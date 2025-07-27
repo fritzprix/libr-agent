@@ -1,4 +1,5 @@
 use anyhow::Result;
+use log::{debug, error, info, warn};
 use rmcp::{
     model::CallToolRequestParam,
     service::{RoleClient, RunningService},
@@ -129,10 +130,10 @@ impl MCPServerManager {
 
         // Create transport and connect using RMCP pattern
         let transport = TokioChildProcess::new(cmd)?;
-        println!("Created transport for command: {} {:?}", command, args);
+        debug!("Created transport for command: {} {:?}", command, args);
 
         let client = ().serve(transport).await?;
-        println!("Successfully connected to MCP server: {}", config.name);
+        info!("Successfully connected to MCP server: {}", config.name);
 
         let connection = MCPConnection { client };
 
@@ -140,7 +141,7 @@ impl MCPServerManager {
         {
             let mut connections = self.connections.lock().await;
             connections.insert(config.name.clone(), connection);
-            println!("Stored connection for server: {}", config.name);
+            debug!("Stored connection for server: {}", config.name);
         }
 
         Ok(format!(
@@ -156,7 +157,7 @@ impl MCPServerManager {
         if let Some(connection) = connections.remove(server_name) {
             // Cancel the client connection
             let _ = connection.client.cancel().await;
-            println!("Stopped MCP server: {}", server_name);
+            info!("Stopped MCP server: {}", server_name);
         }
 
         Ok(())
@@ -190,13 +191,17 @@ impl MCPServerManager {
                     result: Some(serde_json::to_value(result).unwrap_or(serde_json::Value::Null)),
                     error: None,
                 },
-                Err(e) => ToolCallResult {
-                    success: false,
-                    result: None,
-                    error: Some(e.to_string()),
+                Err(e) => {
+                    error!("Error calling tool '{}': {}", tool_name, e);
+                    ToolCallResult {
+                        success: false,
+                        result: None,
+                        error: Some(e.to_string()),
+                    }
                 },
             }
         } else {
+            error!("Server '{}' not found", server_name);
             ToolCallResult {
                 success: false,
                 result: None,
@@ -262,7 +267,7 @@ impl MCPServerManager {
             }
             _ => {
                 // If it's not an object, create a default schema
-                println!("Warning: Received non-object schema, using default");
+                warn!("Received non-object schema, using default");
                 MCPToolInputSchema::default()
             }
         }
@@ -273,21 +278,21 @@ impl MCPServerManager {
         let connections = self.connections.lock().await;
 
         if let Some(connection) = connections.get(server_name) {
-            println!("Found connection for server: {}", server_name);
+            debug!("Found connection for server: {}", server_name);
 
             match connection.client.list_all_tools().await {
                 Ok(tools_response) => {
-                    println!("Raw tools response: {:?}", tools_response);
+                    debug!("Raw tools response: {:?}", tools_response);
                     let mut tools = Vec::new();
 
                     for tool in tools_response {
-                        println!("Processing tool: {:?}", tool);
+                        debug!("Processing tool: {:?}", tool);
 
                         // Convert the input schema to our structured format
                         let input_schema_value = serde_json::to_value(tool.input_schema)
                             .unwrap_or_else(|e| {
-                                println!(
-                                    "Warning: Failed to serialize input_schema for tool {}: {}",
+                                warn!(
+                                    "Failed to serialize input_schema for tool {}: {}",
                                     tool.name, e
                                 );
                                 serde_json::Value::Object(serde_json::Map::new())
@@ -301,23 +306,23 @@ impl MCPServerManager {
                             input_schema: structured_schema,
                         };
 
-                        println!(
+                        debug!(
                             "Converted tool: {} with schema type: {}",
                             mcp_tool.name, mcp_tool.input_schema.schema_type
                         );
                         tools.push(mcp_tool);
                     }
 
-                    println!("Successfully converted {} tools", tools.len());
+                    debug!("Successfully converted {} tools", tools.len());
                     Ok(tools)
                 }
                 Err(e) => {
-                    println!("Error listing tools: {}", e);
+                    error!("Error listing tools: {}", e);
                     Err(anyhow::anyhow!("Failed to list tools: {}", e))
                 }
             }
         } else {
-            println!("Server '{}' not found in connections", server_name);
+            warn!("Server '{}' not found in connections", server_name);
             Err(anyhow::anyhow!("Server '{}' not found", server_name))
         }
     }
@@ -340,8 +345,8 @@ impl MCPServerManager {
                     all_tools.extend(tools);
                 }
                 Err(e) => {
-                    println!(
-                        "Warning: Failed to get tools from server {}: {}",
+                    warn!(
+                        "Failed to get tools from server {}: {}",
                         server_name, e
                     );
                     // Continue with other servers instead of failing completely
@@ -370,7 +375,7 @@ impl MCPServerManager {
         let mut status_map = HashMap::new();
 
         for server_name in connections.keys() {
-            status_map.insert(server_name.clone(), true);
+            status_map.insert(server_name.to_string(), true);
         }
 
         status_map
@@ -381,20 +386,29 @@ impl MCPServerManager {
         // Ensure the schema type is 'object'
         if tool.input_schema.schema_type != "object" {
             return Err(anyhow::anyhow!(
-                "Tool '{}' has invalid schema type '{}', expected 'object'",
+                "Tool '{}' has invalid schema type '{}', expected 'object' (input_schema: {:?})",
                 tool.name,
-                tool.input_schema.schema_type
+                tool.input_schema.schema_type,
+                tool.input_schema
             ));
         }
 
         // Validate required fields exist in properties
         if let Some(required) = &tool.input_schema.required {
+            if tool.input_schema.properties.is_empty() {
+                return Err(anyhow::anyhow!(
+                    "Tool '{}' has required fields but no properties defined (input_schema: {:?})",
+                    tool.name,
+                    tool.input_schema
+                ));
+            }
             for req_field in required {
                 if !tool.input_schema.properties.contains_key(req_field) {
                     return Err(anyhow::anyhow!(
-                        "Tool '{}' requires field '{}' but it's not defined in properties",
+                        "Tool '{}' requires field '{}' but it's not defined in properties (input_schema: {:?})",
                         tool.name,
-                        req_field
+                        req_field,
+                        tool.input_schema
                     ));
                 }
             }
@@ -425,9 +439,4 @@ impl MCPServerManager {
     }
 }
 
-impl Drop for MCPServerManager {
-    fn drop(&mut self) {
-        // Cleanup will be handled by the async runtime
-        // when connections are dropped
-    }
-}
+

@@ -29,4 +29,5 @@ tokio-util = { version = "0.7", features = ["codec"] }
 futures = "0.3"
 rmcp = { version = "0.2.1", features = ["client", "transport-child-process"] }
 tauri-plugin-log = "2"
+log = "0.4.27"
 

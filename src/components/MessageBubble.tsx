@@ -29,28 +29,29 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
   const isAssistant = message.role === "assistant" || message.role === "system";
 
   // Enhanced styling based on role
+  // Use shadcn color tokens for bubble and avatar backgrounds
   const getBubbleStyles = () => {
     if (isUser) {
       return {
         container: "justify-end",
         bubble:
-          "text-white shadow-lg shadow-blue-900/25 border border-blue-500/20",
+          "text-primary-foreground bg-primary shadow-lg border border-primary/20",
         avatar: "🧑‍💻",
-        avatarBg: "bg-blue-500",
+        avatarBg: "bg-primary",
       };
     } else if (isTool) {
       return {
         container: "justify-start",
-        bubble: "shadow-lg shadow-purple-900/25 border border-purple-500/20",
+        bubble: "bg-muted text-muted-foreground shadow-lg border border-muted/20",
         avatar: "🔧",
-        avatarBg: "bg-purple-500",
+        avatarBg: "bg-muted",
       };
     } else {
       return {
         container: "justify-start",
-        bubble: "shadow-lg shadow-black/25 border border-gray-600/20",
+        bubble: "bg-secondary text-secondary-foreground shadow-lg border border-secondary/20",
         avatar: "🤖",
-        avatarBg: "bg-green-500",
+        avatarBg: "bg-secondary",
       };
     }
   };
@@ -133,7 +134,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
         </div>
         {/* Thinking indicator */}
         {message.thinking && (
-          <div className="flex items-center gap-3 mt-4 p-3 bg-black/20 rounded-lg border border-white/10">
+          <div className="flex items-center gap-3 mt-4 p-3 bg-popover rounded-lg border border-border">
             {message.content ? <></> : <LoadingSpinner size="sm" />}
             <span className="text-sm opacity-50 italic">
               {message.thinking}
@@ -150,7 +151,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
 
         {/* Tool Calls */}
         {message.tool_calls && message.tool_calls.length > 0 && (
-          <div className="mt-4 p-3 bg-black/20 rounded-lg border border-white/10">
+          <div className="mt-4 p-3 bg-popover rounded-lg border border-border">
             <div className="flex items-center gap-2 mb-2">
               <span className="text-sm">🛠️</span>
               <span className="text-sm font-medium">Tool Call</span>
@@ -159,11 +160,11 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
               {message.tool_calls.map((tool_call, index) => (
                 <div
                   key={index}
-                  className="inline-flex items-center gap-2 px-3 py-1 bg-white/10 rounded-full text-xs"
+                  className="inline-flex items-center gap-2 px-3 py-1 bg-muted rounded-full text-xs"
                 >
                   {tool_call.function && (
                     <>
-                      <span className="text-blue-400">
+                      <span className="text-primary">
                         {tool_call.function.name}
                       </span>
                       <span className="truncate max-w-32">
@@ -179,7 +180,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
 
         {/* Attachments */}
         {message.attachments && message.attachments.length > 0 && (
-          <div className="mt-4 p-3 bg-black/20 rounded-lg border border-white/10">
+          <div className="mt-4 p-3 bg-popover rounded-lg border border-border">
             <div className="flex items-center gap-2 mb-2">
               <span className="text-sm">📎</span>
               <span className="text-sm font-medium">
@@ -191,9 +192,9 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
               {message.attachments.map((attachment, index) => (
                 <div
                   key={index}
-                  className="inline-flex items-center gap-2 px-3 py-1 bg-white/10 rounded-full text-xs"
+                  className="inline-flex items-center gap-2 px-3 py-1 bg-muted rounded-full text-xs"
                 >
-                  <span className="text-green-400">📄</span>
+                  <span className="text-success">📄</span>
                   <span className="truncate max-w-32">{attachment.name}</span>
                 </div>
               ))}
@@ -203,19 +204,19 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
 
         {/* Enhanced tool output */}
         {isTool && (
-          <div className="mt-4 bg-black/30 rounded-lg border border-purple-400/20 overflow-hidden">
-            <div className="px-3 py-2 bg-accent/30 border-b border-accent/20 flex items-center gap-2">
+          <div className="mt-4 bg-muted/70 rounded-lg border border-muted/40 overflow-hidden">
+            <div className="px-3 py-2 bg-accent border-b border-accent/20 flex items-center gap-2">
               <div className="flex gap-1">
-                <div className="w-2 h-2 bg-red-400 rounded-full"></div>
-                <div className="w-2 h-2 bg-yellow-400 rounded-full"></div>
-                <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+                <div className="w-2 h-2 bg-destructive rounded-full"></div>
+                <div className="w-2 h-2 bg-warning rounded-full"></div>
+                <div className="w-2 h-2 bg-success rounded-full"></div>
               </div>
               <span className="text-accent-foreground font-mono text-sm">
                 Tool Output
               </span>
             </div>
             <div className="p-4 max-h-32 overflow-y-auto custom-scrollbar">
-              <pre className="text-xs text-accent-foreground font-mono whitespace-pre-wrap break-words">
+              <pre className="text-xs text-muted-foreground font-mono whitespace-pre-wrap break-words">
                 {message.content}
               </pre>
             </div>
