@@ -2,7 +2,7 @@ import { createId } from "@paralleldrive/cuid2";
 import Groq from "groq-sdk";
 import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
-import { FunctionDeclaration, GoogleGenAI, Content, Type } from "@google/genai";
+import { FunctionDeclaration, GoogleGenAI, Content, Type, FunctionCall } from "@google/genai";
 import { ChatCompletionTool as GroqChatCompletionTool } from "groq-sdk/resources/chat/completions.mjs";
 import { ChatCompletionTool as OpenAIChatCompletionTool } from "openai/resources/chat/completions.mjs";
 import {
@@ -91,10 +91,10 @@ class MessageValidator {
         throw new Error("Tool arguments must be an object");
       }
       return parsed;
-    } catch (error) {
+    } catch (error: unknown) {
       throw new Error(
         `Invalid tool arguments: ${
-          error instanceof Error ? error.message : "Unknown error"
+          error instanceof Error ? error.message : String(error)
         }`,
       );
     }
@@ -111,23 +111,24 @@ type ProviderToolType =
 type ProviderToolsType = ProviderToolType[];
 
 // Helper function to convert JSON schema types to Gemini types
+interface JsonSchemaProperty {
+  type: string;
+  description?: string;
+  items?: JsonSchemaProperty;
+}
+
+// Helper function to convert JSON schema types to Gemini types
 function convertPropertiesToGeminiTypes(
-  properties: Record<string, unknown>,
-): any {
+  properties: Record<string, JsonSchemaProperty>,
+): Record<string, { type: Type; description?: string; items?: { type: Type } }> {
   if (!properties || typeof properties !== "object") {
     return {};
   }
 
-  const convertedProperties: any = {};
+  const convertedProperties: Record<string, { type: Type; description?: string; items?: { type: Type } }> = {};
 
   for (const [key, value] of Object.entries(properties)) {
-    if (!value || typeof value !== "object") {
-      convertedProperties[key] = { type: Type.STRING };
-      continue;
-    }
-
-    const prop = value as any;
-    const propType = prop.type;
+    const propType = value.type;
 
     switch (propType) {
       case "string":
@@ -143,8 +144,8 @@ function convertPropertiesToGeminiTypes(
       case "array":
         convertedProperties[key] = {
           type: Type.ARRAY,
-          items: prop.items
-            ? convertSinglePropertyToGeminiType(prop.items)
+          items: value.items
+            ? convertSinglePropertyToGeminiType(value.items)
             : { type: Type.STRING },
         };
         break;
@@ -156,8 +157,8 @@ function convertPropertiesToGeminiTypes(
         break;
     }
 
-    if (prop.description && typeof prop.description === "string") {
-      convertedProperties[key].description = prop.description;
+    if (value.description && typeof value.description === "string") {
+      convertedProperties[key].description = value.description;
     }
   }
 
@@ -165,11 +166,9 @@ function convertPropertiesToGeminiTypes(
 }
 
 // Helper function to convert a single property type
-function convertSinglePropertyToGeminiType(prop: any): any {
-  if (!prop || typeof prop !== "object") {
-    return { type: Type.STRING };
-  }
-
+function convertSinglePropertyToGeminiType(
+  prop: JsonSchemaProperty,
+): { type: Type; items?: { type: Type } } {
   switch (prop.type) {
     case "string":
       return { type: Type.STRING };
@@ -252,7 +251,7 @@ function convertMCPToolToProviderFormat(
         parameters: {
           type: Type.OBJECT,
           properties: convertPropertiesToGeminiTypes(
-            mcpTool.input_schema.properties,
+            mcpTool.input_schema.properties as Record<string, JsonSchemaProperty>,
           ),
           required: mcpTool.input_schema.required || [],
         },
@@ -289,7 +288,7 @@ export interface IAIService {
       availableTools?: MCPTool[];
       config?: AIServiceConfig;
     },
-  ): AsyncGenerator<string, void, unknown>;
+  ): AsyncGenerator<string, void, void>;
 
   dispose(): void;
 }
@@ -380,7 +379,7 @@ abstract class BaseAIService implements IAIService {
       availableTools?: MCPTool[];
       config?: AIServiceConfig;
     },
-  ): AsyncGenerator<string, void, unknown>;
+  ): AsyncGenerator<string, void, void>;
 
   abstract getProvider(): AIServiceProvider;
   abstract dispose(): void;
@@ -396,7 +395,7 @@ export class EmptyAIService extends BaseAIService {
   }
 
   async *streamChat(
-  ): AsyncGenerator<string, void, unknown> {
+  ): AsyncGenerator<string, void, void> {
     yield "";
     throw new AIServiceError(
       `EmptyAIService does not support streaming chat`,
@@ -435,7 +434,7 @@ export class GroqService extends BaseAIService {
       availableTools?: MCPTool[];
       config?: AIServiceConfig;
     } = {},
-  ): AsyncGenerator<string, void, unknown> {
+  ): AsyncGenerator<string, void, void> {
     this.validateMessages(messages);
     logger.info("tools : ", { availableTools: options.availableTools });
 
@@ -565,7 +564,7 @@ export class OpenAIService extends BaseAIService {
       availableTools?: MCPTool[];
       config?: AIServiceConfig;
     } = {},
-  ): AsyncGenerator<string, void, unknown> {
+  ): AsyncGenerator<string, void, void> {
     this.validateMessages(messages);
 
     const config = { ...this.defaultConfig, ...options.config };
@@ -690,7 +689,7 @@ export class AnthropicService extends BaseAIService {
       availableTools?: MCPTool[];
       config?: AIServiceConfig;
     } = {},
-  ): AsyncGenerator<string, void, unknown> {
+  ): AsyncGenerator<string, void, void> {
     this.validateMessages(messages);
 
     const config = { ...this.defaultConfig, ...options.config };
@@ -837,7 +836,7 @@ export class GeminiService extends BaseAIService {
       availableTools?: MCPTool[];
       config?: AIServiceConfig;
     } = {},
-  ): AsyncGenerator<string, void, unknown> {
+  ): AsyncGenerator<string, void, void> {
     this.validateMessages(messages);
 
     const config = { ...this.defaultConfig, ...options.config };
@@ -860,7 +859,15 @@ export class GeminiService extends BaseAIService {
       logger.info("gemini call : ", { model, config });
 
       // Fixed API call structure based on your example
-      const geminiConfig: any = {
+      interface GeminiServiceConfig {
+        responseMimeType: string;
+        tools?: Array<{ functionDeclarations: FunctionDeclaration[] }>;
+        systemInstruction?: Array<{ text: string }>;
+        maxOutputTokens?: number;
+        temperature?: number;
+      }
+
+      const geminiConfig: GeminiServiceConfig = {
         responseMimeType: "text/plain",
       };
 
@@ -897,7 +904,7 @@ export class GeminiService extends BaseAIService {
       for await (const chunk of result) {
         if (chunk.functionCalls && chunk.functionCalls.length > 0) {
           yield JSON.stringify({
-            tool_calls: chunk.functionCalls.map((fc: any) => ({
+            tool_calls: chunk.functionCalls.map((fc: FunctionCall) => ({
               id: createId(), // Generate a new ID for each tool call
               type: "function",
               function: {

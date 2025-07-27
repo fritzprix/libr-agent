@@ -1,37 +1,40 @@
-import { useMemo, useCallback, useEffect, useState } from "react";
-import { useLocalTools, LocalService } from "../context/LocalToolContext"; // 경로에 맞게 수정
+import { useMemo, useCallback, useEffect, useState } from 'react';
+import { useLocalTools, LocalService } from '../context/LocalToolContext'; // 경로에 맞게 수정
 
 // 이 컴포넌트는 UI를 렌더링하지 않고, 날씨 확인 도구만 제공합니다。
 export function WeatherTool() {
   const { registerService, unregisterService } = useLocalTools();
-  const [unit] = useState<"celsius" | "fahrenheit">("celsius");
+  const [unit] = useState<'celsius' | 'fahrenheit'>('celsius');
 
   const getWeatherHandler = useCallback(
-    async ({ location }: { location: string }) => {
+    async (args: unknown) => {
+      const argsObj = args as Record<string, unknown>;
+      const location = argsObj.location as string;
       // 실제 API 호출 로직...
       console.log(`Getting weather for ${location} in ${unit}`);
-      return { temperature: unit === "celsius" ? 22 : 72, unit };
+      const temperature = unit === 'celsius' ? 22 : 72;
+      return `Current weather in ${location}: ${temperature}°${unit === 'celsius' ? 'C' : 'F'}`;
     },
     [unit],
   );
 
   const weatherService: LocalService = useMemo(
     () => ({
-      name: "weatherService",
+      name: 'weatherService',
       tools: [
         {
           toolDefinition: {
-            name: "get_current_weather",
-            description: "Get the current weather for a given location",
+            name: 'get_current_weather',
+            description: 'Get the current weather for a given location',
             input_schema: {
-              type: "object" as const,
+              type: 'object' as const,
               properties: {
                 location: {
-                  type: "string",
-                  description: "The city and state, e.g. San Francisco, CA",
+                  type: 'string',
+                  description: 'The city and state, e.g. San Francisco, CA',
                 },
               },
-              required: ["location"],
+              required: ['location'],
             },
           },
           handler: getWeatherHandler,

@@ -6,17 +6,17 @@ import React, {
   useMemo,
   useRef,
   useState,
-} from "react";
-import { MCPTool } from "../lib/tauri-mcp-client";
-import { Tool } from "../types/chat";
-import { useAssistantContext } from "./AssistantContext";
+} from 'react';
+import { MCPTool } from '../lib/tauri-mcp-client';
+import { Tool } from '../types/chat';
+import { useAssistantContext } from './AssistantContext';
 
 /**
  * Represents a single tool within a service, pairing its definition with its handler.
  */
 export interface ServiceTool {
   toolDefinition: MCPTool;
-  handler: (args: any) => any;
+  handler: (args: unknown) => Promise<string>;
 }
 
 /**
@@ -43,7 +43,7 @@ interface LocalToolContextType {
   executeToolCall: (toolCall: {
     id: string;
     function: { name: string; arguments: string };
-  }) => Promise<{ role: "tool"; content: string; tool_call_id: string }>;
+  }) => Promise<{ role: 'tool'; content: string; tool_call_id: string }>;
   availableTools: Tool[];
   isLocalTool: (toolName: string) => boolean;
 }
@@ -115,21 +115,21 @@ export function LocalToolProvider({ children }: { children: React.ReactNode }) {
             const args = JSON.parse(toolCall.function.arguments);
             const result = await tool.handler(args);
             return {
-              role: "tool" as const,
+              role: 'tool' as const,
               content: JSON.stringify(result ?? null),
               tool_call_id: toolCall.id,
             };
-          } catch (error: any) {
+          } catch (error) {
             return {
-              role: "tool" as const,
-              content: `Error executing tool: ${error.message}`,
+              role: 'tool' as const,
+              content: `Error executing tool: ${error instanceof Error ? error.message : String(error)}`,
               tool_call_id: toolCall.id,
             };
           }
         }
       }
       return {
-        role: "tool" as const,
+        role: 'tool' as const,
         content: `Error: Tool "${toolName}" not found.`,
         tool_call_id: toolCall.id,
       };
@@ -218,7 +218,7 @@ export function LocalToolProvider({ children }: { children: React.ReactNode }) {
 export const useLocalTools = () => {
   const context = useContext(LocalToolContext);
   if (!context) {
-    throw new Error("useLocalTools must be used within a LocalToolProvider");
+    throw new Error('useLocalTools must be used within a LocalToolProvider');
   }
   return context;
 };

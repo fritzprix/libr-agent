@@ -4,14 +4,14 @@ import React, {
   useContext,
   useEffect,
   useMemo,
-} from "react";
-import { useAsyncFn } from "react-use";
-import { AIServiceProvider } from "../lib/ai-service";
-import { dbService } from "../lib/db";
-import { llmConfigManager } from "../lib/llm-config-manager";
-import { getLogger } from "../lib/logger";
+} from 'react';
+import { useAsyncFn } from 'react-use';
+import { AIServiceProvider } from '../lib/ai-service';
+import { dbService } from '../lib/db';
+import { llmConfigManager } from '../lib/llm-config-manager';
+import { getLogger } from '../lib/logger';
 
-const logger = getLogger("SettingsContext");
+const logger = getLogger('SettingsContext');
 
 interface ModelChoice {
   provider: AIServiceProvider;
@@ -29,8 +29,8 @@ const DEFAULT_MODEL = llmConfigManager.recommendModel({});
 export const DEFAULT_SETTING: Settings = {
   apiKeys: {} as Record<AIServiceProvider, string>,
   preferredModel: {
-    provider: (DEFAULT_MODEL?.providerId || "openai") as AIServiceProvider,
-    model: DEFAULT_MODEL?.modelId || "",
+    provider: (DEFAULT_MODEL?.providerId || 'openai') as AIServiceProvider,
+    model: DEFAULT_MODEL?.modelId || '',
   },
   windowSize: 20,
 };
@@ -51,23 +51,27 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     try {
       const [apiKeysObject, preferredModelObject, windowSizeObject] =
         await Promise.all([
-          dbService.objects.read("apiKeys"),
-          dbService.objects.read("preferredModel"),
-          dbService.objects.read("windowSize"),
+          dbService.objects.read('apiKeys'),
+          dbService.objects.read('preferredModel'),
+          dbService.objects.read('windowSize'),
         ]);
       const settings: Settings = {
         ...DEFAULT_SETTING,
-        ...(apiKeysObject ? { apiKeys: apiKeysObject.value } : {}),
+        ...(apiKeysObject
+          ? {
+              apiKeys: apiKeysObject.value as Record<AIServiceProvider, string>,
+            }
+          : {}),
         ...(preferredModelObject
-          ? { preferredModel: preferredModelObject.value }
+          ? { preferredModel: preferredModelObject.value as ModelChoice }
           : {}),
         ...(windowSizeObject != null
-          ? { windowSize: windowSizeObject.value }
+          ? { windowSize: windowSizeObject.value as number }
           : {}),
       };
       return settings;
     } catch (e) {
-      logger.error("Failed to load settings", e);
+      logger.error('Failed to load settings', e);
       throw e;
     }
   }, []);
@@ -82,23 +86,23 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       try {
         if (settings.apiKeys) {
           const newApiKeys = { ...(value?.apiKeys || {}), ...settings.apiKeys };
-          await dbService.objects.upsert({ key: "apiKeys", value: newApiKeys });
+          await dbService.objects.upsert({ key: 'apiKeys', value: newApiKeys });
         }
         if (settings.preferredModel) {
           await dbService.objects.upsert({
-            key: "preferredModel",
+            key: 'preferredModel',
             value: settings.preferredModel,
           });
         }
         if (settings.windowSize != null) {
           await dbService.objects.upsert({
-            key: "windowSize",
+            key: 'windowSize',
             value: settings.windowSize,
           });
         }
         await load();
       } catch (e) {
-        logger.error("Failed to update settings", e);
+        logger.error('Failed to update settings', e);
         throw e;
       }
     },
@@ -124,7 +128,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
 export const useSettings = () => {
   const context = useContext(SettingsContext);
   if (!context) {
-    throw new Error("useSettings must be used within a SettingsProvider");
+    throw new Error('useSettings must be used within a SettingsProvider');
   }
   return context;
 };

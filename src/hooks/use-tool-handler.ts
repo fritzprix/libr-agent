@@ -1,12 +1,12 @@
-import { useCallback, useRef, useEffect } from "react";
+import { useCallback, useRef, useEffect } from 'react';
 
 /**
  * Custom hook for creating stable tool handlers that automatically manage
  * unstable dependencies through refs to prevent infinite re-renders
  */
 export function useToolHandler<
-  TInput = any,
-  TDeps extends Record<string, any> = {},
+  TInput = Record<string, unknown>,
+  TDeps extends object = object,
 >(
   handler: (input: TInput, deps: TDeps) => void | Promise<void>,
   dependencies: TDeps,
@@ -25,7 +25,7 @@ export function useToolHandler<
       try {
         return handler(input, depsRef.current);
       } catch (error) {
-        console.error("Tool handler error:", error);
+        console.error('Tool handler error:', error);
         throw error;
       }
     },
@@ -36,7 +36,7 @@ export function useToolHandler<
 }
 
 // Even simpler - just use closure, no deps parameter needed
-export function useStableHandler<T extends (...args: any[]) => any>(
+export function useStableHandler<T extends (...args: unknown[]) => void>(
   callback: T,
 ): T {
   const callbackRef = useRef<T>(callback);
@@ -48,7 +48,7 @@ export function useStableHandler<T extends (...args: any[]) => any>(
 
   // Return stable reference that calls the latest callback
   return useCallback(
-    ((...args: any[]) => {
+    ((...args: unknown[]) => {
       return callbackRef.current(...args);
     }) as T,
     [],

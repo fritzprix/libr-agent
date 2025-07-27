@@ -1,14 +1,14 @@
-import React, { useCallback, useEffect, useMemo, useRef } from "react";
-import { useAssistantContext } from "../../context/AssistantContext";
-import { LocalService, useLocalTools } from "../../context/LocalToolContext";
-import { useChatContext } from "../../hooks/use-chat";
-import { createId } from "@paralleldrive/cuid2";
-import { Assistant } from "../../types/chat";
-import { useSessionContext } from "../../context/SessionContext";
-import { useSessionHistory } from "../../context/SessionHistoryContext";
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useAssistantContext } from '../../context/AssistantContext';
+import { LocalService, useLocalTools } from '../../context/LocalToolContext';
+import { useChatContext } from '../../hooks/use-chat';
+import { createId } from '@paralleldrive/cuid2';
+import { Assistant } from '../../types/chat';
+import { useSessionContext } from '../../context/SessionContext';
+import { useSessionHistory } from '../../context/SessionHistoryContext';
 
-const MULTI_AGENT_ORCHESTRATOR_ASSISTANT_ID = "multi-agent-orchestrator";
-const MULTI_AGENT_SERVICE = "multi-agent-orchestrator-service";
+const MULTI_AGENT_ORCHESTRATOR_ASSISTANT_ID = 'multi-agent-orchestrator';
+const MULTI_AGENT_SERVICE = 'multi-agent-orchestrator-service';
 
 interface PromptToUserInput {
   prompt: string;
@@ -48,22 +48,25 @@ export const MultiAgentOrchestrator: React.FC = () => {
 
   // ✨ Clean, stable tool handlers using the simpler useStableHandler
   const handlePromptToUser = useCallback(
-    ({ prompt }: PromptToUserInput) => {
-      if (!currentSession) return; // Ensure there's an active session
+    async (args: unknown): Promise<string> => {
+      const { prompt } = args as PromptToUserInput;
+      if (!currentSession) return 'No active session'; // Ensure there's an active session
       addMessage({
         assistantId: MULTI_AGENT_ORCHESTRATOR_ASSISTANT_ID,
         id: createId(),
         content: prompt,
-        role: "assistant",
+        role: 'assistant',
         sessionId: currentSession.id,
       });
+      return 'Prompt sent to user';
     },
     [addMessage, currentSession],
   );
 
   const handleSwitchAssistant = useCallback(
-    ({ assistantId, instruction }: SwitchAssistantInput) => {
-      if (!currentSession) return; // Ensure there's an active session
+    async (args: unknown): Promise<string> => {
+      const { assistantId, instruction } = args as SwitchAssistantInput;
+      if (!currentSession) return 'No active session'; // Ensure there's an active session
       const nextAssistant = assistants.find((a) => a.id === assistantId);
       if (nextAssistant) {
         setCurrentAssistant(nextAssistant);
@@ -72,10 +75,11 @@ export const MultiAgentOrchestrator: React.FC = () => {
             id: createId(),
             assistantId: MULTI_AGENT_ORCHESTRATOR_ASSISTANT_ID,
             content: instruction,
-            role: "user",
+            role: 'user',
             sessionId: currentSession.id,
           },
         ]);
+        return `Switched to assistant: ${nextAssistant.name}`;
       } else {
         throw new Error(`Assistant with ID ${assistantId} not found`);
       }
@@ -83,35 +87,45 @@ export const MultiAgentOrchestrator: React.FC = () => {
     [submit, currentSession],
   );
 
-  const handleSetPlan = useCallback(({ items }: SetPlanInput) => {
+  const handleSetPlan = useCallback(async (args: unknown): Promise<string> => {
+    const { items } = args as SetPlanInput;
     const newPlan = items.map(
       (item) => ({ plan: item, complete: false }) satisfies PlanItem,
     );
     plan.current = newPlan;
+    return `Plan set with ${items.length} items`;
   }, []);
 
-  const handleCheckPlanItem = useCallback(({ index }: CheckPlanItemInput) => {
-    if (index >= 0 && index < plan.current.length) {
-      plan.current[index].complete = true;
-    } else {
-      throw new Error(`Invalid plan item index: ${index}`);
-    }
-  }, []);
+  const handleCheckPlanItem = useCallback(
+    async (args: unknown): Promise<string> => {
+      const { index } = args as CheckPlanItemInput;
+      if (index >= 0 && index < plan.current.length) {
+        plan.current[index].complete = true;
+        return `Plan item ${index} marked as complete`;
+      } else {
+        throw new Error(`Invalid plan item index: ${index}`);
+      }
+    },
+    [],
+  );
 
-  const handleClearPlan = useCallback(() => {
+  const handleClearPlan = useCallback(async (): Promise<string> => {
     plan.current = [];
+    return 'Plan cleared';
   }, []);
 
   const handleReportResult = useCallback(
-    ({ resultInDetail }: ReportResultInput) => {
-      if (!currentSession) return; // Ensure there's an active session
+    async (args: unknown): Promise<string> => {
+      const { resultInDetail } = args as ReportResultInput;
+      if (!currentSession) return 'No active session'; // Ensure there's an active session
       addMessage({
         id: createId(),
         assistantId: MULTI_AGENT_ORCHESTRATOR_ASSISTANT_ID,
         content: resultInDetail,
-        role: "assistant",
+        role: 'assistant',
         sessionId: currentSession.id,
       });
+      return 'Result reported';
     },
     [addMessage, currentSession],
   );
@@ -123,86 +137,86 @@ export const MultiAgentOrchestrator: React.FC = () => {
       tools: [
         {
           toolDefinition: {
-            name: "promptToUser",
+            name: 'promptToUser',
             description:
-              "Prompt the user for additional information or clarification",
+              'Prompt the user for additional information or clarification',
             input_schema: {
-              type: "object",
+              type: 'object',
               properties: {
                 prompt: {
-                  type: "string",
-                  description: "The prompt message to show to the user",
+                  type: 'string',
+                  description: 'The prompt message to show to the user',
                 },
               },
-              required: ["prompt"],
+              required: ['prompt'],
             },
           },
           handler: handlePromptToUser,
         },
         {
           toolDefinition: {
-            name: "switchAssistant",
+            name: 'switchAssistant',
             description:
-              "Switch to a different specialized assistant with specific instructions",
+              'Switch to a different specialized assistant with specific instructions',
             input_schema: {
-              type: "object",
+              type: 'object',
               properties: {
                 assistantId: {
-                  type: "string",
-                  description: "The ID of the assistant to switch to",
+                  type: 'string',
+                  description: 'The ID of the assistant to switch to',
                 },
                 instruction: {
-                  type: "string",
-                  description: "Clear instructions for the new assistant",
+                  type: 'string',
+                  description: 'Clear instructions for the new assistant',
                 },
               },
-              required: ["assistantId", "instruction"],
+              required: ['assistantId', 'instruction'],
             },
           },
           handler: handleSwitchAssistant,
         },
         {
           toolDefinition: {
-            name: "setPlan",
-            description: "Set a plan of action items for the user",
+            name: 'setPlan',
+            description: 'Set a plan of action items for the user',
             input_schema: {
-              type: "object",
+              type: 'object',
               properties: {
                 items: {
-                  type: "array",
-                  items: { type: "string" },
-                  description: "Array of plan items/steps",
+                  type: 'array',
+                  items: { type: 'string' },
+                  description: 'Array of plan items/steps',
                 },
               },
-              required: ["items"],
+              required: ['items'],
             },
           },
           handler: handleSetPlan,
         },
         {
           toolDefinition: {
-            name: "checkPlanItem",
-            description: "Mark a specific plan item as completed",
+            name: 'checkPlanItem',
+            description: 'Mark a specific plan item as completed',
             input_schema: {
-              type: "object",
+              type: 'object',
               properties: {
                 index: {
-                  type: "number",
+                  type: 'number',
                   description:
-                    "0-based index of the plan item to mark as complete",
+                    '0-based index of the plan item to mark as complete',
                 },
               },
-              required: ["index"],
+              required: ['index'],
             },
           },
           handler: handleCheckPlanItem,
         },
         {
           toolDefinition: {
-            name: "clearPlan",
-            description: "Clear/cancel the current plan",
+            name: 'clearPlan',
+            description: 'Clear/cancel the current plan',
             input_schema: {
-              type: "object",
+              type: 'object',
               properties: {},
               required: [],
             },
@@ -211,18 +225,18 @@ export const MultiAgentOrchestrator: React.FC = () => {
         },
         {
           toolDefinition: {
-            name: "reportResult",
+            name: 'reportResult',
             description:
-              "Provide a detailed summary of completed task or current status",
+              'Provide a detailed summary of completed task or current status',
             input_schema: {
-              type: "object",
+              type: 'object',
               properties: {
                 resultInDetail: {
-                  type: "string",
-                  description: "Detailed result summary",
+                  type: 'string',
+                  description: 'Detailed result summary',
                 },
               },
-              required: ["resultInDetail"],
+              required: ['resultInDetail'],
             },
           },
           handler: handleReportResult,
@@ -242,7 +256,7 @@ export const MultiAgentOrchestrator: React.FC = () => {
   const multiAgentOrchestratorAssistant: Assistant = useMemo(
     () => ({
       id: MULTI_AGENT_ORCHESTRATOR_ASSISTANT_ID,
-      name: "MultiAgentOrchestrator",
+      name: 'MultiAgentOrchestrator',
       systemPrompt: `You are a Multi-Agent Orchestrator. Your goal is to coordinate multiple specialized AI assistants to fulfill complex user requests. You have access to the following tools to manage the workflow:
 
 1. **promptToUser(prompt: string)**: Use this to ask the user for additional information or clarification. This will pause the current operation and wait for user input.
@@ -254,7 +268,7 @@ export const MultiAgentOrchestrator: React.FC = () => {
 
 Your primary objective is to break down complex requests, delegate to appropriate assistants, manage the overall plan, and report back to the user clearly and concisely. Always consider the most efficient way to achieve the user's goal.
 
-Available assistants: ${assistants.map((a) => `${a.id}: ${a.name}`).join(", ")}`,
+Available assistants: ${assistants.map((a) => `${a.id}: ${a.name}`).join(', ')}`,
       localServices: [localService.name],
       mcpConfig: {},
       isDefault: false,
@@ -284,7 +298,7 @@ Available assistants: ${assistants.map((a) => `${a.id}: ${a.name}`).join(", ")}`
       <div className="mt-4">
         <div className="text-sm text-gray-300 mb-3">
           The Multi-Agent Orchestrator is coordinating specialized assistants to
-          handle complex tasks. Current assistant:{" "}
+          handle complex tasks. Current assistant:{' '}
           <span className="font-semibold text-blue-300">
             {currentAssistant?.name}
           </span>
@@ -298,7 +312,7 @@ Available assistants: ${assistants.map((a) => `${a.id}: ${a.name}`).join(", ")}`
                 <div
                   key={assistant.id}
                   className={`p-1 rounded ${
-                    assistant.id === currentAssistant?.id ? "bg-blue-600" : ""
+                    assistant.id === currentAssistant?.id ? 'bg-blue-600' : ''
                   }`}
                 >
                   {assistant.name} ({assistant.id})
