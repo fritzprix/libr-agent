@@ -2,11 +2,11 @@ import { useMemo, useState } from "react";
 import { Session } from "../types/chat";
 import { Input } from "./ui";
 import SessionItem from "./SessionItem";
+import { useSidebar } from "./ui/sidebar";
 
 interface SessionListProps {
   sessions: Session[];
   currentSessionId?: string;
-  isCollapsed?: boolean;
   onSelectSession: (sessionId: string) => void;
   onDeleteSession: (sessionId: string) => void;
   showSearch?: boolean;
@@ -17,7 +17,6 @@ interface SessionListProps {
 export default function SessionList({
   sessions,
   currentSessionId,
-  isCollapsed = false,
   onSelectSession,
   onDeleteSession,
   showSearch = false,
@@ -25,6 +24,8 @@ export default function SessionList({
   emptyMessage = "No sessions found",
 }: SessionListProps) {
   const [searchQuery, setSearchQuery] = useState("");
+  const { state } = useSidebar();
+  const isCollapsed = state === "collapsed";
 
   // Filter sessions based on search query
   const filteredSessions = useMemo(() => {
@@ -73,7 +74,6 @@ export default function SessionList({
                 key={session.id}
                 session={session}
                 isSelected={session.id === currentSessionId}
-                isCollapsed={isCollapsed}
                 onSelect={onSelectSession}
                 onDelete={onDeleteSession}
               />

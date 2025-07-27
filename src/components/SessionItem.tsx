@@ -1,18 +1,17 @@
-import React, { useCallback } from "react";
+import { useCallback } from "react";
 import { Session } from "../types/chat";
 import { Button } from "./ui";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuTrigger,
+  DropdownMenuTrigger
 } from "./ui/dropdown-menu";
+import { useSidebar } from "./ui/sidebar";
 
 interface SessionItemProps {
   session: Session;
   isSelected?: boolean;
-  isCollapsed?: boolean;
   onSelect: (sessionId: string) => void;
   onDelete: (sessionId: string) => void;
   className?: string;
@@ -21,11 +20,12 @@ interface SessionItemProps {
 export default function SessionItem({
   session,
   isSelected = false,
-  isCollapsed = false,
   onSelect,
   onDelete,
   className = "",
 }: SessionItemProps) {
+  const { state } = useSidebar();
+  const isCollapsed = state === "collapsed";
   const handleSelect = useCallback(() => {
     onSelect(session.id);
   }, [onSelect, session.id]);
@@ -44,18 +44,21 @@ export default function SessionItem({
     [onDelete, session.id, session.name],
   );
 
-  const displayName = session.name || session.assistants[0]?.name || "Untitled Session";
+  const displayName =
+    session.name || session.assistants[0]?.name || "Untitled Session";
   const sessionIcon = session.type === "single" ? "💬" : "👥";
 
   return (
     <div
-      className={`flex items-center justify-between group hover:bg-gray-700 rounded-md transition-colors ${isSelected ? "bg-green-900/20 text-green-400" : "text-gray-400"
-        } ${className}`}
+      className={`flex items-center justify-between group hover:bg-gray-700 rounded-md transition-colors ${
+        isSelected ? "bg-green-900/20 text-green-400" : "text-gray-400"
+      } ${className}`}
     >
       <Button
         variant="ghost"
-        className={`flex-1 justify-start text-left transition-colors duration-150 ${isSelected ? "text-green-400" : "text-gray-400 hover:text-gray-300"
-          }`}
+        className={`flex-1 justify-start text-left transition-colors duration-150 ${
+          isSelected ? "text-green-400" : "text-gray-400 hover:text-gray-300"
+        }`}
         onClick={handleSelect}
       >
         {isCollapsed ? (
@@ -70,22 +73,12 @@ export default function SessionItem({
       {!isCollapsed && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-            >
+            <Button variant="ghost" size="sm">
               <span>⋮</span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent>
-            <DropdownMenuLabel>
-              Hello
-            </DropdownMenuLabel>
-            <DropdownMenuItem
-              onClick={handleDelete}
-            >
-              Delete
-            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleDelete}>Delete</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       )}

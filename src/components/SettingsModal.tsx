@@ -6,7 +6,6 @@ import {
   TabsList,
   TabsTrigger,
   TabsContent,
-  CompactModelPicker,
   TerminalModelPicker,
 } from "./ui";
 import { AIServiceProvider } from "../lib/ai-service";

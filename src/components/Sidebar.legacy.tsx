@@ -147,7 +147,6 @@ export default function Sidebar({
                 currentSessionId={
                   currentView === "chat" ? currentSession?.id : undefined
                 }
-                isCollapsed={isCollapsed}
                 onSelectSession={handleLoadSession}
                 onDeleteSession={handleDeleteSession}
                 showSearch={false}
