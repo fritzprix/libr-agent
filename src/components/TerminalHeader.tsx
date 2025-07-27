@@ -1,6 +1,6 @@
-import { createContext, useContext, useState, ReactNode } from "react";
-import { CompactModelPicker } from "./ui";
 import { useSessionContext } from "@/context/SessionContext";
+import { createContext, ReactNode, useContext, useState } from "react";
+import { CompactModelPicker } from "./ui";
 
 interface TerminalHeaderContextType {
   isAgentMode: boolean;
@@ -35,12 +35,12 @@ export default function TerminalHeader({
     setIsAgentMode((prev) => !prev);
   };
 
+
   return (
     <TerminalHeaderContext.Provider value={{ isAgentMode, toggleMode }}>
       {/* Terminal Header */}
       <div className="px-4 py-3 flex items-center justify-between border-b flex-shrink-0">
-        <div className="flex items-center gap-4">
-        </div>
+        <div className="flex items-center gap-4"></div>
         <div className="flex items-center gap-2">
           <span className="text-xs">Session:</span>
           <span className="text-sm">
@@ -52,8 +52,7 @@ export default function TerminalHeader({
       {/* Mode Switcher */}
       <div className="px-4 py-2 border-b  flex-shrink-0">
         <div className="flex justify-between items-center">
-          <div className="flex gap-2">
-          </div>
+          <div className="flex gap-2"></div>
           {children}
         </div>
       </div>

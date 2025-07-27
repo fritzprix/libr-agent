@@ -1,14 +1,11 @@
 import { useMemo, useState } from "react";
 import { Session } from "../types/chat";
-import { Input } from "./ui";
 import SessionItem from "./SessionItem";
+import { Input } from "./ui";
 import { useSidebar } from "./ui/sidebar";
 
 interface SessionListProps {
   sessions: Session[];
-  currentSessionId?: string;
-  onSelectSession: (sessionId: string) => void;
-  onDeleteSession: (sessionId: string) => void;
   showSearch?: boolean;
   className?: string;
   emptyMessage?: string;
@@ -16,9 +13,6 @@ interface SessionListProps {
 
 export default function SessionList({
   sessions,
-  currentSessionId,
-  onSelectSession,
-  onDeleteSession,
   showSearch = false,
   className = "",
   emptyMessage = "No sessions found",
@@ -62,7 +56,7 @@ export default function SessionList({
         </div>
       )}
 
-      <div className="space-y-1 flex-1 overflow-y-auto">
+      <div className="space-y-1 flex-1">
         {filteredSessions.length === 0
           ? !isCollapsed && (
               <div className="text-center text-gray-500 py-4 text-sm">
@@ -73,9 +67,6 @@ export default function SessionList({
               <SessionItem
                 key={session.id}
                 session={session}
-                isSelected={session.id === currentSessionId}
-                onSelect={onSelectSession}
-                onDelete={onDeleteSession}
               />
             ))}
       </div>

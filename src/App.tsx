@@ -16,6 +16,8 @@ import { SessionContextProvider } from "./context/SessionContext";
 import { SessionHistoryProvider } from "./context/SessionHistoryContext";
 import { SettingsProvider } from "./context/SettingsContext";
 import "./globals.css";
+import { AppHeader } from "./components/AppHeader";
+import { ThemeToggle } from "./components/ThemeToggle";
 
 function App() {
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
@@ -44,9 +46,9 @@ function App() {
 
                           {/* Main Content Area */}
                           <div className="flex flex-1 flex-col min-w-0">
-                            <header className="flex items-center p-4 border-b flex-shrink-0">
-                              <SidebarTrigger />
-                            </header>
+                            <AppHeader>
+                              <ThemeToggle/>
+                            </AppHeader>
                             <div className="flex-1 overflow-auto w-full">
                               <Routes>
                                 <Route path="/" element={<ChatContainer />} />

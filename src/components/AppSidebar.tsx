@@ -189,11 +189,6 @@ export default function AppSidebar({
             <SidebarGroupContent>
               <SessionList
                 sessions={sessions.slice(0, 5)}
-                currentSessionId={
-                  currentView === "chat" ? currentSession?.id : undefined
-                }
-                onSelectSession={handleLoadSession}
-                onDeleteSession={handleDeleteSession}
                 showSearch={false}
                 emptyMessage=""
               />
