@@ -1,5 +1,5 @@
 import { createId } from '@paralleldrive/cuid2';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import MessageBubble from './MessageBubble';
 import { ToolCaller } from './orchestrators/ToolCaller';
 import { getLogger } from '@/lib/logger';
@@ -10,59 +10,67 @@ import { useSessionContext } from '@/context/SessionContext';
 import { useChatContext } from '@/hooks/use-chat';
 import { Message } from '@/models/chat';
 import TerminalHeader from '@/components/TerminalHeader';
-import { Button, FileAttachment, Input } from '@/components/ui';
-import AssistantGroupDetailList from '../assistant/AssistantGroupDetailList';
+import { Button, CompactModelPicker, FileAttachment, Input } from '@/components/ui';
 import ToolsModal from '../tools/ToolsModal';
-// import { useChatContext } from "../context/ChatContext";
 
 const logger = getLogger('Chat');
 
-interface ChatProps {
-  children?: React.ReactNode;
-  showAssistantManager: boolean;
-  setShowAssistantManager: (show: boolean) => void;
+// Internal context for sharing state between Chat subcomponents
+interface ChatContextType {
+  input: string;
+  setInput: React.Dispatch<React.SetStateAction<string>>;
+  attachedFiles: { name: string; content: string }[];
+  setAttachedFiles: React.Dispatch<React.SetStateAction<{ name: string; content: string }[]>>;
+  showToolsDetail: boolean;
+  setShowToolsDetail: React.Dispatch<React.SetStateAction<boolean>>;
+  availableTools: any[];
+  isLoading: boolean;
+  messages: Message[];
+  currentSession: any;
+  currentAssistant: any;
+  handleSubmit: (e: React.FormEvent<HTMLFormElement>) => Promise<void>;
+  handleFileAttachment: (e: React.ChangeEvent<HTMLInputElement>) => Promise<void>;
+  removeAttachedFile: (index: number) => void;
+  handleAgentInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  messagesEndRef: React.RefObject<HTMLDivElement>;
 }
 
-export default function Chat({
-  children,
-  showAssistantManager,
-  setShowAssistantManager,
-}: ChatProps) {
+const ChatContext = createContext<ChatContextType | null>(null);
+
+const useChatInternalContext = () => {
+  const context = useContext(ChatContext);
+  if (!context) {
+    throw new Error('Chat subcomponents must be used within a Chat component');
+  }
+  return context;
+};
+
+interface ChatProps {
+  children?: React.ReactNode;
+}
+
+// Main Chat container component
+function Chat({ children }: ChatProps) {
   const { currentAssistant } = useAssistantContext();
   const [showToolsDetail, setShowToolsDetail] = useState(false);
-  const [attachedFiles, setAttachedFiles] = useState<
-    { name: string; content: string }[]
-  >([]);
+  const [attachedFiles, setAttachedFiles] = useState<{ name: string; content: string }[]>([]);
   const { availableTools: mcpTools } = useMCPServer();
   const { availableTools: localTools } = useLocalTools();
-  const availableTools = useMemo(
-    () => [...mcpTools, ...localTools],
-    [mcpTools, localTools],
-  );
+  const availableTools = useMemo(() => [...mcpTools, ...localTools], [mcpTools, localTools]);
   const [input, setInput] = useState('');
   const { current: currentSession } = useSessionContext();
   const { submit, isLoading, messages } = useChatContext();
-
-  // Since ChatContainer ensures currentSession exists before rendering Chat,
-  // we can safely assert it's not null here
-  if (!currentSession) {
-    throw new Error(
-      'Chat component should only be rendered when currentSession exists',
-    );
-  }
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  if (!currentSession) {
+    throw new Error('Chat component should only be rendered when currentSession exists');
+  }
 
   const handleAgentInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setInput(e.target.value);
   };
 
-  const handleFileAttachment = async (
-    e: React.ChangeEvent<HTMLInputElement>,
-  ) => {
+  const handleFileAttachment = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
 
@@ -72,9 +80,7 @@ export default function Chat({
       const file = files[i];
       if (
         !file.type.startsWith('text/') &&
-        !file.name.match(
-          /\.(txt|md|json|js|ts|tsx|jsx|py|java|cpp|c|h|css|html|xml|yaml|yml|csv)$/i,
-        )
+        !file.name.match(/\.(txt|md|json|js|ts|tsx|jsx|py|java|cpp|c|h|css|html|xml|yaml|yml|csv)$/i)
       ) {
         alert(`File "${file.name}" is not a supported text file format.`);
         continue;
@@ -120,7 +126,7 @@ export default function Chat({
       id: createId(),
       content: messageContent,
       role: 'user',
-      sessionId: currentSession?.id || '', // Add sessionId
+      sessionId: currentSession?.id || '',
     };
 
     setInput('');
@@ -133,134 +139,203 @@ export default function Chat({
     }
   };
 
+  const contextValue: ChatContextType = {
+    input,
+    setInput,
+    attachedFiles,
+    setAttachedFiles,
+    showToolsDetail,
+    setShowToolsDetail,
+    availableTools,
+    isLoading,
+    messages,
+    currentSession,
+    currentAssistant,
+    handleSubmit,
+    handleFileAttachment,
+    removeAttachedFile,
+    handleAgentInputChange,
+    messagesEndRef,
+  };
+
   return (
-    <div className="h-full w-full font-mono flex flex-col rounded-lg overflow-hidden shadow-2xl">
-      <TerminalHeader>
-        <Button
-          className="text-xs px-2 py-1 rounded"
-          onClick={() => setShowAssistantManager(true)}
-        >
-          [manage-assistants]
-        </Button>
-      </TerminalHeader>
-
-      {/* Messages Area - Fills space between model picker and bottom UI */}
-      <div className="flex-1 flex flex-col min-h-0">
-        <div className="flex-1 p-4 overflow-y-auto flex flex-col gap-6 terminal-scrollbar">
-          {messages.map((m) => (
-            <MessageBubble
-              key={m.id}
-              message={m}
-              currentAssistantName={currentSession?.assistants[0]?.name || ''}
-            />
-          ))}
-          {isLoading && (
-            <div className="flex justify-start">
-              <div className="rounded px-3 py-2">
-                <div className="text-xs mb-1">
-                  Agent ({currentSession?.assistants[0]?.name})
-                </div>
-                <div className="text-sm">thinking...</div>
-              </div>
-            </div>
-          )}
-          <div ref={messagesEndRef} />
-        </div>
+    <ChatContext.Provider value={contextValue}>
+      <div className="h-full w-full font-mono flex flex-col rounded-lg overflow-hidden shadow-2xl">
+        {children}
+        <ToolCaller />
+        <ToolsModal
+          isOpen={showToolsDetail}
+          onClose={() => setShowToolsDetail(false)}
+        />
       </div>
+    </ChatContext.Provider>
+  );
+}
 
-      {/* Bottom UI Stack - Fixed at bottom */}
-      <div className="flex-shrink-0">
-        {/* Status bar */}
-        <div className="px-4 py-2 border-t flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-xs">Assistant:</span>
-            <span className="text-xs">
-              {currentSession?.assistants[0]?.name || 'None'}
-            </span>
-          </div>
+// Chat Header component
+function ChatHeader({ children }: { children?: React.ReactNode }) {
+  return (
+    <TerminalHeader>
+      {children}
+    </TerminalHeader>
+  );
+}
 
-          <div className="flex items-center gap-2">
-            <span className="text-xs">Tools:</span>
-            <button
-              onClick={() => setShowToolsDetail(true)}
-              className="text-xs transition-colors flex items-center gap-1"
-            >
-              🔧 {availableTools.length} available
-            </button>
-          </div>
-        </div>
+// Chat Messages component
+function ChatMessages() {
+  const { messages, isLoading, currentSession, messagesEndRef } = useChatInternalContext();
 
-        {/* Attached files section */}
-        {attachedFiles.length > 0 && (
-          <div className="px-4 py-2 border-t">
-            <div className="text-xs mb-2">📎 Attached Files:</div>
-            <div className="flex flex-wrap gap-2">
-              {attachedFiles.map((file, index) => (
-                <div
-                  key={index}
-                  className="flex items-center px-2 py-1 rounded border border-gray-700"
-                >
-                  <span className="text-xs truncate max-w-[150px]">
-                    {file.name}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => removeAttachedFile(index)}
-                    className="ml-2 text-xs"
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, messagesEndRef]);
+
+  return (
+    <div className="flex-1 flex flex-col min-h-0">
+      <div className="flex-1 p-4 overflow-y-auto flex flex-col gap-6 terminal-scrollbar">
+        {messages.map((m) => (
+          <MessageBubble
+            key={m.id}
+            message={m}
+            currentAssistantName={currentSession?.assistants[0]?.name || ''}
+          />
+        ))}
+        {isLoading && (
+          <div className="flex justify-start">
+            <div className="rounded px-3 py-2">
+              <div className="text-xs mb-1">
+                Agent ({currentSession?.assistants[0]?.name})
+              </div>
+              <div className="text-sm">thinking...</div>
             </div>
           </div>
         )}
+        <div ref={messagesEndRef} />
+      </div>
+    </div>
+  );
+}
 
-        {/* Input form */}
-        <form
-          onSubmit={handleSubmit}
-          className="px-4 py-4 border-t flex items-center gap-2"
+// Chat Status Bar component
+function ChatStatusBar({ children }: { children?: React.ReactNode }) {
+  const { availableTools, setShowToolsDetail } = useChatInternalContext();
+
+  return (
+    <div className="px-4 py-2 border-t flex items-center justify-between">
+      <div>
+        <CompactModelPicker />
+        {children}
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="text-xs">Tools:</span>
+        <button
+          onClick={() => setShowToolsDetail(true)}
+          className="text-xs transition-colors flex items-center gap-1"
         >
-          <span className="font-bold flex-shrink-0">$</span>
-          <div className="flex-1 flex items-center gap-2 min-w-0">
-            <Input
-              value={input}
-              onChange={handleAgentInputChange}
-              placeholder={isLoading ? 'agent busy...' : 'query agent...'}
-              disabled={isLoading}
-              className="flex-1 min-w-0"
-              autoComplete="off"
-              spellCheck="false"
-            />
+          🔧 {availableTools.length} available
+        </button>
+      </div>
+    </div>
+  );
+}
 
-            <FileAttachment
-              files={attachedFiles}
-              onRemove={removeAttachedFile}
-              onAdd={handleFileAttachment}
-              compact={true}
-            />
-          </div>
+// Chat Attached Files component
+function ChatAttachedFiles() {
+  const { attachedFiles, removeAttachedFile } = useChatInternalContext();
 
-          <Button
-            type="submit"
-            disabled={isLoading}
-            variant="ghost"
-            size="sm"
-            className="px-1"
+  if (attachedFiles.length === 0) return null;
+
+  return (
+    <div className="px-4 py-2 border-t">
+      <div className="text-xs mb-2">📎 Attached Files:</div>
+      <div className="flex flex-wrap gap-2">
+        {attachedFiles.map((file, index) => (
+          <div
+            key={index}
+            className="flex items-center px-2 py-1 rounded border border-gray-700"
           >
-            ⏎
-          </Button>
-        </form>
+            <span className="text-xs truncate max-w-[150px]">
+              {file.name}
+            </span>
+            <button
+              type="button"
+              onClick={() => removeAttachedFile(index)}
+              className="ml-2 text-xs"
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Chat Input component
+function ChatInput({ children }: { children?: React.ReactNode }) {
+  const {
+    input,
+    isLoading,
+    attachedFiles,
+    handleSubmit,
+    handleAgentInputChange,
+    handleFileAttachment,
+    removeAttachedFile,
+  } = useChatInternalContext();
+
+  return (
+    <form
+      onSubmit={handleSubmit}
+      className="px-4 py-4 border-t flex items-center gap-2"
+    >
+      <span className="font-bold flex-shrink-0">$</span>
+      <div className="flex-1 flex items-center gap-2 min-w-0">
+        <Input
+          value={input}
+          onChange={handleAgentInputChange}
+          placeholder={isLoading ? 'agent busy...' : 'query agent...'}
+          disabled={isLoading}
+          className="flex-1 min-w-0"
+          autoComplete="off"
+          spellCheck="false"
+        />
+
+        <FileAttachment
+          files={attachedFiles}
+          onRemove={removeAttachedFile}
+          onAdd={handleFileAttachment}
+          compact={true}
+        />
+        {children}
       </div>
 
-      {/* Modals */}
-      {showAssistantManager && <AssistantGroupDetailList />}
-      <ToolsModal
-        isOpen={showToolsDetail}
-        onClose={() => setShowToolsDetail(false)}
-      />
-      <ToolCaller />
+      <Button
+        type="submit"
+        disabled={isLoading}
+        variant="ghost"
+        size="sm"
+        className="px-1"
+      >
+        ⏎
+      </Button>
+    </form>
+  );
+}
+
+// Chat Bottom section (combines status bar, attached files, and input)
+function ChatBottom({ children }: { children?: React.ReactNode }) {
+  return (
+    <div className="flex-shrink-0">
       {children}
     </div>
   );
 }
+
+// Attach subcomponents as static properties
+Chat.Header = ChatHeader;
+Chat.Messages = ChatMessages;
+Chat.StatusBar = ChatStatusBar;
+Chat.AttachedFiles = ChatAttachedFiles;
+Chat.Input = ChatInput;
+Chat.Bottom = ChatBottom;
+
+export default Chat;

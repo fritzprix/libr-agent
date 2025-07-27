@@ -1,19 +1,12 @@
+import { Button } from '@/components/ui';
 import { useAssistantContext } from '@/context/AssistantContext';
 import { useSessionContext } from '@/context/SessionContext';
 import { Assistant } from '@/models/chat';
 import { useCallback } from 'react';
-import AssistantGroupDetailList from '../assistant/AssistantGroupDetailList';
-import { Button } from '@/components/ui';
+import { Link } from 'react-router';
 
-interface StartSingleChatViewProps {
-  setShowAssistantManager: (show: boolean) => void;
-  showAssistantManager: boolean;
-}
 
-export default function StartSingleChatView({
-  setShowAssistantManager,
-  showAssistantManager,
-}: StartSingleChatViewProps) {
+export default function StartSingleChatView() {
   const { assistants, setCurrentAssistant } = useAssistantContext();
   const { start } = useSessionContext();
 
@@ -26,7 +19,7 @@ export default function StartSingleChatView({
   );
 
   return (
-    <div className="h-full w-full flex flex-col items-center justify-center font-mono p-4">
+    <div className="h-full w-full flex flex-col items-center justify-center font-mono p-4 space-y-2">
       <h2 className="text-2xl font-bold mb-6">
         Select an Assistant to Start a Chat
       </h2>
@@ -44,10 +37,11 @@ export default function StartSingleChatView({
           </div>
         ))}
       </div>
-      <Button onClick={() => setShowAssistantManager(true)} className="mt-8">
-        Manage Assistants
-      </Button>
-      {showAssistantManager && <AssistantGroupDetailList />}
+      <Link to={"/assistants"}>
+        <Button>
+          Manage Assistants
+        </Button>
+      </Link>
     </div>
   );
 }

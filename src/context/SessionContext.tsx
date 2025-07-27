@@ -24,6 +24,8 @@ interface SessionContextType {
   getCurrentSession: () => Session | null;
   sessions: Page<Session>[];
   getSessions: () => Session[];
+  isAgenticMode: boolean;
+  toggleAgenticMode: () => void;
   loadMore: () => void;
   start: (
     assistants: Assistant[],
@@ -102,6 +104,9 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
     (() => Promise<void>) | null
   >(null);
 
+  const [isAgenticMode, setIsAgenticMode] = useState(false);
+
+
   const currentRef = useRef(current);
   const sessionsRef = useRef<Session[]>([]);
 
@@ -134,6 +139,8 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     sessionsRef.current = sessions.flatMap((page) => page.items);
   }, [sessions]);
+
+  const handleToggleAgenticMode = useCallback(() => setIsAgenticMode(prev => !prev), [])
 
   /**
    * Clears any current error state.
@@ -333,6 +340,8 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
     () => ({
       sessions,
       current,
+      isAgenticMode,
+      toggleAgenticMode: handleToggleAgenticMode,
       getSessions: handleGetSessions,
       getCurrentSession: handleGetCurrentSession,
       loadMore: handleLoadMore,
@@ -348,6 +357,8 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
     [
       sessions,
       current,
+      isAgenticMode,
+      handleToggleAgenticMode,
       handleGetSessions,
       handleGetCurrentSession,
       handleLoadMore,

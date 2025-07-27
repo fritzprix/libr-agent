@@ -16,7 +16,6 @@ interface AssistantEditorProps {
 
 export default function AssistantEditor({
   editingAssistant,
-  isCreating,
   mcpConfigText,
   onSave,
   onCancel,
@@ -30,12 +29,6 @@ export default function AssistantEditor({
 
   return (
     <div className="flex-1 flex flex-col h-full">
-      <div className="p-4 border-b border-muted flex-shrink-0">
-        <h3 className="text-primary font-bold text-lg">
-          {isCreating ? '새 어시스턴트 만들기' : '어시스턴트 편집'}
-        </h3>
-      </div>
-
       <div className="flex-1 overflow-y-auto p-4">
         <div className="space-y-4">
           <InputWithLabel
