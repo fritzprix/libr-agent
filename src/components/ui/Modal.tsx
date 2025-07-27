@@ -33,7 +33,7 @@ export default function Modal({
     sm: "max-w-sm",
     md: "max-w-md",
     lg: "max-w-lg",
-    xl: "max-w-4xl",
+    xl: "max-w-screen-xl",
   };
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>

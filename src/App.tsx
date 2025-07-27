@@ -6,7 +6,7 @@ import Group from "./components/Group";
 import GroupCreationModal from "./components/GroupCreationModal";
 import History from "./components/History";
 import SettingsModal from "./components/SettingsModal";
-import { SidebarProvider, SidebarTrigger } from "./components/ui/sidebar";
+import { SidebarProvider } from "./components/ui/sidebar";
 import { WeatherTool } from "./components/WeatherTool";
 import { AssistantContextProvider } from "./context/AssistantContext";
 import { LocalToolProvider } from "./context/LocalToolContext";

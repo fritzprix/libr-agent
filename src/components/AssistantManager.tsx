@@ -147,11 +147,11 @@ export default function AssistantManager({ onClose }: AssistantManagerProps) {
       size="xl"
     >
       {/* Main container with fixed height */}
-      <div className="flex h-full overflow-hidden flex-col md:flex-row">
+      <div className="flex h-full w-full overflow-hidden flex-col md:flex-row">
         {/* Assistant List - Fixed width with internal scrolling */}
-        <div className="w-full md:w-1/3 border-r border-gray-700 flex flex-col h-full">
+        <div className="w-full border-r border-muted flex flex-col h-full">
           {/* Button - Fixed at top */}
-          <div className="p-4 border-b border-gray-700 flex-shrink-0">
+          <div className="p-4 border-b border-muted flex-shrink-0">
             <Button
               variant="primary"
               className="w-full"
@@ -167,14 +167,12 @@ export default function AssistantManager({ onClose }: AssistantManagerProps) {
               {assistants.map((assistant) => (
                 <div
                   key={assistant.id}
-                  className={`border rounded p-3 cursor-pointer transition-colors ${
-                    currentAssistant?.id === assistant.id
-                      ? "border-green-400 bg-green-900/20"
-                      : "border-gray-700 hover:border-gray-600"
-                  }`}
-                >
+                  className={`border rounded p-3 cursor-pointer transition-colors ${currentAssistant?.id === assistant.id
+                    ? "border-primary bg-primary/20"
+                    : "border-muted hover:border-accent"
+                  }`}>
                   <div className="flex justify-between items-start mb-2">
-                    <h3 className="text-green-400 font-medium">
+                    <h3 className="text-primary font-medium">
                       {assistant.name}
                     </h3>
                     <div className="flex gap-1 flex-wrap">
@@ -186,10 +184,10 @@ export default function AssistantManager({ onClose }: AssistantManagerProps) {
                       )}
                     </div>
                   </div>
-                  <p className="text-gray-400 text-sm mb-3 line-clamp-2">
+                  <p className="text-muted-foreground text-sm mb-3 line-clamp-2">
                     {assistant.systemPrompt}
                   </p>
-                  <div className="text-xs text-gray-500 mb-2">
+                  <div className="text-xs text-muted-foreground mb-2">
                     MCP 서버:{" "}
                     {assistant.mcpConfig?.mcpServers
                       ? Object.keys(assistant.mcpConfig.mcpServers).length
@@ -203,7 +201,7 @@ export default function AssistantManager({ onClose }: AssistantManagerProps) {
                         (serverName) => (
                           <div
                             key={serverName}
-                            className="flex items-center gap-1 text-xs px-1 py-0.5 rounded bg-gray-800"
+                          className="flex items-center gap-1 text-xs px-1 py-0.5 rounded bg-muted"
                           >
                             <StatusIndicator
                               status={
@@ -215,7 +213,7 @@ export default function AssistantManager({ onClose }: AssistantManagerProps) {
                               }
                               size="sm"
                             />
-                            <span className="text-gray-300">{serverName}</span>
+                            <span className="text-foreground">{serverName}</span>
                           </div>
                         ),
                       )}
@@ -270,8 +268,8 @@ export default function AssistantManager({ onClose }: AssistantManagerProps) {
         {/* Role Editor */}
         {(editingAssistant || isCreating) && (
           <div className="flex-1 flex flex-col h-full">
-            <div className="p-4 border-b border-gray-700 flex-shrink-0">
-              <h3 className="text-green-400 font-bold text-lg">
+            <div className="p-4 border-b border-muted flex-shrink-0">
+              <h3 className="text-primary font-bold text-lg">
                 {isCreating ? "새 어시스턴트 만들기" : "어시스턴트 편집"}
               </h3>
             </div>
@@ -305,13 +303,13 @@ export default function AssistantManager({ onClose }: AssistantManagerProps) {
               </div>
 
               <div>
-                <label className="text-gray-400 font-medium">
+                <label className="text-muted-foreground font-medium">
                   로컬 서비스 활성화
                 </label>
-                <div className="space-y-2 mt-2 p-2 border border-gray-700 rounded-md">
+                <div className="space-y-2 mt-2 p-2 border border-muted rounded-md">
                   {getAvailableServices().map((serviceName) => (
                     <div key={serviceName}>
-                      <h4 className="text-sm font-semibold text-gray-300 mb-1">
+                      <h4 className="text-sm font-semibold text-foreground mb-1">
                         {serviceName}
                       </h4>
                       <div className="space-y-1 pl-2">
@@ -344,7 +342,7 @@ export default function AssistantManager({ onClose }: AssistantManagerProps) {
                             />
                             <label
                               htmlFor={`tool-${tool.name}`}
-                              className="text-sm text-gray-400"
+                              className="text-sm text-muted-foreground"
                             >
                               {tool.name}
                             </label>
@@ -357,9 +355,9 @@ export default function AssistantManager({ onClose }: AssistantManagerProps) {
 
                 <div>
                   <div className="flex justify-between items-center mb-2">
-                    <label className="text-gray-400 font-medium">
+                    <label className="text-muted-foreground font-medium">
                       MCP 설정 (JSON)
-                      <span className="text-xs text-gray-500 ml-2">
+                      <span className="text-xs text-muted-foreground ml-2">
                         - 연결할 MCP 서버들을 설정합니다
                       </span>
                     </label>
@@ -386,14 +384,14 @@ export default function AssistantManager({ onClose }: AssistantManagerProps) {
                     className="h-48 font-mono text-sm"
                     placeholder={JSON.stringify(DEFAULT_MCP_CONFIG)}
                   />
-                  <div className="text-xs text-gray-500 mt-1">
+                  <div className="text-xs text-muted-foreground mt-1">
                     * mcpServers 형식만 사용됩니다. 빈 객체로 두면 MCP 서버를
                     사용하지 않습니다.
                   </div>
 
                   {editingAssistant && Object.keys(status).length > 0 && (
-                    <div className="mt-3 p-2 bg-gray-900 rounded border border-gray-700">
-                      <div className="text-xs text-gray-400 mb-2">
+                    <div className="mt-3 p-2 bg-muted rounded border border-muted">
+                      <div className="text-xs text-muted-foreground mb-2">
                         에디터 서버 상태:
                       </div>
                       <div className="flex flex-wrap gap-2">
@@ -401,14 +399,14 @@ export default function AssistantManager({ onClose }: AssistantManagerProps) {
                           ([serverName, isConnected]) => (
                             <div
                               key={serverName}
-                              className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-gray-800"
+                            className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-muted"
                             >
                               <StatusIndicator
                                 status={
                                   isConnected ? "connected" : "disconnected"
                                 }
                               />
-                              <span className="text-gray-300">
+                              <span className="text-foreground">
                                 {serverName}
                               </span>
                               <Badge
@@ -426,7 +424,7 @@ export default function AssistantManager({ onClose }: AssistantManagerProps) {
               </div>
             </div>
 
-            <div className="flex gap-3 p-4 border-t border-gray-700 flex-shrink-0">
+            <div className="flex gap-3 p-4 border-t border-muted flex-shrink-0">
               <Button variant="primary" onClick={handleSaveAssistant}>
                 저장
               </Button>
@@ -439,7 +437,7 @@ export default function AssistantManager({ onClose }: AssistantManagerProps) {
 
         {!editingAssistant && !isCreating && (
           <div className="flex-1 flex items-center justify-center">
-            <div className="text-center text-gray-500">
+            <div className="text-center text-muted-foreground">
               <div className="text-4xl mb-4">⚙️</div>
               <p>어시스턴트를 선택하여 편집하거나</p>
               <p>새 어시스턴트를 만들어보세요</p>

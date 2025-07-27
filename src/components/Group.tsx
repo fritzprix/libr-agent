@@ -27,7 +27,7 @@ export default function Group() {
   );
 
   return (
-    <div className="flex-1 flex flex-col p-4 bg-black text-green-400 font-mono rounded-lg overflow-hidden shadow-2xl shadow-green-400/30">
+    <div className="flex-1 flex flex-col p-4 bg-black text-primary font-mono rounded-lg overflow-hidden shadow-2xl shadow-green-400/30">
       <h2 className="text-2xl font-bold mb-6">Your Groups</h2>
       {groups.length === 0 ? (
         <div className="flex-1 flex items-center justify-center text-gray-500">
@@ -38,10 +38,10 @@ export default function Group() {
           {groups.map((group) => (
             <div
               key={group.id}
-              className="bg-gray-800 border border-gray-700 rounded-lg p-4 cursor-pointer hover:border-green-400 transition-colors"
+              className="bg-gray-800 border border-gray-700 rounded-lg p-4 cursor-pointer hover:border-primary transition-colors"
               onClick={() => handleLoadGroupSession(group.id)}
             >
-              <h3 className="text-lg font-semibold text-green-300">
+              <h3 className="text-lg font-semibold text-primary">
                 {group.name || "Untitled Group"}
               </h3>
               <p className="text-sm text-gray-400 mt-2 line-clamp-3">

@@ -204,18 +204,18 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
         {/* Enhanced tool output */}
         {isTool && (
           <div className="mt-4 bg-black/30 rounded-lg border border-purple-400/20 overflow-hidden">
-            <div className="px-3 py-2 bg-purple-900/30 border-b border-purple-400/20 flex items-center gap-2">
+            <div className="px-3 py-2 bg-accent/30 border-b border-accent/20 flex items-center gap-2">
               <div className="flex gap-1">
                 <div className="w-2 h-2 bg-red-400 rounded-full"></div>
                 <div className="w-2 h-2 bg-yellow-400 rounded-full"></div>
                 <div className="w-2 h-2 bg-green-400 rounded-full"></div>
               </div>
-              <span className="text-xs text-purple-300 font-mono">
+              <span className="text-accent-foreground font-mono text-sm">
                 Tool Output
               </span>
             </div>
             <div className="p-4 max-h-32 overflow-y-auto custom-scrollbar">
-              <pre className="text-xs text-purple-100 font-mono whitespace-pre-wrap break-words">
+              <pre className="text-xs text-accent-foreground font-mono whitespace-pre-wrap break-words">
                 {message.content}
               </pre>
             </div>

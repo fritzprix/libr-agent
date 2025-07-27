@@ -52,7 +52,7 @@ export default function SessionItem({
       <div className="flex flex-1 min-w-0">
         <Button
           variant="ghost"
-          className={`flex-1 min-w-0 justify-start text-left transition-colors duration-150 ${isSelected ? "text-green-400" : "text-gray-400 hover:text-gray-300"} w-full`}
+          className={`flex-1 min-w-0 justify-start text-left transition-colors duration-150 ${isSelected ? "text-primary" : "text-gray-400 hover:text-gray-300"} w-full`}
           onClick={handleSelect}
         >
           {isCollapsed ? (
@@ -68,9 +68,7 @@ export default function SessionItem({
         <div className="flex-shrink-0 ml-1">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm">
                 <span>⋮</span>
-              </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent
               sideOffset={5}

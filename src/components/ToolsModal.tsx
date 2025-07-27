@@ -20,7 +20,7 @@ const ToolsModal: React.FC<ToolsModalProps> = ({ isOpen, onClose }) => {
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-gray-900 border border-green-400 rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold text-green-400">
+          <h2 className="text-lg font-bold text-primary">
             Available Tools ({availableTools.length})
           </h2>
           <button
@@ -44,7 +44,7 @@ const ToolsModal: React.FC<ToolsModalProps> = ({ isOpen, onClose }) => {
                   className="bg-gray-800 border border-gray-700 rounded p-3"
                 >
                   <div className="flex items-center gap-2 mb-2">
-                    <span className="text-blue-400 font-mono text-sm">
+                    <span className="text-accent font-mono text-sm">
                       🔧 {tool.name}
                     </span>
                   </div>

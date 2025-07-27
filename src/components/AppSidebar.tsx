@@ -6,8 +6,8 @@ import {
   Settings,
   Users
 } from "lucide-react";
-import { useCallback, useEffect, useMemo } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useMemo } from "react";
+import { Link, useLocation } from "react-router-dom";
 import { useSessionContext } from "../context/SessionContext";
 import SessionList from "./SessionList";
 import {
@@ -37,31 +37,14 @@ export default function AppSidebar({
   const {
     select,
     sessions: sessionPages,
-    current: currentSession,
-    delete: deleteSession,
   } = useSessionContext();
   const location = useLocation();
-  const navigate = useNavigate();
 
   const sessions = useMemo(
     () => (sessionPages ? sessionPages.flatMap((p) => p.items) : []),
     [sessionPages],
   );
 
-  const handleLoadSession = useCallback(
-    async (sessionId: string) => {
-      select(sessionId);
-      navigate("/chat");
-    },
-    [select, navigate],
-  );
-
-  const handleDeleteSession = useCallback(
-    async (sessionId: string) => {
-      await deleteSession(sessionId);
-    },
-    [deleteSession],
-  );
 
   const isCollapsed = state === "collapsed";
   const currentView = location.pathname.substring(1); // Extract current view from path

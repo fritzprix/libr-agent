@@ -277,7 +277,7 @@ Available assistants: ${assistants.map((a) => `${a.id}: ${a.name}`).join(", ")}`
   }, [multiAgentOrchestratorAssistant, setCurrentAssistant]);
 
   return (
-    <div className="multi-agent-orchestrator-container p-4 border-t border-gray-700 bg-gray-800 text-white rounded-lg shadow-lg mb-4">
+    <div className="multi-agent-orchestrator-container p-4 border-t border-gray-700 bg-gray-800 text-foreground rounded-lg shadow-lg mb-4">
       <h3 className="text-lg font-semibold flex items-center">
         Multi-Agent Orchestrator Active
       </h3>

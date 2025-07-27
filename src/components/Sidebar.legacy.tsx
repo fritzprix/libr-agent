@@ -1,7 +1,7 @@
-import { useCallback, useMemo } from "react";
+import { useMemo } from "react";
 import { useSessionContext } from "../context/SessionContext";
-import { Button } from "./ui";
 import SessionList from "./SessionList";
+import { Button } from "./ui";
 
 interface SidebarProps {
   isCollapsed: boolean;
@@ -23,8 +23,6 @@ export default function Sidebar({
   const {
     select,
     sessions: sessionPages,
-    current: currentSession,
-    delete: deleteSession,
   } = useSessionContext();
 
   const sessions = useMemo(
@@ -32,27 +30,12 @@ export default function Sidebar({
     [sessionPages],
   );
 
-  const handleLoadSession = useCallback(
-    async (sessionId: string) => {
-      select(sessionId);
-      onViewChange("chat"); // Switch to chat view after loading session
-    },
-    [select, onViewChange],
-  );
-
-  const handleDeleteSession = useCallback(
-    async (sessionId: string) => {
-      await deleteSession(sessionId);
-    },
-    [deleteSession],
-  );
-
   const navButtonClass = (view: string) =>
     `w-full justify-start transition-colors duration-150 ${currentView === view ? "bg-green-900/20 text-green-400" : "text-gray-400 hover:bg-gray-700"}`;
 
   return (
     <aside
-      className={`flex flex-col bg-gray-800 text-green-400 h-screen transition-all duration-300 ease-in-out ${isCollapsed ? "w-16" : "w-64"} border-r border-gray-700 shadow-lg`}
+      className={`flex flex-col bg-gray-800 text-primary h-screen transition-all duration-300 ease-in-out ${isCollapsed ? "w-16" : "w-64"} border-r border-gray-700 shadow-lg`}
     >
       {/* Sidebar Header */}
       <div className="p-4 flex items-center justify-between flex-shrink-0">
@@ -144,11 +127,6 @@ export default function Sidebar({
               )}
               <SessionList
                 sessions={sessions.slice(0, 5)} // Show only 5 recent sessions
-                currentSessionId={
-                  currentView === "chat" ? currentSession?.id : undefined
-                }
-                onSelectSession={handleLoadSession}
-                onDeleteSession={handleDeleteSession}
                 showSearch={false}
                 emptyMessage=""
               />

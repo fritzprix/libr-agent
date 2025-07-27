@@ -7,28 +7,12 @@ export default function History() {
   const {
     sessions: sessionPages,
     current: currentSession,
-    select,
-    delete: deleteSession,
     loadMore,
     isLoading,
   } = useSessionContext();
 
   // Flatten the paginated sessions
   const sessions = sessionPages ? sessionPages.flatMap((p) => p.items) : [];
-
-  const handleSelectSession = useCallback(
-    (sessionId: string) => {
-      select(sessionId);
-    },
-    [select],
-  );
-
-  const handleDeleteSession = useCallback(
-    async (sessionId: string) => {
-      await deleteSession(sessionId);
-    },
-    [deleteSession],
-  );
 
   const handleLoadMore = useCallback(() => {
     loadMore();
@@ -47,7 +31,7 @@ export default function History() {
 
       <Card className="flex-1 bg-gray-800 border-gray-700">
         <CardHeader>
-          <CardTitle className="text-lg text-green-400">
+          <CardTitle className="text-lg text-primary">
             All Sessions ({sessions.length})
           </CardTitle>
         </CardHeader>
@@ -60,9 +44,6 @@ export default function History() {
             <>
               <SessionList
                 sessions={sessions}
-                currentSessionId={currentSession?.id}
-                onSelectSession={handleSelectSession}
-                onDeleteSession={handleDeleteSession}
                 showSearch={true}
                 className="flex-1"
                 emptyMessage="No sessions yet. Start a conversation to create your first session."
@@ -91,7 +72,7 @@ export default function History() {
         <div className="mt-4">
           <Card className="bg-gray-800 border-gray-700">
             <CardHeader>
-              <CardTitle className="text-md text-green-400">
+              <CardTitle className="text-md text-primary">
                 Selected Session
               </CardTitle>
             </CardHeader>

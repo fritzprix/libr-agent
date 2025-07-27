@@ -67,17 +67,17 @@ export default function GroupCreationModal({
             assistants.map((assistant) => (
               <div
                 key={assistant.id}
-                className={`flex items-center justify-between p-2 rounded-md cursor-pointer ${selectedAssistants.some((a) => a.id === assistant.id) ? "bg-green-900/20 border border-green-400" : "hover:bg-gray-700"}`}
+                className={`flex items-center justify-between p-2 rounded-md cursor-pointer ${selectedAssistants.some((a) => a.id === assistant.id) ? "bg-primary/20 border border-primary" : "hover:bg-gray-700"}`}
                 onClick={() => handleToggleAssistant(assistant)}
               >
                 <div>
-                  <p className="font-medium text-green-300">{assistant.name}</p>
+                  <p className="font-medium text-primary">{assistant.name}</p>
                   <p className="text-xs text-gray-400 line-clamp-1">
                     {assistant.systemPrompt}
                   </p>
                 </div>
                 {selectedAssistants.some((a) => a.id === assistant.id) && (
-                  <span className="text-green-400">✓</span>
+                  <span className="text-primary">✓</span>
                 )}
               </div>
             ))
