@@ -1,10 +1,10 @@
-import Dexie, { Table } from "dexie";
-import { Assistant, Session, StreamableMessage } from "../types/chat";
+import { Assistant, Group, Message, Session } from '@/models/chat';
+import Dexie, { Table } from 'dexie';
 
 // --- TYPE DEFINITIONS ---
-export interface DatabaseObject {
+export interface DatabaseObject<T = unknown> {
   key: string;
-  value: any;
+  value: T;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -18,20 +18,21 @@ export interface Page<T> {
   hasPreviousPage: boolean;
 }
 
-export interface CRUD<T> {
+export interface CRUD<T, U = T> {
   upsert: (object: T) => Promise<void>;
   upsertMany: (objects: T[]) => Promise<void>;
-  read: (key: string) => Promise<T | undefined>;
+  read: (key: string) => Promise<U | undefined>;
   delete: (key: string) => Promise<void>;
-  getPage: (page: number, pageSize: number) => Promise<Page<T>>; // if pageSize is -1, return all items
+  getPage: (page: number, pageSize: number) => Promise<Page<U>>; // if pageSize is -1, return all items
   count: () => Promise<number>;
 }
 
 export interface DatabaseService {
   assistants: CRUD<Assistant>;
-  objects: CRUD<DatabaseObject>;
+  objects: CRUD<DatabaseObject<unknown>, DatabaseObject<unknown>>;
   sessions: CRUD<Session>;
-  messages: CRUD<StreamableMessage>;
+  messages: CRUD<Message>;
+  groups: CRUD<Group>;
 }
 
 class LocalDatabase extends Dexie {
@@ -44,33 +45,34 @@ class LocalDatabase extends Dexie {
   }
 
   assistants!: Table<Assistant, string>;
-  objects!: Table<DatabaseObject, string>;
+  objects!: Table<DatabaseObject<unknown>, string>;
   sessions!: Table<Session, string>;
-  messages!: Table<StreamableMessage, string>;
+  messages!: Table<Message, string>;
+  groups!: Table<Group, string>;
 
   constructor() {
-    super("MCPAgentDB");
+    super('MCPAgentDB');
 
     // Version 1: Original schema
     this.version(1).stores({
-      assistants: "&id",
-      objects: "&key",
+      assistants: '&id',
+      objects: '&key',
     });
 
     // Version 2: Add proper indexes
     this.version(2)
       .stores({
-        assistants: "&id, createdAt, updatedAt, name",
-        objects: "&key, createdAt, updatedAt", // Added timestamp indexes
+        assistants: '&id, createdAt, updatedAt, name',
+        objects: '&key, createdAt, updatedAt', // Added timestamp indexes
       })
       .upgrade(async (tx) => {
-        console.log("Upgrading database to version 2 - adding indexes");
+        console.log('Upgrading database to version 2 - adding indexes');
 
         const now = new Date();
 
         // Fix assistants
         await tx
-          .table("assistants")
+          .table('assistants')
           .toCollection()
           .modify((assistant) => {
             if (!assistant.createdAt) assistant.createdAt = now;
@@ -79,7 +81,7 @@ class LocalDatabase extends Dexie {
 
         // Fix objects
         await tx
-          .table("objects")
+          .table('objects')
           .toCollection()
           .modify((obj) => {
             if (!obj.createdAt) obj.createdAt = now;
@@ -90,13 +92,22 @@ class LocalDatabase extends Dexie {
     // Version 3: Add sessions and messages tables
     this.version(3)
       .stores({
-        sessions: "&id, createdAt, updatedAt",
-        messages: "&id, sessionId, createdAt", // Added index on sessionId for efficient querying
+        sessions: '&id, createdAt, updatedAt',
+        messages: '&id, sessionId, createdAt', // Added index on sessionId for efficient querying
       })
       .upgrade(async () => {
         console.log(
-          "Upgrading database to version 3 - adding sessions and messages tables",
+          'Upgrading database to version 3 - adding sessions and messages tables',
         );
+      });
+
+    // Version 4: Add groups table
+    this.version(4)
+      .stores({
+        groups: '&id, createdAt, updatedAt, name',
+      })
+      .upgrade(async () => {
+        console.log('Upgrading database to version 4 - adding groups table');
       });
   }
 }
@@ -160,13 +171,13 @@ export const dbService: DatabaseService = {
       const totalItems = await db.assistants.count();
 
       if (pageSize === -1) {
-        const items = await db.assistants.orderBy("createdAt").toArray();
+        const items = await db.assistants.orderBy('createdAt').toArray();
         return createPage(items, page, pageSize, totalItems);
       }
 
       const offset = (page - 1) * pageSize;
       const items = await db.assistants
-        .orderBy("createdAt")
+        .orderBy('createdAt')
         .offset(offset)
         .limit(pageSize)
         .toArray();
@@ -178,45 +189,53 @@ export const dbService: DatabaseService = {
     },
   },
   objects: {
-    upsert: async (object: DatabaseObject) => {
+    upsert: async <T>(object: DatabaseObject<T>) => {
       const now = new Date();
       if (!object.createdAt) object.createdAt = now;
       object.updatedAt = now;
-      await LocalDatabase.getInstance().objects.put(object);
+      await LocalDatabase.getInstance().objects.put(
+        object as DatabaseObject<unknown>,
+      );
     },
-    upsertMany: async (objects: DatabaseObject[]) => {
+    upsertMany: async <T>(objects: DatabaseObject<T>[]) => {
       const now = new Date();
       const updatedObjects = objects.map((obj) => ({
         ...obj,
         createdAt: obj.createdAt || now,
         updatedAt: now,
       }));
-      await LocalDatabase.getInstance().objects.bulkPut(updatedObjects);
+      await LocalDatabase.getInstance().objects.bulkPut(
+        updatedObjects as DatabaseObject<unknown>[],
+      );
     },
-    read: async (key: string) => {
-      return LocalDatabase.getInstance().objects.get(key);
+    read: async <T>(key: string): Promise<DatabaseObject<T> | undefined> => {
+      return LocalDatabase.getInstance().objects.get(key) as Promise<
+        DatabaseObject<T> | undefined
+      >;
     },
     delete: async (key: string) => {
       await LocalDatabase.getInstance().objects.delete(key);
     },
-    getPage: async (
+    getPage: async <T>(
       page: number,
       pageSize: number,
-    ): Promise<Page<DatabaseObject>> => {
+    ): Promise<Page<DatabaseObject<T>>> => {
       const db = LocalDatabase.getInstance();
       const totalItems = await db.objects.count();
 
       if (pageSize === -1) {
-        const items = await db.objects.orderBy("createdAt").toArray();
+        const items = (await db.objects
+          .orderBy('createdAt')
+          .toArray()) as DatabaseObject<T>[];
         return createPage(items, page, pageSize, totalItems);
       }
 
       const offset = (page - 1) * pageSize;
-      const items = await db.objects
-        .orderBy("createdAt")
+      const items = (await db.objects
+        .orderBy('createdAt')
         .offset(offset)
         .limit(pageSize)
-        .toArray();
+        .toArray()) as DatabaseObject<T>[];
 
       return createPage(items, page, pageSize, totalItems);
     },
@@ -247,9 +266,9 @@ export const dbService: DatabaseService = {
       const db = LocalDatabase.getInstance();
       // Use a transaction to ensure atomicity.
       // If deleting messages fails, the session won't be deleted either.
-      await db.transaction("rw", db.sessions, db.messages, async () => {
+      await db.transaction('rw', db.sessions, db.messages, async () => {
         // Delete all messages associated with this session first
-        await db.messages.where("sessionId").equals(id).delete();
+        await db.messages.where('sessionId').equals(id).delete();
         // Then delete the session itself
         await db.sessions.delete(id);
       });
@@ -260,7 +279,7 @@ export const dbService: DatabaseService = {
 
       if (pageSize === -1) {
         const items = await db.sessions
-          .orderBy("updatedAt")
+          .orderBy('updatedAt')
           .reverse()
           .toArray();
         return createPage(items, page, pageSize, totalItems);
@@ -268,7 +287,7 @@ export const dbService: DatabaseService = {
 
       const offset = (page - 1) * pageSize;
       const items = await db.sessions
-        .orderBy("updatedAt")
+        .orderBy('updatedAt')
         .reverse()
         .offset(offset)
         .limit(pageSize)
@@ -281,13 +300,13 @@ export const dbService: DatabaseService = {
     },
   },
   messages: {
-    upsert: async (message: StreamableMessage) => {
+    upsert: async (message: Message) => {
       const now = new Date();
       if (!message.createdAt) message.createdAt = now;
       message.updatedAt = now;
       await LocalDatabase.getInstance().messages.put(message);
     },
-    upsertMany: async (messages: StreamableMessage[]) => {
+    upsertMany: async (messages: Message[]) => {
       const now = new Date();
       const updatedMessages = messages.map((msg) => ({
         ...msg,
@@ -302,23 +321,20 @@ export const dbService: DatabaseService = {
     delete: async (id: string) => {
       await LocalDatabase.getInstance().messages.delete(id);
     },
-    getPage: async (
-      page: number,
-      pageSize: number,
-    ): Promise<Page<StreamableMessage>> => {
+    getPage: async (page: number, pageSize: number): Promise<Page<Message>> => {
       const db = LocalDatabase.getInstance();
       // Note: This paginates ALL messages across ALL sessions.
       // For session-specific messages, see dbUtils.getMessagesPageForSession
       const totalItems = await db.messages.count();
 
       if (pageSize === -1) {
-        const items = await db.messages.orderBy("createdAt").toArray();
+        const items = await db.messages.orderBy('createdAt').toArray();
         return createPage(items, page, pageSize, totalItems);
       }
 
       const offset = (page - 1) * pageSize;
       const items = await db.messages
-        .orderBy("createdAt")
+        .orderBy('createdAt')
         .offset(offset)
         .limit(pageSize)
         .toArray();
@@ -329,6 +345,50 @@ export const dbService: DatabaseService = {
       return LocalDatabase.getInstance().messages.count();
     },
   },
+  groups: {
+    upsert: async (group: Group) => {
+      const now = new Date();
+      if (!group.createdAt) group.createdAt = now;
+      group.updatedAt = now; // Assuming Group also has an updatedAt field
+      await LocalDatabase.getInstance().groups.put(group);
+    },
+    upsertMany: async (groups: Group[]) => {
+      const now = new Date();
+      const updatedGroups = groups.map((group) => ({
+        ...group,
+        createdAt: group.createdAt || now,
+        updatedAt: now, // Assuming Group also has an updatedAt field
+      }));
+      await LocalDatabase.getInstance().groups.bulkPut(updatedGroups);
+    },
+    read: async (id: string) => {
+      return LocalDatabase.getInstance().groups.get(id);
+    },
+    delete: async (id: string) => {
+      await LocalDatabase.getInstance().groups.delete(id);
+    },
+    getPage: async (page: number, pageSize: number): Promise<Page<Group>> => {
+      const db = LocalDatabase.getInstance();
+      const totalItems = await db.groups.count();
+
+      if (pageSize === -1) {
+        const items = await db.groups.orderBy('createdAt').toArray();
+        return createPage(items, page, pageSize, totalItems);
+      }
+
+      const offset = (page - 1) * pageSize;
+      const items = await db.groups
+        .orderBy('createdAt')
+        .offset(offset)
+        .limit(pageSize)
+        .toArray();
+
+      return createPage(items, page, pageSize, totalItems);
+    },
+    count: async (): Promise<number> => {
+      return LocalDatabase.getInstance().groups.count();
+    },
+  },
 };
 
 // Expanded utility functions
@@ -336,7 +396,7 @@ export const dbUtils = {
   // --- Assistants ---
   getAllAssistants: async (): Promise<Assistant[]> => {
     return LocalDatabase.getInstance()
-      .assistants.orderBy("createdAt")
+      .assistants.orderBy('createdAt')
       .toArray();
   },
   assistantExists: async (id: string): Promise<boolean> => {
@@ -350,8 +410,8 @@ export const dbUtils = {
   },
 
   // --- Objects ---
-  getAllObjects: async (): Promise<DatabaseObject[]> => {
-    return LocalDatabase.getInstance().objects.orderBy("createdAt").toArray();
+  getAllObjects: async (): Promise<DatabaseObject<unknown>[]> => {
+    return LocalDatabase.getInstance().objects.orderBy('createdAt').toArray();
   },
   objectExists: async (key: string): Promise<boolean> => {
     return (await LocalDatabase.getInstance().objects.get(key)) !== undefined;
@@ -366,7 +426,7 @@ export const dbUtils = {
   // --- Sessions ---
   getAllSessions: async (): Promise<Session[]> => {
     return LocalDatabase.getInstance()
-      .sessions.orderBy("updatedAt")
+      .sessions.orderBy('updatedAt')
       .reverse()
       .toArray();
   },
@@ -379,16 +439,14 @@ export const dbUtils = {
   },
 
   // --- Messages ---
-  getAllMessages: async (): Promise<StreamableMessage[]> => {
-    return LocalDatabase.getInstance().messages.orderBy("createdAt").toArray();
+  getAllMessages: async (): Promise<Message[]> => {
+    return LocalDatabase.getInstance().messages.orderBy('createdAt').toArray();
   },
-  getAllMessagesForSession: async (
-    sessionId: string,
-  ): Promise<StreamableMessage[]> => {
+  getAllMessagesForSession: async (sessionId: string): Promise<Message[]> => {
     return LocalDatabase.getInstance()
-      .messages.where("sessionId")
+      .messages.where('sessionId')
       .equals(sessionId)
-      .sortBy("createdAt");
+      .sortBy('createdAt');
   },
   /**
    * NEW: Fetches a paginated list of messages for a specific session.
@@ -398,13 +456,13 @@ export const dbUtils = {
     sessionId: string,
     page: number,
     pageSize: number,
-  ): Promise<Page<StreamableMessage>> => {
+  ): Promise<Page<Message>> => {
     const db = LocalDatabase.getInstance();
     const collection = db.messages.where({ sessionId });
     const totalItems = await collection.count();
 
     if (pageSize === -1) {
-      const items = await collection.sortBy("createdAt");
+      const items = await collection.sortBy('createdAt');
       return createPage(items, 1, totalItems, totalItems);
     }
 
@@ -413,21 +471,21 @@ export const dbUtils = {
       .reverse()
       .offset((page - 1) * pageSize)
       .limit(pageSize)
-      .sortBy("createdAt");
+      .sortBy('createdAt');
 
     // Return the page's items in chronological order for display
     return createPage(items.reverse(), page, pageSize, totalItems);
   },
   deleteAllMessagesForSession: async (sessionId: string): Promise<number> => {
     return LocalDatabase.getInstance()
-      .messages.where("sessionId")
+      .messages.where('sessionId')
       .equals(sessionId)
       .delete();
   },
   clearAllMessages: async (): Promise<void> => {
     await LocalDatabase.getInstance().messages.clear();
   },
-  bulkUpsertMessages: async (messages: StreamableMessage[]): Promise<void> => {
+  bulkUpsertMessages: async (messages: Message[]): Promise<void> => {
     await dbService.messages.upsertMany(messages);
   },
 };

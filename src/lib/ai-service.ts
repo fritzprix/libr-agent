@@ -1,18 +1,25 @@
-import { createId } from "@paralleldrive/cuid2";
-import Groq from "groq-sdk";
-import OpenAI from "openai";
-import Anthropic from "@anthropic-ai/sdk";
-import { FunctionDeclaration, GoogleGenAI, Content, Type } from "@google/genai";
-import { ChatCompletionTool as GroqChatCompletionTool } from "groq-sdk/resources/chat/completions.mjs";
-import { ChatCompletionTool as OpenAIChatCompletionTool } from "openai/resources/chat/completions.mjs";
+import { createId } from '@paralleldrive/cuid2';
+import Groq from 'groq-sdk';
+import OpenAI from 'openai';
+import Anthropic from '@anthropic-ai/sdk';
+import {
+  FunctionDeclaration,
+  GoogleGenAI,
+  Content,
+  Type,
+  FunctionCall,
+} from '@google/genai';
+import { ChatCompletionTool as GroqChatCompletionTool } from 'groq-sdk/resources/chat/completions.mjs';
+import { ChatCompletionTool as OpenAIChatCompletionTool } from 'openai/resources/chat/completions.mjs';
 import {
   MessageParam as AnthropicMessageParam,
   Tool as AnthropicTool,
-} from "@anthropic-ai/sdk/resources/messages.mjs";
-import { MCPTool } from "./tauri-mcp-client";
-import { getLogger } from "./logger";
+} from '@anthropic-ai/sdk/resources/messages.mjs';
+import { MCPTool } from './tauri-mcp-client';
+import { getLogger } from './logger';
+import { Message } from '@/models/chat';
 
-const logger = getLogger("AIService");
+const logger = getLogger('AIService');
 
 // --- Configuration and Types ---
 
@@ -26,14 +33,12 @@ export interface AIServiceConfig {
 }
 
 export enum AIServiceProvider {
-  Groq = "groq",
-  OpenAI = "openai",
-  Anthropic = "anthropic",
-  Gemini = "gemini",
-  Empty = "empty",
+  Groq = 'groq',
+  OpenAI = 'openai',
+  Anthropic = 'anthropic',
+  Gemini = 'gemini',
+  Empty = 'empty',
 }
-
-import { StreamableMessage } from "../types/chat";
 
 export class AIServiceError extends Error {
   constructor(
@@ -43,58 +48,58 @@ export class AIServiceError extends Error {
     public originalError?: Error,
   ) {
     super(message);
-    this.name = "AIServiceError";
+    this.name = 'AIServiceError';
   }
 }
 
 // --- Validation and Security ---
 
 class MessageValidator {
-  static validateMessage(message: StreamableMessage): void {
-    if (!message.id || typeof message.id !== "string") {
-      throw new Error("Message must have a valid id");
+  static validateMessage(message: Message): void {
+    if (!message.id || typeof message.id !== 'string') {
+      throw new Error('Message must have a valid id');
     }
     if (
       (!message.content &&
-        (message.role === "user" || message.role === "system")) ||
-      typeof message.content !== "string"
+        (message.role === 'user' || message.role === 'system')) ||
+      typeof message.content !== 'string'
     ) {
       logger.error(`Invalid message content: `, { message });
-      throw new Error("Message must have valid content");
+      throw new Error('Message must have valid content');
     }
-    if (!["user", "assistant", "system", "tool"].includes(message.role)) {
-      throw new Error("Message must have a valid role");
+    if (!['user', 'assistant', 'system', 'tool'].includes(message.role)) {
+      throw new Error('Message must have a valid role');
     }
 
     // Sanitize content length
     if (message.content.length > 100000) {
-      throw new Error("Message content too long");
+      throw new Error('Message content too long');
     }
   }
 
   static validateTool(tool: MCPTool): void {
-    if (!tool.name || typeof tool.name !== "string") {
-      throw new Error("Tool must have a valid name");
+    if (!tool.name || typeof tool.name !== 'string') {
+      throw new Error('Tool must have a valid name');
     }
-    if (!tool.description || typeof tool.description !== "string") {
-      throw new Error("Tool must have a valid description");
+    if (!tool.description || typeof tool.description !== 'string') {
+      throw new Error('Tool must have a valid description');
     }
-    if (!tool.input_schema || typeof tool.input_schema !== "object") {
-      throw new Error("Tool must have a valid input_schema");
+    if (!tool.input_schema || typeof tool.input_schema !== 'object') {
+      throw new Error('Tool must have a valid input_schema');
     }
   }
 
   static sanitizeToolArguments(args: string): Record<string, unknown> {
     try {
       const parsed = JSON.parse(args);
-      if (typeof parsed !== "object" || parsed === null) {
-        throw new Error("Tool arguments must be an object");
+      if (typeof parsed !== 'object' || parsed === null) {
+        throw new Error('Tool arguments must be an object');
       }
       return parsed;
-    } catch (error) {
+    } catch (error: unknown) {
       throw new Error(
         `Invalid tool arguments: ${
-          error instanceof Error ? error.message : "Unknown error"
+          error instanceof Error ? error.message : String(error)
         }`,
       );
     }
@@ -111,44 +116,51 @@ type ProviderToolType =
 type ProviderToolsType = ProviderToolType[];
 
 // Helper function to convert JSON schema types to Gemini types
+interface JsonSchemaProperty {
+  type: string;
+  description?: string;
+  items?: JsonSchemaProperty;
+}
+
+// Helper function to convert JSON schema types to Gemini types
 function convertPropertiesToGeminiTypes(
-  properties: Record<string, unknown>,
-): any {
-  if (!properties || typeof properties !== "object") {
+  properties: Record<string, JsonSchemaProperty>,
+): Record<
+  string,
+  { type: Type; description?: string; items?: { type: Type } }
+> {
+  if (!properties || typeof properties !== 'object') {
     return {};
   }
 
-  const convertedProperties: any = {};
+  const convertedProperties: Record<
+    string,
+    { type: Type; description?: string; items?: { type: Type } }
+  > = {};
 
   for (const [key, value] of Object.entries(properties)) {
-    if (!value || typeof value !== "object") {
-      convertedProperties[key] = { type: Type.STRING };
-      continue;
-    }
-
-    const prop = value as any;
-    const propType = prop.type;
+    const propType = value.type;
 
     switch (propType) {
-      case "string":
+      case 'string':
         convertedProperties[key] = { type: Type.STRING };
         break;
-      case "number":
-      case "integer":
+      case 'number':
+      case 'integer':
         convertedProperties[key] = { type: Type.NUMBER };
         break;
-      case "boolean":
+      case 'boolean':
         convertedProperties[key] = { type: Type.BOOLEAN };
         break;
-      case "array":
+      case 'array':
         convertedProperties[key] = {
           type: Type.ARRAY,
-          items: prop.items
-            ? convertSinglePropertyToGeminiType(prop.items)
+          items: value.items
+            ? convertSinglePropertyToGeminiType(value.items)
             : { type: Type.STRING },
         };
         break;
-      case "object":
+      case 'object':
         convertedProperties[key] = { type: Type.OBJECT };
         break;
       default:
@@ -156,8 +168,8 @@ function convertPropertiesToGeminiTypes(
         break;
     }
 
-    if (prop.description && typeof prop.description === "string") {
-      convertedProperties[key].description = prop.description;
+    if (value.description && typeof value.description === 'string') {
+      convertedProperties[key].description = value.description;
     }
   }
 
@@ -165,22 +177,21 @@ function convertPropertiesToGeminiTypes(
 }
 
 // Helper function to convert a single property type
-function convertSinglePropertyToGeminiType(prop: any): any {
-  if (!prop || typeof prop !== "object") {
-    return { type: Type.STRING };
-  }
-
+function convertSinglePropertyToGeminiType(prop: JsonSchemaProperty): {
+  type: Type;
+  items?: { type: Type };
+} {
   switch (prop.type) {
-    case "string":
+    case 'string':
       return { type: Type.STRING };
-    case "number":
-    case "integer":
+    case 'number':
+    case 'integer':
       return { type: Type.NUMBER };
-    case "boolean":
+    case 'boolean':
       return { type: Type.BOOLEAN };
-    case "array":
+    case 'array':
       return { type: Type.ARRAY };
-    case "object":
+    case 'object':
       return { type: Type.OBJECT };
     default:
       return { type: Type.STRING };
@@ -214,7 +225,7 @@ function convertMCPToolToProviderFormat(
   const required = mcpTool.input_schema.required || [];
 
   const commonParameters = {
-    type: "object" as const,
+    type: 'object' as const,
     properties: properties,
     required: required,
   };
@@ -222,7 +233,7 @@ function convertMCPToolToProviderFormat(
   switch (provider) {
     case AIServiceProvider.OpenAI:
       return {
-        type: "function",
+        type: 'function',
         function: {
           name: mcpTool.name,
           description: mcpTool.description,
@@ -231,7 +242,7 @@ function convertMCPToolToProviderFormat(
       } satisfies OpenAIChatCompletionTool;
     case AIServiceProvider.Groq:
       return {
-        type: "function",
+        type: 'function',
         function: {
           name: mcpTool.name,
           description: mcpTool.description,
@@ -252,7 +263,10 @@ function convertMCPToolToProviderFormat(
         parameters: {
           type: Type.OBJECT,
           properties: convertPropertiesToGeminiTypes(
-            mcpTool.input_schema.properties,
+            mcpTool.input_schema.properties as Record<
+              string,
+              JsonSchemaProperty
+            >,
           ),
           required: mcpTool.input_schema.required || [],
         },
@@ -282,14 +296,14 @@ export function convertMCPToolsToProviderTools(
 
 export interface IAIService {
   streamChat(
-    messages: StreamableMessage[],
+    messages: Message[],
     options?: {
       modelName?: string;
       systemPrompt?: string;
       availableTools?: MCPTool[];
       config?: AIServiceConfig;
     },
-  ): AsyncGenerator<string, void, unknown>;
+  ): AsyncGenerator<string, void, void>;
 
   dispose(): void;
 }
@@ -314,15 +328,15 @@ abstract class BaseAIService implements IAIService {
   }
 
   protected validateApiKey(apiKey: string): void {
-    if (!apiKey || typeof apiKey !== "string" || apiKey.trim().length === 0) {
-      throw new AIServiceError("Invalid API key provided", this.getProvider());
+    if (!apiKey || typeof apiKey !== 'string' || apiKey.trim().length === 0) {
+      throw new AIServiceError('Invalid API key provided', this.getProvider());
     }
   }
 
-  protected validateMessages(messages: StreamableMessage[]): void {
+  protected validateMessages(messages: Message[]): void {
     if (!Array.isArray(messages) || messages.length === 0) {
       throw new AIServiceError(
-        "Messages array cannot be empty",
+        'Messages array cannot be empty',
         this.getProvider(),
       );
     }
@@ -366,21 +380,21 @@ abstract class BaseAIService implements IAIService {
     timeoutMs: number,
   ): Promise<T> {
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error("Operation timed out")), timeoutMs);
+      setTimeout(() => reject(new Error('Operation timed out')), timeoutMs);
     });
 
     return Promise.race([promise, timeoutPromise]);
   }
 
   abstract streamChat(
-    messages: StreamableMessage[],
+    messages: Message[],
     options?: {
       modelName?: string;
       systemPrompt?: string;
       availableTools?: MCPTool[];
       config?: AIServiceConfig;
     },
-  ): AsyncGenerator<string, void, unknown>;
+  ): AsyncGenerator<string, void, void>;
 
   abstract getProvider(): AIServiceProvider;
   abstract dispose(): void;
@@ -388,24 +402,17 @@ abstract class BaseAIService implements IAIService {
 
 export class EmptyAIService extends BaseAIService {
   constructor() {
-    super("empty_api_key"); // Dummy API key
+    super('empty_api_key'); // Dummy API key
   }
 
   getProvider(): AIServiceProvider {
     return AIServiceProvider.Empty;
   }
 
-  async *streamChat(
-    _messages: StreamableMessage[],
-    _options?: {
-      modelName?: string;
-      systemPrompt?: string;
-      availableTools?: MCPTool[];
-      config?: AIServiceConfig;
-    },
-  ): AsyncGenerator<string, void, unknown> {
+  async *streamChat(): AsyncGenerator<string, void, void> {
+    yield '';
     throw new AIServiceError(
-      "EmptyAIService does not support streaming chat",
+      `EmptyAIService does not support streaming chat`,
       AIServiceProvider.Empty,
     );
     // Yield nothing, this is an empty service
@@ -434,16 +441,16 @@ export class GroqService extends BaseAIService {
   }
 
   async *streamChat(
-    messages: StreamableMessage[],
+    messages: Message[],
     options: {
       modelName?: string;
       systemPrompt?: string;
       availableTools?: MCPTool[];
       config?: AIServiceConfig;
     } = {},
-  ): AsyncGenerator<string, void, unknown> {
+  ): AsyncGenerator<string, void, void> {
     this.validateMessages(messages);
-    logger.info("tools : ", { availableTools: options.availableTools });
+    logger.info('tools : ', { availableTools: options.availableTools });
 
     const config = { ...this.defaultConfig, ...options.config };
 
@@ -457,10 +464,10 @@ export class GroqService extends BaseAIService {
         this.groq.chat.completions.create({
           messages: groqMessages,
           model:
-            options.modelName || config.defaultModel || "llama-3.1-8b-instant",
+            options.modelName || config.defaultModel || 'llama-3.1-8b-instant',
           temperature: config.temperature,
           max_tokens: config.maxTokens,
-          reasoning_format: "parsed",
+          reasoning_format: 'parsed',
           stream: true,
           tools: options.availableTools
             ? (convertMCPToolsToProviderTools(
@@ -468,12 +475,12 @@ export class GroqService extends BaseAIService {
                 AIServiceProvider.Groq,
               ) as GroqChatCompletionTool[])
             : undefined,
-          tool_choice: options.availableTools ? "auto" : undefined,
+          tool_choice: options.availableTools ? 'auto' : undefined,
         }),
       );
 
       for await (const chunk of chatCompletion) {
-        logger.info("inside chunk : ", { chunk: JSON.stringify(chunk) });
+        logger.info('inside chunk : ', { chunk: JSON.stringify(chunk) });
         if (chunk.choices[0]?.delta?.reasoning) {
           yield JSON.stringify({ thinking: chunk.choices[0].delta.reasoning });
         } else if (chunk.choices[0]?.delta?.tool_calls) {
@@ -482,14 +489,14 @@ export class GroqService extends BaseAIService {
           });
         } else if (chunk.choices[0]?.delta?.content) {
           yield JSON.stringify({
-            content: chunk.choices[0]?.delta?.content || "",
+            content: chunk.choices[0]?.delta?.content || '',
           });
         }
       }
     } catch (error) {
       throw new AIServiceError(
         `Groq streaming failed: ${
-          error instanceof Error ? error.message : "Unknown error"
+          error instanceof Error ? error.message : 'Unknown error'
         }`,
         AIServiceProvider.Groq,
         undefined,
@@ -499,37 +506,37 @@ export class GroqService extends BaseAIService {
   }
 
   private convertToGroqMessages(
-    messages: StreamableMessage[],
+    messages: Message[],
     systemPrompt?: string,
   ): Groq.Chat.Completions.ChatCompletionMessageParam[] {
     const groqMessages: Groq.Chat.Completions.ChatCompletionMessageParam[] = [];
 
     if (systemPrompt) {
-      groqMessages.push({ role: "system", content: systemPrompt });
+      groqMessages.push({ role: 'system', content: systemPrompt });
     }
 
     for (const m of messages) {
-      if (m.role === "user") {
-        groqMessages.push({ role: "user", content: m.content });
-      } else if (m.role === "assistant") {
+      if (m.role === 'user') {
+        groqMessages.push({ role: 'user', content: m.content });
+      } else if (m.role === 'assistant') {
         if (m.tool_calls && m.tool_calls.length > 0) {
           groqMessages.push({
-            role: "assistant",
+            role: 'assistant',
             content: m.content || null,
             tool_calls: m.tool_calls,
           });
         } else if (m.thinking) {
           groqMessages.push({
-            role: "assistant",
+            role: 'assistant',
             content: m.content,
           });
         } else {
-          groqMessages.push({ role: "assistant", content: m.content });
+          groqMessages.push({ role: 'assistant', content: m.content });
         }
-      } else if (m.role === "tool") {
+      } else if (m.role === 'tool') {
         if (m.tool_call_id) {
           groqMessages.push({
-            role: "tool",
+            role: 'tool',
             tool_call_id: m.tool_call_id,
             content: m.content,
           });
@@ -564,19 +571,19 @@ export class OpenAIService extends BaseAIService {
   }
 
   async *streamChat(
-    messages: StreamableMessage[],
+    messages: Message[],
     options: {
       modelName?: string;
       systemPrompt?: string;
       availableTools?: MCPTool[];
       config?: AIServiceConfig;
     } = {},
-  ): AsyncGenerator<string, void, unknown> {
+  ): AsyncGenerator<string, void, void> {
     this.validateMessages(messages);
 
     const config = { ...this.defaultConfig, ...options.config };
     if (options.availableTools) {
-      logger.info(" tool calls: ", {
+      logger.info(' tool calls: ', {
         tools: convertMCPToolsToProviderTools(
           options?.availableTools,
           AIServiceProvider.OpenAI,
@@ -589,11 +596,11 @@ export class OpenAIService extends BaseAIService {
         messages,
         options.systemPrompt,
       );
-      logger.info("openai call : ", { openaiMessages });
+      logger.info('openai call : ', { openaiMessages });
 
       const completion = await this.withRetry(() =>
         this.openai.chat.completions.create({
-          model: options.modelName || config.defaultModel || "gpt-4-turbo",
+          model: options.modelName || config.defaultModel || 'gpt-4-turbo',
           messages: openaiMessages,
           max_completion_tokens: config.maxTokens,
           stream: true,
@@ -603,7 +610,7 @@ export class OpenAIService extends BaseAIService {
                 AIServiceProvider.OpenAI,
               ) as OpenAIChatCompletionTool[])
             : undefined,
-          tool_choice: options.availableTools ? "auto" : undefined,
+          tool_choice: options.availableTools ? 'auto' : undefined,
         }),
       );
 
@@ -614,14 +621,14 @@ export class OpenAIService extends BaseAIService {
           });
         } else if (chunk.choices[0]?.delta?.content) {
           yield JSON.stringify({
-            content: chunk.choices[0]?.delta?.content || "",
+            content: chunk.choices[0]?.delta?.content || '',
           });
         }
       }
     } catch (error) {
       throw new AIServiceError(
         `OpenAI streaming failed: ${
-          error instanceof Error ? error.message : "Unknown error"
+          error instanceof Error ? error.message : 'Unknown error'
         }`,
         AIServiceProvider.OpenAI,
         undefined,
@@ -631,33 +638,33 @@ export class OpenAIService extends BaseAIService {
   }
 
   private convertToOpenAIMessages(
-    messages: StreamableMessage[],
+    messages: Message[],
     systemPrompt?: string,
   ): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
     const openaiMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] =
       [];
 
     if (systemPrompt) {
-      openaiMessages.push({ role: "system", content: systemPrompt });
+      openaiMessages.push({ role: 'system', content: systemPrompt });
     }
 
     for (const m of messages) {
-      if (m.role === "user") {
-        openaiMessages.push({ role: "user", content: m.content });
-      } else if (m.role === "assistant") {
+      if (m.role === 'user') {
+        openaiMessages.push({ role: 'user', content: m.content });
+      } else if (m.role === 'assistant') {
         if (m.tool_calls && m.tool_calls.length > 0) {
           openaiMessages.push({
-            role: "assistant",
+            role: 'assistant',
             content: m.content || null,
             tool_calls: m.tool_calls,
           });
         } else {
-          openaiMessages.push({ role: "assistant", content: m.content });
+          openaiMessages.push({ role: 'assistant', content: m.content });
         }
-      } else if (m.role === "tool") {
+      } else if (m.role === 'tool') {
         if (m.tool_call_id) {
           openaiMessages.push({
-            role: "tool",
+            role: 'tool',
             tool_call_id: m.tool_call_id,
             content: m.content,
           });
@@ -689,14 +696,14 @@ export class AnthropicService extends BaseAIService {
   }
 
   async *streamChat(
-    messages: StreamableMessage[],
+    messages: Message[],
     options: {
       modelName?: string;
       systemPrompt?: string;
       availableTools?: MCPTool[];
       config?: AIServiceConfig;
     } = {},
-  ): AsyncGenerator<string, void, unknown> {
+  ): AsyncGenerator<string, void, void> {
     this.validateMessages(messages);
 
     const config = { ...this.defaultConfig, ...options.config };
@@ -709,13 +716,13 @@ export class AnthropicService extends BaseAIService {
           model:
             options.modelName ||
             config.defaultModel ||
-            "claude-3-sonnet-20240229",
+            'claude-3-sonnet-20240229',
           max_tokens: config.maxTokens!,
           messages: anthropicMessages,
           stream: true,
           thinking: {
             budget_tokens: 1024,
-            type: "enabled",
+            type: 'enabled',
           },
           system: options.systemPrompt,
           tools: options.availableTools
@@ -729,18 +736,18 @@ export class AnthropicService extends BaseAIService {
 
       for await (const chunk of completion) {
         if (
-          chunk.type === "content_block_delta" &&
-          chunk.delta.type === "text_delta"
+          chunk.type === 'content_block_delta' &&
+          chunk.delta.type === 'text_delta'
         ) {
           yield JSON.stringify({ content: chunk.delta.text });
         } else if (
-          chunk.type === "content_block_delta" &&
-          chunk.delta.type === "thinking_delta"
+          chunk.type === 'content_block_delta' &&
+          chunk.delta.type === 'thinking_delta'
         ) {
           yield JSON.stringify({ thinking: chunk.delta.thinking });
         } else if (
-          chunk.type === "content_block_delta" &&
-          chunk.delta.type === "input_json_delta"
+          chunk.type === 'content_block_delta' &&
+          chunk.delta.type === 'input_json_delta'
         ) {
           yield JSON.stringify({ tool_calls: chunk.delta.partial_json });
         }
@@ -748,7 +755,7 @@ export class AnthropicService extends BaseAIService {
     } catch (error) {
       throw new AIServiceError(
         `Anthropic streaming failed: ${
-          error instanceof Error ? error.message : "Unknown error"
+          error instanceof Error ? error.message : 'Unknown error'
         }`,
         AIServiceProvider.Anthropic,
         undefined,
@@ -758,24 +765,24 @@ export class AnthropicService extends BaseAIService {
   }
 
   private convertToAnthropicMessages(
-    messages: StreamableMessage[],
+    messages: Message[],
   ): AnthropicMessageParam[] {
     const anthropicMessages: AnthropicMessageParam[] = [];
 
     for (const m of messages) {
-      if (m.role === "system") {
+      if (m.role === 'system') {
         // System messages are handled separately in the API call
         continue;
       }
 
-      if (m.role === "user") {
-        anthropicMessages.push({ role: "user", content: m.content });
-      } else if (m.role === "assistant") {
+      if (m.role === 'user') {
+        anthropicMessages.push({ role: 'user', content: m.content });
+      } else if (m.role === 'assistant') {
         if (m.tool_calls) {
           anthropicMessages.push({
-            role: "assistant",
+            role: 'assistant',
             content: m.tool_calls.map((tc) => ({
-              type: "tool_use" as const,
+              type: 'tool_use' as const,
               id: tc.id,
               name: tc.function.name,
               input: MessageValidator.sanitizeToolArguments(
@@ -785,10 +792,10 @@ export class AnthropicService extends BaseAIService {
           });
         } else if (m.tool_use) {
           anthropicMessages.push({
-            role: "assistant",
+            role: 'assistant',
             content: [
               {
-                type: "tool_use" as const,
+                type: 'tool_use' as const,
                 id: m.tool_use.id,
                 name: m.tool_use.name,
                 input: m.tool_use.input,
@@ -796,14 +803,14 @@ export class AnthropicService extends BaseAIService {
             ],
           });
         } else {
-          anthropicMessages.push({ role: "assistant", content: m.content });
+          anthropicMessages.push({ role: 'assistant', content: m.content });
         }
-      } else if (m.role === "tool") {
+      } else if (m.role === 'tool') {
         anthropicMessages.push({
-          role: "user",
+          role: 'user',
           content: [
             {
-              type: "tool_result" as const,
+              type: 'tool_result' as const,
               tool_use_id: m.tool_call_id!,
               content: m.content,
             },
@@ -836,14 +843,14 @@ export class GeminiService extends BaseAIService {
   }
 
   async *streamChat(
-    messages: StreamableMessage[],
+    messages: Message[],
     options: {
       modelName?: string;
       systemPrompt?: string;
       availableTools?: MCPTool[];
       config?: AIServiceConfig;
     } = {},
-  ): AsyncGenerator<string, void, unknown> {
+  ): AsyncGenerator<string, void, void> {
     this.validateMessages(messages);
 
     const config = { ...this.defaultConfig, ...options.config };
@@ -862,12 +869,20 @@ export class GeminiService extends BaseAIService {
         : undefined;
 
       const model =
-        options.modelName || config.defaultModel || "gemini-1.5-pro";
-      logger.info("gemini call : ", { model, config });
+        options.modelName || config.defaultModel || 'gemini-1.5-pro';
+      logger.info('gemini call : ', { model, config });
 
       // Fixed API call structure based on your example
-      const geminiConfig: any = {
-        responseMimeType: "text/plain",
+      interface GeminiServiceConfig {
+        responseMimeType: string;
+        tools?: Array<{ functionDeclarations: FunctionDeclaration[] }>;
+        systemInstruction?: Array<{ text: string }>;
+        maxOutputTokens?: number;
+        temperature?: number;
+      }
+
+      const geminiConfig: GeminiServiceConfig = {
+        responseMimeType: 'text/plain',
       };
 
       if (tools) {
@@ -886,7 +901,7 @@ export class GeminiService extends BaseAIService {
         geminiConfig.temperature = config.temperature;
       }
 
-      logger.info("gemini final request: ", {
+      logger.info('gemini final request: ', {
         model: model,
         config: geminiConfig,
         contents: geminiMessages,
@@ -903,9 +918,9 @@ export class GeminiService extends BaseAIService {
       for await (const chunk of result) {
         if (chunk.functionCalls && chunk.functionCalls.length > 0) {
           yield JSON.stringify({
-            tool_calls: chunk.functionCalls.map((fc: any) => ({
+            tool_calls: chunk.functionCalls.map((fc: FunctionCall) => ({
               id: createId(), // Generate a new ID for each tool call
-              type: "function",
+              type: 'function',
               function: {
                 name: fc.name,
                 arguments: JSON.stringify(fc.args), // Convert args object to JSON string
@@ -917,12 +932,12 @@ export class GeminiService extends BaseAIService {
         }
       }
     } catch (error) {
-      logger.error("Gemini API Error Details:", {
+      logger.error('Gemini API Error Details:', {
         error: error,
-        message: error instanceof Error ? error.message : "Unknown error",
+        message: error instanceof Error ? error.message : 'Unknown error',
         stack: error instanceof Error ? error.stack : undefined,
         requestData: {
-          model: options.modelName || config.defaultModel || "gemini-1.5-pro",
+          model: options.modelName || config.defaultModel || 'gemini-1.5-pro',
           messagesCount: messages.length,
           hasTools: !!options.availableTools?.length,
           systemPrompt: !!options.systemPrompt,
@@ -930,7 +945,7 @@ export class GeminiService extends BaseAIService {
       });
       throw new AIServiceError(
         `Gemini streaming failed: ${
-          error instanceof Error ? error.message : "Unknown error"
+          error instanceof Error ? error.message : 'Unknown error'
         }`,
         AIServiceProvider.Gemini,
         undefined,
@@ -939,23 +954,23 @@ export class GeminiService extends BaseAIService {
     }
   }
 
-  private convertToGeminiMessages(messages: StreamableMessage[]): Content[] {
+  private convertToGeminiMessages(messages: Message[]): Content[] {
     const geminiMessages: Content[] = [];
 
     for (const m of messages) {
-      if (m.role === "system") {
+      if (m.role === 'system') {
         continue; // Skip system messages, handled by systemInstruction
       }
 
-      if (m.role === "user" && m.content) {
+      if (m.role === 'user' && m.content) {
         geminiMessages.push({
-          role: "user",
+          role: 'user',
           parts: [{ text: m.content }],
         });
-      } else if (m.role === "assistant") {
+      } else if (m.role === 'assistant') {
         if (m.tool_calls && m.tool_calls.length > 0) {
           geminiMessages.push({
-            role: "model",
+            role: 'model',
             parts: m.tool_calls.map((tc) => ({
               functionCall: {
                 name: tc.function.name,
@@ -967,16 +982,16 @@ export class GeminiService extends BaseAIService {
           });
         } else if (m.content) {
           geminiMessages.push({
-            role: "model",
+            role: 'model',
             parts: [{ text: m.content }],
           });
         }
-      } else if (m.role === "tool") {
+      } else if (m.role === 'tool') {
         // Find the corresponding assistant message to get the function name
         let functionName: string | undefined;
         for (let j = messages.indexOf(m) - 1; j >= 0; j--) {
           const prevMessage = messages[j];
-          if (prevMessage.role === "assistant" && prevMessage.tool_calls) {
+          if (prevMessage.role === 'assistant' && prevMessage.tool_calls) {
             const toolCall = prevMessage.tool_calls.find(
               (tc) => tc.id === m.tool_call_id,
             );
@@ -989,7 +1004,7 @@ export class GeminiService extends BaseAIService {
 
         if (functionName) {
           geminiMessages.push({
-            role: "function", // Gemini expects 'function' role for tool results
+            role: 'function', // Gemini expects 'function' role for tool results
             parts: [
               {
                 functionResponse: {

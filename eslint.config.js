@@ -2,10 +2,13 @@ import globals from "globals";
 import pluginJs from "@eslint/js";
 import tseslintParser from "@typescript-eslint/parser";
 import tseslintPlugin from "@typescript-eslint/eslint-plugin";
-import pluginReactConfig from "eslint-plugin-react/configs/recommended.js";
+import pluginReact from "eslint-plugin-react";
 
 export default [
-  { files: ["**/*.{js,mjs,cjs,ts,jsx,tsx}"] },
+  { 
+    files: ["**/*.{js,mjs,cjs,ts,jsx,tsx}"],
+    ignores: ["dist/**", "src-tauri/target/**"],
+  },
   {
     languageOptions: {
       parser: tseslintParser,
@@ -20,19 +23,25 @@ export default [
     },
   },
   pluginJs.configs.recommended,
-  tseslintPlugin.configs.recommended,
-  pluginReactConfig,
+  pluginJs.configs.recommended,
   {
-    settings: {
-      react: {
-        version: "detect",
-      },
+    plugins: {
+      "@typescript-eslint": tseslintPlugin,
+    },
+    rules: tseslintPlugin.configs.recommended.rules,
+  },
+  {
+    plugins: {
+      react: pluginReact,
+    },
+    rules: {
+      ...pluginReact.configs.recommended.rules,
+      ...pluginReact.configs["jsx-runtime"].rules,
     },
   },
   {
     rules: {
-      "react/react-in-jsx-scope": "off",
-      "react/jsx-uses-react": "off",
+      // Add any custom rules here
     },
   },
 ];

@@ -1,20 +1,20 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useSessionContext } from "../context/SessionContext";
-import { useSessionHistory } from "../context/SessionHistoryContext";
-import { StreamableMessage } from "../types/chat";
-import { useAIService } from "./use-ai-service";
-import { createId } from "@paralleldrive/cuid2";
-import { getLogger } from "../lib/logger";
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSessionContext } from '../context/SessionContext';
+import { useSessionHistory } from '../context/SessionHistoryContext';
+import { useAIService } from './use-ai-service';
+import { createId } from '@paralleldrive/cuid2';
+import { getLogger } from '../lib/logger';
+import { Message } from '@/models/chat';
 
-const logger = getLogger("useChatContext");
+const logger = getLogger('useChatContext');
 
 interface ChatContextReturn {
-  submit: (messageToAdd?: StreamableMessage[]) => Promise<StreamableMessage>;
+  submit: (messageToAdd?: Message[]) => Promise<Message>;
   isLoading: boolean;
-  messages: StreamableMessage[];
+  messages: Message[];
 }
 
-const validateMessage = (message: StreamableMessage): boolean => {
+const validateMessage = (message: Message): boolean => {
   return !!(message.role && (message.content || message.tool_calls));
 };
 
@@ -22,9 +22,9 @@ export const useChatContext = (): ChatContextReturn => {
   const { messages: history, addMessage } = useSessionHistory();
   const { submit: triggerAIService, isLoading, response } = useAIService();
   const { current: currentSession } = useSessionContext();
-  const {} = useSessionContext();
-  const [currentStreaming, setCurrentStreaming] =
-    useState<StreamableMessage | null>(null);
+  const [currentStreaming, setCurrentStreaming] = useState<Message | null>(
+    null,
+  );
 
   const messages = useMemo(() => {
     if (currentStreaming) {
@@ -44,10 +44,10 @@ export const useChatContext = (): ChatContextReturn => {
 
   useEffect(() => {
     if (response) {
-      logger.info("Updating currentStreaming with response:", { response });
+      logger.info('Updating currentStreaming with response:', { response });
       setCurrentStreaming((prev) => {
         if (prev) {
-          logger.info("Merging with existing streaming message:", {
+          logger.info('Merging with existing streaming message:', {
             prev,
             response,
           });
@@ -57,12 +57,12 @@ export const useChatContext = (): ChatContextReturn => {
         const newStreaming = {
           ...response,
           id: response.id || createId(),
-          content: response.content || "",
-          role: "assistant" as const,
-          sessionId: response.sessionId || currentSession?.id || "",
+          content: response.content || '',
+          role: 'assistant' as const,
+          sessionId: response.sessionId || currentSession?.id || '',
           isStreaming: response.isStreaming !== false,
         };
-        logger.info("Creating new streaming message:", { newStreaming });
+        logger.info('Creating new streaming message:', { newStreaming });
         return newStreaming;
       });
     }
@@ -76,7 +76,7 @@ export const useChatContext = (): ChatContextReturn => {
       );
       if (messageInHistory) {
         logger.info(
-          "Final message found in history, clearing streaming state:",
+          'Final message found in history, clearing streaming state:',
           {
             messageId: currentStreaming.id,
           },
@@ -87,13 +87,13 @@ export const useChatContext = (): ChatContextReturn => {
   }, [history, currentStreaming]);
 
   const handleSubmit = useCallback(
-    async (messageToAdd?: StreamableMessage[]): Promise<StreamableMessage> => {
+    async (messageToAdd?: Message[]): Promise<Message> => {
       if (!currentSession) {
-        throw new Error("No active session to submit messages to.");
+        throw new Error('No active session to submit messages to.');
       }
 
       try {
-        let messagesToSend: StreamableMessage[];
+        let messagesToSend: Message[];
 
         if (messageToAdd) {
           // Validate and persist new messages before processing
@@ -101,7 +101,7 @@ export const useChatContext = (): ChatContextReturn => {
             messageToAdd.map(async (msg) => {
               if (!validateMessage(msg)) {
                 throw new Error(
-                  "Invalid message in batch: must have role and either content or tool_calls",
+                  'Invalid message in batch: must have role and either content or tool_calls',
                 );
               }
               const messageWithId = { ...msg, sessionId: currentSession.id };
@@ -117,12 +117,12 @@ export const useChatContext = (): ChatContextReturn => {
         const aiResponse = await triggerAIService(messagesToSend);
 
         if (aiResponse) {
-          const responseWithSessionId: StreamableMessage = {
+          const responseWithSessionId: Message = {
             ...aiResponse,
             isStreaming: false,
             sessionId: currentSession.id,
           };
-          logger.info("Finalizing streaming message and adding to history:", {
+          logger.info('Finalizing streaming message and adding to history:', {
             responseWithSessionId,
           });
 
@@ -135,7 +135,7 @@ export const useChatContext = (): ChatContextReturn => {
 
         return aiResponse;
       } catch (error) {
-        console.error("Failed to submit messages:", error);
+        console.error('Failed to submit messages:', error);
         // Clear streaming state immediately on error
         setCurrentStreaming(null);
         throw error;

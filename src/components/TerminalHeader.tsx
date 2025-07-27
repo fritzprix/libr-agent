@@ -1,6 +1,6 @@
-import { useSessionContext } from "@/context/SessionContext";
-import { createContext, ReactNode, useContext, useState } from "react";
-import { CompactModelPicker } from "./ui";
+import { useSessionContext } from '@/context/SessionContext';
+import { createContext, ReactNode, useContext, useState } from 'react';
+import { CompactModelPicker } from './ui';
 
 interface TerminalHeaderContextType {
   isAgentMode: boolean;
@@ -15,7 +15,7 @@ export const useTerminalHeaderContext = () => {
   const context = useContext(TerminalHeaderContext);
   if (!context) {
     throw new Error(
-      "useTerminalHeaderContext must be used within a TerminalHeaderProvider",
+      'useTerminalHeaderContext must be used within a TerminalHeaderProvider',
     );
   }
   return context;
@@ -25,16 +25,13 @@ interface TerminalHeaderProps {
   children?: ReactNode;
 }
 
-export default function TerminalHeader({
-  children,
-}: TerminalHeaderProps) {
+export default function TerminalHeader({ children }: TerminalHeaderProps) {
   const { current: currentSession } = useSessionContext();
   const [isAgentMode, setIsAgentMode] = useState(true); // Default to agent mode as per plan
 
   const toggleMode = () => {
     setIsAgentMode((prev) => !prev);
   };
-
 
   return (
     <TerminalHeaderContext.Provider value={{ isAgentMode, toggleMode }}>

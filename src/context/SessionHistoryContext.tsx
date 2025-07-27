@@ -5,14 +5,14 @@ import {
   useContext,
   useEffect,
   useMemo,
-} from "react";
-import useSWRInfinite from "swr/infinite";
-import { dbService, dbUtils, Page } from "../lib/db";
-import { getLogger } from "../lib/logger";
-import { StreamableMessage } from "../types/chat";
-import { useSessionContext } from "./SessionContext";
+} from 'react';
+import useSWRInfinite from 'swr/infinite';
+import { dbService, dbUtils, Page } from '../lib/db';
+import { getLogger } from '../lib/logger';
+import { useSessionContext } from './SessionContext';
+import { Message } from '@/models/chat';
 
-const logger = getLogger("SessionHistoryContext");
+const logger = getLogger('SessionHistoryContext');
 const PAGE_SIZE = 50;
 
 /**
@@ -20,18 +20,16 @@ const PAGE_SIZE = 50;
  * 여러 메시지를 한 번에 추가하는 addHistoryMessages 함수가 추가되었습니다.
  */
 interface SessionHistoryContextType {
-  messages: StreamableMessage[];
+  messages: Message[];
   isLoading: boolean;
   error: Error | null;
   loadMore: () => void;
   hasMore: boolean;
-  addMessage: (message: StreamableMessage) => Promise<StreamableMessage>;
-  addHistoryMessages: (
-    messages: StreamableMessage[],
-  ) => Promise<StreamableMessage[]>;
+  addMessage: (message: Message) => Promise<Message>;
+  addHistoryMessages: (messages: Message[]) => Promise<Message[]>;
   updateMessage: (
     messageId: string,
-    updates: Partial<StreamableMessage>,
+    updates: Partial<Message>,
   ) => Promise<void>;
   deleteMessage: (messageId: string) => Promise<void>;
   clearHistory: () => Promise<void>;
@@ -49,7 +47,7 @@ export function useSessionHistory(): SessionHistoryContextType {
   const context = useContext(SessionHistoryContext);
   if (!context) {
     throw new Error(
-      "useSessionHistory must be used within a SessionHistoryProvider",
+      'useSessionHistory must be used within a SessionHistoryProvider',
     );
   }
   return context;
@@ -62,14 +60,14 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
   const { current: currentSession } = useSessionContext();
 
   const { data, error, isLoading, setSize, mutate } = useSWRInfinite<
-    Page<StreamableMessage>
+    Page<Message>
   >(
     (pageIndex, previousPageData) => {
       if (!currentSession?.id) return null;
       if (previousPageData && !previousPageData.hasNextPage) return null;
-      return [currentSession.id, "messages", pageIndex + 1];
+      return [currentSession.id, 'messages', pageIndex + 1];
     },
-    async ([sessionId, _, page]: [string, string, number]) => {
+    async ([sessionId, , page]: [string, string, number]) => {
       return dbUtils.getMessagesPageForSession(sessionId, page, PAGE_SIZE);
     },
     {
@@ -94,22 +92,22 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
   }, [isLoading, hasMore, setSize]);
 
   useEffect(() => {
-    logger.info("current session : ", { currentSession });
+    logger.info('current session : ', { currentSession });
   }, [currentSession]);
 
-  const validateMessage = useCallback((message: StreamableMessage): boolean => {
+  const validateMessage = useCallback((message: Message): boolean => {
     return !!(message.role && (message.content || message.tool_calls));
   }, []);
 
   const addMessage = useCallback(
-    async (message: StreamableMessage): Promise<StreamableMessage> => {
-      if (!currentSession) throw new Error("No active session.");
+    async (message: Message): Promise<Message> => {
+      if (!currentSession) throw new Error('No active session.');
       if (!validateMessage(message))
-        throw new Error("Invalid message structure.");
+        throw new Error('Invalid message structure.');
 
       const messageWithSessionId = { ...message, sessionId: currentSession.id };
 
-      logger.info("Adding message with optimistic update:", {
+      logger.info('Adding message with optimistic update:', {
         messageWithSessionId,
       });
 
@@ -120,7 +118,7 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
       await mutate(
         (currentData) => {
           if (!currentData || currentData.length === 0) {
-            const newPage: Page<StreamableMessage> = {
+            const newPage: Page<Message> = {
               items: [messageWithSessionId],
               page: 1,
               pageSize: PAGE_SIZE,
@@ -128,14 +126,14 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
               hasNextPage: false,
               hasPreviousPage: false,
             };
-            logger.info("Creating new page with first message:", { newPage });
+            logger.info('Creating new page with first message:', { newPage });
             return [newPage];
           }
           const newData = [...currentData];
           const lastPage = { ...newData[newData.length - 1] };
           lastPage.items = [...lastPage.items, messageWithSessionId];
           newData[newData.length - 1] = lastPage;
-          logger.info("Added message to existing page:", {
+          logger.info('Added message to existing page:', {
             messageId: messageWithSessionId.id,
             totalMessages: lastPage.items.length,
           });
@@ -146,11 +144,11 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
 
       try {
         await dbService.messages.upsert(messageWithSessionId);
-        logger.info("Successfully persisted message to DB:", {
+        logger.info('Successfully persisted message to DB:', {
           messageId: messageWithSessionId.id,
         });
       } catch (e) {
-        logger.error("Failed to add message, rolling back", e);
+        logger.error('Failed to add message, rolling back', e);
         // 실제 롤백: 이전 데이터로 복원
         await mutate(previousData, { revalidate: false });
         throw e;
@@ -165,10 +163,8 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
    * ChatContext의 submit 함수에서 사용됩니다.
    */
   const addHistoryMessages = useCallback(
-    async (
-      messagesToAdd: StreamableMessage[],
-    ): Promise<StreamableMessage[]> => {
-      if (!currentSession) throw new Error("No active session.");
+    async (messagesToAdd: Message[]): Promise<Message[]> => {
+      if (!currentSession) throw new Error('No active session.');
       messagesToAdd.forEach(validateMessage);
 
       const messagesWithSessionId = messagesToAdd.map((msg) => ({
@@ -182,7 +178,7 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
       await mutate(
         (currentData) => {
           if (!currentData || currentData.length === 0) {
-            const newPage: Page<StreamableMessage> = {
+            const newPage: Page<Message> = {
               items: messagesWithSessionId,
               page: 1,
               pageSize: PAGE_SIZE,
@@ -204,7 +200,7 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
       try {
         await dbService.messages.upsertMany(messagesWithSessionId);
       } catch (e) {
-        logger.error("Failed to add message batch, rolling back", e);
+        logger.error('Failed to add message batch, rolling back', e);
         // 실제 롤백: 이전 데이터로 복원
         await mutate(previousData, { revalidate: false });
         throw e;
@@ -215,8 +211,8 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
   );
 
   const updateMessage = useCallback(
-    async (messageId: string, updates: Partial<StreamableMessage>) => {
-      if (!currentSession) throw new Error("No active session.");
+    async (messageId: string, updates: Partial<Message>) => {
+      if (!currentSession) throw new Error('No active session.');
 
       // 낙관적 업데이트 전 현재 데이터 백업
       const previousData = data;
@@ -239,7 +235,7 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
         if (!existing) throw new Error(`Message ${messageId} not found.`);
         await dbService.messages.upsert({ ...existing, ...updates });
       } catch (e) {
-        logger.error("Failed to update message, rolling back", e);
+        logger.error('Failed to update message, rolling back', e);
         // 실제 롤백: 이전 데이터로 복원
         await mutate(previousData, { revalidate: false });
         throw e;
@@ -250,7 +246,7 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
 
   const deleteMessage = useCallback(
     async (messageId: string) => {
-      if (!currentSession) throw new Error("No active session.");
+      if (!currentSession) throw new Error('No active session.');
 
       // 낙관적 업데이트 전 현재 데이터 백업
       const previousData = data;
@@ -269,7 +265,7 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
       try {
         await dbService.messages.delete(messageId);
       } catch (e) {
-        logger.error("Failed to delete message, rolling back", e);
+        logger.error('Failed to delete message, rolling back', e);
         // 실제 롤백: 이전 데이터로 복원
         await mutate(previousData, { revalidate: false });
         throw e;
@@ -279,7 +275,7 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
   );
 
   const clearHistory = useCallback(async () => {
-    if (!currentSession) throw new Error("No active session.");
+    if (!currentSession) throw new Error('No active session.');
 
     // 낙관적 업데이트 전 현재 데이터 백업
     const previousData = data;
@@ -289,7 +285,7 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
     try {
       await dbUtils.deleteAllMessagesForSession(currentSession.id);
     } catch (e) {
-      logger.error("Failed to clear history, rolling back", e);
+      logger.error('Failed to clear history, rolling back', e);
       // 실제 롤백: 이전 데이터로 복원
       await mutate(previousData, { revalidate: false });
       throw e;

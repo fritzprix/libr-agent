@@ -6,14 +6,14 @@ import React, {
   useMemo,
   useRef,
   useState,
-} from "react";
-import { useAsyncFn } from "react-use";
-import { getLogger } from "../lib/logger";
-import { MCPTool, tauriMCPClient } from "../lib/tauri-mcp-client";
-import { useAssistantContext } from "./AssistantContext";
-import { Assistant } from "../types/chat";
+} from 'react';
+import { useAsyncFn } from 'react-use';
+import { getLogger } from '../lib/logger';
+import { MCPTool, tauriMCPClient } from '../lib/tauri-mcp-client';
+import { useAssistantContext } from './AssistantContext';
+import { Assistant } from '../models/chat';
 
-const logger = getLogger("MCPServerContext");
+const logger = getLogger('MCPServerContext');
 
 interface MCPServerContextType {
   availableTools: MCPTool[];
@@ -23,9 +23,9 @@ interface MCPServerContextType {
   connectServers: (assistant: Assistant) => Promise<void>;
   executeToolCall: (toolCall: {
     id: string;
-    type: "function";
+    type: 'function';
     function: { name: string; arguments: string };
-  }) => Promise<{ role: "tool"; content: string; tool_call_id: string }>;
+  }) => Promise<{ role: 'tool'; content: string; tool_call_id: string }>;
 }
 
 export const MCPServerContext = createContext<MCPServerContextType | undefined>(
@@ -65,7 +65,7 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
 
         const connectedServers = await tauriMCPClient.getConnectedServers();
         for (const serverName of connectedServers) {
-          if (serverStatus.hasOwnProperty(serverName)) {
+          if (Object.prototype.hasOwnProperty.call(serverStatus, serverName)) {
             serverStatus[serverName] = true;
           }
         }
@@ -73,7 +73,7 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
         setAvailableTools(tools);
         logger.debug(`Total tools loaded: ${tools.length}`);
       } catch (error) {
-        logger.error("Error connecting to MCP:", { error });
+        logger.error('Error connecting to MCP:', { error });
         Object.keys(serverStatus).forEach((key) => {
           serverStatus[key] = false;
         });
@@ -86,16 +86,16 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
   const executeToolCall = useCallback(
     async (toolCall: {
       id: string;
-      type: "function";
+      type: 'function';
       function: { name: string; arguments: string };
-    }): Promise<{ role: "tool"; content: string; tool_call_id: string }> => {
+    }): Promise<{ role: 'tool'; content: string; tool_call_id: string }> => {
       logger.debug(`Executing tool call:`, { toolCall });
       const aiProvidedToolName = toolCall.function.name;
       let serverName: string | undefined;
       let toolName: string | undefined;
 
       // Use '__' as delimiter for URL and JSON safety
-      const delimiter = "__";
+      const delimiter = '__';
       const parts = aiProvidedToolName.split(delimiter);
       if (parts.length >= 2) {
         serverName = parts[0];
@@ -107,7 +107,7 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
           `Could not determine serverName or toolName for AI-provided tool name: ${aiProvidedToolName}`,
         );
         return {
-          role: "tool",
+          role: 'tool',
           content: `Error: Could not find tool '${aiProvidedToolName}' or determine its server.`,
           tool_call_id: toolCall.id,
         };
@@ -122,7 +122,7 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
           { parseError },
         );
         return {
-          role: "tool",
+          role: 'tool',
           content: `Error: Invalid tool arguments JSON: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
           tool_call_id: toolCall.id,
         };
@@ -138,7 +138,7 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
           result,
         });
         return {
-          role: "tool",
+          role: 'tool',
           content: JSON.stringify(result),
           tool_call_id: toolCall.id,
         };
@@ -147,7 +147,7 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
           execError,
         });
         return {
-          role: "tool",
+          role: 'tool',
           content: `Error: Tool '${toolCall.function.name}' failed: ${execError instanceof Error ? execError.message : String(execError)}`,
           tool_call_id: toolCall.id,
         };
@@ -162,7 +162,7 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
 
   useEffect(() => {
     if (currentAssistant) {
-      logger.info("connect : ", { currentAssistant: currentAssistant.name });
+      logger.info('connect : ', { currentAssistant: currentAssistant.name });
       connectServers(currentAssistant);
     }
   }, [connectServers, currentAssistant]);
