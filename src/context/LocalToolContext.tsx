@@ -1,3 +1,5 @@
+import { MCPTool } from '@/lib/tauri-mcp-client';
+import { Tool } from '@/models/chat';
 import React, {
   createContext,
   useCallback,
@@ -7,8 +9,6 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { MCPTool } from '../lib/tauri-mcp-client';
-import { Tool } from '../types/chat';
 import { useAssistantContext } from './AssistantContext';
 
 /**

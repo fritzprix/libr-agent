@@ -11,7 +11,7 @@ import { useAsyncFn } from 'react-use';
 import { getLogger } from '../lib/logger';
 import { MCPTool, tauriMCPClient } from '../lib/tauri-mcp-client';
 import { useAssistantContext } from './AssistantContext';
-import { Assistant } from '../types/chat';
+import { Assistant } from '../models/chat';
 
 const logger = getLogger('MCPServerContext');
 

@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSessionContext } from '../context/SessionContext';
 import { useSessionHistory } from '../context/SessionHistoryContext';
-import { Message } from '../types/chat';
 import { useAIService } from './use-ai-service';
 import { createId } from '@paralleldrive/cuid2';
 import { getLogger } from '../lib/logger';
+import { Message } from '@/models/chat';
 
 const logger = getLogger('useChatContext');
 

@@ -48,4 +48,7 @@ export { default as StatusIndicator } from './StatusIndicator';
 export { default as TextareaWithLabel } from './TextareaWithLabel';
 
 // Model picker components (from parent directory)
-export { CompactModelPicker, TerminalModelPicker } from '../ModelPicker';
+export {
+  CompactModelPicker,
+  TerminalModelPicker,
+} from '../../features/chat/ModelPicker';

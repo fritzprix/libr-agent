@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useSessionContext } from '../context/SessionContext';
-import SessionList from './SessionList';
-import { Button } from './ui';
+import { Button } from './ui/button';
+import SessionList from '@/features/session/SessionList';
 
 interface SidebarProps {
   isCollapsed: boolean;

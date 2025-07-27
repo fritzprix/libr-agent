@@ -1,12 +1,12 @@
 import { createId } from '@paralleldrive/cuid2';
 import { useCallback, useMemo, useState } from 'react';
 import { AIServiceConfig, AIServiceFactory } from '../lib/ai-service';
-import { Message, ToolCall } from '../types/chat';
 import { getLogger } from '../lib/logger';
 import { useSettings } from './use-settings';
 import { useMCPServer } from './use-mcp-server';
 import { useLocalTools } from '../context/LocalToolContext';
 import { useAssistantContext } from '../context/AssistantContext';
+import { Message, ToolCall } from '@/models/chat';
 
 const logger = getLogger('useAIService');
 

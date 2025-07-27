@@ -1,5 +1,5 @@
+import { Assistant, Group, Message, Session } from '@/models/chat';
 import Dexie, { Table } from 'dexie';
-import { Assistant, Session, Message, Group } from '../types/chat';
 
 // --- TYPE DEFINITIONS ---
 export interface DatabaseObject<T = unknown> {

@@ -17,6 +17,7 @@ import {
 } from '@anthropic-ai/sdk/resources/messages.mjs';
 import { MCPTool } from './tauri-mcp-client';
 import { getLogger } from './logger';
+import { Message } from '@/models/chat';
 
 const logger = getLogger('AIService');
 
@@ -38,8 +39,6 @@ export enum AIServiceProvider {
   Gemini = 'gemini',
   Empty = 'empty',
 }
-
-import { Message } from '../types/chat';
 
 export class AIServiceError extends Error {
   constructor(

@@ -9,8 +9,8 @@ import {
 import useSWRInfinite from 'swr/infinite';
 import { dbService, dbUtils, Page } from '../lib/db';
 import { getLogger } from '../lib/logger';
-import { Message } from '../types/chat';
 import { useSessionContext } from './SessionContext';
+import { Message } from '@/models/chat';
 
 const logger = getLogger('SessionHistoryContext');
 const PAGE_SIZE = 50;

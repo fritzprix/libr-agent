@@ -8,7 +8,7 @@ import React, {
 } from 'react';
 import { dbService } from '../lib/db';
 import { getLogger } from '../lib/logger';
-import { Group } from '../types/chat';
+import { Group } from '../models/chat';
 
 const logger = getLogger('AssistantGroupContext');
 

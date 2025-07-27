@@ -12,7 +12,7 @@ import {
 import useSWRInfinite from 'swr/infinite';
 import { dbService, Page } from '../lib/db';
 import { getLogger } from '../lib/logger';
-import { Assistant, Session } from '../types/chat';
+import { Assistant, Session } from '../models/chat';
 
 const logger = getLogger('SessionContext');
 

@@ -12,7 +12,7 @@ import {
 import { useAsyncFn } from 'react-use';
 import { dbService } from '../lib/db';
 import { getLogger } from '../lib/logger';
-import { Assistant } from '../types/chat';
+import { Assistant } from '../models/chat';
 
 const logger = getLogger('AssistantContext');
 
