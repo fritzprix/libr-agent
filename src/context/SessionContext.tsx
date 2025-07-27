@@ -113,8 +113,8 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
     setSize,
     mutate,
   } = useSWRInfinite(
-    (pageIndex) => ["session", pageIndex],
-    async ([_, pageIndex]) => {
+    (pageIndex) => [`session`, pageIndex],
+    async ([, pageIndex]) => {
       return dbService.sessions.getPage(pageIndex, 10);
     },
   );

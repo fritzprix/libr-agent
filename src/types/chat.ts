@@ -26,8 +26,6 @@ export interface ToolCall {
   };
 }
 
-export interface StreamableMessage extends Message {}
-
 export interface Assistant {
   id: string;
   name: string;

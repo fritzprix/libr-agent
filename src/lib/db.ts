@@ -1,5 +1,5 @@
 import Dexie, { Table } from "dexie";
-import { Assistant, Session, StreamableMessage } from "../types/chat";
+import { Assistant, Session, Message } from "../types/chat";
 
 // --- TYPE DEFINITIONS ---
 export interface DatabaseObject {
@@ -31,7 +31,7 @@ export interface DatabaseService {
   assistants: CRUD<Assistant>;
   objects: CRUD<DatabaseObject>;
   sessions: CRUD<Session>;
-  messages: CRUD<StreamableMessage>;
+  messages: CRUD<Message>;
 }
 
 class LocalDatabase extends Dexie {
@@ -46,7 +46,7 @@ class LocalDatabase extends Dexie {
   assistants!: Table<Assistant, string>;
   objects!: Table<DatabaseObject, string>;
   sessions!: Table<Session, string>;
-  messages!: Table<StreamableMessage, string>;
+  messages!: Table<Message, string>;
 
   constructor() {
     super("MCPAgentDB");
@@ -281,13 +281,13 @@ export const dbService: DatabaseService = {
     },
   },
   messages: {
-    upsert: async (message: StreamableMessage) => {
+    upsert: async (message: Message) => {
       const now = new Date();
       if (!message.createdAt) message.createdAt = now;
       message.updatedAt = now;
       await LocalDatabase.getInstance().messages.put(message);
     },
-    upsertMany: async (messages: StreamableMessage[]) => {
+    upsertMany: async (messages: Message[]) => {
       const now = new Date();
       const updatedMessages = messages.map((msg) => ({
         ...msg,
@@ -305,7 +305,7 @@ export const dbService: DatabaseService = {
     getPage: async (
       page: number,
       pageSize: number,
-    ): Promise<Page<StreamableMessage>> => {
+    ): Promise<Page<Message>> => {
       const db = LocalDatabase.getInstance();
       // Note: This paginates ALL messages across ALL sessions.
       // For session-specific messages, see dbUtils.getMessagesPageForSession
@@ -379,12 +379,12 @@ export const dbUtils = {
   },
 
   // --- Messages ---
-  getAllMessages: async (): Promise<StreamableMessage[]> => {
+  getAllMessages: async (): Promise<Message[]> => {
     return LocalDatabase.getInstance().messages.orderBy("createdAt").toArray();
   },
   getAllMessagesForSession: async (
     sessionId: string,
-  ): Promise<StreamableMessage[]> => {
+  ): Promise<Message[]> => {
     return LocalDatabase.getInstance()
       .messages.where("sessionId")
       .equals(sessionId)
@@ -398,7 +398,7 @@ export const dbUtils = {
     sessionId: string,
     page: number,
     pageSize: number,
-  ): Promise<Page<StreamableMessage>> => {
+  ): Promise<Page<Message>> => {
     const db = LocalDatabase.getInstance();
     const collection = db.messages.where({ sessionId });
     const totalItems = await collection.count();
@@ -427,7 +427,7 @@ export const dbUtils = {
   clearAllMessages: async (): Promise<void> => {
     await LocalDatabase.getInstance().messages.clear();
   },
-  bulkUpsertMessages: async (messages: StreamableMessage[]): Promise<void> => {
+  bulkUpsertMessages: async (messages: Message[]): Promise<void> => {
     await dbService.messages.upsertMany(messages);
   },
 };

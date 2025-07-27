@@ -1,20 +1,19 @@
 import { createId } from "@paralleldrive/cuid2";
-import React, { useEffect, useRef, useState, useMemo } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useAssistantContext } from "../context/AssistantContext";
-import { useMCPServer } from "../hooks/use-mcp-server";
 import { useLocalTools } from "../context/LocalToolContext";
-import { StreamableMessage } from "../types/chat";
+import { useMCPServer } from "../hooks/use-mcp-server";
 import { getLogger } from "../lib/logger";
-import AssistantManager from "./AssistantManager";
-import { FileAttachment, InputWithLabel as Input } from "./ui";
-import ToolsModal from "./ToolsModal";
 import MessageBubble from "./MessageBubble";
 import { ToolCaller } from "./orchestrators/ToolCaller";
 import TerminalHeader from "./TerminalHeader";
-import { Button } from "./ui";
+import ToolsModal from "./ToolsModal";
+import { Button, FileAttachment, InputWithLabel as Input } from "./ui";
 // import { useChatContext } from "../context/ChatContext";
+import { Message } from "@/types/chat";
 import { useSessionContext } from "../context/SessionContext";
 import { useChatContext } from "../hooks/use-chat";
+import AssistantManager from "./assistant/AssistantEditorDialog";
 
 const logger = getLogger("Chat");
 
@@ -117,7 +116,7 @@ export default function Chat({
       });
     }
 
-    const userMessage: StreamableMessage = {
+    const userMessage: Message = {
       id: createId(),
       content: messageContent,
       role: "user",

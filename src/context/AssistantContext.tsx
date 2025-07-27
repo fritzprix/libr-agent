@@ -24,15 +24,11 @@ interface AssistantContextType {
   currentAssistant: Assistant | null;
   getCurrentAssistant: () => Assistant | null;
   setCurrentAssistant: (assistant: Assistant | null) => void;
-  saveAssistant: (
+  upsert: (
     assistant: Partial<Assistant>,
     mcpConfigText: string,
   ) => Promise<Assistant | undefined>;
-  deleteAssistant: (assistantId: string) => Promise<void>;
-  getNewAssistantTemplate: () => {
-    assistant: Partial<Assistant>;
-    mcpConfigText: string;
-  };
+  delete: (assistantId: string) => Promise<void>;
   error: Error | null;
 }
 
@@ -55,7 +51,7 @@ export const DEFAULT_MCP_CONFIG = {
   },
 };
 
-function getDefaultAssistant(): Assistant {
+export function getDefaultAssistant(): Assistant {
   return {
     id: createId(),
     createdAt: new Date(),
@@ -67,7 +63,7 @@ function getDefaultAssistant(): Assistant {
   };
 }
 
-function getNewAssistantTemplate(): {
+export function getNewAssistantTemplate(): {
   assistant: Partial<Assistant>;
   mcpConfigText: string;
 } {
@@ -92,8 +88,14 @@ export const AssistantContextProvider = ({
   const [currentAssistant, setCurrentAssistant] = useState<Assistant | null>(
     null,
   );
+  const [error, setError] = useState<Error | null>(null);
+  // Helper to show user-friendly error messages
+  const showError = useCallback((message: string, errorObj?: unknown) => {
+    logger.error(message, { error: errorObj });
+    alert(message);
+  }, []);
   const currentAssistantRef = useRef(currentAssistant);
-  const [{ value: assistants, loading, error }, loadAssistants] =
+  const [{ value: assistants, loading, error: loadError }, loadAssistants] =
     useAsyncFn(async () => {
       let fetchedAssistants = await dbService.assistants.getPage(0, -1);
       logger.info("fetched assistants : ", { fetchedAssistants });
@@ -110,27 +112,13 @@ export const AssistantContextProvider = ({
     currentAssistantRef.current = currentAssistant;
   }, [currentAssistant]);
 
-  useEffect(() => {
-    if (!loading && assistants && !currentAssistant) {
-      if (assistants.length === 0) {
-        const a = getDefaultAssistant();
-        setCurrentAssistant(a);
-        saveAssistant(a);
-      } else {
-        logger.info("assistants : ", { assistants });
-        const a = assistants.find((a) => a.isDefault) || assistants[0];
-        setCurrentAssistant(a);
-      }
-    }
-  }, [loading, assistants]);
-
-  const [{}, saveAssistant] = useAsyncFn(
+  const [{ error: saveError }, upsertAssistant] = useAsyncFn(
     async (
       editingAssistant: Partial<Assistant>,
       mcpConfigText?: string,
     ): Promise<Assistant | undefined> => {
       if (!editingAssistant?.name) {
-        alert("이름은 필수입니다.");
+        showError("이름은 필수입니다.");
         return;
       }
       // Parse MCP config from text and validate JSON
@@ -146,8 +134,9 @@ export const AssistantContextProvider = ({
         } else {
           mcpConfig = {};
         }
-      } catch (error) {
-        alert("유효하지 않은 JSON 형식입니다. JSON을 확인해주세요.");
+      } catch (e) {
+        showError("유효하지 않은 JSON 형식입니다. JSON을 확인해주세요.", e);
+        setError(e instanceof Error ? e : new Error("Invalid JSON"));
         return undefined;
       }
 
@@ -186,16 +175,16 @@ export const AssistantContextProvider = ({
         }
         await loadAssistants();
         return assistantToSave;
-      } catch (error) {
-        logger.error("Error saving assistant:", { error });
-        alert("어시스턴트 저장 중 오류가 발생했습니다.");
+      } catch (err) {
+        showError("어시스턴트 저장 중 오류가 발생했습니다.", err);
+        setError(err instanceof Error ? err : new Error("Failed to save assistant"));
         return undefined;
       }
     },
-    [currentAssistant, loadAssistants],
+    [currentAssistant, loadAssistants, showError],
   );
 
-  const [{}, deleteAssistant] = useAsyncFn(
+  const [{ error: deleteError }, deleteAssistant] = useAsyncFn(
     async (assistantId: string) => {
       const assistant = assistants?.find((a) => a.id === assistantId);
       const assistantName = assistant?.name || "Unknown";
@@ -208,24 +197,48 @@ export const AssistantContextProvider = ({
           await dbService.assistants.delete(assistantId);
           await loadAssistants();
           // The useEffect hook will handle setting a new currentAssistant
-        } catch (error) {
-          logger.error("Error deleting assistant:", { error });
-          alert("어시스턴트 삭제 중 오류가 발생했습니다.");
+        } catch (err) {
+          showError("어시스턴트 삭제 중 오류가 발생했습니다.", err);
+          setError(err instanceof Error ? err : new Error("Failed to delete assistant"));
         } finally {
           await loadAssistants();
         }
       }
     },
-    [loadAssistants],
+    [loadAssistants, assistants, showError],
   );
+
+  useEffect(() => {
+    // Prioritize showing the most recent error
+    if (saveError) {
+      setError(saveError);
+    } else if (deleteError) {
+      setError(deleteError);
+    } else if (loadError) {
+      setError(loadError);
+    }
+  }, [saveError, deleteError, loadError]);
+
+
+  useEffect(() => {
+    if (!loading && assistants && !currentAssistant) {
+      if (assistants.length === 0) {
+        const a = getDefaultAssistant();
+        setCurrentAssistant(a);
+        upsertAssistant(a);
+      } else {
+        logger.info("assistants : ", { assistants });
+        const a = assistants.find((a) => a.isDefault) || assistants[0];
+        setCurrentAssistant(a);
+      }
+    }
+  }, [loading, assistants, upsertAssistant]);
 
   const getCurrentAssistant = useCallback(() => {
     return currentAssistantRef.current;
   }, []);
 
-  const getNewAssistantTemplateCallback = useCallback(() => {
-    return getNewAssistantTemplate();
-  }, []);
+  
 
   logger.info("assistant context : ", {
     assistants: assistants?.length,
@@ -238,9 +251,8 @@ export const AssistantContextProvider = ({
       currentAssistant,
       setCurrentAssistant,
       getCurrentAssistant,
-      saveAssistant,
-      deleteAssistant,
-      getNewAssistantTemplate: getNewAssistantTemplateCallback,
+      upsert: upsertAssistant,
+      delete: deleteAssistant,
       error: error ?? null,
     }),
     [
@@ -248,9 +260,8 @@ export const AssistantContextProvider = ({
       currentAssistant,
       setCurrentAssistant,
       getCurrentAssistant,
-      saveAssistant,
+      upsertAssistant,
       deleteAssistant,
-      getNewAssistantTemplateCallback,
       error,
     ],
   );

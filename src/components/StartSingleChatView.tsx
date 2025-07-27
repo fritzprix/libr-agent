@@ -2,8 +2,8 @@ import { useCallback } from "react";
 import { useAssistantContext } from "../context/AssistantContext";
 import { useSessionContext } from "../context/SessionContext";
 import { Assistant } from "../types/chat";
-import AssistantManager from "./AssistantManager";
 import { Button } from "./ui";
+import AssistantManager from "./assistant/AssistantEditorDialog";
 
 interface StartSingleChatViewProps {
   setShowAssistantManager: (show: boolean) => void;

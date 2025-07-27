@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSessionContext } from "../context/SessionContext";
 import { useSessionHistory } from "../context/SessionHistoryContext";
-import { StreamableMessage } from "../types/chat";
+import { Message } from "../types/chat";
 import { useAIService } from "./use-ai-service";
 import { createId } from "@paralleldrive/cuid2";
 import { getLogger } from "../lib/logger";
@@ -9,12 +9,12 @@ import { getLogger } from "../lib/logger";
 const logger = getLogger("useChatContext");
 
 interface ChatContextReturn {
-  submit: (messageToAdd?: StreamableMessage[]) => Promise<StreamableMessage>;
+  submit: (messageToAdd?: Message[]) => Promise<Message>;
   isLoading: boolean;
-  messages: StreamableMessage[];
+  messages: Message[];
 }
 
-const validateMessage = (message: StreamableMessage): boolean => {
+const validateMessage = (message: Message): boolean => {
   return !!(message.role && (message.content || message.tool_calls));
 };
 
@@ -22,9 +22,8 @@ export const useChatContext = (): ChatContextReturn => {
   const { messages: history, addMessage } = useSessionHistory();
   const { submit: triggerAIService, isLoading, response } = useAIService();
   const { current: currentSession } = useSessionContext();
-  const {} = useSessionContext();
   const [currentStreaming, setCurrentStreaming] =
-    useState<StreamableMessage | null>(null);
+    useState<Message | null>(null);
 
   const messages = useMemo(() => {
     if (currentStreaming) {
@@ -87,13 +86,13 @@ export const useChatContext = (): ChatContextReturn => {
   }, [history, currentStreaming]);
 
   const handleSubmit = useCallback(
-    async (messageToAdd?: StreamableMessage[]): Promise<StreamableMessage> => {
+    async (messageToAdd?: Message[]): Promise<Message> => {
       if (!currentSession) {
         throw new Error("No active session to submit messages to.");
       }
 
       try {
-        let messagesToSend: StreamableMessage[];
+        let messagesToSend: Message[];
 
         if (messageToAdd) {
           // Validate and persist new messages before processing
@@ -117,7 +116,7 @@ export const useChatContext = (): ChatContextReturn => {
         const aiResponse = await triggerAIService(messagesToSend);
 
         if (aiResponse) {
-          const responseWithSessionId: StreamableMessage = {
+          const responseWithSessionId: Message = {
             ...aiResponse,
             isStreaming: false,
             sessionId: currentSession.id,

@@ -33,7 +33,7 @@ export enum AIServiceProvider {
   Empty = "empty",
 }
 
-import { StreamableMessage } from "../types/chat";
+import { Message } from "../types/chat";
 
 export class AIServiceError extends Error {
   constructor(
@@ -50,7 +50,7 @@ export class AIServiceError extends Error {
 // --- Validation and Security ---
 
 class MessageValidator {
-  static validateMessage(message: StreamableMessage): void {
+  static validateMessage(message: Message): void {
     if (!message.id || typeof message.id !== "string") {
       throw new Error("Message must have a valid id");
     }
@@ -282,7 +282,7 @@ export function convertMCPToolsToProviderTools(
 
 export interface IAIService {
   streamChat(
-    messages: StreamableMessage[],
+    messages: Message[],
     options?: {
       modelName?: string;
       systemPrompt?: string;
@@ -319,7 +319,7 @@ abstract class BaseAIService implements IAIService {
     }
   }
 
-  protected validateMessages(messages: StreamableMessage[]): void {
+  protected validateMessages(messages: Message[]): void {
     if (!Array.isArray(messages) || messages.length === 0) {
       throw new AIServiceError(
         "Messages array cannot be empty",
@@ -373,7 +373,7 @@ abstract class BaseAIService implements IAIService {
   }
 
   abstract streamChat(
-    messages: StreamableMessage[],
+    messages: Message[],
     options?: {
       modelName?: string;
       systemPrompt?: string;
@@ -396,16 +396,10 @@ export class EmptyAIService extends BaseAIService {
   }
 
   async *streamChat(
-    _messages: StreamableMessage[],
-    _options?: {
-      modelName?: string;
-      systemPrompt?: string;
-      availableTools?: MCPTool[];
-      config?: AIServiceConfig;
-    },
   ): AsyncGenerator<string, void, unknown> {
+    yield "";
     throw new AIServiceError(
-      "EmptyAIService does not support streaming chat",
+      `EmptyAIService does not support streaming chat`,
       AIServiceProvider.Empty,
     );
     // Yield nothing, this is an empty service
@@ -434,7 +428,7 @@ export class GroqService extends BaseAIService {
   }
 
   async *streamChat(
-    messages: StreamableMessage[],
+    messages: Message[],
     options: {
       modelName?: string;
       systemPrompt?: string;
@@ -499,7 +493,7 @@ export class GroqService extends BaseAIService {
   }
 
   private convertToGroqMessages(
-    messages: StreamableMessage[],
+    messages: Message[],
     systemPrompt?: string,
   ): Groq.Chat.Completions.ChatCompletionMessageParam[] {
     const groqMessages: Groq.Chat.Completions.ChatCompletionMessageParam[] = [];
@@ -564,7 +558,7 @@ export class OpenAIService extends BaseAIService {
   }
 
   async *streamChat(
-    messages: StreamableMessage[],
+    messages: Message[],
     options: {
       modelName?: string;
       systemPrompt?: string;
@@ -631,7 +625,7 @@ export class OpenAIService extends BaseAIService {
   }
 
   private convertToOpenAIMessages(
-    messages: StreamableMessage[],
+    messages: Message[],
     systemPrompt?: string,
   ): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
     const openaiMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] =
@@ -689,7 +683,7 @@ export class AnthropicService extends BaseAIService {
   }
 
   async *streamChat(
-    messages: StreamableMessage[],
+    messages: Message[],
     options: {
       modelName?: string;
       systemPrompt?: string;
@@ -758,7 +752,7 @@ export class AnthropicService extends BaseAIService {
   }
 
   private convertToAnthropicMessages(
-    messages: StreamableMessage[],
+    messages: Message[],
   ): AnthropicMessageParam[] {
     const anthropicMessages: AnthropicMessageParam[] = [];
 
@@ -836,7 +830,7 @@ export class GeminiService extends BaseAIService {
   }
 
   async *streamChat(
-    messages: StreamableMessage[],
+    messages: Message[],
     options: {
       modelName?: string;
       systemPrompt?: string;
@@ -939,7 +933,7 @@ export class GeminiService extends BaseAIService {
     }
   }
 
-  private convertToGeminiMessages(messages: StreamableMessage[]): Content[] {
+  private convertToGeminiMessages(messages: Message[]): Content[] {
     const geminiMessages: Content[] = [];
 
     for (const m of messages) {

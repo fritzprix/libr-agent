@@ -6,7 +6,7 @@ import {
   Settings,
   Users
 } from "lucide-react";
-import { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useSessionContext } from "../context/SessionContext";
 import SessionList from "./SessionList";
@@ -71,10 +71,10 @@ export default function AppSidebar({
       } as React.CSSProperties}
     >
       <SidebarHeader className="border-b">
-        <div className="flex flex-row items-center justify-center gap-2 py-3">
-          <BrainCircuit size={16} className="flex-shrink-0" />
+        <div className="flex flex-row items-center justify-center gap-2 p-4">
+          <BrainCircuit size={32} className="flex-shrink-0" />
           <span
-            className={`font-medium text-sm whitespace-nowrap transition-all duration-300 ease-in-out ${isCollapsed
+            className={`font-medium text-2xl whitespace-nowrap transition-all duration-300 ease-in-out ${isCollapsed
                 ? 'opacity-0 w-0 overflow-hidden'
                 : 'opacity-100 w-auto'
               }`}

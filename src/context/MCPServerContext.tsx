@@ -65,7 +65,7 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
 
         const connectedServers = await tauriMCPClient.getConnectedServers();
         for (const serverName of connectedServers) {
-          if (serverStatus.hasOwnProperty(serverName)) {
+          if (Object.prototype.hasOwnProperty.call(serverStatus, serverName)) {
             serverStatus[serverName] = true;
           }
         }

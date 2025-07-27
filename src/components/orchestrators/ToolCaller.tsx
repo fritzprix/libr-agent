@@ -1,8 +1,8 @@
 import { createId } from "@paralleldrive/cuid2";
-import { useEffect } from "react";
+import React, { useEffect } from "react";
 import { useLocalTools } from "../../context/LocalToolContext";
 import { useMCPServer } from "../../hooks/use-mcp-server";
-import { StreamableMessage } from "../../types/chat";
+import { Message } from "../../types/chat";
 // import { useChatContext } from "../../context/ChatContext";
 import { useSessionContext } from "../../context/SessionContext";
 import { useChatContext } from "../../hooks/use-chat";
@@ -24,7 +24,7 @@ export const ToolCaller: React.FC = () => {
       !lastMessage.isStreaming
     ) {
       const execute = async () => {
-        const toolResults: StreamableMessage[] = [];
+        const toolResults: Message[] = [];
         for (const toolCall of lastMessage.tool_calls!) {
           const toolName = toolCall.function.name;
           const callFunction = isLocalTool(toolName)

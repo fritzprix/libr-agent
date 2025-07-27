@@ -9,7 +9,7 @@ import {
 import useSWRInfinite from "swr/infinite";
 import { dbService, dbUtils, Page } from "../lib/db";
 import { getLogger } from "../lib/logger";
-import { StreamableMessage } from "../types/chat";
+import { Message } from "../types/chat";
 import { useSessionContext } from "./SessionContext";
 
 const logger = getLogger("SessionHistoryContext");
@@ -20,18 +20,18 @@ const PAGE_SIZE = 50;
  * 여러 메시지를 한 번에 추가하는 addHistoryMessages 함수가 추가되었습니다.
  */
 interface SessionHistoryContextType {
-  messages: StreamableMessage[];
+  messages: Message[];
   isLoading: boolean;
   error: Error | null;
   loadMore: () => void;
   hasMore: boolean;
-  addMessage: (message: StreamableMessage) => Promise<StreamableMessage>;
+  addMessage: (message: Message) => Promise<Message>;
   addHistoryMessages: (
-    messages: StreamableMessage[],
-  ) => Promise<StreamableMessage[]>;
+    messages: Message[],
+  ) => Promise<Message[]>;
   updateMessage: (
     messageId: string,
-    updates: Partial<StreamableMessage>,
+    updates: Partial<Message>,
   ) => Promise<void>;
   deleteMessage: (messageId: string) => Promise<void>;
   clearHistory: () => Promise<void>;
@@ -62,14 +62,14 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
   const { current: currentSession } = useSessionContext();
 
   const { data, error, isLoading, setSize, mutate } = useSWRInfinite<
-    Page<StreamableMessage>
+    Page<Message>
   >(
     (pageIndex, previousPageData) => {
       if (!currentSession?.id) return null;
       if (previousPageData && !previousPageData.hasNextPage) return null;
       return [currentSession.id, "messages", pageIndex + 1];
     },
-    async ([sessionId, _, page]: [string, string, number]) => {
+    async ([sessionId, , page]: [string, string, number]) => {
       return dbUtils.getMessagesPageForSession(sessionId, page, PAGE_SIZE);
     },
     {
@@ -97,12 +97,12 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
     logger.info("current session : ", { currentSession });
   }, [currentSession]);
 
-  const validateMessage = useCallback((message: StreamableMessage): boolean => {
+  const validateMessage = useCallback((message: Message): boolean => {
     return !!(message.role && (message.content || message.tool_calls));
   }, []);
 
   const addMessage = useCallback(
-    async (message: StreamableMessage): Promise<StreamableMessage> => {
+    async (message: Message): Promise<Message> => {
       if (!currentSession) throw new Error("No active session.");
       if (!validateMessage(message))
         throw new Error("Invalid message structure.");
@@ -120,7 +120,7 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
       await mutate(
         (currentData) => {
           if (!currentData || currentData.length === 0) {
-            const newPage: Page<StreamableMessage> = {
+            const newPage: Page<Message> = {
               items: [messageWithSessionId],
               page: 1,
               pageSize: PAGE_SIZE,
@@ -166,8 +166,8 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
    */
   const addHistoryMessages = useCallback(
     async (
-      messagesToAdd: StreamableMessage[],
-    ): Promise<StreamableMessage[]> => {
+      messagesToAdd: Message[],
+    ): Promise<Message[]> => {
       if (!currentSession) throw new Error("No active session.");
       messagesToAdd.forEach(validateMessage);
 
@@ -182,7 +182,7 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
       await mutate(
         (currentData) => {
           if (!currentData || currentData.length === 0) {
-            const newPage: Page<StreamableMessage> = {
+            const newPage: Page<Message> = {
               items: messagesWithSessionId,
               page: 1,
               pageSize: PAGE_SIZE,
@@ -215,7 +215,7 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
   );
 
   const updateMessage = useCallback(
-    async (messageId: string, updates: Partial<StreamableMessage>) => {
+    async (messageId: string, updates: Partial<Message>) => {
       if (!currentSession) throw new Error("No active session.");
 
       // 낙관적 업데이트 전 현재 데이터 백업
