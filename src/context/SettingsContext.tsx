@@ -49,10 +49,11 @@ interface SettingModalViewContextType {
   toggleOpen: () => void;
 }
 
-export const SettingModalViewContext = createContext<SettingModalViewContextType>({
-  isOpen: false,
-  toggleOpen: () => { }
-})
+export const SettingModalViewContext =
+  createContext<SettingModalViewContextType>({
+    isOpen: false,
+    toggleOpen: () => {},
+  });
 
 export const SettingsContext = createContext<SettingsContextType | undefined>(
   undefined,
@@ -72,8 +73,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         ...DEFAULT_SETTING,
         ...(apiKeysObject
           ? {
-            apiKeys: apiKeysObject.value as Record<AIServiceProvider, string>,
-          }
+              apiKeys: apiKeysObject.value as Record<AIServiceProvider, string>,
+            }
           : {}),
         ...(preferredModelObject
           ? { preferredModel: preferredModelObject.value as ModelChoice }
@@ -134,15 +135,18 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const modalViewContextValue: SettingModalViewContextType = useMemo(() => {
     return {
       isOpen: openSettingModal,
-      toggleOpen: () => setOpenSettingModal(prev => !prev)
-    }
+      toggleOpen: () => setOpenSettingModal((prev) => !prev),
+    };
   }, []);
 
   return (
     <SettingModalViewContext.Provider value={modalViewContextValue}>
       <SettingsContext.Provider value={contextValue}>
         {children}
-        <SettingsModal isOpen={openSettingModal} onClose={() => setOpenSettingModal(prev => !prev)} />
+        <SettingsModal
+          isOpen={openSettingModal}
+          onClose={() => setOpenSettingModal((prev) => !prev)}
+        />
       </SettingsContext.Provider>
     </SettingModalViewContext.Provider>
   );

@@ -106,7 +106,6 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
 
   const [isAgenticMode, setIsAgenticMode] = useState(false);
 
-
   const currentRef = useRef(current);
   const sessionsRef = useRef<Session[]>([]);
 
@@ -140,7 +139,10 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
     sessionsRef.current = sessions.flatMap((page) => page.items);
   }, [sessions]);
 
-  const handleToggleAgenticMode = useCallback(() => setIsAgenticMode(prev => !prev), [])
+  const handleToggleAgenticMode = useCallback(
+    () => setIsAgenticMode((prev) => !prev),
+    [],
+  );
 
   /**
    * Clears any current error state.

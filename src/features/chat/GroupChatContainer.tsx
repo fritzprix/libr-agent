@@ -1,21 +1,13 @@
-
-import { Switch } from '@/components/ui/switch';
 import { useSessionContext } from '@/context/SessionContext';
-import Chat from './Chat';
-import StartGroupChatView from './StartGroupChatView';
-import { MultiAgentOrchestrator } from './orchestrators/MultiAgentOrchestrator';
 import { ChatRouter } from '.';
-
+import StartGroupChatView from './StartGroupChatView';
 
 export default function GroupChatContainer() {
-  const { current: currentSession, isAgenticMode, toggleAgenticMode } = useSessionContext();
+  const { current: currentSession } = useSessionContext();
 
   if (!currentSession) {
-    return (
-      <StartGroupChatView />
-    );
+    return <StartGroupChatView />;
   }
 
-    return <ChatRouter/>;
-  
+  return <ChatRouter />;
 }

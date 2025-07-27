@@ -3,8 +3,9 @@ import { Route, Routes } from 'react-router-dom';
 import AppSidebar from '../components/layout/AppSidebar';
 import AssistantDetailList from '../features/assistant/AssistantDetailList';
 import AssistantGroupDetailList from '../features/assistant/AssistantGroupDetailList';
-import StartGroupChatView from '../features/chat/StartGroupChatView';
 
+import GroupChatContainer from '@/features/chat/GroupChatContainer';
+import SingleChatContainer from '@/features/chat/SingleChatContainer';
 import { ThemeToggle } from '../components/common/ThemeToggle';
 import { AppHeader } from '../components/layout/AppHeader';
 import { SidebarProvider } from '../components/ui/sidebar';
@@ -19,10 +20,8 @@ import { SettingsProvider } from '../context/SettingsContext';
 import History from '../features/history/History';
 import SettingsModal from '../features/settings/SettingsModal';
 import { WeatherTool } from '../features/tools/WeatherTool';
-import "../styles/globals.css";
-import "./App.css";
-import SingleChatContainer from '@/features/chat/SingleChatContainer';
-import GroupChatContainer from '@/features/chat/GroupChatContainer';
+import '../styles/globals.css';
+import './App.css';
 
 function App() {
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
@@ -52,7 +51,10 @@ function App() {
                             </AppHeader>
                             <div className="flex-1 overflow-auto w-full">
                               <Routes>
-                                <Route path="/" element={<SingleChatContainer />} />
+                                <Route
+                                  path="/"
+                                  element={<SingleChatContainer />}
+                                />
                                 <Route
                                   path="/chat/single"
                                   element={<SingleChatContainer />}

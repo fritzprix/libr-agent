@@ -5,7 +5,6 @@ import { Assistant } from '@/models/chat';
 import { useCallback } from 'react';
 import { Link } from 'react-router';
 
-
 export default function StartSingleChatView() {
   const { assistants, setCurrentAssistant } = useAssistantContext();
   const { start } = useSessionContext();
@@ -37,10 +36,8 @@ export default function StartSingleChatView() {
           </div>
         ))}
       </div>
-      <Link to={"/assistants"}>
-        <Button>
-          Manage Assistants
-        </Button>
+      <Link to={'/assistants'}>
+        <Button>Manage Assistants</Button>
       </Link>
     </div>
   );

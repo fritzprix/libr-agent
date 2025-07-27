@@ -1,6 +1,12 @@
 'use client';
 
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui';
 import { Assistant } from '@/models/chat';
 import { useState } from 'react';
 import {
@@ -66,8 +72,8 @@ export default function AssistantEditorView() {
       <Dialog open={!!editingAssistant} onOpenChange={handleCancel}>
         <DialogContent className="max-w-2xl h-fit p-0 flex flex-col">
           <DialogHeader>
-            <DialogTitle className='p-2'>
-                {isCreating ? '새 어시스턴트 만들기' : '어시스턴트 편집'}
+            <DialogTitle className="p-2">
+              {isCreating ? '새 어시스턴트 만들기' : '어시스턴트 편집'}
             </DialogTitle>
             <DialogDescription>
               {(editingAssistant || isCreating) && (
@@ -84,7 +90,6 @@ export default function AssistantEditorView() {
               )}
             </DialogDescription>
           </DialogHeader>
-
         </DialogContent>
       </Dialog>
 

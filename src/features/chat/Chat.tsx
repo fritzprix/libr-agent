@@ -1,5 +1,12 @@
 import { createId } from '@paralleldrive/cuid2';
-import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import MessageBubble from './MessageBubble';
 import { ToolCaller } from './orchestrators/ToolCaller';
 import { getLogger } from '@/lib/logger';
@@ -8,28 +15,38 @@ import { useLocalTools } from '@/context/LocalToolContext';
 import { useAssistantContext } from '@/context/AssistantContext';
 import { useSessionContext } from '@/context/SessionContext';
 import { useChatContext } from '@/hooks/use-chat';
-import { Message } from '@/models/chat';
+import { Assistant, Message, Session, Tool } from '@/models/chat';
 import TerminalHeader from '@/components/TerminalHeader';
-import { Button, CompactModelPicker, FileAttachment, Input } from '@/components/ui';
+import {
+  Button,
+  CompactModelPicker,
+  FileAttachment,
+  Input,
+} from '@/components/ui';
 import ToolsModal from '../tools/ToolsModal';
 
 const logger = getLogger('Chat');
 
 // Internal context for sharing state between Chat subcomponents
+
 interface ChatContextType {
   input: string;
   setInput: React.Dispatch<React.SetStateAction<string>>;
   attachedFiles: { name: string; content: string }[];
-  setAttachedFiles: React.Dispatch<React.SetStateAction<{ name: string; content: string }[]>>;
+  setAttachedFiles: React.Dispatch<
+    React.SetStateAction<{ name: string; content: string }[]>
+  >;
   showToolsDetail: boolean;
   setShowToolsDetail: React.Dispatch<React.SetStateAction<boolean>>;
-  availableTools: any[];
+  availableTools: Tool[];
   isLoading: boolean;
   messages: Message[];
-  currentSession: any;
-  currentAssistant: any;
+  currentSession: Session | null;
+  currentAssistant: Assistant | null;
   handleSubmit: (e: React.FormEvent<HTMLFormElement>) => Promise<void>;
-  handleFileAttachment: (e: React.ChangeEvent<HTMLInputElement>) => Promise<void>;
+  handleFileAttachment: (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => Promise<void>;
   removeAttachedFile: (index: number) => void;
   handleAgentInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   messagesEndRef: React.RefObject<HTMLDivElement>;
@@ -53,24 +70,33 @@ interface ChatProps {
 function Chat({ children }: ChatProps) {
   const { currentAssistant } = useAssistantContext();
   const [showToolsDetail, setShowToolsDetail] = useState(false);
-  const [attachedFiles, setAttachedFiles] = useState<{ name: string; content: string }[]>([]);
+  const [attachedFiles, setAttachedFiles] = useState<
+    { name: string; content: string }[]
+  >([]);
   const { availableTools: mcpTools } = useMCPServer();
   const { availableTools: localTools } = useLocalTools();
-  const availableTools = useMemo(() => [...mcpTools, ...localTools], [mcpTools, localTools]);
+  const availableTools = useMemo(
+    () => [...mcpTools, ...localTools],
+    [mcpTools, localTools],
+  );
   const [input, setInput] = useState('');
   const { current: currentSession } = useSessionContext();
   const { submit, isLoading, messages } = useChatContext();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   if (!currentSession) {
-    throw new Error('Chat component should only be rendered when currentSession exists');
+    throw new Error(
+      'Chat component should only be rendered when currentSession exists',
+    );
   }
 
   const handleAgentInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setInput(e.target.value);
   };
 
-  const handleFileAttachment = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileAttachment = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
     const files = e.target.files;
     if (!files) return;
 
@@ -80,7 +106,9 @@ function Chat({ children }: ChatProps) {
       const file = files[i];
       if (
         !file.type.startsWith('text/') &&
-        !file.name.match(/\.(txt|md|json|js|ts|tsx|jsx|py|java|cpp|c|h|css|html|xml|yaml|yml|csv)$/i)
+        !file.name.match(
+          /\.(txt|md|json|js|ts|tsx|jsx|py|java|cpp|c|h|css|html|xml|yaml|yml|csv)$/i,
+        )
       ) {
         alert(`File "${file.name}" is not a supported text file format.`);
         continue;
@@ -174,16 +202,13 @@ function Chat({ children }: ChatProps) {
 
 // Chat Header component
 function ChatHeader({ children }: { children?: React.ReactNode }) {
-  return (
-    <TerminalHeader>
-      {children}
-    </TerminalHeader>
-  );
+  return <TerminalHeader>{children}</TerminalHeader>;
 }
 
 // Chat Messages component
 function ChatMessages() {
-  const { messages, isLoading, currentSession, messagesEndRef } = useChatInternalContext();
+  const { messages, isLoading, currentSession, messagesEndRef } =
+    useChatInternalContext();
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -253,9 +278,7 @@ function ChatAttachedFiles() {
             key={index}
             className="flex items-center px-2 py-1 rounded border border-gray-700"
           >
-            <span className="text-xs truncate max-w-[150px]">
-              {file.name}
-            </span>
+            <span className="text-xs truncate max-w-[150px]">{file.name}</span>
             <button
               type="button"
               onClick={() => removeAttachedFile(index)}
@@ -323,11 +346,7 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
 
 // Chat Bottom section (combines status bar, attached files, and input)
 function ChatBottom({ children }: { children?: React.ReactNode }) {
-  return (
-    <div className="flex-shrink-0">
-      {children}
-    </div>
-  );
+  return <div className="flex-shrink-0">{children}</div>;
 }
 
 // Attach subcomponents as static properties

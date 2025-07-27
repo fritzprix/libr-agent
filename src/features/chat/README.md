@@ -55,48 +55,62 @@ function MinimalChat() {
 ## Components
 
 ### `<Chat>`
+
 The main container component that provides context and shared state to all child components.
 
 **Props:**
+
 - `children?: React.ReactNode` - Child components to render
 
 **Required Context:**
+
 - Must be wrapped with required context providers (`useAssistantContext`, `useSessionContext`, `useChatContext`)
 
 ### `<Chat.Header>`
+
 Renders the terminal-style header section.
 
 **Props:**
+
 - `children?: React.ReactNode` - Additional content to display in header
 
 **Example:**
+
 ```jsx
 <Chat.Header>
-  <Button variant="ghost" size="sm">Settings</Button>
+  <Button variant="ghost" size="sm">
+    Settings
+  </Button>
 </Chat.Header>
 ```
 
 ### `<Chat.Messages>`
+
 Displays the message history and handles auto-scrolling to new messages.
 
 **Features:**
+
 - Auto-scroll to newest messages
 - Loading indicator when AI is thinking
 - Message bubbles with role identification
 - Overflow scrolling with custom scrollbar
 
 ### `<Chat.StatusBar>`
+
 Shows the model picker and available tools count.
 
 **Props:**
+
 - `children?: React.ReactNode` - Additional status information
 
 **Features:**
+
 - Model selection dropdown
 - Tools count with modal trigger
 - Extensible with custom status items
 
 **Example:**
+
 ```jsx
 <Chat.StatusBar>
   <span className="text-xs ml-2 text-green-500">Connected</span>
@@ -104,38 +118,50 @@ Shows the model picker and available tools count.
 ```
 
 ### `<Chat.AttachedFiles>`
+
 Displays attached files with remove functionality. Only shows when files are attached.
 
 **Features:**
+
 - File name display with truncation
 - Remove file buttons
 - Responsive layout
 - Auto-hide when empty
 
 ### `<Chat.Input>`
+
 The main input form with file attachment support and submit button.
 
 **Props:**
+
 - `children?: React.ReactNode` - Additional input controls (buttons, etc.)
 
 **Features:**
+
 - Text input with placeholder states
 - File attachment button
 - Submit button with enter key support
 - Disabled state during loading
 
 **Example:**
+
 ```jsx
 <Chat.Input>
-  <Button variant="ghost" size="sm" title="Voice input">🎤</Button>
-  <Button variant="ghost" size="sm" title="Quick actions">⚡</Button>
+  <Button variant="ghost" size="sm" title="Voice input">
+    🎤
+  </Button>
+  <Button variant="ghost" size="sm" title="Quick actions">
+    ⚡
+  </Button>
 </Chat.Input>
 ```
 
 ### `<Chat.Bottom>`
+
 Container for bottom UI elements (status bar, files, input).
 
 **Props:**
+
 - `children?: React.ReactNode` - Bottom section components
 
 ## Advanced Examples
@@ -148,9 +174,15 @@ function AdvancedChat() {
     <Chat>
       <Chat.Header>
         <div className="flex gap-2">
-          <Button variant="ghost" size="sm">Clear History</Button>
-          <Button variant="ghost" size="sm">Export Chat</Button>
-          <Button variant="ghost" size="sm">Settings</Button>
+          <Button variant="ghost" size="sm">
+            Clear History
+          </Button>
+          <Button variant="ghost" size="sm">
+            Export Chat
+          </Button>
+          <Button variant="ghost" size="sm">
+            Settings
+          </Button>
         </div>
       </Chat.Header>
 
@@ -158,17 +190,21 @@ function AdvancedChat() {
 
       <Chat.Bottom>
         <Chat.AttachedFiles />
-        
+
         <Chat.StatusBar>
           <div className="flex items-center gap-2 ml-2">
             <span className="text-xs text-green-500">●</span>
             <span className="text-xs">Connected</span>
           </div>
         </Chat.StatusBar>
-        
+
         <Chat.Input>
-          <Button variant="ghost" size="sm" title="Templates">📋</Button>
-          <Button variant="ghost" size="sm" title="Voice">🎤</Button>
+          <Button variant="ghost" size="sm" title="Templates">
+            📋
+          </Button>
+          <Button variant="ghost" size="sm" title="Voice">
+            🎤
+          </Button>
         </Chat.Input>
       </Chat.Bottom>
     </Chat>
@@ -184,9 +220,9 @@ function ReorderedChat() {
     <Chat>
       {/* Status at top */}
       <Chat.StatusBar />
-      
+
       <Chat.Messages />
-      
+
       {/* Files above input */}
       <Chat.AttachedFiles />
       <Chat.Input />
@@ -218,6 +254,7 @@ function ConditionalChat({ showHeader = true, showStatus = true }) {
 ### From Monolithic Component
 
 **Before:**
+
 ```jsx
 import Chat from './Chat';
 
@@ -227,6 +264,7 @@ function App() {
 ```
 
 **After:**
+
 ```jsx
 import Chat from './Chat';
 
@@ -254,17 +292,20 @@ function App() {
 ## File Attachment Support
 
 ### Supported File Types
+
 - Text files (`.txt`, `.md`, `.json`)
 - Code files (`.js`, `.ts`, `.tsx`, `.jsx`, `.py`, `.java`, `.cpp`, `.c`, `.h`)
 - Web files (`.css`, `.html`, `.xml`)
 - Data files (`.yaml`, `.yml`, `.csv`)
 
 ### File Size Limits
+
 - Maximum file size: 1MB per file
 - Multiple files can be attached
 - Files are automatically validated
 
 ### File Handling
+
 ```jsx
 // Files are automatically processed and included in message content
 // Format: [File: filename.ext]\n{content}\n
@@ -320,6 +361,7 @@ The component uses Tailwind CSS with a terminal/console theme:
 ## Best Practices
 
 ### 1. Always Use the Container
+
 ```jsx
 // ✅ Good
 <Chat>
@@ -332,6 +374,7 @@ The component uses Tailwind CSS with a terminal/console theme:
 ```
 
 ### 2. Compose for Your Use Case
+
 ```jsx
 // ✅ Good - only include what you need
 <Chat>
@@ -352,6 +395,7 @@ The component uses Tailwind CSS with a terminal/console theme:
 ```
 
 ### 3. Extend with Children
+
 ```jsx
 // ✅ Good - extend functionality
 <Chat.Input>
@@ -361,6 +405,7 @@ The component uses Tailwind CSS with a terminal/console theme:
 ```
 
 ### 4. Use Chat.Bottom for Layout
+
 ```jsx
 // ✅ Good - logical grouping
 <Chat.Bottom>

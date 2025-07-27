@@ -34,12 +34,8 @@ export default function StartGroupChatView() {
           </div>
         ))}
       </div>
-      <Link
-        to={"/assistants/groups"}
-      >
-        <Button>
-          Manage Assistant Groups
-        </Button>
+      <Link to={'/assistants/groups'}>
+        <Button>Manage Assistant Groups</Button>
       </Link>
     </div>
   );
