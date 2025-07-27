@@ -25,7 +25,6 @@ SynapticFlow is a high-freedom AI agent tool that helps users define and manage 
 ### 🚧 In Progress
 
 - **🔄 AI Integration**: Connect with AI models like OpenAI/Claude.
-- **📎 Advanced Features**: File attachments, conversation history, complex tool calls.
 
 ## 🛠 Technology Stack
 
@@ -42,20 +41,75 @@ SynapticFlow is a high-freedom AI agent tool that helps users define and manage 
 ```bash
 synaptic-flow/
 ├── src/                        # React Frontend
-│   ├── components/             # React Components
-│   │   ├── Chat.tsx           # Main chat interface
-│   │   └── RoleManager.tsx    # Role management UI
-│   │   └── SettingsModal.tsx  # Settings management UI
-│   ├── context/                # Global settings Context
-│   │   └── SettingsContext.tsx # Settings Context definition
-│   ├── hooks/                  # Custom React Hooks
-│   │   └── use-settings.ts     # Hook using Settings Context
-│   ├── lib/                   # Utility libraries
-│   │   ├── db.ts              # IndexedDB management
-│   │   └── tauri-mcp-client.ts # Tauri MCP client
-│   ├── App.tsx                # Root React component
-│   ├── main.tsx               # React entry point
-│   └── globals.css            # Tailwind CSS styles
+│   ├── app/                    # App entry, root layout, global providers
+│   │   ├── App.tsx
+│   │   ├── main.tsx
+│   │   ├── App.css
+│   │   └── globals.css
+│   ├── assets/                 # Static assets (images, svgs, etc.)
+│   │   └── react.svg
+│   ├── components/             # Shared, generic UI components (reusable)
+│   │   ├── ui/
+│   │   │   └── ...shadcn/ui components...
+│   │   ├── layout/
+│   │   │   ├── AppHeader.tsx
+│   │   │   └── AppSidebar.tsx
+│   │   │   └── ...
+│   │   └── common/
+│   │       └── ThemeToggle.tsx
+│   │       └── ...
+│   ├── features/               # Feature-specific components, logic, and hooks
+│   │   ├── chat/
+│   │   │   ├── Chat.tsx
+│   │   │   ├── ChatContainer.tsx
+│   │   │   ├── MessageBubble.tsx
+│   │   │   ├── useChat.ts
+│   │   │   └── ...
+│   │   ├── group/
+│   │   │   ├── Group.tsx
+│   │   │   ├── GroupCreationModal.tsx
+│   │   │   └── ...
+│   │   ├── history/
+│   │   │   ├── History.tsx
+│   │   │   └── ...
+│   │   ├── assistant/
+│   │   │   ├── AssistantDetailList.tsx
+│   │   │   ├── AssistantEditor.tsx
+│   │   │   └── ...
+│   │   ├── session/
+│   │   │   ├── SessionList.tsx
+│   │   │   ├── SessionItem.tsx
+│   │   │   └── ...
+│   │   ├── settings/
+│   │   │   ├── SettingsModal.tsx
+│   │   │   └── ...
+│   │   └── tools/
+│   │       ├── ToolsModal.tsx
+│   │       ├── WeatherTool.tsx
+│   │       └── ...
+│   ├── config/                 # Static config files
+│   │   └── llm-config.json
+│   ├── context/                # React context providers
+│   │   └── AssistantContext.tsx
+│   │   └── ...
+│   ├── hooks/                  # Generic, reusable hooks
+│   │   ├── useAiService.ts
+│   │   ├── useMcpServer.ts
+│   │   └── ...
+│   ├── lib/                    # Service layer, business logic, data, API
+│   │   ├── aiService.ts
+│   │   ├── db.ts
+│   │   ├── llmConfigManager.ts
+│   │   ├── logger.ts
+│   │   ├── tauriMcpClient.ts
+│   │   └── utils.ts
+│   ├── models/                 # TypeScript types and interfaces
+│   │   ├── chat.ts
+│   │   └── llmConfig.ts
+│   ├── styles/                 # Global or shared CSS
+│   │   └── tailwind.css
+│   ├── README.md
+│   └── vite-env.d.ts
 ├── src-tauri/                 # Rust Backend
 │   ├── src/
 │   │   ├── lib.rs             # Tauri commands definition
@@ -153,7 +207,7 @@ pnpm tauri build
 ## 🧪 Current Status
 
 - ✅ **Basic Tauri App Structure**: Completed
-- ✅ **React Component Migration**: Completed
+- ✅ **React Component Migration**: Completed and Verified
 - ✅ **Rust MCP Server Management**: Implemented.
 - ✅ **Centralized Configuration Management**: API keys and other settings are managed and permanently stored within the app.
 
