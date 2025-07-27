@@ -4,12 +4,14 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useState,
 } from 'react';
 import { useAsyncFn } from 'react-use';
 import { AIServiceProvider } from '../lib/ai-service';
 import { dbService } from '../lib/db';
 import { llmConfigManager } from '../lib/llm-config-manager';
 import { getLogger } from '../lib/logger';
+import SettingsModal from '@/features/settings/SettingsModal';
 
 const logger = getLogger('SettingsContext');
 
@@ -42,11 +44,23 @@ interface SettingsContextType {
   error: Error | null;
 }
 
+interface SettingModalViewContextType {
+  isOpen: boolean;
+  toggleOpen: () => void;
+}
+
+export const SettingModalViewContext =
+  createContext<SettingModalViewContextType>({
+    isOpen: false,
+    toggleOpen: () => {},
+  });
+
 export const SettingsContext = createContext<SettingsContextType | undefined>(
   undefined,
 );
 
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
+  const [openSettingModal, setOpenSettingModal] = useState(false);
   const [{ value, loading, error }, load] = useAsyncFn(async () => {
     try {
       const [apiKeysObject, preferredModelObject, windowSizeObject] =
@@ -118,10 +132,23 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     };
   }, [value, loading, update, error]);
 
+  const modalViewContextValue: SettingModalViewContextType = useMemo(() => {
+    return {
+      isOpen: openSettingModal,
+      toggleOpen: () => setOpenSettingModal((prev) => !prev),
+    };
+  }, []);
+
   return (
-    <SettingsContext.Provider value={contextValue}>
-      {children}
-    </SettingsContext.Provider>
+    <SettingModalViewContext.Provider value={modalViewContextValue}>
+      <SettingsContext.Provider value={contextValue}>
+        {children}
+        <SettingsModal
+          isOpen={openSettingModal}
+          onClose={() => setOpenSettingModal((prev) => !prev)}
+        />
+      </SettingsContext.Provider>
+    </SettingModalViewContext.Provider>
   );
 }
 

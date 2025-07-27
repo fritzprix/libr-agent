@@ -1,15 +1,21 @@
 'use client';
 
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui';
+import { Assistant } from '@/models/chat';
 import { useState } from 'react';
-import AssistantEditor from './AssistantEditor';
-import EmptyState from './EmptyState';
 import {
   getNewAssistantTemplate,
   useAssistantContext,
 } from '../../context/AssistantContext';
+import AssistantEditor from './AssistantEditor';
+import EmptyState from './EmptyState';
 import AssistantList from './List';
-import { Dialog, DialogContent } from '@/components/ui';
-import { Assistant } from '@/models/chat';
 
 export default function AssistantEditorView() {
   const { upsert } = useAssistantContext();
@@ -64,19 +70,26 @@ export default function AssistantEditorView() {
       />
 
       <Dialog open={!!editingAssistant} onOpenChange={handleCancel}>
-        <DialogContent className="max-w-2xl h-[90vh] p-0 flex flex-col">
-          {(editingAssistant || isCreating) && (
-            <AssistantEditor
-              editingAssistant={editingAssistant}
-              isCreating={isCreating}
-              mcpConfigText={mcpConfigText}
-              onSave={handleSaveAssistant}
-              onCancel={handleCancel}
-              onAssistantChange={setEditingAssistant}
-              onMcpConfigChange={setMcpConfigText}
-              onFormatJson={handleFormatJson}
-            />
-          )}
+        <DialogContent className="max-w-2xl h-fit p-0 flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="p-2">
+              {isCreating ? '새 어시스턴트 만들기' : '어시스턴트 편집'}
+            </DialogTitle>
+            <DialogDescription>
+              {(editingAssistant || isCreating) && (
+                <AssistantEditor
+                  editingAssistant={editingAssistant}
+                  isCreating={isCreating}
+                  mcpConfigText={mcpConfigText}
+                  onSave={handleSaveAssistant}
+                  onCancel={handleCancel}
+                  onAssistantChange={setEditingAssistant}
+                  onMcpConfigChange={setMcpConfigText}
+                  onFormatJson={handleFormatJson}
+                />
+              )}
+            </DialogDescription>
+          </DialogHeader>
         </DialogContent>
       </Dialog>
 

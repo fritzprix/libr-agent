@@ -1,19 +1,11 @@
-import { useCallback } from 'react';
-import AssistantGroupDetailList from '../assistant/AssistantGroupDetailList';
+import { Button } from '@/components/ui';
 import { useAssistantGroupContext } from '@/context/AssistantGroupContext';
 import { useSessionContext } from '@/context/SessionContext';
 import { Group } from '@/models/chat';
-import { Button } from '@/components/ui';
+import { useCallback } from 'react';
+import { Link } from 'react-router';
 
-interface StartGroupChatViewProps {
-  setShowAssistantGroupManager: (show: boolean) => void;
-  showAssistantGroupManager: boolean;
-}
-
-export default function StartGroupChatView({
-  setShowAssistantGroupManager,
-  showAssistantGroupManager,
-}: StartGroupChatViewProps) {
+export default function StartGroupChatView() {
   const { groups, setCurrentGroup } = useAssistantGroupContext();
   const { start } = useSessionContext();
 
@@ -42,13 +34,9 @@ export default function StartGroupChatView({
           </div>
         ))}
       </div>
-      <Button
-        onClick={() => setShowAssistantGroupManager(true)}
-        className="mt-8"
-      >
-        Manage Assistant Groups
-      </Button>
-      {showAssistantGroupManager && <AssistantGroupDetailList />}
+      <Link to={'/assistants/groups'}>
+        <Button>Manage Assistant Groups</Button>
+      </Link>
     </div>
   );
 }

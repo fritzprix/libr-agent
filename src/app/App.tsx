@@ -1,15 +1,14 @@
 import { useState } from 'react';
-import { Routes, Route } from 'react-router-dom';
+import { Route, Routes } from 'react-router-dom';
 import AppSidebar from '../components/layout/AppSidebar';
-import ChatContainer from '../features/chat/ChatContainer';
 import AssistantDetailList from '../features/assistant/AssistantDetailList';
 import AssistantGroupDetailList from '../features/assistant/AssistantGroupDetailList';
-import StartGroupChatView from '../features/chat/StartGroupChatView';
 
-import History from '../features/history/History';
-import SettingsModal from '../features/settings/SettingsModal';
+import GroupChatContainer from '@/features/chat/GroupChatContainer';
+import SingleChatContainer from '@/features/chat/SingleChatContainer';
+import { ThemeToggle } from '../components/common/ThemeToggle';
+import { AppHeader } from '../components/layout/AppHeader';
 import { SidebarProvider } from '../components/ui/sidebar';
-import { WeatherTool } from '../features/tools/WeatherTool';
 import { AssistantContextProvider } from '../context/AssistantContext';
 import { AssistantGroupProvider } from '../context/AssistantGroupContext';
 import { LocalToolProvider } from '../context/LocalToolContext';
@@ -18,15 +17,14 @@ import { ModelOptionsProvider } from '../context/ModelProvider';
 import { SessionContextProvider } from '../context/SessionContext';
 import { SessionHistoryProvider } from '../context/SessionHistoryContext';
 import { SettingsProvider } from '../context/SettingsContext';
-import "./App.css";
-import "../styles/globals.css";
-import { AppHeader } from '../components/layout/AppHeader';
-import { ThemeToggle } from '../components/common/ThemeToggle';
+import History from '../features/history/History';
+import SettingsModal from '../features/settings/SettingsModal';
+import { WeatherTool } from '../features/tools/WeatherTool';
+import '../styles/globals.css';
+import './App.css';
 
 function App() {
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
-  const [showAssistantGroupManager, setShowAssistantGroupManager] =
-    useState(false);
 
   return (
     <div className="h-screen w-full">
@@ -53,27 +51,21 @@ function App() {
                             </AppHeader>
                             <div className="flex-1 overflow-auto w-full">
                               <Routes>
-                                <Route path="/" element={<ChatContainer />} />
+                                <Route
+                                  path="/"
+                                  element={<SingleChatContainer />}
+                                />
                                 <Route
                                   path="/chat/single"
-                                  element={<ChatContainer />}
+                                  element={<SingleChatContainer />}
                                 />
                                 <Route
                                   path="/chat/group"
-                                  element={
-                                    <StartGroupChatView
-                                      setShowAssistantGroupManager={
-                                        setShowAssistantGroupManager
-                                      }
-                                      showAssistantGroupManager={
-                                        showAssistantGroupManager
-                                      }
-                                    />
-                                  }
+                                  element={<GroupChatContainer />}
                                 />
                                 <Route
                                   path="/chat/flow"
-                                  element={<ChatContainer />}
+                                  element={<SingleChatContainer />}
                                 />
                                 <Route
                                   path="/assistants"
