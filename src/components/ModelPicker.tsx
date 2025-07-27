@@ -1,7 +1,7 @@
 import { FC, useCallback, useMemo } from "react";
-import { Dropdown } from "./ui/Dropdown";
 import { useModelOptions } from "../context/ModelProvider";
 import { AIServiceProvider } from "../lib/ai-service";
+import { Dropdown } from "./ui";
 
 interface ModelPickerProps {
   className?: string;
@@ -68,7 +68,6 @@ const CompactModelPicker: FC<ModelPickerProps> = ({ className = "" }) => {
         placeholder="provider"
         onChange={onProviderChange}
         className="flex-shrink w-28"
-        variant="compact"
       />
       <span className="text-gray-600">/</span>
       <Dropdown
@@ -78,7 +77,6 @@ const CompactModelPicker: FC<ModelPickerProps> = ({ className = "" }) => {
         onChange={onModelChange}
         disabled={!modelId || modelOptions.length === 0}
         className="flex-grow min-w-0"
-        variant="compact"
       />
       {selectedModelData && (
         <span className="text-xs text-gray-400 bg-gray-800 px-2 py-0.5 rounded">
@@ -151,7 +149,6 @@ const TerminalModelPicker: FC<ModelPickerProps> = ({ className = "" }) => {
             placeholder="<select>"
             onChange={onProviderChange}
             className="w-28"
-            variant="compact"
           />
           {apiKeyStatus && (
             <div
@@ -170,7 +167,6 @@ const TerminalModelPicker: FC<ModelPickerProps> = ({ className = "" }) => {
             onChange={onModelChange}
             disabled={!provider || modelOptions.length === 0}
             className="min-w-0"
-            variant="compact"
           />
         </div>
         {selectedModelData && (

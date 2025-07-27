@@ -1,17 +1,20 @@
-import { useState } from "react";
-import { Assistant } from "../types/chat";
+import { useCallback, useState } from "react";
 import { useAssistantContext } from "../context/AssistantContext";
-import { useChatContext } from "../hooks/use-chat";
-import { Button, Input, Modal } from "./ui";
+import { useSessionContext } from "../context/SessionContext";
+import { Assistant } from "../types/chat";
+import { ButtonLegacy as Button, InputWithLabel as Input, Modal } from "./ui";
 
 interface GroupCreationModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-export default function GroupCreationModal({ isOpen, onClose }: GroupCreationModalProps) {
+export default function GroupCreationModal({
+  isOpen,
+  onClose,
+}: GroupCreationModalProps) {
   const { assistants } = useAssistantContext();
-  const { startNewSession } = useChatContext();
+  const { start } = useSessionContext();
   const [groupName, setGroupName] = useState("");
   const [groupDescription, setGroupDescription] = useState("");
   const [selectedAssistants, setSelectedAssistants] = useState<Assistant[]>([]);
@@ -20,21 +23,21 @@ export default function GroupCreationModal({ isOpen, onClose }: GroupCreationMod
     setSelectedAssistants((prev) =>
       prev.some((a) => a.id === assistant.id)
         ? prev.filter((a) => a.id !== assistant.id)
-        : [...prev, assistant]
+        : [...prev, assistant],
     );
   };
 
-  const handleCreateGroup = () => {
+  const handleCreateGroup = useCallback(() => {
     if (!groupName.trim() || selectedAssistants.length === 0) {
       alert("Please provide a group name and select at least one assistant.");
       return;
     }
-    startNewSession(selectedAssistants, "group", groupName, groupDescription);
+    start(selectedAssistants);
     onClose();
     setGroupName("");
     setGroupDescription("");
     setSelectedAssistants([]);
-  };
+  }, [start]);
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Create New Group" size="lg">
@@ -57,7 +60,9 @@ export default function GroupCreationModal({ isOpen, onClose }: GroupCreationMod
         <h3 className="text-lg font-semibold mb-3">Select Assistants</h3>
         <div className="flex-1 overflow-y-auto border border-gray-700 rounded-md p-3 space-y-2 terminal-scrollbar">
           {assistants.length === 0 ? (
-            <p className="text-gray-500">No assistants available. Please add some in settings.</p>
+            <p className="text-gray-500">
+              No assistants available. Please add some in settings.
+            </p>
           ) : (
             assistants.map((assistant) => (
               <div
@@ -67,7 +72,9 @@ export default function GroupCreationModal({ isOpen, onClose }: GroupCreationMod
               >
                 <div>
                   <p className="font-medium text-green-300">{assistant.name}</p>
-                  <p className="text-xs text-gray-400 line-clamp-1">{assistant.systemPrompt}</p>
+                  <p className="text-xs text-gray-400 line-clamp-1">
+                    {assistant.systemPrompt}
+                  </p>
                 </div>
                 {selectedAssistants.some((a) => a.id === assistant.id) && (
                   <span className="text-green-400">✓</span>
@@ -78,8 +85,14 @@ export default function GroupCreationModal({ isOpen, onClose }: GroupCreationMod
         </div>
 
         <div className="mt-4 flex justify-end gap-2">
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" onClick={handleCreateGroup} disabled={selectedAssistants.length === 0 || !groupName.trim()}>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            onClick={handleCreateGroup}
+            disabled={selectedAssistants.length === 0 || !groupName.trim()}
+          >
             Create Group
           </Button>
         </div>

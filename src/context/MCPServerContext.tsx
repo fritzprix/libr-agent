@@ -158,7 +158,7 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
 
   useEffect(() => {
     availableToolsRef.current = availableTools;
-  },[availableTools]);
+  }, [availableTools]);
 
   useEffect(() => {
     if (currentAssistant) {
@@ -169,7 +169,7 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
 
   const getAvailableTools = useCallback(() => {
     return availableToolsRef.current;
-  },[])
+  }, []);
 
   const value: MCPServerContextType = useMemo(
     () => ({

@@ -49,16 +49,21 @@ export const SettingsContext = createContext<SettingsContextType | undefined>(
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [{ value, loading, error }, load] = useAsyncFn(async () => {
     try {
-      const [apiKeysObject, preferredModelObject, windowSizeObject] = await Promise.all([
-        dbService.objects.read("apiKeys"),
-        dbService.objects.read("preferredModel"),
-        dbService.objects.read("windowSize"),
-      ]);
+      const [apiKeysObject, preferredModelObject, windowSizeObject] =
+        await Promise.all([
+          dbService.objects.read("apiKeys"),
+          dbService.objects.read("preferredModel"),
+          dbService.objects.read("windowSize"),
+        ]);
       const settings: Settings = {
         ...DEFAULT_SETTING,
         ...(apiKeysObject ? { apiKeys: apiKeysObject.value } : {}),
-        ...(preferredModelObject ? { preferredModel: preferredModelObject.value } : {}),
-        ...(windowSizeObject != null ? { windowSize: windowSizeObject.value } : {}),
+        ...(preferredModelObject
+          ? { preferredModel: preferredModelObject.value }
+          : {}),
+        ...(windowSizeObject != null
+          ? { windowSize: windowSizeObject.value }
+          : {}),
       };
       return settings;
     } catch (e) {
@@ -86,7 +91,10 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
           });
         }
         if (settings.windowSize != null) {
-          await dbService.objects.upsert({ key: "windowSize", value: settings.windowSize });
+          await dbService.objects.upsert({
+            key: "windowSize",
+            value: settings.windowSize,
+          });
         }
         await load();
       } catch (e) {

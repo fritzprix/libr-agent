@@ -1,10 +1,157 @@
-import { useContext } from "react";
-import { ChatContext } from "../context/ChatContext";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSessionContext } from "../context/SessionContext";
+import { useSessionHistory } from "../context/SessionHistoryContext";
+import { StreamableMessage } from "../types/chat";
+import { useAIService } from "./use-ai-service";
+import { createId } from "@paralleldrive/cuid2";
+import { getLogger } from "../lib/logger";
 
-export const useChatContext = () => {
-  const context = useContext(ChatContext);
-  if (!context) {
-    throw new Error("useChatContext must be used within a ChatProvider");
-  }
-  return context;
+const logger = getLogger("useChatContext");
+
+interface ChatContextReturn {
+  submit: (messageToAdd?: StreamableMessage[]) => Promise<StreamableMessage>;
+  isLoading: boolean;
+  messages: StreamableMessage[];
+}
+
+const validateMessage = (message: StreamableMessage): boolean => {
+  return !!(message.role && (message.content || message.tool_calls));
+};
+
+export const useChatContext = (): ChatContextReturn => {
+  const { messages: history, addMessage } = useSessionHistory();
+  const { submit: triggerAIService, isLoading, response } = useAIService();
+  const { current: currentSession } = useSessionContext();
+  const {} = useSessionContext();
+  const [currentStreaming, setCurrentStreaming] =
+    useState<StreamableMessage | null>(null);
+
+  const messages = useMemo(() => {
+    if (currentStreaming) {
+      // Check if we already have this message in history (non-streaming version)
+      const existingMessage = history.find(
+        (m) => m.id === currentStreaming.id && !m.isStreaming,
+      );
+      if (existingMessage) {
+        // If the message exists in history and is not streaming, use history only
+        return [...history];
+      }
+      // Otherwise, show streaming message
+      return [...history, currentStreaming];
+    }
+    return [...history];
+  }, [currentStreaming, history]);
+
+  useEffect(() => {
+    if (response) {
+      logger.info("Updating currentStreaming with response:", { response });
+      setCurrentStreaming((prev) => {
+        if (prev) {
+          logger.info("Merging with existing streaming message:", {
+            prev,
+            response,
+          });
+          return { ...prev, ...response };
+        }
+        // If prev is null but we have a response, create a new streaming message
+        const newStreaming = {
+          ...response,
+          id: response.id || createId(),
+          content: response.content || "",
+          role: "assistant" as const,
+          sessionId: response.sessionId || currentSession?.id || "",
+          isStreaming: response.isStreaming !== false,
+        };
+        logger.info("Creating new streaming message:", { newStreaming });
+        return newStreaming;
+      });
+    }
+  }, [response, currentSession?.id]);
+
+  // Effect to clear streaming state when message appears in history
+  useEffect(() => {
+    if (currentStreaming && !currentStreaming.isStreaming) {
+      const messageInHistory = history.find(
+        (m) => m.id === currentStreaming.id && !m.isStreaming,
+      );
+      if (messageInHistory) {
+        logger.info(
+          "Final message found in history, clearing streaming state:",
+          {
+            messageId: currentStreaming.id,
+          },
+        );
+        setCurrentStreaming(null);
+      }
+    }
+  }, [history, currentStreaming]);
+
+  const handleSubmit = useCallback(
+    async (messageToAdd?: StreamableMessage[]): Promise<StreamableMessage> => {
+      if (!currentSession) {
+        throw new Error("No active session to submit messages to.");
+      }
+
+      try {
+        let messagesToSend: StreamableMessage[];
+
+        if (messageToAdd) {
+          // Validate and persist new messages before processing
+          const messagesWithSessionId = await Promise.all(
+            messageToAdd.map(async (msg) => {
+              if (!validateMessage(msg)) {
+                throw new Error(
+                  "Invalid message in batch: must have role and either content or tool_calls",
+                );
+              }
+              const messageWithId = { ...msg, sessionId: currentSession.id };
+              addMessage(messageWithId);
+              return messageWithId;
+            }),
+          );
+
+          messagesToSend = [...messages, ...messagesWithSessionId];
+        } else {
+          messagesToSend = messages;
+        }
+        const aiResponse = await triggerAIService(messagesToSend);
+
+        if (aiResponse) {
+          const responseWithSessionId: StreamableMessage = {
+            ...aiResponse,
+            isStreaming: false,
+            sessionId: currentSession.id,
+          };
+          logger.info("Finalizing streaming message and adding to history:", {
+            responseWithSessionId,
+          });
+
+          // Update the current streaming message to be non-streaming
+          setCurrentStreaming(responseWithSessionId);
+
+          // Add to history - the useEffect will clear streaming state when it appears
+          await addMessage(responseWithSessionId);
+        }
+
+        return aiResponse;
+      } catch (error) {
+        console.error("Failed to submit messages:", error);
+        // Clear streaming state immediately on error
+        setCurrentStreaming(null);
+        throw error;
+      }
+    },
+    [triggerAIService, currentSession, messages, addMessage],
+  );
+
+  const value = useMemo<ChatContextReturn>(
+    () => ({
+      submit: handleSubmit,
+      isLoading,
+      messages,
+    }),
+    [handleSubmit, isLoading, messages],
+  );
+
+  return value;
 };

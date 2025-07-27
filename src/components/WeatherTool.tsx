@@ -1,8 +1,5 @@
 import { useMemo, useCallback, useEffect, useState } from "react";
-import {
-  useLocalTools,
-  LocalService,
-} from "../context/LocalToolContext"; // 경로에 맞게 수정
+import { useLocalTools, LocalService } from "../context/LocalToolContext"; // 경로에 맞게 수정
 
 // 이 컴포넌트는 UI를 렌더링하지 않고, 날씨 확인 도구만 제공합니다。
 export function WeatherTool() {
@@ -15,7 +12,7 @@ export function WeatherTool() {
       console.log(`Getting weather for ${location} in ${unit}`);
       return { temperature: unit === "celsius" ? 22 : 72, unit };
     },
-    [unit]
+    [unit],
   );
 
   const weatherService: LocalService = useMemo(
@@ -41,7 +38,7 @@ export function WeatherTool() {
         },
       ],
     }),
-    [getWeatherHandler]
+    [getWeatherHandler],
   );
 
   useEffect(() => {

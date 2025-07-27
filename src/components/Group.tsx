@@ -1,26 +1,30 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useSessionContext } from "../context/SessionContext";
 import { dbService } from "../lib/db";
 import { Session } from "../types/chat";
-import { useChatContext } from "../hooks/use-chat";
-
 
 export default function Group() {
   const [groups, setGroups] = useState<Session[]>([]);
-  const { loadSession } = useChatContext();
+  const { select: selectSession } = useSessionContext();
 
   useEffect(() => {
     const fetchGroups = async () => {
       const fetchedSessions = await dbService.sessions.getPage(1, -1); // Fetch all sessions
       // Filter for sessions of type 'group'
-      const groupSessions = fetchedSessions.items.filter(session => session.type === "group");
+      const groupSessions = fetchedSessions.items.filter(
+        (session) => session.type === "group",
+      );
       setGroups(groupSessions);
     };
     fetchGroups();
   }, []);
 
-  const handleLoadGroupSession = async (sessionId: string) => {
-    await loadSession(sessionId);
-  };
+  const handleLoadGroupSession = useCallback(
+    async (sessionId: string) => {
+      await selectSession(sessionId);
+    },
+    [selectSession],
+  );
 
   return (
     <div className="flex-1 flex flex-col p-4 bg-black text-green-400 font-mono rounded-lg overflow-hidden shadow-2xl shadow-green-400/30">
@@ -37,10 +41,14 @@ export default function Group() {
               className="bg-gray-800 border border-gray-700 rounded-lg p-4 cursor-pointer hover:border-green-400 transition-colors"
               onClick={() => handleLoadGroupSession(group.id)}
             >
-              <h3 className="text-lg font-semibold text-green-300">{group.name || "Untitled Group"}</h3>
-              <p className="text-sm text-gray-400 mt-2 line-clamp-3">{group.description || "No description provided."}</p>
+              <h3 className="text-lg font-semibold text-green-300">
+                {group.name || "Untitled Group"}
+              </h3>
+              <p className="text-sm text-gray-400 mt-2 line-clamp-3">
+                {group.description || "No description provided."}
+              </p>
               <div className="mt-3 text-xs text-gray-500">
-                Assistants: {group.assistants.map(a => a.name).join(", ")}
+                Assistants: {group.assistants.map((a) => a.name).join(", ")}
               </div>
               <div className="mt-1 text-xs text-gray-500">
                 Created: {new Date(group.createdAt).toLocaleDateString()}

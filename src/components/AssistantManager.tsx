@@ -9,7 +9,14 @@ import { useLocalTools } from "../context/LocalToolContext";
 import { useMCPServer } from "../hooks/use-mcp-server";
 import { getLogger } from "../lib/logger";
 import { Assistant } from "../types/chat";
-import { Badge, Button, Input, Modal, StatusIndicator, Textarea } from "./ui";
+import {
+  BadgeLegacy as Badge,
+  ButtonLegacy as Button,
+  InputWithLabel as Input,
+  Modal,
+  StatusIndicator,
+  TextareaWithLabel as Textarea,
+} from "./ui";
 
 const logger = getLogger("AssistantManager");
 

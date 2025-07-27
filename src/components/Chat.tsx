@@ -1,18 +1,20 @@
 import { createId } from "@paralleldrive/cuid2";
 import React, { useEffect, useRef, useState, useMemo } from "react";
 import { useAssistantContext } from "../context/AssistantContext";
-import { useChatContext } from "../hooks/use-chat";
 import { useMCPServer } from "../hooks/use-mcp-server";
 import { useLocalTools } from "../context/LocalToolContext";
 import { StreamableMessage } from "../types/chat";
 import { getLogger } from "../lib/logger";
 import AssistantManager from "./AssistantManager";
-import { FileAttachment, Input } from "./ui";
+import { FileAttachment, InputWithLabel as Input } from "./ui";
 import ToolsModal from "./ToolsModal";
 import MessageBubble from "./MessageBubble";
 import { ToolCaller } from "./orchestrators/ToolCaller";
 import TerminalHeader from "./TerminalHeader";
 import { Button } from "./ui";
+// import { useChatContext } from "../context/ChatContext";
+import { useSessionContext } from "../context/SessionContext";
+import { useChatContext } from "../hooks/use-chat";
 
 const logger = getLogger("Chat");
 
@@ -39,7 +41,8 @@ export default function Chat({
     [mcpTools, localTools],
   );
   const [input, setInput] = useState("");
-  const { submit, isLoading, messages, currentSession } = useChatContext();
+  const { current: currentSession } = useSessionContext();
+  const { submit, isLoading, messages } = useChatContext();
 
   // Since ChatContainer ensures currentSession exists before rendering Chat,
   // we can safely assert it's not null here
@@ -95,6 +98,7 @@ export default function Chat({
     setAttachedFiles((prev) => [...prev, ...newAttachedFiles]);
     e.target.value = "";
   };
+
   const removeAttachedFile = (index: number) => {
     setAttachedFiles((prev) => prev.filter((_, i) => i !== index));
   };
@@ -131,17 +135,14 @@ export default function Chat({
   };
 
   return (
-    <div className="h-full w-full bg-black text-green-400 font-mono flex flex-col rounded-lg overflow-hidden shadow-2xl shadow-green-400/30">
-      <TerminalHeader
-        currentSessionName={currentSession.name || ""}
-        currentSessionType={currentSession.type || ""}
-      >
-        <button
-          className="text-xs px-2 py-1 rounded bg-gray-800 text-green-400 hover:bg-green-700 hover:text-white"
+    <div className="h-full w-full font-mono flex flex-col rounded-lg overflow-hidden shadow-2xl">
+      <TerminalHeader>
+        <Button
+          className="text-xs px-2 py-1 rounded"
           onClick={() => setShowAssistantManager(true)}
         >
           [manage-assistants]
-        </button>
+        </Button>
       </TerminalHeader>
 
       {/* Messages Area - Fills space between model picker and bottom UI */}
@@ -156,8 +157,8 @@ export default function Chat({
           ))}
           {isLoading && (
             <div className="flex justify-start">
-              <div className="bg-gray-800/50 text-gray-200 rounded px-3 py-2">
-                <div className="text-xs text-gray-400 mb-1">
+              <div className="rounded px-3 py-2">
+                <div className="text-xs mb-1">
                   Agent ({currentSession?.assistants[0]?.name})
                 </div>
                 <div className="text-sm">thinking...</div>
@@ -171,19 +172,19 @@ export default function Chat({
       {/* Bottom UI Stack - Fixed at bottom */}
       <div className="flex-shrink-0">
         {/* Status bar */}
-        <div className="bg-gray-900/90 px-4 py-2 border-t border-gray-700 flex items-center justify-between">
+        <div className="px-4 py-2 border-t flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-400">Assistant:</span>
-            <span className="text-xs text-green-400">
+            <span className="text-xs">Assistant:</span>
+            <span className="text-xs">
               {currentSession?.assistants[0]?.name || "None"}
             </span>
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-400">Tools:</span>
+            <span className="text-xs">Tools:</span>
             <button
               onClick={() => setShowToolsDetail(true)}
-              className="text-xs text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1"
+              className="text-xs transition-colors flex items-center gap-1"
             >
               🔧 {availableTools.length} available
             </button>
@@ -192,21 +193,21 @@ export default function Chat({
 
         {/* Attached files section */}
         {attachedFiles.length > 0 && (
-          <div className="bg-gray-950 px-4 py-2 border-t border-gray-700">
-            <div className="text-xs text-gray-500 mb-2">📎 Attached Files:</div>
+          <div className="px-4 py-2 border-t">
+            <div className="text-xs mb-2">📎 Attached Files:</div>
             <div className="flex flex-wrap gap-2">
               {attachedFiles.map((file, index) => (
                 <div
                   key={index}
-                  className="flex items-center bg-gray-900 px-2 py-1 rounded border border-gray-700"
+                  className="flex items-center px-2 py-1 rounded border border-gray-700"
                 >
-                  <span className="text-xs text-green-400 truncate max-w-[150px]">
+                  <span className="text-xs truncate max-w-[150px]">
                     {file.name}
                   </span>
                   <button
                     type="button"
                     onClick={() => removeAttachedFile(index)}
-                    className="text-red-400 hover:text-red-300 ml-2 text-xs"
+                    className="ml-2 text-xs"
                   >
                     ✕
                   </button>
@@ -219,9 +220,9 @@ export default function Chat({
         {/* Input form */}
         <form
           onSubmit={handleSubmit}
-          className="bg-gray-950 px-4 py-4 border-t border-gray-700 flex items-center gap-2"
+          className="px-4 py-4 border-t flex items-center gap-2"
         >
-          <span className="text-green-400 font-bold flex-shrink-0">$</span>
+          <span className="font-bold flex-shrink-0">$</span>
           <div className="flex-1 flex items-center gap-2 min-w-0">
             <Input
               variant="terminal"
@@ -229,7 +230,7 @@ export default function Chat({
               onChange={handleAgentInputChange}
               placeholder={isLoading ? "agent busy..." : "query agent..."}
               disabled={isLoading}
-              className="flex-1 caret-green-400 min-w-0"
+              className="flex-1 min-w-0"
               autoComplete="off"
               spellCheck="false"
             />

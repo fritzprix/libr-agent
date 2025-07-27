@@ -1,12 +1,12 @@
 import {
   Modal,
-  Input,
-  Button,
+  InputWithLabel as Input,
+  ButtonLegacy as Button,
   Tabs,
   TabsList,
   TabsTrigger,
   TabsContent,
-  CompactModelPicker,
+  TerminalModelPicker,
 } from "./ui";
 import { AIServiceProvider } from "../lib/ai-service";
 import { useSettings } from "../hooks/use-settings";
@@ -43,16 +43,8 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       <div className="p-6 text-gray-300">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
-            <TabsTrigger
-              onClick={() => setActiveTab("api-key")}
-              isActive={activeTab === "api-key"}
-            >
-              API Key Settings
-            </TabsTrigger>
-            <TabsTrigger
-              onClick={() => setActiveTab("conversation-model")}
-              isActive={activeTab === "conversation-model"}
-            >
+            <TabsTrigger value="api-key">API Key Settings</TabsTrigger>
+            <TabsTrigger value="conversation-model">
               Conversation & Model Preferences
             </TabsTrigger>
           </TabsList>
@@ -97,7 +89,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 <label className="block text-gray-400 mb-2 font-medium">
                   LLM Preference
                 </label>
-                <CompactModelPicker />
+                <TerminalModelPicker />
               </div>
             </div>
           </TabsContent>

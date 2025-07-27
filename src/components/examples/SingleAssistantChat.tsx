@@ -1,6 +1,6 @@
-import React from 'react';
-import ChatContainer from '../ChatContainer';
-import Reflection from '../Reflection';
+import React from "react";
+import ChatContainer from "../ChatContainer";
+import Reflection from "../Reflection";
 
 /**
  * Example component demonstrating how to use the new peer architecture

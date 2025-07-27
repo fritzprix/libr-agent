@@ -5,8 +5,6 @@ on:
     branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
-  release:
-    types: [ published ]
 
 jobs:
   test:
@@ -83,30 +81,3 @@ jobs:
     
     - name: 🏗️ Build Tauri app
       run: pnpm tauri build
-    
-    - name: 📤 Upload artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: tauri-agent-${{ matrix.os }}
-        path: src-tauri/target/release/bundle/
-
-  release:
-    name: 🎉 Release
-    needs: build
-    runs-on: ubuntu-latest
-    if: github.event_name == 'release'
-    
-    steps:
-    - name: 📥 Checkout
-      uses: actions/checkout@v4
-    
-    - name: 📥 Download artifacts
-      uses: actions/download-artifact@v4
-    
-    - name: 🎉 Upload release assets
-      uses: softprops/action-gh-release@v1
-      with:
-        files: |
-          tauri-agent-*/
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

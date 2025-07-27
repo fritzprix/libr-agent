@@ -308,7 +308,7 @@ export const dbService: DatabaseService = {
     ): Promise<Page<StreamableMessage>> => {
       const db = LocalDatabase.getInstance();
       // Note: This paginates ALL messages across ALL sessions.
-      // For session-specific messages, see dbUtils.getAllMessagesForSession
+      // For session-specific messages, see dbUtils.getMessagesPageForSession
       const totalItems = await db.messages.count();
 
       if (pageSize === -1) {
@@ -389,6 +389,34 @@ export const dbUtils = {
       .messages.where("sessionId")
       .equals(sessionId)
       .sortBy("createdAt");
+  },
+  /**
+   * NEW: Fetches a paginated list of messages for a specific session.
+   * Fetches the most recent messages first and returns them in chronological order.
+   */
+  getMessagesPageForSession: async (
+    sessionId: string,
+    page: number,
+    pageSize: number,
+  ): Promise<Page<StreamableMessage>> => {
+    const db = LocalDatabase.getInstance();
+    const collection = db.messages.where({ sessionId });
+    const totalItems = await collection.count();
+
+    if (pageSize === -1) {
+      const items = await collection.sortBy("createdAt");
+      return createPage(items, 1, totalItems, totalItems);
+    }
+
+    // Fetch latest messages first for pagination purposes
+    const items = await collection
+      .reverse()
+      .offset((page - 1) * pageSize)
+      .limit(pageSize)
+      .sortBy("createdAt");
+
+    // Return the page's items in chronological order for display
+    return createPage(items.reverse(), page, pageSize, totalItems);
   },
   deleteAllMessagesForSession: async (sessionId: string): Promise<number> => {
     return LocalDatabase.getInstance()

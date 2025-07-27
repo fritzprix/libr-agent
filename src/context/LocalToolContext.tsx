@@ -11,7 +11,6 @@ import { MCPTool } from "../lib/tauri-mcp-client";
 import { Tool } from "../types/chat";
 import { useAssistantContext } from "./AssistantContext";
 
-
 /**
  * Represents a single tool within a service, pairing its definition with its handler.
  */
@@ -64,7 +63,7 @@ export function LocalToolProvider({ children }: { children: React.ReactNode }) {
       servicesRef.current.set(service.name, service);
       forceUpdate(); // Update UI when a service is registered
     },
-    [forceUpdate]
+    [forceUpdate],
   );
 
   const unregisterService = useCallback(
@@ -72,7 +71,7 @@ export function LocalToolProvider({ children }: { children: React.ReactNode }) {
       servicesRef.current.delete(serviceName);
       forceUpdate(); // Update UI when a service is unregistered
     },
-    [forceUpdate]
+    [forceUpdate],
   );
 
   const getToolsByService = useCallback((serviceName: string) => {
@@ -109,7 +108,7 @@ export function LocalToolProvider({ children }: { children: React.ReactNode }) {
       // Search for the tool across all registered services and execute its handler.
       for (const service of servicesRef.current.values()) {
         const tool = service.tools.find(
-          (t) => t.toolDefinition.name === toolName
+          (t) => t.toolDefinition.name === toolName,
         );
         if (tool) {
           try {
@@ -135,7 +134,7 @@ export function LocalToolProvider({ children }: { children: React.ReactNode }) {
         tool_call_id: toolCall.id,
       };
     },
-    []
+    [],
   );
 
   const { currentAssistant } = useAssistantContext();
@@ -169,18 +168,17 @@ export function LocalToolProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     availableToolsRef.current = availableTools;
-  },[availableTools]);
+  }, [availableTools]);
 
   const getAvailableTools = useCallback(() => {
     return availableToolsRef.current;
   }, []);
 
-
   const isLocalTool = useCallback(
     (toolName: string) => {
       return allRegisteredTools.some((tool) => tool.name === toolName);
     },
-    [allRegisteredTools]
+    [allRegisteredTools],
   );
 
   const value = useMemo(
@@ -207,7 +205,7 @@ export function LocalToolProvider({ children }: { children: React.ReactNode }) {
       getToolByName,
       executeToolCall,
       isLocalTool,
-    ]
+    ],
   );
 
   return (

@@ -1,12 +1,16 @@
 import { createId } from "@paralleldrive/cuid2";
 import { useEffect } from "react";
 import { useLocalTools } from "../../context/LocalToolContext";
-import { useChatContext } from "../../hooks/use-chat";
 import { useMCPServer } from "../../hooks/use-mcp-server";
-import { StreamableMessage } from '../../types/chat';
+import { StreamableMessage } from "../../types/chat";
+// import { useChatContext } from "../../context/ChatContext";
+import { useSessionContext } from "../../context/SessionContext";
+import { useChatContext } from "../../hooks/use-chat";
 
 export const ToolCaller: React.FC = () => {
-  const { messages, addMessage, submit, currentSession } = useChatContext();
+  const { current: currentSession } = useSessionContext();
+
+  const { messages, submit } = useChatContext();
   const { executeToolCall: callMcpTool } = useMCPServer();
   const { isLocalTool, executeToolCall: callLocalTool } = useLocalTools();
 
@@ -39,7 +43,7 @@ export const ToolCaller: React.FC = () => {
       };
       execute();
     }
-  }, [messages, addMessage, submit, isLocalTool]);
+  }, [messages, submit, isLocalTool]);
 
   return null;
 };

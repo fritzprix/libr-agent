@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useChatContext } from "../hooks/use-chat";
+import { useSessionContext } from "../context/SessionContext";
 import Chat from "./Chat";
 import StartSingleChatView from "./StartSingleChatView";
 
@@ -9,7 +9,7 @@ interface ChatContainerProps {
 
 export default function ChatContainer({ children }: ChatContainerProps) {
   const [showAssistantManager, setShowAssistantManager] = useState(false);
-  const { currentSession } = useChatContext();
+  const { current: currentSession } = useSessionContext();
 
   if (!currentSession) {
     return (

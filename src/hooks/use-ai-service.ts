@@ -29,13 +29,12 @@ export const useAIService = (config?: AIServiceConfig) => {
         maxRetries: 3,
         maxTokens: 4096,
       }),
-    [provider, apiKeys, model]
+    [provider, apiKeys, model],
   );
   const { getCurrentAssistant } = useAssistantContext();
 
   const { getAvailableTools: getAvailableMCPTools } = useMCPServer();
   const { getAvailableTools: getAvailableLocalTools } = useLocalTools();
-
 
   const submit = useCallback(
     async (messages: StreamableMessage[]): Promise<StreamableMessage> => {
@@ -57,7 +56,8 @@ export const useAIService = (config?: AIServiceConfig) => {
       try {
         const stream = serviceInstance.streamChat(messages, {
           modelName: model,
-          systemPrompt: getCurrentAssistant()?.systemPrompt || DEFAULT_SYSTEM_PROMPT,
+          systemPrompt:
+            getCurrentAssistant()?.systemPrompt || DEFAULT_SYSTEM_PROMPT,
           availableTools,
           config: config,
         });
@@ -141,8 +141,8 @@ export const useAIService = (config?: AIServiceConfig) => {
       serviceInstance,
       getAvailableLocalTools,
       getAvailableMCPTools,
-      getCurrentAssistant
-    ]
+      getCurrentAssistant,
+    ],
   );
 
   return { response, isLoading, error, submit };

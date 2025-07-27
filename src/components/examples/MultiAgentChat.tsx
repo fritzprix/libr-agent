@@ -1,6 +1,6 @@
-import React from 'react';
-import ChatContainer from '../ChatContainer';
-import { MultiAgentOrchestrator } from '../orchestrators/MultiAgentOrchestrator';
+import React from "react";
+import ChatContainer from "../ChatContainer";
+import { MultiAgentOrchestrator } from "../orchestrators/MultiAgentOrchestrator";
 
 /**
  * Example component demonstrating how to use the new peer architecture

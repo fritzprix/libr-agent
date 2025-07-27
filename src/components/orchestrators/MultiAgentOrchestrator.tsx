@@ -1,12 +1,13 @@
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
-import { useAssistantContext } from '../../context/AssistantContext';
-import { LocalService, useLocalTools } from '../../context/LocalToolContext';
-import { useChatContext } from '../../hooks/use-chat';
-import { createId } from '@paralleldrive/cuid2';
-import { Assistant } from '../../types/chat';
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
+import { useAssistantContext } from "../../context/AssistantContext";
+import { LocalService, useLocalTools } from "../../context/LocalToolContext";
+import { useChatContext } from "../../hooks/use-chat";
+import { createId } from "@paralleldrive/cuid2";
+import { Assistant } from "../../types/chat";
+import { useSessionContext } from "../../context/SessionContext";
+import { useSessionHistory } from "../../context/SessionHistoryContext";
 
-
-const MULTI_AGENT_ORCHESTRATOR_ASSISTANT_ID = 'multi-agent-orchestrator';
+const MULTI_AGENT_ORCHESTRATOR_ASSISTANT_ID = "multi-agent-orchestrator";
 const MULTI_AGENT_SERVICE = "multi-agent-orchestrator-service";
 
 interface PromptToUserInput {
@@ -36,43 +37,56 @@ interface PlanItem {
 }
 
 export const MultiAgentOrchestrator: React.FC = () => {
-  const { currentAssistant, setCurrentAssistant, assistants } = useAssistantContext();
+  const { currentAssistant, setCurrentAssistant, assistants } =
+    useAssistantContext();
   const { registerService, unregisterService } = useLocalTools();
-  const { addMessage, submit, currentSession } = useChatContext();
+  const { current: currentSession } = useSessionContext();
+  const { addMessage } = useSessionHistory();
+  const { submit } = useChatContext();
 
   const plan = useRef<PlanItem[]>([]);
 
   // ✨ Clean, stable tool handlers using the simpler useStableHandler
-  const handlePromptToUser = useCallback(({ prompt }: PromptToUserInput) => {
-    if (!currentSession) return; // Ensure there's an active session
-    addMessage({
-      assistantId: MULTI_AGENT_ORCHESTRATOR_ASSISTANT_ID,
-      id: createId(),
-      content: prompt,
-      role: 'assistant',
-      sessionId: currentSession.id,
-    });
-  }, [addMessage, currentSession]);
-
-  const handleSwitchAssistant = useCallback(({ assistantId, instruction }: SwitchAssistantInput) => {
-    if (!currentSession) return; // Ensure there's an active session
-    const nextAssistant = assistants.find(a => a.id === assistantId);
-    if (nextAssistant) {
-      setCurrentAssistant(nextAssistant);
-      submit([{
-        id: createId(),
+  const handlePromptToUser = useCallback(
+    ({ prompt }: PromptToUserInput) => {
+      if (!currentSession) return; // Ensure there's an active session
+      addMessage({
         assistantId: MULTI_AGENT_ORCHESTRATOR_ASSISTANT_ID,
-        content: instruction,
-        role: 'user',
+        id: createId(),
+        content: prompt,
+        role: "assistant",
         sessionId: currentSession.id,
-      }]);
-    } else {
-      throw new Error(`Assistant with ID ${assistantId} not found`);
-    }
-  },[submit, currentSession]);
+      });
+    },
+    [addMessage, currentSession],
+  );
+
+  const handleSwitchAssistant = useCallback(
+    ({ assistantId, instruction }: SwitchAssistantInput) => {
+      if (!currentSession) return; // Ensure there's an active session
+      const nextAssistant = assistants.find((a) => a.id === assistantId);
+      if (nextAssistant) {
+        setCurrentAssistant(nextAssistant);
+        submit([
+          {
+            id: createId(),
+            assistantId: MULTI_AGENT_ORCHESTRATOR_ASSISTANT_ID,
+            content: instruction,
+            role: "user",
+            sessionId: currentSession.id,
+          },
+        ]);
+      } else {
+        throw new Error(`Assistant with ID ${assistantId} not found`);
+      }
+    },
+    [submit, currentSession],
+  );
 
   const handleSetPlan = useCallback(({ items }: SetPlanInput) => {
-    const newPlan = items.map(item => ({ plan: item, complete: false } satisfies PlanItem));
+    const newPlan = items.map(
+      (item) => ({ plan: item, complete: false }) satisfies PlanItem,
+    );
     plan.current = newPlan;
   }, []);
 
@@ -86,117 +100,150 @@ export const MultiAgentOrchestrator: React.FC = () => {
 
   const handleClearPlan = useCallback(() => {
     plan.current = [];
-  },[]);
+  }, []);
 
-  const handleReportResult = useCallback(({ resultInDetail }: ReportResultInput) => {
-    if (!currentSession) return; // Ensure there's an active session
-    addMessage({
-      id: createId(),
-      assistantId: MULTI_AGENT_ORCHESTRATOR_ASSISTANT_ID,
-      content: resultInDetail,
-      role: 'assistant',
-      sessionId: currentSession.id,
-    });
-  },[addMessage, currentSession]);
+  const handleReportResult = useCallback(
+    ({ resultInDetail }: ReportResultInput) => {
+      if (!currentSession) return; // Ensure there's an active session
+      addMessage({
+        id: createId(),
+        assistantId: MULTI_AGENT_ORCHESTRATOR_ASSISTANT_ID,
+        content: resultInDetail,
+        role: "assistant",
+        sessionId: currentSession.id,
+      });
+    },
+    [addMessage, currentSession],
+  );
 
   // ✨ Now localService is stable - handlers never change
-  const localService: LocalService = useMemo(() => ({
-    name: MULTI_AGENT_SERVICE,
-    tools: [
-      {
-        toolDefinition: {
-          name: "promptToUser",
-          description: "Prompt the user for additional information or clarification",
-          input_schema: {
-            type: 'object',
-            properties: {
-              prompt: { type: "string", description: "The prompt message to show to the user" }
+  const localService: LocalService = useMemo(
+    () => ({
+      name: MULTI_AGENT_SERVICE,
+      tools: [
+        {
+          toolDefinition: {
+            name: "promptToUser",
+            description:
+              "Prompt the user for additional information or clarification",
+            input_schema: {
+              type: "object",
+              properties: {
+                prompt: {
+                  type: "string",
+                  description: "The prompt message to show to the user",
+                },
+              },
+              required: ["prompt"],
             },
-            required: ["prompt"]
-          }
+          },
+          handler: handlePromptToUser,
         },
-        handler: handlePromptToUser
-      },
-      {
-        toolDefinition: {
-          name: "switchAssistant",
-          description: "Switch to a different specialized assistant with specific instructions",
-          input_schema: {
-            type: 'object',
-            properties: {
-              assistantId: { type: "string", description: "The ID of the assistant to switch to" },
-              instruction: { type: "string", description: "Clear instructions for the new assistant" }
+        {
+          toolDefinition: {
+            name: "switchAssistant",
+            description:
+              "Switch to a different specialized assistant with specific instructions",
+            input_schema: {
+              type: "object",
+              properties: {
+                assistantId: {
+                  type: "string",
+                  description: "The ID of the assistant to switch to",
+                },
+                instruction: {
+                  type: "string",
+                  description: "Clear instructions for the new assistant",
+                },
+              },
+              required: ["assistantId", "instruction"],
             },
-            required: ["assistantId", "instruction"]
-          }
+          },
+          handler: handleSwitchAssistant,
         },
-        handler: handleSwitchAssistant
-      },
-      {
-        toolDefinition: {
-          name: "setPlan",
-          description: "Set a plan of action items for the user",
-          input_schema: {
-            type: 'object',
-            properties: {
-              items: {
-                type: "array",
-                items: { type: "string" },
-                description: "Array of plan items/steps"
-              }
+        {
+          toolDefinition: {
+            name: "setPlan",
+            description: "Set a plan of action items for the user",
+            input_schema: {
+              type: "object",
+              properties: {
+                items: {
+                  type: "array",
+                  items: { type: "string" },
+                  description: "Array of plan items/steps",
+                },
+              },
+              required: ["items"],
             },
-            required: ["items"]
-          }
+          },
+          handler: handleSetPlan,
         },
-        handler: handleSetPlan
-      },
-      {
-        toolDefinition: {
-          name: "checkPlanItem",
-          description: "Mark a specific plan item as completed",
-          input_schema: {
-            type: 'object',
-            properties: {
-              index: { type: "number", description: "0-based index of the plan item to mark as complete" }
+        {
+          toolDefinition: {
+            name: "checkPlanItem",
+            description: "Mark a specific plan item as completed",
+            input_schema: {
+              type: "object",
+              properties: {
+                index: {
+                  type: "number",
+                  description:
+                    "0-based index of the plan item to mark as complete",
+                },
+              },
+              required: ["index"],
             },
-            required: ["index"]
-          }
+          },
+          handler: handleCheckPlanItem,
         },
-        handler: handleCheckPlanItem
-      },
-      {
-        toolDefinition: {
-          name: "clearPlan",
-          description: "Clear/cancel the current plan",
-          input_schema: {
-            type: 'object',
-            properties: {},
-            required: []
-          }
-        },
-        handler: handleClearPlan
-      },
-      {
-        toolDefinition: {
-          name: "reportResult",
-          description: "Provide a detailed summary of completed task or current status",
-          input_schema: {
-            type: 'object',
-            properties: {
-              resultInDetail: { type: "string", description: "Detailed result summary" }
+        {
+          toolDefinition: {
+            name: "clearPlan",
+            description: "Clear/cancel the current plan",
+            input_schema: {
+              type: "object",
+              properties: {},
+              required: [],
             },
-            required: ["resultInDetail"]
-          }
+          },
+          handler: handleClearPlan,
         },
-        handler: handleReportResult
-      }
-    ]
-  }), [handlePromptToUser, handleSwitchAssistant, handleSetPlan, handleCheckPlanItem, handleClearPlan, handleReportResult]);
+        {
+          toolDefinition: {
+            name: "reportResult",
+            description:
+              "Provide a detailed summary of completed task or current status",
+            input_schema: {
+              type: "object",
+              properties: {
+                resultInDetail: {
+                  type: "string",
+                  description: "Detailed result summary",
+                },
+              },
+              required: ["resultInDetail"],
+            },
+          },
+          handler: handleReportResult,
+        },
+      ],
+    }),
+    [
+      handlePromptToUser,
+      handleSwitchAssistant,
+      handleSetPlan,
+      handleCheckPlanItem,
+      handleClearPlan,
+      handleReportResult,
+    ],
+  );
 
-  const multiAgentOrchestratorAssistant: Assistant = useMemo(() => ({
-    id: MULTI_AGENT_ORCHESTRATOR_ASSISTANT_ID,
-    name: 'MultiAgentOrchestrator',
-    systemPrompt: `You are a Multi-Agent Orchestrator. Your goal is to coordinate multiple specialized AI assistants to fulfill complex user requests. You have access to the following tools to manage the workflow:
+  const multiAgentOrchestratorAssistant: Assistant = useMemo(
+    () => ({
+      id: MULTI_AGENT_ORCHESTRATOR_ASSISTANT_ID,
+      name: "MultiAgentOrchestrator",
+      systemPrompt: `You are a Multi-Agent Orchestrator. Your goal is to coordinate multiple specialized AI assistants to fulfill complex user requests. You have access to the following tools to manage the workflow:
 
 1. **promptToUser(prompt: string)**: Use this to ask the user for additional information or clarification. This will pause the current operation and wait for user input.
 2. **switchAssistant(assistantId: string, instruction: string)**: Use this to delegate a task to another specialized assistant. Provide the assistant ID and clear instructions for the new assistant. The current conversation context will be passed to the new assistant.
@@ -207,13 +254,15 @@ export const MultiAgentOrchestrator: React.FC = () => {
 
 Your primary objective is to break down complex requests, delegate to appropriate assistants, manage the overall plan, and report back to the user clearly and concisely. Always consider the most efficient way to achieve the user's goal.
 
-Available assistants: ${assistants.map(a => `${a.id}: ${a.name}`).join(', ')}`,
-    localServices: [localService.name],
-    mcpConfig: {},
-    isDefault: false,
-    createdAt: new Date(),
-    updatedAt: new Date()
-  }), [localService, assistants]);
+Available assistants: ${assistants.map((a) => `${a.id}: ${a.name}`).join(", ")}`,
+      localServices: [localService.name],
+      mcpConfig: {},
+      isDefault: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }),
+    [localService, assistants],
+  );
 
   // ✨ Now this useEffect won't cause infinite loops
   useEffect(() => {
@@ -234,17 +283,24 @@ Available assistants: ${assistants.map(a => `${a.id}: ${a.name}`).join(', ')}`,
       </h3>
       <div className="mt-4">
         <div className="text-sm text-gray-300 mb-3">
-          The Multi-Agent Orchestrator is coordinating specialized assistants to handle complex tasks.
-          Current assistant: <span className="font-semibold text-blue-300">{currentAssistant?.name}</span>
+          The Multi-Agent Orchestrator is coordinating specialized assistants to
+          handle complex tasks. Current assistant:{" "}
+          <span className="font-semibold text-blue-300">
+            {currentAssistant?.name}
+          </span>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div className="p-3 bg-gray-700 rounded-lg">
             <h4 className="text-sm font-semibold mb-2">Available Assistants</h4>
             <div className="text-xs text-gray-300 space-y-1">
-              {assistants.map(assistant => (
-                <div key={assistant.id} className={`p-1 rounded ${assistant.id === currentAssistant?.id ? 'bg-blue-600' : ''
-                  }`}>
+              {assistants.map((assistant) => (
+                <div
+                  key={assistant.id}
+                  className={`p-1 rounded ${
+                    assistant.id === currentAssistant?.id ? "bg-blue-600" : ""
+                  }`}
+                >
                   {assistant.name} ({assistant.id})
                 </div>
               ))}
