@@ -1,4 +1,4 @@
-import { createId } from "@paralleldrive/cuid2";
+import { createId } from '@paralleldrive/cuid2';
 import {
   createContext,
   ReactNode,
@@ -8,13 +8,13 @@ import {
   useMemo,
   useRef,
   useState,
-} from "react";
-import useSWRInfinite from "swr/infinite";
-import { dbService, Page } from "../lib/db";
-import { getLogger } from "../lib/logger";
-import { Assistant, Session } from "../types/chat";
+} from 'react';
+import useSWRInfinite from 'swr/infinite';
+import { dbService, Page } from '../lib/db';
+import { getLogger } from '../lib/logger';
+import { Assistant, Session } from '../types/chat';
 
-const logger = getLogger("SessionContext");
+const logger = getLogger('SessionContext');
 
 /**
  * The shape of the SessionContext, providing session management and state for consumers.
@@ -52,7 +52,7 @@ export function useSessionContext(): SessionContextType {
   const context = useContext(SessionContext);
   if (!context) {
     throw new Error(
-      "useSessionContext must be used within SessionContextProvider",
+      'useSessionContext must be used within SessionContextProvider',
     );
   }
   return context;
@@ -81,7 +81,7 @@ function generateSessionDescription(
   customDescription?: string,
 ): string {
   if (customDescription) return customDescription;
-  return `Conversation with ${assistants.map((a) => a.name).join(", ")}`;
+  return `Conversation with ${assistants.map((a) => a.name).join(', ')}`;
 }
 
 /**
@@ -209,14 +209,14 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
       const operation = async () => {
         if (!assistants.length) {
           throw new Error(
-            "At least one assistant is required to start a session.",
+            'At least one assistant is required to start a session.',
           );
         }
 
         const session: Session = {
           id: createId(),
           assistants: [...assistants],
-          type: assistants.length > 1 ? "group" : "single",
+          type: assistants.length > 1 ? 'group' : 'single',
           createdAt: new Date(),
           updatedAt: new Date(),
           description: generateSessionDescription(assistants, description),
@@ -269,7 +269,7 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
         setLastFailedOperation(null);
       } catch (error) {
         const errorObj = toError(error);
-        logger.error("Failed to start new session", errorObj);
+        logger.error('Failed to start new session', errorObj);
         setOperationError(errorObj);
         setLastFailedOperation(() => operation);
       }

@@ -1,4 +1,4 @@
-import llmConfig from "../config/llm-config.json";
+import llmConfig from '../config/llm-config.json';
 
 export interface ModelInfo {
   id?: string;
@@ -104,10 +104,10 @@ export class LLMConfigManager {
   // Langchain 모델 ID 생성
   getLangchainModelId(providerId: string, modelId: string): string {
     const providerMap: Record<string, string> = {
-      openai: "openai",
-      anthropic: "anthropic",
-      groq: "groq",
-      google: "google-genai",
+      openai: 'openai',
+      anthropic: 'anthropic',
+      groq: 'groq',
+      google: 'google-genai',
     };
 
     const langchainProvider = providerMap[providerId];

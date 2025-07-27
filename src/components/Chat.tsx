@@ -1,21 +1,21 @@
-import { createId } from "@paralleldrive/cuid2";
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useAssistantContext } from "../context/AssistantContext";
-import { useLocalTools } from "../context/LocalToolContext";
-import { useMCPServer } from "../hooks/use-mcp-server";
-import { getLogger } from "../lib/logger";
-import MessageBubble from "./MessageBubble";
-import { ToolCaller } from "./orchestrators/ToolCaller";
-import TerminalHeader from "./TerminalHeader";
-import ToolsModal from "./ToolsModal";
-import { Button, FileAttachment, InputWithLabel as Input } from "./ui";
+import { createId } from '@paralleldrive/cuid2';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useAssistantContext } from '../context/AssistantContext';
+import { useLocalTools } from '../context/LocalToolContext';
+import { useMCPServer } from '../hooks/use-mcp-server';
+import { getLogger } from '../lib/logger';
+import MessageBubble from './MessageBubble';
+import { ToolCaller } from './orchestrators/ToolCaller';
+import TerminalHeader from './TerminalHeader';
+import ToolsModal from './ToolsModal';
+import { Button, FileAttachment, InputWithLabel as Input } from './ui';
 // import { useChatContext } from "../context/ChatContext";
-import { Message } from "@/types/chat";
-import { useSessionContext } from "../context/SessionContext";
-import { useChatContext } from "../hooks/use-chat";
-import AssistantManager from "./assistant/AssistantEditorDialog";
+import { Message } from '@/types/chat';
+import { useSessionContext } from '../context/SessionContext';
+import { useChatContext } from '../hooks/use-chat';
+import AssistantDetailList from './assistant/AssistantDetailList';
 
-const logger = getLogger("Chat");
+const logger = getLogger('Chat');
 
 interface ChatProps {
   children?: React.ReactNode;
@@ -39,7 +39,7 @@ export default function Chat({
     () => [...mcpTools, ...localTools],
     [mcpTools, localTools],
   );
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState('');
   const { current: currentSession } = useSessionContext();
   const { submit, isLoading, messages } = useChatContext();
 
@@ -47,13 +47,13 @@ export default function Chat({
   // we can safely assert it's not null here
   if (!currentSession) {
     throw new Error(
-      "Chat component should only be rendered when currentSession exists",
+      'Chat component should only be rendered when currentSession exists',
     );
   }
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
   const handleAgentInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -71,7 +71,7 @@ export default function Chat({
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       if (
-        !file.type.startsWith("text/") &&
+        !file.type.startsWith('text/') &&
         !file.name.match(
           /\.(txt|md|json|js|ts|tsx|jsx|py|java|cpp|c|h|css|html|xml|yaml|yml|csv)$/i,
         )
@@ -95,7 +95,7 @@ export default function Chat({
     }
 
     setAttachedFiles((prev) => [...prev, ...newAttachedFiles]);
-    e.target.value = "";
+    e.target.value = '';
   };
 
   const removeAttachedFile = (index: number) => {
@@ -103,14 +103,14 @@ export default function Chat({
   };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    logger.info("submit!!", currentAssistant);
+    logger.info('submit!!', currentAssistant);
     e.preventDefault();
     if (!input.trim() && attachedFiles.length === 0) return;
     if (!currentAssistant) return;
 
     let messageContent = input.trim();
     if (attachedFiles.length > 0) {
-      messageContent += "\n\n--- Attached Files ---\n";
+      messageContent += '\n\n--- Attached Files ---\n';
       attachedFiles.forEach((file) => {
         messageContent += `\n[File: ${file.name}]\n${file.content}\n`;
       });
@@ -119,17 +119,17 @@ export default function Chat({
     const userMessage: Message = {
       id: createId(),
       content: messageContent,
-      role: "user",
-      sessionId: currentSession?.id || "", // Add sessionId
+      role: 'user',
+      sessionId: currentSession?.id || '', // Add sessionId
     };
 
-    setInput("");
+    setInput('');
     setAttachedFiles([]);
 
     try {
       await submit([userMessage]);
     } catch (err) {
-      logger.error("Error submitting message:", err);
+      logger.error('Error submitting message:', err);
     }
   };
 
@@ -151,7 +151,7 @@ export default function Chat({
             <MessageBubble
               key={m.id}
               message={m}
-              currentAssistantName={currentSession?.assistants[0]?.name || ""}
+              currentAssistantName={currentSession?.assistants[0]?.name || ''}
             />
           ))}
           {isLoading && (
@@ -175,7 +175,7 @@ export default function Chat({
           <div className="flex items-center gap-2">
             <span className="text-xs">Assistant:</span>
             <span className="text-xs">
-              {currentSession?.assistants[0]?.name || "None"}
+              {currentSession?.assistants[0]?.name || 'None'}
             </span>
           </div>
 
@@ -227,7 +227,7 @@ export default function Chat({
               variant="terminal"
               value={input}
               onChange={handleAgentInputChange}
-              placeholder={isLoading ? "agent busy..." : "query agent..."}
+              placeholder={isLoading ? 'agent busy...' : 'query agent...'}
               disabled={isLoading}
               className="flex-1 min-w-0"
               autoComplete="off"
@@ -255,9 +255,7 @@ export default function Chat({
       </div>
 
       {/* Modals */}
-      {showAssistantManager && (
-        <AssistantManager onClose={() => setShowAssistantManager(false)} />
-      )}
+      {showAssistantManager && <AssistantDetailList />}
       <ToolsModal
         isOpen={showToolsDetail}
         onClose={() => setShowToolsDetail(false)}

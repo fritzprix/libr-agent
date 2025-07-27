@@ -1,11 +1,11 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from '@tauri-apps/api/core';
 
 export interface MCPServerConfig {
   name: string;
   command?: string;
   args?: string[];
   env?: Record<string, string>;
-  transport: "stdio" | "http" | "websocket";
+  transport: 'stdio' | 'http' | 'websocket';
   url?: string;
   port?: number;
 }
@@ -14,7 +14,7 @@ export interface MCPTool {
   name: string;
   description: string;
   input_schema: {
-    type: "object";
+    type: 'object';
     properties: Record<string, unknown>;
     required?: string[];
   };
@@ -28,11 +28,11 @@ export interface ToolCallResult {
 
 export class TauriMCPClient {
   async startServer(config: MCPServerConfig): Promise<string> {
-    return await invoke("start_mcp_server", { config });
+    return await invoke('start_mcp_server', { config });
   }
 
   async stopServer(serverName: string): Promise<void> {
-    return await invoke("stop_mcp_server", { serverName });
+    return await invoke('stop_mcp_server', { serverName });
   }
 
   async callTool(
@@ -40,7 +40,7 @@ export class TauriMCPClient {
     toolName: string,
     arguments_: Record<string, unknown>,
   ): Promise<ToolCallResult> {
-    return await invoke("call_mcp_tool", {
+    return await invoke('call_mcp_tool', {
       serverName,
       toolName,
       arguments: arguments_,
@@ -48,7 +48,7 @@ export class TauriMCPClient {
   }
 
   async listTools(serverName: string): Promise<MCPTool[]> {
-    return await invoke("list_mcp_tools", { serverName });
+    return await invoke('list_mcp_tools', { serverName });
   }
 
   async listToolsFromConfig(config: {
@@ -57,19 +57,19 @@ export class TauriMCPClient {
       { command: string; args?: string[]; env?: Record<string, string> }
     >;
   }): Promise<MCPTool[]> {
-    return await invoke("list_tools_from_config", { config });
+    return await invoke('list_tools_from_config', { config });
   }
 
   async getConnectedServers(): Promise<string[]> {
-    return await invoke("get_connected_servers");
+    return await invoke('get_connected_servers');
   }
 
   async checkServerStatus(serverName: string): Promise<boolean> {
-    return await invoke("check_server_status", { serverName });
+    return await invoke('check_server_status', { serverName });
   }
 
   async checkAllServersStatus(): Promise<Record<string, boolean>> {
-    return await invoke("check_all_servers_status");
+    return await invoke('check_all_servers_status');
   }
 }
 

@@ -1,13 +1,13 @@
-import { FC, useCallback, useMemo } from "react";
-import { useModelOptions } from "../context/ModelProvider";
-import { AIServiceProvider } from "../lib/ai-service";
-import { Dropdown } from "./ui";
+import { FC, useCallback, useMemo } from 'react';
+import { useModelOptions } from '../context/ModelProvider';
+import { AIServiceProvider } from '../lib/ai-service';
+import { Dropdown } from './ui';
 
 interface ModelPickerProps {
   className?: string;
 }
 
-const CompactModelPicker: FC<ModelPickerProps> = ({ className = "" }) => {
+const CompactModelPicker: FC<ModelPickerProps> = ({ className = '' }) => {
   const {
     modelId,
     provider,
@@ -59,7 +59,7 @@ const CompactModelPicker: FC<ModelPickerProps> = ({ className = "" }) => {
       {apiKeyStatus && (
         <div
           title={apiKeyStatus.text}
-          className={`w-2 h-2 rounded-full flex-shrink-0 ${apiKeyStatus.configured ? "bg-primary" : "bg-yellow-500"}`}
+          className={`w-2 h-2 rounded-full flex-shrink-0 ${apiKeyStatus.configured ? 'bg-primary' : 'bg-yellow-500'}`}
         ></div>
       )}
       <Dropdown
@@ -88,7 +88,7 @@ const CompactModelPicker: FC<ModelPickerProps> = ({ className = "" }) => {
 };
 
 // --- TERMINAL MODEL PICKER (refactored to match CompactModelPicker logic) ---
-const TerminalModelPicker: FC<ModelPickerProps> = ({ className = "" }) => {
+const TerminalModelPicker: FC<ModelPickerProps> = ({ className = '' }) => {
   const {
     modelId,
     provider,
@@ -152,7 +152,7 @@ const TerminalModelPicker: FC<ModelPickerProps> = ({ className = "" }) => {
           />
           {apiKeyStatus && (
             <div
-              className={`text-xs px-2 py-1 rounded font-bold ${apiKeyStatus.configured ? "bg-primary/20 text-primary" : "bg-yellow-500/20 text-yellow-400"}`}
+              className={`text-xs px-2 py-1 rounded font-bold ${apiKeyStatus.configured ? 'bg-primary/20 text-primary' : 'bg-yellow-500/20 text-yellow-400'}`}
             >
               {apiKeyStatus.text}
             </div>
@@ -163,7 +163,7 @@ const TerminalModelPicker: FC<ModelPickerProps> = ({ className = "" }) => {
           <Dropdown
             options={modelOptions}
             value={modelId}
-            placeholder={provider ? "<select>" : "..."}
+            placeholder={provider ? '<select>' : '...'}
             onChange={onModelChange}
             disabled={!provider || modelOptions.length === 0}
             className="min-w-0"
@@ -173,13 +173,13 @@ const TerminalModelPicker: FC<ModelPickerProps> = ({ className = "" }) => {
           <div className="border-t border-primary/20 mt-4 pt-3 text-xs text-muted-foreground space-y-2">
             <div className="flex justify-between items-center">
               <span>
-                CONTEXT:{" "}
+                CONTEXT:{' '}
                 <span className="font-semibold text-primary">
-                  {selectedModelData.contextWindow?.toLocaleString() || "N/A"}
+                  {selectedModelData.contextWindow?.toLocaleString() || 'N/A'}
                 </span>
               </span>
               <span>
-                TOOLS:{" "}
+                TOOLS:{' '}
                 {selectedModelData.supportTools ? (
                   <span className="font-semibold text-primary">YES</span>
                 ) : (
@@ -187,7 +187,7 @@ const TerminalModelPicker: FC<ModelPickerProps> = ({ className = "" }) => {
                 )}
               </span>
               <span>
-                REASONING:{" "}
+                REASONING:{' '}
                 {selectedModelData.supportReasoning ? (
                   <span className="font-semibold text-primary">YES</span>
                 ) : (
@@ -197,16 +197,16 @@ const TerminalModelPicker: FC<ModelPickerProps> = ({ className = "" }) => {
             </div>
             <div className="flex justify-between items-center text-muted-foreground">
               <span>
-                COST (IN):{" "}
+                COST (IN):{' '}
                 <span className="font-semibold text-muted-foreground">
-                  ${(selectedModelData.cost?.input * 1000)?.toFixed(2) || "?"}
+                  ${(selectedModelData.cost?.input * 1000)?.toFixed(2) || '?'}
                 </span>
                 /Mtok
               </span>
               <span>
-                COST (OUT):{" "}
+                COST (OUT):{' '}
                 <span className="font-semibold text-muted-foreground">
-                  ${(selectedModelData.cost?.output * 1000)?.toFixed(2) || "?"}
+                  ${(selectedModelData.cost?.output * 1000)?.toFixed(2) || '?'}
                 </span>
                 /Mtok
               </span>

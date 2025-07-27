@@ -1,5 +1,5 @@
 import Dexie, { Table } from 'dexie';
-import { Assistant, Session, Message } from '../types/chat';
+import { Assistant, Session, Message, Group } from '../types/chat';
 
 // --- TYPE DEFINITIONS ---
 export interface DatabaseObject<T = unknown> {
@@ -32,6 +32,7 @@ export interface DatabaseService {
   objects: CRUD<DatabaseObject<unknown>, DatabaseObject<unknown>>;
   sessions: CRUD<Session>;
   messages: CRUD<Message>;
+  groups: CRUD<Group>;
 }
 
 class LocalDatabase extends Dexie {
@@ -47,6 +48,7 @@ class LocalDatabase extends Dexie {
   objects!: Table<DatabaseObject<unknown>, string>;
   sessions!: Table<Session, string>;
   messages!: Table<Message, string>;
+  groups!: Table<Group, string>;
 
   constructor() {
     super('MCPAgentDB');
@@ -97,6 +99,15 @@ class LocalDatabase extends Dexie {
         console.log(
           'Upgrading database to version 3 - adding sessions and messages tables',
         );
+      });
+
+    // Version 4: Add groups table
+    this.version(4)
+      .stores({
+        groups: '&id, createdAt, updatedAt, name',
+      })
+      .upgrade(async () => {
+        console.log('Upgrading database to version 4 - adding groups table');
       });
   }
 }
@@ -332,6 +343,50 @@ export const dbService: DatabaseService = {
     },
     count: async (): Promise<number> => {
       return LocalDatabase.getInstance().messages.count();
+    },
+  },
+  groups: {
+    upsert: async (group: Group) => {
+      const now = new Date();
+      if (!group.createdAt) group.createdAt = now;
+      group.updatedAt = now; // Assuming Group also has an updatedAt field
+      await LocalDatabase.getInstance().groups.put(group);
+    },
+    upsertMany: async (groups: Group[]) => {
+      const now = new Date();
+      const updatedGroups = groups.map((group) => ({
+        ...group,
+        createdAt: group.createdAt || now,
+        updatedAt: now, // Assuming Group also has an updatedAt field
+      }));
+      await LocalDatabase.getInstance().groups.bulkPut(updatedGroups);
+    },
+    read: async (id: string) => {
+      return LocalDatabase.getInstance().groups.get(id);
+    },
+    delete: async (id: string) => {
+      await LocalDatabase.getInstance().groups.delete(id);
+    },
+    getPage: async (page: number, pageSize: number): Promise<Page<Group>> => {
+      const db = LocalDatabase.getInstance();
+      const totalItems = await db.groups.count();
+
+      if (pageSize === -1) {
+        const items = await db.groups.orderBy('createdAt').toArray();
+        return createPage(items, page, pageSize, totalItems);
+      }
+
+      const offset = (page - 1) * pageSize;
+      const items = await db.groups
+        .orderBy('createdAt')
+        .offset(offset)
+        .limit(pageSize)
+        .toArray();
+
+      return createPage(items, page, pageSize, totalItems);
+    },
+    count: async (): Promise<number> => {
+      return LocalDatabase.getInstance().groups.count();
     },
   },
 };

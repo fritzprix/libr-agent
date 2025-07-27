@@ -1,7 +1,7 @@
-import { Assistant } from "@/types/chat";
-import LocalServicesEditor from "./LocalServicesEditor";
-import MCPConfigEditor from "./MCPConfigEditor";
-import { Button, InputWithLabel, TextareaWithLabel } from "../ui";
+import { Assistant } from '@/types/chat';
+import LocalServicesEditor from './LocalServicesEditor';
+import MCPConfigEditor from './MCPConfigEditor';
+import { Button, InputWithLabel, TextareaWithLabel } from '../ui';
 
 interface AssistantEditorProps {
   editingAssistant: Partial<Assistant> | null;
@@ -32,7 +32,7 @@ export default function AssistantEditor({
     <div className="flex-1 flex flex-col h-full">
       <div className="p-4 border-b border-muted flex-shrink-0">
         <h3 className="text-primary font-bold text-lg">
-          {isCreating ? "새 어시스턴트 만들기" : "어시스턴트 편집"}
+          {isCreating ? '새 어시스턴트 만들기' : '어시스턴트 편집'}
         </h3>
       </div>
 
@@ -40,7 +40,7 @@ export default function AssistantEditor({
         <div className="space-y-4">
           <InputWithLabel
             label="어시스턴트 이름 *"
-            value={editingAssistant?.name || ""}
+            value={editingAssistant?.name || ''}
             onChange={(e) =>
               onAssistantChange({
                 ...editingAssistant,
@@ -52,7 +52,7 @@ export default function AssistantEditor({
 
           <TextareaWithLabel
             label="시스템 프롬프트 *"
-            value={editingAssistant?.systemPrompt || ""}
+            value={editingAssistant?.systemPrompt || ''}
             onChange={(e) =>
               onAssistantChange({
                 ...editingAssistant,

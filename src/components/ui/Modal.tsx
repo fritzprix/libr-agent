@@ -1,4 +1,4 @@
-import React from "react";
+import React from 'react';
 import {
   Dialog,
   DialogContent,
@@ -6,7 +6,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "./dialog";
+} from './dialog';
 
 interface ModalProps {
   isOpen: boolean;
@@ -16,7 +16,7 @@ interface ModalProps {
   children: React.ReactNode;
   footer?: React.ReactNode;
   className?: string;
-  size?: "sm" | "md" | "lg" | "xl";
+  size?: 'sm' | 'md' | 'lg' | 'xl';
 }
 
 export default function Modal({
@@ -26,14 +26,14 @@ export default function Modal({
   description,
   children,
   footer,
-  className = "",
-  size = "md",
+  className = '',
+  size = 'md',
 }: ModalProps) {
   const sizeClasses = {
-    sm: "max-w-sm",
-    md: "max-w-md",
-    lg: "max-w-lg",
-    xl: "max-w-screen-xl",
+    sm: 'max-w-sm',
+    md: 'max-w-md',
+    lg: 'max-w-lg',
+    xl: 'max-w-screen-xl',
   };
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>

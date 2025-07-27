@@ -1,4 +1,4 @@
-import React from "react";
+import React from 'react';
 
 interface FileAttachmentProps {
   files: { name: string; content: string }[];
@@ -14,24 +14,24 @@ export default function FileAttachment({
   onRemove,
   onAdd,
   allowedExtensions = [
-    "txt",
-    "md",
-    "json",
-    "js",
-    "ts",
-    "tsx",
-    "jsx",
-    "py",
-    "java",
-    "cpp",
-    "c",
-    "h",
-    "css",
-    "html",
-    "xml",
-    "yaml",
-    "yml",
-    "csv",
+    'txt',
+    'md',
+    'json',
+    'js',
+    'ts',
+    'tsx',
+    'jsx',
+    'py',
+    'java',
+    'cpp',
+    'c',
+    'h',
+    'css',
+    'html',
+    'xml',
+    'yaml',
+    'yml',
+    'csv',
   ],
   compact = false,
 }: FileAttachmentProps) {
@@ -49,7 +49,7 @@ export default function FileAttachment({
           ref={fileInputRef}
           type="file"
           multiple
-          accept={allowedExtensions.map((ext) => `.${ext}`).join(",")}
+          accept={allowedExtensions.map((ext) => `.${ext}`).join(',')}
           onChange={onAdd}
           className="hidden"
         />
@@ -79,7 +79,7 @@ export default function FileAttachment({
         ref={fileInputRef}
         type="file"
         multiple
-        accept={allowedExtensions.map((ext) => `.${ext}`).join(",")}
+        accept={allowedExtensions.map((ext) => `.${ext}`).join(',')}
         onChange={onAdd}
         className="hidden"
       />

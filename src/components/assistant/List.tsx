@@ -1,7 +1,7 @@
-import { useAssistantContext } from "@/context/AssistantContext";
-import { Assistant } from "@/types/chat";
-import { Button } from "../ui";
-import AssistantCard from "./Card";
+import { useAssistantContext } from '@/context/AssistantContext';
+import { Assistant } from '@/types/chat';
+import { Button } from '../ui';
+import AssistantCard from './Card';
 
 interface AssistantListProps {
   onCreateNew: () => void;

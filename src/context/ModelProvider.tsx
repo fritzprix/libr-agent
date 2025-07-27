@@ -5,14 +5,14 @@ import {
   useContext,
   FC,
   PropsWithChildren,
-} from "react";
-import { AIServiceProvider } from "../lib/ai-service";
+} from 'react';
+import { AIServiceProvider } from '../lib/ai-service';
 import {
   llmConfigManager,
   ModelInfo,
   ProviderInfo,
-} from "../lib/llm-config-manager";
-import { useSettings } from "../hooks/use-settings";
+} from '../lib/llm-config-manager';
+import { useSettings } from '../hooks/use-settings';
 
 const DEFAULT_MODEL_INFO: ModelInfo = {
   contextWindow: 0,
@@ -20,8 +20,8 @@ const DEFAULT_MODEL_INFO: ModelInfo = {
   supportReasoning: false,
   supportStreaming: false,
   cost: { input: 0, output: 0 },
-  description: "",
-  name: "",
+  description: '',
+  name: '',
 };
 
 interface ModelOptionsContextType {
@@ -134,7 +134,7 @@ export const useModelOptions = () => {
   const context = useContext(ModelOptionsContext);
   if (!context) {
     throw new Error(
-      "useModelOptions must be used within a ModelOptionsProvider",
+      'useModelOptions must be used within a ModelOptionsProvider',
     );
   }
   return context;

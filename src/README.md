@@ -5,7 +5,7 @@
 ### list models
 
 ```js
-import Groq from "groq-sdk";
+import Groq from 'groq-sdk';
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -21,28 +21,28 @@ getModels().then((models) => {
 ### Reasoning
 
 ```js
-import { Groq } from "groq-sdk";
+import { Groq } from 'groq-sdk';
 
 const groq = new Groq();
 
 const chatCompletion = await groq.chat.completions.create({
   messages: [
     {
-      role: "user",
-      content: "",
+      role: 'user',
+      content: '',
     },
   ],
-  model: "qwen/qwen3-32b",
+  model: 'qwen/qwen3-32b',
   temperature: 0.6,
   max_completion_tokens: 4096,
   top_p: 0.95,
   stream: true,
-  reasoning_effort: "default",
+  reasoning_effort: 'default',
   stop: null,
 });
 
 for await (const chunk of chatCompletion) {
-  process.stdout.write(chunk.choices[0]?.delta?.content || "");
+  process.stdout.write(chunk.choices[0]?.delta?.content || '');
 }
 ```
 
@@ -137,25 +137,25 @@ print(run_conversation(user_prompt))
 ### Tool Use
 
 ```js
-import { OpenAI } from "openai";
+import { OpenAI } from 'openai';
 
 const openai = new OpenAI();
 
 const tools = [
   {
-    type: "function",
+    type: 'function',
     function: {
-      name: "get_weather",
-      description: "Get current temperature for a given location.",
+      name: 'get_weather',
+      description: 'Get current temperature for a given location.',
       parameters: {
-        type: "object",
+        type: 'object',
         properties: {
           location: {
-            type: "string",
-            description: "City and country e.g. Bogotá, Colombia",
+            type: 'string',
+            description: 'City and country e.g. Bogotá, Colombia',
           },
         },
-        required: ["location"],
+        required: ['location'],
         additionalProperties: false,
       },
       strict: true,
@@ -164,9 +164,9 @@ const tools = [
 ];
 
 const completion = await openai.chat.completions.create({
-  model: "gpt-4.1",
+  model: 'gpt-4.1',
   messages: [
-    { role: "user", content: "What is the weather like in Paris today?" },
+    { role: 'user', content: 'What is the weather like in Paris today?' },
   ],
   tools,
   store: true,
@@ -178,7 +178,7 @@ console.log(completion.choices[0].message.tool_calls);
 ### Reasoning
 
 ```js
-import OpenAI from "openai";
+import OpenAI from 'openai';
 
 const openai = new OpenAI();
 
@@ -188,11 +188,11 @@ format '[1,2],[3,4],[5,6]' and prints the transpose in the same format.
 `;
 
 const completion = await openai.chat.completions.create({
-  model: "o4-mini",
-  reasoning_effort: "medium",
+  model: 'o4-mini',
+  reasoning_effort: 'medium',
   messages: [
     {
-      role: "user",
+      role: 'user',
       content: prompt,
     },
   ],
@@ -207,14 +207,14 @@ console.log(completion.choices[0].message.content);
 ### Streaming
 
 ```js
-import Anthropic from "@anthropic-ai/sdk";
+import Anthropic from '@anthropic-ai/sdk';
 
 const client = new Anthropic();
 
 const stream = await client.messages.create({
   max_tokens: 1024,
-  messages: [{ role: "user", content: "Hello, Claude" }],
-  model: "claude-sonnet-4-20250514",
+  messages: [{ role: 'user', content: 'Hello, Claude' }],
+  model: 'claude-sonnet-4-20250514',
   stream: true,
 });
 for await (const messageStreamEvent of stream) {

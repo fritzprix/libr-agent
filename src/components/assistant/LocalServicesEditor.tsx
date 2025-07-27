@@ -1,4 +1,4 @@
-import { useLocalTools } from "@/context/LocalToolContext";
+import { useLocalTools } from '@/context/LocalToolContext';
 
 interface LocalServicesEditorProps {
   localServices: string[] | undefined;

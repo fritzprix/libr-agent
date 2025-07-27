@@ -1,6 +1,6 @@
-import React, { useMemo } from "react";
-import { useLocalTools } from "../context/LocalToolContext";
-import { useMCPServer } from "../hooks/use-mcp-server";
+import React, { useMemo } from 'react';
+import { useLocalTools } from '../context/LocalToolContext';
+import { useMCPServer } from '../hooks/use-mcp-server';
 
 interface ToolsModalProps {
   isOpen: boolean;

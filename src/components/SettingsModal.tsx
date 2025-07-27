@@ -7,10 +7,10 @@ import {
   TabsTrigger,
   TabsContent,
   TerminalModelPicker,
-} from "./ui";
-import { AIServiceProvider } from "../lib/ai-service";
-import { useSettings } from "../hooks/use-settings";
-import { ChangeEvent, useCallback, useState } from "react";
+} from './ui';
+import { AIServiceProvider } from '../lib/ai-service';
+import { useSettings } from '../hooks/use-settings';
+import { ChangeEvent, useCallback, useState } from 'react';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -22,7 +22,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     value: { apiKeys, windowSize },
     update,
   } = useSettings();
-  const [activeTab, setActiveTab] = useState("api-key");
+  const [activeTab, setActiveTab] = useState('api-key');
 
   const handleApiKeyUpdate = useCallback(
     (e: ChangeEvent<HTMLInputElement>, serviceProvider: AIServiceProvider) => {
@@ -55,13 +55,13 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 <div key={serviceProvider}>
                   <label className="block text-gray-400 mb-2 font-medium">
                     {serviceProvider.charAt(0).toUpperCase() +
-                      serviceProvider.slice(1)}{" "}
+                      serviceProvider.slice(1)}{' '}
                     API Key
                   </label>
                   <Input
                     type="password"
                     placeholder={`Enter your ${serviceProvider} API key`}
-                    value={apiKeys[serviceProvider] || ""}
+                    value={apiKeys[serviceProvider] || ''}
                     onChange={(e) => handleApiKeyUpdate(e, serviceProvider)}
                   />
                 </div>

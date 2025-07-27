@@ -1,6 +1,6 @@
-import { useMCPServer } from "@/hooks/use-mcp-server";
-import { Badge, Button, StatusIndicator, Textarea } from "../ui";
-import { DEFAULT_MCP_CONFIG } from "@/context/AssistantContext";
+import { useMCPServer } from '@/hooks/use-mcp-server';
+import { Badge, Button, StatusIndicator, Textarea } from '../ui';
+import { DEFAULT_MCP_CONFIG } from '@/context/AssistantContext';
 
 interface MCPConfigEditorProps {
   mcpConfigText: string;
@@ -26,7 +26,7 @@ export default function MCPConfigEditor({
         </label>
         <div className="flex gap-2">
           <Button size="sm" variant="ghost" disabled={isCheckingStatus}>
-            {isCheckingStatus ? "확인중..." : "서버 상태 확인"}
+            {isCheckingStatus ? '확인중...' : '서버 상태 확인'}
           </Button>
           <Button size="sm" variant="ghost" onClick={onFormatJson}>
             Format JSON
@@ -58,11 +58,11 @@ export default function MCPConfigEditor({
                 className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-muted"
               >
                 <StatusIndicator
-                  status={isConnected ? "connected" : "disconnected"}
+                  status={isConnected ? 'connected' : 'disconnected'}
                 />
                 <span className="text-foreground">{serverName}</span>
-                <Badge variant={isConnected ? "default" : "destructive"}>
-                  {isConnected ? "OK" : "NOK"}
+                <Badge variant={isConnected ? 'default' : 'destructive'}>
+                  {isConnected ? 'OK' : 'NOK'}
                 </Badge>
               </div>
             ))}

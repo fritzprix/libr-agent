@@ -1,23 +1,37 @@
-import { useCallback, useState } from "react";
-import { useAssistantContext } from "../context/AssistantContext";
-import { useSessionContext } from "../context/SessionContext";
-import { Assistant } from "../types/chat";
-import { ButtonLegacy as Button, InputWithLabel as Input, Modal } from "./ui";
+import { useCallback, useEffect, useState } from 'react';
+import { useAssistantContext } from '../context/AssistantContext';
+import { Assistant, Group } from '../types/chat';
+import { ButtonLegacy as Button, InputWithLabel as Input, Modal } from './ui';
 
 interface GroupCreationModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onSave: (group: Partial<Group>) => void;
+  editingGroup: Partial<Group> | null;
 }
 
 export default function GroupCreationModal({
   isOpen,
   onClose,
+  onSave,
+  editingGroup,
 }: GroupCreationModalProps) {
   const { assistants } = useAssistantContext();
-  const { start } = useSessionContext();
-  const [groupName, setGroupName] = useState("");
-  const [groupDescription, setGroupDescription] = useState("");
+  const [groupName, setGroupName] = useState('');
+  const [groupDescription, setGroupDescription] = useState('');
   const [selectedAssistants, setSelectedAssistants] = useState<Assistant[]>([]);
+
+  useEffect(() => {
+    if (editingGroup) {
+      setGroupName(editingGroup.name || '');
+      setGroupDescription(editingGroup.description || '');
+      setSelectedAssistants(editingGroup.assistants || []);
+    } else {
+      setGroupName('');
+      setGroupDescription('');
+      setSelectedAssistants([]);
+    }
+  }, [editingGroup]);
 
   const handleToggleAssistant = (assistant: Assistant) => {
     setSelectedAssistants((prev) =>
@@ -27,17 +41,27 @@ export default function GroupCreationModal({
     );
   };
 
-  const handleCreateGroup = useCallback(() => {
+  const handleSave = useCallback(() => {
     if (!groupName.trim() || selectedAssistants.length === 0) {
-      alert("Please provide a group name and select at least one assistant.");
+      alert('Please provide a group name and select at least one assistant.');
       return;
     }
-    start(selectedAssistants);
+
+    onSave({
+      id: editingGroup?.id,
+      name: groupName,
+      description: groupDescription,
+      assistants: selectedAssistants,
+    });
     onClose();
-    setGroupName("");
-    setGroupDescription("");
-    setSelectedAssistants([]);
-  }, [start]);
+  }, [
+    groupName,
+    groupDescription,
+    selectedAssistants,
+    onSave,
+    onClose,
+    editingGroup,
+  ]);
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Create New Group" size="lg">
@@ -67,7 +91,7 @@ export default function GroupCreationModal({
             assistants.map((assistant) => (
               <div
                 key={assistant.id}
-                className={`flex items-center justify-between p-2 rounded-md cursor-pointer ${selectedAssistants.some((a) => a.id === assistant.id) ? "bg-primary/20 border border-primary" : "hover:bg-gray-700"}`}
+                className={`flex items-center justify-between p-2 rounded-md cursor-pointer ${selectedAssistants.some((a) => a.id === assistant.id) ? 'bg-primary/20 border border-primary' : 'hover:bg-gray-700'}`}
                 onClick={() => handleToggleAssistant(assistant)}
               >
                 <div>
@@ -90,10 +114,10 @@ export default function GroupCreationModal({
           </Button>
           <Button
             variant="primary"
-            onClick={handleCreateGroup}
+            onClick={handleSave}
             disabled={selectedAssistants.length === 0 || !groupName.trim()}
           >
-            Create Group
+            {editingGroup ? 'Save Group' : 'Create Group'}
           </Button>
         </div>
       </div>

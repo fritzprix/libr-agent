@@ -1,4 +1,4 @@
-import { createId } from "@paralleldrive/cuid2";
+import { createId } from '@paralleldrive/cuid2';
 import {
   createContext,
   ReactNode,
@@ -8,13 +8,13 @@ import {
   useMemo,
   useRef,
   useState,
-} from "react";
-import { useAsyncFn } from "react-use";
-import { dbService } from "../lib/db";
-import { getLogger } from "../lib/logger";
-import { Assistant } from "../types/chat";
+} from 'react';
+import { useAsyncFn } from 'react-use';
+import { dbService } from '../lib/db';
+import { getLogger } from '../lib/logger';
+import { Assistant } from '../types/chat';
 
-const logger = getLogger("AssistantContext");
+const logger = getLogger('AssistantContext');
 
 const DEFAULT_PROMPT =
   "You are an AI assistant agent that can use external tools via MCP (Model Context Protocol).\n- Always analyze the user's intent and, if needed, use available tools to provide the best answer.\n- When a tool is required, call the appropriate tool with correct parameters.\n- If the answer can be given without a tool, respond directly.\n- Be concise and clear. If you use a tool, explain the result to the user in natural language.\n- If you are unsure, ask clarifying questions before taking action.";
@@ -38,14 +38,14 @@ const AssistantContext = createContext<AssistantContextType | undefined>(
 
 export const DEFAULT_MCP_CONFIG = {
   mcpServers: {
-    "sequential-thinking": {
-      command: "npx",
-      args: ["-y", "@modelcontextprotocol/server-sequential-thinking"],
+    'sequential-thinking': {
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-sequential-thinking'],
       env: {},
     },
     filesystem: {
-      command: "npx",
-      args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-filesystem', '/tmp'],
       env: {},
     },
   },
@@ -55,7 +55,7 @@ export function getDefaultAssistant(): Assistant {
   return {
     id: createId(),
     createdAt: new Date(),
-    name: "Default Assistant",
+    name: 'Default Assistant',
     isDefault: true,
     mcpConfig: DEFAULT_MCP_CONFIG,
     systemPrompt: DEFAULT_PROMPT,
@@ -71,9 +71,9 @@ export function getNewAssistantTemplate(): {
 
   return {
     assistant: {
-      name: "",
+      name: '',
       systemPrompt:
-        "You are a helpful AI assistant with access to various tools. Use the available tools to help users accomplish their tasks.",
+        'You are a helpful AI assistant with access to various tools. Use the available tools to help users accomplish their tasks.',
       mcpConfig: {},
     },
     mcpConfigText: JSON.stringify(defaultMcpConfig, null, 2),
@@ -98,7 +98,7 @@ export const AssistantContextProvider = ({
   const [{ value: assistants, loading, error: loadError }, loadAssistants] =
     useAsyncFn(async () => {
       let fetchedAssistants = await dbService.assistants.getPage(0, -1);
-      logger.info("fetched assistants : ", { fetchedAssistants });
+      logger.info('fetched assistants : ', { fetchedAssistants });
       return fetchedAssistants.items;
     }, []);
 
@@ -118,7 +118,7 @@ export const AssistantContextProvider = ({
       mcpConfigText?: string,
     ): Promise<Assistant | undefined> => {
       if (!editingAssistant?.name) {
-        showError("이름은 필수입니다.");
+        showError('이름은 필수입니다.');
         return;
       }
       // Parse MCP config from text and validate JSON
@@ -135,8 +135,8 @@ export const AssistantContextProvider = ({
           mcpConfig = {};
         }
       } catch (e) {
-        showError("유효하지 않은 JSON 형식입니다. JSON을 확인해주세요.", e);
-        setError(e instanceof Error ? e : new Error("Invalid JSON"));
+        showError('유효하지 않은 JSON 형식입니다. JSON을 확인해주세요.', e);
+        setError(e instanceof Error ? e : new Error('Invalid JSON'));
         return undefined;
       }
 
@@ -176,8 +176,10 @@ export const AssistantContextProvider = ({
         await loadAssistants();
         return assistantToSave;
       } catch (err) {
-        showError("어시스턴트 저장 중 오류가 발생했습니다.", err);
-        setError(err instanceof Error ? err : new Error("Failed to save assistant"));
+        showError('어시스턴트 저장 중 오류가 발생했습니다.', err);
+        setError(
+          err instanceof Error ? err : new Error('Failed to save assistant'),
+        );
         return undefined;
       }
     },
@@ -187,7 +189,7 @@ export const AssistantContextProvider = ({
   const [{ error: deleteError }, deleteAssistant] = useAsyncFn(
     async (assistantId: string) => {
       const assistant = assistants?.find((a) => a.id === assistantId);
-      const assistantName = assistant?.name || "Unknown";
+      const assistantName = assistant?.name || 'Unknown';
       if (
         window.confirm(
           `정말로 '${assistantName}' 어시스턴트를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`,
@@ -198,8 +200,12 @@ export const AssistantContextProvider = ({
           await loadAssistants();
           // The useEffect hook will handle setting a new currentAssistant
         } catch (err) {
-          showError("어시스턴트 삭제 중 오류가 발생했습니다.", err);
-          setError(err instanceof Error ? err : new Error("Failed to delete assistant"));
+          showError('어시스턴트 삭제 중 오류가 발생했습니다.', err);
+          setError(
+            err instanceof Error
+              ? err
+              : new Error('Failed to delete assistant'),
+          );
         } finally {
           await loadAssistants();
         }
@@ -219,7 +225,6 @@ export const AssistantContextProvider = ({
     }
   }, [saveError, deleteError, loadError]);
 
-
   useEffect(() => {
     if (!loading && assistants && !currentAssistant) {
       if (assistants.length === 0) {
@@ -227,7 +232,7 @@ export const AssistantContextProvider = ({
         setCurrentAssistant(a);
         upsertAssistant(a);
       } else {
-        logger.info("assistants : ", { assistants });
+        logger.info('assistants : ', { assistants });
         const a = assistants.find((a) => a.isDefault) || assistants[0];
         setCurrentAssistant(a);
       }
@@ -238,9 +243,7 @@ export const AssistantContextProvider = ({
     return currentAssistantRef.current;
   }, []);
 
-  
-
-  logger.info("assistant context : ", {
+  logger.info('assistant context : ', {
     assistants: assistants?.length,
     error,
   });
@@ -277,7 +280,7 @@ export function useAssistantContext() {
   const ctx = useContext(AssistantContext);
   if (!ctx)
     throw new Error(
-      "useAssistantContext must be used within a AssistantContextProvider",
+      'useAssistantContext must be used within a AssistantContextProvider',
     );
   return ctx;
 }

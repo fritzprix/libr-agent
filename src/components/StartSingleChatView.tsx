@@ -1,9 +1,9 @@
-import { useCallback } from "react";
-import { useAssistantContext } from "../context/AssistantContext";
-import { useSessionContext } from "../context/SessionContext";
-import { Assistant } from "../types/chat";
-import { Button } from "./ui";
-import AssistantManager from "./assistant/AssistantEditorDialog";
+import { useCallback } from 'react';
+import { useAssistantContext } from '../context/AssistantContext';
+import { useSessionContext } from '../context/SessionContext';
+import { Assistant } from '../types/chat';
+import { Button } from './ui';
+import AssistantDetailList from './assistant/AssistantDetailList';
 
 interface StartSingleChatViewProps {
   setShowAssistantManager: (show: boolean) => void;
@@ -37,24 +37,17 @@ export default function StartSingleChatView({
             className=" border rounded-lg p-4 cursor-pointer   transition-colors"
             onClick={() => handleAssistantSelect(assistant)}
           >
-            <h3 className="text-lg font-semibold">
-              {assistant.name}
-            </h3>
+            <h3 className="text-lg font-semibold">{assistant.name}</h3>
             <p className="text-sm mt-2 line-clamp-3">
               {assistant.systemPrompt}
             </p>
           </div>
         ))}
       </div>
-      <Button
-        onClick={() => setShowAssistantManager(true)}
-        className="mt-8"
-      >
+      <Button onClick={() => setShowAssistantManager(true)} className="mt-8">
         Manage Assistants
       </Button>
-      {showAssistantManager && (
-        <AssistantManager onClose={() => setShowAssistantManager(false)} />
-      )}
+      {showAssistantManager && <AssistantDetailList />}
     </div>
   );
 }

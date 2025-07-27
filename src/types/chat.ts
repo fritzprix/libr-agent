@@ -1,9 +1,9 @@
-import { MCPTool } from "../lib/tauri-mcp-client";
+import { MCPTool } from '../lib/tauri-mcp-client';
 
 export interface Message {
   id: string;
   sessionId: string; // Added sessionId
-  role: "user" | "assistant" | "system" | "tool";
+  role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
   tool_calls?: ToolCall[];
   tool_call_id?: string;
@@ -19,7 +19,7 @@ export interface Message {
 
 export interface ToolCall {
   id: string;
-  type: "function";
+  type: 'function';
   function: {
     name: string;
     arguments: string;
@@ -52,7 +52,7 @@ export interface Tool extends MCPTool {
 
 export interface Session {
   id: string;
-  type: "single" | "group";
+  type: 'single' | 'group';
   assistants: Assistant[];
   name?: string; // Group 세션의 경우 그룹명
   description?: string; // Group 세션의 경우 설명
@@ -66,4 +66,5 @@ export interface Group {
   description: string;
   assistants: Assistant[];
   createdAt: Date;
+  updatedAt: Date;
 }

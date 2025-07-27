@@ -4,10 +4,10 @@ import {
   warn,
   error as logError,
   trace,
-} from "@tauri-apps/plugin-log";
+} from '@tauri-apps/plugin-log';
 
 export class Logger {
-  private static defaultContext = "TauriAgent";
+  private static defaultContext = 'TauriAgent';
 
   private static formatLogMessage(
     message: string,
@@ -19,19 +19,19 @@ export class Logger {
     let logArgs = [...args];
 
     // Check if the last argument is a context string
-    if (logArgs.length > 0 && typeof logArgs[logArgs.length - 1] === "string") {
+    if (logArgs.length > 0 && typeof logArgs[logArgs.length - 1] === 'string') {
       actualContext = logArgs.pop() as string; // Remove and use as context
     }
 
     // Format the message and remaining arguments
     if (logArgs.length > 0) {
       const formattedArgs = logArgs.map((arg) => {
-        if (typeof arg === "object" && arg !== null) {
+        if (typeof arg === 'object' && arg !== null) {
           return JSON.stringify(arg);
         }
         return String(arg);
       });
-      logMessage = `${logMessage} ${formattedArgs.join(" ")}`;
+      logMessage = `${logMessage} ${formattedArgs.join(' ')}`;
     }
     return { formattedMessage: logMessage, context: actualContext };
   }
@@ -101,11 +101,14 @@ export class Logger {
 
 // Convenience functions for common logging patterns (global logger)
 export const log = {
-  debug: (message: string, ...args: unknown[]) => Logger.debug(message, ...args),
+  debug: (message: string, ...args: unknown[]) =>
+    Logger.debug(message, ...args),
   info: (message: string, ...args: unknown[]) => Logger.info(message, ...args),
   warn: (message: string, ...args: unknown[]) => Logger.warn(message, ...args),
-  error: (message: string, ...args: unknown[]) => Logger.error(message, ...args),
-  trace: (message: string, ...args: unknown[]) => Logger.trace(message, ...args),
+  error: (message: string, ...args: unknown[]) =>
+    Logger.error(message, ...args),
+  trace: (message: string, ...args: unknown[]) =>
+    Logger.trace(message, ...args),
 };
 
 // Function to get a context-specific logger instance

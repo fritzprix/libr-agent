@@ -1,16 +1,16 @@
-import React from "react";
-import { LoadingSpinner } from "./ui";
+import React from 'react';
+import { LoadingSpinner } from './ui';
 
 interface MessageWithAttachments {
   id: string;
   content: string;
-  role: "user" | "assistant" | "system" | "tool";
+  role: 'user' | 'assistant' | 'system' | 'tool';
   thinking?: string;
   isStreaming?: boolean;
   attachments?: { name: string; content: string }[];
   tool_calls?: {
     id: string;
-    type: "function";
+    type: 'function';
     function: { name: string; arguments: string };
   }[];
 }
@@ -24,34 +24,36 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
   message,
   currentAssistantName,
 }) => {
-  const isUser = message.role === "user";
-  const isTool = message.role === "tool";
-  const isAssistant = message.role === "assistant" || message.role === "system";
+  const isUser = message.role === 'user';
+  const isTool = message.role === 'tool';
+  const isAssistant = message.role === 'assistant' || message.role === 'system';
 
   // Enhanced styling based on role
   // Use shadcn color tokens for bubble and avatar backgrounds
   const getBubbleStyles = () => {
     if (isUser) {
       return {
-        container: "justify-end",
+        container: 'justify-end',
         bubble:
-          "text-primary-foreground bg-primary shadow-lg border border-primary/20",
-        avatar: "🧑‍💻",
-        avatarBg: "bg-primary",
+          'text-primary-foreground bg-primary shadow-lg border border-primary/20',
+        avatar: '🧑‍💻',
+        avatarBg: 'bg-primary',
       };
     } else if (isTool) {
       return {
-        container: "justify-start",
-        bubble: "bg-muted text-muted-foreground shadow-lg border border-muted/20",
-        avatar: "🔧",
-        avatarBg: "bg-muted",
+        container: 'justify-start',
+        bubble:
+          'bg-muted text-muted-foreground shadow-lg border border-muted/20',
+        avatar: '🔧',
+        avatarBg: 'bg-muted',
       };
     } else {
       return {
-        container: "justify-start",
-        bubble: "bg-secondary text-secondary-foreground shadow-lg border border-secondary/20",
-        avatar: "🤖",
-        avatarBg: "bg-secondary",
+        container: 'justify-start',
+        bubble:
+          'bg-secondary text-secondary-foreground shadow-lg border border-secondary/20',
+        avatar: '🤖',
+        avatarBg: 'bg-secondary',
       };
     }
   };
@@ -59,20 +61,20 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
   const styles = getBubbleStyles();
 
   const getRoleLabel = () => {
-    if (isUser) return "You";
-    if (isTool) return "Tool Output";
+    if (isUser) return 'You';
+    if (isTool) return 'Tool Output';
     if (isAssistant)
       return currentAssistantName
         ? `Agent (${currentAssistantName})`
-        : "Assistant";
-    return "";
+        : 'Assistant';
+    return '';
   };
 
   const formatContent = (content: string) => {
     // Simple markdown-like formatting for better readability
-    return content.split("\n").map((line, index) => {
+    return content.split('\n').map((line, index) => {
       // Handle code blocks
-      if (line.startsWith("```")) {
+      if (line.startsWith('```')) {
         return (
           <div key={index} className="text-xs text-gray-400 font-mono">
             {line}
@@ -80,14 +82,14 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
         );
       }
       // Handle headers
-      if (line.startsWith("# ")) {
+      if (line.startsWith('# ')) {
         return (
           <div key={index} className="font-bold text-lg mt-3 mb-1">
             {line.substring(2)}
           </div>
         );
       }
-      if (line.startsWith("## ")) {
+      if (line.startsWith('## ')) {
         return (
           <div key={index} className="font-bold text-base mt-2 mb-1">
             {line.substring(3)}
@@ -95,8 +97,8 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
         );
       }
       // Handle bold text
-      if (line.includes("**")) {
-        const parts = line.split("**");
+      if (line.includes('**')) {
+        const parts = line.split('**');
         return (
           <div key={index}>
             {parts.map((part, i) =>
@@ -105,7 +107,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
           </div>
         );
       }
-      return <div key={index}>{line || "\u00A0"}</div>;
+      return <div key={index}>{line || '\u00A0'}</div>;
     });
   };
 
@@ -185,7 +187,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
               <span className="text-sm">📎</span>
               <span className="text-sm font-medium">
                 {message.attachments.length} file
-                {message.attachments.length > 1 ? "s" : ""} attached
+                {message.attachments.length > 1 ? 's' : ''} attached
               </span>
             </div>
             <div className="flex flex-wrap gap-2">

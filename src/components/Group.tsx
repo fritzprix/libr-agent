@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
-import { useSessionContext } from "../context/SessionContext";
-import { dbService } from "../lib/db";
-import { Session } from "../types/chat";
+import { useCallback, useEffect, useState } from 'react';
+import { useSessionContext } from '../context/SessionContext';
+import { dbService } from '../lib/db';
+import { Session } from '../types/chat';
 
 export default function Group() {
   const [groups, setGroups] = useState<Session[]>([]);
@@ -12,7 +12,7 @@ export default function Group() {
       const fetchedSessions = await dbService.sessions.getPage(1, -1); // Fetch all sessions
       // Filter for sessions of type 'group'
       const groupSessions = fetchedSessions.items.filter(
-        (session) => session.type === "group",
+        (session) => session.type === 'group',
       );
       setGroups(groupSessions);
     };
@@ -42,13 +42,13 @@ export default function Group() {
               onClick={() => handleLoadGroupSession(group.id)}
             >
               <h3 className="text-lg font-semibold text-primary">
-                {group.name || "Untitled Group"}
+                {group.name || 'Untitled Group'}
               </h3>
               <p className="text-sm text-muted-foreground mt-2 line-clamp-3">
-                {group.description || "No description provided."}
+                {group.description || 'No description provided.'}
               </p>
               <div className="mt-3 text-xs text-muted-foreground">
-                Assistants: {group.assistants.map((a) => a.name).join(", ")}
+                Assistants: {group.assistants.map((a) => a.name).join(', ')}
               </div>
               <div className="mt-1 text-xs text-muted-foreground">
                 Created: {new Date(group.createdAt).toLocaleDateString()}

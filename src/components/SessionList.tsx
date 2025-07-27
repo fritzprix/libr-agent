@@ -1,8 +1,8 @@
-import { useMemo, useState } from "react";
-import { Session } from "../types/chat";
-import SessionItem from "./SessionItem";
-import { Input } from "./ui";
-import { useSidebar } from "./ui/sidebar";
+import { useMemo, useState } from 'react';
+import { Session } from '../types/chat';
+import SessionItem from './SessionItem';
+import { Input } from './ui';
+import { useSidebar } from './ui/sidebar';
 
 interface SessionListProps {
   sessions: Session[];
@@ -14,12 +14,12 @@ interface SessionListProps {
 export default function SessionList({
   sessions,
   showSearch = false,
-  className = "",
-  emptyMessage = "No sessions found",
+  className = '',
+  emptyMessage = 'No sessions found',
 }: SessionListProps) {
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState('');
   const { state } = useSidebar();
-  const isCollapsed = state === "collapsed";
+  const isCollapsed = state === 'collapsed';
 
   // Filter sessions based on search query
   const filteredSessions = useMemo(() => {
@@ -29,11 +29,11 @@ export default function SessionList({
 
     const query = searchQuery.toLowerCase();
     return sessions.filter((session) => {
-      const name = session.name?.toLowerCase() || "";
-      const description = session.description?.toLowerCase() || "";
+      const name = session.name?.toLowerCase() || '';
+      const description = session.description?.toLowerCase() || '';
       const assistantNames = session.assistants
         .map((a) => a.name.toLowerCase())
-        .join(" ");
+        .join(' ');
 
       return (
         name.includes(query) ||
@@ -60,14 +60,11 @@ export default function SessionList({
         {filteredSessions.length === 0
           ? !isCollapsed && (
               <div className="text-center text-gray-500 py-4 text-sm">
-                {searchQuery ? "No matching sessions" : emptyMessage}
+                {searchQuery ? 'No matching sessions' : emptyMessage}
               </div>
             )
           : filteredSessions.map((session) => (
-              <SessionItem
-                key={session.id}
-                session={session}
-              />
+              <SessionItem key={session.id} session={session} />
             ))}
       </div>
     </div>

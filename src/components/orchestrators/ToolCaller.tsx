@@ -1,11 +1,11 @@
-import { createId } from "@paralleldrive/cuid2";
-import React, { useEffect } from "react";
-import { useLocalTools } from "../../context/LocalToolContext";
-import { useMCPServer } from "../../hooks/use-mcp-server";
-import { Message } from "../../types/chat";
+import { createId } from '@paralleldrive/cuid2';
+import React, { useEffect } from 'react';
+import { useLocalTools } from '../../context/LocalToolContext';
+import { useMCPServer } from '../../hooks/use-mcp-server';
+import { Message } from '../../types/chat';
 // import { useChatContext } from "../../context/ChatContext";
-import { useSessionContext } from "../../context/SessionContext";
-import { useChatContext } from "../../hooks/use-chat";
+import { useSessionContext } from '../../context/SessionContext';
+import { useChatContext } from '../../hooks/use-chat';
 
 export const ToolCaller: React.FC = () => {
   const { current: currentSession } = useSessionContext();
@@ -18,7 +18,7 @@ export const ToolCaller: React.FC = () => {
     const lastMessage = messages[messages.length - 1];
     if (
       lastMessage &&
-      lastMessage.role === "assistant" &&
+      lastMessage.role === 'assistant' &&
       lastMessage.tool_calls &&
       lastMessage.tool_calls.length > 0 &&
       !lastMessage.isStreaming
@@ -33,10 +33,10 @@ export const ToolCaller: React.FC = () => {
           const result = await callFunction(toolCall);
           toolResults.push({
             id: createId(),
-            role: "tool",
+            role: 'tool',
             content: result.content,
             tool_call_id: toolCall.id,
-            sessionId: currentSession?.id || "", // Add sessionId
+            sessionId: currentSession?.id || '', // Add sessionId
           });
         }
         submit(toolResults);

@@ -1,7 +1,7 @@
-import React, { useState } from "react";
-import { useSessionContext } from "../context/SessionContext";
-import Chat from "./Chat";
-import StartSingleChatView from "./StartSingleChatView";
+import React, { useState } from 'react';
+import { useSessionContext } from '../context/SessionContext';
+import Chat from './Chat';
+import StartSingleChatView from './StartSingleChatView';
 
 interface ChatContainerProps {
   children?: React.ReactNode;

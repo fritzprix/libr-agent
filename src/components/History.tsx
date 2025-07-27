@@ -1,7 +1,7 @@
-import { useCallback, useMemo } from "react";
-import { useSessionContext } from "../context/SessionContext";
-import SessionList from "./SessionList";
-import { Card, CardContent, CardHeader, CardTitle } from "./ui";
+import { useCallback, useMemo } from 'react';
+import { useSessionContext } from '../context/SessionContext';
+import SessionList from './SessionList';
+import { Card, CardContent, CardHeader, CardTitle } from './ui';
 
 export default function History() {
   const {
@@ -12,7 +12,10 @@ export default function History() {
   } = useSessionContext();
 
   // Flatten the paginated sessions
-  const sessions = useMemo(() => sessionPages ? sessionPages.flatMap((p) => p.items) : [],[sessionPages]);
+  const sessions = useMemo(
+    () => (sessionPages ? sessionPages.flatMap((p) => p.items) : []),
+    [sessionPages],
+  );
 
   const handleLoadMore = useCallback(() => {
     loadMore();
@@ -59,7 +62,7 @@ export default function History() {
                       disabled={isLoading}
                       className="px-4 py-2 bg-primary/10 border border-primary text-primary rounded hover:bg-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      {isLoading ? "Loading..." : "Load More"}
+                      {isLoading ? 'Loading...' : 'Load More'}
                     </button>
                   </div>
                 )}
@@ -91,7 +94,7 @@ export default function History() {
                 <div>
                   <span className="text-muted-foreground">Assistants: </span>
                   <span className="text-foreground">
-                    {currentSession.assistants.map((a) => a.name).join(", ")}
+                    {currentSession.assistants.map((a) => a.name).join(', ')}
                   </span>
                 </div>
                 <div>

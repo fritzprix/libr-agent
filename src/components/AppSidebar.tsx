@@ -2,14 +2,13 @@ import {
   BrainCircuit,
   History,
   MessageSquare,
-  Plus,
   Settings,
-  Users
-} from "lucide-react";
-import React, { useEffect, useMemo } from "react";
-import { Link, useLocation } from "react-router-dom";
-import { useSessionContext } from "../context/SessionContext";
-import SessionList from "./SessionList";
+  Users,
+} from 'lucide-react';
+import React, { useEffect, useMemo } from 'react';
+import { Link, useLocation } from 'react-router-dom';
+import { useSessionContext } from '../context/SessionContext';
+import SessionList from './SessionList';
 import {
   Sidebar,
   SidebarContent,
@@ -22,22 +21,15 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   useSidebar,
-} from "./ui/sidebar";
+} from './ui/sidebar';
 
 interface AppSidebarProps {
   onOpenSettings: () => void;
-  onOpenGroupCreationModal: () => void;
 }
 
-export default function AppSidebar({
-  onOpenSettings,
-  onOpenGroupCreationModal,
-}: AppSidebarProps) {
+export default function AppSidebar({ onOpenSettings }: AppSidebarProps) {
   const { state, toggleSidebar } = useSidebar();
-  const {
-    select,
-    sessions: sessionPages,
-  } = useSessionContext();
+  const { select, sessions: sessionPages } = useSessionContext();
   const location = useLocation();
 
   const sessions = useMemo(
@@ -45,39 +37,41 @@ export default function AppSidebar({
     [sessionPages],
   );
 
-
-  const isCollapsed = state === "collapsed";
+  const isCollapsed = state === 'collapsed';
   const currentView = location.pathname.substring(1); // Extract current view from path
 
   // Add keyboard shortcut for sidebar toggle
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.ctrlKey && event.key === "b") {
+      if (event.ctrlKey && event.key === 'b') {
         event.preventDefault();
         toggleSidebar();
       }
     };
 
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, [toggleSidebar]);
 
   return (
     <Sidebar
       className="backdrop-blur-sm border-r shadow-xl"
       collapsible="icon"
-      style={{
-        '--sidebar-width-icon': '3.5rem',
-      } as React.CSSProperties}
+      style={
+        {
+          '--sidebar-width-icon': '3.5rem',
+        } as React.CSSProperties
+      }
     >
       <SidebarHeader className="border-b">
         <div className="flex flex-row items-center justify-center gap-2 p-4">
           <BrainCircuit size={32} className="flex-shrink-0" />
           <span
-            className={`font-medium text-2xl whitespace-nowrap transition-all duration-300 ease-in-out ${isCollapsed
+            className={`font-medium text-2xl whitespace-nowrap transition-all duration-300 ease-in-out ${
+              isCollapsed
                 ? 'opacity-0 w-0 overflow-hidden'
                 : 'opacity-100 w-auto'
-              }`}
+            }`}
           >
             SynapticFlow
           </span>
@@ -93,14 +87,38 @@ export default function AppSidebar({
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
-                <Link to="/chat">
+                <Link to="/chat/single">
                   <SidebarMenuButton
                     onClick={() => select()}
-                    isActive={currentView === "chat"}
-                    tooltip="New Chat"
+                    isActive={location.pathname === '/chat/single'}
+                    tooltip="Single Assistant Chat"
                   >
                     <MessageSquare size={16} />
-                    <span>New Chat</span>
+                    <span>Single Assistant Chat</span>
+                  </SidebarMenuButton>
+                </Link>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <Link to="/chat/group">
+                  <SidebarMenuButton
+                    onClick={() => select()}
+                    isActive={location.pathname === '/chat/group'}
+                    tooltip="Assistant Group Chat"
+                  >
+                    <Users size={16} />
+                    <span>Assistant Group Chat</span>
+                  </SidebarMenuButton>
+                </Link>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <Link to="/chat/flow">
+                  <SidebarMenuButton
+                    onClick={() => select()}
+                    isActive={location.pathname === '/chat/flow'}
+                    tooltip="Flow Chat"
+                  >
+                    <BrainCircuit size={16} />
+                    <span>Flow Chat</span>
                   </SidebarMenuButton>
                 </Link>
               </SidebarMenuItem>
@@ -111,29 +129,31 @@ export default function AppSidebar({
         {/* Group Section */}
         <SidebarGroup>
           <SidebarGroupLabel className="text-sm font-semibold uppercase tracking-wide mb-2">
-            Group
+            Assistant Management
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
-                <Link to="/group">
+                <Link to="/assistants">
                   <SidebarMenuButton
-                    isActive={currentView === "group"}
-                    tooltip="Create Group"
+                    isActive={location.pathname === '/assistants'}
+                    tooltip="Manage Assistants"
                   >
                     <Users size={16} />
-                    <span>Create Group</span>
+                    <span>Assistants</span>
                   </SidebarMenuButton>
                 </Link>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <SidebarMenuButton
-                  onClick={onOpenGroupCreationModal}
-                  tooltip="New Group"
-                >
-                  <Plus size={16} />
-                  <span>New Group</span>
-                </SidebarMenuButton>
+                <Link to="/assistants/groups">
+                  <SidebarMenuButton
+                    isActive={location.pathname === '/assistants/groups'}
+                    tooltip="Manage Assistant Groups"
+                  >
+                    <Users size={16} />
+                    <span>Assistant Groups</span>
+                  </SidebarMenuButton>
+                </Link>
               </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
@@ -147,13 +167,13 @@ export default function AppSidebar({
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
-                <Link to="/history">
+                <Link to="/history/search">
                   <SidebarMenuButton
-                    isActive={currentView === "history"}
-                    tooltip="View History"
+                    isActive={location.pathname === '/history/search'}
+                    tooltip="Search History"
                   >
                     <History size={16} />
-                    <span>View History</span>
+                    <span>Search History</span>
                   </SidebarMenuButton>
                 </Link>
               </SidebarMenuItem>
@@ -162,7 +182,7 @@ export default function AppSidebar({
         </SidebarGroup>
 
         {/* Recent Sessions - only show if not in history view */}
-        {currentView !== "history" && sessions.length > 0 && (
+        {currentView !== 'history' && sessions.length > 0 && (
           <SidebarGroup>
             {!isCollapsed && (
               <SidebarGroupLabel className="text-xs font-semibold uppercase tracking-wider mb-2">

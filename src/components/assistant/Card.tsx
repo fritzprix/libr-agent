@@ -1,24 +1,31 @@
-import { useAssistantContext } from "@/context/AssistantContext";
-import { useMCPServer } from "@/hooks/use-mcp-server";
-import { useState } from "react";
-import { Badge, Button, StatusIndicator } from "../ui";
-import { Assistant } from "@/types/chat";
+import { useAssistantContext } from '@/context/AssistantContext';
+import { useMCPServer } from '@/hooks/use-mcp-server';
+import { useState } from 'react';
+import { Badge, Button, StatusIndicator } from '../ui';
+import { Assistant } from '@/types/chat';
 
 interface AssistantCardProps {
   assistant: Assistant;
   onEdit: (assistant: Assistant) => void;
 }
 
-export default function AssistantCard({ assistant, onEdit }: AssistantCardProps) {
-  const { currentAssistant, setCurrentAssistant, delete: deleteAssistant } = useAssistantContext();
+export default function AssistantCard({
+  assistant,
+  onEdit,
+}: AssistantCardProps) {
+  const {
+    currentAssistant,
+    setCurrentAssistant,
+    delete: deleteAssistant,
+  } = useAssistantContext();
   const { status, isConnecting: isCheckingStatus } = useMCPServer();
   const [isDeleting, setIsDeleting] = useState(false);
-  
+
   const isActive = currentAssistant?.id === assistant.id;
 
   const handleDelete = async () => {
     if (assistant.isDefault) {
-      alert("기본 어시스턴트는 삭제할 수 없습니다.");
+      alert('기본 어시스턴트는 삭제할 수 없습니다.');
       return;
     }
 
@@ -33,9 +40,10 @@ export default function AssistantCard({ assistant, onEdit }: AssistantCardProps)
     <div
       className={`border rounded p-3 cursor-pointer transition-colors ${
         isActive
-          ? "border-primary bg-primary/20"
-          : "border-muted hover:border-accent"
+          ? 'border-primary bg-primary/20'
+          : 'border-muted hover:border-accent'
       }`}
+      onClick={() => setCurrentAssistant(assistant)}
     >
       <div className="flex justify-between items-start mb-2">
         <h3 className="text-primary font-medium">{assistant.name}</h3>
@@ -50,7 +58,7 @@ export default function AssistantCard({ assistant, onEdit }: AssistantCardProps)
       </p>
 
       <div className="text-xs text-muted-foreground mb-2">
-        MCP 서버:{" "}
+        MCP 서버:{' '}
         {assistant.mcpConfig?.mcpServers
           ? Object.keys(assistant.mcpConfig.mcpServers).length
           : 0}
@@ -68,38 +76,26 @@ export default function AssistantCard({ assistant, onEdit }: AssistantCardProps)
                 <StatusIndicator
                   status={
                     status[serverName] === true
-                      ? "connected"
+                      ? 'connected'
                       : status[serverName] === false
-                      ? "disconnected"
-                      : "unknown"
+                        ? 'disconnected'
+                        : 'unknown'
                   }
                   size="sm"
                 />
                 <span className="text-foreground">{serverName}</span>
               </div>
-            )
+            ),
           )}
         </div>
       )}
 
       <div className="flex flex-wrap gap-2">
-        <Button
-          size="sm"
-          variant="default"
-          onClick={() => setCurrentAssistant(assistant)}
-          disabled={isActive}
-        >
-          선택
-        </Button>
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={() => onEdit(assistant)}
-        >
+        <Button size="sm" variant="secondary" onClick={() => onEdit(assistant)}>
           편집
         </Button>
         <Button size="sm" variant="ghost" disabled={isCheckingStatus}>
-          {isCheckingStatus && isActive ? "확인중..." : "상태확인"}
+          {isCheckingStatus && isActive ? '확인중...' : '상태확인'}
         </Button>
         <Button
           size="sm"
@@ -107,11 +103,11 @@ export default function AssistantCard({ assistant, onEdit }: AssistantCardProps)
           onClick={handleDelete}
           title={
             assistant.isDefault
-              ? "기본 어시스턴트는 삭제할 수 없습니다."
-              : "어시스턴트 삭제"
+              ? '기본 어시스턴트는 삭제할 수 없습니다.'
+              : '어시스턴트 삭제'
           }
         >
-          {isDeleting ? "삭제중..." : "삭제"}
+          {isDeleting ? '삭제중...' : '삭제'}
         </Button>
       </div>
     </div>
