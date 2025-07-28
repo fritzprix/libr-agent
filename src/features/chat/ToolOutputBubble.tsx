@@ -19,7 +19,7 @@ const JsonViewer: React.FC<JsonViewerProps> = ({ data, level = 0 }) => {
   const [collapsed, setCollapsed] = useState(level > 2);
   const indent = '  '.repeat(level);
 
-  const renderValue = (value: JsonValue, key?: string, isLastItem?: boolean) => {
+  const renderValue = (value: JsonValue, isLastItem?: boolean) => {
     const comma = !isLastItem ? ',' : '';
 
     if (value === null) {
@@ -60,7 +60,7 @@ const JsonViewer: React.FC<JsonViewerProps> = ({ data, level = 0 }) => {
               {value.map((item, index) => (
                 <div key={index} className="font-mono text-sm">
                   <span className="text-muted-foreground">{indent}  </span>
-                  {renderValue(item, undefined, index === value.length - 1)}
+                  {renderValue(item, index === value.length - 1)}
                 </div>
               ))}
             </div>
@@ -98,7 +98,7 @@ const JsonViewer: React.FC<JsonViewerProps> = ({ data, level = 0 }) => {
                   <span className="text-muted-foreground">{indent}  </span>
                   <span className="text-orange-600 dark:text-orange-400">&quot;{objKey}&quot;</span>
                   <span className="text-muted-foreground">: </span>
-                  {renderValue(value[objKey], objKey, index === keys.length - 1)}
+                  {renderValue(value[objKey], index === keys.length - 1)}
                 </div>
               ))}
             </div>

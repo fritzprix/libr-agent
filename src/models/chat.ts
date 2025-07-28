@@ -29,6 +29,8 @@ export interface ToolCall {
 export interface Assistant {
   id: string;
   name: string;
+  description?: string;
+  avatar?: string; // Optional avatar URL or identifier
   systemPrompt: string;
   mcpConfig: {
     mcpServers?: Record<
