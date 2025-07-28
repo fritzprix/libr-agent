@@ -74,7 +74,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, currentAssistant
         </div>
         {message.thinking && (
           <div className="flex items-center gap-3 mt-4 p-3 bg-popover rounded-lg border border-border">
-            {message.content ? <></> : <LoadingSpinner size="sm" />}
+            {message.isStreaming ? <LoadingSpinner size="sm" />:<></>}
             <span className="text-sm opacity-50 italic">{message.thinking}</span>
           </div>
         )}

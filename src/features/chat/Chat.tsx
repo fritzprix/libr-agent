@@ -228,13 +228,13 @@ function ChatAttachedFiles() {
             className="flex items-center px-2 py-1 rounded border border-gray-700"
           >
             <span className="text-xs truncate max-w-[150px]">{file.name}</span>
-            <button
+            <Button
               type="button"
               onClick={() => removeAttachedFile(index)}
               className="ml-2 text-xs"
             >
               ✕
-            </button>
+            </Button>
           </div>
         ))}
       </div>
