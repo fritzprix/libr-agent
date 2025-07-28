@@ -48,9 +48,9 @@ export const MultiAgentOrchestrator: React.FC = () => {
 
   // ✨ Clean, stable tool handlers using the simpler useStableHandler
   const handlePromptToUser = useCallback(
-    async (args: unknown): Promise<string> => {
+    async (args: unknown): Promise<string|null> => {
       const { prompt } = args as PromptToUserInput;
-      if (!currentSession) return 'No active session'; // Ensure there's an active session
+      if (!currentSession) return null; // Ensure there's an active session
       addMessage({
         assistantId: MULTI_AGENT_ORCHESTRATOR_ASSISTANT_ID,
         id: createId(),
@@ -58,15 +58,15 @@ export const MultiAgentOrchestrator: React.FC = () => {
         role: 'assistant',
         sessionId: currentSession.id,
       });
-      return 'Prompt sent to user';
+      return null;
     },
     [addMessage, currentSession],
   );
 
   const handleSwitchAssistant = useCallback(
-    async (args: unknown): Promise<string> => {
+    async (args: unknown): Promise<string|null> => {
       const { assistantId, instruction } = args as SwitchAssistantInput;
-      if (!currentSession) return 'No active session'; // Ensure there's an active session
+      if (!currentSession) return JSON.stringify({ success: false, message: "", error:null}); // Ensure there's an active session
       const nextAssistant = assistants.find((a) => a.id === assistantId);
       if (nextAssistant) {
         setCurrentAssistant(nextAssistant);
@@ -79,7 +79,7 @@ export const MultiAgentOrchestrator: React.FC = () => {
             sessionId: currentSession.id,
           },
         ]);
-        return `Switched to assistant: ${nextAssistant.name}`;
+        return JSON.stringify({ sucess: true, message: `Switched to assistant: ${nextAssistant.name}`, error:null});
       } else {
         throw new Error(`Assistant with ID ${assistantId} not found`);
       }

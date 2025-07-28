@@ -198,21 +198,6 @@ function convertSinglePropertyToGeminiType(prop: JsonSchemaProperty): {
   }
 }
 
-// // Helper function to sanitize function names for Gemini
-// function sanitizeFunctionName(name: string): string {
-//   // Gemini requires: start with letter/underscore, alphanumeric + _ . -, max 64 chars
-//   let sanitized = name
-//     .replace(/:/g, '_') // Replace colons specifically
-//     .replace(/[^a-zA-Z0-9_.-]/g, '_') // Replace other invalid chars with underscore
-//     .substring(0, 64); // Max 64 chars
-
-//   // Ensure it starts with letter or underscore
-//   if (!/^[a-zA-Z_]/.test(sanitized)) {
-//     sanitized = '_' + sanitized.substring(0, 63);
-//   }
-
-//   return sanitized;
-// }
 
 // Updated tool conversion for Gemini - use parameters with Type enums
 function convertMCPToolToProviderFormat(

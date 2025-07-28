@@ -16,7 +16,7 @@ import { useAssistantContext } from './AssistantContext';
  */
 export interface ServiceTool {
   toolDefinition: MCPTool;
-  handler: (args: unknown) => Promise<string>;
+  handler: (args: unknown) => Promise<string|null>;
 }
 
 /**
