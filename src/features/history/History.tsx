@@ -1,5 +1,11 @@
 import { useCallback, useMemo } from 'react';
-import { Button, Card, CardContent, CardHeader, CardTitle } from '../../components/ui';
+import {
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from '../../components/ui';
 import { useSessionContext } from '@/context/SessionContext';
 import SessionList from '../session/SessionList';
 
@@ -9,7 +15,7 @@ export default function History() {
     current: currentSession,
     loadMore,
     isLoading,
-    hasNextPage
+    hasNextPage,
   } = useSessionContext();
 
   // Flatten the paginated sessions
