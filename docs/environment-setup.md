@@ -13,23 +13,27 @@ cp .env.example .env
 ### 2. Get API Keys
 
 #### 🟢 Groq (Recommended - Free & Fast)
+
 1. Visit [Groq Console](https://console.groq.com/keys)
 2. Sign up for free account
 3. Create new API key
 4. Copy key to `VITE_GROQ_API_KEY` in `.env`
 
 **Why Groq?**
+
 - ⚡ Extremely fast inference (10x faster than OpenAI)
 - 🆓 Generous free tier
 - 🦙 Latest Llama models
 - 🔥 Perfect for development
 
 #### 🔵 OpenAI (Premium)
+
 1. Visit [OpenAI Platform](https://platform.openai.com/api-keys)
 2. Create API key
 3. Add to `VITE_OPENAI_API_KEY` in `.env`
 
 #### 🟠 Anthropic Claude (Premium)
+
 1. Visit [Anthropic Console](https://console.anthropic.com/)
 2. Create API key
 3. Add to `VITE_ANTHROPIC_API_KEY` in `.env`
@@ -53,12 +57,14 @@ VITE_AI_MAX_TOKENS=4096
 ## 🚀 Quick Start
 
 1. **Setup environment:**
+
    ```bash
    cp .env.example .env
    # Edit .env with your API keys
    ```
 
 2. **Install dependencies:**
+
    ```bash
    pnpm install
    ```
@@ -71,18 +77,22 @@ VITE_AI_MAX_TOKENS=4096
 ## 🎯 Model Recommendations
 
 ### For Development & Testing
+
 - **Groq + Llama 3.1 8B**: Ultra-fast, free, great for testing
 - **Model**: `llama-3.1-8b-instant`
 
 ### For Production
+
 - **Groq + Llama 3.1 70B**: Balanced performance and cost
 - **Model**: `llama-3.1-70b-versatile`
 
 ### For Complex Tasks
+
 - **OpenAI GPT-4**: Best reasoning, higher cost
 - **Model**: `gpt-4-turbo-preview`
 
 ### For Long Conversations
+
 - **Anthropic Claude**: Excellent context handling
 - **Model**: `claude-3-sonnet-20240229`
 
@@ -96,16 +106,19 @@ VITE_AI_MAX_TOKENS=4096
 ## 🐛 Troubleshooting
 
 ### "No API key found"
+
 - Check `.env` file exists
 - Verify `VITE_` prefix on all variables
 - Restart development server after adding keys
 
 ### "Model not available"
+
 - Check API key has access to selected model
 - Try default model first: `llama-3.1-8b-instant`
 - Verify API key permissions
 
 ### "Network errors"
+
 - Check internet connection
 - Verify API quotas/billing
 - Try different AI provider

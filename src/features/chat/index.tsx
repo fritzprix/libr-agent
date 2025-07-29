@@ -16,9 +16,6 @@ export function ChatRouter() {
         <Chat.Header></Chat.Header>
         <Chat.Messages />
         <Chat.Bottom>
-          <Chat.StatusBar />
-          <Chat.AttachedFiles />
-          <Chat.Input />
         </Chat.Bottom>
         <MultiAgentOrchestrator />
       </Chat>
@@ -43,9 +40,6 @@ export function ChatRouter() {
       </Chat.Header>
       <Chat.Messages />
       <Chat.Bottom>
-        <Chat.StatusBar />
-        <Chat.AttachedFiles />
-        <Chat.Input />
       </Chat.Bottom>
       <Reflection />
     </Chat>

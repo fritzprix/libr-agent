@@ -8,7 +8,7 @@
         "gpt-4.1": {
           "name": "GPT-4.1",
           "contextWindow": 1000000,
-          "supportReasoning": true,
+          "supportReasoning": false,
           "supportTools": true,
           "supportStreaming": true,
           "cost": {
@@ -20,7 +20,7 @@
         "gpt-4.1-mini": {
           "name": "GPT-4.1 Mini",
           "contextWindow": 1000000,
-          "supportReasoning": true,
+          "supportReasoning": false,
           "supportTools": true,
           "supportStreaming": true,
           "cost": {
@@ -32,7 +32,7 @@
         "gpt-4.1-nano": {
           "name": "GPT-4.1 Nano",
           "contextWindow": 1000000,
-          "supportReasoning": true,
+          "supportReasoning": false,
           "supportTools": true,
           "supportStreaming": true,
           "cost": {
@@ -80,7 +80,7 @@
         "gpt-4o": {
           "name": "GPT-4o",
           "contextWindow": 128000,
-          "supportReasoning": true,
+          "supportReasoning": false,
           "supportTools": true,
           "supportStreaming": true,
           "cost": {
@@ -92,7 +92,7 @@
         "gpt-4o-mini": {
           "name": "GPT-4o Mini",
           "contextWindow": 128000,
-          "supportReasoning": true,
+          "supportReasoning": false,
           "supportTools": true,
           "supportStreaming": true,
           "cost": {
@@ -135,7 +135,7 @@
         "claude-3-5-sonnet-20241022": {
           "name": "Claude 3.5 Sonnet",
           "contextWindow": 200000,
-          "supportReasoning": true,
+          "supportReasoning": false,
           "supportTools": true,
           "supportStreaming": true,
           "cost": {
@@ -147,7 +147,7 @@
         "claude-3-5-haiku-20241022": {
           "name": "Claude 3.5 Haiku",
           "contextWindow": 200000,
-          "supportReasoning": true,
+          "supportReasoning": false,
           "supportTools": true,
           "supportStreaming": true,
           "cost": {
@@ -166,7 +166,7 @@
         "llama-3.3-70b-versatile": {
           "name": "Llama 3.3 70B Versatile",
           "contextWindow": 128000,
-          "supportReasoning": true,
+          "supportReasoning": false,
           "supportTools": true,
           "supportStreaming": true,
           "cost": {
@@ -178,7 +178,7 @@
         "llama-3.1-8b-instant": {
           "name": "Llama 3.1 8B Instant",
           "contextWindow": 128000,
-          "supportReasoning": true,
+          "supportReasoning": false,
           "supportTools": true,
           "supportStreaming": true,
           "cost": {
@@ -203,7 +203,7 @@
           "name": "Qwen3 32B",
           "contextWindow": 128000,
           "supportReasoning": true,
-          "supportTools": false,
+          "supportTools": true,
           "supportStreaming": true,
           "cost": {
             "input": 0.0008,
@@ -214,7 +214,7 @@
         "gemma2-9b-it": {
           "name": "Gemma 2 9B IT",
           "contextWindow": 8192,
-          "supportReasoning": true,
+          "supportReasoning": false,
           "supportTools": true,
           "supportStreaming": true,
           "cost": {
@@ -226,7 +226,7 @@
         "meta-llama/llama-4-maverick-17b-128e-instruct": {
           "name": "Llama 4 Maverick 17B",
           "contextWindow": 131072,
-          "supportReasoning": true,
+          "supportReasoning": false,
           "supportTools": true,
           "supportStreaming": true,
           "cost": {

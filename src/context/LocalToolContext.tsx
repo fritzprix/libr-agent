@@ -13,10 +13,23 @@ import { useAssistantContext } from './AssistantContext';
 
 /**
  * Represents a single tool within a service, pairing its definition with its handler.
+ * The handler returns a standard MCPResponse for protocol compliance.
  */
+// MCP-compliant response type
+export interface MCPResponse {
+  jsonrpc: '2.0';
+  id: number | string;
+  result?: object;
+  error?: {
+    code: number;
+    message: string;
+    data?: unknown;
+  };
+}
+
 export interface ServiceTool {
   toolDefinition: MCPTool;
-  handler: (args: unknown) => Promise<string>;
+  handler: (args: unknown) => Promise<MCPResponse>;
 }
 
 /**

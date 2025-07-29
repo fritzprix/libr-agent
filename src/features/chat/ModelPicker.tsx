@@ -79,9 +79,21 @@ const CompactModelPicker: FC<ModelPickerProps> = ({ className = '' }) => {
         className="flex-grow min-w-0"
       />
       {selectedModelData && (
-        <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">
-          {selectedModelData.contextWindow / 1000}k
-        </span>
+        <div className="flex items-center space-x-1.5 flex-shrink-0">
+          <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">
+            {selectedModelData.contextWindow / 1000}k
+          </span>
+          {selectedModelData.supportTools && (
+            <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">
+              Tools
+            </span>
+          )}
+          {selectedModelData.supportReasoning && (
+            <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">
+              Reasoning
+            </span>
+          )}
+        </div>
       )}
     </div>
   );
