@@ -39,6 +39,7 @@ interface SessionContextType {
   error: Error | null;
   clearError: () => void;
   retryLastOperation: () => Promise<void>;
+  hasNextPage: boolean
 }
 
 /**
@@ -125,6 +126,8 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
 
   const sessions = useMemo(() => data ?? [], [data]);
 
+  const hasNextPage = useMemo(() => !(sessions.length > 0 && !sessions[sessions.length - 1].hasNextPage),[sessions])
+
   // Combined error state
   const error = useMemo(() => {
     if (fetchError) return toError(fetchError);
@@ -185,8 +188,10 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
    * Loads more sessions (pagination).
    */
   const handleLoadMore = useCallback(() => {
-    setSize((prev) => prev + 1);
-  }, [setSize]);
+    if(hasNextPage) {
+      setSize((prev) => prev + 1);
+    }
+  }, [setSize, hasNextPage]);
 
   /**
    * Selects a session by its id and sets it as current.
@@ -355,6 +360,7 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
       error,
       clearError,
       retryLastOperation,
+      hasNextPage
     }),
     [
       sessions,
@@ -372,6 +378,7 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
       error,
       clearError,
       retryLastOperation,
+      hasNextPage
     ],
   );
 

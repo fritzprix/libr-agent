@@ -1,3 +1,4 @@
+import { useAssistantContext } from '@/context/AssistantContext';
 import { useLocalTools } from '@/context/LocalToolContext';
 import { useSessionContext } from '@/context/SessionContext';
 import { useChatContext } from '@/hooks/use-chat';
@@ -9,6 +10,7 @@ import { useAsyncFn } from 'react-use';
 
 export const ToolCaller: React.FC = () => {
   const { current: currentSession } = useSessionContext();
+  const { currentAssistant } = useAssistantContext();
 
   const { messages, submit } = useChatContext();
   const { executeToolCall: callMcpTool } = useMCPServer();
@@ -24,6 +26,7 @@ export const ToolCaller: React.FC = () => {
         const result = await callFunction(toolCall);
         toolResults.push({
           id: createId(),
+          assistantId: currentAssistant?.id,
           role: 'tool',
           content: result.content,
           tool_call_id: toolCall.id,
