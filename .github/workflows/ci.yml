@@ -34,13 +34,32 @@ jobs:
     
     - name: 📦 Install dependencies
       run: pnpm install
-    
+
+    - name: 🔧 Install Tauri dependencies (Ubuntu)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          libwebkit2gtk-4.1-dev \
+          libappindicator3-dev \
+          librsvg2-dev \
+          patchelf \
+          libglib2.0-dev \
+          libgio2.0-dev \
+          libgobject-2.0-dev \
+          pkg-config \
+          libgtk-3-dev
+
+    - name: Set PKG_CONFIG_PATH (Ubuntu)
+      if: matrix.os == 'ubuntu-latest'
+      run: echo "PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig" >> $GITHUB_ENV
+
     - name: 🧪 Run tests (if available)
       run: pnpm test || echo "No tests defined"
-    
+
     - name: 🔍 Check TypeScript
       run: pnpm tsc --noEmit
-    
+
     - name: 🦀 Check Rust
       run: cd src-tauri && cargo check
 
