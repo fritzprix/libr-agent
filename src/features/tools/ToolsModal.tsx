@@ -50,15 +50,17 @@ const ToolsModal: React.FC<ToolsModalProps> = ({ isOpen, onClose }) => {
                     </span>
                   </div>
                   {tool.description && (
-                    <p className="text-foreground text-sm">{tool.description}</p>
+                    <p className="text-foreground text-sm">
+                      {tool.description}
+                    </p>
                   )}
-                  {tool.input_schema && (
+                  {tool.inputSchema && (
                     <details className="mt-2">
                       <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
                         Input Schema
                       </summary>
                       <pre className="text-xs text-muted-foreground mt-1 bg-background p-2 rounded overflow-x-auto">
-                        {JSON.stringify(tool.input_schema, null, 2)}
+                        {JSON.stringify(tool.inputSchema, null, 2)}
                       </pre>
                     </details>
                   )}

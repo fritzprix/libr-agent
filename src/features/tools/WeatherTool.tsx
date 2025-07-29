@@ -3,6 +3,7 @@ import {
   MCPResponse,
   useLocalTools,
 } from '@/context/LocalToolContext';
+import { createObjectSchema, createStringSchema } from '@/lib/tauri-mcp-client';
 import { createId } from '@paralleldrive/cuid2';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -48,16 +49,14 @@ export function WeatherTool() {
           toolDefinition: {
             name: 'get_current_weather',
             description: 'Get the current weather for a given location',
-            input_schema: {
-              type: 'object' as const,
+            inputSchema: createObjectSchema({
               properties: {
-                location: {
-                  type: 'string',
+                location: createStringSchema({
                   description: 'The city and state, e.g. San Francisco, CA',
-                },
+                }),
               },
               required: ['location'],
-            },
+            }),
           },
           handler: getWeatherHandler,
         },

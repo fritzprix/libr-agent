@@ -4,6 +4,12 @@ import {
   MCPResponse,
   useLocalTools,
 } from '@/context/LocalToolContext';
+import {
+  createArraySchema,
+  createNumberSchema,
+  createObjectSchema,
+  createStringSchema,
+} from '@/lib/tauri-mcp-client';
 import { useSessionContext } from '@/context/SessionContext';
 import { useSessionHistory } from '@/context/SessionHistoryContext';
 import { useChatContext } from '@/hooks/use-chat';
@@ -258,16 +264,14 @@ export const MultiAgentOrchestrator: React.FC = () => {
             name: 'promptToUser',
             description:
               'Prompt the user for additional information or clarification',
-            input_schema: {
-              type: 'object',
+            inputSchema: createObjectSchema({
               properties: {
-                prompt: {
-                  type: 'string',
+                prompt: createStringSchema({
                   description: 'The prompt message to show to the user',
-                },
+                }),
               },
               required: ['prompt'],
-            },
+            }),
           },
           handler: handlePromptToUser,
         },
@@ -276,20 +280,18 @@ export const MultiAgentOrchestrator: React.FC = () => {
             name: 'switchAssistant',
             description:
               'Switch to a different specialized assistant with specific instructions',
-            input_schema: {
-              type: 'object',
+            inputSchema: createObjectSchema({
               properties: {
-                assistantId: {
-                  type: 'string',
+                assistantId: createStringSchema({
                   description: 'The ID of the assistant to switch to',
-                },
-                instruction: {
-                  type: 'string',
-                  description: 'Clear instructions for the new assistant',
-                },
+                }),
+                instruction: createStringSchema({
+                  description:
+                    'Optional specific instruction for the assistant',
+                }),
               },
-              required: ['assistantId', 'instruction'],
-            },
+              required: ['assistantId'],
+            }),
           },
           handler: handleSwitchAssistant,
         },
@@ -297,17 +299,15 @@ export const MultiAgentOrchestrator: React.FC = () => {
           toolDefinition: {
             name: 'setPlan',
             description: 'Set a plan of action items for the user',
-            input_schema: {
-              type: 'object',
+            inputSchema: createObjectSchema({
               properties: {
-                items: {
-                  type: 'array',
-                  items: { type: 'string' },
+                items: createArraySchema({
+                  items: createStringSchema(),
                   description: 'Array of plan items/steps',
-                },
+                }),
               },
               required: ['items'],
-            },
+            }),
           },
           handler: handleSetPlan,
         },
@@ -315,17 +315,15 @@ export const MultiAgentOrchestrator: React.FC = () => {
           toolDefinition: {
             name: 'checkPlanItem',
             description: 'Mark a specific plan item as completed',
-            input_schema: {
-              type: 'object',
+            inputSchema: createObjectSchema({
               properties: {
-                index: {
-                  type: 'number',
+                index: createNumberSchema({
                   description:
                     '0-based index of the plan item to mark as complete',
-                },
+                }),
               },
               required: ['index'],
-            },
+            }),
           },
           handler: handleCheckPlanItem,
         },
@@ -333,11 +331,10 @@ export const MultiAgentOrchestrator: React.FC = () => {
           toolDefinition: {
             name: 'clearPlan',
             description: 'Clear/cancel the current plan',
-            input_schema: {
-              type: 'object',
+            inputSchema: createObjectSchema({
               properties: {},
               required: [],
-            },
+            }),
           },
           handler: handleClearPlan,
         },
@@ -346,16 +343,14 @@ export const MultiAgentOrchestrator: React.FC = () => {
             name: 'reportResult',
             description:
               'Provide a detailed summary of completed task or current status',
-            input_schema: {
-              type: 'object',
+            inputSchema: createObjectSchema({
               properties: {
-                resultInDetail: {
-                  type: 'string',
+                resultInDetail: createStringSchema({
                   description: 'Detailed result summary',
-                },
+                }),
               },
               required: ['resultInDetail'],
-            },
+            }),
           },
           handler: handleReportResult,
         },
