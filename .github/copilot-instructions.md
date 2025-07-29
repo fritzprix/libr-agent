@@ -1,4 +1,69 @@
-# TauriAgent Project Guidelines
+# 🚀 SynapticFlow Project Guidelines
+
+## Project Overview
+
+**SynapticFlow: A High-Freedom AI Agent Platform - Infinitely Expandable with MCP!**
+
+SynapticFlow is a next-generation desktop AI agent platform that combines the lightness of Tauri with the intuitiveness of React. Users can automate all daily tasks by giving AI agents their own unique personalities and abilities.
+
+## Key Features
+
+- Role Management System: Create/edit/delete various AI agent roles.
+- System Prompt: Define custom AI personalities for each role.
+- Real-time MCP Connection: Run local MCP servers via stdio protocol.
+- Tool Calling System: Call tools from the MCP server in real-time.
+- IndexedDB Storage: Store roles/conversations in a browser local database.
+- Tauri Backend: High-performance native desktop app framework.
+- UI Components: Modern terminal-style interface.
+- Centralized Configuration Management: All settings, including API keys, models, and message window sizes, are managed and permanently stored within the app.
+- Agent and Multi-Agent Configuration Sharing/Extraction: Easily export and import agent and Multi-Agent configurations.
+
+## Technology Stack
+
+- Tauri (Rust + WebView)
+- React 18
+- TypeScript
+- RMCP (Rust-based Model Context Protocol client)
+- Tailwind CSS
+- IndexedDB
+- Vite
+
+## File Structure
+
+```bash
+synaptic-flow/
+├── src/                        # React Frontend
+│   ├── app/                    # App entry, root layout, global providers
+│   ├── assets/                 # Static assets (images, svgs, etc.)
+│   ├── components/             # Shared, generic UI components (reusable)
+│   ├── features/               # Feature-specific components, logic, and hooks
+│   ├── config/                 # Static config files
+│   ├── context/                # React context providers
+│   ├── hooks/                  # Generic, reusable hooks
+│   ├── lib/                    # Service layer, business logic, data, API
+│   ├── models/                 # TypeScript types and interfaces
+│   ├── styles/                 # Global or shared CSS
+│   ├── README.md
+│   └── vite-env.d.ts
+├── src-tauri/                 # Rust Backend
+│   ├── src/
+│   ├── Cargo.toml
+│   └── tauri.conf.json
+├── docs/                      # Documentation
+├── dist/                      # Build artifacts
+├── package.json
+├── tailwind.config.js
+└── vite.config.ts
+```
+
+## Quick Start
+
+1. Install Rust ([rustup.rs](https://rustup.rs/)), Node.js (v18+), and pnpm (`npm install -g pnpm`).
+2. Run `pnpm install` to install dependencies.
+3. Start development: `pnpm tauri dev`
+4. Build for production: `pnpm tauri build`
+5. API keys are managed in-app via the settings modal (not in .env files).
+# SynapticFlow Project Guidelines
 
 ## Coding Style
 

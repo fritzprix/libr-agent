@@ -5,6 +5,7 @@ import { useAIService } from './use-ai-service';
 import { createId } from '@paralleldrive/cuid2';
 import { getLogger } from '../lib/logger';
 import { Message } from '@/models/chat';
+import { useSettings } from './use-settings';
 
 const logger = getLogger('useChatContext');
 
@@ -25,6 +26,8 @@ export const useChatContext = (): ChatContextReturn => {
   const [currentStreaming, setCurrentStreaming] = useState<Message | null>(
     null,
   );
+  const { value: settingValue } = useSettings();
+  const messageWindowSize = useMemo(() => settingValue ? settingValue.windowSize : 20, [settingValue]);
 
   const messages = useMemo(() => {
     if (currentStreaming) {
@@ -114,7 +117,7 @@ export const useChatContext = (): ChatContextReturn => {
         } else {
           messagesToSend = messages;
         }
-        const aiResponse = await triggerAIService(messagesToSend);
+        const aiResponse = await triggerAIService(messagesToSend.slice(-messageWindowSize));
 
         if (aiResponse) {
           const responseWithSessionId: Message = {

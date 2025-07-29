@@ -1,3 +1,110 @@
+# Tool Response Schema Management in SynapticFlow
+
+## Project Approach
+
+In SynapticFlow, tool responses are managed using a strict, typesafe TypeScript schema that closely follows the MCP protocol specification. All tool responses implement the `MCPResponse` interface, which enforces:
+
+- JSON-RPC compliance (`jsonrpc`, `id`, `success`, `error`)
+- A `result` field of type `MCPResult`, which supports both unstructured and structured content
+
+### Typesafe Content Blocks
+
+The `MCPResult` type supports multiple content types:
+
+- **Text**: `{ type: 'text', text: string }`
+- **Image**: `{ type: 'image', data: string, mimeType: string, annotations?: object }`
+- **Audio**: `{ type: 'audio', data: string, mimeType: string, annotations?: object }`
+- **Resource Link**: `{ type: 'resource_link', uri: string, name: string, ... }`
+- **Resource**: `{ type: 'resource', resource: { ... } }`
+
+Structured content is returned in the `structuredContent` field, allowing for strict schema validation and easy integration with LLMs and clients.
+
+### Example: Typescript Definition
+
+```typescript
+export interface MCPResponse {
+  jsonrpc: '2.0';
+  id: number | string;
+  success: boolean;
+  result?: MCPResult;
+  error?: {
+    code: number;
+    message: string;
+    data?: unknown;
+  };
+}
+
+export interface MCPResult {
+  content?: MCPContent[];
+  structuredContent?: Record<string, unknown>;
+  isError?: boolean;
+}
+
+export type MCPContent =
+  | { type: 'text'; text: string; annotations?: object }
+  | { type: 'image'; data: string; mimeType: string; annotations?: object }
+  | { type: 'audio'; data: string; mimeType: string; annotations?: object }
+  | {
+      type: 'resource_link';
+      uri: string;
+      name: string;
+      description?: string;
+      mimeType?: string;
+      annotations?: object;
+    }
+  | {
+      type: 'resource';
+      resource: {
+        uri: string;
+        title?: string;
+        mimeType?: string;
+        text?: string;
+        annotations?: object;
+      };
+    };
+```
+
+### Usage in Tool Handlers
+
+All tool handlers (see `src/features/chat/orchestrators/MultiAgentOrchestrator.tsx`, `src/features/tools/WeatherTool.tsx`) return responses using these types. For example:
+
+```typescript
+return {
+  success: true,
+  jsonrpc: '2.0',
+  id,
+  result: {
+    content: [
+      { type: 'text', text: 'Prompt sent to user' },
+    ],
+    structuredContent: { ... }, // optional
+  },
+};
+```
+
+This ensures:
+
+- All tool responses are strictly validated at compile time
+- Easy extension for new content types
+- Consistency with MCP protocol and LLM expectations
+
+### Output Schema Support
+
+If a tool provides an output schema, the `structuredContent` field is used to return validated, structured results. For backwards compatibility, a serialized version may also be included in a text content block.
+
+### Error Handling
+
+Errors are reported using the `error` field for protocol errors, and the `isError` property in `MCPResult` for tool execution errors, matching MCP best practices.
+
+### Summary
+
+This approach provides:
+
+- Strong type safety for all tool responses
+- Full compatibility with MCP protocol
+- Clear separation of unstructured and structured content
+- Easy integration with LLMs and client applications
+
 # Tools
 
 <div id="enable-section-numbers" />
