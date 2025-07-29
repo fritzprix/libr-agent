@@ -87,6 +87,10 @@ jobs:
           libgobject-2.0-dev \
           pkg-config \
           libgtk-3-dev
+
+    - name: Set PKG_CONFIG_PATH (Ubuntu)
+      if: matrix.os == 'ubuntu-latest'
+      run: echo "PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig" >> $GITHUB_ENV
     
     - name: 🏗️ Build Tauri app
       run: pnpm tauri build
