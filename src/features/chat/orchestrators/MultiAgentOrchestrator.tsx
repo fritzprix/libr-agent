@@ -52,6 +52,7 @@ export const MultiAgentOrchestrator: React.FC = () => {
       const id = createId();
       if (!currentSession) {
         return {
+          success: false,
           jsonrpc: '2.0',
           id,
           error: {
@@ -68,9 +69,14 @@ export const MultiAgentOrchestrator: React.FC = () => {
         sessionId: currentSession.id,
       });
       return {
+        success: true,
         jsonrpc: '2.0',
         id,
-        result: { message: 'Prompt sent to user' },
+        result: {
+          content: [
+            { type: 'text', text: 'Prompt sent to user' },
+          ],
+        },
       };
     },
     [addMessage, currentSession],
@@ -82,6 +88,7 @@ export const MultiAgentOrchestrator: React.FC = () => {
       const id = createId();
       if (!currentSession) {
         return {
+          success: false,
           jsonrpc: '2.0',
           id,
           error: {
@@ -103,12 +110,18 @@ export const MultiAgentOrchestrator: React.FC = () => {
           },
         ]);
         return {
+          success: true,
           jsonrpc: '2.0',
           id,
-          result: { success: true, message: `Switched to assistant: ${nextAssistant.name}` },
+          result: {
+            content: [
+              { type: 'text', text: `Switched to assistant: ${nextAssistant.name}` },
+            ],
+          },
         };
       } else {
         return {
+          success: false,
           jsonrpc: '2.0',
           id,
           error: {
@@ -129,9 +142,15 @@ export const MultiAgentOrchestrator: React.FC = () => {
     );
     plan.current = newPlan;
     return {
+      success: true,
       jsonrpc: '2.0',
       id,
-      result: { message: `Plan set with ${items.length} items`, items },
+      result: {
+        content: [
+          { type: 'text', text: `Plan set with ${items.length} items: ${items.join(', ')}` },
+        ],
+        structuredContent: { items },
+      },
     };
   }, []);
 
@@ -142,12 +161,19 @@ export const MultiAgentOrchestrator: React.FC = () => {
       if (index >= 0 && index < plan.current.length) {
         plan.current[index].complete = true;
         return {
+          success: true,
           jsonrpc: '2.0',
           id,
-          result: { message: `Plan item ${index} marked as complete`, index },
+          result: {
+            content: [
+              { type: 'text', text: `Plan item ${index} marked as complete` },
+            ],
+            structuredContent: { index },
+          },
         };
       } else {
         return {
+          success: false,
           jsonrpc: '2.0',
           id,
           error: {
@@ -164,9 +190,14 @@ export const MultiAgentOrchestrator: React.FC = () => {
     const id = createId();
     plan.current = [];
     return {
+      success: true,
       jsonrpc: '2.0',
       id,
-      result: { message: 'Plan cleared' },
+      result: {
+        content: [
+          { type: 'text', text: 'Plan cleared' },
+        ],
+      },
     };
   }, []);
 
@@ -176,6 +207,7 @@ export const MultiAgentOrchestrator: React.FC = () => {
       const id = createId();
       if (!currentSession) {
         return {
+          success: false,
           jsonrpc: '2.0',
           id,
           error: {
@@ -192,9 +224,15 @@ export const MultiAgentOrchestrator: React.FC = () => {
         sessionId: currentSession.id,
       });
       return {
+        success: true,
         jsonrpc: '2.0',
         id,
-        result: { message: 'Result reported', detail: resultInDetail },
+        result: {
+          content: [
+            { type: 'text', text: `Result reported: ${resultInDetail}` },
+          ],
+          structuredContent: { detail: resultInDetail },
+        },
       };
     },
     [addMessage, currentSession],
@@ -381,9 +419,8 @@ Available assistants: ${assistants.map((a) => `${a.id}: ${a.name}`).join(', ')}`
               {assistants.map((assistant) => (
                 <div
                   key={assistant.id}
-                  className={`p-1 rounded ${
-                    assistant.id === currentAssistant?.id ? 'bg-blue-600' : ''
-                  }`}
+                  className={`p-1 rounded ${assistant.id === currentAssistant?.id ? 'bg-blue-600' : ''
+                    }`}
                 >
                   {assistant.name} ({assistant.id})
                 </div>

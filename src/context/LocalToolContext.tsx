@@ -15,11 +15,65 @@ import { useAssistantContext } from './AssistantContext';
  * Represents a single tool within a service, pairing its definition with its handler.
  * The handler returns a standard MCPResponse for protocol compliance.
  */
-// MCP-compliant response type
+// MCP-compliant content types (from MCP spec)
+export type MCPTextContent = {
+  type: 'text';
+  text: string;
+  annotations?: Record<string, unknown>;
+};
+
+export type MCPImageContent = {
+  type: 'image';
+  data: string; // base64
+  mimeType: string;
+  annotations?: Record<string, unknown>;
+};
+
+export type MCPAudioContent = {
+  type: 'audio';
+  data: string; // base64
+  mimeType: string;
+  annotations?: Record<string, unknown>;
+};
+
+export type MCPResourceLinkContent = {
+  type: 'resource_link';
+  uri: string;
+  name: string;
+  description?: string;
+  mimeType?: string;
+  annotations?: Record<string, unknown>;
+};
+
+export type MCPResourceContent = {
+  type: 'resource';
+  resource: {
+    uri: string;
+    title?: string;
+    mimeType?: string;
+    text?: string;
+    annotations?: Record<string, unknown>;
+  };
+};
+
+export type MCPContent =
+  | MCPTextContent
+  | MCPImageContent
+  | MCPAudioContent
+  | MCPResourceLinkContent
+  | MCPResourceContent;
+
+export interface MCPResult {
+  content?: MCPContent[];
+  structuredContent?: Record<string, unknown>;
+  isError?: boolean;
+}
+
 export interface MCPResponse {
   jsonrpc: '2.0';
   id: number | string;
-  result?: object;
+  success: boolean;
+  result?: MCPResult;
   error?: {
     code: number;
     message: string;

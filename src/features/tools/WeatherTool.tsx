@@ -1,5 +1,6 @@
-import { LocalService, useLocalTools } from '@/context/LocalToolContext';
-import { useMemo, useCallback, useEffect, useState } from 'react';
+import { LocalService, MCPResponse, useLocalTools } from '@/context/LocalToolContext';
+import { createId } from '@paralleldrive/cuid2';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 // 이 컴포넌트는 UI를 렌더링하지 않고, 날씨 확인 도구만 제공합니다。
 export function WeatherTool() {
@@ -7,13 +8,30 @@ export function WeatherTool() {
   const [unit] = useState<'celsius' | 'fahrenheit'>('celsius');
 
   const getWeatherHandler = useCallback(
-    async (args: unknown) => {
+    async (args: unknown): Promise<MCPResponse> => {
       const argsObj = args as Record<string, unknown>;
       const location = argsObj.location as string;
       // 실제 API 호출 로직...
       console.log(`Getting weather for ${location} in ${unit}`);
       const temperature = unit === 'celsius' ? 22 : 72;
-      return `Current weather in ${location}: ${temperature}°${unit === 'celsius' ? 'C' : 'F'}`;
+      return {
+        jsonrpc: "2.0",
+        id: createId(),
+        success: true,
+        result: {
+          content: [
+            {
+              type: 'text',
+              text: `Current weather in ${location}: ${temperature}°${unit === 'celsius' ? 'C' : 'F'}`,
+            },
+          ],
+          structuredContent: {
+            location,
+            temperature,
+            unit,
+          },
+        },
+      };
     },
     [unit],
   );
