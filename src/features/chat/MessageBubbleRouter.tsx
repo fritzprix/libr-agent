@@ -1,4 +1,3 @@
-
 import React from 'react';
 import ContentBubble from './ContentBubble';
 import ToolCallBubble from './ToolCallBubble';
@@ -22,7 +21,9 @@ interface MessageBubbleRouterProps {
   };
 }
 
-const MessageBubbleRouter: React.FC<MessageBubbleRouterProps> = ({ message }) => {
+const MessageBubbleRouter: React.FC<MessageBubbleRouterProps> = ({
+  message,
+}) => {
   if (message.tool_calls && message.tool_calls.length > 0) {
     return <ToolCallBubble tool_calls={message.tool_calls} />;
   }

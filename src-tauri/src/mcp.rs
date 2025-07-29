@@ -29,30 +29,124 @@ fn default_transport() -> String {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MCPToolInputSchema {
-    #[serde(rename = "type")]
-    pub schema_type: String,
-    pub properties: serde_json::Map<String, serde_json::Value>,
+#[serde(tag = "type")]
+pub enum JSONSchemaType {
+    #[serde(rename = "string")]
+    String {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        min_length: Option<u32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        max_length: Option<u32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pattern: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        format: Option<String>,
+    },
+    #[serde(rename = "number")]
+    Number {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        minimum: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        maximum: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        exclusive_minimum: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        exclusive_maximum: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        multiple_of: Option<f64>,
+    },
+    #[serde(rename = "integer")]
+    Integer {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        minimum: Option<i64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        maximum: Option<i64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        exclusive_minimum: Option<i64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        exclusive_maximum: Option<i64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        multiple_of: Option<i64>,
+    },
+    #[serde(rename = "boolean")]
+    Boolean,
+    #[serde(rename = "array")]
+    Array {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        items: Option<Box<JSONSchema>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        min_items: Option<u32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        max_items: Option<u32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        unique_items: Option<bool>,
+    },
+    #[serde(rename = "object")]
+    Object {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        properties: Option<std::collections::HashMap<String, JSONSchema>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        required: Option<Vec<String>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        additional_properties: Option<bool>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        min_properties: Option<u32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        max_properties: Option<u32>,
+    },
+    #[serde(rename = "null")]
+    Null,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JSONSchema {
+    #[serde(flatten)]
+    pub schema_type: JSONSchemaType,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub required: Option<Vec<String>>,
+    pub title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-    // Allow additional fields for flexibility
-    #[serde(flatten)]
-    pub additional_properties: serde_json::Map<String, serde_json::Value>,
+    pub default: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub examples: Option<Vec<serde_json::Value>>,
+    #[serde(rename = "enum", skip_serializing_if = "Option::is_none")]
+    pub enum_values: Option<Vec<serde_json::Value>>,
+    #[serde(rename = "const", skip_serializing_if = "Option::is_none")]
+    pub const_value: Option<serde_json::Value>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MCPToolAnnotations {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub audience: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub priority: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_modified: Option<String>,
+    #[serde(flatten)]
+    pub additional: serde_json::Map<String, serde_json::Value>,
+}
+
+// For backward compatibility, create a type alias
+pub type MCPToolInputSchema = JSONSchema;
 
 impl Default for MCPToolInputSchema {
     fn default() -> Self {
         Self {
-            schema_type: "object".to_string(),
-            properties: serde_json::Map::new(),
-            required: None,
-            description: None,
+            schema_type: JSONSchemaType::Object {
+                properties: Some(std::collections::HashMap::new()),
+                required: None,
+                additional_properties: None,
+                min_properties: None,
+                max_properties: None,
+            },
             title: None,
-            additional_properties: serde_json::Map::new(),
+            description: None,
+            default: None,
+            examples: None,
+            enum_values: None,
+            const_value: None,
         }
     }
 }
@@ -60,8 +154,15 @@ impl Default for MCPToolInputSchema {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MCPTool {
     pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
     pub description: String,
-    pub input_schema: MCPToolInputSchema,
+    #[serde(rename = "inputSchema")]
+    pub input_schema: JSONSchema,
+    #[serde(rename = "outputSchema", skip_serializing_if = "Option::is_none")]
+    pub output_schema: Option<JSONSchema>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<MCPToolAnnotations>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -198,7 +299,7 @@ impl MCPServerManager {
                         result: None,
                         error: Some(e.to_string()),
                     }
-                },
+                }
             }
         } else {
             error!("Server '{}' not found", server_name);
@@ -210,65 +311,15 @@ impl MCPServerManager {
         }
     }
 
-    /// Convert JSON schema to structured MCPToolInputSchema
-    fn convert_input_schema(schema: serde_json::Value) -> MCPToolInputSchema {
-        match schema {
-            serde_json::Value::Object(obj) => {
-                let mut input_schema = MCPToolInputSchema::default();
-
-                // Extract known fields
-                if let Some(schema_type) = obj.get("type") {
-                    if let Some(type_str) = schema_type.as_str() {
-                        input_schema.schema_type = type_str.to_string();
-                    }
-                }
-
-                if let Some(properties) = obj.get("properties") {
-                    if let Some(props_obj) = properties.as_object() {
-                        input_schema.properties = props_obj.clone();
-                    }
-                }
-
-                if let Some(required) = obj.get("required") {
-                    if let Some(req_array) = required.as_array() {
-                        let required_strings: Vec<String> = req_array
-                            .iter()
-                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                            .collect();
-                        if !required_strings.is_empty() {
-                            input_schema.required = Some(required_strings);
-                        }
-                    }
-                }
-
-                if let Some(description) = obj.get("description") {
-                    if let Some(desc_str) = description.as_str() {
-                        input_schema.description = Some(desc_str.to_string());
-                    }
-                }
-
-                if let Some(title) = obj.get("title") {
-                    if let Some(title_str) = title.as_str() {
-                        input_schema.title = Some(title_str.to_string());
-                    }
-                }
-
-                // Store any additional properties
-                for (key, value) in obj {
-                    if !matches!(
-                        key.as_str(),
-                        "type" | "properties" | "required" | "description" | "title"
-                    ) {
-                        input_schema.additional_properties.insert(key, value);
-                    }
-                }
-
-                input_schema
-            }
-            _ => {
-                // If it's not an object, create a default schema
-                warn!("Received non-object schema, using default");
-                MCPToolInputSchema::default()
+    /// Convert JSON schema to structured JSONSchema
+    fn convert_input_schema(schema: serde_json::Value) -> JSONSchema {
+        // For now, use serde_json to deserialize directly into our JSONSchema struct
+        // This provides better type safety and handles the conversion automatically
+        match serde_json::from_value::<JSONSchema>(schema) {
+            Ok(json_schema) => json_schema,
+            Err(e) => {
+                warn!("Failed to parse JSON schema: {}, using default", e);
+                JSONSchema::default()
             }
         }
     }
@@ -302,12 +353,15 @@ impl MCPServerManager {
 
                         let mcp_tool = MCPTool {
                             name: tool.name.to_string(),
+                            title: None,
                             description: tool.description.unwrap_or_default().to_string(),
                             input_schema: structured_schema,
+                            output_schema: None,
+                            annotations: None,
                         };
 
                         debug!(
-                            "Converted tool: {} with schema type: {}",
+                            "Converted tool: {} with schema type: {:?}",
                             mcp_tool.name, mcp_tool.input_schema.schema_type
                         );
                         tools.push(mcp_tool);
@@ -345,10 +399,7 @@ impl MCPServerManager {
                     all_tools.extend(tools);
                 }
                 Err(e) => {
-                    warn!(
-                        "Failed to get tools from server {}: {}",
-                        server_name, e
-                    );
+                    warn!("Failed to get tools from server {}: {}", server_name, e);
                     // Continue with other servers instead of failing completely
                 }
             }
@@ -384,37 +435,36 @@ impl MCPServerManager {
     /// Validate if a tool schema is compatible with AI service expectations
     pub fn validate_tool_schema(tool: &MCPTool) -> Result<()> {
         // Ensure the schema type is 'object'
-        if tool.input_schema.schema_type != "object" {
-            return Err(anyhow::anyhow!(
-                "Tool '{}' has invalid schema type '{}', expected 'object' (input_schema: {:?})",
-                tool.name,
-                tool.input_schema.schema_type,
-                tool.input_schema
-            ));
-        }
-
-        // Validate required fields exist in properties
-        if let Some(required) = &tool.input_schema.required {
-            if tool.input_schema.properties.is_empty() {
-                return Err(anyhow::anyhow!(
-                    "Tool '{}' has required fields but no properties defined (input_schema: {:?})",
-                    tool.name,
-                    tool.input_schema
-                ));
-            }
-            for req_field in required {
-                if !tool.input_schema.properties.contains_key(req_field) {
+        match &tool.input_schema.schema_type {
+            JSONSchemaType::Object {
+                properties,
+                required,
+                ..
+            } => {
+                // Validate required fields exist in properties
+                if let (Some(required_fields), Some(props)) = (required, properties) {
+                    for req_field in required_fields {
+                        if !props.contains_key(req_field) {
+                            return Err(anyhow::anyhow!(
+                                "Tool '{}' requires field '{}' but it's not defined in properties",
+                                tool.name,
+                                req_field
+                            ));
+                        }
+                    }
+                } else if required.is_some() && properties.is_none() {
                     return Err(anyhow::anyhow!(
-                        "Tool '{}' requires field '{}' but it's not defined in properties (input_schema: {:?})",
-                        tool.name,
-                        req_field,
-                        tool.input_schema
+                        "Tool '{}' has required fields but no properties defined",
+                        tool.name
                     ));
                 }
+                Ok(())
             }
+            _ => Err(anyhow::anyhow!(
+                "Tool '{}' has invalid schema type, expected 'object'",
+                tool.name
+            )),
         }
-
-        Ok(())
     }
 
     /// Get validated tools that are compatible with the AI service
@@ -438,5 +488,3 @@ impl MCPServerManager {
         Ok(validated_tools)
     }
 }
-
-

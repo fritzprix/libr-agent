@@ -1,5 +1,11 @@
 import { useCallback, useMemo } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui';
+import {
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from '../../components/ui';
 import { useSessionContext } from '@/context/SessionContext';
 import SessionList from '../session/SessionList';
 
@@ -9,6 +15,7 @@ export default function History() {
     current: currentSession,
     loadMore,
     isLoading,
+    hasNextPage,
   } = useSessionContext();
 
   // Flatten the paginated sessions
@@ -53,19 +60,17 @@ export default function History() {
               />
 
               {/* Load more button if there are more pages */}
-              {sessionPages &&
-                sessionPages.length > 0 &&
-                sessionPages[sessionPages.length - 1]?.hasNextPage && (
-                  <div className="mt-4 text-center">
-                    <button
-                      onClick={handleLoadMore}
-                      disabled={isLoading}
-                      className="px-4 py-2 bg-primary/10 border border-primary text-primary rounded hover:bg-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {isLoading ? 'Loading...' : 'Load More'}
-                    </button>
-                  </div>
-                )}
+              {hasNextPage && (
+                <div className="mt-4 text-center">
+                  <Button
+                    onClick={handleLoadMore}
+                    disabled={isLoading}
+                    className="px-4 py-2 bg-primary/10 border border-primary text-primary rounded hover:bg-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isLoading ? 'Loading...' : 'Load More'}
+                  </Button>
+                </div>
+              )}
             </>
           )}
         </CardContent>

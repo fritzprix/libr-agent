@@ -1,5 +1,15 @@
 import { useAssistantContext } from '@/context/AssistantContext';
-import { LocalService, MCPResponse, useLocalTools } from '@/context/LocalToolContext';
+import {
+  LocalService,
+  MCPResponse,
+  useLocalTools,
+} from '@/context/LocalToolContext';
+import {
+  createArraySchema,
+  createNumberSchema,
+  createObjectSchema,
+  createStringSchema,
+} from '@/lib/tauri-mcp-client';
 import { useSessionContext } from '@/context/SessionContext';
 import { useSessionHistory } from '@/context/SessionHistoryContext';
 import { useChatContext } from '@/hooks/use-chat';
@@ -37,7 +47,8 @@ interface PlanItem {
 }
 
 export const MultiAgentOrchestrator: React.FC = () => {
-  const { currentAssistant, setCurrentAssistant, assistants } = useAssistantContext();
+  const { currentAssistant, setCurrentAssistant, assistants } =
+    useAssistantContext();
   const { registerService, unregisterService } = useLocalTools();
   const { current: currentSession } = useSessionContext();
   const { addMessage } = useSessionHistory();
@@ -52,6 +63,7 @@ export const MultiAgentOrchestrator: React.FC = () => {
       const id = createId();
       if (!currentSession) {
         return {
+          success: false,
           jsonrpc: '2.0',
           id,
           error: {
@@ -68,9 +80,12 @@ export const MultiAgentOrchestrator: React.FC = () => {
         sessionId: currentSession.id,
       });
       return {
+        success: true,
         jsonrpc: '2.0',
         id,
-        result: { message: 'Prompt sent to user' },
+        result: {
+          content: [{ type: 'text', text: 'Prompt sent to user' }],
+        },
       };
     },
     [addMessage, currentSession],
@@ -82,6 +97,7 @@ export const MultiAgentOrchestrator: React.FC = () => {
       const id = createId();
       if (!currentSession) {
         return {
+          success: false,
           jsonrpc: '2.0',
           id,
           error: {
@@ -103,12 +119,21 @@ export const MultiAgentOrchestrator: React.FC = () => {
           },
         ]);
         return {
+          success: true,
           jsonrpc: '2.0',
           id,
-          result: { success: true, message: `Switched to assistant: ${nextAssistant.name}` },
+          result: {
+            content: [
+              {
+                type: 'text',
+                text: `Switched to assistant: ${nextAssistant.name}`,
+              },
+            ],
+          },
         };
       } else {
         return {
+          success: false,
           jsonrpc: '2.0',
           id,
           error: {
@@ -121,19 +146,31 @@ export const MultiAgentOrchestrator: React.FC = () => {
     [submit, currentSession, assistants, setCurrentAssistant],
   );
 
-  const handleSetPlan = useCallback(async (args: unknown): Promise<MCPResponse> => {
-    const { items } = args as SetPlanInput;
-    const id = createId();
-    const newPlan = items.map(
-      (item) => ({ plan: item, complete: false }) satisfies PlanItem,
-    );
-    plan.current = newPlan;
-    return {
-      jsonrpc: '2.0',
-      id,
-      result: { message: `Plan set with ${items.length} items`, items },
-    };
-  }, []);
+  const handleSetPlan = useCallback(
+    async (args: unknown): Promise<MCPResponse> => {
+      const { items } = args as SetPlanInput;
+      const id = createId();
+      const newPlan = items.map(
+        (item) => ({ plan: item, complete: false }) satisfies PlanItem,
+      );
+      plan.current = newPlan;
+      return {
+        success: true,
+        jsonrpc: '2.0',
+        id,
+        result: {
+          content: [
+            {
+              type: 'text',
+              text: `Plan set with ${items.length} items: ${items.join(', ')}`,
+            },
+          ],
+          structuredContent: { items },
+        },
+      };
+    },
+    [],
+  );
 
   const handleCheckPlanItem = useCallback(
     async (args: unknown): Promise<MCPResponse> => {
@@ -142,12 +179,19 @@ export const MultiAgentOrchestrator: React.FC = () => {
       if (index >= 0 && index < plan.current.length) {
         plan.current[index].complete = true;
         return {
+          success: true,
           jsonrpc: '2.0',
           id,
-          result: { message: `Plan item ${index} marked as complete`, index },
+          result: {
+            content: [
+              { type: 'text', text: `Plan item ${index} marked as complete` },
+            ],
+            structuredContent: { index },
+          },
         };
       } else {
         return {
+          success: false,
           jsonrpc: '2.0',
           id,
           error: {
@@ -164,9 +208,12 @@ export const MultiAgentOrchestrator: React.FC = () => {
     const id = createId();
     plan.current = [];
     return {
+      success: true,
       jsonrpc: '2.0',
       id,
-      result: { message: 'Plan cleared' },
+      result: {
+        content: [{ type: 'text', text: 'Plan cleared' }],
+      },
     };
   }, []);
 
@@ -176,6 +223,7 @@ export const MultiAgentOrchestrator: React.FC = () => {
       const id = createId();
       if (!currentSession) {
         return {
+          success: false,
           jsonrpc: '2.0',
           id,
           error: {
@@ -192,9 +240,15 @@ export const MultiAgentOrchestrator: React.FC = () => {
         sessionId: currentSession.id,
       });
       return {
+        success: true,
         jsonrpc: '2.0',
         id,
-        result: { message: 'Result reported', detail: resultInDetail },
+        result: {
+          content: [
+            { type: 'text', text: `Result reported: ${resultInDetail}` },
+          ],
+          structuredContent: { detail: resultInDetail },
+        },
       };
     },
     [addMessage, currentSession],
@@ -210,16 +264,14 @@ export const MultiAgentOrchestrator: React.FC = () => {
             name: 'promptToUser',
             description:
               'Prompt the user for additional information or clarification',
-            input_schema: {
-              type: 'object',
+            inputSchema: createObjectSchema({
               properties: {
-                prompt: {
-                  type: 'string',
+                prompt: createStringSchema({
                   description: 'The prompt message to show to the user',
-                },
+                }),
               },
               required: ['prompt'],
-            },
+            }),
           },
           handler: handlePromptToUser,
         },
@@ -228,20 +280,18 @@ export const MultiAgentOrchestrator: React.FC = () => {
             name: 'switchAssistant',
             description:
               'Switch to a different specialized assistant with specific instructions',
-            input_schema: {
-              type: 'object',
+            inputSchema: createObjectSchema({
               properties: {
-                assistantId: {
-                  type: 'string',
+                assistantId: createStringSchema({
                   description: 'The ID of the assistant to switch to',
-                },
-                instruction: {
-                  type: 'string',
-                  description: 'Clear instructions for the new assistant',
-                },
+                }),
+                instruction: createStringSchema({
+                  description:
+                    'Optional specific instruction for the assistant',
+                }),
               },
-              required: ['assistantId', 'instruction'],
-            },
+              required: ['assistantId'],
+            }),
           },
           handler: handleSwitchAssistant,
         },
@@ -249,17 +299,15 @@ export const MultiAgentOrchestrator: React.FC = () => {
           toolDefinition: {
             name: 'setPlan',
             description: 'Set a plan of action items for the user',
-            input_schema: {
-              type: 'object',
+            inputSchema: createObjectSchema({
               properties: {
-                items: {
-                  type: 'array',
-                  items: { type: 'string' },
+                items: createArraySchema({
+                  items: createStringSchema(),
                   description: 'Array of plan items/steps',
-                },
+                }),
               },
               required: ['items'],
-            },
+            }),
           },
           handler: handleSetPlan,
         },
@@ -267,17 +315,15 @@ export const MultiAgentOrchestrator: React.FC = () => {
           toolDefinition: {
             name: 'checkPlanItem',
             description: 'Mark a specific plan item as completed',
-            input_schema: {
-              type: 'object',
+            inputSchema: createObjectSchema({
               properties: {
-                index: {
-                  type: 'number',
+                index: createNumberSchema({
                   description:
                     '0-based index of the plan item to mark as complete',
-                },
+                }),
               },
               required: ['index'],
-            },
+            }),
           },
           handler: handleCheckPlanItem,
         },
@@ -285,11 +331,10 @@ export const MultiAgentOrchestrator: React.FC = () => {
           toolDefinition: {
             name: 'clearPlan',
             description: 'Clear/cancel the current plan',
-            input_schema: {
-              type: 'object',
+            inputSchema: createObjectSchema({
               properties: {},
               required: [],
-            },
+            }),
           },
           handler: handleClearPlan,
         },
@@ -298,16 +343,14 @@ export const MultiAgentOrchestrator: React.FC = () => {
             name: 'reportResult',
             description:
               'Provide a detailed summary of completed task or current status',
-            input_schema: {
-              type: 'object',
+            inputSchema: createObjectSchema({
               properties: {
-                resultInDetail: {
-                  type: 'string',
+                resultInDetail: createStringSchema({
                   description: 'Detailed result summary',
-                },
+                }),
               },
               required: ['resultInDetail'],
-            },
+            }),
           },
           handler: handleReportResult,
         },

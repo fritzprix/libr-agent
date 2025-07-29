@@ -1,4 +1,3 @@
-
 import React from 'react';
 
 interface ToolCallBubbleProps {
@@ -24,9 +23,7 @@ const ToolCallBubble: React.FC<ToolCallBubbleProps> = ({ tool_calls }) => {
           >
             {tool_call.function && (
               <>
-                <span className="text-primary">
-                  {tool_call.function.name}
-                </span>
+                <span className="text-primary">{tool_call.function.name}</span>
                 <span className="truncate max-w-32">
                   {tool_call.function.arguments}
                 </span>

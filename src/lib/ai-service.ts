@@ -15,7 +15,7 @@ import {
   MessageParam as AnthropicMessageParam,
   Tool as AnthropicTool,
 } from '@anthropic-ai/sdk/resources/messages.mjs';
-import { MCPTool } from './tauri-mcp-client';
+import { MCPTool, JSONSchema } from './tauri-mcp-client';
 import { getLogger } from './logger';
 import { Message } from '@/models/chat';
 
@@ -84,8 +84,11 @@ class MessageValidator {
     if (!tool.description || typeof tool.description !== 'string') {
       throw new Error('Tool must have a valid description');
     }
-    if (!tool.input_schema || typeof tool.input_schema !== 'object') {
-      throw new Error('Tool must have a valid input_schema');
+    if (!tool.inputSchema || typeof tool.inputSchema !== 'object') {
+      throw new Error('Tool must have a valid inputSchema');
+    }
+    if (tool.inputSchema.type !== 'object') {
+      throw new Error('Tool inputSchema must be of type "object"');
     }
   }
 
@@ -120,6 +123,42 @@ interface JsonSchemaProperty {
   type: string;
   description?: string;
   items?: JsonSchemaProperty;
+}
+
+function convertJSONSchemaToJsonSchemaProperty(
+  schema: JSONSchema,
+): JsonSchemaProperty {
+  // Extract the base type from our structured JSONSchema
+  const getTypeString = (schema: JSONSchema): string => {
+    if (schema.type === 'string') return 'string';
+    if (schema.type === 'number') return 'number';
+    if (schema.type === 'integer') return 'integer';
+    if (schema.type === 'boolean') return 'boolean';
+    if (schema.type === 'array') return 'array';
+    if (schema.type === 'object') return 'object';
+    if (schema.type === 'null') return 'null';
+    return 'string'; // fallback
+  };
+
+  const result: JsonSchemaProperty = {
+    type: getTypeString(schema),
+    description: schema.description,
+  };
+
+  // Handle array items recursively
+  if (schema.type === 'array' && 'items' in schema && schema.items) {
+    if (Array.isArray(schema.items)) {
+      // If items is an array, use the first item
+      result.items =
+        schema.items.length > 0
+          ? convertJSONSchemaToJsonSchemaProperty(schema.items[0])
+          : { type: 'string' };
+    } else {
+      result.items = convertJSONSchemaToJsonSchemaProperty(schema.items);
+    }
+  }
+
+  return result;
 }
 
 // Helper function to convert JSON schema types to Gemini types
@@ -198,7 +237,6 @@ function convertSinglePropertyToGeminiType(prop: JsonSchemaProperty): {
   }
 }
 
-
 // Updated tool conversion for Gemini - use parameters with Type enums
 function convertMCPToolToProviderFormat(
   mcpTool: MCPTool,
@@ -206,8 +244,9 @@ function convertMCPToolToProviderFormat(
 ): ProviderToolType {
   MessageValidator.validateTool(mcpTool);
 
-  const properties = mcpTool.input_schema.properties;
-  const required = mcpTool.input_schema.required || [];
+  // Extract properties and required fields from the structured schema
+  const properties = mcpTool.inputSchema.properties || {};
+  const required = mcpTool.inputSchema.required || [];
 
   const commonParameters = {
     type: 'object' as const,
@@ -248,12 +287,16 @@ function convertMCPToolToProviderFormat(
         parameters: {
           type: Type.OBJECT,
           properties: convertPropertiesToGeminiTypes(
-            mcpTool.input_schema.properties as Record<
-              string,
-              JsonSchemaProperty
-            >,
+            Object.fromEntries(
+              Object.entries(mcpTool.inputSchema.properties || {}).map(
+                ([key, value]) => [
+                  key,
+                  convertJSONSchemaToJsonSchemaProperty(value),
+                ],
+              ),
+            ),
           ),
-          required: mcpTool.input_schema.required || [],
+          required: mcpTool.inputSchema.required || [],
         },
       };
     case AIServiceProvider.Empty:

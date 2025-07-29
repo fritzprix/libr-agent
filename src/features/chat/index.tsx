@@ -15,8 +15,7 @@ export function ChatRouter() {
       <Chat>
         <Chat.Header></Chat.Header>
         <Chat.Messages />
-        <Chat.Bottom>
-        </Chat.Bottom>
+        <Chat.Bottom></Chat.Bottom>
         <MultiAgentOrchestrator />
       </Chat>
     );
@@ -39,8 +38,7 @@ export function ChatRouter() {
         </div>
       </Chat.Header>
       <Chat.Messages />
-      <Chat.Bottom>
-      </Chat.Bottom>
+      <Chat.Bottom></Chat.Bottom>
       <Reflection />
     </Chat>
   );
