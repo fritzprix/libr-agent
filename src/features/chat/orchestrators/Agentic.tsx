@@ -3,6 +3,7 @@ import {
   MCPResponse,
   useLocalTools,
 } from '@/context/LocalToolContext';
+import { useChatContext } from '@/hooks/use-chat';
 import { createObjectSchema, createStringSchema } from '@/lib/tauri-mcp-client';
 import { createId } from '@paralleldrive/cuid2';
 import { useCallback, useEffect, useMemo } from 'react';
@@ -16,6 +17,7 @@ interface ReportToUserInputType {
 }
 
 export function SimpleAgenticFlow() {
+
   const handleRecursion = useCallback(
     async (args: unknown): Promise<MCPResponse> => {
       const { reason } = args as RecursionInputType;
@@ -91,6 +93,7 @@ export function SimpleAgenticFlow() {
   }, [handleRecursion, handleReportToUser]);
 
   const { unregisterService, registerService } = useLocalTools();
+
 
   useEffect(() => {
     registerService(service);
