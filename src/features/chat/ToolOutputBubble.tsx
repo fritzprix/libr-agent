@@ -27,15 +27,29 @@ const JsonViewer: React.FC<JsonViewerProps> = ({ data, level = 0 }) => {
     }
 
     if (typeof value === 'boolean') {
-      return <span className="text-violet-600 dark:text-violet-400">{value.toString()}{comma}</span>;
+      return (
+        <span className="text-violet-600 dark:text-violet-400">
+          {value.toString()}
+          {comma}
+        </span>
+      );
     }
 
     if (typeof value === 'number') {
-      return <span className="text-blue-600 dark:text-blue-400">{value}{comma}</span>;
+      return (
+        <span className="text-blue-600 dark:text-blue-400">
+          {value}
+          {comma}
+        </span>
+      );
     }
 
     if (typeof value === 'string') {
-      return <span className="text-emerald-600 dark:text-emerald-400">&quot;{value}&quot;{comma}</span>;
+      return (
+        <span className="text-emerald-600 dark:text-emerald-400">
+          &quot;{value}&quot;{comma}
+        </span>
+      );
     }
 
     if (Array.isArray(value)) {
@@ -59,7 +73,7 @@ const JsonViewer: React.FC<JsonViewerProps> = ({ data, level = 0 }) => {
             <div className="ml-4">
               {value.map((item, index) => (
                 <div key={index} className="font-mono text-sm">
-                  <span className="text-muted-foreground">{indent}  </span>
+                  <span className="text-muted-foreground">{indent} </span>
                   {renderValue(item, index === value.length - 1)}
                 </div>
               ))}
@@ -76,7 +90,12 @@ const JsonViewer: React.FC<JsonViewerProps> = ({ data, level = 0 }) => {
     if (typeof value === 'object') {
       const keys = Object.keys(value);
       if (keys.length === 0) {
-        return <span className="text-muted-foreground">{`{}`}{comma}</span>;
+        return (
+          <span className="text-muted-foreground">
+            {`{}`}
+            {comma}
+          </span>
+        );
       }
 
       return (
@@ -95,8 +114,10 @@ const JsonViewer: React.FC<JsonViewerProps> = ({ data, level = 0 }) => {
             <div className="ml-4">
               {keys.map((objKey, index) => (
                 <div key={objKey} className="font-mono text-sm">
-                  <span className="text-muted-foreground">{indent}  </span>
-                  <span className="text-orange-600 dark:text-orange-400">&quot;{objKey}&quot;</span>
+                  <span className="text-muted-foreground">{indent} </span>
+                  <span className="text-orange-600 dark:text-orange-400">
+                    &quot;{objKey}&quot;
+                  </span>
                   <span className="text-muted-foreground">: </span>
                   {renderValue(value[objKey], index === keys.length - 1)}
                 </div>
@@ -105,19 +126,30 @@ const JsonViewer: React.FC<JsonViewerProps> = ({ data, level = 0 }) => {
           )}
           <div className="font-mono text-sm">
             <span className="text-muted-foreground">{indent}</span>
-            <span className="text-muted-foreground">{'}'}{comma}</span>
+            <span className="text-muted-foreground">
+              {'}'}
+              {comma}
+            </span>
           </div>
         </div>
       );
     }
 
-    return <span className="text-muted-foreground">{String(value)}{comma}</span>;
+    return (
+      <span className="text-muted-foreground">
+        {String(value)}
+        {comma}
+      </span>
+    );
   };
 
   return <div>{renderValue(data)}</div>;
 };
 
-export const ToolOutputBubble: React.FC<ToolOutputBubbleProps> = ({ content, defaultExpanded = false }) => {
+export const ToolOutputBubble: React.FC<ToolOutputBubbleProps> = ({
+  content,
+  defaultExpanded = false,
+}) => {
   const [copied, setCopied] = useState(false);
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
@@ -131,7 +163,9 @@ export const ToolOutputBubble: React.FC<ToolOutputBubbleProps> = ({ content, def
 
   const copyToClipboard = async () => {
     try {
-      await navigator.clipboard.writeText(parsedContent ? JSON.stringify(parsedContent, null, 2) : content);
+      await navigator.clipboard.writeText(
+        parsedContent ? JSON.stringify(parsedContent, null, 2) : content,
+      );
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
@@ -154,7 +188,11 @@ export const ToolOutputBubble: React.FC<ToolOutputBubbleProps> = ({ content, def
             onClick={() => setIsExpanded(!isExpanded)}
             className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
           >
-            {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+            {isExpanded ? (
+              <ChevronDown size={16} />
+            ) : (
+              <ChevronRight size={16} />
+            )}
             <span className="font-mono text-sm flex items-center gap-2">
               Tool Output
               {isJson && (
@@ -182,8 +220,7 @@ export const ToolOutputBubble: React.FC<ToolOutputBubbleProps> = ({ content, def
                 ? `Array with ${parsedContent.length} items`
                 : typeof parsedContent === 'object' && parsedContent !== null
                   ? `Object with ${Object.keys(parsedContent).length} keys`
-                  : `${typeof parsedContent} value`
-              }
+                  : `${typeof parsedContent} value`}
             </span>
           ) : (
             <span>{content.length} characters</span>
@@ -207,6 +244,5 @@ export const ToolOutputBubble: React.FC<ToolOutputBubbleProps> = ({ content, def
     </div>
   );
 };
-
 
 export default ToolOutputBubble;

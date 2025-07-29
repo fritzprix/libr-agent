@@ -174,10 +174,10 @@ function ChatMessages() {
 }
 
 // Chat Status Bar component - now manages its own tools state
-function ChatStatusBar({ 
+function ChatStatusBar({
   children,
-  onShowTools 
-}: { 
+  onShowTools,
+}: {
   children?: React.ReactNode;
   onShowTools?: () => void;
 }) {

@@ -1,5 +1,9 @@
 import { useAssistantContext } from '@/context/AssistantContext';
-import { LocalService, MCPResponse, useLocalTools } from '@/context/LocalToolContext';
+import {
+  LocalService,
+  MCPResponse,
+  useLocalTools,
+} from '@/context/LocalToolContext';
 import { useSessionContext } from '@/context/SessionContext';
 import { useSessionHistory } from '@/context/SessionHistoryContext';
 import { useChatContext } from '@/hooks/use-chat';
@@ -37,7 +41,8 @@ interface PlanItem {
 }
 
 export const MultiAgentOrchestrator: React.FC = () => {
-  const { currentAssistant, setCurrentAssistant, assistants } = useAssistantContext();
+  const { currentAssistant, setCurrentAssistant, assistants } =
+    useAssistantContext();
   const { registerService, unregisterService } = useLocalTools();
   const { current: currentSession } = useSessionContext();
   const { addMessage } = useSessionHistory();
@@ -73,9 +78,7 @@ export const MultiAgentOrchestrator: React.FC = () => {
         jsonrpc: '2.0',
         id,
         result: {
-          content: [
-            { type: 'text', text: 'Prompt sent to user' },
-          ],
+          content: [{ type: 'text', text: 'Prompt sent to user' }],
         },
       };
     },
@@ -115,7 +118,10 @@ export const MultiAgentOrchestrator: React.FC = () => {
           id,
           result: {
             content: [
-              { type: 'text', text: `Switched to assistant: ${nextAssistant.name}` },
+              {
+                type: 'text',
+                text: `Switched to assistant: ${nextAssistant.name}`,
+              },
             ],
           },
         };
@@ -134,25 +140,31 @@ export const MultiAgentOrchestrator: React.FC = () => {
     [submit, currentSession, assistants, setCurrentAssistant],
   );
 
-  const handleSetPlan = useCallback(async (args: unknown): Promise<MCPResponse> => {
-    const { items } = args as SetPlanInput;
-    const id = createId();
-    const newPlan = items.map(
-      (item) => ({ plan: item, complete: false }) satisfies PlanItem,
-    );
-    plan.current = newPlan;
-    return {
-      success: true,
-      jsonrpc: '2.0',
-      id,
-      result: {
-        content: [
-          { type: 'text', text: `Plan set with ${items.length} items: ${items.join(', ')}` },
-        ],
-        structuredContent: { items },
-      },
-    };
-  }, []);
+  const handleSetPlan = useCallback(
+    async (args: unknown): Promise<MCPResponse> => {
+      const { items } = args as SetPlanInput;
+      const id = createId();
+      const newPlan = items.map(
+        (item) => ({ plan: item, complete: false }) satisfies PlanItem,
+      );
+      plan.current = newPlan;
+      return {
+        success: true,
+        jsonrpc: '2.0',
+        id,
+        result: {
+          content: [
+            {
+              type: 'text',
+              text: `Plan set with ${items.length} items: ${items.join(', ')}`,
+            },
+          ],
+          structuredContent: { items },
+        },
+      };
+    },
+    [],
+  );
 
   const handleCheckPlanItem = useCallback(
     async (args: unknown): Promise<MCPResponse> => {
@@ -194,9 +206,7 @@ export const MultiAgentOrchestrator: React.FC = () => {
       jsonrpc: '2.0',
       id,
       result: {
-        content: [
-          { type: 'text', text: 'Plan cleared' },
-        ],
+        content: [{ type: 'text', text: 'Plan cleared' }],
       },
     };
   }, []);
@@ -419,8 +429,9 @@ Available assistants: ${assistants.map((a) => `${a.id}: ${a.name}`).join(', ')}`
               {assistants.map((assistant) => (
                 <div
                   key={assistant.id}
-                  className={`p-1 rounded ${assistant.id === currentAssistant?.id ? 'bg-blue-600' : ''
-                    }`}
+                  className={`p-1 rounded ${
+                    assistant.id === currentAssistant?.id ? 'bg-blue-600' : ''
+                  }`}
                 >
                   {assistant.name} ({assistant.id})
                 </div>

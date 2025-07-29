@@ -27,7 +27,10 @@ export const useChatContext = (): ChatContextReturn => {
     null,
   );
   const { value: settingValue } = useSettings();
-  const messageWindowSize = useMemo(() => settingValue ? settingValue.windowSize : 20, [settingValue]);
+  const messageWindowSize = useMemo(
+    () => (settingValue ? settingValue.windowSize : 20),
+    [settingValue],
+  );
 
   const messages = useMemo(() => {
     if (currentStreaming) {
@@ -117,7 +120,9 @@ export const useChatContext = (): ChatContextReturn => {
         } else {
           messagesToSend = messages;
         }
-        const aiResponse = await triggerAIService(messagesToSend.slice(-messageWindowSize));
+        const aiResponse = await triggerAIService(
+          messagesToSend.slice(-messageWindowSize),
+        );
 
         if (aiResponse) {
           const responseWithSessionId: Message = {

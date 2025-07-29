@@ -198,7 +198,6 @@ function convertSinglePropertyToGeminiType(prop: JsonSchemaProperty): {
   }
 }
 
-
 // Updated tool conversion for Gemini - use parameters with Type enums
 function convertMCPToolToProviderFormat(
   mcpTool: MCPTool,

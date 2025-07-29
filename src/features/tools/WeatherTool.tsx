@@ -1,4 +1,8 @@
-import { LocalService, MCPResponse, useLocalTools } from '@/context/LocalToolContext';
+import {
+  LocalService,
+  MCPResponse,
+  useLocalTools,
+} from '@/context/LocalToolContext';
 import { createId } from '@paralleldrive/cuid2';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -15,7 +19,7 @@ export function WeatherTool() {
       console.log(`Getting weather for ${location} in ${unit}`);
       const temperature = unit === 'celsius' ? 22 : 72;
       return {
-        jsonrpc: "2.0",
+        jsonrpc: '2.0',
         id: createId(),
         success: true,
         result: {
