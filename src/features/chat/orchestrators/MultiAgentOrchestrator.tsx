@@ -1,5 +1,5 @@
 import { useAssistantContext } from '@/context/AssistantContext';
-import { LocalService, useLocalTools } from '@/context/LocalToolContext';
+import { LocalService, MCPResponse, useLocalTools } from '@/context/LocalToolContext';
 import { useSessionContext } from '@/context/SessionContext';
 import { useSessionHistory } from '@/context/SessionHistoryContext';
 import { useChatContext } from '@/hooks/use-chat';
@@ -37,8 +37,7 @@ interface PlanItem {
 }
 
 export const MultiAgentOrchestrator: React.FC = () => {
-  const { currentAssistant, setCurrentAssistant, assistants } =
-    useAssistantContext();
+  const { currentAssistant, setCurrentAssistant, assistants } = useAssistantContext();
   const { registerService, unregisterService } = useLocalTools();
   const { current: currentSession } = useSessionContext();
   const { addMessage } = useSessionHistory();
@@ -48,84 +47,155 @@ export const MultiAgentOrchestrator: React.FC = () => {
 
   // ✨ Clean, stable tool handlers using the simpler useStableHandler
   const handlePromptToUser = useCallback(
-    async (args: unknown): Promise<string|null> => {
+    async (args: unknown): Promise<MCPResponse> => {
       const { prompt } = args as PromptToUserInput;
-      if (!currentSession) return null; // Ensure there's an active session
+      const id = createId();
+      if (!currentSession) {
+        return {
+          jsonrpc: '2.0',
+          id,
+          error: {
+            code: 400,
+            message: 'No active session',
+          },
+        };
+      }
       addMessage({
         assistantId: MULTI_AGENT_ORCHESTRATOR_ASSISTANT_ID,
-        id: createId(),
+        id,
         content: prompt,
         role: 'assistant',
         sessionId: currentSession.id,
       });
-      return null;
+      return {
+        jsonrpc: '2.0',
+        id,
+        result: { message: 'Prompt sent to user' },
+      };
     },
     [addMessage, currentSession],
   );
 
   const handleSwitchAssistant = useCallback(
-    async (args: unknown): Promise<string|null> => {
+    async (args: unknown): Promise<MCPResponse> => {
       const { assistantId, instruction } = args as SwitchAssistantInput;
-      if (!currentSession) return JSON.stringify({ success: false, message: "", error:null}); // Ensure there's an active session
+      const id = createId();
+      if (!currentSession) {
+        return {
+          jsonrpc: '2.0',
+          id,
+          error: {
+            code: 400,
+            message: 'No active session',
+          },
+        };
+      }
       const nextAssistant = assistants.find((a) => a.id === assistantId);
       if (nextAssistant) {
         setCurrentAssistant(nextAssistant);
         submit([
           {
-            id: createId(),
+            id,
             assistantId: MULTI_AGENT_ORCHESTRATOR_ASSISTANT_ID,
             content: instruction,
             role: 'user',
             sessionId: currentSession.id,
           },
         ]);
-        return JSON.stringify({ sucess: true, message: `Switched to assistant: ${nextAssistant.name}`, error:null});
+        return {
+          jsonrpc: '2.0',
+          id,
+          result: { success: true, message: `Switched to assistant: ${nextAssistant.name}` },
+        };
       } else {
-        throw new Error(`Assistant with ID ${assistantId} not found`);
+        return {
+          jsonrpc: '2.0',
+          id,
+          error: {
+            code: 404,
+            message: `Assistant with ID ${assistantId} not found`,
+          },
+        };
       }
     },
-    [submit, currentSession],
+    [submit, currentSession, assistants, setCurrentAssistant],
   );
 
-  const handleSetPlan = useCallback(async (args: unknown): Promise<string> => {
+  const handleSetPlan = useCallback(async (args: unknown): Promise<MCPResponse> => {
     const { items } = args as SetPlanInput;
+    const id = createId();
     const newPlan = items.map(
       (item) => ({ plan: item, complete: false }) satisfies PlanItem,
     );
     plan.current = newPlan;
-    return `Plan set with ${items.length} items`;
+    return {
+      jsonrpc: '2.0',
+      id,
+      result: { message: `Plan set with ${items.length} items`, items },
+    };
   }, []);
 
   const handleCheckPlanItem = useCallback(
-    async (args: unknown): Promise<string> => {
+    async (args: unknown): Promise<MCPResponse> => {
       const { index } = args as CheckPlanItemInput;
+      const id = createId();
       if (index >= 0 && index < plan.current.length) {
         plan.current[index].complete = true;
-        return `Plan item ${index} marked as complete`;
+        return {
+          jsonrpc: '2.0',
+          id,
+          result: { message: `Plan item ${index} marked as complete`, index },
+        };
       } else {
-        throw new Error(`Invalid plan item index: ${index}`);
+        return {
+          jsonrpc: '2.0',
+          id,
+          error: {
+            code: 400,
+            message: `Invalid plan item index: ${index}`,
+          },
+        };
       }
     },
     [],
   );
 
-  const handleClearPlan = useCallback(async (): Promise<string> => {
+  const handleClearPlan = useCallback(async (): Promise<MCPResponse> => {
+    const id = createId();
     plan.current = [];
-    return 'Plan cleared';
+    return {
+      jsonrpc: '2.0',
+      id,
+      result: { message: 'Plan cleared' },
+    };
   }, []);
 
   const handleReportResult = useCallback(
-    async (args: unknown): Promise<string> => {
+    async (args: unknown): Promise<MCPResponse> => {
       const { resultInDetail } = args as ReportResultInput;
-      if (!currentSession) return 'No active session'; // Ensure there's an active session
+      const id = createId();
+      if (!currentSession) {
+        return {
+          jsonrpc: '2.0',
+          id,
+          error: {
+            code: 400,
+            message: 'No active session',
+          },
+        };
+      }
       addMessage({
-        id: createId(),
+        id,
         assistantId: MULTI_AGENT_ORCHESTRATOR_ASSISTANT_ID,
         content: resultInDetail,
         role: 'assistant',
         sessionId: currentSession.id,
       });
-      return 'Result reported';
+      return {
+        jsonrpc: '2.0',
+        id,
+        result: { message: 'Result reported', detail: resultInDetail },
+      };
     },
     [addMessage, currentSession],
   );
