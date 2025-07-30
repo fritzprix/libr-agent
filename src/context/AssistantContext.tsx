@@ -102,6 +102,7 @@ export const AssistantContextProvider = ({
     toast.error(message);
   }, []);
   const currentAssistantRef = useRef(currentAssistant);
+
   const [{ value: assistants, loading, error: loadError }, loadAssistants] =
     useAsyncFn(async () => {
       let fetchedAssistants = await dbService.assistants.getPage(0, -1);
@@ -117,6 +118,11 @@ export const AssistantContextProvider = ({
     );
     return [...ephemeralAssistants, ...dbAssistants];
   }, [assistants, ephemeralAssistants]);
+
+  const assistantsRef = useRef(assistants);
+  useEffect(() => {
+    assistantsRef.current = assistants;
+  }, [assistants]);
 
   useEffect(() => {
     if (!loading && !assistants) {
@@ -272,17 +278,18 @@ export const AssistantContextProvider = ({
 
   const handleRegisterEphemeral = useCallback(
     (assistant: Assistant) => {
-      // DB 기반 assistants와 ephemeralAssistants 모두에서 id 중복 체크
-      const existsInDb = (assistants ?? []).some((a) => a.id === assistant.id);
-      const existsInEphemeral = ephemeralAssistants.some(
+      const existsInDb = (assistantsRef.current ?? []).some(
         (a) => a.id === assistant.id,
       );
-      if (existsInDb || existsInEphemeral) {
-        throw new Error(`Assistant with id "${assistant.id}" already exists.`);
+      if (existsInDb) {
+        return;
       }
-      setEphemeralAssistants((prev) => [...prev, assistant]);
+      setEphemeralAssistants((prev) => {
+        const filtered = prev.filter((a) => a.id !== assistant.id);
+        return [...filtered, assistant];
+      });
     },
-    [assistants, ephemeralAssistants],
+    [], // No dependency on assistants!
   );
 
   const handleUnregisterEphemeral = useCallback((id: string) => {

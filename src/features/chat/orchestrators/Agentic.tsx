@@ -9,41 +9,41 @@ import { useSessionContext } from '@/context/SessionContext';
 import { useChatContext } from '@/hooks/use-chat';
 import { getLogger } from '@/lib/logger';
 import { createObjectSchema, createStringSchema } from '@/lib/tauri-mcp-client';
-import { Assistant } from '@/models/chat';
+import { Assistant, Message } from '@/models/chat';
 import { createId } from '@paralleldrive/cuid2';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 const logger = getLogger('Agentic.tsx');
 
-interface PlanNextStepInputType {
-  currentSituation: string;
-  reasoning: string;
-  nextAction: string;
+interface SwitchAssistantInputType {
+  from: string;
+  to: string;
+  query: string;
 }
 
 interface ReportToUserInputType {
   report: string;
-  isComplete?: string;
+  isComplete?: string; // "true" | "false" | undefined
 }
 
 const SUPERVISER_ASSISTANT_ID = 'superviser-assistant';
 
 export function SimpleAgenticFlow() {
-  const [isFlowActive, setIsFlowActive] = useState(false);
-  const [hasReportedToUser, setHasReportedToUser] = useState(false);
   const { current: currentSession } = useSessionContext();
   const [error, setError] = useState<string | null>(null);
   const flowStepCountRef = useRef(0);
   const maxStepsRef = useRef(10);
+  const lastReportRef = useRef<boolean>(false);
 
   const { submit, messages } = useChatContext();
   const {
+    assistants,
     setCurrentAssistant,
     getCurrentAssistant,
     registerEphemeralAssistant,
     unregisterEphemeralAssistant,
   } = useAssistantContext();
-  const { idle, schedule } = useScheduler();
+  const { idle } = useScheduler();
   const { unregisterService, registerService } = useLocalTools();
 
   // 🎯 Worker의 공개 정보만 요약하기
@@ -95,46 +95,43 @@ export function SimpleAgenticFlow() {
     return worker || null;
   }, [currentSession]);
 
-  const handlePlanNextStep = useCallback(
+  const handleSwitchAssistant = useCallback(
     async (args: unknown): Promise<MCPResponse> => {
       try {
-        const { currentSituation, nextAction, reasoning } =
-          args as PlanNextStepInputType;
+        const { from, to, query } = args as SwitchAssistantInputType;
 
-        if (!currentSituation || !nextAction || !reasoning) {
-          throw new Error(
-            'Missing required fields: currentSituation, nextAction, reasoning',
-          );
+        if (!from || !to || !query) {
+          throw new Error('Missing required fields: from, to, query');
         }
 
         flowStepCountRef.current += 1;
-        logger.info(
-          `[Agentic Flow] Step ${flowStepCountRef.current}: Planning next action`,
-        );
-        logger.info(`- Current Situation: ${currentSituation}`);
-        logger.info(`- Next Action: ${nextAction}`);
-        logger.info(`- Reasoning: ${reasoning}`);
+        logger.info(`[Agentic Flow] Switching assistant: ${from} → ${to}`);
+        logger.info(`- Query: ${query}`);
 
-        // 🎯 단일 Worker에게 작업 위임
-        const workerAssistant = getWorkerInstance();
+        // 🎯 대상 Assistant 찾기
+        let targetAssistant: Assistant | null = null;
 
-        if (workerAssistant) {
+        if (to === SUPERVISER_ASSISTANT_ID) {
+          targetAssistant = superviserAssistant;
+        } else {
+          targetAssistant = getWorkerInstance();
+        }
+
+        if (targetAssistant) {
           logger.info(
-            `[Agentic Flow] Delegating execution to worker: ${workerAssistant.name}`,
+            `[Agentic Flow] Switching to assistant: ${targetAssistant.name}`,
           );
 
-          // Worker로 전환 (응답 완료 후)
-          setTimeout(() => {
-            setCurrentAssistant(workerAssistant);
-          }, 100);
+          // Assistant 전환 (불필요한 delay 제거)
+          setCurrentAssistant(targetAssistant);
         } else {
-          logger.error('[Agentic Flow] No worker assistant found in session');
+          logger.error(`[Agentic Flow] Target assistant not found: ${to}`);
         }
 
         // 최대 단계 수 체크
         if (flowStepCountRef.current >= maxStepsRef.current) {
           logger.warn(
-            '[Agentic Flow] Maximum steps reached, suggesting completion',
+            '[Agentic Flow] Maximum switches reached, suggesting completion',
           );
           return {
             id: createId(),
@@ -144,7 +141,7 @@ export function SimpleAgenticFlow() {
               content: [
                 {
                   type: 'text',
-                  text: `Step ${flowStepCountRef.current} completed. Maximum steps reached. Please consider using report_to_user to finish the task.`,
+                  text: `Maximum assistant switches reached. Please consider using report_to_user to finish the task.`,
                 },
               ],
             },
@@ -159,13 +156,13 @@ export function SimpleAgenticFlow() {
             content: [
               {
                 type: 'text',
-                text: `Step ${flowStepCountRef.current} completed. Next action planned: ${nextAction}. Delegating execution to worker assistant.`,
+                text: `Switching to ${to}: ${query}`,
               },
             ],
           },
         };
       } catch (error) {
-        logger.error('[Agentic Flow] Plan next step error:', error);
+        logger.error('[Agentic Flow] Switch assistant error:', error);
         return {
           id: createId(),
           jsonrpc: '2.0',
@@ -185,7 +182,9 @@ export function SimpleAgenticFlow() {
       try {
         const rawArgs = args as ReportToUserInputType;
         const { report } = rawArgs;
-        const isComplete = rawArgs.isComplete !== 'false';
+        // 더 robust한 isComplete 처리
+        const isComplete =
+          rawArgs.isComplete === 'true' || rawArgs.isComplete === undefined;
 
         if (!report) {
           throw new Error('Report content is required');
@@ -199,8 +198,8 @@ export function SimpleAgenticFlow() {
           `[Agentic Flow] Flow completed in ${flowStepCountRef.current} steps`,
         );
 
-        setHasReportedToUser(true);
-        setIsFlowActive(false);
+        // 리포트 플래그 설정
+        lastReportRef.current = true;
         flowStepCountRef.current = 0;
 
         return {
@@ -239,27 +238,28 @@ export function SimpleAgenticFlow() {
       tools: [
         {
           toolDefinition: {
-            name: 'plan_next_step',
+            name: 'switch_assistant',
             description:
-              'Plan the next step in solving the current task. Analyze the current situation and determine the most logical next action to take. After planning, execution will be delegated to the worker assistant.',
+              'Switch control between assistants in the 2-agent workflow. Use this to delegate tasks to the appropriate assistant or return control to the supervisor.',
             inputSchema: createObjectSchema({
               properties: {
-                currentSituation: createStringSchema({
+                from: createStringSchema({
                   description:
-                    'Description of the current state and what has been accomplished so far',
+                    'The ID or name of the current assistant (who is making the switch)',
                 }),
-                nextAction: createStringSchema({
-                  description: 'The specific next action to take',
-                }),
-                reasoning: createStringSchema({
+                to: createStringSchema({
                   description:
-                    'The reasoning behind why this next action is the best choice',
+                    'The ID or name of the target assistant to switch to',
+                }),
+                query: createStringSchema({
+                  description:
+                    'The specific task, question, or instruction for the target assistant',
                 }),
               },
-              required: ['currentSituation', 'nextAction', 'reasoning'],
+              required: ['from', 'to', 'query'],
             }),
           },
-          handler: handlePlanNextStep,
+          handler: handleSwitchAssistant,
         },
         {
           toolDefinition: {
@@ -284,7 +284,7 @@ export function SimpleAgenticFlow() {
         },
       ],
     };
-  }, [handlePlanNextStep, handleReportToUser]);
+  }, [handleSwitchAssistant, handleReportToUser]);
 
   // 🎯 Worker의 공개 정보만 포함하는 System Prompt
   const superviserAssistant: Assistant = useMemo(() => {
@@ -298,118 +298,129 @@ export function SimpleAgenticFlow() {
       updatedAt: new Date(),
       isDefault: false,
       mcpConfig: {},
-      systemPrompt: `You are a supervisor assistant responsible for orchestrating a 2-agent workflow. Your role is to plan tasks systematically and delegate execution to your worker assistant.
+      systemPrompt: `You are a supervisor assistant responsible for orchestrating a 2-agent workflow. Your role is to plan tasks systematically and coordinate with your worker assistant.
 
 WORKER ASSISTANT INFORMATION:
 ${workerInfo}
 
 WORKFLOW PROCESS:
 1. Analyze the user's request thoroughly
-2. Use 'plan_next_step' to break down the task into logical steps
-3. After each planning step, execution will be automatically delegated to the worker assistant
-4. When control returns to you (after worker completes their task), assess progress and plan the next step
-5. Continue this cycle until the task is complete
-6. Use 'report_to_user' when you have a complete solution or final answer
+2. Use 'switch_assistant' to delegate specific tasks to the worker assistant
+3. When control returns to you (after worker completes their task), assess progress and determine next steps
+4. Continue this coordination cycle until the task is complete
+5. Use 'report_to_user' when you have a complete solution or final answer
 
 2-AGENT COORDINATION:
 - You are the PLANNER and COORDINATOR
 - The worker assistant is the EXECUTOR
-- After each 'plan_next_step', the worker will automatically take over to execute the planned action
-- When the worker completes their task, control will return to you for the next planning cycle
+- Use 'switch_assistant' to hand off control with specific instructions
+- When the worker completes their task, control will automatically return to you
 - Maintain oversight of the overall workflow and progress
+
+SWITCH ASSISTANT USAGE:
+- from: Always use "${SUPERVISER_ASSISTANT_ID}" when you are switching
+- to: Use the worker's ID or name when delegating tasks
+- query: Provide clear, specific instructions for what the worker should do
 
 GUIDELINES:
 - Always think step-by-step and be methodical
-- Consider the worker's capabilities (based on their description, services, and MCP capabilities) when planning tasks
-- Use 'plan_next_step' to document your progress and reasoning before delegating
-- Each step should move closer to solving the user's request
-- Be thorough but efficient - avoid unnecessary steps
-- Use 'report_to_user' only when you have a complete, actionable answer for the user
+- Consider the worker's capabilities when delegating tasks
+- Use 'switch_assistant' to delegate execution while maintaining coordination
+- Each switch should have a clear purpose and specific instructions
+- Be thorough but efficient - avoid unnecessary handoffs
+- Use 'report_to_user' only when you have a complete, actionable answer
 - Include all relevant details and context in your final report
 - Work collaboratively with the worker assistant to achieve the best results
 
-Remember: This is a 2-agent system where you plan and the worker executes. Your systematic planning combined with the worker's execution capabilities will provide comprehensive solutions to user requests.`,
+Remember: This is a 2-agent system where you coordinate and the worker executes. Your systematic coordination combined with the worker's execution capabilities will provide comprehensive solutions to user requests.`,
     };
   }, [service.name, getWorkerInfoSummary]);
 
-  // 핵심 흐름 제어 로직
+  // 🎯 자동 Assistant 전환 로직
   useEffect(() => {
-    if (!idle || hasReportedToUser) {
-      return;
-    }
+    if (idle && messages.length > 0) {
+      const lastMessage = messages[messages.length - 1];
 
-    const lastAssistantMessage = [...messages]
-      .reverse()
-      .find((m) => m.role === 'assistant');
+      // 마지막 메시지가 supervisor에 의한 것이 아니고, reportToUser가 아닐 때
+      const isFromSupervisor =
+        lastMessage?.assistantId === SUPERVISER_ASSISTANT_ID;
+      const isReportToUser = lastReportRef.current;
 
-    // report_to_user 호출 감지로 흐름 종료
-    const hasCalledReportToUser = lastAssistantMessage?.tool_calls?.some(
-      (tc) => tc.function.name === 'report_to_user',
-    );
+      if (!isFromSupervisor && !isReportToUser) {
+        const currentAssistant = getCurrentAssistant();
+        if (
+          currentAssistant &&
+          currentAssistant.id === SUPERVISER_ASSISTANT_ID
+        ) {
+          const workerAssistant = getWorkerInstance();
+          const workerName = workerAssistant?.name || 'worker';
 
-    if (hasCalledReportToUser) {
-      logger.info('[Agentic Flow] Detected report_to_user call, stopping flow');
-      setHasReportedToUser(true);
-      setIsFlowActive(false);
-      return;
-    }
+          // assistant 메시지에 tool_calls 포함 (ToolCaller가 자동으로 처리)
+          const autoSwitchMessage: Message = {
+            id: createId(),
+            assistantId: SUPERVISER_ASSISTANT_ID,
+            role: 'assistant',
+            content:
+              "I need to coordinate the next steps based on the worker's completion. Let me switch back to review progress and plan the next action.",
+            tool_calls: [
+              {
+                id: createId(),
+                type: 'function',
+                function: {
+                  name: 'switch_assistant',
+                  arguments: JSON.stringify({
+                    from: workerName,
+                    to: SUPERVISER_ASSISTANT_ID,
+                    query:
+                      'Review worker completion and coordinate next steps',
+                  }),
+                },
+              },
+            ],
+            sessionId: currentSession?.id || '',
+            isStreaming: false,
+          };
 
-    const current = getCurrentAssistant();
+          submit([autoSwitchMessage]);
+        } else {
+          logger.info('[Agentic Flow] Auto-switching to supervisor assistant');
 
-    if (current && current.id === SUPERVISER_ASSISTANT_ID) {
-      if (!isFlowActive) {
-        setIsFlowActive(true);
-      }
+          // 리포트 플래그 리셋
+          lastReportRef.current = false;
 
-      logger.info('[Agentic Flow] Scheduling next step submission');
-      submit()
-        .catch((error) => {
-          logger.error('[Agentic Flow] Submit error:', error);
-          setError(error instanceof Error ? error.message : 'Submit failed');
-        })
-        .finally(() => {
-          setIsFlowActive(false);
-        });
-    } else {
-      // 🎯 마지막 메시지가 supervisor 것이 아닐 때만 supervisor로 전환
-      const isLastMessageFromSupervisor =
-        lastAssistantMessage?.tool_calls?.some(
-          (tc) =>
-            tc.function.name === 'plan_next_step' ||
-            tc.function.name === 'report_to_user',
-        );
+          // Supervisor로 전환
+          const supervisorAssistant = assistants?.find(
+            (assistant) => assistant.id === SUPERVISER_ASSISTANT_ID,
+          );
 
-      if (!isLastMessageFromSupervisor) {
-        logger.info(
-          '[Agentic Flow] Activating supervisor assistant (last message not from supervisor)',
-        );
-        setCurrentAssistant(superviserAssistant);
-        setHasReportedToUser(false);
-        flowStepCountRef.current = 0;
+          if (supervisorAssistant) {
+            // 불필요한 delay 제거하고 즉시 supervisor로 전환
+            setCurrentAssistant(supervisorAssistant);
+            // ToolCaller 패턴에 맞게 tool_calls가 포함된 assistant 메시지를 submit
+
+          }
+        }
       } else {
-        logger.info(
-          '[Agentic Flow] Last message was from supervisor, skipping activation',
-        );
+        // 리포트 플래그 리셋 (다음 사이클을 위해)
+        lastReportRef.current = false;
       }
     }
   }, [
     idle,
     messages,
-    hasReportedToUser,
-    isFlowActive,
-    superviserAssistant,
-    getCurrentAssistant,
+    currentSession,
     setCurrentAssistant,
-    schedule,
     submit,
+    getWorkerInstance,
+    assistants,
   ]);
 
   // 서비스 등록 및 정리
   useEffect(() => {
     try {
       logger.info('[Agentic Flow] Registering service:', service.name);
-      registerEphemeralAssistant(superviserAssistant);
       registerService(service);
+      registerEphemeralAssistant(superviserAssistant);
       setError(null);
     } catch (error) {
       logger.error('[Agentic Flow] Service registration error:', error);
@@ -421,12 +432,15 @@ Remember: This is a 2-agent system where you plan and the worker executes. Your 
     return () => {
       try {
         logger.info('[Agentic Flow] Unregistering service:', service.name);
-        const worker = currentSession?.assistants[0];
+        // Null check 개선
+        const worker = currentSession?.assistants?.find(
+          (assistant) => assistant.id !== SUPERVISER_ASSISTANT_ID,
+        );
         if (worker) {
           setCurrentAssistant(worker);
         }
-        unregisterEphemeralAssistant(superviserAssistant.id);
         unregisterService(service.name);
+        unregisterEphemeralAssistant(superviserAssistant.id);
       } catch (error) {
         logger.error('[Agentic Flow] Service cleanup error:', error);
       }
@@ -438,6 +452,8 @@ Remember: This is a 2-agent system where you plan and the worker executes. Your 
     currentSession,
     registerEphemeralAssistant,
     unregisterEphemeralAssistant,
+    superviserAssistant,
+    setCurrentAssistant,
   ]);
 
   // 에러 로깅

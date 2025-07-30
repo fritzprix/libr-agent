@@ -140,18 +140,38 @@ function Chat({ children }: ChatProps) {
 }
 
 // Chat Header component
-function ChatHeader({ children }: { children?: React.ReactNode }) {
-  return <TerminalHeader>{children}</TerminalHeader>;
+function ChatHeader({ children, assistantName }: { children?: React.ReactNode; assistantName?: string }) {
+  return (
+    <TerminalHeader>
+      {children}
+      {assistantName && (
+        <span className="ml-2 text-xs text-blue-400">[{assistantName}]</span>
+      )}
+    </TerminalHeader>
+  );
 }
 
 // Chat Messages component
 function ChatMessages() {
-  const { messages, isLoading, currentSession, messagesEndRef } =
-    useChatInternalContext();
+  const { messages, isLoading, currentSession, messagesEndRef } = useChatInternalContext();
+  const { getAssistant } = useAssistantContext();
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, messagesEndRef]);
+
+  // 각 메시지의 assistantId로 이름을 찾아서 전달
+  const getAssistantNameForMessage = (m: Message) => {
+    if (m.role === 'assistant' && 'assistantId' in m && m.assistantId) {
+      const assistant = getAssistant(m.assistantId);
+      return assistant?.name || '';
+    }
+    // fallback: current session의 첫 assistant
+    if (m.role === 'assistant' && currentSession?.assistants?.length) {
+      return currentSession.assistants[0].name;
+    }
+    return '';
+  };
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -160,7 +180,7 @@ function ChatMessages() {
           <MessageBubble
             key={m.id}
             message={m}
-            currentAssistantName={currentSession?.assistants[0]?.name || ''}
+            currentAssistantName={getAssistantNameForMessage(m)}
           />
         ))}
         {isLoading && (
