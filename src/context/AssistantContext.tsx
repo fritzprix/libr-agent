@@ -13,6 +13,7 @@ import { useAsyncFn } from 'react-use';
 import { dbService } from '../lib/db';
 import { getLogger } from '../lib/logger';
 import { Assistant } from '../models/chat';
+import { toast } from 'sonner';
 
 const logger = getLogger('AssistantContext');
 
@@ -24,11 +25,14 @@ interface AssistantContextType {
   currentAssistant: Assistant | null;
   getCurrentAssistant: () => Assistant | null;
   setCurrentAssistant: (assistant: Assistant | null) => void;
+  getAssistant: (id: string) => Assistant | null;
   upsert: (
     assistant: Partial<Assistant>,
     mcpConfigText: string,
   ) => Promise<Assistant | undefined>;
   delete: (assistantId: string) => Promise<void>;
+  registerEphemeralAssistant: (assistant: Assistant) => void;
+  unregisterEphemeralAssistant: (id: string) => void;
   error: Error | null;
 }
 
@@ -88,11 +92,14 @@ export const AssistantContextProvider = ({
   const [currentAssistant, setCurrentAssistant] = useState<Assistant | null>(
     null,
   );
+  const [ephemeralAssistants, setEphemeralAssistants] = useState<Assistant[]>(
+    [],
+  );
   const [error, setError] = useState<Error | null>(null);
   // Helper to show user-friendly error messages
   const showError = useCallback((message: string, errorObj?: unknown) => {
     logger.error(message, { error: errorObj });
-    alert(message);
+    toast.error(message);
   }, []);
   const currentAssistantRef = useRef(currentAssistant);
   const [{ value: assistants, loading, error: loadError }, loadAssistants] =
@@ -102,6 +109,15 @@ export const AssistantContextProvider = ({
       return fetchedAssistants.items;
     }, []);
 
+  // ephemeral이 우선권을 갖도록 id 기준으로 중복 제거
+  const allAssistants = useMemo(() => {
+    const ephemeralMap = new Map(ephemeralAssistants.map((a) => [a.id, a]));
+    const dbAssistants = (assistants ?? []).filter(
+      (a) => !ephemeralMap.has(a.id),
+    );
+    return [...ephemeralAssistants, ...dbAssistants];
+  }, [assistants, ephemeralAssistants]);
+
   useEffect(() => {
     if (!loading && !assistants) {
       loadAssistants();
@@ -110,6 +126,13 @@ export const AssistantContextProvider = ({
 
   useEffect(() => {
     currentAssistantRef.current = currentAssistant;
+  }, [currentAssistant]);
+
+  // assistant가 전환될 때 toast로 이름 안내
+  useEffect(() => {
+    if (currentAssistant) {
+      toast(`Assistant 전환: ${currentAssistant.name}`);
+    }
   }, [currentAssistant]);
 
   const [{ error: saveError }, upsertAssistant] = useAsyncFn(
@@ -197,8 +220,6 @@ export const AssistantContextProvider = ({
       ) {
         try {
           await dbService.assistants.delete(assistantId);
-          await loadAssistants();
-          // The useEffect hook will handle setting a new currentAssistant
         } catch (err) {
           showError('어시스턴트 삭제 중 오류가 발생했습니다.', err);
           setError(
@@ -228,6 +249,7 @@ export const AssistantContextProvider = ({
   useEffect(() => {
     if (!loading && assistants && !currentAssistant) {
       if (assistants.length === 0) {
+        // 사용 가능한 어시스턴트가 없으면 기본 어시스턴트를 자동 생성 및 저장합니다.
         const a = getDefaultAssistant();
         setCurrentAssistant(a);
         upsertAssistant(a);
@@ -248,24 +270,58 @@ export const AssistantContextProvider = ({
     error,
   });
 
+  const handleRegisterEphemeral = useCallback(
+    (assistant: Assistant) => {
+      // DB 기반 assistants와 ephemeralAssistants 모두에서 id 중복 체크
+      const existsInDb = (assistants ?? []).some((a) => a.id === assistant.id);
+      const existsInEphemeral = ephemeralAssistants.some(
+        (a) => a.id === assistant.id,
+      );
+      if (existsInDb || existsInEphemeral) {
+        throw new Error(`Assistant with id "${assistant.id}" already exists.`);
+      }
+      setEphemeralAssistants((prev) => [...prev, assistant]);
+    },
+    [assistants, ephemeralAssistants],
+  );
+
+  const handleUnregisterEphemeral = useCallback((id: string) => {
+    setEphemeralAssistants((prev) => {
+      return prev.filter((a) => a.id !== id);
+    });
+  }, []);
+
+  const handleGetAssistant = useCallback(
+    (id: string) => {
+      return allAssistants.find((a) => a.id === id) || null;
+    },
+    [allAssistants],
+  );
+
   const contextValue: AssistantContextType = useMemo(
     () => ({
-      assistants: assistants || [],
+      assistants: allAssistants,
       currentAssistant,
       setCurrentAssistant,
+      unregisterEphemeralAssistant: handleUnregisterEphemeral,
+      registerEphemeralAssistant: handleRegisterEphemeral,
+      getAssistant: handleGetAssistant,
       getCurrentAssistant,
       upsert: upsertAssistant,
       delete: deleteAssistant,
       error: error ?? null,
     }),
     [
-      assistants,
+      allAssistants,
       currentAssistant,
       setCurrentAssistant,
       getCurrentAssistant,
       upsertAssistant,
       deleteAssistant,
       error,
+      handleRegisterEphemeral,
+      handleUnregisterEphemeral,
+      handleGetAssistant,
     ],
   );
 

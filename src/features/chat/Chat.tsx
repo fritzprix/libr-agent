@@ -1,6 +1,7 @@
 import { createId } from '@paralleldrive/cuid2';
 import React, {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -24,6 +25,7 @@ import {
   Input,
 } from '@/components/ui';
 import ToolsModal from '../tools/ToolsModal';
+import { useScheduler } from '@/context/SchedulerContext';
 
 const logger = getLogger('Chat');
 
@@ -64,6 +66,7 @@ function Chat({ children }: ChatProps) {
   const [attachedFiles, setAttachedFiles] = useState<
     { name: string; content: string }[]
   >([]);
+  const { schedule } = useScheduler();
   const [input, setInput] = useState('');
   const { current: currentSession } = useSessionContext();
   const { submit, isLoading, messages } = useChatContext();
@@ -75,36 +78,41 @@ function Chat({ children }: ChatProps) {
     );
   }
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    logger.info('submit!!', currentAssistant);
-    e.preventDefault();
-    if (!input.trim() && attachedFiles.length === 0) return;
-    if (!currentAssistant) return;
+  const handleSubmit = useCallback(
+    async (e: React.FormEvent<HTMLFormElement>) => {
+      logger.info('submit!!', currentAssistant);
+      e.preventDefault();
+      if (!input.trim() && attachedFiles.length === 0) return;
+      if (!currentAssistant) return;
 
-    let messageContent = input.trim();
-    if (attachedFiles.length > 0) {
-      messageContent += '\n\n--- Attached Files ---\n';
-      attachedFiles.forEach((file) => {
-        messageContent += `\n[File: ${file.name}]\n${file.content}\n`;
-      });
-    }
+      let messageContent = input.trim();
+      if (attachedFiles.length > 0) {
+        messageContent += '\n\n--- Attached Files ---\n';
+        attachedFiles.forEach((file) => {
+          messageContent += `\n[File: ${file.name}]\n${file.content}\n`;
+        });
+      }
 
-    const userMessage: Message = {
-      id: createId(),
-      content: messageContent,
-      role: 'user',
-      sessionId: currentSession?.id || '',
-    };
+      const userMessage: Message = {
+        id: createId(),
+        content: messageContent,
+        role: 'user',
+        sessionId: currentSession?.id || '',
+      };
 
-    setInput('');
-    setAttachedFiles([]);
+      setInput('');
+      setAttachedFiles([]);
 
-    try {
-      await submit([userMessage]);
-    } catch (err) {
-      logger.error('Error submitting message:', err);
-    }
-  };
+      try {
+        schedule(async () => {
+          await submit([userMessage]);
+        });
+      } catch (err) {
+        logger.error('Error submitting message:', err);
+      }
+    },
+    [submit, schedule, input],
+  );
 
   const contextValue: ChatContextType = {
     input,
@@ -211,10 +219,12 @@ function ChatStatusBar({
 // Chat Attached Files component - now handles its own file removal
 function ChatAttachedFiles() {
   const { attachedFiles, setAttachedFiles } = useChatInternalContext();
-
-  const removeAttachedFile = (index: number) => {
-    setAttachedFiles((prev) => prev.filter((_, i) => i !== index));
-  };
+  const removeAttachedFile = React.useCallback(
+    (index: number) => {
+      setAttachedFiles((prev) => prev.filter((_, i) => i !== index));
+    },
+    [setAttachedFiles],
+  );
 
   if (attachedFiles.length === 0) return null;
 
@@ -253,51 +263,58 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
     handleSubmit,
   } = useChatInternalContext();
 
-  const handleAgentInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setInput(e.target.value);
-  };
+  const handleAgentInputChange = React.useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      setInput(e.target.value);
+    },
+    [setInput],
+  );
 
-  const handleFileAttachment = async (
-    e: React.ChangeEvent<HTMLInputElement>,
-  ) => {
-    const files = e.target.files;
-    if (!files) return;
+  const handleFileAttachment = React.useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      if (!files) return;
 
-    const newAttachedFiles: { name: string; content: string }[] = [];
+      const newAttachedFiles: { name: string; content: string }[] = [];
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      if (
-        !file.type.startsWith('text/') &&
-        !file.name.match(
-          /\.(txt|md|json|js|ts|tsx|jsx|py|java|cpp|c|h|css|html|xml|yaml|yml|csv)$/i,
-        )
-      ) {
-        alert(`File "${file.name}" is not a supported text file format.`);
-        continue;
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (
+          !file.type.startsWith('text/') &&
+          !file.name.match(
+            /\.(txt|md|json|js|ts|tsx|jsx|py|java|cpp|c|h|css|html|xml|yaml|yml|csv)$/i,
+          )
+        ) {
+          alert(`File "${file.name}" is not a supported text file format.`);
+          continue;
+        }
+
+        if (file.size > 1024 * 1024) {
+          alert(`File "${file.name}" is too large. Maximum size is 1MB.`);
+          continue;
+        }
+
+        try {
+          const content = await file.text();
+          newAttachedFiles.push({ name: file.name, content });
+        } catch (error) {
+          logger.error(`Error reading file ${file.name}:`, { error });
+          alert(`Error reading file "${file.name}".`);
+        }
       }
 
-      if (file.size > 1024 * 1024) {
-        alert(`File "${file.name}" is too large. Maximum size is 1MB.`);
-        continue;
-      }
+      setAttachedFiles((prev) => [...prev, ...newAttachedFiles]);
+      e.target.value = '';
+    },
+    [setAttachedFiles],
+  );
 
-      try {
-        const content = await file.text();
-        newAttachedFiles.push({ name: file.name, content });
-      } catch (error) {
-        logger.error(`Error reading file ${file.name}:`, { error });
-        alert(`Error reading file "${file.name}".`);
-      }
-    }
-
-    setAttachedFiles((prev) => [...prev, ...newAttachedFiles]);
-    e.target.value = '';
-  };
-
-  const removeAttachedFile = (index: number) => {
-    setAttachedFiles((prev) => prev.filter((_, i) => i !== index));
-  };
+  const removeAttachedFile = React.useCallback(
+    (index: number) => {
+      setAttachedFiles((prev) => prev.filter((_, i) => i !== index));
+    },
+    [setAttachedFiles],
+  );
 
   return (
     <form

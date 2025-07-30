@@ -2,7 +2,7 @@ import { useSessionContext } from '@/context/SessionContext';
 import Chat from './Chat';
 import { Switch } from '@/components/ui/switch';
 import { MultiAgentOrchestrator } from './orchestrators/MultiAgentOrchestrator';
-import Reflection from './Reflection';
+import SimpleAgenticFlow from './orchestrators/Agentic';
 
 export function ChatRouter() {
   const { current, isAgenticMode, toggleAgenticMode } = useSessionContext();
@@ -39,7 +39,7 @@ export function ChatRouter() {
       </Chat.Header>
       <Chat.Messages />
       <Chat.Bottom></Chat.Bottom>
-      <Reflection />
+      {isAgenticMode && <SimpleAgenticFlow />}
     </Chat>
   );
 }
