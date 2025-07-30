@@ -104,9 +104,7 @@ function Chat({ children }: ChatProps) {
       setAttachedFiles([]);
 
       try {
-        schedule(async () => {
-          await submit([userMessage]);
-        });
+        await submit([userMessage]);
       } catch (err) {
         logger.error('Error submitting message:', err);
       }

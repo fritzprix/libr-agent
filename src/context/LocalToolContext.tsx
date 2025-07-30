@@ -10,6 +10,7 @@ import React, {
   useState,
 } from 'react';
 import { useAssistantContext } from './AssistantContext';
+import { useScheduledCallback } from '@/hooks/use-scheduled-callback';
 
 /**
  * Represents a single tool within a service, pairing its definition with its handler.
@@ -204,6 +205,10 @@ export function LocalToolProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
+  const scheduledExecuteToolCall = useScheduledCallback(executeToolCall, [
+    executeToolCall,
+  ]);
+
   const { currentAssistant } = useAssistantContext();
 
   const allRegisteredTools = useMemo(() => {
@@ -258,7 +263,7 @@ export function LocalToolProvider({ children }: { children: React.ReactNode }) {
       getAvailableTools,
       getService,
       getToolByName,
-      executeToolCall,
+      executeToolCall: scheduledExecuteToolCall,
       isLocalTool,
     }),
     [
@@ -270,7 +275,7 @@ export function LocalToolProvider({ children }: { children: React.ReactNode }) {
       getAvailableServices,
       getService,
       getToolByName,
-      executeToolCall,
+      scheduledExecuteToolCall,
       isLocalTool,
     ],
   );

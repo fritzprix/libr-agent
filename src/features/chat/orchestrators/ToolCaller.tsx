@@ -35,9 +35,7 @@ export const ToolCaller: React.FC = () => {
           sessionId: currentSession?.id || '', // Add sessionId
         });
       }
-      schedule(async () => {
-        await submit(toolResults);
-      });
+      await submit(toolResults);
     },
     [submit, callLocalTool, callMcpTool, schedule],
   );

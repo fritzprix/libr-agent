@@ -1,90 +1,86 @@
-# Refactoring Plan
 
-## Task 1 - Scheduler 구현 (SchedulerContext)
+# Refactoring Plan: SchedulerContext 및 Tool/Agentic 연동
 
-### 목표
+## 목표
+- SchedulerContext를 전역적으로 구현하여, idle(유휴) 상태 감지 및 예약 작업(schedule) 실행을 일관적으로 관리한다.
+- Tool 실행, agentic assistant의 반복 submit 등 orchestrator의 모든 비동기 작업을 SchedulerContext를 통해 직렬화/제어한다.
 
-- idle(유휴) 상태를 감지하고, 예약된 작업을 안전하게 실행하는 SchedulerContext를 구현한다.
-- ToolCaller, Agentic 등 orchestrator에서 scheduler를 통해 tool call, recurring logic 등을 제어할 수 있도록 한다.
-
-### 아키텍처 및 역할
-
-- SchedulerContext는 전역적으로 제공되며, 다음을 담당한다:
-  - idle 상태 감지 (예: 메시지 처리 대기, 네트워크 응답 대기 등)
-  - schedule(fn): 예약된 작업을 큐에 넣고, idle 시점에 실행
-  - idle: 현재 시스템이 유휴 상태인지 boolean으로 제공
-  - recurring logic 지원 (예: agentic assistant의 반복적 submit 등)
-
-### 연동 구조
-
-- ToolCaller, Agentic 등 orchestrator는 SchedulerContext의 schedule, idle을 활용해 비동기 작업을 제어한다.
-- 예시: tool call이 필요할 때 schedule(() => execute(...)) 호출
-- 예시: agentic assistant가 idle일 때 자동 submit 예약
-
----
-
-#### 일반적인 tool call 처리 예시
+- SchedulerContext는 React Context로 제공되며, useScheduler() hook으로 schedule, idle을 노출한다.
+- Tool 실행(예: LocalToolContext, MCPServerContext의 executeToolCall), 메시지 submit(use-chat.tsx의 handleSubmit) 등 핵심 실행부에서만 schedule을 적용한다.
+- 그 외의 곳에서는 schedule을 직접 호출할 필요 없이, 위 3군데만 통합 적용하면 전체 동작이 직렬화된다.
+#### 1. Tool 실행부 (LocalToolContext, MCPServerContext)
 
 ```tsx
-const { schedule, idle } = useScheduler();
-const { messages } = useChatContext();
-const { execute } = useMCPServer();
+import { useScheduler } from '../context/SchedulerContext';
+// ...
+const { schedule } = useScheduler();
 
-useEffect(() => {
-  // 메시지 배열의 마지막 메시지가 tool call이면, idle 상태에서 실행 예약
-  const lastMessage = messages[messages.length - 1];
-  if (isToolCall(lastMessage)) {
-    schedule(() => execute(lastMessage));
-  }
-}, [schedule, execute, messages]);
+const executeToolCall = useCallback(
+  (toolCall) => {
+    return new Promise((resolve, reject) => {
+      schedule(async () => {
+        try {
+          // 기존 tool 실행 로직
+          const result = await handler(toolCall);
+          resolve(result);
+        } catch (e) {
+          reject(e);
+        }
+      });
+    });
+  },
+  [schedule],
+);
 ```
 
----
+#### 2. 메시지 submit (use-chat.tsx)
 
-#### Recurring logic (agentic assistant 자동 반복) 예시
+```tsx
+import { useScheduler } from '../context/SchedulerContext';
+// ...
+const { schedule } = useScheduler();
+
+const handleSubmit = useCallback((messageToAdd) => {
+  return new Promise((resolve, reject) => {
+    schedule(async () => {
+      try {
+        // 기존 handleSubmit 로직
+        const aiResponse = await triggerAIService(...);
+        resolve(aiResponse);
+      } catch (e) {
+        reject(e);
+      }
+    });
+  });
+}, [schedule, ...]);
+```
+
+#### 3. Agentic/Orchestrator에서의 반복 submit
 
 ```tsx
 const { schedule, idle } = useScheduler();
-const { messages, submit } = useChatContext();
-const { select, currentAssistant } = useAssistantContext();
-const agenticPolicyAssistant: Assistant = ... // 명확한 타입 지정 권장
-
-// idle 상태가 되면 agentic assistant를 선택
 useEffect(() => {
   if (idle) {
-    select(agenticPolicyAssistant);
-  }
-}, [idle, select, agenticPolicyAssistant]);
-
-// agentic assistant가 선택되어 있고 idle이면 submit 예약
-useEffect(() => {
-  if (
-    currentAssistant?.id === agenticPolicyAssistant.id &&
-    idle
-  ) {
     schedule(() => submit());
-  }
-}, [currentAssistant, agenticPolicyAssistant, idle, schedule, submit]);
-```
 
 ---
 
-### SchedulerContext.tsx 설계안
+## SchedulerContext 설계안
 
-- React context로 구현, useScheduler() hook 제공
-- 내부적으로 작업 큐(queue)와 idle 상태 관리
-- schedule(fn): 작업 예약, idle 시점에 실행
-- idle: boolean, 현재 유휴 상태
-- (선택) 작업 우선순위, 중복 예약 방지 등 확장 고려
-
-#### 예시 스켈레톤
+- 작업 큐(queue)와 idle 상태를 관리하며, schedule(fn)로 예약된 작업을 idle 시점에 순차 실행
+- (확장) 작업 우선순위, 중복 예약 방지 등 고려 가능
 
 ```tsx
-// src/context/SchedulerContext.tsx
-import React, { createContext, useContext, useState, useCallback } from 'react';
+  useCallback,
+  useEffect,
+  useMemo,
+} from 'react';
+import { useAsyncFn, useQueue } from 'react-use';
+
+type Task = () => Promise<void>;
 
 interface SchedulerContextType {
-  schedule: (fn: () => void) => void;
+  schedule: (task: Task) => void;
   idle: boolean;
 }
 
@@ -92,33 +88,56 @@ const SchedulerContext = createContext<SchedulerContextType | undefined>(
   undefined,
 );
 
-export const SchedulerProvider: React.FC<{ children: React.ReactNode }> = ({
+export const SchedulerProvider: React.FC<{ children: ReactNode }> = ({
   children,
 }) => {
-  // ...작업 큐, idle 상태 관리 로직 구현 예정
+  const { remove, size, add, first } = useQueue<Task>();
+  const [{ loading }, run] = useAsyncFn(async (task: Task) => {
+    try {
+      await task();
+    } catch (e) {
+      console.error('Scheduled task failed:', e);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (first && !loading) {
+      run(first).finally(() => {
+        remove();
+      });
+    }
+  }, [loading, first, run, remove]);
+
+  const idle = useMemo(() => !loading && size === 0, [loading, size]);
+
+  const schedule = useCallback(
+    (task: Task) => {
+      add(task);
+    },
+    [add],
+  );
+
+  const value = { schedule, idle };
+
   return (
-    <SchedulerContext.Provider value={{ schedule: () => {}, idle: true }}>
+    <SchedulerContext.Provider value={value}>
       {children}
     </SchedulerContext.Provider>
   );
 };
 
 export function useScheduler() {
-  const ctx = useContext(SchedulerContext);
-  if (!ctx)
-    throw new Error('useScheduler must be used within SchedulerProvider');
-  return ctx;
+  const context = useContext(SchedulerContext);
+  if (context === undefined) {
+    throw new Error('useScheduler must be used within a SchedulerProvider');
+  }
+  return context;
 }
 ```
 
 ---
 
-### 다음 단계
-
-- [ ] SchedulerContext.tsx 실제 구현 (작업 큐, idle 감지, 예약 실행)
-- [ ] ToolCaller, Agentic 등 orchestrator에서 useScheduler로 통합
-- [ ] 테스트 및 edge case 검증 (중복 예약, 에러 처리 등)
-- [ ] 문서화 및 예제 추가
+## 연동 구조 PlantUML
 
 ```plantuml
 @startuml

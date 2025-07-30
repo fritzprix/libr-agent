@@ -13,10 +13,9 @@ import {
 import { useSessionContext } from '@/context/SessionContext';
 import { useSessionHistory } from '@/context/SessionHistoryContext';
 import { useChatContext } from '@/hooks/use-chat';
-import { Assistant, Message, ToolCall } from '@/models/chat';
+import { Assistant } from '@/models/chat';
 import { createId } from '@paralleldrive/cuid2';
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
-import { useScheduler } from '@/context/SchedulerContext';
 
 const MULTI_AGENT_ORCHESTRATOR_ASSISTANT_ID = 'multi-agent-orchestrator';
 const MULTI_AGENT_SERVICE = 'multi-agent-orchestrator-service';
@@ -47,21 +46,13 @@ interface PlanItem {
   complete: boolean;
 }
 
-function isToolCall(
-  message: Message,
-): message is Message & { tool_calls: ToolCall[] } {
-  return message.tool_calls !== undefined && message.tool_calls.length > 0;
-}
-
 export const MultiAgentOrchestrator: React.FC = () => {
   const { currentAssistant, setCurrentAssistant, assistants } =
     useAssistantContext();
-  const { registerService, unregisterService, executeToolCall } =
-    useLocalTools();
+  const { registerService, unregisterService } = useLocalTools();
   const { current: currentSession } = useSessionContext();
   const { addMessage } = useSessionHistory();
-  const { submit, messages } = useChatContext();
-  const { schedule } = useScheduler();
+  const { submit } = useChatContext();
 
   const plan = useRef<PlanItem[]>([]);
 
@@ -400,35 +391,13 @@ Available assistants: ${assistants.map((a) => `${a.id}: ${a.name}`).join(', ')}`
     [localService, assistants],
   );
 
-  useEffect(() => {
-    const lastMessage = messages[messages.length - 1];
-    if (lastMessage && isToolCall(lastMessage)) {
-      console.log('Tool call detected, scheduling execution...');
-      schedule(async () => {
-        const toolResults = await Promise.all(
-          lastMessage.tool_calls.map(executeToolCall),
-        );
-
-        const toolMessages: Message[] = toolResults.map((result) => ({
-          id: createId(),
-          role: 'tool' as const,
-          content: result.content,
-          tool_call_id: result.tool_call_id,
-          sessionId: lastMessage.sessionId,
-        }));
-
-        submit(toolMessages);
-      });
-    }
-  }, [messages, schedule, executeToolCall, submit]);
-
   // ✨ Now this useEffect won't cause infinite loops
   useEffect(() => {
     registerService(localService);
     return () => {
       unregisterService(MULTI_AGENT_SERVICE);
     };
-  }, [localService, registerService, unregisterService]);
+  }, [localService]); // localService is now stable
 
   useEffect(() => {
     setCurrentAssistant(multiAgentOrchestratorAssistant);

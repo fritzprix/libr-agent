@@ -37,7 +37,12 @@ export function SimpleAgenticFlow() {
   const maxStepsRef = useRef(10);
 
   const { submit, messages } = useChatContext();
-  const { setCurrentAssistant, getCurrentAssistant } = useAssistantContext();
+  const {
+    setCurrentAssistant,
+    getCurrentAssistant,
+    registerEphemeralAssistant,
+    unregisterEphemeralAssistant,
+  } = useAssistantContext();
   const { idle, schedule } = useScheduler();
   const { unregisterService, registerService } = useLocalTools();
 
@@ -357,15 +362,14 @@ Remember: This is a 2-agent system where you plan and the worker executes. Your 
       }
 
       logger.info('[Agentic Flow] Scheduling next step submission');
-      schedule(async () => {
-        try {
-          await submit();
-        } catch (error) {
+      submit()
+        .catch((error) => {
           logger.error('[Agentic Flow] Submit error:', error);
           setError(error instanceof Error ? error.message : 'Submit failed');
+        })
+        .finally(() => {
           setIsFlowActive(false);
-        }
-      });
+        });
     } else {
       // 🎯 마지막 메시지가 supervisor 것이 아닐 때만 supervisor로 전환
       const isLastMessageFromSupervisor =
@@ -404,6 +408,7 @@ Remember: This is a 2-agent system where you plan and the worker executes. Your 
   useEffect(() => {
     try {
       logger.info('[Agentic Flow] Registering service:', service.name);
+      registerEphemeralAssistant(superviserAssistant);
       registerService(service);
       setError(null);
     } catch (error) {
@@ -420,13 +425,20 @@ Remember: This is a 2-agent system where you plan and the worker executes. Your 
         if (worker) {
           setCurrentAssistant(worker);
         }
-
+        unregisterEphemeralAssistant(superviserAssistant.id);
         unregisterService(service.name);
       } catch (error) {
         logger.error('[Agentic Flow] Service cleanup error:', error);
       }
     };
-  }, [registerService, service, unregisterService, currentSession]);
+  }, [
+    registerService,
+    service,
+    unregisterService,
+    currentSession,
+    registerEphemeralAssistant,
+    unregisterEphemeralAssistant,
+  ]);
 
   // 에러 로깅
   useEffect(() => {
