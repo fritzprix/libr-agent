@@ -119,3 +119,55 @@ export function useScheduler() {
 - [ ] ToolCaller, Agentic 등 orchestrator에서 useScheduler로 통합
 - [ ] 테스트 및 edge case 검증 (중복 예약, 에러 처리 등)
 - [ ] 문서화 및 예제 추가
+
+```plantuml
+@startuml
+actor User
+participant SingleChatContainer
+participant SessionContext
+participant Agentic
+participant SchedulerContext
+participant useChatContext
+participant use_ai_service
+participant ai_service
+
+User -> SingleChatContainer : Open chat UI
+SingleChatContainer -> SessionContext : useSessionContext()
+SessionContext --> SingleChatContainer : currentSession 반환
+
+alt 세션 없음
+  SingleChatContainer -> User : <StartSingleChatView /> 렌더
+else 세션 있음
+  SingleChatContainer -> Agentic : (Agentic orchestrator mount)
+  Agentic -> SessionContext : useSessionContext()로 currentSession 조회
+  Agentic -> useChatContext : useChatContext()로 submit, messages 등 사용
+  Agentic -> SchedulerContext : useScheduler()로 schedule, idle 사용
+
+  loop Agentic agentic flow
+    Agentic -> SchedulerContext : idle 상태 확인
+    alt idle && agentic flow 필요
+      Agentic -> SchedulerContext : schedule(() => submit())
+      SchedulerContext -> useChatContext : submit()
+      useChatContext -> use_ai_service : submit(messages)
+      use_ai_service -> ai_service : streamChat(messages, ...)
+      ai_service --> use_ai_service : 응답 스트림
+      use_ai_service --> useChatContext : Message 업데이트
+      useChatContext --> Agentic : messages 업데이트
+    end
+    Agentic -> SessionContext : getCurrentAssistant() 등으로 어시스턴트 상태 확인
+    Agentic -> SchedulerContext : schedule(() => submit()) (필요시 반복)
+  end
+
+  alt report_to_user 호출됨
+    Agentic -> SchedulerContext : setHasReportedToUser(true), flow 종료
+  end
+end
+
+note over Agentic, SchedulerContext
+Agentic은 메시지/상태 변화 감지
+SchedulerContext는 예약된 작업을 idle 시점에 실행
+use-ai-service는 실제 AI inference 및 tool call 처리
+end note
+
+@enduml
+```
