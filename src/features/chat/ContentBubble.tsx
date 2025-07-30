@@ -60,15 +60,11 @@ const ContentBubble: React.FC<ContentBubbleProps> = ({ content, message }) => {
               return <p {...props}>{String(children)}</p>;
             }
           },
-          code: ({ children, className, ...props }) => {
+          code: ({ children, className }) => {
             try {
-              return (
-                <code className={className} {...props}>
-                  {children}
-                </code>
-              );
+              return <code className={className}>{children}</code>;
             } catch {
-              return <code {...props}>{String(children)}</code>;
+              return <code>{String(children)}</code>;
             }
           },
           pre: ({ children, ...props }) => {

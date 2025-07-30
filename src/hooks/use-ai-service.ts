@@ -7,6 +7,7 @@ import { useMCPServer } from './use-mcp-server';
 import { useLocalTools } from '../context/LocalToolContext';
 import { useAssistantContext } from '../context/AssistantContext';
 import { Message, ToolCall } from '@/models/chat';
+import { useScheduledCallback } from './use-scheduled-callback';
 
 const logger = getLogger('useAIService');
 
@@ -147,5 +148,7 @@ export const useAIService = (config?: AIServiceConfig) => {
     ],
   );
 
-  return { response, isLoading, error, submit };
+  const scheduledSubmit = useScheduledCallback(submit, [submit]);
+
+  return { response, isLoading, error, submit: scheduledSubmit };
 };

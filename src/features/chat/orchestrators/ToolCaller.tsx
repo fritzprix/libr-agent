@@ -1,5 +1,6 @@
 import { useAssistantContext } from '@/context/AssistantContext';
 import { useLocalTools } from '@/context/LocalToolContext';
+import { useScheduler } from '@/context/SchedulerContext';
 import { useSessionContext } from '@/context/SessionContext';
 import { useChatContext } from '@/hooks/use-chat';
 import { useMCPServer } from '@/hooks/use-mcp-server';
@@ -15,6 +16,7 @@ export const ToolCaller: React.FC = () => {
   const { messages, submit } = useChatContext();
   const { executeToolCall: callMcpTool } = useMCPServer();
   const { isLocalTool, executeToolCall: callLocalTool } = useLocalTools();
+  const { schedule } = useScheduler();
   const [{ loading }, execute] = useAsyncFn(
     async (tcMessage: Message) => {
       const toolResults: Message[] = [];
@@ -33,9 +35,9 @@ export const ToolCaller: React.FC = () => {
           sessionId: currentSession?.id || '', // Add sessionId
         });
       }
-      submit(toolResults);
+      await submit(toolResults);
     },
-    [submit, callLocalTool, callMcpTool],
+    [submit, callLocalTool, callMcpTool, schedule],
   );
 
   useEffect(() => {
@@ -50,7 +52,7 @@ export const ToolCaller: React.FC = () => {
     ) {
       execute(lastMessage);
     }
-  }, [messages, submit, isLocalTool, execute]);
+  }, [messages, execute]);
 
   return null;
 };
