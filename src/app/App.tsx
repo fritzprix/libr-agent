@@ -31,14 +31,14 @@ function App() {
   return (
     <div className="h-screen w-full">
       <SettingsProvider>
-        <AssistantGroupProvider>
-          <AssistantContextProvider>
-            <SessionContextProvider>
-              <SessionHistoryProvider>
-                <ModelOptionsProvider>
-                  <MCPServerProvider>
-                    <LocalToolProvider>
-                      <SchedulerProvider>
+        <SchedulerProvider>
+          <AssistantGroupProvider>
+            <AssistantContextProvider>
+              <SessionContextProvider>
+                <SessionHistoryProvider>
+                  <ModelOptionsProvider>
+                    <MCPServerProvider>
+                      <LocalToolProvider>
                         <WeatherTool />
                         <SidebarProvider>
                           <div className="flex h-screen w-full">
@@ -98,14 +98,14 @@ function App() {
                           onClose={() => setIsSettingsModalOpen(false)}
                         />
                         <Toaster />
-                      </SchedulerProvider>
-                    </LocalToolProvider>
-                  </MCPServerProvider>
-                </ModelOptionsProvider>
-              </SessionHistoryProvider>
-            </SessionContextProvider>
-          </AssistantContextProvider>
-        </AssistantGroupProvider>
+                      </LocalToolProvider>
+                    </MCPServerProvider>
+                  </ModelOptionsProvider>
+                </SessionHistoryProvider>
+              </SessionContextProvider>
+            </AssistantContextProvider>
+          </AssistantGroupProvider>
+        </SchedulerProvider>
       </SettingsProvider>
     </div>
   );
