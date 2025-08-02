@@ -111,7 +111,7 @@ export const useChatContext = (): ChatContextReturn => {
                 );
               }
               const messageWithId = { ...msg, sessionId: currentSession.id };
-              addMessage(messageWithId);
+              await addMessage(messageWithId);
               return messageWithId;
             }),
           );

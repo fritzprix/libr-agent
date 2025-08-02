@@ -33,6 +33,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.56.0",
+    "@cerebras/cerebras_cloud_sdk": "^1.35.0",
     "@google/genai": "^1.10.0",
     "@langchain/community": "^0.3.48",
     "@langchain/core": "^0.3.50",

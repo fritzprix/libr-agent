@@ -9,9 +9,11 @@ import React, {
 } from 'react';
 import { useAsyncFn } from 'react-use';
 import { getLogger } from '../lib/logger';
-import { MCPTool, tauriMCPClient } from '../lib/tauri-mcp-client';
+import { tauriMCPClient } from '../lib/tauri-mcp-client';
+import { MCPTool } from '../lib/mcp-types';
 import { useAssistantContext } from './AssistantContext';
 import { Assistant } from '../models/chat';
+import { MessageValidator } from '@/lib/ai-service/validators';
 import { useScheduledCallback } from '@/hooks/use-scheduled-callback';
 
 const logger = getLogger('MCPServerContext');
@@ -130,26 +132,64 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
       }
 
       try {
-        const result = await tauriMCPClient.callTool(
+        // Step 1: Get raw result from MCP tool
+        const rawResult = await tauriMCPClient.callTool(
           serverName,
           toolName,
           toolArguments,
         );
-        logger.debug(`Tool execution result for ${toolCall.function.name}:`, {
-          result,
-        });
-        return {
-          role: 'tool',
-          content: JSON.stringify(result),
-          tool_call_id: toolCall.id,
-        };
+
+        logger.debug(
+          `Raw tool execution result for ${toolCall.function.name}:`,
+          {
+            rawResult,
+          },
+        );
+
+        // Step 2: 📍 Core improvement - Validate and normalize the response
+        const validatedResult =
+          MessageValidator.validateAndNormalizeMCPResponse(
+            rawResult,
+            aiProvidedToolName,
+          );
+
+        // Step 3: Format for chat system
+        const formattedResult = MessageValidator.formatMCPResponseForChat(
+          validatedResult,
+          toolCall.id,
+        );
+
+        // Step 4: Log success/failure appropriately
+        if (formattedResult.error) {
+          logger.warn(
+            `Tool execution completed with error for ${toolCall.function.name}:`,
+            {
+              result: formattedResult,
+              validatedResult,
+            },
+          );
+        } else {
+          logger.debug(
+            `Tool execution successful for ${toolCall.function.name}:`,
+            {
+              result: formattedResult,
+            },
+          );
+        }
+
+        return formattedResult;
       } catch (execError) {
+        // Step 5: Exception handling - standardized error response
         logger.error(`Tool execution failed for ${toolCall.function.name}:`, {
           execError,
         });
+
         return {
           role: 'tool',
-          content: `Error: Tool '${toolCall.function.name}' failed: ${execError instanceof Error ? execError.message : String(execError)}`,
+          content: JSON.stringify({
+            error: `Tool '${toolCall.function.name}' failed: ${execError instanceof Error ? execError.message : String(execError)}`,
+            success: false,
+          }),
           tool_call_id: toolCall.id,
         };
       }

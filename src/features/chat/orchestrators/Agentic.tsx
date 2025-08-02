@@ -8,7 +8,7 @@ import { useScheduler } from '@/context/SchedulerContext';
 import { useSessionContext } from '@/context/SessionContext';
 import { useChatContext } from '@/hooks/use-chat';
 import { getLogger } from '@/lib/logger';
-import { createObjectSchema, createStringSchema } from '@/lib/tauri-mcp-client';
+import { createObjectSchema, createStringSchema } from '@/lib/mcp-types';
 import { Assistant, Message } from '@/models/chat';
 import { createId } from '@paralleldrive/cuid2';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -137,7 +137,6 @@ export function SimpleAgenticFlow() {
           return {
             id: createId(),
             jsonrpc: '2.0',
-            success: true,
             result: {
               content: [
                 {
@@ -152,7 +151,6 @@ export function SimpleAgenticFlow() {
         return {
           id: createId(),
           jsonrpc: '2.0',
-          success: true,
           result: {
             content: [
               {
@@ -167,7 +165,6 @@ export function SimpleAgenticFlow() {
         return {
           id: createId(),
           jsonrpc: '2.0',
-          success: false,
           error: {
             code: -1,
             message: error instanceof Error ? error.message : 'Unknown error',
@@ -206,7 +203,6 @@ export function SimpleAgenticFlow() {
         return {
           id: createId(),
           jsonrpc: '2.0',
-          success: true,
           result: {
             content: [
               {
@@ -222,7 +218,6 @@ export function SimpleAgenticFlow() {
         return {
           id: createId(),
           jsonrpc: '2.0',
-          success: false,
           error: {
             code: -1,
             message: error instanceof Error ? error.message : 'Unknown error',

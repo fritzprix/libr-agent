@@ -1,4 +1,4 @@
-import { MCPTool } from '../lib/tauri-mcp-client';
+import { MCPTool } from '../lib/mcp-types';
 
 export interface Message {
   id: string;

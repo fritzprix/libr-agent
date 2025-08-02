@@ -11,6 +11,9 @@ importers:
       '@anthropic-ai/sdk':
         specifier: ^0.56.0
         version: 0.56.0
+      '@cerebras/cerebras_cloud_sdk':
+        specifier: ^1.35.0
+        version: 1.35.0
       '@google/genai':
         specifier: ^1.10.0
         version: 1.10.0
@@ -323,6 +326,9 @@ packages:
       dotenv: ^16.4.5
       openai: ^4.62.1
       zod: ^3.23.8
+
+  '@cerebras/cerebras_cloud_sdk@1.35.0':
+    resolution: {integrity: sha512-bQ6KYHmcvudHJ1aLzqkeETn3Y071/8/zpcZho6g4pKZ+VluHvLmIG0buhrwF9qJY5WSLmXR/s4pruxVRmfV7yQ==}
 
   '@cfworker/json-schema@4.1.1':
     resolution: {integrity: sha512-gAmrUZSGtKc3AiBL71iNWxDsyUC5uMaKKGdvzYsBoTW/xi42JQHl7eKV2OYzCUqvc+D2RCcf7EXY2iCyFIk6og==}
@@ -4323,6 +4329,18 @@ snapshots:
       - bufferutil
       - encoding
       - utf-8-validate
+
+  '@cerebras/cerebras_cloud_sdk@1.35.0':
+    dependencies:
+      '@types/node': 18.19.118
+      '@types/node-fetch': 2.6.12
+      abort-controller: 3.0.0
+      agentkeepalive: 4.6.0
+      form-data-encoder: 1.7.2
+      formdata-node: 4.4.1
+      node-fetch: 2.7.0
+    transitivePeerDependencies:
+      - encoding
 
   '@cfworker/json-schema@4.1.1': {}
 
