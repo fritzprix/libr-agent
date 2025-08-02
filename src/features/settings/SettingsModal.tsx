@@ -39,7 +39,13 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   );
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Settings">
+    <Modal 
+      isOpen={isOpen} 
+      onClose={onClose} 
+      title="Settings"
+      description="Configure your AI models, API keys, and application preferences"
+      size="xl"
+    >
       <div className="p-6 text-gray-300">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
