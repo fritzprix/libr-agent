@@ -140,7 +140,13 @@ function Chat({ children }: ChatProps) {
 }
 
 // Chat Header component
-function ChatHeader({ children, assistantName }: { children?: React.ReactNode; assistantName?: string }) {
+function ChatHeader({
+  children,
+  assistantName,
+}: {
+  children?: React.ReactNode;
+  assistantName?: string;
+}) {
   return (
     <TerminalHeader>
       {children}
@@ -153,7 +159,8 @@ function ChatHeader({ children, assistantName }: { children?: React.ReactNode; a
 
 // Chat Messages component
 function ChatMessages() {
-  const { messages, isLoading, currentSession, messagesEndRef } = useChatInternalContext();
+  const { messages, isLoading, currentSession, messagesEndRef } =
+    useChatInternalContext();
   const { getAssistant } = useAssistantContext();
 
   useEffect(() => {

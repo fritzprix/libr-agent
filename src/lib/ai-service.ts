@@ -18,6 +18,7 @@ import {
 import { MCPTool, JSONSchema } from './tauri-mcp-client';
 import { getLogger } from './logger';
 import { Message } from '@/models/chat';
+import { llmConfigManager } from './llm-config-manager';
 
 const logger = getLogger('AIService');
 
@@ -488,6 +489,11 @@ export class GroqService extends BaseAIService {
         options.systemPrompt,
       );
 
+      const model = llmConfigManager.getModel(
+        'groq',
+        options.modelName || config.defaultModel || 'llama-3.1-8b-instant',
+      );
+
       const chatCompletion = await this.withRetry(() =>
         this.groq.chat.completions.create({
           messages: groqMessages,
@@ -495,7 +501,7 @@ export class GroqService extends BaseAIService {
             options.modelName || config.defaultModel || 'llama-3.1-8b-instant',
           temperature: config.temperature,
           max_tokens: config.maxTokens,
-          reasoning_format: 'parsed',
+          reasoning_format: model?.supportReasoning ? 'parsed' : undefined,
           stream: true,
           tools: options.availableTools
             ? (convertMCPToolsToProviderTools(
