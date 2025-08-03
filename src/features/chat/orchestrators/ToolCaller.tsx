@@ -6,7 +6,7 @@ import { useChatContext } from '@/hooks/use-chat';
 import { useMCPServer } from '@/hooks/use-mcp-server';
 import { Message } from '@/models/chat';
 import { createId } from '@paralleldrive/cuid2';
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import { useAsyncFn } from 'react-use';
 
 interface ToolExecutionResult {
@@ -85,6 +85,8 @@ export const ToolCaller: React.FC = () => {
     },
     [],
   );
+
+  const lastProcessedMessageId = useRef<string | null>(null);
 
   /**
    * Execute tool calls with comprehensive validation and error handling
@@ -207,8 +209,11 @@ export const ToolCaller: React.FC = () => {
       lastMessage.tool_calls &&
       lastMessage.tool_calls.length > 0 &&
       !lastMessage.isStreaming &&
-      !loading
+      !loading &&
+      lastMessage.id &&
+      lastProcessedMessageId.current !== lastMessage.id
     ) {
+      lastProcessedMessageId.current = lastMessage.id;
       execute(lastMessage);
     }
   }, [messages, execute, loading]);
