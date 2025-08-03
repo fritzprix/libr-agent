@@ -9,6 +9,9 @@ import React, {
 } from 'react';
 import { produce, Draft } from 'immer';
 import equal from 'fast-deep-equal';
+import { getLogger } from '@/lib/logger';
+
+const logger = getLogger('EditorContext');
 
 // --- 타입 정의 (Type Definitions) ---
 
@@ -99,7 +102,7 @@ export function EditorProvider<T extends object>({
       originalValueRef.current = draft;
       setErrors([]);
     } catch (error) {
-      console.error('Commit failed:', error);
+      logger.error('Commit failed:', error);
       const errorMessage =
         error instanceof Error ? error.message : '저장에 실패했습니다.';
       setErrors([errorMessage]);

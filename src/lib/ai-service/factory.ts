@@ -6,6 +6,7 @@ import { AnthropicService } from './anthropic';
 import { GeminiService } from './gemini';
 import { FireworksService } from './fireworks';
 import { CerebrasService } from './cerebras';
+import { OllamaService } from './ollama';
 import { EmptyAIService } from './empty';
 
 const logger = getLogger('AIService');
@@ -64,6 +65,9 @@ export class AIServiceFactory {
           break;
         case AIServiceProvider.Cerebras:
           service = new CerebrasService(apiKey, config);
+          break;
+        case AIServiceProvider.Ollama:
+          service = new OllamaService(apiKey, config);
           break;
         default:
           logger.warn(

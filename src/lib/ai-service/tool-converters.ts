@@ -6,7 +6,6 @@ import { Tool as AnthropicTool } from '@anthropic-ai/sdk/resources/messages.mjs'
 import { MCPTool, JSONSchema } from '../mcp-types';
 import { getLogger } from '../logger';
 import { AIServiceProvider, AIServiceError } from './types';
-import { MessageValidator } from './validators';
 
 const logger = getLogger('AIService');
 
@@ -17,7 +16,17 @@ type ProviderToolType =
   | OpenAIChatCompletionTool
   | AnthropicTool
   | FunctionDeclaration
-  | Cerebras.Chat.Completions.ChatCompletionCreateParams.Tool;
+  | Cerebras.Chat.Completions.ChatCompletionCreateParams.Tool
+  | OllamaTool;
+
+interface OllamaTool {
+  type: 'function';
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+}
 type ProviderToolsType = ProviderToolType[];
 
 // Helper function to convert JSON schema types to Gemini types
@@ -218,12 +227,27 @@ function convertSinglePropertyToGeminiType(prop: JsonSchemaProperty): {
   }
 }
 
+function validateTool(tool: MCPTool): void {
+  if (!tool.name || typeof tool.name !== 'string') {
+    throw new Error('Tool must have a valid name');
+  }
+  if (!tool.description || typeof tool.description !== 'string') {
+    throw new Error('Tool must have a valid description');
+  }
+  if (!tool.inputSchema || typeof tool.inputSchema !== 'object') {
+    throw new Error('Tool must have a valid inputSchema');
+  }
+  if (tool.inputSchema.type !== 'object') {
+    throw new Error('Tool inputSchema must be of type "object"');
+  }
+}
+
 // Updated tool conversion for Gemini - use parameters with Type enums
 function convertMCPToolToProviderFormat(
   mcpTool: MCPTool,
   provider: AIServiceProvider,
 ): ProviderToolType {
-  MessageValidator.validateTool(mcpTool);
+  validateTool(mcpTool);
 
   // Extract properties and required fields from the structured schema
   const properties = mcpTool.inputSchema.properties || {};
@@ -298,6 +322,15 @@ function convertMCPToolToProviderFormat(
         },
       } satisfies Cerebras.Chat.Completions.ChatCompletionCreateParams.Tool;
     }
+    case AIServiceProvider.Ollama:
+      return {
+        type: 'function',
+        function: {
+          name: mcpTool.name,
+          description: mcpTool.description,
+          parameters: commonParameters,
+        },
+      } satisfies OllamaTool;
     case AIServiceProvider.Empty:
       throw new AIServiceError(
         `Tool conversion not supported for Empty AIServiceProvider`,
@@ -324,7 +357,7 @@ export function convertMCPToolsToCerebrasTools(
   mcpTools: MCPTool[],
 ): Cerebras.Chat.Completions.ChatCompletionCreateParams.Tool[] {
   return mcpTools.map((tool) => {
-    MessageValidator.validateTool(tool);
+    validateTool(tool);
 
     const properties = tool.inputSchema.properties || {};
     const required = tool.inputSchema.required || [];

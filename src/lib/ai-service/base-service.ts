@@ -6,7 +6,7 @@ import {
   AIServiceError,
   IAIService,
 } from './types';
-import { MessageValidator } from './validators';
+import { ModelInfo, llmConfigManager } from '../llm-config-manager';
 import { withRetry, withTimeout } from '../retry-utils';
 
 // --- Base Service Class with Common Functionality ---
@@ -41,7 +41,21 @@ export abstract class BaseAIService implements IAIService {
         this.getProvider(),
       );
     }
-    messages.forEach(MessageValidator.validateMessage);
+    messages.forEach((message) => {
+      if (!message.id || typeof message.id !== 'string') {
+        throw new Error('Message must have a valid id');
+      }
+      if (
+        (!message.content &&
+          (message.role === 'user' || message.role === 'system')) ||
+        typeof message.content !== 'string'
+      ) {
+        throw new Error('Message must have valid content');
+      }
+      if (!['user', 'assistant', 'system', 'tool'].includes(message.role)) {
+        throw new Error('Message must have a valid role');
+      }
+    });
   }
 
   protected async withRetry<T>(
@@ -70,6 +84,22 @@ export abstract class BaseAIService implements IAIService {
     timeoutMs: number,
   ): Promise<T> {
     return withTimeout(promise, timeoutMs);
+  }
+
+  /**
+   * Default implementation returns models from llmConfigManager for the provider.
+   * Override this method for services that need dynamic model discovery (e.g., Ollama).
+   */
+  async listModels(): Promise<ModelInfo[]> {
+    const provider = this.getProvider();
+    const models = llmConfigManager.getModelsForProvider(provider);
+
+    if (!models) {
+      return [];
+    }
+
+    // Record<string, ModelInfo>를 ModelInfo[]로 변환
+    return Object.values(models);
   }
 
   abstract streamChat(

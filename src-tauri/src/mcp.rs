@@ -175,9 +175,9 @@ pub struct MCPError {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ToolCallResult {
+pub struct MCPResponse {
     pub jsonrpc: String,
-    pub id: serde_json::Value,
+    pub id: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -243,7 +243,7 @@ impl MCPServerManager {
 
         // Create transport and connect using RMCP pattern
         let transport = TokioChildProcess::new(cmd)?;
-        debug!("Created transport for command: {} {:?}", command, args);
+        debug!("Created transport for command: {command} {args:?}");
 
         let client = ().serve(transport).await?;
         info!("Successfully connected to MCP server: {}", config.name);
@@ -270,7 +270,7 @@ impl MCPServerManager {
         if let Some(connection) = connections.remove(server_name) {
             // Cancel the client connection
             let _ = connection.client.cancel().await;
-            info!("Stopped MCP server: {}", server_name);
+            info!("Stopped MCP server: {server_name}");
         }
 
         Ok(())
@@ -282,7 +282,7 @@ impl MCPServerManager {
         server_name: &str,
         tool_name: &str,
         arguments: serde_json::Value,
-    ) -> ToolCallResult {
+    ) -> MCPResponse {
         let connections = self.connections.lock().await;
 
         // Generate a unique ID for this request
@@ -302,17 +302,45 @@ impl MCPServerManager {
             };
 
             match connection.client.call_tool(call_param).await {
-                Ok(result) => ToolCallResult {
-                    jsonrpc: "2.0".to_string(),
-                    id: request_id,
-                    result: Some(serde_json::to_value(result).unwrap_or(serde_json::Value::Null)),
-                    error: None,
+                Ok(result) => {
+                    let result_value = serde_json::to_value(&result).unwrap_or(serde_json::Value::Null);
+                    
+                    // 결과에 에러가 포함되어 있는지 확인
+                    let contains_error = result_value.to_string().to_lowercase().contains("error");
+                    
+                    if contains_error && result_value.get("isError").and_then(|v| v.as_bool()).unwrap_or(false) {
+                        // isError가 true인 경우 에러로 처리
+                        let error_msg = result_value.get("content")
+                            .and_then(|c| c.as_array())
+                            .and_then(|arr| arr.first())
+                            .and_then(|item| item.get("text"))
+                            .and_then(|text| text.as_str())
+                            .unwrap_or("Tool execution error");
+                            
+                        MCPResponse {
+                            jsonrpc: "2.0".to_string(),
+                            id: Some(request_id),
+                            result: None,
+                            error: Some(MCPError {
+                                code: -32000, // Tool execution error
+                                message: error_msg.to_string(),
+                                data: Some(result_value),
+                            }),
+                        }
+                    } else {
+                        MCPResponse {
+                            jsonrpc: "2.0".to_string(),
+                            id: Some(request_id),
+                            result: Some(result_value),
+                            error: None,
+                        }
+                    }
                 },
                 Err(e) => {
-                    error!("Error calling tool '{}': {}", tool_name, e);
-                    ToolCallResult {
+                    error!("Error calling tool '{tool_name}': {e}");
+                    MCPResponse {
                         jsonrpc: "2.0".to_string(),
-                        id: request_id,
+                        id: Some(request_id),
                         result: None,
                         error: Some(MCPError {
                             code: -32603, // Internal error
@@ -323,14 +351,14 @@ impl MCPServerManager {
                 }
             }
         } else {
-            error!("Server '{}' not found", server_name);
-            ToolCallResult {
+            error!("Server '{server_name}' not found");
+            MCPResponse {
                 jsonrpc: "2.0".to_string(),
-                id: request_id,
+                id: Some(request_id),
                 result: None,
                 error: Some(MCPError {
                     code: -32601, // Method not found
-                    message: format!("Server '{}' not found", server_name),
+                    message: format!("Server '{server_name}' not found"),
                     data: None,
                 }),
             }
@@ -344,7 +372,7 @@ impl MCPServerManager {
         match serde_json::from_value::<JSONSchema>(schema) {
             Ok(json_schema) => json_schema,
             Err(e) => {
-                warn!("Failed to parse JSON schema: {}, using default", e);
+                warn!("Failed to parse JSON schema: {e}, using default");
                 JSONSchema::default()
             }
         }
@@ -355,15 +383,15 @@ impl MCPServerManager {
         let connections = self.connections.lock().await;
 
         if let Some(connection) = connections.get(server_name) {
-            debug!("Found connection for server: {}", server_name);
+            debug!("Found connection for server: {server_name}");
 
             match connection.client.list_all_tools().await {
                 Ok(tools_response) => {
-                    debug!("Raw tools response: {:?}", tools_response);
+                    debug!("Raw tools response: {tools_response:?}");
                     let mut tools = Vec::new();
 
                     for tool in tools_response {
-                        debug!("Processing tool: {:?}", tool);
+                        debug!("Processing tool: {tool:?}");
 
                         // Convert the input schema to our structured format
                         let input_schema_value = serde_json::to_value(tool.input_schema)
@@ -397,12 +425,12 @@ impl MCPServerManager {
                     Ok(tools)
                 }
                 Err(e) => {
-                    error!("Error listing tools: {}", e);
+                    error!("Error listing tools: {e}");
                     Err(anyhow::anyhow!("Failed to list tools: {}", e))
                 }
             }
         } else {
-            warn!("Server '{}' not found in connections", server_name);
+            warn!("Server '{server_name}' not found in connections");
             Err(anyhow::anyhow!("Server '{}' not found", server_name))
         }
     }
@@ -425,7 +453,7 @@ impl MCPServerManager {
                     all_tools.extend(tools);
                 }
                 Err(e) => {
-                    warn!("Failed to get tools from server {}: {}", server_name, e);
+                    warn!("Failed to get tools from server {server_name}: {e}");
                     // Continue with other servers instead of failing completely
                 }
             }

@@ -25,10 +25,14 @@ export function Dropdown({
   disabled,
   className = '',
 }: DropdownProps) {
+  // value가 options에 있는지 확인하고, 없으면 빈 문자열 사용
+  const validValue = options.some((opt) => opt.value === value) ? value : '';
+
   return (
     <div className={`relative ${className}`}>
       <Select
-        value={typeof value === 'string' ? value : `${value}`}
+        key={options.length} // options 변경시 강제 리렌더링
+        value={validValue}
         onValueChange={(v) => onChange(v)}
         disabled={disabled}
       >

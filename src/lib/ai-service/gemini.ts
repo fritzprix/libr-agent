@@ -11,7 +11,6 @@ import { MCPTool } from '../mcp-types';
 import { AIServiceProvider, AIServiceConfig, AIServiceError } from './types';
 import { BaseAIService } from './base-service';
 import { convertMCPToolsToProviderTools } from './tool-converters';
-import { MessageValidator } from './validators';
 
 const logger = getLogger('AIService');
 
@@ -161,9 +160,7 @@ export class GeminiService extends BaseAIService {
             parts: m.tool_calls.map((tc) => ({
               functionCall: {
                 name: tc.function.name,
-                args: MessageValidator.sanitizeToolArguments(
-                  tc.function.arguments,
-                ),
+                args: JSON.parse(tc.function.arguments),
               },
             })),
           });

@@ -2,19 +2,19 @@ use std::sync::OnceLock;
 use tauri_plugin_log::{Target, TargetKind};
 use log::error;
 mod mcp;
-use mcp::{MCPServerConfig, MCPServerManager, ToolCallResult};
+use mcp::{MCPServerConfig, MCPServerManager, MCPResponse};
 
 // 전역 MCP 서버 매니저
 static MCP_MANAGER: OnceLock<MCPServerManager> = OnceLock::new();
 
 fn get_mcp_manager() -> &'static MCPServerManager {
-    MCP_MANAGER.get_or_init(|| MCPServerManager::new())
+    MCP_MANAGER.get_or_init(MCPServerManager::new)
 }
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
 fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
+    format!("Hello, {name}! You've been greeted from Rust!")
 }
 
 #[tauri::command]
@@ -38,7 +38,7 @@ async fn call_mcp_tool(
     server_name: String,
     tool_name: String,
     arguments: serde_json::Value,
-) -> ToolCallResult {
+) -> MCPResponse {
     get_mcp_manager()
         .call_tool(&server_name, &tool_name, arguments)
         .await
@@ -78,7 +78,7 @@ async fn list_tools_from_config(config: serde_json::Value) -> Result<Vec<mcp::MC
                     );
                 }
                 let server_cfg: mcp::MCPServerConfig = serde_json::from_value(server_value)
-                    .map_err(|e| format!("Invalid server config: {}", e))?;
+                    .map_err(|e| format!("Invalid server config: {e}"))?;
                 server_list.push(server_cfg);
             }
             server_list
@@ -88,7 +88,7 @@ async fn list_tools_from_config(config: serde_json::Value) -> Result<Vec<mcp::MC
             let mut server_list = Vec::new();
             for server_value in servers_array {
                 let server_cfg: mcp::MCPServerConfig = serde_json::from_value(server_value.clone())
-                    .map_err(|e| format!("Invalid server config: {}", e))?;
+                    .map_err(|e| format!("Invalid server config: {e}"))?;
                 server_list.push(server_cfg);
             }
             server_list
@@ -109,14 +109,14 @@ async fn list_tools_from_config(config: serde_json::Value) -> Result<Vec<mcp::MC
     for server_cfg in servers_config {
         let server_name = server_cfg.name.clone();
         if !manager.is_server_alive(&server_name).await {
-            println!("🚀 [TAURI] Starting server: {}", server_name);
+            println!("🚀 [TAURI] Starting server: {server_name}");
             if let Err(e) = manager.start_server(server_cfg).await {
-                eprintln!("❌ [TAURI] Failed to start server {}: {}", server_name, e);
+                eprintln!("❌ [TAURI] Failed to start server {server_name}: {e}");
                 continue; // Skip to the next server if this one fails to start
             }
             tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
         } else {
-            println!("🚀 [TAURI] Server {} already running", server_name);
+            println!("🚀 [TAURI] Server {server_name} already running");
         }
 
         // Fetch tools for the server we just ensured is running
@@ -135,8 +135,7 @@ async fn list_tools_from_config(config: serde_json::Value) -> Result<Vec<mcp::MC
             }
             Err(e) => {
                 eprintln!(
-                    "❌ [TAURI] Error listing tools for '{}': {}",
-                    server_name, e
+                    "❌ [TAURI] Error listing tools for '{server_name}': {e}"
                 );
                 // Continue to the next server
             }
@@ -188,7 +187,7 @@ fn validate_tool_schema(tool: mcp::MCPTool) -> Result<(), String> {
 pub fn run() {
     // Set up custom panic handler for better error reporting
     std::panic::set_hook(Box::new(|panic_info| {
-        error!("🚨 PANIC: {}", panic_info);
+        error!("🚨 PANIC: {panic_info}");
         if let Some(location) = panic_info.location() {
             error!("  Location: {}:{}:{}", location.file(), location.line(), location.column());
         }
@@ -252,16 +251,16 @@ pub fn run() {
     match result {
         Ok(app_result) => {
             if let Err(e) = app_result {
-                eprintln!("❌ Tauri application error: {}", e);
+                eprintln!("❌ Tauri application error: {e}");
                 std::process::exit(1);
             }
         }
         Err(panic_payload) => {
             eprintln!("❌ Application panicked during startup");
             if let Some(panic_str) = panic_payload.downcast_ref::<&str>() {
-                eprintln!("   Panic message: {}", panic_str);
+                eprintln!("   Panic message: {panic_str}");
             } else if let Some(panic_string) = panic_payload.downcast_ref::<String>() {
-                eprintln!("   Panic message: {}", panic_string);
+                eprintln!("   Panic message: {panic_string}");
             }
             
             eprintln!("💡 Troubleshooting suggestions:");

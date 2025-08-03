@@ -10,10 +10,9 @@ import React, {
 import { useAsyncFn } from 'react-use';
 import { getLogger } from '../lib/logger';
 import { tauriMCPClient } from '../lib/tauri-mcp-client';
-import { MCPTool } from '../lib/mcp-types';
+import { MCPResponse, MCPTool, normalizeToolResult } from '../lib/mcp-types';
 import { useAssistantContext } from './AssistantContext';
 import { Assistant } from '../models/chat';
-import { MessageValidator } from '@/lib/ai-service/validators';
 import { useScheduledCallback } from '@/hooks/use-scheduled-callback';
 
 const logger = getLogger('MCPServerContext');
@@ -28,7 +27,7 @@ interface MCPServerContextType {
     id: string;
     type: 'function';
     function: { name: string; arguments: string };
-  }) => Promise<{ role: 'tool'; content: string; tool_call_id: string }>;
+  }) => Promise<MCPResponse>;
 }
 
 export const MCPServerContext = createContext<MCPServerContextType | undefined>(
@@ -91,111 +90,64 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
       id: string;
       type: 'function';
       function: { name: string; arguments: string };
-    }): Promise<{ role: 'tool'; content: string; tool_call_id: string }> => {
+    }): Promise<MCPResponse> => {
       logger.debug(`Executing tool call:`, { toolCall });
       const aiProvidedToolName = toolCall.function.name;
-      let serverName: string | undefined;
-      let toolName: string | undefined;
-
-      // Use '__' as delimiter for URL and JSON safety
       const delimiter = '__';
       const parts = aiProvidedToolName.split(delimiter);
-      if (parts.length >= 2) {
-        serverName = parts[0];
-        toolName = parts.slice(1).join(delimiter);
-      }
+      const serverName = parts.length > 1 ? parts[0] : undefined;
+      const toolName =
+        parts.length > 1 ? parts.slice(1).join(delimiter) : aiProvidedToolName;
 
       if (!serverName || !toolName) {
-        logger.error(
-          `Could not determine serverName or toolName for AI-provided tool name: ${aiProvidedToolName}`,
+        const errorMsg = `Could not determine server/tool name from '${aiProvidedToolName}'`;
+        logger.error(errorMsg);
+        return normalizeToolResult(
+          { error: errorMsg, success: false },
+          aiProvidedToolName,
         );
-        return {
-          role: 'tool',
-          content: `Error: Could not find tool '${aiProvidedToolName}' or determine its server.`,
-          tool_call_id: toolCall.id,
-        };
       }
 
-      let toolArguments: Record<string, unknown> = {};
+      let toolArguments: Record<string, unknown>;
       try {
         toolArguments = JSON.parse(toolCall.function.arguments);
       } catch (parseError) {
-        logger.error(
-          `Failed to parse tool arguments for ${toolCall.function.name}:`,
-          { parseError },
+        const errorMsg = `Failed to parse arguments: ${parseError instanceof Error ? parseError.message : String(parseError)}`;
+        logger.error(errorMsg, { arguments: toolCall.function.arguments });
+        return normalizeToolResult(
+          { error: errorMsg, success: false },
+          aiProvidedToolName,
         );
-        return {
-          role: 'tool',
-          content: `Error: Invalid tool arguments JSON: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
-          tool_call_id: toolCall.id,
-        };
       }
 
       try {
-        // Step 1: Get raw result from MCP tool
-        const rawResult = await tauriMCPClient.callTool(
+        const rawResponse = await tauriMCPClient.callTool(
           serverName,
           toolName,
           toolArguments,
         );
-
-        logger.debug(
-          `Raw tool execution result for ${toolCall.function.name}:`,
-          {
-            rawResult,
-          },
-        );
-
-        // Step 2: 📍 Core improvement - Validate and normalize the response
-        const validatedResult =
-          MessageValidator.validateAndNormalizeMCPResponse(
-            rawResult,
-            aiProvidedToolName,
-          );
-
-        // Step 3: Format for chat system
-        const formattedResult = MessageValidator.formatMCPResponseForChat(
-          validatedResult,
-          toolCall.id,
-        );
-
-        // Step 4: Log success/failure appropriately
-        if (formattedResult.error) {
-          logger.warn(
-            `Tool execution completed with error for ${toolCall.function.name}:`,
-            {
-              result: formattedResult,
-              validatedResult,
-            },
-          );
-        } else {
-          logger.debug(
-            `Tool execution successful for ${toolCall.function.name}:`,
-            {
-              result: formattedResult,
-            },
-          );
-        }
-
-        return formattedResult;
-      } catch (execError) {
-        // Step 5: Exception handling - standardized error response
-        logger.error(`Tool execution failed for ${toolCall.function.name}:`, {
-          execError,
+        logger.debug(`MCP Response for ${aiProvidedToolName}:`, {
+          rawResponse,
         });
 
-        return {
-          role: 'tool',
-          content: JSON.stringify({
-            error: `Tool '${toolCall.function.name}' failed: ${execError instanceof Error ? execError.message : String(execError)}`,
-            success: false,
-          }),
-          tool_call_id: toolCall.id,
-        };
+        // 응답을 normalizeToolResult로 한 번 더 검증하여 에러 패턴 감지
+        const mcpResponse = normalizeToolResult(
+          rawResponse,
+          aiProvidedToolName,
+        );
+        return mcpResponse;
+      } catch (execError) {
+        const errorMsg = `Tool execution failed: ${execError instanceof Error ? execError.message : String(execError)}`;
+        logger.error(errorMsg, { execError });
+        return normalizeToolResult(
+          { error: errorMsg, success: false },
+          aiProvidedToolName,
+        );
       }
     },
     [],
   );
+
   const scheduleExecuteToolCall = useScheduledCallback(executeToolCall, [
     executeToolCall,
   ]);

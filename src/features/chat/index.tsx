@@ -1,8 +1,7 @@
 import { useSessionContext } from '@/context/SessionContext';
 import Chat from './Chat';
 import { Switch } from '@/components/ui/switch';
-import { MultiAgentOrchestrator } from './orchestrators/MultiAgentOrchestrator';
-import SimpleAgenticFlow from './orchestrators/Agentic';
+import { IdleDetector } from './orchestrators/IdleDetector';
 
 export function ChatRouter() {
   const { current, isAgenticMode, toggleAgenticMode } = useSessionContext();
@@ -16,7 +15,6 @@ export function ChatRouter() {
         <Chat.Header></Chat.Header>
         <Chat.Messages />
         <Chat.Bottom></Chat.Bottom>
-        <MultiAgentOrchestrator />
       </Chat>
     );
   }
@@ -39,7 +37,7 @@ export function ChatRouter() {
       </Chat.Header>
       <Chat.Messages />
       <Chat.Bottom></Chat.Bottom>
-      {isAgenticMode && <SimpleAgenticFlow />}
+      {isAgenticMode && <IdleDetector />}
     </Chat>
   );
 }

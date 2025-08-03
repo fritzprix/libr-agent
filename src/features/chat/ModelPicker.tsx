@@ -2,12 +2,15 @@ import { FC, useCallback, useMemo } from 'react';
 import { Dropdown } from '../../components/ui';
 import { useModelOptions } from '@/context/ModelProvider';
 import { AIServiceProvider } from '@/lib/ai-service';
+import { getLogger } from '@/lib/logger';
 
 interface ModelPickerProps {
   className?: string;
 }
 
 const CompactModelPicker: FC<ModelPickerProps> = ({ className = '' }) => {
+  const logger = getLogger('ModelPicker');
+
   const {
     modelId,
     provider,
@@ -18,7 +21,18 @@ const CompactModelPicker: FC<ModelPickerProps> = ({ className = '' }) => {
     selectedModelData,
     providerOptions,
     modelOptions,
+    refreshModels,
+    isRefreshingModels,
   } = useModelOptions();
+
+  // 디버깅: 컴포넌트 렌더링 상태 로그
+  logger.debug('CompactModelPicker render', {
+    provider,
+    modelId,
+    modelOptionsLength: modelOptions.length,
+    modelOptions,
+    isRefreshingModels,
+  });
 
   const apiKeyStatus = useMemo(() => {
     const key = apiKeys[provider];
@@ -71,13 +85,39 @@ const CompactModelPicker: FC<ModelPickerProps> = ({ className = '' }) => {
       />
       <span className="text-muted-foreground">/</span>
       <Dropdown
+        key={`model-${provider}-${modelOptions.length}`} // 강제 리렌더링을 위한 key
         options={modelOptions}
-        value={modelId}
+        value={modelOptions.some((opt) => opt.value === modelId) ? modelId : ''}
         placeholder="model"
         onChange={onModelChange}
         disabled={!modelId || modelOptions.length === 0}
         className="flex-grow min-w-0"
       />
+
+      {/* Ollama인 경우 새로고침 버튼 표시 */}
+      {provider === AIServiceProvider.Ollama && (
+        <button
+          onClick={refreshModels}
+          disabled={isRefreshingModels}
+          className="flex-shrink-0 p-1 hover:bg-primary/10 rounded text-muted-foreground hover:text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          title="Refresh Ollama models"
+        >
+          <svg
+            className={`w-4 h-4 ${isRefreshingModels ? 'animate-spin' : ''}`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+            />
+          </svg>
+        </button>
+      )}
+
       {selectedModelData && (
         <div className="flex items-center space-x-1.5 flex-shrink-0">
           <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">
@@ -111,6 +151,8 @@ const TerminalModelPicker: FC<ModelPickerProps> = ({ className = '' }) => {
     selectedModelData,
     providerOptions,
     modelOptions,
+    refreshModels,
+    isRefreshingModels,
   } = useModelOptions();
 
   const apiKeyStatus = useMemo(() => {
@@ -170,16 +212,42 @@ const TerminalModelPicker: FC<ModelPickerProps> = ({ className = '' }) => {
             </div>
           )}
         </div>
-        <div className="grid grid-cols-[90px_1fr] gap-3 items-center">
+        <div className="grid grid-cols-[90px_1fr_auto] gap-3 items-center">
           <label className="text-sm text-primary">MODEL:</label>
           <Dropdown
+            key={`terminal-model-${provider}-${modelOptions.length}`} // 강제 리렌더링을 위한 key
             options={modelOptions}
-            value={modelId}
+            value={
+              modelOptions.some((opt) => opt.value === modelId) ? modelId : ''
+            }
             placeholder={provider ? '<select>' : '...'}
             onChange={onModelChange}
             disabled={!provider || modelOptions.length === 0}
             className="min-w-0"
           />
+          {/* Ollama인 경우 새로고침 버튼 표시 */}
+          {provider === AIServiceProvider.Ollama && (
+            <button
+              onClick={refreshModels}
+              disabled={isRefreshingModels}
+              className="flex-shrink-0 p-2 hover:bg-primary/10 rounded text-muted-foreground hover:text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed border border-primary/20"
+              title="Refresh Ollama models"
+            >
+              <svg
+                className={`w-4 h-4 ${isRefreshingModels ? 'animate-spin' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                />
+              </svg>
+            </button>
+          )}
         </div>
         {selectedModelData && (
           <div className="border-t border-primary/20 mt-4 pt-3 text-xs text-muted-foreground space-y-2">

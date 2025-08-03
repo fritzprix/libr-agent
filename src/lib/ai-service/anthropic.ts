@@ -9,7 +9,6 @@ import { MCPTool } from '../mcp-types';
 import { AIServiceProvider, AIServiceConfig, AIServiceError } from './types';
 import { BaseAIService } from './base-service';
 import { convertMCPToolsToProviderTools } from './tool-converters';
-import { MessageValidator } from './validators';
 
 const logger = getLogger('AIService');
 
@@ -115,9 +114,7 @@ export class AnthropicService extends BaseAIService {
               type: 'tool_use' as const,
               id: tc.id,
               name: tc.function.name,
-              input: MessageValidator.sanitizeToolArguments(
-                tc.function.arguments,
-              ),
+              input: JSON.parse(tc.function.arguments),
             })),
           });
         } else if (m.tool_use) {

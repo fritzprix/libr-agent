@@ -617,6 +617,109 @@
           "description": "Distilled 70-billion-parameter reasoning model (private preview)"
         }
       }
+    },
+    "ollama": {
+      "name": "Ollama",
+      "apiKeyEnvVar": "OLLAMA_API_KEY",
+      "baseUrl": "http://127.0.0.1:11434",
+      "models": {
+        "llama3.1": {
+          "name": "llama3.1",
+          "contextWindow": 128000,
+          "supportReasoning": false,
+          "supportTools": true,
+          "supportStreaming": true,
+          "cost": {
+            "input": 0.0,
+            "output": 0.0
+          },
+          "description": "Llama 3.1 - Meta's latest large language model"
+        },
+        "llama3.2": {
+          "name": "llama3.2",
+          "contextWindow": 128000,
+          "supportReasoning": false,
+          "supportTools": true,
+          "supportStreaming": true,
+          "cost": {
+            "input": 0.0,
+            "output": 0.0
+          },
+          "description": "Llama 3.2 - Meta's multimodal model"
+        },
+        "llama3.3": {
+          "name": "llama3.3",
+          "contextWindow": 128000,
+          "supportReasoning": false,
+          "supportTools": true,
+          "supportStreaming": true,
+          "cost": {
+            "input": 0.0,
+            "output": 0.0
+          },
+          "description": "Llama 3.3 - Meta's latest optimized model"
+        },
+        "codellama": {
+          "name": "codellama",
+          "contextWindow": 100000,
+          "supportReasoning": false,
+          "supportTools": true,
+          "supportStreaming": true,
+          "cost": {
+            "input": 0.0,
+            "output": 0.0
+          },
+          "description": "Code Llama - Specialized for code generation"
+        },
+        "mistral": {
+          "name": "mistral",
+          "contextWindow": 32000,
+          "supportReasoning": false,
+          "supportTools": true,
+          "supportStreaming": true,
+          "cost": {
+            "input": 0.0,
+            "output": 0.0
+          },
+          "description": "Mistral - High-performance open model"
+        },
+        "qwen2.5": {
+          "name": "qwen2.5",
+          "contextWindow": 128000,
+          "supportReasoning": false,
+          "supportTools": true,
+          "supportStreaming": true,
+          "cost": {
+            "input": 0.0,
+            "output": 0.0
+          },
+          "description": "Qwen 2.5 - Alibaba's multilingual model"
+        },
+        "gemma2": {
+          "name": "gemma2",
+          "contextWindow": 8192,
+          "supportReasoning": false,
+          "supportTools": true,
+          "supportStreaming": true,
+          "cost": {
+            "input": 0.0,
+            "output": 0.0
+          },
+          "description": "Gemma 2 - Google's open model"
+        },
+        "deepseek-coder": {
+          "name": "deepseek-coder",
+          "contextWindow": 16384,
+          "supportReasoning": false,
+          "supportTools": true,
+          "supportStreaming": true,
+          "cost": {
+            "input": 0.0,
+            "output": 0.0
+          },
+          "description": "DeepSeek Coder - Specialized coding model"
+        }
+      }
     }
   }
 }

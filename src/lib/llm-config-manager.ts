@@ -1,4 +1,7 @@
 import llmConfig from '../config/llm-config.json';
+import { getLogger } from './logger';
+
+const logger = getLogger('LLMConfigManager');
 
 export interface ModelInfo {
   id?: string;
@@ -45,7 +48,9 @@ export class LLMConfigManager {
 
   // Provider 관련 메서드
   getProviders(): Record<string, ProviderInfo> {
-    return Object.entries(this.config.providers)
+    logger.info('🔍 Raw config providers:', this.config.providers);
+
+    const result = Object.entries(this.config.providers)
       .map(([id, provider]) => ({ ...provider, id }))
       .reduce(
         (acc, v) => {
@@ -54,6 +59,9 @@ export class LLMConfigManager {
         },
         {} as Record<string, ProviderInfo>,
       );
+
+    logger.info('✅ Processed providers:', result);
+    return result;
   }
 
   getProvider(providerId: string): ProviderInfo | null {

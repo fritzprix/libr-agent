@@ -90,6 +90,7 @@ synaptic-flow/
 - Prefer functional components with hooks over class components.
 - Use TypeScript interfaces for type definitions.
 - **Do not use `any` in TypeScript.** The lint configuration is extremely strict; always use precise types and interfaces. Use unknown or generics if absolutely necessary, but avoid `any` as much as possible.
+- **Use the centralized logger instead of console.log**: Import `getLogger` from `@/lib/logger` and use context-specific logging (e.g., `const logger = getLogger('ComponentName')`) instead of `console.*` methods for better debugging and log management.
 
 ### CSS/Styling
 
@@ -98,6 +99,36 @@ synaptic-flow/
 ## Architecture
 
 - `shadcn/ui`: Component library for building accessible and customizable UI components
+
+### Logging System
+
+The project uses a centralized logging system located at `src/lib/logger.ts` that integrates with Tauri's native logging plugin. This provides better debugging capabilities and structured logging across the application.
+
+#### Usage Guidelines
+
+- **Always use the centralized logger instead of `console.*` methods**
+- Import and use context-specific loggers: 
+  ```typescript
+  import { getLogger } from '@/lib/logger';
+  const logger = getLogger('ComponentName');
+  
+  // Use appropriate log levels
+  logger.debug('Debug information', data);
+  logger.info('General information', data);
+  logger.warn('Warning message', data);
+  logger.error('Error occurred', error);
+  ```
+- **Context naming**: Use descriptive context names that match the component/module name
+- **Log levels**: Use appropriate log levels (debug, info, warn, error) based on the importance and type of information
+- **Error logging**: When logging errors, pass the Error object as the last parameter for proper error handling
+
+#### Benefits
+
+- Centralized log management through Tauri's native logging system
+- Better debugging capabilities in development and production
+- Structured logging with context information
+- Integration with Tauri's log viewing tools
+- Consistent logging format across the application
 
 ### Layer Responsibilities
 

@@ -154,21 +154,11 @@ export interface MCPError {
  * 표준 MCP 응답 (JSON-RPC 2.0 사양 준수)
  * 모든 MCP 응답은 이 형식을 따라야 합니다.
  */
-// MCP Response types (JSON-RPC 2.0 compliant)
 export interface MCPResponse {
   jsonrpc: '2.0';
   id: string | number | null;
   result?: MCPResult;
   error?: MCPError;
-}
-
-// Helper functions to check response status
-export function isSuccessResponse(response: MCPResponse): boolean {
-  return response.error === undefined;
-}
-
-export function isErrorResponse(response: MCPResponse): boolean {
-  return response.error !== undefined;
 }
 
 // ========================================
@@ -203,31 +193,6 @@ export interface MCPServerConfig {
   transport: 'stdio' | 'http' | 'websocket';
   url?: string;
   port?: number;
-}
-
-// ========================================
-// 🔀 Tool Call Result Types (Rust backend interface)
-// ========================================
-
-// Tool Call Result type (used by Rust backend via Tauri)
-export interface ToolCallResult {
-  success: boolean;
-  result?: unknown;
-  error?: string;
-}
-
-// ========================================
-// 🔀 Legacy Support Types (점진적 마이그레이션용)
-// ========================================
-
-/**
- * @deprecated 레거시 지원용. 새 코드에서는 MCPResponse 사용
- */
-export interface LegacyToolCallResult {
-  success: boolean;
-  result?: unknown;
-  error?: string;
-  isError?: boolean;
 }
 
 // ========================================
@@ -313,39 +278,109 @@ export function createObjectSchema(options?: {
 }
 
 /**
- * MCP 응답이 성공인지 확인
+ * MCP 응답이 성공인지 확인 (타입 가드)
  */
-export function isMCPSuccess(response: MCPResponse): boolean {
-  return !response.error && response.result !== undefined;
+export function isMCPSuccess(
+  response: MCPResponse,
+): response is MCPResponse & { result: MCPResult } {
+  return response.error === undefined && response.result !== undefined;
 }
 
 /**
- * MCP 응답이 에러인지 확인
+ * MCP 응답이 에러인지 확인 (타입 가드)
  */
-export function isMCPError(response: MCPResponse): boolean {
+export function isMCPError(
+  response: MCPResponse,
+): response is MCPResponse & { error: MCPError } {
   return response.error !== undefined;
 }
 
 /**
- * 레거시 응답을 MCP 형식으로 변환
+ * MCPResult에 유효한 content가 있는지 확인
  */
-export function normalizeLegacyResponse(
-  legacy: LegacyToolCallResult,
+export function isValidMCPResult(result: MCPResult): boolean {
+  return !!(result.content?.length || result.structuredContent);
+}
+
+/**
+ * 다양한 Tool 실행 결과를 일관된 MCPResponse 형식으로 변환
+ * @param result Tool 실행 결과 (모든 타입 가능)
+ * @param toolName Tool 이름
+ * @returns MCPResponse 객체
+ */
+export function normalizeToolResult(
+  result: unknown,
   toolName: string,
 ): MCPResponse {
   const id = `tool-${toolName}-${Date.now()}`;
 
-  if (!legacy.success || legacy.error || legacy.isError) {
+  // 1. 이미 MCPResponse 형식인 경우 그대로 반환
+  if (
+    typeof result === 'object' &&
+    result !== null &&
+    'jsonrpc' in result &&
+    (result as MCPResponse).jsonrpc === '2.0'
+  ) {
+    return result as MCPResponse;
+  }
+
+  // 2. 에러 패턴 감지 (핵심 개선사항)
+  // - 문자열에 'error' 포함
+  // - 객체에 'error' 프로퍼티 포함
+  // - 객체에 'success: false' 포함
+  // - JSON 문자열 내부에 에러 포함 (error.txt 케이스 대응)
+  const isError =
+    (typeof result === 'string' &&
+      (result.toLowerCase().includes('error') ||
+        result.toLowerCase().includes('failed') ||
+        result.includes('"error":') || // JSON 내부 에러 감지
+        result.includes('\\"error\\":'))) || // 이스케이프된 JSON 내부 에러 감지
+    (typeof result === 'object' &&
+      result !== null &&
+      ('error' in result ||
+        ('success' in result && !(result as { success: boolean }).success)));
+
+  if (isError) {
+    // 에러 메시지 추출 로직 개선
+    let errorMessage: string;
+
+    if (typeof result === 'string') {
+      // JSON 문자열인지 확인하고 파싱 시도
+      if (result.includes('"error":') || result.includes('\\"error\\":')) {
+        try {
+          const parsed = JSON.parse(result);
+          errorMessage = parsed.error || result;
+        } catch {
+          // JSON 파싱 실패 시 원본 문자열 사용
+          errorMessage = result;
+        }
+      } else {
+        errorMessage = result;
+      }
+    } else if (
+      typeof result === 'object' &&
+      result !== null &&
+      'error' in result
+    ) {
+      errorMessage = String((result as { error: unknown }).error);
+    } else {
+      errorMessage = `Unknown error in ${toolName}`;
+    }
+
     return {
       jsonrpc: '2.0',
       id,
       error: {
-        code: -32603,
-        message: legacy.error || `Tool execution failed: ${toolName}`,
-        data: legacy,
+        code: -32603, // Internal error
+        message: errorMessage,
+        data: result,
       },
     };
   }
+
+  // 3. 성공 결과 변환
+  const textContent =
+    typeof result === 'string' ? result : JSON.stringify(result, null, 2);
 
   return {
     jsonrpc: '2.0',
@@ -354,10 +389,7 @@ export function normalizeLegacyResponse(
       content: [
         {
           type: 'text',
-          text:
-            typeof legacy.result === 'string'
-              ? legacy.result
-              : JSON.stringify(legacy.result || { success: true }),
+          text: textContent,
         },
       ],
     },
@@ -368,25 +400,86 @@ export function normalizeLegacyResponse(
  * MCP 응답을 채팅 시스템용 문자열로 변환
  */
 export function mcpResponseToString(response: MCPResponse): string {
-  if (response.error) {
+  if (isMCPError(response)) {
     return JSON.stringify({
       error: response.error.message,
       success: false,
     });
   }
 
-  if (response.result?.content) {
-    const textContent = response.result.content
-      .filter((c) => c.type === 'text')
-      .map((c) => (c as MCPTextContent).text)
-      .join('\n');
+  if (isMCPSuccess(response) && response.result) {
+    if (response.result.content) {
+      const textContent = response.result.content
+        .filter((c) => c.type === 'text')
+        .map((c) => (c as MCPTextContent).text)
+        .join('\n');
 
-    return textContent || JSON.stringify(response.result);
+      // content에 에러가 포함되어 있는지 확인
+      if (
+        textContent &&
+        (textContent.includes('"error":') ||
+          textContent.includes('\\"error\\":'))
+      ) {
+        try {
+          const parsed = JSON.parse(textContent);
+          if (parsed.error) {
+            return JSON.stringify({
+              error: parsed.error,
+              success: false,
+            });
+          }
+        } catch {
+          // JSON 파싱 실패 시 원본 반환하지만 에러로 표시
+          return JSON.stringify({
+            error: textContent,
+            success: false,
+          });
+        }
+      }
+
+      if (textContent) return textContent;
+    }
+    if (response.result.structuredContent) {
+      return JSON.stringify(response.result.structuredContent, null, 2);
+    }
+    // content 와 structuredContent 모두 없는 경우
+    return JSON.stringify(response.result, null, 2);
   }
 
-  if (response.result?.structuredContent) {
-    return JSON.stringify(response.result.structuredContent);
-  }
+  // 이론적으로 도달하면 안 되는 경로
+  return JSON.stringify({
+    error: 'Invalid MCP Response structure',
+    success: false,
+  });
+}
 
-  return JSON.stringify(response.result || { success: true });
+/**
+ * 테스트용: error.txt와 같은 케이스를 검증하는 함수
+ */
+export function testErrorDetection(): void {
+  // error.txt에서 발견된 케이스 테스트
+  const errorCase = {
+    success: true,
+    content:
+      '{\n  "error": "fieldSelector.replace is not a function",\n  "tool": "updateGame",\n  "timestamp": "2025-08-03T11:26:28.643Z"\n}',
+    metadata: {
+      toolName: 'rpg-server__updateGame',
+      isValidated: true,
+    },
+    toolName: 'rpg-server__updateGame',
+    executionTime: 97,
+    timestamp: '2025-08-03T11:26:28.728Z',
+  };
+
+  const normalizedResponse = normalizeToolResult(
+    errorCase.content,
+    errorCase.toolName,
+  );
+
+  console.log('Test Result:', {
+    original: errorCase,
+    normalized: normalizedResponse,
+    isError: isMCPError(normalizedResponse),
+    isSuccess: isMCPSuccess(normalizedResponse),
+  });
 }
