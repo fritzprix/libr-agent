@@ -188,13 +188,13 @@ fn validate_tool_schema(tool: mcp::MCPTool) -> Result<(), String> {
 pub fn run() {
     // Set up custom panic handler for better error reporting
     std::panic::set_hook(Box::new(|panic_info| {
-        eprintln!("🚨 PANIC: {}", panic_info);
+        error!("🚨 PANIC: {}", panic_info);
         if let Some(location) = panic_info.location() {
-            eprintln!("  Location: {}:{}:{}", location.file(), location.line(), location.column());
+            error!("  Location: {}:{}:{}", location.file(), location.line(), location.column());
         }
         
         // Attempt graceful shutdown
-        eprintln!("🔄 Attempting graceful shutdown...");
+        error!("🔄 Attempting graceful shutdown...");
     }));
 
     // Configure Tauri builder with error handling
