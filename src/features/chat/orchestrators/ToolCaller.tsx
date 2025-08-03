@@ -4,20 +4,20 @@ import { useScheduler } from '@/context/SchedulerContext';
 import { useSessionContext } from '@/context/SessionContext';
 import { useChatContext } from '@/hooks/use-chat';
 import { useMCPServer } from '@/hooks/use-mcp-server';
+import {
+  isMCPError,
+  isMCPSuccess,
+  MCPResponse,
+  mcpResponseToString,
+} from '@/lib/mcp-types';
 import { Message } from '@/models/chat';
 import { createId } from '@paralleldrive/cuid2';
 import React, { useCallback, useEffect, useRef } from 'react';
 import { useAsyncFn } from 'react-use';
 
-interface ToolExecutionResult {
-  content: unknown;
-  isError?: boolean;
-  metadata?: Record<string, unknown>;
-}
-
 interface SerializedToolResult {
   success: boolean;
-  content?: unknown;
+  content?: string;
   error?: string;
   metadata: Record<string, unknown>;
   toolName: string;
@@ -33,65 +33,60 @@ export const ToolCaller: React.FC = () => {
   const { isLocalTool, executeToolCall: callLocalTool } = useLocalTools();
   const { schedule } = useScheduler();
 
-  /**
-   * Serialize tool execution result with comprehensive error handling
-   * Ensures compatibility across all AI service providers (Gemini, Groq, etc.)
-   */
   const serializeToolResult = useCallback(
     (
-      result: ToolExecutionResult,
+      mcpResponse: MCPResponse,
       toolName: string,
       executionStartTime: number,
     ): string => {
-      const serializedResult: SerializedToolResult = {
-        success: !result.isError,
-        content: result.isError ? undefined : result.content,
-        error: result.isError
-          ? typeof result.content === 'string'
-            ? result.content
-            : 'Unknown error'
+      // 추가 에러 검증: content에 에러가 있는지 확인
+      const isContentError = isMCPSuccess(mcpResponse) && 
+        mcpResponse.result?.content?.some(content => 
+          content.type === 'text' && 
+          (content.text.includes('"error":') || content.text.includes('\\"error\\":'))
+        );
+
+      const actualSuccess = isMCPSuccess(mcpResponse) && !isContentError;
+      
+      let errorMessage: string | undefined;
+      if (isMCPError(mcpResponse)) {
+        errorMessage = mcpResponse.error.message;
+      } else if (isContentError && mcpResponse.result?.content?.[0]?.type === 'text') {
+        // content에서 에러 메시지 추출
+        try {
+          const contentText = mcpResponse.result.content[0].text;
+          const parsed = JSON.parse(contentText);
+          errorMessage = parsed.error || contentText;
+        } catch {
+          errorMessage = mcpResponse.result.content[0].text;
+        }
+      }
+
+      const result: SerializedToolResult = {
+        success: actualSuccess,
+        content: actualSuccess
+          ? mcpResponseToString(mcpResponse)
           : undefined,
+        error: errorMessage,
         metadata: {
-          ...result.metadata,
           toolName,
+          mcpResponseId: mcpResponse.id,
+          jsonrpc: mcpResponse.jsonrpc,
           isValidated: true,
+          hasContentError: isContentError,
         },
         toolName,
         executionTime: Date.now() - executionStartTime,
         timestamp: new Date().toISOString(),
       };
 
-      try {
-        return JSON.stringify(serializedResult, null, 0);
-      } catch (serializationError) {
-        // Fallback for non-serializable content
-        const fallbackResult: SerializedToolResult = {
-          success: false,
-          error: `Serialization failed: ${
-            serializationError instanceof Error
-              ? serializationError.message
-              : 'Unknown error'
-          }`,
-          metadata: {
-            originalToolName: toolName,
-            serializationFailed: true,
-          },
-          toolName,
-          executionTime: Date.now() - executionStartTime,
-          timestamp: new Date().toISOString(),
-        };
-        return JSON.stringify(fallbackResult);
-      }
+      return JSON.stringify(result);
     },
     [],
   );
 
   const lastProcessedMessageId = useRef<string | null>(null);
 
-  /**
-   * Execute tool calls with comprehensive validation and error handling
-   * Follows SynapticFlow guidelines for robust error handling
-   */
   const [{ loading }, execute] = useAsyncFn(
     async (tcMessage: Message) => {
       if (!tcMessage.tool_calls || tcMessage.tool_calls.length === 0) {
@@ -114,25 +109,10 @@ export const ToolCaller: React.FC = () => {
           const callFunction = isLocalTool(toolName)
             ? callLocalTool
             : callMcpTool;
-          const result = await callFunction(toolCall);
-
-          // Normalize result to expected interface
-          const normalizedResult: ToolExecutionResult = {
-            content: result.content,
-            isError:
-              'isError' in result && typeof result.isError === 'boolean'
-                ? result.isError
-                : false,
-            metadata:
-              'metadata' in result &&
-              typeof result.metadata === 'object' &&
-              result.metadata !== null
-                ? (result.metadata as Record<string, unknown>)
-                : {},
-          };
+          const mcpResponse: MCPResponse = await callFunction(toolCall);
 
           const serializedContent = serializeToolResult(
-            normalizedResult,
+            mcpResponse,
             toolName,
             executionStartTime,
           );
@@ -146,27 +126,37 @@ export const ToolCaller: React.FC = () => {
             sessionId: currentSession?.id || '',
           });
 
-          console.info(`Tool executed successfully: ${toolName}`);
+          if (isMCPSuccess(mcpResponse)) {
+            console.info(`Tool executed successfully: ${toolName}`);
+          } else {
+            console.warn(`Tool execution finished with error: ${toolName}`, {
+              error: (mcpResponse as MCPResponse & { error: object }).error,
+            });
+          }
         } catch (error) {
           console.error(`Tool execution failed for ${toolName}:`, error);
 
-          const errorResult: ToolExecutionResult = {
-            content:
-              error instanceof Error
-                ? error.message
-                : 'Unknown execution error',
-            isError: true,
-            metadata: {
-              errorType:
+          const errorResponse: MCPResponse = {
+            jsonrpc: '2.0',
+            id: `tool-${toolName}-${Date.now()}`,
+            error: {
+              code: -32000,
+              message:
                 error instanceof Error
-                  ? error.constructor.name
-                  : 'UnknownError',
-              toolCallId: toolCall.id,
+                  ? error.message
+                  : 'Unknown execution error',
+              data: {
+                errorType:
+                  error instanceof Error
+                    ? error.constructor.name
+                    : 'UnknownError',
+                toolCallId: toolCall.id,
+              },
             },
           };
 
           const serializedContent = serializeToolResult(
-            errorResult,
+            errorResponse,
             toolName,
             executionStartTime,
           );
@@ -197,10 +187,6 @@ export const ToolCaller: React.FC = () => {
     ],
   );
 
-  /**
-   * Monitor messages for tool calls and execute them automatically
-   * Only executes when assistant message has tool_calls and is not streaming
-   */
   useEffect(() => {
     const lastMessage = messages[messages.length - 1];
     if (

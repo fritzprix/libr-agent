@@ -1,24 +1,11 @@
-warning: unused variable: `app`
-   --> src/lib.rs:202:21
-    |
-202 |             .setup(|app| {
-    |                     ^^^ help: if this is intentional, prefix it with an underscore: `_app`
-    |
-    = note: `#[warn(unused_variables)]` on by default
-
-warning: associated items `list_all_tools`, `validate_tool_schema`, and `get_validated_tools` are never used
-   --> src/mcp.rs:411:18
-    |
-195 | impl MCPServerManager {
-    | --------------------- associated items in this implementation
-...
-411 |     pub async fn list_all_tools(&self) -> Result<Vec<MCPTool>> {
-    |                  ^^^^^^^^^^^^^^
-...
-462 |     pub fn validate_tool_schema(tool: &MCPTool) -> Result<()> {
-    |            ^^^^^^^^^^^^^^^^^^^^
-...
-497 |     pub async fn get_validated_tools(&self, server_name: &str) -> Result<Vec<MCPTool>> {
-    |                  ^^^^^^^^^^^^^^^^^^^
-    |
-    = note: `#[warn(dead_code)]` on by default
+{
+  "success": true,
+  "content": "{\n  \"error\": \"fieldSelector.replace is not a function\",\n  \"tool\": \"updateGame\",\n  \"timestamp\": \"2025-08-03T11:26:28.643Z\"\n}",
+  "metadata": {
+    "toolName": "rpg-server__updateGame",
+    "isValidated": true
+  },
+  "toolName": "rpg-server__updateGame",
+  "executionTime": 97,
+  "timestamp": "2025-08-03T11:26:28.728Z"
+}

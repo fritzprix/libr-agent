@@ -5,10 +5,17 @@ import React, {
   useEffect,
   ReactNode,
   useMemo,
+  useState,
+  useRef,
 } from 'react';
 import { useAsyncFn, useQueue } from 'react-use';
 
 // --- 스케줄러 핵심 로직 수정 ---
+
+/**
+ * idle 상태가 true로 변경될 때의 디바운스 시간 (밀리초)
+ */
+const IDLE_DEBOUNCE_MS = 1000;
 
 /**
  * 스케줄러 내부에서 관리될 태스크의 구조입니다.
@@ -67,7 +74,42 @@ export const SchedulerProvider: React.FC<{ children: ReactNode }> = ({
     }
   }, [loading, first, run, remove]);
 
-  const idle = useMemo(() => !loading && size === 0, [loading, size]);
+  const rawIdle = useMemo(() => !loading && size === 0, [loading, size]);
+
+  // Debounced idle state
+  const [debouncedIdle, setDebouncedIdle] = useState(rawIdle);
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimer.current) {
+        clearTimeout(debounceTimer.current);
+        debounceTimer.current = null;
+      }
+    };
+  }, []);
+
+  // Handle raw idle changes
+  useEffect(() => {
+    if (!rawIdle) {
+      // 즉시 false로 설정
+      if (debounceTimer.current) {
+        clearTimeout(debounceTimer.current);
+        debounceTimer.current = null;
+      }
+      if (debouncedIdle) {
+        setDebouncedIdle(false);
+      }
+    } else if (!debouncedIdle) {
+      // rawIdle이 true이고 debouncedIdle이 false일 때만 타이머 설정
+      debounceTimer.current = setTimeout(() => {
+        setDebouncedIdle(true);
+        debounceTimer.current = null;
+      }, IDLE_DEBOUNCE_MS);
+    }
+    // debouncedIdle을 의존성에서 제거하여 무한 루프 방지
+  }, [rawIdle, debouncedIdle]);
 
   /**
    * 새로운 태스크를 예약하고, 그 결과를 받을 수 있는 Promise를 반환합니다.
@@ -87,7 +129,10 @@ export const SchedulerProvider: React.FC<{ children: ReactNode }> = ({
     [add],
   );
 
-  const value = { schedule, idle };
+  const value = useMemo(
+    () => ({ schedule, idle: debouncedIdle }),
+    [schedule, debouncedIdle],
+  );
 
   return (
     <SchedulerContext.Provider value={value}>

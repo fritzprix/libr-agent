@@ -2,7 +2,7 @@ use std::sync::OnceLock;
 use tauri_plugin_log::{Target, TargetKind};
 use log::error;
 mod mcp;
-use mcp::{MCPServerConfig, MCPServerManager, ToolCallResult};
+use mcp::{MCPServerConfig, MCPServerManager, MCPResponse};
 
 // 전역 MCP 서버 매니저
 static MCP_MANAGER: OnceLock<MCPServerManager> = OnceLock::new();
@@ -38,7 +38,7 @@ async fn call_mcp_tool(
     server_name: String,
     tool_name: String,
     arguments: serde_json::Value,
-) -> ToolCallResult {
+) -> MCPResponse {
     get_mcp_manager()
         .call_tool(&server_name, &tool_name, arguments)
         .await

@@ -1,11 +1,10 @@
 import { invoke } from '@tauri-apps/api/core';
-import { MCPServerConfig, MCPTool, LegacyToolCallResult } from './mcp-types';
+import { MCPServerConfig, MCPTool, MCPResponse } from './mcp-types';
 
 /**
  * 🔌 Tauri MCP Client
  *
  * Tauri 백엔드와 통신하여 MCP 서버를 관리하고 도구를 호출하는 클라이언트
- * 레거시 ToolCallResult를 반환하지만, 점진적으로 MCPResponse로 마이그레이션 예정
  */
 
 export class TauriMCPClient {
@@ -21,7 +20,7 @@ export class TauriMCPClient {
     serverName: string,
     toolName: string,
     arguments_: Record<string, unknown>,
-  ): Promise<LegacyToolCallResult> {
+  ): Promise<MCPResponse> {
     return await invoke('call_mcp_tool', {
       serverName,
       toolName,

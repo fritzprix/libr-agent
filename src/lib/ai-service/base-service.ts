@@ -6,7 +6,6 @@ import {
   AIServiceError,
   IAIService,
 } from './types';
-import { MessageValidator } from './validators';
 import { withRetry, withTimeout } from '../retry-utils';
 
 // --- Base Service Class with Common Functionality ---
@@ -41,7 +40,21 @@ export abstract class BaseAIService implements IAIService {
         this.getProvider(),
       );
     }
-    messages.forEach(MessageValidator.validateMessage);
+    messages.forEach(message => {
+      if (!message.id || typeof message.id !== 'string') {
+        throw new Error('Message must have a valid id');
+      }
+      if (
+        (!message.content &&
+          (message.role === 'user' || message.role === 'system')) ||
+        typeof message.content !== 'string'
+      ) {
+        throw new Error('Message must have valid content');
+      }
+      if (!['user', 'assistant', 'system', 'tool'].includes(message.role)) {
+        throw new Error('Message must have a valid role');
+      }
+    });
   }
 
   protected async withRetry<T>(

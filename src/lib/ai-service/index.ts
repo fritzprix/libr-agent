@@ -3,9 +3,6 @@ export type { AIServiceConfig, IAIService } from './types';
 
 export { AIServiceProvider, AIServiceError } from './types';
 
-// Re-export validation utilities
-export { MessageValidator } from './validators';
-
 // Re-export tool conversion utilities
 export {
   convertMCPToolsToProviderTools,

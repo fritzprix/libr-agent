@@ -1,4 +1,4 @@
-import { MCPTool, MCPResponse } from '@/lib/mcp-types';
+import { MCPTool, MCPResponse, normalizeToolResult } from '@/lib/mcp-types';
 import { Tool } from '@/models/chat';
 
 // Re-export MCPResponse for backward compatibility
@@ -51,7 +51,7 @@ interface LocalToolContextType {
   executeToolCall: (toolCall: {
     id: string;
     function: { name: string; arguments: string };
-  }) => Promise<{ role: 'tool'; content: string; tool_call_id: string }>;
+  }) => Promise<MCPResponse>;
   availableTools: Tool[];
   isLocalTool: (toolName: string) => boolean;
 }
@@ -111,38 +111,22 @@ export function LocalToolProvider({ children }: { children: React.ReactNode }) {
     async (toolCall: {
       id: string;
       function: { name: string; arguments: string };
-    }) => {
+    }): Promise<MCPResponse> => {
       const toolName = toolCall.function.name;
-      // Search for the tool across all registered services and execute its handler.
-      for (const service of servicesRef.current.values()) {
-        const tool = service.tools.find(
-          (t) => t.toolDefinition.name === toolName,
-        );
-        if (tool) {
-          try {
-            const args = JSON.parse(toolCall.function.arguments);
-            const result = await tool.handler(args);
-            return {
-              role: 'tool' as const,
-              content: JSON.stringify(result ?? null),
-              tool_call_id: toolCall.id,
-            };
-          } catch (error) {
-            return {
-              role: 'tool' as const,
-              content: `Error executing tool: ${error instanceof Error ? error.message : String(error)}`,
-              tool_call_id: toolCall.id,
-            };
-          }
-        }
+      const tool = getToolByName(toolName);
+
+      if (!tool) {
+        return normalizeToolResult({ error: `Tool "${toolName}" not found.`, success: false }, toolName);
       }
-      return {
-        role: 'tool' as const,
-        content: `Error: Tool "${toolName}" not found.`,
-        tool_call_id: toolCall.id,
-      };
+
+      try {
+        const args = JSON.parse(toolCall.function.arguments);
+        return await tool.handler(args);
+      } catch (error) {
+        return normalizeToolResult({ error: `Error executing tool: ${error instanceof Error ? error.message : String(error)}`, success: false }, toolName);
+      }
     },
-    [],
+    [getToolByName],
   );
 
   const scheduledExecuteToolCall = useScheduledCallback(executeToolCall, [

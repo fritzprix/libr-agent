@@ -175,9 +175,9 @@ pub struct MCPError {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ToolCallResult {
+pub struct MCPResponse {
     pub jsonrpc: String,
-    pub id: serde_json::Value,
+    pub id: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -282,7 +282,7 @@ impl MCPServerManager {
         server_name: &str,
         tool_name: &str,
         arguments: serde_json::Value,
-    ) -> ToolCallResult {
+    ) -> MCPResponse {
         let connections = self.connections.lock().await;
 
         // Generate a unique ID for this request
@@ -302,17 +302,45 @@ impl MCPServerManager {
             };
 
             match connection.client.call_tool(call_param).await {
-                Ok(result) => ToolCallResult {
-                    jsonrpc: "2.0".to_string(),
-                    id: request_id,
-                    result: Some(serde_json::to_value(result).unwrap_or(serde_json::Value::Null)),
-                    error: None,
+                Ok(result) => {
+                    let result_value = serde_json::to_value(&result).unwrap_or(serde_json::Value::Null);
+                    
+                    // 결과에 에러가 포함되어 있는지 확인
+                    let contains_error = result_value.to_string().to_lowercase().contains("error");
+                    
+                    if contains_error && result_value.get("isError").and_then(|v| v.as_bool()).unwrap_or(false) {
+                        // isError가 true인 경우 에러로 처리
+                        let error_msg = result_value.get("content")
+                            .and_then(|c| c.as_array())
+                            .and_then(|arr| arr.first())
+                            .and_then(|item| item.get("text"))
+                            .and_then(|text| text.as_str())
+                            .unwrap_or("Tool execution error");
+                            
+                        MCPResponse {
+                            jsonrpc: "2.0".to_string(),
+                            id: Some(request_id),
+                            result: None,
+                            error: Some(MCPError {
+                                code: -32000, // Tool execution error
+                                message: error_msg.to_string(),
+                                data: Some(result_value),
+                            }),
+                        }
+                    } else {
+                        MCPResponse {
+                            jsonrpc: "2.0".to_string(),
+                            id: Some(request_id),
+                            result: Some(result_value),
+                            error: None,
+                        }
+                    }
                 },
                 Err(e) => {
                     error!("Error calling tool '{}': {}", tool_name, e);
-                    ToolCallResult {
+                    MCPResponse {
                         jsonrpc: "2.0".to_string(),
-                        id: request_id,
+                        id: Some(request_id),
                         result: None,
                         error: Some(MCPError {
                             code: -32603, // Internal error
@@ -324,9 +352,9 @@ impl MCPServerManager {
             }
         } else {
             error!("Server '{}' not found", server_name);
-            ToolCallResult {
+            MCPResponse {
                 jsonrpc: "2.0".to_string(),
-                id: request_id,
+                id: Some(request_id),
                 result: None,
                 error: Some(MCPError {
                     code: -32601, // Method not found
