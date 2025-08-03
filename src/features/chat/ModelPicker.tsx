@@ -10,7 +10,7 @@ interface ModelPickerProps {
 
 const CompactModelPicker: FC<ModelPickerProps> = ({ className = '' }) => {
   const logger = getLogger('ModelPicker');
-  
+
   const {
     modelId,
     provider,
@@ -87,7 +87,7 @@ const CompactModelPicker: FC<ModelPickerProps> = ({ className = '' }) => {
       <Dropdown
         key={`model-${provider}-${modelOptions.length}`} // 강제 리렌더링을 위한 key
         options={modelOptions}
-        value={modelOptions.some(opt => opt.value === modelId) ? modelId : ''}
+        value={modelOptions.some((opt) => opt.value === modelId) ? modelId : ''}
         placeholder="model"
         onChange={onModelChange}
         disabled={!modelId || modelOptions.length === 0}
@@ -217,7 +217,9 @@ const TerminalModelPicker: FC<ModelPickerProps> = ({ className = '' }) => {
           <Dropdown
             key={`terminal-model-${provider}-${modelOptions.length}`} // 강제 리렌더링을 위한 key
             options={modelOptions}
-            value={modelOptions.some(opt => opt.value === modelId) ? modelId : ''}
+            value={
+              modelOptions.some((opt) => opt.value === modelId) ? modelId : ''
+            }
             placeholder={provider ? '<select>' : '...'}
             onChange={onModelChange}
             disabled={!provider || modelOptions.length === 0}

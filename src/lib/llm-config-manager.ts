@@ -49,7 +49,7 @@ export class LLMConfigManager {
   // Provider 관련 메서드
   getProviders(): Record<string, ProviderInfo> {
     logger.info('🔍 Raw config providers:', this.config.providers);
-    
+
     const result = Object.entries(this.config.providers)
       .map(([id, provider]) => ({ ...provider, id }))
       .reduce(
@@ -59,7 +59,7 @@ export class LLMConfigManager {
         },
         {} as Record<string, ProviderInfo>,
       );
-    
+
     logger.info('✅ Processed providers:', result);
     return result;
   }

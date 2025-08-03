@@ -27,7 +27,7 @@ const DEFAULT_MODEL_INFO: ModelInfo = {
   name: '',
 };
 
-const logger = getLogger("ModelProvider");
+const logger = getLogger('ModelProvider');
 
 interface ModelOptionsContextType {
   modelId: string;
@@ -107,7 +107,9 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
       );
 
       setDynamicModels(modelsRecord);
-      logger.info(`Manually refreshed ${modelList.length} models from Ollama server`);
+      logger.info(
+        `Manually refreshed ${modelList.length} models from Ollama server`,
+      );
     } catch (error) {
       logger.error('Failed to manually refresh models:', error);
       // 에러 시 빈 객체로 설정하여 정적 모델로 fallback
@@ -148,7 +150,9 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
         );
 
         setDynamicModels(modelsRecord);
-        logger.info(`Auto-refreshed ${modelList.length} models from Ollama server`);
+        logger.info(
+          `Auto-refreshed ${modelList.length} models from Ollama server`,
+        );
       } catch (error) {
         logger.error('Failed to auto-refresh models:', error);
         // 에러 시 빈 객체로 설정하여 정적 모델로 fallback
@@ -164,7 +168,7 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
   const providerOptions = useMemo(() => {
     const providers = llmConfigManager.getProviders();
     logger.info('📊 Available providers:', providers);
-    
+
     return Object.entries(providers).map(([key, value]) => ({
       label: value.name,
       value: key,
@@ -174,12 +178,12 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
   const modelOptions = useMemo(() => {
     logger.info('🎯 Current provider:', provider);
     logger.info('📦 Models for provider:', models);
-    
+
     const options = Object.entries(models).map(([key, value]) => ({
       label: value.name,
       value: key,
     }));
-    
+
     logger.info('🔄 Generated modelOptions:', options);
     return options;
   }, [models, provider]);
