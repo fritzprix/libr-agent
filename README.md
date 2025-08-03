@@ -124,70 +124,23 @@ synaptic-flow/
 └── vite.config.ts             # Vite configuration
 ```
 
-## 🚀 Getting Started
+## 📚 Documentation
 
-### 1. Prerequisites
+For detailed information about the project, including setup, API reference, and contribution guidelines, please see our **[full documentation here](./docs/README.md)**.
 
-- **Rust**: Install from [rustup.rs](https://rustup.rs/)
-- **Node.js**: v18 or higher
-- **pnpm**: `npm install -g pnpm`
+## 🚀 Quick Start
 
-### 2. Environment Variables (API keys are managed within the app)
+1.  **Prerequisites**: Ensure you have [Rust](https://rustup.rs/), [Node.js](https://nodejs.org/) (v18+), and [pnpm](https://pnpm.io/) installed.
+2.  **Install Dependencies**:
+    ```bash
+    pnpm install
+    ```
+3.  **Run in Development Mode**:
+    ```bash
+    pnpm tauri dev
+    ```
 
-This project does not store API keys in `.env` files. Instead, they are entered directly into the settings modal within the application and securely stored in `localStorage`. Therefore, no separate `.env` file setup is required.
-
-## 🔑 Quick Start Guide
-
-### Obtaining AI API Keys and Setting Them in the App
-
-After running the application, open the settings modal by clicking the 'Settings' button in the top right corner. In the 'API Key Settings' tab, you can enter and save API keys for various AI service providers (Groq, OpenAI, Anthropic, Gemini).
-
-**1. Groq (Free, Fast Inference)** - Recommended! 🌟
-
-1. Visit [Groq Console](https://console.groq.com/keys)
-2. Create an account and click "Create API Key"
-3. Enter the generated key into the app's settings modal.
-
-**2. OpenAI (GPT-4o, GPT-4o-mini)**
-
-1. Visit [OpenAI Platform](https://platform.openai.com/api-keys)
-2. Click "Create new secret key"
-3. Enter the generated key into the app's settings modal.
-
-**3. Anthropic (Claude-3.5-Sonnet)**
-
-1. Visit [Anthropic Console](https://console.anthropic.com/)
-2. Generate a new key in the API Keys section.
-3. Enter the generated key into the app's settings modal.
-
-**4. Gemini (Google Gemini)**
-
-1. Visit [Google AI Studio](https://aistudio.google.com/app/apikey)
-2. "Create API key in new project" or generate a key from an existing project.
-3. Enter the generated key into the app's settings modal.
-
-> 💡 **Tip**: Groq is fast and powerful enough even on the free tier!
-
-### 3. Install Dependencies
-
-```bash
-# Install Node.js dependencies
-pnpm install
-
-# Rust dependencies are installed automatically
-```
-
-### 4. Run in Development Mode
-
-```bash
-pnpm tauri dev
-```
-
-### 5. Production Build
-
-```bash
-pnpm tauri build
-```
+For more detailed instructions, see the [Getting Started](./docs/guides/getting-started.md) guide.
 
 ## 📈 Next Steps
 
