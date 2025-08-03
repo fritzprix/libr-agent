@@ -39,9 +39,9 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   );
 
   return (
-    <Modal 
-      isOpen={isOpen} 
-      onClose={onClose} 
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
       title="Settings"
       description="Configure your AI models, API keys, and application preferences"
       size="xl"

@@ -24,9 +24,11 @@ export const useChatContext = (): ChatContextReturn => {
   const { submit: triggerAIService, isLoading, response } = useAIService();
   const { current: currentSession } = useSessionContext();
   const { value: settingValue } = useSettings();
-  
-  const [streamingMessage, setStreamingMessage] = useState<Message | null>(null);
-  
+
+  const [streamingMessage, setStreamingMessage] = useState<Message | null>(
+    null,
+  );
+
   // Extract window size with default fallback
   const messageWindowSize = settingValue?.windowSize ?? 20;
 
@@ -38,7 +40,7 @@ export const useChatContext = (): ChatContextReturn => {
 
     // Check if streaming message already exists in history as finalized
     const existsInHistory = history.some(
-      (message) => message.id === streamingMessage.id && !message.isStreaming
+      (message) => message.id === streamingMessage.id && !message.isStreaming,
     );
 
     return existsInHistory ? history : [...history, streamingMessage];
@@ -71,7 +73,7 @@ export const useChatContext = (): ChatContextReturn => {
     if (!streamingMessage || streamingMessage.isStreaming) return;
 
     const isMessageInHistory = history.some(
-      (message) => message.id === streamingMessage.id && !message.isStreaming
+      (message) => message.id === streamingMessage.id && !message.isStreaming,
     );
 
     if (isMessageInHistory) {
@@ -97,7 +99,7 @@ export const useChatContext = (): ChatContextReturn => {
             messageToAdd.map(async (message) => {
               if (!validateMessage(message)) {
                 throw new Error(
-                  'Invalid message: must have role and either content or tool_calls'
+                  'Invalid message: must have role and either content or tool_calls',
                 );
               }
 
@@ -108,7 +110,7 @@ export const useChatContext = (): ChatContextReturn => {
 
               await addMessage(messageWithSession);
               return messageWithSession;
-            })
+            }),
           );
 
           messagesToSend = [...messages, ...processedMessages];
@@ -116,7 +118,7 @@ export const useChatContext = (): ChatContextReturn => {
 
         // Send windowed messages to AI service
         const aiResponse = await triggerAIService(
-          messagesToSend.slice(-messageWindowSize)
+          messagesToSend.slice(-messageWindowSize),
         );
 
         // Handle AI response persistence
@@ -143,13 +145,7 @@ export const useChatContext = (): ChatContextReturn => {
         throw error;
       }
     },
-    [
-      currentSession,
-      messages,
-      messageWindowSize,
-      triggerAIService,
-      addMessage,
-    ]
+    [currentSession, messages, messageWindowSize, triggerAIService, addMessage],
   );
 
   return {

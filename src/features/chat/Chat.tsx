@@ -72,8 +72,6 @@ function Chat({ children }: ChatProps) {
     );
   }
 
-
-
   const contextValue: ChatContextType = {
     attachedFiles,
     setAttachedFiles,
@@ -238,12 +236,9 @@ function ChatAttachedFiles() {
 
 // Chat Input component - now handles its own file attachment logic
 function ChatInput({ children }: { children?: React.ReactNode }) {
-  const {
-    isLoading,
-    attachedFiles,
-    setAttachedFiles,
-  } = useChatInternalContext();
-  const [input, setInput] = useState<string>("");
+  const { isLoading, attachedFiles, setAttachedFiles } =
+    useChatInternalContext();
+  const [input, setInput] = useState<string>('');
   const { current: currentSession } = useSessionContext();
   const { currentAssistant } = useAssistantContext();
   const { submit } = useChatContext();

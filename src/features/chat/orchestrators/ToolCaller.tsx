@@ -37,47 +37,54 @@ export const ToolCaller: React.FC = () => {
    * Serialize tool execution result with comprehensive error handling
    * Ensures compatibility across all AI service providers (Gemini, Groq, etc.)
    */
-  const serializeToolResult = useCallback((
-    result: ToolExecutionResult,
-    toolName: string,
-    executionStartTime: number,
-  ): string => {
-    const serializedResult: SerializedToolResult = {
-      success: !result.isError,
-      content: result.isError ? undefined : result.content,
-      error: result.isError ? 
-        (typeof result.content === 'string' ? result.content : 'Unknown error') : 
-        undefined,
-      metadata: {
-        ...result.metadata,
-        toolName,
-        isValidated: true,
-      },
-      toolName,
-      executionTime: Date.now() - executionStartTime,
-      timestamp: new Date().toISOString(),
-    };
-
-    try {
-      return JSON.stringify(serializedResult, null, 0);
-    } catch (serializationError) {
-      // Fallback for non-serializable content
-      const fallbackResult: SerializedToolResult = {
-        success: false,
-        error: `Serialization failed: ${
-          serializationError instanceof Error ? serializationError.message : 'Unknown error'
-        }`,
+  const serializeToolResult = useCallback(
+    (
+      result: ToolExecutionResult,
+      toolName: string,
+      executionStartTime: number,
+    ): string => {
+      const serializedResult: SerializedToolResult = {
+        success: !result.isError,
+        content: result.isError ? undefined : result.content,
+        error: result.isError
+          ? typeof result.content === 'string'
+            ? result.content
+            : 'Unknown error'
+          : undefined,
         metadata: {
-          originalToolName: toolName,
-          serializationFailed: true,
+          ...result.metadata,
+          toolName,
+          isValidated: true,
         },
         toolName,
         executionTime: Date.now() - executionStartTime,
         timestamp: new Date().toISOString(),
       };
-      return JSON.stringify(fallbackResult);
-    }
-  }, []);
+
+      try {
+        return JSON.stringify(serializedResult, null, 0);
+      } catch (serializationError) {
+        // Fallback for non-serializable content
+        const fallbackResult: SerializedToolResult = {
+          success: false,
+          error: `Serialization failed: ${
+            serializationError instanceof Error
+              ? serializationError.message
+              : 'Unknown error'
+          }`,
+          metadata: {
+            originalToolName: toolName,
+            serializationFailed: true,
+          },
+          toolName,
+          executionTime: Date.now() - executionStartTime,
+          timestamp: new Date().toISOString(),
+        };
+        return JSON.stringify(fallbackResult);
+      }
+    },
+    [],
+  );
 
   /**
    * Execute tool calls with comprehensive validation and error handling
@@ -102,16 +109,24 @@ export const ToolCaller: React.FC = () => {
             args: toolCall.function.arguments,
           });
 
-          const callFunction = isLocalTool(toolName) ? callLocalTool : callMcpTool;
+          const callFunction = isLocalTool(toolName)
+            ? callLocalTool
+            : callMcpTool;
           const result = await callFunction(toolCall);
 
           // Normalize result to expected interface
           const normalizedResult: ToolExecutionResult = {
             content: result.content,
-            isError: ('isError' in result && typeof result.isError === 'boolean') ? result.isError : false,
-            metadata: ('metadata' in result && typeof result.metadata === 'object' && result.metadata !== null) 
-              ? result.metadata as Record<string, unknown>
-              : {},
+            isError:
+              'isError' in result && typeof result.isError === 'boolean'
+                ? result.isError
+                : false,
+            metadata:
+              'metadata' in result &&
+              typeof result.metadata === 'object' &&
+              result.metadata !== null
+                ? (result.metadata as Record<string, unknown>)
+                : {},
           };
 
           const serializedContent = serializeToolResult(
@@ -134,10 +149,16 @@ export const ToolCaller: React.FC = () => {
           console.error(`Tool execution failed for ${toolName}:`, error);
 
           const errorResult: ToolExecutionResult = {
-            content: error instanceof Error ? error.message : 'Unknown execution error',
+            content:
+              error instanceof Error
+                ? error.message
+                : 'Unknown execution error',
             isError: true,
             metadata: {
-              errorType: error instanceof Error ? error.constructor.name : 'UnknownError',
+              errorType:
+                error instanceof Error
+                  ? error.constructor.name
+                  : 'UnknownError',
               toolCallId: toolCall.id,
             },
           };
@@ -163,7 +184,15 @@ export const ToolCaller: React.FC = () => {
         await submit(toolResults);
       }
     },
-    [submit, callLocalTool, callMcpTool, schedule, currentAssistant, currentSession, serializeToolResult],
+    [
+      submit,
+      callLocalTool,
+      callMcpTool,
+      schedule,
+      currentAssistant,
+      currentSession,
+      serializeToolResult,
+    ],
   );
 
   /**
