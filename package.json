@@ -29,7 +29,11 @@
     "lint": "eslint src --ext ts,tsx --report-unused-disable-directives",
     "lint:fix": "eslint . --ext ts,tsx --fix",
     "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,json,css,scss,md}\"",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "tauri:dev": "./run-safe.sh dev",
+    "tauri:build": "./run-safe.sh build",
+    "tauri:dev-unsafe": "tauri dev",
+    "diagnose": "echo 'System diagnostic...' && ldd --version && echo 'WebKit packages:' && dpkg -l | grep webkit"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.56.0",
