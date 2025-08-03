@@ -1,19 +1,34 @@
-import { useMCPServer } from '@/hooks/use-mcp-server';
-import { DEFAULT_MCP_CONFIG } from '../../context/AssistantContext';
 import { Badge, Button, StatusIndicator, Textarea } from '@/components/ui';
+import { useMCPServer } from '@/hooks/use-mcp-server';
+import { useCallback } from 'react';
+import { toast } from 'sonner';
+import { DEFAULT_MCP_CONFIG } from '../../context/AssistantContext';
 
 interface MCPConfigEditorProps {
   mcpConfigText: string;
   onChange: (text: string) => void;
-  onFormatJson: () => void;
 }
 
 export default function MCPConfigEditor({
   mcpConfigText,
   onChange,
-  onFormatJson,
 }: MCPConfigEditorProps) {
   const { status, isConnecting: isCheckingStatus } = useMCPServer();
+
+  const handleChange = (v: string) => {
+    onChange(v);
+  };
+
+  const handleFormatJson = useCallback(() => {
+    try {
+      const parsed = JSON.parse(mcpConfigText);
+      const formatted = JSON.stringify(parsed, null, 2);
+      onChange(formatted);
+      toast.success('JSON이 올바르게 포맷되었습니다.');
+    } catch {
+      toast.error('유효하지 않은 JSON 형식입니다.');
+    }
+  }, [onChange, mcpConfigText]);
 
   return (
     <div>
@@ -28,7 +43,7 @@ export default function MCPConfigEditor({
           <Button size="sm" variant="ghost" disabled={isCheckingStatus}>
             {isCheckingStatus ? '확인중...' : '서버 상태 확인'}
           </Button>
-          <Button size="sm" variant="ghost" onClick={onFormatJson}>
+          <Button size="sm" variant="ghost" onClick={handleFormatJson}>
             Format JSON
           </Button>
         </div>
@@ -36,9 +51,9 @@ export default function MCPConfigEditor({
 
       <Textarea
         value={mcpConfigText}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => handleChange(e.target.value)}
         className="h-48 font-mono text-sm"
-        placeholder={JSON.stringify(DEFAULT_MCP_CONFIG)}
+        placeholder={JSON.stringify(DEFAULT_MCP_CONFIG, null, 2)}
       />
 
       <div className="text-xs text-muted-foreground mt-1">

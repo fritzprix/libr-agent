@@ -315,6 +315,308 @@
           "description": "Experimental model with strongest coding performance and 2M context"
         }
       }
+    },
+    "fireworks": {
+      "name": "Fireworks AI",
+      "apiKeyEnvVar": "FIREWORKS_API_KEY",
+      "baseUrl": "https://api.fireworks.ai/inference/v1",
+      "models": {
+        "deepseek-r1-fast": {
+          "name": "DeepSeek R1 (Fast)",
+          "contextWindow": 128000,
+          "supportReasoning": true,
+          "supportTools": true,
+          "supportStreaming": true,
+          "cost": {
+            "input": 3,
+            "output": 8
+          },
+          "description": "State-of-the-art reasoning model optimized for math, coding, and complex problem solving"
+        },
+        "deepseek-r1-basic": {
+          "name": "DeepSeek R1 (Basic)",
+          "contextWindow": 128000,
+          "supportReasoning": true,
+          "supportTools": true,
+          "supportStreaming": true,
+          "cost": {
+            "input": 0.55,
+            "output": 2.19
+          },
+          "description": "Cost-efficient reasoning model with strong performance across reasoning tasks"
+        },
+        "deepseek-v3": {
+          "name": "DeepSeek V3",
+          "contextWindow": 128000,
+          "supportReasoning": false,
+          "supportTools": true,
+          "supportStreaming": true,
+          "cost": {
+            "input": 0.9,
+            "output": 0.9
+          },
+          "description": "Mixture-of-Experts model with 671B total parameters and 37B activated per token"
+        },
+        "accounts/fireworks/models/qwen3-235b-a22b-thinking-2507": {
+          "name": "Qwen3 235B (Reasoning)",
+          "contextWindow": 131072,
+          "supportReasoning": true,
+          "supportTools": true,
+          "supportStreaming": true,
+          "cost": {
+            "input": 0.22,
+            "output": 0.88
+          },
+          "description": "Large-scale MoE model with thinking mode for complex reasoning tasks"
+        },
+        "qwen3-30b-reasoning": {
+          "name": "Qwen3 30B (Reasoning)",
+          "contextWindow": 131072,
+          "supportReasoning": true,
+          "supportTools": true,
+          "supportStreaming": true,
+          "cost": {
+            "input": 0.15,
+            "output": 0.6
+          },
+          "description": "Efficient reasoning model with 30.5B parameters and 3.3B activated"
+        },
+        "qwen2.5-coder-32b": {
+          "name": "Qwen2.5 Coder 32B",
+          "contextWindow": 128000,
+          "supportReasoning": false,
+          "supportTools": true,
+          "supportStreaming": true,
+          "cost": {
+            "input": 0.2,
+            "output": 0.2
+          },
+          "description": "Specialized coding model optimized for programming tasks"
+        },
+        "llama4-maverick-basic": {
+          "name": "Llama 4 Maverick (Basic)",
+          "contextWindow": 1000000,
+          "supportReasoning": false,
+          "supportTools": true,
+          "supportStreaming": true,
+          "cost": {
+            "input": 0.22,
+            "output": 0.88
+          },
+          "description": "Next-gen Llama model with 1M context window and multimodal capabilities"
+        },
+        "llama4-scout-basic": {
+          "name": "Llama 4 Scout (Basic)",
+          "contextWindow": 1000000,
+          "supportReasoning": false,
+          "supportTools": true,
+          "supportStreaming": true,
+          "cost": {
+            "input": 0.15,
+            "output": 0.6
+          },
+          "description": "Efficient Llama 4 variant with 1M context window"
+        },
+        "llama-3.3-70b": {
+          "name": "Llama 3.3 70B",
+          "contextWindow": 128000,
+          "supportReasoning": false,
+          "supportTools": true,
+          "supportStreaming": true,
+          "cost": {
+            "input": 0.2,
+            "output": 0.2
+          },
+          "description": "Latest Llama 3.3 model with significant quality improvements"
+        },
+        "llama-3.1-405b": {
+          "name": "Llama 3.1 405B",
+          "contextWindow": 128000,
+          "supportReasoning": false,
+          "supportTools": true,
+          "supportStreaming": true,
+          "cost": {
+            "input": 3,
+            "output": 3
+          },
+          "description": "Largest Llama model with exceptional performance across tasks"
+        },
+        "llama-3.1-70b": {
+          "name": "Llama 3.1 70B",
+          "contextWindow": 128000,
+          "supportReasoning": false,
+          "supportTools": true,
+          "supportStreaming": true,
+          "cost": {
+            "input": 0.2,
+            "output": 0.2
+          },
+          "description": "High-performance Llama model for general use cases"
+        },
+        "llama-3.1-8b": {
+          "name": "Llama 3.1 8B",
+          "contextWindow": 128000,
+          "supportReasoning": false,
+          "supportTools": true,
+          "supportStreaming": true,
+          "cost": {
+            "input": 0.1,
+            "output": 0.1
+          },
+          "description": "Fast and efficient small Llama model"
+        },
+        "mixtral-8x22b": {
+          "name": "Mixtral 8x22B",
+          "contextWindow": 64000,
+          "supportReasoning": false,
+          "supportTools": true,
+          "supportStreaming": true,
+          "cost": {
+            "input": 1.2,
+            "output": 1.2
+          },
+          "description": "Large Mixture-of-Experts model with strong performance"
+        },
+        "mixtral-8x7b": {
+          "name": "Mixtral 8x7B",
+          "contextWindow": 32000,
+          "supportReasoning": false,
+          "supportTools": true,
+          "supportStreaming": true,
+          "cost": {
+            "input": 0.5,
+            "output": 0.5
+          },
+          "description": "Efficient MoE model for general-purpose tasks"
+        },
+        "firefunction-v2": {
+          "name": "FireFunction V2",
+          "contextWindow": 8192,
+          "supportReasoning": false,
+          "supportTools": true,
+          "supportStreaming": true,
+          "cost": {
+            "input": 0.2,
+            "output": 0.2
+          },
+          "description": "State-of-the-art function calling model competitive with GPT-4o"
+        },
+        "yi-large": {
+          "name": "Yi Large",
+          "contextWindow": 32000,
+          "supportReasoning": false,
+          "supportTools": true,
+          "supportStreaming": true,
+          "cost": {
+            "input": 0.2,
+            "output": 0.2
+          },
+          "description": "High-performance model from 01.AI"
+        },
+        "kimi-k2-instruct": {
+          "name": "Kimi K2 Instruct",
+          "contextWindow": 128000,
+          "supportReasoning": false,
+          "supportTools": true,
+          "supportStreaming": true,
+          "cost": {
+            "input": 0.6,
+            "output": 2.5
+          },
+          "description": "Large MoE model with 1T parameters and 32B active, optimized for agentic tasks"
+        }
+      }
+    },
+    "cerebras": {
+      "name": "Cerebras",
+      "apiKeyEnvVar": "CEREBRAS_API_KEY",
+      "baseUrl": "https://api.cerebras.ai/v1",
+      "models": {
+        "llama3.1-8b": {
+          "name": "Llama 3.1 8B",
+          "contextWindow": 8192,
+          "supportReasoning": false,
+          "supportTools": true,
+          "supportStreaming": true,
+          "cost": {
+            "input": 0.0001,
+            "output": 0.0001
+          },
+          "description": "Fast 8-billion-parameter model; ~1,800 tokens / s on Cerebras Inference"
+        },
+        "llama-3.3-70b": {
+          "name": "Llama 3.3 70B",
+          "contextWindow": 8192,
+          "supportReasoning": false,
+          "supportTools": true,
+          "supportStreaming": true,
+          "cost": {
+            "input": 0.0006,
+            "output": 0.0006
+          },
+          "description": "High-accuracy 70-billion-parameter model; ~450 tokens / s"
+        },
+        "llama-4-scout-17b-16e-instruct": {
+          "name": "Llama 4 Scout 17B",
+          "contextWindow": 131072,
+          "supportReasoning": false,
+          "supportTools": true,
+          "supportStreaming": true,
+          "cost": {
+            "input": 0.0002,
+            "output": 0.0002
+          },
+          "description": "Next-gen preview model with extended context"
+        },
+        "llama-4-maverick-17b-128e-instruct": {
+          "name": "Llama 4 Maverick 17B",
+          "contextWindow": 131072,
+          "supportReasoning": false,
+          "supportTools": true,
+          "supportStreaming": true,
+          "cost": {
+            "input": 0.0002,
+            "output": 0.0002
+          },
+          "description": "Multimodal-ready Llama 4 variant"
+        },
+        "qwen-3-32b": {
+          "name": "Qwen 3 32B",
+          "contextWindow": 128000,
+          "supportReasoning": true,
+          "supportTools": true,
+          "supportStreaming": true,
+          "cost": {
+            "input": 0.0003,
+            "output": 0.0003
+          },
+          "description": "Reasoning-focused 32-billion-parameter model"
+        },
+        "qwen-3-235b-a22b-instruct-2507": {
+          "name": "Qwen 3 235B Instruct",
+          "contextWindow": 131000,
+          "supportReasoning": true,
+          "supportTools": true,
+          "supportStreaming": true,
+          "cost": {
+            "input": 0.0006,
+            "output": 0.0012
+          },
+          "description": "Frontier-level 235-billion-parameter Mixture-of-Experts; ~1,500 tokens / s"
+        },
+        "deepseek-r1-distill-llama-70b": {
+          "name": "DeepSeek R1 Distill Llama 70B",
+          "contextWindow": 128000,
+          "supportReasoning": true,
+          "supportTools": true,
+          "supportStreaming": true,
+          "cost": {
+            "input": 0.0006,
+            "output": 0.0006
+          },
+          "description": "Distilled 70-billion-parameter reasoning model (private preview)"
+        }
+      }
     }
   }
 }

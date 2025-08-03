@@ -1,5 +1,8 @@
-import { MCPTool } from '@/lib/tauri-mcp-client';
+import { MCPTool, MCPResponse } from '@/lib/mcp-types';
 import { Tool } from '@/models/chat';
+
+// Re-export MCPResponse for backward compatibility
+export type { MCPResponse } from '@/lib/mcp-types';
 import React, {
   createContext,
   useCallback,
@@ -13,74 +16,11 @@ import { useAssistantContext } from './AssistantContext';
 import { useScheduledCallback } from '@/hooks/use-scheduled-callback';
 
 /**
- * Represents a single tool within a service, pairing its definition with its handler.
- * The handler returns a standard MCPResponse for protocol compliance.
+ * 🧰 Local Tool Context
+ *
+ * 로컬에서 실행되는 도구들을 관리합니다.
+ * 모든 로컬 도구는 MCP 프로토콜을 준수하는 MCPResponse를 반환해야 합니다.
  */
-// MCP-compliant content types (from MCP spec)
-export type MCPTextContent = {
-  type: 'text';
-  text: string;
-  annotations?: Record<string, unknown>;
-};
-
-export type MCPImageContent = {
-  type: 'image';
-  data: string; // base64
-  mimeType: string;
-  annotations?: Record<string, unknown>;
-};
-
-export type MCPAudioContent = {
-  type: 'audio';
-  data: string; // base64
-  mimeType: string;
-  annotations?: Record<string, unknown>;
-};
-
-export type MCPResourceLinkContent = {
-  type: 'resource_link';
-  uri: string;
-  name: string;
-  description?: string;
-  mimeType?: string;
-  annotations?: Record<string, unknown>;
-};
-
-export type MCPResourceContent = {
-  type: 'resource';
-  resource: {
-    uri: string;
-    title?: string;
-    mimeType?: string;
-    text?: string;
-    annotations?: Record<string, unknown>;
-  };
-};
-
-export type MCPContent =
-  | MCPTextContent
-  | MCPImageContent
-  | MCPAudioContent
-  | MCPResourceLinkContent
-  | MCPResourceContent;
-
-export interface MCPResult {
-  content?: MCPContent[];
-  structuredContent?: Record<string, unknown>;
-  isError?: boolean;
-}
-
-export interface MCPResponse {
-  jsonrpc: '2.0';
-  id: number | string;
-  success: boolean;
-  result?: MCPResult;
-  error?: {
-    code: number;
-    message: string;
-    data?: unknown;
-  };
-}
 
 export interface ServiceTool {
   toolDefinition: MCPTool;

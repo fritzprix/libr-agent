@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::process::Command;
 use tokio::sync::Mutex;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MCPServerConfig {
@@ -166,10 +167,21 @@ pub struct MCPTool {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct MCPError {
+    pub code: i32,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ToolCallResult {
-    pub success: bool,
+    pub jsonrpc: String,
+    pub id: serde_json::Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<serde_json::Value>,
-    pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<MCPError>,
 }
 
 pub struct MCPConnection {
@@ -273,6 +285,9 @@ impl MCPServerManager {
     ) -> ToolCallResult {
         let connections = self.connections.lock().await;
 
+        // Generate a unique ID for this request
+        let request_id = serde_json::Value::String(Uuid::new_v4().to_string());
+
         if let Some(connection) = connections.get(server_name) {
             // RMCP API 사용 - CallToolRequestParam 구조체 사용
             let args_map = if let serde_json::Value::Object(obj) = arguments {
@@ -288,25 +303,36 @@ impl MCPServerManager {
 
             match connection.client.call_tool(call_param).await {
                 Ok(result) => ToolCallResult {
-                    success: true,
+                    jsonrpc: "2.0".to_string(),
+                    id: request_id,
                     result: Some(serde_json::to_value(result).unwrap_or(serde_json::Value::Null)),
                     error: None,
                 },
                 Err(e) => {
                     error!("Error calling tool '{}': {}", tool_name, e);
                     ToolCallResult {
-                        success: false,
+                        jsonrpc: "2.0".to_string(),
+                        id: request_id,
                         result: None,
-                        error: Some(e.to_string()),
+                        error: Some(MCPError {
+                            code: -32603, // Internal error
+                            message: e.to_string(),
+                            data: None,
+                        }),
                     }
                 }
             }
         } else {
             error!("Server '{}' not found", server_name);
             ToolCallResult {
-                success: false,
+                jsonrpc: "2.0".to_string(),
+                id: request_id,
                 result: None,
-                error: Some(format!("Server '{}' not found", server_name)),
+                error: Some(MCPError {
+                    code: -32601, // Method not found
+                    message: format!("Server '{}' not found", server_name),
+                    data: None,
+                }),
             }
         }
     }

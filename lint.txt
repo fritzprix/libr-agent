@@ -1,0 +1,11 @@
+
+> synaptic-flow@0.1.0 lint /home/fritzprix/my_works/tauri-agent
+> eslint src --ext ts,tsx --report-unused-disable-directives
+
+
+/home/fritzprix/my_works/tauri-agent/src/context/EditorContext.tsx
+  36:56  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+✖ 1 problem (1 error, 0 warnings)
+
+ ELIFECYCLE  Command failed with exit code 1.

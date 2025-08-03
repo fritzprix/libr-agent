@@ -46,6 +46,11 @@ export default function Modal({
             )}
           </DialogHeader>
         )}
+        {title && !description && (
+          <DialogDescription className="sr-only">
+            {title} modal dialog
+          </DialogDescription>
+        )}
         {children}
         {footer && <DialogFooter>{footer}</DialogFooter>}
       </DialogContent>

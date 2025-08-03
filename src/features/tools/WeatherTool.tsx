@@ -3,7 +3,7 @@ import {
   MCPResponse,
   useLocalTools,
 } from '@/context/LocalToolContext';
-import { createObjectSchema, createStringSchema } from '@/lib/tauri-mcp-client';
+import { createObjectSchema, createStringSchema } from '@/lib/mcp-types';
 import { createId } from '@paralleldrive/cuid2';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -22,7 +22,6 @@ export function WeatherTool() {
       return {
         jsonrpc: '2.0',
         id: createId(),
-        success: true,
         result: {
           content: [
             {

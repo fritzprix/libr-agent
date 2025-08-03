@@ -26,10 +26,7 @@ interface AssistantContextType {
   getCurrentAssistant: () => Assistant | null;
   setCurrentAssistant: (assistant: Assistant | null) => void;
   getAssistant: (id: string) => Assistant | null;
-  upsert: (
-    assistant: Partial<Assistant>,
-    mcpConfigText: string,
-  ) => Promise<Assistant | undefined>;
+  upsert: (assistant: Assistant) => Promise<Assistant | undefined>;
   delete: (assistantId: string) => Promise<void>;
   registerEphemeralAssistant: (assistant: Assistant) => void;
   unregisterEphemeralAssistant: (id: string) => void;
@@ -57,7 +54,6 @@ export const DEFAULT_MCP_CONFIG = {
 
 export function getDefaultAssistant(): Assistant {
   return {
-    id: createId(),
     createdAt: new Date(),
     name: 'Default Assistant',
     isDefault: true,
@@ -67,20 +63,15 @@ export function getDefaultAssistant(): Assistant {
   };
 }
 
-export function getNewAssistantTemplate(): {
-  assistant: Partial<Assistant>;
-  mcpConfigText: string;
-} {
-  const defaultMcpConfig = DEFAULT_MCP_CONFIG;
-
+export function getNewAssistantTemplate(): Assistant {
   return {
-    assistant: {
-      name: '',
-      systemPrompt:
-        'You are a helpful AI assistant with access to various tools. Use the available tools to help users accomplish their tasks.',
-      mcpConfig: {},
-    },
-    mcpConfigText: JSON.stringify(defaultMcpConfig, null, 2),
+    name: 'New Assistant',
+    systemPrompt:
+      'You are a helpful AI assistant with access to various tools. Use the available tools to help users accomplish their tasks.',
+    mcpConfig: DEFAULT_MCP_CONFIG,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    isDefault: false,
   };
 }
 
@@ -142,39 +133,16 @@ export const AssistantContextProvider = ({
   }, [currentAssistant]);
 
   const [{ error: saveError }, upsertAssistant] = useAsyncFn(
-    async (
-      editingAssistant: Partial<Assistant>,
-      mcpConfigText?: string,
-    ): Promise<Assistant | undefined> => {
+    async (editingAssistant: Assistant): Promise<Assistant | undefined> => {
       if (!editingAssistant?.name) {
         showError('이름은 필수입니다.');
         return;
-      }
-      // Parse MCP config from text and validate JSON
-      let mcpConfigJson = JSON.stringify(editingAssistant.mcpConfig);
-
-      if (mcpConfigJson === mcpConfigText) {
-        mcpConfigJson = mcpConfigText;
-      }
-      let mcpConfig;
-      try {
-        if (mcpConfigJson.trim()) {
-          mcpConfig = JSON.parse(mcpConfigJson);
-        } else {
-          mcpConfig = {};
-        }
-      } catch (e) {
-        showError('유효하지 않은 JSON 형식입니다. JSON을 확인해주세요.', e);
-        setError(e instanceof Error ? e : new Error('Invalid JSON'));
-        return undefined;
       }
 
       // 기본 systemPrompt가 없으면 Agent에 맞는 프롬프트로 자동 설정
       const systemPrompt = editingAssistant.systemPrompt || DEFAULT_PROMPT;
 
       try {
-        const finalConfig = { mcpServers: mcpConfig.mcpServers || {} };
-
         // 기존 Assistant 편집 시 id를 유지, 새 Assistant일 때만 id 생성
 
         let assistantId = editingAssistant.id;
@@ -188,7 +156,7 @@ export const AssistantContextProvider = ({
           id: assistantId,
           name: editingAssistant.name,
           systemPrompt,
-          mcpConfig: finalConfig,
+          mcpConfig: editingAssistant.mcpConfig,
           isDefault: editingAssistant.isDefault || false,
           localServices: editingAssistant.localServices || [],
           createdAt: assistantCreatedAt || new Date(),

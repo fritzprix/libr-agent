@@ -20,6 +20,7 @@ SynapticFlow is a next-generation desktop AI agent platform that combines the li
 
 ## Technology Stack
 
+- PNPM
 - Tauri (Rust + WebView)
 - React 18
 - TypeScript

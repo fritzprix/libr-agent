@@ -8,10 +8,11 @@ import { useScheduler } from '@/context/SchedulerContext';
 import { useSessionContext } from '@/context/SessionContext';
 import { useChatContext } from '@/hooks/use-chat';
 import { getLogger } from '@/lib/logger';
-import { createObjectSchema, createStringSchema } from '@/lib/tauri-mcp-client';
+import { createObjectSchema, createStringSchema } from '@/lib/mcp-types';
 import { Assistant, Message } from '@/models/chat';
 import { createId } from '@paralleldrive/cuid2';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
 
 const logger = getLogger('Agentic.tsx');
 
@@ -136,7 +137,6 @@ export function SimpleAgenticFlow() {
           return {
             id: createId(),
             jsonrpc: '2.0',
-            success: true,
             result: {
               content: [
                 {
@@ -151,7 +151,6 @@ export function SimpleAgenticFlow() {
         return {
           id: createId(),
           jsonrpc: '2.0',
-          success: true,
           result: {
             content: [
               {
@@ -166,7 +165,6 @@ export function SimpleAgenticFlow() {
         return {
           id: createId(),
           jsonrpc: '2.0',
-          success: false,
           error: {
             code: -1,
             message: error instanceof Error ? error.message : 'Unknown error',
@@ -205,7 +203,6 @@ export function SimpleAgenticFlow() {
         return {
           id: createId(),
           jsonrpc: '2.0',
-          success: true,
           result: {
             content: [
               {
@@ -221,7 +218,6 @@ export function SimpleAgenticFlow() {
         return {
           id: createId(),
           jsonrpc: '2.0',
-          success: false,
           error: {
             code: -1,
             message: error instanceof Error ? error.message : 'Unknown error',
@@ -371,8 +367,7 @@ Remember: This is a 2-agent system where you coordinate and the worker executes.
                   arguments: JSON.stringify({
                     from: workerName,
                     to: SUPERVISER_ASSISTANT_ID,
-                    query:
-                      'Review worker completion and coordinate next steps',
+                    query: 'Review worker completion and coordinate next steps',
                   }),
                 },
               },
@@ -397,7 +392,6 @@ Remember: This is a 2-agent system where you coordinate and the worker executes.
             // 불필요한 delay 제거하고 즉시 supervisor로 전환
             setCurrentAssistant(supervisorAssistant);
             // ToolCaller 패턴에 맞게 tool_calls가 포함된 assistant 메시지를 submit
-
           }
         }
       } else {
@@ -430,6 +424,12 @@ Remember: This is a 2-agent system where you coordinate and the worker executes.
     }
 
     return () => {
+      if (!superviserAssistant.id) {
+        toast.error(
+          'Supervisor assistant ID가 존재하지 않아 서비스 정리를 건너뜁니다.',
+        );
+        return;
+      }
       try {
         logger.info('[Agentic Flow] Unregistering service:', service.name);
         // Null check 개선

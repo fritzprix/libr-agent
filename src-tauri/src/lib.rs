@@ -162,30 +162,115 @@ async fn check_all_servers_status() -> std::collections::HashMap<String, bool> {
     get_mcp_manager().check_all_servers().await
 }
 
+#[tauri::command]
+async fn list_all_tools() -> Result<Vec<mcp::MCPTool>, String> {
+    get_mcp_manager()
+        .list_all_tools()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn get_validated_tools(server_name: String) -> Result<Vec<mcp::MCPTool>, String> {
+    get_mcp_manager()
+        .get_validated_tools(&server_name)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn validate_tool_schema(tool: mcp::MCPTool) -> Result<(), String> {
+    mcp::MCPServerManager::validate_tool_schema(&tool)
+        .map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .plugin(
-            tauri_plugin_log::Builder::new()
-                .targets([
-                    Target::new(TargetKind::Stdout),
-                    Target::new(TargetKind::LogDir { file_name: None }),
-                    Target::new(TargetKind::Webview),
-                ])
-                .build(),
-        )
-        .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![
-            greet,
-            start_mcp_server,
-            stop_mcp_server,
-            call_mcp_tool,
-            list_mcp_tools,
-            list_tools_from_config,
-            get_connected_servers,
-            check_server_status,
-            check_all_servers_status
-        ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+    // Set up custom panic handler for better error reporting
+    std::panic::set_hook(Box::new(|panic_info| {
+        error!("🚨 PANIC: {}", panic_info);
+        if let Some(location) = panic_info.location() {
+            error!("  Location: {}:{}:{}", location.file(), location.line(), location.column());
+        }
+        
+        // Attempt graceful shutdown
+        error!("🔄 Attempting graceful shutdown...");
+    }));
+
+    // Configure Tauri builder with error handling
+    let result = std::panic::catch_unwind(|| {
+        tauri::Builder::default()
+            .plugin(
+                tauri_plugin_log::Builder::new()
+                    .targets([
+                        Target::new(TargetKind::Stdout),
+                        Target::new(TargetKind::LogDir { file_name: None }),
+                        Target::new(TargetKind::Webview),
+                    ])
+                    .build(),
+            )
+            .plugin(tauri_plugin_opener::init())
+            .invoke_handler(tauri::generate_handler![
+                greet,
+                start_mcp_server,
+                stop_mcp_server,
+                call_mcp_tool,
+                list_mcp_tools,
+                list_tools_from_config,
+                get_connected_servers,
+                check_server_status,
+                check_all_servers_status,
+                list_all_tools,
+                get_validated_tools,
+                validate_tool_schema
+            ])
+            .setup(|_app| {
+                println!("🚀 SynapticFlow initializing...");
+                
+                // Verify WebView can be created safely
+                #[cfg(target_os = "linux")]
+                {
+                    println!("🐧 Linux detected - checking WebKit compatibility...");
+                    
+                    // Set environment variables for better WebKit compatibility
+                    std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+                    std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+                    
+                    // Check if running in a container or limited environment
+                    if std::env::var("container").is_ok() || 
+                       std::env::var("DISPLAY").is_err() {
+                        eprintln!("⚠️  Warning: Running in limited graphics environment");
+                    }
+                }
+                
+                println!("✅ SynapticFlow setup completed successfully");
+                Ok(())
+            })
+            .run(tauri::generate_context!())
+    });
+
+    match result {
+        Ok(app_result) => {
+            if let Err(e) = app_result {
+                eprintln!("❌ Tauri application error: {}", e);
+                std::process::exit(1);
+            }
+        }
+        Err(panic_payload) => {
+            eprintln!("❌ Application panicked during startup");
+            if let Some(panic_str) = panic_payload.downcast_ref::<&str>() {
+                eprintln!("   Panic message: {}", panic_str);
+            } else if let Some(panic_string) = panic_payload.downcast_ref::<String>() {
+                eprintln!("   Panic message: {}", panic_string);
+            }
+            
+            eprintln!("💡 Troubleshooting suggestions:");
+            eprintln!("   1. Check WebKit/GTK installation: sudo apt install libwebkit2gtk-4.1-dev");
+            eprintln!("   2. Update graphics drivers");
+            eprintln!("   3. Set WEBKIT_DISABLE_COMPOSITING_MODE=1");
+            eprintln!("   4. Run in a desktop environment with proper display");
+            
+            std::process::exit(1);
+        }
+    }
 }

@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Route, Routes } from 'react-router-dom';
 import AppSidebar from '../components/layout/AppSidebar';
-import AssistantDetailList from '../features/assistant/AssistantDetailList';
 import AssistantGroupDetailList from '../features/assistant/AssistantGroupDetailList';
 
 import GroupChatContainer from '@/features/chat/GroupChatContainer';
@@ -21,9 +20,9 @@ import { SessionHistoryProvider } from '../context/SessionHistoryContext';
 import { SettingsProvider } from '../context/SettingsContext';
 import History from '../features/history/History';
 import SettingsModal from '../features/settings/SettingsModal';
-import { WeatherTool } from '../features/tools/WeatherTool';
 import '../styles/globals.css';
 import './App.css';
+import AssistantList from '@/features/assistant/List';
 
 function App() {
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
@@ -39,7 +38,6 @@ function App() {
                   <ModelOptionsProvider>
                     <MCPServerProvider>
                       <LocalToolProvider>
-                        <WeatherTool />
                         <SidebarProvider>
                           <div className="flex h-screen w-full">
                             {/* Sidebar */}
@@ -74,7 +72,7 @@ function App() {
                                   />
                                   <Route
                                     path="/assistants"
-                                    element={<AssistantDetailList />}
+                                    element={<AssistantList />}
                                   />
                                   <Route
                                     path="/assistants/groups"

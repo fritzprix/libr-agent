@@ -13,6 +13,7 @@ import useSWRInfinite from 'swr/infinite';
 import { dbService, Page } from '../lib/db';
 import { getLogger } from '../lib/logger';
 import { Assistant, Session } from '../models/chat';
+import { useAssistantContext } from './AssistantContext';
 
 const logger = getLogger('SessionContext');
 
@@ -106,7 +107,7 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
   >(null);
 
   const [isAgenticMode, setIsAgenticMode] = useState(false);
-
+  const { setCurrentAssistant } = useAssistantContext();
   const currentRef = useRef(current);
   const sessionsRef = useRef<Session[]>([]);
 
@@ -209,10 +210,13 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
       const session = sessions.find((s) => s.id === id);
       if (session) {
         setCurrent(session);
+        if (session.type === 'single') {
+          setCurrentAssistant(session.assistants[0]);
+        }
         clearError(); // Clear any errors when successfully selecting
       }
     },
-    [clearError],
+    [clearError, setCurrentAssistant],
   );
 
   /**

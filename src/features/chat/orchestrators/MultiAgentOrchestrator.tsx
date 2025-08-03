@@ -4,15 +4,15 @@ import {
   MCPResponse,
   useLocalTools,
 } from '@/context/LocalToolContext';
+import { useSessionContext } from '@/context/SessionContext';
+import { useSessionHistory } from '@/context/SessionHistoryContext';
+import { useChatContext } from '@/hooks/use-chat';
 import {
   createArraySchema,
   createNumberSchema,
   createObjectSchema,
   createStringSchema,
-} from '@/lib/tauri-mcp-client';
-import { useSessionContext } from '@/context/SessionContext';
-import { useSessionHistory } from '@/context/SessionHistoryContext';
-import { useChatContext } from '@/hooks/use-chat';
+} from '@/lib/mcp-types';
 import { Assistant } from '@/models/chat';
 import { createId } from '@paralleldrive/cuid2';
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
@@ -63,7 +63,6 @@ export const MultiAgentOrchestrator: React.FC = () => {
       const id = createId();
       if (!currentSession) {
         return {
-          success: false,
           jsonrpc: '2.0',
           id,
           error: {
@@ -80,7 +79,6 @@ export const MultiAgentOrchestrator: React.FC = () => {
         sessionId: currentSession.id,
       });
       return {
-        success: true,
         jsonrpc: '2.0',
         id,
         result: {
@@ -97,7 +95,6 @@ export const MultiAgentOrchestrator: React.FC = () => {
       const id = createId();
       if (!currentSession) {
         return {
-          success: false,
           jsonrpc: '2.0',
           id,
           error: {
@@ -119,7 +116,6 @@ export const MultiAgentOrchestrator: React.FC = () => {
           },
         ]);
         return {
-          success: true,
           jsonrpc: '2.0',
           id,
           result: {
@@ -133,7 +129,6 @@ export const MultiAgentOrchestrator: React.FC = () => {
         };
       } else {
         return {
-          success: false,
           jsonrpc: '2.0',
           id,
           error: {
@@ -155,7 +150,6 @@ export const MultiAgentOrchestrator: React.FC = () => {
       );
       plan.current = newPlan;
       return {
-        success: true,
         jsonrpc: '2.0',
         id,
         result: {
@@ -179,7 +173,6 @@ export const MultiAgentOrchestrator: React.FC = () => {
       if (index >= 0 && index < plan.current.length) {
         plan.current[index].complete = true;
         return {
-          success: true,
           jsonrpc: '2.0',
           id,
           result: {
@@ -191,7 +184,6 @@ export const MultiAgentOrchestrator: React.FC = () => {
         };
       } else {
         return {
-          success: false,
           jsonrpc: '2.0',
           id,
           error: {
@@ -208,7 +200,6 @@ export const MultiAgentOrchestrator: React.FC = () => {
     const id = createId();
     plan.current = [];
     return {
-      success: true,
       jsonrpc: '2.0',
       id,
       result: {
@@ -223,7 +214,6 @@ export const MultiAgentOrchestrator: React.FC = () => {
       const id = createId();
       if (!currentSession) {
         return {
-          success: false,
           jsonrpc: '2.0',
           id,
           error: {
@@ -240,7 +230,6 @@ export const MultiAgentOrchestrator: React.FC = () => {
         sessionId: currentSession.id,
       });
       return {
-        success: true,
         jsonrpc: '2.0',
         id,
         result: {

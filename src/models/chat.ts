@@ -1,4 +1,4 @@
-import { MCPTool } from '../lib/tauri-mcp-client';
+import { MCPTool } from '../lib/mcp-types';
 
 export interface Message {
   id: string;
@@ -27,7 +27,7 @@ export interface ToolCall {
 }
 
 export interface Assistant {
-  id: string;
+  id?: string;
   name: string;
   description?: string;
   avatar?: string; // Optional avatar URL or identifier
