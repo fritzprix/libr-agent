@@ -1,3 +1,5 @@
+import type { ModelInfo } from '../llm-config-manager';
+
 export interface AIServiceConfig {
   timeout?: number;
   maxRetries?: number;
@@ -14,6 +16,7 @@ export enum AIServiceProvider {
   Gemini = 'gemini',
   Fireworks = 'fireworks',
   Cerebras = 'cerebras',
+  Ollama = 'ollama',
   Empty = 'empty',
 }
 
@@ -39,6 +42,13 @@ export interface IAIService {
       config?: AIServiceConfig;
     },
   ): AsyncGenerator<string, void, void>;
+
+  /**
+   * Returns the list of supported models for this service.
+   * For services like OpenAI/Anthropic, this returns static config data.
+   * For services like Ollama, this may query the server dynamically.
+   */
+  listModels(): Promise<ModelInfo[]>;
 
   dispose(): void;
 }

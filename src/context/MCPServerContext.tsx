@@ -96,12 +96,16 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
       const delimiter = '__';
       const parts = aiProvidedToolName.split(delimiter);
       const serverName = parts.length > 1 ? parts[0] : undefined;
-      const toolName = parts.length > 1 ? parts.slice(1).join(delimiter) : aiProvidedToolName;
+      const toolName =
+        parts.length > 1 ? parts.slice(1).join(delimiter) : aiProvidedToolName;
 
       if (!serverName || !toolName) {
         const errorMsg = `Could not determine server/tool name from '${aiProvidedToolName}'`;
         logger.error(errorMsg);
-        return normalizeToolResult({ error: errorMsg, success: false }, aiProvidedToolName);
+        return normalizeToolResult(
+          { error: errorMsg, success: false },
+          aiProvidedToolName,
+        );
       }
 
       let toolArguments: Record<string, unknown>;
@@ -110,7 +114,10 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
       } catch (parseError) {
         const errorMsg = `Failed to parse arguments: ${parseError instanceof Error ? parseError.message : String(parseError)}`;
         logger.error(errorMsg, { arguments: toolCall.function.arguments });
-        return normalizeToolResult({ error: errorMsg, success: false }, aiProvidedToolName);
+        return normalizeToolResult(
+          { error: errorMsg, success: false },
+          aiProvidedToolName,
+        );
       }
 
       try {
@@ -119,15 +126,23 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
           toolName,
           toolArguments,
         );
-        logger.debug(`MCP Response for ${aiProvidedToolName}:`, { rawResponse });
-        
+        logger.debug(`MCP Response for ${aiProvidedToolName}:`, {
+          rawResponse,
+        });
+
         // 응답을 normalizeToolResult로 한 번 더 검증하여 에러 패턴 감지
-        const mcpResponse = normalizeToolResult(rawResponse, aiProvidedToolName);
+        const mcpResponse = normalizeToolResult(
+          rawResponse,
+          aiProvidedToolName,
+        );
         return mcpResponse;
       } catch (execError) {
         const errorMsg = `Tool execution failed: ${execError instanceof Error ? execError.message : String(execError)}`;
         logger.error(errorMsg, { execError });
-        return normalizeToolResult({ error: errorMsg, success: false }, aiProvidedToolName);
+        return normalizeToolResult(
+          { error: errorMsg, success: false },
+          aiProvidedToolName,
+        );
       }
     },
     [],

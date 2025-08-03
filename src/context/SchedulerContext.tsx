@@ -9,6 +9,7 @@ import React, {
   useRef,
 } from 'react';
 import { useAsyncFn, useQueue } from 'react-use';
+import { getLogger } from '@/lib/logger';
 
 // --- 스케줄러 핵심 로직 수정 ---
 
@@ -16,6 +17,8 @@ import { useAsyncFn, useQueue } from 'react-use';
  * idle 상태가 true로 변경될 때의 디바운스 시간 (밀리초)
  */
 const IDLE_DEBOUNCE_MS = 1000;
+
+const logger = getLogger('SchedulerContext');
 
 /**
  * 스케줄러 내부에서 관리될 태스크의 구조입니다.
@@ -57,7 +60,7 @@ export const SchedulerProvider: React.FC<{ children: ReactNode }> = ({
         managedTask.resolve(result);
         return result;
       } catch (error: unknown) {
-        console.error('Scheduled task failed:', error);
+        logger.error('Scheduled task failed:', error);
         // 태스크 실패 시 Promise를 실패 상태로 만듭니다.
         managedTask.reject(error);
       }

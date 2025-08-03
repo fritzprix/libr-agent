@@ -10,10 +10,13 @@ import {
   MCPResponse,
   mcpResponseToString,
 } from '@/lib/mcp-types';
+import { getLogger } from '@/lib/logger';
 import { Message } from '@/models/chat';
 import { createId } from '@paralleldrive/cuid2';
 import React, { useCallback, useEffect, useRef } from 'react';
 import { useAsyncFn } from 'react-use';
+
+const logger = getLogger('ToolCaller');
 
 interface SerializedToolResult {
   success: boolean;
@@ -40,18 +43,24 @@ export const ToolCaller: React.FC = () => {
       executionStartTime: number,
     ): string => {
       // 추가 에러 검증: content에 에러가 있는지 확인
-      const isContentError = isMCPSuccess(mcpResponse) && 
-        mcpResponse.result?.content?.some(content => 
-          content.type === 'text' && 
-          (content.text.includes('"error":') || content.text.includes('\\"error\\":'))
+      const isContentError =
+        isMCPSuccess(mcpResponse) &&
+        mcpResponse.result?.content?.some(
+          (content) =>
+            content.type === 'text' &&
+            (content.text.includes('"error":') ||
+              content.text.includes('\\"error\\":')),
         );
 
       const actualSuccess = isMCPSuccess(mcpResponse) && !isContentError;
-      
+
       let errorMessage: string | undefined;
       if (isMCPError(mcpResponse)) {
         errorMessage = mcpResponse.error.message;
-      } else if (isContentError && mcpResponse.result?.content?.[0]?.type === 'text') {
+      } else if (
+        isContentError &&
+        mcpResponse.result?.content?.[0]?.type === 'text'
+      ) {
         // content에서 에러 메시지 추출
         try {
           const contentText = mcpResponse.result.content[0].text;
@@ -64,9 +73,7 @@ export const ToolCaller: React.FC = () => {
 
       const result: SerializedToolResult = {
         success: actualSuccess,
-        content: actualSuccess
-          ? mcpResponseToString(mcpResponse)
-          : undefined,
+        content: actualSuccess ? mcpResponseToString(mcpResponse) : undefined,
         error: errorMessage,
         metadata: {
           toolName,
@@ -90,7 +97,7 @@ export const ToolCaller: React.FC = () => {
   const [{ loading }, execute] = useAsyncFn(
     async (tcMessage: Message) => {
       if (!tcMessage.tool_calls || tcMessage.tool_calls.length === 0) {
-        console.warn('No tool calls found in message');
+        logger.warn('No tool calls found in message');
         return;
       }
 
@@ -101,7 +108,7 @@ export const ToolCaller: React.FC = () => {
         const executionStartTime = Date.now();
 
         try {
-          console.info(`Executing tool: ${toolName}`, {
+          logger.info(`Executing tool: ${toolName}`, {
             toolCall: toolCall.function.name,
             args: toolCall.function.arguments,
           });
@@ -127,14 +134,14 @@ export const ToolCaller: React.FC = () => {
           });
 
           if (isMCPSuccess(mcpResponse)) {
-            console.info(`Tool executed successfully: ${toolName}`);
+            logger.info(`Tool executed successfully: ${toolName}`);
           } else {
-            console.warn(`Tool execution finished with error: ${toolName}`, {
+            logger.warn(`Tool execution finished with error: ${toolName}`, {
               error: (mcpResponse as MCPResponse & { error: object }).error,
             });
           }
         } catch (error) {
-          console.error(`Tool execution failed for ${toolName}:`, error);
+          logger.error(`Tool execution failed for ${toolName}:`, error);
 
           const errorResponse: MCPResponse = {
             jsonrpc: '2.0',

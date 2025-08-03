@@ -1,4 +1,7 @@
 import { useCallback, useRef, useEffect } from 'react';
+import { getLogger } from '@/lib/logger';
+
+const logger = getLogger('ToolHandler');
 
 /**
  * Custom hook for creating stable tool handlers that automatically manage
@@ -25,7 +28,7 @@ export function useToolHandler<
       try {
         return handler(input, depsRef.current);
       } catch (error) {
-        console.error('Tool handler error:', error);
+        logger.error('Tool handler error:', error);
         throw error;
       }
     },

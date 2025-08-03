@@ -334,8 +334,7 @@ export function normalizeToolResult(
       (result.toLowerCase().includes('error') ||
         result.toLowerCase().includes('failed') ||
         result.includes('"error":') || // JSON 내부 에러 감지
-        result.includes('\\"error\\":'))) // 이스케이프된 JSON 내부 에러 감지
-    ||
+        result.includes('\\"error\\":'))) || // 이스케이프된 JSON 내부 에러 감지
     (typeof result === 'object' &&
       result !== null &&
       ('error' in result ||
@@ -344,7 +343,7 @@ export function normalizeToolResult(
   if (isError) {
     // 에러 메시지 추출 로직 개선
     let errorMessage: string;
-    
+
     if (typeof result === 'string') {
       // JSON 문자열인지 확인하고 파싱 시도
       if (result.includes('"error":') || result.includes('\\"error\\":')) {
@@ -358,7 +357,11 @@ export function normalizeToolResult(
       } else {
         errorMessage = result;
       }
-    } else if (typeof result === 'object' && result !== null && 'error' in result) {
+    } else if (
+      typeof result === 'object' &&
+      result !== null &&
+      'error' in result
+    ) {
       errorMessage = String((result as { error: unknown }).error);
     } else {
       errorMessage = `Unknown error in ${toolName}`;
@@ -377,9 +380,7 @@ export function normalizeToolResult(
 
   // 3. 성공 결과 변환
   const textContent =
-    typeof result === 'string'
-      ? result
-      : JSON.stringify(result, null, 2);
+    typeof result === 'string' ? result : JSON.stringify(result, null, 2);
 
   return {
     jsonrpc: '2.0',
@@ -412,9 +413,13 @@ export function mcpResponseToString(response: MCPResponse): string {
         .filter((c) => c.type === 'text')
         .map((c) => (c as MCPTextContent).text)
         .join('\n');
-      
+
       // content에 에러가 포함되어 있는지 확인
-      if (textContent && (textContent.includes('"error":') || textContent.includes('\\"error\\":'))) {
+      if (
+        textContent &&
+        (textContent.includes('"error":') ||
+          textContent.includes('\\"error\\":'))
+      ) {
         try {
           const parsed = JSON.parse(textContent);
           if (parsed.error) {
@@ -431,7 +436,7 @@ export function mcpResponseToString(response: MCPResponse): string {
           });
         }
       }
-      
+
       if (textContent) return textContent;
     }
     if (response.result.structuredContent) {
@@ -454,19 +459,23 @@ export function mcpResponseToString(response: MCPResponse): string {
 export function testErrorDetection(): void {
   // error.txt에서 발견된 케이스 테스트
   const errorCase = {
-    "success": true,
-    "content": "{\n  \"error\": \"fieldSelector.replace is not a function\",\n  \"tool\": \"updateGame\",\n  \"timestamp\": \"2025-08-03T11:26:28.643Z\"\n}",
-    "metadata": {
-      "toolName": "rpg-server__updateGame",
-      "isValidated": true
+    success: true,
+    content:
+      '{\n  "error": "fieldSelector.replace is not a function",\n  "tool": "updateGame",\n  "timestamp": "2025-08-03T11:26:28.643Z"\n}',
+    metadata: {
+      toolName: 'rpg-server__updateGame',
+      isValidated: true,
     },
-    "toolName": "rpg-server__updateGame",
-    "executionTime": 97,
-    "timestamp": "2025-08-03T11:26:28.728Z"
+    toolName: 'rpg-server__updateGame',
+    executionTime: 97,
+    timestamp: '2025-08-03T11:26:28.728Z',
   };
 
-  const normalizedResponse = normalizeToolResult(errorCase.content, errorCase.toolName);
-  
+  const normalizedResponse = normalizeToolResult(
+    errorCase.content,
+    errorCase.toolName,
+  );
+
   console.log('Test Result:', {
     original: errorCase,
     normalized: normalizedResponse,

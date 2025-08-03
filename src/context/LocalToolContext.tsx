@@ -116,14 +116,23 @@ export function LocalToolProvider({ children }: { children: React.ReactNode }) {
       const tool = getToolByName(toolName);
 
       if (!tool) {
-        return normalizeToolResult({ error: `Tool "${toolName}" not found.`, success: false }, toolName);
+        return normalizeToolResult(
+          { error: `Tool "${toolName}" not found.`, success: false },
+          toolName,
+        );
       }
 
       try {
         const args = JSON.parse(toolCall.function.arguments);
         return await tool.handler(args);
       } catch (error) {
-        return normalizeToolResult({ error: `Error executing tool: ${error instanceof Error ? error.message : String(error)}`, success: false }, toolName);
+        return normalizeToolResult(
+          {
+            error: `Error executing tool: ${error instanceof Error ? error.message : String(error)}`,
+            success: false,
+          },
+          toolName,
+        );
       }
     },
     [getToolByName],

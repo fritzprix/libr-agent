@@ -16,7 +16,17 @@ type ProviderToolType =
   | OpenAIChatCompletionTool
   | AnthropicTool
   | FunctionDeclaration
-  | Cerebras.Chat.Completions.ChatCompletionCreateParams.Tool;
+  | Cerebras.Chat.Completions.ChatCompletionCreateParams.Tool
+  | OllamaTool;
+
+interface OllamaTool {
+  type: 'function';
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+}
 type ProviderToolsType = ProviderToolType[];
 
 // Helper function to convert JSON schema types to Gemini types
@@ -312,6 +322,15 @@ function convertMCPToolToProviderFormat(
         },
       } satisfies Cerebras.Chat.Completions.ChatCompletionCreateParams.Tool;
     }
+    case AIServiceProvider.Ollama:
+      return {
+        type: 'function',
+        function: {
+          name: mcpTool.name,
+          description: mcpTool.description,
+          parameters: commonParameters,
+        },
+      } satisfies OllamaTool;
     case AIServiceProvider.Empty:
       throw new AIServiceError(
         `Tool conversion not supported for Empty AIServiceProvider`,

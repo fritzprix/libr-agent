@@ -20,6 +20,7 @@ export { FireworksService } from './fireworks';
 export { AnthropicService } from './anthropic';
 export { GeminiService } from './gemini';
 export { CerebrasService } from './cerebras';
+export { OllamaService } from './ollama';
 
 // Re-export factory
 export { AIServiceFactory } from './factory';
