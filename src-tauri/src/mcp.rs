@@ -243,7 +243,7 @@ impl MCPServerManager {
 
         // Create transport and connect using RMCP pattern
         let transport = TokioChildProcess::new(cmd)?;
-        debug!("Created transport for command: {} {:?}", command, args);
+        debug!("Created transport for command: {command} {args:?}");
 
         let client = ().serve(transport).await?;
         info!("Successfully connected to MCP server: {}", config.name);
@@ -270,7 +270,7 @@ impl MCPServerManager {
         if let Some(connection) = connections.remove(server_name) {
             // Cancel the client connection
             let _ = connection.client.cancel().await;
-            info!("Stopped MCP server: {}", server_name);
+            info!("Stopped MCP server: {server_name}");
         }
 
         Ok(())
@@ -337,7 +337,7 @@ impl MCPServerManager {
                     }
                 },
                 Err(e) => {
-                    error!("Error calling tool '{}': {}", tool_name, e);
+                    error!("Error calling tool '{tool_name}': {e}");
                     MCPResponse {
                         jsonrpc: "2.0".to_string(),
                         id: Some(request_id),
@@ -351,14 +351,14 @@ impl MCPServerManager {
                 }
             }
         } else {
-            error!("Server '{}' not found", server_name);
+            error!("Server '{server_name}' not found");
             MCPResponse {
                 jsonrpc: "2.0".to_string(),
                 id: Some(request_id),
                 result: None,
                 error: Some(MCPError {
                     code: -32601, // Method not found
-                    message: format!("Server '{}' not found", server_name),
+                    message: format!("Server '{server_name}' not found"),
                     data: None,
                 }),
             }
@@ -372,7 +372,7 @@ impl MCPServerManager {
         match serde_json::from_value::<JSONSchema>(schema) {
             Ok(json_schema) => json_schema,
             Err(e) => {
-                warn!("Failed to parse JSON schema: {}, using default", e);
+                warn!("Failed to parse JSON schema: {e}, using default");
                 JSONSchema::default()
             }
         }
@@ -383,15 +383,15 @@ impl MCPServerManager {
         let connections = self.connections.lock().await;
 
         if let Some(connection) = connections.get(server_name) {
-            debug!("Found connection for server: {}", server_name);
+            debug!("Found connection for server: {server_name}");
 
             match connection.client.list_all_tools().await {
                 Ok(tools_response) => {
-                    debug!("Raw tools response: {:?}", tools_response);
+                    debug!("Raw tools response: {tools_response:?}");
                     let mut tools = Vec::new();
 
                     for tool in tools_response {
-                        debug!("Processing tool: {:?}", tool);
+                        debug!("Processing tool: {tool:?}");
 
                         // Convert the input schema to our structured format
                         let input_schema_value = serde_json::to_value(tool.input_schema)
@@ -425,12 +425,12 @@ impl MCPServerManager {
                     Ok(tools)
                 }
                 Err(e) => {
-                    error!("Error listing tools: {}", e);
+                    error!("Error listing tools: {e}");
                     Err(anyhow::anyhow!("Failed to list tools: {}", e))
                 }
             }
         } else {
-            warn!("Server '{}' not found in connections", server_name);
+            warn!("Server '{server_name}' not found in connections");
             Err(anyhow::anyhow!("Server '{}' not found", server_name))
         }
     }
@@ -453,7 +453,7 @@ impl MCPServerManager {
                     all_tools.extend(tools);
                 }
                 Err(e) => {
-                    warn!("Failed to get tools from server {}: {}", server_name, e);
+                    warn!("Failed to get tools from server {server_name}: {e}");
                     // Continue with other servers instead of failing completely
                 }
             }
