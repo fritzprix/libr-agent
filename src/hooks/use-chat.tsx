@@ -16,150 +16,145 @@ interface ChatContextReturn {
 }
 
 const validateMessage = (message: Message): boolean => {
-  return !!(message.role && (message.content || message.tool_calls));
+  return Boolean(message.role && (message.content || message.tool_calls));
 };
 
 export const useChatContext = (): ChatContextReturn => {
   const { messages: history, addMessage } = useSessionHistory();
   const { submit: triggerAIService, isLoading, response } = useAIService();
   const { current: currentSession } = useSessionContext();
-  const [currentStreaming, setCurrentStreaming] = useState<Message | null>(
-    null,
-  );
   const { value: settingValue } = useSettings();
-  const messageWindowSize = useMemo(
-    () => (settingValue ? settingValue.windowSize : 20),
-    [settingValue],
-  );
+  
+  const [streamingMessage, setStreamingMessage] = useState<Message | null>(null);
+  
+  // Extract window size with default fallback
+  const messageWindowSize = settingValue?.windowSize ?? 20;
 
+  // Combine history with streaming message, avoiding duplicates
   const messages = useMemo(() => {
-    if (currentStreaming) {
-      // Check if we already have this message in history (non-streaming version)
-      const existingMessage = history.find(
-        (m) => m.id === currentStreaming.id && !m.isStreaming,
-      );
-      if (existingMessage) {
-        // If the message exists in history and is not streaming, use history only
-        return [...history];
-      }
-      // Otherwise, show streaming message
-      return [...history, currentStreaming];
+    if (!streamingMessage) {
+      return history;
     }
-    return [...history];
-  }, [currentStreaming, history]);
 
+    // Check if streaming message already exists in history as finalized
+    const existsInHistory = history.some(
+      (message) => message.id === streamingMessage.id && !message.isStreaming
+    );
+
+    return existsInHistory ? history : [...history, streamingMessage];
+  }, [streamingMessage, history]);
+
+  // Handle AI service streaming responses
   useEffect(() => {
-    if (response) {
-      logger.info('Updating currentStreaming with response:', { response });
-      setCurrentStreaming((prev) => {
-        if (prev) {
-          logger.info('Merging with existing streaming message:', {
-            prev,
-            response,
-          });
-          return { ...prev, ...response };
-        }
-        // If prev is null but we have a response, create a new streaming message
-        const newStreaming = {
-          ...response,
-          id: response.id || createId(),
-          content: response.content || '',
-          role: 'assistant' as const,
-          sessionId: response.sessionId || currentSession?.id || '',
-          isStreaming: response.isStreaming !== false,
-        };
-        logger.info('Creating new streaming message:', { newStreaming });
-        return newStreaming;
-      });
-    }
+    if (!response) return;
+
+    setStreamingMessage((previous) => {
+      if (previous) {
+        // Merge response with existing streaming message
+        return { ...previous, ...response };
+      }
+
+      // Create new streaming message with proper defaults
+      return {
+        ...response,
+        id: response.id ?? createId(),
+        content: response.content ?? '',
+        role: 'assistant' as const,
+        sessionId: response.sessionId ?? currentSession?.id ?? '',
+        isStreaming: response.isStreaming !== false,
+      };
+    });
   }, [response, currentSession?.id]);
 
-  // Effect to clear streaming state when message appears in history
+  // Clear streaming state when message is finalized in history
   useEffect(() => {
-    if (currentStreaming && !currentStreaming.isStreaming) {
-      const messageInHistory = history.find(
-        (m) => m.id === currentStreaming.id && !m.isStreaming,
-      );
-      if (messageInHistory) {
-        logger.info(
-          'Final message found in history, clearing streaming state:',
-          {
-            messageId: currentStreaming.id,
-          },
-        );
-        setCurrentStreaming(null);
-      }
-    }
-  }, [history, currentStreaming]);
+    if (!streamingMessage || streamingMessage.isStreaming) return;
 
-  const handleSubmit = useCallback(
+    const isMessageInHistory = history.some(
+      (message) => message.id === streamingMessage.id && !message.isStreaming
+    );
+
+    if (isMessageInHistory) {
+      logger.info('Message finalized in history, clearing streaming state', {
+        messageId: streamingMessage.id,
+      });
+      setStreamingMessage(null);
+    }
+  }, [history, streamingMessage]);
+
+  const submit = useCallback(
     async (messageToAdd?: Message[]): Promise<Message> => {
       if (!currentSession) {
-        throw new Error('No active session to submit messages to.');
+        throw new Error('No active session available for message submission');
       }
 
       try {
-        let messagesToSend: Message[];
+        let messagesToSend = messages;
 
-        if (messageToAdd) {
-          // Validate and persist new messages before processing
-          const messagesWithSessionId = await Promise.all(
-            messageToAdd.map(async (msg) => {
-              if (!validateMessage(msg)) {
+        // Process and validate new messages if provided
+        if (messageToAdd?.length) {
+          const processedMessages = await Promise.all(
+            messageToAdd.map(async (message) => {
+              if (!validateMessage(message)) {
                 throw new Error(
-                  'Invalid message in batch: must have role and either content or tool_calls',
+                  'Invalid message: must have role and either content or tool_calls'
                 );
               }
-              const messageWithId = { ...msg, sessionId: currentSession.id };
-              await addMessage(messageWithId);
-              return messageWithId;
-            }),
+
+              const messageWithSession = {
+                ...message,
+                sessionId: currentSession.id,
+              };
+
+              await addMessage(messageWithSession);
+              return messageWithSession;
+            })
           );
 
-          messagesToSend = [...messages, ...messagesWithSessionId];
-        } else {
-          messagesToSend = messages;
+          messagesToSend = [...messages, ...processedMessages];
         }
+
+        // Send windowed messages to AI service
         const aiResponse = await triggerAIService(
-          messagesToSend.slice(-messageWindowSize),
+          messagesToSend.slice(-messageWindowSize)
         );
 
+        // Handle AI response persistence
         if (aiResponse) {
-          const responseWithSessionId: Message = {
+          const finalizedMessage: Message = {
             ...aiResponse,
             isStreaming: false,
             sessionId: currentSession.id,
           };
-          logger.info('Finalizing streaming message and adding to history:', {
-            responseWithSessionId,
+
+          logger.info('Finalizing AI response', {
+            messageId: finalizedMessage.id,
           });
 
-          // Update the current streaming message to be non-streaming
-          setCurrentStreaming(responseWithSessionId);
-
-          // Add to history - the useEffect will clear streaming state when it appears
-          await addMessage(responseWithSessionId);
+          // Update streaming state and persist to history
+          setStreamingMessage(finalizedMessage);
+          await addMessage(finalizedMessage);
         }
 
         return aiResponse;
       } catch (error) {
-        console.error('Failed to submit messages:', error);
-        // Clear streaming state immediately on error
-        setCurrentStreaming(null);
+        logger.error('Message submission failed', { error });
+        setStreamingMessage(null);
         throw error;
       }
     },
-    [triggerAIService, currentSession, messages, addMessage],
-  );
-
-  const value = useMemo<ChatContextReturn>(
-    () => ({
-      submit: handleSubmit,
-      isLoading,
+    [
+      currentSession,
       messages,
-    }),
-    [handleSubmit, isLoading, messages],
+      messageWindowSize,
+      triggerAIService,
+      addMessage,
+    ]
   );
 
-  return value;
+  return {
+    submit,
+    isLoading,
+    messages,
+  };
 };

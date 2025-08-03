@@ -1,3 +1,17 @@
+import TerminalHeader from '@/components/TerminalHeader';
+import {
+  Button,
+  CompactModelPicker,
+  FileAttachment,
+  Input,
+} from '@/components/ui';
+import { useAssistantContext } from '@/context/AssistantContext';
+import { useLocalTools } from '@/context/LocalToolContext';
+import { useSessionContext } from '@/context/SessionContext';
+import { useChatContext } from '@/hooks/use-chat';
+import { useMCPServer } from '@/hooks/use-mcp-server';
+import { getLogger } from '@/lib/logger';
+import { Assistant, Message, Session } from '@/models/chat';
 import { createId } from '@paralleldrive/cuid2';
 import React, {
   createContext,
@@ -8,31 +22,14 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import ToolsModal from '../tools/ToolsModal';
 import MessageBubble from './MessageBubble';
 import { ToolCaller } from './orchestrators/ToolCaller';
-import { getLogger } from '@/lib/logger';
-import { useMCPServer } from '@/hooks/use-mcp-server';
-import { useLocalTools } from '@/context/LocalToolContext';
-import { useAssistantContext } from '@/context/AssistantContext';
-import { useSessionContext } from '@/context/SessionContext';
-import { useChatContext } from '@/hooks/use-chat';
-import { Assistant, Message, Session } from '@/models/chat';
-import TerminalHeader from '@/components/TerminalHeader';
-import {
-  Button,
-  CompactModelPicker,
-  FileAttachment,
-  Input,
-} from '@/components/ui';
-import ToolsModal from '../tools/ToolsModal';
-import { useScheduler } from '@/context/SchedulerContext';
 
 const logger = getLogger('Chat');
 
 // Simplified context - only truly shared state
 interface ChatContextType {
-  input: string;
-  setInput: React.Dispatch<React.SetStateAction<string>>;
   attachedFiles: { name: string; content: string }[];
   setAttachedFiles: React.Dispatch<
     React.SetStateAction<{ name: string; content: string }[]>
@@ -41,7 +38,6 @@ interface ChatContextType {
   messages: Message[];
   currentSession: Session | null;
   currentAssistant: Assistant | null;
-  handleSubmit: (e: React.FormEvent<HTMLFormElement>) => Promise<void>;
   messagesEndRef: React.RefObject<HTMLDivElement>;
 }
 
@@ -66,10 +62,8 @@ function Chat({ children }: ChatProps) {
   const [attachedFiles, setAttachedFiles] = useState<
     { name: string; content: string }[]
   >([]);
-  const { schedule } = useScheduler();
-  const [input, setInput] = useState('');
   const { current: currentSession } = useSessionContext();
-  const { submit, isLoading, messages } = useChatContext();
+  const { isLoading, messages } = useChatContext();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   if (!currentSession) {
@@ -78,50 +72,15 @@ function Chat({ children }: ChatProps) {
     );
   }
 
-  const handleSubmit = useCallback(
-    async (e: React.FormEvent<HTMLFormElement>) => {
-      logger.info('submit!!', currentAssistant);
-      e.preventDefault();
-      if (!input.trim() && attachedFiles.length === 0) return;
-      if (!currentAssistant) return;
 
-      let messageContent = input.trim();
-      if (attachedFiles.length > 0) {
-        messageContent += '\n\n--- Attached Files ---\n';
-        attachedFiles.forEach((file) => {
-          messageContent += `\n[File: ${file.name}]\n${file.content}\n`;
-        });
-      }
-
-      const userMessage: Message = {
-        id: createId(),
-        content: messageContent,
-        role: 'user',
-        sessionId: currentSession?.id || '',
-      };
-
-      setInput('');
-      setAttachedFiles([]);
-
-      try {
-        await submit([userMessage]);
-      } catch (err) {
-        logger.error('Error submitting message:', err);
-      }
-    },
-    [submit, schedule, input],
-  );
 
   const contextValue: ChatContextType = {
-    input,
-    setInput,
     attachedFiles,
     setAttachedFiles,
     isLoading,
     messages,
     currentSession,
     currentAssistant,
-    handleSubmit,
     messagesEndRef,
   };
 
@@ -280,19 +239,53 @@ function ChatAttachedFiles() {
 // Chat Input component - now handles its own file attachment logic
 function ChatInput({ children }: { children?: React.ReactNode }) {
   const {
-    input,
-    setInput,
     isLoading,
     attachedFiles,
     setAttachedFiles,
-    handleSubmit,
   } = useChatInternalContext();
+  const [input, setInput] = useState<string>("");
+  const { current: currentSession } = useSessionContext();
+  const { currentAssistant } = useAssistantContext();
+  const { submit } = useChatContext();
 
   const handleAgentInputChange = React.useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       setInput(e.target.value);
     },
     [setInput],
+  );
+  const handleSubmit = useCallback(
+    async (e: React.FormEvent<HTMLFormElement>) => {
+      logger.info('submit!!', currentAssistant);
+      e.preventDefault();
+      if (!input.trim() && attachedFiles.length === 0) return;
+      if (!currentAssistant) return;
+
+      let messageContent = input.trim();
+      if (attachedFiles.length > 0) {
+        messageContent += '\n\n--- Attached Files ---\n';
+        attachedFiles.forEach((file) => {
+          messageContent += `\n[File: ${file.name}]\n${file.content}\n`;
+        });
+      }
+
+      const userMessage: Message = {
+        id: createId(),
+        content: messageContent,
+        role: 'user',
+        sessionId: currentSession?.id || '',
+      };
+
+      setInput('');
+      setAttachedFiles([]);
+
+      try {
+        await submit([userMessage]);
+      } catch (err) {
+        logger.error('Error submitting message:', err);
+      }
+    },
+    [submit, input],
   );
 
   const handleFileAttachment = React.useCallback(

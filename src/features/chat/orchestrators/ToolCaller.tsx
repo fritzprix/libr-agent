@@ -26,11 +26,17 @@ export const ToolCaller: React.FC = () => {
           ? callLocalTool
           : callMcpTool;
         const result = await callFunction(toolCall);
+        
+        // Always serialize the full MCP response as JSON string
+        // This ensures compatibility across all AI service providers
+        // and prevents "Tool message content is not valid JSON" warnings
+        const serializedContent = JSON.stringify(result);
+        
         toolResults.push({
           id: createId(),
           assistantId: currentAssistant?.id,
           role: 'tool',
-          content: result.content,
+          content: serializedContent,
           tool_call_id: toolCall.id,
           sessionId: currentSession?.id || '', // Add sessionId
         });
