@@ -1,6 +1,6 @@
 use std::sync::OnceLock;
 use tauri_plugin_log::{Target, TargetKind};
-
+use log::error;
 mod mcp;
 use mcp::{MCPServerConfig, MCPServerManager, ToolCallResult};
 
