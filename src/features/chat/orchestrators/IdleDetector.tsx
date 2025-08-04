@@ -4,13 +4,9 @@ import { toast } from 'sonner';
 
 function IdleDetector() {
   const { idle } = useScheduler();
-  const lastIdleRef = useRef<boolean>(idle);
 
   useEffect(() => {
-    if (lastIdleRef.current !== idle) {
-      lastIdleRef.current = idle;
-      toast.info(`New Idle State ${idle}`);
-    }
+    toast.info(`New Idle State ${idle}`);
   }, [idle]);
   return null;
 }

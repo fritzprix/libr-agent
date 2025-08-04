@@ -15,8 +15,6 @@ import { getLogger } from '../lib/logger';
 import { Assistant } from '../models/chat';
 import { toast } from 'sonner';
 
-const logger = getLogger('AssistantContext');
-
 const DEFAULT_PROMPT =
   "You are an AI assistant agent that can use external tools via MCP (Model Context Protocol).\n- Always analyze the user's intent and, if needed, use available tools to provide the best answer.\n- When a tool is required, call the appropriate tool with correct parameters.\n- If the answer can be given without a tool, respond directly.\n- Be concise and clear. If you use a tool, explain the result to the user in natural language.\n- If you are unsure, ask clarifying questions before taking action.";
 
@@ -25,6 +23,8 @@ interface AssistantContextType {
   currentAssistant: Assistant | null;
   getCurrentAssistant: () => Assistant | null;
   setCurrentAssistant: (assistant: Assistant | null) => void;
+  extend : (assistant: Partial<Assistant>) => void;
+  reset : () => void;
   getAssistant: (id: string) => Assistant | null;
   upsert: (assistant: Assistant) => Promise<Assistant | undefined>;
   delete: (assistantId: string) => Promise<void>;
@@ -86,9 +86,12 @@ export const AssistantContextProvider = ({
   const [ephemeralAssistants, setEphemeralAssistants] = useState<Assistant[]>(
     [],
   );
+
+  const [ extension, setExtension ] = useState<Partial<Assistant>|null>(null);
   const [error, setError] = useState<Error | null>(null);
   // Helper to show user-friendly error messages
   const showError = useCallback((message: string, errorObj?: unknown) => {
+    const logger = getLogger('AssistantContext.showError');
     logger.error(message, { error: errorObj });
     toast.error(message);
   }, []);
@@ -96,12 +99,13 @@ export const AssistantContextProvider = ({
 
   const [{ value: assistants, loading, error: loadError }, loadAssistants] =
     useAsyncFn(async () => {
+      const logger = getLogger('AssistantContext.loadAssistants');
       let fetchedAssistants = await dbService.assistants.getPage(0, -1);
       logger.info('fetched assistants : ', { fetchedAssistants });
       return fetchedAssistants.items;
     }, []);
 
-  // ephemeral이 우선권을 갖도록 id 기준으로 중복 제거
+  // Ephemeral has priority, remove duplicates by id
   const allAssistants = useMemo(() => {
     const ephemeralMap = new Map(ephemeralAssistants.map((a) => [a.id, a]));
     const dbAssistants = (assistants ?? []).filter(
@@ -125,26 +129,25 @@ export const AssistantContextProvider = ({
     currentAssistantRef.current = currentAssistant;
   }, [currentAssistant]);
 
-  // assistant가 전환될 때 toast로 이름 안내
+  // Assistant switched toast notification in English
   useEffect(() => {
     if (currentAssistant) {
-      toast(`Assistant 전환: ${currentAssistant.name}`);
+      toast(`Assistant switched: ${currentAssistant.name}`);
     }
   }, [currentAssistant]);
 
   const [{ error: saveError }, upsertAssistant] = useAsyncFn(
     async (editingAssistant: Assistant): Promise<Assistant | undefined> => {
       if (!editingAssistant?.name) {
-        showError('이름은 필수입니다.');
+        showError('Assistant name is required.');
         return;
       }
 
-      // 기본 systemPrompt가 없으면 Agent에 맞는 프롬프트로 자동 설정
+      // Set default systemPrompt if none provided
       const systemPrompt = editingAssistant.systemPrompt || DEFAULT_PROMPT;
 
       try {
-        // 기존 Assistant 편집 시 id를 유지, 새 Assistant일 때만 id 생성
-
+        // Keep existing id for updates, generate new id for new assistants
         let assistantId = editingAssistant.id;
         let assistantCreatedAt = editingAssistant.createdAt;
         if (!assistantId) {
@@ -163,9 +166,15 @@ export const AssistantContextProvider = ({
           updatedAt: new Date(),
         };
 
+        const logger = getLogger('AssistantContext.upsertAssistant');
         logger.info(`Saving assistant`, { assistantToSave });
 
         await dbService.assistants.upsert(assistantToSave);
+
+        // Remove from ephemeral if it was saved to DB
+        setEphemeralAssistants((prev) =>
+          prev.filter((a) => a.id !== assistantToSave.id)
+        );
 
         if (currentAssistant?.id === assistantToSave.id || !currentAssistant) {
           setCurrentAssistant(assistantToSave);
@@ -173,7 +182,7 @@ export const AssistantContextProvider = ({
         await loadAssistants();
         return assistantToSave;
       } catch (err) {
-        showError('어시스턴트 저장 중 오류가 발생했습니다.', err);
+        showError('Failed to save assistant.', err);
         setError(
           err instanceof Error ? err : new Error('Failed to save assistant'),
         );
@@ -189,13 +198,13 @@ export const AssistantContextProvider = ({
       const assistantName = assistant?.name || 'Unknown';
       if (
         window.confirm(
-          `정말로 '${assistantName}' 어시스턴트를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`,
+          `Are you sure you want to delete '${assistantName}' assistant? This action cannot be undone.`,
         )
       ) {
         try {
           await dbService.assistants.delete(assistantId);
         } catch (err) {
-          showError('어시스턴트 삭제 중 오류가 발생했습니다.', err);
+          showError('Failed to delete assistant.', err);
           setError(
             err instanceof Error
               ? err
@@ -220,14 +229,41 @@ export const AssistantContextProvider = ({
     }
   }, [saveError, deleteError, loadError]);
 
+  const handledApplyAssistantExtension = useCallback((ext: Partial<Assistant>) => {
+    const logger = getLogger('AssistantContext.extend');
+    
+    if (!ext || Object.keys(ext).length === 0) {
+      logger.warn('Empty extension provided to extend function');
+      return;
+    }
+    
+    logger.info('Applying assistant extension', { 
+      extension: {
+        name: ext.name,
+        systemPrompt: !!ext.systemPrompt,
+        localServices: ext.localServices?.length || 0,
+        mcpServers: Object.keys(ext.mcpConfig?.mcpServers || {}).length,
+      }
+    });
+    
+    setExtension(ext);
+  }, []);
+
+  const handleResetAssistantExtension = useCallback(() => {
+    const logger = getLogger('AssistantContext.reset');
+    logger.debug('Resetting assistant extension');
+    setExtension(null);
+  }, []);
+
   useEffect(() => {
     if (!loading && assistants && !currentAssistant) {
       if (assistants.length === 0) {
-        // 사용 가능한 어시스턴트가 없으면 기본 어시스턴트를 자동 생성 및 저장합니다.
+        // Create and save default assistant if none available
         const a = getDefaultAssistant();
         setCurrentAssistant(a);
         upsertAssistant(a);
       } else {
+        const logger = getLogger('AssistantContext.initializeAssistant');
         logger.info('assistants : ', { assistants });
         const a = assistants.find((a) => a.isDefault) || assistants[0];
         setCurrentAssistant(a);
@@ -239,7 +275,8 @@ export const AssistantContextProvider = ({
     return currentAssistantRef.current;
   }, []);
 
-  logger.info('assistant context : ', {
+  const contextLogger = getLogger('AssistantContext.provider');
+  contextLogger.info('assistant context : ', {
     assistants: assistants?.length,
     error,
   });
@@ -257,7 +294,7 @@ export const AssistantContextProvider = ({
         return [...filtered, assistant];
       });
     },
-    [], // No dependency on assistants!
+    [], // No dependency on assistants to prevent circular dependency
   );
 
   const handleUnregisterEphemeral = useCallback((id: string) => {
@@ -273,10 +310,66 @@ export const AssistantContextProvider = ({
     [allAssistants],
   );
 
+  const effectiveAssistant: Assistant | null = useMemo(() => {
+    if (extension && currentAssistant) {
+      const logger = getLogger('AssistantContext.effectiveAssistant');
+      
+      // System prompt: append extension context if available
+      const basePrompt = currentAssistant.systemPrompt || '';
+      const extPrompt = extension.systemPrompt;
+      const combinedPrompt = extPrompt 
+        ? [basePrompt, extPrompt].filter(Boolean).join('\n\n')
+        : basePrompt;
+
+      // Local services: merge existing + additional (deduplicated)
+      const baseServices = currentAssistant.localServices || [];
+      const extServices = extension.localServices || [];
+      const combinedServices = [...new Set([...baseServices, ...extServices])];
+
+      // MCP config: merge existing + additional servers (extension takes priority)
+      const baseMcpConfig = currentAssistant.mcpConfig || { mcpServers: {} };
+      const extMcpConfig = extension.mcpConfig || { mcpServers: {} };
+      const combinedMcpConfig = {
+        ...baseMcpConfig,
+        mcpServers: {
+          ...baseMcpConfig.mcpServers,
+          ...extMcpConfig.mcpServers, // Extension has priority
+        },
+      };
+
+      const result = {
+        ...currentAssistant,
+        ...extension, // Other fields allow override
+        systemPrompt: combinedPrompt,
+        localServices: combinedServices,
+        mcpConfig: combinedMcpConfig,
+      } satisfies Assistant;
+
+      logger.debug('Applied extension to assistant', {
+        baseAssistant: currentAssistant.name,
+        extension: {
+          systemPrompt: !!extPrompt,
+          localServices: extServices.length,
+          mcpServers: Object.keys(extMcpConfig.mcpServers || {}),
+        },
+        result: {
+          systemPromptLength: result.systemPrompt.length,
+          localServicesCount: result.localServices?.length,
+          mcpServersCount: Object.keys(result.mcpConfig?.mcpServers || {}).length,
+        },
+      });
+
+      return result;
+    }
+    return currentAssistant;
+  }, [currentAssistant, extension]);
+
   const contextValue: AssistantContextType = useMemo(
     () => ({
       assistants: allAssistants,
-      currentAssistant,
+      currentAssistant: effectiveAssistant,
+      extend: handledApplyAssistantExtension,
+      reset: handleResetAssistantExtension,
       setCurrentAssistant,
       unregisterEphemeralAssistant: handleUnregisterEphemeral,
       registerEphemeralAssistant: handleRegisterEphemeral,
@@ -288,7 +381,9 @@ export const AssistantContextProvider = ({
     }),
     [
       allAssistants,
-      currentAssistant,
+      effectiveAssistant,
+      handledApplyAssistantExtension,
+      handleResetAssistantExtension,
       setCurrentAssistant,
       getCurrentAssistant,
       upsertAssistant,
