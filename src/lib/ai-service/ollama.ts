@@ -29,7 +29,7 @@ interface SimpleOllamaMessage {
     type: 'function';
     function: {
       name: string;
-      arguments: string;
+      arguments: Record<string, unknown>;
     };
   }>;
   tool_call_id?: string;
@@ -325,9 +325,7 @@ export class OllamaService extends BaseAIService {
         type: 'function' as const,
         function: {
           name: tc.function.name,
-          arguments: typeof tc.function.arguments === 'string' 
-            ? tc.function.arguments 
-            : JSON.stringify(tc.function.arguments || {}),
+          arguments: this.parseArguments(tc.function.arguments),
         },
       }));
       logger.debug('Converted tool calls for assistant message', result.tool_calls);
@@ -338,6 +336,18 @@ export class OllamaService extends BaseAIService {
 
   private generateToolCallId(): string {
     return `call_${Math.random().toString(36).substring(2, 15)}`;
+  }
+
+  private parseArguments(args: string): Record<string, unknown> {
+    try {
+      if (typeof args === 'string') {
+        return JSON.parse(args || '{}');
+      }
+      return args || {};
+    } catch (error) {
+      logger.warn('Failed to parse tool call arguments, using empty object:', { args, error });
+      return {};
+    }
   }
 
   private getModelContextWindow(modelName: string): number {
