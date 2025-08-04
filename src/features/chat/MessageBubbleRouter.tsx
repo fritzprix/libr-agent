@@ -12,7 +12,12 @@ interface MessageBubbleRouterProps {
 const MessageBubbleRouter: React.FC<MessageBubbleRouterProps> = ({
   message,
 }) => {
-  if (message.tool_calls && message.tool_calls.length > 0) {
+  if (
+    message.tool_calls && 
+    Array.isArray(message.tool_calls) && 
+    message.tool_calls.length > 0 &&
+    message.tool_calls.every(tc => tc && tc.function && tc.function.name)
+  ) {
     return <ToolCallBubble tool_calls={message.tool_calls} />;
   }
 
