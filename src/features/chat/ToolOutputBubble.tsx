@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { ChevronDown, ChevronRight, Copy, Check } from 'lucide-react';
+import { Message } from '@/models/chat';
 
 interface ToolOutputBubbleProps {
-  content: string;
+  message: Message;
   defaultExpanded?: boolean;
 }
 
@@ -147,11 +148,12 @@ const JsonViewer: React.FC<JsonViewerProps> = ({ data, level = 0 }) => {
 };
 
 export const ToolOutputBubble: React.FC<ToolOutputBubbleProps> = ({
-  content,
+  message,
   defaultExpanded = false,
 }) => {
   const [copied, setCopied] = useState(false);
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+  const { content } = message;
 
   const parsedContent = (() => {
     try {

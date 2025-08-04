@@ -3,22 +3,10 @@ import ContentBubble from './ContentBubble';
 import ToolCallBubble from './ToolCallBubble';
 import ToolOutputBubble from './ToolOutputBubble';
 import AttachmentBubble from './AttachmentBubble';
+import { Message } from '@/models/chat';
 
 interface MessageBubbleRouterProps {
-  message: {
-    id: string;
-    content: string;
-    role: 'user' | 'assistant' | 'system' | 'tool';
-    attachments?: {
-      name: string;
-      content: string;
-    }[];
-    tool_calls?: {
-      id: string;
-      type: 'function';
-      function: { name: string; arguments: string };
-    }[];
-  };
+  message: Message;
 }
 
 const MessageBubbleRouter: React.FC<MessageBubbleRouterProps> = ({
@@ -29,14 +17,14 @@ const MessageBubbleRouter: React.FC<MessageBubbleRouterProps> = ({
   }
 
   if (message.role === 'tool') {
-    return <ToolOutputBubble content={message.content} />;
+    return <ToolOutputBubble message={message} />;
   }
 
   if (message.attachments && message.attachments.length > 0) {
     return <AttachmentBubble attachments={message.attachments} />;
   }
 
-  return <ContentBubble content={message.content} />;
+  return <ContentBubble message={message} />;
 };
 
 export default MessageBubbleRouter;
