@@ -10,13 +10,13 @@ import AssistantEditor from './AssistantEditor';
 import AssistantCard from './Card';
 
 export default function AssistantList() {
-  const { assistants, upsert } = useAssistantContext();
+  const { assistants, saveAssistant } = useAssistantContext();
   const [createNew, setCreateNew] = useState<boolean>(false);
   const handleCreateComplete = useCallback(
     (assistant: Assistant) => {
-      upsert(assistant);
+      saveAssistant(assistant);
     },
-    [upsert],
+    [saveAssistant],
   );
 
   return (

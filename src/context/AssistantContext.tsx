@@ -15,21 +15,21 @@ import { getLogger } from '../lib/logger';
 import { Assistant } from '../models/chat';
 import { toast } from 'sonner';
 
-const logger = getLogger('AssistantContext');
-
 const DEFAULT_PROMPT =
   "You are an AI assistant agent that can use external tools via MCP (Model Context Protocol).\n- Always analyze the user's intent and, if needed, use available tools to provide the best answer.\n- When a tool is required, call the appropriate tool with correct parameters.\n- If the answer can be given without a tool, respond directly.\n- Be concise and clear. If you use a tool, explain the result to the user in natural language.\n- If you are unsure, ask clarifying questions before taking action.";
 
 interface AssistantContextType {
   assistants: Assistant[];
   currentAssistant: Assistant | null;
-  getCurrentAssistant: () => Assistant | null;
+  getCurrent: () => Assistant | null;
   setCurrentAssistant: (assistant: Assistant | null) => void;
-  getAssistant: (id: string) => Assistant | null;
-  upsert: (assistant: Assistant) => Promise<Assistant | undefined>;
-  delete: (assistantId: string) => Promise<void>;
-  registerEphemeralAssistant: (assistant: Assistant) => void;
-  unregisterEphemeralAssistant: (id: string) => void;
+  applyExtension: (extension: Partial<Assistant>) => void;
+  resetExtension: () => void;
+  getById: (id: string) => Assistant | null;
+  saveAssistant: (assistant: Assistant) => Promise<Assistant | undefined>;
+  deleteAssistant: (assistantId: string) => Promise<void>;
+  registerEphemeral: (assistant: Assistant) => void;
+  unregisterEphemeral: (id: string) => void;
   error: Error | null;
 }
 
@@ -86,22 +86,28 @@ export const AssistantContextProvider = ({
   const [ephemeralAssistants, setEphemeralAssistants] = useState<Assistant[]>(
     [],
   );
+
+  const [extension, setExtension] = useState<Partial<Assistant> | null>(null);
   const [error, setError] = useState<Error | null>(null);
+
   // Helper to show user-friendly error messages
   const showError = useCallback((message: string, errorObj?: unknown) => {
+    const logger = getLogger('AssistantContext.showError');
     logger.error(message, { error: errorObj });
     toast.error(message);
   }, []);
+
   const currentAssistantRef = useRef(currentAssistant);
 
   const [{ value: assistants, loading, error: loadError }, loadAssistants] =
     useAsyncFn(async () => {
+      const logger = getLogger('AssistantContext.loadAssistants');
       let fetchedAssistants = await dbService.assistants.getPage(0, -1);
       logger.info('fetched assistants : ', { fetchedAssistants });
       return fetchedAssistants.items;
     }, []);
 
-  // ephemeral이 우선권을 갖도록 id 기준으로 중복 제거
+  // Ephemeral has priority, remove duplicates by id
   const allAssistants = useMemo(() => {
     const ephemeralMap = new Map(ephemeralAssistants.map((a) => [a.id, a]));
     const dbAssistants = (assistants ?? []).filter(
@@ -121,30 +127,25 @@ export const AssistantContextProvider = ({
     }
   }, [loadAssistants, loading, assistants]);
 
-  useEffect(() => {
-    currentAssistantRef.current = currentAssistant;
-  }, [currentAssistant]);
-
-  // assistant가 전환될 때 toast로 이름 안내
+  // Assistant switched toast notification in English
   useEffect(() => {
     if (currentAssistant) {
-      toast(`Assistant 전환: ${currentAssistant.name}`);
+      toast(`Assistant switched: ${currentAssistant.name}`);
     }
   }, [currentAssistant]);
 
   const [{ error: saveError }, upsertAssistant] = useAsyncFn(
     async (editingAssistant: Assistant): Promise<Assistant | undefined> => {
       if (!editingAssistant?.name) {
-        showError('이름은 필수입니다.');
+        showError('Assistant name is required.');
         return;
       }
 
-      // 기본 systemPrompt가 없으면 Agent에 맞는 프롬프트로 자동 설정
+      // Set default systemPrompt if none provided
       const systemPrompt = editingAssistant.systemPrompt || DEFAULT_PROMPT;
 
       try {
-        // 기존 Assistant 편집 시 id를 유지, 새 Assistant일 때만 id 생성
-
+        // Keep existing id for updates, generate new id for new assistants
         let assistantId = editingAssistant.id;
         let assistantCreatedAt = editingAssistant.createdAt;
         if (!assistantId) {
@@ -163,9 +164,15 @@ export const AssistantContextProvider = ({
           updatedAt: new Date(),
         };
 
+        const logger = getLogger('AssistantContext.upsertAssistant');
         logger.info(`Saving assistant`, { assistantToSave });
 
         await dbService.assistants.upsert(assistantToSave);
+
+        // Remove from ephemeral if it was saved to DB
+        setEphemeralAssistants((prev) =>
+          prev.filter((a) => a.id !== assistantToSave.id),
+        );
 
         if (currentAssistant?.id === assistantToSave.id || !currentAssistant) {
           setCurrentAssistant(assistantToSave);
@@ -173,7 +180,7 @@ export const AssistantContextProvider = ({
         await loadAssistants();
         return assistantToSave;
       } catch (err) {
-        showError('어시스턴트 저장 중 오류가 발생했습니다.', err);
+        showError('Failed to save assistant.', err);
         setError(
           err instanceof Error ? err : new Error('Failed to save assistant'),
         );
@@ -189,13 +196,13 @@ export const AssistantContextProvider = ({
       const assistantName = assistant?.name || 'Unknown';
       if (
         window.confirm(
-          `정말로 '${assistantName}' 어시스턴트를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`,
+          `Are you sure you want to delete '${assistantName}' assistant? This action cannot be undone.`,
         )
       ) {
         try {
           await dbService.assistants.delete(assistantId);
         } catch (err) {
-          showError('어시스턴트 삭제 중 오류가 발생했습니다.', err);
+          showError('Failed to delete assistant.', err);
           setError(
             err instanceof Error
               ? err
@@ -220,31 +227,59 @@ export const AssistantContextProvider = ({
     }
   }, [saveError, deleteError, loadError]);
 
+  const applyExtension = useCallback((ext: Partial<Assistant>) => {
+    const logger = getLogger('AssistantContext.applyExtension');
+
+    if (!ext || Object.keys(ext).length === 0) {
+      logger.warn('Empty extension provided to applyExtension function');
+      return;
+    }
+
+    logger.info('Applying assistant extension', {
+      extension: {
+        name: ext.name,
+        systemPrompt: !!ext.systemPrompt,
+        localServices: ext.localServices?.length || 0,
+        mcpServers: Object.keys(ext.mcpConfig?.mcpServers || {}).length,
+      },
+    });
+
+    setExtension(ext);
+  }, []);
+
+  const resetExtension = useCallback(() => {
+    const logger = getLogger('AssistantContext.resetExtension');
+    logger.debug('Resetting assistant extension');
+    setExtension(null);
+  }, []);
+
   useEffect(() => {
     if (!loading && assistants && !currentAssistant) {
       if (assistants.length === 0) {
-        // 사용 가능한 어시스턴트가 없으면 기본 어시스턴트를 자동 생성 및 저장합니다.
+        // Create and save default assistant if none available
         const a = getDefaultAssistant();
         setCurrentAssistant(a);
         upsertAssistant(a);
       } else {
+        const logger = getLogger('AssistantContext.initializeAssistant');
         logger.info('assistants : ', { assistants });
         const a = assistants.find((a) => a.isDefault) || assistants[0];
         setCurrentAssistant(a);
       }
     }
-  }, [loading, assistants, upsertAssistant]);
+  }, [loading, assistants, currentAssistant, upsertAssistant]);
 
-  const getCurrentAssistant = useCallback(() => {
+  const getCurrent = useCallback(() => {
     return currentAssistantRef.current;
   }, []);
 
-  logger.info('assistant context : ', {
+  const contextLogger = getLogger('AssistantContext.provider');
+  contextLogger.info('assistant context : ', {
     assistants: assistants?.length,
     error,
   });
 
-  const handleRegisterEphemeral = useCallback(
+  const registerEphemeral = useCallback(
     (assistant: Assistant) => {
       const existsInDb = (assistantsRef.current ?? []).some(
         (a) => a.id === assistant.id,
@@ -257,46 +292,111 @@ export const AssistantContextProvider = ({
         return [...filtered, assistant];
       });
     },
-    [], // No dependency on assistants!
+    [], // No dependency on assistants to prevent circular dependency
   );
 
-  const handleUnregisterEphemeral = useCallback((id: string) => {
+  const unregisterEphemeral = useCallback((id: string) => {
     setEphemeralAssistants((prev) => {
       return prev.filter((a) => a.id !== id);
     });
   }, []);
 
-  const handleGetAssistant = useCallback(
+  const getById = useCallback(
     (id: string) => {
       return allAssistants.find((a) => a.id === id) || null;
     },
     [allAssistants],
   );
 
+  const effectiveAssistant: Assistant | null = useMemo(() => {
+    if (extension && currentAssistant) {
+      const logger = getLogger('AssistantContext.effectiveAssistant');
+
+      // System prompt: append extension context if available
+      const basePrompt = currentAssistant.systemPrompt || '';
+      const extensionPrompt = extension.systemPrompt;
+      const combinedPrompt = extensionPrompt
+        ? [basePrompt, extensionPrompt].filter(Boolean).join('\n\n')
+        : basePrompt;
+
+      // Local services: merge existing + additional (deduplicated)
+      const baseServices = currentAssistant.localServices || [];
+      const extensionServices = extension.localServices || [];
+      const combinedServices = [
+        ...new Set([...baseServices, ...extensionServices]),
+      ];
+
+      // MCP config: merge existing + additional servers (extension takes priority)
+      const baseMcpConfig = currentAssistant.mcpConfig || { mcpServers: {} };
+      const extensionMcpConfig = extension.mcpConfig || { mcpServers: {} };
+      const combinedMcpConfig = {
+        ...baseMcpConfig,
+        mcpServers: {
+          ...baseMcpConfig.mcpServers,
+          ...extensionMcpConfig.mcpServers, // Extension has priority
+        },
+      };
+
+      const result = {
+        ...currentAssistant,
+        ...extension, // Other fields allow extension
+        systemPrompt: combinedPrompt,
+        localServices: combinedServices,
+        mcpConfig: combinedMcpConfig,
+      } satisfies Assistant;
+
+      logger.debug('Applied extension to assistant', {
+        baseAssistant: currentAssistant.name,
+        extension: {
+          systemPrompt: !!extensionPrompt,
+          localServices: extensionServices.length,
+          mcpServers: Object.keys(extensionMcpConfig.mcpServers || {}),
+        },
+        result: {
+          systemPromptLength: result.systemPrompt.length,
+          localServicesCount: result.localServices?.length,
+          mcpServersCount: Object.keys(result.mcpConfig?.mcpServers || {})
+            .length,
+        },
+      });
+
+      return result;
+    }
+    return currentAssistant;
+  }, [currentAssistant, extension]);
+
+  useEffect(() => {
+    currentAssistantRef.current = effectiveAssistant;
+  }, [effectiveAssistant]);
+
   const contextValue: AssistantContextType = useMemo(
     () => ({
       assistants: allAssistants,
-      currentAssistant,
+      currentAssistant: effectiveAssistant,
+      applyExtension,
+      resetExtension,
       setCurrentAssistant,
-      unregisterEphemeralAssistant: handleUnregisterEphemeral,
-      registerEphemeralAssistant: handleRegisterEphemeral,
-      getAssistant: handleGetAssistant,
-      getCurrentAssistant,
-      upsert: upsertAssistant,
-      delete: deleteAssistant,
+      unregisterEphemeral,
+      registerEphemeral,
+      getById,
+      getCurrent,
+      saveAssistant: upsertAssistant,
+      deleteAssistant: deleteAssistant,
       error: error ?? null,
     }),
     [
       allAssistants,
-      currentAssistant,
+      effectiveAssistant,
+      applyExtension,
+      resetExtension,
       setCurrentAssistant,
-      getCurrentAssistant,
+      getCurrent,
       upsertAssistant,
       deleteAssistant,
       error,
-      handleRegisterEphemeral,
-      handleUnregisterEphemeral,
-      handleGetAssistant,
+      registerEphemeral,
+      unregisterEphemeral,
+      getById,
     ],
   );
 
@@ -308,10 +408,10 @@ export const AssistantContextProvider = ({
 };
 
 export function useAssistantContext() {
-  const ctx = useContext(AssistantContext);
-  if (!ctx)
+  const context = useContext(AssistantContext);
+  if (!context)
     throw new Error(
       'useAssistantContext must be used within a AssistantContextProvider',
     );
-  return ctx;
+  return context;
 }

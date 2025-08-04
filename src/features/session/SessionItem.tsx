@@ -9,6 +9,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui';
+import { getLogger } from '@/lib/logger';
+import { confirm } from '@tauri-apps/plugin-dialog';
+
+const logger = getLogger('SessionItem');
 
 interface SessionItemProps {
   session: Session;
@@ -28,13 +32,16 @@ export default function SessionItem({ session }: SessionItemProps) {
   );
 
   const handleDelete = useCallback(
-    (e: React.MouseEvent) => {
+    async (e: React.MouseEvent) => {
       e.stopPropagation();
-      if (
-        window.confirm(
-          `Are you sure you want to delete session "${session.name || 'Untitled Session'}"?`,
-        )
-      ) {
+      logger.info('Attempting to delete session', { sessionId: session.id });
+
+      const userConfirmed = await confirm(
+        `Are you sure you want to delete session "${session.name || 'Untitled Session'}"?`,
+        { title: 'Confirm Deletion' },
+      );
+
+      if (userConfirmed) {
         onDelete(session.id);
       }
     },

@@ -1,8 +1,7 @@
-import { MCPTool, MCPResponse, normalizeToolResult } from '@/lib/mcp-types';
+import { useScheduledCallback } from '@/hooks/use-scheduled-callback';
+import { MCPResponse, MCPTool, normalizeToolResult } from '@/lib/mcp-types';
+import { getLogger } from '@/lib/logger';
 import { Tool } from '@/models/chat';
-
-// Re-export MCPResponse for backward compatibility
-export type { MCPResponse } from '@/lib/mcp-types';
 import React, {
   createContext,
   useCallback,
@@ -13,7 +12,11 @@ import React, {
   useState,
 } from 'react';
 import { useAssistantContext } from './AssistantContext';
-import { useScheduledCallback } from '@/hooks/use-scheduled-callback';
+
+const logger = getLogger('LocalToolContext');
+
+// Re-export MCPResponse for backward compatibility
+export type { MCPResponse } from '@/lib/mcp-types';
 
 /**
  * 🧰 Local Tool Context
@@ -22,9 +25,12 @@ import { useScheduledCallback } from '@/hooks/use-scheduled-callback';
  * 모든 로컬 도구는 MCP 프로토콜을 준수하는 MCPResponse를 반환해야 합니다.
  */
 
-export interface ServiceTool {
+export type ServiceToolHandler<TArgs = Record<string, unknown>> = (
+  args: TArgs,
+) => Promise<MCPResponse>;
+export interface ServiceTool<TArgs = Record<string, unknown>> {
   toolDefinition: MCPTool;
-  handler: (args: unknown) => Promise<MCPResponse>;
+  handler: ServiceToolHandler<TArgs>;
 }
 
 /**
@@ -33,7 +39,7 @@ export interface ServiceTool {
  */
 export interface LocalService {
   name: string; // Unique name for the service, e.g., "weatherService"
-  tools: ServiceTool[];
+  tools: ServiceTool<unknown>[];
 }
 
 /**
@@ -68,6 +74,11 @@ export function LocalToolProvider({ children }: { children: React.ReactNode }) {
 
   const registerService = useCallback(
     (service: LocalService) => {
+      logger.info('Registering service', {
+        serviceName: service.name,
+        toolCount: service.tools.length,
+        tools: service.tools.map((t) => t.toolDefinition.name),
+      });
       servicesRef.current.set(service.name, service);
       forceUpdate(); // Update UI when a service is registered
     },
@@ -76,6 +87,7 @@ export function LocalToolProvider({ children }: { children: React.ReactNode }) {
 
   const unregisterService = useCallback(
     (serviceName: string) => {
+      logger.info('Unregistering service', { serviceName });
       servicesRef.current.delete(serviceName);
       forceUpdate(); // Update UI when a service is unregistered
     },
@@ -116,6 +128,7 @@ export function LocalToolProvider({ children }: { children: React.ReactNode }) {
       const tool = getToolByName(toolName);
 
       if (!tool) {
+        logger.warn('Tool not found', { toolName });
         return normalizeToolResult(
           { error: `Tool "${toolName}" not found.`, success: false },
           toolName,
@@ -124,8 +137,10 @@ export function LocalToolProvider({ children }: { children: React.ReactNode }) {
 
       try {
         const args = JSON.parse(toolCall.function.arguments);
+        logger.debug('Executing tool', { toolName, args });
         return await tool.handler(args);
       } catch (error) {
+        logger.error('Error executing tool', { toolName, error });
         return normalizeToolResult(
           {
             error: `Error executing tool: ${error instanceof Error ? error.message : String(error)}`,

@@ -1,17 +1,25 @@
+import { useChatContext } from '@/context/ChatContext';
 import { useScheduler } from '@/context/SchedulerContext';
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { toast } from 'sonner';
 
 function IdleDetector() {
   const { idle } = useScheduler();
-  const lastIdleRef = useRef<boolean>(idle);
+  const { messages } = useChatContext();
 
   useEffect(() => {
-    if (lastIdleRef.current !== idle) {
-      lastIdleRef.current = idle;
-      toast.info(`New Idle State ${idle}`);
+    if (idle) {
+      const lastMessage = messages[messages.length - 1];
+      if (
+        (lastMessage && lastMessage.isStreaming === false,
+        lastMessage.role === 'assistant')
+      ) {
+        // TODO:
+      }
     }
-  }, [idle]);
+    toast.info(`New Idle State ${idle}`);
+  }, [idle, messages]);
+
   return null;
 }
 
