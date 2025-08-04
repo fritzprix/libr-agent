@@ -1,5 +1,5 @@
 import { useScheduler } from '@/context/SchedulerContext';
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { toast } from 'sonner';
 
 function IdleDetector() {

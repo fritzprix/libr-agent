@@ -23,11 +23,11 @@ interface AssistantContextType {
   currentAssistant: Assistant | null;
   getCurrentAssistant: () => Assistant | null;
   setCurrentAssistant: (assistant: Assistant | null) => void;
-  extend : (assistant: Partial<Assistant>) => void;
-  reset : () => void;
+  extendAssistant: (extension: Partial<Assistant>) => void;
+  resetExtension: () => void;
   getAssistant: (id: string) => Assistant | null;
-  upsert: (assistant: Assistant) => Promise<Assistant | undefined>;
-  delete: (assistantId: string) => Promise<void>;
+  saveAssistant: (assistant: Assistant) => Promise<Assistant | undefined>;
+  deleteAssistant: (assistantId: string) => Promise<void>;
   registerEphemeralAssistant: (assistant: Assistant) => void;
   unregisterEphemeralAssistant: (id: string) => void;
   error: Error | null;
@@ -368,15 +368,15 @@ export const AssistantContextProvider = ({
     () => ({
       assistants: allAssistants,
       currentAssistant: effectiveAssistant,
-      extend: handledApplyAssistantExtension,
-      reset: handleResetAssistantExtension,
+      extendAssistant: handledApplyAssistantExtension,
+      resetExtension: handleResetAssistantExtension,
       setCurrentAssistant,
       unregisterEphemeralAssistant: handleUnregisterEphemeral,
       registerEphemeralAssistant: handleRegisterEphemeral,
       getAssistant: handleGetAssistant,
       getCurrentAssistant,
-      upsert: upsertAssistant,
-      delete: deleteAssistant,
+      saveAssistant: upsertAssistant,
+      deleteAssistant: deleteAssistant,
       error: error ?? null,
     }),
     [
