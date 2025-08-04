@@ -1,5 +1,11 @@
 import { Ollama } from 'ollama/browser';
-import type { ChatRequest, ListResponse, ModelResponse, Tool, Message as OllamaMessage } from 'ollama';
+import type {
+  ChatRequest,
+  ListResponse,
+  ModelResponse,
+  Tool,
+  Message as OllamaMessage,
+} from 'ollama';
 import { getLogger } from '../logger';
 import { Message } from '@/models/chat';
 import { MCPTool } from '../mcp-types';
@@ -56,20 +62,21 @@ function convertMCPToolsToOllamaTools(mcpTools?: MCPTool[]): Tool[] {
 
 export class OllamaService extends BaseAIService {
   private host: string;
+  // Ollama client instance
   private ollamaClient: Ollama;
 
   constructor(apiKey: string, config?: AIServiceConfig & { host?: string }) {
     super(apiKey, config);
     this.host = config?.host || DEFAULT_HOST;
-    
+
     // Ollama 클라이언트 인스턴스 생성
-    this.ollamaClient = new Ollama({ 
+    this.ollamaClient = new Ollama({
       host: this.host,
       headers: {
         'User-Agent': 'SynapticFlow/1.0',
       },
     });
-    
+
     logger.info(`Ollama service initialized with host: ${this.host}`);
   }
 
@@ -219,9 +226,10 @@ export class OllamaService extends BaseAIService {
           type: 'function' as const,
           function: {
             name: tc.function.name,
-            arguments: typeof tc.function.arguments === 'string' 
-              ? tc.function.arguments 
-              : JSON.stringify(tc.function.arguments || {}),
+            arguments:
+              typeof tc.function.arguments === 'string'
+                ? tc.function.arguments
+                : JSON.stringify(tc.function.arguments || {}),
           },
         }));
         logger.debug('Tool calls detected in chunk:', result.tool_calls);
@@ -286,10 +294,11 @@ export class OllamaService extends BaseAIService {
         return {
           role: 'system',
           content: message.content || '',
+          tool_call_id: message.tool_call_id,
         };
 
       case 'tool':
-        // Ollama에서 tool 결과를 처리하기 위해 user 메시지로 변환
+        // Convert tool result to a user message for processing in Ollama  
         return {
           role: 'user',
           content: `Tool result: ${message.content}`,
@@ -328,7 +337,10 @@ export class OllamaService extends BaseAIService {
           arguments: this.parseArguments(tc.function.arguments),
         },
       }));
-      logger.debug('Converted tool calls for assistant message', result.tool_calls);
+      logger.debug(
+        'Converted tool calls for assistant message',
+        result.tool_calls,
+      );
     }
 
     return result;
@@ -345,24 +357,27 @@ export class OllamaService extends BaseAIService {
       }
       return args || {};
     } catch (error) {
-      logger.warn('Failed to parse tool call arguments, using empty object:', { args, error });
+      logger.warn('Failed to parse tool call arguments, using empty object:', {
+        args,
+        error,
+      });
       return {};
     }
   }
 
   private getModelContextWindow(modelName: string): number {
-    // 일반적인 Ollama 모델들의 컨텍스트 윈도우
+    // Context window for common Ollama models  
     if (modelName.includes('llama3.1')) return 128000;
     if (modelName.includes('llama3')) return 8192;
     if (modelName.includes('llama2')) return 4096;
     if (modelName.includes('codellama')) return 16384;
     if (modelName.includes('mistral')) return 8192;
     if (modelName.includes('qwen')) return 32768;
-    return 4096; // 기본값
+    return 4096; // default value
   }
 
   private getModelToolSupport(modelName: string): boolean {
-    // Tool calling을 지원하는 모델들 (실제 지원 여부는 모델마다 다름)
+    // Models that support tool calling (actual support may vary by model)
     const toolSupportModels = [
       'llama3.1',
       'llama3.2',
@@ -370,7 +385,7 @@ export class OllamaService extends BaseAIService {
       'mistral',
       'dolphin',
     ];
-    return toolSupportModels.some(model => modelName.includes(model));
+    return toolSupportModels.some((model) => modelName.includes(model));
   }
 
   private handleStreamError(
