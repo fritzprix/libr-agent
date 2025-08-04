@@ -303,20 +303,27 @@ impl MCPServerManager {
 
             match connection.client.call_tool(call_param).await {
                 Ok(result) => {
-                    let result_value = serde_json::to_value(&result).unwrap_or(serde_json::Value::Null);
-                    
+                    let result_value =
+                        serde_json::to_value(&result).unwrap_or(serde_json::Value::Null);
+
                     // 결과에 에러가 포함되어 있는지 확인
                     let contains_error = result_value.to_string().to_lowercase().contains("error");
-                    
-                    if contains_error && result_value.get("isError").and_then(|v| v.as_bool()).unwrap_or(false) {
+
+                    if contains_error
+                        && result_value
+                            .get("isError")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false)
+                    {
                         // isError가 true인 경우 에러로 처리
-                        let error_msg = result_value.get("content")
+                        let error_msg = result_value
+                            .get("content")
                             .and_then(|c| c.as_array())
                             .and_then(|arr| arr.first())
                             .and_then(|item| item.get("text"))
                             .and_then(|text| text.as_str())
                             .unwrap_or("Tool execution error");
-                            
+
                         MCPResponse {
                             jsonrpc: "2.0".to_string(),
                             id: Some(request_id),
@@ -335,7 +342,7 @@ impl MCPServerManager {
                             error: None,
                         }
                     }
-                },
+                }
                 Err(e) => {
                     error!("Error calling tool '{tool_name}': {e}");
                     MCPResponse {

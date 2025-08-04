@@ -1,8 +1,8 @@
+use log::error;
 use std::sync::OnceLock;
 use tauri_plugin_log::{Target, TargetKind};
-use log::error;
 mod mcp;
-use mcp::{MCPServerConfig, MCPServerManager, MCPResponse};
+use mcp::{MCPResponse, MCPServerConfig, MCPServerManager};
 
 // 전역 MCP 서버 매니저
 static MCP_MANAGER: OnceLock<MCPServerManager> = OnceLock::new();
@@ -134,9 +134,7 @@ async fn list_tools_from_config(config: serde_json::Value) -> Result<Vec<mcp::MC
                 all_tools.extend(tools);
             }
             Err(e) => {
-                eprintln!(
-                    "❌ [TAURI] Error listing tools for '{server_name}': {e}"
-                );
+                eprintln!("❌ [TAURI] Error listing tools for '{server_name}': {e}");
                 // Continue to the next server
             }
         }
@@ -179,8 +177,7 @@ async fn get_validated_tools(server_name: String) -> Result<Vec<mcp::MCPTool>, S
 
 #[tauri::command]
 fn validate_tool_schema(tool: mcp::MCPTool) -> Result<(), String> {
-    mcp::MCPServerManager::validate_tool_schema(&tool)
-        .map_err(|e| e.to_string())
+    mcp::MCPServerManager::validate_tool_schema(&tool).map_err(|e| e.to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -189,9 +186,14 @@ pub fn run() {
     std::panic::set_hook(Box::new(|panic_info| {
         error!("🚨 PANIC: {panic_info}");
         if let Some(location) = panic_info.location() {
-            error!("  Location: {}:{}:{}", location.file(), location.line(), location.column());
+            error!(
+                "  Location: {}:{}:{}",
+                location.file(),
+                location.line(),
+                location.column()
+            );
         }
-        
+
         // Attempt graceful shutdown
         error!("🔄 Attempting graceful shutdown...");
     }));
@@ -199,6 +201,7 @@ pub fn run() {
     // Configure Tauri builder with error handling
     let result = std::panic::catch_unwind(|| {
         tauri::Builder::default()
+            .plugin(tauri_plugin_dialog::init())
             .plugin(
                 tauri_plugin_log::Builder::new()
                     .targets([
@@ -225,23 +228,22 @@ pub fn run() {
             ])
             .setup(|_app| {
                 println!("🚀 SynapticFlow initializing...");
-                
+
                 // Verify WebView can be created safely
                 #[cfg(target_os = "linux")]
                 {
                     println!("🐧 Linux detected - checking WebKit compatibility...");
-                    
+
                     // Set environment variables for better WebKit compatibility
                     std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
                     std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
-                    
+
                     // Check if running in a container or limited environment
-                    if std::env::var("container").is_ok() || 
-                       std::env::var("DISPLAY").is_err() {
+                    if std::env::var("container").is_ok() || std::env::var("DISPLAY").is_err() {
                         eprintln!("⚠️  Warning: Running in limited graphics environment");
                     }
                 }
-                
+
                 println!("✅ SynapticFlow setup completed successfully");
                 Ok(())
             })
@@ -262,13 +264,15 @@ pub fn run() {
             } else if let Some(panic_string) = panic_payload.downcast_ref::<String>() {
                 eprintln!("   Panic message: {panic_string}");
             }
-            
+
             eprintln!("💡 Troubleshooting suggestions:");
-            eprintln!("   1. Check WebKit/GTK installation: sudo apt install libwebkit2gtk-4.1-dev");
+            eprintln!(
+                "   1. Check WebKit/GTK installation: sudo apt install libwebkit2gtk-4.1-dev"
+            );
             eprintln!("   2. Update graphics drivers");
             eprintln!("   3. Set WEBKIT_DISABLE_COMPOSITING_MODE=1");
             eprintln!("   4. Run in a desktop environment with proper display");
-            
+
             std::process::exit(1);
         }
     }
