@@ -1,25 +1,38 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSessionContext } from '../context/SessionContext';
-import { useSessionHistory } from '../context/SessionHistoryContext';
-import { useAIService } from './use-ai-service';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
+import { useSessionContext } from './SessionContext';
+import { useSessionHistory } from './SessionHistoryContext';
+import { useAIService } from '../hooks/use-ai-service';
 import { createId } from '@paralleldrive/cuid2';
 import { getLogger } from '../lib/logger';
 import { Message } from '@/models/chat';
-import { useSettings } from './use-settings';
+import { useSettings } from '../hooks/use-settings';
 
-const logger = getLogger('useChatContext');
+const logger = getLogger('ChatContext');
 
-interface ChatContextReturn {
+interface ChatContextValue {
   submit: (messageToAdd?: Message[]) => Promise<Message>;
   isLoading: boolean;
   messages: Message[];
 }
 
+const ChatContext = createContext<ChatContextValue | undefined>(undefined);
+
 const validateMessage = (message: Message): boolean => {
   return Boolean(message.role && (message.content || message.tool_calls));
 };
 
-export const useChatContext = (): ChatContextReturn => {
+interface ChatProviderProps {
+  children: React.ReactNode;
+}
+
+export function ChatProvider({ children }: ChatProviderProps) {
   const { messages: history, addMessage } = useSessionHistory();
   const { submit: triggerAIService, isLoading, response } = useAIService();
   const { current: currentSession } = useSessionContext();
@@ -39,11 +52,17 @@ export const useChatContext = (): ChatContextReturn => {
     }
 
     // Check if streaming message already exists in history as finalized
-    const existsInHistory = history.some(
+    const existingMessage = history.find(
       (message) => message.id === streamingMessage.id && !message.isStreaming,
     );
 
-    return existsInHistory ? history : [...history, streamingMessage];
+    return existingMessage
+      ? history.map((msg) =>
+          msg.id === streamingMessage.id
+            ? { ...msg, ...streamingMessage }
+            : msg
+        )
+      : [...history, streamingMessage];
   }, [streamingMessage, history]);
 
   // Handle AI service streaming responses
@@ -148,9 +167,22 @@ export const useChatContext = (): ChatContextReturn => {
     [currentSession, messages, messageWindowSize, triggerAIService, addMessage],
   );
 
-  return {
-    submit,
-    isLoading,
-    messages,
-  };
-};
+  const value: ChatContextValue = useMemo(
+    () => ({
+      submit,
+      isLoading,
+      messages,
+    }),
+    [messages, submit, isLoading],
+  );
+
+  return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
+}
+
+export function useChatContext(): ChatContextValue {
+  const context = useContext(ChatContext);
+  if (context === undefined) {
+    throw new Error('useChatContext must be used within a ChatProvider');
+  }
+  return context;
+}

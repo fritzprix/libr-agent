@@ -2,7 +2,6 @@ import { useAssistantContext } from '@/context/AssistantContext';
 import { useLocalTools } from '@/context/LocalToolContext';
 import { useScheduler } from '@/context/SchedulerContext';
 import { useSessionContext } from '@/context/SessionContext';
-import { useChatContext } from '@/hooks/use-chat';
 import { useMCPServer } from '@/hooks/use-mcp-server';
 import {
   isMCPError,
@@ -15,6 +14,7 @@ import { Message } from '@/models/chat';
 import { createId } from '@paralleldrive/cuid2';
 import React, { useCallback, useEffect, useRef } from 'react';
 import { useAsyncFn } from 'react-use';
+import { useChatContext } from '@/context/ChatContext';
 
 const logger = getLogger('ToolCaller');
 

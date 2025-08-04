@@ -1,19 +1,10 @@
+import { Message } from '@/models/chat';
 import React from 'react';
-import MessageBubbleRouter from './MessageBubbleRouter';
 import { LoadingSpinner } from '../../components/ui';
+import MessageBubbleRouter from './MessageBubbleRouter';
 
-interface MessageWithAttachments {
-  id: string;
-  content: string;
-  role: 'user' | 'assistant' | 'system' | 'tool';
-  thinking?: string;
-  isStreaming?: boolean;
+interface MessageWithAttachments extends Message {
   attachments?: { name: string; content: string }[];
-  tool_calls?: {
-    id: string;
-    type: 'function';
-    function: { name: string; arguments: string };
-  }[];
 }
 
 interface MessageBubbleProps {
@@ -87,7 +78,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
               {getRoleLabel()}
             </span>
             <span className="text-xs opacity-60">
-              {new Date().toLocaleTimeString()}
+              {message.createdAt?.toLocaleString()}
             </span>
           </div>
         </div>

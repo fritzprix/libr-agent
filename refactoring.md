@@ -1,324 +1,278 @@
-# MCP 타입 시스템 리팩터링 계획
+# 🔄 SynapticFlow Streaming UI Refactoring Plan
 
-## 🎯 목표
+## 📋 Overview
 
-MCP tool 호출 결과의 타입 불일치 문제를 해결하고, 에러 처리의 일관성을 확보하여 `success: true`인데 실제로는 에러인 상황을 방지합니다.
+This document outlines the refactoring plan to fix real-time streaming message updates in the chat interface. The current implementation has issues with message accumulation and UI responsiveness during AI response streaming.
 
-## 🚨 현재 문제점
+## 🐛 Current Issues
 
-### 1. 타입 일관성 문제
+### 1. Streaming Message Update Problems
 
-- **MCPResponse** (JSON-RPC 2.0 준수) - 표준 타입
-- **ToolCallResult** (Rust backend용) - 구조가 다름 (`success: boolean`)
-- **LegacyToolCallResult** (레거시용) - 더 혼란스러운 구조 (`success`, `isError` 중복)
+- **Root Cause**: Message deduplication logic in `use-chat.tsx` interferes with real-time streaming updates
+- **Symptom**: Messages don't update in real-time during AI response streaming
+- **Impact**: Poor user experience with delayed or missing content updates
 
-### 2. Helper 함수명 불일치
+### 2. Loading State Management
 
-```typescript
-// 중복된 함수들
-isSuccessResponse() vs isMCPSuccess()
-isErrorResponse() vs isMCPError()
-```
+- **Issue**: Loading indicators only show for initial request, not during streaming
+- **Missing**: Visual feedback for ongoing message generation
+- **Impact**: Users can't distinguish between thinking and generating states
 
-### 3. 에러 감지 로직 결함
+### 3. Input State Management
 
-- `success: true`인데 `result`에 에러 메시지가 있는 경우를 감지하지 못함
-- `normalizeLegacyResponse` 함수가 에러 패턴을 제대로 인식하지 못함
+- **Issue**: Input field doesn't properly disable during streaming
+- **Impact**: Users can send multiple requests while AI is still responding
 
-### 4. MCPResult 타입의 모호함
+## 🎯 Refactoring Goals
 
-- `content`와 `structuredContent` 모두 optional → 빈 객체도 유효한 결과가 됨
+1. **Fix Real-time Streaming**: Ensure messages update immediately as content streams in
+2. **Improve Loading States**: Provide clear visual feedback for different processing states
+3. **Enhanced UX**: Better input management and user interaction during streaming
+4. **Maintain Performance**: Keep existing performance optimizations
 
-## 📋 수정 계획
+## 📁 Files to Modify
 
-### Phase 1: 타입 정의 개선 (`src/lib/mcp-types.ts`)
+### 1. `src/hooks/use-chat.tsx`
 
-#### 1.1 타입 통합 및 단순화
+**Priority**: 🔴 Critical
+**Changes**: Fix streaming message accumulation and deduplication logic
 
-```typescript
-// ✅ 유지: MCPResponse (표준)
-export interface MCPResponse {
-  jsonrpc: '2.0';
-  id: string | number | null;
-  result?: MCPResult;
-  error?: MCPError;
-}
+### 2. `src/features/chat/Chat.tsx`
 
-// ❌ 제거: ToolCallResult, LegacyToolCallResult
-// → 모든 곳에서 MCPResponse만 사용
-```
+**Priority**: 🔴 Critical
+**Changes**: Improve loading states and input management
 
-#### 1.2 MCPResult 타입 개선
+### 3. `src/hooks/use-ai-service.ts`
 
-```typescript
-export interface MCPResult {
-  content?: MCPContent[];
-  structuredContent?: Record<string, unknown>;
-}
+**Priority**: 🟡 Review
+**Changes**: Verify content accumulation is working correctly
 
-// 타입 가드 추가
-export function isValidMCPResult(result: MCPResult): boolean {
-  return !!(result.content?.length || result.structuredContent);
-}
-```
+## 🔧 Detailed Implementation Plan
 
-#### 1.3 Helper 함수 정리
+### Phase 1: Fix Streaming Message Logic
+
+#### 1.1 Update `use-chat.tsx` - Message Deduplication
 
 ```typescript
-// ✅ 유지 & 개선: 타입 가드 기능 추가
-export function isMCPSuccess(
-  response: MCPResponse,
-): response is MCPResponse & { result: MCPResult } {
-  return response.error === undefined && response.result !== undefined;
-}
-
-export function isMCPError(
-  response: MCPResponse,
-): response is MCPResponse & { error: MCPError } {
-  return response.error !== undefined;
-}
-
-// ❌ 제거: isSuccessResponse, isErrorResponse
-```
-
-#### 1.4 강화된 변환 함수
-
-```typescript
-export function normalizeToolResult(
-  result: unknown,
-  toolName: string,
-): MCPResponse {
-  const id = `tool-${toolName}-${Date.now()}`;
-
-  // 이미 MCPResponse인 경우
-  if (typeof result === 'object' && result !== null && 'jsonrpc' in result) {
-    return result as MCPResponse;
+// Current problematic logic in messages useMemo
+const messages = useMemo(() => {
+  if (!streamingMessage) {
+    return history;
   }
 
-  // 🔍 에러 패턴 감지 (핵심 개선사항)
-  const isError =
-    (typeof result === 'string' && result.includes('error')) ||
-    (typeof result === 'object' && result !== null && 'error' in result) ||
-    (typeof result === 'object' &&
-      result !== null &&
-      'success' in result &&
-      !(result as any).success);
+  // 🔄 CHANGE: Better handling of streaming vs finalized messages
+  const finalizedExists = history.some(
+    (message) => message.id === streamingMessage.id && !message.isStreaming,
+  );
 
-  if (isError) {
-    const errorMessage =
-      typeof result === 'string'
-        ? result
-        : typeof result === 'object' && result !== null && 'error' in result
-          ? (result as any).error
-          : 'Unknown error';
-
-    return {
-      jsonrpc: '2.0',
-      id,
-      error: {
-        code: -32603,
-        message: errorMessage,
-        data: result,
-      },
-    };
+  if (finalizedExists) {
+    return history; // Use finalized version from history
   }
 
-  // 성공 케이스
-  return {
-    jsonrpc: '2.0',
-    id,
-    result: {
-      content: [
-        {
-          type: 'text',
-          text: typeof result === 'string' ? result : JSON.stringify(result),
-        },
-      ],
-    },
-  };
-}
+  // Remove any temporary streaming version from history
+  const filteredHistory = history.filter(
+    (msg) => msg.id !== streamingMessage.id,
+  );
+  return [...filteredHistory, streamingMessage];
+}, [streamingMessage, history]);
 ```
 
-### Phase 2: Rust 백엔드 수정 (`src-tauri/src/`)
+#### 1.2 Update `use-chat.tsx` - Streaming Message State Management
 
-#### 2.1 ToolCallResult 타입 제거
+```typescript
+// Improve streaming message update logic
+useEffect(() => {
+  if (!response) return;
 
-```rust
-// ❌ 제거
-pub struct ToolCallResult {
-    pub success: bool,
-    pub result: Option<serde_json::Value>,
-    pub error: Option<String>,
-}
-
-// ✅ 대체: MCPResponse 구조 사용
-#[derive(Debug, Serialize, Deserialize)]
-pub struct MCPResponse {
-    pub jsonrpc: String,
-    pub id: Option<String>,
-    pub result: Option<serde_json::Value>,
-    pub error: Option<MCPError>,
-}
-```
-
-#### 2.2 Tauri 명령어 수정
-
-```rust
-// src-tauri/src/lib.rs
-#[tauri::command]
-async fn call_mcp_tool(
-    server_name: String,
-    tool_name: String,
-    arguments: serde_json::Value,
-) -> MCPResponse {  // ✅ 반환 타입 변경
-    // 구현 수정
-}
-```
-
-#### 2.3 MCP 호출 로직 수정
-
-```rust
-// src-tauri/src/mcp.rs
-impl MCPServerManager {
-    pub async fn call_tool(
-        &self,
-        server_name: &str,
-        tool_name: &str,
-        arguments: serde_json::Value,
-    ) -> MCPResponse {  // ✅ 반환 타입 변경
-        // JSON-RPC 2.0 형식으로 응답 생성
+  setStreamingMessage((previous) => {
+    // New streaming message
+    if (!previous || previous.id !== response.id) {
+      return {
+        ...response,
+        id: response.id ?? createId(),
+        content: response.content ?? '',
+        role: 'assistant' as const,
+        sessionId: response.sessionId ?? currentSession?.id ?? '',
+        isStreaming: response.isStreaming !== false,
+      };
     }
-}
-```
 
-### Phase 3: 프론트엔드 수정
-
-#### 3.1 ToolCaller.tsx 수정
-
-```typescript
-// src/features/chat/orchestrators/ToolCaller.tsx
-
-import {
-  MCPResponse,
-  isMCPSuccess,
-  isMCPError,
-  normalizeToolResult,  // ✅ 새로운 함수 사용
-  mcpResponseToString
-} from '@/lib/mcp-types';
-
-// MCP 호출 결과 처리
-const mcpResponse: MCPResponse = await callMcpTool(...);
-
-// ❌ 기존 normalizedResult 로직 제거
-// ✅ MCPResponse 직접 사용
-if (isMCPSuccess(mcpResponse)) {
-  // 성공 처리
-  const content = mcpResponseToString(mcpResponse);
-} else if (isMCPError(mcpResponse)) {
-  // 에러 처리
-  const errorMessage = mcpResponse.error.message;
-}
-```
-
-#### 3.2 MCP 서비스 레이어 수정
-
-```typescript
-// src/hooks/use-mcp-server.ts
-// src/lib/tauri-mcp-client.ts
-
-// 모든 MCP 관련 함수가 MCPResponse를 반환하도록 수정
-export async function executeToolCall(
-  serverName: string,
-  toolName: string,
-  args: Record<string, unknown>,
-): Promise<MCPResponse> {
-  // ✅ 반환 타입 통일
-  // 구현
-}
-```
-
-### Phase 4: 로깅 및 직렬화 수정
-
-#### 4.1 SerializedToolResult 개선
-
-```typescript
-// src/features/chat/orchestrators/ToolCaller.tsx
-
-interface SerializedToolResult {
-  success: boolean;
-  content?: string;
-  error?: string;
-  metadata: Record<string, unknown>;
-  toolName: string;
-  executionTime: number;
-  timestamp: string;
-}
-
-const serializeToolResult = useCallback(
-  (
-    mcpResponse: MCPResponse,
-    toolName: string,
-    executionStartTime: number,
-  ): string => {
-    const result: SerializedToolResult = {
-      success: isMCPSuccess(mcpResponse), // ✅ 정확한 성공/실패 판별
-      content: isMCPSuccess(mcpResponse)
-        ? mcpResponseToString(mcpResponse)
-        : undefined,
-      error: isMCPError(mcpResponse) ? mcpResponse.error.message : undefined,
-      metadata: {
-        toolName,
-        mcpResponseId: mcpResponse.id,
-        jsonrpc: mcpResponse.jsonrpc,
-      },
-      toolName,
-      executionTime: Date.now() - executionStartTime,
-      timestamp: new Date().toISOString(),
+    // Update existing streaming message
+    // Note: AI service already accumulates content, so we use direct assignment
+    return {
+      ...previous,
+      ...response,
+      content: response.content ?? previous.content,
+      thinking: response.thinking ?? previous.thinking,
+      tool_calls: response.tool_calls ?? previous.tool_calls,
     };
-
-    return JSON.stringify(result);
-  },
-  [],
-);
+  });
+}, [response, currentSession?.id]);
 ```
 
-## 🔄 마이그레이션 단계
+### Phase 2: Enhance UI Responsiveness
 
-### Step 1: 타입 정의 수정
+#### 2.1 Update `Chat.tsx` - Improved Loading States
 
-1. `src/lib/mcp-types.ts` 수정
-2. 새로운 helper 함수 추가
-3. 레거시 타입/함수 deprecated 마킹
+```typescript
+// Add streaming state detection
+const hasStreamingMessage = messages.some(m => m.isStreaming);
+const shouldShowThinking = isLoading || hasStreamingMessage;
 
-### Step 2: Rust 백엔드 수정
+// Enhanced thinking indicator
+{shouldShowThinking && (
+  <div className="flex justify-start">
+    <div className="rounded px-3 py-2">
+      <div className="text-xs mb-1">
+        Agent ({currentSession?.assistants[0]?.name})
+      </div>
+      <div className="text-sm">
+        {hasStreamingMessage ? 'generating...' : 'thinking...'}
+      </div>
+    </div>
+  </div>
+)}
+```
 
-1. `src-tauri/src/mcp.rs` 타입 수정
-2. `src-tauri/src/lib.rs` Tauri 명령어 수정
-3. 테스트 및 검증
+#### 2.2 Update `Chat.tsx` - Input Management
 
-### Step 3: 프론트엔드 수정
+```typescript
+// Better input state management
+function ChatInput({ children }: { children?: React.ReactNode }) {
+  const { isLoading, attachedFiles, setAttachedFiles, messages } = useChatInternalContext();
 
-1. `ToolCaller.tsx` 수정
-2. MCP 관련 훅/서비스 수정
-3. 에러 처리 로직 개선
+  const hasStreamingMessage = messages.some(m => m.isStreaming);
+  const isDisabled = isLoading || hasStreamingMessage;
 
-### Step 4: 정리 및 검증
+  return (
+    <form onSubmit={handleSubmit} className="px-4 py-4 border-t flex items-center gap-2">
+      <Input
+        value={input}
+        onChange={handleAgentInputChange}
+        placeholder={
+          isDisabled
+            ? hasStreamingMessage
+              ? 'agent generating...'
+              : 'agent thinking...'
+            : 'query agent...'
+        }
+        disabled={isDisabled}
+        // ... other props
+      />
+      <Button
+        type="submit"
+        disabled={isDisabled}
+        variant="ghost"
+        size="sm"
+      >
+        ⏎
+      </Button>
+    </form>
+  );
+}
+```
 
-1. 레거시 타입/함수 완전 제거
-2. 전체 시스템 테스트
-3. 문서 업데이트
+### Phase 3: Verification and Testing
 
-## ✅ 기대 효과
+#### 3.1 Test Scenarios
 
-1. **에러 처리 일관성**: `success: true`인데 실제로는 에러인 상황 방지
-2. **타입 안전성**: 컴파일 타임에 타입 오류 감지
-3. **코드 단순화**: 타입 변환 로직 최소화
-4. **유지보수성**: 하나의 표준 타입으로 통일
-5. **확장성**: 새로운 MCP 서버/툴 추가 시 일관된 처리
+1. **Basic Streaming**: Send message and verify real-time content updates
+2. **Multiple Messages**: Test rapid message sending and proper queuing
+3. **Tool Calls**: Verify streaming works with tool call responses
+4. **Error Handling**: Test error scenarios during streaming
+5. **Network Issues**: Test behavior with connection problems
 
-## 🚨 주의사항
+#### 3.2 Performance Verification
 
-1. **점진적 마이그레이션**: 기존 코드 동작에 영향을 주지 않도록 단계적 적용
-2. **테스트 강화**: 각 단계마다 철저한 테스트 수행
-3. **문서 동기화**: 타입 변경사항을 문서에 반영
-4. **팀 공유**: 새로운 타입 사용법을 팀원들과 공유
+- [ ] Check for memory leaks in streaming state management
+- [ ] Verify smooth scrolling during content updates
+- [ ] Test with long responses (>1000 tokens)
+- [ ] Validate proper cleanup of streaming states
+
+## ⚠️ Potential Risks and Mitigation
+
+### Risk 1: Message Duplication
+
+**Risk**: Streaming messages might duplicate in the UI
+**Mitigation**: Robust deduplication logic with ID-based filtering
+
+### Risk 2: Memory Leaks
+
+**Risk**: Streaming state not properly cleaned up
+**Mitigation**: Proper useEffect cleanup and state reset
+
+### Risk 3: Race Conditions
+
+**Risk**: Multiple streaming messages interfering
+**Mitigation**: Use message IDs for proper state isolation
+
+### Risk 4: Performance Degradation
+
+**Risk**: Frequent re-renders during streaming
+**Mitigation**: Optimize useMemo dependencies and React.memo usage
+
+## 📊 Success Metrics
+
+### Before Refactoring
+
+- ❌ Messages don't update in real-time during streaming
+- ❌ No visual feedback during message generation
+- ❌ Input field allows concurrent requests
+- ❌ Poor user experience during AI interactions
+
+### After Refactoring
+
+- ✅ Messages update immediately as content streams
+- ✅ Clear visual feedback for thinking vs generating states
+- ✅ Proper input management during streaming
+- ✅ Smooth and responsive user experience
+- ✅ Maintained performance and stability
+
+## 🚀 Implementation Timeline
+
+### Day 1: Core Logic Fix
+
+- [ ] Fix `use-chat.tsx` streaming message logic
+- [ ] Update message deduplication in `useMemo`
+- [ ] Test basic streaming functionality
+
+### Day 2: UI Enhancement
+
+- [ ] Implement improved loading states in `Chat.tsx`
+- [ ] Update input management and disabling logic
+- [ ] Add proper visual feedback for different states
+
+### Day 3: Testing and Polish
+
+- [ ] Comprehensive testing of all scenarios
+- [ ] Performance optimization and cleanup
+- [ ] Documentation updates
+- [ ] Code review and final adjustments
+
+## 📝 Notes
+
+### Logger Usage
+
+- Use centralized logger instead of console methods
+- Context-specific logging: `const logger = getLogger('Chat')`
+- Appropriate log levels for debugging streaming issues
+
+### Type Safety
+
+- Maintain strict TypeScript compliance
+- No usage of `any` type
+- Proper interface definitions for streaming states
+
+### Component Architecture
+
+- Keep existing compound component pattern for Chat
+- Maintain separation of concerns between hooks and components
+- Preserve existing context patterns and data flow
+
+## 🔗 Related Files
+
+- `src/hooks/use-chat.tsx` - Main streaming logic
+- `src/features/chat/Chat.tsx` - UI components and states
+- `src/hooks/use-ai-service.ts` - AI service streaming
+- `src/features/chat/orchestrators/ToolCaller.tsx` - Tool execution flow
+- `src/context/SessionHistoryContext.tsx` - Message persistence

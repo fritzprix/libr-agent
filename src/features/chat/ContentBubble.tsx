@@ -1,19 +1,21 @@
-import React from 'react';
+import { getLogger } from '@/lib/logger';
+import { Message } from '@/models/chat';
+import React, { useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 
-interface Message {
-  isStreaming?: boolean;
-  // 다른 메시지 속성들도 여기에 추가 가능
-}
+const logger = getLogger('ContentBubble');
 
 interface ContentBubbleProps {
-  content: string;
-  message?: Message;
+  message: Message;
 }
 
-const ContentBubble: React.FC<ContentBubbleProps> = ({ content, message }) => {
+const ContentBubble: React.FC<ContentBubbleProps> = ({ message }) => {
+  const { isStreaming, content } = message;
   const safeContent = typeof content === 'string' ? content : '';
-  const isStreaming = message?.isStreaming ?? false;
+
+  useEffect(() => {
+    logger.info('message', { message });
+  }, []);
 
   if (!safeContent.trim()) {
     return null;

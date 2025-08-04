@@ -1,13 +1,13 @@
+import { Message, ToolCall } from '@/models/chat';
 import { createId } from '@paralleldrive/cuid2';
 import { useCallback, useMemo, useState } from 'react';
+import { useAssistantContext } from '../context/AssistantContext';
+import { useLocalTools } from '../context/LocalToolContext';
 import { AIServiceConfig, AIServiceFactory } from '../lib/ai-service';
 import { getLogger } from '../lib/logger';
-import { useSettings } from './use-settings';
 import { useMCPServer } from './use-mcp-server';
-import { useLocalTools } from '../context/LocalToolContext';
-import { useAssistantContext } from '../context/AssistantContext';
-import { Message, ToolCall } from '@/models/chat';
 import { useScheduledCallback } from './use-scheduled-callback';
+import { useSettings } from './use-settings';
 
 const logger = getLogger('useAIService');
 

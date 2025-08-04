@@ -8,15 +8,13 @@ import {
 import { useAssistantContext } from '@/context/AssistantContext';
 import { useLocalTools } from '@/context/LocalToolContext';
 import { useSessionContext } from '@/context/SessionContext';
-import { useChatContext } from '@/hooks/use-chat';
+import { useChatContext, ChatProvider } from '@/context/ChatContext';
 import { useMCPServer } from '@/hooks/use-mcp-server';
 import { getLogger } from '@/lib/logger';
-import { Assistant, Message, Session } from '@/models/chat';
+import { Message } from '@/models/chat';
 import { createId } from '@paralleldrive/cuid2';
 import React, {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -28,43 +26,14 @@ import { ToolCaller } from './orchestrators/ToolCaller';
 
 const logger = getLogger('Chat');
 
-// Simplified context - only truly shared state
-interface ChatContextType {
-  attachedFiles: { name: string; content: string }[];
-  setAttachedFiles: React.Dispatch<
-    React.SetStateAction<{ name: string; content: string }[]>
-  >;
-  isLoading: boolean;
-  messages: Message[];
-  currentSession: Session | null;
-  currentAssistant: Assistant | null;
-  messagesEndRef: React.RefObject<HTMLDivElement>;
-}
-
-const ChatContext = createContext<ChatContextType | null>(null);
-
-const useChatInternalContext = () => {
-  const context = useContext(ChatContext);
-  if (!context) {
-    throw new Error('Chat subcomponents must be used within a Chat component');
-  }
-  return context;
-};
-
 interface ChatProps {
   children?: React.ReactNode;
 }
 
 // Main Chat container component
 function Chat({ children }: ChatProps) {
-  const { currentAssistant } = useAssistantContext();
   const [showToolsDetail, setShowToolsDetail] = useState(false);
-  const [attachedFiles, setAttachedFiles] = useState<
-    { name: string; content: string }[]
-  >([]);
   const { current: currentSession } = useSessionContext();
-  const { isLoading, messages } = useChatContext();
-  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   if (!currentSession) {
     throw new Error(
@@ -72,18 +41,8 @@ function Chat({ children }: ChatProps) {
     );
   }
 
-  const contextValue: ChatContextType = {
-    attachedFiles,
-    setAttachedFiles,
-    isLoading,
-    messages,
-    currentSession,
-    currentAssistant,
-    messagesEndRef,
-  };
-
   return (
-    <ChatContext.Provider value={contextValue}>
+    <ChatProvider>
       <div className="h-full w-full font-mono flex flex-col rounded-lg overflow-hidden shadow-2xl">
         {children}
         <ToolCaller />
@@ -92,7 +51,7 @@ function Chat({ children }: ChatProps) {
           onClose={() => setShowToolsDetail(false)}
         />
       </div>
-    </ChatContext.Provider>
+    </ChatProvider>
   );
 }
 
@@ -116,26 +75,32 @@ function ChatHeader({
 
 // Chat Messages component
 function ChatMessages() {
-  const { messages, isLoading, currentSession, messagesEndRef } =
-    useChatInternalContext();
+  const { messages, isLoading } = useChatContext();
+  const { getCurrentSession, current: currentSession } = useSessionContext();
   const { getAssistant } = useAssistantContext();
+
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, messagesEndRef]);
 
   // 각 메시지의 assistantId로 이름을 찾아서 전달
-  const getAssistantNameForMessage = (m: Message) => {
-    if (m.role === 'assistant' && 'assistantId' in m && m.assistantId) {
-      const assistant = getAssistant(m.assistantId);
-      return assistant?.name || '';
-    }
-    // fallback: current session의 첫 assistant
-    if (m.role === 'assistant' && currentSession?.assistants?.length) {
-      return currentSession.assistants[0].name;
-    }
-    return '';
-  };
+  const getAssistantNameForMessage = useCallback(
+    (m: Message) => {
+      if (m.role === 'assistant' && 'assistantId' in m && m.assistantId) {
+        const assistant = getAssistant(m.assistantId);
+        return assistant?.name || '';
+      }
+      // fallback: current session의 첫 assistant
+      const currentSession = getCurrentSession();
+      if (m.role === 'assistant' && currentSession?.assistants?.length) {
+        return currentSession.assistants[0].name;
+      }
+      return '';
+    },
+    [getAssistant, getCurrentSession],
+  );
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -200,7 +165,9 @@ function ChatStatusBar({
 
 // Chat Attached Files component - now handles its own file removal
 function ChatAttachedFiles() {
-  const { attachedFiles, setAttachedFiles } = useChatInternalContext();
+  const [attachedFiles, setAttachedFiles] = useState<
+    { name: string; content: string }[]
+  >([]);
   const removeAttachedFile = React.useCallback(
     (index: number) => {
       setAttachedFiles((prev) => prev.filter((_, i) => i !== index));
@@ -236,12 +203,10 @@ function ChatAttachedFiles() {
 
 // Chat Input component - now handles its own file attachment logic
 function ChatInput({ children }: { children?: React.ReactNode }) {
-  const { isLoading, attachedFiles, setAttachedFiles } =
-    useChatInternalContext();
   const [input, setInput] = useState<string>('');
   const { current: currentSession } = useSessionContext();
   const { currentAssistant } = useAssistantContext();
-  const { submit } = useChatContext();
+  const { submit, isLoading } = useChatContext();
 
   const handleAgentInputChange = React.useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -253,16 +218,10 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
     async (e: React.FormEvent<HTMLFormElement>) => {
       logger.info('submit!!', currentAssistant);
       e.preventDefault();
-      if (!input.trim() && attachedFiles.length === 0) return;
+      if (!input.trim()) return;
       if (!currentAssistant) return;
 
       let messageContent = input.trim();
-      if (attachedFiles.length > 0) {
-        messageContent += '\n\n--- Attached Files ---\n';
-        attachedFiles.forEach((file) => {
-          messageContent += `\n[File: ${file.name}]\n${file.content}\n`;
-        });
-      }
 
       const userMessage: Message = {
         id: createId(),
@@ -272,7 +231,6 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
       };
 
       setInput('');
-      setAttachedFiles([]);
 
       try {
         await submit([userMessage]);
@@ -316,18 +274,12 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
         }
       }
 
-      setAttachedFiles((prev) => [...prev, ...newAttachedFiles]);
       e.target.value = '';
     },
-    [setAttachedFiles],
+    [],
   );
 
-  const removeAttachedFile = React.useCallback(
-    (index: number) => {
-      setAttachedFiles((prev) => prev.filter((_, i) => i !== index));
-    },
-    [setAttachedFiles],
-  );
+  const removeAttachedFile = React.useCallback(() => {}, []);
 
   return (
     <form
@@ -347,7 +299,7 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
         />
 
         <FileAttachment
-          files={attachedFiles}
+          files={[]}
           onRemove={removeAttachedFile}
           onAdd={handleFileAttachment}
           compact={true}
