@@ -77,7 +77,7 @@ function ChatHeader({
 function ChatMessages() {
   const { messages, isLoading } = useChatContext();
   const { getCurrentSession, current: currentSession } = useSessionContext();
-  const { getAssistant } = useAssistantContext();
+  const { getById } = useAssistantContext();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -89,7 +89,7 @@ function ChatMessages() {
   const getAssistantNameForMessage = useCallback(
     (m: Message) => {
       if (m.role === 'assistant' && 'assistantId' in m && m.assistantId) {
-        const assistant = getAssistant(m.assistantId);
+        const assistant = getById(m.assistantId);
         return assistant?.name || '';
       }
       // fallback: current session의 첫 assistant
@@ -99,7 +99,7 @@ function ChatMessages() {
       }
       return '';
     },
-    [getAssistant, getCurrentSession],
+    [getById, getCurrentSession],
   );
 
   return (

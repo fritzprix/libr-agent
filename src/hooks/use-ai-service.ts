@@ -32,7 +32,7 @@ export const useAIService = (config?: AIServiceConfig) => {
       }),
     [provider, apiKeys, model],
   );
-  const { getCurrentAssistant } = useAssistantContext();
+  const { getCurrent: getCurrentAssistant } = useAssistantContext();
 
   const { getAvailableTools: getAvailableMCPTools } = useMCPServer();
   const { getAvailableTools: getAvailableLocalTools } = useLocalTools();

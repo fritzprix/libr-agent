@@ -60,7 +60,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       ? history.map((msg) =>
           msg.id === streamingMessage.id
             ? { ...msg, ...streamingMessage }
-            : msg
+            : msg,
         )
       : [...history, streamingMessage];
   }, [streamingMessage, history]);

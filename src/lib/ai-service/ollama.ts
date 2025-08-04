@@ -298,7 +298,7 @@ export class OllamaService extends BaseAIService {
         };
 
       case 'tool':
-        // Convert tool result to a user message for processing in Ollama  
+        // Convert tool result to a user message for processing in Ollama
         return {
           role: 'user',
           content: `Tool result: ${message.content}`,
@@ -366,7 +366,7 @@ export class OllamaService extends BaseAIService {
   }
 
   private getModelContextWindow(modelName: string): number {
-    // Context window for common Ollama models  
+    // Context window for common Ollama models
     if (modelName.includes('llama3.1')) return 128000;
     if (modelName.includes('llama3')) return 8192;
     if (modelName.includes('llama2')) return 4096;

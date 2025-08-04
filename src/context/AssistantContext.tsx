@@ -21,15 +21,15 @@ const DEFAULT_PROMPT =
 interface AssistantContextType {
   assistants: Assistant[];
   currentAssistant: Assistant | null;
-  getCurrentAssistant: () => Assistant | null;
+  getCurrent: () => Assistant | null;
   setCurrentAssistant: (assistant: Assistant | null) => void;
-  extendAssistant: (extension: Partial<Assistant>) => void;
+  applyExtension: (extension: Partial<Assistant>) => void;
   resetExtension: () => void;
-  getAssistant: (id: string) => Assistant | null;
+  getById: (id: string) => Assistant | null;
   saveAssistant: (assistant: Assistant) => Promise<Assistant | undefined>;
   deleteAssistant: (assistantId: string) => Promise<void>;
-  registerEphemeralAssistant: (assistant: Assistant) => void;
-  unregisterEphemeralAssistant: (id: string) => void;
+  registerEphemeral: (assistant: Assistant) => void;
+  unregisterEphemeral: (id: string) => void;
   error: Error | null;
 }
 
@@ -87,14 +87,16 @@ export const AssistantContextProvider = ({
     [],
   );
 
-  const [ extension, setExtension ] = useState<Partial<Assistant>|null>(null);
+  const [extension, setExtension] = useState<Partial<Assistant> | null>(null);
   const [error, setError] = useState<Error | null>(null);
+
   // Helper to show user-friendly error messages
   const showError = useCallback((message: string, errorObj?: unknown) => {
     const logger = getLogger('AssistantContext.showError');
     logger.error(message, { error: errorObj });
     toast.error(message);
   }, []);
+
   const currentAssistantRef = useRef(currentAssistant);
 
   const [{ value: assistants, loading, error: loadError }, loadAssistants] =
@@ -124,10 +126,6 @@ export const AssistantContextProvider = ({
       loadAssistants();
     }
   }, [loadAssistants, loading, assistants]);
-
-  useEffect(() => {
-    currentAssistantRef.current = currentAssistant;
-  }, [currentAssistant]);
 
   // Assistant switched toast notification in English
   useEffect(() => {
@@ -173,7 +171,7 @@ export const AssistantContextProvider = ({
 
         // Remove from ephemeral if it was saved to DB
         setEphemeralAssistants((prev) =>
-          prev.filter((a) => a.id !== assistantToSave.id)
+          prev.filter((a) => a.id !== assistantToSave.id),
         );
 
         if (currentAssistant?.id === assistantToSave.id || !currentAssistant) {
@@ -229,28 +227,28 @@ export const AssistantContextProvider = ({
     }
   }, [saveError, deleteError, loadError]);
 
-  const handledApplyAssistantExtension = useCallback((ext: Partial<Assistant>) => {
-    const logger = getLogger('AssistantContext.extend');
-    
+  const applyExtension = useCallback((ext: Partial<Assistant>) => {
+    const logger = getLogger('AssistantContext.applyExtension');
+
     if (!ext || Object.keys(ext).length === 0) {
-      logger.warn('Empty extension provided to extend function');
+      logger.warn('Empty extension provided to applyExtension function');
       return;
     }
-    
-    logger.info('Applying assistant extension', { 
+
+    logger.info('Applying assistant extension', {
       extension: {
         name: ext.name,
         systemPrompt: !!ext.systemPrompt,
         localServices: ext.localServices?.length || 0,
         mcpServers: Object.keys(ext.mcpConfig?.mcpServers || {}).length,
-      }
+      },
     });
-    
+
     setExtension(ext);
   }, []);
 
-  const handleResetAssistantExtension = useCallback(() => {
-    const logger = getLogger('AssistantContext.reset');
+  const resetExtension = useCallback(() => {
+    const logger = getLogger('AssistantContext.resetExtension');
     logger.debug('Resetting assistant extension');
     setExtension(null);
   }, []);
@@ -269,9 +267,9 @@ export const AssistantContextProvider = ({
         setCurrentAssistant(a);
       }
     }
-  }, [loading, assistants, upsertAssistant]);
+  }, [loading, assistants, currentAssistant, upsertAssistant]);
 
-  const getCurrentAssistant = useCallback(() => {
+  const getCurrent = useCallback(() => {
     return currentAssistantRef.current;
   }, []);
 
@@ -281,7 +279,7 @@ export const AssistantContextProvider = ({
     error,
   });
 
-  const handleRegisterEphemeral = useCallback(
+  const registerEphemeral = useCallback(
     (assistant: Assistant) => {
       const existsInDb = (assistantsRef.current ?? []).some(
         (a) => a.id === assistant.id,
@@ -297,13 +295,13 @@ export const AssistantContextProvider = ({
     [], // No dependency on assistants to prevent circular dependency
   );
 
-  const handleUnregisterEphemeral = useCallback((id: string) => {
+  const unregisterEphemeral = useCallback((id: string) => {
     setEphemeralAssistants((prev) => {
       return prev.filter((a) => a.id !== id);
     });
   }, []);
 
-  const handleGetAssistant = useCallback(
+  const getById = useCallback(
     (id: string) => {
       return allAssistants.find((a) => a.id === id) || null;
     },
@@ -313,33 +311,35 @@ export const AssistantContextProvider = ({
   const effectiveAssistant: Assistant | null = useMemo(() => {
     if (extension && currentAssistant) {
       const logger = getLogger('AssistantContext.effectiveAssistant');
-      
+
       // System prompt: append extension context if available
       const basePrompt = currentAssistant.systemPrompt || '';
-      const extPrompt = extension.systemPrompt;
-      const combinedPrompt = extPrompt 
-        ? [basePrompt, extPrompt].filter(Boolean).join('\n\n')
+      const extensionPrompt = extension.systemPrompt;
+      const combinedPrompt = extensionPrompt
+        ? [basePrompt, extensionPrompt].filter(Boolean).join('\n\n')
         : basePrompt;
 
       // Local services: merge existing + additional (deduplicated)
       const baseServices = currentAssistant.localServices || [];
-      const extServices = extension.localServices || [];
-      const combinedServices = [...new Set([...baseServices, ...extServices])];
+      const extensionServices = extension.localServices || [];
+      const combinedServices = [
+        ...new Set([...baseServices, ...extensionServices]),
+      ];
 
       // MCP config: merge existing + additional servers (extension takes priority)
       const baseMcpConfig = currentAssistant.mcpConfig || { mcpServers: {} };
-      const extMcpConfig = extension.mcpConfig || { mcpServers: {} };
+      const extensionMcpConfig = extension.mcpConfig || { mcpServers: {} };
       const combinedMcpConfig = {
         ...baseMcpConfig,
         mcpServers: {
           ...baseMcpConfig.mcpServers,
-          ...extMcpConfig.mcpServers, // Extension has priority
+          ...extensionMcpConfig.mcpServers, // Extension has priority
         },
       };
 
       const result = {
         ...currentAssistant,
-        ...extension, // Other fields allow override
+        ...extension, // Other fields allow extension
         systemPrompt: combinedPrompt,
         localServices: combinedServices,
         mcpConfig: combinedMcpConfig,
@@ -348,14 +348,15 @@ export const AssistantContextProvider = ({
       logger.debug('Applied extension to assistant', {
         baseAssistant: currentAssistant.name,
         extension: {
-          systemPrompt: !!extPrompt,
-          localServices: extServices.length,
-          mcpServers: Object.keys(extMcpConfig.mcpServers || {}),
+          systemPrompt: !!extensionPrompt,
+          localServices: extensionServices.length,
+          mcpServers: Object.keys(extensionMcpConfig.mcpServers || {}),
         },
         result: {
           systemPromptLength: result.systemPrompt.length,
           localServicesCount: result.localServices?.length,
-          mcpServersCount: Object.keys(result.mcpConfig?.mcpServers || {}).length,
+          mcpServersCount: Object.keys(result.mcpConfig?.mcpServers || {})
+            .length,
         },
       });
 
@@ -364,17 +365,21 @@ export const AssistantContextProvider = ({
     return currentAssistant;
   }, [currentAssistant, extension]);
 
+  useEffect(() => {
+    currentAssistantRef.current = effectiveAssistant;
+  }, [effectiveAssistant]);
+
   const contextValue: AssistantContextType = useMemo(
     () => ({
       assistants: allAssistants,
       currentAssistant: effectiveAssistant,
-      extendAssistant: handledApplyAssistantExtension,
-      resetExtension: handleResetAssistantExtension,
+      applyExtension,
+      resetExtension,
       setCurrentAssistant,
-      unregisterEphemeralAssistant: handleUnregisterEphemeral,
-      registerEphemeralAssistant: handleRegisterEphemeral,
-      getAssistant: handleGetAssistant,
-      getCurrentAssistant,
+      unregisterEphemeral,
+      registerEphemeral,
+      getById,
+      getCurrent,
       saveAssistant: upsertAssistant,
       deleteAssistant: deleteAssistant,
       error: error ?? null,
@@ -382,16 +387,16 @@ export const AssistantContextProvider = ({
     [
       allAssistants,
       effectiveAssistant,
-      handledApplyAssistantExtension,
-      handleResetAssistantExtension,
+      applyExtension,
+      resetExtension,
       setCurrentAssistant,
-      getCurrentAssistant,
+      getCurrent,
       upsertAssistant,
       deleteAssistant,
       error,
-      handleRegisterEphemeral,
-      handleUnregisterEphemeral,
-      handleGetAssistant,
+      registerEphemeral,
+      unregisterEphemeral,
+      getById,
     ],
   );
 
@@ -403,10 +408,10 @@ export const AssistantContextProvider = ({
 };
 
 export function useAssistantContext() {
-  const ctx = useContext(AssistantContext);
-  if (!ctx)
+  const context = useContext(AssistantContext);
+  if (!context)
     throw new Error(
       'useAssistantContext must be used within a AssistantContextProvider',
     );
-  return ctx;
+  return context;
 }

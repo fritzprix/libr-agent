@@ -12,7 +12,7 @@ import {
 import { getLogger } from '@/lib/logger';
 import { confirm } from '@tauri-apps/plugin-dialog';
 
-const logger = getLogger("SessionItem");
+const logger = getLogger('SessionItem');
 
 interface SessionItemProps {
   session: Session;
@@ -34,11 +34,11 @@ export default function SessionItem({ session }: SessionItemProps) {
   const handleDelete = useCallback(
     async (e: React.MouseEvent) => {
       e.stopPropagation();
-      logger.info("Attempting to delete session", { sessionId: session.id });
-      
+      logger.info('Attempting to delete session', { sessionId: session.id });
+
       const userConfirmed = await confirm(
         `Are you sure you want to delete session "${session.name || 'Untitled Session'}"?`,
-        { title: 'Confirm Deletion' }
+        { title: 'Confirm Deletion' },
       );
 
       if (userConfirmed) {
