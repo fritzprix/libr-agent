@@ -78,7 +78,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
               {getRoleLabel()}
             </span>
             <span className="text-xs opacity-60">
-              {message.createdAt?.toDateString()}
+              {message.createdAt?.toLocaleString()}
             </span>
           </div>
         </div>
