@@ -10,6 +10,7 @@ import { ThemeToggle } from '../components/common/ThemeToggle';
 import { AppHeader } from '../components/layout/AppHeader';
 import { SidebarProvider } from '../components/ui/sidebar';
 import { AssistantContextProvider } from '../context/AssistantContext';
+import { AssistantExtensionProvider } from '../context/AssistantExtensionContext';
 import { AssistantGroupProvider } from '../context/AssistantGroupContext';
 import { LocalToolProvider } from '../context/LocalToolContext';
 import { MCPServerProvider } from '../context/MCPServerContext';
@@ -36,9 +37,10 @@ function App() {
               <SessionContextProvider>
                 <SessionHistoryProvider>
                   <ModelOptionsProvider>
-                    <MCPServerProvider>
-                      <LocalToolProvider>
-                        <SidebarProvider>
+                    <LocalToolProvider>
+                      <AssistantExtensionProvider>
+                        <MCPServerProvider>
+                          <SidebarProvider>
                           <div className="flex h-screen w-full">
                             {/* Sidebar */}
                             <AppSidebar
@@ -96,8 +98,9 @@ function App() {
                           onClose={() => setIsSettingsModalOpen(false)}
                         />
                         <Toaster />
-                      </LocalToolProvider>
-                    </MCPServerProvider>
+                        </MCPServerProvider>
+                      </AssistantExtensionProvider>
+                    </LocalToolProvider>
                   </ModelOptionsProvider>
                 </SessionHistoryProvider>
               </SessionContextProvider>

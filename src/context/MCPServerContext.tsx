@@ -10,8 +10,9 @@ import React, {
 import { useAsyncFn } from 'react-use';
 import { getLogger } from '../lib/logger';
 import { tauriMCPClient } from '../lib/tauri-mcp-client';
-import { MCPResponse, MCPTool, normalizeToolResult } from '../lib/mcp-types';
+import { MCPResponse, MCPTool, normalizeToolResult, MCPServerConfig } from '../lib/mcp-types';
 import { useAssistantContext } from './AssistantContext';
+import { useAssistantExtension } from './AssistantExtensionContext';
 import { Assistant } from '../models/chat';
 import { useScheduledCallback } from '@/hooks/use-scheduled-callback';
 
@@ -41,12 +42,32 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
   const [serverStatus, setServerStatus] = useState<Record<string, boolean>>({});
   const availableToolsRef = useRef(availableTools);
   const { currentAssistant } = useAssistantContext();
+  const { getExtensionServices } = useAssistantExtension();
   const [{ loading: isConnecting }, connectServers] = useAsyncFn(
     async (assistant: Assistant) => {
       const serverStatus: Record<string, boolean> = {};
       try {
+        // 기본 어시스턴트 MCP 서버들
+        const baseServers = assistant.mcpConfig.mcpServers || {};
+        
+        // 확장에서 등록된 remote MCP 서버들
+        const extensionServices = getExtensionServices();
+        const extensionMCPServers = extensionServices
+          .filter(service => service.type === 'remote')
+          .reduce((acc, service) => {
+            acc[service.service.name] = service.service;
+            return acc;
+          }, {} as Record<string, MCPServerConfig>);
+
+        // 모든 MCP 서버들을 병합
+        const allMCPServers = { ...baseServers, ...extensionMCPServers };
+        
         const configForTauri = {
-          mcpServers: assistant.mcpConfig.mcpServers || {},
+          mcpServers: allMCPServers as Record<string, {
+            command: string;
+            args?: string[];
+            env?: Record<string, string>;
+          }>,
         };
 
         const servers = Object.keys(configForTauri.mcpServers);
@@ -63,7 +84,12 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
 
         setServerStatus(serverStatus);
         const tools = await tauriMCPClient.listToolsFromConfig(configForTauri);
-        logger.debug(`Received tools from Tauri:`, { tools });
+        logger.debug(`Received tools from Tauri:`, { 
+          tools,
+          baseServers: Object.keys(baseServers).length,
+          extensionServers: Object.keys(extensionMCPServers).length,
+          totalServers: servers.length
+        });
 
         const connectedServers = await tauriMCPClient.getConnectedServers();
         for (const serverName of connectedServers) {
@@ -82,7 +108,7 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
         setServerStatus({ ...serverStatus });
       }
     },
-    [],
+    [getExtensionServices],
   );
 
   const executeToolCall = useCallback(

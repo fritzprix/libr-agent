@@ -13,11 +13,12 @@ import { createId } from '@paralleldrive/cuid2';
 import { getLogger } from '../lib/logger';
 import { Message } from '@/models/chat';
 import { useSettings } from '../hooks/use-settings';
+import { useAssistantExtension } from './AssistantExtensionContext';
 
 const logger = getLogger('ChatContext');
 
 interface ChatContextValue {
-  submit: (messageToAdd?: Message[]) => Promise<Message>;
+  submit: (messageToAdd?: Message[], agentKey?: string) => Promise<Message>;
   isLoading: boolean;
   messages: Message[];
 }
@@ -37,6 +38,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const { submit: triggerAIService, isLoading, response } = useAIService();
   const { current: currentSession } = useSessionContext();
   const { value: settingValue } = useSettings();
+  const { getExtensionSystemPrompts } = useAssistantExtension();
 
   const [streamingMessage, setStreamingMessage] = useState<Message | null>(
     null,
@@ -44,6 +46,21 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
   // Extract window size with default fallback
   const messageWindowSize = settingValue?.windowSize ?? 20;
+
+  // Create system message from prompt
+  const createSystemMessage = useCallback((prompt: string, agentKey: string): Message => ({
+    id: `system-${agentKey}-${createId()}`,
+    role: 'system',
+    content: prompt,
+    sessionId: currentSession?.id ?? '',
+    isStreaming: false,
+    createdAt: new Date(),
+  }), [currentSession?.id]);
+
+  // Get active system prompts sorted by priority (only from extensions)
+  const getActiveSystemPrompts = useCallback(() => {
+    return getExtensionSystemPrompts();
+  }, [getExtensionSystemPrompts]);
 
   // Combine history with streaming message, avoiding duplicates
   const messages = useMemo(() => {
@@ -104,7 +121,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   }, [history, streamingMessage]);
 
   const submit = useCallback(
-    async (messageToAdd?: Message[]): Promise<Message> => {
+    async (messageToAdd?: Message[], agentKey?: string): Promise<Message> => {
       if (!currentSession) {
         throw new Error('No active session available for message submission');
       }
@@ -135,10 +152,28 @@ export function ChatProvider({ children }: ChatProviderProps) {
           messagesToSend = [...messages, ...processedMessages];
         }
 
-        // Send windowed messages to AI service
-        const aiResponse = await triggerAIService(
-          messagesToSend.slice(-messageWindowSize),
+        // Get windowed messages (excluding system prompts from history)
+        const userMessages = messagesToSend
+          .filter((msg) => msg.role !== 'system')
+          .slice(-messageWindowSize);
+
+        // Prepare system prompts for this submission
+        const activePrompts = getActiveSystemPrompts();
+        const systemMessages = activePrompts.map((promptData) =>
+          createSystemMessage(promptData.prompt, promptData.key)
         );
+
+        // Combine system prompts with user messages
+        const finalMessages = [...systemMessages, ...userMessages];
+
+        logger.debug('Submitting messages with system prompts', {
+          systemPromptsCount: systemMessages.length,
+          userMessagesCount: userMessages.length,
+          agentKey,
+        });
+
+        // Send combined messages to AI service
+        const aiResponse = await triggerAIService(finalMessages);
 
         // Handle AI response persistence
         if (aiResponse) {
@@ -150,6 +185,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
           logger.info('Finalizing AI response', {
             messageId: finalizedMessage.id,
+            agentKey,
           });
 
           // Update streaming state and persist to history
@@ -159,12 +195,20 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
         return aiResponse;
       } catch (error) {
-        logger.error('Message submission failed', { error });
+        logger.error('Message submission failed', { error, agentKey });
         setStreamingMessage(null);
         throw error;
       }
     },
-    [currentSession, messages, messageWindowSize, triggerAIService, addMessage],
+    [
+      currentSession,
+      messages,
+      messageWindowSize,
+      triggerAIService,
+      addMessage,
+      getActiveSystemPrompts,
+      createSystemMessage,
+    ],
   );
 
   const value: ChatContextValue = useMemo(
@@ -173,7 +217,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
       isLoading,
       messages,
     }),
-    [messages, submit, isLoading],
+    [
+      messages,
+      submit,
+      isLoading,
+    ],
   );
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
