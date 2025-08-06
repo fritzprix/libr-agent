@@ -1,11 +1,13 @@
-{
-  "success": true,
-  "content": "{\n  \"error\": \"fieldSelector.replace is not a function\",\n  \"tool\": \"updateGame\",\n  \"timestamp\": \"2025-08-03T11:26:28.643Z\"\n}",
-  "metadata": {
-    "toolName": "rpg-server__updateGame",
-    "isValidated": true
-  },
-  "toolName": "rpg-server__updateGame",
-  "executionTime": 97,
-  "timestamp": "2025-08-03T11:26:28.728Z"
-}
+
+> synaptic-flow@0.1.0 build /home/fritzprix/my_works/tauri-agent
+> tsc && vite build
+
+vite v6.3.5 building for production...
+transforming...
+✓ 2393 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                     0.47 kB │ gzip:   0.30 kB
+dist/assets/index-Bf2sSkn3.css     68.11 kB │ gzip:  11.84 kB
+dist/assets/index-CoDxYG4R.js   1,220.66 kB │ gzip: 342.26 kB
+✓ built in 3.78s

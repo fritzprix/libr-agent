@@ -66,6 +66,7 @@ function LoopFramework() {
   const { messages, submit } = useChatContext();
   const { idle } = useScheduler();
   const loopContextRef = useRef<LoopContext>({});
+  const lastMessageRef = useRef<string|null>(null);
 
   // Learn: 관찰과 행동으로부터 얻은 교훈이나 결론을 기록합니다.
   const learn: ServiceToolHandler<LearnInput> = useCallback(
@@ -403,7 +404,7 @@ function LoopFramework() {
 
     logger.info('Registering LOOP framework extension');
     registerExtension('agentic-loop', agenticExtension);
-    
+
     return () => {
       unregisterExtension('agentic-loop');
       logger.info('Unregistered LOOP framework extension');
@@ -414,12 +415,21 @@ function LoopFramework() {
   useEffect(() => {
     const lastMessage = messages[messages.length - 1];
     if (idle &&
-        lastMessage && 
-        lastMessage.isStreaming === false && 
-        lastMessage.function_call?.name !== 'halt'
+      lastMessage &&
+      lastMessage.isStreaming === false &&
+      lastMessage.function_call?.name !== 'halt' &&
+      lastMessageRef.current !== lastMessage.id
     ) {
       logger.debug('Auto-submitting message in LOOP Framework', { lastMessage });
-      submit();
+      const id = createId();
+      lastMessageRef.current = id;
+      submit([{
+        id,
+        sessionId: '', // Will be set by submit function
+        role: 'system',
+        content: 'Reflect on your current LOOP context and decide the next step. Use getContext to review your current state, then proceed with the appropriate LOOP action (learn, observe, orient, plan, or halt).',
+        isStreaming: false,
+      }]);
     }
   }, [idle, messages, submit]);
 
