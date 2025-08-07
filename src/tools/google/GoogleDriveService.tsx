@@ -39,7 +39,7 @@ function GoogleDriveService() {
   useEffect(() => {
     registerService(service);
     return () => {
-      unregisterService(service);
+      unregisterService(service.name);
     };
   }, [registerService, unregisterService, service]);
 
