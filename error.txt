@@ -1,13 +1,6 @@
 
-> synaptic-flow@0.1.0 build /home/fritzprix/my_works/tauri-agent
+> synaptic-flow@0.1.0 build /Users/1111108/my_work/synaptic-flow
 > tsc && vite build
 
-vite v6.3.5 building for production...
-transforming...
-✓ 2393 modules transformed.
-rendering chunks...
-computing gzip size...
-dist/index.html                     0.47 kB │ gzip:   0.30 kB
-dist/assets/index-Bf2sSkn3.css     68.11 kB │ gzip:  11.84 kB
-dist/assets/index-CoDxYG4R.js   1,220.66 kB │ gzip: 342.26 kB
-✓ built in 3.78s
+src/features/chat/MessageBubbleRouter.tsx(3,28): error TS2306: File '/Users/1111108/my_work/synaptic-flow/src/features/chat/ToolCallBubble.tsx' is not a module.
+ ELIFECYCLE  Command failed with exit code 2.
