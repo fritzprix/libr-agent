@@ -1,4 +1,7 @@
 import React from 'react';
+import { Wrench } from 'lucide-react';
+import { BaseBubble } from '@/components/ui/BaseBubble';
+import { JsonViewer } from '@/components/ui/JsonViewer';
 
 interface ToolCallBubbleProps {
   tool_calls: {
@@ -9,30 +12,66 @@ interface ToolCallBubbleProps {
 }
 
 const ToolCallBubble: React.FC<ToolCallBubbleProps> = ({ tool_calls }) => {
-  return (
-    <div className="mt-4 p-3 bg-popover rounded-lg border border-border">
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-sm">🛠️</span>
-        <span className="text-sm font-medium">Tool Call</span>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        {tool_calls.map((tool_call, index) => (
-          <div
-            key={index}
-            className="inline-flex items-center gap-2 px-3 py-1 bg-muted rounded-full text-xs"
-          >
-            {tool_call.function && (
-              <>
-                <span className="text-primary">{tool_call.function.name}</span>
-                <span className="truncate max-w-32">
-                  {tool_call.function.arguments}
-                </span>
-              </>
-            )}
-          </div>
-        ))}
-      </div>
+  const badge = (
+    <span className="px-2 py-1 bg-primary text-primary-foreground text-xs rounded-full">
+      {tool_calls.length} call{tool_calls.length !== 1 ? 's' : ''}
+    </span>
+  );
+
+  const collapsedSummary = (
+    <div className="flex flex-wrap gap-2">
+      {tool_calls.map((call, index) => (
+        <span
+          key={index}
+          className="inline-flex items-center gap-1 px-2 py-1 bg-muted rounded-full text-xs"
+        >
+          <span className="text-primary">{call.function.name}</span>
+        </span>
+      ))}
     </div>
+  );
+
+  const copyData = JSON.stringify(tool_calls, null, 2);
+
+  return (
+    <BaseBubble
+      title="Tool Call"
+      icon={<Wrench size={16} />}
+      badge={badge}
+      copyData={copyData}
+      collapsedSummary={collapsedSummary}
+    >
+      {tool_calls.map((call) => {
+        let parsedArgs = null;
+        try {
+          parsedArgs = JSON.parse(call.function.arguments);
+        } catch {
+          // arguments가 JSON이 아닌 경우 그대로 사용
+        }
+
+        return (
+          <div key={call.id} className="mb-4 last:mb-0">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="font-mono text-sm font-medium text-primary">
+                {call.function.name}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                #{call.id}
+              </span>
+            </div>
+            <div className="pl-4 border-l-2 border-border">
+              {parsedArgs ? (
+                <JsonViewer data={parsedArgs} />
+              ) : (
+                <pre className="text-sm text-foreground font-mono whitespace-pre-wrap break-words">
+                  {call.function.arguments}
+                </pre>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </BaseBubble>
   );
 };
 

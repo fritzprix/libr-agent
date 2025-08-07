@@ -1,7 +1,9 @@
 import { getLogger } from '@/lib/logger';
 import { Message } from '@/models/chat';
+import { useClipboard } from '@/hooks/useClipboard';
 import React, { useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
+import { Copy, Check } from 'lucide-react';
 
 const logger = getLogger('ContentBubble');
 
@@ -12,10 +14,19 @@ interface ContentBubbleProps {
 const ContentBubble: React.FC<ContentBubbleProps> = ({ message }) => {
   const { isStreaming, content } = message;
   const safeContent = typeof content === 'string' ? content : '';
+  const { copied, copyToClipboard } = useClipboard();
 
   useEffect(() => {
     logger.info('message', { message });
   }, []);
+
+  const handleCopy = async () => {
+    try {
+      await copyToClipboard(safeContent);
+    } catch (err) {
+      logger.error('Failed to copy content', err);
+    }
+  };
 
   if (!safeContent.trim()) {
     return null;
@@ -46,7 +57,17 @@ const ContentBubble: React.FC<ContentBubbleProps> = ({ message }) => {
   const processedContent = processStreamingContent(safeContent);
 
   return (
-    <div className="text-sm leading-relaxed">
+    <div className="group relative text-sm leading-relaxed">
+      {/* Copy button - hover로 나타남 */}
+      <button
+        onClick={handleCopy}
+        className="absolute top-2 right-2 flex items-center gap-1 px-2 py-1 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-xs rounded transition-all opacity-0 group-hover:opacity-100"
+        aria-label="Copy content"
+      >
+        {copied ? <Check size={12} /> : <Copy size={12} />}
+        {copied ? 'Copied!' : 'Copy'}
+      </button>
+      
       <ReactMarkdown
         // 에러가 발생해도 앱이 크래시되지 않도록 처리
         skipHtml={false}
