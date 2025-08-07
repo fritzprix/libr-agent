@@ -23,8 +23,6 @@ interface AssistantContextType {
   currentAssistant: Assistant | null;
   getCurrent: () => Assistant | null;
   setCurrentAssistant: (assistant: Assistant | null) => void;
-  applyExtension: (extension: Partial<Assistant>) => void;
-  resetExtension: () => void;
   getById: (id: string) => Assistant | null;
   saveAssistant: (assistant: Assistant) => Promise<Assistant | undefined>;
   deleteAssistant: (assistantId: string) => Promise<void>;
@@ -87,7 +85,6 @@ export const AssistantContextProvider = ({
     [],
   );
 
-  const [extension, setExtension] = useState<Partial<Assistant> | null>(null);
   const [error, setError] = useState<Error | null>(null);
 
   // Helper to show user-friendly error messages
@@ -227,32 +224,6 @@ export const AssistantContextProvider = ({
     }
   }, [saveError, deleteError, loadError]);
 
-  const applyExtension = useCallback((ext: Partial<Assistant>) => {
-    const logger = getLogger('AssistantContext.applyExtension');
-
-    if (!ext || Object.keys(ext).length === 0) {
-      logger.warn('Empty extension provided to applyExtension function');
-      return;
-    }
-
-    logger.info('Applying assistant extension', {
-      extension: {
-        name: ext.name,
-        systemPrompt: !!ext.systemPrompt,
-        localServices: ext.localServices?.length || 0,
-        mcpServers: Object.keys(ext.mcpConfig?.mcpServers || {}).length,
-      },
-    });
-
-    setExtension(ext);
-  }, []);
-
-  const resetExtension = useCallback(() => {
-    const logger = getLogger('AssistantContext.resetExtension');
-    logger.debug('Resetting assistant extension');
-    setExtension(null);
-  }, []);
-
   useEffect(() => {
     if (!loading && assistants && !currentAssistant) {
       if (assistants.length === 0) {
@@ -308,73 +279,14 @@ export const AssistantContextProvider = ({
     [allAssistants],
   );
 
-  const effectiveAssistant: Assistant | null = useMemo(() => {
-    if (extension && currentAssistant) {
-      const logger = getLogger('AssistantContext.effectiveAssistant');
-
-      // System prompt: append extension context if available
-      const basePrompt = currentAssistant.systemPrompt || '';
-      const extensionPrompt = extension.systemPrompt;
-      const combinedPrompt = extensionPrompt
-        ? [basePrompt, extensionPrompt].filter(Boolean).join('\n\n')
-        : basePrompt;
-
-      // Local services: merge existing + additional (deduplicated)
-      const baseServices = currentAssistant.localServices || [];
-      const extensionServices = extension.localServices || [];
-      const combinedServices = [
-        ...new Set([...baseServices, ...extensionServices]),
-      ];
-
-      // MCP config: merge existing + additional servers (extension takes priority)
-      const baseMcpConfig = currentAssistant.mcpConfig || { mcpServers: {} };
-      const extensionMcpConfig = extension.mcpConfig || { mcpServers: {} };
-      const combinedMcpConfig = {
-        ...baseMcpConfig,
-        mcpServers: {
-          ...baseMcpConfig.mcpServers,
-          ...extensionMcpConfig.mcpServers, // Extension has priority
-        },
-      };
-
-      const result = {
-        ...currentAssistant,
-        ...extension, // Other fields allow extension
-        systemPrompt: combinedPrompt,
-        localServices: combinedServices,
-        mcpConfig: combinedMcpConfig,
-      } satisfies Assistant;
-
-      logger.debug('Applied extension to assistant', {
-        baseAssistant: currentAssistant.name,
-        extension: {
-          systemPrompt: !!extensionPrompt,
-          localServices: extensionServices.length,
-          mcpServers: Object.keys(extensionMcpConfig.mcpServers || {}),
-        },
-        result: {
-          systemPromptLength: result.systemPrompt.length,
-          localServicesCount: result.localServices?.length,
-          mcpServersCount: Object.keys(result.mcpConfig?.mcpServers || {})
-            .length,
-        },
-      });
-
-      return result;
-    }
-    return currentAssistant;
-  }, [currentAssistant, extension]);
-
   useEffect(() => {
-    currentAssistantRef.current = effectiveAssistant;
-  }, [effectiveAssistant]);
+    currentAssistantRef.current = currentAssistant;
+  }, [currentAssistant]);
 
   const contextValue: AssistantContextType = useMemo(
     () => ({
       assistants: allAssistants,
-      currentAssistant: effectiveAssistant,
-      applyExtension,
-      resetExtension,
+      currentAssistant,
       setCurrentAssistant,
       unregisterEphemeral,
       registerEphemeral,
@@ -386,9 +298,7 @@ export const AssistantContextProvider = ({
     }),
     [
       allAssistants,
-      effectiveAssistant,
-      applyExtension,
-      resetExtension,
+      currentAssistant,
       setCurrentAssistant,
       getCurrent,
       upsertAssistant,

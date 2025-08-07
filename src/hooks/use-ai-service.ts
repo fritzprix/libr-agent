@@ -3,6 +3,7 @@ import { createId } from '@paralleldrive/cuid2';
 import { useCallback, useMemo, useState } from 'react';
 import { useAssistantContext } from '../context/AssistantContext';
 import { useLocalTools } from '../context/LocalToolContext';
+import { useAssistantExtension } from '../context/AssistantExtensionContext';
 import { AIServiceConfig, AIServiceFactory } from '../lib/ai-service';
 import { getLogger } from '../lib/logger';
 import { useMCPServer } from './use-mcp-server';
@@ -33,9 +34,10 @@ export const useAIService = (config?: AIServiceConfig) => {
     [provider, apiKeys, model],
   );
   const { getCurrent: getCurrentAssistant } = useAssistantContext();
+  const { getExtensionSystemPrompts, getExtensionServices } = useAssistantExtension();
 
   const { getAvailableTools: getAvailableMCPTools } = useMCPServer();
-  const { getAvailableTools: getAvailableLocalTools } = useLocalTools();
+  const { getAvailableTools: getAvailableLocalTools, getService } = useLocalTools();
 
   const submit = useCallback(
     async (messages: Message[]): Promise<Message> => {
@@ -48,18 +50,39 @@ export const useAIService = (config?: AIServiceConfig) => {
         ...getAvailableLocalTools(),
       ].filter(Boolean);
 
+      // Get extension services and their tools
+      const extensionServices = getExtensionServices();
+      const extensionTools = extensionServices.flatMap(serviceExt => {
+        if (serviceExt.type === 'native') {
+          const localService = getService(serviceExt.service.name);
+          return localService?.tools.map(tool => tool.toolDefinition) || [];
+        }
+        // Remote extension tools are included in getAvailableMCPTools() from MCPServerContext
+        return [];
+      });
+
+      const allTools = [...availableTools, ...extensionTools];
+
       let currentResponseId = createId();
       let fullContent = '';
       let thinking = '';
       let toolCalls: ToolCall[] = [];
       let finalMessage: Message | null = null;
 
+      logger.info("available tools ", { 
+        base: availableTools.length, 
+        extension: extensionTools.length, 
+        total: allTools.length 
+      });
+
       try {
         const stream = serviceInstance.streamChat(messages, {
           modelName: model,
-          systemPrompt:
+          systemPrompt: [
             getCurrentAssistant()?.systemPrompt || DEFAULT_SYSTEM_PROMPT,
-          availableTools,
+            ...getExtensionSystemPrompts()
+          ].join('\n\n'),
+          availableTools: allTools,
           config: config,
         });
 
@@ -145,6 +168,9 @@ export const useAIService = (config?: AIServiceConfig) => {
       getAvailableLocalTools,
       getAvailableMCPTools,
       getCurrentAssistant,
+      getExtensionSystemPrompts,
+      getExtensionServices,
+      getService,
     ],
   );
 
