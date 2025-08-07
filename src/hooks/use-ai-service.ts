@@ -57,7 +57,7 @@ export const useAIService = (config?: AIServiceConfig) => {
           const localService = getService(serviceExt.service.name);
           return localService?.tools.map(tool => tool.toolDefinition) || [];
         }
-        // remote 확장 도구들은 MCPServerContext에서 getAvailableMCPTools()에 포함됨
+        // Remote extension tools are included in getAvailableMCPTools() from MCPServerContext
         return [];
       });
 

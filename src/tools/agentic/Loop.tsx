@@ -422,7 +422,7 @@ function LoopFramework() {
     ) {
       logger.debug('Auto-submitting message in LOOP Framework', { lastMessage });
       const id = createId();
-      lastMessageRef.current = id;
+      lastMessageRef.current = lastMessage.id;
       submit([{
         id,
         sessionId: '', // Will be set by submit function
