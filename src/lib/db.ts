@@ -9,6 +9,38 @@ export interface DatabaseObject<T = unknown> {
   updatedAt?: Date;
 }
 
+// 파일 첨부용 타입 정의
+export interface FileStore {
+  id: string;
+  name: string;
+  description?: string;
+  sessionId?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface FileContent {
+  id: string;
+  storeId: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  uploadedAt: Date;
+  content: string;
+  lineCount: number;
+  summary: string; // 첫 20줄 요약
+}
+
+export interface FileChunk {
+  id: string;
+  contentId: string;
+  chunkIndex: number;
+  text: string;
+  startLine: number;
+  endLine: number;
+  embedding?: number[]; // BM25에서는 null, 임베딩 활성화시 사용
+}
+
 export interface Page<T> {
   items: T[];
   page: number;
@@ -33,6 +65,9 @@ export interface DatabaseService {
   sessions: CRUD<Session>;
   messages: CRUD<Message>;
   groups: CRUD<Group>;
+  fileStores: CRUD<FileStore>;
+  fileContents: CRUD<FileContent>;
+  fileChunks: CRUD<FileChunk>;
 }
 
 class LocalDatabase extends Dexie {
@@ -49,6 +84,9 @@ class LocalDatabase extends Dexie {
   sessions!: Table<Session, string>;
   messages!: Table<Message, string>;
   groups!: Table<Group, string>;
+  fileStores!: Table<FileStore, string>;
+  fileContents!: Table<FileContent, string>;
+  fileChunks!: Table<FileChunk, string>;
 
   constructor() {
     super('MCPAgentDB');
@@ -108,6 +146,17 @@ class LocalDatabase extends Dexie {
       })
       .upgrade(async () => {
         console.log('Upgrading database to version 4 - adding groups table');
+      });
+
+    // Version 5: Add file attachment tables
+    this.version(5)
+      .stores({
+        fileStores: '&id, sessionId, createdAt, updatedAt, name',
+        fileContents: '&id, storeId, filename, uploadedAt, mimeType',
+        fileChunks: '&id, contentId, chunkIndex',
+      })
+      .upgrade(async () => {
+        console.log('Upgrading database to version 5 - adding file attachment tables');
       });
   }
 }
@@ -389,6 +438,138 @@ export const dbService: DatabaseService = {
       return LocalDatabase.getInstance().groups.count();
     },
   },
+  fileStores: {
+    upsert: async (store: FileStore) => {
+      const now = new Date();
+      if (!store.createdAt) store.createdAt = now;
+      store.updatedAt = now;
+      await LocalDatabase.getInstance().fileStores.put(store);
+    },
+    upsertMany: async (stores: FileStore[]) => {
+      const now = new Date();
+      const updatedStores = stores.map((store) => ({
+        ...store,
+        createdAt: store.createdAt || now,
+        updatedAt: now,
+      }));
+      await LocalDatabase.getInstance().fileStores.bulkPut(updatedStores);
+    },
+    read: async (id: string) => {
+      return LocalDatabase.getInstance().fileStores.get(id);
+    },
+    delete: async (id: string) => {
+      const db = LocalDatabase.getInstance();
+      await db.transaction('rw', db.fileStores, db.fileContents, db.fileChunks, async () => {
+        // Delete all chunks for contents in this store
+        const contents = await db.fileContents.where('storeId').equals(id).toArray();
+        for (const content of contents) {
+          await db.fileChunks.where('contentId').equals(content.id).delete();
+        }
+        // Delete all contents in this store
+        await db.fileContents.where('storeId').equals(id).delete();
+        // Delete the store itself
+        await db.fileStores.delete(id);
+      });
+    },
+    getPage: async (page: number, pageSize: number): Promise<Page<FileStore>> => {
+      const db = LocalDatabase.getInstance();
+      const totalItems = await db.fileStores.count();
+
+      if (pageSize === -1) {
+        const items = await db.fileStores.orderBy('createdAt').toArray();
+        return createPage(items, page, pageSize, totalItems);
+      }
+
+      const offset = (page - 1) * pageSize;
+      const items = await db.fileStores
+        .orderBy('createdAt')
+        .offset(offset)
+        .limit(pageSize)
+        .toArray();
+
+      return createPage(items, page, pageSize, totalItems);
+    },
+    count: async (): Promise<number> => {
+      return LocalDatabase.getInstance().fileStores.count();
+    },
+  },
+  fileContents: {
+    upsert: async (content: FileContent) => {
+      await LocalDatabase.getInstance().fileContents.put(content);
+    },
+    upsertMany: async (contents: FileContent[]) => {
+      await LocalDatabase.getInstance().fileContents.bulkPut(contents);
+    },
+    read: async (id: string) => {
+      return LocalDatabase.getInstance().fileContents.get(id);
+    },
+    delete: async (id: string) => {
+      const db = LocalDatabase.getInstance();
+      await db.transaction('rw', db.fileContents, db.fileChunks, async () => {
+        // Delete all chunks for this content
+        await db.fileChunks.where('contentId').equals(id).delete();
+        // Delete the content itself
+        await db.fileContents.delete(id);
+      });
+    },
+    getPage: async (page: number, pageSize: number): Promise<Page<FileContent>> => {
+      const db = LocalDatabase.getInstance();
+      const totalItems = await db.fileContents.count();
+
+      if (pageSize === -1) {
+        const items = await db.fileContents.orderBy('uploadedAt').reverse().toArray();
+        return createPage(items, page, pageSize, totalItems);
+      }
+
+      const offset = (page - 1) * pageSize;
+      const items = await db.fileContents
+        .orderBy('uploadedAt')
+        .reverse()
+        .offset(offset)
+        .limit(pageSize)
+        .toArray();
+
+      return createPage(items, page, pageSize, totalItems);
+    },
+    count: async (): Promise<number> => {
+      return LocalDatabase.getInstance().fileContents.count();
+    },
+  },
+  fileChunks: {
+    upsert: async (chunk: FileChunk) => {
+      await LocalDatabase.getInstance().fileChunks.put(chunk);
+    },
+    upsertMany: async (chunks: FileChunk[]) => {
+      await LocalDatabase.getInstance().fileChunks.bulkPut(chunks);
+    },
+    read: async (id: string) => {
+      return LocalDatabase.getInstance().fileChunks.get(id);
+    },
+    delete: async (id: string) => {
+      await LocalDatabase.getInstance().fileChunks.delete(id);
+    },
+    getPage: async (page: number, pageSize: number): Promise<Page<FileChunk>> => {
+      const db = LocalDatabase.getInstance();
+      const totalItems = await db.fileChunks.count();
+
+      if (pageSize === -1) {
+        const items = await db.fileChunks.orderBy('chunkIndex').toArray();
+        return createPage(items, page, pageSize, totalItems);
+      }
+
+      const offset = (page - 1) * pageSize;
+      const items = await db.fileChunks
+        .orderBy('chunkIndex')
+        .offset(offset)
+        .limit(pageSize)
+        .toArray();
+
+      return createPage(items, page, pageSize, totalItems);
+    },
+    count: async (): Promise<number> => {
+      return LocalDatabase.getInstance().fileChunks.count();
+    },
+  },
 };
 
 // Expanded utility functions
@@ -487,5 +668,73 @@ export const dbUtils = {
   },
   bulkUpsertMessages: async (messages: Message[]): Promise<void> => {
     await dbService.messages.upsertMany(messages);
+  },
+
+  // --- File Stores ---
+  getAllFileStores: async (): Promise<FileStore[]> => {
+    return LocalDatabase.getInstance().fileStores.orderBy('createdAt').toArray();
+  },
+  getFileStoresBySession: async (sessionId: string): Promise<FileStore[]> => {
+    return LocalDatabase.getInstance()
+      .fileStores.where('sessionId')
+      .equals(sessionId)
+      .sortBy('createdAt');
+  },
+  clearAllFileStores: async (): Promise<void> => {
+    const db = LocalDatabase.getInstance();
+    await db.transaction('rw', db.fileStores, db.fileContents, db.fileChunks, async () => {
+      await db.fileChunks.clear();
+      await db.fileContents.clear();
+      await db.fileStores.clear();
+    });
+  },
+
+  // --- File Contents ---
+  getFileContentsByStore: async (storeId: string): Promise<FileContent[]> => {
+    return LocalDatabase.getInstance()
+      .fileContents.where('storeId')
+      .equals(storeId)
+      .sortBy('uploadedAt');
+  },
+  searchFileContentsByFilename: async (filename: string): Promise<FileContent[]> => {
+    return LocalDatabase.getInstance()
+      .fileContents.where('filename')
+      .startsWithIgnoreCase(filename)
+      .toArray();
+  },
+
+  // --- File Chunks ---
+  getFileChunksByContent: async (contentId: string): Promise<FileChunk[]> => {
+    return LocalDatabase.getInstance()
+      .fileChunks.where('contentId')
+      .equals(contentId)
+      .sortBy('chunkIndex');
+  },
+  getFileChunksByStore: async (storeId: string): Promise<FileChunk[]> => {
+    // Get all content IDs for the store first
+    const contents = await LocalDatabase.getInstance()
+      .fileContents.where('storeId')
+      .equals(storeId)
+      .toArray();
+    
+    const contentIds = contents.map(content => content.id);
+    const allChunks: FileChunk[] = [];
+    
+    // Get chunks for each content
+    for (const contentId of contentIds) {
+      const chunks = await LocalDatabase.getInstance()
+        .fileChunks.where('contentId')
+        .equals(contentId)
+        .sortBy('chunkIndex');
+      allChunks.push(...chunks);
+    }
+    
+    return allChunks;
+  },
+  updateChunkEmbedding: async (chunkId: string, embedding: number[]): Promise<void> => {
+    await LocalDatabase.getInstance()
+      .fileChunks.where('id')
+      .equals(chunkId)
+      .modify({ embedding });
   },
 };

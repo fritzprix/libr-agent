@@ -70,13 +70,87 @@ mcp-plan.md의 파일 첨부 시스템을 Web Worker MCP 서버 모듈로 구현
 └─────────────┘ └─────────────┘
 ```
 
-## 📁 파일 구조
+## 📁 파일 구조 및 코드 배치
 
+### 1. 데이터베이스 확장 (기존 활용)
+```text
+src/lib/db.ts                 # ✅ 기존 파일 확장
+├── FileStore, FileContent, FileChunk 타입 추가
+├── Version 5 스키마 추가 (fileStores, fileContents, fileChunks)
+├── CRUD 서비스 추가 (기존 패턴 동일)
+└── 파일 첨부용 유틸리티 함수 추가
+```
+
+### 2. MCP Server Module (새로 생성)
 ```text
 src/lib/web-mcp/modules/
-├── calculator.ts          # ✅ 기존
-├── filesystem.ts          # ✅ 기존
-└── file-store.ts          # 🆕 새로 구현
+├── calculator.ts             # ✅ 기존
+├── filesystem.ts             # ✅ 기존
+└── file-store.ts             # 🆕 새로 구현
+    ├── ISearchEngine 인터페이스
+    ├── BM25SearchEngine (MVP)
+    ├── EmbeddingSearchEngine (향후 확장)
+    ├── AdaptiveSearchManager
+    ├── TextChunker 유틸리티
+    └── FileStoreServer MCP 구현
+```
+
+### 3. 타입 정의 위치 (기존 활용)
+```text
+src/models/
+├── chat.ts                   # ✅ 기존 - AttachmentReference 이미 정의됨!
+└── search-engine.ts          # 🆕 새로 생성 (검색 엔진 전용)
+    ├── ISearchEngine 인터페이스
+    ├── SearchResult, SearchOptions
+    └── BM25/Embedding 관련 타입
+```
+
+**✅ 중요 발견**: `AttachmentReference` 타입이 `src/models/chat.ts`에 이미 완벽하게 정의되어 있습니다!
+```typescript
+// src/models/chat.ts (기존)
+export interface AttachmentReference {
+  storeId: string;         // MCP 파일 저장소 ID
+  contentId: string;       // MCP 컨텐츠 ID
+  filename: string;        // 원본 파일명
+  mimeType: string;        // MIME 타입
+  size: number;            // 파일 크기 (bytes)
+  lineCount: number;       // 총 라인 수
+  preview: string;         // 첫 10-20줄 미리보기
+  uploadedAt: string;      // 업로드 시간 (ISO 8601)
+  chunkCount?: number;     // 청크 개수 (검색용)
+  lastAccessedAt?: string; // 마지막 접근 시간
+}
+```
+
+### 4. Hook 및 Context (기존 패턴 활용)
+
+```text
+src/hooks/
+└── use-file-attachment.ts    # 🆕 새로 생성
+    ├── useFileStore (스토어 관리)
+    ├── useFileUpload (파일 업로드) 
+    └── useFileSearch (검색 기능)
+    ※ AttachmentReference 타입은 기존 chat.ts에서 import
+
+src/context/
+└── WebMCPContext.tsx         # 🔄 기존 파일 확장
+    ├── 기존 기능 유지
+    └── 파일 첨부 관련 메서드 추가
+```
+
+### 5. UI 컴포넌트 (기존 패턴 활용)
+
+```text
+src/features/file-attachment/  # 🆕 새로 생성
+├── components/
+│   ├── FileUpload.tsx         # AttachmentReference 활용
+│   ├── FileList.tsx           # AttachmentReference[] 표시
+│   ├── SearchResults.tsx      # 검색 결과 UI
+│   └── index.ts
+├── hooks/
+│   └── use-file-attachment.ts (위 hooks/에서 이동)
+└── types/
+    └── index.ts (chat.ts와 search-engine.ts에서 re-export)
 ```
 
 ## 🔧 구현 계획
@@ -236,15 +310,46 @@ interface SearchResult {
 
 #### 2.2 BM25 검색 엔진 구현 (MVP)
 
+**파일 위치**: `src/lib/web-mcp/modules/file-store.ts`
+
 ```typescript
+// 기존 db.ts의 타입들을 import
+import { dbService, dbUtils, FileStore, FileContent, FileChunk } from '@/lib/db';
+// 기존 chat.ts의 AttachmentReference 활용
+import { AttachmentReference } from '@/models/chat';
 import BM25 from 'wink-bm25-text-search';
 import { getLogger } from '@/lib/logger';
 
 const logger = getLogger('BM25SearchEngine');
 
+// 검색 엔진 공통 인터페이스 (파일 상단에 정의)
+interface ISearchEngine {
+  initialize(): Promise<void>;
+  indexStore(storeId: string, chunks: FileChunk[]): Promise<void>;
+  search(storeId: string, query: string, options: SearchOptions): Promise<SearchResult[]>;
+  isReady(): boolean;
+  cleanup(): Promise<void>;
+}
+
+interface SearchOptions {
+  topN: number;
+  threshold?: number;
+  searchType?: 'keyword' | 'semantic' | 'hybrid';
+}
+
+interface SearchResult {
+  contentId: string;
+  chunkId: string;
+  context: string;
+  lineRange: [number, number];
+  score: number;
+  relevanceType: 'keyword' | 'semantic' | 'hybrid';
+}
+
+// BM25 검색 엔진 구현 (기존 db.ts 활용)
 class BM25SearchEngine implements ISearchEngine {
   private bm25Indexes = new Map<string, any>(); // storeId별 BM25 인덱스
-  private chunkMappings = new Map<string, Map<string, ContentChunk>>(); // 빠른 조회용
+  private chunkMappings = new Map<string, Map<string, FileChunk>>(); // 빠른 조회용
   private isInitialized = false;
   
   async initialize(): Promise<void> {
@@ -254,7 +359,7 @@ class BM25SearchEngine implements ISearchEngine {
     this.isInitialized = true;
   }
   
-  async indexStore(storeId: string, chunks: ContentChunk[]): Promise<void> {
+  async indexStore(storeId: string, chunks: FileChunk[]): Promise<void> {
     if (!this.isInitialized) {
       await this.initialize();
     }
@@ -270,18 +375,18 @@ class BM25SearchEngine implements ISearchEngine {
     });
     
     // 청크 데이터 준비 및 인덱싱
-    const chunkMapping = new Map<string, ContentChunk>();
+    const chunkMapping = new Map<string, FileChunk>();
     
     chunks.forEach(chunk => {
       // 텍스트 전처리
       const processedText = this.preprocessText(chunk.text);
       
       bm25.addDoc({
-        id: chunk.chunkId,
+        id: chunk.id, // 기존 db.ts의 id 필드 사용
         text: processedText
       });
       
-      chunkMapping.set(chunk.chunkId, chunk);
+      chunkMapping.set(chunk.id, chunk);
     });
     
     // 인덱스 통합 및 저장
@@ -319,7 +424,7 @@ class BM25SearchEngine implements ISearchEngine {
         
         return {
           contentId: chunk.contentId,
-          chunkId: chunk.chunkId,
+          chunkId: chunk.id,
           context: chunk.text,
           lineRange: [chunk.startLine, chunk.endLine] as [number, number],
           score: result.score,
@@ -895,11 +1000,12 @@ class VectorSearch {
 
 ```typescript
 import type { WebMCPServer, MCPTool } from '@/lib/mcp-types';
+import { AttachmentReference } from '@/models/chat'; // 기존 타입 활용
 import { getLogger } from '@/lib/logger';
 
 const logger = getLogger('FileStoreMCP');
 
-// 타입 정의
+// 타입 정의 (기존 AttachmentReference 활용)
 interface CreateStoreInput {
   metadata?: {
     name?: string;
@@ -924,20 +1030,15 @@ interface AddContentInput {
   };
 }
 
-interface AddContentOutput {
+// AttachmentReference를 활용한 출력 타입
+interface AddContentOutput extends Omit<AttachmentReference, 'storeId' | 'contentId'> {
+  storeId: string;
   contentId: string;
-  chunkCount: number;
+  chunkCount: number; // 추가 정보
 }
 
-interface ContentSummary {
-  contentId: string;
-  filename: string;
-  mimeType: string;
-  size: number;
-  uploadedAt: string;
-  lineCount: number;
-  summary: string;
-}
+// AttachmentReference를 기반으로 한 컨텐츠 요약
+type ContentSummary = AttachmentReference;
 
 interface SearchResult {
   contentId: string;
@@ -1208,25 +1309,26 @@ function App() {
 }
 ```
 
-### Hook 사용 예시
+### Hook 사용 예시 (기존 AttachmentReference 활용)
 
 ```typescript
 // 파일 첨부 컴포넌트에서 사용
 import { useWebMCPTools } from '@/hooks/use-web-mcp';
+import { AttachmentReference } from '@/models/chat'; // 기존 타입 활용
 
 function FileAttachmentComponent() {
   const { executeCall } = useWebMCPTools();
   
-  const uploadFile = async (file: File) => {
+  const uploadFile = async (file: File): Promise<AttachmentReference> => {
     try {
       // 1. 스토어 생성 (세션당 한 번)
       const { storeId } = await executeCall('file-store', 'createStore', {
         metadata: { sessionId: 'current-session', name: 'Session Files' }
       });
       
-      // 2. 파일 내용 추가
+      // 2. 파일 내용 추가 (AttachmentReference 형식으로 반환)
       const content = await file.text();
-      const { contentId, chunkCount } = await executeCall('file-store', 'addContent', {
+      const result = await executeCall('file-store', 'addContent', {
         storeId,
         content,
         metadata: {
@@ -1235,15 +1337,29 @@ function FileAttachmentComponent() {
           size: file.size,
           uploadedAt: new Date().toISOString()
         }
-      });
+      }) as AddContentOutput;
+      
+      // AttachmentReference 형식으로 변환
+      const attachment: AttachmentReference = {
+        storeId: result.storeId,
+        contentId: result.contentId,
+        filename: result.filename,
+        mimeType: result.mimeType,
+        size: result.size,
+        lineCount: result.lineCount,
+        preview: result.preview,
+        uploadedAt: result.uploadedAt,
+        chunkCount: result.chunkCount,
+        lastAccessedAt: new Date().toISOString()
+      };
       
       logger.info('File uploaded successfully', { 
-        contentId, 
-        filename: file.name, 
-        chunkCount 
+        contentId: attachment.contentId, 
+        filename: attachment.filename, 
+        chunkCount: attachment.chunkCount 
       });
       
-      return { storeId, contentId, chunkCount };
+      return attachment;
     } catch (error) {
       logger.error('File upload failed', { filename: file.name, error });
       throw error;
@@ -1690,16 +1806,35 @@ class MetricsCollector {
 }
 ```
 
-## 🎯 결론 및 다음 단계
+## 🎯 결론 및 다음 단계 (기존 타입 활용)
 
 이 구현 계획을 통해 Web Worker MCP 모듈로 완전한 파일 첨부 및 의미적 검색 시스템을 구현할 수 있습니다.
 
 ### 주요 장점
 
-1. **브라우저 네이티브**: 외부 서버 의존성 없이 브라우저에서 완전 동작
-2. **표준 MCP 인터페이스**: 기존 시스템과 완벽 통합
-3. **확장 가능**: 새로운 검색 알고리즘이나 임베딩 모델 쉽게 교체
-4. **성능 최적화**: 메모리 관리 및 배치 처리로 안정적 동작
+1. **기존 타입 재사용**: `AttachmentReference`가 이미 완벽하게 정의되어 일관성 확보
+2. **브라우저 네이티브**: 외부 서버 의존성 없이 브라우저에서 완전 동작
+3. **표준 MCP 인터페이스**: 기존 시스템과 완벽 통합
+4. **확장 가능**: 새로운 검색 알고리즘이나 임베딩 모델 쉽게 교체
+5. **성능 최적화**: 메모리 관리 및 배치 처리로 안정적 동작
+
+### 🔗 기존 타입 통합 이점
+
+```typescript
+// src/models/chat.ts의 AttachmentReference를 그대로 활용
+export interface Message {
+  // ...기존 필드들
+  attachments?: AttachmentReference[]; // ✅ 이미 정의됨!
+}
+
+// 새로운 파일 첨부 기능이 기존 채팅 시스템과 완벽 호환
+const message: Message = {
+  id: 'msg-1',
+  content: '파일을 첨부했습니다.',
+  attachments: [uploadedAttachment], // AttachmentReference 그대로 사용
+  // ...
+};
+```
 
 ### MVP 단계별 구현 우선순위
 
@@ -1737,29 +1872,37 @@ class MetricsCollector {
 └── 🔗 검색 결과 연관성 분석
 ```
 
-### 다음 단계
+### 다음 단계 (기존 타입 기반)
 
-1. **Phase 1a 구현**: BM25 기반 Core Module 및 IndexedDB 구조 구현
-   - `wink-bm25-text-search` 통합
-   - 검색 엔진 추상화 인터페이스 구현
-   - 기본 MCP 도구 구현
+1. **Phase 1a 구현**: 검색 엔진 타입 정의 및 BM25 Core Module
+   - `src/models/search-engine.ts` 생성 (ISearchEngine, SearchOptions, SearchResult)
+   - `wink-bm25-text-search` 통합 및 BM25SearchEngine 구현
+   - 기존 `AttachmentReference` 타입과 연동하는 MCP 도구 구현
 
-2. **Phase 1b 구현**: UI 통합 및 기본 기능 완성
-   - WebMCPContext 통합
-   - 파일 업로드/검색 컴포넌트
-   - BM25 기반 테스트 완료
+2. **Phase 1b 구현**: UI 통합 및 기존 채팅 시스템과 연결
+   - WebMCPContext에 파일 첨부 기능 추가
+   - `AttachmentReference[]`를 활용한 파일 업로드/검색 컴포넌트
+   - `Message.attachments` 필드와 완전 호환되는 UI 구현
 
 3. **Phase 2a 구현**: 임베딩 기능 점진적 추가
    - transformers.js 선택적 로딩
-   - 백그라운드 임베딩 생성
+   - 백그라운드 임베딩 생성 및 기존 `FileChunk` 테이블과 연동
    - Progressive Enhancement 적용
 
-4. **Phase 2b 최적화**: 하이브리드 검색 및 성능 튜닝
-   - 결과 융합 알고리즘 최적화
-   - 메모리 관리 및 캐싱
-   - 사용자 설정 검색 전략
+4. **Phase 2b 최적화**: 하이브리드 검색 및 채팅 통합
+   - BM25 + 임베딩 결과 융합 알고리즘
+   - 채팅 컨텍스트에 파일 첨부 내용 자동 포함
+   - `AttachmentReference` 기반 파일 관리 및 검색
 
-5. **Phase 3 확장**: 추가 기능 및 다양한 파일 형식 지원
-   - PDF, DOCX 등 문서 파싱
-   - 메타데이터 검색 지원
-   - 고급 검색 필터 및 정렬
+5. **Phase 3 확장**: 기존 시스템 완전 통합
+   - PDF, DOCX 등 다양한 파일 형식 지원
+   - 세션별 파일 관리 (Session 테이블과 연동)
+   - Assistant별 파일 접근 권한 관리
+
+### 🚀 즉시 활용 가능한 기존 자산
+
+- ✅ `AttachmentReference` 인터페이스 (완벽하게 정의됨)
+- ✅ `Message.attachments` 필드 (채팅과 즉시 연동 가능)
+- ✅ 기존 db.ts의 CRUD 패턴 (파일 저장 로직 확장됨)
+- ✅ WebMCPContext 구조 (calculator/filesystem 패턴 참고)
+- ✅ 로깅 시스템 (`@/lib/logger`) 및 shadcn/ui 컴포넌트
