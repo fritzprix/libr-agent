@@ -1,6 +1,9 @@
 import { useCallback } from 'react';
 import { useResourceAttachment } from '@/context/ResourceAttachmentContext';
-import { ResourceAttachmentService, FileProcessingOptions } from '@/lib/resource-attachment-service';
+import {
+  ResourceAttachmentService,
+  FileProcessingOptions,
+} from '@/lib/resource-attachment-service';
 import { AttachmentReference } from '@/models/chat';
 import { getLogger } from '@/lib/logger';
 
@@ -28,17 +31,22 @@ export const useResourceAttachmentService = () => {
       url: string,
       mimeType: string,
       filename?: string,
-      options?: FileProcessingOptions
+      options?: FileProcessingOptions,
     ): Promise<AttachmentReference> => {
       try {
-        logger.debug('Adding and processing file', { url, mimeType, filename, options });
+        logger.debug('Adding and processing file', {
+          url,
+          mimeType,
+          filename,
+          options,
+        });
 
         // Process file using service layer (this will use MCP tools when implemented)
         const processedAttachment = await ResourceAttachmentService.processFile(
           url,
           mimeType,
           filename,
-          options
+          options,
         );
 
         // Add to context state
@@ -51,11 +59,15 @@ export const useResourceAttachmentService = () => {
 
         return processedAttachment;
       } catch (error) {
-        logger.error('Failed to add and process file', { url, mimeType, error });
+        logger.error('Failed to add and process file', {
+          url,
+          mimeType,
+          error,
+        });
         throw error;
       }
     },
-    [addFileToContext]
+    [addFileToContext],
   );
 
   /**
@@ -64,14 +76,16 @@ export const useResourceAttachmentService = () => {
   const getFileContent = useCallback(
     async (attachment: AttachmentReference): Promise<string> => {
       try {
-        logger.debug('Getting file content', { contentId: attachment.contentId });
+        logger.debug('Getting file content', {
+          contentId: attachment.contentId,
+        });
         return await ResourceAttachmentService.getFileContent(attachment);
       } catch (error) {
         logger.error('Failed to get file content', { attachment, error });
         throw error;
       }
     },
-    []
+    [],
   );
 
   /**
@@ -80,45 +94,63 @@ export const useResourceAttachmentService = () => {
   const searchInFile = useCallback(
     async (
       attachment: AttachmentReference,
-      query: string
-    ): Promise<Array<{ lineNumber: number; content: string; match: string }>> => {
+      query: string,
+    ): Promise<
+      Array<{ lineNumber: number; content: string; match: string }>
+    > => {
       try {
-        logger.debug('Searching in file', { contentId: attachment.contentId, query });
+        logger.debug('Searching in file', {
+          contentId: attachment.contentId,
+          query,
+        });
         return await ResourceAttachmentService.searchInFile(attachment, query);
       } catch (error) {
         logger.error('Failed to search in file', { attachment, query, error });
         throw error;
       }
     },
-    []
+    [],
   );
 
   /**
    * Search across all attached files
    */
   const searchInAllFiles = useCallback(
-    async (query: string): Promise<
+    async (
+      query: string,
+    ): Promise<
       Array<{
         attachment: AttachmentReference;
         matches: Array<{ lineNumber: number; content: string; match: string }>;
       }>
     > => {
       try {
-        logger.debug('Searching in all files', { query, fileCount: files.length });
+        logger.debug('Searching in all files', {
+          query,
+          fileCount: files.length,
+        });
 
         const results = await Promise.allSettled(
           files.map(async (file) => ({
             attachment: file,
             matches: await ResourceAttachmentService.searchInFile(file, query),
-          }))
+          })),
         );
 
         // Filter successful results and exclude empty matches
         const successfulResults = results
-          .filter((result): result is PromiseFulfilledResult<{
-            attachment: AttachmentReference;
-            matches: Array<{ lineNumber: number; content: string; match: string }>;
-          }> => result.status === 'fulfilled')
+          .filter(
+            (
+              result,
+            ): result is PromiseFulfilledResult<{
+              attachment: AttachmentReference;
+              matches: Array<{
+                lineNumber: number;
+                content: string;
+                match: string;
+              }>;
+            }> => result.status === 'fulfilled',
+          )
           .map((result) => result.value)
           .filter((result) => result.matches.length > 0);
 
@@ -134,7 +166,7 @@ export const useResourceAttachmentService = () => {
         throw error;
       }
     },
-    [files]
+    [files],
   );
 
   /**

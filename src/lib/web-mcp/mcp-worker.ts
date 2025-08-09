@@ -5,7 +5,12 @@
  * providing MCP-compatible functionality without Node.js/Python dependencies.
  */
 
-import { WebMCPServer, WebMCPMessage, WebMCPResponse, MCPTool } from '../mcp-types';
+import {
+  WebMCPServer,
+  WebMCPMessage,
+  WebMCPResponse,
+  MCPTool,
+} from '../mcp-types';
 
 // Cache for loaded MCP servers
 const mcpServers = new Map<string, WebMCPServer>();
@@ -24,15 +29,24 @@ async function loadMCPServer(serverName: string): Promise<WebMCPServer> {
     const server = mod.default as WebMCPServer;
 
     // Validate server structure
-    if (!server.name || !server.tools || typeof server.callTool !== 'function') {
+    if (
+      !server.name ||
+      !server.tools ||
+      typeof server.callTool !== 'function'
+    ) {
       throw new Error(`Invalid MCP server module: ${serverName}`);
     }
 
     mcpServers.set(serverName, server);
-    console.log(`[WebMCP Worker] Loaded server: ${serverName} with ${server.tools.length} tools`);
+    console.log(
+      `[WebMCP Worker] Loaded server: ${serverName} with ${server.tools.length} tools`,
+    );
     return server;
   } catch (error) {
-    console.error(`[WebMCP Worker] Failed to load server ${serverName}:`, error);
+    console.error(
+      `[WebMCP Worker] Failed to load server ${serverName}:`,
+      error,
+    );
     throw new Error(`Failed to load MCP server: ${serverName}`);
   }
 }
@@ -40,7 +54,9 @@ async function loadMCPServer(serverName: string): Promise<WebMCPServer> {
 /**
  * Handle MCP message and return appropriate response
  */
-async function handleMCPMessage(message: WebMCPMessage): Promise<WebMCPResponse> {
+async function handleMCPMessage(
+  message: WebMCPMessage,
+): Promise<WebMCPResponse> {
   const { id, type, serverName, toolName, args } = message;
 
   try {
@@ -48,7 +64,7 @@ async function handleMCPMessage(message: WebMCPMessage): Promise<WebMCPResponse>
       case 'ping':
         return { id, result: 'pong' };
 
-      case 'loadServer':
+      case 'loadServer': {
         if (!serverName) {
           throw new Error('Server name is required for loadServer');
         }
@@ -59,17 +75,18 @@ async function handleMCPMessage(message: WebMCPMessage): Promise<WebMCPResponse>
             name: loadedServer.name,
             description: loadedServer.description,
             version: loadedServer.version,
-            toolCount: loadedServer.tools.length
-          }
+            toolCount: loadedServer.tools.length,
+          },
         };
+      }
 
-      case 'listTools':
+      case 'listTools': {
         if (!serverName) {
           // Return tools from all loaded servers
           const allTools: MCPTool[] = [];
           for (const [name, server] of mcpServers.entries()) {
             // Prefix tool names with server name for uniqueness
-            const prefixedTools = server.tools.map(tool => ({
+            const prefixedTools = server.tools.map((tool) => ({
               ...tool,
               name: `${name}__${tool.name}`,
             }));
@@ -79,28 +96,35 @@ async function handleMCPMessage(message: WebMCPMessage): Promise<WebMCPResponse>
         } else {
           // Return tools from specific server
           const server = await loadMCPServer(serverName);
-          const prefixedTools = server.tools.map(tool => ({
+          const prefixedTools = server.tools.map((tool) => ({
             ...tool,
             name: `${serverName}__${tool.name}`,
           }));
           return { id, result: prefixedTools };
         }
+      }
 
-      case 'callTool':
+      case 'callTool': {
         if (!serverName || !toolName) {
-          throw new Error('Server name and tool name are required for callTool');
+          throw new Error(
+            'Server name and tool name are required for callTool',
+          );
         }
 
         const server = await loadMCPServer(serverName);
         const result = await server.callTool(toolName, args);
         return { id, result };
+      }
 
       default:
         throw new Error(`Unknown MCP message type: ${type}`);
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error(`[WebMCP Worker] Error handling message:`, { message, error: errorMessage });
+    console.error(`[WebMCP Worker] Error handling message:`, {
+      message,
+      error: errorMessage,
+    });
     return { id, error: errorMessage };
   }
 }

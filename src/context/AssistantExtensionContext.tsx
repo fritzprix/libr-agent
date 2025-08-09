@@ -42,40 +42,46 @@ interface AssistantExtensionContextValue {
   getExtensionServices: () => ServiceExtension[];
 }
 
-const AssistantExtensionContext = createContext<AssistantExtensionContextValue | undefined>(
-  undefined,
-);
+const AssistantExtensionContext = createContext<
+  AssistantExtensionContextValue | undefined
+>(undefined);
 
 interface AssistantExtensionProviderProps {
   children: React.ReactNode;
 }
 
-export function AssistantExtensionProvider({ children }: AssistantExtensionProviderProps) {
+export function AssistantExtensionProvider({
+  children,
+}: AssistantExtensionProviderProps) {
   const extensionsRef = useRef<Record<string, AssistantExtension>>({});
   const systemPromptsRef = useRef<Record<string, SystemPrompt>>({});
 
-  const registerExtension = useCallback((key: string, extension: AssistantExtension) => {
-    extensionsRef.current[key] = extension;
-    
-    // Register system prompts from extension
-    if (extension.systemPrompts) {
-      extension.systemPrompts.forEach((prompt, index) => {
-        const promptKey = `${key}-prompt-${index}`;
-        systemPromptsRef.current[promptKey] = {
-          key: promptKey,
-          prompt,
-          priority: 10, // Extensions get higher priority
-        };
+  const registerExtension = useCallback(
+    (key: string, extension: AssistantExtension) => {
+      extensionsRef.current[key] = extension;
+
+      // Register system prompts from extension
+      if (extension.systemPrompts) {
+        extension.systemPrompts.forEach((prompt, index) => {
+          const promptKey = `${key}-prompt-${index}`;
+          systemPromptsRef.current[promptKey] = {
+            key: promptKey,
+            prompt,
+            priority: 10, // Extensions get higher priority
+          };
+        });
+      }
+
+      logger.info('Assistant extension registered', {
+        key,
+        systemPromptsCount: extension.systemPrompts?.length ?? 0,
+        servicesCount: extension.services?.length ?? 0,
+        services:
+          extension.services?.map((s) => `${s.type}:${s.service.name}`) ?? [],
       });
-    }
-    
-    logger.info('Assistant extension registered', {
-      key,
-      systemPromptsCount: extension.systemPrompts?.length ?? 0,
-      servicesCount: extension.services?.length ?? 0,
-      services: extension.services?.map(s => `${s.type}:${s.service.name}`) ?? [],
-    });
-  }, []);
+    },
+    [],
+  );
 
   const unregisterExtension = useCallback((key: string) => {
     const extension = extensionsRef.current[key];
@@ -87,7 +93,7 @@ export function AssistantExtensionProvider({ children }: AssistantExtensionProvi
           delete systemPromptsRef.current[promptKey];
         });
       }
-      
+
       delete extensionsRef.current[key];
       logger.info('Assistant extension unregistered', {
         key,
@@ -102,13 +108,15 @@ export function AssistantExtensionProvider({ children }: AssistantExtensionProvi
   }, []);
 
   const getExtensionSystemPrompts = useCallback(() => {
-    return Object.values(systemPromptsRef.current)
-      .sort((a, b) => (b.priority || 0) - (a.priority || 0));
+    return Object.values(systemPromptsRef.current).sort(
+      (a, b) => (b.priority || 0) - (a.priority || 0),
+    );
   }, []);
 
   const getExtensionServices = useCallback(() => {
-    return Object.values(extensionsRef.current)
-      .flatMap(extension => extension.services || []);
+    return Object.values(extensionsRef.current).flatMap(
+      (extension) => extension.services || [],
+    );
   }, []);
 
   const value: AssistantExtensionContextValue = useMemo(
@@ -138,7 +146,9 @@ export function AssistantExtensionProvider({ children }: AssistantExtensionProvi
 export function useAssistantExtension(): AssistantExtensionContextValue {
   const context = useContext(AssistantExtensionContext);
   if (context === undefined) {
-    throw new Error('useAssistantExtension must be used within an AssistantExtensionProvider');
+    throw new Error(
+      'useAssistantExtension must be used within an AssistantExtensionProvider',
+    );
   }
   return context;
 }

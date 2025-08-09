@@ -23,14 +23,8 @@ export const useWebMCP = () => {
  * Provides convenience methods for common MCP operations.
  */
 export const useWebMCPTools = () => {
-  const {
-    availableTools,
-    callTool,
-    listTools,
-    serverStates,
-    isInitialized,
-    error,
-  } = useWebMCP();
+  const { availableTools, callTool, serverStates, isInitialized, error } =
+    useWebMCP();
 
   /**
    * Get all available tools with server prefix
@@ -41,7 +35,7 @@ export const useWebMCPTools = () => {
    * Find a specific tool by name (with server prefix)
    */
   const findTool = (toolName: string) => {
-    return availableTools.find(tool => tool.name === toolName);
+    return availableTools.find((tool) => tool.name === toolName);
   };
 
   /**
@@ -59,7 +53,7 @@ export const useWebMCPTools = () => {
   const executeCall = async (
     serverNameOrFullName: string,
     toolNameOrArgs?: string | unknown,
-    args?: unknown
+    args?: unknown,
   ): Promise<unknown> => {
     let serverName: string;
     let toolName: string;
@@ -75,7 +69,9 @@ export const useWebMCPTools = () => {
       // Format: executeCall("serverName__toolName", args)
       const parts = serverNameOrFullName.split('__');
       if (parts.length < 2) {
-        throw new Error(`Invalid tool name format. Expected "serverName__toolName", got "${serverNameOrFullName}"`);
+        throw new Error(
+          `Invalid tool name format. Expected "serverName__toolName", got "${serverNameOrFullName}"`,
+        );
       }
       serverName = parts[0];
       toolName = parts.slice(1).join('__');
@@ -150,7 +146,7 @@ export const useWebMCPManagement = () => {
    * Load multiple servers concurrently
    */
   const loadServers = async (serverNames: string[]): Promise<void> => {
-    await Promise.all(serverNames.map(serverName => loadServer(serverName)));
+    await Promise.all(serverNames.map((serverName) => loadServer(serverName)));
   };
 
   /**

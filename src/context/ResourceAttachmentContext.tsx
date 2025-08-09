@@ -13,24 +13,28 @@ const logger = getLogger('ResourceAttachmentContext');
 
 interface ResourceAttachmentContextType {
   files: AttachmentReference[];
-  addFile: (url: string, mimeType: string, filename?: string) => Promise<AttachmentReference>;
+  addFile: (
+    url: string,
+    mimeType: string,
+    filename?: string,
+  ) => Promise<AttachmentReference>;
   removeFile: (ref: AttachmentReference) => Promise<void>;
   clearFiles: () => void;
   isLoading: boolean;
   getFileById: (id: string) => AttachmentReference | undefined;
 }
 
-const ResourceAttachmentContext = createContext<ResourceAttachmentContextType | undefined>(
-  undefined,
-);
+const ResourceAttachmentContext = createContext<
+  ResourceAttachmentContextType | undefined
+>(undefined);
 
 interface ResourceAttachmentProviderProps {
   children: ReactNode;
 }
 
-export const ResourceAttachmentProvider: React.FC<ResourceAttachmentProviderProps> = ({
-  children,
-}) => {
+export const ResourceAttachmentProvider: React.FC<
+  ResourceAttachmentProviderProps
+> = ({ children }) => {
   const [files, setFiles] = useState<AttachmentReference[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -47,30 +51,37 @@ export const ResourceAttachmentProvider: React.FC<ResourceAttachmentProviderProp
   }, []);
 
   // Helper function to generate preview content
-  const generatePreview = useCallback(async (url: string, mimeType: string): Promise<string> => {
-    try {
-      // For text files, try to fetch and preview first few lines
-      if (mimeType.startsWith('text/')) {
-        // This would typically use MCP tools to read file content
-        // For now, return a placeholder
-        return 'Preview will be generated when file is processed...';
+  const generatePreview = useCallback(
+    async (url: string, mimeType: string): Promise<string> => {
+      try {
+        // For text files, try to fetch and preview first few lines
+        if (mimeType.startsWith('text/')) {
+          // This would typically use MCP tools to read file content
+          // For now, return a placeholder
+          return 'Preview will be generated when file is processed...';
+        }
+        return `${mimeType} file - Preview not available`;
+      } catch (error) {
+        logger.warn('Failed to generate preview', { url, mimeType, error });
+        return 'Preview not available';
       }
-      return `${mimeType} file - Preview not available`;
-    } catch (error) {
-      logger.warn('Failed to generate preview', { url, mimeType, error });
-      return 'Preview not available';
-    }
-  }, []);
+    },
+    [],
+  );
 
   const addFile = useCallback(
-    async (url: string, mimeType: string, filename?: string): Promise<AttachmentReference> => {
+    async (
+      url: string,
+      mimeType: string,
+      filename?: string,
+    ): Promise<AttachmentReference> => {
       setIsLoading(true);
       try {
         logger.debug('Adding file attachment', { url, mimeType, filename });
 
         const actualFilename = filename || extractFilenameFromUrl(url);
         const preview = await generatePreview(url, mimeType);
-        
+
         // Create a new attachment reference
         const attachment: AttachmentReference = {
           storeId: `store_${Date.now()}`,
@@ -87,7 +98,8 @@ export const ResourceAttachmentProvider: React.FC<ResourceAttachmentProviderProp
 
         // Check if file already exists (by URL/filename)
         const existingFile = files.find(
-          (file) => file.filename === actualFilename && file.storeId.includes(url)
+          (file) =>
+            file.filename === actualFilename && file.storeId.includes(url),
         );
 
         if (existingFile) {
@@ -97,16 +109,18 @@ export const ResourceAttachmentProvider: React.FC<ResourceAttachmentProviderProp
 
         // Add to files array
         setFiles((prevFiles) => [...prevFiles, attachment]);
-        
-        logger.info('File attachment added successfully', { 
-          filename: actualFilename, 
-          contentId: attachment.contentId 
+
+        logger.info('File attachment added successfully', {
+          filename: actualFilename,
+          contentId: attachment.contentId,
         });
 
         return attachment;
       } catch (error) {
         logger.error('Failed to add file attachment', { url, mimeType, error });
-        throw new Error(`Failed to add file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        throw new Error(
+          `Failed to add file: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        );
       } finally {
         setIsLoading(false);
       }
@@ -117,19 +131,24 @@ export const ResourceAttachmentProvider: React.FC<ResourceAttachmentProviderProp
   const removeFile = useCallback(
     async (ref: AttachmentReference): Promise<void> => {
       try {
-        logger.debug('Removing file attachment', { contentId: ref.contentId, filename: ref.filename });
+        logger.debug('Removing file attachment', {
+          contentId: ref.contentId,
+          filename: ref.filename,
+        });
 
-        setFiles((prevFiles) => 
-          prevFiles.filter((file) => file.contentId !== ref.contentId)
+        setFiles((prevFiles) =>
+          prevFiles.filter((file) => file.contentId !== ref.contentId),
         );
 
-        logger.info('File attachment removed successfully', { 
-          filename: ref.filename, 
-          contentId: ref.contentId 
+        logger.info('File attachment removed successfully', {
+          filename: ref.filename,
+          contentId: ref.contentId,
         });
       } catch (error) {
         logger.error('Failed to remove file attachment', { ref, error });
-        throw new Error(`Failed to remove file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        throw new Error(
+          `Failed to remove file: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        );
       }
     },
     [],
@@ -171,7 +190,9 @@ export const ResourceAttachmentProvider: React.FC<ResourceAttachmentProviderProp
 export const useResourceAttachment = () => {
   const context = useContext(ResourceAttachmentContext);
   if (context === undefined) {
-    throw new Error('useResourceAttachment must be used within a ResourceAttachmentProvider');
+    throw new Error(
+      'useResourceAttachment must be used within a ResourceAttachmentProvider',
+    );
   }
   return context;
 };

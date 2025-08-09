@@ -19,7 +19,7 @@ export class TauriMCPClient {
   async startServer(config: MCPServerConfig): Promise<string> {
     try {
       logger.debug('Starting MCP server', { config });
-      const result = await invoke('start_mcp_server', { config }) as string;
+      const result = (await invoke('start_mcp_server', { config })) as string;
       logger.info('MCP server started successfully', { serverId: result });
       return result;
     } catch (error) {
@@ -56,12 +56,16 @@ export class TauriMCPClient {
     arguments_: Record<string, unknown>,
   ): Promise<MCPResponse> {
     try {
-      logger.debug('Calling MCP tool', { serverName, toolName, arguments: arguments_ });
-      const result = await invoke('call_mcp_tool', {
+      logger.debug('Calling MCP tool', {
         serverName,
         toolName,
         arguments: arguments_,
-      }) as MCPResponse;
+      });
+      const result = (await invoke('call_mcp_tool', {
+        serverName,
+        toolName,
+        arguments: arguments_,
+      })) as MCPResponse;
       logger.debug('MCP tool call completed', { serverName, toolName, result });
       return result;
     } catch (error) {
@@ -78,8 +82,13 @@ export class TauriMCPClient {
   async listTools(serverName: string): Promise<MCPTool[]> {
     try {
       logger.debug('Listing tools for server', { serverName });
-      const tools = await invoke('list_mcp_tools', { serverName }) as MCPTool[];
-      logger.debug('Tools listed successfully', { serverName, toolCount: tools.length });
+      const tools = (await invoke('list_mcp_tools', {
+        serverName,
+      })) as MCPTool[];
+      logger.debug('Tools listed successfully', {
+        serverName,
+        toolCount: tools.length,
+      });
       return tools;
     } catch (error) {
       logger.error('Failed to list tools', error);
@@ -99,11 +108,15 @@ export class TauriMCPClient {
     >;
   }): Promise<MCPTool[]> {
     try {
-      logger.debug('Listing tools from config', { 
-        serverCount: Object.keys(config.mcpServers || {}).length 
+      logger.debug('Listing tools from config', {
+        serverCount: Object.keys(config.mcpServers || {}).length,
       });
-      const tools = await invoke('list_tools_from_config', { config }) as MCPTool[];
-      logger.debug('Tools listed from config successfully', { toolCount: tools.length });
+      const tools = (await invoke('list_tools_from_config', {
+        config,
+      })) as MCPTool[];
+      logger.debug('Tools listed from config successfully', {
+        toolCount: tools.length,
+      });
       return tools;
     } catch (error) {
       logger.error('Failed to list tools from config', error);
@@ -118,8 +131,11 @@ export class TauriMCPClient {
   async getConnectedServers(): Promise<string[]> {
     try {
       logger.debug('Getting connected servers');
-      const servers = await invoke('get_connected_servers') as string[];
-      logger.debug('Connected servers retrieved', { serverCount: servers.length, servers });
+      const servers = (await invoke('get_connected_servers')) as string[];
+      logger.debug('Connected servers retrieved', {
+        serverCount: servers.length,
+        servers,
+      });
       return servers;
     } catch (error) {
       logger.error('Failed to get connected servers', error);
@@ -135,7 +151,9 @@ export class TauriMCPClient {
   async checkServerStatus(serverName: string): Promise<boolean> {
     try {
       logger.debug('Checking server status', { serverName });
-      const status = await invoke('check_server_status', { serverName }) as boolean;
+      const status = (await invoke('check_server_status', {
+        serverName,
+      })) as boolean;
       logger.debug('Server status checked', { serverName, status });
       return status;
     } catch (error) {
@@ -151,7 +169,10 @@ export class TauriMCPClient {
   async checkAllServersStatus(): Promise<Record<string, boolean>> {
     try {
       logger.debug('Checking all servers status');
-      const statusMap = await invoke('check_all_servers_status') as Record<string, boolean>;
+      const statusMap = (await invoke('check_all_servers_status')) as Record<
+        string,
+        boolean
+      >;
       logger.debug('All servers status checked', { statusMap });
       return statusMap;
     } catch (error) {

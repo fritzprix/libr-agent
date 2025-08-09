@@ -6,18 +6,26 @@
  */
 
 import { createId } from '@paralleldrive/cuid2';
-import { WebMCPMessage, WebMCPResponse, WebMCPProxyConfig, MCPTool } from '../mcp-types';
+import {
+  WebMCPMessage,
+  WebMCPResponse,
+  WebMCPProxyConfig,
+  MCPTool,
+} from '../mcp-types';
 import { getLogger } from '../logger';
 
 const logger = getLogger('WebMCPProxy');
 
 export class WebMCPProxy {
   private worker: Worker | null = null;
-  private pendingRequests = new Map<string, {
-    resolve: (value: unknown) => void;
-    reject: (error: Error) => void;
-    timeout: NodeJS.Timeout;
-  }>();
+  private pendingRequests = new Map<
+    string,
+    {
+      resolve: (value: unknown) => void;
+      reject: (error: Error) => void;
+      timeout: ReturnType<typeof setTimeout>;
+    }
+  >();
   private config: Required<WebMCPProxyConfig>;
   private isInitialized = false;
 
@@ -53,7 +61,9 @@ export class WebMCPProxy {
     } catch (error) {
       logger.error('Failed to initialize WebMCP proxy', error);
       this.cleanup();
-      throw new Error(`Failed to initialize WebMCP proxy: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(
+        `Failed to initialize WebMCP proxy: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
@@ -64,7 +74,7 @@ export class WebMCPProxy {
     logger.debug('Cleaning up WebMCP proxy');
 
     // Reject all pending requests
-    for (const [id, { reject, timeout }] of this.pendingRequests.entries()) {
+    for (const [, { reject, timeout }] of this.pendingRequests.entries()) {
       clearTimeout(timeout);
       reject(new Error('Worker terminated'));
     }
@@ -82,7 +92,9 @@ export class WebMCPProxy {
   /**
    * Send a message to the worker and wait for response
    */
-  private async sendMessage<T = unknown>(message: Omit<WebMCPMessage, 'id'>): Promise<T> {
+  private async sendMessage<T = unknown>(
+    message: Omit<WebMCPMessage, 'id'>,
+  ): Promise<T> {
     if (!this.worker || !this.isInitialized) {
       throw new Error('WebMCP proxy not initialized');
     }
@@ -116,7 +128,9 @@ export class WebMCPProxy {
 
     const pending = this.pendingRequests.get(response.id);
     if (!pending) {
-      logger.warn('Received response for unknown request', { responseId: response.id });
+      logger.warn('Received response for unknown request', {
+        responseId: response.id,
+      });
       return;
     }
 
@@ -139,11 +153,11 @@ export class WebMCPProxy {
     logger.error('Worker error occurred', {
       message: error.message,
       filename: error.filename,
-      lineno: error.lineno
+      lineno: error.lineno,
     });
 
     // Reject all pending requests
-    for (const [id, { reject, timeout }] of this.pendingRequests.entries()) {
+    for (const [, { reject, timeout }] of this.pendingRequests.entries()) {
       clearTimeout(timeout);
       reject(new Error(`Worker error: ${error.message}`));
     }
@@ -199,14 +213,21 @@ export class WebMCPProxy {
       serverName,
     });
 
-    logger.debug('Listed tools for server', { serverName, toolCount: tools.length });
+    logger.debug('Listed tools for server', {
+      serverName,
+      toolCount: tools.length,
+    });
     return tools;
   }
 
   /**
    * Call a tool on a specific server
    */
-  async callTool(serverName: string, toolName: string, args: unknown): Promise<unknown> {
+  async callTool(
+    serverName: string,
+    toolName: string,
+    args: unknown,
+  ): Promise<unknown> {
     logger.debug('Calling tool', { serverName, toolName, args });
 
     const result = await this.sendMessage({

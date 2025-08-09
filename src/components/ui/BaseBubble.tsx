@@ -27,7 +27,7 @@ export const BaseBubble: React.FC<BaseBubbleProps> = ({
 
   const copyToClipboard = async () => {
     if (!copyData) return;
-    
+
     try {
       await navigator.clipboard.writeText(copyData);
       setCopied(true);
@@ -38,7 +38,9 @@ export const BaseBubble: React.FC<BaseBubbleProps> = ({
   };
 
   return (
-    <div className={`mt-4 bg-background rounded-lg border border-border overflow-hidden shadow-lg ${className}`}>
+    <div
+      className={`mt-4 bg-background rounded-lg border border-border overflow-hidden shadow-lg ${className}`}
+    >
       <div className="px-4 py-3 bg-muted border-b border-border flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="flex gap-1.5">

@@ -152,6 +152,9 @@ importers:
       tailwindcss:
         specifier: ^4.1.11
         version: 4.1.11
+      wink-bm25-text-search:
+        specifier: ^3.1.2
+        version: 3.1.2
       zod:
         specifier: ^3.24.1
         version: 3.25.76
@@ -167,13 +170,13 @@ importers:
         version: 4.1.11
       '@tailwindcss/vite':
         specifier: ^4.1.11
-        version: 4.1.11(vite@6.3.5(@types/node@24.0.13)(jiti@2.4.2)(lightningcss@1.30.1)(yaml@2.8.0))
+        version: 4.1.11(vite@6.3.5(@types/node@20.19.10)(jiti@2.4.2)(lightningcss@1.30.1)(yaml@2.8.0))
       '@tauri-apps/cli':
         specifier: ^2
         version: 2.6.2
       '@types/node':
-        specifier: ^24.0.13
-        version: 24.0.13
+        specifier: ^20.12.2
+        version: 20.19.10
       '@types/react':
         specifier: ^18.3.1
         version: 18.3.23
@@ -188,7 +191,7 @@ importers:
         version: 8.38.0(eslint@9.31.0(jiti@2.4.2))(typescript@5.6.3)
       '@vitejs/plugin-react':
         specifier: ^4.3.4
-        version: 4.6.0(vite@6.3.5(@types/node@24.0.13)(jiti@2.4.2)(lightningcss@1.30.1)(yaml@2.8.0))
+        version: 4.6.0(vite@6.3.5(@types/node@20.19.10)(jiti@2.4.2)(lightningcss@1.30.1)(yaml@2.8.0))
       eslint:
         specifier: ^9.31.0
         version: 9.31.0(jiti@2.4.2)
@@ -218,7 +221,7 @@ importers:
         version: 5.6.3
       vite:
         specifier: ^6.0.3
-        version: 6.3.5(@types/node@24.0.13)(jiti@2.4.2)(lightningcss@1.30.1)(yaml@2.8.0)
+        version: 6.3.5(@types/node@20.19.10)(jiti@2.4.2)(lightningcss@1.30.1)(yaml@2.8.0)
 
 packages:
 
@@ -1802,8 +1805,8 @@ packages:
   '@types/node@18.19.118':
     resolution: {integrity: sha512-hIPK0hSrrcaoAu/gJMzN3QClXE4QdCdFvaenJ0JsjIbExP1JFFVH+RHcBt25c9n8bx5dkIfqKE+uw6BmBns7ug==}
 
-  '@types/node@24.0.13':
-    resolution: {integrity: sha512-Qm9OYVOFHFYg3wJoTSrz80hoec5Lia/dPp84do3X7dZvLikQvM1YpmvTBEdIr/e+U8HTkFjLHLnl78K/qjf+jQ==}
+  '@types/node@20.19.10':
+    resolution: {integrity: sha512-iAFpG6DokED3roLSP0K+ybeDdIX6Bc0Vd3mLW5uDqThPWtNos3E+EqOM11mPQHKzfWHqEBuLjIlsBQQ8CsISmQ==}
 
   '@types/prop-types@15.7.15':
     resolution: {integrity: sha512-F6bEyamV9jKGAFBEmlQnesRPGOQqS2+Uwi0Em15xenOxHaf2hv6L8YCVn3rPdPJOiJfPiCnLIRyvwVaqMY3MIw==}
@@ -2219,6 +2222,9 @@ packages:
 
   emoji-regex@8.0.0:
     resolution: {integrity: sha512-MSjYzcWNOA0ewAHpz0MxpYFvwg6yjy1NG3xteoqz644VCo/RPgnr1/GGt+ic3iJTzQ8Eu3TdM14SawnVUmGE6A==}
+
+  emoji-regex@9.2.2:
+    resolution: {integrity: sha512-L18DaJsXSUk2+42pv8mLs5jJT2hqFkFE4j21wOmgbUqsZ2hL72NsUU785g9RXgo3s0ZNgVl42TiHp3ZtOv/Vyg==}
 
   enhanced-resolve@5.18.2:
     resolution: {integrity: sha512-6Jw4sE1maoRJo3q8MsSIn2onJFbLTOjY9hlx4DZXmOKvLRd1Ok2kXmAGXaafL2+ijsJZ1ClYbl/pmqr9+k4iUQ==}
@@ -3936,8 +3942,8 @@ packages:
   undici-types@5.26.5:
     resolution: {integrity: sha512-JlCMO+ehdEIKqlFxk6IfVoAUVmgz7cU7zD/h9XZ0qzeosSHmUJVOzSQvvYSYWXkFXC+IfLKSIffhv0sVZup6pA==}
 
-  undici-types@7.8.0:
-    resolution: {integrity: sha512-9UJ2xGDvQ43tYyVMpuHlsgApydB8ZKfVYTsLDhXkFL/6gfkp+U8xTGdh8pMJv1SpZna0zxG1DwsKZsreLbXBxw==}
+  undici-types@6.21.0:
+    resolution: {integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==}
 
   unified@10.1.2:
     resolution: {integrity: sha512-pUSWAi/RAnVy1Pif2kAoeWNBa3JVrx0MId2LASj8G+7AiHWoKZNTomq6LG326T68U7/e263X6fTdcXIy7XnF7Q==}
@@ -4118,6 +4124,34 @@ packages:
     resolution: {integrity: sha512-BLI3Tl1TW3Pvl70l3yq3Y64i+awpwXqsGBYWkkqMtnbXgrMD+yj7rhW0kuEDxzJaYXGjEW5ogapKNMEKNMjibA==}
     engines: {node: '>= 8'}
     hasBin: true
+
+  wink-bm25-text-search@3.1.2:
+    resolution: {integrity: sha512-s+xY0v/yurUhiUop/XZnf9IvO9XVuwI14X+QTW0JqlmQCg+9ZgVXTMudXKqZuQVsnm5J+RjLnqrOflnD5BLApA==}
+
+  wink-distance@2.0.2:
+    resolution: {integrity: sha512-pyEhUB/OKFYcgOC4J6E+c+gwVA/8qg2s5n49mIcUsJZM5iDSa17uOxRQXR4rvfp+gbj55K/I08FwjFBwb6fq3g==}
+
+  wink-eng-lite-web-model@1.8.1:
+    resolution: {integrity: sha512-M2tSOU/rVNkDj8AS8IoKJaM7apJJjS0cN+hE8CPazfnB4A/ojyc9+7RMPk18UOiIdSyWk7MR6w8z9lWix2l5tA==}
+    engines: {node: '>=16.0.0'}
+
+  wink-helpers@2.0.0:
+    resolution: {integrity: sha512-I/ZzXrHcNRXuoeFJmp2vMVqDI6UCK02Tds1WP4kSGAmx520gjL1BObVzF7d2ps24tyHIly9ngdB2jwhlFUjPvg==}
+
+  wink-jaro-distance@2.0.0:
+    resolution: {integrity: sha512-9bcUaXCi9N8iYpGWbFkf83OsBkg17r4hEyxusEzl+nnReLRPqxhB9YNeRn3g54SYnVRNXP029lY3HDsbdxTAuA==}
+
+  wink-nlp-utils@2.1.0:
+    resolution: {integrity: sha512-b7PcRhEBNxQmsmht70jLOkwYUyie3da4/cgEXL+CumYO5b/nwV+W7fuMXToh5BtGq1RABznmc2TGTp1Qf/JUXg==}
+
+  wink-nlp@1.14.3:
+    resolution: {integrity: sha512-lvY5iCs3T8I34F8WKS70+2P0U9dWLn3vdPf/Z+m2VK14N7OmqnPzmHfh3moHdusajoQ37Em39z0IZB9K4x/96A==}
+
+  wink-porter2-stemmer@2.0.1:
+    resolution: {integrity: sha512-0g+RkkqhRXFmSpJQStVXW5N/WsshWpJXsoDRW7DwVkGI2uDT6IBCoq3xdH5p6IHLaC6ygk7RWUsUx4alKxoagQ==}
+
+  wink-tokenizer@5.3.0:
+    resolution: {integrity: sha512-O/yAw0g3FmSgeeQuYAJJfP7fVPB4A6ay0018qASh79aWmIOyPYy4j4r9EQT8xBjicja6lCLvgRVAybmEBaATQA==}
 
   word-wrap@1.2.5:
     resolution: {integrity: sha512-BN22B5eaMMI9UMtjrGd5g5eCYPpCPDUy0FJXbYsaT5zYxjFOckS53SQDE3pWkVoWpHXVb3BrYcEN4Twa55B5cA==}
@@ -5254,12 +5288,12 @@ snapshots:
       postcss: 8.5.6
       tailwindcss: 4.1.11
 
-  '@tailwindcss/vite@4.1.11(vite@6.3.5(@types/node@24.0.13)(jiti@2.4.2)(lightningcss@1.30.1)(yaml@2.8.0))':
+  '@tailwindcss/vite@4.1.11(vite@6.3.5(@types/node@20.19.10)(jiti@2.4.2)(lightningcss@1.30.1)(yaml@2.8.0))':
     dependencies:
       '@tailwindcss/node': 4.1.11
       '@tailwindcss/oxide': 4.1.11
       tailwindcss: 4.1.11
-      vite: 6.3.5(@types/node@24.0.13)(jiti@2.4.2)(lightningcss@1.30.1)(yaml@2.8.0)
+      vite: 6.3.5(@types/node@20.19.10)(jiti@2.4.2)(lightningcss@1.30.1)(yaml@2.8.0)
 
   '@tauri-apps/api@2.6.0': {}
 
@@ -5371,16 +5405,16 @@ snapshots:
 
   '@types/node-fetch@2.6.12':
     dependencies:
-      '@types/node': 24.0.13
+      '@types/node': 20.19.10
       form-data: 4.0.3
 
   '@types/node@18.19.118':
     dependencies:
       undici-types: 5.26.5
 
-  '@types/node@24.0.13':
+  '@types/node@20.19.10':
     dependencies:
-      undici-types: 7.8.0
+      undici-types: 6.21.0
 
   '@types/prop-types@15.7.15': {}
 
@@ -5496,7 +5530,7 @@ snapshots:
       '@typescript-eslint/types': 8.38.0
       eslint-visitor-keys: 4.2.1
 
-  '@vitejs/plugin-react@4.6.0(vite@6.3.5(@types/node@24.0.13)(jiti@2.4.2)(lightningcss@1.30.1)(yaml@2.8.0))':
+  '@vitejs/plugin-react@4.6.0(vite@6.3.5(@types/node@20.19.10)(jiti@2.4.2)(lightningcss@1.30.1)(yaml@2.8.0))':
     dependencies:
       '@babel/core': 7.28.0
       '@babel/plugin-transform-react-jsx-self': 7.27.1(@babel/core@7.28.0)
@@ -5504,7 +5538,7 @@ snapshots:
       '@rolldown/pluginutils': 1.0.0-beta.19
       '@types/babel__core': 7.20.5
       react-refresh: 0.17.0
-      vite: 6.3.5(@types/node@24.0.13)(jiti@2.4.2)(lightningcss@1.30.1)(yaml@2.8.0)
+      vite: 6.3.5(@types/node@20.19.10)(jiti@2.4.2)(lightningcss@1.30.1)(yaml@2.8.0)
     transitivePeerDependencies:
       - supports-color
 
@@ -5845,6 +5879,8 @@ snapshots:
   electron-to-chromium@1.5.183: {}
 
   emoji-regex@8.0.0: {}
+
+  emoji-regex@9.2.2: {}
 
   enhanced-resolve@5.18.2:
     dependencies:
@@ -7461,7 +7497,7 @@ snapshots:
       '@protobufjs/path': 1.1.2
       '@protobufjs/pool': 1.1.0
       '@protobufjs/utf8': 1.1.0
-      '@types/node': 24.0.13
+      '@types/node': 20.19.10
       long: 5.3.2
 
   proxy-from-env@1.1.0: {}
@@ -8036,7 +8072,7 @@ snapshots:
 
   undici-types@5.26.5: {}
 
-  undici-types@7.8.0: {}
+  undici-types@6.21.0: {}
 
   unified@10.1.2:
     dependencies:
@@ -8171,7 +8207,7 @@ snapshots:
       '@types/unist': 3.0.3
       vfile-message: 4.0.3
 
-  vite@6.3.5(@types/node@24.0.13)(jiti@2.4.2)(lightningcss@1.30.1)(yaml@2.8.0):
+  vite@6.3.5(@types/node@20.19.10)(jiti@2.4.2)(lightningcss@1.30.1)(yaml@2.8.0):
     dependencies:
       esbuild: 0.25.6
       fdir: 6.4.6(picomatch@4.0.2)
@@ -8180,7 +8216,7 @@ snapshots:
       rollup: 4.45.0
       tinyglobby: 0.2.14
     optionalDependencies:
-      '@types/node': 24.0.13
+      '@types/node': 20.19.10
       fsevents: 2.3.3
       jiti: 2.4.2
       lightningcss: 1.30.1
@@ -8254,6 +8290,41 @@ snapshots:
   which@2.0.2:
     dependencies:
       isexe: 2.0.0
+
+  wink-bm25-text-search@3.1.2:
+    dependencies:
+      wink-eng-lite-web-model: 1.8.1
+      wink-helpers: 2.0.0
+      wink-nlp: 1.14.3
+      wink-nlp-utils: 2.1.0
+
+  wink-distance@2.0.2:
+    dependencies:
+      wink-helpers: 2.0.0
+      wink-jaro-distance: 2.0.0
+
+  wink-eng-lite-web-model@1.8.1: {}
+
+  wink-helpers@2.0.0: {}
+
+  wink-jaro-distance@2.0.0: {}
+
+  wink-nlp-utils@2.1.0:
+    dependencies:
+      wink-distance: 2.0.2
+      wink-eng-lite-web-model: 1.8.1
+      wink-helpers: 2.0.0
+      wink-nlp: 1.14.3
+      wink-porter2-stemmer: 2.0.1
+      wink-tokenizer: 5.3.0
+
+  wink-nlp@1.14.3: {}
+
+  wink-porter2-stemmer@2.0.1: {}
+
+  wink-tokenizer@5.3.0:
+    dependencies:
+      emoji-regex: 9.2.2
 
   word-wrap@1.2.5: {}
 

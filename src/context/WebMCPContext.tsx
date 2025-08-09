@@ -25,7 +25,11 @@ interface WebMCPContextType {
   initializeProxy: () => Promise<void>;
   loadServer: (serverName: string) => Promise<void>;
   listTools: (serverName?: string) => Promise<MCPTool[]>;
-  callTool: (serverName: string, toolName: string, args: unknown) => Promise<unknown>;
+  callTool: (
+    serverName: string,
+    toolName: string,
+    args: unknown,
+  ) => Promise<unknown>;
   cleanup: () => void;
 
   // Status
@@ -54,7 +58,9 @@ export const WebMCPProvider: React.FC<WebMCPProviderProps> = ({
   autoLoad = true,
 }) => {
   const [availableTools, setAvailableTools] = useState<MCPTool[]>([]);
-  const [serverStates, setServerStates] = useState<Record<string, WebMCPServerState>>({});
+  const [serverStates, setServerStates] = useState<
+    Record<string, WebMCPServerState>
+  >({});
   const [error, setError] = useState<string | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
 
@@ -78,10 +84,13 @@ export const WebMCPProvider: React.FC<WebMCPProviderProps> = ({
 
       // Auto-load servers if specified
       if (autoLoad && servers.length > 0) {
-        await Promise.all(servers.map(serverName => loadServerInternal(serverName)));
+        await Promise.all(
+          servers.map((serverName) => loadServerInternal(serverName)),
+        );
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
       logger.error('Failed to initialize WebMCP proxy', error);
       setError(errorMessage);
       setIsInitialized(false);
@@ -99,7 +108,7 @@ export const WebMCPProvider: React.FC<WebMCPProviderProps> = ({
       logger.debug('Loading MCP server', { serverName });
 
       // Update server state to loading
-      setServerStates(prev => ({
+      setServerStates((prev) => ({
         ...prev,
         [serverName]: {
           loaded: false,
@@ -115,7 +124,7 @@ export const WebMCPProvider: React.FC<WebMCPProviderProps> = ({
       const tools = await proxyRef.current.listTools(serverName);
 
       // Update server state
-      setServerStates(prev => ({
+      setServerStates((prev) => ({
         ...prev,
         [serverName]: {
           loaded: true,
@@ -131,14 +140,15 @@ export const WebMCPProvider: React.FC<WebMCPProviderProps> = ({
       logger.info('MCP server loaded successfully', {
         serverName,
         toolCount: tools.length,
-        serverInfo
+        serverInfo,
       });
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
       logger.error('Failed to load MCP server', { serverName, error });
 
       // Update server state with error
-      setServerStates(prev => ({
+      setServerStates((prev) => ({
         ...prev,
         [serverName]: {
           loaded: false,
@@ -152,71 +162,93 @@ export const WebMCPProvider: React.FC<WebMCPProviderProps> = ({
     }
   }, []);
 
-  const loadServer = useCallback(async (serverName: string) => {
-    await loadServerInternal(serverName);
-  }, [loadServerInternal]);
+  const loadServer = useCallback(
+    async (serverName: string) => {
+      await loadServerInternal(serverName);
+    },
+    [loadServerInternal],
+  );
 
   // List tools from a server or all servers
-  const listTools = useCallback(async (serverName?: string): Promise<MCPTool[]> => {
-    if (!proxyRef.current) {
-      throw new Error('WebMCP proxy not initialized');
-    }
-
-    try {
-      if (serverName) {
-        return await proxyRef.current.listTools(serverName);
-      } else {
-        return await proxyRef.current.listAllTools();
+  const listTools = useCallback(
+    async (serverName?: string): Promise<MCPTool[]> => {
+      if (!proxyRef.current) {
+        throw new Error('WebMCP proxy not initialized');
       }
-    } catch (error) {
-      logger.error('Failed to list tools', { serverName, error });
-      throw error;
-    }
-  }, []);
+
+      try {
+        if (serverName) {
+          return await proxyRef.current.listTools(serverName);
+        } else {
+          return await proxyRef.current.listAllTools();
+        }
+      } catch (error) {
+        logger.error('Failed to list tools', { serverName, error });
+        throw error;
+      }
+    },
+    [],
+  );
 
   // Call a tool on a specific server
-  const callTool = useCallback(async (
-    serverName: string,
-    toolName: string,
-    args: unknown
-  ): Promise<unknown> => {
-    if (!proxyRef.current) {
-      throw new Error('WebMCP proxy not initialized');
-    }
+  const callTool = useCallback(
+    async (
+      serverName: string,
+      toolName: string,
+      args: unknown,
+    ): Promise<unknown> => {
+      if (!proxyRef.current) {
+        throw new Error('WebMCP proxy not initialized');
+      }
 
-    try {
-      logger.debug('Calling WebMCP tool', { serverName, toolName, args });
+      try {
+        logger.debug('Calling WebMCP tool', { serverName, toolName, args });
 
-      const result = await proxyRef.current.callTool(serverName, toolName, args);
+        const result = await proxyRef.current.callTool(
+          serverName,
+          toolName,
+          args,
+        );
 
-      // Update server activity
-      setServerStates(prev => ({
-        ...prev,
-        [serverName]: {
-          ...prev[serverName],
-          lastActivity: Date.now(),
-        },
-      }));
+        // Update server activity
+        setServerStates((prev) => ({
+          ...prev,
+          [serverName]: {
+            ...prev[serverName],
+            lastActivity: Date.now(),
+          },
+        }));
 
-      logger.debug('WebMCP tool call completed', { serverName, toolName, result });
-      return result;
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.error('Failed to call WebMCP tool', { serverName, toolName, error });
+        logger.debug('WebMCP tool call completed', {
+          serverName,
+          toolName,
+          result,
+        });
+        return result;
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        logger.error('Failed to call WebMCP tool', {
+          serverName,
+          toolName,
+          error,
+        });
 
-      // Update server state with error
-      setServerStates(prev => ({
-        ...prev,
-        [serverName]: {
-          ...prev[serverName],
-          lastError: errorMessage,
-          lastActivity: Date.now(),
-        },
-      }));
+        // Update server state with error
+        setServerStates((prev) => ({
+          ...prev,
+          [serverName]: {
+            ...prev[serverName],
+            lastError: errorMessage,
+            lastActivity: Date.now(),
+          },
+        }));
 
-      throw error;
-    }
-  }, []);
+        throw error;
+      }
+    },
+    [],
+  );
 
   // Cleanup resources
   const cleanup = useCallback(() => {
@@ -287,8 +319,6 @@ export const WebMCPProvider: React.FC<WebMCPProviderProps> = ({
   );
 
   return (
-    <WebMCPContext.Provider value={value}>
-      {children}
-    </WebMCPContext.Provider>
+    <WebMCPContext.Provider value={value}>{children}</WebMCPContext.Provider>
   );
 };

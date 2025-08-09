@@ -38,6 +38,7 @@ The Web MCP system provides:
 ### 1. MCP Worker (`mcp-worker.ts`)
 
 The main Web Worker that:
+
 - Dynamically loads MCP server modules
 - Handles message passing with the main thread
 - Manages server lifecycle and caching
@@ -46,6 +47,7 @@ The main Web Worker that:
 ### 2. MCP Proxy (`mcp-proxy.ts`)
 
 Communication interface that:
+
 - Abstracts Web Worker messaging
 - Provides Promise-based API
 - Handles timeouts and retries
@@ -54,6 +56,7 @@ Communication interface that:
 ### 3. MCP Modules (`modules/`)
 
 Individual MCP servers implementing the `WebMCPServer` interface:
+
 - `calculator.ts` - Arithmetic operations
 - `filesystem.ts` - File system operations using Tauri APIs
 - Custom modules can be easily added
@@ -104,7 +107,12 @@ function CalculatorComponent() {
 
 ```typescript
 // modules/my-server.ts
-import { WebMCPServer, MCPTool, createObjectSchema, createStringSchema } from '../../mcp-types';
+import {
+  WebMCPServer,
+  MCPTool,
+  createObjectSchema,
+  createStringSchema,
+} from '../../mcp-types';
 
 const tools: MCPTool[] = [
   {
@@ -121,7 +129,7 @@ const tools: MCPTool[] = [
 
 async function callTool(name: string, args: unknown): Promise<unknown> {
   const params = args as { name: string };
-  
+
   switch (name) {
     case 'greet':
       return { message: `Hello, ${params.name}!` };
@@ -165,15 +173,19 @@ function App() {
 ## Available Hooks
 
 ### `useWebMCP()`
+
 Core Web MCP functionality access.
 
 ### `useWebMCPTools()`
+
 Simplified tool operations and status checking.
 
 ### `useWebMCPManagement()`
+
 Server loading and system management.
 
 ### `useUnifiedMCP()`
+
 Combined access to both Tauri and Web MCP systems.
 
 ## Tool Naming Convention
@@ -181,6 +193,7 @@ Combined access to both Tauri and Web MCP systems.
 Web MCP tools follow the pattern: `serverName__toolName`
 
 Examples:
+
 - `calculator__add`
 - `calculator__multiply`
 - `filesystem__read_file`
@@ -230,6 +243,7 @@ Errors are automatically converted to standard MCP Response format with proper e
 ### Testing
 
 Use the Web MCP Demo component (`/tools/webmcp-demo`) to test:
+
 - Server loading and initialization
 - Tool discovery and execution
 - Error handling scenarios
@@ -266,17 +280,17 @@ await executeCall('calculator', 'factorial', { n: 5 });
 // File operations
 await executeCall('filesystem', 'write_file', {
   path: '/tmp/hello.txt',
-  content: 'Hello World!'
+  content: 'Hello World!',
 });
 
 await executeCall('filesystem', 'read_file', {
-  path: '/tmp/hello.txt'
+  path: '/tmp/hello.txt',
 });
 
 // Directory operations
 await executeCall('filesystem', 'list_directory', {
   path: '/home/user',
-  recursive: false
+  recursive: false,
 });
 ```
 

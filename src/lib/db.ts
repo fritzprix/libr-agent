@@ -156,7 +156,9 @@ class LocalDatabase extends Dexie {
         fileChunks: '&id, contentId, chunkIndex',
       })
       .upgrade(async () => {
-        console.log('Upgrading database to version 5 - adding file attachment tables');
+        console.log(
+          'Upgrading database to version 5 - adding file attachment tables',
+        );
       });
   }
 }
@@ -459,19 +461,31 @@ export const dbService: DatabaseService = {
     },
     delete: async (id: string) => {
       const db = LocalDatabase.getInstance();
-      await db.transaction('rw', db.fileStores, db.fileContents, db.fileChunks, async () => {
-        // Delete all chunks for contents in this store
-        const contents = await db.fileContents.where('storeId').equals(id).toArray();
-        for (const content of contents) {
-          await db.fileChunks.where('contentId').equals(content.id).delete();
-        }
-        // Delete all contents in this store
-        await db.fileContents.where('storeId').equals(id).delete();
-        // Delete the store itself
-        await db.fileStores.delete(id);
-      });
+      await db.transaction(
+        'rw',
+        db.fileStores,
+        db.fileContents,
+        db.fileChunks,
+        async () => {
+          // Delete all chunks for contents in this store
+          const contents = await db.fileContents
+            .where('storeId')
+            .equals(id)
+            .toArray();
+          for (const content of contents) {
+            await db.fileChunks.where('contentId').equals(content.id).delete();
+          }
+          // Delete all contents in this store
+          await db.fileContents.where('storeId').equals(id).delete();
+          // Delete the store itself
+          await db.fileStores.delete(id);
+        },
+      );
     },
-    getPage: async (page: number, pageSize: number): Promise<Page<FileStore>> => {
+    getPage: async (
+      page: number,
+      pageSize: number,
+    ): Promise<Page<FileStore>> => {
       const db = LocalDatabase.getInstance();
       const totalItems = await db.fileStores.count();
 
@@ -512,12 +526,18 @@ export const dbService: DatabaseService = {
         await db.fileContents.delete(id);
       });
     },
-    getPage: async (page: number, pageSize: number): Promise<Page<FileContent>> => {
+    getPage: async (
+      page: number,
+      pageSize: number,
+    ): Promise<Page<FileContent>> => {
       const db = LocalDatabase.getInstance();
       const totalItems = await db.fileContents.count();
 
       if (pageSize === -1) {
-        const items = await db.fileContents.orderBy('uploadedAt').reverse().toArray();
+        const items = await db.fileContents
+          .orderBy('uploadedAt')
+          .reverse()
+          .toArray();
         return createPage(items, page, pageSize, totalItems);
       }
 
@@ -548,7 +568,10 @@ export const dbService: DatabaseService = {
     delete: async (id: string) => {
       await LocalDatabase.getInstance().fileChunks.delete(id);
     },
-    getPage: async (page: number, pageSize: number): Promise<Page<FileChunk>> => {
+    getPage: async (
+      page: number,
+      pageSize: number,
+    ): Promise<Page<FileChunk>> => {
       const db = LocalDatabase.getInstance();
       const totalItems = await db.fileChunks.count();
 
@@ -672,7 +695,9 @@ export const dbUtils = {
 
   // --- File Stores ---
   getAllFileStores: async (): Promise<FileStore[]> => {
-    return LocalDatabase.getInstance().fileStores.orderBy('createdAt').toArray();
+    return LocalDatabase.getInstance()
+      .fileStores.orderBy('createdAt')
+      .toArray();
   },
   getFileStoresBySession: async (sessionId: string): Promise<FileStore[]> => {
     return LocalDatabase.getInstance()
@@ -682,11 +707,17 @@ export const dbUtils = {
   },
   clearAllFileStores: async (): Promise<void> => {
     const db = LocalDatabase.getInstance();
-    await db.transaction('rw', db.fileStores, db.fileContents, db.fileChunks, async () => {
-      await db.fileChunks.clear();
-      await db.fileContents.clear();
-      await db.fileStores.clear();
-    });
+    await db.transaction(
+      'rw',
+      db.fileStores,
+      db.fileContents,
+      db.fileChunks,
+      async () => {
+        await db.fileChunks.clear();
+        await db.fileContents.clear();
+        await db.fileStores.clear();
+      },
+    );
   },
 
   // --- File Contents ---
@@ -696,7 +727,9 @@ export const dbUtils = {
       .equals(storeId)
       .sortBy('uploadedAt');
   },
-  searchFileContentsByFilename: async (filename: string): Promise<FileContent[]> => {
+  searchFileContentsByFilename: async (
+    filename: string,
+  ): Promise<FileContent[]> => {
     return LocalDatabase.getInstance()
       .fileContents.where('filename')
       .startsWithIgnoreCase(filename)
@@ -716,10 +749,10 @@ export const dbUtils = {
       .fileContents.where('storeId')
       .equals(storeId)
       .toArray();
-    
-    const contentIds = contents.map(content => content.id);
+
+    const contentIds = contents.map((content) => content.id);
     const allChunks: FileChunk[] = [];
-    
+
     // Get chunks for each content
     for (const contentId of contentIds) {
       const chunks = await LocalDatabase.getInstance()
@@ -728,10 +761,13 @@ export const dbUtils = {
         .sortBy('chunkIndex');
       allChunks.push(...chunks);
     }
-    
+
     return allChunks;
   },
-  updateChunkEmbedding: async (chunkId: string, embedding: number[]): Promise<void> => {
+  updateChunkEmbedding: async (
+    chunkId: string,
+    embedding: number[],
+  ): Promise<void> => {
     await LocalDatabase.getInstance()
       .fileChunks.where('id')
       .equals(chunkId)

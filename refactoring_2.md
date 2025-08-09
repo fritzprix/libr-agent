@@ -1836,41 +1836,75 @@ const message: Message = {
 };
 ```
 
-### MVP 단계별 구현 우선순위
+### 🚧 구현 현황 및 다음 작업 계획
 
-```text
-🎯 MVP Phase 1a: BM25 기반 검색 (즉시 사용 가능)
-├── ✅ 기본 파일 저장 (IndexedDB)
-├── ✅ 텍스트 청킹
-├── ✅ BM25 인덱싱 및 검색
-├── ✅ 키워드 기반 검색
-└── ✅ 기본 에러 처리
+#### ✅ 완료된 작업 (refactoring_2_summary.md 기반)
 
-🚀 MVP Phase 1b: UI 통합 및 사용성 개선
-├── 📁 파일 업로드 컴포넌트
-├── 🔍 검색 결과 표시 UI
-├── 📊 진행 상황 모니터링
-├── ⚠️  에러 처리 및 사용자 피드백
-└── 🧪 기본 테스트 완료
+1. **Backend Infrastructure**: 
+   - IndexedDB schema v5 확장 (FileStore, FileContent, FileChunk)
+   - file-store MCP 서버 모듈 구현 (BM25SearchEngine 포함)
+   - 5개 MCP 도구 구현 (createStore, addContent, listContent, readContent, similaritySearch)
 
-🔬 Enhanced Phase 2a: 임베딩 검색 (선택적 로딩)
-├── 🤖 transformers.js 백그라운드 로딩
-├── 🧠 임베딩 생성 및 저장
-├── 🔄 BM25 → 임베딩 점진적 전환
-└── 📈 성능 모니터링
+2. **Type System**: 
+   - search-engine.ts 타입 정의
+   - 기존 AttachmentReference 활용
 
-⚡ Enhanced Phase 2b: 하이브리드 검색 최적화
-├── 🔀 BM25 + 임베딩 결과 융합
-├── ⚙️  사용자 설정 검색 전략
-├── 🎛️  가중치 조정 및 튜닝
-└── 🏆 최적 검색 결과 제공
+3. **Integration**:
+   - WebMCPProvider에 file-store 등록
+   - 기본 hooks 및 플레이스홀더 컴포넌트
 
-🌟 Advanced Phase 3: 확장 기능
-├── 📄 다양한 파일 형식 지원
-├── 🏷️  메타데이터 기반 필터링
-├── 💾 검색 결과 캐싱
-└── 🔗 검색 결과 연관성 분석
-```
+#### � 진행해야 할 작업 (우선순위별)
+
+##### Phase 1: 핵심 UI/UX 통합 (최우선)
+
+1. **Built-in MCP Context Provider 구현**
+   ```typescript
+   // src/context/BuiltinMCPContext.tsx 새로 생성
+   interface BuiltinMCPContextValue {
+     fileStore: {
+       createStore: (metadata?: any) => Promise<string>;
+       uploadFile: (file: File, storeId: string) => Promise<AttachmentReference>;
+       searchFiles: (storeId: string, query: string) => Promise<SearchResult[]>;
+     };
+     isReady: boolean;
+     error: Error | null;
+   }
+   ```
+
+2. **Chat.tsx 파일 첨부 UI 연동**
+   ```typescript
+   // 현재: FileAttachment 컴포넌트가 로컬 상태만 관리
+   // 필요: file-store MCP와 실제 연동하여 AttachmentReference 생성
+   function ChatInput() {
+     const [attachments, setAttachments] = useState<AttachmentReference[]>([]);
+     const handleFileAttachment = async (files: File[]) => {
+       // createStore + addContent → AttachmentReference 생성
+     };
+   }
+   ```
+
+3. **use-ai-service.ts Built-in MCP 통합**
+   ```typescript
+   // AI가 파일 첨부 내용을 활용할 수 있도록 통합
+   const availableTools = [
+     ...unifiedMCPTools,
+     ...getAvailableLocalTools(),
+     ...getBuiltinMCPTools(), // file-store 도구들 포함
+   ];
+   ```
+
+##### Phase 2: 사용자 경험 개선
+
+4. **FileAttachment.tsx 개선**: Drag & Drop, 진행률 표시, 파일 제한 처리
+5. **AttachmentBubble.tsx 개선**: 파일 미리보기, 검색 하이라이팅, 내용 읽기
+6. **파일 검색 모달**: 과거 첨부 파일 검색 기능
+7. **세션별 파일 관리**: 파일 스토어 관리 시스템
+
+##### Phase 3: 고급 기능
+
+8. **Progressive Enhancement**: 임베딩 검색, 하이브리드 검색
+9. **다양한 파일 형식**: PDF, 이미지 등 지원
+10. **성능 모니터링**: 검색 성능, 메모리 사용량 모니터링
 
 ### 다음 단계 (기존 타입 기반)
 
@@ -1906,3 +1940,11 @@ const message: Message = {
 - ✅ 기존 db.ts의 CRUD 패턴 (파일 저장 로직 확장됨)
 - ✅ WebMCPContext 구조 (calculator/filesystem 패턴 참고)
 - ✅ 로깅 시스템 (`@/lib/logger`) 및 shadcn/ui 컴포넌트
+
+### 🎯 즉시 시작할 작업 체크리스트
+
+- [ ] **1순위**: BuiltinMCPContext 구현 (`src/context/BuiltinMCPContext.tsx`)
+- [ ] **2순위**: Chat.tsx 파일 첨부 연동 (file-store MCP와 실제 연결)
+- [ ] **3순위**: use-ai-service.ts Built-in MCP 통합
+- [ ] **4순위**: FileAttachment 컴포넌트 개선 (Drag & Drop)
+- [ ] **5순위**: AttachmentBubble 파일 미리보기 기능

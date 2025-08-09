@@ -5,7 +5,12 @@
  * This serves as an example of how to implement MCP servers for web workers.
  */
 
-import { WebMCPServer, MCPTool, createObjectSchema, createNumberSchema } from '../../mcp-types';
+import {
+  WebMCPServer,
+  MCPTool,
+  createObjectSchema,
+  createNumberSchema,
+} from '../../mcp-types';
 
 // Define the tools available in this server
 const tools: MCPTool[] = [
@@ -75,7 +80,10 @@ const tools: MCPTool[] = [
     inputSchema: createObjectSchema({
       description: 'Square root operation parameters',
       properties: {
-        value: createNumberSchema({ description: 'Number to calculate square root (must be non-negative)', minimum: 0 }),
+        value: createNumberSchema({
+          description: 'Number to calculate square root (must be non-negative)',
+          minimum: 0,
+        }),
       },
       required: ['value'],
     }),
@@ -86,7 +94,11 @@ const tools: MCPTool[] = [
     inputSchema: createObjectSchema({
       description: 'Factorial operation parameters',
       properties: {
-        n: createNumberSchema({ description: 'Non-negative integer', minimum: 0, maximum: 170 }),
+        n: createNumberSchema({
+          description: 'Non-negative integer',
+          minimum: 0,
+          maximum: 170,
+        }),
       },
       required: ['n'],
     }),
@@ -231,7 +243,8 @@ async function callTool(name: string, args: unknown): Promise<unknown> {
 // Create and export the MCP server
 const calculatorServer: WebMCPServer = {
   name: 'calculator',
-  description: 'Basic calculator operations including arithmetic, power, square root, and factorial',
+  description:
+    'Basic calculator operations including arithmetic, power, square root, and factorial',
   version: '1.0.0',
   tools,
   callTool,

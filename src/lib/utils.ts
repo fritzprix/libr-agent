@@ -13,10 +13,7 @@ export function cn(...inputs: ClassValue[]) {
  * @param wait The minimum interval (ms) between calls
  * @returns A throttled version of the function
  */
-export function throttlePromise<
-  Args extends readonly unknown[],
-  Return
->(
+export function throttlePromise<Args extends readonly unknown[], Return>(
   fn: (...args: Args) => Promise<Return>,
   wait: number,
 ): (...args: Args) => Promise<Return> {
@@ -42,11 +39,14 @@ export function throttlePromise<
         pendingArgs = args;
         pendingResolve = resolve;
         if (!timeout) {
-          timeout = setTimeout(() => {
-            if (pendingArgs && pendingResolve) {
-              call();
-            }
-          }, wait - (now - lastCall));
+          timeout = setTimeout(
+            () => {
+              if (pendingArgs && pendingResolve) {
+                call();
+              }
+            },
+            wait - (now - lastCall),
+          );
         }
       }
     });

@@ -22,6 +22,7 @@ import {
 import { useWebMCPTools, useWebMCPManagement } from '@/hooks/use-web-mcp';
 import { useUnifiedMCP } from '@/context/UnifiedMCPContext';
 import { getLogger } from '@/lib/logger';
+import { runWebMCPTests, TestResult } from '@/lib/web-mcp/test-integration';
 
 const logger = getLogger('WebMCPDemo');
 
@@ -30,8 +31,9 @@ export const WebMCPDemo: React.FC = () => {
   const [calcB, setCalcB] = useState('3');
   const [filePath, setFilePath] = useState('/tmp/test.txt');
   const [fileContent, setFileContent] = useState('Hello from Web MCP!');
-  const [results, setResults] = useState<Record<string, any>>({});
+  const [results, setResults] = useState<Record<string, unknown>>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
+  const [testResults, setTestResults] = useState<TestResult[]>([]);
 
   const {
     availableTools,
@@ -45,7 +47,7 @@ export const WebMCPDemo: React.FC = () => {
   const { systemStatus } = useUnifiedMCP();
 
   const executeWithLoading = useCallback(
-    async (key: string, fn: () => Promise<any>) => {
+    async (key: string, fn: () => Promise<unknown>) => {
       setLoading((prev) => ({ ...prev, [key]: true }));
       try {
         const result = await fn();
@@ -64,6 +66,17 @@ export const WebMCPDemo: React.FC = () => {
     },
     [],
   );
+
+  const runTests = useCallback(() => {
+    executeWithLoading('run_tests', async () => {
+      const results = await runWebMCPTests();
+      setTestResults(results);
+      return {
+        message: 'Tests completed',
+        summary: `${results.filter((r) => r.success).length}/${results.length} passed`,
+      };
+    });
+  }, [executeWithLoading]);
 
   const testCalculator = useCallback(
     (operation: string) => {
@@ -107,7 +120,8 @@ export const WebMCPDemo: React.FC = () => {
     return availableTools.filter(
       (tool) =>
         tool.name.startsWith('calculator__') ||
-        tool.name.startsWith('filesystem__'),
+        tool.name.startsWith('filesystem__') ||
+        tool.name.startsWith('file-store__'),
     );
   };
 
@@ -379,6 +393,51 @@ export const WebMCPDemo: React.FC = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* Integration Tests */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Integration Tests</CardTitle>
+          <CardDescription>
+            Run the full Web MCP integration test suite.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button onClick={runTests} disabled={loading.run_tests}>
+            {loading.run_tests ? 'Running Tests...' : 'Run Integration Tests'}
+          </Button>
+          {renderResult('run_tests')}
+          {testResults.length > 0 && (
+            <div className="mt-4 space-y-2">
+              {testResults.map((result, index) => (
+                <div
+                  key={index}
+                  className={`p-2 rounded-md ${result.success ? 'bg-green-100' : 'bg-red-100'}`}
+                >
+                  <div className="flex justify-between items-center">
+                    <span
+                      className={`font-medium ${result.success ? 'text-green-800' : 'text-red-800'}`}
+                    >
+                      {result.name}
+                    </span>
+                    <Badge variant={result.success ? 'default' : 'destructive'}>
+                      {result.success ? 'PASS' : 'FAIL'}
+                    </Badge>
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Duration: {result.duration}ms
+                  </div>
+                  {!result.success && (
+                    <div className="text-xs text-red-700 mt-1">
+                      {result.error}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Available Tools */}
       <Card>

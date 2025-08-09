@@ -155,12 +155,19 @@ export class GeminiService extends BaseAIService {
 
     // Check if the last message is an orphaned function call
     const lastMessage = messages[messages.length - 1];
-    if (lastMessage.role === 'assistant' && lastMessage.tool_calls && lastMessage.tool_calls.length > 0) {
+    if (
+      lastMessage.role === 'assistant' &&
+      lastMessage.tool_calls &&
+      lastMessage.tool_calls.length > 0
+    ) {
       // Check if this function call has corresponding tool responses
       let hasCorrespondingResponses = false;
       for (let i = messages.length - 1; i >= 0; i--) {
         const msg = messages[i];
-        if (msg.role === 'tool' && lastMessage.tool_calls.some(tc => tc.id === msg.tool_call_id)) {
+        if (
+          msg.role === 'tool' &&
+          lastMessage.tool_calls.some((tc) => tc.id === msg.tool_call_id)
+        ) {
           hasCorrespondingResponses = true;
           break;
         }
@@ -171,10 +178,13 @@ export class GeminiService extends BaseAIService {
       }
 
       if (!hasCorrespondingResponses) {
-        logger.warn('Removing orphaned function call at end of message window', {
-          toolCallsCount: lastMessage.tool_calls.length,
-          messageContent: lastMessage.content?.substring(0, 100)
-        });
+        logger.warn(
+          'Removing orphaned function call at end of message window',
+          {
+            toolCallsCount: lastMessage.tool_calls.length,
+            messageContent: lastMessage.content?.substring(0, 100),
+          },
+        );
         return messages.slice(0, -1);
       }
     }

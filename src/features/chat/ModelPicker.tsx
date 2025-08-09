@@ -8,7 +8,6 @@ interface ModelPickerProps {
 }
 
 const CompactModelPicker: FC<ModelPickerProps> = ({ className = '' }) => {
-
   const {
     modelId,
     provider,

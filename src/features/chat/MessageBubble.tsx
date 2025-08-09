@@ -3,7 +3,6 @@ import React from 'react';
 import { LoadingSpinner } from '../../components/ui';
 import MessageBubbleRouter from './MessageBubbleRouter';
 
-
 interface MessageBubbleProps {
   message: Message;
   currentAssistantName?: string;

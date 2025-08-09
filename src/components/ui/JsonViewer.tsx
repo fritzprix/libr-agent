@@ -1,7 +1,13 @@
 import React, { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 
-export type JsonValue = string | number | boolean | null | JsonObject | JsonArray;
+export type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonObject
+  | JsonArray;
 export type JsonObject = { [key: string]: JsonValue };
 export type JsonArray = JsonValue[];
 
