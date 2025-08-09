@@ -492,7 +492,8 @@ export interface WebMCPResponse {
  * Web Worker MCP 프록시 설정
  */
 export interface WebMCPProxyConfig {
-  workerPath: string;
+  workerPath?: string;
+  workerInstance?: Worker;
   timeout?: number;
   maxRetries?: number;
 }

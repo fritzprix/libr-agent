@@ -2,6 +2,7 @@ import React, {
   createContext,
   ReactNode,
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useState,
@@ -12,8 +13,12 @@ import { getLogger } from '../lib/logger';
 import { WebMCPProxy, createWebMCPProxy } from '../lib/web-mcp/mcp-proxy';
 import { MCPTool, WebMCPServerState } from '../lib/mcp-types';
 
+// Vite Worker import
+import MCPWorker from '../lib/web-mcp/mcp-worker.ts?worker';
+
 const logger = getLogger('WebMCPContext');
 
+// 공개 API (구독자용)
 interface WebMCPContextType {
   availableTools: MCPTool[];
   serverStates: Record<string, WebMCPServerState>;
@@ -21,39 +26,56 @@ interface WebMCPContextType {
   isLoading: boolean;
   error: string | null;
 
-  // Operations
-  initializeProxy: () => Promise<void>;
-  loadServer: (serverName: string) => Promise<void>;
-  listTools: (serverName?: string) => Promise<MCPTool[]>;
+  // 핵심 기능만 노출
   callTool: (
     serverName: string,
     toolName: string,
     args: unknown,
   ) => Promise<unknown>;
-  cleanup: () => void;
-
-  // Status
   getProxyStatus: () => {
     initialized: boolean;
     pendingRequests: number;
-    workerPath: string;
+    workerType: string;
   } | null;
+}
+
+// 내부 API (Provider 내부 + 초기화 컴포넌트용)
+interface WebMCPInternalContextType extends WebMCPContextType {
+  initializeProxy: () => Promise<void>;
+  loadServer: (serverName: string) => Promise<void>;
+  listTools: (serverName?: string) => Promise<MCPTool[]>;
+  cleanup: () => void;
 }
 
 export const WebMCPContext = createContext<WebMCPContextType | undefined>(
   undefined,
 );
 
+const WebMCPInternalContext = createContext<WebMCPInternalContextType | undefined>(
+  undefined,
+);
+
+// 초기화 전용 컴포넌트
+function WebMCPInitializer() {
+  const { isInitialized, isLoading, error, initializeProxy } = useContext(WebMCPInternalContext)!;
+
+  useEffect(() => {
+    if (!isInitialized && !isLoading && !error) {
+      initializeProxy();
+    }
+  }, [isInitialized, isLoading, error, initializeProxy]);
+
+  return null;
+}
+
 interface WebMCPProviderProps {
   children: ReactNode;
-  workerPath?: string;
   servers?: string[];
   autoLoad?: boolean;
 }
 
 export const WebMCPProvider: React.FC<WebMCPProviderProps> = ({
   children,
-  workerPath = '/src/lib/web-mcp/mcp-worker.ts',
   servers = [],
   autoLoad = true,
 }) => {
@@ -70,11 +92,14 @@ export const WebMCPProvider: React.FC<WebMCPProviderProps> = ({
   // Initialize the Web Worker MCP proxy
   const [{ loading: isLoading }, initializeProxy] = useAsyncFn(async () => {
     try {
-      logger.debug('Initializing WebMCP proxy', { workerPath });
+      logger.debug('Initializing WebMCP proxy with Vite worker');
       setError(null);
 
-      // Create new proxy instance
-      const proxy = createWebMCPProxy({ workerPath });
+      // Create Worker instance using Vite's ?worker import
+      const workerInstance = new MCPWorker();
+
+      // Create new proxy instance with Worker instance
+      const proxy = createWebMCPProxy({ workerInstance });
       await proxy.initialize();
 
       proxyRef.current = proxy;
@@ -96,7 +121,7 @@ export const WebMCPProvider: React.FC<WebMCPProviderProps> = ({
       setIsInitialized(false);
       throw error;
     }
-  }, [workerPath, servers, autoLoad]);
+  }, [servers, autoLoad]);
 
   // Load a specific MCP server
   const loadServerInternal = useCallback(async (serverName: string) => {
@@ -282,13 +307,6 @@ export const WebMCPProvider: React.FC<WebMCPProviderProps> = ({
     };
   }, [cleanup]);
 
-  // Auto-initialize if not already initialized
-  useEffect(() => {
-    if (!isInitialized && !isLoading && !error) {
-      initializeProxy();
-    }
-  }, [isInitialized, isLoading, error, initializeProxy]);
-
   const value: WebMCPContextType = useMemo(
     () => ({
       availableTools,
@@ -296,11 +314,7 @@ export const WebMCPProvider: React.FC<WebMCPProviderProps> = ({
       isInitialized,
       isLoading,
       error,
-      initializeProxy,
-      loadServer,
-      listTools,
       callTool,
-      cleanup,
       getProxyStatus,
     }),
     [
@@ -309,16 +323,69 @@ export const WebMCPProvider: React.FC<WebMCPProviderProps> = ({
       isInitialized,
       isLoading,
       error,
-      initializeProxy,
-      loadServer,
-      listTools,
       callTool,
-      cleanup,
       getProxyStatus,
     ],
   );
 
-  return (
-    <WebMCPContext.Provider value={value}>{children}</WebMCPContext.Provider>
+  const internalValue: WebMCPInternalContextType = useMemo(
+    () => ({
+      availableTools,
+      serverStates,
+      isInitialized,
+      isLoading,
+      error,
+      callTool,
+      getProxyStatus,
+      initializeProxy,
+      loadServer,
+      listTools,
+      cleanup,
+    }),
+    [
+      availableTools,
+      serverStates,
+      isInitialized,
+      isLoading,
+      error,
+      callTool,
+      getProxyStatus,
+      initializeProxy,
+      loadServer,
+      listTools,
+      cleanup,
+    ],
   );
+
+  return (
+    <WebMCPInternalContext.Provider value={internalValue}>
+      <WebMCPContext.Provider value={value}>
+        {children}
+        <WebMCPInitializer />
+      </WebMCPContext.Provider>
+    </WebMCPInternalContext.Provider>
+  );
+};
+
+// 공개 hook
+export const useWebMCP = () => {
+  const context = useContext(WebMCPContext);
+  if (context === undefined) {
+    throw new Error('useWebMCP must be used within a WebMCPProvider');
+  }
+  return context;
+};
+
+// 내부 관리용 hook (같은 파일 내에서만 사용하거나, 특별한 경우에만 export)
+export const useWebMCPManagement = () => {
+  const context = useContext(WebMCPInternalContext);
+  if (context === undefined) {
+    throw new Error('useWebMCPManagement must be used within a WebMCPProvider');
+  }
+  return {
+    initializeProxy: context.initializeProxy,
+    loadServer: context.loadServer,
+    listTools: context.listTools,
+    cleanup: context.cleanup,
+  };
 };

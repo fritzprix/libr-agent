@@ -44,7 +44,6 @@ function App() {
                       <AssistantExtensionProvider>
                         <MCPServerProvider>
                           <WebMCPProvider
-                            workerPath="/workers/mcp-worker.js"
                             servers={['calculator', 'filesystem', 'file-store']}
                             autoLoad={true}
                           >

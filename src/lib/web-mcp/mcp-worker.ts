@@ -3,20 +3,32 @@
  *
  * This worker runs MCP servers in a web worker environment,
  * providing MCP-compatible functionality without Node.js/Python dependencies.
+ * 
+ * Designed for Vite's ?worker import system
  */
 
-import {
+import type {
   WebMCPServer,
   WebMCPMessage,
   WebMCPResponse,
   MCPTool,
 } from '../mcp-types';
 
+// Static imports for better bundling with Vite
+import calculatorServer from './modules/calculator';
+import filesystemServer from './modules/filesystem';
+
+// Server registry with static imports
+const serverRegistry = new Map<string, WebMCPServer>([
+  ['calculator', calculatorServer],
+  ['filesystem', filesystemServer],
+]);
+
 // Cache for loaded MCP servers
 const mcpServers = new Map<string, WebMCPServer>();
 
 /**
- * Dynamically load an MCP server module
+ * Load an MCP server from the registry
  */
 async function loadMCPServer(serverName: string): Promise<WebMCPServer> {
   if (mcpServers.has(serverName)) {
@@ -24,9 +36,11 @@ async function loadMCPServer(serverName: string): Promise<WebMCPServer> {
   }
 
   try {
-    // Dynamic import of MCP server modules
-    const mod = await import(`./modules/${serverName}`);
-    const server = mod.default as WebMCPServer;
+    // Get server from static registry
+    const server = serverRegistry.get(serverName);
+    if (!server) {
+      throw new Error(`Unknown MCP server: ${serverName}`);
+    }
 
     // Validate server structure
     if (

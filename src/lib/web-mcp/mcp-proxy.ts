@@ -26,7 +26,7 @@ export class WebMCPProxy {
       timeout: ReturnType<typeof setTimeout>;
     }
   >();
-  private config: Required<WebMCPProxyConfig>;
+  private config: WebMCPProxyConfig & { timeout: number; maxRetries: number };
   private isInitialized = false;
 
   constructor(config: WebMCPProxyConfig) {
@@ -48,7 +48,16 @@ export class WebMCPProxy {
     try {
       logger.debug('Initializing WebMCP proxy', { config: this.config });
 
-      this.worker = new Worker(this.config.workerPath, { type: 'module' });
+      // Create worker from instance or path
+      if (this.config.workerInstance) {
+        this.worker = this.config.workerInstance;
+        logger.debug('Using provided worker instance');
+      } else if (this.config.workerPath) {
+        this.worker = new Worker(this.config.workerPath, { type: 'module' });
+        logger.debug('Created worker from path', { workerPath: this.config.workerPath });
+      } else {
+        throw new Error('Either workerInstance or workerPath must be provided');
+      }
 
       this.worker.onmessage = this.handleWorkerMessage.bind(this);
       this.worker.onerror = this.handleWorkerError.bind(this);
@@ -247,12 +256,12 @@ export class WebMCPProxy {
   getStatus(): {
     initialized: boolean;
     pendingRequests: number;
-    workerPath: string;
+    workerType: string;
   } {
     return {
       initialized: this.isInitialized,
       pendingRequests: this.pendingRequests.size,
-      workerPath: this.config.workerPath,
+      workerType: this.config.workerInstance ? 'instance' : 'path',
     };
   }
 }

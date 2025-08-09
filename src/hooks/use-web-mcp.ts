@@ -1,5 +1,4 @@
-import { useContext } from 'react';
-import { WebMCPContext } from '../context/WebMCPContext';
+import { useWebMCP as useWebMCPContext, useWebMCPManagement as useWebMCPManagementContext } from '../context/WebMCPContext';
 
 /**
  * 🌐 Hook for using Web MCP functionality
@@ -8,13 +7,7 @@ import { WebMCPContext } from '../context/WebMCPContext';
  * Must be used within a WebMCPProvider.
  */
 export const useWebMCP = () => {
-  const context = useContext(WebMCPContext);
-
-  if (context === undefined) {
-    throw new Error('useWebMCP must be used within a WebMCPProvider');
-  }
-
-  return context;
+  return useWebMCPContext();
 };
 
 /**
@@ -136,11 +129,14 @@ export const useWebMCPManagement = () => {
     loadServer,
     cleanup,
     initializeProxy,
+  } = useWebMCPManagementContext();
+  
+  const {
     getProxyStatus,
     isInitialized,
     isLoading,
     error,
-  } = useWebMCP();
+  } = useWebMCPContext();
 
   /**
    * Load multiple servers concurrently
