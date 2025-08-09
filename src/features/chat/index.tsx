@@ -1,7 +1,6 @@
 import { Switch } from '@/components/ui/switch';
 import { useSessionContext } from '@/context/SessionContext';
 import Chat from './Chat';
-import { LoopFramework } from '@/tools/agentic/Loop';
 
 export function ChatRouter() {
   const { current, isAgenticMode, toggleAgenticMode } = useSessionContext();
@@ -37,7 +36,6 @@ export function ChatRouter() {
       </Chat.Header>
       <Chat.Messages />
       <Chat.Bottom></Chat.Bottom>
-      {isAgenticMode && <LoopFramework />}
     </Chat>
   );
 }

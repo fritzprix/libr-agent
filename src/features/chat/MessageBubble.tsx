@@ -3,12 +3,9 @@ import React from 'react';
 import { LoadingSpinner } from '../../components/ui';
 import MessageBubbleRouter from './MessageBubbleRouter';
 
-interface MessageWithAttachments extends Message {
-  attachments?: { name: string; content: string }[];
-}
 
 interface MessageBubbleProps {
-  message: MessageWithAttachments;
+  message: Message;
   currentAssistantName?: string;
 }
 

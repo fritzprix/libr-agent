@@ -1,5 +1,19 @@
 import { MCPTool } from '../lib/mcp-types';
 
+// MCP 파일 첨부 참조 타입
+export interface AttachmentReference {
+  storeId: string;         // MCP 파일 저장소 ID
+  contentId: string;       // MCP 컨텐츠 ID
+  filename: string;        // 원본 파일명
+  mimeType: string;        // MIME 타입 ('text/plain', 'text/markdown' 등)
+  size: number;            // 파일 크기 (bytes)
+  lineCount: number;       // 총 라인 수
+  preview: string;         // 첫 10-20줄 미리보기
+  uploadedAt: string;      // 업로드 시간 (ISO 8601)
+  chunkCount?: number;     // 청크 개수 (검색용)
+  lastAccessedAt?: string; // 마지막 접근 시간
+}
+
 export interface Message {
   id: string;
   sessionId: string; // Added sessionId
@@ -10,9 +24,8 @@ export interface Message {
   isStreaming?: boolean;
   thinking?: string;
   assistantId?: string; // Optional, used for tracking in multi-agent scenarios
-  attachments?: { name: string; content: string }[];
+  attachments?: AttachmentReference[]; // MCP 기반 파일 첨부 참조로 변경
   tool_use?: { id: string; name: string; input: Record<string, unknown> };
-  function_call?: { name: string; arguments: Record<string, unknown> };
   createdAt?: Date; // Added
   updatedAt?: Date; // Added
 }

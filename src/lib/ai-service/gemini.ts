@@ -39,10 +39,13 @@ export class GeminiService extends BaseAIService {
   ): AsyncGenerator<string, void, void> {
     this.validateMessages(messages);
 
+    // Validate and fix message stack for Gemini's sequencing rules
+    const validatedMessages = this.validateGeminiMessageStack(messages);
+
     const config = { ...this.defaultConfig, ...options.config };
 
     try {
-      const geminiMessages = this.convertToGeminiMessages(messages);
+      const geminiMessages = this.convertToGeminiMessages(validatedMessages);
       const tools = options.availableTools
         ? [
             {
@@ -124,7 +127,8 @@ export class GeminiService extends BaseAIService {
         stack: error instanceof Error ? error.stack : undefined,
         requestData: {
           model: options.modelName || config.defaultModel || 'gemini-1.5-pro',
-          messagesCount: messages.length,
+          originalMessagesCount: messages.length,
+          validatedMessagesCount: validatedMessages.length,
           hasTools: !!options.availableTools?.length,
           systemPrompt: !!options.systemPrompt,
         },
@@ -138,6 +142,44 @@ export class GeminiService extends BaseAIService {
         error instanceof Error ? error : undefined,
       );
     }
+  }
+
+  /**
+   * Simple validation for Gemini's message sequencing rules.
+   * Removes orphaned function calls at the end of the message window.
+   */
+  private validateGeminiMessageStack(messages: Message[]): Message[] {
+    if (messages.length === 0) {
+      return messages;
+    }
+
+    // Check if the last message is an orphaned function call
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage.role === 'assistant' && lastMessage.tool_calls && lastMessage.tool_calls.length > 0) {
+      // Check if this function call has corresponding tool responses
+      let hasCorrespondingResponses = false;
+      for (let i = messages.length - 1; i >= 0; i--) {
+        const msg = messages[i];
+        if (msg.role === 'tool' && lastMessage.tool_calls.some(tc => tc.id === msg.tool_call_id)) {
+          hasCorrespondingResponses = true;
+          break;
+        }
+        // Stop searching if we hit another assistant message
+        if (msg.role === 'assistant' && msg !== lastMessage) {
+          break;
+        }
+      }
+
+      if (!hasCorrespondingResponses) {
+        logger.warn('Removing orphaned function call at end of message window', {
+          toolCallsCount: lastMessage.tool_calls.length,
+          messageContent: lastMessage.content?.substring(0, 100)
+        });
+        return messages.slice(0, -1);
+      }
+    }
+
+    return messages;
   }
 
   private convertToGeminiMessages(messages: Message[]): Content[] {

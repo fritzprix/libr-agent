@@ -1,20 +1,20 @@
 import { useAssistantContext } from '@/context/AssistantContext';
+import { useChatContext } from '@/context/ChatContext';
 import { useLocalTools } from '@/context/LocalToolContext';
 import { useScheduler } from '@/context/SchedulerContext';
 import { useSessionContext } from '@/context/SessionContext';
 import { useMCPServer } from '@/hooks/use-mcp-server';
+import { getLogger } from '@/lib/logger';
 import {
   isMCPError,
   isMCPSuccess,
   MCPResponse,
   mcpResponseToString,
 } from '@/lib/mcp-types';
-import { getLogger } from '@/lib/logger';
 import { Message } from '@/models/chat';
 import { createId } from '@paralleldrive/cuid2';
 import React, { useCallback, useEffect, useRef } from 'react';
 import { useAsyncFn } from 'react-use';
-import { useChatContext } from '@/context/ChatContext';
 
 const logger = getLogger('ToolCaller');
 
