@@ -14,28 +14,6 @@ import {
   createBooleanSchema,
 } from '../../mcp-types';
 
-// Filesystem 서버 타입 정의 - 함수 형식에만 집중
-export interface FilesystemServer {
-  read_file(args: { path: string; encoding?: string }): Promise<{ content: string; size: number }>;
-  write_file(args: { path: string; content: string; encoding?: string }): Promise<{ success: boolean; bytesWritten: number }>;
-  append_file(args: { path: string; content: string; encoding?: string }): Promise<{ success: boolean; bytesAppended: number }>;
-  delete_file(args: { path: string }): Promise<{ success: boolean }>;
-  file_exists(args: { path: string }): Promise<{ exists: boolean }>;
-  get_file_info(args: { path: string }): Promise<{ 
-    size: number; 
-    isFile: boolean; 
-    isDirectory: boolean; 
-    modified: string; 
-    created: string; 
-    accessed: string; 
-  }>;
-  create_directory(args: { path: string; recursive?: boolean }): Promise<{ success: boolean }>;
-  list_directory(args: { path: string }): Promise<{ entries: Array<{ name: string; isFile: boolean; isDirectory: boolean; size?: number; modified?: string }> }>;
-  delete_directory(args: { path: string; recursive?: boolean }): Promise<{ success: boolean }>;
-  copy_file(args: { source: string; destination: string; overwrite?: boolean }): Promise<{ success: boolean }>;
-  move_file(args: { source: string; destination: string; overwrite?: boolean }): Promise<{ success: boolean }>;
-}
-
 // Define the tools available in this server
 const tools: MCPTool[] = [
   {

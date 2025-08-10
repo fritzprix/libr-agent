@@ -33,7 +33,7 @@ const log = {
 // Static imports for better bundling with Vite
 let calculatorServer: WebMCPServer | null = null;
 let filesystemServer: WebMCPServer | null = null;
-let fileStoreServer: WebMCPServer | null = null;
+let contentStoreServer: WebMCPServer | null = null;
 
 // Dynamic imports with error handling
 async function loadServers(): Promise<void> {
@@ -41,11 +41,11 @@ async function loadServers(): Promise<void> {
     log.debug('Loading MCP servers');
 
     // Load all servers
-    const [calculatorModule, filesystemModule, fileStoreModule] =
+    const [calculatorModule, filesystemModule, contentStoreModule] =
       await Promise.allSettled([
         import('./modules/calculator'),
         import('./modules/filesystem'),
-        import('./modules/file-store'),
+        import('./modules/content-store'),
       ]);
 
     if (calculatorModule.status === 'fulfilled') {
@@ -62,11 +62,14 @@ async function loadServers(): Promise<void> {
       log.error('Failed to load filesystem server', filesystemModule.reason);
     }
 
-    if (fileStoreModule.status === 'fulfilled') {
-      fileStoreServer = fileStoreModule.value.default;
-      log.debug('File-store server loaded');
+    if (contentStoreModule.status === 'fulfilled') {
+      contentStoreServer = contentStoreModule.value.default;
+      log.debug('Content-store server loaded');
     } else {
-      log.error('Failed to load file-store server', fileStoreModule.reason);
+      log.error(
+        'Failed to load content-store server',
+        contentStoreModule.reason,
+      );
     }
 
     log.info('Server loading completed');
@@ -80,7 +83,7 @@ const getServerRegistry = (): Map<string, WebMCPServer | null> => {
   return new Map([
     ['calculator', calculatorServer],
     ['filesystem', filesystemServer],
-    ['file-store', fileStoreServer],
+    ['content-store', contentStoreServer],
   ]);
 };
 
@@ -97,7 +100,7 @@ async function loadMCPServer(serverName: string): Promise<WebMCPServer> {
 
   try {
     // Ensure servers are loaded
-    if (!calculatorServer && !filesystemServer && !fileStoreServer) {
+    if (!calculatorServer && !filesystemServer && !contentStoreServer) {
       await loadServers();
     }
 
@@ -203,8 +206,29 @@ async function handleMCPMessage(
         }
 
         const server = await loadMCPServer(serverName);
-        const result = await server.callTool(toolName, args);
-        return { id, result };
+
+        try {
+          const result = await server.callTool(toolName, args);
+
+          log.debug('Tool call completed', {
+            id,
+            serverName,
+            toolName,
+          });
+
+          return { id, result };
+        } catch (toolError) {
+          log.error('Tool call failed', {
+            id,
+            serverName,
+            toolName,
+            error:
+              toolError instanceof Error
+                ? toolError.message
+                : String(toolError),
+          });
+          throw toolError;
+        }
       }
 
       default: {
@@ -213,7 +237,15 @@ async function handleMCPMessage(
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    log.error('Error handling message', { id, type, error: errorMessage });
+
+    log.error('Error handling MCP message', {
+      id,
+      type,
+      serverName,
+      toolName,
+      error: errorMessage,
+    });
+
     return { id, error: errorMessage };
   }
 }
@@ -222,17 +254,24 @@ async function handleMCPMessage(
  * Worker message handler
  */
 self.onmessage = async (event: MessageEvent<WebMCPMessage>) => {
+  const messageId = event.data?.id || 'unknown';
+
   try {
     const response = await handleMCPMessage(event.data);
     self.postMessage(response);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    log.error('Unhandled error', { error: errorMessage });
+
+    log.error('Worker message handler error', {
+      id: messageId,
+      error: errorMessage,
+    });
 
     const errorResponse: WebMCPResponse = {
-      id: event.data?.id || 'unknown',
+      id: messageId,
       error: `Worker error: ${errorMessage}`,
     };
+
     self.postMessage(errorResponse);
   }
 };

@@ -19,7 +19,7 @@ import MCPWorker from '../lib/web-mcp/mcp-worker.ts?worker';
 const logger = getLogger('WebMCPContext');
 
 // 간단한 서버 프록시 인터페이스
-interface WebMCPServerProxy {
+export interface WebMCPServerProxy {
   name: string;
   isLoaded: boolean;
   tools: MCPTool[];
@@ -213,16 +213,16 @@ export const WebMCPProvider: React.FC<WebMCPProviderProps> = ({
       tools.forEach((tool) => {
         // prefix가 붙어있다면 제거해서 메서드 이름으로 사용
         const originalToolName = tool.name;
-        const methodName = originalToolName.startsWith(`${serverName}__`) 
-          ? originalToolName.replace(`${serverName}__`, '') 
+        const methodName = originalToolName.startsWith(`${serverName}__`)
+          ? originalToolName.replace(`${serverName}__`, '')
           : originalToolName;
-        
-        logger.debug('Processing tool for server proxy', { 
-          serverName, 
+
+        logger.debug('Processing tool for server proxy', {
+          serverName,
           originalToolName,
-          methodName
+          methodName,
         });
-        
+
         serverProxy[methodName] = async (args?: unknown) => {
           if (!proxyRef.current) {
             throw new Error('WebMCP proxy not initialized');
@@ -282,7 +282,7 @@ export const WebMCPProvider: React.FC<WebMCPProviderProps> = ({
             throw error;
           }
         };
-        
+
         logger.debug('Method assigned to server proxy', {
           serverName,
           originalToolName,
@@ -542,9 +542,11 @@ export const useWebMCPManagement = () => {
 };
 
 // 타입 안전한 Web MCP 서버 사용을 위한 새로운 hook
-export const useWebMCPServer = (serverName: string) => {
+export function useWebMCPServer<T extends WebMCPServerProxy>(
+  serverName: string,
+) {
   const { getWebMCPServer, serverStates } = useWebMCPManagement();
-  const [server, setServer] = useState<WebMCPServerProxy | null>(null);
+  const [server, setServer] = useState<T | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -552,7 +554,7 @@ export const useWebMCPServer = (serverName: string) => {
     try {
       setLoading(true);
       setError(null);
-      const serverProxy = await getWebMCPServer(serverName);
+      const serverProxy = (await getWebMCPServer(serverName)) as T;
       setServer(serverProxy);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
@@ -578,4 +580,4 @@ export const useWebMCPServer = (serverName: string) => {
     serverState: serverStates[serverName],
     reload: loadServerProxy,
   } as const;
-};
+}

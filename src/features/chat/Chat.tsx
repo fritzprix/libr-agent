@@ -9,9 +9,10 @@ import { useAssistantContext } from '@/context/AssistantContext';
 import { useLocalTools } from '@/context/LocalToolContext';
 import { useSessionContext } from '@/context/SessionContext';
 import { useChatContext, ChatProvider } from '@/context/ChatContext';
+import { useResourceAttachment } from '@/context/ResourceAttachmentContext';
 import { useMCPServer } from '@/hooks/use-mcp-server';
 import { getLogger } from '@/lib/logger';
-import { Message } from '@/models/chat';
+import { AttachmentReference, Message } from '@/models/chat';
 import { createId } from '@paralleldrive/cuid2';
 import React, {
   useCallback,
@@ -22,7 +23,9 @@ import React, {
 } from 'react';
 import ToolsModal from '../tools/ToolsModal';
 import MessageBubble from './MessageBubble';
-import { ToolCaller } from './orchestrators/ToolCaller';
+import { ToolCaller } from './ToolCaller';
+// import { useWebMCPServer } from '@/context/WebMCPContext';
+// import { ContentStoreServer } from '@/lib/web-mcp/modules/content-store';
 
 const logger = getLogger('Chat');
 
@@ -163,16 +166,15 @@ function ChatStatusBar({
   );
 }
 
-// Chat Attached Files component - now handles its own file removal
+// Chat Attached Files component - now uses ResourceAttachmentContext
 function ChatAttachedFiles() {
-  const [attachedFiles, setAttachedFiles] = useState<
-    { name: string; content: string }[]
-  >([]);
+  const { files: attachedFiles, removeFile } = useResourceAttachment();
+
   const removeAttachedFile = React.useCallback(
-    (index: number) => {
-      setAttachedFiles((prev) => prev.filter((_, i) => i !== index));
+    (file: AttachmentReference) => {
+      removeFile(file);
     },
-    [setAttachedFiles],
+    [removeFile],
   );
 
   if (attachedFiles.length === 0) return null;
@@ -186,10 +188,12 @@ function ChatAttachedFiles() {
             key={index}
             className="flex items-center px-2 py-1 rounded border border-gray-700"
           >
-            <span className="text-xs truncate max-w-[150px]">{file.name}</span>
+            <span className="text-xs truncate max-w-[150px]">
+              {file.filename}
+            </span>
             <Button
               type="button"
-              onClick={() => removeAttachedFile(index)}
+              onClick={() => removeAttachedFile(file)}
               className="ml-2 text-xs"
             >
               ✕
@@ -200,13 +204,20 @@ function ChatAttachedFiles() {
     </div>
   );
 }
-
-// Chat Input component - now handles its own file attachment logic
+// Chat Input component - now uses ResourceAttachmentContext
 function ChatInput({ children }: { children?: React.ReactNode }) {
   const [input, setInput] = useState<string>('');
+
   const { current: currentSession } = useSessionContext();
   const { currentAssistant } = useAssistantContext();
   const { submit, isLoading } = useChatContext();
+  const {
+    files: attachedFiles,
+    addFile,
+    removeFile,
+    clearFiles,
+    isLoading: isAttachmentLoading,
+  } = useResourceAttachment();
 
   const handleAgentInputChange = React.useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -214,23 +225,26 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
     },
     [setInput],
   );
+
   const handleSubmit = useCallback(
     async (e: React.FormEvent<HTMLFormElement>) => {
-      logger.info('submit!!', currentAssistant);
       e.preventDefault();
-      if (!input.trim()) return;
-      if (!currentAssistant) return;
-
-      let messageContent = input.trim();
+      // Submit if there's text OR if files are attached.
+      if (!input.trim() && attachedFiles.length === 0) return;
+      if (!currentAssistant || !currentSession) return;
 
       const userMessage: Message = {
         id: createId(),
-        content: messageContent,
+        content: input.trim(),
         role: 'user',
-        sessionId: currentSession?.id || '',
+        sessionId: currentSession.id,
+        // Include the references of successfully attached files.
+        attachments: attachedFiles,
       };
 
       setInput('');
+      // Clear the attached files from the UI after submission.
+      clearFiles();
 
       try {
         await submit([userMessage]);
@@ -238,48 +252,104 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
         logger.error('Error submitting message:', err);
       }
     },
-    [submit, input],
+    [
+      submit,
+      input,
+      attachedFiles,
+      currentAssistant,
+      currentSession,
+      clearFiles,
+    ],
   );
 
+  // File attachment handler using ResourceAttachmentContext
   const handleFileAttachment = React.useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files;
-      if (!files) return;
+      if (!files || !currentSession) {
+        alert('Cannot attach file: session not available.');
+        return;
+      }
 
-      const newAttachedFiles: { name: string; content: string }[] = [];
-
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        if (
-          !file.type.startsWith('text/') &&
-          !file.name.match(
-            /\.(txt|md|json|js|ts|tsx|jsx|py|java|cpp|c|h|css|html|xml|yaml|yml|csv)$/i,
-          )
-        ) {
-          alert(`File "${file.name}" is not a supported text file format.`);
+      // Process each selected file.
+      for (const file of files) {
+        // You can expand this list based on what your parsers support.
+        const supportedExtensions = /\.(txt|md|json|pdf|docx|xlsx|pptx)$/i;
+        if (!supportedExtensions.test(file.name)) {
+          alert(`File "${file.name}" format is not supported.`);
           continue;
         }
 
-        if (file.size > 1024 * 1024) {
-          alert(`File "${file.name}" is too large. Maximum size is 1MB.`);
+        // Example file size limit: 50MB
+        if (file.size > 50 * 1024 * 1024) {
+          alert(`File "${file.name}" is too large. Maximum size is 50MB.`);
           continue;
         }
 
+        let fileUrl = '';
         try {
-          const content = await file.text();
-          newAttachedFiles.push({ name: file.name, content });
+          logger.debug(`Starting file processing`, {
+            filename: file.name,
+            fileSize: file.size,
+            fileType: file.type,
+            sessionId: currentSession?.id,
+          });
+
+          // 1. Create a temporary blob URL for the file.
+          fileUrl = URL.createObjectURL(file);
+
+          // 2. Use ResourceAttachmentContext to add file
+          await addFile(fileUrl, file.type, file.name);
+
+          logger.info(`File processed successfully`, {
+            filename: file.name,
+            fileSize: file.size,
+          });
         } catch (error) {
-          logger.error(`Error reading file ${file.name}:`, { error });
-          alert(`Error reading file "${file.name}".`);
+          logger.error(`Error processing file ${file.name}:`, {
+            filename: file.name,
+            fileSize: file.size,
+            fileType: file.type,
+            sessionId: currentSession?.id,
+            error:
+              error instanceof Error
+                ? {
+                    message: error.message,
+                    stack: error.stack,
+                    name: error.name,
+                  }
+                : error,
+            errorString: String(error),
+          });
+          alert(
+            `Error processing file "${file.name}": ${error instanceof Error ? error.message : String(error)}`,
+          );
+        } finally {
+          // 3. IMPORTANT: Revoke the blob URL to prevent memory leaks.
+          if (fileUrl) {
+            URL.revokeObjectURL(fileUrl);
+          }
         }
       }
 
+      // Clear the file input so the user can select the same file again.
       e.target.value = '';
     },
-    [],
+    [currentSession, addFile],
   );
 
-  const removeAttachedFile = React.useCallback(() => {}, []);
+  // Remove file handler using ResourceAttachmentContext
+  const removeAttachedFile = React.useCallback(
+    (filename: string) => {
+      const fileToRemove = attachedFiles.find(
+        (f: AttachmentReference) => f.filename === filename,
+      );
+      if (fileToRemove) {
+        removeFile(fileToRemove);
+      }
+    },
+    [attachedFiles, removeFile],
+  );
 
   return (
     <form
@@ -291,16 +361,29 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
         <Input
           value={input}
           onChange={handleAgentInputChange}
-          placeholder={isLoading ? 'agent busy...' : 'query agent...'}
-          disabled={isLoading}
+          placeholder={
+            isLoading || isAttachmentLoading
+              ? 'Agent busy...'
+              : 'Query agent...'
+          }
+          disabled={isLoading || isAttachmentLoading}
           className="flex-1 min-w-0"
           autoComplete="off"
           spellCheck="false"
         />
 
         <FileAttachment
-          files={[]}
-          onRemove={removeAttachedFile}
+          // Convert AttachmentReference[] to the expected format
+          files={attachedFiles.map((file: AttachmentReference) => ({
+            name: file.filename,
+            content: file.preview || '',
+          }))}
+          onRemove={(index: number) => {
+            const file = attachedFiles[index];
+            if (file) {
+              removeAttachedFile(file.filename);
+            }
+          }}
           onAdd={handleFileAttachment}
           compact={true}
         />
@@ -309,7 +392,12 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
 
       <Button
         type="submit"
-        disabled={isLoading}
+        // Disable button if there's nothing to send.
+        disabled={
+          isLoading ||
+          isAttachmentLoading ||
+          (!input.trim() && attachedFiles.length === 0)
+        }
         variant="ghost"
         size="sm"
         className="px-1"

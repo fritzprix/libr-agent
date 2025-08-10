@@ -71,6 +71,7 @@ export interface Session {
   assistants: Assistant[];
   name?: string; // Group 세션의 경우 그룹명
   description?: string; // Group 세션의 경우 설명
+  storeId?: string; // MCP content-store ID for file attachments
   createdAt: Date;
   updatedAt: Date;
 }

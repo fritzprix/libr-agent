@@ -12,17 +12,6 @@ import {
   createNumberSchema,
 } from '../../mcp-types';
 
-// Calculator 서버 타입 정의 - 함수 형식에만 집중
-export interface CalculatorServer {
-  add(args: { a: number; b: number }): Promise<{ result: number; operation: string; operands: number[]; formula: string }>;
-  subtract(args: { a: number; b: number }): Promise<{ result: number; operation: string; operands: number[]; formula: string }>;
-  multiply(args: { a: number; b: number }): Promise<{ result: number; operation: string; operands: number[]; formula: string }>;
-  divide(args: { a: number; b: number }): Promise<{ result: number; operation: string; operands: number[]; formula: string }>;
-  power(args: { base: number; exponent: number }): Promise<{ result: number; operation: string; operands: number[]; formula: string }>;
-  sqrt(args: { value: number }): Promise<{ result: number; operation: string; operands: number[]; formula: string }>;
-  factorial(args: { n: number }): Promise<{ result: number; operation: string; operands: number[]; formula: string }>;
-}
-
 // Define the tools available in this server
 const tools: MCPTool[] = [
   {
