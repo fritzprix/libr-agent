@@ -17,6 +17,43 @@ import { getLogger } from '@/lib/logger';
 
 const logger = getLogger('FileStoreMCP');
 
+// Custom error classes for better error handling
+class FileStoreError extends Error {
+  constructor(
+    message: string,
+    public readonly code: string,
+    public readonly context?: Record<string, unknown>,
+  ) {
+    super(message);
+    this.name = 'FileStoreError';
+  }
+}
+
+class StoreNotFoundError extends FileStoreError {
+  constructor(storeId: string) {
+    super(`Store not found: ${storeId}`, 'STORE_NOT_FOUND', { storeId });
+  }
+}
+
+class ContentNotFoundError extends FileStoreError {
+  constructor(contentId: string, storeId?: string) {
+    super(`Content not found: ${contentId}`, 'CONTENT_NOT_FOUND', { 
+      contentId, 
+      storeId 
+    });
+  }
+}
+
+class InvalidRangeError extends FileStoreError {
+  constructor(fromLine: number, toLine: number, totalLines: number) {
+    super(
+      `Invalid line range: ${fromLine}-${toLine} (total: ${totalLines})`,
+      'INVALID_LINE_RANGE',
+      { fromLine, toLine, totalLines }
+    );
+  }
+}
+
 // BM25 라이브러리의 실제 반환 타입에 맞춘 타입 정의
 type BM25SearchResult = { 0: string; 1: number }; // BM25 라이브러리가 실제 반환하는 형태
 
@@ -35,68 +72,110 @@ interface LocalBM25Instance {
 class TextChunker {
   private readonly CHUNK_SIZE = 500; // characters
   private readonly OVERLAP_SIZE = 50; // characters
+  private readonly MIN_CHUNK_SIZE = 100; // minimum chunk size
 
   chunkText(
     content: string,
   ): { text: string; startLine: number; endLine: number }[] {
-    const lines = content.split('\n');
+    const sentences = this.splitIntoSentences(content);
     const chunks: { text: string; startLine: number; endLine: number }[] = [];
-
+    
     let currentChunk = '';
-    let chunkStartLine = 0;
-    let currentLine = 0;
+    let currentSentences: string[] = [];
+    let chunkStartLine = 1;
 
-    for (const line of lines) {
-      currentChunk += line + '\n';
-      currentLine++;
-
-      if (currentChunk.length >= this.CHUNK_SIZE) {
+    for (const sentence of sentences) {
+      const sentenceWithSpace = currentChunk ? ` ${sentence}` : sentence;
+      const potentialChunk = currentChunk + sentenceWithSpace;
+      
+      // 청크 크기 초과 시 현재 청크 완료
+      if (potentialChunk.length > this.CHUNK_SIZE && currentChunk.length >= this.MIN_CHUNK_SIZE) {
+        const endLine = chunkStartLine + this.countLines(currentChunk) - 1;
         chunks.push({
           text: currentChunk.trim(),
           startLine: chunkStartLine,
-          endLine: currentLine - 1,
+          endLine,
         });
 
-        const overlapLines = this.getOverlapLines(currentChunk);
-        currentChunk = overlapLines;
-        chunkStartLine = Math.max(
-          0,
-          currentLine - this.getLineCount(overlapLines),
-        );
+        // Overlap 적용
+        const { overlapText, overlapLines } = this.createOverlap(currentSentences);
+        currentChunk = overlapText;
+        currentSentences = [...overlapLines];
+        chunkStartLine = Math.max(1, endLine - this.countLines(overlapText) + 1);
       }
+
+      currentChunk = potentialChunk;
+      currentSentences.push(sentence);
     }
 
+    // 마지막 청크 처리
     if (currentChunk.trim()) {
+      const endLine = chunkStartLine + this.countLines(currentChunk) - 1;
       chunks.push({
         text: currentChunk.trim(),
         startLine: chunkStartLine,
-        endLine: currentLine - 1,
+        endLine,
       });
     }
 
-    return chunks;
+    return chunks.length > 0 ? chunks : [{ text: content, startLine: 1, endLine: this.countLines(content) }];
   }
 
-  private getOverlapLines(chunk: string): string {
-    const lines = chunk.split('\n');
-    // A simple character-based overlap might be better here if lines are long
-    let overlap = '';
-    for (let i = lines.length - 1; i >= 0; i--) {
-      if (overlap.length >= this.OVERLAP_SIZE) break;
-      overlap = lines[i] + '\n' + overlap;
+  private splitIntoSentences(text: string): string[] {
+    // 문장 구분자: 마침표, 느낌표, 물음표 + 공백/줄바꿈
+    const sentencePattern = /([.!?]+)(\s+|$)/g;
+    const sentences: string[] = [];
+    let lastIndex = 0;
+
+    text.replace(sentencePattern, (match, punctuation, _whitespace, offset) => {
+      const sentence = text.slice(lastIndex, offset + punctuation.length).trim();
+      if (sentence.length > 0) {
+        sentences.push(sentence);
+      }
+      lastIndex = offset + match.length;
+      return match;
+    });
+
+    // 남은 텍스트 처리
+    const remaining = text.slice(lastIndex).trim();
+    if (remaining) {
+      sentences.push(remaining);
     }
-    return overlap;
+
+    return sentences.length > 0 ? sentences : [text];
   }
 
-  private getLineCount(text: string): number {
-    return text.split('\n').length;
+  private createOverlap(sentences: string[]): { overlapText: string; overlapLines: string[] } {
+    let overlapText = '';
+    const overlapLines: string[] = [];
+
+    // 뒤에서부터 overlap 크기에 맞을 때까지 문장 수집
+    for (let i = sentences.length - 1; i >= 0; i--) {
+      const sentence = sentences[i];
+      const potentialOverlap = sentence + (overlapText ? ` ${overlapText}` : '');
+      
+      if (potentialOverlap.length > this.OVERLAP_SIZE && overlapText.length > 0) {
+        break;
+      }
+      
+      overlapLines.unshift(sentence);
+      overlapText = potentialOverlap;
+    }
+
+    return { overlapText, overlapLines };
+  }
+
+  private countLines(text: string): number {
+    return text ? text.split('\n').length : 1;
   }
 }
 
 class BM25SearchEngine implements ISearchEngine {
   private bm25Indexes = new Map<string, LocalBM25Instance>();
   private chunkMappings = new Map<string, Map<string, FileChunk>>();
+  private indexLastUsed = new Map<string, number>();
   private isInitialized = false;
+  private readonly MAX_INDEXES = 10;
 
   async initialize(): Promise<void> {
     if (this.isInitialized) return;
@@ -104,8 +183,38 @@ class BM25SearchEngine implements ISearchEngine {
     this.isInitialized = true;
   }
 
-  async indexStore(storeId: string, chunks: FileChunk[]): Promise<void> {
+  async addToIndex(storeId: string, newChunks: FileChunk[]): Promise<void> {
     if (!this.isInitialized) await this.initialize();
+
+    let bm25 = this.bm25Indexes.get(storeId);
+    let chunkMapping = this.chunkMappings.get(storeId);
+
+    if (!bm25 || !chunkMapping) {
+      // 기존 인덱스가 없으면 전체 인덱스 재구성
+      const allChunks = await dbUtils.getFileChunksByStore(storeId);
+      await this.rebuildIndex(storeId, allChunks);
+      return;
+    }
+
+    // 기존 인덱스에 새 chunk들 추가
+    newChunks.forEach((chunk) => {
+      const processedText = this.preprocessText(chunk.text);
+      bm25.addDoc({ id: chunk.id, text: processedText });
+      chunkMapping.set(chunk.id, chunk);
+    });
+
+    bm25.consolidate();
+    this.indexLastUsed.set(storeId, Date.now());
+    
+    logger.info('Added chunks to existing index', { 
+      storeId, 
+      newChunkCount: newChunks.length,
+      totalChunks: chunkMapping.size 
+    });
+  }
+
+  private async rebuildIndex(storeId: string, chunks: FileChunk[]): Promise<void> {
+    await this.cleanupOldIndexes();
 
     const bm25 = BM25();
     bm25.defineConfig({
@@ -125,7 +234,29 @@ class BM25SearchEngine implements ISearchEngine {
     bm25.consolidate();
     this.bm25Indexes.set(storeId, bm25);
     this.chunkMappings.set(storeId, chunkMapping);
-    logger.info('BM25 index created', { storeId, chunkCount: chunks.length });
+    this.indexLastUsed.set(storeId, Date.now());
+    
+    logger.info('Index rebuilt', { storeId, chunkCount: chunks.length });
+  }
+
+  private async cleanupOldIndexes(): Promise<void> {
+    if (this.bm25Indexes.size < this.MAX_INDEXES) return;
+
+    const sortedByAge = Array.from(this.indexLastUsed.entries())
+      .sort(([, a], [, b]) => a - b);
+    
+    const toRemove = sortedByAge.slice(0, sortedByAge.length - this.MAX_INDEXES + 1);
+    
+    for (const [storeId] of toRemove) {
+      this.bm25Indexes.delete(storeId);
+      this.chunkMappings.delete(storeId);
+      this.indexLastUsed.delete(storeId);
+      logger.debug('Removed old index from memory', { storeId });
+    }
+  }
+
+  async indexStore(storeId: string, chunks: FileChunk[]): Promise<void> {
+    await this.rebuildIndex(storeId, chunks);
   }
 
   async search(
@@ -137,41 +268,47 @@ class BM25SearchEngine implements ISearchEngine {
     const chunkMapping = this.chunkMappings.get(storeId);
 
     if (!bm25 || !chunkMapping) {
-      logger.warn('No index found for store', { storeId });
-      // Attempt to build index on the fly
       const chunks = await dbUtils.getFileChunksByStore(storeId);
-      if (chunks.length > 0) {
-        logger.info(`Index for store ${storeId} not found, building it now.`);
-        await this.indexStore(storeId, chunks);
-        return this.search(storeId, query, options);
-      } else {
+      if (chunks.length === 0) {
+        logger.warn('No chunks found for store', { storeId });
         return [];
       }
+      
+      await this.rebuildIndex(storeId, chunks);
+      return this.search(storeId, query, options);
     }
+
+    // 사용 시간 업데이트
+    this.indexLastUsed.set(storeId, Date.now());
 
     const processedQuery = this.preprocessText(query);
     const searchResults = bm25.search(processedQuery);
 
     const results: SearchResult[] = searchResults
+      .filter((result: BM25SearchResult) => result[1] >= (options.threshold || 0)) // threshold 적용
       .slice(0, options.topN)
-      .map((result: BM25SearchResult) => {
+      .map((result: BM25SearchResult): SearchResult | null => {
         const chunk = chunkMapping.get(result[0]);
-        if (!chunk) return null;
+        if (!chunk) {
+          logger.warn('Chunk not found in mapping', { chunkId: result[0], storeId });
+          return null;
+        }
         return {
           contentId: chunk.contentId,
           chunkId: chunk.id,
           context: chunk.text,
           lineRange: [chunk.startLine, chunk.endLine] as [number, number],
           score: result[1],
-          relevanceType: 'keyword' as const,
+          relevanceType: 'keyword',
         };
       })
-      .filter(Boolean) as SearchResult[];
+      .filter((result): result is SearchResult => result !== null);
 
     logger.debug('BM25 search completed', {
       storeId,
       query: processedQuery,
       resultCount: results.length,
+      totalResults: searchResults.length,
     });
     return results;
   }
@@ -183,6 +320,7 @@ class BM25SearchEngine implements ISearchEngine {
   async cleanup(): Promise<void> {
     this.bm25Indexes.clear();
     this.chunkMappings.clear();
+    this.indexLastUsed.clear();
     this.isInitialized = false;
     logger.info('BM25 search engine cleaned up');
   }
@@ -353,98 +491,165 @@ async function createStore(
 }
 
 async function addContent(input: AddContentInput): Promise<AddContentOutput> {
-  const contentId = `content_${Date.now()}`;
-  const lines = input.content.split('\n');
-  const summary = lines.slice(0, 20).join('\n');
-  const now = new Date(input.metadata.uploadedAt);
+  try {
+    // Store 존재 여부 확인
+    const store = await dbService.fileStores.read(input.storeId);
+    if (!store) {
+      throw new StoreNotFoundError(input.storeId);
+    }
 
-  const content: FileContent = {
-    id: contentId,
-    storeId: input.storeId,
-    filename: input.metadata.filename,
-    mimeType: input.metadata.mimeType,
-    size: input.metadata.size,
-    uploadedAt: now,
-    content: input.content,
-    lineCount: lines.length,
-    summary,
-  };
-  await dbService.fileContents.upsert(content);
+    const contentId = `content_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const lines = input.content.split('\n');
+    const summary = lines.slice(0, 20).join('\n');
+    const uploadedAt = new Date(input.metadata.uploadedAt);
 
-  const chunksData = textChunker.chunkText(input.content);
-  const chunks: FileChunk[] = chunksData.map((chunkData, index) => ({
-    id: `${contentId}_chunk_${index}`,
-    contentId,
-    chunkIndex: index,
-    text: chunkData.text,
-    startLine: chunkData.startLine,
-    endLine: chunkData.endLine,
-  }));
+    // Content 생성
+    const content: FileContent = {
+      id: contentId,
+      storeId: input.storeId,
+      filename: input.metadata.filename,
+      mimeType: input.metadata.mimeType,
+      size: input.metadata.size,
+      uploadedAt,
+      content: input.content,
+      lineCount: lines.length,
+      summary,
+    };
 
-  await dbService.fileChunks.upsertMany(chunks);
-  await searchEngine.indexStore(input.storeId, chunks);
+    // Chunking
+    const chunksData = textChunker.chunkText(input.content);
+    const chunks: FileChunk[] = chunksData.map((chunkData, index) => ({
+      id: `${contentId}_chunk_${index}`,
+      contentId,
+      chunkIndex: index,
+      text: chunkData.text,
+      startLine: chunkData.startLine,
+      endLine: chunkData.endLine,
+    }));
 
-  logger.info('Content added with chunks', {
-    contentId,
-    filename: input.metadata.filename,
-    chunkCount: chunks.length,
-  });
+    // DB 저장
+    await dbService.fileContents.upsert(content);
+    await dbService.fileChunks.upsertMany(chunks);
+    
+    // 기존 인덱스에 새 chunk만 추가 (전체 재인덱싱 방지)
+    await searchEngine.addToIndex(input.storeId, chunks);
 
-  return {
-    storeId: input.storeId,
-    contentId,
-    filename: content.filename,
-    mimeType: content.mimeType,
-    size: content.size,
-    lineCount: content.lineCount,
-    preview: content.summary,
-    chunkCount: chunks.length,
-    uploadedAt: now,
-  };
+    logger.info('Content added successfully', {
+      contentId,
+      filename: input.metadata.filename,
+      chunkCount: chunks.length,
+      storeId: input.storeId,
+    });
+
+    return {
+      storeId: input.storeId,
+      contentId,
+      filename: content.filename,
+      mimeType: content.mimeType,
+      size: content.size,
+      lineCount: content.lineCount,
+      preview: content.summary,
+      chunkCount: chunks.length,
+      uploadedAt,
+    };
+  } catch (error) {
+    logger.error('Failed to add content', error, { 
+      storeId: input.storeId, 
+      filename: input.metadata.filename 
+    });
+    throw error;
+  }
 }
 
 async function listContent(
   input: ListContentInput,
-): Promise<{ contents: ContentSummary[] }> {
+): Promise<{ contents: ContentSummary[]; total: number; hasMore: boolean }> {
   const { storeId, pagination } = input;
-  const pageNum = pagination?.offset
-    ? Math.floor(pagination.offset / (pagination.limit || 50)) + 1
-    : 1;
-  const pageSize = pagination?.limit || 50;
+  const limit = Math.min(pagination?.limit || 50, 100); // 최대 100개 제한
+  const offset = Math.max(pagination?.offset || 0, 0);
 
-  const page = await dbService.fileContents.getPage(pageNum, pageSize);
-  const contentsInStore = page.items.filter((item) => item.storeId === storeId);
+  try {
+    // 전체 페이지를 가져와서 storeId로 필터링
+    // TODO: DB에 findByStoreId 메서드 추가 필요
+    const allPages = await dbService.fileContents.getPage(1, 1000); // 임시로 큰 페이지 사이즈 사용
+    const allContentsInStore = allPages.items.filter((item: FileContent) => item.storeId === storeId);
+    const total = allContentsInStore.length;
+    
+    const paginatedContents = allContentsInStore
+      .slice(offset, offset + limit);
 
-  const summaries: ContentSummary[] = contentsInStore.map((c) => ({
-    storeId: c.storeId,
-    contentId: c.id,
-    filename: c.filename,
-    mimeType: c.mimeType,
-    size: c.size,
-    lineCount: c.lineCount,
-    preview: c.summary,
-    uploadedAt: c.uploadedAt.toISOString(),
-  }));
+    const summaries: ContentSummary[] = paginatedContents.map((c: FileContent) => ({
+      storeId: c.storeId,
+      contentId: c.id,
+      filename: c.filename,
+      mimeType: c.mimeType,
+      size: c.size,
+      lineCount: c.lineCount,
+      preview: c.summary,
+      uploadedAt: c.uploadedAt.toISOString(),
+    }));
 
-  return { contents: summaries };
+    const hasMore = offset + limit < total;
+
+    logger.debug('Listed content', { 
+      storeId, 
+      offset, 
+      limit, 
+      total, 
+      returned: summaries.length,
+      hasMore 
+    });
+
+    return { contents: summaries, total, hasMore };
+  } catch (error) {
+    logger.error('Failed to list content', error, { input });
+    throw new FileStoreError(
+      'Failed to retrieve content list',
+      'LIST_CONTENT_FAILED',
+      { storeId, pagination }
+    );
+  }
 }
 
 async function readContent(
   input: ReadContentInput,
 ): Promise<{ content: string; lineRange: [number, number] }> {
-  const content = await dbService.fileContents.read(input.contentId);
-  if (!content || content.storeId !== input.storeId)
-    throw new Error(`Content not found: ${input.contentId}`);
+  try {
+    const content = await dbService.fileContents.read(input.contentId);
+    
+    if (!content) {
+      throw new ContentNotFoundError(input.contentId, input.storeId);
+    }
+    
+    if (content.storeId !== input.storeId) {
+      throw new FileStoreError(
+        'Content belongs to different store',
+        'STORE_MISMATCH',
+        { 
+          contentId: input.contentId, 
+          expectedStore: input.storeId, 
+          actualStore: content.storeId 
+        }
+      );
+    }
 
-  const lines = content.content.split('\n');
-  const fromLine = Math.max(0, input.lineRange.fromLine - 1);
-  const toLine = Math.min(lines.length, input.lineRange.toLine || lines.length);
+    const lines = content.content.split('\n');
+    const fromLine = Math.max(1, input.lineRange.fromLine);
+    const toLine = Math.min(lines.length, input.lineRange.toLine || lines.length);
 
-  const selectedLines = lines.slice(fromLine, toLine);
-  return {
-    content: selectedLines.join('\n'),
-    lineRange: [fromLine + 1, toLine],
-  };
+    if (fromLine > lines.length) {
+      throw new InvalidRangeError(fromLine, toLine, lines.length);
+    }
+
+    const selectedLines = lines.slice(fromLine - 1, toLine);
+    return {
+      content: selectedLines.join('\n'),
+      lineRange: [fromLine, toLine],
+    };
+  } catch (error) {
+    logger.error('Failed to read content', error, { input });
+    throw error;
+  }
 }
 
 async function similaritySearch(

@@ -14,15 +14,74 @@ import type {
   MCPTool,
 } from '../mcp-types';
 
-// Static imports for better bundling with Vite
-import calculatorServer from './modules/calculator';
-import filesystemServer from './modules/filesystem';
+// Add console logging for debugging since we can't use our logger in worker context
+const log = {
+  debug: (message: string, data?: unknown) => {
+    console.log(`[WebMCP Worker][DEBUG] ${message}`, data || '');
+  },
+  info: (message: string, data?: unknown) => {
+    console.log(`[WebMCP Worker][INFO] ${message}`, data || '');
+  },
+  warn: (message: string, data?: unknown) => {
+    console.warn(`[WebMCP Worker][WARN] ${message}`, data || '');
+  },
+  error: (message: string, data?: unknown) => {
+    console.error(`[WebMCP Worker][ERROR] ${message}`, data || '');
+  }
+};
 
-// Server registry with static imports
-const serverRegistry = new Map<string, WebMCPServer>([
-  ['calculator', calculatorServer],
-  ['filesystem', filesystemServer],
-]);
+// Static imports for better bundling with Vite
+let calculatorServer: WebMCPServer | null = null;
+let filesystemServer: WebMCPServer | null = null;
+let fileStoreServer: WebMCPServer | null = null;
+
+// Dynamic imports with error handling
+async function loadServers(): Promise<void> {
+  try {
+    log.debug('Loading MCP servers');
+    
+    // Load all servers
+    const [calculatorModule, filesystemModule, fileStoreModule] = await Promise.allSettled([
+      import('./modules/calculator'),
+      import('./modules/filesystem'), 
+      import('./modules/file-store')
+    ]);
+
+    if (calculatorModule.status === 'fulfilled') {
+      calculatorServer = calculatorModule.value.default;
+      log.debug('Calculator server loaded');
+    } else {
+      log.error('Failed to load calculator server', calculatorModule.reason);
+    }
+
+    if (filesystemModule.status === 'fulfilled') {
+      filesystemServer = filesystemModule.value.default;
+      log.debug('Filesystem server loaded');
+    } else {
+      log.error('Failed to load filesystem server', filesystemModule.reason);
+    }
+
+    if (fileStoreModule.status === 'fulfilled') {
+      fileStoreServer = fileStoreModule.value.default;
+      log.debug('File-store server loaded');
+    } else {
+      log.error('Failed to load file-store server', fileStoreModule.reason);
+    }
+
+    log.info('Server loading completed');
+  } catch (error) {
+    log.error('Critical error during server loading', error);
+  }
+}
+
+// Server registry with dynamic loading
+const getServerRegistry = (): Map<string, WebMCPServer | null> => {
+  return new Map([
+    ['calculator', calculatorServer],
+    ['filesystem', filesystemServer],
+    ['file-store', fileStoreServer],
+  ]);
+};
 
 // Cache for loaded MCP servers
 const mcpServers = new Map<string, WebMCPServer>();
@@ -36,32 +95,32 @@ async function loadMCPServer(serverName: string): Promise<WebMCPServer> {
   }
 
   try {
-    // Get server from static registry
+    // Ensure servers are loaded
+    if (!calculatorServer && !filesystemServer && !fileStoreServer) {
+      await loadServers();
+    }
+
+    // Get server from registry
+    const serverRegistry = getServerRegistry();
     const server = serverRegistry.get(serverName);
+    
     if (!server) {
-      throw new Error(`Unknown MCP server: ${serverName}`);
+      const availableServers = Array.from(serverRegistry.keys());
+      throw new Error(`Unknown MCP server: ${serverName}. Available: ${availableServers.join(', ')}`);
     }
 
     // Validate server structure
-    if (
-      !server.name ||
-      !server.tools ||
-      typeof server.callTool !== 'function'
-    ) {
+    if (!server.name || !server.tools || typeof server.callTool !== 'function') {
       throw new Error(`Invalid MCP server module: ${serverName}`);
     }
 
     mcpServers.set(serverName, server);
-    console.log(
-      `[WebMCP Worker] Loaded server: ${serverName} with ${server.tools.length} tools`,
-    );
+    log.info('Server loaded', { serverName, toolCount: server.tools.length });
     return server;
   } catch (error) {
-    console.error(
-      `[WebMCP Worker] Failed to load server ${serverName}:`,
-      error,
-    );
-    throw new Error(`Failed to load MCP server: ${serverName}`);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    log.error('Failed to load server', { serverName, error: errorMessage });
+    throw new Error(`Failed to load MCP server: ${serverName} - ${errorMessage}`);
   }
 }
 
@@ -73,24 +132,34 @@ async function handleMCPMessage(
 ): Promise<WebMCPResponse> {
   const { id, type, serverName, toolName, args } = message;
 
+  log.debug('Handling MCP message', { 
+    id, 
+    type, 
+    serverName, 
+    toolName,
+    hasArgs: !!args
+  });
+
   try {
     switch (type) {
       case 'ping':
+        log.debug('Handling ping request');
         return { id, result: 'pong' };
 
       case 'loadServer': {
         if (!serverName) {
           throw new Error('Server name is required for loadServer');
         }
+        
         const loadedServer = await loadMCPServer(serverName);
-        return {
-          id,
+        return { 
+          id, 
           result: {
             name: loadedServer.name,
             description: loadedServer.description,
             version: loadedServer.version,
             toolCount: loadedServer.tools.length,
-          },
+          }
         };
       }
 
@@ -99,7 +168,6 @@ async function handleMCPMessage(
           // Return tools from all loaded servers
           const allTools: MCPTool[] = [];
           for (const [name, server] of mcpServers.entries()) {
-            // Prefix tool names with server name for uniqueness
             const prefixedTools = server.tools.map((tool) => ({
               ...tool,
               name: `${name}__${tool.name}`,
@@ -120,9 +188,7 @@ async function handleMCPMessage(
 
       case 'callTool': {
         if (!serverName || !toolName) {
-          throw new Error(
-            'Server name and tool name are required for callTool',
-          );
+          throw new Error('Server name and tool name are required for callTool');
         }
 
         const server = await loadMCPServer(serverName);
@@ -130,15 +196,13 @@ async function handleMCPMessage(
         return { id, result };
       }
 
-      default:
+      default: {
         throw new Error(`Unknown MCP message type: ${type}`);
+      }
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error(`[WebMCP Worker] Error handling message:`, {
-      message,
-      error: errorMessage,
-    });
+    log.error('Error handling message', { id, type, error: errorMessage });
     return { id, error: errorMessage };
   }
 }
@@ -152,9 +216,8 @@ self.onmessage = async (event: MessageEvent<WebMCPMessage>) => {
     self.postMessage(response);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error(`[WebMCP Worker] Unhandled error:`, error);
+    log.error('Unhandled error', { error: errorMessage });
 
-    // Send error response
     const errorResponse: WebMCPResponse = {
       id: event.data?.id || 'unknown',
       error: `Worker error: ${errorMessage}`,
@@ -167,15 +230,21 @@ self.onmessage = async (event: MessageEvent<WebMCPMessage>) => {
  * Worker error handler
  */
 self.onerror = (error) => {
-  console.error('[WebMCP Worker] Worker error:', error);
+  log.error('Worker error', { error: String(error) });
 };
 
 /**
  * Worker unhandled rejection handler
  */
 self.onunhandledrejection = (event) => {
-  console.error('[WebMCP Worker] Unhandled rejection:', event.reason);
+  log.error('Unhandled rejection', { reason: String(event.reason) });
   event.preventDefault();
 };
 
-console.log('[WebMCP Worker] Web Worker MCP server initialized');
+// Initialize worker and load servers
+log.info('Initializing WebMCP worker');
+loadServers().then(() => {
+  log.info('WebMCP worker ready');
+}).catch((error) => {
+  log.error('Worker initialization failed', { error: String(error) });
+});

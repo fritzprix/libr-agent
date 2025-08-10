@@ -35,6 +35,11 @@ export class WebMCPProxy {
       maxRetries: 3,
       ...config,
     };
+
+    logger.debug('WebMCPProxy created', { 
+      workerType: this.config.workerInstance ? 'instance' : 'path',
+      timeout: this.config.timeout
+    });
   }
 
   /**
@@ -42,23 +47,29 @@ export class WebMCPProxy {
    */
   async initialize(): Promise<void> {
     if (this.isInitialized) {
+      logger.debug('WebMCP proxy already initialized');
       return;
     }
 
     try {
-      logger.debug('Initializing WebMCP proxy', { config: this.config });
+      logger.info('Initializing WebMCP proxy');
 
       // Create worker from instance or path
       if (this.config.workerInstance) {
         this.worker = this.config.workerInstance;
         logger.debug('Using provided worker instance');
       } else if (this.config.workerPath) {
+        logger.debug('Creating worker from path');
         this.worker = new Worker(this.config.workerPath, { type: 'module' });
-        logger.debug('Created worker from path', { workerPath: this.config.workerPath });
       } else {
         throw new Error('Either workerInstance or workerPath must be provided');
       }
 
+      if (!this.worker) {
+        throw new Error('Worker creation failed');
+      }
+
+      // Setup event handlers
       this.worker.onmessage = this.handleWorkerMessage.bind(this);
       this.worker.onerror = this.handleWorkerError.bind(this);
 
@@ -68,11 +79,11 @@ export class WebMCPProxy {
       this.isInitialized = true;
       logger.info('WebMCP proxy initialized successfully');
     } catch (error) {
-      logger.error('Failed to initialize WebMCP proxy', error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error('Failed to initialize WebMCP proxy', { error: errorMessage });
+      
       this.cleanup();
-      throw new Error(
-        `Failed to initialize WebMCP proxy: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      throw new Error(`Failed to initialize WebMCP proxy: ${errorMessage}`);
     }
   }
 
@@ -80,7 +91,9 @@ export class WebMCPProxy {
    * Clean up resources
    */
   cleanup(): void {
-    logger.debug('Cleaning up WebMCP proxy');
+    logger.debug('Cleaning up WebMCP proxy', { 
+      pendingRequests: this.pendingRequests.size 
+    });
 
     // Reject all pending requests
     for (const [, { reject, timeout }] of this.pendingRequests.entries()) {
@@ -123,7 +136,11 @@ export class WebMCPProxy {
         timeout,
       });
 
-      logger.debug('Sending message to worker', { message: fullMessage });
+      logger.debug('Sending message to worker', { 
+        type: message.type,
+        id
+      });
+      
       this.worker!.postMessage(fullMessage);
     });
   }
@@ -133,13 +150,15 @@ export class WebMCPProxy {
    */
   private handleWorkerMessage(event: MessageEvent<WebMCPResponse>): void {
     const response = event.data;
-    logger.debug('Received message from worker', { response });
+
+    if (!response || !response.id) {
+      logger.warn('Invalid response from worker', { response });
+      return;
+    }
 
     const pending = this.pendingRequests.get(response.id);
     if (!pending) {
-      logger.warn('Received response for unknown request', {
-        responseId: response.id,
-      });
+      logger.warn('Response for unknown request', { id: response.id });
       return;
     }
 
@@ -159,11 +178,7 @@ export class WebMCPProxy {
    * Handle worker errors
    */
   private handleWorkerError(error: ErrorEvent): void {
-    logger.error('Worker error occurred', {
-      message: error.message,
-      filename: error.filename,
-      lineno: error.lineno,
-    });
+    logger.error('Worker error', { message: error.message });
 
     // Reject all pending requests
     for (const [, { reject, timeout }] of this.pendingRequests.entries()) {
@@ -177,8 +192,27 @@ export class WebMCPProxy {
    * Test worker responsiveness
    */
   async ping(): Promise<string> {
-    const result = await this.sendMessage<string>({ type: 'ping' });
-    return result;
+    if (!this.worker) {
+      throw new Error('Worker not available');
+    }
+
+    const id = createId();
+    const message: WebMCPMessage = { type: 'ping', id };
+
+    return new Promise<string>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.pendingRequests.delete(id);
+        reject(new Error(`Ping timeout after ${this.config.timeout}ms`));
+      }, this.config.timeout);
+
+      this.pendingRequests.set(id, {
+        resolve: resolve as (value: unknown) => void,
+        reject,
+        timeout,
+      });
+
+      this.worker!.postMessage(message);
+    });
   }
 
   /**
@@ -253,15 +287,12 @@ export class WebMCPProxy {
   /**
    * Get proxy status
    */
-  getStatus(): {
-    initialized: boolean;
-    pendingRequests: number;
-    workerType: string;
-  } {
+  getStatus() {
     return {
       initialized: this.isInitialized,
       pendingRequests: this.pendingRequests.size,
       workerType: this.config.workerInstance ? 'instance' : 'path',
+      hasWorker: !!this.worker,
     };
   }
 }
