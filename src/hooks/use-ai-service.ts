@@ -6,7 +6,7 @@ import { useLocalTools } from '../context/LocalToolContext';
 import { useAssistantExtension } from '../context/AssistantExtensionContext';
 import { AIServiceConfig, AIServiceFactory } from '../lib/ai-service';
 import { getLogger } from '../lib/logger';
-import { useMCPServer } from './use-mcp-server';
+import { useUnifiedMCP } from '../context/UnifiedMCPContext';
 import { useScheduledCallback } from './use-scheduled-callback';
 import { useSettings } from './use-settings';
 
@@ -34,10 +34,12 @@ export const useAIService = (config?: AIServiceConfig) => {
     [provider, apiKeys, model],
   );
   const { getCurrent: getCurrentAssistant } = useAssistantContext();
-  const { getExtensionSystemPrompts, getExtensionServices } = useAssistantExtension();
+  const { getExtensionSystemPrompts, getExtensionServices } =
+    useAssistantExtension();
 
-  const { getAvailableTools: getAvailableMCPTools } = useMCPServer();
-  const { getAvailableTools: getAvailableLocalTools, getService } = useLocalTools();
+  const { availableTools: unifiedMCPTools } = useUnifiedMCP();
+  const { getAvailableTools: getAvailableLocalTools, getService } =
+    useLocalTools();
 
   const submit = useCallback(
     async (messages: Message[]): Promise<Message> => {
@@ -46,16 +48,16 @@ export const useAIService = (config?: AIServiceConfig) => {
       setResponse(null);
 
       const availableTools = [
-        ...getAvailableMCPTools(),
+        ...unifiedMCPTools,
         ...getAvailableLocalTools(),
       ].filter(Boolean);
 
       // Get extension services and their tools
       const extensionServices = getExtensionServices();
-      const extensionTools = extensionServices.flatMap(serviceExt => {
+      const extensionTools = extensionServices.flatMap((serviceExt) => {
         if (serviceExt.type === 'native') {
           const localService = getService(serviceExt.service.name);
-          return localService?.tools.map(tool => tool.toolDefinition) || [];
+          return localService?.tools.map((tool) => tool.toolDefinition) || [];
         }
         // Remote extension tools are included in getAvailableMCPTools() from MCPServerContext
         return [];
@@ -69,10 +71,11 @@ export const useAIService = (config?: AIServiceConfig) => {
       let toolCalls: ToolCall[] = [];
       let finalMessage: Message | null = null;
 
-      logger.info("available tools ", { 
-        base: availableTools.length, 
-        extension: extensionTools.length, 
-        total: allTools.length 
+      logger.info('available tools ', {
+        unifiedMCP: unifiedMCPTools.length,
+        local: getAvailableLocalTools().length,
+        extension: extensionTools.length,
+        total: allTools.length,
       });
 
       try {
@@ -80,7 +83,7 @@ export const useAIService = (config?: AIServiceConfig) => {
           modelName: model,
           systemPrompt: [
             getCurrentAssistant()?.systemPrompt || DEFAULT_SYSTEM_PROMPT,
-            ...getExtensionSystemPrompts()
+            ...getExtensionSystemPrompts(),
           ].join('\n\n'),
           availableTools: allTools,
           config: config,
@@ -166,7 +169,7 @@ export const useAIService = (config?: AIServiceConfig) => {
       config,
       serviceInstance,
       getAvailableLocalTools,
-      getAvailableMCPTools,
+      unifiedMCPTools,
       getCurrentAssistant,
       getExtensionSystemPrompts,
       getExtensionServices,

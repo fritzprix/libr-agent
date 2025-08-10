@@ -1,218 +1,233 @@
-# 🔧 Native Tools Integration 구현 계획
+# MCP Web Worker Refactoring Plan
 
-SynapticFlow에 외부 MCP 서버 없이 바로 사용 가능한 Native Tools 시스템을 구축하는 단계적 계획입니다.
+## Background
 
-## 🎯 목표
+Current MCP (Model Context Protocol) implementations are primarily built with Node.js or Python, which leads to several issues:
 
-- Google Drive, Slack, Gmail 등 주요 서비스와의 OAuth 기반 연동
-- Chat UI에서 직관적인 도구 활성화/비활성화 인터페이스
-- 확장 가능한 플러그인 아키텍처
-- 안전한 토큰 관리 및 자동 갱신
+- **Dependency Complexity**: Requires Node.js/Python installation on end-user machines
+- **Deployment Constraints**: Difficult to integrate MCP servers directly into web applications
+- **Security Limitations**: Restricted integration of AI services with various features on client-side
 
----
+Especially in special cases like Tauri, built-in MCP support is possible, but the current structure makes deployment and management complex.
 
-## 📋 구현 단계
+## Purpose
 
-### Phase 1: 기반 아키텍처 구축
+Implement an MCP-compatible layer using Web Workers to achieve:
 
-#### 1.1 ChatTools 컴포넌트 Chat.tsx에 추가
+1. **Dependency Elimination**: Run MCP servers with browser runtime only, without Node.js/Python
+2. **Built-in Support**: Provide embedded MCP servers within applications
+3. **Easy Deployment**: Deploy directly alongside web applications
+4. **Standard Compliance**: Adhere to MCP tool calling and discovery standards
 
-**목표**: Chat UI에 Native Tools 관리 메뉴 통합
+## Requirements
 
-**작업 내용**:
+### Platform Support
+- **Tauri**: Built-in MCP server support in desktop applications
+- **Next.js**: Web Worker-based MCP support in web applications
+- **Compatibility**: Utilize Web Worker APIs that work in browser environments
 
-- `src/features/chat/ChatTools.tsx` 컴포넌트 생성
-- Chat.tsx의 ChatStatusBar에서 Tools 메뉴 클릭 시 ChatTools 표시
-- 각 도구별 토글/상태 표시 UI 구성
-- ToolsModal 내부에 ChatTools 통합
+### Functional Requirements
+- **Tool Discovery**: Query available tool lists
+- **Tool Calling**: Execute specific tools and return results
+- **Dynamic Loading**: Load MCP server modules at runtime
+- **Type Safety**: Strong typing support based on TypeScript
 
-**파일 수정**:
+### Non-Functional Requirements
+- **Simple Interface**: MCP-specialized simple API rather than generic worker
+- **Performance**: Module caching and efficient message processing
+- **Extensibility**: Easy addition of new MCP server modules
 
-- `src/features/chat/Chat.tsx` - ChatStatusBar에 ChatTools 통합
-- `src/features/chat/ChatTools.tsx` - 새로 생성
-- `src/features/tools/ToolsModal.tsx` - ChatTools 섹션 추가
+## Current State Analysis
 
-**예상 코드 구조**:
+### Existing Worker System
+- ✅ Dynamic module loading (`import('./modules/${moduleName}')`)
+- ✅ Message-based RPC (`WorkerProxy`, `self.onmessage`)
+- ✅ Callback support and type safety
+- ✅ Module caching and lifecycle management
 
-```tsx
-// ChatTools.tsx
-export default function ChatTools() {
-  return (
-    <div className="space-y-2">
-      <h3 className="text-sm font-semibold">Native Tools</h3>
-      {/* 각 도구별 컴포넌트들이 여기에 렌더링 */}
-    </div>
-  );
-}
-```
+### Areas for Improvement
+- 🔄 Generic API → Specialize to MCP-dedicated API
+- 🔄 Complex callback system → Simplify to MCP standard interface
+- 🔄 Arbitrary function calls → Standard `listTools`, `callTool` methods
 
----
+## Refactoring Plan
 
-#### 1.2 OAuth Context Provider & Hook 구현
-
-**목표**: 서비스 인증 토큰의 중앙 집중식 관리
-
-**작업 내용**:
-
-- IndexedDB 스키마에 oauth_sessions 테이블 추가
-- OAuthContext Provider 구현
-- useOAuth Hook 제공
-- 토큰 만료/갱신 로직 구현
-- 앱 시작 시 저장된 세션 자동 복원
-
-**파일 수정**:
-
-- `src/lib/db.ts` - OAuthSession 인터페이스 및 CRUD 추가
-- `src/context/OAuthContext.tsx` - 새로 생성
-- `src/app/App.tsx` - OAuthProvider로 래핑
-- `src/models/oauth.ts` - OAuth 관련 타입 정의 (새로 생성)
-
-**데이터 구조**:
-
+### 1. MCP Type Definitions
 ```typescript
-interface OAuthSession {
+// types/mcp.ts
+export interface ToolDefinition {
+  name: string;
+  description: string;
+  inputSchema: object; // JSON Schema
+}
+
+export interface MCPServer {
+  name: string;
+  description?: string;
+  version?: string;
+  tools: ToolDefinition[];
+  callTool: (name: string, args: any) => Promise<any>;
+}
+
+export interface MCPMessage {
   id: string;
-  serviceType: 'google-drive' | 'slack' | 'gmail';
-  accessToken: string;
-  refreshToken?: string;
-  expiresAt?: Date;
-  userInfo?: { email: string; name: string; avatar?: string };
-  createdAt: Date;
-  updatedAt: Date;
+  type: 'listTools' | 'callTool' | 'ping';
+  serverName: string;
+  args?: any;
+}
+
+export interface MCPResponse {
+  id: string;
+  result?: any;
+  error?: string;
 }
 ```
 
----
+### 2. MCP Module Standard Interface
+```typescript
+// modules/calculator.ts
+import { MCPServer } from '@/types/mcp';
 
-#### 1.3 Tauri OAuth Framework 통합
+const tools = [
+  {
+    name: "add",
+    description: "Add two numbers",
+    inputSchema: {
+      type: "object",
+      properties: {
+        a: { type: "number" },
+        b: { type: "number" }
+      },
+      required: ["a", "b"]
+    }
+  }
+];
 
-**목표**: 안전한 OAuth 인증 플로우 구현
+async function callTool(name: string, args: any): Promise<any> {
+  switch(name) {
+    case "add":
+      return { result: args.a + args.b };
+    default:
+      throw new Error(`Unknown tool: ${name}`);
+  }
+}
 
-**작업 내용**:
+const server: MCPServer = {
+  name: "calculator",
+  description: "Basic calculator operations",
+  version: "1.0.0",
+  tools,
+  callTool
+};
 
-- Rust 백엔드에 OAuth 인증 명령어 구현
-- 브라우저 팝업 기반 OAuth 플로우
-- PKCE (Proof Key for Code Exchange) 보안 적용
-- 각 서비스별 OAuth 설정 관리
-
-**파일 수정**:
-
-- `src-tauri/src/oauth.rs` - 새로 생성
-- `src-tauri/src/lib.rs` - oauth 모듈 및 명령어 등록
-- `src-tauri/Cargo.toml` - OAuth 관련 의존성 추가
-- `src/lib/tauri-oauth.ts` - 프론트엔드 OAuth 클라이언트 (새로 생성)
-
-**Rust 의존성 추가**:
-
-```toml
-[dependencies]
-oauth2 = "4.4"
-reqwest = { version = "0.11", features = ["json"] }
-tokio = { version = "1.0", features = ["full"] }
-serde = { version = "1.0", features = ["derive"] }
+export default server;
 ```
 
----
+### 3. Worker Message Processing (MCP-Specific)
+```typescript
+// worker.ts
+import { MCPServer, MCPMessage, MCPResponse } from '@/types/mcp';
 
-### Phase 2: Google Drive Integration 구현
+const mcpServers = new Map<string, MCPServer>();
 
-#### 2.1 Google Drive Tool 기본 구조
+async function loadMCPServer(serverName: string): Promise<MCPServer> {
+  if (mcpServers.has(serverName)) {
+    return mcpServers.get(serverName)!;
+  }
 
-**목표**: 첫 번째 Native Tool로 Google Drive 연동 구현
+  const mod = await import(`./modules/${serverName}`);
+  const server = mod.default as MCPServer;
+  mcpServers.set(serverName, server);
+  return server;
+}
 
-**작업 내용**:
+async function handleMCPMessage(message: MCPMessage): Promise<MCPResponse> {
+  const { id, type, serverName, args } = message;
 
-- `src/tools/google-drive/` 폴더 구조 생성
-- GoogleTool React 컴포넌트 (OAuth 상태 + 토글)
-- GoogleDriveService LocalService 구현
-- 기본 도구: 파일 목록, 업로드, 다운로드
+  try {
+    const server = await loadMCPServer(serverName);
+    
+    let result;
+    switch(type) {
+      case 'listTools':
+        result = server.tools;
+        break;
+      case 'callTool':
+        result = await server.callTool(args.name, args.arguments);
+        break;
+      default:
+        throw new Error(`Unknown MCP method: ${type}`);
+    }
+    
+    return { id, result };
+  } catch (error) {
+    return { id, error: error.message };
+  }
+}
 
-**파일 생성**:
+self.onmessage = async (event: MessageEvent<MCPMessage>) => {
+  const response = await handleMCPMessage(event.data);
+  self.postMessage(response);
+};
+```
 
-- `src/tools/google-drive/index.ts` - 엔트리 포인트
-- `src/tools/google-drive/GoogleTool.tsx` - UI 컴포넌트
-- `src/tools/google-drive/GoogleDriveService.ts` - Service 구현
-- `src/tools/google-drive/types.ts` - Google Drive 관련 타입
+### 4. MCP Provider Usage
+```typescript
+// Usage in React
+<WebMCPProvider servers={["calculator", "file-system"]}>
+   <ExampleSubscriber />
+</WebMCPProvider>
 
-**기본 도구 목록**:
+function ExampleSubscriber() {
+    const { availableTools, executeCall } = useWebMCP();
+    
+    // Query all available tools
+    const tools = await availableTools();
+    
+    // Execute specific tool
+    const result = await executeCall("calculator", "add", { a: 1, b: 2 });
+}
+```
 
-- `listFiles` - 파일/폴더 목록 조회
-- `uploadFile` - 파일 업로드
-- `downloadFile` - 파일 다운로드
-- `createFolder` - 폴더 생성
+### 5. Implementation Phases
 
----
+#### Phase 1: Core Infrastructure
+1. MCP type definitions (`types/mcp.ts`)
+2. MCP Worker implementation (`mcp-worker.ts`)
+3. MCP Proxy implementation (`mcp-proxy.ts`)
 
-#### 2.2 Google API 클라이언트 구현
+#### Phase 2: Provider & Hooks
+1. MCP Context Provider (`useMCPProvider`)
+2. MCP Hooks (`useMCP`, `useWebMCP`)
+3. Basic test module implementation
 
-**목표**: Google Drive API와의 실제 통신 구현
+#### Phase 3: Actual MCP Servers
+1. Calculator server
+2. File System server (utilizing Tauri API)
+3. Additional utility servers
 
-**작업 내용**:
+### 6. Differences from Existing System
 
-- Google Drive API v3 클라이언트 구현
-- 파일 메타데이터 처리
-- 에러 처리 및 재시도 로직
-- Rate limiting 대응
+| Existing Worker System      | MCP-Specific System                  |
+| --------------------------- | ------------------------------------ |
+| Arbitrary function calls    | Standardized `listTools`, `callTool` |
+| Complex callback system     | Simple Promise-based                 |
+| Generic module interface    | MCP server standard interface        |
+| Per-function proxy creation | Per-server proxy creation            |
 
-**파일 생성**:
+## Expected Results
 
-- `src/lib/google-api/drive-client.ts` - Drive API 클라이언트
-- `src/lib/google-api/auth.ts` - Google OAuth 헬퍼
-- `src/lib/google-api/types.ts` - Google API 타입 정의
+### User Experience
+- MCP functionality available without dependency installation
+- Built-in tools within web applications
+- Compatibility with other MCP clients through standard MCP interface
 
----
+### Developer Experience
+- Simple MCP server module implementation
+- Type-safe tool invocation
+- Easy deployment and management
 
-### Phase 3: 확장 및 최적화
-
-#### 3.1 추가 서비스 통합
-
-**작업 내용**:
-
-- Slack API 연동 (`src/tools/slack/`)
-- Gmail API 연동 (`src/tools/gmail/`)
-- 각 서비스별 독립적인 OAuth 설정
-
-#### 3.2 성능 최적화 및 UX 개선
-
-**작업 내용**:
-
-- 토큰 자동 갱신 백그라운드 작업
-- API 호출 캐싱 전략
-- 로딩 상태 및 에러 메시지 개선
-- 사용자 설정 UI (API 키 관리 등)
-
----
-
-## 🔄 각 단계별 검증 포인트
-
-### Phase 1 완료 후
-
-- [ ] ChatTools가 Chat UI에서 정상 표시
-- [ ] OAuth Context가 앱 전역에서 사용 가능
-- [ ] 테스트용 OAuth 플로우 동작 확인
-
-### Phase 2 완료 후
-
-- [ ] Google Drive OAuth 인증 성공
-- [ ] 기본 파일 작업 (목록, 업로드, 다운로드) 정상 동작
-- [ ] Chat에서 Google Drive 도구 활성화/비활성화 가능
-
-### Phase 3 완료 후
-
-- [ ] 다중 서비스 동시 사용 가능
-- [ ] 토큰 갱신 및 에러 복구 정상 동작
-- [ ] 확장 가능한 아키텍처 검증
-
----
-
-## 🚨 주의사항
-
-1. **보안**: OAuth 토큰은 반드시 암호화하여 저장
-2. **타입 안전성**: TypeScript `any` 사용 금지, 모든 API 응답 타입 정의
-3. **로깅**: `getLogger`를 통한 체계적 로깅 적용
-4. **에러 처리**: 네트워크 오류, API 제한 등 예외 상황 대비
-5. **사용자 경험**: OAuth 인증 실패 시 명확한 안내 메시지 제공
-
----
-
-*이 계획은 구현 과정에서 세부사항이 조정될 수 있습니다.*
+### Extensibility
+- Easy addition of new MCP server modules
+- System tools utilizing Tauri native APIs
+- Versatility that works in web environments

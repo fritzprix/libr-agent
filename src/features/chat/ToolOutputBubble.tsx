@@ -23,7 +23,7 @@ export const ToolOutputBubble: React.FC<ToolOutputBubbleProps> = ({
   })();
 
   const isJson = parsedContent !== null;
-  
+
   const badge = isJson ? (
     <span className="px-2 py-1 bg-primary text-primary-foreground text-xs rounded-full">
       JSON
@@ -42,9 +42,7 @@ export const ToolOutputBubble: React.FC<ToolOutputBubbleProps> = ({
     <span>{content.length} characters</span>
   );
 
-  const copyData = isJson 
-    ? JSON.stringify(parsedContent, null, 2) 
-    : content;
+  const copyData = isJson ? JSON.stringify(parsedContent, null, 2) : content;
 
   return (
     <BaseBubble

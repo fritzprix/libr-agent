@@ -67,7 +67,7 @@ const ContentBubble: React.FC<ContentBubbleProps> = ({ message }) => {
         {copied ? <Check size={12} /> : <Copy size={12} />}
         {copied ? 'Copied!' : 'Copy'}
       </button>
-      
+
       <ReactMarkdown
         // 에러가 발생해도 앱이 크래시되지 않도록 처리
         skipHtml={false}

@@ -1,20 +1,20 @@
 import { useAssistantContext } from '@/context/AssistantContext';
+import { useChatContext } from '@/context/ChatContext';
 import { useLocalTools } from '@/context/LocalToolContext';
 import { useScheduler } from '@/context/SchedulerContext';
 import { useSessionContext } from '@/context/SessionContext';
-import { useMCPServer } from '@/hooks/use-mcp-server';
+import { useUnifiedMCP } from '@/context/UnifiedMCPContext';
+import { getLogger } from '@/lib/logger';
 import {
   isMCPError,
   isMCPSuccess,
   MCPResponse,
   mcpResponseToString,
 } from '@/lib/mcp-types';
-import { getLogger } from '@/lib/logger';
 import { Message } from '@/models/chat';
 import { createId } from '@paralleldrive/cuid2';
 import React, { useCallback, useEffect, useRef } from 'react';
 import { useAsyncFn } from 'react-use';
-import { useChatContext } from '@/context/ChatContext';
 
 const logger = getLogger('ToolCaller');
 
@@ -32,8 +32,8 @@ export const ToolCaller: React.FC = () => {
   const { current: currentSession } = useSessionContext();
   const { currentAssistant } = useAssistantContext();
   const { messages, submit } = useChatContext();
-  const { executeToolCall: callMcpTool } = useMCPServer();
   const { isLocalTool, executeToolCall: callLocalTool } = useLocalTools();
+  const { executeToolCall: callUnifiedMcpTool } = useUnifiedMCP();
   const { schedule } = useScheduler();
 
   const serializeToolResult = useCallback(
@@ -113,10 +113,14 @@ export const ToolCaller: React.FC = () => {
             args: toolCall.function.arguments,
           });
 
-          const callFunction = isLocalTool(toolName)
-            ? callLocalTool
-            : callMcpTool;
-          const mcpResponse: MCPResponse = await callFunction(toolCall);
+          let mcpResponse: MCPResponse;
+
+          if (isLocalTool(toolName)) {
+            mcpResponse = await callLocalTool(toolCall);
+          } else {
+            // Use unified MCP system for all other tools (Tauri MCP + Web MCP)
+            mcpResponse = await callUnifiedMcpTool(toolCall);
+          }
 
           const serializedContent = serializeToolResult(
             mcpResponse,
@@ -186,7 +190,7 @@ export const ToolCaller: React.FC = () => {
     [
       submit,
       callLocalTool,
-      callMcpTool,
+      callUnifiedMcpTool,
       schedule,
       currentAssistant,
       currentSession,

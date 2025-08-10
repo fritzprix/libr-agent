@@ -1,16 +1,13 @@
-import { FC, useCallback, useMemo } from 'react';
-import { Dropdown } from '../../components/ui';
 import { useModelOptions } from '@/context/ModelProvider';
 import { AIServiceProvider } from '@/lib/ai-service';
-import { getLogger } from '@/lib/logger';
+import { FC, useCallback, useMemo } from 'react';
+import { Dropdown } from '../../components/ui';
 
 interface ModelPickerProps {
   className?: string;
 }
 
 const CompactModelPicker: FC<ModelPickerProps> = ({ className = '' }) => {
-  const logger = getLogger('ModelPicker');
-
   const {
     modelId,
     provider,
@@ -24,15 +21,6 @@ const CompactModelPicker: FC<ModelPickerProps> = ({ className = '' }) => {
     refreshModels,
     isRefreshingModels,
   } = useModelOptions();
-
-  // 디버깅: 컴포넌트 렌더링 상태 로그
-  logger.debug('CompactModelPicker render', {
-    provider,
-    modelId,
-    modelOptionsLength: modelOptions.length,
-    modelOptions,
-    isRefreshingModels,
-  });
 
   const apiKeyStatus = useMemo(() => {
     const key = apiKeys[provider];

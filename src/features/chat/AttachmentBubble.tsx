@@ -1,10 +1,8 @@
+import { AttachmentReference } from '@/models/chat';
 import React from 'react';
 
 interface AttachmentBubbleProps {
-  attachments: {
-    name: string;
-    content: string;
-  }[];
+  attachments: AttachmentReference[];
 }
 
 const AttachmentBubble: React.FC<AttachmentBubbleProps> = ({ attachments }) => {
@@ -23,7 +21,7 @@ const AttachmentBubble: React.FC<AttachmentBubbleProps> = ({ attachments }) => {
             className="inline-flex items-center gap-2 px-3 py-1 bg-muted rounded-full text-xs"
           >
             <span className="text-success">📄</span>
-            <span className="truncate max-w-32">{attachment.name}</span>
+            <span className="truncate max-w-32">{attachment.filename}</span>
           </div>
         ))}
       </div>
