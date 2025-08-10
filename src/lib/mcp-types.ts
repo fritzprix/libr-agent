@@ -453,6 +453,104 @@ export function mcpResponseToString(response: MCPResponse): string {
   });
 }
 
+// ========================================
+// 🌐 Web Worker MCP Types
+// ========================================
+
+/**
+ * Web Worker MCP 서버 인터페이스
+ */
+export interface WebMCPServer {
+  name: string;
+  description?: string;
+  version?: string;
+  tools: MCPTool[];
+  callTool: (name: string, args: unknown) => Promise<unknown>;
+}
+
+/**
+ * Web Worker MCP 메시지 타입
+ */
+export interface WebMCPMessage {
+  id: string;
+  type: 'listTools' | 'callTool' | 'ping' | 'loadServer';
+  serverName?: string;
+  toolName?: string;
+  args?: unknown;
+}
+
+/**
+ * Web Worker MCP 응답 타입
+ */
+export interface WebMCPResponse {
+  id: string;
+  result?: unknown;
+  error?: string;
+}
+
+/**
+ * Web Worker MCP 프록시 설정
+ */
+export interface WebMCPProxyConfig {
+  workerPath?: string;
+  workerInstance?: Worker;
+  timeout?: number;
+  retryOptions?: {
+    maxRetries?: number;
+    baseDelay?: number;
+    maxDelay?: number;
+    timeout?: number;
+  };
+}
+
+/**
+ * Web Worker MCP 서버 상태
+ */
+export interface WebMCPServerState {
+  loaded: boolean;
+  tools: MCPTool[];
+  lastError?: string;
+  lastActivity?: number;
+}
+
+// ========================================
+// 🔄 Unified MCP Types (Tauri + Web Worker)
+// ========================================
+
+/**
+ * MCP 서버 타입 (Tauri 또는 Web Worker)
+ */
+export type MCPServerType = 'tauri' | 'webworker';
+
+/**
+ * 통합 MCP 서버 설정
+ */
+export interface UnifiedMCPServerConfig {
+  name: string;
+  type: MCPServerType;
+  // Tauri 서버용
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  transport?: 'stdio' | 'http' | 'websocket';
+  url?: string;
+  port?: number;
+  // Web Worker 서버용
+  modulePath?: string;
+  workerPath?: string;
+}
+
+/**
+ * 통합 MCP 도구 실행 컨텍스트
+ */
+export interface MCPToolExecutionContext {
+  serverType: MCPServerType;
+  serverName: string;
+  toolName: string;
+  arguments: unknown;
+  timeout?: number;
+}
+
 /**
  * 테스트용: error.txt와 같은 케이스를 검증하는 함수
  */

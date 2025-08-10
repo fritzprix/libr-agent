@@ -35,6 +35,7 @@ interface SessionContextType {
   ) => Promise<void>;
   delete: (id: string) => Promise<void>;
   select: (id?: string) => void;
+  updateSession: (id: string, updates: Partial<Session>) => Promise<void>;
   isLoading: boolean;
   isValidating: boolean;
   error: Error | null;
@@ -244,6 +245,14 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
           name: generateSessionName(assistants, name),
         };
 
+        logger.info('Creating new session', {
+          sessionId: session.id,
+          assistants: assistants.map((a) => a.name),
+          type: session.type,
+          description: session.description,
+          name: session.name,
+        });
+
         // Optimistic update
         setCurrent(session);
 
@@ -350,6 +359,72 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
     [mutate, data],
   );
 
+  /**
+   * Updates a session with the provided updates.
+   * @param id - The session id to update
+   * @param updates - Partial session object with fields to update
+   */
+  const handleUpdateSession = useCallback(
+    async (id: string, updates: Partial<Session>) => {
+      const operation = async () => {
+        // Find the session to update
+        const sessions = sessionsRef.current;
+        const sessionToUpdate = sessions.find((s) => s.id === id);
+
+        if (!sessionToUpdate) {
+          throw new Error(`Session with id ${id} not found`);
+        }
+
+        const updatedSession: Session = {
+          ...sessionToUpdate,
+          ...updates,
+          updatedAt: new Date(),
+        };
+
+        // Store original state for rollback
+        const originalCurrent = currentRef.current;
+        const originalData = data;
+
+        // Optimistic updates
+        if (id === currentRef.current?.id) {
+          setCurrent(updatedSession);
+        }
+
+        // Update in sessions list optimistically
+        mutate(
+          (currentData) =>
+            currentData?.map((page) => ({
+              ...page,
+              items: page.items.map((s) => (s.id === id ? updatedSession : s)),
+            })),
+          false, // Don't revalidate immediately
+        );
+
+        try {
+          await dbService.sessions.upsert(updatedSession);
+          // No need to revalidate - optimistic update is accurate
+        } catch (error) {
+          // Rollback optimistic updates
+          setCurrent(originalCurrent);
+          mutate(originalData, false);
+          throw error;
+        }
+      };
+
+      try {
+        await operation();
+        setOperationError(null);
+        setLastFailedOperation(null);
+      } catch (error) {
+        const errorObj = toError(error);
+        logger.error(`Failed to update session with id ${id}`, errorObj);
+        setOperationError(errorObj);
+        setLastFailedOperation(() => operation);
+      }
+    },
+    [mutate, data],
+  );
+
   const contextValue: SessionContextType = useMemo(
     () => ({
       sessions,
@@ -362,6 +437,7 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
       select: handleSelect,
       start: handleStartNew,
       delete: handleDelete,
+      updateSession: handleUpdateSession,
       isLoading,
       isValidating,
       error,
@@ -380,6 +456,7 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
       handleSelect,
       handleStartNew,
       handleDelete,
+      handleUpdateSession,
       isLoading,
       isValidating,
       error,

@@ -55,9 +55,7 @@ const ToolCallBubble: React.FC<ToolCallBubbleProps> = ({ tool_calls }) => {
               <span className="font-mono text-sm font-medium text-primary">
                 {call.function.name}
               </span>
-              <span className="text-xs text-muted-foreground">
-                #{call.id}
-              </span>
+              <span className="text-xs text-muted-foreground">#{call.id}</span>
             </div>
             <div className="pl-4 border-l-2 border-border">
               {parsedArgs ? (

@@ -39,10 +39,13 @@ export class GeminiService extends BaseAIService {
   ): AsyncGenerator<string, void, void> {
     this.validateMessages(messages);
 
+    // Validate and fix message stack for Gemini's sequencing rules
+    const validatedMessages = this.validateGeminiMessageStack(messages);
+
     const config = { ...this.defaultConfig, ...options.config };
 
     try {
-      const geminiMessages = this.convertToGeminiMessages(messages);
+      const geminiMessages = this.convertToGeminiMessages(validatedMessages);
       const tools = options.availableTools
         ? [
             {
@@ -124,7 +127,8 @@ export class GeminiService extends BaseAIService {
         stack: error instanceof Error ? error.stack : undefined,
         requestData: {
           model: options.modelName || config.defaultModel || 'gemini-1.5-pro',
-          messagesCount: messages.length,
+          originalMessagesCount: messages.length,
+          validatedMessagesCount: validatedMessages.length,
           hasTools: !!options.availableTools?.length,
           systemPrompt: !!options.systemPrompt,
         },
@@ -138,6 +142,66 @@ export class GeminiService extends BaseAIService {
         error instanceof Error ? error : undefined,
       );
     }
+  }
+
+  /**
+   * Validates Gemini's strict message sequencing rules.
+   * Function calls (assistant with tool_calls) must come immediately after a user turn or function response turn.
+   * Removes any assistant messages with tool_calls that violate this rule.
+   */
+  private validateGeminiMessageStack(messages: Message[]): Message[] {
+    if (messages.length === 0) {
+      return messages;
+    }
+
+    const validatedMessages: Message[] = [];
+    let removedCount = 0;
+
+    for (let i = 0; i < messages.length; i++) {
+      const currentMessage = messages[i];
+
+      // Check if current message is an assistant message with tool_calls
+      if (
+        currentMessage.role === 'assistant' &&
+        currentMessage.tool_calls &&
+        currentMessage.tool_calls.length > 0
+      ) {
+        // Function call must come immediately after user or tool message
+        const previousMessage = validatedMessages[validatedMessages.length - 1];
+
+        if (
+          !previousMessage ||
+          (previousMessage.role !== 'user' && previousMessage.role !== 'tool')
+        ) {
+          logger.warn(
+            'Removing assistant function call that violates Gemini sequencing rules',
+            {
+              index: i,
+              toolCallsCount: currentMessage.tool_calls.length,
+              previousRole: previousMessage?.role || 'none',
+              messageContent: currentMessage.content?.substring(0, 100),
+            },
+          );
+          removedCount++;
+          continue; // Skip this message
+        }
+      }
+
+      // Add valid message to the result
+      validatedMessages.push(currentMessage);
+    }
+
+    if (removedCount > 0) {
+      logger.info(
+        `Removed ${removedCount} assistant messages that violated Gemini sequencing rules`,
+        {
+          originalCount: messages.length,
+          validatedCount: validatedMessages.length,
+        },
+      );
+    }
+
+    return validatedMessages;
   }
 
   private convertToGeminiMessages(messages: Message[]): Content[] {

@@ -48,14 +48,17 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const messageWindowSize = settingValue?.windowSize ?? 20;
 
   // Create system message from prompt
-  const createSystemMessage = useCallback((prompt: string, agentKey: string): Message => ({
-    id: `system-${agentKey}-${createId()}`,
-    role: 'system',
-    content: prompt,
-    sessionId: currentSession?.id ?? '',
-    isStreaming: false,
-    createdAt: new Date(),
-  }), [currentSession?.id]);
+  const createSystemMessage = useCallback(
+    (prompt: string, agentKey: string): Message => ({
+      id: `system-${agentKey}-${createId()}`,
+      role: 'system',
+      content: prompt,
+      sessionId: currentSession?.id ?? '',
+      isStreaming: false,
+      createdAt: new Date(),
+    }),
+    [currentSession?.id],
+  );
 
   // Get active system prompts sorted by priority (only from extensions)
   const getActiveSystemPrompts = useCallback(() => {
@@ -160,7 +163,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         // Prepare system prompts for this submission
         const activePrompts = getActiveSystemPrompts();
         const systemMessages = activePrompts.map((promptData) =>
-          createSystemMessage(promptData.prompt, promptData.key)
+          createSystemMessage(promptData.prompt, promptData.key),
         );
 
         // Combine system prompts with user messages
@@ -217,11 +220,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       isLoading,
       messages,
     }),
-    [
-      messages,
-      submit,
-      isLoading,
-    ],
+    [messages, submit, isLoading],
   );
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
