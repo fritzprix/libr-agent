@@ -36,9 +36,9 @@ export class WebMCPProxy {
       ...config,
     };
 
-    logger.debug('WebMCPProxy created', { 
+    logger.debug('WebMCPProxy created', {
       workerType: this.config.workerInstance ? 'instance' : 'path',
-      timeout: this.config.timeout
+      timeout: this.config.timeout,
     });
   }
 
@@ -79,9 +79,12 @@ export class WebMCPProxy {
       this.isInitialized = true;
       logger.info('WebMCP proxy initialized successfully');
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.error('Failed to initialize WebMCP proxy', { error: errorMessage });
-      
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error('Failed to initialize WebMCP proxy', {
+        error: errorMessage,
+      });
+
       this.cleanup();
       throw new Error(`Failed to initialize WebMCP proxy: ${errorMessage}`);
     }
@@ -91,8 +94,8 @@ export class WebMCPProxy {
    * Clean up resources
    */
   cleanup(): void {
-    logger.debug('Cleaning up WebMCP proxy', { 
-      pendingRequests: this.pendingRequests.size 
+    logger.debug('Cleaning up WebMCP proxy', {
+      pendingRequests: this.pendingRequests.size,
     });
 
     // Reject all pending requests
@@ -136,11 +139,11 @@ export class WebMCPProxy {
         timeout,
       });
 
-      logger.debug('Sending message to worker', { 
+      logger.debug('Sending message to worker', {
         type: message.type,
-        id
+        id,
       });
-      
+
       this.worker!.postMessage(fullMessage);
     });
   }

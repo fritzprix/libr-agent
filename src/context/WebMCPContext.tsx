@@ -51,13 +51,15 @@ export const WebMCPContext = createContext<WebMCPContextType | undefined>(
   undefined,
 );
 
-const WebMCPInternalContext = createContext<WebMCPInternalContextType | undefined>(
-  undefined,
-);
+const WebMCPInternalContext = createContext<
+  WebMCPInternalContextType | undefined
+>(undefined);
 
 // 초기화 전용 컴포넌트
 function WebMCPInitializer() {
-  const { isInitialized, isLoading, error, initializeProxy } = useContext(WebMCPInternalContext)!;
+  const { isInitialized, isLoading, error, initializeProxy } = useContext(
+    WebMCPInternalContext,
+  )!;
 
   useEffect(() => {
     if (!isInitialized && !isLoading && !error) {

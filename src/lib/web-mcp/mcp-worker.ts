@@ -3,7 +3,7 @@
  *
  * This worker runs MCP servers in a web worker environment,
  * providing MCP-compatible functionality without Node.js/Python dependencies.
- * 
+ *
  * Designed for Vite's ?worker import system
  */
 
@@ -27,7 +27,7 @@ const log = {
   },
   error: (message: string, data?: unknown) => {
     console.error(`[WebMCP Worker][ERROR] ${message}`, data || '');
-  }
+  },
 };
 
 // Static imports for better bundling with Vite
@@ -39,13 +39,14 @@ let fileStoreServer: WebMCPServer | null = null;
 async function loadServers(): Promise<void> {
   try {
     log.debug('Loading MCP servers');
-    
+
     // Load all servers
-    const [calculatorModule, filesystemModule, fileStoreModule] = await Promise.allSettled([
-      import('./modules/calculator'),
-      import('./modules/filesystem'), 
-      import('./modules/file-store')
-    ]);
+    const [calculatorModule, filesystemModule, fileStoreModule] =
+      await Promise.allSettled([
+        import('./modules/calculator'),
+        import('./modules/filesystem'),
+        import('./modules/file-store'),
+      ]);
 
     if (calculatorModule.status === 'fulfilled') {
       calculatorServer = calculatorModule.value.default;
@@ -103,14 +104,20 @@ async function loadMCPServer(serverName: string): Promise<WebMCPServer> {
     // Get server from registry
     const serverRegistry = getServerRegistry();
     const server = serverRegistry.get(serverName);
-    
+
     if (!server) {
       const availableServers = Array.from(serverRegistry.keys());
-      throw new Error(`Unknown MCP server: ${serverName}. Available: ${availableServers.join(', ')}`);
+      throw new Error(
+        `Unknown MCP server: ${serverName}. Available: ${availableServers.join(', ')}`,
+      );
     }
 
     // Validate server structure
-    if (!server.name || !server.tools || typeof server.callTool !== 'function') {
+    if (
+      !server.name ||
+      !server.tools ||
+      typeof server.callTool !== 'function'
+    ) {
       throw new Error(`Invalid MCP server module: ${serverName}`);
     }
 
@@ -120,7 +127,9 @@ async function loadMCPServer(serverName: string): Promise<WebMCPServer> {
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     log.error('Failed to load server', { serverName, error: errorMessage });
-    throw new Error(`Failed to load MCP server: ${serverName} - ${errorMessage}`);
+    throw new Error(
+      `Failed to load MCP server: ${serverName} - ${errorMessage}`,
+    );
   }
 }
 
@@ -132,12 +141,12 @@ async function handleMCPMessage(
 ): Promise<WebMCPResponse> {
   const { id, type, serverName, toolName, args } = message;
 
-  log.debug('Handling MCP message', { 
-    id, 
-    type, 
-    serverName, 
+  log.debug('Handling MCP message', {
+    id,
+    type,
+    serverName,
     toolName,
-    hasArgs: !!args
+    hasArgs: !!args,
   });
 
   try {
@@ -150,16 +159,16 @@ async function handleMCPMessage(
         if (!serverName) {
           throw new Error('Server name is required for loadServer');
         }
-        
+
         const loadedServer = await loadMCPServer(serverName);
-        return { 
-          id, 
+        return {
+          id,
           result: {
             name: loadedServer.name,
             description: loadedServer.description,
             version: loadedServer.version,
             toolCount: loadedServer.tools.length,
-          }
+          },
         };
       }
 
@@ -188,7 +197,9 @@ async function handleMCPMessage(
 
       case 'callTool': {
         if (!serverName || !toolName) {
-          throw new Error('Server name and tool name are required for callTool');
+          throw new Error(
+            'Server name and tool name are required for callTool',
+          );
         }
 
         const server = await loadMCPServer(serverName);
@@ -243,8 +254,10 @@ self.onunhandledrejection = (event) => {
 
 // Initialize worker and load servers
 log.info('Initializing WebMCP worker');
-loadServers().then(() => {
-  log.info('WebMCP worker ready');
-}).catch((error) => {
-  log.error('Worker initialization failed', { error: String(error) });
-});
+loadServers()
+  .then(() => {
+    log.info('WebMCP worker ready');
+  })
+  .catch((error) => {
+    log.error('Worker initialization failed', { error: String(error) });
+  });

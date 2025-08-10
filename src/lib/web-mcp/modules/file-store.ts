@@ -37,9 +37,9 @@ class StoreNotFoundError extends FileStoreError {
 
 class ContentNotFoundError extends FileStoreError {
   constructor(contentId: string, storeId?: string) {
-    super(`Content not found: ${contentId}`, 'CONTENT_NOT_FOUND', { 
-      contentId, 
-      storeId 
+    super(`Content not found: ${contentId}`, 'CONTENT_NOT_FOUND', {
+      contentId,
+      storeId,
     });
   }
 }
@@ -49,7 +49,7 @@ class InvalidRangeError extends FileStoreError {
     super(
       `Invalid line range: ${fromLine}-${toLine} (total: ${totalLines})`,
       'INVALID_LINE_RANGE',
-      { fromLine, toLine, totalLines }
+      { fromLine, toLine, totalLines },
     );
   }
 }
@@ -79,7 +79,7 @@ class TextChunker {
   ): { text: string; startLine: number; endLine: number }[] {
     const sentences = this.splitIntoSentences(content);
     const chunks: { text: string; startLine: number; endLine: number }[] = [];
-    
+
     let currentChunk = '';
     let currentSentences: string[] = [];
     let chunkStartLine = 1;
@@ -87,9 +87,12 @@ class TextChunker {
     for (const sentence of sentences) {
       const sentenceWithSpace = currentChunk ? ` ${sentence}` : sentence;
       const potentialChunk = currentChunk + sentenceWithSpace;
-      
+
       // 청크 크기 초과 시 현재 청크 완료
-      if (potentialChunk.length > this.CHUNK_SIZE && currentChunk.length >= this.MIN_CHUNK_SIZE) {
+      if (
+        potentialChunk.length > this.CHUNK_SIZE &&
+        currentChunk.length >= this.MIN_CHUNK_SIZE
+      ) {
         const endLine = chunkStartLine + this.countLines(currentChunk) - 1;
         chunks.push({
           text: currentChunk.trim(),
@@ -98,10 +101,14 @@ class TextChunker {
         });
 
         // Overlap 적용
-        const { overlapText, overlapLines } = this.createOverlap(currentSentences);
+        const { overlapText, overlapLines } =
+          this.createOverlap(currentSentences);
         currentChunk = overlapText;
         currentSentences = [...overlapLines];
-        chunkStartLine = Math.max(1, endLine - this.countLines(overlapText) + 1);
+        chunkStartLine = Math.max(
+          1,
+          endLine - this.countLines(overlapText) + 1,
+        );
       }
 
       currentChunk = potentialChunk;
@@ -118,7 +125,9 @@ class TextChunker {
       });
     }
 
-    return chunks.length > 0 ? chunks : [{ text: content, startLine: 1, endLine: this.countLines(content) }];
+    return chunks.length > 0
+      ? chunks
+      : [{ text: content, startLine: 1, endLine: this.countLines(content) }];
   }
 
   private splitIntoSentences(text: string): string[] {
@@ -128,7 +137,9 @@ class TextChunker {
     let lastIndex = 0;
 
     text.replace(sentencePattern, (match, punctuation, _whitespace, offset) => {
-      const sentence = text.slice(lastIndex, offset + punctuation.length).trim();
+      const sentence = text
+        .slice(lastIndex, offset + punctuation.length)
+        .trim();
       if (sentence.length > 0) {
         sentences.push(sentence);
       }
@@ -145,19 +156,26 @@ class TextChunker {
     return sentences.length > 0 ? sentences : [text];
   }
 
-  private createOverlap(sentences: string[]): { overlapText: string; overlapLines: string[] } {
+  private createOverlap(sentences: string[]): {
+    overlapText: string;
+    overlapLines: string[];
+  } {
     let overlapText = '';
     const overlapLines: string[] = [];
 
     // 뒤에서부터 overlap 크기에 맞을 때까지 문장 수집
     for (let i = sentences.length - 1; i >= 0; i--) {
       const sentence = sentences[i];
-      const potentialOverlap = sentence + (overlapText ? ` ${overlapText}` : '');
-      
-      if (potentialOverlap.length > this.OVERLAP_SIZE && overlapText.length > 0) {
+      const potentialOverlap =
+        sentence + (overlapText ? ` ${overlapText}` : '');
+
+      if (
+        potentialOverlap.length > this.OVERLAP_SIZE &&
+        overlapText.length > 0
+      ) {
         break;
       }
-      
+
       overlapLines.unshift(sentence);
       overlapText = potentialOverlap;
     }
@@ -205,15 +223,18 @@ class BM25SearchEngine implements ISearchEngine {
 
     bm25.consolidate();
     this.indexLastUsed.set(storeId, Date.now());
-    
-    logger.info('Added chunks to existing index', { 
-      storeId, 
+
+    logger.info('Added chunks to existing index', {
+      storeId,
       newChunkCount: newChunks.length,
-      totalChunks: chunkMapping.size 
+      totalChunks: chunkMapping.size,
     });
   }
 
-  private async rebuildIndex(storeId: string, chunks: FileChunk[]): Promise<void> {
+  private async rebuildIndex(
+    storeId: string,
+    chunks: FileChunk[],
+  ): Promise<void> {
     await this.cleanupOldIndexes();
 
     const bm25 = BM25();
@@ -235,18 +256,22 @@ class BM25SearchEngine implements ISearchEngine {
     this.bm25Indexes.set(storeId, bm25);
     this.chunkMappings.set(storeId, chunkMapping);
     this.indexLastUsed.set(storeId, Date.now());
-    
+
     logger.info('Index rebuilt', { storeId, chunkCount: chunks.length });
   }
 
   private async cleanupOldIndexes(): Promise<void> {
     if (this.bm25Indexes.size < this.MAX_INDEXES) return;
 
-    const sortedByAge = Array.from(this.indexLastUsed.entries())
-      .sort(([, a], [, b]) => a - b);
-    
-    const toRemove = sortedByAge.slice(0, sortedByAge.length - this.MAX_INDEXES + 1);
-    
+    const sortedByAge = Array.from(this.indexLastUsed.entries()).sort(
+      ([, a], [, b]) => a - b,
+    );
+
+    const toRemove = sortedByAge.slice(
+      0,
+      sortedByAge.length - this.MAX_INDEXES + 1,
+    );
+
     for (const [storeId] of toRemove) {
       this.bm25Indexes.delete(storeId);
       this.chunkMappings.delete(storeId);
@@ -273,7 +298,7 @@ class BM25SearchEngine implements ISearchEngine {
         logger.warn('No chunks found for store', { storeId });
         return [];
       }
-      
+
       await this.rebuildIndex(storeId, chunks);
       return this.search(storeId, query, options);
     }
@@ -285,12 +310,17 @@ class BM25SearchEngine implements ISearchEngine {
     const searchResults = bm25.search(processedQuery);
 
     const results: SearchResult[] = searchResults
-      .filter((result: BM25SearchResult) => result[1] >= (options.threshold || 0)) // threshold 적용
+      .filter(
+        (result: BM25SearchResult) => result[1] >= (options.threshold || 0),
+      ) // threshold 적용
       .slice(0, options.topN)
       .map((result: BM25SearchResult): SearchResult | null => {
         const chunk = chunkMapping.get(result[0]);
         if (!chunk) {
-          logger.warn('Chunk not found in mapping', { chunkId: result[0], storeId });
+          logger.warn('Chunk not found in mapping', {
+            chunkId: result[0],
+            storeId,
+          });
           return null;
         }
         return {
@@ -530,7 +560,7 @@ async function addContent(input: AddContentInput): Promise<AddContentOutput> {
     // DB 저장
     await dbService.fileContents.upsert(content);
     await dbService.fileChunks.upsertMany(chunks);
-    
+
     // 기존 인덱스에 새 chunk만 추가 (전체 재인덱싱 방지)
     await searchEngine.addToIndex(input.storeId, chunks);
 
@@ -553,9 +583,9 @@ async function addContent(input: AddContentInput): Promise<AddContentOutput> {
       uploadedAt,
     };
   } catch (error) {
-    logger.error('Failed to add content', error, { 
-      storeId: input.storeId, 
-      filename: input.metadata.filename 
+    logger.error('Failed to add content', error, {
+      storeId: input.storeId,
+      filename: input.metadata.filename,
     });
     throw error;
   }
@@ -572,32 +602,35 @@ async function listContent(
     // 전체 페이지를 가져와서 storeId로 필터링
     // TODO: DB에 findByStoreId 메서드 추가 필요
     const allPages = await dbService.fileContents.getPage(1, 1000); // 임시로 큰 페이지 사이즈 사용
-    const allContentsInStore = allPages.items.filter((item: FileContent) => item.storeId === storeId);
+    const allContentsInStore = allPages.items.filter(
+      (item: FileContent) => item.storeId === storeId,
+    );
     const total = allContentsInStore.length;
-    
-    const paginatedContents = allContentsInStore
-      .slice(offset, offset + limit);
 
-    const summaries: ContentSummary[] = paginatedContents.map((c: FileContent) => ({
-      storeId: c.storeId,
-      contentId: c.id,
-      filename: c.filename,
-      mimeType: c.mimeType,
-      size: c.size,
-      lineCount: c.lineCount,
-      preview: c.summary,
-      uploadedAt: c.uploadedAt.toISOString(),
-    }));
+    const paginatedContents = allContentsInStore.slice(offset, offset + limit);
+
+    const summaries: ContentSummary[] = paginatedContents.map(
+      (c: FileContent) => ({
+        storeId: c.storeId,
+        contentId: c.id,
+        filename: c.filename,
+        mimeType: c.mimeType,
+        size: c.size,
+        lineCount: c.lineCount,
+        preview: c.summary,
+        uploadedAt: c.uploadedAt.toISOString(),
+      }),
+    );
 
     const hasMore = offset + limit < total;
 
-    logger.debug('Listed content', { 
-      storeId, 
-      offset, 
-      limit, 
-      total, 
+    logger.debug('Listed content', {
+      storeId,
+      offset,
+      limit,
+      total,
       returned: summaries.length,
-      hasMore 
+      hasMore,
     });
 
     return { contents: summaries, total, hasMore };
@@ -606,7 +639,7 @@ async function listContent(
     throw new FileStoreError(
       'Failed to retrieve content list',
       'LIST_CONTENT_FAILED',
-      { storeId, pagination }
+      { storeId, pagination },
     );
   }
 }
@@ -616,26 +649,29 @@ async function readContent(
 ): Promise<{ content: string; lineRange: [number, number] }> {
   try {
     const content = await dbService.fileContents.read(input.contentId);
-    
+
     if (!content) {
       throw new ContentNotFoundError(input.contentId, input.storeId);
     }
-    
+
     if (content.storeId !== input.storeId) {
       throw new FileStoreError(
         'Content belongs to different store',
         'STORE_MISMATCH',
-        { 
-          contentId: input.contentId, 
-          expectedStore: input.storeId, 
-          actualStore: content.storeId 
-        }
+        {
+          contentId: input.contentId,
+          expectedStore: input.storeId,
+          actualStore: content.storeId,
+        },
       );
     }
 
     const lines = content.content.split('\n');
     const fromLine = Math.max(1, input.lineRange.fromLine);
-    const toLine = Math.min(lines.length, input.lineRange.toLine || lines.length);
+    const toLine = Math.min(
+      lines.length,
+      input.lineRange.toLine || lines.length,
+    );
 
     if (fromLine > lines.length) {
       throw new InvalidRangeError(fromLine, toLine, lines.length);

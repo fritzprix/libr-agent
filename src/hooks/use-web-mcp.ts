@@ -1,4 +1,7 @@
-import { useWebMCP as useWebMCPContext, useWebMCPManagement as useWebMCPManagementContext } from '../context/WebMCPContext';
+import {
+  useWebMCP as useWebMCPContext,
+  useWebMCPManagement as useWebMCPManagementContext,
+} from '../context/WebMCPContext';
 
 /**
  * 🌐 Hook for using Web MCP functionality
@@ -125,18 +128,10 @@ export const useWebMCPTools = () => {
  * Provides methods for loading and managing MCP servers.
  */
 export const useWebMCPManagement = () => {
-  const {
-    loadServer,
-    cleanup,
-    initializeProxy,
-  } = useWebMCPManagementContext();
-  
-  const {
-    getProxyStatus,
-    isInitialized,
-    isLoading,
-    error,
-  } = useWebMCPContext();
+  const { loadServer, cleanup, initializeProxy } = useWebMCPManagementContext();
+
+  const { getProxyStatus, isInitialized, isLoading, error } =
+    useWebMCPContext();
 
   /**
    * Load multiple servers concurrently

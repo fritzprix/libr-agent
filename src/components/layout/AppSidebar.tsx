@@ -199,26 +199,26 @@ export default function AppSidebar({ onOpenSettings }: AppSidebarProps) {
           </SidebarGroup>
         )}
       </SidebarContent>
- <SidebarGroup>
-          <SidebarGroupLabel className="text-sm font-semibold uppercase tracking-wide mb-2">
-            History
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <Link to="/tools/webmcp-demo">
-                  <SidebarMenuButton
-                    isActive={location.pathname === '/tools/webmcp-demo'}
-                    tooltip="Demo"
-                  >
-                    <History size={16} />
-                    <span>Demo</span>
-                  </SidebarMenuButton>
-                </Link>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+      <SidebarGroup>
+        <SidebarGroupLabel className="text-sm font-semibold uppercase tracking-wide mb-2">
+          History
+        </SidebarGroupLabel>
+        <SidebarGroupContent>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <Link to="/tools/webmcp-demo">
+                <SidebarMenuButton
+                  isActive={location.pathname === '/tools/webmcp-demo'}
+                  tooltip="Demo"
+                >
+                  <History size={16} />
+                  <span>Demo</span>
+                </SidebarMenuButton>
+              </Link>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarGroupContent>
+      </SidebarGroup>
       <SidebarFooter className="border-t">
         <SidebarMenu>
           <SidebarMenuItem>
