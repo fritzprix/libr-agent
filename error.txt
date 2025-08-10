@@ -1,12 +1,80 @@
+[2025-08-10][01:09:54][webview:error@http://localhost:1420/src/lib/logger.ts:52:24][ERROR] [WebMCPProxy] Attempted to send message to uninitialized proxy {} {"hasWorker":true,"isInitialized":false,"messageType":"ping"}
+[2025-08-10][01:09:54][webview:error@http://localhost:1420/src/lib/logger.ts:52:24][ERROR] [WebMCPProxy] Worker ping failed {} {"errorType":"Error","errorMessage":"WebMCP proxy not initialized","pendingRequests":0}
+[2025-08-10][01:09:54][webview:error@http://localhost:1420/src/lib/logger.ts:52:24][ERROR] [WebMCPProxy] Failed to initialize WebMCP proxy {} {"errorType":"Error","errorMessage":"Worker ping failed: WebMCP proxy not initialized","config":{"hasWorkerInstance":true,"timeout":30000},"workerState":"created"}
+[2025-08-10][01:09:54][webview:debug@http://localhost:1420/src/lib/logger.ts:28:24][DEBUG] [WebMCPProxy] Starting WebMCP proxy cleanup {"pendingRequests":0,"hasWorker":true,"isInitialized":false}
+[2025-08-10][01:09:54][webview:debug@http://localhost:1420/src/lib/logger.ts:28:24][DEBUG] [WebMCPProxy] Worker terminated successfully
+[2025-08-10][01:09:54][webview:debug@http://localhost:1420/src/lib/logger.ts:28:24][DEBUG] [WebMCPProxy] WebMCP proxy cleanup completed
+[2025-08-10][01:09:54][webview:error@http://localhost:1420/src/lib/logger.ts:52:24][ERROR] [WebMCPContext] Failed to initialize WebMCP proxy {}
 
-> synaptic-flow@0.1.0 build /home/fritzprix/my_works/tauri-agent
-> tsc && vite build
-
-src/lib/web-mcp/modules/file-store.ts(109,35): error TS2345: Argument of type 'BM25Instance' is not assignable to parameter of type 'BM25Instance'.
-  The types returned by 'search(...)' are incompatible between these types.
-    Type 'BM25Result[]' is not assignable to type 'BM25Result[]'. Two different types with this name exist, but they are unrelated.
-      Type 'BM25Result' is missing the following properties from type 'BM25Result': id, score
-src/lib/web-mcp/modules/file-store.ts(136,12): error TS2345: Argument of type '(result: [string, number]) => { contentId: string; chunkId: string; context: string; lineRange: [number, number]; score: number; relevanceType: "keyword"; } | null' is not assignable to parameter of type '(value: BM25Result, index: number, array: BM25Result[]) => { contentId: string; chunkId: string; context: string; lineRange: [number, number]; score: number; relevanceType: "keyword"; } | null'.
-  Types of parameters 'result' and 'value' are incompatible.
-    Type 'BM25Result' is not assignable to type '[string, number]'.
- ELIFECYCLE  Command failed with exit code 2.
+[Error] [2025-08-10][01:13:18][webview:error@http://localhost:1420/src/lib/logger.ts:52:24][ERROR] [WebMCPProxy] Attempted to send message to uninitialized proxy {} {"hasWorker":true,"isInitialized":false,"messageType":"ping"}
+	(anonymous function) (@tauri-apps_plugin-log.js:141)
+	(anonymous function) (@tauri-apps_plugin-log.js:122)
+	(anonymous function) (user-script:5:272)
+	runCallback (user-script:5:284)
+	value (user-script:5:366)
+	(anonymous function) (Script Element 32:1:91)
+	Global Code (Script Element 32:1:394)
+[Error] [2025-08-10][01:13:18][webview:error@http://localhost:1420/src/lib/logger.ts:52:24][ERROR] [WebMCPProxy] Attempted to send message to uninitialized proxy {} {"hasWorker":true,"isInitialized":false,"messageType":"ping"}
+	(anonymous function) (@tauri-apps_plugin-log.js:141)
+	(anonymous function) (@tauri-apps_plugin-log.js:122)
+	(anonymous function) (user-script:5:272)
+	runCallback (user-script:5:284)
+	value (user-script:5:366)
+	(anonymous function) (Script Element 45:1:91)
+	Global Code (Script Element 45:1:394)
+[Error] [2025-08-10][01:13:18][webview:error@http://localhost:1420/src/lib/logger.ts:52:24][ERROR] [WebMCPProxy] Ping failed {} {"duration":13}
+	(anonymous function) (@tauri-apps_plugin-log.js:141)
+	(anonymous function) (@tauri-apps_plugin-log.js:122)
+	(anonymous function) (user-script:5:272)
+	runCallback (user-script:5:284)
+	value (user-script:5:366)
+	(anonymous function) (Script Element 47:1:91)
+	Global Code (Script Element 47:1:305)
+[Error] [2025-08-10][01:13:18][webview:error@http://localhost:1420/src/lib/logger.ts:52:24][ERROR] [WebMCPProxy] Ping failed {} {"duration":10}
+	(anonymous function) (@tauri-apps_plugin-log.js:141)
+	(anonymous function) (@tauri-apps_plugin-log.js:122)
+	(anonymous function) (user-script:5:272)
+	runCallback (user-script:5:284)
+	value (user-script:5:366)
+	(anonymous function) (Script Element 48:1:91)
+	Global Code (Script Element 48:1:305)
+[Error] [2025-08-10][01:13:18][webview:error@http://localhost:1420/src/lib/logger.ts:52:24][ERROR] [WebMCPProxy] Worker ping failed {} {"errorType":"Error","errorMessage":"WebMCP proxy not initialized","pendingRequests":0}
+	(anonymous function) (@tauri-apps_plugin-log.js:141)
+	(anonymous function) (@tauri-apps_plugin-log.js:122)
+	(anonymous function) (user-script:5:272)
+	runCallback (user-script:5:284)
+	value (user-script:5:366)
+	(anonymous function) (Script Element 49:1:91)
+	Global Code (Script Element 49:1:392)
+[Error] [2025-08-10][01:13:18][webview:error@http://localhost:1420/src/lib/logger.ts:52:24][ERROR] [WebMCPProxy] Failed to initialize WebMCP proxy {} {"errorType":"Error","errorMessage":"Worker ping failed: WebMCP proxy not initialized","config":{"hasWorkerInstance":true,"timeout":30000},"workerState":"created"}
+	(anonymous function) (@tauri-apps_plugin-log.js:141)
+	(anonymous function) (@tauri-apps_plugin-log.js:122)
+	(anonymous function) (user-script:5:272)
+	runCallback (user-script:5:284)
+	value (user-script:5:366)
+	(anonymous function) (Script Element 50:1:91)
+	Global Code (Script Element 50:1:491)
+[Error] [2025-08-10][01:13:18][webview:error@http://localhost:1420/src/lib/logger.ts:52:24][ERROR] [WebMCPProxy] Worker ping failed {} {"errorType":"Error","errorMessage":"WebMCP proxy not initialized","pendingRequests":0}
+	(anonymous function) (@tauri-apps_plugin-log.js:141)
+	(anonymous function) (@tauri-apps_plugin-log.js:122)
+	(anonymous function) (user-script:5:272)
+	runCallback (user-script:5:284)
+	value (user-script:5:366)
+	(anonymous function) (Script Element 54:1:91)
+	Global Code (Script Element 54:1:392)
+[Error] [2025-08-10][01:13:18][webview:error@http://localhost:1420/src/lib/logger.ts:52:24][ERROR] [WebMCPProxy] Failed to initialize WebMCP proxy {} {"errorType":"Error","errorMessage":"Worker ping failed: WebMCP proxy not initialized","config":{"hasWorkerInstance":true,"timeout":30000},"workerState":"created"}
+	(anonymous function) (@tauri-apps_plugin-log.js:141)
+	(anonymous function) (@tauri-apps_plugin-log.js:122)
+	(anonymous function) (user-script:5:272)
+	runCallback (user-script:5:284)
+	value (user-script:5:366)
+	(anonymous function) (Script Element 55:1:91)
+	Global Code (Script Element 55:1:491)
+[Error] [2025-08-10][01:13:18][webview:error@http://localhost:1420/src/lib/logger.ts:52:24][ERROR] [WebMCPContext] Failed to initialize WebMCP proxy {}
+	(anonymous function) (@tauri-apps_plugin-log.js:141)
+	(anonymous function) (@tauri-apps_plugin-log.js:122)
+	(anonymous function) (user-script:5:272)
+	runCallback (user-script:5:284)
+	value (user-script:5:366)
+	(anonymous function) (Script Element 59:1:91)
+	Global Code (Script Element 59:1:311)

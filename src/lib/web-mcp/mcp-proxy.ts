@@ -13,6 +13,7 @@ import {
   MCPTool,
 } from '../mcp-types';
 import { getLogger } from '../logger';
+import { withRetry, withTimeout, RetryOptions } from '../retry-utils';
 
 const logger = getLogger('WebMCPProxy');
 
@@ -26,13 +27,23 @@ export class WebMCPProxy {
       timeout: ReturnType<typeof setTimeout>;
     }
   >();
-  private config: WebMCPProxyConfig & { timeout: number; maxRetries: number };
+  private config: WebMCPProxyConfig & {
+    timeout: number;
+    retryOptions: RetryOptions;
+  };
   private isInitialized = false;
+  private initializationPromise: Promise<void> | null = null;
 
   constructor(config: WebMCPProxyConfig) {
     this.config = {
       timeout: 30000, // 30 seconds default
-      maxRetries: 3,
+      retryOptions: {
+        maxRetries: 3,
+        baseDelay: 1000,
+        maxDelay: 10000,
+        exponentialBackoff: true,
+        ...config.retryOptions,
+      },
       ...config,
     };
 
@@ -51,6 +62,20 @@ export class WebMCPProxy {
       return;
     }
 
+    // Prevent multiple concurrent initializations
+    if (this.initializationPromise) {
+      return this.initializationPromise;
+    }
+
+    this.initializationPromise = this._doInitialize();
+    try {
+      await this.initializationPromise;
+    } finally {
+      this.initializationPromise = null;
+    }
+  }
+
+  private async _doInitialize(): Promise<void> {
     try {
       logger.info('Initializing WebMCP proxy');
 
@@ -73,8 +98,11 @@ export class WebMCPProxy {
       this.worker.onmessage = this.handleWorkerMessage.bind(this);
       this.worker.onerror = this.handleWorkerError.bind(this);
 
-      // Test worker responsiveness
-      await this.ping();
+      // Test worker responsiveness with retry
+      await withRetry(() => this.ping(), {
+        ...this.config.retryOptions,
+        timeout: this.config.timeout,
+      });
 
       this.isInitialized = true;
       logger.info('WebMCP proxy initialized successfully');
@@ -192,6 +220,15 @@ export class WebMCPProxy {
   }
 
   /**
+   * Test worker responsiveness with retry logic
+   */
+  async pingWithRetry(): Promise<string> {
+    const result = await withRetry(() => this.ping(), this.config.retryOptions);
+
+    return result as string;
+  }
+
+  /**
    * Test worker responsiveness
    */
   async ping(): Promise<string> {
@@ -202,7 +239,7 @@ export class WebMCPProxy {
     const id = createId();
     const message: WebMCPMessage = { type: 'ping', id };
 
-    return new Promise<string>((resolve, reject) => {
+    const pingPromise = new Promise<string>((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.pendingRequests.delete(id);
         reject(new Error(`Ping timeout after ${this.config.timeout}ms`));
@@ -216,10 +253,13 @@ export class WebMCPProxy {
 
       this.worker!.postMessage(message);
     });
+
+    // Apply timeout wrapper for additional safety
+    return withTimeout(pingPromise, this.config.timeout);
   }
 
   /**
-   * Load an MCP server module in the worker
+   * Load an MCP server module in the worker with retry
    */
   async loadServer(serverName: string): Promise<{
     name: string;
@@ -227,37 +267,48 @@ export class WebMCPProxy {
     version?: string;
     toolCount: number;
   }> {
-    const result = await this.sendMessage<{
-      name: string;
-      description?: string;
-      version?: string;
-      toolCount: number;
-    }>({
-      type: 'loadServer',
-      serverName,
-    });
+    const result = await withRetry(
+      () =>
+        this.sendMessage<{
+          name: string;
+          description?: string;
+          version?: string;
+          toolCount: number;
+        }>({
+          type: 'loadServer',
+          serverName,
+        }),
+      this.config.retryOptions,
+    );
 
     logger.info('MCP server loaded', { serverName, result });
     return result;
   }
 
   /**
-   * List all available tools from loaded servers
+   * List all available tools from loaded servers with retry
    */
   async listAllTools(): Promise<MCPTool[]> {
-    const tools = await this.sendMessage<MCPTool[]>({ type: 'listTools' });
+    const tools = await withRetry(
+      () => this.sendMessage<MCPTool[]>({ type: 'listTools' }),
+      this.config.retryOptions,
+    );
     logger.debug('Listed all tools', { toolCount: tools.length });
     return tools;
   }
 
   /**
-   * List tools from a specific server
+   * List tools from a specific server with retry
    */
   async listTools(serverName: string): Promise<MCPTool[]> {
-    const tools = await this.sendMessage<MCPTool[]>({
-      type: 'listTools',
-      serverName,
-    });
+    const tools = await withRetry(
+      () =>
+        this.sendMessage<MCPTool[]>({
+          type: 'listTools',
+          serverName,
+        }),
+      this.config.retryOptions,
+    );
 
     logger.debug('Listed tools for server', {
       serverName,
@@ -267,27 +318,29 @@ export class WebMCPProxy {
   }
 
   /**
-   * Call a tool on a specific server
+   * Call a tool on an MCP server with retry
    */
   async callTool(
     serverName: string,
     toolName: string,
     args: unknown,
   ): Promise<unknown> {
-    logger.debug('Calling tool', { serverName, toolName, args });
+    logger.debug('Calling tool', { serverName, toolName });
 
-    const result = await this.sendMessage({
-      type: 'callTool',
-      serverName,
-      toolName,
-      args,
-    });
+    const result = await withRetry(
+      () =>
+        this.sendMessage({
+          type: 'callTool',
+          serverName,
+          toolName,
+          args,
+        }),
+      this.config.retryOptions,
+    );
 
     logger.debug('Tool call completed', { serverName, toolName, result });
     return result;
-  }
-
-  /**
+  } /**
    * Get proxy status
    */
   getStatus() {

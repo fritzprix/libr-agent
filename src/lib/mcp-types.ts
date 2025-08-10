@@ -495,7 +495,12 @@ export interface WebMCPProxyConfig {
   workerPath?: string;
   workerInstance?: Worker;
   timeout?: number;
-  maxRetries?: number;
+  retryOptions?: {
+    maxRetries?: number;
+    baseDelay?: number;
+    maxDelay?: number;
+    timeout?: number;
+  };
 }
 
 /**
