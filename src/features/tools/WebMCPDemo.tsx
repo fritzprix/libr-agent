@@ -188,7 +188,7 @@ const CalculatorDirectDemo: React.FC = () => {
         </div>
 
         {['direct_add', 'direct_subtract', 'direct_multiply', 'direct_divide'].map((key) => 
-          renderResult(key)
+          <div key={key}>{renderResult(key)}</div>
         )}
       </CardContent>
     </Card>

@@ -211,7 +211,18 @@ export const WebMCPProvider: React.FC<WebMCPProviderProps> = ({
 
       // 각 툴에 대해 동적으로 메서드 생성
       tools.forEach((tool) => {
-        const methodName = tool.name;
+        // prefix가 붙어있다면 제거해서 메서드 이름으로 사용
+        const originalToolName = tool.name;
+        const methodName = originalToolName.startsWith(`${serverName}__`) 
+          ? originalToolName.replace(`${serverName}__`, '') 
+          : originalToolName;
+        
+        logger.debug('Processing tool for server proxy', { 
+          serverName, 
+          originalToolName,
+          methodName
+        });
+        
         serverProxy[methodName] = async (args?: unknown) => {
           if (!proxyRef.current) {
             throw new Error('WebMCP proxy not initialized');
@@ -220,10 +231,12 @@ export const WebMCPProvider: React.FC<WebMCPProviderProps> = ({
           logger.debug('Calling server method', {
             serverName,
             methodName,
+            originalToolName,
             args,
           });
 
           try {
+            // callTool에는 prefix 제거된 이름을 사용
             const result = await proxyRef.current.callTool(
               serverName,
               methodName,
@@ -239,6 +252,12 @@ export const WebMCPProvider: React.FC<WebMCPProviderProps> = ({
               },
             }));
 
+            logger.debug('Server method call successful', {
+              serverName,
+              methodName,
+              result,
+            });
+
             return result;
           } catch (error) {
             const errorMessage =
@@ -246,6 +265,7 @@ export const WebMCPProvider: React.FC<WebMCPProviderProps> = ({
             logger.error('Server method call failed', {
               serverName,
               methodName,
+              originalToolName,
               error,
             });
 
@@ -262,6 +282,14 @@ export const WebMCPProvider: React.FC<WebMCPProviderProps> = ({
             throw error;
           }
         };
+        
+        logger.debug('Method assigned to server proxy', {
+          serverName,
+          originalToolName,
+          methodName,
+          methodType: typeof serverProxy[methodName],
+          isFunction: typeof serverProxy[methodName] === 'function',
+        });
       });
 
       return serverProxy;
