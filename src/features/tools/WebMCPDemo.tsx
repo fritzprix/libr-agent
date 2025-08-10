@@ -20,11 +20,180 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { useWebMCPTools, useWebMCPManagement } from '@/hooks/use-web-mcp';
+import { useWebMCPServer } from '@/context/WebMCPContext';
 import { useUnifiedMCP } from '@/context/UnifiedMCPContext';
 import { getLogger } from '@/lib/logger';
 import { runWebMCPTests, TestResult } from '@/lib/web-mcp/test-integration';
+import type { CalculatorServer } from '@/lib/web-mcp/modules/calculator';
 
 const logger = getLogger('WebMCPDemo');
+
+// 간단한 Calculator Direct Call Demo 컴포넌트
+const CalculatorDirectDemo: React.FC = () => {
+  const [calcA, setCalcA] = useState('5');
+  const [calcB, setCalcB] = useState('3');
+  const [results, setResults] = useState<Record<string, unknown>>({});
+  const [loading, setLoading] = useState<Record<string, boolean>>({});
+
+  // 타입 안전한 Calculator 서버 사용
+  const {
+    server,
+    loading: serverLoading,
+    error: serverError,
+  } = useWebMCPServer('calculator');
+
+  // 타입 캐스팅으로 Calculator 서버 메서드 사용
+  const calculatorServer = server as CalculatorServer | null;
+
+  const executeWithLoading = useCallback(
+    async (key: string, fn: () => Promise<unknown>) => {
+      setLoading((prev) => ({ ...prev, [key]: true }));
+      try {
+        const result = await fn();
+        setResults((prev) => ({ ...prev, [key]: result }));
+        logger.info(`Direct call completed: ${key}`, { result });
+      } catch (error) {
+        const errorResult = {
+          error: error instanceof Error ? error.message : String(error),
+          timestamp: new Date().toISOString(),
+        };
+        setResults((prev) => ({ ...prev, [key]: errorResult }));
+        logger.error(`Direct call failed: ${key}`, error);
+      } finally {
+        setLoading((prev) => ({ ...prev, [key]: false }));
+      }
+    },
+    [],
+  );
+
+  // Calculator 직접 호출 함수들
+  const directAdd = () =>
+    executeWithLoading('direct_add', async () => {
+      if (!calculatorServer) throw new Error('Calculator server not ready');
+      return await calculatorServer.add({ a: parseFloat(calcA), b: parseFloat(calcB) });
+    });
+
+  const directSubtract = () =>
+    executeWithLoading('direct_subtract', async () => {
+      if (!calculatorServer) throw new Error('Calculator server not ready');
+      return await calculatorServer.subtract({ a: parseFloat(calcA), b: parseFloat(calcB) });
+    });
+
+  const directMultiply = () =>
+    executeWithLoading('direct_multiply', async () => {
+      if (!calculatorServer) throw new Error('Calculator server not ready');
+      return await calculatorServer.multiply({ a: parseFloat(calcA), b: parseFloat(calcB) });
+    });
+
+  const directDivide = () =>
+    executeWithLoading('direct_divide', async () => {
+      if (!calculatorServer) throw new Error('Calculator server not ready');
+      return await calculatorServer.divide({ a: parseFloat(calcA), b: parseFloat(calcB) });
+    });
+
+  const renderResult = (key: string) => {
+    const result = results[key];
+    if (!result) return null;
+
+    return (
+      <div className="mt-2 p-3 bg-muted rounded-md">
+        <div className="text-sm font-medium mb-1">Result:</div>
+        <pre className="text-xs overflow-auto whitespace-pre-wrap">
+          {typeof result === 'string'
+            ? result
+            : JSON.stringify(result, null, 2)}
+        </pre>
+      </div>
+    );
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Calculator className="h-5 w-5" />
+          Calculator Direct Call Demo
+        </CardTitle>
+        <CardDescription>
+          Call Calculator server methods directly with type safety
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-center gap-2">
+          <Badge variant={calculatorServer ? 'default' : 'secondary'}>
+            {serverLoading ? 'Loading...' : calculatorServer ? 'Ready' : 'Not Ready'}
+          </Badge>
+          {serverError && (
+            <div className="flex items-center gap-1 text-destructive text-sm">
+              <AlertCircle className="h-4 w-4" />
+              {serverError}
+            </div>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <Label htmlFor="directCalcA">Number A</Label>
+            <Input
+              id="directCalcA"
+              type="number"
+              value={calcA}
+              onChange={(e) => setCalcA(e.target.value)}
+            />
+          </div>
+          <div>
+            <Label htmlFor="directCalcB">Number B</Label>
+            <Input
+              id="directCalcB"
+              type="number"
+              value={calcB}
+              onChange={(e) => setCalcB(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            onClick={directAdd}
+            disabled={!calculatorServer || loading.direct_add}
+            variant="outline"
+            size="sm"
+          >
+            {loading.direct_add ? '...' : 'ADD'}
+          </Button>
+          <Button
+            onClick={directSubtract}
+            disabled={!calculatorServer || loading.direct_subtract}
+            variant="outline"
+            size="sm"
+          >
+            {loading.direct_subtract ? '...' : 'SUBTRACT'}
+          </Button>
+          <Button
+            onClick={directMultiply}
+            disabled={!calculatorServer || loading.direct_multiply}
+            variant="outline"
+            size="sm"
+          >
+            {loading.direct_multiply ? '...' : 'MULTIPLY'}
+          </Button>
+          <Button
+            onClick={directDivide}
+            disabled={!calculatorServer || loading.direct_divide}
+            variant="outline"
+            size="sm"
+          >
+            {loading.direct_divide ? '...' : 'DIVIDE'}
+          </Button>
+        </div>
+
+        {['direct_add', 'direct_subtract', 'direct_multiply', 'direct_divide'].map((key) => 
+          renderResult(key)
+        )}
+      </CardContent>
+    </Card>
+  );
+};
 
 export const WebMCPDemo: React.FC = () => {
   const [calcA, setCalcA] = useState('5');
@@ -151,6 +320,9 @@ export const WebMCPDemo: React.FC = () => {
           Test Web Worker-based MCP servers without Node.js/Python dependencies
         </p>
       </div>
+
+      {/* Direct Call Demo */}
+      <CalculatorDirectDemo />
 
       {/* System Status */}
       <Card>

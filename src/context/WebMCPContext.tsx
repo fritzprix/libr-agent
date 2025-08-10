@@ -18,6 +18,14 @@ import MCPWorker from '../lib/web-mcp/mcp-worker.ts?worker';
 
 const logger = getLogger('WebMCPContext');
 
+// 간단한 서버 프록시 인터페이스
+interface WebMCPServerProxy {
+  name: string;
+  isLoaded: boolean;
+  tools: MCPTool[];
+  [methodName: string]: unknown; // 동적 메서드들
+}
+
 // 공개 API (구독자용)
 interface WebMCPContextType {
   availableTools: MCPTool[];
@@ -45,6 +53,8 @@ interface WebMCPInternalContextType extends WebMCPContextType {
   loadServer: (serverName: string) => Promise<void>;
   listTools: (serverName?: string) => Promise<MCPTool[]>;
   cleanup: () => void;
+  // 새로운 서버 프록시 API
+  getWebMCPServer: (serverName: string) => Promise<WebMCPServerProxy>;
 }
 
 export const WebMCPContext = createContext<WebMCPContextType | undefined>(
@@ -90,6 +100,7 @@ export const WebMCPProvider: React.FC<WebMCPProviderProps> = ({
 
   const proxyRef = useRef<WebMCPProxy | null>(null);
   const availableToolsRef = useRef(availableTools);
+  const serverProxiesRef = useRef<Map<string, WebMCPServerProxy>>(new Map());
 
   // Initialize the Web Worker MCP proxy
   const [{ loading: isLoading }, initializeProxy] = useAsyncFn(async () => {
@@ -189,6 +200,109 @@ export const WebMCPProvider: React.FC<WebMCPProviderProps> = ({
     }
   }, []);
 
+  // 서버 프록시 생성 함수
+  const createServerProxy = useCallback(
+    (serverName: string, tools: MCPTool[]): WebMCPServerProxy => {
+      const serverProxy: WebMCPServerProxy = {
+        name: serverName,
+        isLoaded: true,
+        tools,
+      };
+
+      // 각 툴에 대해 동적으로 메서드 생성
+      tools.forEach((tool) => {
+        const methodName = tool.name;
+        serverProxy[methodName] = async (args?: unknown) => {
+          if (!proxyRef.current) {
+            throw new Error('WebMCP proxy not initialized');
+          }
+
+          logger.debug('Calling server method', {
+            serverName,
+            methodName,
+            args,
+          });
+
+          try {
+            const result = await proxyRef.current.callTool(
+              serverName,
+              methodName,
+              args,
+            );
+
+            // Update server activity
+            setServerStates((prev) => ({
+              ...prev,
+              [serverName]: {
+                ...prev[serverName],
+                lastActivity: Date.now(),
+              },
+            }));
+
+            return result;
+          } catch (error) {
+            const errorMessage =
+              error instanceof Error ? error.message : String(error);
+            logger.error('Server method call failed', {
+              serverName,
+              methodName,
+              error,
+            });
+
+            // Update server state with error
+            setServerStates((prev) => ({
+              ...prev,
+              [serverName]: {
+                ...prev[serverName],
+                lastError: errorMessage,
+                lastActivity: Date.now(),
+              },
+            }));
+
+            throw error;
+          }
+        };
+      });
+
+      return serverProxy;
+    },
+    [],
+  );
+
+  // MCP 서버 프록시 가져오기
+  const getWebMCPServer = useCallback(
+    async (serverName: string): Promise<WebMCPServerProxy> => {
+      // 이미 캐시된 프록시가 있는지 확인
+      const cachedProxy = serverProxiesRef.current.get(serverName);
+      if (cachedProxy) {
+        return cachedProxy;
+      }
+
+      // 서버가 로드되지 않았다면 로드
+      if (!serverStates[serverName]?.loaded) {
+        await loadServerInternal(serverName);
+      }
+
+      // 서버 상태 확인
+      const serverState = serverStates[serverName];
+      if (!serverState?.loaded) {
+        throw new Error(`Server ${serverName} is not loaded`);
+      }
+
+      // 서버 프록시 생성
+      const serverProxy = createServerProxy(serverName, serverState.tools);
+      serverProxiesRef.current.set(serverName, serverProxy);
+
+      logger.info('Created server proxy', {
+        serverName,
+        methodCount: serverState.tools.length,
+      });
+
+      return serverProxy;
+    },
+    [serverStates, createServerProxy, loadServerInternal],
+  );
+
   const loadServer = useCallback(
     async (serverName: string) => {
       await loadServerInternal(serverName);
@@ -286,6 +400,9 @@ export const WebMCPProvider: React.FC<WebMCPProviderProps> = ({
       proxyRef.current = null;
     }
 
+    // 서버 프록시 캐시 정리
+    serverProxiesRef.current.clear();
+
     setIsInitialized(false);
     setAvailableTools([]);
     setServerStates({});
@@ -343,6 +460,7 @@ export const WebMCPProvider: React.FC<WebMCPProviderProps> = ({
       loadServer,
       listTools,
       cleanup,
+      getWebMCPServer,
     }),
     [
       availableTools,
@@ -356,6 +474,7 @@ export const WebMCPProvider: React.FC<WebMCPProviderProps> = ({
       loadServer,
       listTools,
       cleanup,
+      getWebMCPServer,
     ],
   );
 
@@ -378,7 +497,7 @@ export const useWebMCP = () => {
   return context;
 };
 
-// 내부 관리용 hook (같은 파일 내에서만 사용하거나, 특별한 경우에만 export)
+// 내부 관리용 hook
 export const useWebMCPManagement = () => {
   const context = useContext(WebMCPInternalContext);
   if (context === undefined) {
@@ -389,5 +508,46 @@ export const useWebMCPManagement = () => {
     loadServer: context.loadServer,
     listTools: context.listTools,
     cleanup: context.cleanup,
+    getWebMCPServer: context.getWebMCPServer,
+    serverStates: context.serverStates,
   };
+};
+
+// 타입 안전한 Web MCP 서버 사용을 위한 새로운 hook
+export const useWebMCPServer = (serverName: string) => {
+  const { getWebMCPServer, serverStates } = useWebMCPManagement();
+  const [server, setServer] = useState<WebMCPServerProxy | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadServerProxy = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const serverProxy = await getWebMCPServer(serverName);
+      setServer(serverProxy);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      setError(errorMessage);
+      logger.error('Failed to load server proxy', { serverName, error: err });
+    } finally {
+      setLoading(false);
+    }
+  }, [getWebMCPServer, serverName]);
+
+  // 서버 상태가 변경되면 자동으로 프록시 로드
+  useEffect(() => {
+    const serverState = serverStates[serverName];
+    if (serverState?.loaded && !server) {
+      loadServerProxy();
+    }
+  }, [serverStates, serverName, server, loadServerProxy]);
+
+  return {
+    server,
+    loading,
+    error,
+    serverState: serverStates[serverName],
+    reload: loadServerProxy,
+  } as const;
 };

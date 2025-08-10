@@ -17,6 +17,21 @@ import { getLogger } from '@/lib/logger';
 
 const logger = getLogger('FileStoreMCP');
 
+// FileStore 서버 타입 정의 - 함수 형식에만 집중
+export interface FileStoreServer {
+  store_file(args: { name: string; content: string; contentType?: string; metadata?: Record<string, unknown> }): Promise<{ id: string; success: boolean; chunks?: number }>;
+  retrieve_file(args: { id: string }): Promise<{ content: string; metadata: Record<string, unknown>; contentType: string }>;
+  list_files(args?: { limit?: number; offset?: number }): Promise<{ files: Array<{ id: string; name: string; contentType: string; size: number; createdAt: string; metadata: Record<string, unknown> }> }>;
+  delete_file(args: { id: string }): Promise<{ success: boolean }>;
+  search_files(args: { query: string; limit?: number; contentType?: string }): Promise<{ results: Array<{ id: string; name: string; score: number; snippet: string; metadata: Record<string, unknown> }> }>;
+  get_file_info(args: { id: string }): Promise<{ id: string; name: string; contentType: string; size: number; chunks: number; createdAt: string; metadata: Record<string, unknown> }>;
+  update_file_metadata(args: { id: string; metadata: Record<string, unknown> }): Promise<{ success: boolean }>;
+  get_chunk(args: { id: string; chunkIndex: number }): Promise<{ content: string; chunkIndex: number; totalChunks: number }>;
+  list_chunks(args: { id: string }): Promise<{ chunks: Array<{ index: number; size: number; hash: string }> }>;
+  clear_store(args?: Record<string, never>): Promise<{ success: boolean; deletedCount: number }>;
+  get_store_stats(args?: Record<string, never>): Promise<{ totalFiles: number; totalSize: number; totalChunks: number; avgFileSize: number }>;
+}
+
 // Custom error classes for better error handling
 class FileStoreError extends Error {
   constructor(
