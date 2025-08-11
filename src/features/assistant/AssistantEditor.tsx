@@ -26,15 +26,6 @@ export default function AssistantEditor() {
     setMcpConfigText(JSON.stringify(draft.mcpConfig, null, 2));
   }, [draft.mcpConfig]);
 
-  const handleLocalServicesUpdate = useCallback(
-    (services: string[]) => {
-      update((draft) => {
-        draft.localServices = services;
-      });
-    },
-    [update],
-  );
-
   const handleMCPConfigUpdate = useCallback(
     (jsonString: string) => {
       setMcpConfigText(jsonString);
@@ -75,10 +66,7 @@ export default function AssistantEditor() {
             placeholder="AI가 수행할 역할과 행동 방식을 설명하세요..."
             className="h-32"
           />
-          <LocalServicesEditor
-            localServices={draft.localServices}
-            onChange={handleLocalServicesUpdate}
-          />
+          <LocalServicesEditor />
           <MCPConfigEditor
             mcpConfigText={mcpConfigText}
             onChange={handleMCPConfigUpdate}

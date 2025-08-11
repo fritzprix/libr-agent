@@ -2,13 +2,13 @@ import { Message, ToolCall } from '@/models/chat';
 import { createId } from '@paralleldrive/cuid2';
 import { useCallback, useMemo, useState } from 'react';
 import { useAssistantContext } from '../context/AssistantContext';
-import { useLocalTools } from '../context/LocalToolContext';
 import { useAssistantExtension } from '../context/AssistantExtensionContext';
 import { AIServiceConfig, AIServiceFactory } from '../lib/ai-service';
 import { getLogger } from '../lib/logger';
 import { useUnifiedMCP } from '../context/UnifiedMCPContext';
 import { useScheduledCallback } from './use-scheduled-callback';
 import { useSettings } from './use-settings';
+import { prepareMessagesForLLM } from '../lib/message-preprocessor';
 
 const logger = getLogger('useAIService');
 
@@ -38,8 +38,6 @@ export const useAIService = (config?: AIServiceConfig) => {
     useAssistantExtension();
 
   const { availableTools: unifiedMCPTools } = useUnifiedMCP();
-  const { getAvailableTools: getAvailableLocalTools, getService } =
-    useLocalTools();
 
   const submit = useCallback(
     async (messages: Message[]): Promise<Message> => {
@@ -49,16 +47,12 @@ export const useAIService = (config?: AIServiceConfig) => {
 
       const availableTools = [
         ...unifiedMCPTools,
-        ...getAvailableLocalTools(),
       ].filter(Boolean);
 
-      // Get extension services and their tools
+      // Get extension services and their tools  
       const extensionServices = getExtensionServices();
-      const extensionTools = extensionServices.flatMap((serviceExt) => {
-        if (serviceExt.type === 'native') {
-          const localService = getService(serviceExt.service.name);
-          return localService?.tools.map((tool) => tool.toolDefinition) || [];
-        }
+      const extensionTools = extensionServices.flatMap(() => {
+        // Only remote extension tools are supported now
         // Remote extension tools are included in getAvailableMCPTools() from MCPServerContext
         return [];
       });
@@ -73,13 +67,15 @@ export const useAIService = (config?: AIServiceConfig) => {
 
       logger.info('available tools ', {
         unifiedMCP: unifiedMCPTools.length,
-        local: getAvailableLocalTools().length,
         extension: extensionTools.length,
         total: allTools.length,
       });
 
       try {
-        const stream = serviceInstance.streamChat(messages, {
+        // Preprocess messages to include attachment information
+        const processedMessages = await prepareMessagesForLLM(messages);
+
+        const stream = serviceInstance.streamChat(processedMessages, {
           modelName: model,
           systemPrompt: [
             getCurrentAssistant()?.systemPrompt || DEFAULT_SYSTEM_PROMPT,
@@ -168,12 +164,10 @@ export const useAIService = (config?: AIServiceConfig) => {
       apiKeys,
       config,
       serviceInstance,
-      getAvailableLocalTools,
       unifiedMCPTools,
       getCurrentAssistant,
       getExtensionSystemPrompts,
       getExtensionServices,
-      getService,
     ],
   );
 
