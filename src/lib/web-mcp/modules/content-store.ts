@@ -13,31 +13,27 @@ import {
   SearchOptions,
   SearchResult,
 } from '@/models/search-engine';
-import { getLogger } from '@/lib/logger';
 import { WebMCPServerProxy } from '@/context/WebMCPContext';
+import { ParserFactory } from './parsers/parser-factory';
+import { ParserError } from './parsers/index';
 
 // Worker-safe logger that falls back to console if Tauri logger is not available
 const createWorkerSafeLogger = (context: string) => {
-  try {
-    // Try to use Tauri logger first
-    return getLogger(context);
-  } catch {
-    // Fallback to console logger for Worker environment
-    return {
-      debug: (message: string, data?: unknown) => {
-        console.log(`[${context}][DEBUG] ${message}`, data || '');
-      },
-      info: (message: string, data?: unknown) => {
-        console.log(`[${context}][INFO] ${message}`, data || '');
-      },
-      warn: (message: string, data?: unknown) => {
-        console.warn(`[${context}][WARN] ${message}`, data || '');
-      },
-      error: (message: string, data?: unknown) => {
-        console.error(`[${context}][ERROR] ${message}`, data || '');
-      },
-    };
-  }
+  // Fallback to console logger for Worker environment
+  return {
+    debug: (message: string, data?: unknown) => {
+      console.log(`[${context}][DEBUG] ${message}`, data || '');
+    },
+    info: (message: string, data?: unknown) => {
+      console.log(`[${context}][INFO] ${message}`, data || '');
+    },
+    warn: (message: string, data?: unknown) => {
+      console.warn(`[${context}][WARN] ${message}`, data || '');
+    },
+    error: (message: string, data?: unknown) => {
+      console.error(`[${context}][ERROR] ${message}`, data || '');
+    },
+  };
 };
 
 const logger = createWorkerSafeLogger('content-store');
@@ -85,16 +81,6 @@ class InvalidRangeError extends FileStoreError {
   }
 }
 
-class UnsupportedFormatError extends FileStoreError {
-  constructor(filename: string, mimeType: string) {
-    super(
-      `Unsupported file format: ${filename} (${mimeType})`,
-      'UNSUPPORTED_FORMAT',
-      { filename, mimeType },
-    );
-  }
-}
-
 interface ParseResult {
   content: string;
   filename: string;
@@ -102,77 +88,42 @@ interface ParseResult {
   size: number;
 }
 
-async function parseDocxFile(file: File): Promise<string> {
-  const mammoth = await import('mammoth');
-  const arrayBuffer = await file.arrayBuffer();
-  const result = await mammoth.extractRawText({ arrayBuffer });
-  return result.value;
-}
-
-async function parseXlsxFile(file: File): Promise<string> {
-  const XLSX = await import('xlsx');
-  const arrayBuffer = await file.arrayBuffer();
-  const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-  let content = '';
-  // FIX: sheetName의 타입을 명시하여 TS7006 에러 해결
-  workbook.SheetNames.forEach((sheetName: string) => {
-    content += `=== Sheet: ${sheetName} ===\n`;
-    const worksheet = workbook.Sheets[sheetName];
-    content += XLSX.utils.sheet_to_csv(worksheet) + '\n\n';
-  });
-  return content.trim();
-}
-
-async function parsePdfFile(file: File): Promise<string> {
-  logger.warn('PDF parsing is not yet implemented.');
-  return `PDF content for "${file.name}" to be implemented.`;
-}
-
-async function parsePptxFile(file: File): Promise<string> {
-  logger.warn('PPTX parsing is not yet implemented.');
-  return `PPTX content for "${file.name}" to be implemented.`;
-}
-
-async function parseTextFile(file: File): Promise<string> {
-  return file.text();
-}
-
+// Remove old parsing functions and use the new ParserFactory
 async function parseRichFile(file: File): Promise<string> {
-  const mimeType = file.type.toLowerCase();
-  const fileName = file.name.toLowerCase();
+  try {
+    logger.info('Starting file parsing', {
+      filename: file.name,
+      size: file.size,
+      type: file.type,
+    });
 
-  if (
-    mimeType ===
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-    fileName.endsWith('.docx')
-  ) {
-    return parseDocxFile(file);
-  }
-  if (
-    mimeType ===
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
-    fileName.endsWith('.xlsx')
-  ) {
-    return parseXlsxFile(file);
-  }
-  if (
-    mimeType ===
-      'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
-    fileName.endsWith('.pptx')
-  ) {
-    return parsePptxFile(file);
-  }
-  if (mimeType === 'application/pdf' || fileName.endsWith('.pdf')) {
-    return parsePdfFile(file);
-  }
-  if (
-    mimeType.startsWith('text/') ||
-    ['.md', '.json', '.txt'].some((ext) => fileName.endsWith(ext))
-  ) {
-    return parseTextFile(file);
-  }
+    const result = await ParserFactory.parseFile(file);
 
-  throw new UnsupportedFormatError(file.name, file.type);
+    logger.info('File parsing completed', {
+      filename: file.name,
+      contentLength: result.length,
+      preview: result.substring(0, 200) + (result.length > 200 ? '...' : ''),
+    });
+
+    return result;
+  } catch (error) {
+    logger.error('File parsing failed', {
+      filename: file.name,
+      error:
+        error instanceof Error
+          ? {
+              name: error.name,
+              message: error.message,
+              stack: error.stack,
+            }
+          : error,
+    });
+
+    if (error instanceof ParserError) {
+      throw error;
+    }
+    throw error;
+  }
 }
 
 async function parseFileFromUrl(
@@ -731,6 +682,13 @@ async function createStore(
 
 async function addContent(input: AddContentInput): Promise<AddContentOutput> {
   try {
+    logger.info('Starting addContent', {
+      storeId: input.storeId,
+      hasFileUrl: !!input.fileUrl,
+      hasContent: !!input.content,
+      metadata: input.metadata,
+    });
+
     const store = await dbService.fileStores.read(input.storeId);
     if (!store) {
       throw new StoreNotFoundError(input.storeId);
@@ -745,6 +703,7 @@ async function addContent(input: AddContentInput): Promise<AddContentOutput> {
     };
 
     if (input.fileUrl) {
+      logger.info('Parsing file from URL', { fileUrl: input.fileUrl });
       const parseResult = await parseFileFromUrl(input.fileUrl, input.metadata);
       finalContent = parseResult.content;
       fileMetadata = {
@@ -753,7 +712,15 @@ async function addContent(input: AddContentInput): Promise<AddContentOutput> {
         size: parseResult.size,
         uploadedAt: new Date(),
       };
+      logger.info('File URL parsing completed', {
+        filename: parseResult.filename,
+        contentLength: finalContent.length,
+      });
     } else if (input.content && input.metadata?.filename) {
+      logger.debug('Using pre-parsed content', {
+        filename: input.metadata.filename,
+        contentLength: input.content.length,
+      });
       finalContent = input.content;
       fileMetadata = {
         filename: input.metadata.filename,
@@ -862,7 +829,7 @@ async function listContent(
     const hasMore = offset + limit < total;
     return { contents: summaries, total, hasMore };
   } catch (error) {
-    logger.error('Failed to list content', error, { input });
+    logger.error('Failed to list content', error);
     throw new FileStoreError(
       'Failed to retrieve content list',
       'LIST_CONTENT_FAILED',
@@ -903,7 +870,7 @@ async function readContent(
       lineRange: [fromLine, toLine],
     };
   } catch (error) {
-    logger.error('Failed to read content', error, { input });
+    logger.error('Failed to read content', error);
     throw error;
   }
 }
