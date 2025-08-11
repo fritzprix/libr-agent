@@ -12,7 +12,6 @@ import { SidebarProvider } from '../components/ui/sidebar';
 import { AssistantContextProvider } from '../context/AssistantContext';
 import { AssistantExtensionProvider } from '../context/AssistantExtensionContext';
 import { AssistantGroupProvider } from '../context/AssistantGroupContext';
-import { LocalToolProvider } from '../context/LocalToolContext';
 import { MCPServerProvider } from '../context/MCPServerContext';
 import { WebMCPProvider } from '../context/WebMCPContext';
 import { UnifiedMCPProvider } from '../context/UnifiedMCPContext';
@@ -43,8 +42,7 @@ function App() {
                     <SessionHistoryProvider>
                       <ResourceAttachmentProvider>
                         <ModelOptionsProvider>
-                          <LocalToolProvider>
-                            <MCPServerProvider>
+                          <MCPServerProvider>
                               <UnifiedMCPProvider>
                                 <SidebarProvider>
                                   <div className="flex h-screen w-full">
@@ -108,7 +106,6 @@ function App() {
                                 <Toaster />
                               </UnifiedMCPProvider>
                             </MCPServerProvider>
-                          </LocalToolProvider>
                         </ModelOptionsProvider>
                       </ResourceAttachmentProvider>
                     </SessionHistoryProvider>

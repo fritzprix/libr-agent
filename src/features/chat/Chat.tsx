@@ -6,7 +6,6 @@ import {
   Input,
 } from '@/components/ui';
 import { useAssistantContext } from '@/context/AssistantContext';
-import { useLocalTools } from '@/context/LocalToolContext';
 import { useSessionContext } from '@/context/SessionContext';
 import { useChatContext, ChatProvider } from '@/context/ChatContext';
 import { useResourceAttachment } from '@/context/ResourceAttachmentContext';
@@ -141,10 +140,9 @@ function ChatStatusBar({
 }) {
   // Move tools logic here since it's only used in this component
   const { availableTools: mcpTools } = useMCPServer();
-  const { availableTools: localTools } = useLocalTools();
   const availableTools = useMemo(
-    () => [...mcpTools, ...localTools],
-    [mcpTools, localTools],
+    () => [...mcpTools],
+    [mcpTools],
   );
 
   return (

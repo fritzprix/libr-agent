@@ -7,7 +7,6 @@ import React, {
 } from 'react';
 import { getLogger } from '@/lib/logger';
 import { MCPServerConfig } from '@/lib/mcp-types';
-import { LocalService } from './LocalToolContext';
 
 const logger = getLogger('AssistantExtensionContext');
 
@@ -37,12 +36,7 @@ interface RemoteService {
   service: MCPServerConfig;
 }
 
-interface NativeService {
-  type: 'native';
-  service: LocalService;
-}
-
-export type ServiceExtension = RemoteService | NativeService;
+export type ServiceExtension = RemoteService;
 
 // --- AssistantExtension Type Updated ---
 

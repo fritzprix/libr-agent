@@ -1,5 +1,4 @@
 import React, { useMemo } from 'react';
-import { useLocalTools } from '@/context/LocalToolContext';
 import { useMCPServer } from '@/hooks/use-mcp-server';
 import { MCPTool } from '@/lib/mcp-types';
 
@@ -10,10 +9,9 @@ interface ToolsModalProps {
 
 const ToolsModal: React.FC<ToolsModalProps> = ({ isOpen, onClose }) => {
   const { availableTools: mcpTools } = useMCPServer();
-  const { availableTools: localTools } = useLocalTools();
   const availableTools: MCPTool[] = useMemo(
-    () => [...mcpTools, ...localTools],
-    [localTools, mcpTools],
+    () => [...mcpTools],
+    [mcpTools],
   );
   if (!isOpen) return null;
 

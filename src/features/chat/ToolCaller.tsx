@@ -1,6 +1,5 @@
 import { useAssistantContext } from '@/context/AssistantContext';
 import { useChatContext } from '@/context/ChatContext';
-import { useLocalTools } from '@/context/LocalToolContext';
 import { useScheduler } from '@/context/SchedulerContext';
 import { useSessionContext } from '@/context/SessionContext';
 import { useUnifiedMCP } from '@/context/UnifiedMCPContext';
@@ -32,7 +31,6 @@ export const ToolCaller: React.FC = () => {
   const { current: currentSession } = useSessionContext();
   const { currentAssistant } = useAssistantContext();
   const { messages, submit } = useChatContext();
-  const { isLocalTool, executeToolCall: callLocalTool } = useLocalTools();
   const { executeToolCall: callUnifiedMcpTool } = useUnifiedMCP();
   const { schedule } = useScheduler();
 
@@ -115,12 +113,8 @@ export const ToolCaller: React.FC = () => {
 
           let mcpResponse: MCPResponse;
 
-          if (isLocalTool(toolName)) {
-            mcpResponse = await callLocalTool(toolCall);
-          } else {
-            // Use unified MCP system for all other tools (Tauri MCP + Web MCP)
-            mcpResponse = await callUnifiedMcpTool(toolCall);
-          }
+          // Use unified MCP system for all tools (Tauri MCP + Web MCP)
+          mcpResponse = await callUnifiedMcpTool(toolCall);
 
           const serializedContent = serializeToolResult(
             mcpResponse,
@@ -189,7 +183,6 @@ export const ToolCaller: React.FC = () => {
     },
     [
       submit,
-      callLocalTool,
       callUnifiedMcpTool,
       schedule,
       currentAssistant,
