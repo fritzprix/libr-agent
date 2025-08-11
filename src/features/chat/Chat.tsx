@@ -274,7 +274,7 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
       // Process each selected file.
       for (const file of files) {
         // You can expand this list based on what your parsers support.
-        const supportedExtensions = /\.(txt|md|json|pdf|docx|xlsx|pptx)$/i;
+        const supportedExtensions = /\.(txt|md|json|pdf|docx|xlsx)$/i;
         if (!supportedExtensions.test(file.name)) {
           alert(`File "${file.name}" format is not supported.`);
           continue;

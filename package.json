@@ -85,6 +85,7 @@
     "swr": "^2.3.4",
     "tailwind-merge": "^3.3.1",
     "tailwindcss": "^4.1.11",
+    "unpdf": "^1.1.0",
     "wink-bm25-text-search": "^3.1.2",
     "xlsx": "^0.18.5",
     "zod": "^3.24.1",
