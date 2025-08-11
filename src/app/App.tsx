@@ -26,7 +26,6 @@ import SettingsModal from '../features/settings/SettingsModal';
 import '../styles/globals.css';
 import './App.css';
 import AssistantList from '@/features/assistant/List';
-import WebMCPDemo from '@/features/tools/WebMCPDemo';
 import { ResourceAttachmentProvider } from '@/context/ResourceAttachmentContext';
 
 function App() {
@@ -96,10 +95,6 @@ function App() {
                                           <Route
                                             path="/history/search"
                                             element={<History />}
-                                          />
-                                          <Route
-                                            path="/tools/webmcp-demo"
-                                            element={<WebMCPDemo />}
                                           />
                                         </Routes>
                                       </div>
