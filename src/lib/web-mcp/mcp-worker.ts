@@ -10,7 +10,7 @@
 import type {
   WebMCPServer,
   WebMCPMessage,
-  MCPResponse,
+  WebMCPResponse,
   MCPTool,
 } from '../mcp-types';
 
@@ -139,7 +139,9 @@ async function loadMCPServer(serverName: string): Promise<WebMCPServer> {
 /**
  * Handle MCP message and return appropriate response
  */
-async function handleMCPMessage(message: WebMCPMessage): Promise<MCPResponse> {
+async function handleMCPMessage(
+  message: WebMCPMessage,
+): Promise<WebMCPResponse> {
   const { id, type, serverName, toolName, args } = message;
 
   log.debug('Handling MCP message', {
@@ -154,18 +156,7 @@ async function handleMCPMessage(message: WebMCPMessage): Promise<MCPResponse> {
     switch (type) {
       case 'ping':
         log.debug('Handling ping request');
-        return {
-          jsonrpc: '2.0',
-          id,
-          result: {
-            content: [
-              {
-                type: 'text',
-                text: 'pong',
-              },
-            ],
-          },
-        };
+        return { id, result: 'pong' };
 
       case 'loadServer': {
         if (!serverName) {
@@ -173,23 +164,13 @@ async function handleMCPMessage(message: WebMCPMessage): Promise<MCPResponse> {
         }
 
         const loadedServer = await loadMCPServer(serverName);
-        const serverInfo = {
-          name: loadedServer.name,
-          description: loadedServer.description,
-          version: loadedServer.version,
-          toolCount: loadedServer.tools.length,
-        };
-
         return {
-          jsonrpc: '2.0',
           id,
           result: {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(serverInfo, null, 2),
-              },
-            ],
+            name: loadedServer.name,
+            description: loadedServer.description,
+            version: loadedServer.version,
+            toolCount: loadedServer.tools.length,
           },
         };
       }
@@ -205,13 +186,7 @@ async function handleMCPMessage(message: WebMCPMessage): Promise<MCPResponse> {
             }));
             allTools.push(...prefixedTools);
           }
-          return {
-            jsonrpc: '2.0',
-            id,
-            result: {
-              structuredContent: { tools: allTools },
-            },
-          };
+          return { id, result: allTools };
         } else {
           // Return tools from specific server
           const server = await loadMCPServer(serverName);
@@ -219,13 +194,7 @@ async function handleMCPMessage(message: WebMCPMessage): Promise<MCPResponse> {
             ...tool,
             name: `${serverName}__${tool.name}`,
           }));
-          return {
-            jsonrpc: '2.0',
-            id,
-            result: {
-              structuredContent: { tools: prefixedTools },
-            },
-          };
+          return { id, result: prefixedTools };
         }
       }
 
@@ -247,24 +216,8 @@ async function handleMCPMessage(message: WebMCPMessage): Promise<MCPResponse> {
             toolName,
           });
 
-          // Tool 결과를 표준 MCPResponse 형식으로 변환
-          const textContent =
-            typeof result === 'string'
-              ? result
-              : JSON.stringify(result, null, 2);
-
-          return {
-            jsonrpc: '2.0',
-            id,
-            result: {
-              content: [
-                {
-                  type: 'text',
-                  text: textContent,
-                },
-              ],
-            },
-          };
+          // Tool 결과를 간단한 형태로 반환
+          return { id, result };
         } catch (toolError) {
           log.error('Tool call failed', {
             id,
@@ -294,14 +247,7 @@ async function handleMCPMessage(message: WebMCPMessage): Promise<MCPResponse> {
       error: errorMessage,
     });
 
-    return {
-      jsonrpc: '2.0',
-      id,
-      error: {
-        code: -32603, // Internal error
-        message: errorMessage,
-      },
-    };
+    return { id, error: errorMessage };
   }
 }
 
@@ -322,13 +268,9 @@ self.onmessage = async (event: MessageEvent<WebMCPMessage>) => {
       error: errorMessage,
     });
 
-    const errorResponse: MCPResponse = {
-      jsonrpc: '2.0',
+    const errorResponse: WebMCPResponse = {
       id: messageId,
-      error: {
-        code: -32603, // Internal error
-        message: `Worker error: ${errorMessage}`,
-      },
+      error: `Worker error: ${errorMessage}`,
     };
 
     self.postMessage(errorResponse);

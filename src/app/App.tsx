@@ -13,7 +13,6 @@ import { AssistantContextProvider } from '../context/AssistantContext';
 import { AssistantGroupProvider } from '../context/AssistantGroupContext';
 import { MCPServerProvider } from '../context/MCPServerContext';
 import { WebMCPProvider } from '../context/WebMCPContext';
-import { UnifiedMCPProvider } from '../context/UnifiedMCPContext';
 import { ModelOptionsProvider } from '../context/ModelProvider';
 import { SchedulerProvider } from '../context/SchedulerContext';
 import { SessionContextProvider } from '../context/SessionContext';
@@ -34,80 +33,78 @@ function App() {
       <SettingsProvider>
         <SchedulerProvider>
           <WebMCPProvider servers={['content-store']} autoLoad={true}>
-            <AssistantGroupProvider>
-              <AssistantContextProvider>
-                <SessionContextProvider>
-                  <SessionHistoryProvider>
-                    <ResourceAttachmentProvider>
-                      <ModelOptionsProvider>
-                        <MCPServerProvider>
-                          <UnifiedMCPProvider>
-                            <SidebarProvider>
-                              <div className="flex h-screen w-full">
-                                {/* Sidebar */}
-                                <AppSidebar
-                                  onOpenSettings={() =>
-                                    setIsSettingsModalOpen(true)
-                                  }
-                                />
+            <MCPServerProvider>
+              <AssistantGroupProvider>
+                <AssistantContextProvider>
+                  <SessionContextProvider>
+                    <SessionHistoryProvider>
+                      <ResourceAttachmentProvider>
+                        <ModelOptionsProvider>
+                          <SidebarProvider>
+                            <div className="flex h-screen w-full">
+                              {/* Sidebar */}
+                              <AppSidebar
+                                onOpenSettings={() =>
+                                  setIsSettingsModalOpen(true)
+                                }
+                              />
 
-                                {/* Main Content Area */}
-                                <div className="flex flex-1 flex-col min-w-0">
-                                  <AppHeader>
-                                    <ThemeToggle />
-                                  </AppHeader>
-                                  <div className="flex-1 overflow-auto w-full">
-                                    <Routes>
-                                      <Route
-                                        path="/"
-                                        element={<SingleChatContainer />}
-                                      />
-                                      <Route
-                                        path="/chat/single"
-                                        element={<SingleChatContainer />}
-                                      />
-                                      <Route
-                                        path="/chat/group"
-                                        element={<GroupChatContainer />}
-                                      />
-                                      <Route
-                                        path="/chat/flow"
-                                        element={<SingleChatContainer />}
-                                      />
-                                      <Route
-                                        path="/assistants"
-                                        element={<AssistantList />}
-                                      />
-                                      <Route
-                                        path="/assistants/groups"
-                                        element={<AssistantGroupDetailList />}
-                                      />
-                                      <Route
-                                        path="/history"
-                                        element={<History />}
-                                      />
-                                      <Route
-                                        path="/history/search"
-                                        element={<History />}
-                                      />
-                                    </Routes>
-                                  </div>
+                              {/* Main Content Area */}
+                              <div className="flex flex-1 flex-col min-w-0">
+                                <AppHeader>
+                                  <ThemeToggle />
+                                </AppHeader>
+                                <div className="flex-1 overflow-auto w-full">
+                                  <Routes>
+                                    <Route
+                                      path="/"
+                                      element={<SingleChatContainer />}
+                                    />
+                                    <Route
+                                      path="/chat/single"
+                                      element={<SingleChatContainer />}
+                                    />
+                                    <Route
+                                      path="/chat/group"
+                                      element={<GroupChatContainer />}
+                                    />
+                                    <Route
+                                      path="/chat/flow"
+                                      element={<SingleChatContainer />}
+                                    />
+                                    <Route
+                                      path="/assistants"
+                                      element={<AssistantList />}
+                                    />
+                                    <Route
+                                      path="/assistants/groups"
+                                      element={<AssistantGroupDetailList />}
+                                    />
+                                    <Route
+                                      path="/history"
+                                      element={<History />}
+                                    />
+                                    <Route
+                                      path="/history/search"
+                                      element={<History />}
+                                    />
+                                  </Routes>
                                 </div>
                               </div>
-                            </SidebarProvider>
-                            <SettingsModal
-                              isOpen={isSettingsModalOpen}
-                              onClose={() => setIsSettingsModalOpen(false)}
-                            />
-                            <Toaster />
-                          </UnifiedMCPProvider>
-                        </MCPServerProvider>
-                      </ModelOptionsProvider>
-                    </ResourceAttachmentProvider>
-                  </SessionHistoryProvider>
-                </SessionContextProvider>
-              </AssistantContextProvider>
-            </AssistantGroupProvider>
+                            </div>
+                          </SidebarProvider>
+                          <SettingsModal
+                            isOpen={isSettingsModalOpen}
+                            onClose={() => setIsSettingsModalOpen(false)}
+                          />
+                          <Toaster />
+                        </ModelOptionsProvider>
+                      </ResourceAttachmentProvider>
+                    </SessionHistoryProvider>
+                  </SessionContextProvider>
+                </AssistantContextProvider>
+              </AssistantGroupProvider>
+            </MCPServerProvider>
           </WebMCPProvider>
         </SchedulerProvider>
       </SettingsProvider>

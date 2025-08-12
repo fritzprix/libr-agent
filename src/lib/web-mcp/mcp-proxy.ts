@@ -8,7 +8,7 @@
 import { createId } from '@paralleldrive/cuid2';
 import {
   WebMCPMessage,
-  MCPResponse,
+  WebMCPResponse,
   WebMCPProxyConfig,
   MCPTool,
 } from '../mcp-types';
@@ -176,7 +176,7 @@ export class WebMCPProxy {
   /**
    * Handle incoming messages from worker
    */
-  private handleWorkerMessage(event: MessageEvent<MCPResponse>): void {
+  private handleWorkerMessage(event: MessageEvent<WebMCPResponse>): void {
     const response = event.data;
 
     if (!response || response.id === undefined || response.id === null) {
@@ -197,7 +197,7 @@ export class WebMCPProxy {
 
     // Handle response
     if (response.error) {
-      pending.reject(new Error(response.error.message));
+      pending.reject(new Error(response.error));
     } else {
       pending.resolve(response.result);
     }

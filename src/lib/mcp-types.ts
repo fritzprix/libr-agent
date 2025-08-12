@@ -480,11 +480,15 @@ export interface WebMCPMessage {
 }
 
 /**
- * Web Worker MCP 응답 타입
+ * Web Worker MCP 응답 타입 (간단한 형태)
  * 표준 MCPResponse와 완전히 동일한 구조를 사용하여 일관성 보장
  * Web Worker와 Tauri MCP 서버 간 응답 형식 통일
  */
-export type WebMCPResponse = MCPResponse;
+export interface WebMCPResponse {
+  id: string | number;
+  result?: unknown;
+  error?: string;
+}
 
 /**
  * Web Worker MCP 프록시 설정

@@ -2,7 +2,7 @@ import { useAssistantContext } from '@/context/AssistantContext';
 import { useChatContext } from '@/context/ChatContext';
 import { useScheduler } from '@/context/SchedulerContext';
 import { useSessionContext } from '@/context/SessionContext';
-import { useUnifiedMCP } from '@/context/UnifiedMCPContext';
+import { useMCPServer } from '@/hooks/use-mcp-server';
 import { getLogger } from '@/lib/logger';
 import {
   isMCPError,
@@ -31,7 +31,8 @@ export const ToolCaller: React.FC = () => {
   const { current: currentSession } = useSessionContext();
   const { currentAssistant } = useAssistantContext();
   const { messages, submit } = useChatContext();
-  const { executeToolCall: callUnifiedMcpTool } = useUnifiedMCP();
+  const { executeToolCall } = useMCPServer();
+
   const { schedule } = useScheduler();
 
   const serializeToolResult = useCallback(
@@ -114,7 +115,7 @@ export const ToolCaller: React.FC = () => {
           let mcpResponse: MCPResponse;
 
           // Use unified MCP system for all tools (Tauri MCP + Web MCP)
-          mcpResponse = await callUnifiedMcpTool(toolCall);
+          mcpResponse = await executeToolCall(toolCall);
 
           const serializedContent = serializeToolResult(
             mcpResponse,
@@ -183,7 +184,7 @@ export const ToolCaller: React.FC = () => {
     },
     [
       submit,
-      callUnifiedMcpTool,
+      executeToolCall,
       schedule,
       currentAssistant,
       currentSession,

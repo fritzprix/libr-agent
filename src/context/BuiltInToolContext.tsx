@@ -13,11 +13,9 @@ import { WebMCPProvider } from './WebMCPContext';
 import builtinMCPServers from '@/config/builtin-mcp-servers.json';
 
 // Built-in MCP 설정을 JSON에서 로드
-const BUILTIN_MCP_CONFIGS: MCPConfig[] = [
-  {
-    mcpServers: builtinMCPServers.servers,
-  },
-];
+const BUILTIN_MCP_CONFIGS: MCPConfig = {
+  mcpServers: builtinMCPServers.servers,
+};
 
 interface BuiltInToolContextType {
   availableTools: MCPTool[];
