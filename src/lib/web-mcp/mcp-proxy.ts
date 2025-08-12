@@ -179,12 +179,13 @@ export class WebMCPProxy {
   private handleWorkerMessage(event: MessageEvent<WebMCPResponse>): void {
     const response = event.data;
 
-    if (!response || !response.id) {
+    if (!response || response.id === undefined || response.id === null) {
       logger.warn('Invalid response from worker', { response });
       return;
     }
 
-    const pending = this.pendingRequests.get(response.id);
+    const responseId = String(response.id);
+    const pending = this.pendingRequests.get(responseId);
     if (!pending) {
       logger.warn('Response for unknown request', { id: response.id });
       return;
@@ -192,7 +193,7 @@ export class WebMCPProxy {
 
     // Clean up
     clearTimeout(pending.timeout);
-    this.pendingRequests.delete(response.id);
+    this.pendingRequests.delete(responseId);
 
     // Handle response
     if (response.error) {

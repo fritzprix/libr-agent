@@ -10,15 +10,8 @@ import React, {
 import { useAsyncFn } from 'react-use';
 import { getLogger } from '../lib/logger';
 import { tauriMCPClient } from '../lib/tauri-mcp-client';
-import {
-  MCPResponse,
-  MCPTool,
-  normalizeToolResult,
-  MCPServerConfig,
-} from '../lib/mcp-types';
-import { useAssistantContext } from './AssistantContext';
-import { useAssistantExtension } from './AssistantExtensionContext';
-import { Assistant } from '../models/chat';
+import { MCPResponse, MCPTool, normalizeToolResult } from '../lib/mcp-types';
+import { MCPConfig } from '../models/chat';
 import { useScheduledCallback } from '@/hooks/use-scheduled-callback';
 
 const logger = getLogger('MCPServerContext');
@@ -28,7 +21,7 @@ interface MCPServerContextType {
   getAvailableTools: () => MCPTool[];
   isConnecting: boolean;
   status: Record<string, boolean>;
-  connectServers: (assistant: Assistant) => Promise<void>;
+  connectServers: (mcpConfigs: MCPConfig) => Promise<void>;
   executeToolCall: (toolCall: {
     id: string;
     type: 'function';
@@ -46,42 +39,16 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
   const [availableTools, setAvailableTools] = useState<MCPTool[]>([]);
   const [serverStatus, setServerStatus] = useState<Record<string, boolean>>({});
   const availableToolsRef = useRef(availableTools);
-  const { currentAssistant } = useAssistantContext();
-  const { getExtensionServices } = useAssistantExtension();
   const [{ loading: isConnecting }, connectServers] = useAsyncFn(
-    async (assistant: Assistant) => {
+    async (mcpConfig: MCPConfig) => {
       const serverStatus: Record<string, boolean> = {};
       try {
-        // 기본 어시스턴트 MCP 서버들
-        const baseServers = assistant.mcpConfig.mcpServers || {};
+        if (!mcpConfig.mcpServers) {
+          // TODO: put logging
+          return;
+        }
 
-        // 확장에서 등록된 remote MCP 서버들
-        const extensionServices = getExtensionServices();
-        const extensionMCPServers = extensionServices
-          .filter((service) => service.type === 'remote')
-          .reduce(
-            (acc, service) => {
-              acc[service.service.name] = service.service;
-              return acc;
-            },
-            {} as Record<string, MCPServerConfig>,
-          );
-
-        // 모든 MCP 서버들을 병합
-        const allMCPServers = { ...baseServers, ...extensionMCPServers };
-
-        const configForTauri = {
-          mcpServers: allMCPServers as Record<
-            string,
-            {
-              command: string;
-              args?: string[];
-              env?: Record<string, string>;
-            }
-          >,
-        };
-
-        const servers = Object.keys(configForTauri.mcpServers);
+        const servers = Object.keys(mcpConfig.mcpServers);
 
         if (servers.length === 0) {
           setServerStatus({});
@@ -89,16 +56,14 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
           return;
         }
 
-        Object.keys(configForTauri.mcpServers).forEach((name) => {
+        Object.keys(mcpConfig.mcpServers).forEach((name) => {
           serverStatus[name] = false;
         });
 
         setServerStatus(serverStatus);
-        const tools = await tauriMCPClient.listToolsFromConfig(configForTauri);
+        const tools = await tauriMCPClient.listToolsFromConfig(mcpConfig);
         logger.debug(`Received tools from Tauri:`, {
           tools,
-          baseServers: Object.keys(baseServers).length,
-          extensionServers: Object.keys(extensionMCPServers).length,
           totalServers: servers.length,
         });
 
@@ -119,7 +84,7 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
         setServerStatus({ ...serverStatus });
       }
     },
-    [getExtensionServices],
+    [],
   );
 
   const executeToolCall = useCallback(
@@ -192,13 +157,6 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
   useEffect(() => {
     availableToolsRef.current = availableTools;
   }, [availableTools]);
-
-  useEffect(() => {
-    if (currentAssistant) {
-      logger.info('connect : ', { currentAssistant: currentAssistant.name });
-      connectServers(currentAssistant);
-    }
-  }, [connectServers, currentAssistant]);
 
   const getAvailableTools = useCallback(() => {
     return availableToolsRef.current;

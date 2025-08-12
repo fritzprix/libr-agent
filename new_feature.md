@@ -5,11 +5,13 @@
 SynapticFlow에 **내장형 MCP 서버**를 구현하여 사용자가 별도의 외부 프로세스 설치 없이도 핵심 기능들을 MCP 프로토콜로 사용할 수 있도록 한다.
 
 ### 기존 문제점
+
 - 외부 MCP 서버 추가는 일반 사용자에게 어려움
 - NPM, Python, Docker 등 다양한 의존성 설치 필요
 - 복잡한 환경 설정으로 인한 진입 장벽
 
 ### 해결 방안
+
 - Rust 백엔드에 MCP 프로토콜과 동일한 인터페이스를 가진 내장 서버 구현
 - 별도 설치 없이 즉시 사용 가능한 핵심 도구들 제공
 - 시스템 리소스를 최대한 활용할 수 있는 네이티브 성능
@@ -40,6 +42,7 @@ pub trait BuiltinMCPServer: Send + Sync {
   - `delete_file`: 파일 삭제 (향후 확장)
 
 #### 2.2 Sandbox Server (`builtin:sandbox`)
+
 - **목적**: 코드 실행 (Python/TypeScript)
 - **주요 도구들**:
   - `execute_python`: Python 코드 실행
@@ -53,6 +56,7 @@ pub trait BuiltinMCPServer: Send + Sync {
 ### 3. 기존 시스템과의 통합
 
 #### 3.1 MCPServerManager 확장
+
 ```rust
 pub struct MCPServerManager {
   connections: Arc<Mutex<HashMap<String, MCPConnection>>>,  // 기존 외부 서버
@@ -61,6 +65,7 @@ pub struct MCPServerManager {
 ```
 
 #### 3.2 통합 API 제공
+
 - `list_all_tools_unified()`: 외부 + 내장 서버의 모든 도구 목록
 - `call_builtin_tool()`: 내장 서버 도구 호출
 - `list_builtin_servers()`: 사용 가능한 내장 서버 목록
@@ -85,11 +90,13 @@ src-tauri/src/
 ### 1. 보안 고려사항
 
 #### Filesystem Server
+
 - 경로 검증으로 directory traversal 공격 방지
 - 허용된 디렉토리 외부 접근 제한
 - 파일 크기 제한으로 디스크 공간 보호
 
 #### Sandbox Server
+
 - 임시 디렉토리에서 코드 실행
 - 환경 변수 격리 (`PYTHONPATH`, `NODE_PATH` 초기화)
 - 실행 시간 제한 (1-30초)
@@ -97,6 +104,7 @@ src-tauri/src/
 - 네트워크 접근 제한 (향후 추가)
 
 ### 2. 에러 처리
+
 - MCP 프로토콜 표준 에러 코드 사용
 - 상세한 에러 메시지 제공
 - 타임아웃 및 리소스 제한 처리
@@ -221,6 +229,7 @@ const tsResult = await invoke('call_builtin_tool', {
 - [ ] 보안 제한 사항 적용
 
 ### Phase 4: 테스트 및 통합
+
 - [ ] 단위 테스트 작성
 - [ ] 프론트엔드 통합 테스트
 - [ ] 문서 업데이트

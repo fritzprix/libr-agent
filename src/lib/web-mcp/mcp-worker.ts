@@ -216,6 +216,7 @@ async function handleMCPMessage(
             toolName,
           });
 
+          // Tool 결과를 간단한 형태로 반환
           return { id, result };
         } catch (toolError) {
           log.error('Tool call failed', {

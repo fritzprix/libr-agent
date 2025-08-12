@@ -210,6 +210,7 @@ export const WebMCPProvider: React.FC<WebMCPProviderProps> = ({
       };
 
       // 각 툴에 대해 동적으로 메서드 생성
+      logger.info('useWebMCPContext : ', { tools });
       tools.forEach((tool) => {
         // prefix가 붙어있다면 제거해서 메서드 이름으로 사용
         const originalToolName = tool.name;
@@ -549,6 +550,7 @@ export function useWebMCPServer<T extends WebMCPServerProxy>(
   const [server, setServer] = useState<T | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  logger.info('useWebMCPServer : ', { loading, error, server, serverStates });
 
   const loadServerProxy = useCallback(async () => {
     try {

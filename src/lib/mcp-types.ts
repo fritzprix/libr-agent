@@ -179,6 +179,7 @@ export interface MCPTool {
   inputSchema: JSONSchemaObject;
   outputSchema?: JSONSchemaObject;
   annotations?: MCPToolAnnotations;
+  backend?: 'tauri' | 'webworker'; // 도구가 실행되는 백엔드
 }
 
 // ========================================
@@ -480,10 +481,12 @@ export interface WebMCPMessage {
 }
 
 /**
- * Web Worker MCP 응답 타입
+ * Web Worker MCP 응답 타입 (간단한 형태)
+ * 표준 MCPResponse와 완전히 동일한 구조를 사용하여 일관성 보장
+ * Web Worker와 Tauri MCP 서버 간 응답 형식 통일
  */
 export interface WebMCPResponse {
-  id: string;
+  id: string | number;
   result?: unknown;
   error?: string;
 }
@@ -580,4 +583,49 @@ export function testErrorDetection(): void {
     isError: isMCPError(normalizedResponse),
     isSuccess: isMCPSuccess(normalizedResponse),
   });
+}
+
+/**
+ * Web Worker 응답을 표준 MCPResponse로 변환하는 헬퍼 함수
+ * 레거시 WebMCPResponse 형식을 지원하기 위한 변환기
+ */
+export function normalizeWebMCPResponse(response: {
+  id: string;
+  result?: unknown;
+  error?: string;
+}): MCPResponse {
+  const mcpResponse: MCPResponse = {
+    jsonrpc: '2.0',
+    id: response.id,
+  };
+
+  if (response.error) {
+    mcpResponse.error = {
+      code: -32603, // Internal error
+      message: response.error,
+    };
+  } else if (response.result !== undefined) {
+    // 결과를 표준 MCPResult 형식으로 변환
+    if (typeof response.result === 'string') {
+      mcpResponse.result = {
+        content: [
+          {
+            type: 'text',
+            text: response.result,
+          },
+        ],
+      };
+    } else {
+      mcpResponse.result = {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(response.result, null, 2),
+          },
+        ],
+      };
+    }
+  }
+
+  return mcpResponse;
 }
