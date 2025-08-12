@@ -33,17 +33,15 @@ export const useAIService = (config?: AIServiceConfig) => {
   );
   const { getCurrent: getCurrentAssistant } = useAssistantContext();
 
-
   const submit = useCallback(
     async (messages: Message[]): Promise<Message> => {
       setIsLoading(true);
       setError(null);
       setResponse(null);
 
-      const availableTools = [
-      ].filter(Boolean);
+      const availableTools = [].filter(Boolean);
 
-      // Get extension services and their tools  
+      // Get extension services and their tools
 
       const allTools = [...availableTools];
 
@@ -52,7 +50,6 @@ export const useAIService = (config?: AIServiceConfig) => {
       let thinking = '';
       let toolCalls: ToolCall[] = [];
       let finalMessage: Message | null = null;
-
 
       try {
         // Preprocess messages to include attachment information
@@ -140,14 +137,7 @@ export const useAIService = (config?: AIServiceConfig) => {
         setIsLoading(false);
       }
     },
-    [
-      model,
-      provider,
-      apiKeys,
-      config,
-      serviceInstance,
-      getCurrentAssistant
-    ],
+    [model, provider, apiKeys, config, serviceInstance, getCurrentAssistant],
   );
 
   const scheduledSubmit = useScheduledCallback(submit, [submit]);

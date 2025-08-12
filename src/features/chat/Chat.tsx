@@ -140,10 +140,7 @@ function ChatStatusBar({
 }) {
   // Move tools logic here since it's only used in this component
   const { availableTools: mcpTools } = useMCPServer();
-  const availableTools = useMemo(
-    () => [...mcpTools],
-    [mcpTools],
-  );
+  const availableTools = useMemo(() => [...mcpTools], [mcpTools]);
 
   return (
     <div className="px-4 py-2 border-t flex items-center justify-between">

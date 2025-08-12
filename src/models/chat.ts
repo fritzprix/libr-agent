@@ -40,15 +40,15 @@ export interface ToolCall {
 }
 
 export interface MCPConfig {
-    mcpServers?: Record<
-      string,
-      {
-        command: string;
-        args?: string[];
-        env?: Record<string, string>;
-      }
-    >;
-  }
+  mcpServers?: Record<
+    string,
+    {
+      command: string;
+      args?: string[];
+      env?: Record<string, string>;
+    }
+  >;
+}
 
 export interface Assistant {
   id?: string;

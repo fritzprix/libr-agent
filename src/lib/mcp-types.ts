@@ -584,9 +584,11 @@ export function testErrorDetection(): void {
  * Web Worker 응답을 표준 MCPResponse로 변환하는 헬퍼 함수
  * 레거시 WebMCPResponse 형식을 지원하기 위한 변환기
  */
-export function normalizeWebMCPResponse(
-  response: { id: string; result?: unknown; error?: string },
-): MCPResponse {
+export function normalizeWebMCPResponse(response: {
+  id: string;
+  result?: unknown;
+  error?: string;
+}): MCPResponse {
   const mcpResponse: MCPResponse = {
     jsonrpc: '2.0',
     id: response.id,

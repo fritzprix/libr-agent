@@ -139,9 +139,7 @@ async function loadMCPServer(serverName: string): Promise<WebMCPServer> {
 /**
  * Handle MCP message and return appropriate response
  */
-async function handleMCPMessage(
-  message: WebMCPMessage,
-): Promise<MCPResponse> {
+async function handleMCPMessage(message: WebMCPMessage): Promise<MCPResponse> {
   const { id, type, serverName, toolName, args } = message;
 
   log.debug('Handling MCP message', {
@@ -156,15 +154,17 @@ async function handleMCPMessage(
     switch (type) {
       case 'ping':
         log.debug('Handling ping request');
-        return { 
+        return {
           jsonrpc: '2.0',
-          id, 
+          id,
           result: {
-            content: [{
-              type: 'text',
-              text: 'pong'
-            }]
-          }
+            content: [
+              {
+                type: 'text',
+                text: 'pong',
+              },
+            ],
+          },
         };
 
       case 'loadServer': {
@@ -179,16 +179,18 @@ async function handleMCPMessage(
           version: loadedServer.version,
           toolCount: loadedServer.tools.length,
         };
-        
+
         return {
           jsonrpc: '2.0',
           id,
           result: {
-            content: [{
-              type: 'text',
-              text: JSON.stringify(serverInfo, null, 2)
-            }]
-          }
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(serverInfo, null, 2),
+              },
+            ],
+          },
         };
       }
 
@@ -203,12 +205,12 @@ async function handleMCPMessage(
             }));
             allTools.push(...prefixedTools);
           }
-          return { 
+          return {
             jsonrpc: '2.0',
-            id, 
+            id,
             result: {
-              structuredContent: { tools: allTools }
-            }
+              structuredContent: { tools: allTools },
+            },
           };
         } else {
           // Return tools from specific server
@@ -217,12 +219,12 @@ async function handleMCPMessage(
             ...tool,
             name: `${serverName}__${tool.name}`,
           }));
-          return { 
+          return {
             jsonrpc: '2.0',
-            id, 
+            id,
             result: {
-              structuredContent: { tools: prefixedTools }
-            }
+              structuredContent: { tools: prefixedTools },
+            },
           };
         }
       }
@@ -246,19 +248,22 @@ async function handleMCPMessage(
           });
 
           // Tool 결과를 표준 MCPResponse 형식으로 변환
-          const textContent = typeof result === 'string' 
-            ? result 
-            : JSON.stringify(result, null, 2);
+          const textContent =
+            typeof result === 'string'
+              ? result
+              : JSON.stringify(result, null, 2);
 
-          return { 
+          return {
             jsonrpc: '2.0',
-            id, 
+            id,
             result: {
-              content: [{
-                type: 'text',
-                text: textContent
-              }]
-            }
+              content: [
+                {
+                  type: 'text',
+                  text: textContent,
+                },
+              ],
+            },
           };
         } catch (toolError) {
           log.error('Tool call failed', {
@@ -289,13 +294,13 @@ async function handleMCPMessage(
       error: errorMessage,
     });
 
-    return { 
+    return {
       jsonrpc: '2.0',
-      id, 
+      id,
       error: {
         code: -32603, // Internal error
-        message: errorMessage
-      }
+        message: errorMessage,
+      },
     };
   }
 }
@@ -322,8 +327,8 @@ self.onmessage = async (event: MessageEvent<WebMCPMessage>) => {
       id: messageId,
       error: {
         code: -32603, // Internal error
-        message: `Worker error: ${errorMessage}`
-      }
+        message: `Worker error: ${errorMessage}`,
+      },
     };
 
     self.postMessage(errorResponse);

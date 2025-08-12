@@ -9,10 +9,7 @@ interface ToolsModalProps {
 
 const ToolsModal: React.FC<ToolsModalProps> = ({ isOpen, onClose }) => {
   const { availableTools: mcpTools } = useMCPServer();
-  const availableTools: MCPTool[] = useMemo(
-    () => [...mcpTools],
-    [mcpTools],
-  );
+  const availableTools: MCPTool[] = useMemo(() => [...mcpTools], [mcpTools]);
   if (!isOpen) return null;
 
   return (

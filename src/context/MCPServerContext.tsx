@@ -10,11 +10,7 @@ import React, {
 import { useAsyncFn } from 'react-use';
 import { getLogger } from '../lib/logger';
 import { tauriMCPClient } from '../lib/tauri-mcp-client';
-import {
-  MCPResponse,
-  MCPTool,
-  normalizeToolResult,
-} from '../lib/mcp-types';
+import { MCPResponse, MCPTool, normalizeToolResult } from '../lib/mcp-types';
 import { useAssistantContext } from './AssistantContext';
 import { MCPConfig } from '../models/chat';
 import { useScheduledCallback } from '@/hooks/use-scheduled-callback';
@@ -50,11 +46,14 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
       const serverStatus: Record<string, boolean> = {};
       try {
         // 모든 MCP 설정들을 병합
-        const allMCPServers: Record<string, {
-          command: string;
-          args?: string[];
-          env?: Record<string, string>;
-        }> = {};
+        const allMCPServers: Record<
+          string,
+          {
+            command: string;
+            args?: string[];
+            env?: Record<string, string>;
+          }
+        > = {};
 
         // 여러 MCPConfig에서 서버들을 병합
         mcpConfigs.forEach((config) => {

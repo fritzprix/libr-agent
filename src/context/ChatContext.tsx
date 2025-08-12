@@ -58,7 +58,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
     [currentSession?.id],
   );
 
-
   // Combine history with streaming message, avoiding duplicates
   const messages = useMemo(() => {
     if (!streamingMessage) {
@@ -154,9 +153,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
           .filter((msg) => msg.role !== 'system')
           .slice(-messageWindowSize);
 
-
         // Combine system prompts with user messages
-        const finalMessages = [ ...userMessages];
+        const finalMessages = [...userMessages];
 
         logger.debug('Submitting messages with system prompts', {
           userMessagesCount: userMessages.length,
