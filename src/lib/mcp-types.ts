@@ -179,6 +179,7 @@ export interface MCPTool {
   inputSchema: JSONSchemaObject;
   outputSchema?: JSONSchemaObject;
   annotations?: MCPToolAnnotations;
+  backend?: 'tauri' | 'webworker'; // 도구가 실행되는 백엔드
 }
 
 // ========================================

@@ -2,7 +2,7 @@ import { useAssistantContext } from '@/context/AssistantContext';
 import { useChatContext } from '@/context/ChatContext';
 import { useScheduler } from '@/context/SchedulerContext';
 import { useSessionContext } from '@/context/SessionContext';
-import { useMCPServer } from '@/hooks/use-mcp-server';
+import { useUnifiedMCP } from '@/hooks/use-unified-mcp';
 import { getLogger } from '@/lib/logger';
 import {
   isMCPError,
@@ -31,7 +31,7 @@ export const ToolCaller: React.FC = () => {
   const { current: currentSession } = useSessionContext();
   const { currentAssistant } = useAssistantContext();
   const { messages, submit } = useChatContext();
-  const { executeToolCall } = useMCPServer();
+  const { executeToolCall } = useUnifiedMCP();
 
   const { schedule } = useScheduler();
 
@@ -100,6 +100,10 @@ export const ToolCaller: React.FC = () => {
         return;
       }
 
+      logger.info('Starting tool execution batch', {
+        toolCallCount: tcMessage.tool_calls.length,
+      });
+
       const toolResults: Message[] = [];
 
       for (const toolCall of tcMessage.tool_calls) {
@@ -112,10 +116,8 @@ export const ToolCaller: React.FC = () => {
             args: toolCall.function.arguments,
           });
 
-          let mcpResponse: MCPResponse;
-
           // Use unified MCP system for all tools (Tauri MCP + Web MCP)
-          mcpResponse = await executeToolCall(toolCall);
+          const mcpResponse = await executeToolCall(toolCall);
 
           const serializedContent = serializeToolResult(
             mcpResponse,
@@ -179,6 +181,9 @@ export const ToolCaller: React.FC = () => {
       }
 
       if (toolResults.length > 0) {
+        logger.info('Submitting tool results', {
+          resultCount: toolResults.length,
+        });
         await submit(toolResults);
       }
     },

@@ -7,6 +7,7 @@ import { getLogger } from '../lib/logger';
 import { useScheduledCallback } from './use-scheduled-callback';
 import { useSettings } from './use-settings';
 import { prepareMessagesForLLM } from '../lib/message-preprocessor';
+import { useBuiltInTools } from '@/context/BuiltInToolContext';
 
 const logger = getLogger('useAIService');
 
@@ -31,19 +32,19 @@ export const useAIService = (config?: AIServiceConfig) => {
       }),
     [provider, apiKeys, model],
   );
-  const { getCurrent: getCurrentAssistant } = useAssistantContext();
+  const { getCurrent: getCurrentAssistant, availableTools } =
+    useAssistantContext();
+  const { availableTools: builtInTools } = useBuiltInTools();
+
+  const allAvailableTools = useMemo(() => {
+    return [...availableTools, ...builtInTools];
+  }, [availableTools, builtInTools]);
 
   const submit = useCallback(
     async (messages: Message[]): Promise<Message> => {
       setIsLoading(true);
       setError(null);
       setResponse(null);
-
-      const availableTools = [].filter(Boolean);
-
-      // Get extension services and their tools
-
-      const allTools = [...availableTools];
 
       let currentResponseId = createId();
       let fullContent = '';
@@ -60,7 +61,7 @@ export const useAIService = (config?: AIServiceConfig) => {
           systemPrompt: [
             getCurrentAssistant()?.systemPrompt || DEFAULT_SYSTEM_PROMPT,
           ].join('\n\n'),
-          availableTools: allTools,
+          availableTools: allAvailableTools,
           config: config,
         });
 
@@ -137,7 +138,15 @@ export const useAIService = (config?: AIServiceConfig) => {
         setIsLoading(false);
       }
     },
-    [model, provider, apiKeys, config, serviceInstance, getCurrentAssistant],
+    [
+      model,
+      provider,
+      apiKeys,
+      config,
+      serviceInstance,
+      getCurrentAssistant,
+      availableTools,
+    ],
   );
 
   const scheduledSubmit = useScheduledCallback(submit, [submit]);

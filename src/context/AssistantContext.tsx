@@ -15,6 +15,7 @@ import { getLogger } from '../lib/logger';
 import { Assistant } from '../models/chat';
 import { toast } from 'sonner';
 import { useMCPServer } from '@/hooks/use-mcp-server';
+import { MCPTool } from '@/lib/mcp-types';
 
 const DEFAULT_PROMPT =
   "You are an AI assistant agent that can use external tools via MCP (Model Context Protocol).\n- Always analyze the user's intent and, if needed, use available tools to provide the best answer.\n- When a tool is required, call the appropriate tool with correct parameters.\n- If the answer can be given without a tool, respond directly.\n- Be concise and clear. If you use a tool, explain the result to the user in natural language.\n- If you are unsure, ask clarifying questions before taking action.";
@@ -29,6 +30,7 @@ interface AssistantContextType {
   deleteAssistant: (assistantId: string) => Promise<void>;
   registerEphemeral: (assistant: Assistant) => void;
   unregisterEphemeral: (id: string) => void;
+  availableTools: MCPTool[];
   error: Error | null;
 }
 
@@ -86,7 +88,7 @@ export const AssistantContextProvider = ({
     [],
   );
 
-  const { connectServers } = useMCPServer();
+  const { connectServers, availableTools } = useMCPServer();
 
   const [error, setError] = useState<Error | null>(null);
 
@@ -301,6 +303,7 @@ export const AssistantContextProvider = ({
       saveAssistant: upsertAssistant,
       deleteAssistant: deleteAssistant,
       error: error ?? null,
+      availableTools,
     }),
     [
       allAssistants,
@@ -313,6 +316,7 @@ export const AssistantContextProvider = ({
       registerEphemeral,
       unregisterEphemeral,
       getById,
+      availableTools,
     ],
   );
 
