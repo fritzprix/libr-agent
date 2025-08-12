@@ -13,7 +13,6 @@ import { createId } from '@paralleldrive/cuid2';
 import { getLogger } from '../lib/logger';
 import { Message } from '@/models/chat';
 import { useSettings } from '../hooks/use-settings';
-import { useAssistantExtension } from './AssistantExtensionContext';
 
 const logger = getLogger('ChatContext');
 
@@ -38,7 +37,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const { submit: triggerAIService, isLoading, response } = useAIService();
   const { current: currentSession } = useSessionContext();
   const { value: settingValue } = useSettings();
-  const { getExtensionSystemPrompts } = useAssistantExtension();
 
   const [streamingMessage, setStreamingMessage] = useState<Message | null>(
     null,
@@ -60,10 +58,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
     [currentSession?.id],
   );
 
-  // Get active system prompts sorted by priority (only from extensions)
-  const getActiveSystemPrompts = useCallback(() => {
-    return getExtensionSystemPrompts();
-  }, [getExtensionSystemPrompts]);
 
   // Combine history with streaming message, avoiding duplicates
   const messages = useMemo(() => {
@@ -160,17 +154,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
           .filter((msg) => msg.role !== 'system')
           .slice(-messageWindowSize);
 
-        // Prepare system prompts for this submission
-        const activePrompts = getActiveSystemPrompts();
-        const systemMessages = activePrompts.map((promptData) =>
-          createSystemMessage(promptData.prompt, promptData.key),
-        );
 
         // Combine system prompts with user messages
-        const finalMessages = [...systemMessages, ...userMessages];
+        const finalMessages = [ ...userMessages];
 
         logger.debug('Submitting messages with system prompts', {
-          systemPromptsCount: systemMessages.length,
           userMessagesCount: userMessages.length,
           agentKey,
         });
@@ -209,7 +197,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
       messageWindowSize,
       triggerAIService,
       addMessage,
-      getActiveSystemPrompts,
       createSystemMessage,
     ],
   );

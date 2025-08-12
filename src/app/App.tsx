@@ -10,7 +10,6 @@ import { ThemeToggle } from '../components/common/ThemeToggle';
 import { AppHeader } from '../components/layout/AppHeader';
 import { SidebarProvider } from '../components/ui/sidebar';
 import { AssistantContextProvider } from '../context/AssistantContext';
-import { AssistantExtensionProvider } from '../context/AssistantExtensionContext';
 import { AssistantGroupProvider } from '../context/AssistantGroupContext';
 import { MCPServerProvider } from '../context/MCPServerContext';
 import { WebMCPProvider } from '../context/WebMCPContext';
@@ -37,7 +36,6 @@ function App() {
           <WebMCPProvider servers={['content-store']} autoLoad={true}>
             <AssistantGroupProvider>
               <AssistantContextProvider>
-                <AssistantExtensionProvider>
                   <SessionContextProvider>
                     <SessionHistoryProvider>
                       <ResourceAttachmentProvider>
@@ -110,7 +108,6 @@ function App() {
                       </ResourceAttachmentProvider>
                     </SessionHistoryProvider>
                   </SessionContextProvider>
-                </AssistantExtensionProvider>
               </AssistantContextProvider>
             </AssistantGroupProvider>
           </WebMCPProvider>

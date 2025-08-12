@@ -2,10 +2,8 @@ import { Message, ToolCall } from '@/models/chat';
 import { createId } from '@paralleldrive/cuid2';
 import { useCallback, useMemo, useState } from 'react';
 import { useAssistantContext } from '../context/AssistantContext';
-import { useAssistantExtension } from '../context/AssistantExtensionContext';
 import { AIServiceConfig, AIServiceFactory } from '../lib/ai-service';
 import { getLogger } from '../lib/logger';
-import { useUnifiedMCP } from '../context/UnifiedMCPContext';
 import { useScheduledCallback } from './use-scheduled-callback';
 import { useSettings } from './use-settings';
 import { prepareMessagesForLLM } from '../lib/message-preprocessor';
@@ -34,10 +32,7 @@ export const useAIService = (config?: AIServiceConfig) => {
     [provider, apiKeys, model],
   );
   const { getCurrent: getCurrentAssistant } = useAssistantContext();
-  const { getExtensionSystemPrompts, getExtensionServices } =
-    useAssistantExtension();
 
-  const { availableTools: unifiedMCPTools } = useUnifiedMCP();
 
   const submit = useCallback(
     async (messages: Message[]): Promise<Message> => {
@@ -46,18 +41,11 @@ export const useAIService = (config?: AIServiceConfig) => {
       setResponse(null);
 
       const availableTools = [
-        ...unifiedMCPTools,
       ].filter(Boolean);
 
       // Get extension services and their tools  
-      const extensionServices = getExtensionServices();
-      const extensionTools = extensionServices.flatMap(() => {
-        // Only remote extension tools are supported now
-        // Remote extension tools are included in getAvailableMCPTools() from MCPServerContext
-        return [];
-      });
 
-      const allTools = [...availableTools, ...extensionTools];
+      const allTools = [...availableTools];
 
       let currentResponseId = createId();
       let fullContent = '';
@@ -65,11 +53,6 @@ export const useAIService = (config?: AIServiceConfig) => {
       let toolCalls: ToolCall[] = [];
       let finalMessage: Message | null = null;
 
-      logger.info('available tools ', {
-        unifiedMCP: unifiedMCPTools.length,
-        extension: extensionTools.length,
-        total: allTools.length,
-      });
 
       try {
         // Preprocess messages to include attachment information
@@ -79,7 +62,6 @@ export const useAIService = (config?: AIServiceConfig) => {
           modelName: model,
           systemPrompt: [
             getCurrentAssistant()?.systemPrompt || DEFAULT_SYSTEM_PROMPT,
-            ...getExtensionSystemPrompts(),
           ].join('\n\n'),
           availableTools: allTools,
           config: config,
@@ -164,10 +146,7 @@ export const useAIService = (config?: AIServiceConfig) => {
       apiKeys,
       config,
       serviceInstance,
-      unifiedMCPTools,
-      getCurrentAssistant,
-      getExtensionSystemPrompts,
-      getExtensionServices,
+      getCurrentAssistant
     ],
   );
 

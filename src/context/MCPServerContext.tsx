@@ -14,11 +14,9 @@ import {
   MCPResponse,
   MCPTool,
   normalizeToolResult,
-  MCPServerConfig,
 } from '../lib/mcp-types';
 import { useAssistantContext } from './AssistantContext';
-import { useAssistantExtension } from './AssistantExtensionContext';
-import { Assistant } from '../models/chat';
+import { MCPConfig } from '../models/chat';
 import { useScheduledCallback } from '@/hooks/use-scheduled-callback';
 
 const logger = getLogger('MCPServerContext');
@@ -28,7 +26,7 @@ interface MCPServerContextType {
   getAvailableTools: () => MCPTool[];
   isConnecting: boolean;
   status: Record<string, boolean>;
-  connectServers: (assistant: Assistant) => Promise<void>;
+  connectServers: (mcpConfigs: MCPConfig[]) => Promise<void>;
   executeToolCall: (toolCall: {
     id: string;
     type: 'function';
@@ -47,38 +45,26 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
   const [serverStatus, setServerStatus] = useState<Record<string, boolean>>({});
   const availableToolsRef = useRef(availableTools);
   const { currentAssistant } = useAssistantContext();
-  const { getExtensionServices } = useAssistantExtension();
   const [{ loading: isConnecting }, connectServers] = useAsyncFn(
-    async (assistant: Assistant) => {
+    async (mcpConfigs: MCPConfig[]) => {
       const serverStatus: Record<string, boolean> = {};
       try {
-        // 기본 어시스턴트 MCP 서버들
-        const baseServers = assistant.mcpConfig.mcpServers || {};
+        // 모든 MCP 설정들을 병합
+        const allMCPServers: Record<string, {
+          command: string;
+          args?: string[];
+          env?: Record<string, string>;
+        }> = {};
 
-        // 확장에서 등록된 remote MCP 서버들
-        const extensionServices = getExtensionServices();
-        const extensionMCPServers = extensionServices
-          .filter((service) => service.type === 'remote')
-          .reduce(
-            (acc, service) => {
-              acc[service.service.name] = service.service;
-              return acc;
-            },
-            {} as Record<string, MCPServerConfig>,
-          );
-
-        // 모든 MCP 서버들을 병합
-        const allMCPServers = { ...baseServers, ...extensionMCPServers };
+        // 여러 MCPConfig에서 서버들을 병합
+        mcpConfigs.forEach((config) => {
+          if (config.mcpServers) {
+            Object.assign(allMCPServers, config.mcpServers);
+          }
+        });
 
         const configForTauri = {
-          mcpServers: allMCPServers as Record<
-            string,
-            {
-              command: string;
-              args?: string[];
-              env?: Record<string, string>;
-            }
-          >,
+          mcpServers: allMCPServers,
         };
 
         const servers = Object.keys(configForTauri.mcpServers);
@@ -97,8 +83,7 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
         const tools = await tauriMCPClient.listToolsFromConfig(configForTauri);
         logger.debug(`Received tools from Tauri:`, {
           tools,
-          baseServers: Object.keys(baseServers).length,
-          extensionServers: Object.keys(extensionMCPServers).length,
+          totalConfigs: mcpConfigs.length,
           totalServers: servers.length,
         });
 
@@ -119,7 +104,7 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
         setServerStatus({ ...serverStatus });
       }
     },
-    [getExtensionServices],
+    [],
   );
 
   const executeToolCall = useCallback(
@@ -196,7 +181,7 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
   useEffect(() => {
     if (currentAssistant) {
       logger.info('connect : ', { currentAssistant: currentAssistant.name });
-      connectServers(currentAssistant);
+      connectServers([currentAssistant.mcpConfig]);
     }
   }, [connectServers, currentAssistant]);
 

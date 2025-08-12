@@ -39,13 +39,7 @@ export interface ToolCall {
   };
 }
 
-export interface Assistant {
-  id?: string;
-  name: string;
-  description?: string;
-  avatar?: string; // Optional avatar URL or identifier
-  systemPrompt: string;
-  mcpConfig: {
+export interface MCPConfig {
     mcpServers?: Record<
       string,
       {
@@ -54,7 +48,15 @@ export interface Assistant {
         env?: Record<string, string>;
       }
     >;
-  };
+  }
+
+export interface Assistant {
+  id?: string;
+  name: string;
+  description?: string;
+  avatar?: string; // Optional avatar URL or identifier
+  systemPrompt: string;
+  mcpConfig: MCPConfig;
   localServices?: string[];
   isDefault: boolean;
   createdAt: Date;
