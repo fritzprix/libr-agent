@@ -1,13 +1,11 @@
 import { Message, ToolCall } from '@/models/chat';
 import { createId } from '@paralleldrive/cuid2';
 import { useCallback, useMemo, useState } from 'react';
-import { useAssistantContext } from '../context/AssistantContext';
 import { AIServiceConfig, AIServiceFactory } from '../lib/ai-service';
 import { getLogger } from '../lib/logger';
 import { useScheduledCallback } from './use-scheduled-callback';
 import { useSettings } from './use-settings';
 import { prepareMessagesForLLM } from '../lib/message-preprocessor';
-import { useBuiltInTools } from '@/context/BuiltInToolContext';
 
 const logger = getLogger('useAIService');
 
@@ -29,19 +27,16 @@ export const useAIService = (config?: AIServiceConfig) => {
         defaultModel: model,
         maxRetries: 3,
         maxTokens: 4096,
+        ...config,
       }),
-    [provider, apiKeys, model],
+    [provider, apiKeys, model, config],
   );
-  const { getCurrent: getCurrentAssistant, availableTools } =
-    useAssistantContext();
-  const { availableTools: builtInTools } = useBuiltInTools();
-
-  const allAvailableTools = useMemo(() => {
-    return [...availableTools, ...builtInTools];
-  }, [availableTools, builtInTools]);
 
   const submit = useCallback(
-    async (messages: Message[]): Promise<Message> => {
+    async (
+      messages: Message[], 
+      systemPrompt?: string | (() => Promise<string>)
+    ): Promise<Message> => {
       setIsLoading(true);
       setError(null);
       setResponse(null);
@@ -56,12 +51,18 @@ export const useAIService = (config?: AIServiceConfig) => {
         // Preprocess messages to include attachment information
         const processedMessages = await prepareMessagesForLLM(messages);
 
+        // Evaluate systemPrompt if it's a function
+        let resolvedSystemPrompt: string;
+        if (typeof systemPrompt === 'function') {
+          resolvedSystemPrompt = await systemPrompt();
+        } else {
+          resolvedSystemPrompt = systemPrompt || DEFAULT_SYSTEM_PROMPT;
+        }
+
         const stream = serviceInstance.streamChat(processedMessages, {
           modelName: model,
-          systemPrompt: [
-            getCurrentAssistant()?.systemPrompt || DEFAULT_SYSTEM_PROMPT,
-          ].join('\n\n'),
-          availableTools: allAvailableTools,
+          systemPrompt: resolvedSystemPrompt,
+          availableTools: config?.tools || [],
           config: config,
         });
 
@@ -138,15 +139,7 @@ export const useAIService = (config?: AIServiceConfig) => {
         setIsLoading(false);
       }
     },
-    [
-      model,
-      provider,
-      apiKeys,
-      config,
-      serviceInstance,
-      getCurrentAssistant,
-      availableTools,
-    ],
+    [model, config, serviceInstance],
   );
 
   const scheduledSubmit = useScheduledCallback(submit, [submit]);

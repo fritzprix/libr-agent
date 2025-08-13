@@ -7,6 +7,7 @@ export interface AIServiceConfig {
   defaultModel?: string;
   maxTokens?: number;
   temperature?: number;
+  tools?: import('../mcp-types').MCPTool[];
 }
 
 export enum AIServiceProvider {

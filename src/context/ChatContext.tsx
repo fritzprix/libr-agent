@@ -9,17 +9,28 @@ import React, {
 import { useSessionContext } from './SessionContext';
 import { useSessionHistory } from './SessionHistoryContext';
 import { useAIService } from '../hooks/use-ai-service';
+import { useAssistantContext } from './AssistantContext';
+import { useBuiltInTools } from './BuiltInToolContext';
 import { createId } from '@paralleldrive/cuid2';
 import { getLogger } from '../lib/logger';
 import { Message } from '@/models/chat';
 import { useSettings } from '../hooks/use-settings';
+import { AIServiceConfig } from '@/lib/ai-service';
 
 const logger = getLogger('ChatContext');
+
+interface SystemPromptExtension {
+  id: string;
+  content: string | (() => Promise<string>);
+  priority: number; // Higher number = higher priority
+}
 
 interface ChatContextValue {
   submit: (messageToAdd?: Message[], agentKey?: string) => Promise<Message>;
   isLoading: boolean;
   messages: Message[];
+  registerSystemPrompt: (extension: Omit<SystemPromptExtension, 'id'>) => string;
+  unregisterSystemPrompt: (id: string) => void;
 }
 
 const ChatContext = createContext<ChatContextValue | undefined>(undefined);
@@ -32,31 +43,84 @@ interface ChatProviderProps {
   children: React.ReactNode;
 }
 
+const DEFAULT_SYSTEM_PROMPT = 'You are a helpful assistant.';
+
 export function ChatProvider({ children }: ChatProviderProps) {
   const { messages: history, addMessage } = useSessionHistory();
-  const { submit: triggerAIService, isLoading, response } = useAIService();
   const { current: currentSession } = useSessionContext();
   const { value: settingValue } = useSettings();
+  const { getCurrent: getCurrentAssistant, availableTools } = useAssistantContext();
+  const { availableTools: builtInTools } = useBuiltInTools();
 
   const [streamingMessage, setStreamingMessage] = useState<Message | null>(
     null,
   );
+  const [systemPromptExtensions, setSystemPromptExtensions] = useState<SystemPromptExtension[]>([]);
 
   // Extract window size with default fallback
   const messageWindowSize = settingValue?.windowSize ?? 20;
 
-  // Create system message from prompt
-  const createSystemMessage = useCallback(
-    (prompt: string, agentKey: string): Message => ({
-      id: `system-${agentKey}-${createId()}`,
-      role: 'system',
-      content: prompt,
-      sessionId: currentSession?.id ?? '',
-      isStreaming: false,
-      createdAt: new Date(),
-    }),
-    [currentSession?.id],
-  );
+  // Register system prompt extension
+  const registerSystemPrompt = useCallback((extension: Omit<SystemPromptExtension, 'id'>) => {
+    const id = createId();
+    const newExtension: SystemPromptExtension = { ...extension, id };
+    
+    setSystemPromptExtensions((prev) => {
+      const updated = [...prev, newExtension];
+      // Sort by priority (higher priority first)
+      return updated.sort((a, b) => b.priority - a.priority);
+    });
+
+    logger.debug('Registered system prompt extension', { id, priority: extension.priority });
+    return id;
+  }, []);
+
+  // Unregister system prompt extension
+  const unregisterSystemPrompt = useCallback((id: string) => {
+    setSystemPromptExtensions((prev) => prev.filter((ext) => ext.id !== id));
+    logger.debug('Unregistered system prompt extension', { id });
+  }, []);
+
+  // Build combined system prompt with extensions
+  const buildSystemPrompt = useCallback(async (): Promise<string> => {
+    const basePrompt = getCurrentAssistant()?.systemPrompt || DEFAULT_SYSTEM_PROMPT;
+    
+    if (systemPromptExtensions.length === 0) {
+      return basePrompt;
+    }
+
+    // Resolve all extensions (handle both string and function types)
+    const extensionPrompts = await Promise.all(
+      systemPromptExtensions.map(async (ext) => {
+        if (typeof ext.content === 'function') {
+          return await ext.content();
+        }
+        return ext.content;
+      })
+    );
+
+    // Combine base prompt with extensions
+    const combinedPrompt = [basePrompt, ...extensionPrompts]
+      .filter(Boolean)
+      .join('\n\n');
+
+    logger.debug('Built combined system prompt', {
+      baseLength: basePrompt.length,
+      extensionsCount: systemPromptExtensions.length,
+      totalLength: combinedPrompt.length,
+    });
+
+    return combinedPrompt;
+  }, [getCurrentAssistant, systemPromptExtensions]);
+
+  // AI Service configuration with tools only
+  const aiServiceConfig = useMemo((): AIServiceConfig => ({
+    tools: [...availableTools, ...builtInTools],
+    maxRetries: 3,
+    maxTokens: 4096,
+  }), [availableTools, builtInTools]);
+
+  const { submit: triggerAIService, isLoading, response } = useAIService(aiServiceConfig);
 
   // Combine history with streaming message, avoiding duplicates
   const messages = useMemo(() => {
@@ -158,11 +222,12 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
         logger.debug('Submitting messages with system prompts', {
           userMessagesCount: userMessages.length,
+          extensionsCount: systemPromptExtensions.length,
           agentKey,
         });
 
-        // Send combined messages to AI service
-        const aiResponse = await triggerAIService(finalMessages);
+        // Send combined messages to AI service with dynamic system prompt
+        const aiResponse = await triggerAIService(finalMessages, buildSystemPrompt);
 
         // Handle AI response persistence
         if (aiResponse) {
@@ -195,8 +260,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
       messageWindowSize,
       triggerAIService,
       addMessage,
-      createSystemMessage,
-    ],
+      systemPromptExtensions,
+    ]
   );
 
   const value: ChatContextValue = useMemo(
@@ -204,8 +269,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
       submit,
       isLoading,
       messages,
+      registerSystemPrompt,
+      unregisterSystemPrompt,
     }),
-    [messages, submit, isLoading],
+    [messages, submit, isLoading, registerSystemPrompt, unregisterSystemPrompt],
   );
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
