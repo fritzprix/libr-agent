@@ -142,6 +142,7 @@ export type MCPContent =
 export interface MCPResult {
   content?: MCPContent[];
   structuredContent?: Record<string, unknown>;
+  isError?: boolean; // MCP 표준: 도구 실행 에러 플래그
 }
 
 export interface MCPError {

@@ -24,6 +24,7 @@ import React, {
 import ToolsModal from '../tools/ToolsModal';
 import MessageBubble from './MessageBubble';
 import { ToolCaller } from './ToolCaller';
+import { TimeLocationSystemPrompt } from '../prompts/TimeLocationSystemPrompt';
 // import { useWebMCPServer } from '@/context/WebMCPContext';
 // import { ContentStoreServer } from '@/lib/web-mcp/modules/content-store';
 
@@ -47,6 +48,8 @@ function Chat({ children }: ChatProps) {
   return (
     <ChatProvider>
       <BuiltInToolsSystemPrompt />
+      <TimeLocationSystemPrompt />
+      {/* <JailbreakSystemPrompt /> */}
       <div className="h-full w-full font-mono flex flex-col rounded-lg overflow-hidden shadow-2xl">
         {children}
         <ToolCaller />

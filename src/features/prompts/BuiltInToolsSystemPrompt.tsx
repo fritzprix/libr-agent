@@ -11,7 +11,7 @@ const logger = getLogger('BuiltInToolsSystemPrompt');
  * System prompt component that dynamically injects information about attached files
  * into the chat context. This allows the AI to be aware of files that have been
  * uploaded to the current session's content store.
- * 
+ *
  * This component automatically registers a system prompt extension that:
  * - Lists all files attached to the current session
  * - Provides file metadata (name, type, size, preview)
@@ -20,44 +20,50 @@ const logger = getLogger('BuiltInToolsSystemPrompt');
  */
 export function BuiltInToolsSystemPrompt() {
   const { registerSystemPrompt, unregisterSystemPrompt } = useChatContext();
-  const { server } = useWebMCPServer<ContentStoreServer>("content-store");
+  const { server } = useWebMCPServer<ContentStoreServer>('content-store');
   const { getCurrentSession } = useSessionContext();
 
   const buildPrompt = useCallback(async () => {
     const currentSession = getCurrentSession();
     if (!currentSession?.storeId) {
-      logger.warn('No current session available for building attached files prompt');
+      logger.warn(
+        'No current session available for building attached files prompt',
+      );
       return '# Attached Files\nNo files currently attached.';
     }
 
     try {
-      const result = await server?.listContent({ storeId: currentSession.storeId });
+      const result = await server?.listContent({
+        storeId: currentSession.storeId,
+      });
 
       if (!result?.contents || result.contents.length === 0) {
         return '# Attached Files\nNo files currently attached.';
       }
 
       const attachedResources = result.contents
-        .map(c => JSON.stringify({
-          storeId: c.storeId,
-          contentId: c.contentId,
-          preview: c.preview,
-          filename: c.filename,
-          type: c.mimeType,
-          size: c.size
-        }))
+        .map((c) =>
+          JSON.stringify({
+            storeId: c.storeId,
+            contentId: c.contentId,
+            preview: c.preview,
+            filename: c.filename,
+            type: c.mimeType,
+            size: c.size,
+          }),
+        )
         .join('\n');
 
       logger.debug('Built attached files prompt', {
         sessionId: currentSession.id,
-        fileCount: result.contents.length
+        fileCount: result.contents.length,
       });
 
       return `# Attached Files\n${attachedResources}`;
     } catch (error) {
       logger.error('Failed to build attached files prompt', {
         sessionId: currentSession.id,
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
       });
       return '# Attached Files\nError loading attached files.';
     }
@@ -65,7 +71,9 @@ export function BuiltInToolsSystemPrompt() {
 
   useEffect(() => {
     if (!server) {
-      logger.debug('Skipping system prompt registration - missing session or server');
+      logger.debug(
+        'Skipping system prompt registration - missing session or server',
+      );
       return;
     }
 
@@ -76,7 +84,9 @@ export function BuiltInToolsSystemPrompt() {
 
     return () => {
       unregisterSystemPrompt(id);
-      logger.debug('Unregistered attached files system prompt', { promptId: id });
+      logger.debug('Unregistered attached files system prompt', {
+        promptId: id,
+      });
     };
   }, [server, buildPrompt, registerSystemPrompt, unregisterSystemPrompt]);
 

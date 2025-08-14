@@ -33,6 +33,7 @@ pub trait BuiltinMCPServer: Send + Sync {
 ### 2. 구현할 내장 서버들
 
 #### 2.1 Filesystem Server (`builtin:filesystem`)
+
 - **목적**: 파일 시스템 조작
 - **주요 도구들**:
   - `read_file`: 파일 내용 읽기

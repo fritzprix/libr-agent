@@ -4,12 +4,7 @@ import { useScheduler } from '@/context/SchedulerContext';
 import { useSessionContext } from '@/context/SessionContext';
 import { useUnifiedMCP } from '@/hooks/use-unified-mcp';
 import { getLogger } from '@/lib/logger';
-import {
-  isMCPError,
-  isMCPSuccess,
-  MCPResponse,
-  mcpResponseToString,
-} from '@/lib/mcp-types';
+import { isMCPError, MCPResponse, mcpResponseToString } from '@/lib/mcp-types';
 import { Message } from '@/models/chat';
 import { createId } from '@paralleldrive/cuid2';
 import React, { useCallback, useEffect, useRef } from 'react';
@@ -41,49 +36,63 @@ export const ToolCaller: React.FC = () => {
       toolName: string,
       executionStartTime: number,
     ): string => {
-      // 추가 에러 검증: content에 에러가 있는지 확인
-      const isContentError =
-        isMCPSuccess(mcpResponse) &&
-        mcpResponse.result?.content?.some(
-          (content) =>
-            content.type === 'text' &&
-            (content.text.includes('"error":') ||
-              content.text.includes('\\"error\\":')),
-        );
+      const executionTime = Date.now() - executionStartTime;
+      const timestamp = new Date().toISOString();
 
-      const actualSuccess = isMCPSuccess(mcpResponse) && !isContentError;
-
-      let errorMessage: string | undefined;
+      // 표준 MCP 에러 처리
       if (isMCPError(mcpResponse)) {
-        errorMessage = mcpResponse.error.message;
-      } else if (
-        isContentError &&
-        mcpResponse.result?.content?.[0]?.type === 'text'
-      ) {
-        // content에서 에러 메시지 추출
-        try {
-          const contentText = mcpResponse.result.content[0].text;
-          const parsed = JSON.parse(contentText);
-          errorMessage = parsed.error || contentText;
-        } catch {
-          errorMessage = mcpResponse.result.content[0].text;
-        }
+        const result: SerializedToolResult = {
+          success: false,
+          error: `${mcpResponse.error.message} (Code: ${mcpResponse.error.code})`,
+          metadata: {
+            toolName,
+            mcpResponseId: mcpResponse.id,
+            jsonrpc: mcpResponse.jsonrpc,
+            errorCode: mcpResponse.error.code,
+            errorData: mcpResponse.error.data,
+          },
+          toolName,
+          executionTime,
+          timestamp,
+        };
+        return JSON.stringify(result);
       }
 
+      // Tool 실행 에러 처리 (isError: true)
+      if (mcpResponse.result?.isError) {
+        const errorText =
+          mcpResponse.result.content?.[0]?.type === 'text'
+            ? mcpResponse.result.content[0].text
+            : 'Tool execution failed';
+
+        const result: SerializedToolResult = {
+          success: false,
+          error: errorText,
+          metadata: {
+            toolName,
+            mcpResponseId: mcpResponse.id,
+            jsonrpc: mcpResponse.jsonrpc,
+            isToolExecutionError: true,
+          },
+          toolName,
+          executionTime,
+          timestamp,
+        };
+        return JSON.stringify(result);
+      }
+
+      // 성공 케이스
       const result: SerializedToolResult = {
-        success: actualSuccess,
-        content: actualSuccess ? mcpResponseToString(mcpResponse) : undefined,
-        error: errorMessage,
+        success: true,
+        content: mcpResponseToString(mcpResponse),
         metadata: {
           toolName,
           mcpResponseId: mcpResponse.id,
           jsonrpc: mcpResponse.jsonrpc,
-          isValidated: true,
-          hasContentError: isContentError,
         },
         toolName,
-        executionTime: Date.now() - executionStartTime,
-        timestamp: new Date().toISOString(),
+        executionTime,
+        timestamp,
       };
 
       return JSON.stringify(result);
@@ -119,6 +128,22 @@ export const ToolCaller: React.FC = () => {
           // Use unified MCP system for all tools (Tauri MCP + Web MCP)
           const mcpResponse = await executeToolCall(toolCall);
 
+          // 에러 처리: MCP 에러나 도구 실행 에러는 예외로 처리
+          if (isMCPError(mcpResponse)) {
+            throw new Error(
+              `MCP Protocol Error: ${mcpResponse.error.message} (Code: ${mcpResponse.error.code})`,
+            );
+          }
+
+          if (mcpResponse.result?.isError) {
+            const errorText =
+              mcpResponse.result.content?.[0]?.type === 'text'
+                ? mcpResponse.result.content[0].text
+                : 'Tool execution failed';
+            throw new Error(`Tool Execution Error: ${errorText}`);
+          }
+
+          // 성공 케이스만 직렬화
           const serializedContent = serializeToolResult(
             mcpResponse,
             toolName,
@@ -134,46 +159,43 @@ export const ToolCaller: React.FC = () => {
             sessionId: currentSession?.id || '',
           });
 
-          if (isMCPSuccess(mcpResponse)) {
-            logger.info(`Tool executed successfully: ${toolName}`);
-          } else {
-            logger.warn(`Tool execution finished with error: ${toolName}`, {
-              error: (mcpResponse as MCPResponse & { error: object }).error,
-            });
-          }
+          logger.info(`Tool executed successfully: ${toolName}`);
         } catch (error) {
           logger.error(`Tool execution failed for ${toolName}:`, error);
 
-          const errorResponse: MCPResponse = {
-            jsonrpc: '2.0',
-            id: `tool-${toolName}-${Date.now()}`,
-            error: {
-              code: -32000,
-              message:
-                error instanceof Error
-                  ? error.message
-                  : 'Unknown execution error',
-              data: {
-                errorType:
-                  error instanceof Error
-                    ? error.constructor.name
-                    : 'UnknownError',
-                toolCallId: toolCall.id,
-              },
-            },
+          // 에러 상황에서는 상세한 에러 정보를 포함한 메시지 생성
+          const errorMessage =
+            error instanceof Error ? error.message : 'Unknown execution error';
+          const errorDetails = {
+            toolName,
+            error: errorMessage,
+            toolCallId: toolCall.id,
+            timestamp: new Date().toISOString(),
+            executionTime: Date.now() - executionStartTime,
+            errorType:
+              error instanceof Error ? error.constructor.name : 'UnknownError',
           };
 
-          const serializedContent = serializeToolResult(
-            errorResponse,
-            toolName,
-            executionStartTime,
-          );
+          // 에러 메시지를 사용자가 이해할 수 있는 형태로 구성
+          const userFriendlyError = `❌ **Tool Execution Failed**
+
+**Tool**: ${toolName}
+**Error**: ${errorMessage}
+**Time**: ${new Date().toLocaleTimeString()}
+**Duration**: ${Date.now() - executionStartTime}ms
+
+Please check the tool configuration or try again.`;
 
           toolResults.push({
             id: createId(),
             assistantId: currentAssistant?.id,
-            role: 'tool',
-            content: serializedContent,
+            role: 'tool', // 에러도 tool role로 유지하되, 내용으로 구분
+            content: JSON.stringify({
+              success: false,
+              error: errorMessage,
+              userMessage: userFriendlyError,
+              details: errorDetails,
+            }),
             tool_call_id: toolCall.id,
             sessionId: currentSession?.id || '',
           });

@@ -34,8 +34,8 @@ export const useAIService = (config?: AIServiceConfig) => {
 
   const submit = useCallback(
     async (
-      messages: Message[], 
-      systemPrompt?: string | (() => Promise<string>)
+      messages: Message[],
+      systemPrompt?: string | (() => Promise<string>),
     ): Promise<Message> => {
       setIsLoading(true);
       setError(null);
