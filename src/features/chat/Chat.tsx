@@ -8,7 +8,7 @@ import {
 import { useAssistantContext } from '@/context/AssistantContext';
 import { useSessionContext } from '@/context/SessionContext';
 import { useChatContext, ChatProvider } from '@/context/ChatContext';
-import { BuiltInToolsSystemPrompt } from '@/context/BuiltInToolContext';
+import { BuiltInToolsSystemPrompt } from '@/features/prompts/BuiltInToolsSystemPrompt';
 import { useResourceAttachment } from '@/context/ResourceAttachmentContext';
 import { useMCPServer } from '@/hooks/use-mcp-server';
 import { getLogger } from '@/lib/logger';

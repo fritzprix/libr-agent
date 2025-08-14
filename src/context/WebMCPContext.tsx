@@ -550,7 +550,6 @@ export function useWebMCPServer<T extends WebMCPServerProxy>(
   const [server, setServer] = useState<T | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  logger.info('useWebMCPServer : ', { loading, error, server, serverStates });
 
   const loadServerProxy = useCallback(async () => {
     try {

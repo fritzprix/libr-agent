@@ -59,6 +59,12 @@ export const useAIService = (config?: AIServiceConfig) => {
           resolvedSystemPrompt = systemPrompt || DEFAULT_SYSTEM_PROMPT;
         }
 
+        logger.info('Submitting messages to AI service', {
+          model,
+          systemPrompt: resolvedSystemPrompt,
+          messageCount: processedMessages.length,
+        });
+
         const stream = serviceInstance.streamChat(processedMessages, {
           modelName: model,
           systemPrompt: resolvedSystemPrompt,
