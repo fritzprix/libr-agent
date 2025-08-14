@@ -8,6 +8,7 @@ import {
 import { useAssistantContext } from '@/context/AssistantContext';
 import { useSessionContext } from '@/context/SessionContext';
 import { useChatContext, ChatProvider } from '@/context/ChatContext';
+import { BuiltInToolsSystemPrompt } from '@/context/BuiltInToolContext';
 import { useResourceAttachment } from '@/context/ResourceAttachmentContext';
 import { useMCPServer } from '@/hooks/use-mcp-server';
 import { getLogger } from '@/lib/logger';
@@ -45,6 +46,7 @@ function Chat({ children }: ChatProps) {
 
   return (
     <ChatProvider>
+      <BuiltInToolsSystemPrompt />
       <div className="h-full w-full font-mono flex flex-col rounded-lg overflow-hidden shadow-2xl">
         {children}
         <ToolCaller />

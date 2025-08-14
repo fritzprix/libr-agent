@@ -91,6 +91,26 @@ synaptic-flow/
 - Use TypeScript interfaces for type definitions.
 - **Do not use `any` in TypeScript.** The lint configuration is extremely strict; always use precise types and interfaces. Use unknown or generics if absolutely necessary, but avoid `any` as much as possible.
 - **Use the centralized logger instead of console.log**: Import `getLogger` from `@/lib/logger` and use context-specific logging (e.g., `const logger = getLogger('ComponentName')`) instead of `console.*` methods for better debugging and log management.
+- **Never use inline import() types in interfaces.** Always use proper import statements at the top of the file instead of `import('../path').Type`. This improves readability, maintainability, and IDE support.
+
+#### ❌ Bad (Inline Import Types)
+```typescript
+interface Config {
+  tools?: import('../mcp-types').MCPTool[];
+  messages: import('@/models/chat').Message[];
+}
+```
+
+#### ✅ Good (Proper Import Statements)
+```typescript
+import type { MCPTool } from '../mcp-types';
+import type { Message } from '@/models/chat';
+
+interface Config {
+  tools?: MCPTool[];
+  messages: Message[];
+}
+```
 
 ### CSS/Styling
 
