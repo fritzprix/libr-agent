@@ -249,11 +249,6 @@ export const AssistantContextProvider = ({
     return currentAssistantRef.current;
   }, []);
 
-  const contextLogger = getLogger('AssistantContext.provider');
-  contextLogger.info('assistant context : ', {
-    assistants: assistants?.length,
-    error,
-  });
 
   const registerEphemeral = useCallback(
     (assistant: Assistant) => {
