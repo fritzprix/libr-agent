@@ -42,6 +42,8 @@
     "@langchain/community": "^0.3.48",
     "@langchain/core": "^0.3.50",
     "@langchain/groq": "^0.2.3",
+    "@mcp-ui/client": "^5.6.2",
+    "@mcp-ui/server": "^5.2.0",
     "@paralleldrive/cuid2": "^2.2.2",
     "@radix-ui/react-alert-dialog": "^1.1.14",
     "@radix-ui/react-collapsible": "^1.1.11",

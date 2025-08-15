@@ -2,7 +2,8 @@ import { useMCPServer } from './use-mcp-server';
 import { useWebMCPTools } from './use-web-mcp';
 import { useBuiltInTools } from '@/context/BuiltInToolContext';
 import { useCallback, useMemo } from 'react';
-import { MCPResponse, MCPTool } from '@/lib/mcp-types';
+import { MCPResponse, MCPTool, MCPResourceContent } from '@/lib/mcp-types';
+import { UIResource } from '@/models/chat';
 import { getLogger } from '@/lib/logger';
 
 const logger = getLogger('useUnifiedMCP');
@@ -29,10 +30,8 @@ export const useUnifiedMCP = () => {
     availableTools: webTools,
     isInitialized: isWebReady,
   } = useWebMCPTools();
-  const {
-    executeToolCall: executeBuiltinTool,
-    availableTools: builtinTools,
-  } = useBuiltInTools();
+  const { executeToolCall: executeBuiltinTool, availableTools: builtinTools } =
+    useBuiltInTools();
 
   // Create lookup map for fast tool type resolution
   const toolTypeMap = useMemo((): Map<string, BackendType> => {
@@ -124,6 +123,39 @@ export const useUnifiedMCP = () => {
           const args = JSON.parse(toolCall.function.arguments);
           const result = await executeWebTool(toolName, args);
 
+          // Check if result is already MCPResponse
+          if (
+            typeof result === 'object' &&
+            result !== null &&
+            'jsonrpc' in result &&
+            (result as MCPResponse).jsonrpc === '2.0'
+          ) {
+            return result as MCPResponse;
+          }
+
+          // Check if result is UIResource
+          if (
+            typeof result === 'object' &&
+            result !== null &&
+            'mimeType' in result &&
+            typeof (result as UIResource).mimeType === 'string'
+          ) {
+            const uiResource = result as UIResource;
+            return {
+              jsonrpc: '2.0',
+              id: toolCall.id,
+              result: {
+                content: [
+                  {
+                    type: 'resource',
+                    resource: uiResource,
+                  } as MCPResourceContent,
+                ],
+              },
+            };
+          }
+
+          // Default text handling for other results
           return {
             jsonrpc: '2.0',
             id: toolCall.id,
@@ -203,7 +235,12 @@ export const useUnifiedMCP = () => {
 
   // Get tool type statistics
   const getToolStats = useCallback(() => {
-    const stats: { tauri: number; web: number; builtin: number; total: number } = {
+    const stats: {
+      tauri: number;
+      web: number;
+      builtin: number;
+      total: number;
+    } = {
       tauri: 0,
       web: 0,
       builtin: 0,

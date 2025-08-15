@@ -1,5 +1,13 @@
 import { MCPTool } from '../lib/mcp-types';
 
+// UIResource interface for MCP-UI integration
+export interface UIResource {
+  uri?: string; // ui://... 형태 권장
+  mimeType: string; // 'text/html' | 'text/uri-list' | 'application/vnd.mcp-ui.remote-dom'
+  text?: string; // inline HTML or remote-dom script
+  blob?: string; // base64-encoded content when used
+}
+
 // MCP 파일 첨부 참조 타입
 export interface AttachmentReference {
   storeId: string; // MCP 파일 저장소 ID
@@ -26,6 +34,7 @@ export interface Message {
   assistantId?: string; // Optional, used for tracking in multi-agent scenarios
   attachments?: AttachmentReference[]; // MCP 기반 파일 첨부 참조로 변경
   tool_use?: { id: string; name: string; input: Record<string, unknown> };
+  uiResource?: UIResource | UIResource[]; // NEW: structured UI resource(s)
   createdAt?: Date; // Added
   updatedAt?: Date; // Added
 }

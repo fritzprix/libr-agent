@@ -595,8 +595,8 @@ impl MCPServerManager {
 
     /// Call a tool on either external or builtin server based on server name
     pub async fn call_tool_unified(&self, server_name: &str, tool_name: &str, args: serde_json::Value) -> MCPResponse {
-        // Check if it's a builtin server (starts with "builtin:")
-        if server_name.starts_with("builtin:") {
+        // Check if it's a builtin server (starts with "builtin.")
+        if server_name.starts_with("builtin.") {
             self.call_builtin_tool(server_name, tool_name, args).await
         } else {
             self.call_tool(server_name, tool_name, args).await

@@ -356,7 +356,7 @@ impl SandboxServer {
 #[async_trait]
 impl BuiltinMCPServer for SandboxServer {
     fn name(&self) -> &str {
-        "builtin:sandbox"
+        "builtin.sandbox"
     }
     
     fn description(&self) -> &str {

@@ -32,7 +32,7 @@ pub trait BuiltinMCPServer: Send + Sync {
 
 ### 2. 구현할 내장 서버들
 
-#### 2.1 Filesystem Server (`builtin:filesystem`)
+#### 2.1 Filesystem Server (`builtin.filesystem`)
 
 - **목적**: 파일 시스템 조작
 - **주요 도구들**:
@@ -43,7 +43,7 @@ pub trait BuiltinMCPServer: Send + Sync {
   - `delete_file`: 파일 삭제 (향후 확장)
 - **접근 제약**: 현재 process의 실행 위치의 하위 디렉토리까지로 범위를 제한
 
-#### 2.2 Sandbox Server (`builtin:sandbox`)
+#### 2.2 Sandbox Server (`builtin.sandbox`)
 
 - **목적**: 코드 실행 (Python/TypeScript)
 - **주요 도구들**:
@@ -62,15 +62,15 @@ pub trait BuiltinMCPServer: Send + Sync {
 ```rust
 pub struct MCPServerManager {
   connections: Arc<Mutex<HashMap<String, MCPConnection>>>,  // 기존 외부 서버
-  builtin_servers: HashMap<String, Box<dyn BuiltinMCPServer>>,  // 새로운 내장 서버
+  builtin.servers: HashMap<String, Box<dyn BuiltinMCPServer>>,  // 새로운 내장 서버
 }
 ```
 
 #### 3.2 통합 API 제공
 
 - `list_all_tools_unified()`: 외부 + 내장 서버의 모든 도구 목록
-- `call_builtin_tool()`: 내장 서버 도구 호출
-- `list_builtin_servers()`: 사용 가능한 내장 서버 목록
+- `call_builtin.tool()`: 내장 서버 도구 호출
+- `list_builtin.servers()`: 사용 가능한 내장 서버 목록
 
 ## 📁 파일 구조
 
@@ -147,9 +147,9 @@ src-tauri/src/
 
 ```rust
 // 내장 서버 관련
-#[tauri::command] async fn list_builtin_tools() -> Vec<MCPTool>
-#[tauri::command] async fn call_builtin_tool(server_name: String, tool_name: String, args: Value) -> MCPResponse
-#[tauri::command] async fn list_builtin_servers() -> Vec<String>
+#[tauri::command] async fn list_builtin.tools() -> Vec<MCPTool>
+#[tauri::command] async fn call_builtin.tool(server_name: String, tool_name: String, args: Value) -> MCPResponse
+#[tauri::command] async fn list_builtin.servers() -> Vec<String>
 
 // 통합 API
 #[tauri::command] async fn list_all_tools_unified() -> Result<Vec<MCPTool>, String>
@@ -164,15 +164,15 @@ src-tauri/src/
 const allTools = await invoke('list_all_tools_unified');
 
 // 파일 읽기
-const fileContent = await invoke('call_builtin_tool', {
-  serverName: 'builtin:filesystem',
+const fileContent = await invoke('call_builtin.tool', {
+  serverName: 'builtin.filesystem',
   toolName: 'read_file',
   args: { path: '/path/to/file.txt' },
 });
 
 // Python 코드 실행
-const pythonResult = await invoke('call_builtin_tool', {
-  serverName: 'builtin:sandbox',
+const pythonResult = await invoke('call_builtin.tool', {
+  serverName: 'builtin.sandbox',
   toolName: 'execute_python',
   args: {
     code: 'print("Hello from Python!")',
@@ -181,8 +181,8 @@ const pythonResult = await invoke('call_builtin_tool', {
 });
 
 // TypeScript 코드 실행
-const tsResult = await invoke('call_builtin_tool', {
-  serverName: 'builtin:sandbox',
+const tsResult = await invoke('call_builtin.tool', {
+  serverName: 'builtin.sandbox',
   toolName: 'execute_typescript',
   args: {
     code: 'console.log("Hello from TypeScript!");',

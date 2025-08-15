@@ -53,3 +53,6 @@ export {
   CompactModelPicker,
   TerminalModelPicker,
 } from '../../features/chat/ModelPicker';
+
+// MCP-UI components
+export { default as UIResourceRenderer } from './UIResourceRenderer';

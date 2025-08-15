@@ -9,12 +9,12 @@ This document shows how the enhanced system prompt appears to the AI Assistant, 
 
 You have access to powerful built-in tools that can help you assist users with various tasks. These tools are secure, fast, and require no external setup.
 
-## 🔧 Filesystem Tools (builtin:filesystem)
+## 🔧 Filesystem Tools (builtin.filesystem)
 
 **Available Operations:**
-- `builtin:filesystem__read_file` - Read file contents safely
-- `builtin:filesystem__write_file` - Write content to files (creates directories as needed)
-- `builtin:filesystem__list_directory` - List directory contents with metadata
+- `builtin.filesystem__read_file` - Read file contents safely
+- `builtin.filesystem__write_file` - Write content to files (creates directories as needed)
+- `builtin.filesystem__list_directory` - List directory contents with metadata
 
 **Security Features:**
 - Access restricted to current working directory and subdirectories
@@ -31,20 +31,20 @@ You have access to powerful built-in tools that can help you assist users with v
 **Example Usage:**
 ```
 // Read package.json to understand project structure
-builtin:filesystem__read_file: {"path": "package.json"}
+builtin.filesystem__read_file: {"path": "package.json"}
 
 // List files in src directory
-builtin:filesystem__list_directory: {"path": "src"}
+builtin.filesystem__list_directory: {"path": "src"}
 
 // Write a new configuration file
-builtin:filesystem__write_file: {"path": "config/new-settings.json", "content": "{\"setting\": \"value\"}"}
+builtin.filesystem__write_file: {"path": "config/new-settings.json", "content": "{\"setting\": \"value\"}"}
 ```
 
-## 🐍 Code Execution Tools (builtin:sandbox)
+## 🐍 Code Execution Tools (builtin.sandbox)
 
 **Available Runtimes:**
-- `builtin:sandbox__execute_python` - Execute Python code in isolated environment
-- `builtin:sandbox__execute_typescript` - Execute TypeScript/JavaScript code
+- `builtin.sandbox__execute_python` - Execute Python code in isolated environment
+- `builtin.sandbox__execute_typescript` - Execute TypeScript/JavaScript code
 
 **Security Features:**
 - Isolated temporary directory execution
@@ -63,13 +63,13 @@ builtin:filesystem__write_file: {"path": "config/new-settings.json", "content": 
 **Example Usage:**
 ```
 // Data analysis with Python
-builtin:sandbox__execute_python: {
+builtin.sandbox__execute_python: {
   "code": "import json\ndata = [1,2,3,4,5]\nprint(f'Average: {sum(data)/len(data)}')",
   "timeout": 10
 }
 
 // TypeScript calculations
-builtin:sandbox__execute_typescript: {
+builtin.sandbox__execute_typescript: {
   "code": "const nums = [1,2,3,4,5];\nconsole.log('Sum:', nums.reduce((a,b) => a+b, 0));",
   "timeout": 5
 }
@@ -151,9 +151,9 @@ With this enhanced system prompt, the AI Assistant now:
 ```
 I'll help you analyze your React project structure. Let me start by exploring your project files.
 
-[Uses builtin:filesystem__read_file to read package.json]
-[Uses builtin:filesystem__list_directory to explore src/ directory]
-[Uses builtin:filesystem__read_file to read key files like App.tsx]
+[Uses builtin.filesystem__read_file to read package.json]
+[Uses builtin.filesystem__list_directory to explore src/ directory]
+[Uses builtin.filesystem__read_file to read key files like App.tsx]
 
 Based on my analysis, your project has the following structure:
 - React 18 with TypeScript
@@ -171,8 +171,8 @@ Would you like me to analyze any specific part in more detail?
 ```
 I'll create a robust API error handling utility for your project. Let me write this to your utils directory.
 
-[Uses builtin:filesystem__write_file to create src/utils/api-error-handler.ts]
-[Uses builtin:sandbox__execute_typescript to test the utility with examples]
+[Uses builtin.filesystem__write_file to create src/utils/api-error-handler.ts]
+[Uses builtin.sandbox__execute_typescript to test the utility with examples]
 
 I've created `src/utils/api-error-handler.ts` with comprehensive error handling. Here's how it works:
 

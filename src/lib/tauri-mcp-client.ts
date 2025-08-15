@@ -190,7 +190,7 @@ export class TauriMCPClient {
   async listBuiltinServers(): Promise<string[]> {
     try {
       logger.debug('Listing builtin servers');
-      const servers = (await invoke('list_builtin_servers')) as string[];
+      const servers = (await invoke('list_builtin.servers')) as string[];
       logger.debug('Builtin servers listed', {
         serverCount: servers.length,
         servers,
@@ -220,7 +220,7 @@ export class TauriMCPClient {
 
   /**
    * 내장 서버의 도구를 호출합니다
-   * @param serverName 내장 서버 이름 (예: "builtin:filesystem")
+   * @param serverName 내장 서버 이름 (예: "builtin.filesystem")
    * @param toolName 도구 이름
    * @param arguments_ 도구 인수
    * @returns 도구 실행 결과

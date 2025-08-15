@@ -86,8 +86,8 @@ Key point: the providers connect the UI to multiple MCP tool sources so the chat
   - UI: `SessionFilesPopover` (added in `Chat.tsx`) shows session file list and file preview with a dialog to view contents.
 
 - Built-in Servers (Rust):
-  - Filesystem (`builtin:filesystem`): safe file reads/writes and directory listing with `SecurityValidator` and max file size limits.
-  - Sandbox (`builtin:sandbox`): executes Python/TypeScript code in a temp dir with timeouts and environment isolation.
+  - Filesystem (`builtin.filesystem`): safe file reads/writes and directory listing with `SecurityValidator` and max file size limits.
+  - Sandbox (`builtin.sandbox`): executes Python/TypeScript code in a temp dir with timeouts and environment isolation.
   - Registry: `src-tauri/src/mcp/builtin/mod.rs` provides `list_all_tools` and `call_tool` for unified listing and calls.
 
 - Chat & System Prompt:
@@ -109,7 +109,7 @@ Key point: the providers connect the UI to multiple MCP tool sources so the chat
 2. User opens a chat and triggers a tool call
    - UI (Tool Caller) constructs an MCP tool call object `{ id, type:'function', function: { name, arguments } }`.
    - `use-unified-mcp` or `BuiltInToolContext.executeToolCall` determines the backend:
-     - If tool name starts with `builtin:` → route to `tauriMCPClient.callBuiltinTool` (Tauri backend builtin server).
+     - If tool name starts with `builtin.` → route to `tauriMCPClient.callBuiltinTool` (Tauri backend builtin server).
      - If tool belongs to web worker tools → `WebMCP` executeCall.
      - Otherwise → execute via external MCP server managed by `MCPServerProvider`.
    - Result (standard MCPResponse) returns to UI and is optionally stored as a tool result message in chat history.
@@ -119,8 +119,8 @@ Key point: the providers connect the UI to multiple MCP tool sources so the chat
    - `BuiltInToolsSystemPrompt` reads session files to include metadata/previews in the assistant system prompt.
 
 4. Executing sandboxed code
-   - Frontend calls a tool like `builtin:sandbox__execute_python` with code and timeout.
-   - Tauri receives `call_builtin_tool`, the builtin sandbox writes code in a temp dir, runs `python3` (or ts-node), enforces timeout, returns output as MCPResponse.
+   - Frontend calls a tool like `builtin.sandbox__execute_python` with code and timeout.
+   - Tauri receives `call_builtin.tool`, the builtin sandbox writes code in a temp dir, runs `python3` (or ts-node), enforces timeout, returns output as MCPResponse.
 
 ---
 

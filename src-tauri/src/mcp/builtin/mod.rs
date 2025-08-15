@@ -9,7 +9,7 @@ pub mod utils;
 /// Trait for built-in MCP servers
 #[async_trait]
 pub trait BuiltinMCPServer: Send + Sync {
-    /// Server name (e.g., "builtin:filesystem")
+    /// Server name (e.g., "builtin.filesystem")
     fn name(&self) -> &str;
     
     /// Server description

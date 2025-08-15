@@ -1,209 +1,90 @@
-# Refactoring Plan — MCP-UI / UIResource Integration
+# Refactoring Plan — Integrate `@mcp-ui/client` for UIResource rendering
 
-목표: 이 저장소에 MCP-UI(웹에 전달되는 UI 리소스: HTML, 외부 URL, RemoteDOM)를 안전하게 수용하고 렌더링할 수 있게 구조와 흐름을 정비합니다.
+목표: 외부 `@mcp-ui/client` 패키지를 표준 renderer로 도입하여 MCP 서버가 반환하는 UI 리소스(`UIResource`)를 안전하게 렌더링하고, 액션 이벤트를 호스트(MCP)로 전달할 수 있도록 전체 흐름을 정비합니다.
 
-이 문서는 fresh dev가 보고 바로 작업할 수 있도록 구체적인 파일 목록, 수정 위치, 타입 변화, 코드 스케치, 테스트 및 검증 절차를 모두 포함합니다.
+요구사항 체크리스트
 
-요약 체크리스트
+- 프로젝트 종속성에 `@mcp-ui/client`를 추가하고 빌드/타입 체크가 통과해야 합니다.
+- Message 모델과 MCP 타입을 `@mcp-ui` 스펙과 호환되도록 조정(필요시 매핑 유틸 추가).
+- `ToolCaller`가 MCP 응답에 포함된 `resource` 항목을 구조적으로 보존하여 `Message.uiResource`에 넣어야 합니다.
+- `use-unified-mcp`, `use-web-mcp`, `use-mcp-server`는 `UIResource`/`MCPResponse`를 손상시키지 않고 전달.
+- `MessageBubbleRouter`는 `uiResource`를 감지하면 `@mcp-ui/client`의 `UIResourceRenderer`(React)로 라우팅.
+- `UI`에서 발생한 액션(onUIAction)은 적절한 훅(예: `useUnifiedMCP`)을 통해 도구 호출이나 Intent로 변환.
+- 보안: iframe sandbox, origin 검증, X-Frame-Options fallback을 구현.
+- 테스트: 단위 + E2E 스모크(모의 web tool)를 추가.
 
-- Message 모델에 구조화된 UI 리소스 필드 추가 (`uiResource` 또는 `resources`).
-- MCP 응답 수집/프록시에서 `resource` 타입을 감지해 Message에 보존.
-- `ToolCaller`가 tool 실행 결과를 문자열로 직렬화하지 않고 구조화 필드로 저장하도록 변경.
-- `use-unified-mcp`, `use-web-mcp`, `use-mcp-server` 훅에서 UIResource/MCPResponse를 손상시키지 않고 전달.
-- UI 렌더러 컴포넌트(`UIResourceRenderer`) 추가(iframe 기반의 안전한 렌더러, `text/html`/`text/uri-list` 우선).
-- `MessageBubbleRouter`에 UIResource 분기 추가.
-- onUIAction 이벤트(iframe/postMessage)를 호스트로 전파할 수 있는 경로 마련.
-- 보안 및 엣지케이스 문서화(iframe sandbox, X-Frame-Options fallback).
+우선순위(권장)
 
-우선순위
+1. 패키지 설치 및 타입 확인
+2. 타입(모델) 및 MCP 타입 정렬/매핑 유틸 추가
+3. `ToolCaller` 변경 — 구조화된 UIResource 보존
+4. `MessageBubbleRouter`에서 `UIResourceRenderer` 사용(단계적 통합)
+5. onUIAction 핸들러 연결 및 보안 검증
+6. 테스트 및 문서화
 
-1. 타입 및 MCP 타입 확장 (model + mcp-types).
-2. MCP 프록시 / unified 훅에서 resource 보존 보장.
-3. `ToolCaller` 변경(핵심 실행 흐름) — 구조화된 메시지 생성.
-4. `UIResourceRenderer` 컴포넌트 작성 및 라우팅 통합.
-5. 테스트/예제 및 보안 검토.
+설치 (빠르게 적용하려면)
 
-핵심 개념 (간단)
+```bash
+pnpm add @mcp-ui/client@latest
+# 또는 프로젝트 정책에 따라 특정 버전 핀
+# pnpm add @mcp-ui/client@1.2.3
+pnpm install
+pnpm run build
+```
 
-- UIResource: 서버가 반환하는 UI 리소스 객체(문서 상의 `UIResource` 스펙을 따름).
-- Message 내 `uiResource` 필드: 렌더러가 안전히 액세스할 수 있는 구조체 필드.
+파일별 구체 작업 지침
 
-파일별 변경 지침 (정확한 위치와 예시)
+1. `src/models/chat.ts` — 타입 정렬 및 `UIResource` 매핑
 
-1. `src/models/chat.ts` — 타입 확장
-
-- 변경 목적: Message가 구조화된 UI 리소스를 보관할 수 있어야 함.
-- 변경 내용 (추가):
+- 목표: 앱 내부 `UIResource` 타입이 `@mcp-ui` 스펙과 호환되도록 정의합니다.
+- 변경 (권장 위치: `src/models/chat.ts` 상단에 추가)
 
 ```ts
-// 새 타입 정의 (예시)
+// src/models/chat.ts
 export interface UIResource {
-  uri?: string; // ui://... 형태 권장
+  uri?: string; // ui://... 식별자
   mimeType: string; // 'text/html' | 'text/uri-list' | 'application/vnd.mcp-ui.remote-dom'
-  text?: string; // inline HTML or remote-dom script
-  blob?: string; // base64-encoded content when used
+  text?: string;
+  blob?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface Message {
-  // ...existing fields...
-  content: string; // 요약/텍스트 표현은 유지
-  uiResource?: UIResource | UIResource[]; // NEW: structured resource(s)
-}
-```
-
-주의: `content`는 사용자/도구 친화적인 텍스트 요약을 담도록 유지하되, 실제 렌더링 가능한 UI는 `uiResource`에서 읽습니다.
-
-2. `src/lib/mcp-types.ts` (또는 MCP 타입 정의가 있는 파일) — MCPResponse content union 확장
-
-- 변경 목적: `MCPResponse.result.content` 항목이 `resource` 타입을 포함할 수 있도록 함.
-- 제안 스니펫:
-
-```ts
-type MCPContentItem =
-	| { type: 'text'; text: string }
-	| { type: 'resource'; resource: UIResource }
-	| { type: 'file'; ... };
-```
-
-3. `src/lib/web-mcp/mcp-proxy.ts` 및 Tauri/MCP 컨텍스트 — 프록시/컨텍스트에서 resource 보존
-
-- 변경 목적: 백엔드(tauri/web/builtin)에서 도착한 MCP 응답을 파싱할 때 `resource` 항목을 감지하면 Message에 매핑.
-- 구현 포인트:
-  - `mcp-proxy`가 MCP 응답을 Message로 변환할 때 `result.content`의 `{ type:'resource' }` 항목을 찾아 `message.uiResource`로 매핑.
-  - `text/uri-list`의 경우 첫번째 유효한 `http/https` URL을 선택(문서 규칙과 일치).
-  - base64 `blob` 처리 시 `uiResource.blob`으로 보존.
-
-4. `src/features/chat/ToolCaller.tsx` — 가장 중요한 변경
-
-- 현재: `serializeToolResult`가 항상 문자열(JSON)으로 직렬화하고, 생성되는 `Message.content`에 문자열을 넣음.
-- 문제: UIResource 구조가 문자열로 사라짐.
-- 변경 목표: `serializeToolResult`가 문자열만 반환하지 않고 구조화된 오브젝트를 반환하도록 변경(아래 예시)
-
-예시 변경(요약):
-
-```ts
-// 기존: returns string
-const serialized = serializeToolResult(mcpResponse, toolName, start);
-
-// 제안: serialized가 구조체를 반환
-type SerializedToolResult = {
-  success: boolean;
-  text?: string;
+  // ...existing fields
+  content: string;
   uiResource?: UIResource | UIResource[];
-  metadata: Record<string, unknown>;
-};
-
-// 메시지 생성
-const msg: Message = {
-  id: createId(),
-  sessionId: currentSession?.id || '',
-  role: 'tool',
-  content:
-    serialized.text ||
-    (serialized.uiResource
-      ? `[UIResource: ${serialized.uiResource[0]?.uri || 'resource'}]`
-      : ''),
-  uiResource: serialized.uiResource,
-  tool_call_id: toolCall.id,
-};
-```
-
-핵심: `ToolCaller`는 `mcpResponse`가 resource 항목을 포함하면 이를 구조체로 보존해 `submit` 합니다(직렬 JSON string 대신 구조화된 필드로).
-
-5. `src/hooks/use-unified-mcp.ts` — web-branch에서 반환 처리 강화
-
-- 현재: web 툴 결과를 텍스트로 감싸 `MCPResponse`의 `result.content`로 넣음.
-- 변경 목표: 만약 `executeWebTool`(WebMCP)의 반환값이 이미 `MCPResponse`거나 `UIResource`라면 그대로 사용하도록 처리.
-
-요지:
-
-- `executeToolCall`에서 `toolType === 'web'` 일 때
-  - `result`가 이미 `MCPResponse`이면 그대로 반환
-  - `result`가 `UIResource` 형태이면 `{ jsonrpc:'2.0', id: toolCall.id, result: { content: [ { type: 'resource', resource: result } ] } }` 로 래핑 후 반환
-  - 그 외엔 기존 텍스트 포맷 유지
-
-6. `src/hooks/use-web-mcp.ts` 및 `WebMCPProxy` 설계 권장
-
-- 목적: `executeCall`/`callTool`이 가능한 한 `MCPResponse`나 `UIResource`를 반환하도록 일관성 보장.
-- 권장: WebMCP 쪽에서 실제 tool 구현자가 UIResource를 반환하면 상위 훅이 이를 변경하지 않도록 문서화 및 타입 보강.
-
-7. `src/features/chat/MessageBubbleRouter.tsx` — 렌더러 라우팅 추가
-
-- 변경: 현재는 tool_calls / tool role / content 순으로 라우팅합니다. 여기에서 `message.uiResource`를 먼저 검사하고 `UIResourceRenderer`로 라우팅하세요.
-
-예시:
-
-```tsx
-if (message.uiResource) {
-	return <UIResourceRenderer resource={message.uiResource} onUIAction={...} />;
 }
 ```
 
-8. 새 컴포넌트: `src/components/ui/UIResourceRenderer.tsx`
+- 주의: `@mcp-ui/client`의 타입이 프로젝트의 타입 시스템(경로 alias 등)과 일치하지 않으면 매핑 유틸을 만듭니다.
 
-- 역할: `UIResource` 객체를 받아 mimeType에 따라 안전하게 렌더링.
-- 우선 지원: `text/html` (iframe srcDoc), `text/uri-list` (iframe src), `application/vnd.mcp-ui.remote-dom` (플래그로 remote-dom 지원 - 우선은 placeholder 또는 host 라이브러리 연계).
-- props: `resource`, `onUIAction?: (action)=>void`, `supportedContentTypes?`, `iframeProps?`, `autoResizeIframe?`.
-- 보안: iframe에 `sandbox` 속성 기본 적용(예: `sandbox="allow-scripts"`는 기본적으로 차단; 필요 시 최소 권한만 열기). 외부 URL 실패시 fallback으로 링크 제공.
+2. `src/lib/mcp-types.ts` — MCPResponse content union 확장
 
-간단한 구현 가이드라인 (iframe 우선)
-
-- `text/html`: use `<iframe sandbox="allow-same-origin" srcDoc={resource.text}>` (검토: allow-same-origin 는 보안상 주의 필요)
-- `text/uri-list`: parse first http/https URL and use `<iframe src={url} sandbox=... />`. X-Frame-Options 차단 시 새 탭 링크로 대체.
-- `remote-dom`: 초기 구현은 `console.warn('remote-dom not yet supported')` 후 안전한 placeholder 렌더링; 이후 `@mcp-ui/client` 통합 권장.
-
-9. onUIAction 이벤트 경로
-
-- UI에서 발생한 action (예: tool call, intent, prompt, notify, link)은 iframe → parent postMessage로 전달됩니다. `UIResourceRenderer`에서 이를 리스닝하고 prop `onUIAction`을 호출하여 호스트 컴포넌트(예: ChatContext / AssistantContext / useUnifiedMCP)를 통해 실제 도구 호출로 전환합니다.
-
-10. 보안 체크리스트
-
-- iframe sandbox 정책 명시 및 최소 권한 원칙 적용
-- 외부 URL은 X-Frame-Options 검사 및 fallback 처리
-- remote-dom 스크립트는 호스트에서 검증/필터링 필요
-- base64 blob의 최대 허용 크기 정책(과도한 메모리 사용 방지)
-
-11. 테스트 및 스모크 시나리오
-
-- 단위 테스트
-  - `ToolCaller`가 `mcpResponse`에 resource가 포함될 때 `message.uiResource`를 채워 submit 하는지 확인
-  - `use-unified-mcp`가 web tool의 UIResource를 올바르게 MCPResponse로 래핑/전달하는지 테스트
-
-- 통합 스모크
-  - 샘플 web tool(모의)을 만들어 UIResource `{ mimeType:'text/html', text:'<h1>Hello</h1>' }` 반환 → end-to-end로 Chat에 표시되는지 확인
-  - 외부 URL 리소스가 X-Frame-Options로 차단될 때 링크로 열린다는 것을 확인
-
-12. Acceptance criteria (완료 조건)
-
-- Message 모델에 `uiResource` 필드 추가되어 타입체크 통과.
-- Tool 호출(tauri/web/builtin) 결과로 UIResource가 Message로 전파되고, `MessageBubbleRouter`가 이를 감지해 `UIResourceRenderer`에서 iframe으로 렌더.
-- UI에서 발생한 액션(onUIAction)은 호스트로 전달되고, 필요한 경우 통합된 MCP 호출로 변환 가능.
-
-13. 커밋/PR 가이드
-
-- 각 논리 단계를 별도 커밋으로 나눕니다: (1) 타입 확장, (2) 프록시/훅 변경, (3) ToolCaller 변경, (4) UI 렌더러 추가, (5) 테스트/문서.
-- PR 설명에 변경 파일, 이유, 수동 테스트 절차(스모크 케이스)을 명시하세요.
-
-14. 작업 우선순위 및 예상 소요
-
-- 타입 + mcp-types 변경: 1-2시간
-- 프록시/훅 수정: 2-4시간
-- `ToolCaller` 리팩토링: 2-3시간
-- `UIResourceRenderer`(첫 버전) + 라우팅: 2-4시간
-- 테스트+문서: 1-2시간
-
-부록: 주요 코드 스니펫 (요약)
-
-- Message 타입 확장 (한 줄 요약)
+- MCP 응답의 `result.content` 항목이 `{ type:'resource', resource: UIResource }`를 포함할 수 있도록 타입을 확장합니다.
 
 ```ts
-uiResource?: UIResource | UIResource[];
+// 예시
+export type MCPContentItem =
+  | { type: 'text'; text: string }
+  | { type: 'resource'; resource: UIResource }
+  | { type: 'file' /* ... */ };
 ```
 
-- ToolCaller 변경 핵심 (메시지 생성 부분)
+3. `src/features/chat/ToolCaller.tsx` — 구조화된 UIResource 보존
+
+- 현재: `serializeToolResult`가 모든 것을 문자열로 만든 후 `Message.content`로 저장합니다. 이 부분을 고칩니다.
+- 변경 포인트:
+  - `serializeToolResult`가 `SerializedToolResult` 객체({ text?, uiResource?, metadata })를 반환하게 수정
+  - `toolResults.push(...)` 시 `uiResource` 필드를 포함한 구조화된 `Message` 객체 생성
 
 ```ts
-const serialized = serializeToolResult(mcpResponse, toolName, start);
+// ToolCaller 내 변경 요지
+const serialized = serializeToolResult(
+  mcpResponse,
+  toolName,
+  executionStartTime,
+);
+
 toolResults.push({
   id: createId(),
   assistantId: currentAssistant?.id,
@@ -215,4 +96,132 @@ toolResults.push({
 });
 ```
 
-끝으로: 제가 이 변경을 실제로 적용하여 패치를 만들고 빌드/스모크를 돌려드릴 수 있습니다. 어느 단계까지 자동으로 적용해 드릴까요? (추천: 우선 타입 + ToolCaller + MessageBubbleRouter + 간단한 `UIResourceRenderer`를 적용한 PR)
+- 권장: `mcpResponse.result.content`를 순회하여 `type==='resource'` 항목을 모두 `uiResource[]`로 수집.
+
+4. `src/hooks/use-unified-mcp.ts` & `src/hooks/use-web-mcp.ts` — web-branch 처리
+
+- 목표: web 툴이 `UIResource`를 반환하면 이를 적절한 `MCPResponse`로 래핑하거나 그대로 전달.
+- 핵심: web tool 결과를 검사하는 헬퍼 추가
+
+```ts
+const looksLikeUIResource = (v: unknown): v is UIResource =>
+  !!v && typeof v === 'object' && 'mimeType' in (v as any);
+
+// executeToolCall의 web branch
+const result = await executeWebTool(toolName, args);
+if (isMCPResponse(result)) return result;
+if (looksLikeUIResource(result)) {
+  return {
+    jsonrpc: '2.0',
+    id: toolCall.id,
+    result: { content: [{ type: 'resource', resource: result as UIResource }] },
+  } as MCPResponse;
+}
+// fallback: wrap as text
+```
+
+- 또한 `use-web-mcp.ts`의 `executeCall` 시그니처에 `Promise<MCPResponse | UIResource | string>` 등 명시적 타입 주석을 추가하면 좋습니다.
+
+5. `src/lib/web-mcp/mcp-proxy.ts` 및 Tauri MCP 경로 — Message 매핑
+
+- MCP 프록시가 MCPResponse를 Message로 변환할 때 `content`에서 `resource` 항목을 찾아 `message.uiResource`로 매핑합니다.
+- `text/uri-list`의 경우 첫 유효 URL만 사용. base64 blob은 `uiResource.blob`으로 보존.
+
+6. `src/features/chat/MessageBubbleRouter.tsx` — `UIResourceRenderer` 라우팅
+
+- `MessageBubbleRouter` 최상단에 `message.uiResource` 검사 추가. React import 방식으로 `@mcp-ui/client`의 `UIResourceRenderer`를 사용합니다.
+
+예시 변경:
+
+```tsx
+import { UIResourceRenderer } from '@mcp-ui/client';
+
+if (message.uiResource) {
+  const resource = Array.isArray(message.uiResource)
+    ? message.uiResource[0]
+    : message.uiResource;
+  return (
+    <UIResourceRenderer
+      resource={resource}
+      onUIAction={(action) => handleUIAction(action, message)}
+    />
+  );
+}
+```
+
+- `handleUIAction`은 아래에서 설명할 onUIAction → MCP 호출 변환 로직과 연결합니다.
+
+7. onUIAction 핸들링 (iframe → host)
+
+- `@mcp-ui/client`의 `onUIAction` 이벤트를 받아 `useUnifiedMCP.executeToolCall`이나 ChatContext의 `submit`로 변환합니다.
+- 예시 handler:
+
+```ts
+const handleUIAction = async (action, message) => {
+  switch (action.type) {
+    case 'tool':
+      await executeToolCall({
+        id: createId(),
+        type: 'function',
+        function: {
+          name: action.payload.toolName,
+          arguments: JSON.stringify(action.payload.params),
+        },
+      });
+      break;
+    case 'intent':
+      // map to assistant intent handler
+      break;
+    case 'prompt':
+      // create new message with content = action.payload.prompt
+      break;
+    case 'link':
+      window.open(action.payload.url, '_blank');
+      break;
+    default:
+      console.warn('Unknown UI action', action);
+  }
+};
+```
+
+- 메시지와 연동된 비동기 응답이 필요하면 `message.id`를 포함해 `executeToolCall` 혹은 MCP proxy에 콜백 등록.
+
+8. 보안 권장사항
+
+- iframe sandbox 설정: 가능한 한 최소 권한 사용(예: `sandbox=""` 또는 `sandbox="allow-scripts"`를 신중히 결정). `allow-same-origin`은 필요 시에만 사용.
+- postMessage 처리: origin 검증, payload 스키마 검증
+
+```ts
+window.addEventListener('message', (ev) => {
+  if (ev.origin !== expectedOrigin) return;
+  // validate ev.data shape
+});
+```
+
+- 외부 URL(embed) 실패(X-Frame-Options) 시 fallback: 링크로 열기. 사용자에게 경고 표시.
+- base64 blob/대용량 컨텐츠는 서버/클라이언트에서 size limit를 적용.
+
+9. 테스트 계획
+
+- 단위 테스트
+  - `ToolCaller`가 `mcpResponse`의 resource를 `Message.uiResource`로 변환하는지 확인
+  - `use-unified-mcp`가 web tool의 `UIResource`를 적절히 래핑하는지 확인
+- 통합 스모크
+  - Mock web tool을 만들어 UIResource text/html 반환 → Chat에 iframe으로 렌더되는지 확인
+  - iframe -> parent postMessage로 tool 호출이 트리거되어 `useUnifiedMCP`가 호출되는지 확인
+
+10. PR/커밋 가이드
+
+- 커밋 분리: (1) deps 설치, (2) 타입 변경, (3) ToolCaller + 훅 변경, (4) 라우팅 + UI 통합, (5) 테스트
+- PR 본문: 변경 요약, 수동 스모크 테스트 절차, 보안/인수 조건 명시
+
+작업 체크포인트(제가 패치로 적용 가능)
+
+- 빠른 적용 권장 (제가 적용 시 순서):
+  1. `pnpm add @mcp-ui/client` 및 빌드 확인
+  2. `src/models/chat.ts` 타입 추가 + `src/lib/mcp-types.ts` 확장
+  3. `ToolCaller.tsx` 수정하여 구조화된 `uiResource` 보존
+  4. `MessageBubbleRouter.tsx`에서 `UIResourceRenderer` 사용
+  5. 간단한 mocked tool로 E2E smoke 확인
+
+원하시면 제가 위 1~4를 패치로 적용하고 빌드 및 간단한 스모크를 실행해 드리겠습니다. 어느 범위를 적용할까요? (추천: 1~4 전부)
