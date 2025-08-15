@@ -180,6 +180,48 @@ fn validate_tool_schema(tool: mcp::MCPTool) -> Result<(), String> {
     mcp::MCPServerManager::validate_tool_schema(&tool).map_err(|e| e.to_string())
 }
 
+// Built-in MCP server commands
+
+#[tauri::command]
+fn list_builtin_servers() -> Vec<String> {
+    get_mcp_manager().list_builtin_servers()
+}
+
+#[tauri::command]
+fn list_builtin_tools() -> Vec<mcp::MCPTool> {
+    get_mcp_manager().list_builtin_tools()
+}
+
+#[tauri::command]
+async fn call_builtin_tool(
+    server_name: String,
+    tool_name: String,
+    arguments: serde_json::Value,
+) -> mcp::MCPResponse {
+    get_mcp_manager()
+        .call_builtin_tool(&server_name, &tool_name, arguments)
+        .await
+}
+
+#[tauri::command]
+async fn list_all_tools_unified() -> Result<Vec<mcp::MCPTool>, String> {
+    get_mcp_manager()
+        .list_all_tools_unified()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn call_tool_unified(
+    server_name: String,
+    tool_name: String,
+    arguments: serde_json::Value,
+) -> mcp::MCPResponse {
+    get_mcp_manager()
+        .call_tool_unified(&server_name, &tool_name, arguments)
+        .await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Set up custom panic handler for better error reporting
@@ -224,7 +266,12 @@ pub fn run() {
                 check_all_servers_status,
                 list_all_tools,
                 get_validated_tools,
-                validate_tool_schema
+                validate_tool_schema,
+                list_builtin_servers,
+                list_builtin_tools,
+                call_builtin_tool,
+                list_all_tools_unified,
+                call_tool_unified
             ])
             .setup(|_app| {
                 println!("🚀 SynapticFlow initializing...");

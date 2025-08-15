@@ -1,4 +1,6 @@
 import type { ModelInfo } from '../llm-config-manager';
+import type { MCPTool } from '../mcp-types';
+import type { Message } from '@/models/chat';
 
 export interface AIServiceConfig {
   timeout?: number;
@@ -7,6 +9,7 @@ export interface AIServiceConfig {
   defaultModel?: string;
   maxTokens?: number;
   temperature?: number;
+  tools?: MCPTool[];
 }
 
 export enum AIServiceProvider {
@@ -34,11 +37,11 @@ export class AIServiceError extends Error {
 
 export interface IAIService {
   streamChat(
-    messages: import('@/models/chat').Message[],
+    messages: Message[],
     options?: {
       modelName?: string;
       systemPrompt?: string;
-      availableTools?: import('../mcp-types').MCPTool[];
+      availableTools?: MCPTool[];
       config?: AIServiceConfig;
     },
   ): AsyncGenerator<string, void, void>;

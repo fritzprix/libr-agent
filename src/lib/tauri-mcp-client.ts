@@ -180,6 +180,129 @@ export class TauriMCPClient {
       throw error;
     }
   }
+
+  // Built-in MCP server methods
+
+  /**
+   * 사용 가능한 내장 서버 목록을 조회합니다
+   * @returns 내장 서버 이름 배열
+   */
+  async listBuiltinServers(): Promise<string[]> {
+    try {
+      logger.debug('Listing builtin servers');
+      const servers = (await invoke('list_builtin_servers')) as string[];
+      logger.debug('Builtin servers listed', {
+        serverCount: servers.length,
+        servers,
+      });
+      return servers;
+    } catch (error) {
+      logger.error('Failed to list builtin servers', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 내장 서버의 모든 도구 목록을 조회합니다
+   * @returns 내장 서버 도구 목록
+   */
+  async listBuiltinTools(): Promise<MCPTool[]> {
+    try {
+      logger.debug('Listing builtin tools');
+      const tools = (await invoke('list_builtin_tools')) as MCPTool[];
+      logger.debug('Builtin tools listed', { toolCount: tools.length });
+      return tools;
+    } catch (error) {
+      logger.error('Failed to list builtin tools', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 내장 서버의 도구를 호출합니다
+   * @param serverName 내장 서버 이름 (예: "builtin:filesystem")
+   * @param toolName 도구 이름
+   * @param arguments_ 도구 인수
+   * @returns 도구 실행 결과
+   */
+  async callBuiltinTool(
+    serverName: string,
+    toolName: string,
+    arguments_: Record<string, unknown>,
+  ): Promise<MCPResponse> {
+    try {
+      logger.debug('Calling builtin tool', {
+        serverName,
+        toolName,
+        arguments: arguments_,
+      });
+      const result = (await invoke('call_builtin_tool', {
+        serverName,
+        toolName,
+        arguments: arguments_,
+      })) as MCPResponse;
+      logger.debug('Builtin tool call completed', {
+        serverName,
+        toolName,
+        result,
+      });
+      return result;
+    } catch (error) {
+      logger.error('Failed to call builtin tool', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 외부 + 내장 서버의 모든 도구 목록을 조회합니다 (통합 API)
+   * @returns 모든 도구 목록
+   */
+  async listAllToolsUnified(): Promise<MCPTool[]> {
+    try {
+      logger.debug('Listing all tools (unified)');
+      const tools = (await invoke('list_all_tools_unified')) as MCPTool[];
+      logger.debug('All tools listed (unified)', { toolCount: tools.length });
+      return tools;
+    } catch (error) {
+      logger.error('Failed to list all tools (unified)', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 외부 또는 내장 서버의 도구를 자동으로 라우팅하여 호출합니다 (통합 API)
+   * @param serverName 서버 이름
+   * @param toolName 도구 이름
+   * @param arguments_ 도구 인수
+   * @returns 도구 실행 결과
+   */
+  async callToolUnified(
+    serverName: string,
+    toolName: string,
+    arguments_: Record<string, unknown>,
+  ): Promise<MCPResponse> {
+    try {
+      logger.debug('Calling tool (unified)', {
+        serverName,
+        toolName,
+        arguments: arguments_,
+      });
+      const result = (await invoke('call_tool_unified', {
+        serverName,
+        toolName,
+        arguments: arguments_,
+      })) as MCPResponse;
+      logger.debug('Tool call completed (unified)', {
+        serverName,
+        toolName,
+        result,
+      });
+      return result;
+    } catch (error) {
+      logger.error('Failed to call tool (unified)', error);
+      throw error;
+    }
+  }
 }
 
 export const tauriMCPClient = new TauriMCPClient();
