@@ -152,10 +152,6 @@ synaptic-flow/
 └── vite.config.ts             # Vite configuration
 ```
 
-## 📚 Documentation
-
-For detailed information about the project, including setup, API reference, and contribution guidelines, please see our **[full documentation here](./docs/README.md)**.
-
 ## 🚀 Getting Started
 
 Ready to use SynapticFlow? Here's how to get up and running:
