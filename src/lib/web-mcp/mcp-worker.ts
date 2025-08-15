@@ -41,26 +41,10 @@ async function loadServers(): Promise<void> {
     log.debug('Loading MCP servers');
 
     // Load all servers
-    const [calculatorModule, filesystemModule, contentStoreModule] =
+    const [contentStoreModule] =
       await Promise.allSettled([
-        import('./modules/calculator'),
-        import('./modules/filesystem'),
         import('./modules/content-store'),
       ]);
-
-    if (calculatorModule.status === 'fulfilled') {
-      calculatorServer = calculatorModule.value.default;
-      log.debug('Calculator server loaded');
-    } else {
-      log.error('Failed to load calculator server', calculatorModule.reason);
-    }
-
-    if (filesystemModule.status === 'fulfilled') {
-      filesystemServer = filesystemModule.value.default;
-      log.debug('Filesystem server loaded');
-    } else {
-      log.error('Failed to load filesystem server', filesystemModule.reason);
-    }
 
     if (contentStoreModule.status === 'fulfilled') {
       contentStoreServer = contentStoreModule.value.default;
