@@ -70,7 +70,6 @@ export class GroqService extends BaseAIService {
       );
 
       for await (const chunk of chatCompletion) {
-        logger.info('inside chunk : ', { chunk: JSON.stringify(chunk) });
         if (chunk.choices[0]?.delta?.reasoning) {
           yield JSON.stringify({ thinking: chunk.choices[0].delta.reasoning });
         } else if (chunk.choices[0]?.delta?.tool_calls) {

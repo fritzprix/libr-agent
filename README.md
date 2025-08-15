@@ -1,30 +1,58 @@
-# 🚀 **SynapticFlow** - Lightning Fast AI Companion
+# 🚀 **SynapticFlow** - AI Agent Platform for Everyone
 
 ## 📋 Project Overview
 
-**SynapticFlow: A High-Freedom AI Agent Platform - Infinitely Expandable with MCP!**
+**SynapticFlow: Making MCP Tool Integration Accessible to All Users**
 
-SynapticFlow is a next-generation desktop AI agent platform that combines the lightness of Tauri with the intuitiveness of React. Users can automate all daily tasks by giving AI agents their own unique personalities and abilities.
+SynapticFlow is a desktop AI agent platform designed to solve two critical problems in the AI ecosystem:
 
-## 🎯 Key Features and Characteristics
+1. **Accessibility Gap**: MCP (Model Context Protocol) tools are powerful but primarily accessible to developers. We make these tools available to general users through an intuitive interface.
 
-SynapticFlow is a high-freedom AI agent tool that helps users define and manage their own AI agents. In particular, it is designed to support Multi-Agent Orchestration, allowing multiple agents to cooperatively perform complex tasks. These agent and Multi-Agent configurations can be easily shared and extracted, maximizing collaboration and reusability among users.
+2. **LLM Provider Lock-in**: Users shouldn't be restricted to a few major LLM providers. SynapticFlow provides freedom to choose from multiple providers, including increasingly powerful local LLMs.
 
-### ✅ Implemented Features
+## 🎯 What Problems We Solve
 
-- **🤖 Role Management System**: Create/edit/delete various AI agent roles.
-- **🧠 System Prompt**: Define custom AI personalities for each role.
-- **🔗 Real-time MCP Connection**: Run local MCP servers via stdio protocol **[Completed!]**
-- **⚡ Tool Calling System**: Call tools from the MCP server in real-time **[Completed!]**
-- **💾 IndexedDB Storage**: Store roles/conversations in a browser local database.
-- **⚡ Tauri Backend**: High-performance native desktop app framework.
-- **🎨 UI Components**: Modern terminal-style interface.
-- **⚙️ Centralized Configuration Management**: All settings, including API keys, models, and message window sizes, are managed and permanently stored within the app **[Completed!]**
-- **🤝 Agent and Multi-Agent Configuration Sharing/Extraction**: Easily export and import agent and Multi-Agent configurations.
+### 🔧 **MCP Tool Integration Made Simple**
 
-### 🚧 In Progress
+- **Problem**: MCP tools require technical setup and command-line knowledge
+- **Solution**: Built-in tools and easy MCP server management with GUI
+- **Benefit**: Anyone can use powerful tools without technical barriers
 
-- **🔄 AI Integration**: Connect with AI models like OpenAI/Claude.
+### 🔓 **Freedom from LLM Vendor Lock-in**
+
+- **Problem**: Most AI platforms tie users to specific LLM providers
+- **Solution**: Support for multiple providers (OpenAI, Anthropic, Groq, local models, etc.)
+- **Benefit**: Choose the best model for your needs and budget
+
+### 🤖 **Personalized AI Agents**
+
+- **Problem**: Generic AI assistants don't fit specific workflows
+- **Solution**: Create custom agents with unique personalities and tool access
+- **Benefit**: AI that works exactly how you want it to
+
+## 🛠 What We Provide
+
+### ✅ **Built-in Tools Ready to Use**
+
+- **🗂️ File Management**: Read, write, and organize files safely with built-in filesystem tools
+- **⚡ Code Execution**: Run Python and TypeScript code in secure sandboxed environments
+- **📁 Content Store**: Upload, manage, and reference files in your conversations
+- **🔗 MCP Integration**: Connect external MCP servers for extended functionality
+
+### ✅ **Multi-LLM Support**
+
+- **🌐 Cloud Providers**: OpenAI, Anthropic Claude, Groq, Fireworks, Cerebras, Google Gemini
+- **🏠 Local Models**: Ollama and other local LLM solutions
+- **🔄 Easy Switching**: Change providers and models without losing your workflow
+- **⚙️ Centralized Config**: Manage all API keys and settings in one place
+
+### ✅ **User-Friendly Features**
+
+- **🤖 Custom Agents**: Create AI assistants with specific roles and tool access
+- **👥 Multi-Agent Collaboration**: Multiple agents working together on complex tasks
+- **💬 Session Management**: Organize conversations with file attachments and context
+- **📤 Export/Import**: Share agent configurations and setups with others
+- **🎨 Modern UI**: Clean, terminal-style interface that's both powerful and intuitive
 
 ## 🛠 Technology Stack
 
@@ -128,40 +156,66 @@ synaptic-flow/
 
 For detailed information about the project, including setup, API reference, and contribution guidelines, please see our **[full documentation here](./docs/README.md)**.
 
-## 🚀 Quick Start
+## 🚀 Getting Started
 
-1.  **Prerequisites**: Ensure you have [Rust](https://rustup.rs/), [Node.js](https://nodejs.org/) (v18+), and [pnpm](https://pnpm.io/) installed.
-2.  **Install Dependencies**:
-    ```bash
-    pnpm install
-    ```
-3.  **Run in Development Mode**:
-    ```bash
-    pnpm tauri dev
-    ```
+Ready to use SynapticFlow? Here's how to get up and running:
 
-For more detailed instructions, see the [Getting Started](./docs/guides/getting-started.md) guide.
+### Option 1: Download Release (Recommended)
 
-## 📈 Next Steps
+Visit our [Releases](https://github.com/SynapticFlow/SynapticFlow/releases) page to download the latest version for your operating system.
 
-1. Refer to **docs/migration.md** for detailed migration plans.
-2. Full MCP protocol implementation.
-3. AI model integration (OpenAI/Claude/local models).
-4. Add advanced UI/UX features.
-5. Cross-platform testing and deployment.
+### Option 2: Build from Source
 
-## 🎨 UI/UX Features
+1. **Prerequisites**: Ensure you have [Rust](https://rustup.rs/), [Node.js](https://nodejs.org/) (v18+), and [pnpm](https://pnpm.io/) installed.
 
-- **Terminal Style**: Developer-friendly dark theme.
-- **Responsive Design**: Supports various screen sizes.
-- **Modern Interface**: Clean design based on Tailwind CSS.
-- **Intuitive Operation**: Drag-and-drop, modal dialogs, etc.
+2. **Install Dependencies**:
 
-## 🧪 Current Status
+   ```bash
+   pnpm install
+   ```
 
-- ✅ **Basic Tauri App Structure**: Completed
-- ✅ **React Component Migration**: Completed and Verified
-- ✅ **Rust MCP Server Management**: Implemented.
-- ✅ **Centralized Configuration Management**: API keys and other settings are managed and permanently stored within the app.
+3. **Run in Development Mode**:
+
+   ```bash
+   pnpm tauri dev
+   ```
+
+### Next Steps
+
+1. **Configure Your First LLM**: Open Settings and add your preferred AI provider's API key
+2. **Create an Agent**: Set up your first AI assistant with specific tools and personality
+3. **Connect MCP Tools**: Add external MCP servers or use our built-in tools
+4. **Start Collaborating**: Begin conversations with your AI agents
+
+## 📚 Documentation
+
+- **📖 [User Guide](docs/guides/getting-started.md)**: Complete setup and usage instructions
+- **🏗️ [Architecture](docs/app-architecture.md)**: Technical details for developers
+- **🔧 [MCP Integration](docs/mcp.md)**: How to connect and use MCP servers
+- **❓ [Troubleshooting](docs/guides/troubleshooting.md)**: Common issues and solutions
+
+## 🤝 Contributing
+
+We welcome contributions! Here's how you can help:
+
+- **🐛 Report Issues**: Found a bug? [Open an issue](https://github.com/SynapticFlow/SynapticFlow/issues)
+- **💡 Suggest Features**: Have ideas? Share them in our discussions
+- **🔧 Submit Code**: Read our [Contributing Guide](CONTRIBUTING.md) to get started
+- **📚 Improve Docs**: Help make our documentation even better
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🌟 Support
+
+If SynapticFlow helps you work more efficiently with AI tools, consider:
+
+- ⭐ **Star this repository** to show your support
+- 🗣️ **Share** with others who might find it useful
+- 🐛 **Report issues** to help us improve
+- 💬 **Join discussions** to shape the future of the project
 
 ---
+
+**Ready to revolutionize your AI workflow? [Download SynapticFlow](https://github.com/SynapticFlow/SynapticFlow/releases) and start building with unlimited AI possibilities!** 🚀

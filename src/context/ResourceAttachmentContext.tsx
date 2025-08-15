@@ -48,6 +48,24 @@ interface ResourceAttachmentContextType {
    * @param id - The contentId of the file to find
    */
   getFileById: (id: string) => AttachmentReference | undefined;
+
+  // Session files management
+  /**
+   * All files stored in the current session's store
+   */
+  sessionFiles: AttachmentReference[];
+  /**
+   * Loading state for session files
+   */
+  isSessionFilesLoading: boolean;
+  /**
+   * Error state for session files
+   */
+  sessionFilesError: string | null;
+  /**
+   * Refresh session files from the server
+   */
+  refreshSessionFiles: () => Promise<void>;
 }
 
 const ResourceAttachmentContext = createContext<
@@ -63,6 +81,14 @@ export const ResourceAttachmentProvider: React.FC<
 > = ({ children }) => {
   const [files, setFiles] = useState<AttachmentReference[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Session files management states
+  const [sessionFiles, setSessionFiles] = useState<AttachmentReference[]>([]);
+  const [isSessionFilesLoading, setIsSessionFilesLoading] = useState(false);
+  const [sessionFilesError, setSessionFilesError] = useState<string | null>(
+    null,
+  );
+
   const { current: currentSession, updateSession } = useSessionContext();
   const { server } = useWebMCPServer<ContentStoreServer>('content-store');
 
@@ -71,6 +97,67 @@ export const ResourceAttachmentProvider: React.FC<
 
   // Reset files when session changes
   const prevSessionIdRef = useRef<string | undefined>();
+
+  // Refresh session files from the server
+  const refreshSessionFiles = useCallback(async () => {
+    if (!server || !currentSession?.storeId) {
+      setSessionFiles([]);
+      return;
+    }
+
+    setIsSessionFilesLoading(true);
+    setSessionFilesError(null);
+
+    try {
+      logger.debug('Refreshing session files', {
+        storeId: currentSession.storeId,
+        sessionId: currentSession.id,
+      });
+
+      const result = await server.listContent({
+        storeId: currentSession.storeId,
+      });
+
+      const allSessionFiles: AttachmentReference[] =
+        result?.contents?.map((content) => ({
+          storeId: content.storeId,
+          contentId: content.contentId,
+          filename: content.filename,
+          mimeType: content.mimeType,
+          size: content.size,
+          lineCount: content.lineCount || 0,
+          preview: content.preview,
+          uploadedAt: content.uploadedAt || new Date().toISOString(),
+          chunkCount: content.chunkCount,
+          lastAccessedAt: content.lastAccessedAt,
+        })) || [];
+
+      setSessionFiles(allSessionFiles);
+
+      logger.info('Session files refreshed successfully', {
+        storeId: currentSession.storeId,
+        fileCount: allSessionFiles.length,
+      });
+    } catch (error) {
+      logger.error('Failed to refresh session files', {
+        storeId: currentSession.storeId,
+        error:
+          error instanceof Error
+            ? {
+                message: error.message,
+                stack: error.stack,
+                name: error.name,
+              }
+            : error,
+      });
+      setSessionFilesError(
+        error instanceof Error ? error.message : 'Failed to load session files',
+      );
+      setSessionFiles([]);
+    } finally {
+      setIsSessionFilesLoading(false);
+    }
+  }, [server, currentSession?.storeId, currentSession?.id]);
 
   useEffect(() => {
     if (currentSession?.id !== prevSessionIdRef.current) {
@@ -86,9 +173,21 @@ export const ResourceAttachmentProvider: React.FC<
       setFiles([]);
       // Clear uploaded filenames when session changes
       uploadedFilenamesRef.current = [];
+
+      // Clear and refresh session files
+      setSessionFiles([]);
+      setSessionFilesError(null);
+
       prevSessionIdRef.current = currentSession?.id;
     }
   }, [currentSession?.id]);
+
+  // Auto-refresh session files when storeId is available
+  useEffect(() => {
+    if (currentSession?.storeId) {
+      refreshSessionFiles();
+    }
+  }, [currentSession?.storeId, refreshSessionFiles]);
 
   // Ensure store exists for current session
   const ensureStoreExists = useCallback(
@@ -355,6 +454,9 @@ export const ResourceAttachmentProvider: React.FC<
           wasConverted: !url.startsWith('blob:'),
         });
 
+        // Refresh session files after successful file addition
+        await refreshSessionFiles();
+
         return attachment;
       } catch (error) {
         // Remove filename from uploaded list on error
@@ -428,6 +530,7 @@ export const ResourceAttachmentProvider: React.FC<
       server,
       currentSession,
       ensureStoreExists,
+      refreshSessionFiles,
     ],
   );
 
@@ -452,6 +555,9 @@ export const ResourceAttachmentProvider: React.FC<
           filename: ref.filename,
           contentId: ref.contentId,
         });
+
+        // Refresh session files after removal
+        await refreshSessionFiles();
       } catch (error) {
         logger.error('Failed to remove file attachment', {
           ref: {
@@ -474,7 +580,7 @@ export const ResourceAttachmentProvider: React.FC<
         );
       }
     },
-    [],
+    [refreshSessionFiles],
   );
 
   const clearFiles = useCallback(() => {
@@ -483,7 +589,10 @@ export const ResourceAttachmentProvider: React.FC<
     // Clear uploaded filenames ref as well
     uploadedFilenamesRef.current = [];
     logger.info('All file attachments cleared');
-  }, [files.length]);
+
+    // Refresh session files after clearing
+    refreshSessionFiles();
+  }, [files.length, refreshSessionFiles]);
 
   const getFileById = useCallback(
     (id: string): AttachmentReference | undefined => {
@@ -500,8 +609,23 @@ export const ResourceAttachmentProvider: React.FC<
       clearFiles,
       isLoading,
       getFileById,
+      sessionFiles,
+      isSessionFilesLoading,
+      sessionFilesError,
+      refreshSessionFiles,
     }),
-    [files, addFile, removeFile, clearFiles, isLoading, getFileById],
+    [
+      files,
+      addFile,
+      removeFile,
+      clearFiles,
+      isLoading,
+      getFileById,
+      sessionFiles,
+      isSessionFilesLoading,
+      sessionFilesError,
+      refreshSessionFiles,
+    ],
   );
 
   return (

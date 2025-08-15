@@ -1,5 +1,6 @@
 import { useMCPServer } from './use-mcp-server';
 import { useWebMCPTools } from './use-web-mcp';
+import { useBuiltInTools } from '@/context/BuiltInToolContext';
 import { useCallback, useMemo } from 'react';
 import { MCPResponse, MCPTool } from '@/lib/mcp-types';
 import { getLogger } from '@/lib/logger';
@@ -12,12 +13,12 @@ interface ToolCall {
   function: { name: string; arguments: string };
 }
 
-type BackendType = 'tauri' | 'web';
+type BackendType = 'tauri' | 'web' | 'builtin';
 
 /**
  * 🔧 Unified MCP Hook
  *
- * Integrates both Tauri-based MCP servers and Web Worker MCP tools
+ * Integrates Tauri-based MCP servers, Web Worker MCP tools, and Tauri builtin tools
  * into a single interface for tool execution.
  */
 export const useUnifiedMCP = () => {
@@ -28,6 +29,10 @@ export const useUnifiedMCP = () => {
     availableTools: webTools,
     isInitialized: isWebReady,
   } = useWebMCPTools();
+  const {
+    executeToolCall: executeBuiltinTool,
+    availableTools: builtinTools,
+  } = useBuiltInTools();
 
   // Create lookup map for fast tool type resolution
   const toolTypeMap = useMemo((): Map<string, BackendType> => {
@@ -43,19 +48,25 @@ export const useUnifiedMCP = () => {
       map.set(tool.name, 'web');
     });
 
+    // Add Builtin tools
+    builtinTools.forEach((tool) => {
+      map.set(tool.name, 'builtin');
+    });
+
     logger.debug('Tool type map created', {
       tauriCount: tauriTools.length,
       webCount: webTools.length,
+      builtinCount: builtinTools.length,
       totalMapped: map.size,
     });
 
     return map;
-  }, [tauriTools, webTools]);
+  }, [tauriTools, webTools, builtinTools]);
 
-  // Combine all available tools
+  // Combine all available tools (include builtin tools)
   const allTools = useMemo(() => {
-    return [...tauriTools, ...webTools];
-  }, [tauriTools, webTools]);
+    return [...tauriTools, ...webTools, ...builtinTools];
+  }, [tauriTools, webTools, builtinTools]);
 
   // Fast tool type lookup using the pre-built map
   const getToolType = useCallback(
@@ -128,6 +139,9 @@ export const useUnifiedMCP = () => {
               ],
             },
           };
+        } else if (toolType === 'builtin') {
+          // Execute Tauri builtin tool
+          return await executeBuiltinTool(toolCall);
         } else {
           // Execute Tauri MCP tool
           return await executeTauriTool(toolCall);
@@ -169,6 +183,7 @@ export const useUnifiedMCP = () => {
     const result = {
       tauri: [] as MCPTool[],
       web: [] as MCPTool[],
+      builtin: [] as MCPTool[],
       all: allTools,
     };
 
@@ -178,6 +193,8 @@ export const useUnifiedMCP = () => {
         result.tauri.push(tool);
       } else if (type === 'web') {
         result.web.push(tool);
+      } else if (type === 'builtin') {
+        result.builtin.push(tool);
       }
     });
 
@@ -186,14 +203,17 @@ export const useUnifiedMCP = () => {
 
   // Get tool type statistics
   const getToolStats = useCallback(() => {
-    const stats = {
+    const stats: { tauri: number; web: number; builtin: number; total: number } = {
       tauri: 0,
       web: 0,
+      builtin: 0,
       total: toolTypeMap.size,
     };
 
     toolTypeMap.forEach((type) => {
-      stats[type]++;
+      if (type === 'tauri') stats.tauri++;
+      else if (type === 'web') stats.web++;
+      else if (type === 'builtin') stats.builtin++;
     });
 
     return stats;

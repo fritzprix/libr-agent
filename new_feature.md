@@ -41,6 +41,7 @@ pub trait BuiltinMCPServer: Send + Sync {
   - `list_directory`: 디렉토리 목록 조회
   - `create_directory`: 디렉토리 생성 (향후 확장)
   - `delete_file`: 파일 삭제 (향후 확장)
+- **접근 제약**: 현재 process의 실행 위치의 하위 디렉토리까지로 범위를 제한
 
 #### 2.2 Sandbox Server (`builtin:sandbox`)
 
@@ -111,6 +112,7 @@ src-tauri/src/
 - 타임아웃 및 리소스 제한 처리
 
 ### 3. 성능 최적화
+
 - Rust의 비동기 처리 활용
 - 메모리 효율적인 스트림 처리
 - 임시 파일 자동 정리
@@ -118,21 +120,25 @@ src-tauri/src/
 ## 🚀 구현 단계
 
 ### Phase 1: 기본 구조 구축
+
 1. `BuiltinMCPServer` trait 정의
 2. `MCPServerManager`에 내장 서버 통합 로직 추가
 3. 기본 Tauri commands 구현
 
 ### Phase 2: Filesystem Server 구현
+
 1. 기본 파일 읽기/쓰기 기능
 2. 디렉토리 목록 조회
 3. 보안 검증 로직 추가
 
 ### Phase 3: Sandbox Server 구현
+
 1. Python 코드 실행 기능
 2. TypeScript 코드 실행 기능 (ts-node)
 3. 보안 및 제한 사항 적용
 
 ### Phase 4: 프론트엔드 통합
+
 1. 내장 서버 도구들을 UI에 표시
 2. 기존 MCP 도구와 동일한 방식으로 호출
 3. 에러 처리 및 사용자 피드백
@@ -161,33 +167,34 @@ const allTools = await invoke('list_all_tools_unified');
 const fileContent = await invoke('call_builtin_tool', {
   serverName: 'builtin:filesystem',
   toolName: 'read_file',
-  args: { path: '/path/to/file.txt' }
+  args: { path: '/path/to/file.txt' },
 });
 
 // Python 코드 실행
 const pythonResult = await invoke('call_builtin_tool', {
   serverName: 'builtin:sandbox',
   toolName: 'execute_python',
-  args: { 
+  args: {
     code: 'print("Hello from Python!")',
-    timeout: 5
-  }
+    timeout: 5,
+  },
 });
 
 // TypeScript 코드 실행
 const tsResult = await invoke('call_builtin_tool', {
   serverName: 'builtin:sandbox',
   toolName: 'execute_typescript',
-  args: { 
+  args: {
     code: 'console.log("Hello from TypeScript!");',
-    timeout: 10
-  }
+    timeout: 10,
+  },
 });
 ```
 
 ## 🔄 향후 확장 계획
 
 ### 추가 내장 서버 아이디어
+
 1. **HTTP Client Server**: REST API 호출 기능
 2. **Database Server**: SQLite 등 경량 DB 조작
 3. **Image Processing Server**: 기본적인 이미지 처리
@@ -195,6 +202,7 @@ const tsResult = await invoke('call_builtin_tool', {
 5. **System Info Server**: 시스템 정보 조회
 
 ### 고급 기능
+
 1. **권한 관리**: 사용자별 도구 접근 제한
 2. **사용량 모니터링**: 도구 사용 통계 및 제한
 3. **플러그인 시스템**: 사용자 정의 내장 서버 추가
@@ -213,17 +221,20 @@ const tsResult = await invoke('call_builtin_tool', {
 ## 📝 구현 체크리스트
 
 ### Phase 1: 기본 구조
+
 - [ ] `src-tauri/src/mcp/builtin/mod.rs` - BuiltinMCPServer trait 정의
 - [ ] `src-tauri/src/mcp/mod.rs` - MCPServerManager에 내장 서버 통합
 - [ ] `src-tauri/src/lib.rs` - 새로운 Tauri commands 추가
 
 ### Phase 2: Filesystem Server
+
 - [ ] `src-tauri/src/mcp/builtin/filesystem.rs` - FilesystemServer 구현
 - [ ] 파일 읽기/쓰기 기능 구현
 - [ ] 디렉토리 목록 조회 기능 구현
 - [ ] 보안 검증 로직 추가
 
 ### Phase 3: Sandbox Server
+
 - [ ] `src-tauri/src/mcp/builtin/sandbox.rs` - SandboxServer 구현
 - [ ] Python 코드 실행 기능 구현
 - [ ] TypeScript 코드 실행 기능 구현

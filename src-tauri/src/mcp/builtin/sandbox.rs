@@ -1,0 +1,398 @@
+use async_trait::async_trait;
+use serde_json::{json, Value};
+use std::collections::HashMap;
+use std::time::Duration;
+use tempfile::TempDir;
+use tokio::fs;
+use tokio::process::Command;
+use tokio::time::timeout;
+use tracing::{error, info, warn};
+
+use crate::mcp::{JSONSchema, JSONSchemaType, MCPError, MCPResponse, MCPTool};
+use super::{BuiltinMCPServer, utils::constants::{MAX_CODE_SIZE, DEFAULT_EXECUTION_TIMEOUT, MAX_EXECUTION_TIMEOUT}};
+
+pub struct SandboxServer;
+
+impl SandboxServer {
+    pub fn new() -> Self {
+        Self
+    }
+    
+    fn create_execute_python_tool() -> MCPTool {
+        MCPTool {
+            name: "execute_python".to_string(),
+            title: Some("Execute Python Code".to_string()),
+            description: "Execute Python code in a sandboxed environment".to_string(),
+            input_schema: JSONSchema {
+                schema_type: JSONSchemaType::Object {
+                    properties: Some({
+                        let mut props = HashMap::new();
+                        props.insert(
+                            "code".to_string(),
+                            JSONSchema {
+                                schema_type: JSONSchemaType::String {
+                                    min_length: Some(1),
+                                    max_length: Some(MAX_CODE_SIZE as u32),
+                                    pattern: None,
+                                    format: None,
+                                },
+                                title: None,
+                                description: Some("Python code to execute".to_string()),
+                                default: None,
+                                examples: Some(vec![json!("print('Hello, World!')")]),
+                                enum_values: None,
+                                const_value: None,
+                            },
+                        );
+                        props.insert(
+                            "timeout".to_string(),
+                            JSONSchema {
+                                schema_type: JSONSchemaType::Integer {
+                                    minimum: Some(1),
+                                    maximum: Some(MAX_EXECUTION_TIMEOUT as i64),
+                                    exclusive_minimum: None,
+                                    exclusive_maximum: None,
+                                    multiple_of: None,
+                                },
+                                title: None,
+                                description: Some("Timeout in seconds (default: 30)".to_string()),
+                                default: Some(json!(DEFAULT_EXECUTION_TIMEOUT)),
+                                examples: None,
+                                enum_values: None,
+                                const_value: None,
+                            },
+                        );
+                        props
+                    }),
+                    required: Some(vec!["code".to_string()]),
+                    additional_properties: Some(false),
+                    min_properties: None,
+                    max_properties: None,
+                },
+                title: None,
+                description: None,
+                default: None,
+                examples: None,
+                enum_values: None,
+                const_value: None,
+            },
+            output_schema: None,
+            annotations: None,
+        }
+    }
+    
+    fn create_execute_typescript_tool() -> MCPTool {
+        MCPTool {
+            name: "execute_typescript".to_string(),
+            title: Some("Execute TypeScript Code".to_string()),
+            description: "Execute TypeScript code in a sandboxed environment using ts-node".to_string(),
+            input_schema: JSONSchema {
+                schema_type: JSONSchemaType::Object {
+                    properties: Some({
+                        let mut props = HashMap::new();
+                        props.insert(
+                            "code".to_string(),
+                            JSONSchema {
+                                schema_type: JSONSchemaType::String {
+                                    min_length: Some(1),
+                                    max_length: Some(MAX_CODE_SIZE as u32),
+                                    pattern: None,
+                                    format: None,
+                                },
+                                title: None,
+                                description: Some("TypeScript code to execute".to_string()),
+                                default: None,
+                                examples: Some(vec![json!("console.log('Hello, World!');")]),
+                                enum_values: None,
+                                const_value: None,
+                            },
+                        );
+                        props.insert(
+                            "timeout".to_string(),
+                            JSONSchema {
+                                schema_type: JSONSchemaType::Integer {
+                                    minimum: Some(1),
+                                    maximum: Some(MAX_EXECUTION_TIMEOUT as i64),
+                                    exclusive_minimum: None,
+                                    exclusive_maximum: None,
+                                    multiple_of: None,
+                                },
+                                title: None,
+                                description: Some("Timeout in seconds (default: 30)".to_string()),
+                                default: Some(json!(DEFAULT_EXECUTION_TIMEOUT)),
+                                examples: None,
+                                enum_values: None,
+                                const_value: None,
+                            },
+                        );
+                        props
+                    }),
+                    required: Some(vec!["code".to_string()]),
+                    additional_properties: Some(false),
+                    min_properties: None,
+                    max_properties: None,
+                },
+                title: None,
+                description: None,
+                default: None,
+                examples: None,
+                enum_values: None,
+                const_value: None,
+            },
+            output_schema: None,
+            annotations: None,
+        }
+    }
+    
+    async fn execute_code_in_sandbox(
+        &self,
+        command: &str,
+        args: &[&str],
+        code: &str,
+        file_extension: &str,
+        timeout_secs: u64,
+    ) -> MCPResponse {
+        let request_id = Value::String(uuid::Uuid::new_v4().to_string());
+        
+        // Validate code size
+        if code.len() > MAX_CODE_SIZE {
+            return MCPResponse {
+                jsonrpc: "2.0".to_string(),
+                id: Some(request_id),
+                result: None,
+                error: Some(MCPError {
+                    code: -32603,
+                    message: format!("Code too large: {} bytes (max: {} bytes)", code.len(), MAX_CODE_SIZE),
+                    data: None,
+                }),
+            };
+        }
+        
+        // Create temporary directory for sandboxed execution
+        let temp_dir = match TempDir::new() {
+            Ok(dir) => dir,
+            Err(e) => {
+                error!("Failed to create temporary directory: {}", e);
+                return MCPResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id: Some(request_id),
+                    result: None,
+                    error: Some(MCPError {
+                        code: -32603,
+                        message: format!("Failed to create sandbox: {}", e),
+                        data: None,
+                    }),
+                };
+            }
+        };
+        
+        // Write code to temporary file
+        let script_path = temp_dir.path().join(format!("script{}", file_extension));
+        if let Err(e) = fs::write(&script_path, code).await {
+            error!("Failed to write script file: {}", e);
+            return MCPResponse {
+                jsonrpc: "2.0".to_string(),
+                id: Some(request_id),
+                result: None,
+                error: Some(MCPError {
+                    code: -32603,
+                    message: format!("Failed to write script: {}", e),
+                    data: None,
+                }),
+            };
+        }
+        
+        // Prepare command with arguments
+        let mut cmd = Command::new(command);
+        for arg in args {
+            cmd.arg(arg);
+        }
+        cmd.arg(&script_path);
+        
+        // Set working directory to temp directory
+        cmd.current_dir(temp_dir.path());
+        
+        // Clear environment variables for isolation
+        cmd.env_clear();
+        cmd.env("PATH", std::env::var("PATH").unwrap_or_default());
+        cmd.env("HOME", temp_dir.path());
+        cmd.env("TMPDIR", temp_dir.path());
+        cmd.env("TEMP", temp_dir.path());
+        
+        // Kill command timeout
+        let timeout_duration = Duration::from_secs(timeout_secs.min(MAX_EXECUTION_TIMEOUT));
+        
+        // Execute command with timeout
+        let execution_result = timeout(timeout_duration, cmd.output()).await;
+        
+        match execution_result {
+            Ok(Ok(output)) => {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                let success = output.status.success();
+                
+                let result_text = if success {
+                    if stdout.trim().is_empty() && stderr.trim().is_empty() {
+                        "Code executed successfully (no output)".to_string()
+                    } else if stderr.trim().is_empty() {
+                        format!("Output:\n{}", stdout.trim())
+                    } else {
+                        format!("Output:\n{}\n\nWarnings/Errors:\n{}", stdout.trim(), stderr.trim())
+                    }
+                } else {
+                    format!("Execution failed (exit code: {}):\n{}", 
+                        output.status.code().unwrap_or(-1), 
+                        if stderr.trim().is_empty() { stdout.trim() } else { stderr.trim() })
+                };
+                
+                info!("Code execution completed. Success: {}, Output length: {}", success, result_text.len());
+                
+                MCPResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id: Some(request_id),
+                    result: Some(json!({
+                        "content": [{
+                            "type": "text",
+                            "text": result_text
+                        }],
+                        "isError": !success
+                    })),
+                    error: None,
+                }
+            }
+            Ok(Err(e)) => {
+                error!("Failed to execute command: {}", e);
+                MCPResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id: Some(request_id),
+                    result: None,
+                    error: Some(MCPError {
+                        code: -32603,
+                        message: format!("Execution error: {}", e),
+                        data: None,
+                    }),
+                }
+            }
+            Err(_) => {
+                warn!("Code execution timed out after {} seconds", timeout_secs);
+                MCPResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id: Some(request_id),
+                    result: None,
+                    error: Some(MCPError {
+                        code: -32603,
+                        message: format!("Execution timed out after {} seconds", timeout_secs),
+                        data: None,
+                    }),
+                }
+            }
+        }
+    }
+    
+    async fn handle_execute_python(&self, args: Value) -> MCPResponse {
+        let request_id = Value::String(uuid::Uuid::new_v4().to_string());
+        
+        let code = match args.get("code").and_then(|v| v.as_str()) {
+            Some(code) => code,
+            None => {
+                return MCPResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id: Some(request_id),
+                    result: None,
+                    error: Some(MCPError {
+                        code: -32602,
+                        message: "Missing required parameter: code".to_string(),
+                        data: None,
+                    }),
+                };
+            }
+        };
+        
+        let timeout_secs = args.get("timeout")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(DEFAULT_EXECUTION_TIMEOUT)
+            .min(MAX_EXECUTION_TIMEOUT);
+        
+        self.execute_code_in_sandbox("python3", &[], code, ".py", timeout_secs).await
+    }
+    
+    async fn handle_execute_typescript(&self, args: Value) -> MCPResponse {
+        let request_id = Value::String(uuid::Uuid::new_v4().to_string());
+        
+        let code = match args.get("code").and_then(|v| v.as_str()) {
+            Some(code) => code,
+            None => {
+                return MCPResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id: Some(request_id),
+                    result: None,
+                    error: Some(MCPError {
+                        code: -32602,
+                        message: "Missing required parameter: code".to_string(),
+                        data: None,
+                    }),
+                };
+            }
+        };
+        
+        let timeout_secs = args.get("timeout")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(DEFAULT_EXECUTION_TIMEOUT)
+            .min(MAX_EXECUTION_TIMEOUT);
+        
+        // Check if ts-node is available, fallback to node if not
+        let command_result = Command::new("which").arg("ts-node").output().await;
+        let (command, args_vec) = if command_result.is_ok() && command_result.unwrap().status.success() {
+            ("ts-node", vec!["--eval"])
+        } else {
+            warn!("ts-node not found, falling back to node with TypeScript disabled");
+            ("node", vec!["--eval"])
+        };
+        
+        self.execute_code_in_sandbox(command, &args_vec, code, ".ts", timeout_secs).await
+    }
+}
+
+#[async_trait]
+impl BuiltinMCPServer for SandboxServer {
+    fn name(&self) -> &str {
+        "builtin:sandbox"
+    }
+    
+    fn description(&self) -> &str {
+        "Built-in code execution sandbox server"
+    }
+    
+    fn tools(&self) -> Vec<MCPTool> {
+        vec![
+            Self::create_execute_python_tool(),
+            Self::create_execute_typescript_tool(),
+        ]
+    }
+    
+    async fn call_tool(&self, tool_name: &str, args: Value) -> MCPResponse {
+        match tool_name {
+            "execute_python" => self.handle_execute_python(args).await,
+            "execute_typescript" => self.handle_execute_typescript(args).await,
+            _ => {
+                let request_id = Value::String(uuid::Uuid::new_v4().to_string());
+                MCPResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id: Some(request_id),
+                    result: None,
+                    error: Some(MCPError {
+                        code: -32601,
+                        message: format!("Tool '{}' not found in sandbox server", tool_name),
+                        data: None,
+                    }),
+                }
+            }
+        }
+    }
+}
+
+impl Default for SandboxServer {
+    fn default() -> Self {
+        Self::new()
+    }
+}

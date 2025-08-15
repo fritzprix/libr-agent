@@ -13,6 +13,8 @@ use tokio::process::Command;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
+pub mod builtin;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MCPServerConfig {
     pub name: String,
@@ -190,12 +192,14 @@ pub struct MCPConnection {
 
 pub struct MCPServerManager {
     connections: Arc<Mutex<HashMap<String, MCPConnection>>>,
+    builtin_servers: Arc<builtin::BuiltinServerRegistry>,
 }
 
 impl MCPServerManager {
     pub fn new() -> Self {
         Self {
             connections: Arc::new(Mutex::new(HashMap::new())),
+            builtin_servers: Arc::new(builtin::BuiltinServerRegistry::new()),
         }
     }
 
@@ -547,5 +551,55 @@ impl MCPServerManager {
         }
 
         Ok(validated_tools)
+    }
+
+    /// Built-in server methods
+
+    /// List all available builtin servers
+    pub fn list_builtin_servers(&self) -> Vec<String> {
+        self.builtin_servers.list_servers()
+    }
+
+    /// List all tools from builtin servers
+    pub fn list_builtin_tools(&self) -> Vec<MCPTool> {
+        self.builtin_servers.list_all_tools()
+    }
+
+    /// Call a tool on a builtin server
+    pub async fn call_builtin_tool(&self, server_name: &str, tool_name: &str, args: serde_json::Value) -> MCPResponse {
+        debug!("call_builtin_tool: server_name='{}', tool_name='{}', args={}", server_name, tool_name, args);
+        
+        let result = self.builtin_servers.call_tool(server_name, tool_name, args).await;
+        
+        debug!("Builtin tool call result: success={}", result.error.is_none());
+        
+        result
+    }
+
+    /// Get unified list of tools from both external and builtin servers
+    pub async fn list_all_tools_unified(&self) -> Result<Vec<MCPTool>> {
+        let mut all_tools = Vec::new();
+
+        // Get external server tools
+        match self.list_all_tools().await {
+            Ok(external_tools) => all_tools.extend(external_tools),
+            Err(e) => warn!("Failed to get external server tools: {}", e),
+        }
+
+        // Get builtin server tools
+        let builtin_tools = self.list_builtin_tools();
+        all_tools.extend(builtin_tools);
+
+        Ok(all_tools)
+    }
+
+    /// Call a tool on either external or builtin server based on server name
+    pub async fn call_tool_unified(&self, server_name: &str, tool_name: &str, args: serde_json::Value) -> MCPResponse {
+        // Check if it's a builtin server (starts with "builtin:")
+        if server_name.starts_with("builtin:") {
+            self.call_builtin_tool(server_name, tool_name, args).await
+        } else {
+            self.call_tool(server_name, tool_name, args).await
+        }
     }
 }
