@@ -41,10 +41,9 @@ async function loadServers(): Promise<void> {
     log.debug('Loading MCP servers');
 
     // Load all servers
-    const [contentStoreModule] =
-      await Promise.allSettled([
-        import('./modules/content-store'),
-      ]);
+    const [contentStoreModule] = await Promise.allSettled([
+      import('./modules/content-store'),
+    ]);
 
     if (contentStoreModule.status === 'fulfilled') {
       contentStoreServer = contentStoreModule.value.default;

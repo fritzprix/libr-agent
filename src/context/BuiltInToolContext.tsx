@@ -69,9 +69,9 @@ function BuiltInToolProviderInternal({ children }: BuiltInToolProviderProps) {
         setIsLoadingTauriTools(true);
         logger.debug('Loading Tauri built-in tools...');
         const tools = await tauriMCPClient.listBuiltinTools();
-        logger.info('Loaded Tauri built-in tools', { 
+        logger.info('Loaded Tauri built-in tools', {
           toolCount: tools.length,
-          toolNames: tools.map(t => t.name)
+          toolNames: tools.map((t) => t.name),
         });
         setTauriBuiltinTools(tools);
       } catch (error) {
@@ -108,12 +108,12 @@ function BuiltInToolProviderInternal({ children }: BuiltInToolProviderProps) {
             if (parts.length >= 2) {
               const serverName = parts[0]; // "builtin.filesystem"
               const actualToolName = parts.slice(1).join('__'); // "list_directory"
-              
-              logger.debug('Parsed builtin tool call', { 
+
+              logger.debug('Parsed builtin tool call', {
                 originalToolName: toolName,
-                serverName, 
+                serverName,
                 actualToolName,
-                args 
+                args,
               });
 
               const result = await tauriMCPClient.callBuiltinTool(

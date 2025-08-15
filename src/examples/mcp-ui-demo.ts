@@ -174,82 +174,82 @@ root.appendChild(container);
  * Demo tool that returns HTML UIResource
  */
 export function createHtmlDemo(): MCPResponse {
-    const uiResource: UIResource = {
-        uri: 'ui://demo/html-component',
-        mimeType: 'text/html',
-        text: SAMPLE_HTML,
-    };
+  const uiResource: UIResource = {
+    uri: 'ui://demo/html-component',
+    mimeType: 'text/html',
+    text: SAMPLE_HTML,
+  };
 
-    return {
-        jsonrpc: '2.0',
-        id: `demo-html-${Date.now()}`,
-        result: {
-            content: [
-                {
-                    type: 'resource',
-                    resource: uiResource,
-                } as MCPResourceContent,
-            ],
-        },
-    };
+  return {
+    jsonrpc: '2.0',
+    id: `demo-html-${Date.now()}`,
+    result: {
+      content: [
+        {
+          type: 'resource',
+          resource: uiResource,
+        } as MCPResourceContent,
+      ],
+    },
+  };
 }
 
 /**
  * Demo tool that returns external URL UIResource
  */
 export function createUrlDemo(): MCPResponse {
-    const uiResource: UIResource = {
-        uri: 'ui://demo/external-url',
-        mimeType: 'text/uri-list',
-        text: 'https://modelcontextprotocol.io/introduction\n# MCP Introduction Page',
-    };
+  const uiResource: UIResource = {
+    uri: 'ui://demo/external-url',
+    mimeType: 'text/uri-list',
+    text: 'https://modelcontextprotocol.io/introduction\n# MCP Introduction Page',
+  };
 
-    return {
-        jsonrpc: '2.0',
-        id: `demo-url-${Date.now()}`,
-        result: {
-            content: [
-                {
-                    type: 'resource',
-                    resource: uiResource,
-                } as MCPResourceContent,
-            ],
-        },
-    };
+  return {
+    jsonrpc: '2.0',
+    id: `demo-url-${Date.now()}`,
+    result: {
+      content: [
+        {
+          type: 'resource',
+          resource: uiResource,
+        } as MCPResourceContent,
+      ],
+    },
+  };
 }
 
 /**
  * Demo tool that returns Remote DOM UIResource
  */
 export function createRemoteDomDemo(): MCPResponse {
-    const uiResource: UIResource = {
-        uri: 'ui://demo/remote-dom-component',
-        mimeType: 'application/vnd.mcp-ui.remote-dom',
-        text: SAMPLE_REMOTE_DOM_SCRIPT,
-    };
+  const uiResource: UIResource = {
+    uri: 'ui://demo/remote-dom-component',
+    mimeType: 'application/vnd.mcp-ui.remote-dom',
+    text: SAMPLE_REMOTE_DOM_SCRIPT,
+  };
 
-    return {
-        jsonrpc: '2.0',
-        id: `demo-remote-dom-${Date.now()}`,
-        result: {
-            content: [
-                {
-                    type: 'resource',
-                    resource: uiResource,
-                } as MCPResourceContent,
-            ],
-        },
-    };
+  return {
+    jsonrpc: '2.0',
+    id: `demo-remote-dom-${Date.now()}`,
+    result: {
+      content: [
+        {
+          type: 'resource',
+          resource: uiResource,
+        } as MCPResourceContent,
+      ],
+    },
+  };
 }
 
 /**
  * Demo tool that returns mixed content (text + UIResource)
  */
 export function createMixedDemo(): MCPResponse {
-    const uiResource: UIResource = {
-        uri: 'ui://demo/mixed-content',
-        mimeType: 'text/html',
-        text: `
+  const uiResource: UIResource = {
+    uri: 'ui://demo/mixed-content',
+    mimeType: 'text/html',
+    text: `
             <div style="padding: 20px; background: #e8f5e8; border-radius: 8px; font-family: sans-serif;">
                 <h3 style="color: #2e7d32; margin-top: 0;">✅ Mixed Content Demo</h3>
                 <p>This demonstrates a tool response that contains both text and UI resources.</p>
@@ -259,116 +259,119 @@ export function createMixedDemo(): MCPResponse {
                 </button>
             </div>
         `,
-    };
+  };
 
-    return {
-        jsonrpc: '2.0',
-        id: `demo-mixed-${Date.now()}`,
-        result: {
-            content: [
-                {
-                    type: 'text',
-                    text: 'Here is some text content along with an interactive UI component:',
-                },
-                {
-                    type: 'resource',
-                    resource: uiResource,
-                } as MCPResourceContent,
-            ],
+  return {
+    jsonrpc: '2.0',
+    id: `demo-mixed-${Date.now()}`,
+    result: {
+      content: [
+        {
+          type: 'text',
+          text: 'Here is some text content along with an interactive UI component:',
         },
-    };
+        {
+          type: 'resource',
+          resource: uiResource,
+        } as MCPResourceContent,
+      ],
+    },
+  };
 }
 
 /**
  * Demo tool that returns multiple UIResources
  */
 export function createMultiResourceDemo(): MCPResponse {
-    const htmlResource: UIResource = {
-        uri: 'ui://demo/multi-html',
-        mimeType: 'text/html',
-        text: `
+  const htmlResource: UIResource = {
+    uri: 'ui://demo/multi-html',
+    mimeType: 'text/html',
+    text: `
             <div style="padding: 15px; background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 8px; margin-bottom: 10px;">
                 <h4 style="margin: 0 0 10px 0; color: #856404;">📊 Resource #1 (HTML)</h4>
                 <p style="margin: 0;">This is the first UI resource in a multi-resource response.</p>
             </div>
         `,
-    };
+  };
 
-    const urlResource: UIResource = {
-        uri: 'ui://demo/multi-url',
-        mimeType: 'text/uri-list',
-        text: 'https://github.com/modelcontextprotocol/specification',
-    };
+  const urlResource: UIResource = {
+    uri: 'ui://demo/multi-url',
+    mimeType: 'text/uri-list',
+    text: 'https://github.com/modelcontextprotocol/specification',
+  };
 
-    return {
-        jsonrpc: '2.0',
-        id: `demo-multi-${Date.now()}`,
-        result: {
-            content: [
-                {
-                    type: 'text',
-                    text: 'This response contains multiple UI resources:',
-                },
-                {
-                    type: 'resource',
-                    resource: htmlResource,
-                } as MCPResourceContent,
-                {
-                    type: 'text',
-                    text: 'And here is an external resource:',
-                },
-                {
-                    type: 'resource',
-                    resource: urlResource,
-                } as MCPResourceContent,
-            ],
+  return {
+    jsonrpc: '2.0',
+    id: `demo-multi-${Date.now()}`,
+    result: {
+      content: [
+        {
+          type: 'text',
+          text: 'This response contains multiple UI resources:',
         },
-    };
+        {
+          type: 'resource',
+          resource: htmlResource,
+        } as MCPResourceContent,
+        {
+          type: 'text',
+          text: 'And here is an external resource:',
+        },
+        {
+          type: 'resource',
+          resource: urlResource,
+        } as MCPResourceContent,
+      ],
+    },
+  };
 }
 
 /**
  * Simple greeting tool for testing tool calls from UI
  */
-export function createGreetingResponse(name: string, from?: string): MCPResponse {
-    return {
-        jsonrpc: '2.0',
-        id: `greeting-${Date.now()}`,
-        result: {
-            content: [
-                {
-                    type: 'text',
-                    text: `Hello, ${name}! 👋${from ? ` (Called from: ${from})` : ''}`,
-                },
-            ],
+export function createGreetingResponse(
+  name: string,
+  from?: string,
+): MCPResponse {
+  return {
+    jsonrpc: '2.0',
+    id: `greeting-${Date.now()}`,
+    result: {
+      content: [
+        {
+          type: 'text',
+          text: `Hello, ${name}! 👋${from ? ` (Called from: ${from})` : ''}`,
         },
-    };
+      ],
+    },
+  };
 }
 
 /**
  * Current time tool for testing
  */
 export function createCurrentTimeResponse(): MCPResponse {
-    return {
-        jsonrpc: '2.0',
-        id: `time-${Date.now()}`,
-        result: {
-            content: [
-                {
-                    type: 'text',
-                    text: `Current time: ${new Date().toLocaleString()}`,
-                },
-            ],
+  return {
+    jsonrpc: '2.0',
+    id: `time-${Date.now()}`,
+    result: {
+      content: [
+        {
+          type: 'text',
+          text: `Current time: ${new Date().toLocaleString()}`,
         },
-    };
+      ],
+    },
+  };
 }
 
 // Export all demo functions for use in web MCP tools or testing
 export const mcpUiDemoTools = {
-    createHtmlDemo,
-    createUrlDemo,
-    createRemoteDomDemo,
-    createMixedDemo,
-    createMultiResourceDemo,
-    createGreetingResponse,
-    createCurrentTimeResponse,
+  createHtmlDemo,
+  createUrlDemo,
+  createRemoteDomDemo,
+  createMixedDemo,
+  createMultiResourceDemo,
+  createGreetingResponse,
+  createCurrentTimeResponse,
 };
