@@ -4,8 +4,11 @@ use std::collections::HashMap;
 use tokio::fs;
 use tracing::{error, info};
 
+use super::{
+    utils::{constants::MAX_FILE_SIZE, SecurityValidator},
+    BuiltinMCPServer,
+};
 use crate::mcp::{JSONSchema, JSONSchemaType, MCPError, MCPResponse, MCPTool};
-use super::{BuiltinMCPServer, utils::{SecurityValidator, constants::MAX_FILE_SIZE}};
 
 pub struct FilesystemServer {
     security: SecurityValidator,
@@ -17,7 +20,7 @@ impl FilesystemServer {
             security: SecurityValidator::default(),
         }
     }
-    
+
     fn create_read_file_tool() -> MCPTool {
         MCPTool {
             name: "read_file".to_string(),
@@ -62,7 +65,7 @@ impl FilesystemServer {
             annotations: None,
         }
     }
-    
+
     fn create_write_file_tool() -> MCPTool {
         MCPTool {
             name: "write_file".to_string(),
@@ -124,7 +127,7 @@ impl FilesystemServer {
             annotations: None,
         }
     }
-    
+
     fn create_list_directory_tool() -> MCPTool {
         MCPTool {
             name: "list_directory".to_string(),
@@ -169,10 +172,10 @@ impl FilesystemServer {
             annotations: None,
         }
     }
-    
+
     async fn handle_read_file(&self, args: Value) -> MCPResponse {
         let request_id = Value::String(uuid::Uuid::new_v4().to_string());
-        
+
         let path_str = match args.get("path").and_then(|v| v.as_str()) {
             Some(path) => path,
             None => {
@@ -188,7 +191,7 @@ impl FilesystemServer {
                 };
             }
         };
-        
+
         // Validate path security
         let safe_path = match self.security.validate_path(path_str) {
             Ok(path) => path,
@@ -206,7 +209,7 @@ impl FilesystemServer {
                 };
             }
         };
-        
+
         // Check file size
         if let Err(e) = self.security.validate_file_size(&safe_path, MAX_FILE_SIZE) {
             error!("File size validation failed: {}", e);
@@ -221,7 +224,7 @@ impl FilesystemServer {
                 }),
             };
         }
-        
+
         // Read file
         match fs::read_to_string(&safe_path).await {
             Ok(content) => {
@@ -253,10 +256,10 @@ impl FilesystemServer {
             }
         }
     }
-    
+
     async fn handle_write_file(&self, args: Value) -> MCPResponse {
         let request_id = Value::String(uuid::Uuid::new_v4().to_string());
-        
+
         let path_str = match args.get("path").and_then(|v| v.as_str()) {
             Some(path) => path,
             None => {
@@ -272,7 +275,7 @@ impl FilesystemServer {
                 };
             }
         };
-        
+
         let content = match args.get("content").and_then(|v| v.as_str()) {
             Some(content) => content,
             None => {
@@ -288,7 +291,7 @@ impl FilesystemServer {
                 };
             }
         };
-        
+
         // Validate path security
         let safe_path = match self.security.validate_path(path_str) {
             Ok(path) => path,
@@ -306,7 +309,7 @@ impl FilesystemServer {
                 };
             }
         };
-        
+
         // Check content size
         if content.len() > MAX_FILE_SIZE {
             return MCPResponse {
@@ -315,12 +318,16 @@ impl FilesystemServer {
                 result: None,
                 error: Some(MCPError {
                     code: -32603,
-                    message: format!("Content too large: {} bytes (max: {} bytes)", content.len(), MAX_FILE_SIZE),
+                    message: format!(
+                        "Content too large: {} bytes (max: {} bytes)",
+                        content.len(),
+                        MAX_FILE_SIZE
+                    ),
                     data: None,
                 }),
             };
         }
-        
+
         // Create parent directory if it doesn't exist
         if let Some(parent) = safe_path.parent() {
             if let Err(e) = fs::create_dir_all(parent).await {
@@ -337,7 +344,7 @@ impl FilesystemServer {
                 };
             }
         }
-        
+
         // Write file
         match fs::write(&safe_path, content).await {
             Ok(()) => {
@@ -369,14 +376,12 @@ impl FilesystemServer {
             }
         }
     }
-    
+
     async fn handle_list_directory(&self, args: Value) -> MCPResponse {
         let request_id = Value::String(uuid::Uuid::new_v4().to_string());
-        
-        let path_str = args.get("path")
-            .and_then(|v| v.as_str())
-            .unwrap_or(".");
-        
+
+        let path_str = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+
         // Validate path security
         let safe_path = match self.security.validate_path(path_str) {
             Ok(path) => path,
@@ -394,12 +399,12 @@ impl FilesystemServer {
                 };
             }
         };
-        
+
         // List directory contents
         match fs::read_dir(&safe_path).await {
             Ok(mut entries) => {
                 let mut items = Vec::new();
-                
+
                 while let Ok(Some(entry)) = entries.next_entry().await {
                     if let Ok(metadata) = entry.metadata().await {
                         let file_type = if metadata.is_dir() {
@@ -409,14 +414,14 @@ impl FilesystemServer {
                         } else {
                             "other"
                         };
-                        
+
                         let name = entry.file_name().to_string_lossy().to_string();
                         let size = if metadata.is_file() {
                             Some(metadata.len())
                         } else {
                             None
                         };
-                        
+
                         items.push(json!({
                             "name": name,
                             "type": file_type,
@@ -424,13 +429,13 @@ impl FilesystemServer {
                         }));
                     }
                 }
-                
+
                 items.sort_by(|a, b| {
                     let a_type = a.get("type").and_then(|v| v.as_str()).unwrap_or("");
                     let b_type = b.get("type").and_then(|v| v.as_str()).unwrap_or("");
                     let a_name = a.get("name").and_then(|v| v.as_str()).unwrap_or("");
                     let b_name = b.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                    
+
                     // Directories first, then files, then by name
                     match (a_type, b_type) {
                         ("directory", "file") => std::cmp::Ordering::Less,
@@ -438,15 +443,19 @@ impl FilesystemServer {
                         _ => a_name.cmp(b_name),
                     }
                 });
-                
-                info!("Successfully listed directory: {:?} ({} items)", safe_path, items.len());
+
+                info!(
+                    "Successfully listed directory: {:?} ({} items)",
+                    safe_path,
+                    items.len()
+                );
                 MCPResponse {
                     jsonrpc: "2.0".to_string(),
                     id: Some(request_id),
                     result: Some(json!({
                         "content": [{
                             "type": "text",
-                            "text": format!("Directory listing for {}:\n{}", path_str, 
+                            "text": format!("Directory listing for {}:\n{}", path_str,
                                 serde_json::to_string_pretty(&items).unwrap_or_default())
                         }]
                     })),
@@ -475,11 +484,11 @@ impl BuiltinMCPServer for FilesystemServer {
     fn name(&self) -> &str {
         "builtin.filesystem"
     }
-    
+
     fn description(&self) -> &str {
         "Built-in filesystem operations server"
     }
-    
+
     fn tools(&self) -> Vec<MCPTool> {
         vec![
             Self::create_read_file_tool(),
@@ -487,7 +496,7 @@ impl BuiltinMCPServer for FilesystemServer {
             Self::create_list_directory_tool(),
         ]
     }
-    
+
     async fn call_tool(&self, tool_name: &str, args: Value) -> MCPResponse {
         match tool_name {
             "read_file" => self.handle_read_file(args).await,

@@ -1,6 +1,6 @@
+use crate::mcp::{MCPResponse, MCPTool};
 use async_trait::async_trait;
 use serde_json::Value;
-use crate::mcp::{MCPTool, MCPResponse};
 
 pub mod filesystem;
 pub mod sandbox;
@@ -11,20 +11,20 @@ pub mod utils;
 pub trait BuiltinMCPServer: Send + Sync {
     /// Server name (e.g., "builtin.filesystem")
     fn name(&self) -> &str;
-    
+
     /// Server description
     #[allow(dead_code)]
     fn description(&self) -> &str;
-    
+
     /// Server version
     #[allow(dead_code)]
     fn version(&self) -> &str {
         "1.0.0"
     }
-    
+
     /// List available tools for this server
     fn tools(&self) -> Vec<MCPTool>;
-    
+
     /// Call a tool on this server
     async fn call_tool(&self, tool_name: &str, args: Value) -> MCPResponse;
 }
@@ -39,30 +39,30 @@ impl BuiltinServerRegistry {
         let mut registry = Self {
             servers: std::collections::HashMap::new(),
         };
-        
+
         // Register built-in servers
         registry.register_server(Box::new(filesystem::FilesystemServer::new()));
         registry.register_server(Box::new(sandbox::SandboxServer::new()));
-        
+
         registry
     }
-    
+
     pub fn register_server(&mut self, server: Box<dyn BuiltinMCPServer>) {
         let name = server.name().to_string();
         self.servers.insert(name, server);
     }
-    
+
     pub fn get_server(&self, name: &str) -> Option<&dyn BuiltinMCPServer> {
         self.servers.get(name).map(|s| s.as_ref())
     }
-    
+
     pub fn list_servers(&self) -> Vec<String> {
         self.servers.keys().cloned().collect()
     }
-    
+
     pub fn list_all_tools(&self) -> Vec<MCPTool> {
         let mut all_tools = Vec::new();
-        
+
         for server in self.servers.values() {
             let mut tools = server.tools();
             // Prefix tool names with server name for uniqueness
@@ -71,10 +71,10 @@ impl BuiltinServerRegistry {
             }
             all_tools.extend(tools);
         }
-        
+
         all_tools
     }
-    
+
     pub async fn call_tool(&self, server_name: &str, tool_name: &str, args: Value) -> MCPResponse {
         if let Some(server) = self.get_server(server_name) {
             server.call_tool(tool_name, args).await

@@ -2,22 +2,5 @@
   "description": "Built-in MCP servers that are automatically available to all assistants",
   "version": "1.0.0",
   "servers": {
-    "filesystem": {
-      "command": "npx",
-      "args": ["@modelcontextprotocol/server-filesystem", "/tmp"],
-      "env": {}
-    },
-    "brave-search": {
-      "command": "npx",
-      "args": ["@modelcontextprotocol/server-brave-search"],
-      "env": {
-        "BRAVE_API_KEY": ""
-      }
-    },
-    "sqlite": {
-      "command": "npx",
-      "args": ["@modelcontextprotocol/server-sqlite", "--db-path", ":memory:"],
-      "env": {}
-    }
   }
 }

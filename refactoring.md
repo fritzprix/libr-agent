@@ -1,227 +1,132 @@
-# Refactoring Plan — Integrate `@mcp-ui/client` for UIResource rendering
+# Refactoring Plan — App 최적화
 
-목표: 외부 `@mcp-ui/client` 패키지를 표준 renderer로 도입하여 MCP 서버가 반환하는 UI 리소스(`UIResource`)를 안전하게 렌더링하고, 액션 이벤트를 호스트(MCP)로 전달할 수 있도록 전체 흐름을 정비합니다.
+요약: 생성된 `app_*.log`들을 분석한 결과, 에러(예외)보다는 WARN 로그가 다수 발견되었고, 반복적으로 등장하는 경고들이 몇 가지 유형으로 집중되어 있습니다. 아래는 발견된 주요 문제, 영향, 우선순위 권장 조치입니다.
 
-요구사항 체크리스트
+## 체크리스트
 
-- 프로젝트 종속성에 `@mcp-ui/client`를 추가하고 빌드/타입 체크가 통과해야 합니다.
-- Message 모델과 MCP 타입을 `@mcp-ui` 스펙과 호환되도록 조정(필요시 매핑 유틸 추가).
-- `ToolCaller`가 MCP 응답에 포함된 `resource` 항목을 구조적으로 보존하여 `Message.uiResource`에 넣어야 합니다.
-- `use-unified-mcp`, `use-web-mcp`, `use-mcp-server`는 `UIResource`/`MCPResponse`를 손상시키지 않고 전달.
-- `MessageBubbleRouter`는 `uiResource`를 감지하면 `@mcp-ui/client`의 `UIResourceRenderer`(React)로 라우팅.
-- `UI`에서 발생한 액션(onUIAction)은 적절한 훅(예: `useUnifiedMCP`)을 통해 도구 호출이나 Intent로 변환.
-- 보안: iframe sandbox, origin 검증, X-Frame-Options fallback을 구현.
-- 테스트: 단위 + E2E 스모크(모의 web tool)를 추가.
+- [x] `app_*.log` 파일별로 `[WARN]` 앞뒤 100라인을 추출하여 검토
+- [x] 상위 반복 WARN 메시지 분류
+- [ ] 각 문제에 대한 코드/설정 수정을 위한 PR 작성 및 테스트
 
-우선순위(권장)
+## 주요 발견 사항
 
-1. 패키지 설치 및 타입 확인
-2. 타입(모델) 및 MCP 타입 정렬/매핑 유틸 추가
-3. `ToolCaller` 변경 — 구조화된 UIResource 보존
-4. `MessageBubbleRouter`에서 `UIResourceRenderer` 사용(단계적 통합)
-5. onUIAction 핸들러 연결 및 보안 검증
-6. 테스트 및 문서화
+1. JSON schema 파싱 실패 (tauri_mcp_agent_lib::mcp)
 
-설치 (빠르게 적용하려면)
+- 반복 메시지: "Failed to parse JSON schema: missing field `type`, using default" 및 "invalid type: sequence, expected variant identifier, using default"
+- 영향: 스키마가 불완전하거나 예상 형식이 아닌 경우 기본값으로 폴백되어 동작이 예상과 달라질 수 있습니다.
+- 우선순위: 높음
+- 권장 조치:
 
-```bash
-pnpm add @mcp-ui/client@latest
-# 또는 프로젝트 정책에 따라 특정 버전 핀
-# pnpm add @mcp-ui/client@1.2.3
-pnpm install
-pnpm run build
-```
+- 권장 조치:
+  - 입력 스키마에 대한 사전 검증 추가(유효성 검사 및 상세 로그)
+  - 스키마 파싱 실패 시 더 구체적인 경고/에러 레벨 분리(예: WARN -> ERROR 가능)
+  - 문제를 유발하는 스키마 예시를 로그에 포함해 재현성 확보
 
-파일별 구체 작업 지침
+2. AIService: tool 메시지에서 함수 이름을 찾을 수 없음
 
-1. `src/models/chat.ts` — 타입 정렬 및 `UIResource` 매핑
+- 반복 메시지: "[AIService] Could not find function name for tool message with tool_call_id: ..."
+- 영향: 툴 호출이 올바르게 라우팅되지 않아 기능이 정상 수행되지 않을 가능성
+- 우선순위: 높음
+- 권장 조치:
 
-- 목표: 앱 내부 `UIResource` 타입이 `@mcp-ui` 스펙과 호환되도록 정의합니다.
-- 변경 (권장 위치: `src/models/chat.ts` 상단에 추가)
+- 권장 조치:
+  - 툴 메시지 포맷 파싱 로직 점검(요청/응답 페이로드에서 function name 추출 실패 원인 분석)
+  - 툴 등록/매핑 로직에서 누락 검사 및 방어 코드 추가
+  - 해당 `tool_call_id`를 수집해 재현 테스트 케이스 작성
 
-```ts
-// src/models/chat.ts
-export interface UIResource {
-  uri?: string; // ui://... 식별자
-  mimeType: string; // 'text/html' | 'text/uri-list' | 'application/vnd.mcp-ui.remote-dom'
-  text?: string;
-  blob?: string;
-  metadata?: Record<string, unknown>;
-}
+3. AIService: Gemini sequencing 규칙 위반으로 보조 호출 제거
 
-export interface Message {
-  // ...existing fields
-  content: string;
-  uiResource?: UIResource | UIResource[];
-}
-```
+- 반복 메시지: "Removing assistant function call that violates Gemini sequencing rules {...}"
+- 영향: 모델/어시스턴트의 툴 호출 순서 제약으로 일부 기능이 차단됨
+- 우선순위: 중
+- 권장 조치:
 
-- 주의: `@mcp-ui/client`의 타입이 프로젝트의 타입 시스템(경로 alias 등)과 일치하지 않으면 매핑 유틸을 만듭니다.
+- 권장 조치:
+  - 모델에 전달되는 함수 호출 시퀀스 검증 로직 검토
+  - 시퀀싱 규칙 문서화 및 규칙 위반 시 상세 로그(원인, 이전/현재 역할 등) 추가
 
-2. `src/lib/mcp-types.ts` — MCPResponse content union 확장
+4. TimeLocationSystemPrompt: 지리 위치 조회 실패
 
-- MCP 응답의 `result.content` 항목이 `{ type:'resource', resource: UIResource }`를 포함할 수 있도록 타입을 확장합니다.
+- 반복 메시지: "[TimeLocationSystemPrompt] Failed to get geolocation {}"
+- 영향: 위치 기반 기능(시간대, 지역화 등)에서 기본값 사용 혹은 기능 저하
+- 우선순위: 낮~중
+- 권장 조치:
 
-```ts
-// 예시
-export type MCPContentItem =
-  | { type: 'text'; text: string }
-  | { type: 'resource'; resource: UIResource }
-  | { type: 'file' /* ... */ };
-```
+- 권장 조치:
+  - 위치 조회 실패 시 폴백 전략 도입(환경변수, 사용자 설정, IP 기반 추정 등)
+  - 외부 API 호출 시 타임아웃/재시도 정책 명확화 및 로깅 강화
 
-3. `src/features/chat/ToolCaller.tsx` — 구조화된 UIResource 보존
+## 추가 권장 작업(운영/개선)
 
-- 현재: `serializeToolResult`가 모든 것을 문자열로 만든 후 `Message.content`로 저장합니다. 이 부분을 고칩니다.
-- 변경 포인트:
-  - `serializeToolResult`가 `SerializedToolResult` 객체({ text?, uiResource?, metadata })를 반환하게 수정
-  - `toolResults.push(...)` 시 `uiResource` 필드를 포함한 구조화된 `Message` 객체 생성
+- 로그 스팸 감소: 동일 WARN이 초당/초기 반복으로 쌓이면 로그 필터링 또는 샘플링 적용
+- 로그 레벨 정비: 재현 불가능한 입력 문제는 WARN, 서비스 중단 관련은 ERROR로 구분
+- 모니터링/알림: 특정 워닝 유형(예: schema 파싱 실패, tool mapping 실패)에 대해 알림 룰 생성
+- 반복 WARN 자동 집계 스크립트: 현재 만든 `scripts/extract_by_occurrence.sh`를 개선하여 중복 병합(겹치는 영역 합치기) 옵션 추가
 
-```ts
-// ToolCaller 내 변경 요지
-const serialized = serializeToolResult(
-  mcpResponse,
-  toolName,
-  executionStartTime,
-);
+## 다음 단계 (권장 우선순위)
 
-toolResults.push({
-  id: createId(),
-  assistantId: currentAssistant?.id,
-  role: 'tool',
-  content: serialized.text || '',
-  uiResource: serialized.uiResource,
-  tool_call_id: toolCall.id,
-  sessionId: currentSession?.id || '',
-});
-```
+1. `tauri_mcp_agent_lib::mcp`의 스키마 파싱 로직에서 입력 예외 케이스 하나를 재현하고 수정(로그에 문제 스키마 인라인 출력) — 담당자: 백엔드
+2. `AIService`의 툴 메시지 파싱/매핑 경로에 방어 코드 추가 및 테스트 케이스 작성 — 담당자: 프론트엔드/서비스 레이어
+3. 위치 조회 실패 폴백 전략 구현(환경변수 기반) — 담당자: 서비스 레이어
+4. `scripts/extract_by_occurrence.sh`에 `--merge-overlap` 옵션 추가(원하시면 제가 구현해 드립니다)
 
-- 권장: `mcpResponse.result.content`를 순회하여 `type==='resource'` 항목을 모두 `uiResource[]`로 수집.
+## 생성된 파일들
 
-4. `src/hooks/use-unified-mcp.ts` & `src/hooks/use-web-mcp.ts` — web-branch 처리
+- `scripts/extract_by_occurrence.sh` — WARN 발생 지점별로 `app_N.log`를 생성 (이미 실행됨)
+- 분석한 산출물(임시): `/tmp/log_summary.txt`
 
-- 목표: web 툴이 `UIResource`를 반환하면 이를 적절한 `MCPResponse`로 래핑하거나 그대로 전달.
-- 핵심: web tool 결과를 검사하는 헬퍼 추가
+요약 완료: 위 내용을 바탕으로 PR/수정 작업을 진행하겠습니다. 원하는 경우 1개 항목을 선택해 바로 코드/테스트 수정을 시작합니다。
 
-```ts
-const looksLikeUIResource = (v: unknown): v is UIResource =>
-  !!v && typeof v === 'object' && 'mimeType' in (v as any);
+--- 자동 로그 분석 요약 추가 (2025-08-16)
 
-// executeToolCall의 web branch
-const result = await executeWebTool(toolName, args);
-if (isMCPResponse(result)) return result;
-if (looksLikeUIResource(result)) {
-  return {
-    jsonrpc: '2.0',
-    id: toolCall.id,
-    result: { content: [{ type: 'resource', resource: result as UIResource }] },
-  } as MCPResponse;
-}
-// fallback: wrap as text
-```
+## 로그 파일 분석 요약 (자동 집계)
 
-- 또한 `use-web-mcp.ts`의 `executeCall` 시그니처에 `Promise<MCPResponse | UIResource | string>` 등 명시적 타입 주석을 추가하면 좋습니다.
+- 분석 대상: 생성된 `app_*.log` 파일들 (스크립트 `scripts/extract_by_occurrence.sh`로 추출). 전체 집계 결과는 `/tmp/log_summary.txt`에 저장되어 있습니다.
+- 전반적 소결: ERROR는 거의 관찰되지 않았고 WARN이 다수(파일당 3~12건 수준) 발견되었습니다. WARN 패턴은 크게 네 가지로 집중되어 있습니다.
 
-5. `src/lib/web-mcp/mcp-proxy.ts` 및 Tauri MCP 경로 — Message 매핑
+### 전역 상위 WARN 유형 (빈도, 자동집계 기준)
 
-- MCP 프록시가 MCPResponse를 Message로 변환할 때 `content`에서 `resource` 항목을 찾아 `message.uiResource`로 매핑합니다.
-- `text/uri-list`의 경우 첫 유효 URL만 사용. base64 blob은 `uiResource.blob`으로 보존.
+- Failed to parse JSON schema: missing field `type`, using default — 28건
+- Could not find function name for tool message with tool_call_id: <various ids> — 다수(상위 항목들: 24,24,23,20,...) — 여러 고유 `tool_call_id`에 걸쳐 발생
+- Removing assistant function call that violates Gemini sequencing rules {...} — 21건(다양한 인덱스/카운트)
+- Failed to get geolocation {} — 10건
 
-6. `src/features/chat/MessageBubbleRouter.tsx` — `UIResourceRenderer` 라우팅
+### 파일별 요약(요점)
 
-- `MessageBubbleRouter` 최상단에 `message.uiResource` 검사 추가. React import 방식으로 `@mcp-ui/client`의 `UIResourceRenderer`를 사용합니다.
+- 대부분 파일(app_1..app_53)은 WARN 0~12건, ERROR 0건.
+- `Failed to parse JSON schema` 계열 WARN은 주로 `app_1`~`app_9`, `app_4`, `app_5` 등 초기 블록에 집중되어 있습니다.
+- `Could not find function name for tool message`는 다수의 파일(app_21..app_33 등)에 광범위하게 나타났고, 각기 다른 `tool_call_id`들로 반복 발생합니다.
+- `Removing assistant function call that violates Gemini sequencing rules`는 여러 파일에서 관찰되어 툴 호출 시퀀스 검증 문제를 시사합니다.
 
-예시 변경:
+### 단기 권장 조치 (우선순위 높음 → 낮음)
 
-```tsx
-import { UIResourceRenderer } from '@mcp-ui/client';
+1. 스키마 파싱 문제(높음)
 
-if (message.uiResource) {
-  const resource = Array.isArray(message.uiResource)
-    ? message.uiResource[0]
-    : message.uiResource;
-  return (
-    <UIResourceRenderer
-      resource={resource}
-      onUIAction={(action) => handleUIAction(action, message)}
-    />
-  );
-}
-```
+- 재현: `app_*`에서 `Failed to parse JSON schema`가 발생한 블록을 찾아 문제 스키마(입력 페이로드)를 캡처해 재현 케이스를 만드세요. (/tmp/log_summary.txt 참조)
+- 조치: 입력 스키마 사전 검증 로직 추가, 실패 시 문제 스키마를 로그에 포함(민감정보 제외), 필요시 에러 레벨 상향.
 
-- `handleUIAction`은 아래에서 설명할 onUIAction → MCP 호출 변환 로직과 연결합니다.
+2. 툴 매핑(함수 이름) 실패(높음)
 
-7. onUIAction 핸들링 (iframe → host)
+- 원인 추정: 툴 메시지 페이로드에서 function name 추출 실패 또는 툴 등록시 id→이름 매핑 누락.
+- 조치: 수집된 `tool_call_id`들을 기준으로 미매핑 샘플을 수집(이미 생성된 `app_*.log`에 샘플 존재). 방어 코드 추가(미매핑시 기본 처리 경로/로깅).
 
-- `@mcp-ui/client`의 `onUIAction` 이벤트를 받아 `useUnifiedMCP.executeToolCall`이나 ChatContext의 `submit`로 변환합니다.
-- 예시 handler:
+3. Gemini 시퀀싱 규칙 위반(중간)
 
-```ts
-const handleUIAction = async (action, message) => {
-  switch (action.type) {
-    case 'tool':
-      await executeToolCall({
-        id: createId(),
-        type: 'function',
-        function: {
-          name: action.payload.toolName,
-          arguments: JSON.stringify(action.payload.params),
-        },
-      });
-      break;
-    case 'intent':
-      // map to assistant intent handler
-      break;
-    case 'prompt':
-      // create new message with content = action.payload.prompt
-      break;
-    case 'link':
-      window.open(action.payload.url, '_blank');
-      break;
-    default:
-      console.warn('Unknown UI action', action);
-  }
-};
-```
+- 조치: 호출 시퀀스 검증 로직 검토, 규칙 위반 시 상세 로그(이전/현재 역할, toolCallsCount 등) 추가해 왜 제거됐는지 정확히 파악.
 
-- 메시지와 연동된 비동기 응답이 필요하면 `message.id`를 포함해 `executeToolCall` 혹은 MCP proxy에 콜백 등록.
+4. 지리 위치 조회 실패(낮음)
 
-8. 보안 권장사항
+- 조치: 폴백 정책(환경변수, 사용자 설정, IP 기반 추정), 외부 호출 재시도/타임아웃 정책 검토.
 
-- iframe sandbox 설정: 가능한 한 최소 권한 사용(예: `sandbox=""` 또는 `sandbox="allow-scripts"`를 신중히 결정). `allow-same-origin`은 필요 시에만 사용.
-- postMessage 처리: origin 검증, payload 스키마 검증
+### 빠른 기술적 검사(권장 커맨드 예)
 
-```ts
-window.addEventListener('message', (ev) => {
-  if (ev.origin !== expectedOrigin) return;
-  // validate ev.data shape
-});
-```
+- 집계 파일 확인: cat /tmp/log_summary.txt
+- 스키마 실패 블록 추출(예):
+  - grep -n '\[WARN\]._Failed to parse JSON schema' app\__.log | cut -d: -f1,2
+  - 이후 해당 app_N.log에서 문제 블록(라인)을 추출해 재현 케이스 생성
 
-- 외부 URL(embed) 실패(X-Frame-Options) 시 fallback: 링크로 열기. 사용자에게 경고 표시.
-- base64 blob/대용량 컨텐츠는 서버/클라이언트에서 size limit를 적용.
+### 메모
 
-9. 테스트 계획
+- 현재 자동 분석은 단순 텍스트 집계 기반입니다. 재현/수정 작업 전에는 각 WARN 발생 시점의 전체 컨텍스트(입력 페이로드, 관련 요청 id 등)을 확보하는 것이 중요합니다.
 
-- 단위 테스트
-  - `ToolCaller`가 `mcpResponse`의 resource를 `Message.uiResource`로 변환하는지 확인
-  - `use-unified-mcp`가 web tool의 `UIResource`를 적절히 래핑하는지 확인
-- 통합 스모크
-  - Mock web tool을 만들어 UIResource text/html 반환 → Chat에 iframe으로 렌더되는지 확인
-  - iframe -> parent postMessage로 tool 호출이 트리거되어 `useUnifiedMCP`가 호출되는지 확인
-
-10. PR/커밋 가이드
-
-- 커밋 분리: (1) deps 설치, (2) 타입 변경, (3) ToolCaller + 훅 변경, (4) 라우팅 + UI 통합, (5) 테스트
-- PR 본문: 변경 요약, 수동 스모크 테스트 절차, 보안/인수 조건 명시
-
-작업 체크포인트(제가 패치로 적용 가능)
-
-- 빠른 적용 권장 (제가 적용 시 순서):
-  1. `pnpm add @mcp-ui/client` 및 빌드 확인
-  2. `src/models/chat.ts` 타입 추가 + `src/lib/mcp-types.ts` 확장
-  3. `ToolCaller.tsx` 수정하여 구조화된 `uiResource` 보존
-  4. `MessageBubbleRouter.tsx`에서 `UIResourceRenderer` 사용
-  5. 간단한 mocked tool로 E2E smoke 확인
-
-원하시면 제가 위 1~4를 패치로 적용하고 빌드 및 간단한 스모크를 실행해 드리겠습니다. 어느 범위를 적용할까요? (추천: 1~4 전부)
+위 항목을 `refactoring.md`에 추가했습니다. 원하시면 1) 스키마 실패 샘플을 자동으로 추출하는 스크립트를 추가하거나 2) `scripts/extract_by_occurrence.sh`에 `--merge-overlap` 옵션을 구현해 겹친 블록을 합치는 작업을 바로 진행하겠습니다.
