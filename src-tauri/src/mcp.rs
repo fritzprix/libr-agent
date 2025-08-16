@@ -391,7 +391,7 @@ impl MCPServerManager {
                 );
 
                 // Try to fix common issues and re-parse
-                if let Ok(mut fixed_schema) = Self::fix_schema_issues(schema.clone()) {
+                if let Ok(fixed_schema) = Self::fix_schema_issues(schema.clone()) {
                     match serde_json::from_value::<JSONSchema>(fixed_schema) {
                         Ok(json_schema) => {
                             info!("Successfully parsed schema after applying fixes");
