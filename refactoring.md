@@ -170,8 +170,56 @@ import { Button } from '@/components/ui/button';
 
 ## 5. 테스트 케이스
 
-- [ ] Send/Cancel 버튼 아이콘이 명확하게 표시되는지
-- [ ] 지원되는 파일 드래그 시 초록색 표시
-- [ ] 지원되지 않는 파일 드래그 시 빨간색 표시
-- [ ] Drop 이벤트에서만 파일이 실제 추가되는지
-- [ ] 첨부 파일 삭제 버튼 클릭 영역이 충분한지
+- [X] Send/Cancel 버튼 아이콘이 명확하게 표시되는지
+- [X] 지원되는 파일 드래그 시 초록색 표시
+- [X] 지원되지 않는 파일 드래그 시 빨간색 표시
+- [X] Drop 이벤트에서만 파일이 실제 추가되는지
+- [X] 첨부 파일 삭제 버튼 클릭 영역이 충분한지
+
+
+## 위 변경 사항으로 인한 이슈 및 해결
+
+### 문제 상황
+- 파일 Drag & Drop 테스트 시, 파일의 실제 내용이 아닌 index.html 내용이 첨부되는 문제 발생
+
+### 문제의 원인 분석
+- **근본 원인**: Drag & Drop과 File Input의 파일 처리 방식 차이
+- **File Input**: `URL.createObjectURL(file)`로 blob URL 생성 → 정상 동작
+- **Drag & Drop**: 파일 시스템 경로를 직접 전달 → `ResourceAttachmentContext.convertToBlobUrl()`에서 `fetch(path)` 시도 → index.html 반환
+
+### 해결 방법
+1. **Tauri 커맨드 추가**: `read_dropped_file` 커맨드를 Rust 백엔드에 구현
+   ```rust
+   #[tauri::command]
+   async fn read_dropped_file(file_path: String) -> Result<Vec<u8>, String>
+   ```
+
+2. **프론트엔드 수정**: Tauri 커맨드를 통해 파일 읽기
+   ```typescript
+   // 기존: 파일 시스템 경로 직접 사용
+   await addFile(filePath, 'application/octet-stream', filename);
+   
+   // 수정: Tauri 커맨드로 파일 읽기 → blob URL 생성
+   const fileData: number[] = await invoke('read_dropped_file', { filePath });
+   const uint8Array = new Uint8Array(fileData);
+   const blob = new Blob([uint8Array]);
+   const blobUrl = URL.createObjectURL(blob);
+   await addFile(blobUrl, mimeType, filename);
+   ```
+
+3. **MIME 타입 개선**: 파일 확장자 기반 정확한 MIME 타입 설정
+
+### 변경된 파일들
+- `src-tauri/src/lib.rs`: `read_dropped_file` 커맨드 추가
+- `src/features/chat/Chat.tsx`: Drag & Drop 파일 처리 로직 개선
+
+### 테스트 완료 사항
+- ✅ TypeScript 컴파일 성공
+- ✅ ESLint 검사 통과  
+- ✅ Prettier 포맷팅 완료
+- ✅ 드래그 앤 드롭 파일 처리 로직 수정 완료
+
+### Best Practice 적용
+- Tauri v2의 보안 모델에 맞는 파일 시스템 접근 방식 사용
+- 메모리 누수 방지를 위한 blob URL cleanup 구현
+- 에러 처리 및 로깅 강화

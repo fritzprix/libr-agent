@@ -314,6 +314,26 @@ async fn list_log_files() -> Result<Vec<String>, String> {
 }
 
 #[tauri::command]
+async fn read_dropped_file(file_path: String) -> Result<Vec<u8>, String> {
+    use std::fs;
+    use std::path::Path;
+
+    let path = Path::new(&file_path);
+    
+    // Security check: ensure the file exists and is accessible
+    if !path.exists() {
+        return Err(format!("File does not exist: {}", file_path));
+    }
+    
+    if !path.is_file() {
+        return Err(format!("Path is not a file: {}", file_path));
+    }
+
+    // Read the file contents
+    fs::read(path).map_err(|e| format!("Failed to read file {}: {}", file_path, e))
+}
+
+#[tauri::command]
 async fn list_all_tools_unified() -> Result<Vec<mcp::MCPTool>, String> {
     get_mcp_manager()
         .list_all_tools_unified()
@@ -388,7 +408,8 @@ pub fn run() {
                 get_log_dir,
                 backup_current_log,
                 clear_current_log,
-                list_log_files
+                list_log_files,
+                read_dropped_file
             ])
             .setup(|_app| {
                 println!("🚀 SynapticFlow initializing...");

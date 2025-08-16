@@ -33,6 +33,7 @@ import React, {
   useState,
 } from 'react';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
+import { invoke } from '@tauri-apps/api/core';
 import ToolsModal from '../tools/ToolsModal';
 import MessageBubble from './MessageBubble';
 import { TimeLocationSystemPrompt } from '../prompts/TimeLocationSystemPrompt';
@@ -503,6 +504,7 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
       logger.info('Files dropped:', filePaths);
 
       for (const filePath of filePaths) {
+        let blobUrl = '';
         try {
           // Extract filename from path
           const filename =
@@ -523,12 +525,46 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
             sessionId: currentSession?.id,
           });
 
-          // For dropped files, we use the file path directly as Tauri can read from it
-          await addFile(filePath, 'application/octet-stream', filename);
+          // Read file content using Tauri command
+          const fileData: number[] = await invoke('read_dropped_file', {
+            filePath,
+          });
+
+          // Convert number array to Uint8Array and create a blob
+          const uint8Array = new Uint8Array(fileData);
+          const blob = new Blob([uint8Array]);
+          blobUrl = URL.createObjectURL(blob);
+
+          // Determine MIME type based on file extension
+          const getMimeType = (filename: string): string => {
+            const ext = filename.toLowerCase().split('.').pop();
+            switch (ext) {
+              case 'txt':
+                return 'text/plain';
+              case 'md':
+                return 'text/markdown';
+              case 'json':
+                return 'application/json';
+              case 'pdf':
+                return 'application/pdf';
+              case 'docx':
+                return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+              case 'xlsx':
+                return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+              default:
+                return 'application/octet-stream';
+            }
+          };
+
+          const mimeType = getMimeType(filename);
+
+          // Use the blob URL with the ResourceAttachmentContext
+          await addFile(blobUrl, mimeType, filename);
 
           logger.info(`Dropped file processed successfully`, {
             filename,
             filePath,
+            mimeType,
           });
         } catch (error) {
           logger.error(`Error processing dropped file ${filePath}:`, {
@@ -547,6 +583,11 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
           alert(
             `Error processing file "${filePath}": ${error instanceof Error ? error.message : String(error)}`,
           );
+        } finally {
+          // Clean up blob URL to prevent memory leaks
+          if (blobUrl) {
+            URL.revokeObjectURL(blobUrl);
+          }
         }
       }
     },
