@@ -205,7 +205,7 @@ async fn call_builtin_tool(
 
 // 로그 파일 관리 명령들
 #[tauri::command]
-async fn get_log_dir() -> Result<String, String> {
+async fn get_app_logs_dir() -> Result<String, String> {
     use std::env;
     use std::path::PathBuf;
 
@@ -246,7 +246,7 @@ async fn backup_current_log() -> Result<String, String> {
     use chrono::Utc;
     use std::fs;
 
-    let log_dir_str = get_log_dir().await?;
+    let log_dir_str = get_app_logs_dir().await?;
     let log_dir = std::path::PathBuf::from(log_dir_str);
 
     // 현재 로그 파일 찾기 (명시된 파일명 사용)
@@ -270,7 +270,7 @@ async fn backup_current_log() -> Result<String, String> {
 async fn clear_current_log() -> Result<(), String> {
     use std::fs;
 
-    let log_dir_str = get_log_dir().await?;
+    let log_dir_str = get_app_logs_dir().await?;
     let log_dir = std::path::PathBuf::from(log_dir_str);
     let log_file = log_dir.join("synaptic-flow.log");
 
@@ -285,7 +285,7 @@ async fn clear_current_log() -> Result<(), String> {
 async fn list_log_files() -> Result<Vec<String>, String> {
     use std::fs;
 
-    let log_dir_str = get_log_dir().await?;
+    let log_dir_str = get_app_logs_dir().await?;
     let log_dir = std::path::PathBuf::from(log_dir_str);
 
     if !log_dir.exists() {
@@ -314,7 +314,7 @@ async fn list_log_files() -> Result<Vec<String>, String> {
 }
 
 #[tauri::command]
-async fn read_dropped_file(file_path: String) -> Result<Vec<u8>, String> {
+async fn read_file(file_path: String) -> Result<Vec<u8>, String> {
     use std::fs;
     use std::path::Path;
 
@@ -405,11 +405,11 @@ pub fn run() {
                 call_builtin_tool,
                 list_all_tools_unified,
                 call_tool_unified,
-                get_log_dir,
+                get_app_logs_dir,
                 backup_current_log,
                 clear_current_log,
                 list_log_files,
-                read_dropped_file
+                read_file
             ])
             .setup(|_app| {
                 println!("🚀 SynapticFlow initializing...");

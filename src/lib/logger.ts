@@ -69,7 +69,7 @@ export interface LogFileManager {
 // 로그 파일 관리 클래스 구현
 class TauriLogFileManager implements LogFileManager {
   async getLogDirectory(): Promise<string> {
-    return await invoke<string>('get_log_dir');
+    return await invoke<string>('get_app_logs_dir');
   }
 
   async backupCurrentLog(): Promise<string> {

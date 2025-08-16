@@ -33,7 +33,7 @@ import React, {
   useState,
 } from 'react';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
-import { invoke } from '@tauri-apps/api/core';
+import { useRustBackend } from '@/hooks/use-rust-backend';
 import ToolsModal from '../tools/ToolsModal';
 import MessageBubble from './MessageBubble';
 import { TimeLocationSystemPrompt } from '../prompts/TimeLocationSystemPrompt';
@@ -455,6 +455,7 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
     clearFiles,
     isLoading: isAttachmentLoading,
   } = useResourceAttachment();
+  const rustBackend = useRustBackend();
 
   // Handle drag and drop events from Tauri
   useEffect(() => {
@@ -525,10 +526,8 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
             sessionId: currentSession?.id,
           });
 
-          // Read file content using Tauri command
-          const fileData: number[] = await invoke('read_dropped_file', {
-            filePath,
-          });
+          // Read file content using type-safe Rust backend
+          const fileData = await rustBackend.readFile(filePath);
 
           // Convert number array to Uint8Array and create a blob
           const uint8Array = new Uint8Array(fileData);
