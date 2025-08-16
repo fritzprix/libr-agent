@@ -13,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui';
+import { Send, X } from 'lucide-react';
 import { useAssistantContext } from '@/context/AssistantContext';
 import { useSessionContext } from '@/context/SessionContext';
 import { useChatContext, ChatProvider } from '@/context/ChatContext';
@@ -429,7 +430,19 @@ function ChatAttachedFiles() {
 // Chat Input component - now uses ResourceAttachmentContext
 function ChatInput({ children }: { children?: React.ReactNode }) {
   const [input, setInput] = useState<string>('');
-  const [isDragOver, setIsDragOver] = useState<boolean>(false);
+  const [dragState, setDragState] = useState<'none' | 'valid' | 'invalid'>(
+    'none',
+  );
+  const dropTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+
+  // File validation function
+  const validateFiles = useCallback((filePaths: string[]): boolean => {
+    const supportedExtensions = /\.(txt|md|json|pdf|docx|xlsx)$/i;
+    return filePaths.every((path) => {
+      const filename = path.split('/').pop() || path.split('\\').pop() || '';
+      return supportedExtensions.test(filename);
+    });
+  }, []);
 
   const { current: currentSession } = useSessionContext();
   const { currentAssistant } = useAssistantContext();
@@ -453,12 +466,13 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
           logger.debug('Drag drop event:', event);
 
           if (event.payload.type === 'enter') {
-            setIsDragOver(true);
+            const isValid = validateFiles(event.payload.paths);
+            setDragState(isValid ? 'valid' : 'invalid');
           } else if (event.payload.type === 'drop') {
-            setIsDragOver(false);
+            setDragState('none');
             handleFileDrop(event.payload.paths);
           } else if (event.payload.type === 'leave') {
-            setIsDragOver(false);
+            setDragState('none');
           }
         });
       } catch (error) {
@@ -472,11 +486,14 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
       if (unlisten) {
         unlisten();
       }
+      if (dropTimeoutRef.current) {
+        clearTimeout(dropTimeoutRef.current);
+      }
     };
   }, []);
 
-  // Handle dropped files
-  const handleFileDrop = useCallback(
+  // Process files with actual file operations
+  const processFileDrop = useCallback(
     async (filePaths: string[]) => {
       if (!currentSession) {
         alert('Cannot attach file: session not available.');
@@ -488,8 +505,11 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
       for (const filePath of filePaths) {
         try {
           // Extract filename from path
-          const filename = filePath.split('/').pop() || filePath.split('\\').pop() || 'unknown';
-          
+          const filename =
+            filePath.split('/').pop() ||
+            filePath.split('\\').pop() ||
+            'unknown';
+
           // Check file extension
           const supportedExtensions = /\.(txt|md|json|pdf|docx|xlsx)$/i;
           if (!supportedExtensions.test(filename)) {
@@ -533,6 +553,22 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
     [currentSession, addFile],
   );
 
+  // Handle dropped files with debounce to prevent duplicate events
+  const handleFileDrop = useCallback(
+    (filePaths: string[]) => {
+      // Clear existing timeout
+      if (dropTimeoutRef.current) {
+        clearTimeout(dropTimeoutRef.current);
+      }
+
+      // Short delay to prevent duplicate events
+      dropTimeoutRef.current = setTimeout(() => {
+        processFileDrop(filePaths);
+      }, 10);
+    },
+    [processFileDrop],
+  );
+
   const handleAgentInputChange = React.useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       setInput(e.target.value);
@@ -543,13 +579,13 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
   const handleSubmit = useCallback(
     async (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault();
-      
+
       // If loading, cancel the request
       if (isLoading) {
         cancel();
         return;
       }
-      
+
       // Submit if there's text OR if files are attached.
       if (!input.trim() && attachedFiles.length === 0) return;
       if (!currentAssistant || !currentSession) return;
@@ -678,9 +714,11 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
     <form
       onSubmit={handleSubmit}
       className={`px-4 py-4 border-t flex items-center gap-2 transition-colors ${
-        isDragOver 
-          ? 'bg-blue-900/20 border-blue-500' 
-          : ''
+        dragState === 'valid'
+          ? 'bg-green-500/10 border-green-500'
+          : dragState === 'invalid'
+            ? 'bg-destructive/10 border-destructive'
+            : ''
       }`}
     >
       <span className="font-bold flex-shrink-0">$</span>
@@ -689,15 +727,21 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
           value={input}
           onChange={handleAgentInputChange}
           placeholder={
-            isDragOver
-              ? 'Drop files here...'
+            dragState !== 'none'
+              ? dragState === 'valid'
+                ? 'Drop supported files here...'
+                : 'Unsupported file type!'
               : isLoading || isAttachmentLoading
-              ? 'Agent busy...'
-              : 'Query agent or drop files...'
+                ? 'Agent busy...'
+                : 'Query agent or drop files...'
           }
           disabled={isLoading || isAttachmentLoading}
           className={`flex-1 min-w-0 transition-colors ${
-            isDragOver ? 'border-blue-500 bg-blue-900/10' : ''
+            dragState === 'valid'
+              ? 'border-green-500 bg-green-500/10'
+              : dragState === 'invalid'
+                ? 'border-destructive bg-destructive/10'
+                : ''
           }`}
           autoComplete="off"
           spellCheck="false"
@@ -729,11 +773,10 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
           (!isLoading && !input.trim() && attachedFiles.length === 0)
         }
         variant="ghost"
-        size="sm"
-        className="px-1"
-        title={isLoading ? "Cancel request" : "Send message"}
+        size="icon"
+        title={isLoading ? 'Cancel request' : 'Send message'}
       >
-        {isLoading ? '✕' : '⏎'}
+        {isLoading ? <X className="h-4 w-4" /> : <Send className="h-4 w-4" />}
       </Button>
     </form>
   );

@@ -149,7 +149,6 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
     [],
   );
 
-
   useEffect(() => {
     availableToolsRef.current = availableTools;
   }, [availableTools]);

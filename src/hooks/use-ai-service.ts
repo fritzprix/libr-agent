@@ -147,6 +147,5 @@ export const useAIService = (config?: AIServiceConfig) => {
     [model, config, serviceInstance],
   );
 
-
   return { response, isLoading, error, submit };
 };

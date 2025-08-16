@@ -106,13 +106,10 @@ const serializeToolResult = (
 
     if (resourceItems.length > 0) {
       uiResources = resourceItems.map((item) => item.resource);
-      logger.info(
-        `Found ${uiResources.length} UI resources in tool response`,
-        {
-          toolName,
-          resourceTypes: uiResources.map((r) => r.mimeType),
-        },
-      );
+      logger.info(`Found ${uiResources.length} UI resources in tool response`, {
+        toolName,
+        resourceTypes: uiResources.map((r) => r.mimeType),
+      });
     }
 
     // 텍스트 내용 수집 - UI Resource가 있으면 요약, 없으면 전체 텍스트
@@ -208,7 +205,10 @@ const ToolCaller: React.FC<ToolCallerProps> = ({ onToolExecutionChange }) => {
           const executionStartTime = Date.now();
 
           try {
-            logger.debug('Executing tool', { toolName, toolCallId: toolCall.id });
+            logger.debug('Executing tool', {
+              toolName,
+              toolCallId: toolCall.id,
+            });
 
             const mcpResponse = await executeToolCall(toolCall);
             const serialized = serializeToolResult(
@@ -303,8 +303,6 @@ const ToolCaller: React.FC<ToolCallerProps> = ({ onToolExecutionChange }) => {
 
   return null;
 };
-
-
 
 export function ChatProvider({ children }: ChatProviderProps) {
   const { messages: history, addMessage } = useSessionHistory();
@@ -409,7 +407,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
       return combinedPrompt;
     } catch (error) {
-      logger.error('Error building system prompt, using base prompt', { error });
+      logger.error('Error building system prompt, using base prompt', {
+        error,
+      });
       return basePrompt;
     }
   }, [getCurrentAssistant, systemPromptExtensions]);
@@ -493,30 +493,18 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
   const submit = useCallback(
     async (messageToAdd?: Message[], agentKey?: string): Promise<Message> => {
-      logger.info("submit ", {messageToAdd});
+      logger.info('submit ', { messageToAdd });
       if (!currentSession) {
         throw new Error('No active session available for message submission');
-      }
-
-      if (cancelRequestRef.current) {
-        cancelRequestRef.current = false;
-        logger.info("canceled!")
-        return {
-          id: createId(),
-          content: 'Request cancelled',
-          role: 'system',
-          sessionId: currentSession.id,
-          isStreaming: false,
-        };
       }
 
       try {
         // Clear any previous streaming state before starting new request
         setStreamingMessage(null);
-        
+
         let messagesToSend = messages;
 
-        // Process and validate new messages if provided
+        // Process and validate new messages if provided (tool 결과 유실 방지)
         if (messageToAdd?.length) {
           const processedMessages = await Promise.all(
             messageToAdd.map(async (message) => {
@@ -537,6 +525,19 @@ export function ChatProvider({ children }: ChatProviderProps) {
           );
 
           messagesToSend = [...messages, ...processedMessages];
+        }
+
+        // Cancel 체크를 메시지 추가 후로 이동 (tool 결과는 보존)
+        if (cancelRequestRef.current) {
+          cancelRequestRef.current = false;
+          logger.info('Request cancelled after message persistence');
+          return {
+            id: createId(),
+            content: 'Request cancelled',
+            role: 'system',
+            sessionId: currentSession.id,
+            isStreaming: false,
+          };
         }
 
         // Get windowed messages (excluding system prompts from history)
@@ -608,9 +609,16 @@ export function ChatProvider({ children }: ChatProviderProps) {
       messages,
       registerSystemPrompt,
       unregisterSystemPrompt,
-      cancel: handleCancel
+      cancel: handleCancel,
     }),
-    [messages, submit, isLoading, registerSystemPrompt, unregisterSystemPrompt, handleCancel],
+    [
+      messages,
+      submit,
+      isLoading,
+      registerSystemPrompt,
+      unregisterSystemPrompt,
+      handleCancel,
+    ],
   );
 
   return (
@@ -621,8 +629,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
     </ChatContext.Provider>
   );
 }
-
-
 
 export function useChatContext(): ChatContextValue {
   const context = useContext(ChatContext);
