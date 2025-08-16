@@ -4,7 +4,7 @@ SynapticFlow now includes built-in MCP servers that provide essential functional
 
 ## Available Built-in Servers
 
-### 1. Filesystem Server (`builtin:filesystem`)
+### 1. Filesystem Server (`builtin.filesystem`)
 
 Provides secure file system operations within the current working directory.
 
@@ -19,7 +19,7 @@ Provides secure file system operations within the current working directory.
 - File size limits to prevent memory exhaustion
 - Automatic parent directory creation for write operations
 
-### 2. Sandbox Server (`builtin:sandbox`)
+### 2. Sandbox Server (`builtin.sandbox`)
 
 Executes code in isolated sandbox environments.
 
@@ -44,7 +44,7 @@ import { tauriMCPClient } from '@/lib/tauri-mcp-client';
 // List all available built-in servers
 const servers = await tauriMCPClient.listBuiltinServers();
 console.log('Built-in servers:', servers);
-// Output: ['builtin:filesystem', 'builtin:sandbox']
+// Output: ['builtin.filesystem', 'builtin.sandbox']
 
 // List all built-in tools
 const tools = await tauriMCPClient.listBuiltinTools();
@@ -52,14 +52,14 @@ console.log('Available tools:', tools.map(t => t.name));
 
 // Read a file
 const readResult = await tauriMCPClient.callBuiltinTool(
-  'builtin:filesystem',
+  'builtin.filesystem',
   'read_file',
   { path: 'README.md' }
 );
 
 // Write a file
 const writeResult = await tauriMCPClient.callBuiltinTool(
-  'builtin:filesystem',
+  'builtin.filesystem',
   'write_file',
   { 
     path: 'output.txt', 
@@ -69,14 +69,14 @@ const writeResult = await tauriMCPClient.callBuiltinTool(
 
 // List directory contents
 const listResult = await tauriMCPClient.callBuiltinTool(
-  'builtin:filesystem',
+  'builtin.filesystem',
   'list_directory',
   { path: '.' }
 );
 
 // Execute Python code
 const pythonResult = await tauriMCPClient.callBuiltinTool(
-  'builtin:sandbox',
+  'builtin.sandbox',
   'execute_python',
   { 
     code: 'print("Hello from Python!")\nprint(2 + 2)',
@@ -86,7 +86,7 @@ const pythonResult = await tauriMCPClient.callBuiltinTool(
 
 // Execute TypeScript code
 const tsResult = await tauriMCPClient.callBuiltinTool(
-  'builtin:sandbox',
+  'builtin.sandbox',
   'execute_typescript',
   { 
     code: 'console.log("Hello from TypeScript!"); console.log(2 + 2);',
@@ -97,7 +97,7 @@ const tsResult = await tauriMCPClient.callBuiltinTool(
 // Use unified API (works with both external and built-in servers)
 const unifiedTools = await tauriMCPClient.listAllToolsUnified();
 const unifiedResult = await tauriMCPClient.callToolUnified(
-  'builtin:filesystem',
+  'builtin.filesystem',
   'read_file',
   { path: 'package.json' }
 );
@@ -109,21 +109,21 @@ const unifiedResult = await tauriMCPClient.callToolUnified(
 import { invoke } from '@tauri-apps/api/core';
 
 // List built-in servers
-const servers = await invoke('list_builtin_servers') as string[];
+const servers = await invoke('list_builtin.servers') as string[];
 
 // List built-in tools
-const tools = await invoke('list_builtin_tools') as MCPTool[];
+const tools = await invoke('list_builtin.tools') as MCPTool[];
 
 // Call built-in tool
-const result = await invoke('call_builtin_tool', {
-  serverName: 'builtin:filesystem',
+const result = await invoke('call_builtin.tool', {
+  serverName: 'builtin.filesystem',
   toolName: 'read_file',
   args: { path: 'example.txt' }
 }) as MCPResponse;
 
 // Unified API - automatically routes to appropriate server
 const unifiedResult = await invoke('call_tool_unified', {
-  serverName: 'builtin:sandbox',
+  serverName: 'builtin.sandbox',
   toolName: 'execute_python',
   args: { code: 'print("Hello!")', timeout: 10 }
 }) as MCPResponse;

@@ -126,15 +126,79 @@ function convertPropertiesToGeminiTypes(
   return convertedProperties;
 }
 
+// Helper function to ensure schema has required type field
+function ensureSchemaTypeField(
+  schema: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!schema || typeof schema !== 'object') {
+    return { type: 'object', properties: {} };
+  }
+
+  const result = { ...schema };
+
+  // Ensure root schema has type field
+  if (!result.type) {
+    // Infer type from structure
+    if (result.properties && typeof result.properties === 'object') {
+      result.type = 'object';
+    } else if (result.items) {
+      result.type = 'array';
+    } else {
+      result.type = 'object'; // default fallback
+    }
+  }
+
+  // Handle array-type type fields (convert to single type)
+  if (Array.isArray(result.type)) {
+    result.type = result.type[0] || 'string';
+  }
+
+  // Recursively ensure properties have type fields
+  if (result.properties && typeof result.properties === 'object') {
+    const properties = result.properties as Record<string, unknown>;
+    const fixedProperties: Record<string, unknown> = {};
+
+    for (const [key, value] of Object.entries(properties)) {
+      if (typeof value === 'object' && value !== null) {
+        fixedProperties[key] = ensureSchemaTypeField(
+          value as Record<string, unknown>,
+        );
+      } else {
+        fixedProperties[key] = value;
+      }
+    }
+    result.properties = fixedProperties;
+  }
+
+  // Recursively ensure array items have type fields
+  if (result.items) {
+    if (Array.isArray(result.items)) {
+      result.items = result.items.map((item) =>
+        typeof item === 'object' && item !== null
+          ? ensureSchemaTypeField(item as Record<string, unknown>)
+          : item,
+      );
+    } else if (typeof result.items === 'object' && result.items !== null) {
+      result.items = ensureSchemaTypeField(
+        result.items as Record<string, unknown>,
+      );
+    }
+  }
+
+  return result;
+}
+
 // Helper function to sanitize JSON schema for Cerebras (remove unsupported fields)
 function sanitizeSchemaForCerebras(
   schema: Record<string, unknown>,
 ): Record<string, unknown> {
   if (!schema || typeof schema !== 'object') {
-    return schema;
+    return { type: 'object', properties: {} };
   }
 
-  const sanitized = { ...schema };
+  // First ensure type field is present
+  const schemaWithType = ensureSchemaTypeField(schema);
+  const sanitized = { ...schemaWithType };
 
   // Remove unsupported fields at the root level (based on Cerebras error feedback)
   const unsupportedFields = [
@@ -253,11 +317,12 @@ function convertMCPToolToProviderFormat(
   const properties = mcpTool.inputSchema.properties || {};
   const required = mcpTool.inputSchema.required || [];
 
-  const commonParameters = {
+  // Ensure schema has proper type fields before sending to any provider
+  const commonParameters = ensureSchemaTypeField({
     type: 'object' as const,
     properties: properties,
     required: required,
-  };
+  });
 
   switch (provider) {
     case AIServiceProvider.OpenAI:
@@ -362,11 +427,12 @@ export function convertMCPToolsToCerebrasTools(
     const properties = tool.inputSchema.properties || {};
     const required = tool.inputSchema.required || [];
 
-    const commonParameters = {
+    // Ensure schema has proper type fields and sanitize for Cerebras
+    const commonParameters = ensureSchemaTypeField({
       type: 'object' as const,
       properties: properties,
       required: required,
-    };
+    });
 
     // Cerebras doesn't support certain JSON schema fields like 'minimum', 'maximum', etc.
     const sanitizedParameters = sanitizeSchemaForCerebras(commonParameters);

@@ -203,6 +203,136 @@ async fn call_builtin_tool(
         .await
 }
 
+// 로그 파일 관리 명령들
+#[tauri::command]
+async fn get_app_logs_dir() -> Result<String, String> {
+    use std::env;
+    use std::path::PathBuf;
+
+    // 플랫폼에 따른 로그 디렉토리 경로 결정 (Tauri 공식 경로)
+    #[cfg(target_os = "windows")]
+    let log_dir = {
+        let local_appdata = env::var("LOCALAPPDATA")
+            .map_err(|_| "Failed to get LOCALAPPDATA directory".to_string())?;
+        PathBuf::from(local_appdata)
+            .join("com.synaptic-flow.app")
+            .join("logs")
+    };
+
+    #[cfg(target_os = "macos")]
+    let log_dir = {
+        let home = env::var("HOME").map_err(|_| "Failed to get HOME directory".to_string())?;
+        PathBuf::from(home)
+            .join("Library")
+            .join("Logs")
+            .join("com.synaptic-flow.app")
+    };
+
+    #[cfg(target_os = "linux")]
+    let log_dir = {
+        let home = env::var("HOME").map_err(|_| "Failed to get HOME directory".to_string())?;
+        PathBuf::from(home)
+            .join(".local")
+            .join("share")
+            .join("com.synaptic-flow.app")
+            .join("logs")
+    };
+
+    Ok(log_dir.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+async fn backup_current_log() -> Result<String, String> {
+    use chrono::Utc;
+    use std::fs;
+
+    let log_dir_str = get_app_logs_dir().await?;
+    let log_dir = std::path::PathBuf::from(log_dir_str);
+
+    // 현재 로그 파일 찾기 (명시된 파일명 사용)
+    let log_file = log_dir.join("synaptic-flow.log");
+
+    if !log_file.exists() {
+        return Err("No current log file found".to_string());
+    }
+
+    // 백업 파일명 생성 (타임스탬프 포함)
+    let timestamp = Utc::now().format("%Y%m%d_%H%M%S").to_string();
+    let backup_file = log_dir.join(format!("synaptic-flow_{}.log.bak", timestamp));
+
+    // 파일 복사
+    fs::copy(&log_file, &backup_file).map_err(|e| format!("Failed to backup log file: {}", e))?;
+
+    Ok(backup_file.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+async fn clear_current_log() -> Result<(), String> {
+    use std::fs;
+
+    let log_dir_str = get_app_logs_dir().await?;
+    let log_dir = std::path::PathBuf::from(log_dir_str);
+    let log_file = log_dir.join("synaptic-flow.log");
+
+    if log_file.exists() {
+        fs::write(&log_file, "").map_err(|e| format!("Failed to clear log file: {}", e))?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn list_log_files() -> Result<Vec<String>, String> {
+    use std::fs;
+
+    let log_dir_str = get_app_logs_dir().await?;
+    let log_dir = std::path::PathBuf::from(log_dir_str);
+
+    if !log_dir.exists() {
+        return Ok(vec![]);
+    }
+
+    let entries =
+        fs::read_dir(&log_dir).map_err(|e| format!("Failed to read log directory: {}", e))?;
+
+    let mut log_files = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("Failed to read directory entry: {}", e))?;
+        let path = entry.path();
+
+        if path.is_file() {
+            if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
+                if filename.ends_with(".log") || filename.ends_with(".log.bak") {
+                    log_files.push(filename.to_string());
+                }
+            }
+        }
+    }
+
+    log_files.sort();
+    Ok(log_files)
+}
+
+#[tauri::command]
+async fn read_file(file_path: String) -> Result<Vec<u8>, String> {
+    use std::fs;
+    use std::path::Path;
+
+    let path = Path::new(&file_path);
+    
+    // Security check: ensure the file exists and is accessible
+    if !path.exists() {
+        return Err(format!("File does not exist: {}", file_path));
+    }
+    
+    if !path.is_file() {
+        return Err(format!("Path is not a file: {}", file_path));
+    }
+
+    // Read the file contents
+    fs::read(path).map_err(|e| format!("Failed to read file {}: {}", file_path, e))
+}
+
 #[tauri::command]
 async fn list_all_tools_unified() -> Result<Vec<mcp::MCPTool>, String> {
     get_mcp_manager()
@@ -248,9 +378,12 @@ pub fn run() {
                 tauri_plugin_log::Builder::new()
                     .targets([
                         Target::new(TargetKind::Stdout),
-                        Target::new(TargetKind::LogDir { file_name: None }),
+                        Target::new(TargetKind::LogDir {
+                            file_name: Some("synaptic-flow".to_string()),
+                        }),
                         Target::new(TargetKind::Webview),
                     ])
+                    .level(log::LevelFilter::Info)
                     .build(),
             )
             .plugin(tauri_plugin_opener::init())
@@ -271,7 +404,12 @@ pub fn run() {
                 list_builtin_tools,
                 call_builtin_tool,
                 list_all_tools_unified,
-                call_tool_unified
+                call_tool_unified,
+                get_app_logs_dir,
+                backup_current_log,
+                clear_current_log,
+                list_log_files,
+                read_file
             ])
             .setup(|_app| {
                 println!("🚀 SynapticFlow initializing...");

@@ -13,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui';
+import { Send, X } from 'lucide-react';
 import { useAssistantContext } from '@/context/AssistantContext';
 import { useSessionContext } from '@/context/SessionContext';
 import { useChatContext, ChatProvider } from '@/context/ChatContext';
@@ -31,9 +32,10 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { getCurrentWebview } from '@tauri-apps/api/webview';
+import { useRustBackend } from '@/hooks/use-rust-backend';
 import ToolsModal from '../tools/ToolsModal';
 import MessageBubble from './MessageBubble';
-import { ToolCaller } from './ToolCaller';
 import { TimeLocationSystemPrompt } from '../prompts/TimeLocationSystemPrompt';
 // import { useWebMCPServer } from '@/context/WebMCPContext';
 // import { ContentStoreServer } from '@/lib/web-mcp/modules/content-store';
@@ -62,7 +64,6 @@ function Chat({ children }: ChatProps) {
       {/* <JailbreakSystemPrompt /> */}
       <div className="h-full w-full font-mono flex flex-col rounded-lg overflow-hidden shadow-2xl">
         {children}
-        <ToolCaller />
         <ToolsModal
           isOpen={showToolsDetail}
           onClose={() => setShowToolsDetail(false)}
@@ -430,10 +431,23 @@ function ChatAttachedFiles() {
 // Chat Input component - now uses ResourceAttachmentContext
 function ChatInput({ children }: { children?: React.ReactNode }) {
   const [input, setInput] = useState<string>('');
+  const [dragState, setDragState] = useState<'none' | 'valid' | 'invalid'>(
+    'none',
+  );
+  const dropTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+
+  // File validation function
+  const validateFiles = useCallback((filePaths: string[]): boolean => {
+    const supportedExtensions = /\.(txt|md|json|pdf|docx|xlsx)$/i;
+    return filePaths.every((path) => {
+      const filename = path.split('/').pop() || path.split('\\').pop() || '';
+      return supportedExtensions.test(filename);
+    });
+  }, []);
 
   const { current: currentSession } = useSessionContext();
   const { currentAssistant } = useAssistantContext();
-  const { submit, isLoading } = useChatContext();
+  const { submit, isLoading, cancel } = useChatContext();
   const {
     files: attachedFiles,
     addFile,
@@ -441,6 +455,159 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
     clearFiles,
     isLoading: isAttachmentLoading,
   } = useResourceAttachment();
+  const rustBackend = useRustBackend();
+
+  // Handle drag and drop events from Tauri
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+
+    const setupDragDrop = async () => {
+      try {
+        const webview = getCurrentWebview();
+        unlisten = await webview.onDragDropEvent((event) => {
+          logger.debug('Drag drop event:', event);
+
+          if (event.payload.type === 'enter') {
+            const isValid = validateFiles(event.payload.paths);
+            setDragState(isValid ? 'valid' : 'invalid');
+          } else if (event.payload.type === 'drop') {
+            setDragState('none');
+            handleFileDrop(event.payload.paths);
+          } else if (event.payload.type === 'leave') {
+            setDragState('none');
+          }
+        });
+      } catch (error) {
+        logger.warn('Failed to setup drag and drop listener:', error);
+      }
+    };
+
+    setupDragDrop();
+
+    return () => {
+      if (unlisten) {
+        unlisten();
+      }
+      if (dropTimeoutRef.current) {
+        clearTimeout(dropTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Process files with actual file operations
+  const processFileDrop = useCallback(
+    async (filePaths: string[]) => {
+      if (!currentSession) {
+        alert('Cannot attach file: session not available.');
+        return;
+      }
+
+      logger.info('Files dropped:', filePaths);
+
+      for (const filePath of filePaths) {
+        let blobUrl = '';
+        try {
+          // Extract filename from path
+          const filename =
+            filePath.split('/').pop() ||
+            filePath.split('\\').pop() ||
+            'unknown';
+
+          // Check file extension
+          const supportedExtensions = /\.(txt|md|json|pdf|docx|xlsx)$/i;
+          if (!supportedExtensions.test(filename)) {
+            alert(`File "${filename}" format is not supported.`);
+            continue;
+          }
+
+          logger.debug(`Processing dropped file`, {
+            filePath,
+            filename,
+            sessionId: currentSession?.id,
+          });
+
+          // Read file content using type-safe Rust backend
+          const fileData = await rustBackend.readFile(filePath);
+
+          // Convert number array to Uint8Array and create a blob
+          const uint8Array = new Uint8Array(fileData);
+          const blob = new Blob([uint8Array]);
+          blobUrl = URL.createObjectURL(blob);
+
+          // Determine MIME type based on file extension
+          const getMimeType = (filename: string): string => {
+            const ext = filename.toLowerCase().split('.').pop();
+            switch (ext) {
+              case 'txt':
+                return 'text/plain';
+              case 'md':
+                return 'text/markdown';
+              case 'json':
+                return 'application/json';
+              case 'pdf':
+                return 'application/pdf';
+              case 'docx':
+                return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+              case 'xlsx':
+                return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+              default:
+                return 'application/octet-stream';
+            }
+          };
+
+          const mimeType = getMimeType(filename);
+
+          // Use the blob URL with the ResourceAttachmentContext
+          await addFile(blobUrl, mimeType, filename);
+
+          logger.info(`Dropped file processed successfully`, {
+            filename,
+            filePath,
+            mimeType,
+          });
+        } catch (error) {
+          logger.error(`Error processing dropped file ${filePath}:`, {
+            filePath,
+            sessionId: currentSession?.id,
+            error:
+              error instanceof Error
+                ? {
+                    message: error.message,
+                    stack: error.stack,
+                    name: error.name,
+                  }
+                : error,
+            errorString: String(error),
+          });
+          alert(
+            `Error processing file "${filePath}": ${error instanceof Error ? error.message : String(error)}`,
+          );
+        } finally {
+          // Clean up blob URL to prevent memory leaks
+          if (blobUrl) {
+            URL.revokeObjectURL(blobUrl);
+          }
+        }
+      }
+    },
+    [currentSession, addFile],
+  );
+
+  // Handle dropped files with debounce to prevent duplicate events
+  const handleFileDrop = useCallback(
+    (filePaths: string[]) => {
+      // Clear existing timeout
+      if (dropTimeoutRef.current) {
+        clearTimeout(dropTimeoutRef.current);
+      }
+
+      // Short delay to prevent duplicate events
+      dropTimeoutRef.current = setTimeout(() => {
+        processFileDrop(filePaths);
+      }, 10);
+    },
+    [processFileDrop],
+  );
 
   const handleAgentInputChange = React.useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -452,6 +619,13 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
   const handleSubmit = useCallback(
     async (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault();
+
+      // If loading, cancel the request
+      if (isLoading) {
+        cancel();
+        return;
+      }
+
       // Submit if there's text OR if files are attached.
       if (!input.trim() && attachedFiles.length === 0) return;
       if (!currentAssistant || !currentSession) return;
@@ -482,6 +656,8 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
       currentAssistant,
       currentSession,
       clearFiles,
+      isLoading,
+      cancel,
     ],
   );
 
@@ -577,7 +753,13 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="px-4 py-4 border-t flex items-center gap-2"
+      className={`px-4 py-4 border-t flex items-center gap-2 transition-colors ${
+        dragState === 'valid'
+          ? 'bg-green-500/10 border-green-500'
+          : dragState === 'invalid'
+            ? 'bg-destructive/10 border-destructive'
+            : ''
+      }`}
     >
       <span className="font-bold flex-shrink-0">$</span>
       <div className="flex-1 flex items-center gap-2 min-w-0">
@@ -585,12 +767,22 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
           value={input}
           onChange={handleAgentInputChange}
           placeholder={
-            isLoading || isAttachmentLoading
-              ? 'Agent busy...'
-              : 'Query agent...'
+            dragState !== 'none'
+              ? dragState === 'valid'
+                ? 'Drop supported files here...'
+                : 'Unsupported file type!'
+              : isLoading || isAttachmentLoading
+                ? 'Agent busy...'
+                : 'Query agent or drop files...'
           }
           disabled={isLoading || isAttachmentLoading}
-          className="flex-1 min-w-0"
+          className={`flex-1 min-w-0 transition-colors ${
+            dragState === 'valid'
+              ? 'border-green-500 bg-green-500/10'
+              : dragState === 'invalid'
+                ? 'border-destructive bg-destructive/10'
+                : ''
+          }`}
           autoComplete="off"
           spellCheck="false"
         />
@@ -615,17 +807,16 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
 
       <Button
         type="submit"
-        // Disable button if there's nothing to send.
+        // Disable button if there's nothing to send (only when not loading).
         disabled={
-          isLoading ||
           isAttachmentLoading ||
-          (!input.trim() && attachedFiles.length === 0)
+          (!isLoading && !input.trim() && attachedFiles.length === 0)
         }
         variant="ghost"
-        size="sm"
-        className="px-1"
+        size="icon"
+        title={isLoading ? 'Cancel request' : 'Send message'}
       >
-        ⏎
+        {isLoading ? <X className="h-4 w-4" /> : <Send className="h-4 w-4" />}
       </Button>
     </form>
   );

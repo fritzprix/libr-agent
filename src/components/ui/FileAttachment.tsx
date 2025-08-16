@@ -1,4 +1,6 @@
 import React from 'react';
+import { Paperclip, Trash2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 interface FileAttachmentProps {
   files: { name: string; content: string }[];
@@ -55,14 +57,16 @@ export default function FileAttachment({
         />
 
         {/* Attach Files Button */}
-        <button
+        <Button
+          variant="ghost"
+          size="icon"
           type="button"
           onClick={handleFileSelect}
-          className="text-gray-500 hover:text-green-400 transition-colors text-sm"
+          className="h-8 w-8 text-gray-500 hover:text-green-400"
           title="Attach files"
         >
-          📎
-        </button>
+          <Paperclip className="h-4 w-4" />
+        </Button>
 
         {/* File Count Indicator */}
         {files.length > 0 && (
@@ -85,14 +89,16 @@ export default function FileAttachment({
       />
 
       {/* Attach Files Button */}
-      <button
+      <Button
+        variant="ghost"
+        size="sm"
         type="button"
         onClick={handleFileSelect}
-        className="text-gray-500 hover:text-green-400 transition-colors px-2 py-1 text-sm border border-gray-600 rounded"
+        className="text-gray-500 hover:text-green-400 border border-gray-600"
         title="Attach files"
       >
-        📎
-      </button>
+        <Paperclip className="h-4 w-4" />
+      </Button>
 
       {/* Attached Files Display */}
       {files.length > 0 && (
@@ -107,13 +113,16 @@ export default function FileAttachment({
                 <span className="text-xs text-green-400 truncate flex-1">
                   {file.name}
                 </span>
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="icon"
                   onClick={() => onRemove(index)}
-                  className="text-red-400 hover:text-red-300 ml-2 text-xs"
+                  className="h-6 w-6 ml-2 text-red-400 hover:text-red-300"
+                  title="Remove file"
                 >
-                  ✕
-                </button>
+                  <Trash2 className="h-3 w-3" />
+                </Button>
               </div>
             ))}
           </div>

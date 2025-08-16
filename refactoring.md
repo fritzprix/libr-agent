@@ -1,20 +1,225 @@
-# Refactoring Plan
+# Refactoring Plan — Chat.tsx의 UI 디자인 개선 및 기능 오류 수정
 
-> Built-In Tool 지원을 위한 체계적 구조 필요
+## 1. Icon 개선 - Lucide React 아이콘 적용
 
-## 문제점
+### 현재 문제점
 
-- 현재 WebMCPContext는 Web Worker를 통한 Built-In 도구 통합을 지원
-- 하지만 현재는 단순히 Tools만 추가될 수 있는 구조임
-  - UnifiedMCPContext를 통해 Tauri를 통해 rmcp.rs를 통해 연결된 MCP 서버와 묶여서 전달이 됨
+// 드래그 오버레이 스타일링
 
-## 원하는 것
+<div className={cn(
+  "transition-colors",
+  dragState === 'valid' && "bg-green-500/10 border-green-500",
+  dragState === 'invalid' && "bg-destructive/10 border-destructive"
+)}>
+```
 
-- Built-In Tools의 제공 여부에 대한 Control 기능 제공
-- 또한 Tools와 함께 추가적인 상태 혹은 정보를 LLM API의 Context Window에 추가할 수 있는 구조가 필요
+### 현재 문제점
 
-## 접근 방향
+- Send/Cancel 버튼: `{isLoading ? '✕' : '⏎'}` (텍스트 기반, 작고 조잡함)
+- 첨부 파일 아이콘: `📎` (이모지 기반, 일관성 없음)
+- 삭제 버튼: `✕` (텍스트 기반, 작음)
 
-- AssistantExtensionContext.tsx를 활용
-- 대략 아래와 같은 패턴으로 명시적으로 이 WebMCP의 기능을 AssistantExtensionContext.tsx를 활용하여 적절한 SystemPrompt와 함께 확장하고자 함
-- 참고 ./src/app/BuiltIn.tsx (대략적인 상호작용만 Draft)
+### 수정 파일들
+
+- `/src/features/chat/Chat.tsx` (라인 724-733: Send/Cancel 버튼)
+- `/src/components/ui/FileAttachment.tsx` (라인 49, 75, 115: 📎, ✕ 아이콘)
+
+### 변경 방향
+
+```tsx
+// 기존
+{
+  isLoading ? '✕' : '⏎';
+}
+
+// 개선 후 - shadcn/ui Button 활용
+import { Send, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+
+<Button
+  type="submit"
+  variant="ghost"
+  size="icon"
+  disabled={!isLoading && !input.trim() && attachedFiles.length === 0}
+  title={isLoading ? 'Cancel request' : 'Send message'}
+>
+  {isLoading ? <X /> : <Send />}
+</Button>;
+```
+
+```tsx
+// 첨부 파일 아이콘 개선 - shadcn/ui Button 활용
+import { Paperclip, Trash2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+
+// 첨부 버튼
+<Button variant="ghost" size="sm" type="button" onClick={handleFileSelect}>
+  <Paperclip />
+</Button>
+
+// 삭제 버튼
+<Button variant="ghost" size="icon" onClick={() => onRemove(index)}>
+  <Trash2 className="text-destructive" />
+</Button>
+```
+
+## 2. Drag & Drop 기능 오류 수정
+
+### 현재 문제 분석
+
+- **Drop 이벤트 중복 호출**: 로그 분석 결과 drop 이벤트가 2번 연속 호출되어 같은 파일이 중복 추가되려는 문제 발생
+- 첫 번째 drop에서 파일 추가 성공, 두 번째 drop에서 "already being uploaded" 에러 발생
+- `/src/features/chat/Chat.tsx` 라인 452-460: `onDragDropEvent` 리스너에서 중복 처리 방지 로직 부재
+
+### 현재 코드 상태
+
+```tsx
+unlisten = await webview.onDragDropEvent((event) => {
+  if (event.payload.type === 'enter') {
+    setIsDragOver(true);
+  } else if (event.payload.type === 'drop') {
+    // 이 부분만 파일 처리해야 함
+    setIsDragOver(false);
+    handleFileDrop(event.payload.paths);
+  } else if (event.payload.type === 'leave') {
+    setIsDragOver(false);
+  }
+});
+```
+
+### 개선 방향
+
+1. **Drop 이벤트 중복 방지 로직 추가**
+   - `handleFileDrop` 함수에 debounce 또는 중복 호출 방지 메커니즘 구현
+   - 동일한 파일 경로의 연속 drop 이벤트를 필터링
+
+2. **파일 지원 여부 검사 로직 추가**
+   - `handleFileDrop` 함수 내에서 파일 확장자 검사를 `enter` 이벤트 시에도 수행
+   - 지원되지 않는 파일은 시각적으로 거부 표시
+
+3. **시각적 피드백 개선**
+   - `isDragOver` 상태를 세분화: `dragValid`, `dragInvalid`
+   - CSS 클래스로 지원/미지원 파일 구분 표시
+
+```tsx
+// 개선된 드래그 상태 관리
+const [dragState, setDragState] = useState<'none' | 'valid' | 'invalid'>(
+  'none',
+);
+const dropTimeoutRef = useRef<NodeJS.Timeout>();
+
+// 파일 검증 함수 분리
+const validateFiles = (filePaths: string[]) => {
+  const supportedExtensions = /\.(txt|md|json|pdf|docx|xlsx)$/i;
+  return filePaths.every((path) => {
+    const filename = path.split('/').pop() || path.split('\\').pop() || '';
+    return supportedExtensions.test(filename);
+  });
+};
+
+// Drop 중복 방지 처리
+const handleFileDrop = useCallback((filePaths: string[]) => {
+  // 기존 타이머 클리어
+  if (dropTimeoutRef.current) {
+    clearTimeout(dropTimeoutRef.current);
+  }
+
+  // 짧은 지연 후 실행 (중복 이벤트 방지)
+  dropTimeoutRef.current = setTimeout(() => {
+    // 실제 파일 처리 로직
+    processFileDrop(filePaths);
+  }, 10);
+}, []);
+```
+
+## 3. 첨부 파일 리스트에 삭제 버튼 개선
+
+### 현재 상태
+
+- `/src/components/ui/FileAttachment.tsx` 라인 108-119: 이미 삭제 버튼 존재
+- 하지만 아이콘이 텍스트 기반 `✕`으로 작고 눈에 잘 안 띔
+
+### 구현 방향
+
+1. **아이콘 개선**: shadcn/ui Button 컴포넌트와 Lucide React 아이콘 활용
+2. **버튼 variants 적용**: `variant="ghost"`, `size="icon"` 사용으로 일관된 스타일링
+3. **접근성 강화**: shadcn/ui의 기본 접근성 기능 활용
+
+```tsx
+// 개선된 삭제 버튼 - shadcn/ui 방식
+import { Trash2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+
+<Button
+  type="button"
+  variant="ghost"
+  size="icon"
+  onClick={() => onRemove(index)}
+  title="Remove file"
+>
+  <Trash2 className="text-destructive" />
+</Button>;
+```
+
+## 4. 구현 우선순위
+
+1. **1단계**: Lucide React 아이콘 적용 (Send, Cancel, Paperclip, Trash)
+2. **2단계**: Drag & Drop 파일 검증 로직 개선
+3. **3단계**: 시각적 드래그 피드백 개선 (CSS 클래스, 상태 관리)
+4. **4단계**: 첨부 파일 삭제 버튼 UX 개선
+
+## 5. 테스트 케이스
+
+- [X] Send/Cancel 버튼 아이콘이 명확하게 표시되는지
+- [X] 지원되는 파일 드래그 시 초록색 표시
+- [X] 지원되지 않는 파일 드래그 시 빨간색 표시
+- [X] Drop 이벤트에서만 파일이 실제 추가되는지
+- [X] 첨부 파일 삭제 버튼 클릭 영역이 충분한지
+
+
+## 위 변경 사항으로 인한 이슈 및 해결
+
+### 문제 상황
+- 파일 Drag & Drop 테스트 시, 파일의 실제 내용이 아닌 index.html 내용이 첨부되는 문제 발생
+
+### 문제의 원인 분석
+- **근본 원인**: Drag & Drop과 File Input의 파일 처리 방식 차이
+- **File Input**: `URL.createObjectURL(file)`로 blob URL 생성 → 정상 동작
+- **Drag & Drop**: 파일 시스템 경로를 직접 전달 → `ResourceAttachmentContext.convertToBlobUrl()`에서 `fetch(path)` 시도 → index.html 반환
+
+### 해결 방법
+1. **Tauri 커맨드 추가**: `read_dropped_file` 커맨드를 Rust 백엔드에 구현
+   ```rust
+   #[tauri::command]
+   async fn read_dropped_file(file_path: String) -> Result<Vec<u8>, String>
+   ```
+
+2. **프론트엔드 수정**: Tauri 커맨드를 통해 파일 읽기
+   ```typescript
+   // 기존: 파일 시스템 경로 직접 사용
+   await addFile(filePath, 'application/octet-stream', filename);
+   
+   // 수정: Tauri 커맨드로 파일 읽기 → blob URL 생성
+   const fileData: number[] = await invoke('read_dropped_file', { filePath });
+   const uint8Array = new Uint8Array(fileData);
+   const blob = new Blob([uint8Array]);
+   const blobUrl = URL.createObjectURL(blob);
+   await addFile(blobUrl, mimeType, filename);
+   ```
+
+3. **MIME 타입 개선**: 파일 확장자 기반 정확한 MIME 타입 설정
+
+### 변경된 파일들
+- `src-tauri/src/lib.rs`: `read_dropped_file` 커맨드 추가
+- `src/features/chat/Chat.tsx`: Drag & Drop 파일 처리 로직 개선
+
+### 테스트 완료 사항
+- ✅ TypeScript 컴파일 성공
+- ✅ ESLint 검사 통과  
+- ✅ Prettier 포맷팅 완료
+- ✅ 드래그 앤 드롭 파일 처리 로직 수정 완료
+
+### Best Practice 적용
+- Tauri v2의 보안 모델에 맞는 파일 시스템 접근 방식 사용
+- 메모리 누수 방지를 위한 blob URL cleanup 구현
+- 에러 처리 및 로깅 강화

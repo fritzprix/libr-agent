@@ -12,7 +12,6 @@ import { getLogger } from '../lib/logger';
 import { tauriMCPClient } from '../lib/tauri-mcp-client';
 import { MCPResponse, MCPTool, normalizeToolResult } from '../lib/mcp-types';
 import { MCPConfig } from '../models/chat';
-import { useScheduledCallback } from '@/hooks/use-scheduled-callback';
 
 const logger = getLogger('MCPServerContext');
 
@@ -150,10 +149,6 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
     [],
   );
 
-  const scheduleExecuteToolCall = useScheduledCallback(executeToolCall, [
-    executeToolCall,
-  ]);
-
   useEffect(() => {
     availableToolsRef.current = availableTools;
   }, [availableTools]);
@@ -169,7 +164,7 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
       getAvailableTools,
       status: serverStatus,
       connectServers,
-      executeToolCall: scheduleExecuteToolCall,
+      executeToolCall,
     }),
     [
       availableTools,
@@ -177,7 +172,7 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
       serverStatus,
       getAvailableTools,
       connectServers,
-      scheduleExecuteToolCall,
+      executeToolCall,
     ],
   );
 

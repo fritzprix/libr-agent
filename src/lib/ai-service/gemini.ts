@@ -1,4 +1,3 @@
-import { createId } from '@paralleldrive/cuid2';
 import {
   FunctionDeclaration,
   GoogleGenAI,
@@ -22,6 +21,25 @@ export class GeminiService extends BaseAIService {
     this.genAI = new GoogleGenAI({
       apiKey: this.apiKey,
     });
+  }
+
+  private generateDeterministicToolCallId(functionCall: FunctionCall): string {
+    // Create a deterministic ID based on function name and arguments
+    // This ensures the same function call always gets the same ID
+    const argsStr = JSON.stringify(functionCall.args || {});
+    const content = `${functionCall.name}:${argsStr}`;
+
+    // Use a simple hash to create a shorter, deterministic ID
+    let hash = 0;
+    for (let i = 0; i < content.length; i++) {
+      const char = content.charCodeAt(i);
+      hash = (hash << 5) - hash + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+
+    // Convert to base36 and add timestamp for some uniqueness within the session
+    const sessionSalt = Date.now().toString(36).slice(-4);
+    return `tool_${Math.abs(hash).toString(36)}_${sessionSalt}`;
   }
 
   getProvider(): AIServiceProvider {
@@ -107,14 +125,24 @@ export class GeminiService extends BaseAIService {
       for await (const chunk of result) {
         if (chunk.functionCalls && chunk.functionCalls.length > 0) {
           yield JSON.stringify({
-            tool_calls: chunk.functionCalls.map((fc: FunctionCall) => ({
-              id: createId(), // Generate a new ID for each tool call
-              type: 'function',
-              function: {
-                name: fc.name,
-                arguments: JSON.stringify(fc.args), // Convert args object to JSON string
-              },
-            })),
+            tool_calls: chunk.functionCalls.map((fc: FunctionCall) => {
+              const toolCallId = this.generateDeterministicToolCallId(fc);
+
+              logger.debug('Generated deterministic tool call ID', {
+                functionName: fc.name,
+                toolCallId,
+                argsLength: JSON.stringify(fc.args || {}).length,
+              });
+
+              return {
+                id: toolCallId,
+                type: 'function',
+                function: {
+                  name: fc.name,
+                  arguments: JSON.stringify(fc.args), // Convert args object to JSON string
+                },
+              };
+            }),
           });
         } else if (chunk.text) {
           yield JSON.stringify({ content: chunk.text });
@@ -156,6 +184,7 @@ export class GeminiService extends BaseAIService {
 
     const validatedMessages: Message[] = [];
     let removedCount = 0;
+    const removedToolCallIds = new Set<string>();
 
     for (let i = 0; i < messages.length; i++) {
       const currentMessage = messages[i];
@@ -173,6 +202,11 @@ export class GeminiService extends BaseAIService {
           !previousMessage ||
           (previousMessage.role !== 'user' && previousMessage.role !== 'tool')
         ) {
+          // Track tool call IDs from removed assistant messages
+          currentMessage.tool_calls.forEach((tc) => {
+            if (tc.id) removedToolCallIds.add(tc.id);
+          });
+
           logger.warn(
             'Removing assistant function call that violates Gemini sequencing rules',
             {
@@ -180,10 +214,28 @@ export class GeminiService extends BaseAIService {
               toolCallsCount: currentMessage.tool_calls.length,
               previousRole: previousMessage?.role || 'none',
               messageContent: currentMessage.content?.substring(0, 100),
+              removedToolCallIds: Array.from(removedToolCallIds),
             },
           );
           removedCount++;
           continue; // Skip this message
+        }
+      }
+
+      // Check if current message is a tool result for a removed tool call
+      if (currentMessage.role === 'tool' && currentMessage.tool_call_id) {
+        if (removedToolCallIds.has(currentMessage.tool_call_id)) {
+          logger.info(
+            'Removing orphaned tool result message for removed assistant tool call',
+            {
+              tool_call_id: currentMessage.tool_call_id,
+              content_snippet:
+                typeof currentMessage.content === 'string'
+                  ? currentMessage.content.substring(0, 100)
+                  : undefined,
+            },
+          );
+          continue; // Skip this orphaned tool result
         }
       }
 
@@ -197,8 +249,54 @@ export class GeminiService extends BaseAIService {
         {
           originalCount: messages.length,
           validatedCount: validatedMessages.length,
+          removedToolCallIds: Array.from(removedToolCallIds),
         },
       );
+    }
+
+    // Safety check: If all messages were removed, keep at least the last few non-tool messages
+    if (validatedMessages.length === 0 && messages.length > 0) {
+      logger.warn(
+        'All messages were removed by validation - adding fallback messages',
+      );
+
+      // Find the last few user and assistant messages (without tool calls) to maintain conversation context
+      const fallbackMessages: Message[] = [];
+      for (
+        let i = messages.length - 1;
+        i >= 0 && fallbackMessages.length < 3;
+        i--
+      ) {
+        const msg = messages[i];
+        if (
+          msg.role === 'user' ||
+          (msg.role === 'assistant' &&
+            (!msg.tool_calls || msg.tool_calls.length === 0))
+        ) {
+          fallbackMessages.unshift(msg);
+        }
+      }
+
+      if (fallbackMessages.length > 0) {
+        logger.info(
+          `Added ${fallbackMessages.length} fallback messages to prevent empty conversation`,
+        );
+        return fallbackMessages;
+      }
+
+      // If no suitable fallback messages, create a minimal user message
+      logger.warn(
+        'No suitable fallback messages found - creating minimal user message',
+      );
+      return [
+        {
+          id: 'fallback-user-msg',
+          role: 'user',
+          content: 'Please continue.',
+          assistantId: messages[0]?.assistantId || '',
+          sessionId: messages[0]?.sessionId || '',
+        },
+      ];
     }
 
     return validatedMessages;
@@ -273,10 +371,71 @@ export class GeminiService extends BaseAIService {
             ],
           });
         } else {
-          logger.warn(
-            `Could not find function name for tool message with tool_call_id: ${m.tool_call_id}`,
-          );
-          // Optionally, handle this error more robustly or skip the message
+          // Gather lightweight diagnostic context to help triage matching failures
+          const msgIndex = messages.indexOf(m);
+          const recentAssistantToolCallIds: string[] = [];
+          const recentFunctionNames: string[] = [];
+
+          for (let j = Math.max(0, msgIndex - 10); j < msgIndex; j++) {
+            const prev = messages[j];
+            if (prev.role === 'assistant' && prev.tool_calls) {
+              for (const tc of prev.tool_calls) {
+                if (tc.id) recentAssistantToolCallIds.push(tc.id);
+                if (tc.function?.name)
+                  recentFunctionNames.push(tc.function.name);
+              }
+            }
+          }
+
+          // Fallback: Try to find a function by name matching if tool_call_id fails
+          let fallbackFunctionName: string | undefined;
+          if (recentFunctionNames.length === 1) {
+            // If there's only one recent function call, assume it's the one
+            fallbackFunctionName = recentFunctionNames[0];
+            logger.info(
+              `Using fallback function name matching for orphaned tool result: ${fallbackFunctionName}`,
+              { tool_call_id: m.tool_call_id },
+            );
+          }
+
+          if (fallbackFunctionName) {
+            // Use the fallback function name
+            let response: Record<string, unknown> | undefined;
+            try {
+              response = JSON.parse(m.content);
+            } catch {
+              response = { value: m.content };
+            }
+            geminiMessages.push({
+              role: 'function',
+              parts: [
+                {
+                  functionResponse: {
+                    name: fallbackFunctionName,
+                    response,
+                  },
+                },
+              ],
+            });
+          } else {
+            logger.warn(
+              `Could not find function name for tool message with tool_call_id: ${m.tool_call_id}`,
+              {
+                tool_call_id: m.tool_call_id,
+                tool_content_snippet:
+                  typeof m.content === 'string'
+                    ? m.content.substring(0, 200)
+                    : undefined,
+                message_index: msgIndex,
+                recent_assistant_tool_call_ids:
+                  recentAssistantToolCallIds.slice(-10),
+                recent_function_names: recentFunctionNames.slice(-10),
+                recent_assistant_count: recentAssistantToolCallIds.length,
+                fallback_attempted: recentFunctionNames.length !== 1,
+              },
+            );
+            // Skip this tool message if we can't resolve it
+          }
         }
       }
     }

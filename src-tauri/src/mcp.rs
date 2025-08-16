@@ -376,17 +376,104 @@ impl MCPServerManager {
         }
     }
 
-    /// Convert JSON schema to structured JSONSchema
+    /// Convert JSON schema to structured JSONSchema with defensive parsing
     fn convert_input_schema(schema: serde_json::Value) -> JSONSchema {
-        // For now, use serde_json to deserialize directly into our JSONSchema struct
-        // This provides better type safety and handles the conversion automatically
-        match serde_json::from_value::<JSONSchema>(schema) {
+        // First try direct deserialization
+        match serde_json::from_value::<JSONSchema>(schema.clone()) {
             Ok(json_schema) => json_schema,
             Err(e) => {
-                warn!("Failed to parse JSON schema: {e}, using default");
+                // Log detailed error information for debugging
+                warn!("Failed to parse JSON schema: {e}");
+                warn!(
+                    "Schema content: {}",
+                    serde_json::to_string_pretty(&schema)
+                        .unwrap_or_else(|_| "invalid JSON".to_string())
+                );
+
+                // Try to fix common issues and re-parse
+                if let Ok(fixed_schema) = Self::fix_schema_issues(schema.clone()) {
+                    match serde_json::from_value::<JSONSchema>(fixed_schema) {
+                        Ok(json_schema) => {
+                            info!("Successfully parsed schema after applying fixes");
+                            return json_schema;
+                        }
+                        Err(fix_error) => {
+                            warn!("Schema still invalid after fixes: {fix_error}");
+                        }
+                    }
+                }
+
+                warn!("Using default object schema as fallback");
                 JSONSchema::default()
             }
         }
+    }
+
+    /// Attempt to fix common schema parsing issues
+    fn fix_schema_issues(
+        mut schema: serde_json::Value,
+    ) -> Result<serde_json::Value, serde_json::Error> {
+        if let Some(obj) = schema.as_object_mut() {
+            // Fix missing type field
+            if !obj.contains_key("type") {
+                // Infer type from structure
+                if obj.contains_key("properties") {
+                    obj.insert(
+                        "type".to_string(),
+                        serde_json::Value::String("object".to_string()),
+                    );
+                } else if obj.contains_key("items") {
+                    obj.insert(
+                        "type".to_string(),
+                        serde_json::Value::String("array".to_string()),
+                    );
+                } else {
+                    obj.insert(
+                        "type".to_string(),
+                        serde_json::Value::String("object".to_string()),
+                    );
+                }
+            }
+
+            // Fix array-type type fields (convert sequence to single string)
+            if let Some(type_value) = obj.get_mut("type") {
+                if type_value.is_array() {
+                    if let Some(first_type) = type_value.as_array().and_then(|arr| arr.first()) {
+                        if let Some(type_str) = first_type.as_str() {
+                            *type_value = serde_json::Value::String(type_str.to_string());
+                        }
+                    }
+                }
+            }
+
+            // Recursively fix properties
+            if let Some(properties) = obj.get_mut("properties") {
+                if let Some(props_obj) = properties.as_object_mut() {
+                    for (_, prop_value) in props_obj.iter_mut() {
+                        if let Ok(fixed_prop) = Self::fix_schema_issues(prop_value.clone()) {
+                            *prop_value = fixed_prop;
+                        }
+                    }
+                }
+            }
+
+            // Recursively fix array items
+            if let Some(items) = obj.get_mut("items") {
+                if items.is_array() {
+                    if let Some(items_array) = items.as_array_mut() {
+                        for item in items_array.iter_mut() {
+                            if let Ok(fixed_item) = Self::fix_schema_issues(item.clone()) {
+                                *item = fixed_item;
+                            }
+                        }
+                    }
+                } else if let Ok(fixed_items) = Self::fix_schema_issues(items.clone()) {
+                    *items = fixed_items;
+                }
+            }
+        }
+
+        Ok(schema)
     }
 
     /// 사용 가능한 도구 목록을 가져옵니다
@@ -566,13 +653,27 @@ impl MCPServerManager {
     }
 
     /// Call a tool on a builtin server
-    pub async fn call_builtin_tool(&self, server_name: &str, tool_name: &str, args: serde_json::Value) -> MCPResponse {
-        debug!("call_builtin_tool: server_name='{}', tool_name='{}', args={}", server_name, tool_name, args);
-        
-        let result = self.builtin_servers.call_tool(server_name, tool_name, args).await;
-        
-        debug!("Builtin tool call result: success={}", result.error.is_none());
-        
+    pub async fn call_builtin_tool(
+        &self,
+        server_name: &str,
+        tool_name: &str,
+        args: serde_json::Value,
+    ) -> MCPResponse {
+        debug!(
+            "call_builtin_tool: server_name='{}', tool_name='{}', args={}",
+            server_name, tool_name, args
+        );
+
+        let result = self
+            .builtin_servers
+            .call_tool(server_name, tool_name, args)
+            .await;
+
+        debug!(
+            "Builtin tool call result: success={}",
+            result.error.is_none()
+        );
+
         result
     }
 
@@ -594,9 +695,14 @@ impl MCPServerManager {
     }
 
     /// Call a tool on either external or builtin server based on server name
-    pub async fn call_tool_unified(&self, server_name: &str, tool_name: &str, args: serde_json::Value) -> MCPResponse {
-        // Check if it's a builtin server (starts with "builtin:")
-        if server_name.starts_with("builtin:") {
+    pub async fn call_tool_unified(
+        &self,
+        server_name: &str,
+        tool_name: &str,
+        args: serde_json::Value,
+    ) -> MCPResponse {
+        // Check if it's a builtin server (starts with "builtin.")
+        if server_name.starts_with("builtin.") {
             self.call_builtin_tool(server_name, tool_name, args).await
         } else {
             self.call_tool(server_name, tool_name, args).await
