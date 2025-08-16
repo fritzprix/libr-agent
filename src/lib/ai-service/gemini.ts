@@ -28,15 +28,15 @@ export class GeminiService extends BaseAIService {
     // This ensures the same function call always gets the same ID
     const argsStr = JSON.stringify(functionCall.args || {});
     const content = `${functionCall.name}:${argsStr}`;
-    
+
     // Use a simple hash to create a shorter, deterministic ID
     let hash = 0;
     for (let i = 0; i < content.length; i++) {
       const char = content.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
+      hash = (hash << 5) - hash + char;
       hash = hash & hash; // Convert to 32-bit integer
     }
-    
+
     // Convert to base36 and add timestamp for some uniqueness within the session
     const sessionSalt = Date.now().toString(36).slice(-4);
     return `tool_${Math.abs(hash).toString(36)}_${sessionSalt}`;
@@ -127,7 +127,7 @@ export class GeminiService extends BaseAIService {
           yield JSON.stringify({
             tool_calls: chunk.functionCalls.map((fc: FunctionCall) => {
               const toolCallId = this.generateDeterministicToolCallId(fc);
-              
+
               logger.debug('Generated deterministic tool call ID', {
                 functionName: fc.name,
                 toolCallId,
@@ -203,7 +203,7 @@ export class GeminiService extends BaseAIService {
           (previousMessage.role !== 'user' && previousMessage.role !== 'tool')
         ) {
           // Track tool call IDs from removed assistant messages
-          currentMessage.tool_calls.forEach(tc => {
+          currentMessage.tool_calls.forEach((tc) => {
             if (tc.id) removedToolCallIds.add(tc.id);
           });
 
@@ -229,10 +229,11 @@ export class GeminiService extends BaseAIService {
             'Removing orphaned tool result message for removed assistant tool call',
             {
               tool_call_id: currentMessage.tool_call_id,
-              content_snippet: typeof currentMessage.content === 'string' 
-                ? currentMessage.content.substring(0, 100) 
-                : undefined,
-            }
+              content_snippet:
+                typeof currentMessage.content === 'string'
+                  ? currentMessage.content.substring(0, 100)
+                  : undefined,
+            },
           );
           continue; // Skip this orphaned tool result
         }
@@ -255,32 +256,47 @@ export class GeminiService extends BaseAIService {
 
     // Safety check: If all messages were removed, keep at least the last few non-tool messages
     if (validatedMessages.length === 0 && messages.length > 0) {
-      logger.warn('All messages were removed by validation - adding fallback messages');
-      
+      logger.warn(
+        'All messages were removed by validation - adding fallback messages',
+      );
+
       // Find the last few user and assistant messages (without tool calls) to maintain conversation context
       const fallbackMessages: Message[] = [];
-      for (let i = messages.length - 1; i >= 0 && fallbackMessages.length < 3; i--) {
+      for (
+        let i = messages.length - 1;
+        i >= 0 && fallbackMessages.length < 3;
+        i--
+      ) {
         const msg = messages[i];
-        if (msg.role === 'user' || 
-            (msg.role === 'assistant' && (!msg.tool_calls || msg.tool_calls.length === 0))) {
+        if (
+          msg.role === 'user' ||
+          (msg.role === 'assistant' &&
+            (!msg.tool_calls || msg.tool_calls.length === 0))
+        ) {
           fallbackMessages.unshift(msg);
         }
       }
-      
+
       if (fallbackMessages.length > 0) {
-        logger.info(`Added ${fallbackMessages.length} fallback messages to prevent empty conversation`);
+        logger.info(
+          `Added ${fallbackMessages.length} fallback messages to prevent empty conversation`,
+        );
         return fallbackMessages;
       }
-      
+
       // If no suitable fallback messages, create a minimal user message
-      logger.warn('No suitable fallback messages found - creating minimal user message');
-      return [{
-        id: 'fallback-user-msg',
-        role: 'user',
-        content: 'Please continue.',
-        assistantId: messages[0]?.assistantId || '',
-        sessionId: messages[0]?.sessionId || '',
-      }];
+      logger.warn(
+        'No suitable fallback messages found - creating minimal user message',
+      );
+      return [
+        {
+          id: 'fallback-user-msg',
+          role: 'user',
+          content: 'Please continue.',
+          assistantId: messages[0]?.assistantId || '',
+          sessionId: messages[0]?.sessionId || '',
+        },
+      ];
     }
 
     return validatedMessages;
@@ -359,13 +375,14 @@ export class GeminiService extends BaseAIService {
           const msgIndex = messages.indexOf(m);
           const recentAssistantToolCallIds: string[] = [];
           const recentFunctionNames: string[] = [];
-          
+
           for (let j = Math.max(0, msgIndex - 10); j < msgIndex; j++) {
             const prev = messages[j];
             if (prev.role === 'assistant' && prev.tool_calls) {
               for (const tc of prev.tool_calls) {
                 if (tc.id) recentAssistantToolCallIds.push(tc.id);
-                if (tc.function?.name) recentFunctionNames.push(tc.function.name);
+                if (tc.function?.name)
+                  recentFunctionNames.push(tc.function.name);
               }
             }
           }
@@ -377,7 +394,7 @@ export class GeminiService extends BaseAIService {
             fallbackFunctionName = recentFunctionNames[0];
             logger.info(
               `Using fallback function name matching for orphaned tool result: ${fallbackFunctionName}`,
-              { tool_call_id: m.tool_call_id }
+              { tool_call_id: m.tool_call_id },
             );
           }
 
@@ -405,9 +422,13 @@ export class GeminiService extends BaseAIService {
               `Could not find function name for tool message with tool_call_id: ${m.tool_call_id}`,
               {
                 tool_call_id: m.tool_call_id,
-                tool_content_snippet: typeof m.content === 'string' ? m.content.substring(0, 200) : undefined,
+                tool_content_snippet:
+                  typeof m.content === 'string'
+                    ? m.content.substring(0, 200)
+                    : undefined,
                 message_index: msgIndex,
-                recent_assistant_tool_call_ids: recentAssistantToolCallIds.slice(-10),
+                recent_assistant_tool_call_ids:
+                  recentAssistantToolCallIds.slice(-10),
                 recent_function_names: recentFunctionNames.slice(-10),
                 recent_assistant_count: recentAssistantToolCallIds.length,
                 fallback_attempted: recentFunctionNames.length !== 1,

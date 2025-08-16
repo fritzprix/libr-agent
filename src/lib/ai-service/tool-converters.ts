@@ -160,7 +160,9 @@ function ensureSchemaTypeField(
 
     for (const [key, value] of Object.entries(properties)) {
       if (typeof value === 'object' && value !== null) {
-        fixedProperties[key] = ensureSchemaTypeField(value as Record<string, unknown>);
+        fixedProperties[key] = ensureSchemaTypeField(
+          value as Record<string, unknown>,
+        );
       } else {
         fixedProperties[key] = value;
       }
@@ -177,7 +179,9 @@ function ensureSchemaTypeField(
           : item,
       );
     } else if (typeof result.items === 'object' && result.items !== null) {
-      result.items = ensureSchemaTypeField(result.items as Record<string, unknown>);
+      result.items = ensureSchemaTypeField(
+        result.items as Record<string, unknown>,
+      );
     }
   }
 

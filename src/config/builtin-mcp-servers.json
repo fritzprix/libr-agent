@@ -1,6 +1,5 @@
 {
   "description": "Built-in MCP servers that are automatically available to all assistants",
   "version": "1.0.0",
-  "servers": {
-  }
+  "servers": {}
 }

@@ -249,7 +249,6 @@ export const AssistantContextProvider = ({
     return currentAssistantRef.current;
   }, []);
 
-
   const registerEphemeral = useCallback(
     (assistant: Assistant) => {
       const existsInDb = (assistantsRef.current ?? []).some(

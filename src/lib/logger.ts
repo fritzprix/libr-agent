@@ -1,28 +1,28 @@
 /**
  * SynapticFlow 글로벌 로거 시스템
- * 
+ *
  * 특징:
  * - 파일 로깅 자동 지원 (플랫폼별 표준 경로)
  * - 시작 시 자동 백업
  * - 로그 레벨 필터링
  * - 설정 영구 저장
  * - 컨텍스트별 로깅
- * 
+ *
  * @example
  * ```typescript
  * import { getLogger, logUtils } from '@/lib/logger';
- * 
+ *
  * // 앱 시작 시 (main.tsx에서 자동 호출됨)
  * await logUtils.initialize();
- * 
+ *
  * // 컨텍스트별 로거 사용
  * const logger = getLogger('MyComponent');
  * logger.info('Component initialized');
- * 
+ *
  * // 설정 변경
  * await logUtils.setLogLevel('debug');
  * await logUtils.enableFileLogging(true);
- * 
+ *
  * // 로그 파일 관리
  * const logDir = await logUtils.getLogDirectory();
  * const files = await logUtils.listAllLogFiles();
@@ -114,18 +114,21 @@ export class Logger {
     if (config) {
       Logger.updateConfig(config);
     }
-    
+
     if (globalLoggerConfig.enableFileLogging) {
       await Logger.performStartupBackup();
       console.log('📁 File logging enabled');
     }
-    
+
     console.log('🚀 Logger initialized with config:', globalLoggerConfig);
   }
 
   // 시작 시 한 번만 백업 수행
   private static async performStartupBackup(): Promise<void> {
-    if (!globalLoggerConfig.autoBackupOnStartup || Logger.hasBackedUpOnStartup) {
+    if (
+      !globalLoggerConfig.autoBackupOnStartup ||
+      Logger.hasBackedUpOnStartup
+    ) {
       return;
     }
 
@@ -176,11 +179,11 @@ export class Logger {
 
   static async debug(message: string, ...args: unknown[]): Promise<void> {
     if (!Logger.shouldLog('debug')) return;
-    
+
     if (globalLoggerConfig.enableFileLogging) {
       await Logger.performStartupBackup();
     }
-    
+
     const { formattedMessage, context } = Logger.formatLogMessage(
       message,
       args,
@@ -191,11 +194,11 @@ export class Logger {
 
   static async info(message: string, ...args: unknown[]): Promise<void> {
     if (!Logger.shouldLog('info')) return;
-    
+
     if (globalLoggerConfig.enableFileLogging) {
       await Logger.performStartupBackup();
     }
-    
+
     const { formattedMessage, context } = Logger.formatLogMessage(
       message,
       args,
@@ -206,11 +209,11 @@ export class Logger {
 
   static async warn(message: string, ...args: unknown[]): Promise<void> {
     if (!Logger.shouldLog('warn')) return;
-    
+
     if (globalLoggerConfig.enableFileLogging) {
       await Logger.performStartupBackup();
     }
-    
+
     const { formattedMessage, context } = Logger.formatLogMessage(
       message,
       args,
@@ -221,11 +224,11 @@ export class Logger {
 
   static async error(message: string, ...args: unknown[]): Promise<void> {
     if (!Logger.shouldLog('error')) return;
-    
+
     if (globalLoggerConfig.enableFileLogging) {
       await Logger.performStartupBackup();
     }
-    
+
     let errorObj: Error | undefined;
     let remainingArgs = [...args];
 
@@ -253,11 +256,11 @@ export class Logger {
 
   static async trace(message: string, ...args: unknown[]): Promise<void> {
     if (!Logger.shouldLog('trace')) return;
-    
+
     if (globalLoggerConfig.enableFileLogging) {
       await Logger.performStartupBackup();
     }
-    
+
     const { formattedMessage, context } = Logger.formatLogMessage(
       message,
       args,
@@ -308,14 +311,14 @@ export const logUtils = {
     } catch (error) {
       console.warn('Failed to load saved logger config:', error);
     }
-    
+
     // 전달된 설정이 있으면 덮어쓰기
     if (config) {
       Logger.updateConfig(config);
       // 새 설정 저장
       await logUtils.saveConfig();
     }
-    
+
     await Logger.initialize();
   },
 
@@ -340,7 +343,10 @@ export const logUtils = {
   saveConfig: async (): Promise<void> => {
     try {
       const config = Logger.getConfig();
-      localStorage.setItem('synaptic-flow-logger-config', JSON.stringify(config));
+      localStorage.setItem(
+        'synaptic-flow-logger-config',
+        JSON.stringify(config),
+      );
     } catch (error) {
       console.error('Failed to save logger config:', error);
     }
