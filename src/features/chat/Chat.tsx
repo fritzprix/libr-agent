@@ -31,6 +31,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { getCurrentWebview } from '@tauri-apps/api/webview';
 import ToolsModal from '../tools/ToolsModal';
 import MessageBubble from './MessageBubble';
 import { TimeLocationSystemPrompt } from '../prompts/TimeLocationSystemPrompt';
@@ -428,10 +429,11 @@ function ChatAttachedFiles() {
 // Chat Input component - now uses ResourceAttachmentContext
 function ChatInput({ children }: { children?: React.ReactNode }) {
   const [input, setInput] = useState<string>('');
+  const [isDragOver, setIsDragOver] = useState<boolean>(false);
 
   const { current: currentSession } = useSessionContext();
   const { currentAssistant } = useAssistantContext();
-  const { submit, isLoading } = useChatContext();
+  const { submit, isLoading, cancel } = useChatContext();
   const {
     files: attachedFiles,
     addFile,
@@ -439,6 +441,97 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
     clearFiles,
     isLoading: isAttachmentLoading,
   } = useResourceAttachment();
+
+  // Handle drag and drop events from Tauri
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+
+    const setupDragDrop = async () => {
+      try {
+        const webview = getCurrentWebview();
+        unlisten = await webview.onDragDropEvent((event) => {
+          logger.debug('Drag drop event:', event);
+
+          if (event.payload.type === 'enter') {
+            setIsDragOver(true);
+          } else if (event.payload.type === 'drop') {
+            setIsDragOver(false);
+            handleFileDrop(event.payload.paths);
+          } else if (event.payload.type === 'leave') {
+            setIsDragOver(false);
+          }
+        });
+      } catch (error) {
+        logger.warn('Failed to setup drag and drop listener:', error);
+      }
+    };
+
+    setupDragDrop();
+
+    return () => {
+      if (unlisten) {
+        unlisten();
+      }
+    };
+  }, []);
+
+  // Handle dropped files
+  const handleFileDrop = useCallback(
+    async (filePaths: string[]) => {
+      if (!currentSession) {
+        alert('Cannot attach file: session not available.');
+        return;
+      }
+
+      logger.info('Files dropped:', filePaths);
+
+      for (const filePath of filePaths) {
+        try {
+          // Extract filename from path
+          const filename = filePath.split('/').pop() || filePath.split('\\').pop() || 'unknown';
+          
+          // Check file extension
+          const supportedExtensions = /\.(txt|md|json|pdf|docx|xlsx)$/i;
+          if (!supportedExtensions.test(filename)) {
+            alert(`File "${filename}" format is not supported.`);
+            continue;
+          }
+
+          logger.debug(`Processing dropped file`, {
+            filePath,
+            filename,
+            sessionId: currentSession?.id,
+          });
+
+          // For dropped files, we use the file path directly as Tauri can read from it
+          await addFile(filePath, 'application/octet-stream', filename);
+
+          logger.info(`Dropped file processed successfully`, {
+            filename,
+            filePath,
+          });
+        } catch (error) {
+          logger.error(`Error processing dropped file ${filePath}:`, {
+            filePath,
+            sessionId: currentSession?.id,
+            error:
+              error instanceof Error
+                ? {
+                    message: error.message,
+                    stack: error.stack,
+                    name: error.name,
+                  }
+                : error,
+            errorString: String(error),
+          });
+          alert(
+            `Error processing file "${filePath}": ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
+    },
+    [currentSession, addFile],
+  );
 
   const handleAgentInputChange = React.useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -450,6 +543,13 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
   const handleSubmit = useCallback(
     async (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault();
+      
+      // If loading, cancel the request
+      if (isLoading) {
+        cancel();
+        return;
+      }
+      
       // Submit if there's text OR if files are attached.
       if (!input.trim() && attachedFiles.length === 0) return;
       if (!currentAssistant || !currentSession) return;
@@ -480,6 +580,8 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
       currentAssistant,
       currentSession,
       clearFiles,
+      isLoading,
+      cancel,
     ],
   );
 
@@ -575,7 +677,11 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="px-4 py-4 border-t flex items-center gap-2"
+      className={`px-4 py-4 border-t flex items-center gap-2 transition-colors ${
+        isDragOver 
+          ? 'bg-blue-900/20 border-blue-500' 
+          : ''
+      }`}
     >
       <span className="font-bold flex-shrink-0">$</span>
       <div className="flex-1 flex items-center gap-2 min-w-0">
@@ -583,12 +689,16 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
           value={input}
           onChange={handleAgentInputChange}
           placeholder={
-            isLoading || isAttachmentLoading
+            isDragOver
+              ? 'Drop files here...'
+              : isLoading || isAttachmentLoading
               ? 'Agent busy...'
-              : 'Query agent...'
+              : 'Query agent or drop files...'
           }
           disabled={isLoading || isAttachmentLoading}
-          className="flex-1 min-w-0"
+          className={`flex-1 min-w-0 transition-colors ${
+            isDragOver ? 'border-blue-500 bg-blue-900/10' : ''
+          }`}
           autoComplete="off"
           spellCheck="false"
         />
@@ -613,17 +723,17 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
 
       <Button
         type="submit"
-        // Disable button if there's nothing to send.
+        // Disable button if there's nothing to send (only when not loading).
         disabled={
-          isLoading ||
           isAttachmentLoading ||
-          (!input.trim() && attachedFiles.length === 0)
+          (!isLoading && !input.trim() && attachedFiles.length === 0)
         }
         variant="ghost"
         size="sm"
         className="px-1"
+        title={isLoading ? "Cancel request" : "Send message"}
       >
-        ⏎
+        {isLoading ? '✕' : '⏎'}
       </Button>
     </form>
   );

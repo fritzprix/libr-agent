@@ -3,7 +3,6 @@ import { createId } from '@paralleldrive/cuid2';
 import { useCallback, useMemo, useState } from 'react';
 import { AIServiceConfig, AIServiceFactory } from '../lib/ai-service';
 import { getLogger } from '../lib/logger';
-import { useScheduledCallback } from './use-scheduled-callback';
 import { useSettings } from './use-settings';
 import { prepareMessagesForLLM } from '../lib/message-preprocessor';
 
@@ -148,7 +147,6 @@ export const useAIService = (config?: AIServiceConfig) => {
     [model, config, serviceInstance],
   );
 
-  const scheduledSubmit = useScheduledCallback(submit, [submit]);
 
-  return { response, isLoading, error, submit: scheduledSubmit };
+  return { response, isLoading, error, submit };
 };

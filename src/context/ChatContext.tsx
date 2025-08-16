@@ -14,7 +14,6 @@ import { useAIService } from '../hooks/use-ai-service';
 import { useAssistantContext } from './AssistantContext';
 import { useBuiltInTools } from './BuiltInToolContext';
 import { useUnifiedMCP } from '../hooks/use-unified-mcp';
-import { useScheduler } from './SchedulerContext';
 import { createId } from '@paralleldrive/cuid2';
 import { getLogger } from '../lib/logger';
 import { Message, UIResource } from '@/models/chat';
@@ -183,7 +182,6 @@ const ToolCaller: React.FC<ToolCallerProps> = ({ onToolExecutionChange }) => {
   const { currentAssistant } = useAssistantContext();
   const { messages, submit } = useChatContext();
   const { executeToolCall } = useUnifiedMCP();
-  const { schedule } = useScheduler();
 
   const lastProcessedMessageId = useRef<string | null>(null);
 
@@ -212,10 +210,7 @@ const ToolCaller: React.FC<ToolCallerProps> = ({ onToolExecutionChange }) => {
           try {
             logger.debug('Executing tool', { toolName, toolCallId: toolCall.id });
 
-            const mcpResponse = await schedule(() =>
-              executeToolCall(toolCall),
-            );
-
+            const mcpResponse = await executeToolCall(toolCall);
             const serialized = serializeToolResult(
               mcpResponse,
               toolName,
@@ -283,7 +278,6 @@ const ToolCaller: React.FC<ToolCallerProps> = ({ onToolExecutionChange }) => {
     [
       submit,
       executeToolCall,
-      schedule,
       currentAssistant,
       currentSession,
       onToolExecutionChange,
@@ -309,6 +303,8 @@ const ToolCaller: React.FC<ToolCallerProps> = ({ onToolExecutionChange }) => {
 
   return null;
 };
+
+
 
 export function ChatProvider({ children }: ChatProviderProps) {
   const { messages: history, addMessage } = useSessionHistory();
@@ -625,6 +621,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
     </ChatContext.Provider>
   );
 }
+
+
 
 export function useChatContext(): ChatContextValue {
   const context = useContext(ChatContext);

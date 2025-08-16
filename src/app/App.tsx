@@ -14,7 +14,6 @@ import { AssistantGroupProvider } from '../context/AssistantGroupContext';
 import { MCPServerProvider } from '../context/MCPServerContext';
 import { WebMCPProvider } from '../context/WebMCPContext';
 import { ModelOptionsProvider } from '../context/ModelProvider';
-import { SchedulerProvider } from '../context/SchedulerContext';
 import { SessionContextProvider } from '../context/SessionContext';
 import { SessionHistoryProvider } from '../context/SessionHistoryContext';
 import { SettingsProvider } from '../context/SettingsContext';
@@ -32,7 +31,6 @@ function App() {
   return (
     <div className="h-screen w-full">
       <SettingsProvider>
-        <SchedulerProvider>
           <WebMCPProvider servers={['content-store']} autoLoad={true}>
             <MCPServerProvider>
               <BuiltInToolProvider>
@@ -109,7 +107,6 @@ function App() {
               </BuiltInToolProvider>
             </MCPServerProvider>
           </WebMCPProvider>
-        </SchedulerProvider>
       </SettingsProvider>
     </div>
   );
