@@ -15,10 +15,11 @@ import { MCPConfig } from '../models/chat';
 
 const logger = getLogger('MCPServerContext');
 
-interface MCPServerContextType {
+export interface MCPServerContextType {
   availableTools: MCPTool[];
   getAvailableTools: () => MCPTool[];
-  isConnecting: boolean;
+  isLoading: boolean;
+  error?: string;
   status: Record<string, boolean>;
   connectServers: (mcpConfigs: MCPConfig) => Promise<void>;
   executeToolCall: (toolCall: {
@@ -37,13 +38,15 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
 }) => {
   const [availableTools, setAvailableTools] = useState<MCPTool[]>([]);
   const [serverStatus, setServerStatus] = useState<Record<string, boolean>>({});
+  const [error, setError] = useState<string | undefined>(undefined);
   const availableToolsRef = useRef(availableTools);
-  const [{ loading: isConnecting }, connectServers] = useAsyncFn(
+
+  const [{ loading: isLoading }, connectServers] = useAsyncFn(
     async (mcpConfig: MCPConfig) => {
       const serverStatus: Record<string, boolean> = {};
+      setError(undefined);
       try {
         if (!mcpConfig.mcpServers) {
-          // TODO: put logging
           return;
         }
 
@@ -76,6 +79,9 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
         setAvailableTools(tools);
         logger.debug(`Total tools loaded: ${tools.length}`);
       } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        setError(errorMessage);
         logger.error('Error connecting to MCP:', { error });
         Object.keys(serverStatus).forEach((key) => {
           serverStatus[key] = false;
@@ -131,7 +137,6 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
           rawResponse,
         });
 
-        // 응답을 normalizeToolResult로 한 번 더 검증하여 에러 패턴 감지
         const mcpResponse = normalizeToolResult(
           rawResponse,
           aiProvidedToolName,
@@ -160,7 +165,8 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
   const value: MCPServerContextType = useMemo(
     () => ({
       availableTools,
-      isConnecting,
+      isLoading,
+      error,
       getAvailableTools,
       status: serverStatus,
       connectServers,
@@ -168,7 +174,8 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
     }),
     [
       availableTools,
-      isConnecting,
+      isLoading,
+      error,
       serverStatus,
       getAvailableTools,
       connectServers,

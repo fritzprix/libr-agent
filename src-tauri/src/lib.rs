@@ -334,6 +334,20 @@ async fn read_file(file_path: String) -> Result<Vec<u8>, String> {
 }
 
 #[tauri::command]
+async fn open_external_url(url: String) -> Result<(), String> {
+    // URL validation
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        return Err("Only HTTP/HTTPS URLs are allowed".to_string());
+    }
+
+    // Use tauri-plugin-opener to open URL in external browser
+    tauri_plugin_opener::open_url(&url, None::<&str>)
+        .map_err(|e| format!("Failed to open URL: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
 async fn list_all_tools_unified() -> Result<Vec<mcp::MCPTool>, String> {
     get_mcp_manager()
         .list_all_tools_unified()
@@ -409,7 +423,8 @@ pub fn run() {
                 backup_current_log,
                 clear_current_log,
                 list_log_files,
-                read_file
+                read_file,
+                open_external_url
             ])
             .setup(|_app| {
                 println!("🚀 SynapticFlow initializing...");

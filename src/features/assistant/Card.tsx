@@ -17,7 +17,7 @@ export default function AssistantCard({ assistant }: AssistantCardProps) {
     deleteAssistant,
     saveAssistant: upsertAssistant,
   } = useAssistantContext();
-  const { status, isConnecting: isCheckingStatus } = useMCPServer();
+  const { status, isLoading: isCheckingStatus } = useMCPServer();
   const [isDeleting, setIsDeleting] = useState(false);
   const isActive = currentAssistant?.id === assistant.id;
 
