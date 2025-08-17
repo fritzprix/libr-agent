@@ -7,11 +7,19 @@ const logger = getLogger('UIResourceRenderer');
 
 // mcp-ui 표준 UIAction 타입 (공식 스펙 그대로)
 export type UIAction =
-  | { type: 'tool', payload: { toolName: string, params: Record<string, unknown> }, messageId?: string }
-  | { type: 'intent', payload: { intent: string, params: Record<string, unknown> }, messageId?: string }
-  | { type: 'prompt', payload: { prompt: string }, messageId?: string }
-  | { type: 'notify', payload: { message: string }, messageId?: string }
-  | { type: 'link', payload: { url: string }, messageId?: string };
+  | {
+      type: 'tool';
+      payload: { toolName: string; params: Record<string, unknown> };
+      messageId?: string;
+    }
+  | {
+      type: 'intent';
+      payload: { intent: string; params: Record<string, unknown> };
+      messageId?: string;
+    }
+  | { type: 'prompt'; payload: { prompt: string }; messageId?: string }
+  | { type: 'notify'; payload: { message: string }; messageId?: string }
+  | { type: 'link'; payload: { url: string }; messageId?: string };
 
 export interface UIResourceRendererProps {
   resource: UIResource | UIResource[];
@@ -28,7 +36,7 @@ const UIResourceRenderer: React.FC<UIResourceRendererProps> = ({
 }) => {
   // 배열인 경우 첫 번째 리소스만 사용 (mcp-ui 표준)
   const targetResource = Array.isArray(resource) ? resource[0] : resource;
-  
+
   if (!targetResource) {
     logger.warn('No UI resource provided');
     return null;
@@ -60,10 +68,10 @@ const UIResourceRenderer: React.FC<UIResourceRendererProps> = ({
   // mcp-ui 표준 onUIAction 핸들러 (직접 전달, 변환 없음)
   const handleUIAction = onUIAction
     ? async (action: UIAction): Promise<void> => {
-        logger.info('UI action received', { 
-          type: action.type, 
+        logger.info('UI action received', {
+          type: action.type,
           payload: action.payload,
-          messageId: action.messageId 
+          messageId: action.messageId,
         });
         onUIAction(action);
       }

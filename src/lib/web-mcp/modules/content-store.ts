@@ -891,7 +891,7 @@ async function similaritySearch(
 }
 
 const fileStoreServer: WebMCPServer = {
-  name: 'file-store',
+  name: 'content-store',
   version: '1.1.0',
   description: 'File attachment and semantic search system using MCP protocol',
   tools,

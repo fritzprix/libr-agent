@@ -7,4 +7,4 @@
 - 변경 이후의 상태 / 해결 판정 기준
 - 수정이 필요한 코드 및 수정부분의 코드 스니핏
 - file 규칙
-  - ./docs/history/refactoring_{date}.md
+  - ./docs/history/refactoring_{yyyyMMdd_hhmm}.md

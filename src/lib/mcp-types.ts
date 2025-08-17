@@ -322,7 +322,9 @@ export function normalizeToolResult(
   deterministicId?: string,
 ): MCPResponse {
   // Use provided deterministic ID or fallback to tool name based ID
-  const id = deterministicId || `normalize-${toolName}-${Math.random().toString(36).slice(2)}`;
+  const id =
+    deterministicId ||
+    `normalize-${toolName}-${Math.random().toString(36).slice(2)}`;
 
   // 1. 이미 MCPResponse 형식인 경우 그대로 반환
   if (

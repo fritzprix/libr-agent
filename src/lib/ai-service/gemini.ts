@@ -170,29 +170,33 @@ export class GeminiService extends BaseAIService {
       return messages;
     }
 
-    const convertedMessages = messages.map(m => {
+    const convertedMessages = messages.map((m) => {
       if (m.role === 'tool') {
         return { ...m, role: 'user' as const };
       }
       return m;
     });
 
-    const firstUserIndex = convertedMessages.findIndex(msg => msg.role === 'user');
+    const firstUserIndex = convertedMessages.findIndex(
+      (msg) => msg.role === 'user',
+    );
     if (firstUserIndex === -1) {
       logger.warn('No user message found after role conversion');
       return [];
     }
 
     const validMessages = convertedMessages.slice(firstUserIndex);
-    
-    logger.info(`Role conversion and validation: ${messages.length} → ${validMessages.length} messages`, {
-      originalRoles: messages.map(m => m.role),
-      convertedRoles: validMessages.map(m => m.role)
-    });
+
+    logger.info(
+      `Role conversion and validation: ${messages.length} → ${validMessages.length} messages`,
+      {
+        originalRoles: messages.map((m) => m.role),
+        convertedRoles: validMessages.map((m) => m.role),
+      },
+    );
 
     return validMessages;
   }
-
 
   private convertToGeminiMessages(messages: Message[]): Content[] {
     const geminiMessages: Content[] = [];
@@ -212,7 +216,8 @@ export class GeminiService extends BaseAIService {
           geminiMessages.push({
             role: 'model',
             parts: m.tool_calls.map((tc) => {
-              const args = tryParse<Record<string, unknown>>(tc.function.arguments) ?? {};
+              const args =
+                tryParse<Record<string, unknown>>(tc.function.arguments) ?? {};
               return {
                 functionCall: {
                   name: tc.function.name,
@@ -228,7 +233,9 @@ export class GeminiService extends BaseAIService {
           });
         }
       } else if (m.role === 'tool') {
-        logger.warn('Unexpected tool message in convertToGeminiMessages - should have been converted to user');
+        logger.warn(
+          'Unexpected tool message in convertToGeminiMessages - should have been converted to user',
+        );
         continue;
       }
     }
@@ -237,23 +244,23 @@ export class GeminiService extends BaseAIService {
   }
 
   private logToolResponseStats(messages: Message[]): void {
-    const toolMessages = messages.filter(m => m.role === 'tool');
+    const toolMessages = messages.filter((m) => m.role === 'tool');
     if (toolMessages.length === 0) return;
-    
+
     const stats = {
       totalToolMessages: toolMessages.length,
       jsonResponses: 0,
       textResponses: 0,
       errorResponses: 0,
-      emptyResponses: 0
+      emptyResponses: 0,
     };
-    
-    toolMessages.forEach(msg => {
+
+    toolMessages.forEach((msg) => {
       if (!msg.content) {
         stats.emptyResponses++;
         return;
       }
-      
+
       try {
         JSON.parse(msg.content);
         stats.jsonResponses++;
@@ -265,7 +272,7 @@ export class GeminiService extends BaseAIService {
         }
       }
     });
-    
+
     logger.info('Tool response processing statistics', stats);
   }
 

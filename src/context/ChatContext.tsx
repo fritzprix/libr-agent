@@ -214,10 +214,14 @@ const ToolCaller: React.FC<ToolCallerProps> = ({ onToolExecutionChange }) => {
           if (!validateToolCallId(toolCall)) {
             logger.error('Invalid tool call ID detected', { toolCall });
             // 유효하지 않은 ID의 경우 새로운 deterministic ID 생성
-            toolCall.id = `fallback_${Math.abs(JSON.stringify(toolCall.function).split('').reduce((a, b) => {
-              a = ((a << 5) - a) + b.charCodeAt(0);
-              return a & a;
-            }, 0)).toString(36)}`;
+            toolCall.id = `fallback_${Math.abs(
+              JSON.stringify(toolCall.function)
+                .split('')
+                .reduce((a, b) => {
+                  a = (a << 5) - a + b.charCodeAt(0);
+                  return a & a;
+                }, 0),
+            ).toString(36)}`;
           }
         }
 

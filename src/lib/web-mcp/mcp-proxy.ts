@@ -13,7 +13,7 @@ import {
   MCPTool,
 } from '../mcp-types';
 import { getLogger } from '../logger';
-import { withTimeout, RetryOptions } from '../retry-utils';
+import { withTimeout } from '../retry-utils';
 
 const logger = getLogger('WebMCPProxy');
 
@@ -29,7 +29,6 @@ export class WebMCPProxy {
   >();
   private config: WebMCPProxyConfig & {
     timeout: number;
-    retryOptions: RetryOptions;
   };
   private isInitialized = false;
   private initializationPromise: Promise<void> | null = null;
@@ -37,13 +36,6 @@ export class WebMCPProxy {
   constructor(config: WebMCPProxyConfig) {
     this.config = {
       timeout: 30000, // 30 seconds default
-      retryOptions: {
-        maxRetries: 3,
-        baseDelay: 1000,
-        maxDelay: 10000,
-        exponentialBackoff: true,
-        ...config.retryOptions,
-      },
       ...config,
     };
 

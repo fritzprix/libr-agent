@@ -13,7 +13,7 @@ export default function MCPConfigEditor({
   mcpConfigText,
   onChange,
 }: MCPConfigEditorProps) {
-  const { status, isConnecting: isCheckingStatus } = useMCPServer();
+  const { status, isLoading: isCheckingStatus } = useMCPServer();
 
   const handleChange = (v: string) => {
     onChange(v);

@@ -64,6 +64,7 @@ synaptic-flow/
 3. Start development: `pnpm tauri dev`
 4. Build for production: `pnpm tauri build`
 5. API keys are managed in-app via the settings modal (not in .env files).
+
 # SynapticFlow Project Guidelines
 
 ## Coding Style
@@ -95,6 +96,7 @@ synaptic-flow/
 - **Never use inline import() types in interfaces.** Always use proper import statements at the top of the file instead of `import('../path').Type`. This improves readability, maintainability, and IDE support.
 
 #### ❌ Bad (Inline Import Types)
+
 ```typescript
 interface Config {
   tools?: import('../mcp-types').MCPTool[];
@@ -103,6 +105,7 @@ interface Config {
 ```
 
 #### ✅ Good (Proper Import Statements)
+
 ```typescript
 import type { MCPTool } from '../mcp-types';
 import type { Message } from '@/models/chat';
@@ -128,17 +131,19 @@ The project uses a centralized logging system located at `src/lib/logger.ts` tha
 #### Usage Guidelines
 
 - **Always use the centralized logger instead of `console.*` methods**
-- Import and use context-specific loggers: 
+- Import and use context-specific loggers:
+
   ```typescript
   import { getLogger } from '@/lib/logger';
   const logger = getLogger('ComponentName');
-  
+
   // Use appropriate log levels
   logger.debug('Debug information', data);
   logger.info('General information', data);
   logger.warn('Warning message', data);
   logger.error('Error occurred', error);
   ```
+
 - **Context naming**: Use descriptive context names that match the component/module name
 - **Log levels**: Use appropriate log levels (debug, info, warn, error) based on the importance and type of information
 - **Error logging**: When logging errors, pass the Error object as the last parameter for proper error handling
@@ -270,6 +275,21 @@ pub async fn command_name(param: Type) -> Result<ReturnType, String> {
 - Test Tauri commands with mock data
 - Verify cross-platform compatibility
 - Test MCP server integration scenarios
+
+### Refactoring Guidelines
+
+**Before completing any refactoring work, always run the following commands to ensure code quality and build integrity:**
+
+1. **Code Quality Check**: `pnpm lint` - Verify ESLint rules compliance
+2. **Code Formatting**: `pnpm format` - Apply Prettier formatting standards
+3. **Build Verification**: `pnpm build` - Ensure the application builds without errors
+
+These steps must be completed successfully before considering any refactoring task complete. This ensures:
+
+- Code consistency across the project
+- No TypeScript compilation errors
+- Proper formatting standards are maintained
+- The application remains buildable after changes
 
 ## Security Considerations
 

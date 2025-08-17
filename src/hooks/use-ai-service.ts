@@ -73,14 +73,14 @@ export const useAIService = (config?: AIServiceConfig) => {
 
         for await (const chunk of stream) {
           let parsedChunk: Record<string, unknown>;
-          
+
           try {
             parsedChunk = JSON.parse(chunk);
           } catch {
             // Handle non-JSON chunks (e.g., plain text tool responses)
-            logger.debug('Received non-JSON chunk, treating as text content', { 
+            logger.debug('Received non-JSON chunk, treating as text content', {
               chunk: chunk.substring(0, 100) + '...',
-              chunkType: typeof chunk 
+              chunkType: typeof chunk,
             });
             parsedChunk = { content: chunk };
           }
@@ -89,27 +89,27 @@ export const useAIService = (config?: AIServiceConfig) => {
             thinking += parsedChunk.thinking;
           }
           if (parsedChunk.tool_calls && Array.isArray(parsedChunk.tool_calls)) {
-            (parsedChunk.tool_calls as (ToolCall & { index: number })[]).forEach(
-              (toolCallChunk: ToolCall & { index: number }) => {
-                const { index } = toolCallChunk;
-                if (index === undefined) {
-                  toolCalls.push(toolCallChunk);
-                  return;
-                }
+            (
+              parsedChunk.tool_calls as (ToolCall & { index: number })[]
+            ).forEach((toolCallChunk: ToolCall & { index: number }) => {
+              const { index } = toolCallChunk;
+              if (index === undefined) {
+                toolCalls.push(toolCallChunk);
+                return;
+              }
 
-                if (toolCalls[index]) {
-                  if (toolCallChunk.function?.arguments) {
-                    toolCalls[index].function.arguments +=
-                      toolCallChunk.function.arguments;
-                  }
-                  if (toolCallChunk.id) {
-                    toolCalls[index].id = toolCallChunk.id;
-                  }
-                } else {
-                  toolCalls[index] = toolCallChunk;
+              if (toolCalls[index]) {
+                if (toolCallChunk.function?.arguments) {
+                  toolCalls[index].function.arguments +=
+                    toolCallChunk.function.arguments;
                 }
-              },
-            );
+                if (toolCallChunk.id) {
+                  toolCalls[index].id = toolCallChunk.id;
+                }
+              } else {
+                toolCalls[index] = toolCallChunk;
+              }
+            });
             toolCalls = toolCalls.filter(Boolean);
           }
           if (parsedChunk.content) {

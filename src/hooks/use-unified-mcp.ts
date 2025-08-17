@@ -38,17 +38,17 @@ export const useUnifiedMCP = () => {
     const map = new Map<string, BackendType>();
 
     // Add Tauri tools
-    tauriTools.forEach((tool) => {
+    tauriTools.forEach((tool: MCPTool) => {
       map.set(tool.name, 'tauri');
     });
 
     // Add Web Worker tools
-    webTools.forEach((tool) => {
+    webTools.forEach((tool: MCPTool) => {
       map.set(tool.name, 'web');
     });
 
     // Add Builtin tools
-    builtinTools.forEach((tool) => {
+    builtinTools.forEach((tool: MCPTool) => {
       map.set(tool.name, 'builtin');
     });
 

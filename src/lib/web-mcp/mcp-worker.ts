@@ -30,30 +30,33 @@ const log = {
   },
 };
 
-// Static imports for better bundling with Vite
-let calculatorServer: WebMCPServer | null = null;
-let filesystemServer: WebMCPServer | null = null;
-let contentStoreServer: WebMCPServer | null = null;
+const MODULE_REGISTRY = [
+  { key: 'content-store', importPath: './modules/content-store' },
+  // Future modules can be added here
+] as const;
 
-// Dynamic imports with error handling
+const serverInstances = new Map<string, WebMCPServer | null>(
+  MODULE_REGISTRY.map(({ key }) => [key, null]),
+);
+
 async function loadServers(): Promise<void> {
   try {
     log.debug('Loading MCP servers');
 
-    // Load all servers
-    const [contentStoreModule] = await Promise.allSettled([
-      import('./modules/content-store'),
-    ]);
+    const modulePromises = MODULE_REGISTRY.map(
+      ({ importPath }) => import(importPath),
+    );
+    const results = await Promise.allSettled(modulePromises);
 
-    if (contentStoreModule.status === 'fulfilled') {
-      contentStoreServer = contentStoreModule.value.default;
-      log.debug('Content-store server loaded');
-    } else {
-      log.error(
-        'Failed to load content-store server',
-        contentStoreModule.reason,
-      );
-    }
+    results.forEach((result, index) => {
+      const { key } = MODULE_REGISTRY[index];
+      if (result.status === 'fulfilled') {
+        serverInstances.set(key, result.value.default);
+        log.debug(`${key} server loaded`);
+      } else {
+        log.error(`Failed to load ${key} server`, result.reason);
+      }
+    });
 
     log.info('Server loading completed');
   } catch (error) {
@@ -61,13 +64,8 @@ async function loadServers(): Promise<void> {
   }
 }
 
-// Server registry with dynamic loading
 const getServerRegistry = (): Map<string, WebMCPServer | null> => {
-  return new Map([
-    ['calculator', calculatorServer],
-    ['filesystem', filesystemServer],
-    ['content-store', contentStoreServer],
-  ]);
+  return serverInstances;
 };
 
 // Cache for loaded MCP servers
@@ -83,7 +81,7 @@ async function loadMCPServer(serverName: string): Promise<WebMCPServer> {
 
   try {
     // Ensure servers are loaded
-    if (!calculatorServer && !filesystemServer && !contentStoreServer) {
+    if (Array.from(serverInstances.values()).every((s) => s === null)) {
       await loadServers();
     }
 
