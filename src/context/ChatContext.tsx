@@ -115,8 +115,13 @@ const serializeToolResult = (
     // 텍스트 내용 수집 - UI Resource가 있으면 요약, 없으면 전체 텍스트
     if (uiResources.length > 0) {
       // UIResource가 있을 때는 간단한 요약만 제공 (HTML 등 대용량 컨텐츠 제외)
+      // undefined 방지를 위한 안전한 요약 생성
       const resourceSummary = uiResources
-        .map((r) => `${r.mimeType}${r.uri ? ` (${r.uri})` : ''}`)
+        .map((r) => {
+          const mimeType = r.mimeType || 'unknown';
+          const uri = r.uri || 'no-uri';
+          return `${mimeType} (${uri})`;
+        })
         .join(', ');
       textContent = `UI Resources: ${resourceSummary}`;
     } else {
@@ -197,6 +202,24 @@ const ToolCaller: React.FC<ToolCallerProps> = ({ onToolExecutionChange }) => {
           toolCallCount: tcMessage.tool_calls.length,
           messageId: tcMessage.id,
         });
+
+        // Tool Call ID 검증 강화
+        const validateToolCallId = (toolCall: { id: string }): boolean => {
+          // Tool call ID가 유효한지 검증
+          return Boolean(toolCall.id && toolCall.id.trim().length > 0);
+        };
+
+        // Tool 실행 전 검증 로직 추가
+        for (const toolCall of tcMessage.tool_calls) {
+          if (!validateToolCallId(toolCall)) {
+            logger.error('Invalid tool call ID detected', { toolCall });
+            // 유효하지 않은 ID의 경우 새로운 deterministic ID 생성
+            toolCall.id = `fallback_${Math.abs(JSON.stringify(toolCall.function).split('').reduce((a, b) => {
+              a = ((a << 5) - a) + b.charCodeAt(0);
+              return a & a;
+            }, 0)).toString(36)}`;
+          }
+        }
 
         const toolResults: Message[] = [];
 

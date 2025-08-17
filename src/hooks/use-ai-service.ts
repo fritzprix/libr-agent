@@ -72,13 +72,24 @@ export const useAIService = (config?: AIServiceConfig) => {
         });
 
         for await (const chunk of stream) {
-          const parsedChunk = JSON.parse(chunk);
+          let parsedChunk: Record<string, unknown>;
+          
+          try {
+            parsedChunk = JSON.parse(chunk);
+          } catch {
+            // Handle non-JSON chunks (e.g., plain text tool responses)
+            logger.debug('Received non-JSON chunk, treating as text content', { 
+              chunk: chunk.substring(0, 100) + '...',
+              chunkType: typeof chunk 
+            });
+            parsedChunk = { content: chunk };
+          }
 
           if (parsedChunk.thinking) {
             thinking += parsedChunk.thinking;
           }
-          if (parsedChunk.tool_calls) {
-            parsedChunk.tool_calls.forEach(
+          if (parsedChunk.tool_calls && Array.isArray(parsedChunk.tool_calls)) {
+            (parsedChunk.tool_calls as (ToolCall & { index: number })[]).forEach(
               (toolCallChunk: ToolCall & { index: number }) => {
                 const { index } = toolCallChunk;
                 if (index === undefined) {

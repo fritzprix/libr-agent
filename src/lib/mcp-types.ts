@@ -319,8 +319,10 @@ export function isValidMCPResult(result: MCPResult): boolean {
 export function normalizeToolResult(
   result: unknown,
   toolName: string,
+  deterministicId?: string,
 ): MCPResponse {
-  const id = `tool-${toolName}-${Date.now()}`;
+  // Use provided deterministic ID or fallback to tool name based ID
+  const id = deterministicId || `normalize-${toolName}-${Math.random().toString(36).slice(2)}`;
 
   // 1. 이미 MCPResponse 형식인 경우 그대로 반환
   if (

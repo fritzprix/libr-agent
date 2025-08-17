@@ -173,6 +173,11 @@ export const useRustBackend = () => {
     return safeInvoke<string[]>('list_log_files');
   };
 
+  // External URL handling
+  const openExternalUrl = async (url: string): Promise<void> => {
+    return safeInvoke<void>('open_external_url', { url });
+  };
+
   // Utility function for basic greeting (example)
   const greet = async (name: string): Promise<string> => {
     return safeInvoke<string>('greet', { name });
@@ -209,6 +214,9 @@ export const useRustBackend = () => {
     backupCurrentLog,
     clearCurrentLog,
     listLogFiles,
+
+    // External URL handling
+    openExternalUrl,
 
     // Utility
     greet,

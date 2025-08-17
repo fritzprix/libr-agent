@@ -8,6 +8,7 @@ import UIResourceRenderer, {
 } from '@/components/ui/UIResourceRenderer';
 import { useUnifiedMCP } from '@/hooks/use-unified-mcp';
 import { useChatContext } from '@/context/ChatContext';
+import { useRustBackend } from '@/hooks/use-rust-backend';
 import { getLogger } from '@/lib/logger';
 
 const logger = getLogger('MessageBubbleRouter');
@@ -21,6 +22,7 @@ const MessageBubbleRouter: React.FC<MessageBubbleRouterProps> = ({
 }) => {
   const { executeToolCall } = useUnifiedMCP();
   const { submit } = useChatContext();
+  const { openExternalUrl } = useRustBackend();
 
   const handleUIAction = useCallback(
     async (action: UIAction) => {
@@ -77,8 +79,19 @@ const MessageBubbleRouter: React.FC<MessageBubbleRouterProps> = ({
           }
 
           case 'link': {
-            // Open external link
-            window.open(action.payload.url, '_blank', 'noopener,noreferrer');
+            const url = action.payload.url;
+            if (!url) return;
+
+            try {
+              await openExternalUrl(url);
+              logger.info('External URL opened successfully', { url });
+            } catch (error) {
+              logger.error('Failed to open external URL', { url, error });
+              // Fallback: browser environment only
+              if (typeof window !== 'undefined') {
+                window.open(url, '_blank', 'noopener,noreferrer');
+              }
+            }
             break;
           }
 
