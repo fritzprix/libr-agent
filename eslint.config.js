@@ -34,6 +34,11 @@ export default [
     plugins: {
       react: pluginReact,
     },
+    settings: {
+      react: {
+        version: "detect"
+      }
+    },
     rules: {
       ...pluginReact.configs.recommended.rules,
       ...pluginReact.configs["jsx-runtime"].rules,
