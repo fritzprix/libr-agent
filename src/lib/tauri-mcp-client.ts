@@ -1,5 +1,11 @@
 import { invoke } from '@tauri-apps/api/core';
-import { MCPServerConfig, MCPTool, MCPResponse } from './mcp-types';
+import {
+  MCPServerConfig,
+  MCPTool,
+  MCPResponse,
+  SamplingOptions,
+  SamplingResponse,
+} from './mcp-types';
 import { getLogger } from '@/lib/logger';
 
 const logger = getLogger('TauriMCPClient');
@@ -70,6 +76,33 @@ export class TauriMCPClient {
       return result;
     } catch (error) {
       logger.error('Failed to call MCP tool', error);
+      throw error;
+    }
+  }
+
+  /**
+   * MCP 서버에서 sampling을 수행합니다
+   * @param serverName 서버 이름
+   * @param prompt 입력 프롬프트
+   * @param options 샘플링 옵션
+   * @returns 샘플링 결과
+   */
+  async sampleFromModel(
+    serverName: string,
+    prompt: string,
+    options?: SamplingOptions,
+  ): Promise<SamplingResponse> {
+    try {
+      logger.debug('Sampling from MCP server', { serverName, prompt, options });
+      const result = (await invoke('sample_from_mcp_server', {
+        serverName,
+        prompt,
+        options,
+      })) as SamplingResponse;
+      logger.debug('MCP sampling completed', { result });
+      return result;
+    } catch (error) {
+      logger.error('Failed to sample from MCP server', error);
       throw error;
     }
   }

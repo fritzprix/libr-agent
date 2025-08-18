@@ -1,10 +1,8 @@
 name: 🔍 Code Quality
 
 on:
-  push:
-    branches: [ main, master ]
   pull_request:
-    branches: [ main, master ]
+    branches: [ main, master, ref/chat ]
 
 jobs:
   quality:
@@ -12,26 +10,27 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - name: 📥 Checkout
-      uses: actions/checkout@v4
-    
-    - name: 📦 Install pnpm
-      uses: pnpm/action-setup@v4
+    - name: � Setup Environment
+      uses: ./.github/actions/setup-tauri-env
       with:
-        version: 9
-    
-    - name: 📦 Setup Node.js
+        install-tauri-deps: 'true'
+
+    - name: Set up Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '18'
+        node-version: 18
         cache: 'pnpm'
-    
-    - name: 📦 Install dependencies
-      run: pnpm install
+
+    - name: Enable Corepack and prepare pnpm
+      run: |
+        corepack enable
+        corepack prepare pnpm@latest --activate
+
+    - name: Install dependencies
+      run: pnpm install --frozen-lockfile
 
     - name: 🔍 ESLint
       run: pnpm lint
-      continue-on-error: true
 
     - name: 🎨 Prettier Check
       run: |
@@ -50,14 +49,6 @@ jobs:
     - name: 🔍 TypeScript Check
       run: pnpm tsc --noEmit
 
-    - name: 🦀 Setup Rust
-      uses: dtolnay/rust-toolchain@stable
-
-    - name: 🦀 Rust cache
-      uses: swatinem/rust-cache@v2
-      with:
-        workspaces: './src-tauri -> target'
-
     - name: 🔍 Rust Clippy
       run: cd src-tauri && cargo clippy -- -D warnings
 
@@ -69,34 +60,14 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - name: 📥 Checkout
-      uses: actions/checkout@v4
-    
-    - name: 📦 Install pnpm
-      uses: pnpm/action-setup@v4
+    - name: � Setup Environment
+      uses: ./.github/actions/setup-tauri-env
       with:
-        version: 9
-    
-    - name: 📦 Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18'
-        cache: 'pnpm'
-    
-    - name: 📦 Install dependencies
-      run: pnpm install
+        install-tauri-deps: 'false'
 
     - name: 🔒 npm audit
       run: pnpm audit --audit-level high
       continue-on-error: true
-
-    - name: 🦀 Setup Rust
-      uses: dtolnay/rust-toolchain@stable
-
-    - name: 🦀 Rust cache
-      uses: swatinem/rust-cache@v2
-      with:
-        workspaces: './src-tauri -> target'
 
     - name: 🔒 Cargo audit
       run: |

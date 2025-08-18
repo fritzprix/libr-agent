@@ -45,6 +45,11 @@ const MockMCPServerProvider = ({
       id: 'test',
       result: { content: [] },
     }),
+    sampleFromModel: async () => ({
+      jsonrpc: '2.0' as const,
+      id: 'test',
+      result: { content: [] },
+    }),
   };
 
   return (

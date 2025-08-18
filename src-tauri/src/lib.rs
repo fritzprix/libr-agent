@@ -45,6 +45,31 @@ async fn call_mcp_tool(
 }
 
 #[tauri::command]
+async fn sample_from_mcp_server(
+    server_name: String,
+    prompt: String,
+    options: Option<serde_json::Value>,
+) -> Result<MCPResponse, String> {
+    let sampling_options = if let Some(opts) = options {
+        Some(
+            serde_json::from_value::<mcp::SamplingOptions>(opts)
+                .map_err(|e| format!("Invalid sampling options: {}", e))?,
+        )
+    } else {
+        None
+    };
+
+    let request = mcp::SamplingRequest {
+        prompt,
+        options: sampling_options,
+    };
+
+    Ok(get_mcp_manager()
+        .sample_from_model(&server_name, request)
+        .await)
+}
+
+#[tauri::command]
 async fn list_mcp_tools(server_name: String) -> Result<Vec<mcp::MCPTool>, String> {
     get_mcp_manager()
         .list_tools(&server_name)
@@ -319,12 +344,12 @@ async fn read_file(file_path: String) -> Result<Vec<u8>, String> {
     use std::path::Path;
 
     let path = Path::new(&file_path);
-    
+
     // Security check: ensure the file exists and is accessible
     if !path.exists() {
         return Err(format!("File does not exist: {}", file_path));
     }
-    
+
     if !path.is_file() {
         return Err(format!("Path is not a file: {}", file_path));
     }
@@ -406,6 +431,7 @@ pub fn run() {
                 start_mcp_server,
                 stop_mcp_server,
                 call_mcp_tool,
+                sample_from_mcp_server,
                 list_mcp_tools,
                 list_tools_from_config,
                 get_connected_servers,

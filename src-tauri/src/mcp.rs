@@ -176,6 +176,24 @@ pub struct MCPError {
     pub data: Option<serde_json::Value>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SamplingOptions {
+    pub model: Option<String>,
+    pub max_tokens: Option<u32>,
+    pub temperature: Option<f64>,
+    pub top_p: Option<f64>,
+    pub top_k: Option<u32>,
+    pub stop_sequences: Option<Vec<String>>,
+    pub presence_penalty: Option<f64>,
+    pub frequency_penalty: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SamplingRequest {
+    pub prompt: String,
+    pub options: Option<SamplingOptions>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MCPResponse {
     pub jsonrpc: String,
@@ -278,6 +296,45 @@ impl MCPServerManager {
         }
 
         Ok(())
+    }
+
+    /// MCP 서버에서 sampling을 수행합니다
+    pub async fn sample_from_model(
+        &self,
+        server_name: &str,
+        request: SamplingRequest,
+    ) -> MCPResponse {
+        let connections = self.connections.lock().await;
+        let request_id = serde_json::Value::String(Uuid::new_v4().to_string());
+
+        if let Some(_connection) = connections.get(server_name) {
+            // RMCP에서 sampling 지원 여부 확인 후 구현
+            // 현재는 임시로 에러 반환
+            MCPResponse {
+                jsonrpc: "2.0".to_string(),
+                id: Some(request_id),
+                result: None,
+                error: Some(MCPError {
+                    code: -32601,
+                    message: "Sampling not yet implemented in RMCP".to_string(),
+                    data: Some(serde_json::json!({
+                        "server_name": server_name,
+                        "request": request
+                    })),
+                }),
+            }
+        } else {
+            MCPResponse {
+                jsonrpc: "2.0".to_string(),
+                id: Some(request_id),
+                result: None,
+                error: Some(MCPError {
+                    code: -32002,
+                    message: format!("Server '{}' not found", server_name),
+                    data: None,
+                }),
+            }
+        }
     }
 
     /// 도구를 호출합니다

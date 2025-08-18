@@ -10,7 +10,13 @@ import React, {
 import { useAsyncFn } from 'react-use';
 import { getLogger } from '../lib/logger';
 import { tauriMCPClient } from '../lib/tauri-mcp-client';
-import { MCPResponse, MCPTool, normalizeToolResult } from '../lib/mcp-types';
+import {
+  MCPResponse,
+  MCPTool,
+  normalizeToolResult,
+  SamplingOptions,
+  SamplingResponse,
+} from '../lib/mcp-types';
 import { MCPConfig } from '../models/chat';
 
 const logger = getLogger('MCPServerContext');
@@ -27,6 +33,11 @@ export interface MCPServerContextType {
     type: 'function';
     function: { name: string; arguments: string };
   }) => Promise<MCPResponse>;
+  sampleFromModel: (
+    serverName: string,
+    prompt: string,
+    options?: SamplingOptions,
+  ) => Promise<SamplingResponse>;
 }
 
 export const MCPServerContext = createContext<MCPServerContextType | undefined>(
@@ -154,6 +165,22 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
     [],
   );
 
+  const sampleFromModel = useCallback(
+    async (
+      serverName: string,
+      prompt: string,
+      options?: SamplingOptions,
+    ): Promise<SamplingResponse> => {
+      logger.debug('Context: Sampling from model', {
+        serverName,
+        prompt,
+        options,
+      });
+      return tauriMCPClient.sampleFromModel(serverName, prompt, options);
+    },
+    [],
+  );
+
   useEffect(() => {
     availableToolsRef.current = availableTools;
   }, [availableTools]);
@@ -171,6 +198,7 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
       status: serverStatus,
       connectServers,
       executeToolCall,
+      sampleFromModel,
     }),
     [
       availableTools,
@@ -180,6 +208,7 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
       getAvailableTools,
       connectServers,
       executeToolCall,
+      sampleFromModel,
     ],
   );
 

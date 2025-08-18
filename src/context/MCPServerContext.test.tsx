@@ -11,6 +11,7 @@ vi.mock('../lib/tauri-mcp-client', () => ({
   tauriMCPClient: {
     listToolsFromConfig: vi.fn(),
     getConnectedServers: vi.fn(),
+    sampleFromModel: vi.fn(),
   },
 }));
 

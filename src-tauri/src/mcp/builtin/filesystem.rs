@@ -16,8 +16,22 @@ pub struct FilesystemServer {
 
 impl FilesystemServer {
     pub fn new() -> Self {
+        // 현재 작업 디렉터리 로그 (확인용)
+        match std::env::current_dir() {
+            Ok(dir) => info!("FilesystemServer starting with CWD = {:?}", dir),
+            Err(e) => error!("Failed to read current_dir: {}", e),
+        }
+
+        let security_validator = SecurityValidator::new();
+
+        // SecurityValidator의 base_dir 확인
+        info!(
+            "FilesystemServer using base_dir: {:?}",
+            security_validator.base_dir()
+        );
+
         Self {
-            security: SecurityValidator::default(),
+            security: security_validator,
         }
     }
 
@@ -25,7 +39,8 @@ impl FilesystemServer {
         MCPTool {
             name: "read_file".to_string(),
             title: Some("Read File".to_string()),
-            description: "Read the contents of a file".to_string(),
+            description: "Read the contents of a file, optionally specifying line ranges"
+                .to_string(),
             input_schema: JSONSchema {
                 schema_type: JSONSchemaType::Object {
                     properties: Some({
@@ -41,6 +56,46 @@ impl FilesystemServer {
                                 },
                                 title: None,
                                 description: Some("Path to the file to read".to_string()),
+                                default: None,
+                                examples: None,
+                                enum_values: None,
+                                const_value: None,
+                            },
+                        );
+                        props.insert(
+                            "start_line".to_string(),
+                            JSONSchema {
+                                schema_type: JSONSchemaType::Integer {
+                                    minimum: Some(1),
+                                    maximum: None,
+                                    exclusive_minimum: None,
+                                    exclusive_maximum: None,
+                                    multiple_of: None,
+                                },
+                                title: None,
+                                description: Some(
+                                    "Starting line number (1-based, optional)".to_string(),
+                                ),
+                                default: None,
+                                examples: None,
+                                enum_values: None,
+                                const_value: None,
+                            },
+                        );
+                        props.insert(
+                            "end_line".to_string(),
+                            JSONSchema {
+                                schema_type: JSONSchemaType::Integer {
+                                    minimum: Some(1),
+                                    maximum: None,
+                                    exclusive_minimum: None,
+                                    exclusive_maximum: None,
+                                    multiple_of: None,
+                                },
+                                title: None,
+                                description: Some(
+                                    "Ending line number (1-based, optional)".to_string(),
+                                ),
                                 default: None,
                                 examples: None,
                                 enum_values: None,
@@ -173,6 +228,112 @@ impl FilesystemServer {
         }
     }
 
+    fn create_search_files_tool() -> MCPTool {
+        MCPTool {
+            name: "search_files".to_string(),
+            title: Some("Search Files".to_string()),
+            description: "Search for files matching patterns with various filters".to_string(),
+            input_schema: JSONSchema {
+                schema_type: JSONSchemaType::Object {
+                    properties: Some({
+                        let mut props = HashMap::new();
+                        props.insert(
+                            "pattern".to_string(),
+                            JSONSchema {
+                                schema_type: JSONSchemaType::String {
+                                    min_length: Some(1),
+                                    max_length: Some(500),
+                                    pattern: None,
+                                    format: None,
+                                },
+                                title: None,
+                                description: Some(
+                                    "Glob pattern to match files (e.g., '*.rs', '**/*.tsx')"
+                                        .to_string(),
+                                ),
+                                default: None,
+                                examples: Some(vec![
+                                    json!("*.rs"),
+                                    json!("**/*.tsx"),
+                                    json!("src/**/*.ts"),
+                                ]),
+                                enum_values: None,
+                                const_value: None,
+                            },
+                        );
+                        props.insert(
+                            "path".to_string(),
+                            JSONSchema {
+                                schema_type: JSONSchemaType::String {
+                                    min_length: Some(1),
+                                    max_length: Some(1000),
+                                    pattern: None,
+                                    format: None,
+                                },
+                                title: None,
+                                description: Some("Root path to search from".to_string()),
+                                default: Some(json!(".")),
+                                examples: None,
+                                enum_values: None,
+                                const_value: None,
+                            },
+                        );
+                        props.insert(
+                            "max_depth".to_string(),
+                            JSONSchema {
+                                schema_type: JSONSchemaType::Integer {
+                                    minimum: Some(1),
+                                    maximum: Some(50),
+                                    exclusive_minimum: None,
+                                    exclusive_maximum: None,
+                                    multiple_of: None,
+                                },
+                                title: None,
+                                description: Some("Maximum depth to search (optional)".to_string()),
+                                default: None,
+                                examples: None,
+                                enum_values: None,
+                                const_value: None,
+                            },
+                        );
+                        props.insert(
+                            "file_type".to_string(),
+                            JSONSchema {
+                                schema_type: JSONSchemaType::String {
+                                    min_length: None,
+                                    max_length: None,
+                                    pattern: None,
+                                    format: None,
+                                },
+                                title: None,
+                                description: Some(
+                                    "Filter by file type: 'file', 'dir', or 'both'".to_string(),
+                                ),
+                                default: Some(json!("both")),
+                                examples: None,
+                                enum_values: Some(vec![json!("file"), json!("dir"), json!("both")]),
+                                const_value: None,
+                            },
+                        );
+                        props
+                    }),
+                    required: Some(vec!["pattern".to_string()]),
+                    additional_properties: Some(false),
+                    min_properties: None,
+                    max_properties: None,
+                },
+                title: None,
+                description: None,
+                default: None,
+                examples: None,
+                enum_values: None,
+                const_value: None,
+            },
+            output_schema: None,
+            annotations: None,
+        }
+    }
+
     async fn handle_read_file(&self, args: Value) -> MCPResponse {
         let request_id = Value::String(uuid::Uuid::new_v4().to_string());
 
@@ -191,6 +352,31 @@ impl FilesystemServer {
                 };
             }
         };
+
+        let start_line = args
+            .get("start_line")
+            .and_then(|v| v.as_u64())
+            .map(|n| n as usize);
+        let end_line = args
+            .get("end_line")
+            .and_then(|v| v.as_u64())
+            .map(|n| n as usize);
+
+        // Validate line range
+        if let (Some(start), Some(end)) = (start_line, end_line) {
+            if start > end {
+                return MCPResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id: Some(request_id),
+                    result: None,
+                    error: Some(MCPError {
+                        code: -32602,
+                        message: "start_line must be less than or equal to end_line".to_string(),
+                        data: None,
+                    }),
+                };
+            }
+        }
 
         // Validate path security
         let safe_path = match self.security.validate_path(path_str) {
@@ -225,8 +411,16 @@ impl FilesystemServer {
             };
         }
 
-        // Read file
-        match fs::read_to_string(&safe_path).await {
+        // Read file with line range support
+        let content = if start_line.is_some() || end_line.is_some() {
+            self.read_file_lines(&safe_path, start_line, end_line).await
+        } else {
+            fs::read_to_string(&safe_path)
+                .await
+                .map_err(|e| e.to_string())
+        };
+
+        match content {
             Ok(content) => {
                 info!("Successfully read file: {:?}", safe_path);
                 MCPResponse {
@@ -255,6 +449,194 @@ impl FilesystemServer {
                 }
             }
         }
+    }
+
+    async fn read_file_lines(
+        &self,
+        path: &std::path::Path,
+        start_line: Option<usize>,
+        end_line: Option<usize>,
+    ) -> Result<String, String> {
+        use tokio::io::{AsyncBufReadExt, BufReader};
+
+        let file = tokio::fs::File::open(path)
+            .await
+            .map_err(|e| e.to_string())?;
+        let reader = BufReader::new(file);
+        let mut lines = reader.lines();
+        let mut result_lines = Vec::new();
+        let mut current_line = 1;
+
+        let start = start_line.unwrap_or(1);
+        let end = end_line.unwrap_or(usize::MAX);
+
+        while let Ok(Some(line)) = lines.next_line().await {
+            if current_line >= start && current_line <= end {
+                result_lines.push(line);
+            }
+
+            if current_line > end {
+                break;
+            }
+
+            current_line += 1;
+        }
+
+        Ok(result_lines.join("\n"))
+    }
+
+    async fn handle_search_files(&self, args: Value) -> MCPResponse {
+        let request_id = Value::String(uuid::Uuid::new_v4().to_string());
+
+        let pattern = match args.get("pattern").and_then(|v| v.as_str()) {
+            Some(pattern) => pattern,
+            None => {
+                return MCPResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id: Some(request_id),
+                    result: None,
+                    error: Some(MCPError {
+                        code: -32602,
+                        message: "Missing required parameter: pattern".to_string(),
+                        data: None,
+                    }),
+                };
+            }
+        };
+
+        let search_path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+        let max_depth = args
+            .get("max_depth")
+            .and_then(|v| v.as_u64())
+            .map(|n| n as usize);
+        let file_type = args
+            .get("file_type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("both");
+
+        // Validate search path security
+        let safe_path = match self.security.validate_path(search_path) {
+            Ok(path) => path,
+            Err(e) => {
+                error!("Path validation failed: {}", e);
+                return MCPResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id: Some(request_id),
+                    result: None,
+                    error: Some(MCPError {
+                        code: -32603,
+                        message: format!("Security error: {}", e),
+                        data: None,
+                    }),
+                };
+            }
+        };
+
+        // Search files
+        match self
+            .search_files_by_pattern(&safe_path, pattern, max_depth, file_type)
+            .await
+        {
+            Ok(results) => {
+                let result_text = if results.is_empty() {
+                    format!(
+                        "No files found matching pattern '{}' in '{}'",
+                        pattern, search_path
+                    )
+                } else {
+                    format!(
+                        "Found {} files matching pattern '{}':\n{}",
+                        results.len(),
+                        pattern,
+                        serde_json::to_string_pretty(&results).unwrap_or_default()
+                    )
+                };
+
+                MCPResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id: Some(request_id),
+                    result: Some(json!({
+                        "content": [{
+                            "type": "text",
+                            "text": result_text
+                        }]
+                    })),
+                    error: None,
+                }
+            }
+            Err(e) => {
+                error!("File search failed: {}", e);
+                MCPResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id: Some(request_id),
+                    result: None,
+                    error: Some(MCPError {
+                        code: -32603,
+                        message: format!("Search failed: {}", e),
+                        data: None,
+                    }),
+                }
+            }
+        }
+    }
+
+    async fn search_files_by_pattern(
+        &self,
+        root_path: &std::path::Path,
+        pattern: &str,
+        max_depth: Option<usize>,
+        file_type: &str,
+    ) -> Result<Vec<serde_json::Value>, String> {
+        use glob::Pattern;
+        use walkdir::WalkDir;
+
+        let glob_pattern = Pattern::new(pattern).map_err(|e| format!("Invalid pattern: {}", e))?;
+        let mut results = Vec::new();
+
+        let walker = if let Some(depth) = max_depth {
+            WalkDir::new(root_path).max_depth(depth)
+        } else {
+            WalkDir::new(root_path)
+        };
+
+        for entry in walker {
+            let entry = entry.map_err(|e| format!("Walk error: {}", e))?;
+            let path = entry.path();
+
+            // Check file type filter
+            let is_dir = path.is_dir();
+            let is_file = path.is_file();
+
+            let should_include = match file_type {
+                "file" => is_file,
+                "dir" => is_dir,
+                "both" => is_file || is_dir,
+                _ => is_file || is_dir,
+            };
+
+            if !should_include {
+                continue;
+            }
+
+            // Check pattern match
+            if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+                if glob_pattern.matches(file_name) || glob_pattern.matches(&path.to_string_lossy())
+                {
+                    let metadata = entry
+                        .metadata()
+                        .map_err(|e| format!("Metadata error: {}", e))?;
+
+                    results.push(json!({
+                        "path": path.to_string_lossy(),
+                        "name": file_name,
+                        "type": if is_dir { "directory" } else { "file" },
+                        "size": if is_file { Some(metadata.len()) } else { None }
+                    }));
+                }
+            }
+        }
+
+        Ok(results)
     }
 
     async fn handle_write_file(&self, args: Value) -> MCPResponse {
@@ -494,6 +876,7 @@ impl BuiltinMCPServer for FilesystemServer {
             Self::create_read_file_tool(),
             Self::create_write_file_tool(),
             Self::create_list_directory_tool(),
+            Self::create_search_files_tool(),
         ]
     }
 
@@ -502,6 +885,7 @@ impl BuiltinMCPServer for FilesystemServer {
             "read_file" => self.handle_read_file(args).await,
             "write_file" => self.handle_write_file(args).await,
             "list_directory" => self.handle_list_directory(args).await,
+            "search_files" => self.handle_search_files(args).await,
             _ => {
                 let request_id = Value::String(uuid::Uuid::new_v4().to_string());
                 MCPResponse {
