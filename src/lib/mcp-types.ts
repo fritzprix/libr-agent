@@ -145,16 +145,49 @@ export type MCPContent =
 // 🔄 MCP Protocol Types (JSON-RPC 2.0 준수)
 // ========================================
 
+// Sampling 관련 타입 추가
+export interface SamplingOptions {
+  model?: string;
+  maxTokens?: number;
+  temperature?: number;
+  topP?: number;
+  topK?: number;
+  stopSequences?: string[];
+  presencePenalty?: number;
+  frequencyPenalty?: number;
+}
+
+export interface SamplingRequest {
+  prompt: string;
+  options?: SamplingOptions;
+}
+
 export interface MCPResult {
   content?: MCPContent[];
   structuredContent?: Record<string, unknown>;
   isError?: boolean; // MCP 표준: 도구 실행 에러 플래그
 }
 
+export interface SamplingResult extends MCPResult {
+  sampling?: {
+    finishReason?: 'stop' | 'length' | 'tool_use' | 'error';
+    usage?: {
+      promptTokens: number;
+      completionTokens: number;
+      totalTokens: number;
+    };
+    model?: string;
+  };
+}
+
 export interface MCPError {
   code: number;
   message: string;
   data?: unknown;
+}
+
+export interface SamplingResponse extends MCPResponse {
+  result?: SamplingResult;
 }
 
 /**
@@ -164,7 +197,7 @@ export interface MCPError {
 export interface MCPResponse {
   jsonrpc: '2.0';
   id: string | number | null;
-  result?: MCPResult;
+  result?: MCPResult | SamplingResult;
   error?: MCPError;
 }
 
@@ -478,6 +511,10 @@ export interface WebMCPServer {
   version?: string;
   tools: MCPTool[];
   callTool: (name: string, args: unknown) => Promise<unknown>;
+  sampleText?: (
+    prompt: string,
+    options?: SamplingOptions,
+  ) => Promise<SamplingResponse>;
 }
 
 /**
@@ -485,7 +522,7 @@ export interface WebMCPServer {
  */
 export interface WebMCPMessage {
   id: string;
-  type: 'listTools' | 'callTool' | 'ping' | 'loadServer';
+  type: 'listTools' | 'callTool' | 'ping' | 'loadServer' | 'sampleText';
   serverName?: string;
   toolName?: string;
   args?: unknown;
