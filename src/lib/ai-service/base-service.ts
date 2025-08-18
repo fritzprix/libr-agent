@@ -171,13 +171,15 @@ export abstract class BaseAIService implements IAIService {
    * Default implementation of sampleText - can be overridden by specific services
    */
   async sampleText(
-    _prompt: string,
-    _options?: {
+    prompt: string,
+    options?: {
       modelName?: string;
       samplingOptions?: SamplingOptions;
       config?: AIServiceConfig;
     },
   ): Promise<SamplingResponse> {
+    void prompt;
+    void options;
     throw new AIServiceError(
       'sampleText not implemented for this service',
       this.getProvider(),
