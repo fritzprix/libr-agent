@@ -45,6 +45,29 @@ async fn call_mcp_tool(
 }
 
 #[tauri::command]
+async fn sample_from_mcp_server(
+    server_name: String,
+    prompt: String,
+    options: Option<serde_json::Value>,
+) -> Result<MCPResponse, String> {
+    let sampling_options = if let Some(opts) = options {
+        Some(serde_json::from_value::<mcp::SamplingOptions>(opts)
+            .map_err(|e| format!("Invalid sampling options: {}", e))?)
+    } else {
+        None
+    };
+
+    let request = mcp::SamplingRequest {
+        prompt,
+        options: sampling_options,
+    };
+
+    Ok(get_mcp_manager()
+        .sample_from_model(&server_name, request)
+        .await)
+}
+
+#[tauri::command]
 async fn list_mcp_tools(server_name: String) -> Result<Vec<mcp::MCPTool>, String> {
     get_mcp_manager()
         .list_tools(&server_name)
@@ -406,6 +429,7 @@ pub fn run() {
                 start_mcp_server,
                 stop_mcp_server,
                 call_mcp_tool,
+                sample_from_mcp_server,
                 list_mcp_tools,
                 list_tools_from_config,
                 get_connected_servers,

@@ -1,5 +1,10 @@
 import { Message } from '@/models/chat';
-import { MCPTool, MCPContent } from '../mcp-types';
+import {
+  MCPTool,
+  MCPContent,
+  SamplingOptions,
+  SamplingResponse,
+} from '../mcp-types';
 import {
   AIServiceConfig,
   AIServiceProvider,
@@ -161,6 +166,23 @@ export abstract class BaseAIService implements IAIService {
       config?: AIServiceConfig;
     },
   ): AsyncGenerator<string, void, void>;
+
+  /**
+   * Default implementation of sampleText - can be overridden by specific services
+   */
+  async sampleText(
+    _prompt: string,
+    _options?: {
+      modelName?: string;
+      samplingOptions?: SamplingOptions;
+      config?: AIServiceConfig;
+    },
+  ): Promise<SamplingResponse> {
+    throw new AIServiceError(
+      'sampleText not implemented for this service',
+      this.getProvider(),
+    );
+  }
 
   abstract getProvider(): AIServiceProvider;
   abstract dispose(): void;

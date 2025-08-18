@@ -12,6 +12,7 @@ import type {
   WebMCPMessage,
   WebMCPResponse,
   MCPTool,
+  SamplingOptions,
 } from '../mcp-types';
 
 // Add console logging for debugging since we can't use our logger in worker context
@@ -210,6 +211,32 @@ async function handleMCPMessage(
                 : String(toolError),
           });
           throw toolError;
+        }
+      }
+
+      case 'sampleText': {
+        if (!serverName) {
+          throw new Error('Server name is required for sampleText');
+        }
+        const { prompt, options } = args as {
+          prompt: string;
+          options?: SamplingOptions;
+        };
+        const server = await loadMCPServer(serverName);
+
+        // Web MCP 서버에 sampling 메서드가 있는지 확인
+        if ('sampleText' in server && typeof server.sampleText === 'function') {
+          const result = await server.sampleText(prompt, options);
+          log.debug('Text sampling completed', {
+            id,
+            serverName,
+            prompt: prompt.substring(0, 100) + '...',
+          });
+          return { id, result };
+        } else {
+          throw new Error(
+            `Server ${serverName} does not support text sampling`,
+          );
         }
       }
 

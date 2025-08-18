@@ -1,5 +1,5 @@
 import type { ModelInfo } from '../llm-config-manager';
-import type { MCPTool } from '../mcp-types';
+import type { MCPTool, SamplingOptions, SamplingResponse } from '../mcp-types';
 import type { Message } from '@/models/chat';
 
 export interface AIServiceConfig {
@@ -45,6 +45,18 @@ export interface IAIService {
       config?: AIServiceConfig;
     },
   ): AsyncGenerator<string, void, void>;
+
+  /**
+   * MCP sampling API - 단일 프롬프트에서 텍스트 생성
+   */
+  sampleText(
+    prompt: string,
+    options?: {
+      modelName?: string;
+      samplingOptions?: SamplingOptions;
+      config?: AIServiceConfig;
+    },
+  ): Promise<SamplingResponse>;
 
   /**
    * Returns the list of supported models for this service.
