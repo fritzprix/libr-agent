@@ -34,8 +34,18 @@ jobs:
       continue-on-error: true
 
     - name: 🎨 Prettier Check
-      run: pnpm format:check || echo "Format check not available"
-      continue-on-error: true
+      run: |
+        echo "Checking code formatting..."
+        if pnpm format:check; then
+          echo "✅ All files are properly formatted"
+          exit 0
+        else
+          echo "⚠️ Code formatting issues found!"
+          echo "💡 Run 'pnpm format' locally to fix formatting issues"
+          echo "📋 Files that need formatting:"
+          pnpm format:check 2>&1 | grep -E '\.(ts|tsx|js|jsx|json|css|scss|md)$' || true
+          exit 1
+        fi
 
     - name: 🔍 TypeScript Check
       run: pnpm tsc --noEmit
