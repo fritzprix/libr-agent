@@ -293,7 +293,7 @@ export class OllamaService extends BaseAIService {
         // System messages are handled separately in convertToOllamaMessages
         return {
           role: 'system',
-          content: message.content || '',
+          content: this.processMessageContent(message.content) || '',
           tool_call_id: message.tool_call_id,
         };
 
@@ -301,7 +301,7 @@ export class OllamaService extends BaseAIService {
         // Convert tool result to a user message for processing in Ollama
         return {
           role: 'user',
-          content: `Tool result: ${message.content}`,
+          content: `Tool result: ${this.processMessageContent(message.content)}`,
           tool_call_id: message.tool_call_id,
         };
 
@@ -316,7 +316,7 @@ export class OllamaService extends BaseAIService {
       logger.warn('User message content must be string');
       return null;
     }
-    return { role: 'user', content: message.content };
+    return { role: 'user', content: this.processMessageContent(message.content) };
   }
 
   private convertAssistantMessage(
@@ -324,7 +324,7 @@ export class OllamaService extends BaseAIService {
   ): SimpleOllamaMessage | null {
     const result: SimpleOllamaMessage = {
       role: 'assistant',
-      content: message.content || '',
+      content: this.processMessageContent(message.content) || '',
     };
 
     // Handle tool calls

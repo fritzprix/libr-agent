@@ -1,5 +1,5 @@
 import { Message } from '@/models/chat';
-import { MCPTool } from '../mcp-types';
+import { MCPTool, MCPContent } from '../mcp-types';
 import {
   AIServiceConfig,
   AIServiceProvider,
@@ -48,7 +48,7 @@ export abstract class BaseAIService implements IAIService {
       if (
         (!message.content &&
           (message.role === 'user' || message.role === 'system')) ||
-        typeof message.content !== 'string'
+        (typeof message.content !== 'string' && !Array.isArray(message.content))
       ) {
         throw new Error('Message must have valid content');
       }
@@ -84,6 +84,56 @@ export abstract class BaseAIService implements IAIService {
     timeoutMs: number,
   ): Promise<T> {
     return withTimeout(promise, timeoutMs);
+  }
+
+  /**
+   * MCPContent 배열을 LLM용 텍스트로 변환
+   */
+  protected processMessageContent(content: string | MCPContent[]): string {
+    if (typeof content === 'string') {
+      return content;
+    }
+
+    // MCPContent 배열에서 텍스트만 추출
+    return content
+      .filter((item) => item.type === 'text')
+      .map((item) => (item as { text: string }).text)
+      .join('\n');
+  }
+
+  /**
+   * MLM용 - 이미지 content도 처리
+   */
+  protected processMultiModalContent(
+    content: string | MCPContent[],
+  ): Array<{ type: string; text?: string; image?: string }> {
+    if (typeof content === 'string') {
+      return [{ type: 'text', text: content }];
+    }
+
+    return content.map((item) => {
+      switch (item.type) {
+        case 'text':
+          return { type: 'text', text: (item as { text: string }).text };
+        case 'image':
+          return {
+            type: 'image',
+            image:
+              (
+                item as {
+                  data?: string;
+                  source?: { data?: string; uri?: string };
+                }
+              ).data ||
+              (item as { source?: { data?: string; uri?: string } }).source
+                ?.data ||
+              (item as { source?: { data?: string; uri?: string } }).source
+                ?.uri,
+          };
+        default:
+          return { type: 'text', text: `[${item.type}]` };
+      }
+    });
   }
 
   /**

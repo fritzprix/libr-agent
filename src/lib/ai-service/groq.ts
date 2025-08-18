@@ -106,28 +106,34 @@ export class GroqService extends BaseAIService {
 
     for (const m of messages) {
       if (m.role === 'user') {
-        groqMessages.push({ role: 'user', content: m.content });
+        groqMessages.push({
+          role: 'user',
+          content: this.processMessageContent(m.content),
+        });
       } else if (m.role === 'assistant') {
         if (m.tool_calls && m.tool_calls.length > 0) {
           groqMessages.push({
             role: 'assistant',
-            content: m.content || null,
+            content: this.processMessageContent(m.content) || null,
             tool_calls: m.tool_calls,
           });
         } else if (m.thinking) {
           groqMessages.push({
             role: 'assistant',
-            content: m.content,
+            content: this.processMessageContent(m.content),
           });
         } else {
-          groqMessages.push({ role: 'assistant', content: m.content });
+          groqMessages.push({
+            role: 'assistant',
+            content: this.processMessageContent(m.content),
+          });
         }
       } else if (m.role === 'tool') {
         if (m.tool_call_id) {
           groqMessages.push({
             role: 'tool',
             tool_call_id: m.tool_call_id,
-            content: m.content,
+            content: this.processMessageContent(m.content),
           });
         } else {
           logger.warn(

@@ -1,4 +1,4 @@
-import { MCPTool } from '../lib/mcp-types';
+import { MCPTool, MCPContent } from '../lib/mcp-types';
 
 // UIResource interface for MCP-UI integration
 export interface UIResource {
@@ -26,7 +26,7 @@ export interface Message {
   id: string;
   sessionId: string; // Added sessionId
   role: 'user' | 'assistant' | 'system' | 'tool';
-  content: string;
+  content: string | MCPContent[];
   tool_calls?: ToolCall[];
   tool_call_id?: string;
   isStreaming?: boolean;
@@ -34,7 +34,6 @@ export interface Message {
   assistantId?: string; // Optional, used for tracking in multi-agent scenarios
   attachments?: AttachmentReference[]; // MCP 기반 파일 첨부 참조로 변경
   tool_use?: { id: string; name: string; input: Record<string, unknown> };
-  uiResource?: UIResource | UIResource[]; // NEW: structured UI resource(s)
   createdAt?: Date; // Added
   updatedAt?: Date; // Added
 }

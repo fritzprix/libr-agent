@@ -316,13 +316,31 @@ export const dbService: DatabaseService = {
     delete: async (id: string) => {
       const db = LocalDatabase.getInstance();
       // Use a transaction to ensure atomicity.
-      // If deleting messages fails, the session won't be deleted either.
-      await db.transaction('rw', db.sessions, db.messages, async () => {
-        // Delete all messages associated with this session first
-        await db.messages.where('sessionId').equals(id).delete();
-        // Then delete the session itself
-        await db.sessions.delete(id);
-      });
+      // If deleting any related data fails, the session won't be deleted either.
+      await db.transaction(
+        'rw',
+        [db.sessions, db.messages, db.fileStores, db.fileContents, db.fileChunks],
+        async () => {
+          // Delete all messages associated with this session first
+          await db.messages.where('sessionId').equals(id).delete();
+
+          // Delete all fileStores for this session and their related data
+          const stores = await db.fileStores.where('sessionId').equals(id).toArray();
+          for (const store of stores) {
+            // Delete all fileContents for this store
+            const contents = await db.fileContents.where('storeId').equals(store.id).toArray();
+            for (const content of contents) {
+              // Delete all fileChunks for this content
+              await db.fileChunks.where('contentId').equals(content.id).delete();
+            }
+            await db.fileContents.where('storeId').equals(store.id).delete();
+          }
+          await db.fileStores.where('sessionId').equals(id).delete();
+
+          // Then delete the session itself
+          await db.sessions.delete(id);
+        },
+      );
     },
     getPage: async (page: number, pageSize: number): Promise<Page<Session>> => {
       const db = LocalDatabase.getInstance();

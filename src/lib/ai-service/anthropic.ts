@@ -105,7 +105,10 @@ export class AnthropicService extends BaseAIService {
       }
 
       if (m.role === 'user') {
-        anthropicMessages.push({ role: 'user', content: m.content });
+        anthropicMessages.push({
+          role: 'user',
+          content: this.processMessageContent(m.content),
+        });
       } else if (m.role === 'assistant') {
         if (m.tool_calls) {
           anthropicMessages.push({
@@ -130,7 +133,10 @@ export class AnthropicService extends BaseAIService {
             ],
           });
         } else {
-          anthropicMessages.push({ role: 'assistant', content: m.content });
+          anthropicMessages.push({
+            role: 'assistant',
+            content: this.processMessageContent(m.content),
+          });
         }
       } else if (m.role === 'tool') {
         anthropicMessages.push({
@@ -139,7 +145,7 @@ export class AnthropicService extends BaseAIService {
             {
               type: 'tool_result' as const,
               tool_use_id: m.tool_call_id!,
-              content: m.content,
+              content: this.processMessageContent(m.content),
             },
           ],
         });

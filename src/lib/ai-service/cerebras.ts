@@ -230,7 +230,7 @@ export class CerebrasService extends BaseAIService {
       logger.warn('User message content must be string');
       return null;
     }
-    return { role: 'user', content: message.content };
+    return { role: 'user', content: this.processMessageContent(message.content) };
   }
 
   private convertAssistantMessage(message: Message): CerebrasMessage | null {
@@ -259,7 +259,7 @@ export class CerebrasService extends BaseAIService {
 
       return {
         role: 'assistant',
-        content: message.content || null,
+        content: this.processMessageContent(message.content) || null,
         tool_calls: validToolCalls.map((tc) => ({
           id: tc.id as string,
           type: TOOL_CALL_TYPE,
@@ -281,7 +281,7 @@ export class CerebrasService extends BaseAIService {
       return null;
     }
 
-    return { role: 'assistant', content: message.content };
+    return { role: 'assistant', content: this.processMessageContent(message.content) };
   }
 
   private convertToolMessage(message: Message): CerebrasMessage | null {
@@ -293,7 +293,7 @@ export class CerebrasService extends BaseAIService {
     return {
       role: 'tool',
       tool_call_id: message.tool_call_id,
-      content: message.content || '',
+      content: this.processMessageContent(message.content) || '',
     };
   }
 

@@ -209,7 +209,7 @@ export class GeminiService extends BaseAIService {
       if (m.role === 'user' && m.content) {
         geminiMessages.push({
           role: 'user',
-          parts: [{ text: m.content }],
+          parts: [{ text: this.processMessageContent(m.content) }],
         });
       } else if (m.role === 'assistant') {
         if (m.tool_calls && m.tool_calls.length > 0) {
@@ -229,7 +229,7 @@ export class GeminiService extends BaseAIService {
         } else if (m.content) {
           geminiMessages.push({
             role: 'model',
-            parts: [{ text: m.content }],
+            parts: [{ text: this.processMessageContent(m.content) }],
           });
         }
       } else if (m.role === 'tool') {
@@ -262,10 +262,10 @@ export class GeminiService extends BaseAIService {
       }
 
       try {
-        JSON.parse(msg.content);
+        JSON.parse(this.processMessageContent(msg.content));
         stats.jsonResponses++;
       } catch {
-        if (msg.content.includes('error:') || msg.content.includes('Error:')) {
+        if (this.processMessageContent(msg.content).includes('error:') || this.processMessageContent(msg.content).includes('Error:')) {
           stats.errorResponses++;
         } else {
           stats.textResponses++;
