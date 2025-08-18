@@ -1,0 +1,63 @@
+name: 'Setup Tauri Environment'
+description: 'Setup Rust, Node, PNPM and Tauri dependencies'
+inputs:
+  install-tauri-deps:
+    description: 'Install Tauri system dependencies'
+    required: false
+    default: 'false'
+  node-version:
+    description: 'Node.js version to use'
+    required: false
+    default: '18'
+  pnpm-version:
+    description: 'PNPM version to use'
+    required: false
+    default: '9'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: 📥 Checkout
+      uses: actions/checkout@v4
+
+    - name: 🦀 Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: 🦀 Rust cache
+      uses: swatinem/rust-cache@v2
+      with:
+        workspaces: './src-tauri -> target'
+
+    - name: 📦 Install pnpm
+      uses: pnpm/action-setup@v4
+      with:
+        version: ${{ inputs.pnpm-version }}
+
+    - name: 📦 Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: 'pnpm'
+
+    - name: 📦 Install dependencies
+      shell: bash
+      run: pnpm install
+
+    - name: 🔧 Install Tauri dependencies (Ubuntu)
+      if: ${{ inputs.install-tauri-deps == 'true' && runner.os == 'Linux' }}
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          libwebkit2gtk-4.1-dev \
+          libappindicator3-dev \
+          librsvg2-dev \
+          patchelf \
+          libglib2.0-dev \
+          pkg-config \
+          libgtk-3-dev
+
+    - name: Set PKG_CONFIG_PATH (Ubuntu)
+      if: ${{ inputs.install-tauri-deps == 'true' && runner.os == 'Linux' }}
+      shell: bash
+      run: echo "PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig" >> $GITHUB_ENV
