@@ -1,0 +1,74 @@
+name: 🌙 Nightly Build
+
+on:
+  schedule:
+    # Run every day at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+jobs:
+  nightly:
+    name: 🌙 Nightly Build
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [macos-latest, ubuntu-latest, windows-latest]
+    
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 🔧 Install dependencies (ubuntu only)
+        if: matrix.platform == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: 🦀 Rust setup
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: 🦀 Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+          cache: 'pnpm'
+
+      - name: 📦 Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: 📦 Install frontend dependencies
+        run: pnpm install
+
+      - name: 🏗️ Build the app
+        run: pnpm tauri build
+
+      - name: 📦 Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-build-${{ matrix.platform }}
+          path: |
+            src-tauri/target/release/bundle/
+          retention-days: 7
+
+  notify:
+    name: 📢 Notify Build Status
+    needs: nightly
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: 📢 Build Success
+        if: needs.nightly.result == 'success'
+        run: echo "✅ Nightly build completed successfully"
+        
+      - name: 📢 Build Failed
+        if: needs.nightly.result == 'failure'
+        run: echo "❌ Nightly build failed"
