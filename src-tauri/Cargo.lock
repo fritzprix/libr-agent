@@ -4087,6 +4087,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "futures",
+ "glob",
  "log",
  "path-clean",
  "rmcp",
@@ -4103,6 +4104,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "uuid",
+ "walkdir",
 ]
 
 [[package]]

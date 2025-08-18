@@ -28,12 +28,12 @@ impl SecurityValidator {
         } else {
             // 2. 확실한 앱 전용 워크스페이스 사용
             let tmp = std::env::temp_dir().join("synaptic-flow");
-            
+
             // 디렉터리 생성 확인
             if let Err(e) = std::fs::create_dir_all(&tmp) {
                 tracing::error!("Failed to create app workspace: {:?}: {}", tmp, e);
             }
-            
+
             tracing::info!("Using app workspace: {:?}", tmp);
             tmp
         };
@@ -46,15 +46,19 @@ impl SecurityValidator {
     /// Validate and clean a file path to prevent directory traversal
     pub fn validate_path(&self, user_path: &str) -> Result<PathBuf, SecurityError> {
         // 디버깅을 위한 로깅 추가
-        tracing::debug!("Validating path: '{}' against base: '{:?}'", user_path, self.base_dir);
-        
+        tracing::debug!(
+            "Validating path: '{}' against base: '{:?}'",
+            user_path,
+            self.base_dir
+        );
+
         // Clean the path to resolve . and .. components
         let clean_path = PathBuf::from(user_path).clean();
 
         // 절대경로 금지 - 보안 강화
         if clean_path.is_absolute() {
             return Err(SecurityError::PathTraversal(format!(
-                "Absolute paths not allowed: '{}'", 
+                "Absolute paths not allowed: '{}'",
                 user_path
             )));
         }
@@ -62,7 +66,7 @@ impl SecurityValidator {
         // Windows 드라이브 경로 금지 (C:, D: 등)
         if user_path.len() >= 2 && user_path.chars().nth(1) == Some(':') {
             return Err(SecurityError::PathTraversal(format!(
-                "Windows drive paths not allowed: '{}'", 
+                "Windows drive paths not allowed: '{}'",
                 user_path
             )));
         }
@@ -70,21 +74,22 @@ impl SecurityValidator {
         // 상위 디렉터리 탐색 금지
         if user_path.contains("..") {
             return Err(SecurityError::PathTraversal(format!(
-                "Parent directory traversal not allowed: '{}'", 
+                "Parent directory traversal not allowed: '{}'",
                 user_path
             )));
         }
 
         // base_dir 기준 상대경로로만 처리
         let absolute_path = self.base_dir.join(clean_path);
-        
+
         tracing::debug!("Resolved path: '{:?}'", absolute_path);
 
         // 부모 디렉터리 생성 (쓰기 작업을 위해)
         if let Some(parent) = absolute_path.parent() {
             if let Err(e) = std::fs::create_dir_all(parent) {
                 return Err(SecurityError::InvalidPath(format!(
-                    "Failed to create directory: {}", e
+                    "Failed to create directory: {}",
+                    e
                 )));
             }
         }
@@ -94,13 +99,17 @@ impl SecurityValidator {
             Ok(path) => path,
             Err(_) => {
                 // 파일이 존재하지 않는 경우 (쓰기 작업에서 발생 가능)
-                tracing::debug!("File doesn't exist yet, using non-canonical path: '{:?}'", absolute_path);
+                tracing::debug!(
+                    "File doesn't exist yet, using non-canonical path: '{:?}'",
+                    absolute_path
+                );
                 absolute_path.clone()
             }
         };
 
         // 최종 검증: base_dir 하위인지 확인
-        if !canonical_path.starts_with(&self.base_dir) && !absolute_path.starts_with(&self.base_dir) {
+        if !canonical_path.starts_with(&self.base_dir) && !absolute_path.starts_with(&self.base_dir)
+        {
             return Err(SecurityError::PathTraversal(format!(
                 "Path '{}' resolves outside allowed directory. Base: {:?}, Resolved: {:?}",
                 user_path, self.base_dir, canonical_path
@@ -165,19 +174,21 @@ mod tests {
         // Invalid paths (directory traversal)
         assert!(validator.validate_path("../test.txt").is_err());
         assert!(validator.validate_path("../../etc/passwd").is_err());
-        
+
         // Invalid paths (absolute paths) - 새로 추가된 보안 검증
         assert!(validator.validate_path("/etc/passwd").is_err());
         assert!(validator.validate_path("/Users/test/file.txt").is_err());
         assert!(validator.validate_path("/tmp/outside.txt").is_err());
-        
+
         // Invalid paths (Windows drive letters) - 추가된 검증
         assert!(validator.validate_path("C:\\Windows\\System32").is_err());
         assert!(validator.validate_path("D:\\secret.txt").is_err());
-        
+
         // Invalid paths (complex traversal attempts)
-        assert!(validator.validate_path("./subdir/../../../etc/passwd").is_err());
-        
+        assert!(validator
+            .validate_path("./subdir/../../../etc/passwd")
+            .is_err());
+
         // Windows 스타일 경로도 상대경로로 처리되지만, ".." 포함으로 차단됨
         assert!(validator.validate_path("subdir\\..\\..\\Windows").is_err());
     }

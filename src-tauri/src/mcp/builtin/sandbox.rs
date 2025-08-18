@@ -30,12 +30,12 @@ impl SandboxServer {
         } else {
             // FilesystemServer와 동일한 앱 워크스페이스 사용
             let tmp = std::env::temp_dir().join("synaptic-flow");
-            
+
             // 디렉터리 생성 확인
             if let Err(e) = std::fs::create_dir_all(&tmp) {
                 tracing::error!("Failed to create sandbox workspace: {:?}: {}", tmp, e);
             }
-            
+
             info!("Using sandbox app workspace: {:?}", tmp);
             tmp
         }
@@ -152,6 +152,89 @@ impl SandboxServer {
                         props
                     }),
                     required: Some(vec!["code".to_string()]),
+                    additional_properties: Some(false),
+                    min_properties: None,
+                    max_properties: None,
+                },
+                title: None,
+                description: None,
+                default: None,
+                examples: None,
+                enum_values: None,
+                const_value: None,
+            },
+            output_schema: None,
+            annotations: None,
+        }
+    }
+
+    fn create_execute_shell_tool() -> MCPTool {
+        MCPTool {
+            name: "execute_shell".to_string(),
+            title: Some("Execute Shell Command".to_string()),
+            description: "Execute a shell command in the current environment".to_string(),
+            input_schema: JSONSchema {
+                schema_type: JSONSchemaType::Object {
+                    properties: Some({
+                        let mut props = HashMap::new();
+                        props.insert(
+                            "command".to_string(),
+                            JSONSchema {
+                                schema_type: JSONSchemaType::String {
+                                    min_length: Some(1),
+                                    max_length: Some(1000),
+                                    pattern: None,
+                                    format: None,
+                                },
+                                title: None,
+                                description: Some("Shell command to execute".to_string()),
+                                default: None,
+                                examples: Some(vec![json!("ls -la"), json!("grep -r 'pattern' .")]),
+                                enum_values: None,
+                                const_value: None,
+                            },
+                        );
+                        props.insert(
+                            "timeout".to_string(),
+                            JSONSchema {
+                                schema_type: JSONSchemaType::Integer {
+                                    minimum: Some(1),
+                                    maximum: Some(300), // 5분 최대
+                                    exclusive_minimum: None,
+                                    exclusive_maximum: None,
+                                    multiple_of: None,
+                                },
+                                title: None,
+                                description: Some("Timeout in seconds (default: 30)".to_string()),
+                                default: Some(json!(30)),
+                                examples: None,
+                                enum_values: None,
+                                const_value: None,
+                            },
+                        );
+                        props.insert(
+                            "working_dir".to_string(),
+                            JSONSchema {
+                                schema_type: JSONSchemaType::String {
+                                    min_length: Some(1),
+                                    max_length: Some(1000),
+                                    pattern: None,
+                                    format: None,
+                                },
+                                title: None,
+                                description: Some(
+                                    "Working directory for command execution (optional)"
+                                        .to_string(),
+                                ),
+                                default: None,
+                                examples: None,
+                                enum_values: None,
+                                const_value: None,
+                            },
+                        );
+                        props
+                    }),
+                    required: Some(vec!["command".to_string()]),
                     additional_properties: Some(false),
                     min_properties: None,
                     max_properties: None,
@@ -408,6 +491,133 @@ impl SandboxServer {
         self.execute_code_in_sandbox(command, &args_vec, code, ".ts", timeout_secs)
             .await
     }
+
+    async fn handle_execute_shell(&self, args: Value) -> MCPResponse {
+        let request_id = Value::String(uuid::Uuid::new_v4().to_string());
+
+        let command_str = match args.get("command").and_then(|v| v.as_str()) {
+            Some(cmd) => cmd,
+            None => {
+                return MCPResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id: Some(request_id),
+                    result: None,
+                    error: Some(MCPError {
+                        code: -32602,
+                        message: "Missing required parameter: command".to_string(),
+                        data: None,
+                    }),
+                };
+            }
+        };
+
+        let timeout_secs = args
+            .get("timeout")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(30)
+            .min(300); // 최대 5분
+
+        let working_dir = args.get("working_dir").and_then(|v| v.as_str());
+
+        // Determine working directory
+        let work_dir = if let Some(dir) = working_dir {
+            std::path::PathBuf::from(dir)
+        } else {
+            Self::determine_execution_working_dir()
+        };
+
+        // Execute shell command
+        let mut cmd = if cfg!(target_os = "windows") {
+            let mut cmd = Command::new("cmd");
+            cmd.args(&["/C", command_str]);
+            cmd
+        } else {
+            let mut cmd = Command::new("sh");
+            cmd.args(&["-c", command_str]);
+            cmd
+        };
+
+        cmd.current_dir(&work_dir);
+
+        let timeout_duration = Duration::from_secs(timeout_secs);
+
+        match timeout(timeout_duration, cmd.output()).await {
+            Ok(Ok(output)) => {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                let success = output.status.success();
+                let exit_code = output.status.code().unwrap_or(-1);
+
+                let result_text = if success {
+                    if stdout.trim().is_empty() && stderr.trim().is_empty() {
+                        "Command executed successfully (no output)".to_string()
+                    } else if stderr.trim().is_empty() {
+                        format!("Command executed successfully:\n{}", stdout.trim())
+                    } else {
+                        format!(
+                            "Command executed successfully:\nSTDOUT:\n{}\n\nSTDERR:\n{}",
+                            stdout.trim(),
+                            stderr.trim()
+                        )
+                    }
+                } else {
+                    format!(
+                        "Command failed with exit code {}:\nSTDOUT:\n{}\n\nSTDERR:\n{}",
+                        exit_code,
+                        stdout.trim(),
+                        stderr.trim()
+                    )
+                };
+
+                info!(
+                    "Shell command executed: {} (exit: {})",
+                    command_str, exit_code
+                );
+
+                MCPResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id: Some(request_id),
+                    result: Some(json!({
+                        "content": [{
+                            "type": "text",
+                            "text": result_text
+                        }],
+                        "isError": !success
+                    })),
+                    error: None,
+                }
+            }
+            Ok(Err(e)) => {
+                error!("Failed to execute shell command '{}': {}", command_str, e);
+                MCPResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id: Some(request_id),
+                    result: None,
+                    error: Some(MCPError {
+                        code: -32603,
+                        message: format!("Execution error: {}", e),
+                        data: None,
+                    }),
+                }
+            }
+            Err(_) => {
+                error!(
+                    "Shell command '{}' timed out after {} seconds",
+                    command_str, timeout_secs
+                );
+                MCPResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id: Some(request_id),
+                    result: None,
+                    error: Some(MCPError {
+                        code: -32603,
+                        message: format!("Command timed out after {} seconds", timeout_secs),
+                        data: None,
+                    }),
+                }
+            }
+        }
+    }
 }
 
 #[async_trait]
@@ -424,6 +634,7 @@ impl BuiltinMCPServer for SandboxServer {
         vec![
             Self::create_execute_python_tool(),
             Self::create_execute_typescript_tool(),
+            Self::create_execute_shell_tool(),
         ]
     }
 
@@ -431,6 +642,7 @@ impl BuiltinMCPServer for SandboxServer {
         match tool_name {
             "execute_python" => self.handle_execute_python(args).await,
             "execute_typescript" => self.handle_execute_typescript(args).await,
+            "execute_shell" => self.handle_execute_shell(args).await,
             _ => {
                 let request_id = Value::String(uuid::Uuid::new_v4().to_string());
                 MCPResponse {
