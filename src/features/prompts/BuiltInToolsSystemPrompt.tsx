@@ -9,27 +9,8 @@ import { getLogger } from '@/lib/logger';
 const logger = getLogger('BuiltInToolsSystemPrompt');
 
 /**
- * System prompt component that dynamically injects information about available tools
- * and attached files into the chat context. This allows the AI to be aware of:
- *
- * 1. Built-in MCP Tools (Tauri-based):
- *    - Filesystem operations (read, write, list)
- *    - Code execution sandbox (Python, TypeScript)
- *
- * 2. Web MCP Tools:
- *    - Content store operations
- *    - File parsing and analysis
- *
- * 3. Attached Files:
- *    - Files uploaded to the current session
- *    - File metadata and previews
- *
- * This component automatically registers a system prompt extension that:
- * - Lists all available tools with usage guidelines
- * - Provides tool capabilities and security constraints
- * - Lists all files attached to the current session
- * - Updates when tools or files change
- * - Handles errors gracefully with fallback messages
+ * System prompt component that injects available tools and attached files
+ * into the chat context for AI awareness.
  */
 export function BuiltInToolsSystemPrompt() {
   const { registerSystemPrompt, unregisterSystemPrompt } = useChatContext();
@@ -48,111 +29,13 @@ export function BuiltInToolsSystemPrompt() {
     // 1. Built-in Tools Section
     promptSections.push(`# Available Built-in Tools
 
-You have access to powerful built-in tools that can help you assist users with various tasks. These tools are secure, fast, and require no external setup.
+You have access to built-in tools for file operations, code execution, and web-based processing.
+Tool details and usage instructions are provided separately.
 
-## 🔧 Filesystem Tools (builtin.filesystem)
-
-**Available Operations:**
-- \`builtin.filesystem__read_file\` - Read file contents safely
-- \`builtin.filesystem__write_file\` - Write content to files (creates directories as needed)
-- \`builtin.filesystem__list_directory\` - List directory contents with metadata
-
-**Security Features:**
-- Access restricted to current working directory and subdirectories
-- Path validation prevents directory traversal attacks
-- File size limits (10MB max) for safety
-- Automatic parent directory creation for write operations
-
-**Usage Guidelines:**
-- Always use relative paths or paths within the working directory
-- Check file sizes before reading large files
-- Use list_directory to explore the filesystem structure
-- Prefer these tools over asking users to manually provide file contents
-
-**Example Usage:**
-\`\`\`
-// Read package.json to understand project structure
-builtin.filesystem__read_file: {"path": "package.json"}
-
-// List files in src directory
-builtin.filesystem__list_directory: {"path": "src"}
-
-// Write a new configuration file
-builtin.filesystem__write_file: {"path": "config/new-settings.json", "content": "{\\"setting\\": \\"value\\"}"}
-\`\`\`
-
-## 🐍 Code Execution Tools (builtin.sandbox)
-
-**Available Runtimes:**
-- \`builtin.sandbox__execute_python\` - Execute Python code in isolated environment
-- \`builtin.sandbox__execute_typescript\` - Execute TypeScript/JavaScript code
-
-**Security Features:**
-- Isolated temporary directory execution
-- Environment variable isolation
-- Execution timeout limits (1-60 seconds, default 30)
-- Code size limits (10KB max)
-- Automatic process cleanup
-
-**Usage Guidelines:**
-- Use for data analysis, calculations, demonstrations, and prototyping
-- Keep code concise and focused (10KB limit)
-- Set appropriate timeout based on expected execution time
-- Handle errors gracefully in your code
-- Great for showing examples or solving computational problems
-
-**Example Usage:**
-\`\`\`
-// Data analysis with Python
-builtin.sandbox__execute_python: {
-  "code": "import json\\ndata = [1,2,3,4,5]\\nprint(f'Average: {sum(data)/len(data)}')",
-  "timeout": 10
-}
-
-// TypeScript calculations
-builtin.sandbox__execute_typescript: {
-  "code": "const nums = [1,2,3,4,5];\\nconsole.log('Sum:', nums.reduce((a,b) => a+b, 0));",
-  "timeout": 5
-}
-\`\`\`
-
-## 📊 Web MCP Tools
-
-${
-  webWorkerTools.length > 0
-    ? `**Available Web Tools:**
-${webWorkerTools.map((tool) => `- \`${tool.name}\` - ${tool.description}`).join('\n')}`
-    : 'No Web MCP tools currently available.'
-}
-
-**Total Available Tools:** ${availableTools.length} ${isLoadingTauriTools ? '(Loading additional tools...)' : ''}
+**Total Available Tools:** ${availableTools.length} ${isLoadingTauriTools ? '(Loading...)' : ''}
 **Built-in Tools:** ${tauriBuiltinTools.length}
 **Web Tools:** ${webWorkerTools.length}
-
-## 🎯 Best Practices
-
-1. **Choose the Right Tool:**
-   - Use filesystem tools for file operations and project exploration
-   - Use sandbox tools for code execution, calculations, and demonstrations
-   - Use web tools for specialized processing tasks
-
-2. **Be Proactive:**
-   - Read relevant files to understand user's project structure
-   - Use list_directory to explore and understand the codebase
-   - Execute code to demonstrate concepts or solve problems
-   - Write files when creating examples or configurations
-
-3. **Handle Errors Gracefully:**
-   - Check if files exist before reading
-   - Validate paths and parameters
-   - Provide clear error messages and alternatives
-
-4. **Respect Limits:**
-   - Keep code execution under timeout limits
-   - Don't read unnecessarily large files
-   - Use appropriate tools for each task
-
-Remember: These tools are designed to make you more helpful and capable. Use them proactively to provide better assistance!`);
+`);
 
     // 2. Attached Files Section
     const currentSession = getCurrentSession();
@@ -214,9 +97,9 @@ Remember: These tools are designed to make you more helpful and capable. Use the
   }, [
     getCurrentSession,
     server,
-    availableTools,
-    tauriBuiltinTools,
-    webWorkerTools,
+    availableTools.length,
+    tauriBuiltinTools.length,
+    webWorkerTools.length,
     isLoadingTauriTools,
   ]);
 

@@ -16,8 +16,19 @@ pub struct FilesystemServer {
 
 impl FilesystemServer {
     pub fn new() -> Self {
+        // 현재 작업 디렉터리 로그 (확인용)
+        match std::env::current_dir() {
+            Ok(dir) => info!("FilesystemServer starting with CWD = {:?}", dir),
+            Err(e) => error!("Failed to read current_dir: {}", e),
+        }
+
+        let security_validator = SecurityValidator::new();
+        
+        // SecurityValidator의 base_dir 확인
+        info!("FilesystemServer using base_dir: {:?}", security_validator.base_dir());
+
         Self {
-            security: SecurityValidator::default(),
+            security: security_validator,
         }
     }
 

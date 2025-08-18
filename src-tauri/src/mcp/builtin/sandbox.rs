@@ -21,6 +21,26 @@ impl SandboxServer {
         Self
     }
 
+    /// 작업 디렉터리 결정 (FilesystemServer와 동일한 로직)
+    fn determine_execution_working_dir() -> std::path::PathBuf {
+        use std::path::PathBuf;
+
+        if let Ok(root) = std::env::var("SYNAPTICFLOW_PROJECT_ROOT") {
+            PathBuf::from(root)
+        } else {
+            // FilesystemServer와 동일한 앱 워크스페이스 사용
+            let tmp = std::env::temp_dir().join("synaptic-flow");
+            
+            // 디렉터리 생성 확인
+            if let Err(e) = std::fs::create_dir_all(&tmp) {
+                tracing::error!("Failed to create sandbox workspace: {:?}: {}", tmp, e);
+            }
+            
+            info!("Using sandbox app workspace: {:?}", tmp);
+            tmp
+        }
+    }
+
     fn create_execute_python_tool() -> MCPTool {
         MCPTool {
             name: "execute_python".to_string(),
@@ -217,15 +237,25 @@ impl SandboxServer {
         }
         cmd.arg(&script_path);
 
-        // Set working directory to temp directory
-        cmd.current_dir(temp_dir.path());
+        // 결정된 작업 디렉터리 사용 (FilesystemServer와 동일한 규칙)
+        let work_dir = Self::determine_execution_working_dir();
+        info!("Sandbox execution working dir: {:?}", work_dir);
+        cmd.current_dir(&work_dir);
 
         // Clear environment variables for isolation
         cmd.env_clear();
         cmd.env("PATH", std::env::var("PATH").unwrap_or_default());
-        cmd.env("HOME", temp_dir.path());
-        cmd.env("TMPDIR", temp_dir.path());
-        cmd.env("TEMP", temp_dir.path());
+
+        // HOME은 작업 디렉터리로 설정
+        if let Some(home_str) = work_dir.to_str() {
+            cmd.env("HOME", home_str);
+        }
+
+        // 임시 관련 변수는 temp_dir로 설정 (실제 임시 파일은 여기에)
+        if let Some(tmp_str) = temp_dir.path().to_str() {
+            cmd.env("TMPDIR", tmp_str);
+            cmd.env("TEMP", tmp_str);
+        }
 
         // Kill command timeout
         let timeout_duration = Duration::from_secs(timeout_secs.min(MAX_EXECUTION_TIMEOUT));
