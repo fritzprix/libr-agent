@@ -20,12 +20,15 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
   const handleLinkClick = async (e: React.MouseEvent, url: string) => {
     e.preventDefault();
     logger.info('Opening external URL', { url });
-    
+
     try {
       await openExternalUrl(url);
       logger.info('External URL opened successfully', { url });
     } catch (error) {
-      logger.error('Failed to open external URL via Tauri, falling back to window.open', { url, error });
+      logger.error(
+        'Failed to open external URL via Tauri, falling back to window.open',
+        { url, error },
+      );
       // Fallback for browser environment
       if (typeof window !== 'undefined') {
         window.open(url, '_blank', 'noopener,noreferrer');

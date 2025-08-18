@@ -11,7 +11,6 @@ interface MessageBubbleRouterProps {
 const MessageBubbleRouter: React.FC<MessageBubbleRouterProps> = ({
   message,
 }) => {
-
   if (
     message.tool_calls &&
     Array.isArray(message.tool_calls) &&

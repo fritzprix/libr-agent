@@ -230,7 +230,10 @@ export class CerebrasService extends BaseAIService {
       logger.warn('User message content must be string');
       return null;
     }
-    return { role: 'user', content: this.processMessageContent(message.content) };
+    return {
+      role: 'user',
+      content: this.processMessageContent(message.content),
+    };
   }
 
   private convertAssistantMessage(message: Message): CerebrasMessage | null {
@@ -281,7 +284,10 @@ export class CerebrasService extends BaseAIService {
       return null;
     }
 
-    return { role: 'assistant', content: this.processMessageContent(message.content) };
+    return {
+      role: 'assistant',
+      content: this.processMessageContent(message.content),
+    };
   }
 
   private convertToolMessage(message: Message): CerebrasMessage | null {

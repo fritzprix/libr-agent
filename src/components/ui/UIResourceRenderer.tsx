@@ -36,7 +36,7 @@ const UIResourceRenderer: React.FC<UIResourceRendererProps> = ({
   onUIAction,
 }) => {
   const { openExternalUrl } = useRustBackend();
-  
+
   // 배열인 경우 첫 번째 리소스만 사용 (mcp-ui 표준)
   const targetResource = Array.isArray(resource) ? resource[0] : resource;
 
@@ -84,14 +84,20 @@ const UIResourceRenderer: React.FC<UIResourceRendererProps> = ({
           type: action.type,
           payload: action.payload,
         });
-        
+
         if (action.type === 'link') {
           const url = action.payload.url;
           try {
             await openExternalUrl(url);
-            logger.info('External URL opened successfully via default handler', { url });
+            logger.info(
+              'External URL opened successfully via default handler',
+              { url },
+            );
           } catch (error) {
-            logger.error('Failed to open external URL via Tauri, falling back to window.open', { url, error });
+            logger.error(
+              'Failed to open external URL via Tauri, falling back to window.open',
+              { url, error },
+            );
             // Fallback for browser environment
             if (typeof window !== 'undefined') {
               window.open(url, '_blank', 'noopener,noreferrer');

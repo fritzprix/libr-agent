@@ -265,7 +265,10 @@ export class GeminiService extends BaseAIService {
         JSON.parse(this.processMessageContent(msg.content));
         stats.jsonResponses++;
       } catch {
-        if (this.processMessageContent(msg.content).includes('error:') || this.processMessageContent(msg.content).includes('Error:')) {
+        if (
+          this.processMessageContent(msg.content).includes('error:') ||
+          this.processMessageContent(msg.content).includes('Error:')
+        ) {
           stats.errorResponses++;
         } else {
           stats.textResponses++;

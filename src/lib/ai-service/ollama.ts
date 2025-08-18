@@ -316,7 +316,10 @@ export class OllamaService extends BaseAIService {
       logger.warn('User message content must be string');
       return null;
     }
-    return { role: 'user', content: this.processMessageContent(message.content) };
+    return {
+      role: 'user',
+      content: this.processMessageContent(message.content),
+    };
   }
 
   private convertAssistantMessage(

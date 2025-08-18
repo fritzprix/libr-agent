@@ -319,19 +319,34 @@ export const dbService: DatabaseService = {
       // If deleting any related data fails, the session won't be deleted either.
       await db.transaction(
         'rw',
-        [db.sessions, db.messages, db.fileStores, db.fileContents, db.fileChunks],
+        [
+          db.sessions,
+          db.messages,
+          db.fileStores,
+          db.fileContents,
+          db.fileChunks,
+        ],
         async () => {
           // Delete all messages associated with this session first
           await db.messages.where('sessionId').equals(id).delete();
 
           // Delete all fileStores for this session and their related data
-          const stores = await db.fileStores.where('sessionId').equals(id).toArray();
+          const stores = await db.fileStores
+            .where('sessionId')
+            .equals(id)
+            .toArray();
           for (const store of stores) {
             // Delete all fileContents for this store
-            const contents = await db.fileContents.where('storeId').equals(store.id).toArray();
+            const contents = await db.fileContents
+              .where('storeId')
+              .equals(store.id)
+              .toArray();
             for (const content of contents) {
               // Delete all fileChunks for this content
-              await db.fileChunks.where('contentId').equals(content.id).delete();
+              await db.fileChunks
+                .where('contentId')
+                .equals(content.id)
+                .delete();
             }
             await db.fileContents.where('storeId').equals(store.id).delete();
           }
