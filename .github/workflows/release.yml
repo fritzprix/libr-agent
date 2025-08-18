@@ -1,4 +1,4 @@
-name: Release
+name: 📦 Release SynapticFlow
 on:
   push:
     tags:
@@ -33,16 +33,16 @@ jobs:
         with:
           workspaces: './src-tauri -> target'
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
       - name: Sync node version and setup cache
         uses: actions/setup-node@v4
         with:
           node-version: 'lts/*'
           cache: 'pnpm'
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v2
-        with:
-          version: 8
 
       - name: Install frontend dependencies
         run: pnpm install
@@ -53,7 +53,34 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: 'TauriAgent v__VERSION__'
-          releaseBody: 'See the assets to download and install this version.'
+          releaseName: 'SynapticFlow v__VERSION__'
+          releaseBody: |
+            🚀 **SynapticFlow v__VERSION__** 
+            
+            A High-Freedom AI Agent Platform - Infinitely Expandable with MCP!
+            
+            ## 🎯 What's New
+            - Enhanced AI agent role management
+            - Improved MCP server integration  
+            - Better file attachment handling
+            - Performance optimizations
+            
+            ## 📦 Installation
+            
+            ### Windows
+            Download and run `SynapticFlow_x64_en-US.msi`
+            
+            ### macOS
+            Download `SynapticFlow.app.tar.gz`, extract and copy to Applications folder
+            
+            ### Linux
+            - **Ubuntu/Debian**: Download and install `.deb` package
+            - **AppImage**: Download `.AppImage`, make executable and run
+            
+            ## 🔧 Requirements
+            - Windows 10+ / macOS 10.15+ / Linux (modern distribution)
+            - 4GB RAM minimum, 8GB recommended
+            
+            See the assets below to download for your platform.
           releaseDraft: true
           prerelease: false

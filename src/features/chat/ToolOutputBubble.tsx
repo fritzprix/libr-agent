@@ -2,6 +2,7 @@ import React from 'react';
 import { Message } from '@/models/chat';
 import { BaseBubble } from '@/components/ui/BaseBubble';
 import { JsonViewer } from '@/components/ui/JsonViewer';
+import MessageRenderer from '@/components/MessageRenderer';
 
 interface ToolOutputBubbleProps {
   message: Message;
@@ -14,9 +15,29 @@ export const ToolOutputBubble: React.FC<ToolOutputBubbleProps> = ({
 }) => {
   const { content } = message;
 
+  // If content is MCPContent array, use MessageRenderer directly
+  if (Array.isArray(content)) {
+    return (
+      <BaseBubble
+        title="Tool Output"
+        badge={
+          <span className="px-2 py-1 bg-primary text-primary-foreground text-xs rounded-full">
+            MCP
+          </span>
+        }
+        defaultExpanded={defaultExpanded}
+        copyData={JSON.stringify(content, null, 2)}
+        collapsedSummary={<span>{content.length} content items</span>}
+      >
+        <MessageRenderer content={content} className="text-sm" />
+      </BaseBubble>
+    );
+  }
+
+  const stringContent = typeof content === 'string' ? content : '';
   const parsedContent = (() => {
     try {
-      return JSON.parse(content);
+      return JSON.parse(stringContent);
     } catch {
       return null;
     }
@@ -39,10 +60,12 @@ export const ToolOutputBubble: React.FC<ToolOutputBubbleProps> = ({
           : `${typeof parsedContent} value`}
     </span>
   ) : (
-    <span>{content.length} characters</span>
+    <span>{stringContent.length} characters</span>
   );
 
-  const copyData = isJson ? JSON.stringify(parsedContent, null, 2) : content;
+  const copyData = isJson
+    ? JSON.stringify(parsedContent, null, 2)
+    : stringContent;
 
   return (
     <BaseBubble
@@ -58,7 +81,7 @@ export const ToolOutputBubble: React.FC<ToolOutputBubbleProps> = ({
         </div>
       ) : (
         <pre className="text-sm text-foreground font-mono whitespace-pre-wrap break-words">
-          {content}
+          {stringContent}
         </pre>
       )}
     </BaseBubble>

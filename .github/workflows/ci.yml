@@ -1,10 +1,10 @@
-name: 🚀 TauriAgent CI/CD
+name: 🚀 SynapticFlow CI/CD
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, ref/chat ]
   pull_request:
-    branches: [ main, master ]
+    branches: [ main, master, ref/chat ]
 
 jobs:
   test:
@@ -20,6 +20,11 @@ jobs:
     
     - name: 🦀 Setup Rust
       uses: dtolnay/rust-toolchain@stable
+
+    - name: 🦀 Rust cache
+      uses: swatinem/rust-cache@v2
+      with:
+        workspaces: './src-tauri -> target'
     
     - name: 📦 Install pnpm
       uses: pnpm/action-setup@v4
@@ -35,7 +40,13 @@ jobs:
     - name: 📦 Install dependencies
       run: pnpm install
 
-    - name: 🔧 Install Tauri dependencies (Ubuntu)
+    - name: � Lint check
+      run: pnpm lint
+
+    - name: 🎨 Format check
+      run: pnpm format:check || echo "Format check not available"
+
+    - name: �🔧 Install Tauri dependencies (Ubuntu)
       if: matrix.os == 'ubuntu-latest'
       run: |
         sudo apt-get update

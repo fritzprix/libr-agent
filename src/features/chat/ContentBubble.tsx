@@ -4,6 +4,7 @@ import { useClipboard } from '@/hooks/useClipboard';
 import React, { useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Copy, Check } from 'lucide-react';
+import MessageRenderer from '@/components/MessageRenderer';
 
 const logger = getLogger('ContentBubble');
 
@@ -13,12 +14,20 @@ interface ContentBubbleProps {
 
 const ContentBubble: React.FC<ContentBubbleProps> = ({ message }) => {
   const { isStreaming, content } = message;
-  const safeContent = typeof content === 'string' ? content : '';
   const { copied, copyToClipboard } = useClipboard();
 
   useEffect(() => {
     logger.info('message', { message });
   }, []);
+
+  // If content is MCPContent array, use MessageRenderer
+  if (Array.isArray(content)) {
+    return (
+      <MessageRenderer content={content} className="text-sm leading-relaxed" />
+    );
+  }
+
+  const safeContent = typeof content === 'string' ? content : '';
 
   const handleCopy = async () => {
     try {

@@ -16,15 +16,10 @@ import { useBuiltInTools } from './BuiltInToolContext';
 import { useUnifiedMCP } from '../hooks/use-unified-mcp';
 import { createId } from '@paralleldrive/cuid2';
 import { getLogger } from '../lib/logger';
-import { Message, UIResource } from '@/models/chat';
+import { Message } from '@/models/chat';
 import { useSettings } from '../hooks/use-settings';
 import { AIServiceConfig } from '@/lib/ai-service';
-import {
-  isMCPError,
-  MCPResponse,
-  mcpResponseToString,
-  MCPResourceContent,
-} from '@/lib/mcp-types';
+import { isMCPError } from '@/lib/mcp-types';
 
 const logger = getLogger('ChatContext');
 
@@ -33,123 +28,6 @@ interface SystemPromptExtension {
   content: string | (() => Promise<string>);
   priority: number; // Higher number = higher priority
 }
-
-interface SerializedToolResult {
-  success: boolean;
-  text?: string;
-  uiResource?: UIResource | UIResource[];
-  error?: string;
-  metadata: Record<string, unknown>;
-  toolName: string;
-  executionTime: number;
-  timestamp: string;
-}
-
-// Pure function - serializeToolResult
-const serializeToolResult = (
-  mcpResponse: MCPResponse,
-  toolName: string,
-  executionStartTime: number,
-): SerializedToolResult => {
-  const executionTime = Date.now() - executionStartTime;
-  const timestamp = new Date().toISOString();
-
-  // 표준 MCP 에러 처리
-  if (isMCPError(mcpResponse)) {
-    return {
-      success: false,
-      error: `${mcpResponse.error.message} (Code: ${mcpResponse.error.code})`,
-      metadata: {
-        toolName,
-        mcpResponseId: mcpResponse.id,
-        jsonrpc: mcpResponse.jsonrpc,
-        errorCode: mcpResponse.error.code,
-        errorData: mcpResponse.error.data,
-      },
-      toolName,
-      executionTime,
-      timestamp,
-    };
-  }
-
-  // Tool 실행 에러 처리 (isError: true)
-  if (mcpResponse.result?.isError) {
-    const errorText =
-      mcpResponse.result.content?.[0]?.type === 'text'
-        ? mcpResponse.result.content[0].text
-        : 'Tool execution failed';
-
-    return {
-      success: false,
-      error: errorText,
-      metadata: {
-        toolName,
-        mcpResponseId: mcpResponse.id,
-        jsonrpc: mcpResponse.jsonrpc,
-        isToolExecutionError: true,
-      },
-      toolName,
-      executionTime,
-      timestamp,
-    };
-  }
-
-  // 성공 케이스 - UIResource 감지 및 보존
-  let uiResources: UIResource[] = [];
-  let textContent = '';
-
-  if (mcpResponse.result?.content) {
-    // UIResource 항목들을 찾아서 수집
-    const resourceItems = mcpResponse.result.content.filter(
-      (item): item is MCPResourceContent => item.type === 'resource',
-    );
-
-    if (resourceItems.length > 0) {
-      uiResources = resourceItems.map((item) => item.resource);
-      logger.info(`Found ${uiResources.length} UI resources in tool response`, {
-        toolName,
-        resourceTypes: uiResources.map((r) => r.mimeType),
-      });
-    }
-
-    // 텍스트 내용 수집 - UI Resource가 있으면 요약, 없으면 전체 텍스트
-    if (uiResources.length > 0) {
-      // UIResource가 있을 때는 간단한 요약만 제공 (HTML 등 대용량 컨텐츠 제외)
-      // undefined 방지를 위한 안전한 요약 생성
-      const resourceSummary = uiResources
-        .map((r) => {
-          const mimeType = r.mimeType || 'unknown';
-          const uri = r.uri || 'no-uri';
-          return `${mimeType} (${uri})`;
-        })
-        .join(', ');
-      textContent = `UI Resources: ${resourceSummary}`;
-    } else {
-      // UIResource가 없을 때는 기존 동작 유지
-      textContent = mcpResponseToString(mcpResponse);
-    }
-  }
-
-  return {
-    success: true,
-    text: textContent,
-    uiResource:
-      uiResources.length === 1
-        ? uiResources[0]
-        : uiResources.length > 1
-          ? uiResources
-          : undefined,
-    metadata: {
-      toolName,
-      mcpResponseId: mcpResponse.id,
-      jsonrpc: mcpResponse.jsonrpc,
-      hasUIResource: uiResources.length > 0,
-    },
-    toolName,
-    executionTime,
-    timestamp,
-  };
-};
 
 interface ChatContextValue {
   submit: (messageToAdd?: Message[], agentKey?: string) => Promise<Message>;
@@ -238,40 +116,25 @@ const ToolCaller: React.FC<ToolCallerProps> = ({ onToolExecutionChange }) => {
             });
 
             const mcpResponse = await executeToolCall(toolCall);
-            const serialized = serializeToolResult(
-              mcpResponse,
-              toolName,
-              executionStartTime,
-            );
+            const executionTime = Date.now() - executionStartTime;
 
             const toolResultMessage: Message = {
               id: createId(),
               assistantId: currentAssistant?.id,
               role: 'tool',
-              content:
-                serialized.text ||
-                (serialized.uiResource
-                  ? `[UIResource: ${
-                      Array.isArray(serialized.uiResource)
-                        ? serialized.uiResource.length + ' resources'
-                        : serialized.uiResource.uri || 'resource'
-                    }]`
-                  : ''),
-              uiResource: serialized.uiResource,
+              content: isMCPError(mcpResponse)
+                ? `Error: ${mcpResponse.error.message} (Code: ${mcpResponse.error.code})`
+                : mcpResponse.result?.content || [],
               tool_call_id: toolCall.id,
               sessionId: currentSession?.id || '',
             };
-
-            if (!serialized.success && serialized.error) {
-              toolResultMessage.content = `Error: ${serialized.error}`;
-            }
 
             toolResults.push(toolResultMessage);
 
             logger.info('Tool execution completed', {
               toolName,
-              success: serialized.success,
-              executionTime: serialized.executionTime,
+              success: !isMCPError(mcpResponse),
+              executionTime,
             });
           } catch (error) {
             logger.error('Tool execution failed', { toolName, error });

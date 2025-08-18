@@ -2,6 +2,7 @@ import React from 'react';
 import type { UIResource } from '@/models/chat';
 import { UIResourceRenderer as ExternalUIResourceRenderer } from '@mcp-ui/client';
 import { getLogger } from '@/lib/logger';
+import { useRustBackend } from '@/hooks/use-rust-backend';
 
 const logger = getLogger('UIResourceRenderer');
 
@@ -34,6 +35,8 @@ const UIResourceRenderer: React.FC<UIResourceRendererProps> = ({
   resource,
   onUIAction,
 }) => {
+  const { openExternalUrl } = useRustBackend();
+
   // 배열인 경우 첫 번째 리소스만 사용 (mcp-ui 표준)
   const targetResource = Array.isArray(resource) ? resource[0] : resource;
 
@@ -75,7 +78,33 @@ const UIResourceRenderer: React.FC<UIResourceRendererProps> = ({
         });
         onUIAction(action);
       }
-    : undefined;
+    : async (action: UIAction): Promise<void> => {
+        // onUIAction이 없을 때 기본 처리
+        logger.info('Default UI action handling', {
+          type: action.type,
+          payload: action.payload,
+        });
+
+        if (action.type === 'link') {
+          const url = action.payload.url;
+          try {
+            await openExternalUrl(url);
+            logger.info(
+              'External URL opened successfully via default handler',
+              { url },
+            );
+          } catch (error) {
+            logger.error(
+              'Failed to open external URL via Tauri, falling back to window.open',
+              { url, error },
+            );
+            // Fallback for browser environment
+            if (typeof window !== 'undefined') {
+              window.open(url, '_blank', 'noopener,noreferrer');
+            }
+          }
+        }
+      };
 
   return (
     <ExternalUIResourceRenderer
