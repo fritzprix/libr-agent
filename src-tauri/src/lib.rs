@@ -470,8 +470,8 @@ pub fn run() {
                 list_browser_sessions,
                 navigate_to_url,
                 get_page_content,
-                execute_script,
-                take_screenshot
+                take_screenshot,
+                browser_script_result
             ])
             .setup(|app| {
                 println!("🚀 SynapticFlow initializing...");

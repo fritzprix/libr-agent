@@ -18,19 +18,10 @@ pub struct BrowserAgentServer {
     browser_server: Arc<InteractiveBrowserServer>,
 }
 
-#[derive(Debug, Clone)]
-struct CrawlResult {
-    html_content: String,
-    extracted_data: serde_json::Value,
-    saved_path: Option<PathBuf>,
-}
-
 impl BrowserAgentServer {
     pub fn new(app_handle: AppHandle) -> Self {
         let browser_server = Arc::new(InteractiveBrowserServer::new(app_handle));
-        Self {
-            browser_server,
-        }
+        Self { browser_server }
     }
 
     /// Get the base directory compatible with SecurityValidator
@@ -62,7 +53,10 @@ impl BrowserAgentServer {
             }
             Err(_) => {
                 // base_dir 외부 파일인 경우 안전상 경로 노출 금지
-                warn!("File is outside allowed base directory: {:?}", absolute_path);
+                warn!(
+                    "File is outside allowed base directory: {:?}",
+                    absolute_path
+                );
                 if let Some(file_name) = absolute_path.file_name() {
                     Ok(format!("crawl_cache/{}", file_name.to_string_lossy()))
                 } else {
@@ -161,235 +155,6 @@ impl BrowserAgentServer {
         Ok(file_path)
     }
 
-    /// Perform advanced web crawling using Interactive Browser Server
-    async fn perform_advanced_crawl(
-        &self,
-        url: &str,
-        selectors: &[String],
-        wait_for_networkidle: bool,
-        _timeout_seconds: u64,
-    ) -> Result<CrawlResult, String> {
-        info!(
-            "Starting advanced crawl for URL: {} with {} selectors",
-            url,
-            selectors.len()
-        );
-
-        // Create a temporary browser session
-        let session_id = self
-            .browser_server
-            .create_browser_session(url, Some("Crawler Session"))
-            .await?;
-
-        info!("Created browser session {} for crawling", session_id);
-
-        // Wait for page to load if requested
-        if wait_for_networkidle {
-            tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
-        }
-
-        // Extract data using CSS selectors
-        let mut extracted_data = serde_json::Map::new();
-
-        for selector in selectors {
-            let script = format!(
-                r#"
-                (function() {{
-                    try {{
-                        const elements = document.querySelectorAll('{}');
-                        const results = Array.from(elements).map(el => ({{
-                            tagName: el.tagName,
-                            textContent: el.textContent?.trim() || '',
-                            innerHTML: el.innerHTML,
-                            attributes: Array.from(el.attributes).reduce((acc, attr) => {{
-                                acc[attr.name] = attr.value;
-                                return acc;
-                            }}, {{}})
-                        }}));
-                        return JSON.stringify(results);
-                    }} catch (error) {{
-                        return JSON.stringify({{ error: error.message }});
-                    }}
-                }})()
-                "#,
-                selector.replace('"', r#"\""#)
-            );
-
-            match self
-                .browser_server
-                .execute_script(&session_id, &script)
-                .await
-            {
-                Ok(result) => {
-                    // Try to parse the JSON result
-                    if let Ok(parsed_result) = serde_json::from_str::<serde_json::Value>(&result) {
-                        extracted_data.insert(selector.clone(), parsed_result);
-                    } else {
-                        // If not JSON, treat as plain text
-                        extracted_data.insert(selector.clone(), json!(result));
-                    }
-                }
-                Err(e) => {
-                    warn!("Failed to extract data for selector '{}': {}", selector, e);
-                    extracted_data.insert(selector.clone(), json!({"error": e}));
-                }
-            }
-        }
-
-        // Get the full page HTML
-        let html_content = match self.browser_server.get_page_content(&session_id).await {
-            Ok(content) => content,
-            Err(e) => {
-                warn!("Failed to get page content: {}", e);
-                String::new()
-            }
-        };
-
-        // Close the temporary session
-        if let Err(e) = self.browser_server.close_session(&session_id).await {
-            warn!("Failed to close browser session {}: {}", session_id, e);
-        }
-
-        info!("Advanced crawl completed successfully");
-        Ok(CrawlResult {
-            html_content,
-            extracted_data: json!(extracted_data),
-            saved_path: None,
-        })
-    }
-
-    /// Handle crawl_page tool call
-    async fn handle_crawl_page(&self, args: Value) -> MCPResponse {
-        let request_id = Value::String(Uuid::new_v4().to_string());
-
-        let url = match args.get("url").and_then(|v| v.as_str()) {
-            Some(url) => url,
-            None => {
-                return MCPResponse {
-                    jsonrpc: "2.0".to_string(),
-                    id: Some(request_id),
-                    result: None,
-                    error: Some(MCPError {
-                        code: -32602,
-                        message: "Missing required parameter: url".to_string(),
-                        data: None,
-                    }),
-                };
-            }
-        };
-
-        let selectors = args
-            .get("selectors")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().map(String::from))
-                    .collect()
-            })
-            .unwrap_or_else(|| vec!["body".to_string()]);
-
-        let wait_for_networkidle = args
-            .get("wait_for")
-            .and_then(|v| v.as_str())
-            .map(|s| s == "networkidle")
-            .unwrap_or(false);
-
-        let timeout = args.get("timeout").and_then(|v| v.as_u64()).unwrap_or(30);
-
-        let save_html = args
-            .get("save_html")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true);
-
-        // Perform advanced crawl using Interactive Browser Server
-        let crawl_result = self
-            .perform_advanced_crawl(url, &selectors, wait_for_networkidle, timeout)
-            .await;
-
-        match crawl_result {
-            Ok(mut result) => {
-                let mut status_message = format!(
-                    "✅ Successfully crawled: {}\n📄 Extracted {} selectors\n📊 Extraction results:",
-                    url,
-                    selectors.len()
-                );
-
-                // Add extracted data preview to content
-                for selector in selectors.iter() {
-                    if let Some(data) = result.extracted_data.get(selector) {
-                        status_message.push_str(&format!(
-                            "\n  {}: {} ({})",
-                            selector,
-                            if data.is_string() {
-                                format!("\"{}\"", data.as_str().unwrap_or(""))
-                            } else {
-                                serde_json::to_string_pretty(data).unwrap_or_else(|_| "Unable to display".to_string())
-                            },
-                            if data.is_array() { format!("{} items", data.as_array().map(|a| a.len()).unwrap_or(0)) }
-                            else if data.is_object() { "object".to_string() }
-                            else { "text".to_string() }
-                        ));
-                    }
-                }
-
-                if save_html {
-                    match self
-                        .save_crawl_result(url, &result.html_content, &result.extracted_data)
-                        .await
-                    {
-                        Ok(saved_path) => {
-                            result.saved_path = Some(saved_path.clone());
-
-                            // ✅ Convert to relative path for MCP filesystem compatibility
-                            match self.make_relative_path(&saved_path.as_path()) {
-                                Ok(relative_path) => {
-                                    status_message.push_str(&format!(
-                                        "\n💾 Saved HTML to: {}",
-                                        relative_path
-                                    ));
-                                }
-                                Err(e) => {
-                                    warn!("Failed to convert to relative path: {}", e);
-                                    status_message.push_str(&format!(
-                                        "\n💾 Saved HTML to: {}",
-                                        saved_path.display()
-                                    ));
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            warn!("Failed to save crawl result: {}", e);
-                            status_message
-                                .push_str(&format!("\n⚠️ Warning: Failed to save HTML: {}", e));
-                        }
-                    }
-                }
-
-                MCPResponse {
-                    jsonrpc: "2.0".to_string(),
-                    id: Some(request_id),
-                    result: Some(json!({
-                        "content": [{
-                            "type": "text",
-                            "text": status_message
-                        }]
-                    })),
-                    error: None,
-                }
-            }
-            Err(e) => MCPResponse {
-                jsonrpc: "2.0".to_string(),
-                id: Some(request_id),
-                result: None,
-                error: Some(MCPError {
-                    code: -32603,
-                    message: format!("Crawl failed: {}", e),
-                    data: None,
-                }),
-            },
-        }
-    }
-
     /// Handle screenshot tool call
     async fn handle_screenshot(&self, _args: Value) -> MCPResponse {
         let request_id = Value::String(Uuid::new_v4().to_string());
@@ -414,7 +179,7 @@ impl BrowserAgentServer {
         extracted_data: &Value,
     ) -> Result<PathBuf, String> {
         let crawl_dir = self.get_crawl_temp_dir().await?;
-        
+
         // Generate unique filename based on session and timestamp
         let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S").to_string();
         let session_short = &session_id[..8.min(session_id.len())];
@@ -487,7 +252,10 @@ impl BrowserAgentServer {
                 };
 
                 // Save extracted data to file
-                match self.save_extracted_data(session_id, script, &parsed_result).await {
+                match self
+                    .save_extracted_data(session_id, script, &parsed_result)
+                    .await
+                {
                     Ok(file_path) => {
                         // ✅ SecurityValidator 호환 상대경로 생성
                         match self.make_relative_path(&file_path) {
@@ -499,8 +267,8 @@ impl BrowserAgentServer {
                                         "content": [{
                                             "type": "text",
                                             "text": format!(
-                                                "✅ Data extraction successful from session: {}\n💾 Extracted data saved to: {}\n📊 Data preview: {}", 
-                                                session_id, 
+                                                "✅ Data extraction successful from session: {}\n💾 Extracted data saved to: {}\n📊 Data preview: {}",
+                                                session_id,
                                                 relative_path, // ✅ 상대경로만 노출
                                                 serde_json::to_string_pretty(&parsed_result)
                                                     .unwrap_or_else(|_| "Unable to preview data".to_string())
@@ -521,7 +289,7 @@ impl BrowserAgentServer {
                                         "content": [{
                                             "type": "text",
                                             "text": format!(
-                                                "✅ Data extraction successful from session: {}\n� Data saved to file (path unavailable)\n📊 Data preview: {}", 
+                                                "✅ Data extraction successful from session: {}\n� Data saved to file (path unavailable)\n📊 Data preview: {}",
                                                 session_id,
                                                 serde_json::to_string_pretty(&parsed_result)
                                                     .unwrap_or_else(|_| "Unable to preview data".to_string())
@@ -544,8 +312,8 @@ impl BrowserAgentServer {
                                 "content": [{
                                     "type": "text",
                                     "text": format!(
-                                        "✅ Data extraction successful from session: {}\n⚠️ File save failed: {}\n📊 Data: {}", 
-                                        session_id, 
+                                        "✅ Data extraction successful from session: {}\n⚠️ File save failed: {}\n📊 Data: {}",
+                                        session_id,
                                         save_error,
                                         serde_json::to_string_pretty(&parsed_result)
                                             .unwrap_or_else(|_| "Unable to display data".to_string())
@@ -825,69 +593,189 @@ impl BrowserAgentServer {
         }
     }
 
-    /// Create crawl_page tool definition
-    fn create_crawl_page_tool(&self) -> MCPTool {
-        let mut properties = HashMap::new();
+    /// Handle crawl_current_page tool call
+    async fn handle_crawl_current_page(&self, args: Value) -> MCPResponse {
+        let request_id = Value::String(Uuid::new_v4().to_string());
 
-        properties.insert(
-            "url".to_string(),
-            JSONSchema {
-                schema_type: JSONSchemaType::String {
-                    min_length: None,
-                    max_length: None,
-                    pattern: None,
-                    format: None,
-                },
-                title: None,
-                description: Some("The URL to crawl".to_string()),
-                default: None,
-                examples: None,
-                enum_values: None,
-                const_value: None,
-            },
+        let session_id = match args.get("session_id").and_then(|v| v.as_str()) {
+            Some(id) => id,
+            None => {
+                return MCPResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id: Some(request_id),
+                    result: None,
+                    error: Some(MCPError {
+                        code: -32602,
+                        message: "Missing required parameter: session_id".to_string(),
+                        data: None,
+                    }),
+                };
+            }
+        };
+
+        let selectors = args
+            .get("selectors")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_else(|| vec!["body".to_string()]);
+
+        let save_html = args
+            .get("save_html")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+
+        let wait_for_content = args
+            .get("wait_for_content")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        info!(
+            "Crawling current page for session {} with {} selectors",
+            session_id,
+            selectors.len()
         );
 
-        properties.insert(
-            "timeout".to_string(),
-            JSONSchema {
-                schema_type: JSONSchemaType::Number {
-                    minimum: Some(1.0),
-                    maximum: Some(60.0),
-                    exclusive_minimum: None,
-                    exclusive_maximum: None,
-                    multiple_of: None,
-                },
-                title: None,
-                description: Some("Timeout in seconds (default: 30, max: 60)".to_string()),
-                default: Some(json!(30)),
-                examples: None,
-                enum_values: None,
-                const_value: None,
-            },
+        // Wait for content to load if requested
+        if wait_for_content {
+            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+        }
+
+        // Get current URL for context
+        let current_url = self
+            .browser_server
+            .get_current_url(session_id)
+            .await
+            .unwrap_or_else(|_| "Unknown URL".to_string());
+
+        // Extract data using CSS selectors
+        let mut extracted_data = serde_json::Map::new();
+
+        for selector in &selectors {
+            let script = format!(
+                r#"
+                (function() {{
+                    try {{
+                        const elements = document.querySelectorAll('{}');
+                        const results = Array.from(elements).map(el => ({{
+                            tagName: el.tagName,
+                            textContent: el.textContent?.trim() || '',
+                            innerHTML: el.innerHTML.length > 500 ? el.innerHTML.substring(0, 500) + '...' : el.innerHTML,
+                            attributes: Array.from(el.attributes).reduce((acc, attr) => {{
+                                acc[attr.name] = attr.value;
+                                return acc;
+                            }}, {{}})
+                        }}));
+                        return results;
+                    }} catch (error) {{
+                        return [{{ error: error.message }}];
+                    }}
+                }})()
+                "#,
+                selector.replace('"', r#"\""#)
+            );
+
+            match self
+                .browser_server
+                .execute_script(session_id, &script)
+                .await
+            {
+                Ok(result) => {
+                    // Try to parse the JSON result from the refactored execute_script
+                    if let Ok(parsed_result) = serde_json::from_str::<serde_json::Value>(&result) {
+                        extracted_data.insert(selector.clone(), parsed_result);
+                    } else {
+                        // If not JSON, treat as plain text result
+                        extracted_data.insert(selector.clone(), json!(result));
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to extract data for selector '{}': {}", selector, e);
+                    extracted_data.insert(selector.clone(), json!({"error": e}));
+                }
+            }
+        }
+
+        // Get the full page HTML for saving if requested
+        let html_content = if save_html {
+            match self.browser_server.get_page_content(session_id).await {
+                Ok(content) => Some(content),
+                Err(e) => {
+                    warn!("Failed to get page content: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        // Create response message
+        let mut status_message = format!(
+            "✅ Successfully crawled current page from session: {}\n🌐 URL: {}\n📄 Extracted {} selectors\n📊 Extraction results:",
+            session_id,
+            current_url,
+            selectors.len()
         );
 
-        MCPTool {
-            name: "crawl_page".to_string(),
-            title: Some("WebView Page Crawler".to_string()),
-            description: "Crawl a web page using WebView and extract data using CSS selectors"
-                .to_string(),
-            input_schema: JSONSchema {
-                schema_type: JSONSchemaType::Object {
-                    properties: Some(properties),
-                    required: Some(vec!["url".to_string()]),
-                    additional_properties: None,
-                    min_properties: None,
-                    max_properties: None,
+        // Add extracted data preview to content
+        for selector in selectors.iter() {
+            if let Some(data) = extracted_data.get(selector) {
+                let preview = if data.is_array() {
+                    let array = data.as_array().unwrap();
+                    format!("{} elements found", array.len())
+                } else if data.is_object() {
+                    if data.get("error").is_some() {
+                        "Error during extraction".to_string()
+                    } else {
+                        "Object data".to_string()
+                    }
+                } else {
+                    let text = data.as_str().unwrap_or("Unknown");
+                    if text.len() > 100 {
+                        format!("\"{}...\"", &text[..97])
+                    } else {
+                        format!("\"{}\"", text)
+                    }
+                };
+                status_message.push_str(&format!("\n  {}: {}", selector, preview));
+            }
+        }
+
+        // Save HTML if requested and available
+        if let Some(html) = html_content {
+            match self
+                .save_crawl_result(&current_url, &html, &json!(extracted_data))
+                .await
+            {
+                Ok(saved_path) => match self.make_relative_path(&saved_path) {
+                    Ok(relative_path) => {
+                        status_message.push_str(&format!("\n💾 Saved HTML to: {}", relative_path));
+                    }
+                    Err(e) => {
+                        warn!("Failed to convert to relative path: {}", e);
+                        status_message.push_str("\n💾 HTML saved to file");
+                    }
                 },
-                title: None,
-                description: None,
-                default: None,
-                examples: None,
-                enum_values: None,
-                const_value: None,
-            },
-            output_schema: None,
-            annotations: None,
+                Err(e) => {
+                    warn!("Failed to save crawl result: {}", e);
+                    status_message.push_str(&format!("\n⚠️ Warning: Failed to save HTML: {}", e));
+                }
+            }
+        }
+
+        MCPResponse {
+            jsonrpc: "2.0".to_string(),
+            id: Some(request_id),
+            result: Some(json!({
+                "content": [{
+                    "type": "text",
+                    "text": status_message
+                }]
+            })),
+            error: None,
         }
     }
 
@@ -980,7 +868,8 @@ impl BrowserAgentServer {
         MCPTool {
             name: "extract_data".to_string(),
             title: Some("WebView Data Extractor".to_string()),
-            description: "Execute JavaScript code in a browser session and extract data".to_string(),
+            description: "Execute JavaScript code in a browser session and extract data"
+                .to_string(),
             input_schema: JSONSchema {
                 schema_type: JSONSchemaType::Object {
                     properties: Some(properties),
@@ -1279,6 +1168,111 @@ impl BrowserAgentServer {
             annotations: None,
         }
     }
+
+    /// Create crawl_current_page tool definition
+    fn create_crawl_current_page_tool(&self) -> MCPTool {
+        let mut properties = HashMap::new();
+
+        properties.insert(
+            "session_id".to_string(),
+            JSONSchema {
+                schema_type: JSONSchemaType::String {
+                    min_length: None,
+                    max_length: None,
+                    pattern: None,
+                    format: None,
+                },
+                title: None,
+                description: Some("Browser session ID to crawl from".to_string()),
+                default: None,
+                examples: None,
+                enum_values: None,
+                const_value: None,
+            },
+        );
+
+        properties.insert(
+            "selectors".to_string(),
+            JSONSchema {
+                schema_type: JSONSchemaType::Array {
+                    items: Some(Box::new(JSONSchema {
+                        schema_type: JSONSchemaType::String {
+                            min_length: None,
+                            max_length: None,
+                            pattern: None,
+                            format: None,
+                        },
+                        title: None,
+                        description: None,
+                        default: None,
+                        examples: None,
+                        enum_values: None,
+                        const_value: None,
+                    })),
+                    min_items: None,
+                    max_items: None,
+                    unique_items: None,
+                },
+                title: None,
+                description: Some(
+                    "CSS selectors to extract data from the current page".to_string(),
+                ),
+                default: Some(json!(["body"])),
+                examples: Some(vec![json!(["h1", ".article-content", "#main-content"])]),
+                enum_values: None,
+                const_value: None,
+            },
+        );
+
+        properties.insert(
+            "save_html".to_string(),
+            JSONSchema {
+                schema_type: JSONSchemaType::Boolean,
+                title: None,
+                description: Some("Whether to save the full HTML content to file".to_string()),
+                default: Some(json!(true)),
+                examples: None,
+                enum_values: None,
+                const_value: None,
+            },
+        );
+
+        properties.insert(
+            "wait_for_content".to_string(),
+            JSONSchema {
+                schema_type: JSONSchemaType::Boolean,
+                title: None,
+                description: Some("Whether to wait for dynamic content to load".to_string()),
+                default: Some(json!(false)),
+                examples: None,
+                enum_values: None,
+                const_value: None,
+            },
+        );
+
+        MCPTool {
+            name: "crawl_current_page".to_string(),
+            title: Some("Crawl Current Page".to_string()),
+            description: "Extract data from the current page of an existing browser session using CSS selectors".to_string(),
+            input_schema: JSONSchema {
+                schema_type: JSONSchemaType::Object {
+                    properties: Some(properties),
+                    required: Some(vec!["session_id".to_string()]),
+                    additional_properties: None,
+                    min_properties: None,
+                    max_properties: None,
+                },
+                title: None,
+                description: None,
+                default: None,
+                examples: None,
+                enum_values: None,
+                const_value: None,
+            },
+            output_schema: None,
+            annotations: None,
+        }
+    }
 }
 
 #[async_trait::async_trait]
@@ -1293,7 +1287,7 @@ impl BuiltinMCPServer for BrowserAgentServer {
 
     fn tools(&self) -> Vec<MCPTool> {
         vec![
-            self.create_crawl_page_tool(),
+            self.create_crawl_current_page_tool(),
             self.create_screenshot_tool(),
             self.create_extract_data_tool(),
             self.create_browser_session_tool(),
@@ -1305,7 +1299,7 @@ impl BuiltinMCPServer for BrowserAgentServer {
 
     async fn call_tool(&self, tool_name: &str, args: Value) -> MCPResponse {
         match tool_name {
-            "crawl_page" => self.handle_crawl_page(args).await,
+            "crawl_current_page" => self.handle_crawl_current_page(args).await,
             "screenshot" => self.handle_screenshot(args).await,
             "extract_data" => self.handle_extract_data(args).await,
             "create_browser_session" => self.handle_create_browser_session(args).await,

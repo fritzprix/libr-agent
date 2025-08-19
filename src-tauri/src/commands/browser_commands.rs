@@ -1,5 +1,6 @@
 use crate::services::{BrowserSession, InteractiveBrowserServer};
 use log::{debug, error, info};
+use serde::Deserialize;
 use tauri::State;
 
 #[tauri::command]
@@ -258,30 +259,6 @@ pub async fn get_page_content(
 }
 
 #[tauri::command]
-pub async fn execute_script(
-    server: State<'_, InteractiveBrowserServer>,
-    session_id: String,
-    script: String,
-) -> Result<String, String> {
-    debug!(
-        "Command: execute_script called for session: {} with script length: {}",
-        session_id,
-        script.len()
-    );
-
-    match server.execute_script(&session_id, &script).await {
-        Ok(result) => {
-            debug!("Script execution successful: {}", result);
-            Ok(result)
-        }
-        Err(e) => {
-            error!("Failed to execute script in session {}: {}", session_id, e);
-            Err(e)
-        }
-    }
-}
-
-#[tauri::command]
 pub async fn take_screenshot(
     server: State<'_, InteractiveBrowserServer>,
     session_id: String,
@@ -304,4 +281,25 @@ pub async fn take_screenshot(
             Err(e)
         }
     }
+}
+
+#[derive(Deserialize)]
+pub struct BrowserScriptPayload {
+    #[serde(rename = "sessionId")]
+    session_id: String,
+    result: String,
+}
+
+#[tauri::command]
+/// Receives the JS execution result from the webview and wakes the waiting Rust future.
+pub async fn browser_script_result(
+    payload: BrowserScriptPayload,
+    server: State<'_, InteractiveBrowserServer>,
+) -> Result<(), String> {
+    debug!(
+        "Received script result for session {}: {}",
+        payload.session_id, payload.result
+    );
+
+    server.handle_script_result(&payload.session_id, payload.result)
 }
