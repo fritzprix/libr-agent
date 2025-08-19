@@ -28,9 +28,7 @@ struct CrawlResult {
 impl BrowserAgentServer {
     pub fn new(app_handle: AppHandle) -> Self {
         let browser_server = Arc::new(InteractiveBrowserServer::new(app_handle));
-        Self {
-            browser_server,
-        }
+        Self { browser_server }
     }
 
     /// Get the base directory compatible with SecurityValidator
@@ -62,7 +60,10 @@ impl BrowserAgentServer {
             }
             Err(_) => {
                 // base_dir 외부 파일인 경우 안전상 경로 노출 금지
-                warn!("File is outside allowed base directory: {:?}", absolute_path);
+                warn!(
+                    "File is outside allowed base directory: {:?}",
+                    absolute_path
+                );
                 if let Some(file_name) = absolute_path.file_name() {
                     Ok(format!("crawl_cache/{}", file_name.to_string_lossy()))
                 } else {
@@ -323,11 +324,16 @@ impl BrowserAgentServer {
                             if data.is_string() {
                                 format!("\"{}\"", data.as_str().unwrap_or(""))
                             } else {
-                                serde_json::to_string_pretty(data).unwrap_or_else(|_| "Unable to display".to_string())
+                                serde_json::to_string_pretty(data)
+                                    .unwrap_or_else(|_| "Unable to display".to_string())
                             },
-                            if data.is_array() { format!("{} items", data.as_array().map(|a| a.len()).unwrap_or(0)) }
-                            else if data.is_object() { "object".to_string() }
-                            else { "text".to_string() }
+                            if data.is_array() {
+                                format!("{} items", data.as_array().map(|a| a.len()).unwrap_or(0))
+                            } else if data.is_object() {
+                                "object".to_string()
+                            } else {
+                                "text".to_string()
+                            }
                         ));
                     }
                 }
@@ -414,7 +420,7 @@ impl BrowserAgentServer {
         extracted_data: &Value,
     ) -> Result<PathBuf, String> {
         let crawl_dir = self.get_crawl_temp_dir().await?;
-        
+
         // Generate unique filename based on session and timestamp
         let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S").to_string();
         let session_short = &session_id[..8.min(session_id.len())];
@@ -487,7 +493,10 @@ impl BrowserAgentServer {
                 };
 
                 // Save extracted data to file
-                match self.save_extracted_data(session_id, script, &parsed_result).await {
+                match self
+                    .save_extracted_data(session_id, script, &parsed_result)
+                    .await
+                {
                     Ok(file_path) => {
                         // ✅ SecurityValidator 호환 상대경로 생성
                         match self.make_relative_path(&file_path) {
@@ -499,8 +508,8 @@ impl BrowserAgentServer {
                                         "content": [{
                                             "type": "text",
                                             "text": format!(
-                                                "✅ Data extraction successful from session: {}\n💾 Extracted data saved to: {}\n📊 Data preview: {}", 
-                                                session_id, 
+                                                "✅ Data extraction successful from session: {}\n💾 Extracted data saved to: {}\n📊 Data preview: {}",
+                                                session_id,
                                                 relative_path, // ✅ 상대경로만 노출
                                                 serde_json::to_string_pretty(&parsed_result)
                                                     .unwrap_or_else(|_| "Unable to preview data".to_string())
@@ -521,7 +530,7 @@ impl BrowserAgentServer {
                                         "content": [{
                                             "type": "text",
                                             "text": format!(
-                                                "✅ Data extraction successful from session: {}\n� Data saved to file (path unavailable)\n📊 Data preview: {}", 
+                                                "✅ Data extraction successful from session: {}\n� Data saved to file (path unavailable)\n📊 Data preview: {}",
                                                 session_id,
                                                 serde_json::to_string_pretty(&parsed_result)
                                                     .unwrap_or_else(|_| "Unable to preview data".to_string())
@@ -544,8 +553,8 @@ impl BrowserAgentServer {
                                 "content": [{
                                     "type": "text",
                                     "text": format!(
-                                        "✅ Data extraction successful from session: {}\n⚠️ File save failed: {}\n📊 Data: {}", 
-                                        session_id, 
+                                        "✅ Data extraction successful from session: {}\n⚠️ File save failed: {}\n📊 Data: {}",
+                                        session_id,
                                         save_error,
                                         serde_json::to_string_pretty(&parsed_result)
                                             .unwrap_or_else(|_| "Unable to display data".to_string())
@@ -825,6 +834,186 @@ impl BrowserAgentServer {
         }
     }
 
+    /// Handle get_page_metadata tool call
+    async fn handle_get_page_metadata(&self, args: Value) -> MCPResponse {
+        let request_id = Value::String(Uuid::new_v4().to_string());
+
+        let session_id = match args.get("session_id").and_then(|v| v.as_str()) {
+            Some(id) => id,
+            None => {
+                return MCPResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id: Some(request_id),
+                    result: None,
+                    error: Some(MCPError {
+                        code: -32602,
+                        message: "Missing required parameter: session_id".to_string(),
+                        data: None,
+                    }),
+                };
+            }
+        };
+
+        match self.browser_server.get_page_metadata(session_id).await {
+            Ok(metadata) => MCPResponse {
+                jsonrpc: "2.0".to_string(),
+                id: Some(request_id),
+                result: Some(json!({
+                    "content": [{
+                        "type": "text",
+                        "text": format!("✅ Page metadata retrieved successfully:\n{}", metadata)
+                    }]
+                })),
+                error: None,
+            },
+            Err(e) => MCPResponse {
+                jsonrpc: "2.0".to_string(),
+                id: Some(request_id),
+                result: None,
+                error: Some(MCPError {
+                    code: -32603,
+                    message: format!("Failed to get page metadata: {}", e),
+                    data: None,
+                }),
+            },
+        }
+    }
+
+    /// Handle get_page_links tool call
+    async fn handle_get_page_links(&self, args: Value) -> MCPResponse {
+        let request_id = Value::String(Uuid::new_v4().to_string());
+
+        let session_id = match args.get("session_id").and_then(|v| v.as_str()) {
+            Some(id) => id,
+            None => {
+                return MCPResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id: Some(request_id),
+                    result: None,
+                    error: Some(MCPError {
+                        code: -32602,
+                        message: "Missing required parameter: session_id".to_string(),
+                        data: None,
+                    }),
+                };
+            }
+        };
+
+        match self.browser_server.get_page_links(session_id).await {
+            Ok(links) => MCPResponse {
+                jsonrpc: "2.0".to_string(),
+                id: Some(request_id),
+                result: Some(json!({
+                    "content": [{
+                        "type": "text",
+                        "text": format!("✅ Page links retrieved successfully:\n{}", links)
+                    }]
+                })),
+                error: None,
+            },
+            Err(e) => MCPResponse {
+                jsonrpc: "2.0".to_string(),
+                id: Some(request_id),
+                result: None,
+                error: Some(MCPError {
+                    code: -32603,
+                    message: format!("Failed to get page links: {}", e),
+                    data: None,
+                }),
+            },
+        }
+    }
+
+    /// Handle get_page_images tool call
+    async fn handle_get_page_images(&self, args: Value) -> MCPResponse {
+        let request_id = Value::String(Uuid::new_v4().to_string());
+
+        let session_id = match args.get("session_id").and_then(|v| v.as_str()) {
+            Some(id) => id,
+            None => {
+                return MCPResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id: Some(request_id),
+                    result: None,
+                    error: Some(MCPError {
+                        code: -32602,
+                        message: "Missing required parameter: session_id".to_string(),
+                        data: None,
+                    }),
+                };
+            }
+        };
+
+        match self.browser_server.get_page_images(session_id).await {
+            Ok(images) => MCPResponse {
+                jsonrpc: "2.0".to_string(),
+                id: Some(request_id),
+                result: Some(json!({
+                    "content": [{
+                        "type": "text",
+                        "text": format!("✅ Page images retrieved successfully:\n{}", images)
+                    }]
+                })),
+                error: None,
+            },
+            Err(e) => MCPResponse {
+                jsonrpc: "2.0".to_string(),
+                id: Some(request_id),
+                result: None,
+                error: Some(MCPError {
+                    code: -32603,
+                    message: format!("Failed to get page images: {}", e),
+                    data: None,
+                }),
+            },
+        }
+    }
+
+    /// Handle get_page_performance tool call
+    async fn handle_get_page_performance(&self, args: Value) -> MCPResponse {
+        let request_id = Value::String(Uuid::new_v4().to_string());
+
+        let session_id = match args.get("session_id").and_then(|v| v.as_str()) {
+            Some(id) => id,
+            None => {
+                return MCPResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id: Some(request_id),
+                    result: None,
+                    error: Some(MCPError {
+                        code: -32602,
+                        message: "Missing required parameter: session_id".to_string(),
+                        data: None,
+                    }),
+                };
+            }
+        };
+
+        match self.browser_server.get_page_performance(session_id).await {
+            Ok(performance) => MCPResponse {
+                jsonrpc: "2.0".to_string(),
+                id: Some(request_id),
+                result: Some(json!({
+                    "content": [{
+                        "type": "text",
+                        "text": format!("✅ Page performance metrics retrieved successfully:\n{}", performance)
+                    }]
+                })),
+                error: None,
+            },
+            Err(e) => MCPResponse {
+                jsonrpc: "2.0".to_string(),
+                id: Some(request_id),
+                result: None,
+                error: Some(MCPError {
+                    code: -32603,
+                    message: format!("Failed to get page performance: {}", e),
+                    data: None,
+                }),
+            },
+        }
+    }
+
     /// Create crawl_page tool definition
     fn create_crawl_page_tool(&self) -> MCPTool {
         let mut properties = HashMap::new();
@@ -980,7 +1169,8 @@ impl BrowserAgentServer {
         MCPTool {
             name: "extract_data".to_string(),
             title: Some("WebView Data Extractor".to_string()),
-            description: "Execute JavaScript code in a browser session and extract data".to_string(),
+            description: "Execute JavaScript code in a browser session and extract data"
+                .to_string(),
             input_schema: JSONSchema {
                 schema_type: JSONSchemaType::Object {
                     properties: Some(properties),
@@ -1279,6 +1469,191 @@ impl BrowserAgentServer {
             annotations: None,
         }
     }
+
+    /// Create page metadata tool definition
+    fn create_page_metadata_tool(&self) -> MCPTool {
+        let mut properties = HashMap::new();
+
+        properties.insert(
+            "session_id".to_string(),
+            JSONSchema {
+                schema_type: JSONSchemaType::String {
+                    min_length: None,
+                    max_length: None,
+                    pattern: None,
+                    format: None,
+                },
+                title: None,
+                description: Some("The browser session ID".to_string()),
+                default: None,
+                examples: None,
+                enum_values: None,
+                const_value: None,
+            },
+        );
+
+        MCPTool {
+            name: "get_page_metadata".to_string(),
+            title: Some("Get Page Metadata".to_string()),
+            description: "Extract metadata from the current page including title, description, keywords, etc.".to_string(),
+            input_schema: JSONSchema {
+                schema_type: JSONSchemaType::Object {
+                    properties: Some(properties),
+                    required: Some(vec!["session_id".to_string()]),
+                    additional_properties: None,
+                    min_properties: None,
+                    max_properties: None,
+                },
+                title: None,
+                description: None,
+                default: None,
+                examples: None,
+                enum_values: None,
+                const_value: None,
+            },
+            output_schema: None,
+            annotations: None,
+        }
+    }
+
+    /// Create page links tool definition
+    fn create_page_links_tool(&self) -> MCPTool {
+        let mut properties = HashMap::new();
+
+        properties.insert(
+            "session_id".to_string(),
+            JSONSchema {
+                schema_type: JSONSchemaType::String {
+                    min_length: None,
+                    max_length: None,
+                    pattern: None,
+                    format: None,
+                },
+                title: None,
+                description: Some("The browser session ID".to_string()),
+                default: None,
+                examples: None,
+                enum_values: None,
+                const_value: None,
+            },
+        );
+
+        MCPTool {
+            name: "get_page_links".to_string(),
+            title: Some("Get Page Links".to_string()),
+            description: "Extract all links from the current page".to_string(),
+            input_schema: JSONSchema {
+                schema_type: JSONSchemaType::Object {
+                    properties: Some(properties),
+                    required: Some(vec!["session_id".to_string()]),
+                    additional_properties: None,
+                    min_properties: None,
+                    max_properties: None,
+                },
+                title: None,
+                description: None,
+                default: None,
+                examples: None,
+                enum_values: None,
+                const_value: None,
+            },
+            output_schema: None,
+            annotations: None,
+        }
+    }
+
+    /// Create page images tool definition
+    fn create_page_images_tool(&self) -> MCPTool {
+        let mut properties = HashMap::new();
+
+        properties.insert(
+            "session_id".to_string(),
+            JSONSchema {
+                schema_type: JSONSchemaType::String {
+                    min_length: None,
+                    max_length: None,
+                    pattern: None,
+                    format: None,
+                },
+                title: None,
+                description: Some("The browser session ID".to_string()),
+                default: None,
+                examples: None,
+                enum_values: None,
+                const_value: None,
+            },
+        );
+
+        MCPTool {
+            name: "get_page_images".to_string(),
+            title: Some("Get Page Images".to_string()),
+            description: "Extract all images from the current page".to_string(),
+            input_schema: JSONSchema {
+                schema_type: JSONSchemaType::Object {
+                    properties: Some(properties),
+                    required: Some(vec!["session_id".to_string()]),
+                    additional_properties: None,
+                    min_properties: None,
+                    max_properties: None,
+                },
+                title: None,
+                description: None,
+                default: None,
+                examples: None,
+                enum_values: None,
+                const_value: None,
+            },
+            output_schema: None,
+            annotations: None,
+        }
+    }
+
+    /// Create page performance tool definition
+    fn create_page_performance_tool(&self) -> MCPTool {
+        let mut properties = HashMap::new();
+
+        properties.insert(
+            "session_id".to_string(),
+            JSONSchema {
+                schema_type: JSONSchemaType::String {
+                    min_length: None,
+                    max_length: None,
+                    pattern: None,
+                    format: None,
+                },
+                title: None,
+                description: Some("The browser session ID".to_string()),
+                default: None,
+                examples: None,
+                enum_values: None,
+                const_value: None,
+            },
+        );
+
+        MCPTool {
+            name: "get_page_performance".to_string(),
+            title: Some("Get Page Performance".to_string()),
+            description: "Get page performance metrics including load times and resource usage"
+                .to_string(),
+            input_schema: JSONSchema {
+                schema_type: JSONSchemaType::Object {
+                    properties: Some(properties),
+                    required: Some(vec!["session_id".to_string()]),
+                    additional_properties: None,
+                    min_properties: None,
+                    max_properties: None,
+                },
+                title: None,
+                description: None,
+                default: None,
+                examples: None,
+                enum_values: None,
+                const_value: None,
+            },
+            output_schema: None,
+            annotations: None,
+        }
+    }
 }
 
 #[async_trait::async_trait]
@@ -1300,6 +1675,10 @@ impl BuiltinMCPServer for BrowserAgentServer {
             self.create_click_element_tool(),
             self.create_input_text_tool(),
             self.create_navigate_url_tool(),
+            self.create_page_metadata_tool(),
+            self.create_page_links_tool(),
+            self.create_page_images_tool(),
+            self.create_page_performance_tool(),
         ]
     }
 
@@ -1312,6 +1691,10 @@ impl BuiltinMCPServer for BrowserAgentServer {
             "click_element" => self.handle_click_element(args).await,
             "input_text" => self.handle_input_text(args).await,
             "navigate_url" => self.handle_navigate_url(args).await,
+            "get_page_metadata" => self.handle_get_page_metadata(args).await,
+            "get_page_links" => self.handle_get_page_links(args).await,
+            "get_page_images" => self.handle_get_page_images(args).await,
+            "get_page_performance" => self.handle_get_page_performance(args).await,
             _ => {
                 let request_id = Value::String(Uuid::new_v4().to_string());
                 MCPResponse {

@@ -1,307 +1,145 @@
-# Refactoring Plan
+## \#\# Refactoring Plan: 미구현 Browser Agent 기능 완성
 
-## 작업의 목적
+### \#\#\# 1. 작업의 목적
 
-Tauri v2 환경에서 MCP UI 리소스 내의 외부 링크가 클릭되어도 외부 브라우저가 열리지 않는 문제를 해결하여, 사용자가 UI 리소스에서 제공하는 링크를 정상적으로 외부 브라우저에서 열 수 있도록 개선한다.
+  - `take_screenshot`, `get_page_performance` 등 현재 플레이스홀더(Placeholder)로 남아있는 브라우저 에이전트의 **핵심 기능들을 `execute_script`를 활용하여 완전히 구현**합니다.
+  - 모든 브라우저 관련 기능이 일관된 JavaScript 실행 및 결과 반환 구조를 따르도록 하여 **코드의 통일성과 유지보수성을 향상**시킵니다.
 
-## 현재의 상태 / 문제점
+-----
 
-### 1. 권한 설정 누락
+### \#\#\# 2. 현재의 상태 / 문제점
 
-- `tauri.conf.json`에 shell.open 권한이 설정되지 않아 외부 브라우저 오픈 API 사용 불가
+  - \*\*`interactive_browser_server.rs`\*\*의 여러 함수들(`take_screenshot`, `get_page_performance`, `get_page_images`, `get_page_links` 등)이 실제 데이터를 추출하는 대신, **고정된 메시지나 제한된 정보만을 담은 JSON 문자열을 반환**하고 있습니다. [cite: interactive\_browser\_server.rs]
+  - 예를 들어, `take_screenshot` 함수는 실제 스크린샷을 찍는 대신 "Screenshot functionality requires html2canvas library..." 라는 메시지만을 반환합니다. [cite: interactive\_browser\_server.rs]
+  - 이로 인해 `browser_agent` 도구의 기능이 불완전하며, 사용자나 AI 모델이 웹페이지에 대한 상세 정보를 얻을 수 없습니다.
 
-### 2. 백엔드 명령어 부재
+-----
 
-- `src-tauri/src/lib.rs`에 외부 URL을 여는 Tauri 명령어가 정의되지 않음
-- `src/hooks/use-rust-backend.ts`에 외부 URL 오픈 함수가 없음
+### \#\#\# 3. 변경 이후의 상태 / 해결 판정 기준
 
-### 3. 프론트엔드 링크 처리 문제
+  - `take_screenshot` 호출 시, 페이지의 기본 정보(뷰포트, URL 등)가 담긴 **JSON 객체를 정상적으로 반환**합니다. (실제 이미지 캡처는 `html2canvas` 같은 외부 라이브러리 주입이 필요하므로, 이번 단계에서는 정보 반환을 목표로 합니다.)
+  - `get_page_performance`, `get_page_images`, `get_page_links` 등의 함수들이 각각 **실제 성능 지표, 이미지 목록, 링크 목록을 추출하여 JSON 형식으로 반환**합니다.
+  - **해결 판정 기준:** 각 도구를 호출했을 때, 플레이스홀더 메시지 대신 실제 추출된 데이터가 포함된 성공 응답을 MCP(Model Context Protocol)를 통해 수신하는 것을 확인합니다.
 
-- `MessageBubbleRouter.tsx`에서 `window.open` 사용 시 Tauri 환경에서 외부 브라우저가 열리지 않음
-- iframe 내부의 링크 클릭이 부모 컨텍스트로 전달되지 않음
+-----
 
-### 4. 로그 분석 결과
+### \#\#\# 4. 수정이 필요한 코드 및 수정부분의 코드 스니핏
 
-```
-"uiResource": {
-  "text": "<a href=\"http://localhost:3000/game/cube_...\" target=\"_blank\">Click to Play!</a>",
-  "uri": "ui://game-link/cube_..."
-}
-```
+#### **1. `interactive_browser_server.rs`: `take_screenshot` 함수 구현**
 
-- 하드코딩된 localhost URL로 인한 배포 환경 호환성 문제
+  * 실제 이미지 캡처 대신, 페이지의 현재 상태를 파악할 수 있는 유용한 정보를 반환하도록 스크립트를 작성하여 `execute_script`로 실행합니다.
 
-## 변경 이후의 상태 / 해결 판정 기준
-
-### 성공 기준
-
-1. MCP UI 리소스 내 링크 클릭 시 외부 브라우저에서 정상 오픈
-2. iframe 내부 링크가 postMessage를 통해 부모로 전달
-3. 브라우저/Tauri 환경 모두에서 호환 동작
-4. 중앙화된 로깅을 통한 링크 오픈 추적
-
-### 검증 방법
-
-1. `pnpm tauri dev` 실행 후 MCP UI 리소스 링크 클릭 테스트
-2. 외부 브라우저 정상 오픈 확인
-3. 로그에서 에러 없이 처리되는지 확인
-
-## 수정이 필요한 코드 및 수정부분의 코드 스니핏
-
-### 1. `src-tauri/tauri.conf.json` - 권한 설정 추가
-
-```json
-{
-  // ...기존 설정...
-  "allowlist": {
-    "shell": {
-      "open": true
-    }
-  }
-  // ...기존 설정...
-}
-```
-
-### 2. `src-tauri/src/lib.rs` - 외부 URL 오픈 명령어 추가
+<!-- end list -->
 
 ```rust
-#[tauri::command]
-async fn open_external_url(url: String) -> Result<(), String> {
-    // URL 유효성 검증
-    if !url.starts_with("http://") && !url.starts_with("https://") {
-        return Err("Only HTTP/HTTPS URLs are allowed".to_string());
-    }
+// interactive_browser_server.rs
 
-    // 외부 브라우저에서 열기
-    std::process::Command::new("xdg-open")
-        .arg(&url)
-        .spawn()
-        .map_err(|e| format!("Failed to open URL: {}", e))?;
+pub async fn take_screenshot(&self, session_id: &str, timeout_secs: Option<u64>) -> Result<String, String> {
+    debug!("Taking screenshot info for session {}", session_id);
 
-    Ok(())
-}
+    let script = r#"
+        (function() {
+            try {
+                // 실제 이미지 캡처는 html2canvas 같은 외부 라이브러리 주입이 필요하므로,
+                // 이 단계에서는 페이지의 현재 상태 정보를 반환합니다.
+                return JSON.stringify({
+                    type: 'screenshot_info',
+                    viewport: {
+                        width: window.innerWidth,
+                        height: window.innerHeight,
+                        devicePixelRatio: window.devicePixelRatio
+                    },
+                    url: window.location.href,
+                    title: document.title,
+                    timestamp: new Date().toISOString()
+                });
+            } catch (error) {
+                return JSON.stringify({ error: 'Screenshot info failed: ' + error.message });
+            }
+        })()
+    "#;
 
-// invoke_handler에 추가
-.invoke_handler(tauri::generate_handler![
-    // ...기존 핸들러들...
-    open_external_url  // 새로 추가
-])
-```
-
-### 3. `src/hooks/use-rust-backend.ts` - 외부 URL 오픈 함수 추가
-
-```typescript
-// External URL handling 섹션 추가
-const openExternalUrl = async (url: string): Promise<void> => {
-  return safeInvoke<void>('open_external_url', { url });
-};
-
-return {
-  // ...기존 exports...
-
-  // External URL handling
-  openExternalUrl,
-
-  // ...기존 exports...
-};
-```
-
-### 4. `src/features/chat/MessageBubbleRouter.tsx` - 링크 처리 로직 수정
-
-```typescript
-import { useRustBackend } from '@/hooks/use-rust-backend';
-
-const MessageBubbleRouter: React.FC<MessageBubbleRouterProps> = ({
-  message,
-}) => {
-  const { executeToolCall } = useUnifiedMCP();
-  const { submit } = useChatContext();
-  const { openExternalUrl } = useRustBackend();
-
-  // ...기존 코드...
-
-  case 'link': {
-    const url = action.payload.url;
-    if (!url) return;
-
-    try {
-      await openExternalUrl(url);
-      logger.info('External URL opened successfully', { url });
-    } catch (error) {
-      logger.error('Failed to open external URL', { url, error });
-      // 폴백: 브라우저 환경에서만 window.open 사용
-      if (typeof window !== 'undefined') {
-        window.open(url, '_blank', 'noopener,noreferrer');
-      }
-    }
-    break;
-  }
-
-  // ...기존 코드...
-};
-```
-
-### 5. `src/components/ui/UIResourceRenderer.tsx` - iframe 링크 클릭 처리 추가
-
-```typescript
-// HTML 리소스에 스크립트 주입
-if (adaptedResource.mimeType?.startsWith('text/html') && adaptedResource.text) {
-  adaptedResource.text += `
-    <script>
-      document.addEventListener('click', function(e) {
-        var a = e.target.closest && e.target.closest('a');
-        if (a && a.href && (a.href.startsWith('http://') || a.href.startsWith('https://'))) {
-          e.preventDefault();
-          window.parent.postMessage({ type: 'link', payload: { url: a.href } }, '*');
-        }
-      });
-    </script>
-  `;
+    self.execute_script(session_id, script, timeout_secs).await
 }
 ```
 
-## 구현 순서
+-----
 
-1. `tauri.conf.json` 권한 설정
-2. `lib.rs`에 Tauri 명령어 추가
-3. `use-rust-backend.ts`에 함수 추가
-4. `MessageBubbleRouter.tsx` 링크 처리 로직 수정
-5. `UIResourceRenderer.tsx` iframe 링크 처리 추가
-6. 빌드 및 테스트
+#### **2. `interactive_browser_server.rs`: `get_page_performance` 함수 구현**
 
----
+  * `window.performance` API를 활용하여 페이지의 상세 성능 지표를 수집하는 스크립트를 구현합니다.
 
-## 추가 개선 사항: MCP-UI 표준 준수 강화
+<!-- end list -->
 
-### 목적
+```rust
+// interactive_browser_server.rs
 
-현재 UIResourceRenderer가 불필요한 타입 변환을 수행하고 있어, mcp-ui 공식 표준을 더욱 충실히 준수하도록 코드를 단순화하고 유지보수성을 향상시킨다.
+pub async fn get_page_performance(&self, session_id: &str, timeout_secs: Option<u64>) -> Result<String, String> {
+    debug!("Getting page performance metrics for session {}", session_id);
 
-### 현재 상태 / 문제점
+    let script = r#"
+        (function() {
+            try {
+                const performance = window.performance;
+                if (!performance) {
+                    return JSON.stringify({ error: 'Performance API not supported.' });
+                }
+                const navigation = performance.getEntriesByType('navigation')[0];
+                const paint = performance.getEntriesByType('paint');
+                const metrics = {
+                    loadTime: navigation ? navigation.duration : null,
+                    domContentLoadedTime: navigation ? navigation.domContentLoadedEventEnd : null,
+                    firstContentfulPaint: paint.find(p => p.name === 'first-contentful-paint')?.startTime || null
+                };
+                return JSON.stringify(metrics);
+            } catch (error) {
+                return JSON.stringify({ error: 'Failed to get performance metrics: ' + error.message });
+            }
+        })()
+    "#;
 
-#### 1. 불필요한 타입 변환
-
-- `UIResourceRenderer.tsx`에서 `name` 필드를 임의로 추가하고 있음 (mcp-ui 스펙에 없음)
-- 복잡한 타입 변환 로직으로 인한 코드 복잡성 증가
-
-#### 2. mcp-ui 표준 미준수
-
-- `@mcp-ui/client`의 UIResourceRenderer를 직접 사용하지 않고 불필요한 래핑 수행
-- UIAction 타입 변환에서 불필요한 복잡성 도입
-
-### MCP-UI 표준 준수 - 변경 결과 및 판정 기준
-
-#### MCP-UI 개선 성공 기준
-
-1. mcp-ui 공식 스펙을 정확히 준수하는 UIResource 타입 사용
-2. 불필요한 타입 변환 로직 제거로 코드 단순화
-3. `@mcp-ui/client` 라이브러리의 표준 동작 보장
-4. 향후 mcp-ui 라이브러리 업데이트 시 자동 호환성 확보
-
-#### MCP-UI 개선 검증 방법
-
-1. UIResource 렌더링이 기존과 동일하게 동작하는지 확인
-2. UIAction 처리가 정상적으로 작동하는지 테스트
-3. mcp-ui 표준 스펙 준수 여부 검증
-
-### MCP-UI 표준 준수 - 수정 코드
-
-#### `src/components/ui/UIResourceRenderer.tsx` - mcp-ui 표준 준수 개선
-
-```typescript
-import React from 'react';
-import type { UIResource } from '@/models/chat';
-import { UIResourceRenderer as ExternalUIResourceRenderer } from '@mcp-ui/client';
-import { getLogger } from '@/lib/logger';
-
-const logger = getLogger('UIResourceRenderer');
-
-// mcp-ui 표준 UIAction 타입 (공식 스펙 그대로)
-export type UIAction =
-  | { type: 'tool', payload: { toolName: string, params: Record<string, unknown> }, messageId?: string }
-  | { type: 'intent', payload: { intent: string, params: Record<string, unknown> }, messageId?: string }
-  | { type: 'prompt', payload: { prompt: string }, messageId?: string }
-  | { type: 'notify', payload: { message: string }, messageId?: string }
-  | { type: 'link', payload: { url: string }, messageId?: string };
-
-export interface UIResourceRendererProps {
-  resource: UIResource | UIResource[];
-  onUIAction?: (action: UIAction) => void;
+    self.execute_script(session_id, script, timeout_secs).await
 }
-
-/**
- * mcp-ui 표준을 준수하는 UIResourceRenderer
- * @mcp-ui/client의 UIResourceRenderer를 직접 사용하여 표준 동작 보장
- */
-const UIResourceRenderer: React.FC<UIResourceRendererProps> = ({
-  resource,
-  onUIAction,
-}) => {
-  // 배열인 경우 첫 번째 리소스만 사용 (mcp-ui 표준)
-  const targetResource = Array.isArray(resource) ? resource[0] : resource;
-  
-  if (!targetResource) {
-    logger.warn('No UI resource provided');
-    return null;
-  }
-
-  // mcp-ui 표준 UIResource 형태로 정규화 (불필요한 필드 제거)
-  const mcpUIResource = {
-    uri: targetResource.uri || 'ui://inline',
-    mimeType: targetResource.mimeType || 'text/html',
-    text: targetResource.text,
-    blob: targetResource.blob,
-  };
-
-  // mcp-ui 표준 onUIAction 핸들러 (직접 전달, 변환 없음)
-  const handleUIAction = onUIAction
-    ? async (action: UIAction): Promise<void> => {
-        logger.info('UI action received', { 
-          type: action.type, 
-          payload: action.payload,
-          messageId: action.messageId 
-        });
-        onUIAction(action);
-      }
-    : undefined;
-
-  return (
-    <ExternalUIResourceRenderer
-      resource={mcpUIResource}
-      onUIAction={handleUIAction}
-    />
-  );
-};
-
-export default UIResourceRenderer;
 ```
 
-### 개선사항 상세
+-----
 
-#### 1. 타입 정확성 향상
+#### **3. `interactive_browser_server.rs`: `get_page_images` 및 `get_page_links` 함수 구현**
 
-- `name` 필드 제거: mcp-ui 스펙에 정의되지 않은 필드 제거
-- UIAction 타입을 mcp-ui 공식 스펙과 정확히 일치하도록 정의
+  * `document.querySelectorAll`을 사용하여 페이지 내의 모든 이미지(`<img>`)와 링크(`<a>`) 태그를 찾아 정보를 추출합니다.
 
-#### 2. 코드 단순화
+<!-- end list -->
 
-- 불필요한 타입 변환 로직 제거
-- `@mcp-ui/client`의 표준 동작을 그대로 활용
+```rust
+// interactive_browser_server.rs
 
-#### 3. 로깅 개선
+pub async fn get_page_images(&self, session_id: &str, timeout_secs: Option<u64>) -> Result<String, String> {
+    debug!("Getting page images for session {}", session_id);
+    let script = r#"
+        (function() {
+            const images = Array.from(document.querySelectorAll('img')).map(img => ({
+                src: img.src,
+                alt: img.alt,
+                width: img.naturalWidth,
+                height: img.naturalHeight
+            }));
+            return JSON.stringify({ count: images.length, images: images });
+        })()
+    "#;
+    self.execute_script(session_id, script, timeout_secs).await
+}
 
-- 중앙화된 로깅 시스템 활용
-- UIAction 처리 시 상세한 로그 정보 제공
-
-#### 4. 유지보수성 향상
-
-- mcp-ui 라이브러리 업데이트 시 자동 호환성 확보
-- 표준 준수로 인한 디버깅 용이성 증대
-
-### 구현 우선순위
-
-1. **높음**: UIResourceRenderer 표준 준수 개선
-2. **중간**: 불필요한 타입 변환 로직 제거
-3. **낮음**: 로깅 및 에러 처리 개선
-
-이 개선사항을 통해 SynapticFlow의 MCP-UI 연동이 더욱 안정적이고 표준에 충실한 구현이 됩니다.
+pub async fn get_page_links(&self, session_id: &str, timeout_secs: Option<u64>) -> Result<String, String> {
+    debug!("Getting page links for session {}", session_id);
+    let script = r#"
+        (function() {
+            const links = Array.from(document.querySelectorAll('a[href]')).map(a => ({
+                href: a.href,
+                text: a.textContent.trim()
+            }));
+            return JSON.stringify({ count: links.length, links: links });
+        })()
+    "#;
+    self.execute_script(session_id, script, timeout_secs).await
+}
+```

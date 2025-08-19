@@ -305,3 +305,97 @@ pub async fn take_screenshot(
         }
     }
 }
+
+#[tauri::command]
+pub async fn get_page_metadata(
+    server: State<'_, InteractiveBrowserServer>,
+    session_id: String,
+) -> Result<String, String> {
+    debug!(
+        "Command: get_page_metadata called for session: {}",
+        session_id
+    );
+
+    match server.get_page_metadata(&session_id).await {
+        Ok(metadata) => {
+            debug!("Page metadata retrieved successfully");
+            Ok(metadata)
+        }
+        Err(e) => {
+            error!(
+                "Failed to get page metadata for session {}: {}",
+                session_id, e
+            );
+            Err(e)
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn get_page_links(
+    server: State<'_, InteractiveBrowserServer>,
+    session_id: String,
+) -> Result<String, String> {
+    debug!("Command: get_page_links called for session: {}", session_id);
+
+    match server.get_page_links(&session_id).await {
+        Ok(links) => {
+            debug!("Page links retrieved successfully");
+            Ok(links)
+        }
+        Err(e) => {
+            error!("Failed to get page links for session {}: {}", session_id, e);
+            Err(e)
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn get_page_images(
+    server: State<'_, InteractiveBrowserServer>,
+    session_id: String,
+) -> Result<String, String> {
+    debug!(
+        "Command: get_page_images called for session: {}",
+        session_id
+    );
+
+    match server.get_page_images(&session_id).await {
+        Ok(images) => {
+            debug!("Page images retrieved successfully");
+            Ok(images)
+        }
+        Err(e) => {
+            error!(
+                "Failed to get page images for session {}: {}",
+                session_id, e
+            );
+            Err(e)
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn get_page_performance(
+    server: State<'_, InteractiveBrowserServer>,
+    session_id: String,
+) -> Result<String, String> {
+    debug!(
+        "Command: get_page_performance called for session: {}",
+        session_id
+    );
+
+    match server.get_page_performance(&session_id).await {
+        Ok(performance) => {
+            debug!("Page performance metrics retrieved successfully");
+            Ok(performance)
+        }
+        Err(e) => {
+            error!(
+                "Failed to get page performance for session {}: {}",
+                session_id, e
+            );
+            Err(e)
+        }
+    }
+}

@@ -2,8 +2,10 @@ use chrono::{DateTime, Utc};
 use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use tauri::{AppHandle, Listener, Manager, WebviewUrl, WebviewWindowBuilder};
+use tokio::sync::oneshot;
+use tokio::time::{timeout, Duration};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -25,18 +27,29 @@ pub enum SessionStatus {
     Error(String),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct InteractiveBrowserServer {
     app_handle: AppHandle,
     sessions: Arc<RwLock<HashMap<String, BrowserSession>>>,
+    pending_requests: Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>,
+}
+
+impl Clone for InteractiveBrowserServer {
+    fn clone(&self) -> Self {
+        Self {
+            app_handle: self.app_handle.clone(),
+            sessions: self.sessions.clone(),
+            pending_requests: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
 }
 
 impl InteractiveBrowserServer {
     pub fn new(app_handle: AppHandle) -> Self {
-        info!("Initializing Interactive Browser Server");
         Self {
             app_handle,
             sessions: Arc::new(RwLock::new(HashMap::new())),
+            pending_requests: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -129,84 +142,74 @@ impl InteractiveBrowserServer {
         };
 
         if let Some(window) = self.app_handle.get_webview_window(&session.window_label) {
-            // For document.documentElement.outerHTML and similar content extraction,
-            // we'll use a more sophisticated approach
-            let is_html_extraction = script.contains("outerHTML") || script.contains("innerHTML") || script.contains("textContent");
-            
-            if is_html_extraction {
-                // Special handling for HTML content extraction
-                let wrapped_script = format!(
-                    r#"
-                    (function() {{
+            // Generate unique request ID for this script execution
+            let request_id = Uuid::new_v4().to_string();
+            let (sender, receiver) = oneshot::channel();
+
+            // Store the sender in pending requests
+            {
+                let mut pending = self
+                    .pending_requests
+                    .lock()
+                    .map_err(|e| format!("Failed to acquire pending requests lock: {}", e))?;
+                pending.insert(request_id.clone(), sender);
+            }
+
+            // Use both DOMContentLoaded and immediate execution to handle all cases
+            let wrapped_script = format!(
+                r#"
+                (function() {{
+                    function executeScript() {{
                         try {{
                             const result = {};
-                            // Store in a global variable for potential retrieval
-                            window.__tauri_last_result = result;
-                            // Try to determine content size for logging
-                            if (typeof result === 'string' && result.length > 100) {{
-                                console.log('HTML_CONTENT_EXTRACTED:' + result.length + '_chars');
-                                return result.substring(0, 100) + '... [content extracted: ' + result.length + ' characters]';
-                            }} else {{
-                                console.log('SCRIPT_RESULT:' + JSON.stringify(result));
-                                return result;
-                            }}
+                            window.__TAURI_INTERNALS__.invoke('send_content_from_webviewjs', {{
+                                sessionId: '{}',
+                                requestId: '{}',
+                                content: typeof result === 'string' ? result : JSON.stringify(result)
+                            }});
                         }} catch (error) {{
-                            console.log('SCRIPT_ERROR:' + error.message);
-                            window.__tauri_last_result = 'Error: ' + error.message;
-                            return 'Error: ' + error.message;
+                            window.__TAURI_INTERNALS__.invoke('send_content_from_webviewjs', {{
+                                sessionId: '{}',
+                                requestId: '{}',
+                                content: 'Error: ' + error.message
+                            }});
                         }}
-                    }})();
-                    "#,
-                    script
-                );
-                
-                match window.eval(&wrapped_script) {
-                    Ok(_) => {
-                        debug!("HTML extraction script executed in session: {}", session_id);
-                        
-                        // For HTML extraction, try to get a meaningful result
-                        if script.contains("document.documentElement.outerHTML") {
-                            Ok("HTML content extracted successfully".to_string())
-                        } else if script.contains("innerHTML") {
-                            Ok("Inner HTML content extracted successfully".to_string())
-                        } else {
-                            Ok("Content extraction completed".to_string())
-                        }
-                    }
-                    Err(e) => {
-                        error!("Failed to execute HTML extraction script: {}", e);
-                        Err(format!("Failed to execute script: {}", e))
-                    }
+                    }}
+
+                    // Execute immediately if DOM is already loaded, otherwise wait for DOMContentLoaded
+                    if (document.readyState === 'loading') {{
+                        window.addEventListener('DOMContentLoaded', executeScript);
+                    }} else {{
+                        executeScript();
+                    }}
+                }})();
+                "#,
+                script, session_id, request_id, session_id, request_id
+            );
+
+            window
+                .eval(&wrapped_script)
+                .map_err(|e| format!("Failed to inject script: {}", e))?;
+
+            // Wait for the result with timeout (30 seconds)
+            match timeout(Duration::from_secs(30), receiver).await {
+                Ok(Ok(result)) => {
+                    debug!("Script execution completed for session: {}", session_id);
+                    Ok(result)
                 }
-            } else {
-                // For other scripts, use simpler approach
-                let wrapped_script = format!(
-                    r#"
-                    (function() {{
-                        try {{
-                            const result = {};
-                            window.__tauri_last_result = result;
-                            console.log('SCRIPT_EXECUTED:' + JSON.stringify(result));
-                            return result;
-                        }} catch (error) {{
-                            console.log('SCRIPT_ERROR:' + error.message);
-                            window.__tauri_last_result = 'Error: ' + error.message;
-                            return 'Error: ' + error.message;
-                        }}
-                    }})();
-                    "#,
-                    script
-                );
-                
-                match window.eval(&wrapped_script) {
-                    Ok(_) => {
-                        debug!("Script executed successfully in session: {}", session_id);
-                        Ok("Script executed successfully".to_string())
-                    }
-                    Err(e) => {
-                        error!("Failed to execute script in session {}: {}", session_id, e);
-                        Err(format!("Failed to execute script: {}", e))
-                    }
+                Ok(Err(_)) => {
+                    error!("Script execution was cancelled for session: {}", session_id);
+                    Err("Script execution was cancelled".to_string())
+                }
+                Err(_) => {
+                    error!("Script execution timeout for session: {}", session_id);
+                    // Clean up pending request on timeout
+                    let mut pending = self
+                        .pending_requests
+                        .lock()
+                        .map_err(|e| format!("Failed to acquire pending requests lock: {}", e))?;
+                    pending.remove(&request_id);
+                    Err("Script execution timeout (30 seconds)".to_string())
                 }
             }
         } else {
@@ -444,26 +447,356 @@ impl InteractiveBrowserServer {
     pub async fn get_page_content(&self, session_id: &str) -> Result<String, String> {
         debug!("Getting page content for session {}", session_id);
         let script = "document.documentElement.outerHTML";
-        
+
+        // Use the new execute_script structure to get actual HTML content
         match self.execute_script(session_id, script).await {
-            Ok(result) => {
-                if result.contains("HTML content extracted successfully") {
-                    // For now, return a placeholder that indicates HTML was extracted
-                    // In a real implementation, we would need to capture the actual HTML
-                    info!("HTML content extraction completed for session: {}", session_id);
-                    Ok("<!DOCTYPE html><html><head><title>Page Content Extracted</title></head><body><h1>HTML Content Successfully Extracted</h1><p>The page content has been extracted but due to Tauri v2 limitations, the actual HTML content cannot be returned directly.</p></body></html>".to_string())
-                } else {
-                    Ok(result)
-                }
+            Ok(content) => {
+                info!(
+                    "Page content extracted for session {}: {} characters",
+                    session_id,
+                    content.len()
+                );
+                Ok(content)
             }
-            Err(e) => Err(e)
+            Err(e) => {
+                error!(
+                    "Failed to get page content for session {}: {}",
+                    session_id, e
+                );
+                Err(e)
+            }
         }
     }
 
-    /// Take a screenshot of the page (placeholder for future implementation)
+    /// Take a screenshot of the page using canvas API
     pub async fn take_screenshot(&self, session_id: &str) -> Result<String, String> {
-        debug!("Taking screenshot for session {}", session_id);
-        // This would be implemented when screenshot capability is added
-        Err("Screenshot functionality not yet implemented".to_string())
+        debug!("Taking screenshot info for session {}", session_id);
+
+        let script = r#"
+            (function() {
+                try {
+                    // 실제 이미지 캡처는 html2canvas 같은 외부 라이브러리 주입이 필요하므로,
+                    // 이 단계에서는 페이지의 현재 상태 정보를 반환합니다.
+                    return JSON.stringify({
+                        type: 'screenshot_info',
+                        viewport: {
+                            width: window.innerWidth,
+                            height: window.innerHeight,
+                            devicePixelRatio: window.devicePixelRatio
+                        },
+                        url: window.location.href,
+                        title: document.title,
+                        timestamp: new Date().toISOString()
+                    });
+                } catch (error) {
+                    return JSON.stringify({ error: 'Screenshot info failed: ' + error.message });
+                }
+            })()
+        "#;
+
+        match self.execute_script(session_id, script).await {
+            Ok(result) => {
+                info!("Screenshot info captured for session {}", session_id);
+                Ok(result)
+            }
+            Err(e) => {
+                error!(
+                    "Failed to capture screenshot for session {}: {}",
+                    session_id, e
+                );
+                Err(e)
+            }
+        }
+    }
+
+    /// Get page metadata (title, description, keywords, etc.)
+    pub async fn get_page_metadata(&self, session_id: &str) -> Result<String, String> {
+        debug!("Getting page metadata for session {}", session_id);
+
+        let script = r#"
+            (function() {
+                const metadata = {
+                    title: document.title,
+                    description: '',
+                    keywords: '',
+                    author: '',
+                    canonical: '',
+                    ogTitle: '',
+                    ogDescription: '',
+                    ogImage: '',
+                    viewport: '',
+                    charset: document.characterSet,
+                    lang: document.documentElement.lang,
+                    url: window.location.href
+                };
+
+                // Get meta tags
+                const metaTags = document.querySelectorAll('meta');
+                metaTags.forEach(tag => {
+                    const name = tag.getAttribute('name') || tag.getAttribute('property');
+                    const content = tag.getAttribute('content');
+
+                    if (name && content) {
+                        switch(name.toLowerCase()) {
+                            case 'description':
+                                metadata.description = content;
+                                break;
+                            case 'keywords':
+                                metadata.keywords = content;
+                                break;
+                            case 'author':
+                                metadata.author = content;
+                                break;
+                            case 'viewport':
+                                metadata.viewport = content;
+                                break;
+                            case 'og:title':
+                                metadata.ogTitle = content;
+                                break;
+                            case 'og:description':
+                                metadata.ogDescription = content;
+                                break;
+                            case 'og:image':
+                                metadata.ogImage = content;
+                                break;
+                        }
+                    }
+                });
+
+                // Get canonical URL
+                const canonical = document.querySelector('link[rel="canonical"]');
+                if (canonical) {
+                    metadata.canonical = canonical.href;
+                }
+
+                return JSON.stringify(metadata, null, 2);
+            })()
+        "#;
+
+        match self.execute_script(session_id, script).await {
+            Ok(result) => {
+                info!("Page metadata extracted for session {}", session_id);
+                Ok(result)
+            }
+            Err(e) => {
+                error!(
+                    "Failed to get page metadata for session {}: {}",
+                    session_id, e
+                );
+                Err(e)
+            }
+        }
+    }
+
+    /// Get all links from the page
+    pub async fn get_page_links(&self, session_id: &str) -> Result<String, String> {
+        debug!("Getting page links for session {}", session_id);
+        let script = r#"
+            (function() {
+                const links = Array.from(document.querySelectorAll('a[href]')).map(a => ({
+                    href: a.href,
+                    text: a.textContent.trim()
+                }));
+                return JSON.stringify({ count: links.length, links: links });
+            })()
+        "#;
+
+        match self.execute_script(session_id, script).await {
+            Ok(result) => {
+                info!("Page links extracted for session {}", session_id);
+                Ok(result)
+            }
+            Err(e) => {
+                error!("Failed to get page links for session {}: {}", session_id, e);
+                Err(e)
+            }
+        }
+    }
+
+    /// Get all images from the page
+    pub async fn get_page_images(&self, session_id: &str) -> Result<String, String> {
+        debug!("Getting page images for session {}", session_id);
+        let script = r#"
+            (function() {
+                const images = Array.from(document.querySelectorAll('img')).map(img => ({
+                    src: img.src,
+                    alt: img.alt,
+                    width: img.naturalWidth,
+                    height: img.naturalHeight
+                }));
+
+                // Also get background images from CSS
+                const elementsWithBgImages = [];
+                document.querySelectorAll('*').forEach((el, index) => {
+                    const bgImage = window.getComputedStyle(el).backgroundImage;
+                    if (bgImage && bgImage !== 'none' && bgImage.includes('url(')) {
+                        const url = bgImage.match(/url\(['"]?(.*?)['"]?\)/);
+                        if (url && url[1]) {
+                            elementsWithBgImages.push({
+                                element: el.tagName.toLowerCase(),
+                                backgroundImage: url[1]
+                            });
+                        }
+                    }
+                });
+
+                return JSON.stringify({
+                    count: images.length,
+                    images: images,
+                    totalBackgroundImages: elementsWithBgImages.length,
+                    backgroundImages: elementsWithBgImages
+                });
+            })()
+        "#;
+
+        match self.execute_script(session_id, script).await {
+            Ok(result) => {
+                info!("Page images extracted for session {}", session_id);
+                Ok(result)
+            }
+            Err(e) => {
+                error!(
+                    "Failed to get page images for session {}: {}",
+                    session_id, e
+                );
+                Err(e)
+            }
+        }
+    }
+
+    /// Get page performance metrics
+    pub async fn get_page_performance(&self, session_id: &str) -> Result<String, String> {
+        debug!(
+            "Getting page performance metrics for session {}",
+            session_id
+        );
+
+        let script = r#"
+            (function() {
+                try {
+                    const performance = window.performance;
+                    if (!performance) {
+                        return JSON.stringify({ error: 'Performance API not supported.' });
+                    }
+                    const navigation = performance.getEntriesByType('navigation')[0];
+                    const paint = performance.getEntriesByType('paint');
+                    const metrics = {
+                        loadTime: navigation ? navigation.duration : null,
+                        domContentLoadedTime: navigation ? navigation.domContentLoadedEventEnd : null,
+                        firstContentfulPaint: paint.find(p => p.name === 'first-contentful-paint')?.startTime || null,
+                        timestamp: Date.now(),
+                        url: window.location.href,
+                        navigation: navigation ? {
+                            domContentLoaded: navigation.domContentLoadedEventEnd - navigation.domContentLoadedEventStart,
+                            loadComplete: navigation.loadEventEnd - navigation.loadEventStart,
+                            domComplete: navigation.domComplete - navigation.navigationStart,
+                            responseStart: navigation.responseStart - navigation.navigationStart,
+                            responseEnd: navigation.responseEnd - navigation.navigationStart
+                        } : null,
+                        paint: {},
+                        memory: performance.memory ? {
+                            usedJSHeapSize: performance.memory.usedJSHeapSize,
+                            totalJSHeapSize: performance.memory.totalJSHeapSize,
+                            jsHeapSizeLimit: performance.memory.jsHeapSizeLimit
+                        } : null,
+                        connection: navigator.connection ? {
+                            effectiveType: navigator.connection.effectiveType,
+                            downlink: navigator.connection.downlink,
+                            rtt: navigator.connection.rtt
+                        } : null
+                    };
+
+                    paint.forEach(entry => {
+                        metrics.paint[entry.name] = entry.startTime;
+                    });
+
+                    return JSON.stringify(metrics, null, 2);
+                } catch (error) {
+                    return JSON.stringify({ error: 'Failed to get performance metrics: ' + error.message });
+                }
+            })()
+        "#;
+
+        match self.execute_script(session_id, script).await {
+            Ok(result) => {
+                info!(
+                    "Page performance metrics extracted for session {}",
+                    session_id
+                );
+                Ok(result)
+            }
+            Err(e) => {
+                error!(
+                    "Failed to get page performance for session {}: {}",
+                    session_id, e
+                );
+                Err(e)
+            }
+        }
+    }
+
+    /// Handle content received from WebView JavaScript
+    pub async fn handle_received_content(
+        &self,
+        session_id: String,
+        request_id: String,
+        content: String,
+    ) -> Result<(), String> {
+        log::info!(
+            "Received content from session {} (request {}): {} characters",
+            session_id,
+            request_id,
+            content.len()
+        );
+
+        // Validate session exists
+        {
+            let sessions = self
+                .sessions
+                .read()
+                .map_err(|e| format!("Failed to acquire read lock: {}", e))?;
+            if !sessions.contains_key(&session_id) {
+                return Err("Session not found".to_string());
+            }
+        }
+
+        // Find and wake up the pending request
+        let sender = {
+            let mut pending = self
+                .pending_requests
+                .lock()
+                .map_err(|e| format!("Failed to acquire pending requests lock: {}", e))?;
+            pending.remove(&request_id)
+        };
+
+        if let Some(sender) = sender {
+            // Send the result to the waiting execute_script call
+            if let Err(_) = sender.send(content.clone()) {
+                log::warn!("Failed to send result to waiting request: {}", request_id);
+            } else {
+                log::debug!("Successfully delivered result to request: {}", request_id);
+            }
+        } else {
+            log::warn!("No pending request found for ID: {}", request_id);
+        }
+
+        // Log content preview for debugging
+        log::debug!(
+            "Content preview: {}",
+            if content.len() > 200 {
+                format!("{}...", &content[..200])
+            } else {
+                content.clone()
+            }
+        );
+
+        // TODO: Add file saving, data processing, etc.
+        // Example:
+        // - Save HTML content to files
+        // - Process extracted data
+        // - Trigger webhooks or notifications
+        // - Store in database
+
+        Ok(())
     }
 }

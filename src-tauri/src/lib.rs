@@ -52,6 +52,19 @@ async fn call_mcp_tool(
 }
 
 #[tauri::command]
+async fn send_content_from_webviewjs(
+    session_id: String,
+    request_id: String,
+    content: String,
+) -> Result<(), String> {
+    // InteractiveBrowserServer 인스턴스 가져오기
+    let manager = crate::services::get_browser_server();
+    manager
+        .handle_received_content(session_id, request_id, content)
+        .await
+}
+
+#[tauri::command]
 async fn sample_from_mcp_server(
     server_name: String,
     prompt: String,
@@ -471,13 +484,24 @@ pub fn run() {
                 navigate_to_url,
                 get_page_content,
                 execute_script,
-                take_screenshot
+                take_screenshot,
+                get_page_metadata,
+                get_page_links,
+                get_page_images,
+                get_page_performance,
+                send_content_from_webviewjs
             ])
             .setup(|app| {
                 println!("🚀 SynapticFlow initializing...");
 
                 // Initialize Interactive Browser Server
                 let browser_server = InteractiveBrowserServer::new(app.handle().clone());
+
+                // Initialize global browser server for command access
+                crate::services::initialize_browser_server(InteractiveBrowserServer::new(
+                    app.handle().clone(),
+                ));
+
                 app.manage(browser_server);
                 println!("✅ Interactive Browser Server initialized");
 
