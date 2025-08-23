@@ -2,6 +2,7 @@ use crate::mcp::{MCPResponse, MCPTool};
 use async_trait::async_trait;
 use serde_json::Value;
 
+pub mod browser_agent_server;
 pub mod filesystem;
 pub mod sandbox;
 pub mod utils;
@@ -29,6 +30,22 @@ pub trait BuiltinMCPServer: Send + Sync {
     async fn call_tool(&self, tool_name: &str, args: Value) -> MCPResponse;
 }
 
+/// Create builtin servers with optional AppHandle for WebView functionality
+#[allow(dead_code)]
+pub fn create_builtin_servers(
+    app_handle: Option<tauri::AppHandle>,
+) -> Vec<std::sync::Arc<dyn BuiltinMCPServer>> {
+    let mut servers: Vec<std::sync::Arc<dyn BuiltinMCPServer>> = vec![
+        std::sync::Arc::new(filesystem::FilesystemServer::new()),
+        std::sync::Arc::new(sandbox::SandboxServer::new()),
+    ];
+
+    // Browser Agent server removed to prevent duplicate tools.
+    // Browser functionality now provided by frontend BrowserToolProvider.
+
+    servers
+}
+
 /// Built-in server registry
 pub struct BuiltinServerRegistry {
     servers: std::collections::HashMap<String, Box<dyn BuiltinMCPServer>>,
@@ -36,6 +53,10 @@ pub struct BuiltinServerRegistry {
 
 impl BuiltinServerRegistry {
     pub fn new() -> Self {
+        Self::with_app_handle(None)
+    }
+
+    pub fn with_app_handle(app_handle: Option<tauri::AppHandle>) -> Self {
         let mut registry = Self {
             servers: std::collections::HashMap::new(),
         };
@@ -43,6 +64,9 @@ impl BuiltinServerRegistry {
         // Register built-in servers
         registry.register_server(Box::new(filesystem::FilesystemServer::new()));
         registry.register_server(Box::new(sandbox::SandboxServer::new()));
+
+        // Browser Agent server removed to prevent duplicate tools.
+        // Browser functionality now provided by frontend BrowserToolProvider.
 
         registry
     }

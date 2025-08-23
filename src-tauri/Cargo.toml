@@ -39,4 +39,7 @@ async-trait = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
 walkdir = "2.4"
 glob = "0.3"
-
+sha2 = "0.10"
+html-escape = "0.2"
+warp = "0.3"
+dashmap = "5.5"

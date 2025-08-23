@@ -1,8 +1,15 @@
 use log::error;
 use std::sync::OnceLock;
+use tauri::Manager;
 use tauri_plugin_log::{Target, TargetKind};
+
+mod commands;
 mod mcp;
+mod services;
+
+use commands::browser_commands::*;
 use mcp::{MCPResponse, MCPServerConfig, MCPServerManager};
+use services::InteractiveBrowserServer;
 
 // 전역 MCP 서버 매니저
 static MCP_MANAGER: OnceLock<MCPServerManager> = OnceLock::new();
@@ -208,13 +215,13 @@ fn validate_tool_schema(tool: mcp::MCPTool) -> Result<(), String> {
 // Built-in MCP server commands
 
 #[tauri::command]
-fn list_builtin_servers() -> Vec<String> {
-    get_mcp_manager().list_builtin_servers()
+async fn list_builtin_servers() -> Vec<String> {
+    get_mcp_manager().list_builtin_servers().await
 }
 
 #[tauri::command]
-fn list_builtin_tools() -> Vec<mcp::MCPTool> {
-    get_mcp_manager().list_builtin_tools()
+async fn list_builtin_tools() -> Vec<mcp::MCPTool> {
+    get_mcp_manager().list_builtin_tools().await
 }
 
 #[tauri::command]
@@ -450,10 +457,40 @@ pub fn run() {
                 clear_current_log,
                 list_log_files,
                 read_file,
-                open_external_url
+                open_external_url,
+                // Interactive Browser commands
+                create_browser_session,
+                close_browser_session,
+                click_element,
+                input_text,
+                scroll_page,
+                get_current_url,
+                get_page_title,
+                element_exists,
+                list_browser_sessions,
+                navigate_to_url,
+                get_page_content,
+                take_screenshot,
+                browser_script_result,
+                execute_script,
+                poll_script_result
             ])
-            .setup(|_app| {
+            .setup(|app| {
                 println!("🚀 SynapticFlow initializing...");
+
+                // Initialize Interactive Browser Server
+                let browser_server = InteractiveBrowserServer::new(app.handle().clone());
+                app.manage(browser_server);
+                println!("✅ Interactive Browser Server initialized");
+
+                // Initialize builtin servers with AppHandle for Browser Agent support
+                let app_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    get_mcp_manager()
+                        .initialize_builtin_servers(Some(app_handle))
+                        .await;
+                    println!("✅ Builtin servers initialized with Browser Agent support");
+                });
 
                 // Verify WebView can be created safely
                 #[cfg(target_os = "linux")]

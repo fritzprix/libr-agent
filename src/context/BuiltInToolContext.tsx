@@ -27,7 +27,9 @@ interface BuiltInToolContextType {
   availableTools: MCPTool[];
   webWorkerTools: MCPTool[];
   tauriBuiltinTools: MCPTool[];
+  localTools: MCPTool[];
   isLoadingTauriTools: boolean;
+  registerLocalTools: (tools: MCPTool[]) => void;
   executeToolCall: (toolCall: {
     id: string;
     type: 'function';
@@ -48,6 +50,9 @@ function BuiltInToolProviderInternal({ children }: BuiltInToolProviderProps) {
   // Tauri built-in MCP 서버 상태 관리
   const [tauriBuiltinTools, setTauriBuiltinTools] = useState<MCPTool[]>([]);
   const [isLoadingTauriTools, setIsLoadingTauriTools] = useState(false);
+
+  // Local frontend tools state management
+  const [localTools, setLocalTools] = useState<MCPTool[]>([]);
 
   const servers: string[] = useMemo(
     () => Object.keys(serverStates),
@@ -85,6 +90,18 @@ function BuiltInToolProviderInternal({ children }: BuiltInToolProviderProps) {
     loadTauriBuiltinTools();
   }, []);
 
+  // Register local tools function
+  const registerLocalTools = useMemo(
+    () => (newTools: MCPTool[]) => {
+      logger.debug('Registering local tools', {
+        toolCount: newTools.length,
+        toolNames: newTools.map((t) => t.name),
+      });
+      setLocalTools((prev) => [...prev, ...newTools]);
+    },
+    [],
+  );
+
   // 통합된 tool 실행 함수
   const executeToolCall = useMemo(
     () =>
@@ -97,6 +114,51 @@ function BuiltInToolProviderInternal({ children }: BuiltInToolProviderProps) {
 
         try {
           const args = JSON.parse(toolCall.function.arguments);
+
+          // Check if this is a local tool
+          const localTool = localTools.find((tool) => tool.name === toolName);
+          if (localTool) {
+            logger.debug('Executing local tool', { toolName, args });
+            try {
+              // Execute the local tool's function
+              const toolWithExecute = localTool as MCPTool & {
+                execute?: (args: unknown) => Promise<unknown>;
+              };
+              const result = await toolWithExecute.execute?.(args);
+              return {
+                jsonrpc: '2.0',
+                id: toolCall.id,
+                result: {
+                  content: [
+                    {
+                      type: 'text',
+                      text:
+                        typeof result === 'string'
+                          ? result
+                          : JSON.stringify(result, null, 2),
+                    },
+                  ],
+                },
+              };
+            } catch (localError) {
+              logger.error('Local tool execution failed', {
+                toolName,
+                error: localError,
+              });
+              return {
+                jsonrpc: '2.0',
+                id: toolCall.id,
+                error: {
+                  code: -32603,
+                  message:
+                    localError instanceof Error
+                      ? localError.message
+                      : String(localError),
+                  data: { toolName, originalError: String(localError) },
+                },
+              };
+            }
+          }
 
           // Tauri built-in 서버 도구인지 확인 (builtin.로 시작)
           if (toolName.startsWith('builtin.')) {
@@ -190,21 +252,35 @@ function BuiltInToolProviderInternal({ children }: BuiltInToolProviderProps) {
           };
         }
       },
-    [tauriBuiltinTools, webWorkerMcptools, executeCall, executeRemoteTool],
+    [
+      localTools,
+      tauriBuiltinTools,
+      webWorkerMcptools,
+      executeCall,
+      executeRemoteTool,
+    ],
   );
 
   const contextValue: BuiltInToolContextType = useMemo(
     () => ({
-      availableTools: [...webWorkerMcptools, ...tauriBuiltinTools],
+      availableTools: [
+        ...webWorkerMcptools,
+        ...tauriBuiltinTools,
+        ...localTools,
+      ],
       webWorkerTools: webWorkerMcptools,
       tauriBuiltinTools,
+      localTools,
       isLoadingTauriTools,
+      registerLocalTools,
       executeToolCall,
     }),
     [
       webWorkerMcptools,
       tauriBuiltinTools,
+      localTools,
       isLoadingTauriTools,
+      registerLocalTools,
       executeToolCall,
     ],
   );

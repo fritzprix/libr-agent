@@ -210,15 +210,22 @@ pub struct MCPConnection {
 
 pub struct MCPServerManager {
     connections: Arc<Mutex<HashMap<String, MCPConnection>>>,
-    builtin_servers: Arc<builtin::BuiltinServerRegistry>,
+    builtin_servers: Arc<Mutex<Option<builtin::BuiltinServerRegistry>>>,
 }
 
 impl MCPServerManager {
     pub fn new() -> Self {
         Self {
             connections: Arc::new(Mutex::new(HashMap::new())),
-            builtin_servers: Arc::new(builtin::BuiltinServerRegistry::new()),
+            builtin_servers: Arc::new(Mutex::new(None)),
         }
+    }
+
+    /// Initialize builtin servers with AppHandle
+    pub async fn initialize_builtin_servers(&self, app_handle: Option<tauri::AppHandle>) {
+        let mut servers = self.builtin_servers.lock().await;
+        *servers = Some(builtin::BuiltinServerRegistry::with_app_handle(app_handle));
+        info!("Initialized builtin servers with AppHandle support");
     }
 
     /// MCP 서버를 시작하고 연결합니다
@@ -700,13 +707,21 @@ impl MCPServerManager {
     /// Built-in server methods
 
     /// List all available builtin servers
-    pub fn list_builtin_servers(&self) -> Vec<String> {
-        self.builtin_servers.list_servers()
+    pub async fn list_builtin_servers(&self) -> Vec<String> {
+        let servers = self.builtin_servers.lock().await;
+        match servers.as_ref() {
+            Some(registry) => registry.list_servers(),
+            None => Vec::new(),
+        }
     }
 
     /// List all tools from builtin servers
-    pub fn list_builtin_tools(&self) -> Vec<MCPTool> {
-        self.builtin_servers.list_all_tools()
+    pub async fn list_builtin_tools(&self) -> Vec<MCPTool> {
+        let servers = self.builtin_servers.lock().await;
+        match servers.as_ref() {
+            Some(registry) => registry.list_all_tools(),
+            None => Vec::new(),
+        }
     }
 
     /// Call a tool on a builtin server
@@ -721,10 +736,23 @@ impl MCPServerManager {
             server_name, tool_name, args
         );
 
-        let result = self
-            .builtin_servers
-            .call_tool(server_name, tool_name, args)
-            .await;
+        let servers = self.builtin_servers.lock().await;
+        let result = match servers.as_ref() {
+            Some(registry) => registry.call_tool(server_name, tool_name, args).await,
+            None => {
+                let request_id = serde_json::Value::String(Uuid::new_v4().to_string());
+                MCPResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id: Some(request_id),
+                    result: None,
+                    error: Some(MCPError {
+                        code: -32001,
+                        message: "Builtin servers not initialized".to_string(),
+                        data: None,
+                    }),
+                }
+            }
+        };
 
         debug!(
             "Builtin tool call result: success={}",
@@ -745,7 +773,7 @@ impl MCPServerManager {
         }
 
         // Get builtin server tools
-        let builtin_tools = self.list_builtin_tools();
+        let builtin_tools = self.list_builtin_tools().await;
         all_tools.extend(builtin_tools);
 
         Ok(all_tools)
