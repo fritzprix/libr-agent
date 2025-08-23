@@ -222,9 +222,9 @@ impl MCPServerManager {
     }
 
     /// Initialize builtin servers with AppHandle
-    pub async fn initialize_builtin_servers(&self, app_handle: Option<tauri::AppHandle>) {
+    pub async fn initialize_builtin_servers(&self) {
         let mut servers = self.builtin_servers.lock().await;
-        *servers = Some(builtin::BuiltinServerRegistry::with_app_handle(app_handle));
+        *servers = Some(builtin::BuiltinServerRegistry::with_app_handle());
         info!("Initialized builtin servers with AppHandle support");
     }
 

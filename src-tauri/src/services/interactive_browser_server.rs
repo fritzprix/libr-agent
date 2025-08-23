@@ -211,7 +211,10 @@ impl InteractiveBrowserServer {
             // Execute the wrapped script
             match window.eval(&wrapped_script) {
                 Ok(_) => {
-                    debug!("Script wrapper executed in session: {}, request_id: {}", session_id, request_id);
+                    debug!(
+                        "Script wrapper executed in session: {}, request_id: {}",
+                        session_id, request_id
+                    );
                     Ok(request_id) // Return request_id immediately
                 }
                 Err(e) => {
@@ -578,8 +581,16 @@ return false;
     }
 
     /// Handle script result from the browser (internal method for browser_script_result command)
-    pub fn handle_script_result(&self, session_id: &str, request_id: String, result: String) -> Result<(), String> {
-        debug!("Storing script result for session: {}, request_id: {}", session_id, request_id);
+    pub fn handle_script_result(
+        &self,
+        session_id: &str,
+        request_id: String,
+        result: String,
+    ) -> Result<(), String> {
+        debug!(
+            "Storing script result for session: {}, request_id: {}",
+            session_id, request_id
+        );
         self.script_results.insert(request_id, result);
         Ok(())
     }

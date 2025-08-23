@@ -1,9 +1,11 @@
 import { useEffect, useRef } from 'react';
 import { useBuiltInTools } from '@/context/BuiltInToolContext';
 import { useBrowserInvoker } from '@/hooks/use-browser-invoker';
+import { useRustBackend } from '@/hooks/use-rust-backend';
 import { MCPTool } from '@/lib/mcp-types';
 import { getLogger } from '@/lib/logger';
 import { invoke } from '@tauri-apps/api/core';
+import TurndownService from 'turndown';
 
 const logger = getLogger('BrowserToolProvider');
 
@@ -19,6 +21,7 @@ type LocalMCPTool = MCPTool & {
 export function BrowserToolProvider() {
   const { registerLocalTools } = useBuiltInTools();
   const { executeScript } = useBrowserInvoker();
+  const { writeFile } = useRustBackend();
   const hasRegistered = useRef(false);
 
   useEffect(() => {
@@ -96,7 +99,7 @@ export function BrowserToolProvider() {
       },
       {
         name: 'browser_getPageContent',
-        description: 'Gets the full HTML content of the current browser page.',
+        description: 'Extracts clean content from the page as Markdown, and saves the raw HTML to a temporary file for reference.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -110,7 +113,63 @@ export function BrowserToolProvider() {
         execute: async (args: Record<string, unknown>) => {
           const { sessionId } = args as { sessionId: string };
           logger.debug('Executing browser_getPageContent', { sessionId });
-          return executeScript(sessionId, 'document.documentElement.outerHTML');
+          
+          try {
+            // 1. Extract Raw HTML using injection script
+            const rawHtml = await executeScript(sessionId, 'document.documentElement.outerHTML');
+            if (!rawHtml || typeof rawHtml !== 'string') {
+              return JSON.stringify({ error: "Failed to get raw HTML from the page." });
+            }
+
+            // 2. Convert HTML to Markdown using Turndown
+            const turndownService = new TurndownService({ 
+              headingStyle: 'atx', 
+              codeBlockStyle: 'fenced',
+              bulletListMarker: '-',
+              emDelimiter: '*'
+            });
+            
+            // Configure Turndown to handle common HTML elements better
+            turndownService.addRule('removeScripts', {
+              filter: ['script', 'style', 'noscript'],
+              replacement: () => ''
+            });
+
+            turndownService.addRule('preserveLineBreaks', {
+              filter: 'br',
+              replacement: () => '\n'
+            });
+
+            const markdownContent = turndownService.turndown(rawHtml);
+
+            // 3. Save Raw HTML file using SecureFileManager
+            const tempDir = 'temp_html';
+            const uniqueId = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+            const relativePath = `${tempDir}/${uniqueId}.html`;
+            
+            // Convert string to Uint8Array for writeFile
+            const encoder = new TextEncoder();
+            const htmlBytes = Array.from(encoder.encode(rawHtml));
+            
+            await writeFile(relativePath, htmlBytes);
+
+            // 4. Return structured response
+            return JSON.stringify({
+              content: markdownContent,
+              saved_raw_html: relativePath,
+              metadata: {
+                extraction_timestamp: new Date().toISOString(),
+                content_length: markdownContent.length,
+                raw_html_size: rawHtml.length
+              }
+            }, null, 2);
+
+          } catch (error) {
+            logger.error('Error in browser_getPageContent:', error);
+            return JSON.stringify({ 
+              error: `Failed to process page content: ${error instanceof Error ? error.message : String(error)}` 
+            });
+          }
         },
       },
       {
@@ -479,7 +538,7 @@ export function BrowserToolProvider() {
     hasRegistered.current = true;
 
     logger.debug('Browser tools registered successfully');
-  }, [registerLocalTools, executeScript]);
+  }, [registerLocalTools, executeScript, writeFile]);
 
   // This is a provider component, it doesn't render anything
   return null;

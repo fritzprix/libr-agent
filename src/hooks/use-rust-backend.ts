@@ -156,6 +156,10 @@ export const useRustBackend = () => {
     return safeInvoke<number[]>('read_file', { filePath });
   };
 
+  const writeFile = async (filePath: string, content: number[]): Promise<void> => {
+    return safeInvoke<void>('write_file', { filePath, content });
+  };
+
   // Log Management
   const getAppLogsDir = async (): Promise<string> => {
     return safeInvoke<string>('get_app_logs_dir');
@@ -208,6 +212,7 @@ export const useRustBackend = () => {
 
     // File System Operations
     readFile,
+    writeFile,
 
     // Log Management
     getAppLogsDir,

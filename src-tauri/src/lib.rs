@@ -9,7 +9,7 @@ mod services;
 
 use commands::browser_commands::*;
 use mcp::{MCPResponse, MCPServerConfig, MCPServerManager};
-use services::InteractiveBrowserServer;
+use services::{InteractiveBrowserServer, SecureFileManager};
 
 // 전역 MCP 서버 매니저
 static MCP_MANAGER: OnceLock<MCPServerManager> = OnceLock::new();
@@ -346,23 +346,20 @@ async fn list_log_files() -> Result<Vec<String>, String> {
 }
 
 #[tauri::command]
-async fn read_file(file_path: String) -> Result<Vec<u8>, String> {
-    use std::fs;
-    use std::path::Path;
+async fn read_file(
+    file_path: String,
+    manager: tauri::State<'_, SecureFileManager>,
+) -> Result<Vec<u8>, String> {
+    manager.read_file(&file_path).await
+}
 
-    let path = Path::new(&file_path);
-
-    // Security check: ensure the file exists and is accessible
-    if !path.exists() {
-        return Err(format!("File does not exist: {}", file_path));
-    }
-
-    if !path.is_file() {
-        return Err(format!("Path is not a file: {}", file_path));
-    }
-
-    // Read the file contents
-    fs::read(path).map_err(|e| format!("Failed to read file {}: {}", file_path, e))
+#[tauri::command]
+async fn write_file(
+    file_path: String,
+    content: Vec<u8>,
+    manager: tauri::State<'_, SecureFileManager>,
+) -> Result<(), String> {
+    manager.write_file(&file_path, &content).await
 }
 
 #[tauri::command]
@@ -457,6 +454,7 @@ pub fn run() {
                 clear_current_log,
                 list_log_files,
                 read_file,
+                write_file,
                 open_external_url,
                 // Interactive Browser commands
                 create_browser_session,
@@ -478,17 +476,19 @@ pub fn run() {
             .setup(|app| {
                 println!("🚀 SynapticFlow initializing...");
 
+                // Initialize SecureFileManager
+                let file_manager = SecureFileManager::new();
+                app.manage(file_manager);
+                println!("✅ SecureFileManager initialized");
+
                 // Initialize Interactive Browser Server
                 let browser_server = InteractiveBrowserServer::new(app.handle().clone());
                 app.manage(browser_server);
                 println!("✅ Interactive Browser Server initialized");
 
                 // Initialize builtin servers with AppHandle for Browser Agent support
-                let app_handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
-                    get_mcp_manager()
-                        .initialize_builtin_servers(Some(app_handle))
-                        .await;
+                    get_mcp_manager().initialize_builtin_servers().await;
                     println!("✅ Builtin servers initialized with Browser Agent support");
                 });
 
