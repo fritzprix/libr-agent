@@ -6,11 +6,11 @@ use serde::{Deserialize, Serialize};
 
 use std::collections::HashMap;
 
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 
 use tauri::{AppHandle, Listener, Manager, WebviewUrl, WebviewWindowBuilder};
 
-use tokio::sync::oneshot;
+use dashmap::DashMap;
 
 use uuid::Uuid;
 
@@ -51,7 +51,7 @@ pub struct InteractiveBrowserServer {
 
     sessions: Arc<RwLock<HashMap<String, BrowserSession>>>,
 
-    result_waiters: Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>,
+    script_results: Arc<DashMap<String, String>>,
 }
 
 impl InteractiveBrowserServer {
@@ -63,7 +63,7 @@ impl InteractiveBrowserServer {
 
             sessions: Arc::new(RwLock::new(HashMap::new())),
 
-            result_waiters: Arc::new(Mutex::new(HashMap::new())),
+            script_results: Arc::new(DashMap::new()),
         }
     }
 
@@ -158,7 +158,7 @@ impl InteractiveBrowserServer {
         Ok(session_id)
     }
 
-    /// Execute JavaScript in a browser session and return the result
+    /// Execute JavaScript in a browser session and return request_id for polling
 
     pub async fn execute_script(&self, session_id: &str, script: &str) -> Result<String, String> {
         debug!("Executing script in session {}: {}", session_id, script);
@@ -176,25 +176,10 @@ impl InteractiveBrowserServer {
         };
 
         if let Some(window) = self.app_handle.get_webview_window(&session.window_label) {
-            // Create oneshot channel for result
+            // Generate unique request ID
+            let request_id = Uuid::new_v4().to_string();
 
-            let (tx, rx) = oneshot::channel();
-
-            // Store the sender in result_waiters
-
-            {
-                let mut waiters = self
-                    .result_waiters
-                    .lock()
-                    .map_err(|e| format!("Failed to acquire result_waiters lock: {}", e))?;
-
-                waiters.insert(session_id.to_string(), tx);
-            }
-
-            // Inject JS that calls window.__TAURI_INTERNALS__.invoke
-
-            // ...
-            // Inject JS that calls window.__TAURI_INTERNALS__.invoke
+            // Inject JS that calls window.__TAURI__.core.invoke with request_id
             let wrapped_script = format!(
                 r#"
 (async function() {{
@@ -204,14 +189,14 @@ impl InteractiveBrowserServer {
             ? 'null' 
             : (typeof result === 'object' ? JSON.stringify(result) : String(result));
         
-        const payload = {{ sessionId: '{session_id}', result: resultStr }};
+        const payload = {{ sessionId: '{session_id}', requestId: '{request_id}', result: resultStr }};
 
         console.log('[TAURI INJECTION] Sending to browser_script_result:', payload);
         window.__TAURI__.core.invoke('browser_script_result', {{ payload }});
     }} catch (error) {{
         const errorStr = 'Error: ' + error.message;
 
-        const payload = {{ sessionId: '{session_id}', result: errorStr }};
+        const payload = {{ sessionId: '{session_id}', requestId: '{request_id}', result: errorStr }};
 
         console.log('[TAURI INJECTION] Sending to browser_script_result (error):', payload);
         window.__TAURI__.core.invoke('browser_script_result', {{ payload }});
@@ -219,71 +204,26 @@ impl InteractiveBrowserServer {
 }})();
 "#,
                 script = script,
-                session_id = session_id
+                session_id = session_id,
+                request_id = request_id
             );
 
             // Execute the wrapped script
-
             match window.eval(&wrapped_script) {
                 Ok(_) => {
-                    debug!("Script wrapper executed in session: {}", session_id);
-
-                    // Wait for result (with timeout)
-
-                    match tokio::time::timeout(std::time::Duration::from_secs(5), rx).await {
-                        Ok(Ok(result)) => {
-                            debug!(
-                                "Received script result for session {}: {}",
-                                session_id, result
-                            );
-
-                            Ok(result)
-                        }
-
-                        Ok(Err(_)) => {
-                            error!(
-                                "Channel closed before result received for session {}",
-                                session_id
-                            );
-
-                            Err("Channel closed before result received".to_string())
-                        }
-
-                        Err(_) => {
-                            error!(
-                                "Timeout waiting for script result in session {}",
-                                session_id
-                            );
-
-                            // Clean up the orphaned waiter
-
-                            if let Ok(mut waiters) = self.result_waiters.lock() {
-                                waiters.remove(session_id);
-                            }
-
-                            Err("Timeout waiting for script result".to_string())
-                        }
-                    }
+                    debug!("Script wrapper executed in session: {}, request_id: {}", session_id, request_id);
+                    Ok(request_id) // Return request_id immediately
                 }
-
                 Err(e) => {
                     error!(
                         "Failed to execute script wrapper in session {}: {}",
                         session_id, e
                     );
-
-                    // Clean up the waiter if script execution failed
-
-                    if let Ok(mut waiters) = self.result_waiters.lock() {
-                        waiters.remove(session_id);
-                    }
-
                     Err(format!("Failed to execute script: {}", e))
                 }
             }
         } else {
             error!("Browser window not found for session: {}", session_id);
-
             Err("Browser window not found".to_string())
         }
     }
@@ -627,25 +567,20 @@ return false;
         Err("Screenshot functionality not yet implemented".to_string())
     }
 
-    /// Handle script result from the browser (internal method for browser_script_result command)
-    pub fn handle_script_result(&self, session_id: &str, result: String) -> Result<(), String> {
-        if let Ok(mut waiters) = self.result_waiters.lock() {
-            if let Some(tx) = waiters.remove(session_id) {
-                if tx.send(result).is_err() {
-                    debug!(
-                        "Receiver for session {} dropped, likely due to timeout.",
-                        session_id
-                    );
-                }
-            } else {
-                debug!(
-                    "No waiting channel for session {} (likely timed out).",
-                    session_id
-                );
-            }
+    /// Poll for script result using request_id
+    pub async fn poll_script_result(&self, request_id: &str) -> Result<Option<String>, String> {
+        if let Some((_key, result)) = self.script_results.remove(request_id) {
+            debug!("Retrieved script result for request_id: {}", request_id);
+            Ok(Some(result))
         } else {
-            return Err("Failed to acquire lock on result_waiters.".to_string());
+            Ok(None)
         }
+    }
+
+    /// Handle script result from the browser (internal method for browser_script_result command)
+    pub fn handle_script_result(&self, session_id: &str, request_id: String, result: String) -> Result<(), String> {
+        debug!("Storing script result for session: {}, request_id: {}", session_id, request_id);
+        self.script_results.insert(request_id, result);
         Ok(())
     }
 }

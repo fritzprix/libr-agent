@@ -24,6 +24,32 @@ impl BrowserAgentServer {
         Self { browser_server }
     }
 
+    /// Execute script with polling mechanism for MCP tools (backend polling)
+    async fn execute_script_with_polling(&self, session_id: &str, script: &str) -> Result<String, String> {
+        // Get request_id from the new non-blocking execute_script
+        let request_id = self.browser_server.execute_script(session_id, script).await?;
+        
+        // Poll for result with timeout
+        const POLLING_INTERVAL_MS: u64 = 100;
+        const TIMEOUT_MS: u64 = 10000;
+        let start_time = std::time::Instant::now();
+        
+        loop {
+            if start_time.elapsed().as_millis() > TIMEOUT_MS as u128 {
+                return Err("Timeout waiting for script result".to_string());
+            }
+            
+            // Poll for result
+            match self.browser_server.poll_script_result(&request_id).await? {
+                Some(result) => return Ok(result),
+                None => {
+                    // Wait before next poll
+                    tokio::time::sleep(tokio::time::Duration::from_millis(POLLING_INTERVAL_MS)).await;
+                }
+            }
+        }
+    }
+
     /// Get the base directory compatible with SecurityValidator
     fn get_base_dir() -> PathBuf {
         if let Ok(root) = std::env::var("SYNAPTICFLOW_PROJECT_ROOT") {
@@ -243,7 +269,7 @@ impl BrowserAgentServer {
             }
         };
 
-        match self.browser_server.execute_script(session_id, script).await {
+        match self.execute_script_with_polling(session_id, script).await {
             Ok(result) => {
                 // Try to parse result as JSON, fallback to string
                 let parsed_result = match serde_json::from_str::<Value>(&result) {
@@ -679,8 +705,7 @@ impl BrowserAgentServer {
             );
 
             match self
-                .browser_server
-                .execute_script(session_id, &script)
+                .execute_script_with_polling(session_id, &script)
                 .await
             {
                 Ok(result) => {
@@ -1287,25 +1312,29 @@ impl BuiltinMCPServer for BrowserAgentServer {
 
     fn tools(&self) -> Vec<MCPTool> {
         vec![
+            // Keep advanced crawling and data extraction tools (unique functionality)
             self.create_crawl_current_page_tool(),
-            self.create_screenshot_tool(),
+            self.create_screenshot_tool(), 
             self.create_extract_data_tool(),
-            self.create_browser_session_tool(),
-            self.create_click_element_tool(),
-            self.create_input_text_tool(),
-            self.create_navigate_url_tool(),
+            // Removed duplicate basic browser tools:
+            // - create_browser_session (available via direct Tauri commands)
+            // - click_element (available as browser_clickElement via frontend)
+            // - input_text (available as browser_inputText via frontend) 
+            // - navigate_url (available via direct Tauri commands)
         ]
     }
 
     async fn call_tool(&self, tool_name: &str, args: Value) -> MCPResponse {
         match tool_name {
+            // Keep only unique/advanced browser tools
             "crawl_current_page" => self.handle_crawl_current_page(args).await,
             "screenshot" => self.handle_screenshot(args).await,
             "extract_data" => self.handle_extract_data(args).await,
-            "create_browser_session" => self.handle_create_browser_session(args).await,
-            "click_element" => self.handle_click_element(args).await,
-            "input_text" => self.handle_input_text(args).await,
-            "navigate_url" => self.handle_navigate_url(args).await,
+            // Removed duplicate tool handlers:
+            // "create_browser_session" => self.handle_create_browser_session(args).await,
+            // "click_element" => self.handle_click_element(args).await, 
+            // "input_text" => self.handle_input_text(args).await,
+            // "navigate_url" => self.handle_navigate_url(args).await,
             _ => {
                 let request_id = Value::String(Uuid::new_v4().to_string());
                 MCPResponse {

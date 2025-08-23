@@ -24,6 +24,7 @@ import './App.css';
 import AssistantList from '@/features/assistant/List';
 import { ResourceAttachmentProvider } from '@/context/ResourceAttachmentContext';
 import { BuiltInToolProvider } from '@/context/BuiltInToolContext';
+import { BrowserToolProvider } from '@/features/tools/BrowserToolProvider';
 
 function App() {
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
@@ -34,6 +35,7 @@ function App() {
         <WebMCPProvider servers={['content-store']} autoLoad={true}>
           <MCPServerProvider>
             <BuiltInToolProvider>
+              <BrowserToolProvider />
               <AssistantGroupProvider>
                 <AssistantContextProvider>
                   <SessionContextProvider>

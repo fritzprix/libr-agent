@@ -40,12 +40,8 @@ pub fn create_builtin_servers(
         std::sync::Arc::new(sandbox::SandboxServer::new()),
     ];
 
-    // Add Browser Agent server only if AppHandle is available
-    if let Some(handle) = app_handle {
-        servers.push(std::sync::Arc::new(
-            browser_agent_server::BrowserAgentServer::new(handle),
-        ));
-    }
+    // Browser Agent server removed to prevent duplicate tools.
+    // Browser functionality now provided by frontend BrowserToolProvider.
 
     servers
 }
@@ -69,12 +65,8 @@ impl BuiltinServerRegistry {
         registry.register_server(Box::new(filesystem::FilesystemServer::new()));
         registry.register_server(Box::new(sandbox::SandboxServer::new()));
 
-        // Add Browser Agent server only if AppHandle is available
-        if let Some(handle) = app_handle {
-            registry.register_server(Box::new(browser_agent_server::BrowserAgentServer::new(
-                handle,
-            )));
-        }
+        // Browser Agent server removed to prevent duplicate tools.
+        // Browser functionality now provided by frontend BrowserToolProvider.
 
         registry
     }

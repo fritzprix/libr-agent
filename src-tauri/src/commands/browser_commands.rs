@@ -287,19 +287,57 @@ pub async fn take_screenshot(
 pub struct BrowserScriptPayload {
     #[serde(rename = "sessionId")]
     session_id: String,
+    #[serde(rename = "requestId")]
+    request_id: String,
     result: String,
 }
 
 #[tauri::command]
-/// Receives the JS execution result from the webview and wakes the waiting Rust future.
+/// Receives the JS execution result from the webview and stores it for polling.
 pub async fn browser_script_result(
     payload: BrowserScriptPayload,
     server: State<'_, InteractiveBrowserServer>,
 ) -> Result<(), String> {
     debug!(
-        "Received script result for session {}: {}",
-        payload.session_id, payload.result
+        "Received script result for session {}, request_id {}: {}",
+        payload.session_id, payload.request_id, payload.result
     );
 
-    server.handle_script_result(&payload.session_id, payload.result)
+    server.handle_script_result(&payload.session_id, payload.request_id, payload.result)
+}
+
+#[tauri::command]
+/// Execute JavaScript in a browser session and return request_id for polling
+pub async fn execute_script(
+    server: State<'_, InteractiveBrowserServer>,
+    session_id: String,
+    script: String,
+) -> Result<String, String> {
+    debug!(
+        "Command: execute_script called for session: {}, script length: {}",
+        session_id,
+        script.len()
+    );
+
+    match server.execute_script(&session_id, &script).await {
+        Ok(request_id) => {
+            debug!("Script execution initiated, request_id: {}", request_id);
+            Ok(request_id)
+        }
+        Err(e) => {
+            error!("Failed to execute script in session {}: {}", session_id, e);
+            Err(e)
+        }
+    }
+}
+
+#[tauri::command]
+/// Poll for a script result using request_id
+pub async fn poll_script_result(
+    server: State<'_, InteractiveBrowserServer>,
+    request_id: String,
+) -> Result<Option<String>, String> {
+    debug!("Polling for script result with request_id: {}", request_id);
+
+    server.poll_script_result(&request_id).await
 }
