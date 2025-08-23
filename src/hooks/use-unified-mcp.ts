@@ -14,58 +14,54 @@ interface ToolCall {
   function: { name: string; arguments: string };
 }
 
-type BackendType = 'tauri' | 'web' | 'builtin';
+type BackendType = 'ExternalMCP' | 'BuiltInWeb' | 'BuiltInRust';
 
-/**
- * 🔧 Unified MCP Hook
- *
- * Integrates Tauri-based MCP servers, Web Worker MCP tools, and Tauri builtin tools
- * into a single interface for tool execution.
- */
 export const useUnifiedMCP = () => {
-  const { executeToolCall: executeTauriTool, availableTools: tauriTools } =
+  const { executeToolCall: executeExternalMCP, availableTools: externalTools } =
     useMCPServer();
   const {
-    executeCall: executeWebTool,
-    availableTools: webTools,
+    executeCall: executeWebBuiltinTool,
+    availableTools: webBuiltInTool,
     isInitialized: isWebReady,
   } = useWebMCPTools();
-  const { executeToolCall: executeBuiltinTool, availableTools: builtinTools } =
-    useBuiltInTools();
+  const {
+    executeToolCall: executeRustBuiltinTool,
+    availableTools: rustBuiltinTools,
+  } = useBuiltInTools();
 
   // Create lookup map for fast tool type resolution
   const toolTypeMap = useMemo((): Map<string, BackendType> => {
     const map = new Map<string, BackendType>();
 
-    // Add Tauri tools
-    tauriTools.forEach((tool: MCPTool) => {
-      map.set(tool.name, 'tauri');
+    // Add external tools
+    externalTools.forEach((tool: MCPTool) => {
+      map.set(tool.name, 'ExternalMCP');
     });
 
     // Add Web Worker tools
-    webTools.forEach((tool: MCPTool) => {
-      map.set(tool.name, 'web');
+    webBuiltInTool.forEach((tool: MCPTool) => {
+      map.set(tool.name, 'BuiltInWeb');
     });
 
     // Add Builtin tools
-    builtinTools.forEach((tool: MCPTool) => {
-      map.set(tool.name, 'builtin');
+    rustBuiltinTools.forEach((tool: MCPTool) => {
+      map.set(tool.name, 'BuiltInRust');
     });
 
     logger.debug('Tool type map created', {
-      tauriCount: tauriTools.length,
-      webCount: webTools.length,
-      builtinCount: builtinTools.length,
+      externalTools: externalTools.length,
+      webworkerBuiltinCount: webBuiltInTool.length,
+      rustBuiltinCount: rustBuiltinTools.length,
       totalMapped: map.size,
     });
 
     return map;
-  }, [tauriTools, webTools, builtinTools]);
+  }, [externalTools, webBuiltInTool, rustBuiltinTools]);
 
   // Combine all available tools (include builtin tools)
   const allTools = useMemo(() => {
-    return [...tauriTools, ...webTools, ...builtinTools];
-  }, [tauriTools, webTools, builtinTools]);
+    return [...externalTools, ...webBuiltInTool, ...rustBuiltinTools];
+  }, [externalTools, webBuiltInTool, rustBuiltinTools]);
 
   // Get tool namespace and type from prefixed tool name
   const getToolNamespace = useCallback((toolName: string): string => {
@@ -81,15 +77,9 @@ export const useUnifiedMCP = () => {
         return calledToolName;
       }
 
-      // 2. Check if it's already namespaced correctly
-      const namespace = getToolNamespace(calledToolName);
-      if (namespace !== 'unknown') {
-        return calledToolName;
-      }
-
-      // 3. Look for tools that end with the called name (LLM using base name)
+      // 2. Look for tools that end with the called name (LLM using base name)
       for (const [registeredName, type] of toolTypeMap.entries()) {
-        if (type === 'web' || type === 'tauri') {
+        if (type === 'ExternalMCP') {
           // Check server__toolName pattern
           const parts = registeredName.split('__');
           if (parts.length >= 2) {
@@ -105,8 +95,8 @@ export const useUnifiedMCP = () => {
           }
         }
         // For builtin tools like "builtin.filesystem__read_file"
-        // should match when LLM calls "read_file" 
-        if (type === 'builtin') {
+        // should match when LLM calls "read_file"
+        if (type === 'BuiltInWeb' || type === 'BuiltInRust') {
           const nameWithoutPrefix = registeredName.replace(/^builtin\./, '');
           const parts = nameWithoutPrefix.split('__');
           if (parts.length >= 2) {
@@ -133,24 +123,16 @@ export const useUnifiedMCP = () => {
     [toolTypeMap, getToolNamespace],
   );
 
-  // Fast tool type lookup using the pre-built map and namespace prefixes
   const getToolType = useCallback(
     (toolName: string): BackendType | null => {
-      const namespace = getToolNamespace(toolName);
-      if (namespace === 'builtin') return 'builtin';
-      if (namespace === 'external') {
-        // For external tools, check if they're web worker or tauri based on the lookup map
-        return toolTypeMap.get(toolName) || 'tauri'; // Default external tools to tauri
-      }
-      return toolTypeMap.get(toolName) || null;
-    },
-    [toolTypeMap, getToolNamespace],
-  );
+      // Prefer direct lookup from the pre-built map
+      const direct = toolTypeMap.get(toolName);
+      if (direct) return direct;
 
-  // Determine if a tool is a web worker tool (optimized with lookup)
-  const isWebWorkerTool = useCallback(
-    (toolName: string): boolean => {
-      return toolTypeMap.get(toolName) === 'web';
+      // Fallback: infer builtin by prefix, otherwise unknown
+      if (!toolName.startsWith('builtin.')) return 'ExternalMCP';
+
+      return null;
     },
     [toolTypeMap],
   );
@@ -167,16 +149,19 @@ export const useUnifiedMCP = () => {
   const executeToolCall = useCallback(
     async (toolCall: ToolCall): Promise<MCPResponse> => {
       const calledToolName = toolCall.function.name;
-      
+
       // Resolve the tool name to handle LLM calling base names instead of prefixed names
       const resolvedToolName = resolveToolName(calledToolName);
-      
+
       if (!resolvedToolName) {
         const namespace = getToolNamespace(calledToolName);
-        logger.warn(`Could not resolve tool: ${calledToolName} (namespace: ${namespace})`, {
-          availableTools: Array.from(toolTypeMap.keys()),
-          detectedNamespace: namespace,
-        });
+        logger.warn(
+          `Could not resolve tool: ${calledToolName} (namespace: ${namespace})`,
+          {
+            availableTools: Array.from(toolTypeMap.keys()),
+            detectedNamespace: namespace,
+          },
+        );
         return {
           jsonrpc: '2.0',
           id: toolCall.id,
@@ -194,7 +179,9 @@ export const useUnifiedMCP = () => {
 
       const toolType = getToolType(resolvedToolName);
       if (!toolType) {
-        logger.error(`Resolved tool name has no type mapping: ${resolvedToolName}`);
+        logger.error(
+          `Resolved tool name has no type mapping: ${resolvedToolName}`,
+        );
         return {
           jsonrpc: '2.0',
           id: toolCall.id,
@@ -206,7 +193,10 @@ export const useUnifiedMCP = () => {
         };
       }
 
-      logger.info(`Executing ${toolType} tool: ${resolvedToolName} (called as: ${calledToolName})`, { toolCall });
+      logger.info(
+        `Executing ${toolType} tool: ${resolvedToolName} (called as: ${calledToolName})`,
+        { toolCall },
+      );
 
       // Use the resolved tool name for execution
       const actualToolCall = {
@@ -218,10 +208,10 @@ export const useUnifiedMCP = () => {
       };
 
       try {
-        if (toolType === 'web') {
+        if (toolType === 'BuiltInWeb') {
           // Execute web worker tool
           const args = JSON.parse(actualToolCall.function.arguments);
-          const result = await executeWebTool(resolvedToolName, args);
+          const result = await executeWebBuiltinTool(resolvedToolName, args);
 
           // Check if result is already MCPResponse
           if (
@@ -271,12 +261,10 @@ export const useUnifiedMCP = () => {
               ],
             },
           };
-        } else if (toolType === 'builtin') {
-          // Execute Tauri builtin tool
-          return await executeBuiltinTool(toolCall);
+        } else if (toolType === 'BuiltInRust') {
+          return await executeRustBuiltinTool(actualToolCall);
         } else {
-          // Execute Tauri MCP tool
-          return await executeTauriTool(toolCall);
+          return await executeExternalMCP(actualToolCall);
         }
       } catch (error) {
         logger.error(`Tool execution failed for ${resolvedToolName}:`, error);
@@ -303,9 +291,9 @@ export const useUnifiedMCP = () => {
     [
       getToolType,
       getToolNamespace,
-      executeWebTool,
-      executeTauriTool,
-      executeBuiltinTool,
+      executeExternalMCP,
+      executeRustBuiltinTool,
+      executeWebBuiltinTool,
       toolTypeMap,
     ],
   );
@@ -321,20 +309,20 @@ export const useUnifiedMCP = () => {
   // Get tools by type using the lookup map
   const getToolsByType = useCallback(() => {
     const result = {
-      tauri: [] as MCPTool[],
-      web: [] as MCPTool[],
-      builtin: [] as MCPTool[],
+      externalMcpServer: [] as MCPTool[],
+      webBuiltIn: [] as MCPTool[],
+      rustBuiltIn: [] as MCPTool[],
       all: allTools,
     };
 
     allTools.forEach((tool) => {
       const type = toolTypeMap.get(tool.name);
-      if (type === 'tauri') {
-        result.tauri.push(tool);
-      } else if (type === 'web') {
-        result.web.push(tool);
-      } else if (type === 'builtin') {
-        result.builtin.push(tool);
+      if (type === 'ExternalMCP') {
+        result.externalMcpServer.push(tool);
+      } else if (type === 'BuiltInWeb') {
+        result.webBuiltIn.push(tool);
+      } else if (type === 'BuiltInRust') {
+        result.rustBuiltIn.push(tool);
       }
     });
 
@@ -344,21 +332,21 @@ export const useUnifiedMCP = () => {
   // Get tool type statistics
   const getToolStats = useCallback(() => {
     const stats: {
-      tauri: number;
-      web: number;
-      builtin: number;
+      external: number;
+      webBuiltIn: number;
+      rustBuiltin: number;
       total: number;
     } = {
-      tauri: 0,
-      web: 0,
-      builtin: 0,
+      external: 0,
+      webBuiltIn: 0,
+      rustBuiltin: 0,
       total: toolTypeMap.size,
     };
 
     toolTypeMap.forEach((type) => {
-      if (type === 'tauri') stats.tauri++;
-      else if (type === 'web') stats.web++;
-      else if (type === 'builtin') stats.builtin++;
+      if (type === 'ExternalMCP') stats.external++;
+      else if (type === 'BuiltInWeb') stats.webBuiltIn++;
+      else if (type === 'BuiltInRust') stats.rustBuiltin++;
     });
 
     return stats;
@@ -378,7 +366,6 @@ export const useUnifiedMCP = () => {
     // Type checking (optimized)
     getToolType,
     getToolNamespace,
-    isWebWorkerTool,
 
     // Lookup map (for debugging/inspection)
     toolTypeMap,
