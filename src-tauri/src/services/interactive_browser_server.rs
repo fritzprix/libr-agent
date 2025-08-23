@@ -207,14 +207,14 @@ impl InteractiveBrowserServer {
         const payload = {{ sessionId: '{session_id}', result: resultStr }};
 
         console.log('[TAURI INJECTION] Sending to browser_script_result:', payload);
-        window.__TAURI_INTERNALS__.invoke('browser_script_result', {{ payload }});
+        window.__TAURI__.core.invoke('browser_script_result', {{ payload }});
     }} catch (error) {{
         const errorStr = 'Error: ' + error.message;
 
         const payload = {{ sessionId: '{session_id}', result: errorStr }};
 
         console.log('[TAURI INJECTION] Sending to browser_script_result (error):', payload);
-        window.__TAURI_INTERNALS__.invoke('browser_script_result', {{ payload }});
+        window.__TAURI__.core.invoke('browser_script_result', {{ payload }});
     }}
 }})();
 "#,

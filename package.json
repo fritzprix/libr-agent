@@ -31,9 +31,6 @@
     "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,json,css,scss,md}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,js,jsx,json,css,scss,md}\"",
     "tauri": "tauri",
-    "tauri:dev": "./run-safe.sh dev",
-    "tauri:build": "./run-safe.sh build",
-    "tauri:dev-unsafe": "tauri dev",
     "diagnose": "echo 'System diagnostic...' && ldd --version && echo 'WebKit packages:' && dpkg -l | grep webkit"
   },
   "dependencies": {
