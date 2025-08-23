@@ -1,6 +1,6 @@
 import { Message, ToolCall } from '@/models/chat';
 import { createId } from '@paralleldrive/cuid2';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AIServiceConfig, AIServiceFactory } from '../lib/ai-service';
 import { getLogger } from '../lib/logger';
 import { useSettings } from './use-settings';
@@ -9,6 +9,7 @@ import { prepareMessagesForLLM } from '../lib/message-preprocessor';
 const logger = getLogger('useAIService');
 
 const DEFAULT_SYSTEM_PROMPT = 'You are a helpful assistant.';
+
 
 export const useAIService = (config?: AIServiceConfig) => {
   const {
@@ -20,6 +21,9 @@ export const useAIService = (config?: AIServiceConfig) => {
   const [response, setResponse] = useState<Message | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  useEffect(()  => {
+    logger.info('use_ai_service:', { config: config?.tools });
+  }, []);
   const serviceInstance = useMemo(
     () =>
       AIServiceFactory.getService(provider, apiKeys[provider], {

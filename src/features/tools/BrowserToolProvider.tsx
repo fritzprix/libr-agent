@@ -36,7 +36,8 @@ export function BrowserToolProvider() {
     const browserTools: LocalMCPTool[] = [
       {
         name: 'browser_createSession',
-        description: 'Creates a new interactive browser session in a separate window.',
+        description:
+          'Creates a new interactive browser session in a separate window.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -99,7 +100,8 @@ export function BrowserToolProvider() {
       },
       {
         name: 'browser_getPageContent',
-        description: 'Extracts clean content from the page as Markdown, and saves the raw HTML to a temporary file for reference.',
+        description:
+          'Extracts clean content from the page as Markdown, and saves the raw HTML to a temporary file for reference.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -113,31 +115,36 @@ export function BrowserToolProvider() {
         execute: async (args: Record<string, unknown>) => {
           const { sessionId } = args as { sessionId: string };
           logger.debug('Executing browser_getPageContent', { sessionId });
-          
+
           try {
             // 1. Extract Raw HTML using injection script
-            const rawHtml = await executeScript(sessionId, 'document.documentElement.outerHTML');
+            const rawHtml = await executeScript(
+              sessionId,
+              'document.documentElement.outerHTML',
+            );
             if (!rawHtml || typeof rawHtml !== 'string') {
-              return JSON.stringify({ error: "Failed to get raw HTML from the page." });
+              return JSON.stringify({
+                error: 'Failed to get raw HTML from the page.',
+              });
             }
 
             // 2. Convert HTML to Markdown using Turndown
-            const turndownService = new TurndownService({ 
-              headingStyle: 'atx', 
+            const turndownService = new TurndownService({
+              headingStyle: 'atx',
               codeBlockStyle: 'fenced',
               bulletListMarker: '-',
-              emDelimiter: '*'
+              emDelimiter: '*',
             });
-            
+
             // Configure Turndown to handle common HTML elements better
             turndownService.addRule('removeScripts', {
               filter: ['script', 'style', 'noscript'],
-              replacement: () => ''
+              replacement: () => '',
             });
 
             turndownService.addRule('preserveLineBreaks', {
               filter: 'br',
-              replacement: () => '\n'
+              replacement: () => '\n',
             });
 
             const markdownContent = turndownService.turndown(rawHtml);
@@ -146,28 +153,31 @@ export function BrowserToolProvider() {
             const tempDir = 'temp_html';
             const uniqueId = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
             const relativePath = `${tempDir}/${uniqueId}.html`;
-            
+
             // Convert string to Uint8Array for writeFile
             const encoder = new TextEncoder();
             const htmlBytes = Array.from(encoder.encode(rawHtml));
-            
+
             await writeFile(relativePath, htmlBytes);
 
             // 4. Return structured response
-            return JSON.stringify({
-              content: markdownContent,
-              saved_raw_html: relativePath,
-              metadata: {
-                extraction_timestamp: new Date().toISOString(),
-                content_length: markdownContent.length,
-                raw_html_size: rawHtml.length
-              }
-            }, null, 2);
-
+            return JSON.stringify(
+              {
+                content: markdownContent,
+                saved_raw_html: relativePath,
+                metadata: {
+                  extraction_timestamp: new Date().toISOString(),
+                  content_length: markdownContent.length,
+                  raw_html_size: rawHtml.length,
+                },
+              },
+              null,
+              2,
+            );
           } catch (error) {
             logger.error('Error in browser_getPageContent:', error);
-            return JSON.stringify({ 
-              error: `Failed to process page content: ${error instanceof Error ? error.message : String(error)}` 
+            return JSON.stringify({
+              error: `Failed to process page content: ${error instanceof Error ? error.message : String(error)}`,
             });
           }
         },
@@ -403,7 +413,8 @@ export function BrowserToolProvider() {
       },
       {
         name: 'browser_extractStructuredContent',
-        description: 'Extracts clean, structured content from the page as JSON, removing styling and focusing on meaningful content.',
+        description:
+          'Extracts clean, structured content from the page as JSON, removing styling and focusing on meaningful content.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -413,28 +424,39 @@ export function BrowserToolProvider() {
             },
             selector: {
               type: 'string',
-              description: 'CSS selector to focus extraction on specific content area (optional, defaults to body).',
+              description:
+                'CSS selector to focus extraction on specific content area (optional, defaults to body).',
             },
             includeLinks: {
               type: 'boolean',
-              description: 'Whether to include href attributes from links (default: true).',
+              description:
+                'Whether to include href attributes from links (default: true).',
             },
             maxDepth: {
               type: 'number',
-              description: 'Maximum nesting depth for content extraction (default: 5).',
+              description:
+                'Maximum nesting depth for content extraction (default: 5).',
             },
           },
           required: ['sessionId'],
         },
         execute: async (args: Record<string, unknown>) => {
-          const { sessionId, selector = 'body', includeLinks = true, maxDepth = 5 } = args as {
+          const {
+            sessionId,
+            selector = 'body',
+            includeLinks = true,
+            maxDepth = 5,
+          } = args as {
             sessionId: string;
             selector?: string;
             includeLinks?: boolean;
             maxDepth?: number;
           };
-          logger.debug('Executing browser_extractStructuredContent', { sessionId, selector });
-          
+          logger.debug('Executing browser_extractStructuredContent', {
+            sessionId,
+            selector,
+          });
+
           // JavaScript to extract clean structured content
           const script = `
 (function() {
@@ -515,9 +537,9 @@ export function BrowserToolProvider() {
   
   return pageInfo;
 })()`;
-          
+
           const result = await executeScript(sessionId, script);
-          
+
           // Try to parse as JSON, if it fails return as text
           try {
             const parsed = JSON.parse(result);

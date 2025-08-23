@@ -132,7 +132,7 @@ export class TauriMCPClient {
   /**
    * 설정에서 모든 도구 목록을 조회합니다
    * @param config MCP 서버 설정
-   * @returns 모든 도구 목록
+   * @returns 모든 도구 목록 (namespace prefix 제외, 컨텍스트에서 처리)
    */
   async listToolsFromConfig(config: {
     mcpServers?: Record<
@@ -237,7 +237,7 @@ export class TauriMCPClient {
 
   /**
    * 내장 서버의 모든 도구 목록을 조회합니다
-   * @returns 내장 서버 도구 목록
+   * @returns 내장 서버 도구 목록 (namespace prefix 제외, 컨텍스트에서 처리)
    */
   async listBuiltinTools(): Promise<MCPTool[]> {
     try {

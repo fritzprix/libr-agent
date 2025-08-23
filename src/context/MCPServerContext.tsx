@@ -74,11 +74,13 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
         });
 
         setServerStatus(serverStatus);
-        const tools = await tauriMCPClient.listToolsFromConfig(mcpConfig);
-        logger.debug(`Received tools from Tauri:`, {
-          tools,
-          totalServers: servers.length,
-        });
+        const rawTools = await tauriMCPClient.listToolsFromConfig(mcpConfig);
+
+        // Add external. prefix to all external MCP tools
+        const tools = rawTools.map((tool) => ({
+          ...tool,
+          name: tool.name
+        }));
 
         const connectedServers = await tauriMCPClient.getConnectedServers();
         for (const serverName of connectedServers) {
@@ -111,6 +113,9 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
     }): Promise<MCPResponse> => {
       logger.debug(`Executing tool call:`, { toolCall });
       const aiProvidedToolName = toolCall.function.name;
+
+      // Handle external. prefix for namespace routing
+
       const delimiter = '__';
       const parts = aiProvidedToolName.split(delimiter);
       const serverName = parts.length > 1 ? parts[0] : undefined;

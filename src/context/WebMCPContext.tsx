@@ -158,8 +158,12 @@ export const WebMCPProvider: React.FC<WebMCPProviderProps> = ({
       // Load the server
       const serverInfo = await proxyRef.current.loadServer(serverName);
 
-      // Get tools for this server
-      const tools = await proxyRef.current.listTools(serverName);
+      // Get tools for this server and add external. prefix
+      const rawTools = await proxyRef.current.listTools(serverName);
+      const tools = rawTools.map((tool) => ({
+        ...tool,
+        name: tool.name
+      }));
 
       // Update server state
       setServerStates((prev) => ({
@@ -171,8 +175,12 @@ export const WebMCPProvider: React.FC<WebMCPProviderProps> = ({
         },
       }));
 
-      // Update available tools
-      const allTools = await proxyRef.current.listAllTools();
+      // Update available tools with external. prefix
+      const allRawTools = await proxyRef.current.listAllTools();
+      const allTools = allRawTools.map((tool) => ({
+        ...tool,
+        name: tool.name
+      }));
       setAvailableTools(allTools);
 
       logger.info('MCP server loaded successfully', {
@@ -212,8 +220,9 @@ export const WebMCPProvider: React.FC<WebMCPProviderProps> = ({
       // 각 툴에 대해 동적으로 메서드 생성
       logger.info('useWebMCPContext : ', { tools });
       tools.forEach((tool) => {
-        // prefix가 붙어있다면 제거해서 메서드 이름으로 사용
+        // external. prefix를 제거하고 server prefix도 제거해서 메서드 이름으로 사용
         const originalToolName = tool.name;
+
         const methodName = originalToolName.startsWith(`${serverName}__`)
           ? originalToolName.replace(`${serverName}__`, '')
           : originalToolName;
@@ -372,11 +381,19 @@ export const WebMCPProvider: React.FC<WebMCPProviderProps> = ({
       }
 
       try {
-        logger.debug('Calling WebMCP tool', { serverName, toolName, args });
+        // Handle external. prefix for namespace routing
+        const actualToolName = toolName;
+
+        logger.debug('Calling WebMCP tool', {
+          serverName,
+          originalToolName: toolName,
+          actualToolName,
+          args,
+        });
 
         const result = await proxyRef.current.callTool(
           serverName,
-          toolName,
+          actualToolName,
           args,
         );
 

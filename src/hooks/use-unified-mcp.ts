@@ -67,12 +67,84 @@ export const useUnifiedMCP = () => {
     return [...tauriTools, ...webTools, ...builtinTools];
   }, [tauriTools, webTools, builtinTools]);
 
-  // Fast tool type lookup using the pre-built map
+  // Get tool namespace and type from prefixed tool name
+  const getToolNamespace = useCallback((toolName: string): string => {
+    if (toolName.startsWith('builtin.')) return 'builtin';
+    else return 'external';
+  }, []);
+
+  // Intelligent tool name resolution - maps LLM-called names to actual prefixed names
+  const resolveToolName = useCallback(
+    (calledToolName: string): string | null => {
+      // 1. Check exact match first (already prefixed)
+      if (toolTypeMap.has(calledToolName)) {
+        return calledToolName;
+      }
+
+      // 2. Check if it's already namespaced correctly
+      const namespace = getToolNamespace(calledToolName);
+      if (namespace !== 'unknown') {
+        return calledToolName;
+      }
+
+      // 3. Look for tools that end with the called name (LLM using base name)
+      for (const [registeredName, type] of toolTypeMap.entries()) {
+        if (type === 'web' || type === 'tauri') {
+          // Check server__toolName pattern
+          const parts = registeredName.split('__');
+          if (parts.length >= 2) {
+            const baseName = parts.slice(1).join('__');
+            if (baseName === calledToolName) {
+              logger.debug('Resolved tool name', {
+                calledName: calledToolName,
+                resolvedName: registeredName,
+                pattern: 'server__tool',
+              });
+              return registeredName;
+            }
+          }
+        }
+        // For builtin tools like "builtin.filesystem__read_file"
+        // should match when LLM calls "read_file" 
+        if (type === 'builtin') {
+          const nameWithoutPrefix = registeredName.replace(/^builtin\./, '');
+          const parts = nameWithoutPrefix.split('__');
+          if (parts.length >= 2) {
+            const baseName = parts.slice(1).join('__');
+            if (baseName === calledToolName) {
+              logger.debug('Resolved tool name', {
+                calledName: calledToolName,
+                resolvedName: registeredName,
+                pattern: 'builtin.server__tool',
+              });
+              return registeredName;
+            }
+          }
+        }
+      }
+
+      // 4. No resolution found
+      logger.warn('Could not resolve tool name', {
+        calledName: calledToolName,
+        availableTools: Array.from(toolTypeMap.keys()),
+      });
+      return null;
+    },
+    [toolTypeMap, getToolNamespace],
+  );
+
+  // Fast tool type lookup using the pre-built map and namespace prefixes
   const getToolType = useCallback(
     (toolName: string): BackendType | null => {
+      const namespace = getToolNamespace(toolName);
+      if (namespace === 'builtin') return 'builtin';
+      if (namespace === 'external') {
+        // For external tools, check if they're web worker or tauri based on the lookup map
+        return toolTypeMap.get(toolName) || 'tauri'; // Default external tools to tauri
+      }
       return toolTypeMap.get(toolName) || null;
     },
-    [toolTypeMap],
+    [toolTypeMap, getToolNamespace],
   );
 
   // Determine if a tool is a web worker tool (optimized with lookup)
@@ -94,34 +166,62 @@ export const useUnifiedMCP = () => {
   // Unified tool execution
   const executeToolCall = useCallback(
     async (toolCall: ToolCall): Promise<MCPResponse> => {
-      const toolName = toolCall.function.name;
-      const toolType = getToolType(toolName);
-
-      if (!toolType) {
-        logger.warn(`Unknown tool: ${toolName}`, {
+      const calledToolName = toolCall.function.name;
+      
+      // Resolve the tool name to handle LLM calling base names instead of prefixed names
+      const resolvedToolName = resolveToolName(calledToolName);
+      
+      if (!resolvedToolName) {
+        const namespace = getToolNamespace(calledToolName);
+        logger.warn(`Could not resolve tool: ${calledToolName} (namespace: ${namespace})`, {
           availableTools: Array.from(toolTypeMap.keys()),
+          detectedNamespace: namespace,
         });
         return {
           jsonrpc: '2.0',
           id: toolCall.id,
           error: {
             code: -32601,
-            message: `Tool '${toolName}' not found`,
+            message: `Tool '${calledToolName}' could not be resolved`,
             data: {
-              toolName,
+              calledToolName,
+              namespace,
               availableTools: Array.from(toolTypeMap.keys()),
             },
           },
         };
       }
 
-      logger.info(`Executing ${toolType} tool: ${toolName}`, { toolCall });
+      const toolType = getToolType(resolvedToolName);
+      if (!toolType) {
+        logger.error(`Resolved tool name has no type mapping: ${resolvedToolName}`);
+        return {
+          jsonrpc: '2.0',
+          id: toolCall.id,
+          error: {
+            code: -32602,
+            message: `Resolved tool '${resolvedToolName}' has no type mapping`,
+            data: { calledToolName, resolvedToolName },
+          },
+        };
+      }
+
+      logger.info(`Executing ${toolType} tool: ${resolvedToolName} (called as: ${calledToolName})`, { toolCall });
+
+      // Use the resolved tool name for execution
+      const actualToolCall = {
+        ...toolCall,
+        function: {
+          ...toolCall.function,
+          name: resolvedToolName,
+        },
+      };
 
       try {
         if (toolType === 'web') {
           // Execute web worker tool
-          const args = JSON.parse(toolCall.function.arguments);
-          const result = await executeWebTool(toolName, args);
+          const args = JSON.parse(actualToolCall.function.arguments);
+          const result = await executeWebTool(resolvedToolName, args);
 
           // Check if result is already MCPResponse
           if (
@@ -143,7 +243,7 @@ export const useUnifiedMCP = () => {
             const uiResource = result as UIResource;
             return {
               jsonrpc: '2.0',
-              id: toolCall.id,
+              id: actualToolCall.id,
               result: {
                 content: [
                   {
@@ -158,7 +258,7 @@ export const useUnifiedMCP = () => {
           // Default text handling for other results
           return {
             jsonrpc: '2.0',
-            id: toolCall.id,
+            id: actualToolCall.id,
             result: {
               content: [
                 {
@@ -179,16 +279,17 @@ export const useUnifiedMCP = () => {
           return await executeTauriTool(toolCall);
         }
       } catch (error) {
-        logger.error(`Tool execution failed for ${toolName}:`, error);
+        logger.error(`Tool execution failed for ${resolvedToolName}:`, error);
 
         return {
           jsonrpc: '2.0',
-          id: toolCall.id,
+          id: actualToolCall.id,
           error: {
             code: -32603,
             message: error instanceof Error ? error.message : String(error),
             data: {
-              toolName,
+              calledToolName,
+              resolvedToolName,
               toolType,
               errorType:
                 error instanceof Error
@@ -199,7 +300,14 @@ export const useUnifiedMCP = () => {
         };
       }
     },
-    [getToolType, executeWebTool, executeTauriTool, toolTypeMap],
+    [
+      getToolType,
+      getToolNamespace,
+      executeWebTool,
+      executeTauriTool,
+      executeBuiltinTool,
+      toolTypeMap,
+    ],
   );
 
   // Get tool by name
@@ -269,6 +377,7 @@ export const useUnifiedMCP = () => {
 
     // Type checking (optimized)
     getToolType,
+    getToolNamespace,
     isWebWorkerTool,
 
     // Lookup map (for debugging/inspection)

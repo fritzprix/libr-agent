@@ -18,8 +18,6 @@ export function BuiltInToolsSystemPrompt() {
   const { getCurrentSession } = useSessionContext();
   const {
     availableTools,
-    tauriBuiltinTools,
-    webWorkerTools,
     isLoadingTauriTools,
   } = useBuiltInTools();
 
@@ -32,9 +30,7 @@ export function BuiltInToolsSystemPrompt() {
 You have access to built-in tools for file operations, code execution, and web-based processing.
 Tool details and usage instructions are provided separately.
 
-**Total Available Tools:** ${availableTools.length} ${isLoadingTauriTools ? '(Loading...)' : ''}
-**Built-in Tools:** ${tauriBuiltinTools.length}
-**Web Tools:** ${webWorkerTools.length}
+**Available Built-In Tools:** ${availableTools.length} ${isLoadingTauriTools ? '(Loading...)' : ''}
 `);
 
     // 2. Attached Files Section
@@ -85,21 +81,12 @@ Tool details and usage instructions are provided separately.
 
     const fullPrompt = promptSections.join('\n');
 
-    logger.debug('Built comprehensive tools and files prompt', {
-      sessionId: currentSession?.id,
-      toolCount: availableTools.length,
-      tauriToolCount: tauriBuiltinTools.length,
-      webToolCount: webWorkerTools.length,
-      promptLength: fullPrompt.length,
-    });
 
     return fullPrompt;
   }, [
     getCurrentSession,
     server,
     availableTools.length,
-    tauriBuiltinTools.length,
-    webWorkerTools.length,
     isLoadingTauriTools,
   ]);
 

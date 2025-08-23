@@ -156,7 +156,10 @@ export const useRustBackend = () => {
     return safeInvoke<number[]>('read_file', { filePath });
   };
 
-  const writeFile = async (filePath: string, content: number[]): Promise<void> => {
+  const writeFile = async (
+    filePath: string,
+    content: number[],
+  ): Promise<void> => {
     return safeInvoke<void>('write_file', { filePath, content });
   };
 

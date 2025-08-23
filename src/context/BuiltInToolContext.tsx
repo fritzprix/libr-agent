@@ -25,9 +25,6 @@ const BUILTIN_MCP_CONFIGS: MCPConfig = {
 
 interface BuiltInToolContextType {
   availableTools: MCPTool[];
-  webWorkerTools: MCPTool[];
-  tauriBuiltinTools: MCPTool[];
-  localTools: MCPTool[];
   isLoadingTauriTools: boolean;
   registerLocalTools: (tools: MCPTool[]) => void;
   executeToolCall: (toolCall: {
@@ -74,11 +71,19 @@ function BuiltInToolProviderInternal({ children }: BuiltInToolProviderProps) {
         setIsLoadingTauriTools(true);
         logger.debug('Loading Tauri built-in tools...');
         const tools = await tauriMCPClient.listBuiltinTools();
-        logger.info('Loaded Tauri built-in tools', {
-          toolCount: tools.length,
-          toolNames: tools.map((t) => t.name),
+        // Add builtin. prefix to Tauri built-in tools
+        const prefixedTauriTools = tools.map((tool) => ({
+          ...tool,
+          name: tool.name.startsWith('builtin.')
+            ? tool.name
+            : `builtin.${tool.name}`,
+        }));
+
+        logger.info('Loaded Tauri built-in tools with builtin. prefix', {
+          toolCount: prefixedTauriTools.length,
+          toolNames: prefixedTauriTools.map((t) => t.name),
         });
-        setTauriBuiltinTools(tools);
+        setTauriBuiltinTools(prefixedTauriTools);
       } catch (error) {
         logger.error('Failed to load Tauri built-in tools', error);
         setTauriBuiltinTools([]);
@@ -90,14 +95,46 @@ function BuiltInToolProviderInternal({ children }: BuiltInToolProviderProps) {
     loadTauriBuiltinTools();
   }, []);
 
-  // Register local tools function
+  // Register local tools function with builtin. namespace prefix and duplicate checking
   const registerLocalTools = useMemo(
     () => (newTools: MCPTool[]) => {
       logger.debug('Registering local tools', {
         toolCount: newTools.length,
         toolNames: newTools.map((t) => t.name),
       });
-      setLocalTools((prev) => [...prev, ...newTools]);
+
+      // Add builtin. prefix to tool names and check for duplicates
+      const prefixedTools = newTools.map((tool) => ({
+        ...tool,
+        name: tool.name.startsWith('builtin.')
+          ? tool.name
+          : `builtin.${tool.name}`,
+      }));
+
+      setLocalTools((prev) => {
+        // Check for duplicate names within the same namespace
+        const existingNames = new Set(prev.map((t) => t.name));
+        const duplicates = prefixedTools.filter((tool) =>
+          existingNames.has(tool.name),
+        );
+
+        if (duplicates.length > 0) {
+          const duplicateNames = duplicates.map((t) => t.name);
+          logger.error('Duplicate tool names detected in builtin namespace', {
+            duplicateNames,
+          });
+          throw new Error(
+            `Duplicate builtin tool names detected: ${duplicateNames.join(', ')}`,
+          );
+        }
+
+        logger.info('Local tools registered with builtin. prefix', {
+          toolCount: prefixedTools.length,
+          toolNames: prefixedTools.map((t) => t.name),
+        });
+
+        return [...prev, ...prefixedTools];
+      });
     },
     [],
   );
@@ -115,7 +152,7 @@ function BuiltInToolProviderInternal({ children }: BuiltInToolProviderProps) {
         try {
           const args = JSON.parse(toolCall.function.arguments);
 
-          // Check if this is a local tool
+          // Check if this is a local tool (with builtin. prefix)
           const localTool = localTools.find((tool) => tool.name === toolName);
           if (localTool) {
             logger.debug('Executing local tool', { toolName, args });
@@ -268,9 +305,6 @@ function BuiltInToolProviderInternal({ children }: BuiltInToolProviderProps) {
         ...tauriBuiltinTools,
         ...localTools,
       ],
-      webWorkerTools: webWorkerMcptools,
-      tauriBuiltinTools,
-      localTools,
       isLoadingTauriTools,
       registerLocalTools,
       executeToolCall,
