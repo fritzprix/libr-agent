@@ -12,13 +12,16 @@ const logger = getLogger('RustBackendClient');
 
 /**
  * 🔌 Shared Rust Backend Client
- * 
+ *
  * Unified client for all Tauri backend communication.
  * Provides centralized error handling, logging, and consistent API.
  * Used by both React hooks and non-React services.
  */
 
-async function safeInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+async function safeInvoke<T>(
+  cmd: string,
+  args?: Record<string, unknown>,
+): Promise<T> {
   try {
     logger.debug('invoke', { cmd, args });
     return await invoke<T>(cmd, args ?? {});
@@ -73,7 +76,9 @@ export async function checkServerStatus(serverName: string): Promise<boolean> {
   return safeInvoke<boolean>('check_server_status', { serverName });
 }
 
-export async function checkAllServersStatus(): Promise<Record<string, boolean>> {
+export async function checkAllServersStatus(): Promise<
+  Record<string, boolean>
+> {
   return safeInvoke<Record<string, boolean>>('check_all_servers_status');
 }
 
@@ -97,8 +102,13 @@ export async function listBuiltinServers(): Promise<string[]> {
   return safeInvoke<string[]>('list_builtin_servers');
 }
 
-export async function listBuiltinTools(serverName?: string): Promise<MCPTool[]> {
-  return safeInvoke<MCPTool[]>('list_builtin_tools', serverName ? { serverName } : undefined);
+export async function listBuiltinTools(
+  serverName?: string,
+): Promise<MCPTool[]> {
+  return safeInvoke<MCPTool[]>(
+    'list_builtin_tools',
+    serverName ? { serverName } : undefined,
+  );
 }
 
 export async function callBuiltinTool(
@@ -141,7 +151,9 @@ export async function listAllTools(): Promise<MCPTool[]> {
   return safeInvoke<MCPTool[]>('list_all_tools');
 }
 
-export async function getValidatedTools(serverName: string): Promise<MCPTool[]> {
+export async function getValidatedTools(
+  serverName: string,
+): Promise<MCPTool[]> {
   return safeInvoke<MCPTool[]>('get_validated_tools', { serverName });
 }
 
@@ -157,7 +169,10 @@ export async function readFile(filePath: string): Promise<number[]> {
   return safeInvoke<number[]>('read_file', { filePath });
 }
 
-export async function writeFile(filePath: string, content: number[]): Promise<void> {
+export async function writeFile(
+  filePath: string,
+  content: number[],
+): Promise<void> {
   return safeInvoke<void>('write_file', { filePath, content });
 }
 

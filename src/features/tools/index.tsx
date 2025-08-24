@@ -54,15 +54,13 @@ export function BuiltInToolProvider({ children }: BuiltInToolProviderProps) {
     const tools: MCPTool[] = [];
     for (const [serviceId, service] of services.entries()) {
       tools.push(
-        ...service
-          .listTools()
-          .map(
-            (t) =>
-              ({
-                ...t,
-                name: `${BUILTIN_PREFIX}${serviceId}__${t.name}`,
-              }) satisfies MCPTool,
-          ),
+        ...service.listTools().map(
+          (t) =>
+            ({
+              ...t,
+              name: `${BUILTIN_PREFIX}${serviceId}__${t.name}`,
+            }) satisfies MCPTool,
+        ),
       );
     }
     return tools;

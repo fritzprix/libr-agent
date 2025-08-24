@@ -137,7 +137,7 @@ function BuiltInToolProviderInternal({ children }: BuiltInToolProviderProps) {
           toolNames: prefixedTools.map((t) => t.name),
         });
 
-  return [...prev, ...prefixedTools];
+        return [...prev, ...prefixedTools];
       });
     },
     [],
@@ -161,11 +161,14 @@ function BuiltInToolProviderInternal({ children }: BuiltInToolProviderProps) {
               try {
                 parsedArgs = JSON.parse(args);
               } catch (parseError) {
-                logger.warn('Failed to parse toolCall.function.arguments as JSON, falling back to raw string', {
-                  toolName,
-                  rawArguments: args,
-                  parseError,
-                });
+                logger.warn(
+                  'Failed to parse toolCall.function.arguments as JSON, falling back to raw string',
+                  {
+                    toolName,
+                    rawArguments: args,
+                    parseError,
+                  },
+                );
                 // keep parsedArgs as the raw string so callers can decide how to handle it
                 parsedArgs = args;
               }

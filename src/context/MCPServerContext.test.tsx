@@ -57,7 +57,9 @@ const TestConsumer = () => {
 describe('MCPServerProvider', () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    (useRustBackend as ReturnType<typeof vi.fn>).mockReturnValue(mockRustBackend);
+    (useRustBackend as ReturnType<typeof vi.fn>).mockReturnValue(
+      mockRustBackend,
+    );
   });
 
   it('should have correct initial state', () => {
@@ -103,7 +105,9 @@ describe('MCPServerProvider', () => {
 
   it('should handle failed server connection', async () => {
     const errorMessage = 'Connection failed';
-    mockRustBackend.listToolsFromConfig.mockRejectedValue(new Error(errorMessage));
+    mockRustBackend.listToolsFromConfig.mockRejectedValue(
+      new Error(errorMessage),
+    );
 
     let connectServers: (config: MCPConfig) => Promise<void>;
 

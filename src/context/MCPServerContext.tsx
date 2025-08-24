@@ -47,7 +47,12 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
   const [serverStatus, setServerStatus] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | undefined>(undefined);
   const availableToolsRef = useRef(availableTools);
-  const { listToolsFromConfig, getConnectedServers, callMCPTool, sampleFromModel: rustSampleFromModel } = useRustBackend();
+  const {
+    listToolsFromConfig,
+    getConnectedServers,
+    callMCPTool,
+    sampleFromModel: rustSampleFromModel,
+  } = useRustBackend();
 
   const [{ loading: isLoading }, connectServers] = useAsyncFn(
     async (mcpConfig: MCPConfig) => {

@@ -29,7 +29,7 @@ export function RustMCPToolProvider() {
         // We'll lazily fetch tools when loadService runs. For now return empty array.
         return [] as MCPTool[];
       },
-  executeTool: async (toolCall: ToolCall): Promise<MCPResponse> => {
+      executeTool: async (toolCall: ToolCall): Promise<MCPResponse> => {
         // toolCall.function.name is the tool name (without builtin prefix)
         const toolName = toolCall.function.name;
         // call into rust backend
@@ -42,9 +42,15 @@ export function RustMCPToolProvider() {
           } else {
             try {
               const parsed = JSON.parse(argsRaw);
-              args = (typeof parsed === 'object' && parsed !== null) ? (parsed as Record<string, unknown>) : { value: parsed };
+              args =
+                typeof parsed === 'object' && parsed !== null
+                  ? (parsed as Record<string, unknown>)
+                  : { value: parsed };
             } catch (e) {
-              logger.warn('Failed to parse args for rust tool call, wrapping raw string', { toolName, argsRaw, e });
+              logger.warn(
+                'Failed to parse args for rust tool call, wrapping raw string',
+                { toolName, argsRaw, e },
+              );
               args = { raw: argsRaw };
             }
           }
@@ -68,7 +74,10 @@ export function RustMCPToolProvider() {
           if (servers && servers.length > 0) {
             const tools = await listBuiltinTools();
             // When tools are needed, the BuiltInToolProvider will call listTools on this service.
-            logger.debug('Fetched rust tools for service', { serviceId, toolCount: tools?.length });
+            logger.debug('Fetched rust tools for service', {
+              serviceId,
+              toolCount: tools?.length,
+            });
           }
         } catch (err) {
           logger.error('Failed to load rust builtin tools', err);
@@ -79,14 +88,20 @@ export function RustMCPToolProvider() {
       },
     } as const;
 
-  register(serviceId, service as BuiltInService);
+    register(serviceId, service as BuiltInService);
 
     return () => {
       if (!mounted) return;
       unregister(serviceId);
       mounted = false;
     };
-  }, [register, unregister, listBuiltinServers, listBuiltinTools, callBuiltinTool]);
+  }, [
+    register,
+    unregister,
+    listBuiltinServers,
+    listBuiltinTools,
+    callBuiltinTool,
+  ]);
 
   return null;
 }
