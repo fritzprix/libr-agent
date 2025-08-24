@@ -10,7 +10,7 @@ import React, {
 } from 'react';
 import { AttachmentReference } from '@/models/chat';
 import { getLogger } from '@/lib/logger';
-import { useWebMCPServer } from './WebMCPContext';
+import { useWebMCPServer } from '@/hooks/use-web-mcp-server';
 import {
   AddContentOutput,
   ContentStoreServer,

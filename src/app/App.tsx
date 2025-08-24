@@ -12,7 +12,6 @@ import { SidebarProvider } from '../components/ui/sidebar';
 import { AssistantContextProvider } from '../context/AssistantContext';
 import { AssistantGroupProvider } from '../context/AssistantGroupContext';
 import { MCPServerProvider } from '../context/MCPServerContext';
-import { WebMCPProvider } from '../context/WebMCPContext';
 import { ModelOptionsProvider } from '../context/ModelProvider';
 import { SessionContextProvider } from '../context/SessionContext';
 import { SessionHistoryProvider } from '../context/SessionHistoryContext';
@@ -23,8 +22,11 @@ import '../styles/globals.css';
 import './App.css';
 import AssistantList from '@/features/assistant/List';
 import { ResourceAttachmentProvider } from '@/context/ResourceAttachmentContext';
-import { BuiltInToolProvider } from '@/context/BuiltInToolContext';
+import { BuiltInToolProvider } from '@/features/tools';
 import { BrowserToolProvider } from '@/features/tools/BrowserToolProvider';
+import { RustMCPToolProvider } from '@/features/tools/RustMCPToolProvider';
+import { WebMCPProvider as WebMCPToolProvider } from '@/features/tools/WebMCPToolProvider';
+import { ToolsTestPage } from '@/features/tools/ToolsTestPage';
 
 function App() {
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
@@ -32,10 +34,11 @@ function App() {
   return (
     <div className="h-screen w-full">
       <SettingsProvider>
-        <WebMCPProvider servers={['content-store']} autoLoad={true}>
           <MCPServerProvider>
             <BuiltInToolProvider>
               <BrowserToolProvider />
+              <RustMCPToolProvider />
+              <WebMCPToolProvider servers={[]} />
               <AssistantGroupProvider>
                 <AssistantContextProvider>
                   <SessionContextProvider>
@@ -90,6 +93,10 @@ function App() {
                                       path="/history/search"
                                       element={<History />}
                                     />
+                                    <Route
+                                      path="/tools/test"
+                                      element={<ToolsTestPage />}
+                                    />
                                   </Routes>
                                 </div>
                               </div>
@@ -108,7 +115,6 @@ function App() {
               </AssistantGroupProvider>
             </BuiltInToolProvider>
           </MCPServerProvider>
-        </WebMCPProvider>
       </SettingsProvider>
     </div>
   );

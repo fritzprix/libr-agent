@@ -1,8 +1,8 @@
 import { useCallback, useEffect } from 'react';
 import { useChatContext } from '@/context/ChatContext';
 import { useSessionContext } from '@/context/SessionContext';
-import { useWebMCPServer } from '@/context/WebMCPContext';
-import { useBuiltInTools } from '@/context/BuiltInToolContext';
+import { useWebMCPServer } from '@/hooks/use-web-mcp-server';
+import { useBuiltInTool } from '@/features/tools';
 import { ContentStoreServer } from '@/lib/web-mcp/modules/content-store';
 import { getLogger } from '@/lib/logger';
 
@@ -16,7 +16,8 @@ export function BuiltInToolsSystemPrompt() {
   const { registerSystemPrompt, unregisterSystemPrompt } = useChatContext();
   const { server } = useWebMCPServer<ContentStoreServer>('content-store');
   const { getCurrentSession } = useSessionContext();
-  const { availableTools, isLoadingTauriTools } = useBuiltInTools();
+  const { availableTools } = useBuiltInTool();
+  const isLoadingTauriTools = false; // No longer tracked in new API
 
   const buildPrompt = useCallback(async () => {
     let promptSections = [];

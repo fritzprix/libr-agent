@@ -164,7 +164,15 @@ export function BuiltInToolProvider({ children }: BuiltInToolProviderProps) {
     } else {
       strippedToolName = toolcall.function.name.replace(BUILTIN_PREFIX, '');
     }
-    const [serviceId, toolName] = strippedToolName.split('__');
+    
+    // Safe name parsing - split on first '__' only
+    const idx = strippedToolName.indexOf('__');
+    if (idx === -1) {
+      throw new Error(`Invalid builtin tool name: ${strippedToolName}`);
+    }
+    const serviceId = strippedToolName.slice(0, idx);
+    const toolName = strippedToolName.slice(idx + 2);
+    
     const service = servicesRef.current.get(serviceId);
     if (service) {
       return service.executeTool({

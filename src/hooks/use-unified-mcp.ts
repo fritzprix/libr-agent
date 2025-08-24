@@ -1,9 +1,9 @@
 import { useMCPServer } from './use-mcp-server';
-import { useWebMCPTools } from './use-web-mcp';
-import { useBuiltInTools } from '@/context/BuiltInToolContext';
+// import { useWebMCPTools } from './use-web-mcp';
+import { useBuiltInTool } from '@/features/tools';
 import { useCallback, useMemo } from 'react';
-import { MCPResponse, MCPTool, MCPResourceContent } from '@/lib/mcp-types';
-import { ToolCall, UIResource } from '@/models/chat';
+import { MCPResponse, MCPTool } from '@/lib/mcp-types';
+import { ToolCall } from '@/models/chat';
 import { getLogger } from '@/lib/logger';
 
 const logger = getLogger('useUnifiedMCP');
@@ -13,15 +13,13 @@ type BackendType = 'ExternalMCP' | 'BuiltInWeb' | 'BuiltInRust';
 export const useUnifiedMCP = () => {
   const { executeToolCall: executeExternalMCP, availableTools: externalTools } =
     useMCPServer();
+  // Web MCP tools are disabled for now
+  const webBuiltInTool: MCPTool[] = [];
+  const isWebReady = false;
   const {
-    executeCall: executeWebBuiltinTool,
-    availableTools: webBuiltInTool,
-    isInitialized: isWebReady,
-  } = useWebMCPTools();
-  const {
-    executeToolCall: executeRustBuiltinTool,
+    executeTool: executeRustBuiltinTool,
     availableTools: rustBuiltinTools,
-  } = useBuiltInTools();
+  } = useBuiltInTool();
 
   // Create lookup map for fast tool type resolution
   const toolTypeMap = useMemo((): Map<string, BackendType> => {
@@ -203,58 +201,7 @@ export const useUnifiedMCP = () => {
 
       try {
         if (toolType === 'BuiltInWeb') {
-          // Execute web worker tool
-          const args = actualToolCall.function.arguments;
-          const result = await executeWebBuiltinTool(resolvedToolName, args);
-
-          // Check if result is already MCPResponse
-          if (
-            typeof result === 'object' &&
-            result !== null &&
-            'jsonrpc' in result &&
-            (result as MCPResponse).jsonrpc === '2.0'
-          ) {
-            return result as MCPResponse;
-          }
-
-          // Check if result is UIResource
-          if (
-            typeof result === 'object' &&
-            result !== null &&
-            'mimeType' in result &&
-            typeof (result as UIResource).mimeType === 'string'
-          ) {
-            const uiResource = result as UIResource;
-            return {
-              jsonrpc: '2.0',
-              id: actualToolCall.id,
-              result: {
-                content: [
-                  {
-                    type: 'resource',
-                    resource: uiResource,
-                  } as MCPResourceContent,
-                ],
-              },
-            };
-          }
-
-          // Default text handling for other results
-          return {
-            jsonrpc: '2.0',
-            id: actualToolCall.id,
-            result: {
-              content: [
-                {
-                  type: 'text',
-                  text:
-                    typeof result === 'string'
-                      ? result
-                      : JSON.stringify(result, null, 2),
-                },
-              ],
-            },
-          };
+          throw new Error('Web MCP tools are currently disabled');
         } else if (toolType === 'BuiltInRust') {
           return await executeRustBuiltinTool(actualToolCall);
         } else {
@@ -287,7 +234,7 @@ export const useUnifiedMCP = () => {
       getToolNamespace,
       executeExternalMCP,
       executeRustBuiltinTool,
-      executeWebBuiltinTool,
+      // executeWebBuiltinTool, // disabled
       toolTypeMap,
     ],
   );

@@ -1,10 +1,10 @@
 import { useRustBackend } from '@/hooks/use-rust-backend';
 import { getLogger } from '@/lib/logger';
-import type { MCPTool, MCPResponse } from '@/lib/mcp-types';
 import { normalizeToolResult } from '@/lib/mcp-types';
+import type { MCPTool, MCPResponse } from '@/lib/mcp-types';
 import { useEffect } from 'react';
-import { useBuiltInTool, type BuiltInService } from '.';
-import type { ToolCall } from '@/models/chat';
+import { useAsyncFn } from 'react-use';
+import { useBuiltInTool } from '.';
 
 const logger = getLogger('RustMCPToolProvider');
 
@@ -19,89 +19,90 @@ export function RustMCPToolProvider() {
   const { listBuiltinServers, listBuiltinTools, callBuiltinTool } =
     useRustBackend();
 
+  const [{ loading, value, error }, loadBuiltInServers] =
+    useAsyncFn(async () => {
+      const servers = await listBuiltinServers();
+
+      const toolsByServer = await Promise.all(
+        servers.map(async (s) => ({
+          server: s,
+          tools: await listBuiltinTools(s),
+        })),
+      );
+
+      const serverTools: Record<string, MCPTool[]> = {};
+      for (const entry of toolsByServer) {
+        serverTools[entry.server] = entry.tools;
+      }
+      return serverTools;
+    }, [listBuiltinServers, listBuiltinTools]);
+
   useEffect(() => {
-    let mounted = true;
+    if (!loading && value) {
+      Object.entries(value).forEach(([serviceId, tools]) => {
+        const cachedTools = tools;
 
-    const serviceId = 'rust';
+        register(serviceId, {
+          listTools: () => cachedTools,
+          loadService: async () => {
+            // no-op: preloaded
+          },
+          unloadService: async () => {
+            // no-op
+          },
+          executeTool: async (toolCall) => {
+            const toolName = toolCall.function.name;
 
-    const service = {
-      listTools: () => {
-        // We'll lazily fetch tools when loadService runs. For now return empty array.
-        return [] as MCPTool[];
-      },
-      executeTool: async (toolCall: ToolCall): Promise<MCPResponse> => {
-        // toolCall.function.name is the tool name (without builtin prefix)
-        const toolName = toolCall.function.name;
-        // call into rust backend
-        logger.debug('Rust service executing tool', { toolName, toolCall });
-        const argsRaw = toolCall.function.arguments;
-        let args: Record<string, unknown> = {};
-        if (typeof argsRaw === 'string') {
-          if (argsRaw.length === 0) {
-            args = {};
-          } else {
+            // safely parse args
+            let args: Record<string, unknown> = {};
             try {
-              const parsed = JSON.parse(argsRaw);
-              args =
-                typeof parsed === 'object' && parsed !== null
-                  ? (parsed as Record<string, unknown>)
-                  : { value: parsed };
+              const raw = toolCall.function.arguments;
+              if (typeof raw === 'string') {
+                args = raw.length
+                  ? (JSON.parse(raw) as Record<string, unknown>)
+                  : {};
+              } else if (typeof raw === 'object' && raw !== null) {
+                args = raw as Record<string, unknown>;
+              }
             } catch (e) {
-              logger.warn(
-                'Failed to parse args for rust tool call, wrapping raw string',
-                { toolName, argsRaw, e },
-              );
-              args = { raw: argsRaw };
+              logger.warn('Failed parsing tool arguments; sending raw', {
+                serviceId,
+                toolName,
+                error: e,
+              });
+              args = { raw: toolCall.function.arguments } as Record<
+                string,
+                unknown
+              >;
             }
-          }
-        } else if (typeof argsRaw === 'object' && argsRaw !== null) {
-          args = argsRaw as Record<string, unknown>;
-        } else {
-          args = {};
-        }
 
-        // Delegate to rust backend
-        const rawResult = await callBuiltinTool(serviceId, toolName, args);
-        // normalize to MCPResponse expected by BuiltInService
-        return normalizeToolResult(rawResult, toolName);
-      },
-      loadService: async () => {
-        // No-op or could prefetch tools
-        try {
-          const servers = await listBuiltinServers();
-          logger.debug('Rust builtin servers', { servers });
-          // Optionally fetch tools for the first server
-          if (servers && servers.length > 0) {
-            const tools = await listBuiltinTools();
-            // When tools are needed, the BuiltInToolProvider will call listTools on this service.
-            logger.debug('Fetched rust tools for service', {
+            const rawResult: MCPResponse = await callBuiltinTool(
               serviceId,
-              toolCount: tools?.length,
-            });
-          }
-        } catch (err) {
-          logger.error('Failed to load rust builtin tools', err);
-        }
-      },
-      unloadService: async () => {
-        // No special cleanup required
-      },
-    } as const;
+              toolName,
+              args,
+            );
+            return normalizeToolResult(rawResult, toolName);
+          },
+        });
+      });
 
-    register(serviceId, service as BuiltInService);
+      return () => {
+        Object.keys(value).forEach((s) => unregister(s));
+      };
+    }
+    return undefined;
+  }, [loading, value, register, unregister, callBuiltinTool]);
 
-    return () => {
-      if (!mounted) return;
-      unregister(serviceId);
-      mounted = false;
-    };
-  }, [
-    register,
-    unregister,
-    listBuiltinServers,
-    listBuiltinTools,
-    callBuiltinTool,
-  ]);
+  // Log loader errors for visibility
+  useEffect(() => {
+    if (error) {
+      logger.error('Failed to load built-in servers/tools', { error });
+    }
+  }, [error]);
+
+  useEffect(() => {
+    loadBuiltInServers();
+  }, []);
 
   return null;
 }

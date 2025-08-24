@@ -19,7 +19,7 @@ import { useSessionContext } from '@/context/SessionContext';
 import { useChatContext, ChatProvider } from '@/context/ChatContext';
 import { BuiltInToolsSystemPrompt } from '@/features/prompts/BuiltInToolsSystemPrompt';
 import { useResourceAttachment } from '@/context/ResourceAttachmentContext';
-import { useWebMCPServer } from '@/context/WebMCPContext';
+import { useWebMCPServer } from '@/hooks/use-web-mcp-server';
 import { ContentStoreServer } from '@/lib/web-mcp/modules/content-store';
 import { useMCPServer } from '@/hooks/use-mcp-server';
 import { getLogger } from '@/lib/logger';
@@ -31,7 +31,7 @@ import { useRustBackend } from '@/hooks/use-rust-backend';
 import ToolsModal from '../tools/ToolsModal';
 import MessageBubble from './MessageBubble';
 import { TimeLocationSystemPrompt } from '../prompts/TimeLocationSystemPrompt';
-// import { useWebMCPServer } from '@/context/WebMCPContext';
+// import { useWebMCPServer } from '@/hooks/use-web-mcp-server';
 // import { ContentStoreServer } from '@/lib/web-mcp/modules/content-store';
 
 const logger = getLogger('Chat');

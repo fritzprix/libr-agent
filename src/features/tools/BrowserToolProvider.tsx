@@ -1,11 +1,12 @@
 import { useEffect, useRef } from 'react';
-import { useBuiltInTools } from '@/context/BuiltInToolContext';
+import { useBuiltInTool } from '.';
 import { useBrowserInvoker } from '@/hooks/use-browser-invoker';
 import { useRustBackend } from '@/hooks/use-rust-backend';
-import { MCPTool } from '@/lib/mcp-types';
+import { MCPTool, MCPResponse } from '@/lib/mcp-types';
 import { getLogger } from '@/lib/logger';
 import { invoke } from '@tauri-apps/api/core';
 import TurndownService from 'turndown';
+import { ToolCall } from '@/models/chat';
 
 const logger = getLogger('BrowserToolProvider');
 
@@ -15,11 +16,11 @@ type LocalMCPTool = MCPTool & {
 };
 
 /**
- * Provider component that registers browser-specific tools with the BuiltInToolContext.
+ * Provider component that registers browser-specific tools with the BuiltInToolProvider.
  * Uses the useBrowserInvoker hook to provide non-blocking browser script execution.
  */
 export function BrowserToolProvider() {
-  const { registerLocalTools } = useBuiltInTools();
+  const { register, unregister } = useBuiltInTool();
   const { executeScript } = useBrowserInvoker();
   const { writeFile } = useRustBackend();
   const hasRegistered = useRef(false);
@@ -556,11 +557,68 @@ export function BrowserToolProvider() {
       toolNames: browserTools.map((t) => t.name),
     });
 
-    registerLocalTools(browserTools);
+    const serviceId = 'browser';
+    const service = {
+      listTools: () => browserTools.map((tool) => {
+        // Extract meta data without execute function
+        return {
+          name: tool.name,
+          description: tool.description,
+          inputSchema: tool.inputSchema,
+        };
+      }),
+      executeTool: async (toolCall: ToolCall): Promise<MCPResponse> => {
+        const toolName = toolCall.function.name;
+        const tool = browserTools.find(t => t.name === toolName);
+        
+        if (!tool) {
+          throw new Error(`Browser tool not found: ${toolName}`);
+        }
+
+        // Parse arguments
+        let args: Record<string, unknown> = {};
+        try {
+          const raw = toolCall.function.arguments;
+          if (typeof raw === 'string') {
+            args = raw.length ? JSON.parse(raw) : {};
+          } else if (typeof raw === 'object' && raw !== null) {
+            args = raw as Record<string, unknown>;
+          }
+        } catch (error) {
+          logger.warn('Failed parsing browser tool arguments', { toolName, error });
+          args = {};
+        }
+
+        // Execute the tool
+        const result = await tool.execute(args);
+        
+        return {
+          jsonrpc: '2.0',
+          id: toolCall.id,
+          result: {
+            content: [{
+              type: 'text',
+              text: typeof result === 'string' ? result : JSON.stringify(result, null, 2)
+            }]
+          }
+        };
+      }
+    };
+
+    register(serviceId, service);
     hasRegistered.current = true;
 
     logger.debug('Browser tools registered successfully');
-  }, [registerLocalTools, executeScript, writeFile]);
+
+    // Return cleanup function
+    return () => {
+      if (hasRegistered.current) {
+        unregister(serviceId);
+        hasRegistered.current = false;
+        logger.debug('Browser tools unregistered');
+      }
+    };
+  }, [register, unregister, executeScript, writeFile]);
 
   // This is a provider component, it doesn't render anything
   return null;
