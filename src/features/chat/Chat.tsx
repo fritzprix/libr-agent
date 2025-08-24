@@ -22,6 +22,7 @@ import { useResourceAttachment } from '@/context/ResourceAttachmentContext';
 import { useWebMCPServer } from '@/hooks/use-web-mcp-server';
 import { ContentStoreServer } from '@/lib/web-mcp/modules/content-store';
 import { useMCPServer } from '@/hooks/use-mcp-server';
+import { useBuiltInTool } from '@/features/tools';
 import { getLogger } from '@/lib/logger';
 import { AttachmentReference, Message } from '@/models/chat';
 import { createId } from '@paralleldrive/cuid2';
@@ -362,6 +363,7 @@ function ChatStatusBar({
   onShowTools?: () => void;
 }) {
   const { availableTools, isLoading, error } = useMCPServer();
+  const { availableTools: builtinAvailable } = useBuiltInTool();
 
   // 로딩 스피너 컴포넌트
   const LoadingSpinner = () => (
@@ -391,13 +393,16 @@ function ChatStatusBar({
   const getToolsDisplayText = () => {
     if (isLoading) return 'Loading tools...';
     if (error) return 'Tools error';
-    return `${availableTools.length} available`;
+  const mcpCount = availableTools.length;
+  const totalCount = mcpCount + (builtinAvailable?.length || 0);
+  return `${totalCount}(${mcpCount}) available`;
   };
 
   const getToolsColor = () => {
     if (isLoading) return 'text-yellow-400';
     if (error) return 'text-red-400';
-    return availableTools.length > 0 ? 'text-green-400' : 'text-gray-500';
+  const totalCount = availableTools.length + (builtinAvailable?.length || 0);
+  return totalCount > 0 ? 'text-green-400' : 'text-gray-500';
   };
 
   const getToolsIcon = () => {
