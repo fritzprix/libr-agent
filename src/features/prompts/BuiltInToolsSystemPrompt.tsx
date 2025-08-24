@@ -1,8 +1,8 @@
 import { useCallback, useEffect } from 'react';
 import { useChatContext } from '@/context/ChatContext';
 import { useSessionContext } from '@/context/SessionContext';
-import { useWebMCPServer } from '@/context/WebMCPContext';
-import { useBuiltInTools } from '@/context/BuiltInToolContext';
+import { useWebMCPServer } from '@/hooks/use-web-mcp-server';
+import { useBuiltInTool } from '@/features/tools';
 import { ContentStoreServer } from '@/lib/web-mcp/modules/content-store';
 import { getLogger } from '@/lib/logger';
 
@@ -16,12 +16,8 @@ export function BuiltInToolsSystemPrompt() {
   const { registerSystemPrompt, unregisterSystemPrompt } = useChatContext();
   const { server } = useWebMCPServer<ContentStoreServer>('content-store');
   const { getCurrentSession } = useSessionContext();
-  const {
-    availableTools,
-    tauriBuiltinTools,
-    webWorkerTools,
-    isLoadingTauriTools,
-  } = useBuiltInTools();
+  const { availableTools } = useBuiltInTool();
+  const isLoadingTauriTools = false; // No longer tracked in new API
 
   const buildPrompt = useCallback(async () => {
     let promptSections = [];
@@ -32,9 +28,7 @@ export function BuiltInToolsSystemPrompt() {
 You have access to built-in tools for file operations, code execution, and web-based processing.
 Tool details and usage instructions are provided separately.
 
-**Total Available Tools:** ${availableTools.length} ${isLoadingTauriTools ? '(Loading...)' : ''}
-**Built-in Tools:** ${tauriBuiltinTools.length}
-**Web Tools:** ${webWorkerTools.length}
+**Available Built-In Tools:** ${availableTools.length} ${isLoadingTauriTools ? '(Loading...)' : ''}
 `);
 
     // 2. Attached Files Section
@@ -85,23 +79,8 @@ Tool details and usage instructions are provided separately.
 
     const fullPrompt = promptSections.join('\n');
 
-    logger.debug('Built comprehensive tools and files prompt', {
-      sessionId: currentSession?.id,
-      toolCount: availableTools.length,
-      tauriToolCount: tauriBuiltinTools.length,
-      webToolCount: webWorkerTools.length,
-      promptLength: fullPrompt.length,
-    });
-
     return fullPrompt;
-  }, [
-    getCurrentSession,
-    server,
-    availableTools.length,
-    tauriBuiltinTools.length,
-    webWorkerTools.length,
-    isLoadingTauriTools,
-  ]);
+  }, [getCurrentSession, server, availableTools.length, isLoadingTauriTools]);
 
   useEffect(() => {
     // Register the system prompt even if server is not available yet

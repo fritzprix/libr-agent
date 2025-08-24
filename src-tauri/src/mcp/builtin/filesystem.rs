@@ -4,35 +4,29 @@ use std::collections::HashMap;
 use tokio::fs;
 use tracing::{error, info};
 
-use super::{
-    utils::{constants::MAX_FILE_SIZE, SecurityValidator},
-    BuiltinMCPServer,
-};
+use super::{utils::constants::MAX_FILE_SIZE, BuiltinMCPServer};
 use crate::mcp::{JSONSchema, JSONSchemaType, MCPError, MCPResponse, MCPTool};
+use crate::services::SecureFileManager;
 
 pub struct FilesystemServer {
-    security: SecurityValidator,
+    file_manager: std::sync::Arc<SecureFileManager>,
 }
 
 impl FilesystemServer {
-    pub fn new() -> Self {
+    pub fn new(file_manager: std::sync::Arc<SecureFileManager>) -> Self {
         // 현재 작업 디렉터리 로그 (확인용)
         match std::env::current_dir() {
             Ok(dir) => info!("FilesystemServer starting with CWD = {:?}", dir),
             Err(e) => error!("Failed to read current_dir: {}", e),
         }
 
-        let security_validator = SecurityValidator::new();
-
-        // SecurityValidator의 base_dir 확인
+        // SecureFileManager의 base_dir 확인
         info!(
             "FilesystemServer using base_dir: {:?}",
-            security_validator.base_dir()
+            file_manager.base_dir()
         );
 
-        Self {
-            security: security_validator,
-        }
+        Self { file_manager }
     }
 
     fn create_read_file_tool() -> MCPTool {
@@ -378,51 +372,60 @@ impl FilesystemServer {
             }
         }
 
-        // Validate path security
-        let safe_path = match self.security.validate_path(path_str) {
-            Ok(path) => path,
-            Err(e) => {
-                error!("Path validation failed: {}", e);
+        // Read file with line range support using SecureFileManager
+        let content = if start_line.is_some() || end_line.is_some() {
+            // For line range reading, we need to validate path and read manually
+            let safe_path = match self
+                .file_manager
+                .get_security_validator()
+                .validate_path(path_str)
+            {
+                Ok(path) => path,
+                Err(e) => {
+                    error!("Path validation failed: {}", e);
+                    return MCPResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id: Some(request_id),
+                        result: None,
+                        error: Some(MCPError {
+                            code: -32603,
+                            message: format!("Security error: {}", e),
+                            data: None,
+                        }),
+                    };
+                }
+            };
+
+            // Check file size
+            if let Err(e) = self
+                .file_manager
+                .get_security_validator()
+                .validate_file_size(&safe_path, MAX_FILE_SIZE)
+            {
+                error!("File size validation failed: {}", e);
                 return MCPResponse {
                     jsonrpc: "2.0".to_string(),
                     id: Some(request_id),
                     result: None,
                     error: Some(MCPError {
                         code: -32603,
-                        message: format!("Security error: {}", e),
+                        message: format!("File size error: {}", e),
                         data: None,
                     }),
                 };
             }
-        };
 
-        // Check file size
-        if let Err(e) = self.security.validate_file_size(&safe_path, MAX_FILE_SIZE) {
-            error!("File size validation failed: {}", e);
-            return MCPResponse {
-                jsonrpc: "2.0".to_string(),
-                id: Some(request_id),
-                result: None,
-                error: Some(MCPError {
-                    code: -32603,
-                    message: format!("File size error: {}", e),
-                    data: None,
-                }),
-            };
-        }
-
-        // Read file with line range support
-        let content = if start_line.is_some() || end_line.is_some() {
             self.read_file_lines(&safe_path, start_line, end_line).await
         } else {
-            fs::read_to_string(&safe_path)
+            self.file_manager
+                .read_file_as_string(path_str)
                 .await
                 .map_err(|e| e.to_string())
         };
 
         match content {
             Ok(content) => {
-                info!("Successfully read file: {:?}", safe_path);
+                info!("Successfully read file: {}", path_str);
                 MCPResponse {
                     jsonrpc: "2.0".to_string(),
                     id: Some(request_id),
@@ -436,7 +439,7 @@ impl FilesystemServer {
                 }
             }
             Err(e) => {
-                error!("Failed to read file {:?}: {}", safe_path, e);
+                error!("Failed to read file {}: {}", path_str, e);
                 MCPResponse {
                     jsonrpc: "2.0".to_string(),
                     id: Some(request_id),
@@ -514,8 +517,12 @@ impl FilesystemServer {
             .and_then(|v| v.as_str())
             .unwrap_or("both");
 
-        // Validate search path security
-        let safe_path = match self.security.validate_path(search_path) {
+        // Validate search path security using SecureFileManager
+        let safe_path = match self
+            .file_manager
+            .get_security_validator()
+            .validate_path(search_path)
+        {
             Ok(path) => path,
             Err(e) => {
                 error!("Path validation failed: {}", e);
@@ -674,63 +681,10 @@ impl FilesystemServer {
             }
         };
 
-        // Validate path security
-        let safe_path = match self.security.validate_path(path_str) {
-            Ok(path) => path,
-            Err(e) => {
-                error!("Path validation failed: {}", e);
-                return MCPResponse {
-                    jsonrpc: "2.0".to_string(),
-                    id: Some(request_id),
-                    result: None,
-                    error: Some(MCPError {
-                        code: -32603,
-                        message: format!("Security error: {}", e),
-                        data: None,
-                    }),
-                };
-            }
-        };
-
-        // Check content size
-        if content.len() > MAX_FILE_SIZE {
-            return MCPResponse {
-                jsonrpc: "2.0".to_string(),
-                id: Some(request_id),
-                result: None,
-                error: Some(MCPError {
-                    code: -32603,
-                    message: format!(
-                        "Content too large: {} bytes (max: {} bytes)",
-                        content.len(),
-                        MAX_FILE_SIZE
-                    ),
-                    data: None,
-                }),
-            };
-        }
-
-        // Create parent directory if it doesn't exist
-        if let Some(parent) = safe_path.parent() {
-            if let Err(e) = fs::create_dir_all(parent).await {
-                error!("Failed to create parent directory {:?}: {}", parent, e);
-                return MCPResponse {
-                    jsonrpc: "2.0".to_string(),
-                    id: Some(request_id),
-                    result: None,
-                    error: Some(MCPError {
-                        code: -32603,
-                        message: format!("Failed to create parent directory: {}", e),
-                        data: None,
-                    }),
-                };
-            }
-        }
-
-        // Write file
-        match fs::write(&safe_path, content).await {
+        // Use SecureFileManager to write file
+        match self.file_manager.write_file_string(path_str, content).await {
             Ok(()) => {
-                info!("Successfully wrote file: {:?}", safe_path);
+                info!("Successfully wrote file: {}", path_str);
                 MCPResponse {
                     jsonrpc: "2.0".to_string(),
                     id: Some(request_id),
@@ -744,7 +698,7 @@ impl FilesystemServer {
                 }
             }
             Err(e) => {
-                error!("Failed to write file {:?}: {}", safe_path, e);
+                error!("Failed to write file {}: {}", path_str, e);
                 MCPResponse {
                     jsonrpc: "2.0".to_string(),
                     id: Some(request_id),
@@ -764,8 +718,12 @@ impl FilesystemServer {
 
         let path_str = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
 
-        // Validate path security
-        let safe_path = match self.security.validate_path(path_str) {
+        // Validate path security using SecureFileManager
+        let safe_path = match self
+            .file_manager
+            .get_security_validator()
+            .validate_path(path_str)
+        {
             Ok(path) => path,
             Err(e) => {
                 error!("Path validation failed: {}", e);
@@ -905,6 +863,6 @@ impl BuiltinMCPServer for FilesystemServer {
 
 impl Default for FilesystemServer {
     fn default() -> Self {
-        Self::new()
+        Self::new(std::sync::Arc::new(SecureFileManager::new()))
     }
 }

@@ -161,22 +161,14 @@ async function handleMCPMessage(
         if (!serverName) {
           // Return tools from all loaded servers
           const allTools: MCPTool[] = [];
-          for (const [name, server] of mcpServers.entries()) {
-            const prefixedTools = server.tools.map((tool) => ({
-              ...tool,
-              name: `${name}__${tool.name}`,
-            }));
-            allTools.push(...prefixedTools);
+          for (const server of mcpServers.values()) {
+            allTools.push(...server.tools);
           }
           return { id, result: allTools };
         } else {
           // Return tools from specific server
           const server = await loadMCPServer(serverName);
-          const prefixedTools = server.tools.map((tool) => ({
-            ...tool,
-            name: `${serverName}__${tool.name}`,
-          }));
-          return { id, result: prefixedTools };
+          return { id, result: server.tools };
         }
       }
 

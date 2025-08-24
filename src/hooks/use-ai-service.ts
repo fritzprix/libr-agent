@@ -1,6 +1,6 @@
 import { Message, ToolCall } from '@/models/chat';
 import { createId } from '@paralleldrive/cuid2';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AIServiceConfig, AIServiceFactory } from '../lib/ai-service';
 import { getLogger } from '../lib/logger';
 import { useSettings } from './use-settings';
@@ -20,6 +20,9 @@ export const useAIService = (config?: AIServiceConfig) => {
   const [response, setResponse] = useState<Message | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  useEffect(() => {
+    logger.info('use_ai_service:', { config: config?.tools });
+  }, []);
   const serviceInstance = useMemo(
     () =>
       AIServiceFactory.getService(provider, apiKeys[provider], {

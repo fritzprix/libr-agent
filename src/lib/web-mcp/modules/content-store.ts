@@ -13,7 +13,7 @@ import {
   SearchOptions,
   SearchResult,
 } from '@/models/search-engine';
-import { WebMCPServerProxy } from '@/context/WebMCPContext';
+import { WebMCPServerProxy } from '@/hooks/use-web-mcp-server';
 import { ParserFactory } from './parsers/parser-factory';
 import { ParserError } from './parsers/index';
 

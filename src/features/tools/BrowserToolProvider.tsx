@@ -1,9 +1,12 @@
 import { useEffect, useRef } from 'react';
-import { useBuiltInTools } from '@/context/BuiltInToolContext';
+import { useBuiltInTool } from '.';
 import { useBrowserInvoker } from '@/hooks/use-browser-invoker';
-import { MCPTool } from '@/lib/mcp-types';
+import { useRustBackend } from '@/hooks/use-rust-backend';
+import { MCPTool, MCPResponse } from '@/lib/mcp-types';
 import { getLogger } from '@/lib/logger';
 import { invoke } from '@tauri-apps/api/core';
+import TurndownService from 'turndown';
+import { ToolCall } from '@/models/chat';
 
 const logger = getLogger('BrowserToolProvider');
 
@@ -13,12 +16,13 @@ type LocalMCPTool = MCPTool & {
 };
 
 /**
- * Provider component that registers browser-specific tools with the BuiltInToolContext.
+ * Provider component that registers browser-specific tools with the BuiltInToolProvider.
  * Uses the useBrowserInvoker hook to provide non-blocking browser script execution.
  */
 export function BrowserToolProvider() {
-  const { registerLocalTools } = useBuiltInTools();
+  const { register, unregister } = useBuiltInTool();
   const { executeScript } = useBrowserInvoker();
+  const { writeFile } = useRustBackend();
   const hasRegistered = useRef(false);
 
   useEffect(() => {
@@ -33,7 +37,8 @@ export function BrowserToolProvider() {
     const browserTools: LocalMCPTool[] = [
       {
         name: 'browser_createSession',
-        description: 'Creates a new interactive browser session in a separate window.',
+        description:
+          'Creates a new interactive browser session in a separate window.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -96,7 +101,8 @@ export function BrowserToolProvider() {
       },
       {
         name: 'browser_getPageContent',
-        description: 'Gets the full HTML content of the current browser page.',
+        description:
+          'Extracts clean content from the page as Markdown, and saves the raw HTML to a temporary file for reference.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -110,7 +116,71 @@ export function BrowserToolProvider() {
         execute: async (args: Record<string, unknown>) => {
           const { sessionId } = args as { sessionId: string };
           logger.debug('Executing browser_getPageContent', { sessionId });
-          return executeScript(sessionId, 'document.documentElement.outerHTML');
+
+          try {
+            // 1. Extract Raw HTML using injection script
+            const rawHtml = await executeScript(
+              sessionId,
+              'document.documentElement.outerHTML',
+            );
+            if (!rawHtml || typeof rawHtml !== 'string') {
+              return JSON.stringify({
+                error: 'Failed to get raw HTML from the page.',
+              });
+            }
+
+            // 2. Convert HTML to Markdown using Turndown
+            const turndownService = new TurndownService({
+              headingStyle: 'atx',
+              codeBlockStyle: 'fenced',
+              bulletListMarker: '-',
+              emDelimiter: '*',
+            });
+
+            // Configure Turndown to handle common HTML elements better
+            turndownService.addRule('removeScripts', {
+              filter: ['script', 'style', 'noscript'],
+              replacement: () => '',
+            });
+
+            turndownService.addRule('preserveLineBreaks', {
+              filter: 'br',
+              replacement: () => '\n',
+            });
+
+            const markdownContent = turndownService.turndown(rawHtml);
+
+            // 3. Save Raw HTML file using SecureFileManager
+            const tempDir = 'temp_html';
+            const uniqueId = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+            const relativePath = `${tempDir}/${uniqueId}.html`;
+
+            // Convert string to Uint8Array for writeFile
+            const encoder = new TextEncoder();
+            const htmlBytes = Array.from(encoder.encode(rawHtml));
+
+            await writeFile(relativePath, htmlBytes);
+
+            // 4. Return structured response
+            return JSON.stringify(
+              {
+                content: markdownContent,
+                saved_raw_html: relativePath,
+                metadata: {
+                  extraction_timestamp: new Date().toISOString(),
+                  content_length: markdownContent.length,
+                  raw_html_size: rawHtml.length,
+                },
+              },
+              null,
+              2,
+            );
+          } catch (error) {
+            logger.error('Error in browser_getPageContent:', error);
+            return JSON.stringify({
+              error: `Failed to process page content: ${error instanceof Error ? error.message : String(error)}`,
+            });
+          }
         },
       },
       {
@@ -344,7 +414,8 @@ export function BrowserToolProvider() {
       },
       {
         name: 'browser_extractStructuredContent',
-        description: 'Extracts clean, structured content from the page as JSON, removing styling and focusing on meaningful content.',
+        description:
+          'Extracts clean, structured content from the page as JSON, removing styling and focusing on meaningful content.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -354,28 +425,39 @@ export function BrowserToolProvider() {
             },
             selector: {
               type: 'string',
-              description: 'CSS selector to focus extraction on specific content area (optional, defaults to body).',
+              description:
+                'CSS selector to focus extraction on specific content area (optional, defaults to body).',
             },
             includeLinks: {
               type: 'boolean',
-              description: 'Whether to include href attributes from links (default: true).',
+              description:
+                'Whether to include href attributes from links (default: true).',
             },
             maxDepth: {
               type: 'number',
-              description: 'Maximum nesting depth for content extraction (default: 5).',
+              description:
+                'Maximum nesting depth for content extraction (default: 5).',
             },
           },
           required: ['sessionId'],
         },
         execute: async (args: Record<string, unknown>) => {
-          const { sessionId, selector = 'body', includeLinks = true, maxDepth = 5 } = args as {
+          const {
+            sessionId,
+            selector = 'body',
+            includeLinks = true,
+            maxDepth = 5,
+          } = args as {
             sessionId: string;
             selector?: string;
             includeLinks?: boolean;
             maxDepth?: number;
           };
-          logger.debug('Executing browser_extractStructuredContent', { sessionId, selector });
-          
+          logger.debug('Executing browser_extractStructuredContent', {
+            sessionId,
+            selector,
+          });
+
           // JavaScript to extract clean structured content
           const script = `
 (function() {
@@ -456,9 +538,9 @@ export function BrowserToolProvider() {
   
   return pageInfo;
 })()`;
-          
+
           const result = await executeScript(sessionId, script);
-          
+
           // Try to parse as JSON, if it fails return as text
           try {
             const parsed = JSON.parse(result);
@@ -475,11 +557,68 @@ export function BrowserToolProvider() {
       toolNames: browserTools.map((t) => t.name),
     });
 
-    registerLocalTools(browserTools);
+    const serviceId = 'browser';
+    const service = {
+      listTools: () => browserTools.map((tool) => {
+        // Extract meta data without execute function
+        return {
+          name: tool.name,
+          description: tool.description,
+          inputSchema: tool.inputSchema,
+        };
+      }),
+      executeTool: async (toolCall: ToolCall): Promise<MCPResponse> => {
+        const toolName = toolCall.function.name;
+        const tool = browserTools.find(t => t.name === toolName);
+        
+        if (!tool) {
+          throw new Error(`Browser tool not found: ${toolName}`);
+        }
+
+        // Parse arguments
+        let args: Record<string, unknown> = {};
+        try {
+          const raw = toolCall.function.arguments;
+          if (typeof raw === 'string') {
+            args = raw.length ? JSON.parse(raw) : {};
+          } else if (typeof raw === 'object' && raw !== null) {
+            args = raw as Record<string, unknown>;
+          }
+        } catch (error) {
+          logger.warn('Failed parsing browser tool arguments', { toolName, error });
+          args = {};
+        }
+
+        // Execute the tool
+        const result = await tool.execute(args);
+        
+        return {
+          jsonrpc: '2.0',
+          id: toolCall.id,
+          result: {
+            content: [{
+              type: 'text',
+              text: typeof result === 'string' ? result : JSON.stringify(result, null, 2)
+            }]
+          }
+        };
+      }
+    };
+
+    register(serviceId, service);
     hasRegistered.current = true;
 
     logger.debug('Browser tools registered successfully');
-  }, [registerLocalTools, executeScript]);
+
+    // Return cleanup function
+    return () => {
+      if (hasRegistered.current) {
+        unregister(serviceId);
+        hasRegistered.current = false;
+        logger.debug('Browser tools unregistered');
+      }
+    };
+  }, [register, unregister, executeScript, writeFile]);
 
   // This is a provider component, it doesn't render anything
   return null;

@@ -4,6 +4,7 @@ import {
   MessageSquare,
   Settings,
   Users,
+  Wrench,
 } from 'lucide-react';
 import React, { useEffect, useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
@@ -174,6 +175,28 @@ export default function AppSidebar({ onOpenSettings }: AppSidebarProps) {
                   >
                     <History size={16} />
                     <span>Search History</span>
+                  </SidebarMenuButton>
+                </Link>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        {/* Tools Section */}
+        <SidebarGroup>
+          <SidebarGroupLabel className="text-sm font-semibold uppercase tracking-wide mb-2">
+            Development
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <Link to="/tools/test">
+                  <SidebarMenuButton
+                    isActive={location.pathname === '/tools/test'}
+                    tooltip="Test Built-in Tools"
+                  >
+                    <Wrench size={16} />
+                    <span>Tools Test</span>
                   </SidebarMenuButton>
                 </Link>
               </SidebarMenuItem>

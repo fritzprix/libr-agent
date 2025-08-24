@@ -12,7 +12,7 @@ import { useSessionContext } from './SessionContext';
 import { useSessionHistory } from './SessionHistoryContext';
 import { useAIService } from '../hooks/use-ai-service';
 import { useAssistantContext } from './AssistantContext';
-import { useBuiltInTools } from './BuiltInToolContext';
+import { useBuiltInTool } from '@/features/tools';
 import { useUnifiedMCP } from '../hooks/use-unified-mcp';
 import { createId } from '@paralleldrive/cuid2';
 import { getLogger } from '../lib/logger';
@@ -200,7 +200,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const { value: settingValue } = useSettings();
   const { getCurrent: getCurrentAssistant, availableTools } =
     useAssistantContext();
-  const { availableTools: builtInTools } = useBuiltInTools();
+  const { availableTools: builtInTools } = useBuiltInTool();
   const cancelRequestRef = useRef(false);
 
   const [streamingMessage, setStreamingMessage] = useState<Message | null>(

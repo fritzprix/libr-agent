@@ -1,19 +1,22 @@
 import { render, screen, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MCPServerProvider, MCPServerContext } from './MCPServerContext';
-import { tauriMCPClient } from '../lib/tauri-mcp-client';
+import { useRustBackend } from '../hooks/use-rust-backend';
 import React from 'react';
 import { MCPTool } from '../lib/mcp-types';
 import { MCPConfig } from '../models/chat';
 
-// Mock the tauriMCPClient
-vi.mock('../lib/tauri-mcp-client', () => ({
-  tauriMCPClient: {
-    listToolsFromConfig: vi.fn(),
-    getConnectedServers: vi.fn(),
-    sampleFromModel: vi.fn(),
-  },
+// Mock the useRustBackend hook
+vi.mock('../hooks/use-rust-backend', () => ({
+  useRustBackend: vi.fn(),
 }));
+
+const mockRustBackend = {
+  listToolsFromConfig: vi.fn(),
+  getConnectedServers: vi.fn(),
+  sampleFromModel: vi.fn(),
+  callMCPTool: vi.fn(),
+};
 
 // Mock the logger
 vi.mock('../lib/logger', () => ({
@@ -54,6 +57,9 @@ const TestConsumer = () => {
 describe('MCPServerProvider', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    (useRustBackend as ReturnType<typeof vi.fn>).mockReturnValue(
+      mockRustBackend,
+    );
   });
 
   it('should have correct initial state', () => {
@@ -69,12 +75,8 @@ describe('MCPServerProvider', () => {
   });
 
   it('should handle successful server connection', async () => {
-    (
-      tauriMCPClient.listToolsFromConfig as ReturnType<typeof vi.fn>
-    ).mockResolvedValue(mockTools);
-    (
-      tauriMCPClient.getConnectedServers as ReturnType<typeof vi.fn>
-    ).mockResolvedValue(['server1']);
+    mockRustBackend.listToolsFromConfig.mockResolvedValue(mockTools);
+    mockRustBackend.getConnectedServers.mockResolvedValue(['server1']);
 
     let connectServers: (config: MCPConfig) => Promise<void>;
 
@@ -103,9 +105,9 @@ describe('MCPServerProvider', () => {
 
   it('should handle failed server connection', async () => {
     const errorMessage = 'Connection failed';
-    (
-      tauriMCPClient.listToolsFromConfig as ReturnType<typeof vi.fn>
-    ).mockRejectedValue(new Error(errorMessage));
+    mockRustBackend.listToolsFromConfig.mockRejectedValue(
+      new Error(errorMessage),
+    );
 
     let connectServers: (config: MCPConfig) => Promise<void>;
 
