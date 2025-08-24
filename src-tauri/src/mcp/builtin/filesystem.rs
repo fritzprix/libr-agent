@@ -822,7 +822,7 @@ impl FilesystemServer {
 #[async_trait]
 impl BuiltinMCPServer for FilesystemServer {
     fn name(&self) -> &str {
-        "builtin.filesystem"
+        "filesystem"
     }
 
     fn description(&self) -> &str {

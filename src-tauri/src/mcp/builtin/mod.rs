@@ -76,11 +76,8 @@ impl BuiltinServerRegistry {
         let mut all_tools = Vec::new();
 
         for server in self.servers.values() {
-            let mut tools = server.tools();
+            let tools = server.tools();
             // Prefix tool names with server name for uniqueness
-            for tool in &mut tools {
-                tool.name = format!("{}__{}", server.name(), tool.name);
-            }
             all_tools.extend(tools);
         }
 

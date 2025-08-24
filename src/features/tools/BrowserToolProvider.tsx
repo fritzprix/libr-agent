@@ -36,7 +36,7 @@ export function BrowserToolProvider() {
 
     const browserTools: LocalMCPTool[] = [
       {
-        name: 'browser_createSession',
+        name: 'createSession',
         description:
           'Creates a new interactive browser session in a separate window.',
         inputSchema: {
@@ -64,7 +64,7 @@ export function BrowserToolProvider() {
         },
       },
       {
-        name: 'browser_closeSession',
+        name: 'closeSession',
         description: 'Closes an existing browser session and its window.',
         inputSchema: {
           type: 'object',
@@ -86,7 +86,7 @@ export function BrowserToolProvider() {
         },
       },
       {
-        name: 'browser_listSessions',
+        name: 'listSessions',
         description: 'Lists all active browser sessions.',
         inputSchema: {
           type: 'object',
@@ -100,7 +100,7 @@ export function BrowserToolProvider() {
         },
       },
       {
-        name: 'browser_getPageContent',
+        name: 'getPageContent',
         description:
           'Extracts clean content from the page as Markdown, and saves the raw HTML to a temporary file for reference.',
         inputSchema: {
@@ -184,7 +184,7 @@ export function BrowserToolProvider() {
         },
       },
       {
-        name: 'browser_clickElement',
+        name: 'clickElement',
         description: 'Clicks on a DOM element using CSS selector.',
         inputSchema: {
           type: 'object',
@@ -227,7 +227,7 @@ export function BrowserToolProvider() {
         },
       },
       {
-        name: 'browser_inputText',
+        name: 'inputText',
         description: 'Inputs text into a form field using CSS selector.',
         inputSchema: {
           type: 'object',
@@ -274,7 +274,7 @@ export function BrowserToolProvider() {
         },
       },
       {
-        name: 'browser_getCurrentUrl',
+        name: 'getCurrentUrl',
         description: 'Gets the current URL of the browser page.',
         inputSchema: {
           type: 'object',
@@ -293,7 +293,7 @@ export function BrowserToolProvider() {
         },
       },
       {
-        name: 'browser_getPageTitle',
+        name: 'getPageTitle',
         description: 'Gets the title of the current browser page.',
         inputSchema: {
           type: 'object',
@@ -312,7 +312,7 @@ export function BrowserToolProvider() {
         },
       },
       {
-        name: 'browser_elementExists',
+        name: 'elementExists',
         description: 'Checks if a DOM element exists using CSS selector.',
         inputSchema: {
           type: 'object',
@@ -351,7 +351,7 @@ export function BrowserToolProvider() {
         },
       },
       {
-        name: 'browser_scrollPage',
+        name: 'scrollPage',
         description: 'Scrolls the page to specified coordinates.',
         inputSchema: {
           type: 'object',
@@ -383,7 +383,7 @@ export function BrowserToolProvider() {
         },
       },
       {
-        name: 'browser_navigateToUrl',
+        name: 'navigateToUrl',
         description: 'Navigates to a new URL in an existing browser session.',
         inputSchema: {
           type: 'object',
@@ -413,7 +413,7 @@ export function BrowserToolProvider() {
         },
       },
       {
-        name: 'browser_extractStructuredContent',
+        name: 'extractStructuredContent',
         description:
           'Extracts clean, structured content from the page as JSON, removing styling and focusing on meaningful content.',
         inputSchema: {
