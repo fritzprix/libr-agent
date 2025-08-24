@@ -298,9 +298,9 @@ export class WebMCPProxy {
     serverName: string,
     toolName: string,
     args: unknown,
-  ): Promise<unknown> {
+  ): Promise<WebMCPResponse> {
     logger.debug('Calling tool', { serverName, toolName });
-    const result = await this.sendMessage({
+    const result = await this.sendMessage<WebMCPResponse>({
       type: 'callTool',
       serverName,
       toolName,

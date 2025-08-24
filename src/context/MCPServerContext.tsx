@@ -9,7 +9,7 @@ import React, {
 } from 'react';
 import { useAsyncFn } from 'react-use';
 import { getLogger } from '../lib/logger';
-import { tauriMCPClient } from '../lib/tauri-mcp-client';
+import { useRustBackend } from '../hooks/use-rust-backend';
 import {
   MCPResponse,
   MCPTool,
@@ -17,7 +17,7 @@ import {
   SamplingOptions,
   SamplingResponse,
 } from '../lib/mcp-types';
-import { MCPConfig } from '../models/chat';
+import { MCPConfig, ToolCall } from '../models/chat';
 
 const logger = getLogger('MCPServerContext');
 
@@ -28,11 +28,7 @@ export interface MCPServerContextType {
   error?: string;
   status: Record<string, boolean>;
   connectServers: (mcpConfigs: MCPConfig) => Promise<void>;
-  executeToolCall: (toolCall: {
-    id: string;
-    type: 'function';
-    function: { name: string; arguments: string };
-  }) => Promise<MCPResponse>;
+  executeToolCall: (toolCall: ToolCall) => Promise<MCPResponse>;
   sampleFromModel: (
     serverName: string,
     prompt: string,
@@ -51,6 +47,7 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
   const [serverStatus, setServerStatus] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | undefined>(undefined);
   const availableToolsRef = useRef(availableTools);
+  const { listToolsFromConfig, getConnectedServers, callMCPTool, sampleFromModel: rustSampleFromModel } = useRustBackend();
 
   const [{ loading: isLoading }, connectServers] = useAsyncFn(
     async (mcpConfig: MCPConfig) => {
@@ -74,15 +71,15 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
         });
 
         setServerStatus(serverStatus);
-        const rawTools = await tauriMCPClient.listToolsFromConfig(mcpConfig);
+        const rawTools = await listToolsFromConfig(mcpConfig);
 
         // Add external. prefix to all external MCP tools
         const tools = rawTools.map((tool) => ({
           ...tool,
-          name: tool.name
+          name: tool.name,
         }));
 
-        const connectedServers = await tauriMCPClient.getConnectedServers();
+        const connectedServers = await getConnectedServers();
         for (const serverName of connectedServers) {
           if (Object.prototype.hasOwnProperty.call(serverStatus, serverName)) {
             serverStatus[serverName] = true;
@@ -106,11 +103,7 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
   );
 
   const executeToolCall = useCallback(
-    async (toolCall: {
-      id: string;
-      type: 'function';
-      function: { name: string; arguments: string };
-    }): Promise<MCPResponse> => {
+    async (toolCall: ToolCall): Promise<MCPResponse> => {
       logger.debug(`Executing tool call:`, { toolCall });
       const aiProvidedToolName = toolCall.function.name;
 
@@ -131,20 +124,12 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
         );
       }
 
-      let toolArguments: Record<string, unknown>;
-      try {
-        toolArguments = JSON.parse(toolCall.function.arguments);
-      } catch (parseError) {
-        const errorMsg = `Failed to parse arguments: ${parseError instanceof Error ? parseError.message : String(parseError)}`;
-        logger.error(errorMsg, { arguments: toolCall.function.arguments });
-        return normalizeToolResult(
-          { error: errorMsg, success: false },
-          aiProvidedToolName,
-        );
-      }
+      const toolArguments: Record<string, unknown> = JSON.parse(
+        toolCall.function.arguments,
+      );
 
       try {
-        const rawResponse = await tauriMCPClient.callTool(
+        const rawResponse = await callMCPTool(
           serverName,
           toolName,
           toolArguments,
@@ -181,7 +166,7 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
         prompt,
         options,
       });
-      return tauriMCPClient.sampleFromModel(serverName, prompt, options);
+      return rustSampleFromModel(serverName, prompt, options);
     },
     [],
   );

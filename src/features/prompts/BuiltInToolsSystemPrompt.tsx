@@ -16,10 +16,7 @@ export function BuiltInToolsSystemPrompt() {
   const { registerSystemPrompt, unregisterSystemPrompt } = useChatContext();
   const { server } = useWebMCPServer<ContentStoreServer>('content-store');
   const { getCurrentSession } = useSessionContext();
-  const {
-    availableTools,
-    isLoadingTauriTools,
-  } = useBuiltInTools();
+  const { availableTools, isLoadingTauriTools } = useBuiltInTools();
 
   const buildPrompt = useCallback(async () => {
     let promptSections = [];
@@ -81,14 +78,8 @@ Tool details and usage instructions are provided separately.
 
     const fullPrompt = promptSections.join('\n');
 
-
     return fullPrompt;
-  }, [
-    getCurrentSession,
-    server,
-    availableTools.length,
-    isLoadingTauriTools,
-  ]);
+  }, [getCurrentSession, server, availableTools.length, isLoadingTauriTools]);
 
   useEffect(() => {
     // Register the system prompt even if server is not available yet

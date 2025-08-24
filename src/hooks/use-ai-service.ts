@@ -10,7 +10,6 @@ const logger = getLogger('useAIService');
 
 const DEFAULT_SYSTEM_PROMPT = 'You are a helpful assistant.';
 
-
 export const useAIService = (config?: AIServiceConfig) => {
   const {
     value: {
@@ -21,7 +20,7 @@ export const useAIService = (config?: AIServiceConfig) => {
   const [response, setResponse] = useState<Message | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
-  useEffect(()  => {
+  useEffect(() => {
     logger.info('use_ai_service:', { config: config?.tools });
   }, []);
   const serviceInstance = useMemo(

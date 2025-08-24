@@ -3,16 +3,10 @@ import { useWebMCPTools } from './use-web-mcp';
 import { useBuiltInTools } from '@/context/BuiltInToolContext';
 import { useCallback, useMemo } from 'react';
 import { MCPResponse, MCPTool, MCPResourceContent } from '@/lib/mcp-types';
-import { UIResource } from '@/models/chat';
+import { ToolCall, UIResource } from '@/models/chat';
 import { getLogger } from '@/lib/logger';
 
 const logger = getLogger('useUnifiedMCP');
-
-interface ToolCall {
-  id: string;
-  type: 'function';
-  function: { name: string; arguments: string };
-}
 
 type BackendType = 'ExternalMCP' | 'BuiltInWeb' | 'BuiltInRust';
 
@@ -210,7 +204,7 @@ export const useUnifiedMCP = () => {
       try {
         if (toolType === 'BuiltInWeb') {
           // Execute web worker tool
-          const args = JSON.parse(actualToolCall.function.arguments);
+          const args = actualToolCall.function.arguments;
           const result = await executeWebBuiltinTool(resolvedToolName, args);
 
           // Check if result is already MCPResponse

@@ -162,7 +162,7 @@ export const WebMCPProvider: React.FC<WebMCPProviderProps> = ({
       const rawTools = await proxyRef.current.listTools(serverName);
       const tools = rawTools.map((tool) => ({
         ...tool,
-        name: tool.name
+        name: tool.name,
       }));
 
       // Update server state
@@ -179,7 +179,7 @@ export const WebMCPProvider: React.FC<WebMCPProviderProps> = ({
       const allRawTools = await proxyRef.current.listAllTools();
       const allTools = allRawTools.map((tool) => ({
         ...tool,
-        name: tool.name
+        name: tool.name,
       }));
       setAvailableTools(allTools);
 
