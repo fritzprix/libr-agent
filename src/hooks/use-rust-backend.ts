@@ -54,6 +54,7 @@ export const useRustBackend = () => {
 
     // File System Operations
     readFile: client.readFile,
+    readDroppedFile: client.readDroppedFile,
     writeFile: client.writeFile,
 
     // Log Management

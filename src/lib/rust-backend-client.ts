@@ -186,6 +186,10 @@ export async function readFile(filePath: string): Promise<number[]> {
   return safeInvoke<number[]>('read_file', { filePath });
 }
 
+export async function readDroppedFile(filePath: string): Promise<number[]> {
+  return safeInvoke<number[]>('read_dropped_file', { filePath });
+}
+
 export async function writeFile(
   filePath: string,
   content: number[],
@@ -300,6 +304,7 @@ export default {
   getValidatedTools,
   validateToolSchema,
   readFile,
+  readDroppedFile,
   writeFile,
   getAppLogsDir,
   backupCurrentLog,

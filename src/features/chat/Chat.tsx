@@ -568,8 +568,8 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
             sessionId: currentSession?.id,
           });
 
-          // Read file content using type-safe Rust backend
-          const fileData = await rustBackend.readFile(filePath);
+          // Read file content using type-safe Rust backend for dropped files
+          const fileData = await rustBackend.readDroppedFile(filePath);
 
           // Convert number array to Uint8Array and create a blob
           const uint8Array = new Uint8Array(fileData);

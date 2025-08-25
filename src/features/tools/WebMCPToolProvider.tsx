@@ -155,7 +155,6 @@ export function WebMCPProvider({ servers = [] }: WebMCPProviderProps) {
   useEffect(() => {
     if (
       !isLoading &&
-      initialized &&
       services &&
       Object.entries(services).length > 0
     ) {
