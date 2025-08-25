@@ -26,7 +26,7 @@ interface SessionHistoryContextType {
   loadMore: () => void;
   hasMore: boolean;
   addMessage: (message: Message) => Promise<Message>;
-  addHistoryMessages: (messages: Message[]) => Promise<Message[]>;
+  addMessages: (messages: Message[]) => Promise<Message[]>;
   updateMessage: (
     messageId: string,
     updates: Partial<Message>,
@@ -99,99 +99,35 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
     return !!(message.role && (message.content || message.tool_calls));
   }, []);
 
-  const addMessage = useCallback(
-    async (message: Message): Promise<Message> => {
-      if (!currentSession) throw new Error('No active session.');
-      if (!validateMessage(message))
-        throw new Error('Invalid message structure.');
-
-      const messageWithSessionId = { ...message, sessionId: currentSession.id };
-
-      logger.info('Adding message with optimistic update:', {
-        messageWithSessionId,
-      });
-
-      // 낙관적 업데이트 전 현재 데이터 백업
-      const previousData = data;
-
-      // 낙관적 업데이트
-      await mutate(
-        (currentData) => {
-          if (!currentData || currentData.length === 0) {
-            const newPage: Page<Message> = {
-              items: [messageWithSessionId],
-              page: 1,
-              pageSize: PAGE_SIZE,
-              totalItems: 1,
-              hasNextPage: false,
-              hasPreviousPage: false,
-            };
-            logger.info('Creating new page with first message:', { newPage });
-            return [newPage];
-          }
-          const newData = [...currentData];
-          const lastPage = { ...newData[newData.length - 1] };
-          lastPage.items = [...lastPage.items, messageWithSessionId];
-          newData[newData.length - 1] = lastPage;
-          logger.info('Added message to existing page:', {
-            messageId: messageWithSessionId.id,
-            totalMessages: lastPage.items.length,
-          });
-          return newData;
-        },
-        { revalidate: false },
-      );
-
-      try {
-        await dbService.messages.upsert(messageWithSessionId);
-        logger.info('Successfully persisted message to DB:', {
-          messageId: messageWithSessionId.id,
-        });
-      } catch (e) {
-        logger.error('Failed to add message, rolling back', e);
-        // 실제 롤백: 이전 데이터로 복원
-        await mutate(previousData, { revalidate: false });
-        throw e;
-      }
-      return messageWithSessionId;
-    },
-    [currentSession, mutate, validateMessage, data],
-  );
-
-  /**
-   * 여러 메시지를 한 번에 추가하는 함수.
-   * ChatContext의 submit 함수에서 사용됩니다.
-   */
-  const addHistoryMessages = useCallback(
-    async (messagesToAdd: Message[]): Promise<Message[]> => {
+  const addMessages = useCallback(
+    async (messagesToAdd: Message[]) => {
       if (!currentSession) throw new Error('No active session.');
       messagesToAdd.forEach(validateMessage);
-
-      const messagesWithSessionId = messagesToAdd.map((msg) => ({
-        ...msg,
+      const messagesWithSessionId = messagesToAdd.map((m) => ({
+        ...m,
         sessionId: currentSession.id,
       }));
 
-      // 낙관적 업데이트 전 현재 데이터 백업
       const previousData = data;
 
       await mutate(
         (currentData) => {
           if (!currentData || currentData.length === 0) {
-            const newPage: Page<Message> = {
-              items: messagesWithSessionId,
-              page: 1,
-              pageSize: PAGE_SIZE,
-              totalItems: messagesWithSessionId.length,
-              hasNextPage: false,
-              hasPreviousPage: false,
-            };
-            return [newPage];
+            return [
+              {
+                items: messagesWithSessionId,
+                page: 1,
+                pageSize: PAGE_SIZE,
+                totalItems: messagesWithSessionId.length,
+                hasNextPage: false,
+                hasPreviousPage: false,
+              },
+            ];
           }
           const newData = [...currentData];
-          const lastPage = { ...newData[newData.length - 1] };
-          lastPage.items = [...lastPage.items, ...messagesWithSessionId];
-          newData[newData.length - 1] = lastPage;
+          const last = { ...newData[newData.length - 1] };
+          last.items = [...last.items, ...messagesWithSessionId];
+          newData[newData.length - 1] = last;
           return newData;
         },
         { revalidate: false },
@@ -200,14 +136,22 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
       try {
         await dbService.messages.upsertMany(messagesWithSessionId);
       } catch (e) {
-        logger.error('Failed to add message batch, rolling back', e);
-        // 실제 롤백: 이전 데이터로 복원
         await mutate(previousData, { revalidate: false });
         throw e;
       }
+
       return messagesWithSessionId;
     },
-    [currentSession, mutate, validateMessage, data],
+    [currentSession, mutate, data, validateMessage],
+  );
+
+  // 기존 addMessage는 내부적으로 addMessages([message]) 호출
+  const addMessage = useCallback(
+    async (message: Message) => {
+      const [added] = await addMessages([message]);
+      return added;
+    },
+    [addMessages],
   );
 
   const updateMessage = useCallback(
@@ -300,7 +244,7 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
       loadMore,
       hasMore,
       addMessage,
-      addHistoryMessages,
+      addMessages,
       updateMessage,
       deleteMessage,
       clearHistory,
@@ -312,7 +256,7 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
       loadMore,
       hasMore,
       addMessage,
-      addHistoryMessages,
+      addMessages,
       updateMessage,
       deleteMessage,
       clearHistory,

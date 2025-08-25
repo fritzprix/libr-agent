@@ -19,5 +19,7 @@ export const useWebMCPTools = () => {
  * @deprecated Use useWebMCPServer from '@/hooks/use-web-mcp-server' instead
  */
 export const useWebMCPManagement = () => {
-  throw new Error('useWebMCPManagement is deprecated. Use useWebMCPServer instead.');
+  throw new Error(
+    'useWebMCPManagement is deprecated. Use useWebMCPServer instead.',
+  );
 };

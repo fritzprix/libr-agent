@@ -64,7 +64,7 @@ describe('BuiltInToolProvider', () => {
             name: 'list_directory',
             arguments: '{}',
           }),
-        })
+        }),
       );
     });
 
@@ -112,7 +112,7 @@ describe('BuiltInToolProvider', () => {
             name: 'name__with__underscores',
             arguments: '{}',
           }),
-        })
+        }),
       );
     });
 
@@ -133,7 +133,7 @@ describe('BuiltInToolProvider', () => {
       await expect(
         act(async () => {
           await result.current.executeTool(toolCall);
-        })
+        }),
       ).rejects.toThrow('Invalid builtin tool name: invalidname');
     });
 
@@ -181,7 +181,7 @@ describe('BuiltInToolProvider', () => {
             name: 'test_tool',
             arguments: '{}',
           }),
-        })
+        }),
       );
     });
   });
@@ -213,8 +213,12 @@ describe('BuiltInToolProvider', () => {
       });
 
       expect(result.current.availableTools).toHaveLength(2);
-      expect(result.current.availableTools[0].name).toBe('builtin.testservice__tool1');
-      expect(result.current.availableTools[1].name).toBe('builtin.testservice__tool2');
+      expect(result.current.availableTools[0].name).toBe(
+        'builtin.testservice__tool1',
+      );
+      expect(result.current.availableTools[1].name).toBe(
+        'builtin.testservice__tool2',
+      );
     });
 
     it('should route tool calls to correct service', async () => {
@@ -235,12 +239,24 @@ describe('BuiltInToolProvider', () => {
       });
 
       const service1: BuiltInService = {
-        listTools: () => [{ name: 'tool1', description: 'Tool 1', inputSchema: { type: 'object', properties: {}, required: [] } }],
+        listTools: () => [
+          {
+            name: 'tool1',
+            description: 'Tool 1',
+            inputSchema: { type: 'object', properties: {}, required: [] },
+          },
+        ],
         executeTool: service1Mock,
       };
 
       const service2: BuiltInService = {
-        listTools: () => [{ name: 'tool2', description: 'Tool 2', inputSchema: { type: 'object', properties: {}, required: [] } }],
+        listTools: () => [
+          {
+            name: 'tool2',
+            description: 'Tool 2',
+            inputSchema: { type: 'object', properties: {}, required: [] },
+          },
+        ],
         executeTool: service2Mock,
       };
 
@@ -264,7 +280,7 @@ describe('BuiltInToolProvider', () => {
         expect.objectContaining({
           id: 'call1',
           function: expect.objectContaining({ name: 'tool1', arguments: '{}' }),
-        })
+        }),
       );
 
       // Test routing to service2
@@ -282,7 +298,7 @@ describe('BuiltInToolProvider', () => {
         expect.objectContaining({
           id: 'call2',
           function: expect.objectContaining({ name: 'tool2', arguments: '{}' }),
-        })
+        }),
       );
     });
 
@@ -303,7 +319,7 @@ describe('BuiltInToolProvider', () => {
       await expect(
         act(async () => {
           await result.current.executeTool(toolCall);
-        })
+        }),
       ).rejects.toThrow('No built-in service found for serviceId: unknown');
     });
 
@@ -344,7 +360,7 @@ describe('BuiltInToolProvider', () => {
       });
 
       const loadServiceMock = vi.fn().mockResolvedValue(undefined);
-      
+
       const mockService: BuiltInService = {
         listTools: () => [],
         executeTool: vi.fn(),
@@ -354,7 +370,7 @@ describe('BuiltInToolProvider', () => {
       await act(async () => {
         result.current.register('testservice', mockService);
         // Wait a bit for async operations
-        await new Promise(resolve => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
       });
 
       expect(loadServiceMock).toHaveBeenCalled();
@@ -366,7 +382,7 @@ describe('BuiltInToolProvider', () => {
       });
 
       const unloadServiceMock = vi.fn().mockResolvedValue(undefined);
-      
+
       const mockService: BuiltInService = {
         listTools: () => [],
         executeTool: vi.fn(),
@@ -380,7 +396,7 @@ describe('BuiltInToolProvider', () => {
       await act(async () => {
         result.current.unregister('testservice');
         // Wait a bit for async operations
-        await new Promise(resolve => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
       });
 
       expect(unloadServiceMock).toHaveBeenCalled();

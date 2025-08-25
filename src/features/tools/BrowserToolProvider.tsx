@@ -4,7 +4,15 @@ import { useBrowserInvoker } from '@/hooks/use-browser-invoker';
 import { useRustBackend } from '@/hooks/use-rust-backend';
 import { MCPTool, MCPResponse } from '@/lib/mcp-types';
 import { getLogger } from '@/lib/logger';
-import { invoke } from '@tauri-apps/api/core';
+import {
+  createBrowserSession,
+  closeBrowserSession,
+  listBrowserSessions,
+  clickElement as rbClickElement,
+  inputText as rbInputText,
+  pollScriptResult as rbPollScriptResult,
+  navigateToUrl as rbNavigateToUrl,
+} from '@/lib/rust-backend-client';
 import TurndownService from 'turndown';
 import { ToolCall } from '@/models/chat';
 
@@ -14,6 +22,52 @@ const logger = getLogger('BrowserToolProvider');
 type LocalMCPTool = MCPTool & {
   execute: (args: Record<string, unknown>) => Promise<unknown>;
 };
+
+/**
+ * Formats browser tool results that return JSON envelopes
+ * Tries to parse JSON and format diagnostics nicely, falls back to raw text
+ */
+function formatBrowserResult(raw: unknown): string {
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      if ('ok' in parsed) {
+        if (parsed.ok) {
+          let result = `✓ ${parsed.action.toUpperCase()} successful (selector: ${parsed.selector})`;
+          if (parsed.diagnostics) {
+            result += `\n\nDiagnostics:\n${JSON.stringify(parsed.diagnostics, null, 2)}`;
+          }
+          if (parsed.value_preview) {
+            result += `\nValue preview: "${parsed.value_preview}"`;
+          }
+          if (parsed.note) {
+            result += `\n\nNote: ${parsed.note}`;
+          }
+          return result;
+        } else {
+          let result = `✗ ${parsed.action.toUpperCase()} failed`;
+          if (parsed.reason) {
+            result += ` - ${parsed.reason}`;
+          }
+          if (parsed.error) {
+            result += ` - ${parsed.error}`;
+          }
+          if (parsed.selector) {
+            result += ` (selector: ${parsed.selector})`;
+          }
+          if (parsed.diagnostics) {
+            result += `\n\nDiagnostics:\n${JSON.stringify(parsed.diagnostics, null, 2)}`;
+          }
+          return result;
+        }
+      }
+      return raw;
+    } catch {
+      return raw;
+    }
+  }
+  return String(raw);
+}
 
 /**
  * Provider component that registers browser-specific tools with the BuiltInToolProvider.
@@ -56,10 +110,7 @@ export function BrowserToolProvider() {
         execute: async (args: Record<string, unknown>) => {
           const { url, title } = args as { url: string; title?: string };
           logger.debug('Executing browser_createSession', { url, title });
-          const sessionId = await invoke<string>('create_browser_session', {
-            url,
-            title: title || null,
-          });
+          const sessionId = await createBrowserSession({ url, title: title || null });
           return `Browser session created successfully: ${sessionId}`;
         },
       },
@@ -79,10 +130,8 @@ export function BrowserToolProvider() {
         execute: async (args: Record<string, unknown>) => {
           const { sessionId } = args as { sessionId: string };
           logger.debug('Executing browser_closeSession', { sessionId });
-          const result = await invoke<string>('close_browser_session', {
-            sessionId,
-          });
-          return result;
+          await closeBrowserSession(sessionId);
+          return `Browser session closed: ${sessionId}`;
         },
       },
       {
@@ -95,7 +144,7 @@ export function BrowserToolProvider() {
         },
         execute: async () => {
           logger.debug('Executing browser_listSessions');
-          const sessions = await invoke<unknown[]>('list_browser_sessions');
+          const sessions = await listBrowserSessions();
           return `Active browser sessions: ${JSON.stringify(sessions, null, 2)}`;
         },
       },
@@ -209,21 +258,33 @@ export function BrowserToolProvider() {
             sessionId,
             selector,
           });
-          const script = `
-(function() {
-  try {
-    const element = document.querySelector('${selector.replace(/'/g, "\\'")}');
-    if (element) {
-      element.click();
-      return 'Element clicked successfully';
-    } else {
-      throw new Error('Element not found: ${selector.replace(/'/g, "\\'")}');
-    }
-  } catch (error) {
-    throw new Error('Click failed: ' + error.message);
-  }
-})()`;
-          return executeScript(sessionId, script);
+          
+          try {
+            const requestId = await rbClickElement(sessionId, selector);
+            
+            logger.debug('Click element request ID received', { requestId });
+            
+            // Poll for result with timeout
+            let attempts = 0;
+            const maxAttempts = 30; // 3 seconds with 100ms intervals
+            
+            while (attempts < maxAttempts) {
+              const result = await rbPollScriptResult(requestId);
+              
+              if (result !== null) {
+                logger.debug('Poll result received', { result });
+                return formatBrowserResult(result);
+              }
+              
+              await new Promise(resolve => setTimeout(resolve, 100));
+              attempts++;
+            }
+            
+            return 'Click operation timed out - no response received from browser';
+          } catch (error) {
+            logger.error('Error in click_element execution', { error, sessionId, selector });
+            return `Error executing click: ${error instanceof Error ? error.message : String(error)}`;
+          }
         },
       },
       {
@@ -254,23 +315,33 @@ export function BrowserToolProvider() {
             text: string;
           };
           logger.debug('Executing browser_inputText', { sessionId, selector });
-          const script = `
-(function() {
-  try {
-    const element = document.querySelector('${selector.replace(/'/g, "\\'")}');
-    if (element) {
-      element.value = '${text.replace(/'/g, "\\'").replace(/\n/g, '\\n')}';
-      element.dispatchEvent(new Event('input', { bubbles: true }));
-      element.dispatchEvent(new Event('change', { bubbles: true }));
-      return 'Text input successfully: ' + element.value;
-    } else {
-      throw new Error('Input element not found: ${selector.replace(/'/g, "\\'")}');
-    }
-  } catch (error) {
-    throw new Error('Input failed: ' + error.message);
-  }
-})()`;
-          return executeScript(sessionId, script);
+          
+          try {
+            const requestId = await rbInputText(sessionId, selector, text);
+            
+            logger.debug('Input text request ID received', { requestId });
+            
+            // Poll for result with timeout
+            let attempts = 0;
+            const maxAttempts = 30; // 3 seconds with 100ms intervals
+            
+            while (attempts < maxAttempts) {
+              const result = await rbPollScriptResult(requestId);
+              
+              if (result !== null) {
+                logger.debug('Poll result received', { result });
+                return formatBrowserResult(result);
+              }
+              
+              await new Promise(resolve => setTimeout(resolve, 100));
+              attempts++;
+            }
+            
+            return 'Input operation timed out - no response received from browser';
+          } catch (error) {
+            logger.error('Error in input_text execution', { error, sessionId, selector });
+            return `Error executing input: ${error instanceof Error ? error.message : String(error)}`;
+          }
         },
       },
       {
@@ -405,10 +476,7 @@ export function BrowserToolProvider() {
             url: string;
           };
           logger.debug('Executing browser_navigateToUrl', { sessionId, url });
-          const result = await invoke<string>('navigate_to_url', {
-            sessionId,
-            url,
-          });
+          const result = await rbNavigateToUrl(sessionId, url);
           return result;
         },
       },
@@ -559,18 +627,19 @@ export function BrowserToolProvider() {
 
     const serviceId = 'browser';
     const service = {
-      listTools: () => browserTools.map((tool) => {
-        // Extract meta data without execute function
-        return {
-          name: tool.name,
-          description: tool.description,
-          inputSchema: tool.inputSchema,
-        };
-      }),
+      listTools: () =>
+        browserTools.map((tool) => {
+          // Extract meta data without execute function
+          return {
+            name: tool.name,
+            description: tool.description,
+            inputSchema: tool.inputSchema,
+          };
+        }),
       executeTool: async (toolCall: ToolCall): Promise<MCPResponse> => {
         const toolName = toolCall.function.name;
-        const tool = browserTools.find(t => t.name === toolName);
-        
+        const tool = browserTools.find((t) => t.name === toolName);
+
         if (!tool) {
           throw new Error(`Browser tool not found: ${toolName}`);
         }
@@ -585,24 +654,32 @@ export function BrowserToolProvider() {
             args = raw as Record<string, unknown>;
           }
         } catch (error) {
-          logger.warn('Failed parsing browser tool arguments', { toolName, error });
+          logger.warn('Failed parsing browser tool arguments', {
+            toolName,
+            error,
+          });
           args = {};
         }
 
         // Execute the tool
         const result = await tool.execute(args);
-        
+
         return {
           jsonrpc: '2.0',
           id: toolCall.id,
           result: {
-            content: [{
-              type: 'text',
-              text: typeof result === 'string' ? result : JSON.stringify(result, null, 2)
-            }]
-          }
+            content: [
+              {
+                type: 'text',
+                text:
+                  typeof result === 'string'
+                    ? result
+                    : JSON.stringify(result, null, 2),
+              },
+            ],
+          },
         };
-      }
+      },
     };
 
     register(serviceId, service);
