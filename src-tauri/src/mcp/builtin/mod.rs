@@ -84,6 +84,21 @@ impl BuiltinServerRegistry {
         all_tools
     }
 
+    pub fn list_tools_for_server(&self, server_name: &str) -> Vec<MCPTool> {
+        // Remove "builtin." prefix if present
+        let normalized_server_name = if server_name.starts_with("builtin.") {
+            &server_name[8..]
+        } else {
+            server_name
+        };
+
+        if let Some(server) = self.get_server(normalized_server_name) {
+            server.tools()
+        } else {
+            Vec::new()
+        }
+    }
+
     pub async fn call_tool(&self, server_name: &str, tool_name: &str, args: Value) -> MCPResponse {
         if let Some(server) = self.get_server(server_name) {
             server.call_tool(tool_name, args).await

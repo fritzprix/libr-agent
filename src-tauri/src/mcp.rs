@@ -724,6 +724,15 @@ impl MCPServerManager {
         }
     }
 
+    /// List tools from a specific builtin server
+    pub async fn list_builtin_tools_for(&self, server_name: &str) -> Vec<MCPTool> {
+        let servers = self.builtin_servers.lock().await;
+        match servers.as_ref() {
+            Some(registry) => registry.list_tools_for_server(server_name),
+            None => Vec::new(),
+        }
+    }
+
     /// Call a tool on a builtin server
     pub async fn call_builtin_tool(
         &self,

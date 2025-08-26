@@ -220,8 +220,11 @@ async fn list_builtin_servers() -> Vec<String> {
 }
 
 #[tauri::command]
-async fn list_builtin_tools() -> Vec<mcp::MCPTool> {
-    get_mcp_manager().list_builtin_tools().await
+async fn list_builtin_tools(server_name: Option<String>) -> Vec<mcp::MCPTool> {
+    match server_name {
+        Some(name) => get_mcp_manager().list_builtin_tools_for(&name).await,
+        None => get_mcp_manager().list_builtin_tools().await,
+    }
 }
 
 #[tauri::command]
@@ -357,48 +360,49 @@ async fn read_file(
 async fn read_dropped_file(file_path: String) -> Result<Vec<u8>, String> {
     use std::path::Path;
     use tokio::fs;
-    
+
     let path = Path::new(&file_path);
-    
+
     // Basic security checks for dropped files
     if !path.exists() {
         return Err(format!("File does not exist: {}", file_path));
     }
-    
+
     if !path.is_file() {
         return Err(format!("Path is not a file: {}", file_path));
     }
-    
+
     // Check file size (10MB limit)
     if let Ok(metadata) = fs::metadata(path).await {
         const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024; // 10MB
         if metadata.len() > MAX_FILE_SIZE {
             return Err(format!(
-                "File too large: {} bytes (max: {} bytes)", 
-                metadata.len(), 
+                "File too large: {} bytes (max: {} bytes)",
+                metadata.len(),
                 MAX_FILE_SIZE
             ));
         }
     }
-    
+
     // Only allow specific file extensions
     let allowed_extensions = ["txt", "md", "json", "pdf", "docx", "xlsx"];
-    let extension = path.extension()
+    let extension = path
+        .extension()
         .and_then(|s| s.to_str())
         .map(|s| s.to_lowercase());
-    
+
     match extension {
         Some(ext) if allowed_extensions.contains(&ext.as_str()) => {
             // Extension is allowed, proceed with reading
         }
         _ => {
             return Err(format!(
-                "File type not allowed. Supported: {}", 
+                "File type not allowed. Supported: {}",
                 allowed_extensions.join(", ")
             ));
         }
     }
-    
+
     // Read the file
     fs::read(path)
         .await
