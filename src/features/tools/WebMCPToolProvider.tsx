@@ -110,30 +110,26 @@ export function WebMCPProvider({ servers = [] }: WebMCPProviderProps) {
       // Log returned result from worker/proxy for debugging and to inspect payload shape
       logger.info('WebMCPToolProvider executeTool result', { serviceId, call, result });
 
+      // proxy.callTool resolves to the worker's result object (not the full
+      // WebMCPResponse). Use a null id when the worker result doesn't provide
+      // one and stringify the returned object itself so the text payload is
+      // preserved.
+      const maybeResp = result as unknown;
+      const respId =
+        typeof maybeResp === 'object' && maybeResp !== null && 'id' in maybeResp
+    ? (maybeResp as { id?: string | number }).id
+          : null;
+
       return {
-        id: result.id,
+        id: respId ?? null,
         jsonrpc: '2.0',
-        error: result.error
-          ? {
-              code:
-                typeof result.error === 'object' && 'code' in result.error
-                  ? (result.error as { code: number }).code
-                  : -1,
-              message:
-                typeof result.error === 'string'
-                  ? result.error
-                  : typeof result.error === 'object' &&
-                      'message' in result.error
-                    ? (result.error as { message: string }).message
-                    : String(result.error),
-              data:
-                typeof result.error === 'object' && 'data' in result.error
-                  ? (result.error as { data?: unknown }).data
-                  : undefined,
-            }
-          : undefined,
         result: {
-          content: [{ type: 'text', text: JSON.stringify(result.result) }],
+          content: [
+            {
+              type: 'text',
+              text: typeof result === 'string' ? result : JSON.stringify(result, null, 2),
+            },
+          ],
         },
       };
     },
