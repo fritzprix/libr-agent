@@ -1,6 +1,6 @@
 use async_trait::async_trait;
-use serde_json::{json, Value};
 use regex;
+use serde_json::{json, Value};
 use std::collections::HashMap;
 use tokio::fs;
 use tracing::{error, info};
@@ -384,7 +384,10 @@ impl FilesystemServer {
                                     format: None,
                                 },
                                 title: None,
-                                description: Some("Path to the file to search (exclusive with 'input')".to_string()),
+                                description: Some(
+                                    "Path to the file to search (exclusive with 'input')"
+                                        .to_string(),
+                                ),
                                 default: None,
                                 examples: None,
                                 enum_values: None,
@@ -401,7 +404,9 @@ impl FilesystemServer {
                                     format: None,
                                 },
                                 title: None,
-                                description: Some("Input string to search (exclusive with 'path')".to_string()),
+                                description: Some(
+                                    "Input string to search (exclusive with 'path')".to_string(),
+                                ),
                                 default: None,
                                 examples: None,
                                 enum_values: None,
@@ -475,7 +480,11 @@ impl FilesystemServer {
                                         .to_string(),
                                 ),
                                 default: None,
-                                examples: Some(vec![json!("*.rs"), json!("**/*.tsx"), json!("src/**/*.ts")]),
+                                examples: Some(vec![
+                                    json!("*.rs"),
+                                    json!("**/*.tsx"),
+                                    json!("src/**/*.ts"),
+                                ]),
                                 enum_values: None,
                                 const_value: None,
                             },
@@ -574,19 +583,24 @@ impl FilesystemServer {
             }
         };
 
-        let replacements: Vec<HashMap<String, Value>> = match serde_json::from_value(replacements_val.clone()) {
-            Ok(r) => r,
-            Err(e) => {
-                return MCPResponse::error(
-                    request_id,
-                    -32602,
-                    &format!("Invalid replacements format: {}", e),
-                );
-            }
-        };
+        let replacements: Vec<HashMap<String, Value>> =
+            match serde_json::from_value(replacements_val.clone()) {
+                Ok(r) => r,
+                Err(e) => {
+                    return MCPResponse::error(
+                        request_id,
+                        -32602,
+                        &format!("Invalid replacements format: {}", e),
+                    );
+                }
+            };
 
         // 경로 유효성 검사
-        let safe_path = match self.file_manager.get_security_validator().validate_path(path_str) {
+        let safe_path = match self
+            .file_manager
+            .get_security_validator()
+            .validate_path(path_str)
+        {
             Ok(path) => path,
             Err(e) => {
                 return MCPResponse::error(request_id, -32603, &format!("Security error: {}", e));
@@ -597,7 +611,11 @@ impl FilesystemServer {
         let lines = match self.read_file_lines(&safe_path).await {
             Ok(lines) => lines,
             Err(e) => {
-                return MCPResponse::error(request_id, -32603, &format!("Failed to read file: {}", e));
+                return MCPResponse::error(
+                    request_id,
+                    -32603,
+                    &format!("Failed to read file: {}", e),
+                );
             }
         };
 
@@ -635,7 +653,11 @@ impl FilesystemServer {
 
         // 파일 쓰기
         let new_content = new_lines.join("\n");
-        match self.file_manager.write_file_string(path_str, &new_content).await {
+        match self
+            .file_manager
+            .write_file_string(path_str, &new_content)
+            .await
+        {
             Ok(_) => MCPResponse::success(
                 request_id,
                 json!({
@@ -659,30 +681,57 @@ impl FilesystemServer {
             None => return MCPResponse::error(request_id, -32602, "missing 'pattern' argument"),
         };
 
-        let ignore_case = args.get("ignore_case").and_then(|v| v.as_bool()).unwrap_or(false);
-        let line_numbers = args.get("line_numbers").and_then(|v| v.as_bool()).unwrap_or(false);
+        let ignore_case = args
+            .get("ignore_case")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let line_numbers = args
+            .get("line_numbers")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
 
         let input_text = if let Some(path_str) = args.get("path").and_then(|v| v.as_str()) {
-            match self.file_manager.get_security_validator().validate_path(path_str) {
-                Ok(safe_path) => {
-                    match tokio::fs::read_to_string(safe_path).await {
-                        Ok(s) => s,
-                        Err(e) => return MCPResponse::error(request_id, -32603, &format!("failed to read file {}: {}", path_str, e)),
+            match self
+                .file_manager
+                .get_security_validator()
+                .validate_path(path_str)
+            {
+                Ok(safe_path) => match tokio::fs::read_to_string(safe_path).await {
+                    Ok(s) => s,
+                    Err(e) => {
+                        return MCPResponse::error(
+                            request_id,
+                            -32603,
+                            &format!("failed to read file {}: {}", path_str, e),
+                        )
                     }
-                }
+                },
                 Err(e) => {
-                    return MCPResponse::error(request_id, -32603, &format!("Security error: {}", e));
+                    return MCPResponse::error(
+                        request_id,
+                        -32603,
+                        &format!("Security error: {}", e),
+                    );
                 }
             }
         } else if let Some(s) = args.get("input").and_then(|v| v.as_str()) {
             s.to_string()
         } else {
-            return MCPResponse::error(request_id, -32602, "either 'path' or 'input' must be provided");
+            return MCPResponse::error(
+                request_id,
+                -32602,
+                "either 'path' or 'input' must be provided",
+            );
         };
 
-        let regex = match regex::RegexBuilder::new(pattern).case_insensitive(ignore_case).build() {
+        let regex = match regex::RegexBuilder::new(pattern)
+            .case_insensitive(ignore_case)
+            .build()
+        {
             Ok(r) => r,
-            Err(e) => return MCPResponse::error(request_id, -32602, &format!("invalid pattern: {}", e)),
+            Err(e) => {
+                return MCPResponse::error(request_id, -32602, &format!("invalid pattern: {}", e))
+            }
         };
 
         let mut matches = Vec::new();
@@ -758,14 +807,11 @@ impl FilesystemServer {
                 .validate_file_size(&safe_path, MAX_FILE_SIZE)
             {
                 error!("File size validation failed: {}", e);
-                return MCPResponse::error(
-                    request_id,
-                    -32603,
-                    &format!("File size error: {}", e),
-                );
+                return MCPResponse::error(request_id, -32603, &format!("File size error: {}", e));
             }
 
-            self.read_file_lines_range(&safe_path, start_line, end_line).await
+            self.read_file_lines_range(&safe_path, start_line, end_line)
+                .await
         } else {
             self.file_manager
                 .read_file_as_string(path_str)
@@ -983,7 +1029,8 @@ impl FilesystemServer {
 
             // Check pattern match
             if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
-                if glob_pattern.matches(file_name) || glob_pattern.matches(&path.to_string_lossy()) {
+                if glob_pattern.matches(file_name) || glob_pattern.matches(&path.to_string_lossy())
+                {
                     let metadata = entry
                         .metadata()
                         .map_err(|e| format!("Metadata error: {}", e))?;
@@ -1038,8 +1085,7 @@ impl FilesystemServer {
 
         // Use SecureFileManager to write file
         match self.file_manager.write_file_string(path_str, content).await {
-            Ok(())
-             => {
+            Ok(()) => {
                 info!("Successfully wrote file: {}", path_str);
                 MCPResponse {
                     jsonrpc: "2.0".to_string(),
