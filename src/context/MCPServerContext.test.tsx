@@ -75,7 +75,7 @@ describe('MCPServerProvider', () => {
   });
 
   it('should handle successful server connection', async () => {
-    mockRustBackend.listToolsFromConfig.mockResolvedValue(mockTools);
+    mockRustBackend.listToolsFromConfig.mockResolvedValue({ server1: mockTools });
     mockRustBackend.getConnectedServers.mockResolvedValue(['server1']);
 
     let connectServers: (config: MCPConfig) => Promise<void>;

@@ -343,7 +343,8 @@ export function BrowserToolProvider() {
 
             result.metadata = {
               extraction_timestamp: new Date().toISOString(),
-              content_length: typeof result.content === 'string' ? result.content.length : 0,
+              content_length:
+                typeof result.content === 'string' ? result.content.length : 0,
               raw_html_size: rawHtml.length,
               selector: selector,
               format: format,

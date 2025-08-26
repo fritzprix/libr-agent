@@ -104,8 +104,11 @@ export function WebMCPProvider({ servers = [] }: WebMCPProviderProps) {
       const result = await proxyRef.current.callTool(
         serviceId,
         call.function.name,
-        call.function.arguments,
+        JSON.parse(call.function.arguments),
       );
+
+      // Log returned result from worker/proxy for debugging and to inspect payload shape
+      logger.info('WebMCPToolProvider executeTool result', { serviceId, call, result });
 
       return {
         id: result.id,

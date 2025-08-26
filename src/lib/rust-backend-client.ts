@@ -81,8 +81,10 @@ export async function listToolsFromConfig(config: {
     string,
     { command: string; args?: string[]; env?: Record<string, string> }
   >;
-}): Promise<MCPTool[]> {
-  return safeInvoke<MCPTool[]>('list_tools_from_config', { config });
+}): Promise<Record<string, MCPTool[]>> {
+  return safeInvoke<Record<string, MCPTool[]>>('list_tools_from_config', {
+    config,
+  });
 }
 
 export async function getConnectedServers(): Promise<string[]> {

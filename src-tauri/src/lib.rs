@@ -85,7 +85,9 @@ async fn list_mcp_tools(server_name: String) -> Result<Vec<mcp::MCPTool>, String
 }
 
 #[tauri::command]
-async fn list_tools_from_config(config: serde_json::Value) -> Result<Vec<mcp::MCPTool>, String> {
+async fn list_tools_from_config(
+    config: serde_json::Value,
+) -> Result<std::collections::HashMap<String, Vec<mcp::MCPTool>>, String> {
     println!("🚀 [TAURI] list_tools_from_config called!");
     println!(
         "🚀 [TAURI] Config received: {}",
@@ -135,7 +137,8 @@ async fn list_tools_from_config(config: serde_json::Value) -> Result<Vec<mcp::MC
 
     let manager = get_mcp_manager();
 
-    let mut all_tools: Vec<mcp::MCPTool> = Vec::new();
+    let mut tools_by_server: std::collections::HashMap<String, Vec<mcp::MCPTool>> =
+        std::collections::HashMap::new();
 
     // Start servers from config and collect their tools
     for server_cfg in servers_config {
@@ -144,6 +147,8 @@ async fn list_tools_from_config(config: serde_json::Value) -> Result<Vec<mcp::MC
             println!("🚀 [TAURI] Starting server: {server_name}");
             if let Err(e) = manager.start_server(server_cfg).await {
                 eprintln!("❌ [TAURI] Failed to start server {server_name}: {e}");
+                // Insert empty tools array for failed server
+                tools_by_server.insert(server_name, Vec::new());
                 continue; // Skip to the next server if this one fails to start
             }
             tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
@@ -153,27 +158,29 @@ async fn list_tools_from_config(config: serde_json::Value) -> Result<Vec<mcp::MC
 
         // Fetch tools for the server we just ensured is running
         match manager.list_tools(&server_name).await {
-            Ok(mut tools) => {
+            Ok(tools) => {
                 println!(
                     "✅ [TAURI] Found {} tools for server '{}'",
                     tools.len(),
                     server_name
                 );
-                // Prefix tool names with server name to avoid conflicts
-                for tool in &mut tools {
-                    tool.name = format!("{}__{}", server_name, tool.name);
-                }
-                all_tools.extend(tools);
+                tools_by_server.insert(server_name, tools);
             }
             Err(e) => {
                 eprintln!("❌ [TAURI] Error listing tools for '{server_name}': {e}");
-                // Continue to the next server
+                // Insert empty tools array for failed server
+                tools_by_server.insert(server_name, Vec::new());
             }
         }
     }
 
-    println!("✅ [TAURI] Total tools collected: {}", all_tools.len());
-    Ok(all_tools)
+    let total_tools: usize = tools_by_server.values().map(|tools| tools.len()).sum();
+    println!(
+        "✅ [TAURI] Total tools collected: {} across {} servers",
+        total_tools,
+        tools_by_server.len()
+    );
+    Ok(tools_by_server)
 }
 
 #[tauri::command]
