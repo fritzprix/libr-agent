@@ -110,7 +110,10 @@ export function BrowserToolProvider() {
         execute: async (args: Record<string, unknown>) => {
           const { url, title } = args as { url: string; title?: string };
           logger.debug('Executing browser_createSession', { url, title });
-          const sessionId = await createBrowserSession({ url, title: title || null });
+          const sessionId = await createBrowserSession({
+            url,
+            title: title || null,
+          });
           return `Browser session created successfully: ${sessionId}`;
         },
       },
@@ -258,31 +261,35 @@ export function BrowserToolProvider() {
             sessionId,
             selector,
           });
-          
+
           try {
             const requestId = await rbClickElement(sessionId, selector);
-            
+
             logger.debug('Click element request ID received', { requestId });
-            
+
             // Poll for result with timeout
             let attempts = 0;
             const maxAttempts = 30; // 3 seconds with 100ms intervals
-            
+
             while (attempts < maxAttempts) {
               const result = await rbPollScriptResult(requestId);
-              
+
               if (result !== null) {
                 logger.debug('Poll result received', { result });
                 return formatBrowserResult(result);
               }
-              
-              await new Promise(resolve => setTimeout(resolve, 100));
+
+              await new Promise((resolve) => setTimeout(resolve, 100));
               attempts++;
             }
-            
+
             return 'Click operation timed out - no response received from browser';
           } catch (error) {
-            logger.error('Error in click_element execution', { error, sessionId, selector });
+            logger.error('Error in click_element execution', {
+              error,
+              sessionId,
+              selector,
+            });
             return `Error executing click: ${error instanceof Error ? error.message : String(error)}`;
           }
         },
@@ -315,31 +322,35 @@ export function BrowserToolProvider() {
             text: string;
           };
           logger.debug('Executing browser_inputText', { sessionId, selector });
-          
+
           try {
             const requestId = await rbInputText(sessionId, selector, text);
-            
+
             logger.debug('Input text request ID received', { requestId });
-            
+
             // Poll for result with timeout
             let attempts = 0;
             const maxAttempts = 30; // 3 seconds with 100ms intervals
-            
+
             while (attempts < maxAttempts) {
               const result = await rbPollScriptResult(requestId);
-              
+
               if (result !== null) {
                 logger.debug('Poll result received', { result });
                 return formatBrowserResult(result);
               }
-              
-              await new Promise(resolve => setTimeout(resolve, 100));
+
+              await new Promise((resolve) => setTimeout(resolve, 100));
               attempts++;
             }
-            
+
             return 'Input operation timed out - no response received from browser';
           } catch (error) {
-            logger.error('Error in input_text execution', { error, sessionId, selector });
+            logger.error('Error in input_text execution', {
+              error,
+              sessionId,
+              selector,
+            });
             return `Error executing input: ${error instanceof Error ? error.message : String(error)}`;
           }
         },

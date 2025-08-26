@@ -359,17 +359,19 @@ describe('formatBrowserResult', () => {
           disabled: false,
           pointerEvents: 'auto',
           visibility: 'visible',
-          rect: { x: 10, y: 20, width: 100, height: 24 }
+          rect: { x: 10, y: 20, width: 100, height: 24 },
         },
-        note: 'click attempted (handlers may ignore synthetic events)'
+        note: 'click attempted (handlers may ignore synthetic events)',
       });
 
       const result = formatBrowserResult(envelope);
-      
+
       expect(result).toContain('✓ CLICK successful (selector: #test-button)');
       expect(result).toContain('Diagnostics:');
       expect(result).toContain('"visible": true');
-      expect(result).toContain('Note: click attempted (handlers may ignore synthetic events)');
+      expect(result).toContain(
+        'Note: click attempted (handlers may ignore synthetic events)',
+      );
     });
 
     it('should format successful input result with value preview', () => {
@@ -383,17 +385,21 @@ describe('formatBrowserResult', () => {
           visible: true,
           disabled: false,
           tagName: 'input',
-          type: 'text'
+          type: 'text',
         },
         value_preview: 'john.doe@example.com',
-        note: 'input attempted (handlers may modify final value)'
+        note: 'input attempted (handlers may modify final value)',
       });
 
       const result = formatBrowserResult(envelope);
-      
-      expect(result).toContain('✓ INPUT successful (selector: input[name="username"])');
+
+      expect(result).toContain(
+        '✓ INPUT successful (selector: input[name="username"])',
+      );
       expect(result).toContain('Value preview: "john.doe@example.com"');
-      expect(result).toContain('Note: input attempted (handlers may modify final value)');
+      expect(result).toContain(
+        'Note: input attempted (handlers may modify final value)',
+      );
     });
   });
 
@@ -404,12 +410,14 @@ describe('formatBrowserResult', () => {
         action: 'click',
         reason: 'not_found',
         selector: '#nonexistent-button',
-        timestamp: '2025-08-25T12:45:00.000Z'
+        timestamp: '2025-08-25T12:45:00.000Z',
       });
 
       const result = formatBrowserResult(envelope);
-      
-      expect(result).toContain('✗ CLICK failed - not_found (selector: #nonexistent-button)');
+
+      expect(result).toContain(
+        '✗ CLICK failed - not_found (selector: #nonexistent-button)',
+      );
     });
 
     it('should format failed input result with error and diagnostics', () => {
@@ -423,13 +431,15 @@ describe('formatBrowserResult', () => {
           visible: true,
           disabled: true,
           tagName: 'input',
-          type: 'text'
-        }
+          type: 'text',
+        },
       });
 
       const result = formatBrowserResult(envelope);
-      
-      expect(result).toContain('✗ INPUT failed - element_disabled (selector: input[disabled])');
+
+      expect(result).toContain(
+        '✗ INPUT failed - element_disabled (selector: input[disabled])',
+      );
       expect(result).toContain('Diagnostics:');
       expect(result).toContain('"disabled": true');
     });
@@ -438,14 +448,16 @@ describe('formatBrowserResult', () => {
       const envelope = JSON.stringify({
         ok: false,
         action: 'click',
-        error: 'TypeError: Cannot read property \'click\' of null',
+        error: "TypeError: Cannot read property 'click' of null",
         selector: '#dynamic-element',
-        timestamp: '2025-08-25T12:55:00.000Z'
+        timestamp: '2025-08-25T12:55:00.000Z',
       });
 
       const result = formatBrowserResult(envelope);
-      
-      expect(result).toContain('✗ CLICK failed - TypeError: Cannot read property \'click\' of null');
+
+      expect(result).toContain(
+        "✗ CLICK failed - TypeError: Cannot read property 'click' of null",
+      );
       expect(result).toContain('(selector: #dynamic-element)');
     });
   });
@@ -454,32 +466,32 @@ describe('formatBrowserResult', () => {
     it('should return original string for non-JSON content', () => {
       const plainText = 'Element clicked successfully';
       const result = formatBrowserResult(plainText);
-      
+
       expect(result).toBe(plainText);
     });
 
     it('should return original string for JSON without ok field', () => {
       const jsonWithoutOk = JSON.stringify({
         message: 'Some other response',
-        data: { value: 123 }
+        data: { value: 123 },
       });
-      
+
       const result = formatBrowserResult(jsonWithoutOk);
-      
+
       expect(result).toBe(jsonWithoutOk);
     });
 
     it('should return original string for invalid JSON', () => {
       const invalidJson = '{ invalid json }';
       const result = formatBrowserResult(invalidJson);
-      
+
       expect(result).toBe(invalidJson);
     });
 
     it('should convert non-string input to string', () => {
       const numberInput = 42;
       const result = formatBrowserResult(numberInput);
-      
+
       expect(result).toBe('42');
     });
 

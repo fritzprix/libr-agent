@@ -153,11 +153,7 @@ export function WebMCPProvider({ servers = [] }: WebMCPProviderProps) {
   }, [servers, executeTool, loadServer, isLoading]);
 
   useEffect(() => {
-    if (
-      !isLoading &&
-      services &&
-      Object.entries(services).length > 0
-    ) {
+    if (!isLoading && services && Object.entries(services).length > 0) {
       Object.entries(services).forEach(([id, service]) => {
         register(id, service);
       });
