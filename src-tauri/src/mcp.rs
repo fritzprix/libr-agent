@@ -119,6 +119,20 @@ pub struct JSONSchema {
     pub const_value: Option<serde_json::Value>,
 }
 
+impl JSONSchema {
+    pub fn null() -> Self {
+        Self {
+            schema_type: JSONSchemaType::Null,
+            title: None,
+            description: None,
+            default: None,
+            examples: None,
+            enum_values: None,
+            const_value: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MCPToolAnnotations {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -202,6 +216,30 @@ pub struct MCPResponse {
     pub result: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<MCPError>,
+}
+
+impl MCPResponse {
+    pub fn success(id: serde_json::Value, result: serde_json::Value) -> Self {
+        Self {
+            jsonrpc: "2.0".to_string(),
+            id: Some(id),
+            result: Some(result),
+            error: None,
+        }
+    }
+
+    pub fn error(id: serde_json::Value, code: i32, message: &str) -> Self {
+        Self {
+            jsonrpc: "2.0".to_string(),
+            id: Some(id),
+            result: None,
+            error: Some(MCPError {
+                code,
+                message: message.to_string(),
+                data: None,
+            }),
+        }
+    }
 }
 
 pub struct MCPConnection {
@@ -392,16 +430,7 @@ impl MCPServerManager {
                             .and_then(|text| text.as_str())
                             .unwrap_or("Tool execution error");
 
-                        MCPResponse {
-                            jsonrpc: "2.0".to_string(),
-                            id: Some(request_id),
-                            result: None,
-                            error: Some(MCPError {
-                                code: -32000, // Tool execution error
-                                message: error_msg.to_string(),
-                                data: Some(result_value),
-                            }),
-                        }
+                        MCPResponse::error(request_id, -32000, error_msg)
                     } else {
                         MCPResponse {
                             jsonrpc: "2.0".to_string(),
@@ -467,8 +496,8 @@ impl MCPServerManager {
                     }
                 }
 
-                warn!("Using default object schema as fallback");
-                JSONSchema::default()
+                warn!("Using null schema as fallback");
+                JSONSchema::null()
             }
         }
     }
@@ -691,11 +720,11 @@ impl MCPServerManager {
         for tool in tools {
             match Self::validate_tool_schema(&tool) {
                 Ok(()) => {
-                    println!("Tool '{}' passed validation", tool.name);
+                    debug!("Tool '{}' passed validation", tool.name);
                     validated_tools.push(tool);
                 }
                 Err(e) => {
-                    println!("Tool '{}' failed validation: {}", tool.name, e);
+                    warn!("Tool '{}' failed validation: {}", tool.name, e);
                     // Optionally, you could try to fix the schema or skip the tool
                 }
             }
