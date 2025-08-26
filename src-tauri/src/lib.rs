@@ -528,7 +528,12 @@ pub fn run() {
                 take_screenshot,
                 browser_script_result,
                 execute_script,
-                poll_script_result
+                poll_script_result,
+                navigate_back,
+                navigate_forward,
+                get_element_text,
+                get_element_attribute,
+                find_element
             ])
             .setup(|app| {
                 println!("🚀 SynapticFlow initializing...");
