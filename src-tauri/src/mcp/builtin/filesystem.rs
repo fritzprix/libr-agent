@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use serde_json::{json, Value};
+use regex;
 use std::collections::HashMap;
 use tokio::fs;
 use tracing::{error, info};
@@ -347,6 +348,109 @@ impl FilesystemServer {
         }
     }
 
+    fn create_grep_tool() -> MCPTool {
+        MCPTool {
+            name: "grep".to_string(),
+            title: Some("Grep".to_string()),
+            description: "Search for a pattern in a file or input string.".to_string(),
+            input_schema: JSONSchema {
+                schema_type: JSONSchemaType::Object {
+                    properties: Some({
+                        let mut props = HashMap::new();
+                        props.insert(
+                            "pattern".to_string(),
+                            JSONSchema {
+                                schema_type: JSONSchemaType::String {
+                                    min_length: Some(1),
+                                    max_length: None,
+                                    pattern: None,
+                                    format: None,
+                                },
+                                title: None,
+                                description: Some("Regex pattern to search for".to_string()),
+                                default: None,
+                                examples: None,
+                                enum_values: None,
+                                const_value: None,
+                            },
+                        );
+                        props.insert(
+                            "path".to_string(),
+                            JSONSchema {
+                                schema_type: JSONSchemaType::String {
+                                    min_length: Some(1),
+                                    max_length: Some(1000),
+                                    pattern: None,
+                                    format: None,
+                                },
+                                title: None,
+                                description: Some("Path to the file to search (exclusive with 'input')".to_string()),
+                                default: None,
+                                examples: None,
+                                enum_values: None,
+                                const_value: None,
+                            },
+                        );
+                        props.insert(
+                            "input".to_string(),
+                            JSONSchema {
+                                schema_type: JSONSchemaType::String {
+                                    min_length: Some(1),
+                                    max_length: None,
+                                    pattern: None,
+                                    format: None,
+                                },
+                                title: None,
+                                description: Some("Input string to search (exclusive with 'path')".to_string()),
+                                default: None,
+                                examples: None,
+                                enum_values: None,
+                                const_value: None,
+                            },
+                        );
+                        props.insert(
+                            "ignore_case".to_string(),
+                            JSONSchema {
+                                schema_type: JSONSchemaType::Boolean,
+                                title: None,
+                                description: Some("Perform case-insensitive matching".to_string()),
+                                default: Some(json!(false)),
+                                examples: None,
+                                enum_values: None,
+                                const_value: None,
+                            },
+                        );
+                        props.insert(
+                            "line_numbers".to_string(),
+                            JSONSchema {
+                                schema_type: JSONSchemaType::Boolean,
+                                title: None,
+                                description: Some("Include line numbers in the output".to_string()),
+                                default: Some(json!(false)),
+                                examples: None,
+                                enum_values: None,
+                                const_value: None,
+                            },
+                        );
+                        props
+                    }),
+                    required: Some(vec!["pattern".to_string()]),
+                    additional_properties: Some(false),
+                    min_properties: None,
+                    max_properties: None,
+                },
+                title: None,
+                description: None,
+                default: None,
+                examples: None,
+                enum_values: None,
+                const_value: None,
+            },
+            output_schema: None,
+            annotations: None,
+        }
+    }
+
     fn create_search_files_tool() -> MCPTool {
         MCPTool {
             name: "search_files".to_string(),
@@ -545,6 +649,62 @@ impl FilesystemServer {
                 MCPResponse::error(request_id, -32603, &format!("Failed to write file: {}", e))
             }
         }
+    }
+
+    async fn handle_grep(&self, args: Value) -> MCPResponse {
+        let request_id = Value::String(uuid::Uuid::new_v4().to_string());
+
+        let pattern = match args.get("pattern").and_then(|v| v.as_str()) {
+            Some(p) => p,
+            None => return MCPResponse::error(request_id, -32602, "missing 'pattern' argument"),
+        };
+
+        let ignore_case = args.get("ignore_case").and_then(|v| v.as_bool()).unwrap_or(false);
+        let line_numbers = args.get("line_numbers").and_then(|v| v.as_bool()).unwrap_or(false);
+
+        let input_text = if let Some(path_str) = args.get("path").and_then(|v| v.as_str()) {
+            match self.file_manager.get_security_validator().validate_path(path_str) {
+                Ok(safe_path) => {
+                    match tokio::fs::read_to_string(safe_path).await {
+                        Ok(s) => s,
+                        Err(e) => return MCPResponse::error(request_id, -32603, &format!("failed to read file {}: {}", path_str, e)),
+                    }
+                }
+                Err(e) => {
+                    return MCPResponse::error(request_id, -32603, &format!("Security error: {}", e));
+                }
+            }
+        } else if let Some(s) = args.get("input").and_then(|v| v.as_str()) {
+            s.to_string()
+        } else {
+            return MCPResponse::error(request_id, -32602, "either 'path' or 'input' must be provided");
+        };
+
+        let regex = match regex::RegexBuilder::new(pattern).case_insensitive(ignore_case).build() {
+            Ok(r) => r,
+            Err(e) => return MCPResponse::error(request_id, -32602, &format!("invalid pattern: {}", e)),
+        };
+
+        let mut matches = Vec::new();
+        for (idx, line) in input_text.lines().enumerate() {
+            if regex.is_match(line) {
+                if line_numbers {
+                    matches.push(json!({ "line": idx + 1, "text": line }));
+                } else {
+                    matches.push(json!(line));
+                }
+            }
+        }
+
+        MCPResponse::success(
+            request_id,
+            json!({
+                "content": [{
+                    "type": "text",
+                    "text": format!("Found {} matches:\n{}", matches.len(), serde_json::to_string_pretty(&matches).unwrap_or_default())
+                }]
+            }),
+        )
     }
 
     async fn handle_read_file(&self, args: Value) -> MCPResponse {
@@ -1032,6 +1192,7 @@ impl BuiltinMCPServer for FilesystemServer {
             Self::create_list_directory_tool(),
             Self::create_search_files_tool(),
             Self::create_replace_lines_in_file_tool(),
+            Self::create_grep_tool(),
         ]
     }
 
@@ -1042,6 +1203,7 @@ impl BuiltinMCPServer for FilesystemServer {
             "list_directory" => self.handle_list_directory(args).await,
             "search_files" => self.handle_search_files(args).await,
             "replace_lines_in_file" => self.handle_replace_lines_in_file(args).await,
+            "grep" => self.handle_grep(args).await,
             _ => {
                 let request_id = Value::String(uuid::Uuid::new_v4().to_string());
                 MCPResponse {
