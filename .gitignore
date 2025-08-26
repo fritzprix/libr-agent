@@ -28,3 +28,4 @@ error.txt
 # LangGraph API
 .langgraph_api
 log.txt
+.envfile

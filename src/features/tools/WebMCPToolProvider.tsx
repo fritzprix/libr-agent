@@ -104,8 +104,11 @@ export function WebMCPProvider({ servers = [] }: WebMCPProviderProps) {
       const result = await proxyRef.current.callTool(
         serviceId,
         call.function.name,
-        call.function.arguments,
+        JSON.parse(call.function.arguments),
       );
+
+      // Log returned result from worker/proxy for debugging and to inspect payload shape
+      logger.info('WebMCPToolProvider executeTool result', { serviceId, call, result });
 
       return {
         id: result.id,
@@ -153,12 +156,7 @@ export function WebMCPProvider({ servers = [] }: WebMCPProviderProps) {
   }, [servers, executeTool, loadServer, isLoading]);
 
   useEffect(() => {
-    if (
-      !isLoading &&
-      initialized &&
-      services &&
-      Object.entries(services).length > 0
-    ) {
+    if (!isLoading && services && Object.entries(services).length > 0) {
       Object.entries(services).forEach(([id, service]) => {
         register(id, service);
       });

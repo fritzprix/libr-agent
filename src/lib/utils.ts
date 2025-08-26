@@ -52,3 +52,71 @@ export function throttlePromise<Args extends readonly unknown[], Return>(
     });
   };
 }
+
+export function toValidJsName(name: string): string {
+  // Replace invalid characters with underscores
+  let validName = name.replace(/[^a-zA-Z0-9_$]/g, '_');
+
+  // If the name starts with a digit, prefix it with an underscore
+  if (/^[0-9]/.test(validName)) {
+    validName = '_' + validName;
+  }
+
+  // If the name is a reserved keyword, append an underscore
+  const reservedKeywords = new Set([
+    'break',
+    'case',
+    'catch',
+    'class',
+    'const',
+    'continue',
+    'debugger',
+    'default',
+    'delete',
+    'do',
+    'else',
+    'export',
+    'extends',
+    'finally',
+    'for',
+    'function',
+    'if',
+    'import',
+    'in',
+    'instanceof',
+    'new',
+    'return',
+    'super',
+    'switch',
+    'this',
+    'throw',
+    'try',
+    'typeof',
+    'var',
+    'void',
+    'while',
+    'with',
+    'yield',
+    // Future reserved keywords
+    'enum',
+    'implements',
+    'interface',
+    'let',
+    'package',
+    'private',
+    'protected',
+    'public',
+    'static',
+    'await',
+    // Literals
+    'null',
+    'true',
+    'false',
+  ]);
+
+  if (reservedKeywords.has(validName)) {
+    validName += '_';
+  }
+
+  return validName;
+}

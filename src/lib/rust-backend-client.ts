@@ -10,6 +10,23 @@ import {
 
 const logger = getLogger('RustBackendClient');
 
+// ========================================
+// Browser types / interfaces
+// ========================================
+
+export interface BrowserSession {
+  id: string;
+  url: string;
+  title?: string | null;
+}
+
+export type BrowserSessionParams = {
+  url: string;
+  title?: string | null;
+};
+
+export type ScriptResult = string | null | { error?: string };
+
 /**
  * 🔌 Shared Rust Backend Client
  *
@@ -64,8 +81,10 @@ export async function listToolsFromConfig(config: {
     string,
     { command: string; args?: string[]; env?: Record<string, string> }
   >;
-}): Promise<MCPTool[]> {
-  return safeInvoke<MCPTool[]>('list_tools_from_config', { config });
+}): Promise<Record<string, MCPTool[]>> {
+  return safeInvoke<Record<string, MCPTool[]>>('list_tools_from_config', {
+    config,
+  });
 }
 
 export async function getConnectedServers(): Promise<string[]> {
@@ -169,11 +188,65 @@ export async function readFile(filePath: string): Promise<number[]> {
   return safeInvoke<number[]>('read_file', { filePath });
 }
 
+export async function readDroppedFile(filePath: string): Promise<number[]> {
+  return safeInvoke<number[]>('read_dropped_file', { filePath });
+}
+
 export async function writeFile(
   filePath: string,
   content: number[],
 ): Promise<void> {
   return safeInvoke<void>('write_file', { filePath, content });
+}
+
+// ========================================
+// Browser session / script helpers
+// Centralized wrappers for browser-related Tauri commands used by
+// `BrowserToolProvider` and other browser features. These use `safeInvoke`
+// so logging and error handling remain consistent across the app.
+// ========================================
+
+export async function createBrowserSession(params: {
+  url: string;
+  title?: string | null;
+}): Promise<string> {
+  return safeInvoke<string>('create_browser_session', params);
+}
+
+export async function closeBrowserSession(sessionId: string): Promise<void> {
+  return safeInvoke<void>('close_browser_session', { sessionId });
+}
+
+export async function listBrowserSessions(): Promise<unknown[]> {
+  return safeInvoke<unknown[]>('list_browser_sessions');
+}
+
+export async function clickElement(
+  sessionId: string,
+  selector: string,
+): Promise<string> {
+  return safeInvoke<string>('click_element', { sessionId, selector });
+}
+
+export async function inputText(
+  sessionId: string,
+  selector: string,
+  text: string,
+): Promise<string> {
+  return safeInvoke<string>('input_text', { sessionId, selector, text });
+}
+
+export async function pollScriptResult(
+  requestId: string,
+): Promise<string | null> {
+  return safeInvoke<string | null>('poll_script_result', { requestId });
+}
+
+export async function navigateToUrl(
+  sessionId: string,
+  url: string,
+): Promise<string> {
+  return safeInvoke<string>('navigate_to_url', { sessionId, url });
 }
 
 // ========================================
@@ -233,6 +306,7 @@ export default {
   getValidatedTools,
   validateToolSchema,
   readFile,
+  readDroppedFile,
   writeFile,
   getAppLogsDir,
   backupCurrentLog,

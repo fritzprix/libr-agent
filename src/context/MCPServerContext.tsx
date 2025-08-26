@@ -18,6 +18,7 @@ import {
   SamplingResponse,
 } from '../lib/mcp-types';
 import { MCPConfig, ToolCall } from '../models/chat';
+import { toValidJsName } from '@/lib/utils';
 
 const logger = getLogger('MCPServerContext');
 
@@ -44,6 +45,8 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
   children,
 }) => {
   const [availableTools, setAvailableTools] = useState<MCPTool[]>([]);
+  const toolsByServer = useRef<Record<string, MCPTool[]>>({});
+  const aliasToIdTableRef = useRef<Map<string, string>>(new Map());
   const [serverStatus, setServerStatus] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | undefined>(undefined);
   const availableToolsRef = useRef(availableTools);
@@ -68,6 +71,7 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
         if (servers.length === 0) {
           setServerStatus({});
           setAvailableTools([]);
+          toolsByServer.current = {};
           return;
         }
 
@@ -76,13 +80,17 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
         });
 
         setServerStatus(serverStatus);
-        const rawTools = await listToolsFromConfig(mcpConfig);
+        const rawToolsByServer = await listToolsFromConfig(mcpConfig);
+        toolsByServer.current = rawToolsByServer;
 
-        // Add external. prefix to all external MCP tools
-        const tools = rawTools.map((tool) => ({
-          ...tool,
-          name: tool.name,
-        }));
+        const availableTools: MCPTool[] = Object.entries(rawToolsByServer).flatMap(([s, tools]) => {
+          if (!aliasToIdTableRef.current.has(s)) {
+            aliasToIdTableRef.current.set(toValidJsName(s), s);
+          }
+          return tools.map(t => ({ ...t, name: `${toValidJsName(s)}__${t.name}` }));
+        })
+
+        setAvailableTools(availableTools);
 
         const connectedServers = await getConnectedServers();
         for (const serverName of connectedServers) {
@@ -91,8 +99,9 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
           }
         }
         setServerStatus({ ...serverStatus });
-        setAvailableTools(tools);
-        logger.debug(`Total tools loaded: ${tools.length}`);
+        logger.debug(
+          `Total tools loaded: ${availableTools.length} across ${Object.keys(rawToolsByServer).length} servers`,
+        );
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : String(error);
@@ -101,7 +110,9 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
         Object.keys(serverStatus).forEach((key) => {
           serverStatus[key] = false;
         });
+        aliasToIdTableRef.current.clear();
         setServerStatus({ ...serverStatus });
+        toolsByServer.current = {};
       }
     },
     [],
@@ -116,46 +127,53 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
 
       const delimiter = '__';
       const parts = aiProvidedToolName.split(delimiter);
-      const serverName = parts.length > 1 ? parts[0] : undefined;
+      const alias = parts.length > 1 ? parts[0] : undefined;
       const toolName =
         parts.length > 1 ? parts.slice(1).join(delimiter) : aiProvidedToolName;
 
-      if (!serverName || !toolName) {
-        const errorMsg = `Could not determine server/tool name from '${aiProvidedToolName}'`;
-        logger.error(errorMsg);
-        return normalizeToolResult(
-          { error: errorMsg, success: false },
-          aiProvidedToolName,
+      if (alias && toolName) {
+        const serverName = aliasToIdTableRef.current.get(alias);
+
+        if (!serverName || !toolName) {
+          const errorMsg = `Could not determine server/tool name from '${aiProvidedToolName}'`;
+          logger.error(errorMsg);
+          return normalizeToolResult(
+            { error: errorMsg, success: false },
+            aiProvidedToolName,
+          );
+        }
+
+        const toolArguments: Record<string, unknown> = JSON.parse(
+          toolCall.function.arguments,
         );
+
+        try {
+          const rawResponse = await callMCPTool(
+            serverName,
+            toolName,
+            toolArguments,
+          );
+          logger.debug(`MCP Response for ${aiProvidedToolName}:`, {
+            rawResponse,
+          });
+
+          const mcpResponse = normalizeToolResult(
+            rawResponse,
+            aiProvidedToolName,
+          );
+          return mcpResponse;
+        } catch (execError) {
+          const errorMsg = `Tool execution failed: ${execError instanceof Error ? execError.message : String(execError)}`;
+          logger.error(errorMsg, { execError });
+          return normalizeToolResult(
+            { error: errorMsg, success: false },
+            aiProvidedToolName,
+          );
+        }
+      } else {
+        throw new Error(`Tool name format invalid, missing '__' delimiter: ${aiProvidedToolName}`);
       }
 
-      const toolArguments: Record<string, unknown> = JSON.parse(
-        toolCall.function.arguments,
-      );
-
-      try {
-        const rawResponse = await callMCPTool(
-          serverName,
-          toolName,
-          toolArguments,
-        );
-        logger.debug(`MCP Response for ${aiProvidedToolName}:`, {
-          rawResponse,
-        });
-
-        const mcpResponse = normalizeToolResult(
-          rawResponse,
-          aiProvidedToolName,
-        );
-        return mcpResponse;
-      } catch (execError) {
-        const errorMsg = `Tool execution failed: ${execError instanceof Error ? execError.message : String(execError)}`;
-        logger.error(errorMsg, { execError });
-        return normalizeToolResult(
-          { error: errorMsg, success: false },
-          aiProvidedToolName,
-        );
-      }
     },
     [],
   );

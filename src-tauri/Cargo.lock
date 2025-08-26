@@ -4295,6 +4295,7 @@ dependencies = [
  "html-escape",
  "log",
  "path-clean",
+ "regex",
  "rmcp",
  "serde",
  "serde_json",

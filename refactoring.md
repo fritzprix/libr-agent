@@ -1,58 +1,271 @@
-# MCP FilesystemServer 리팩토링 계획 (replace_lines_in_file 도구 추가)
+# Browser Tools Refactoring Plan
 
 ## 작업의 목적
 
-- MCP FilesystemServer에 파일의 특정 라인들을 한 번에 교체할 수 있는 범용 도구(replace_lines_in_file)를 추가하여, 파일 분석 및 자동 수정 기능을 강화한다.
+- 신뢰성 향상: 성공률이 낮은 도구들의 안정성 개선
+- 코드 중복 제거: `getPageContent`와 `extractStructuredContent`의 기능 통합
+- 누락된 기본 기능 추가: 브라우저 네비게이션 기본 기능 보완
+- 효율적인 데이터 추출: 전체 페이지 분석 없이 특정 정보만 추출하는 도구 제공
 
 ## 현재의 상태 / 문제점
 
-- 기존 MCP FilesystemServer에는 파일을 읽고 쓰는(read_file, write_file) 기본 도구만 존재하며, 특정 라인 교체와 같은 세밀한 파일 수정 기능이 없다.
-- 파일 내 특정 패턴을 찾아 교체하거나, 여러 라인을 한 번에 수정하는 작업이 불편함.
+### 1. 중복된 페이지 추출 도구
+
+- `getPageContent`(Markdown 중심)와 `extractStructuredContent`(JSON 중심)가 유사한 기능 수행
+- 코드 중복으로 인한 유지보수 비용 증가
+
+### 2. 낮은 성공률의 상호작용 도구
+
+- `clickElement`, `inputText`가 요소 상태 확인 없이 즉시 실행하여 타임아웃 빈발
+- `elementExists`는 존재 여부만 확인하고 상호작용 가능 여부는 미확인
+
+### 3. 누락된 기본 브라우저 기능
+
+- 뒤로가기/앞으로가기 기능 없음
+- 특정 요소의 텍스트나 속성만 조회하는 효율적 방법 부재
 
 ## 변경 이후의 상태 / 해결 판정 기준
 
-- MCP FilesystemServer에 replace_lines_in_file 도구가 추가되어, 여러 라인을 한 번에 교체할 수 있다.
-- 도구는 path(파일 경로)와 replacements(교체할 라인 번호 및 내용 배열)를 입력받아, 지정된 라인들을 새로운 내용으로 교체한다.
-- 정상적으로 동작하면, 파일의 지정된 라인들이 교체되고 성공 메시지를 반환한다.
-- 에러 상황(존재하지 않는 라인, 파일 접근 오류 등)도 명확히 처리한다.
+### 1. 통합된 콘텐츠 추출
+
+- 단일 `extractContent` 도구로 Markdown/JSON 형식 모두 지원
+- 기본값은 토큰 효율적인 Markdown 형식
+
+### 2. 신뢰성 높은 상호작용 체계
+
+- `findElement`로 요소 상태 사전 확인
+- 상호작용 도구들이 상태 확인 후 실행
+
+### 3. 완전한 브라우저 제어
+
+- 네비게이션 기본 기능 완비
+- 효율적인 데이터 추출 도구 제공
 
 ## 수정이 필요한 코드 및 수정부분의 코드 스니핏
 
-### 1. MCPTool 정의 추가
+### 1. extractContent 통합 (BrowserToolProvider.tsx)
 
-```rust
-fn create_replace_lines_in_file_tool() -> MCPTool {
-  // ... replace_lines_in_file MCPTool 정의 ...
-}
+**제거할 기존 도구**:
+
+```typescript
+// 제거: getPageContent
+// 제거: extractStructuredContent
+// 제거: elementExists
 ```
 
-### 2. 핸들러 함수 추가
+**추가할 통합 도구**:
 
-```rust
-async fn handle_replace_lines_in_file(&self, args: Value) -> MCPResponse {
-  // ... path, replacements 파싱 및 라인 교체 로직 ...
-}
-```
+```typescript
+{
+  name: 'extractContent',
+  description: 'Extracts page content as Markdown (default) or structured JSON. Saves raw HTML optionally.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      sessionId: { type: 'string', description: 'Browser session ID' },
+      selector: { type: 'string', description: 'CSS selector to focus extraction (optional, defaults to body)' },
+      format: { type: 'string', enum: ['markdown', 'json'], default: 'markdown' },
+      saveRawHtml: { type: 'boolean', default: false },
+      includeLinks: { type: 'boolean', default: true },
+      maxDepth: { type: 'number', default: 5 }
+    },
+    required: ['sessionId']
+  },
+  execute: async (args: Record<string, unknown>) => {
+    const { sessionId, selector = 'body', format = 'markdown', saveRawHtml = false, includeLinks = true, maxDepth = 5 } = args as {
+      sessionId: string; selector?: string; format?: 'markdown' | 'json'; saveRawHtml?: boolean; includeLinks?: boolean; maxDepth?: number;
+    };
 
-### 3. tools()에 도구 추가
+    try {
+      // Raw HTML 추출
+      const rawHtml = await executeScript(sessionId, `document.querySelector('${selector}').outerHTML`);
+      if (!rawHtml || typeof rawHtml !== 'string') {
+        return JSON.stringify({ error: 'Failed to extract HTML from the page.' });
+      }
 
-```rust
-fn tools(&self) -> Vec<MCPTool> {
-  vec![
-    // ...existing tools...
-    Self::create_replace_lines_in_file_tool(),
-  ]
-}
-```
+      let result: any = {};
 
-### 4. call_tool()에 핸들러 연결
+      if (format === 'markdown') {
+        const turndownService = new TurndownService({
+          headingStyle: 'atx', codeBlockStyle: 'fenced', bulletListMarker: '-', emDelimiter: '*'
+        });
+        turndownService.addRule('removeScripts', { filter: ['script', 'style', 'noscript'], replacement: () => '' });
+        turndownService.addRule('preserveLineBreaks', { filter: 'br', replacement: () => '\n' });
 
-```rust
-async fn call_tool(&self, tool_name: &str, args: Value) -> MCPResponse {
-  match tool_name {
-    // ...existing tools...
-    "replace_lines_in_file" => self.handle_replace_lines_in_file(args).await,
-    _ => { /* ... */ }
+        result.content = turndownService.turndown(rawHtml);
+        result.format = 'markdown';
+      } else {
+        // JSON 구조화 로직 (기존 extractStructuredContent와 동일)
+        const structuredScript = `/* JSON 추출 스크립트 */`;
+        const jsonResult = await executeScript(sessionId, structuredScript);
+        result = JSON.parse(jsonResult);
+      }
+
+      // Raw HTML 저장
+      if (saveRawHtml) {
+        const tempDir = 'temp_html';
+        const uniqueId = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+        const relativePath = `${tempDir}/${uniqueId}.html`;
+        const encoder = new TextEncoder();
+        const htmlBytes = Array.from(encoder.encode(rawHtml));
+        await writeFile(relativePath, htmlBytes);
+        result.saved_raw_html = relativePath;
+      }
+
+      result.metadata = {
+        extraction_timestamp: new Date().toISOString(),
+        content_length: result.content?.length || 0,
+        raw_html_size: rawHtml.length
+      };
+
+      return JSON.stringify(result, null, 2);
+    } catch (error) {
+      return JSON.stringify({ error: `Failed to extract content: ${error instanceof Error ? error.message : String(error)}` });
+    }
   }
 }
 ```
+
+### 2. findElement 도구 추가
+
+```typescript
+{
+  name: 'findElement',
+  description: 'Find element and check its state (existence, visibility, interactability)',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      sessionId: { type: 'string' },
+      selector: { type: 'string' }
+    },
+    required: ['sessionId', 'selector']
+  },
+  execute: async (args: Record<string, unknown>) => {
+    const { sessionId, selector } = args as { sessionId: string; selector: string };
+
+    const script = `
+(function() {
+  const selector = '${selector.replace(/'/g, "\\'")}';
+  try {
+    const el = document.querySelector(selector);
+    if (!el) return JSON.stringify({ exists: false, selector });
+
+    const rect = el.getBoundingClientRect();
+    const style = window.getComputedStyle(el);
+    const visible = !!(rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden');
+    const clickable = visible && style.pointerEvents !== 'none' && !el.disabled;
+
+    return JSON.stringify({
+      exists: true,
+      visible,
+      clickable,
+      tagName: el.tagName.toLowerCase(),
+      rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+      attributes: {
+        id: el.id || null,
+        className: el.className || null,
+        disabled: el.disabled || false
+      },
+      selector
+    });
+  } catch (error) {
+    return JSON.stringify({ exists: false, error: error.message, selector });
+  }
+})()`;
+
+    return executeScript(sessionId, script);
+  }
+}
+```
+
+### 3. 네비게이션 도구 추가
+
+```typescript
+{
+  name: 'navigateBack',
+  description: 'Navigate back in browser history',
+  inputSchema: { type: 'object', properties: { sessionId: { type: 'string' } }, required: ['sessionId'] },
+  execute: async (args: Record<string, unknown>) => {
+    const { sessionId } = args as { sessionId: string };
+    return executeScript(sessionId, 'history.back(); "Navigated back"');
+  }
+},
+{
+  name: 'navigateForward',
+  description: 'Navigate forward in browser history',
+  inputSchema: { type: 'object', properties: { sessionId: { type: 'string' } }, required: ['sessionId'] },
+  execute: async (args: Record<string, unknown>) => {
+    const { sessionId } = args as { sessionId: string };
+    return executeScript(sessionId, 'history.forward(); "Navigated forward"');
+  }
+}
+```
+
+### 4. 효율적 데이터 추출 도구 추가
+
+```typescript
+{
+  name: 'getElementText',
+  description: 'Get text content of a specific element',
+  inputSchema: {
+    type: 'object',
+    properties: { sessionId: { type: 'string' }, selector: { type: 'string' } },
+    required: ['sessionId', 'selector']
+  },
+  execute: async (args: Record<string, unknown>) => {
+    const { sessionId, selector } = args as { sessionId: string; selector: string };
+    const script = `
+      const el = document.querySelector('${selector.replace(/'/g, "\\'")}');
+      el ? el.textContent.trim() : null
+    `;
+    return executeScript(sessionId, script);
+  }
+},
+{
+  name: 'getElementAttribute',
+  description: 'Get specific attribute value of an element',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      sessionId: { type: 'string' },
+      selector: { type: 'string' },
+      attribute: { type: 'string' }
+    },
+    required: ['sessionId', 'selector', 'attribute']
+  },
+  execute: async (args: Record<string, unknown>) => {
+    const { sessionId, selector, attribute } = args as { sessionId: string; selector: string; attribute: string };
+    const script = `
+      const el = document.querySelector('${selector.replace(/'/g, "\\'")}');
+      el ? el.getAttribute('${attribute}') : null
+    `;
+    return executeScript(sessionId, script);
+  }
+}
+```
+
+### 5. clickElement 개선
+
+```typescript
+// 기존 clickElement를 개선하여 findElement 기반으로 상태 확인 후 클릭
+execute: async (args: Record<string, unknown>) => {
+  const { sessionId, selector } = args as { sessionId: string; selector: string };
+
+  // 먼저 요소 상태 확인
+  const elementState = await /* findElement 로직 */;
+  const state = JSON.parse(elementState);
+
+  if (!state.exists) {
+    return formatBrowserResult(JSON.stringify({ ok: false, action: 'click', reason: 'element_not_found', selector }));
+  }
+
+  if (!state.clickable) {
+    return formatBrowserResult(JSON.stringify({ ok: false, action: 'click', reason: 'element_not_clickable', selector, diagnostics: state }));
+  }
+
+  // 기존 클릭 로직 수행
+  // ... 기존 rbClickElement 로직
+}
+```
+
+이 계획에 따라 단계별로 구현하면 도구의 신뢰성과 효율성을 크게 향상시킬 수 있습니다.

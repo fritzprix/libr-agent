@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use regex;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use tokio::fs;
@@ -222,6 +223,239 @@ impl FilesystemServer {
         }
     }
 
+    fn create_replace_lines_in_file_tool() -> MCPTool {
+        MCPTool {
+            name: "replace_lines_in_file".to_string(),
+            title: Some("Replace Lines in File".to_string()),
+            description: "Replace specific lines in a file with new content".to_string(),
+            input_schema: JSONSchema {
+                schema_type: JSONSchemaType::Object {
+                    properties: Some({
+                        let mut props = HashMap::new();
+                        props.insert(
+                            "path".to_string(),
+                            JSONSchema {
+                                schema_type: JSONSchemaType::String {
+                                    min_length: Some(1),
+                                    max_length: Some(1000),
+                                    pattern: None,
+                                    format: None,
+                                },
+                                title: None,
+                                description: Some("Path to the file to modify".to_string()),
+                                default: None,
+                                examples: None,
+                                enum_values: None,
+                                const_value: None,
+                            },
+                        );
+                        props.insert(
+                            "replacements".to_string(),
+                            JSONSchema {
+                                schema_type: JSONSchemaType::Array {
+                                    items: Some(Box::new(JSONSchema {
+                                        schema_type: JSONSchemaType::Object {
+                                            properties: Some({
+                                                let mut item_props = HashMap::new();
+                                                item_props.insert(
+                                                    "line_number".to_string(),
+                                                    JSONSchema {
+                                                        schema_type: JSONSchemaType::Integer {
+                                                            minimum: Some(1),
+                                                            maximum: None,
+                                                            exclusive_minimum: None,
+                                                            exclusive_maximum: None,
+                                                            multiple_of: None,
+                                                        },
+                                                        title: None,
+                                                        description: Some(
+                                                            "The 1-based line number to replace"
+                                                                .to_string(),
+                                                        ),
+                                                        default: None,
+                                                        examples: None,
+                                                        enum_values: None,
+                                                        const_value: None,
+                                                    },
+                                                );
+                                                item_props.insert(
+                                                    "content".to_string(),
+                                                    JSONSchema {
+                                                        schema_type: JSONSchemaType::String {
+                                                            min_length: None,
+                                                            max_length: None,
+                                                            pattern: None,
+                                                            format: None,
+                                                        },
+                                                        title: None,
+                                                        description: Some(
+                                                            "The new content for the line"
+                                                                .to_string(),
+                                                        ),
+                                                        default: None,
+                                                        examples: None,
+                                                        enum_values: None,
+                                                        const_value: None,
+                                                    },
+                                                );
+                                                item_props
+                                            }),
+                                            required: Some(vec![
+                                                "line_number".to_string(),
+                                                "content".to_string(),
+                                            ]),
+                                            additional_properties: Some(false),
+                                            min_properties: None,
+                                            max_properties: None,
+                                        },
+                                        title: None,
+                                        description: None,
+                                        default: None,
+                                        examples: None,
+                                        enum_values: None,
+                                        const_value: None,
+                                    })),
+                                    min_items: Some(1),
+                                    max_items: None,
+                                    unique_items: None,
+                                },
+                                title: None,
+                                description: Some(
+                                    "An array of line replacement objects".to_string(),
+                                ),
+                                default: None,
+                                examples: None,
+                                enum_values: None,
+                                const_value: None,
+                            },
+                        );
+                        props
+                    }),
+                    required: Some(vec!["path".to_string(), "replacements".to_string()]),
+                    additional_properties: Some(false),
+                    min_properties: None,
+                    max_properties: None,
+                },
+                title: None,
+                description: None,
+                default: None,
+                examples: None,
+                enum_values: None,
+                const_value: None,
+            },
+            output_schema: None,
+            annotations: None,
+        }
+    }
+
+    fn create_grep_tool() -> MCPTool {
+        MCPTool {
+            name: "grep".to_string(),
+            title: Some("Grep".to_string()),
+            description: "Search for a pattern in a file or input string.".to_string(),
+            input_schema: JSONSchema {
+                schema_type: JSONSchemaType::Object {
+                    properties: Some({
+                        let mut props = HashMap::new();
+                        props.insert(
+                            "pattern".to_string(),
+                            JSONSchema {
+                                schema_type: JSONSchemaType::String {
+                                    min_length: Some(1),
+                                    max_length: None,
+                                    pattern: None,
+                                    format: None,
+                                },
+                                title: None,
+                                description: Some("Regex pattern to search for".to_string()),
+                                default: None,
+                                examples: None,
+                                enum_values: None,
+                                const_value: None,
+                            },
+                        );
+                        props.insert(
+                            "path".to_string(),
+                            JSONSchema {
+                                schema_type: JSONSchemaType::String {
+                                    min_length: Some(1),
+                                    max_length: Some(1000),
+                                    pattern: None,
+                                    format: None,
+                                },
+                                title: None,
+                                description: Some(
+                                    "Path to the file to search (exclusive with 'input')"
+                                        .to_string(),
+                                ),
+                                default: None,
+                                examples: None,
+                                enum_values: None,
+                                const_value: None,
+                            },
+                        );
+                        props.insert(
+                            "input".to_string(),
+                            JSONSchema {
+                                schema_type: JSONSchemaType::String {
+                                    min_length: Some(1),
+                                    max_length: None,
+                                    pattern: None,
+                                    format: None,
+                                },
+                                title: None,
+                                description: Some(
+                                    "Input string to search (exclusive with 'path')".to_string(),
+                                ),
+                                default: None,
+                                examples: None,
+                                enum_values: None,
+                                const_value: None,
+                            },
+                        );
+                        props.insert(
+                            "ignore_case".to_string(),
+                            JSONSchema {
+                                schema_type: JSONSchemaType::Boolean,
+                                title: None,
+                                description: Some("Perform case-insensitive matching".to_string()),
+                                default: Some(json!(false)),
+                                examples: None,
+                                enum_values: None,
+                                const_value: None,
+                            },
+                        );
+                        props.insert(
+                            "line_numbers".to_string(),
+                            JSONSchema {
+                                schema_type: JSONSchemaType::Boolean,
+                                title: None,
+                                description: Some("Include line numbers in the output".to_string()),
+                                default: Some(json!(false)),
+                                examples: None,
+                                enum_values: None,
+                                const_value: None,
+                            },
+                        );
+                        props
+                    }),
+                    required: Some(vec!["pattern".to_string()]),
+                    additional_properties: Some(false),
+                    min_properties: None,
+                    max_properties: None,
+                },
+                title: None,
+                description: None,
+                default: None,
+                examples: None,
+                enum_values: None,
+                const_value: None,
+            },
+            output_schema: None,
+            annotations: None,
+        }
+    }
+
     fn create_search_files_tool() -> MCPTool {
         MCPTool {
             name: "search_files".to_string(),
@@ -328,22 +562,207 @@ impl FilesystemServer {
         }
     }
 
+    async fn handle_replace_lines_in_file(&self, args: Value) -> MCPResponse {
+        let request_id = Value::String(uuid::Uuid::new_v4().to_string());
+
+        let path_str = match args.get("path").and_then(|v| v.as_str()) {
+            Some(path) => path,
+            None => {
+                return MCPResponse::error(request_id, -32602, "Missing required parameter: path");
+            }
+        };
+
+        let replacements_val = match args.get("replacements") {
+            Some(val) => val,
+            None => {
+                return MCPResponse::error(
+                    request_id,
+                    -32602,
+                    "Missing required parameter: replacements",
+                );
+            }
+        };
+
+        let replacements: Vec<HashMap<String, Value>> =
+            match serde_json::from_value(replacements_val.clone()) {
+                Ok(r) => r,
+                Err(e) => {
+                    return MCPResponse::error(
+                        request_id,
+                        -32602,
+                        &format!("Invalid replacements format: {}", e),
+                    );
+                }
+            };
+
+        // 경로 유효성 검사
+        let safe_path = match self
+            .file_manager
+            .get_security_validator()
+            .validate_path(path_str)
+        {
+            Ok(path) => path,
+            Err(e) => {
+                return MCPResponse::error(request_id, -32603, &format!("Security error: {}", e));
+            }
+        };
+
+        // 파일 읽기
+        let lines = match self.read_file_lines(&safe_path).await {
+            Ok(lines) => lines,
+            Err(e) => {
+                return MCPResponse::error(
+                    request_id,
+                    -32603,
+                    &format!("Failed to read file: {}", e),
+                );
+            }
+        };
+
+        let mut new_lines = lines.clone();
+        let mut replacements_map: HashMap<usize, String> = HashMap::new();
+
+        for rep in replacements {
+            let line_number = match rep.get("line_number").and_then(|v| v.as_u64()) {
+                Some(num) => num as usize,
+                None => {
+                    return MCPResponse::error(request_id, -32602, "Invalid line_number format");
+                }
+            };
+            let content = match rep.get("content").and_then(|v| v.as_str()) {
+                Some(s) => s.to_string(),
+                None => {
+                    return MCPResponse::error(request_id, -32602, "Invalid content format");
+                }
+            };
+
+            if line_number == 0 || line_number > new_lines.len() {
+                return MCPResponse::error(
+                    request_id,
+                    -32602,
+                    &format!("Line number {} is out of bounds", line_number),
+                );
+            }
+            replacements_map.insert(line_number, content);
+        }
+
+        // 라인 교체 (인덱스 기반)
+        for (line_number, content) in replacements_map {
+            new_lines[line_number - 1] = content;
+        }
+
+        // 파일 쓰기
+        let new_content = new_lines.join("\n");
+        match self
+            .file_manager
+            .write_file_string(path_str, &new_content)
+            .await
+        {
+            Ok(_) => MCPResponse::success(
+                request_id,
+                json!({
+                    "content": [{
+                        "type": "text",
+                        "text": format!("Successfully replaced lines in file {}", path_str)
+                    }]
+                }),
+            ),
+            Err(e) => {
+                MCPResponse::error(request_id, -32603, &format!("Failed to write file: {}", e))
+            }
+        }
+    }
+
+    async fn handle_grep(&self, args: Value) -> MCPResponse {
+        let request_id = Value::String(uuid::Uuid::new_v4().to_string());
+
+        let pattern = match args.get("pattern").and_then(|v| v.as_str()) {
+            Some(p) => p,
+            None => return MCPResponse::error(request_id, -32602, "missing 'pattern' argument"),
+        };
+
+        let ignore_case = args
+            .get("ignore_case")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let line_numbers = args
+            .get("line_numbers")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        let input_text = if let Some(path_str) = args.get("path").and_then(|v| v.as_str()) {
+            match self
+                .file_manager
+                .get_security_validator()
+                .validate_path(path_str)
+            {
+                Ok(safe_path) => match tokio::fs::read_to_string(safe_path).await {
+                    Ok(s) => s,
+                    Err(e) => {
+                        return MCPResponse::error(
+                            request_id,
+                            -32603,
+                            &format!("failed to read file {}: {}", path_str, e),
+                        )
+                    }
+                },
+                Err(e) => {
+                    return MCPResponse::error(
+                        request_id,
+                        -32603,
+                        &format!("Security error: {}", e),
+                    );
+                }
+            }
+        } else if let Some(s) = args.get("input").and_then(|v| v.as_str()) {
+            s.to_string()
+        } else {
+            return MCPResponse::error(
+                request_id,
+                -32602,
+                "either 'path' or 'input' must be provided",
+            );
+        };
+
+        let regex = match regex::RegexBuilder::new(pattern)
+            .case_insensitive(ignore_case)
+            .build()
+        {
+            Ok(r) => r,
+            Err(e) => {
+                return MCPResponse::error(request_id, -32602, &format!("invalid pattern: {}", e))
+            }
+        };
+
+        let mut matches = Vec::new();
+        for (idx, line) in input_text.lines().enumerate() {
+            if regex.is_match(line) {
+                if line_numbers {
+                    matches.push(json!({ "line": idx + 1, "text": line }));
+                } else {
+                    matches.push(json!(line));
+                }
+            }
+        }
+
+        MCPResponse::success(
+            request_id,
+            json!({
+                "content": [{
+                    "type": "text",
+                    "text": format!("Found {} matches:\n{}", matches.len(), serde_json::to_string_pretty(&matches).unwrap_or_default())
+                }]
+            }),
+        )
+    }
+
     async fn handle_read_file(&self, args: Value) -> MCPResponse {
         let request_id = Value::String(uuid::Uuid::new_v4().to_string());
 
         let path_str = match args.get("path").and_then(|v| v.as_str()) {
             Some(path) => path,
             None => {
-                return MCPResponse {
-                    jsonrpc: "2.0".to_string(),
-                    id: Some(request_id),
-                    result: None,
-                    error: Some(MCPError {
-                        code: -32602,
-                        message: "Missing required parameter: path".to_string(),
-                        data: None,
-                    }),
-                };
+                return MCPResponse::error(request_id, -32602, "Missing required parameter: path");
             }
         };
 
@@ -359,43 +778,28 @@ impl FilesystemServer {
         // Validate line range
         if let (Some(start), Some(end)) = (start_line, end_line) {
             if start > end {
-                return MCPResponse {
-                    jsonrpc: "2.0".to_string(),
-                    id: Some(request_id),
-                    result: None,
-                    error: Some(MCPError {
-                        code: -32602,
-                        message: "start_line must be less than or equal to end_line".to_string(),
-                        data: None,
-                    }),
-                };
+                return MCPResponse::error(
+                    request_id,
+                    -32602,
+                    "start_line must be less than or equal to end_line",
+                );
             }
         }
 
+        let safe_path = match self
+            .file_manager
+            .get_security_validator()
+            .validate_path(path_str)
+        {
+            Ok(path) => path,
+            Err(e) => {
+                error!("Path validation failed: {}", e);
+                return MCPResponse::error(request_id, -32603, &format!("Security error: {}", e));
+            }
+        };
+
         // Read file with line range support using SecureFileManager
         let content = if start_line.is_some() || end_line.is_some() {
-            // For line range reading, we need to validate path and read manually
-            let safe_path = match self
-                .file_manager
-                .get_security_validator()
-                .validate_path(path_str)
-            {
-                Ok(path) => path,
-                Err(e) => {
-                    error!("Path validation failed: {}", e);
-                    return MCPResponse {
-                        jsonrpc: "2.0".to_string(),
-                        id: Some(request_id),
-                        result: None,
-                        error: Some(MCPError {
-                            code: -32603,
-                            message: format!("Security error: {}", e),
-                            data: None,
-                        }),
-                    };
-                }
-            };
-
             // Check file size
             if let Err(e) = self
                 .file_manager
@@ -403,19 +807,11 @@ impl FilesystemServer {
                 .validate_file_size(&safe_path, MAX_FILE_SIZE)
             {
                 error!("File size validation failed: {}", e);
-                return MCPResponse {
-                    jsonrpc: "2.0".to_string(),
-                    id: Some(request_id),
-                    result: None,
-                    error: Some(MCPError {
-                        code: -32603,
-                        message: format!("File size error: {}", e),
-                        data: None,
-                    }),
-                };
+                return MCPResponse::error(request_id, -32603, &format!("File size error: {}", e));
             }
 
-            self.read_file_lines(&safe_path, start_line, end_line).await
+            self.read_file_lines_range(&safe_path, start_line, end_line)
+                .await
         } else {
             self.file_manager
                 .read_file_as_string(path_str)
@@ -426,35 +822,41 @@ impl FilesystemServer {
         match content {
             Ok(content) => {
                 info!("Successfully read file: {}", path_str);
-                MCPResponse {
-                    jsonrpc: "2.0".to_string(),
-                    id: Some(request_id),
-                    result: Some(json!({
+                MCPResponse::success(
+                    request_id,
+                    json!({
                         "content": [{
                             "type": "text",
                             "text": content
                         }]
-                    })),
-                    error: None,
-                }
+                    }),
+                )
             }
             Err(e) => {
                 error!("Failed to read file {}: {}", path_str, e);
-                MCPResponse {
-                    jsonrpc: "2.0".to_string(),
-                    id: Some(request_id),
-                    result: None,
-                    error: Some(MCPError {
-                        code: -32603,
-                        message: format!("Failed to read file: {}", e),
-                        data: None,
-                    }),
-                }
+                MCPResponse::error(request_id, -32603, &format!("Failed to read file: {}", e))
             }
         }
     }
 
-    async fn read_file_lines(
+    async fn read_file_lines(&self, path: &std::path::Path) -> Result<Vec<String>, String> {
+        use tokio::io::{AsyncBufReadExt, BufReader};
+
+        let file = tokio::fs::File::open(path)
+            .await
+            .map_err(|e| e.to_string())?;
+        let reader = BufReader::new(file);
+        let mut lines = reader.lines();
+        let mut result_lines = Vec::new();
+
+        while let Ok(Some(line)) = lines.next_line().await {
+            result_lines.push(line);
+        }
+
+        Ok(result_lines)
+    }
+
+    async fn read_file_lines_range(
         &self,
         path: &std::path::Path,
         start_line: Option<usize>,
@@ -835,6 +1237,8 @@ impl BuiltinMCPServer for FilesystemServer {
             Self::create_write_file_tool(),
             Self::create_list_directory_tool(),
             Self::create_search_files_tool(),
+            Self::create_replace_lines_in_file_tool(),
+            Self::create_grep_tool(),
         ]
     }
 
@@ -844,6 +1248,8 @@ impl BuiltinMCPServer for FilesystemServer {
             "write_file" => self.handle_write_file(args).await,
             "list_directory" => self.handle_list_directory(args).await,
             "search_files" => self.handle_search_files(args).await,
+            "replace_lines_in_file" => self.handle_replace_lines_in_file(args).await,
+            "grep" => self.handle_grep(args).await,
             _ => {
                 let request_id = Value::String(uuid::Uuid::new_v4().to_string());
                 MCPResponse {

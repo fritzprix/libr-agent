@@ -238,35 +238,68 @@ impl InteractiveBrowserServer {
 
         let script = format!(
             r#"
+(async function() {{
+  const ts = new Date().toISOString();
+  const selector = '{}';
+  
+  try {{
+    const el = document.querySelector(selector);
+    if (!el) {{
+      return JSON.stringify({{
+        ok: false,
+        action: 'click',
+        reason: 'not_found',
+        selector: selector,
+        timestamp: ts
+      }});
+    }}
 
-(function() {{
+    // Get diagnostics
+    const rect = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+    const visible = !!(rect && rect.width > 0 && rect.height > 0);
+    const disabled = el.disabled || el.hasAttribute('disabled');
+    const computedStyle = window.getComputedStyle ? window.getComputedStyle(el) : null;
+    const pointerEvents = computedStyle ? computedStyle.pointerEvents : 'auto';
+    const visibility = computedStyle ? computedStyle.visibility : 'visible';
 
-try {{
+    const diagnostics = {{
+      visible: visible,
+      disabled: disabled,
+      pointerEvents: pointerEvents,
+      visibility: visibility,
+      rect: rect ? {{ x: rect.x, y: rect.y, width: rect.width, height: rect.height }} : null
+    }};
 
-const element = document.querySelector('{}');
+    // Try multiple click approaches
+    try {{
+      el.scrollIntoView({{ block: 'center', inline: 'center' }});
+      el.focus();
+      el.click();
+      el.dispatchEvent(new MouseEvent('click', {{ bubbles: true, cancelable: true }}));
+    }} catch (clickError) {{
+      // Click attempts failed, but we still return diagnostics
+    }}
 
-if (element) {{
-
-element.click();
-
-return 'Element clicked successfully';
-
-}} else {{
-
-throw new Error('Element not found: {}');
-
-}}
-
-}} catch (error) {{
-
-throw new Error('Click failed: ' + error.message);
-
-}}
-
+    return JSON.stringify({{
+      ok: true,
+      action: 'click',
+      selector: selector,
+      timestamp: ts,
+      clickAttempted: true,
+      diagnostics: diagnostics,
+      note: 'click attempted (handlers may ignore synthetic events)'
+    }});
+  }} catch (error) {{
+    return JSON.stringify({{
+      ok: false,
+      action: 'click',
+      error: String(error),
+      selector: selector,
+      timestamp: ts
+    }});
+  }}
 }})()
-
 "#,
-            selector.replace('"', r#"\""#),
             selector.replace('"', r#"\""#)
         );
 
@@ -291,41 +324,105 @@ throw new Error('Click failed: ' + error.message);
 
         let script = format!(
             r#"
+(async function() {{
+  const ts = new Date().toISOString();
+  const selector = '{}';
+  const inputText = '{}';
+  
+  try {{
+    const el = document.querySelector(selector);
+    if (!el) {{
+      return JSON.stringify({{
+        ok: false,
+        action: 'input',
+        reason: 'not_found',
+        selector: selector,
+        timestamp: ts
+      }});
+    }}
 
-(function() {{
+    // Get diagnostics
+    const rect = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+    const visible = !!(rect && rect.width > 0 && rect.height > 0);
+    const disabled = el.disabled || el.hasAttribute('disabled') || el.readOnly || el.hasAttribute('readonly');
+    const computedStyle = window.getComputedStyle ? window.getComputedStyle(el) : null;
+    const pointerEvents = computedStyle ? computedStyle.pointerEvents : 'auto';
+    const visibility = computedStyle ? computedStyle.visibility : 'visible';
 
-try {{
+    const diagnostics = {{
+      visible: visible,
+      disabled: disabled,
+      pointerEvents: pointerEvents,
+      visibility: visibility,
+      rect: rect ? {{ x: rect.x, y: rect.y, width: rect.width, height: rect.height }} : null,
+      tagName: el.tagName.toLowerCase(),
+      type: el.type || 'unknown'
+    }};
 
-const element = document.querySelector('{}');
+    if (disabled) {{
+      return JSON.stringify({{
+        ok: false,
+        action: 'input',
+        reason: 'element_disabled',
+        selector: selector,
+        timestamp: ts,
+        diagnostics: diagnostics
+      }});
+    }}
 
-if (element) {{
+    // Try to input text
+    let applied = false;
+    try {{
+      el.scrollIntoView({{ block: 'center', inline: 'center' }});
+      el.focus();
+      
+      // Clear existing value and set new value
+      el.value = '';
+      el.value = inputText;
+      
+      // Dispatch events
+      el.dispatchEvent(new Event('input', {{ bubbles: true, cancelable: true }}));
+      el.dispatchEvent(new Event('change', {{ bubbles: true, cancelable: true }}));
+      el.dispatchEvent(new KeyboardEvent('keyup', {{ bubbles: true, cancelable: true }}));
+      
+      applied = true;
+    }} catch (inputError) {{
+      return JSON.stringify({{
+        ok: false,
+        action: 'input',
+        error: String(inputError),
+        selector: selector,
+        timestamp: ts,
+        diagnostics: diagnostics
+      }});
+    }}
 
-element.value = '{}';
+    const finalValue = el.value || '';
+    const valuePreview = finalValue.length > 50 ? finalValue.substring(0, 50) + '...' : finalValue;
 
-element.dispatchEvent(new Event('input', {{ bubbles: true }}));
-
-element.dispatchEvent(new Event('change', {{ bubbles: true }}));
-
-return 'Text input successfully: ' + element.value;
-
-}} else {{
-
-throw new Error('Input element not found: {}');
-
-}}
-
-}} catch (error) {{
-
-throw new Error('Input failed: ' + error.message);
-
-}}
-
+    return JSON.stringify({{
+      ok: true,
+      action: 'input',
+      selector: selector,
+      timestamp: ts,
+      applied: applied,
+      diagnostics: diagnostics,
+      value_preview: valuePreview,
+      note: 'input attempted (handlers may modify final value)'
+    }});
+  }} catch (error) {{
+    return JSON.stringify({{
+      ok: false,
+      action: 'input',
+      error: String(error),
+      selector: selector,
+      timestamp: ts
+    }});
+  }}
 }})()
-
 "#,
             selector.replace('"', r#"\""#),
-            text.replace('"', r#"\""#).replace('\n', r#"\n"#),
-            selector.replace('"', r#"\""#)
+            text.replace('"', r#"\""#).replace('\n', r#"\\n"#)
         );
 
         self.execute_script(session_id, &script).await

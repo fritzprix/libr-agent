@@ -83,7 +83,10 @@ class WebMCPProxyManager {
     });
 
     this.serverProxies.set(serverName, serverProxy);
-    logger.info('Created server proxy', { serverName, toolCount: tools.length });
+    logger.info('Created server proxy', {
+      serverName,
+      toolCount: tools.length,
+    });
 
     return serverProxy as T;
   }
@@ -111,9 +114,8 @@ export function useWebMCPServer<T extends WebMCPServerProxy>(
     try {
       setLoading(true);
       setError(null);
-      const serverProxy = await proxyManagerRef.current.getServerProxy<T>(
-        serverName,
-      );
+      const serverProxy =
+        await proxyManagerRef.current.getServerProxy<T>(serverName);
       setServer(serverProxy);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);

@@ -188,7 +188,11 @@ async function handleMCPMessage(
             id,
             serverName,
             toolName,
+            result,
           });
+
+          // Log the detailed tool result for debugging/UI inspection
+          log.info('callTool result', { id, serverName, toolName, result });
 
           // Tool 결과를 간단한 형태로 반환
           return { id, result };
@@ -202,7 +206,13 @@ async function handleMCPMessage(
                 ? toolError.message
                 : String(toolError),
           });
-          throw toolError;
+          return {
+            id,
+            error:
+              toolError instanceof Error
+                ? toolError.message
+                : String(toolError),
+          };
         }
       }
 

@@ -393,16 +393,16 @@ function ChatStatusBar({
   const getToolsDisplayText = () => {
     if (isLoading) return 'Loading tools...';
     if (error) return 'Tools error';
-  const mcpCount = availableTools.length;
-  const totalCount = mcpCount + (builtinAvailable?.length || 0);
-  return `${totalCount}(${mcpCount}) available`;
+    const mcpCount = availableTools.length;
+    const totalCount = mcpCount + (builtinAvailable?.length || 0);
+    return `${totalCount}(${mcpCount}) available`;
   };
 
   const getToolsColor = () => {
     if (isLoading) return 'text-yellow-400';
     if (error) return 'text-red-400';
-  const totalCount = availableTools.length + (builtinAvailable?.length || 0);
-  return totalCount > 0 ? 'text-green-400' : 'text-gray-500';
+    const totalCount = availableTools.length + (builtinAvailable?.length || 0);
+    return totalCount > 0 ? 'text-green-400' : 'text-gray-500';
   };
 
   const getToolsIcon = () => {
@@ -568,8 +568,8 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
             sessionId: currentSession?.id,
           });
 
-          // Read file content using type-safe Rust backend
-          const fileData = await rustBackend.readFile(filePath);
+          // Read file content using type-safe Rust backend for dropped files
+          const fileData = await rustBackend.readDroppedFile(filePath);
 
           // Convert number array to Uint8Array and create a blob
           const uint8Array = new Uint8Array(fileData);

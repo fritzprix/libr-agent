@@ -841,6 +841,7 @@ async function listContent(
 async function readContent(
   input: ReadContentInput,
 ): Promise<{ content: string; lineRange: [number, number] }> {
+  logger.info('Reading content', { input });
   try {
     const content = await dbService.fileContents.read(input.contentId);
     if (!content) {

@@ -17,7 +17,10 @@ const ToolsModal: React.FC<ToolsModalProps> = ({ isOpen, onClose }) => {
 
   const availableTools: DisplayTool[] = useMemo(() => {
     const mcp: DisplayTool[] = mcpTools.map((t) => ({ ...t, source: 'mcp' }));
-    const builtin: DisplayTool[] = builtinTools.map((t) => ({ ...t, source: 'builtin' }));
+    const builtin: DisplayTool[] = builtinTools.map((t) => ({
+      ...t,
+      source: 'builtin',
+    }));
     // show builtin first then mcp, sorted by name for stability
     return [...builtin, ...mcp].sort((a, b) => a.name.localeCompare(b.name));
   }, [mcpTools, builtinTools]);
@@ -44,12 +47,16 @@ const ToolsModal: React.FC<ToolsModalProps> = ({ isOpen, onClose }) => {
         <div className="overflow-y-auto terminal-scrollbar max-h-[60vh]">
           {availableTools.length === 0 ? (
             <div className="text-foreground text-center py-8">
-              No tools available. Configure MCP servers or enable built-in tools.
+              No tools available. Configure MCP servers or enable built-in
+              tools.
             </div>
           ) : (
             <div className="space-y-3">
               {availableTools.map((tool) => (
-                <div key={tool.name} className="bg-muted border border-border rounded p-3">
+                <div
+                  key={tool.name}
+                  className="bg-muted border border-border rounded p-3"
+                >
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
                       <span
@@ -71,7 +78,9 @@ const ToolsModal: React.FC<ToolsModalProps> = ({ isOpen, onClose }) => {
                     </div>
                   </div>
                   {tool.description && (
-                    <p className="text-foreground text-sm">{tool.description}</p>
+                    <p className="text-foreground text-sm">
+                      {tool.description}
+                    </p>
                   )}
                   {tool.inputSchema && (
                     <details className="mt-2">
@@ -79,7 +88,7 @@ const ToolsModal: React.FC<ToolsModalProps> = ({ isOpen, onClose }) => {
                         Input Schema
                       </summary>
                       <pre className="text-xs text-foreground mt-1 bg-background p-2 rounded overflow-x-auto">
-{JSON.stringify(tool.inputSchema, null, 2)}
+                        {JSON.stringify(tool.inputSchema, null, 2)}
                       </pre>
                     </details>
                   )}

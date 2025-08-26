@@ -86,8 +86,6 @@ export const useUnifiedMCP = () => {
             }
           }
         }
-        // For builtin tools like "builtin.filesystem__read_file"
-        // should match when LLM calls "read_file"
         if (type === 'BuiltInWeb' || type === 'BuiltInRust') {
           const nameWithoutPrefix = registeredName.replace(/^builtin\./, '');
           const parts = nameWithoutPrefix.split('__');

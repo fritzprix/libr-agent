@@ -341,3 +341,162 @@ pub async fn poll_script_result(
 
     server.poll_script_result(&request_id).await
 }
+
+#[tauri::command]
+pub async fn navigate_back(
+    server: State<'_, InteractiveBrowserServer>,
+    session_id: String,
+) -> Result<String, String> {
+    debug!("Command: navigate_back called for session: {}", session_id);
+
+    match server
+        .execute_script(&session_id, "history.back(); 'Navigated back'")
+        .await
+    {
+        Ok(request_id) => Ok(request_id),
+        Err(e) => {
+            error!("Failed to navigate back in session {}: {}", session_id, e);
+            Err(e)
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn navigate_forward(
+    server: State<'_, InteractiveBrowserServer>,
+    session_id: String,
+) -> Result<String, String> {
+    debug!(
+        "Command: navigate_forward called for session: {}",
+        session_id
+    );
+
+    match server
+        .execute_script(&session_id, "history.forward(); 'Navigated forward'")
+        .await
+    {
+        Ok(request_id) => Ok(request_id),
+        Err(e) => {
+            error!(
+                "Failed to navigate forward in session {}: {}",
+                session_id, e
+            );
+            Err(e)
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn get_element_text(
+    server: State<'_, InteractiveBrowserServer>,
+    session_id: String,
+    selector: String,
+) -> Result<String, String> {
+    debug!(
+        "Command: get_element_text called - session: {}, selector: {}",
+        session_id, selector
+    );
+
+    let script = format!(
+        "const el = document.querySelector('{}'); el ? el.textContent.trim() : null",
+        selector.replace('\'', "\\'")
+    );
+
+    match server.execute_script(&session_id, &script).await {
+        Ok(request_id) => Ok(request_id),
+        Err(e) => {
+            error!(
+                "Failed to get element text '{}' in session {}: {}",
+                selector, session_id, e
+            );
+            Err(e)
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn get_element_attribute(
+    server: State<'_, InteractiveBrowserServer>,
+    session_id: String,
+    selector: String,
+    attribute: String,
+) -> Result<String, String> {
+    debug!(
+        "Command: get_element_attribute called - session: {}, selector: {}, attribute: {}",
+        session_id, selector, attribute
+    );
+
+    let script = format!(
+        "const el = document.querySelector('{}'); el ? el.getAttribute('{}') : null",
+        selector.replace('\'', "\\'"),
+        attribute.replace('\'', "\\'")
+    );
+
+    match server.execute_script(&session_id, &script).await {
+        Ok(request_id) => Ok(request_id),
+        Err(e) => {
+            error!(
+                "Failed to get element attribute '{}' for '{}' in session {}: {}",
+                attribute, selector, session_id, e
+            );
+            Err(e)
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn find_element(
+    server: State<'_, InteractiveBrowserServer>,
+    session_id: String,
+    selector: String,
+) -> Result<String, String> {
+    debug!(
+        "Command: find_element called - session: {}, selector: {}",
+        session_id, selector
+    );
+
+    let script = format!(
+        r#"
+(function() {{
+  const selector = '{}';
+  try {{
+    const el = document.querySelector(selector);
+    if (!el) return JSON.stringify({{ exists: false, selector }});
+
+    const rect = el.getBoundingClientRect();
+    const style = window.getComputedStyle(el);
+    const visible = !!(rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden');
+    const clickable = visible && style.pointerEvents !== 'none' && !el.disabled;
+
+    return JSON.stringify({{
+      exists: true,
+      visible,
+      clickable,
+      tagName: el.tagName.toLowerCase(),
+      rect: {{ x: rect.x, y: rect.y, width: rect.width, height: rect.height }},
+      attributes: {{
+        id: el.id || null,
+        className: el.className || null,
+        disabled: el.disabled || false
+      }},
+      selector
+    }});
+  }} catch (error) {{
+    return JSON.stringify({{ exists: false, error: error.message, selector }});
+  }}
+}})()
+"#,
+        selector.replace('\'', "\\'")
+    );
+
+    match server.execute_script(&session_id, &script).await {
+        Ok(request_id) => Ok(request_id),
+        Err(e) => {
+            error!(
+                "Failed to find element '{}' in session {}: {}",
+                selector, session_id, e
+            );
+            Err(e)
+        }
+    }
+}

@@ -42,10 +42,6 @@ interface ChatContextValue {
 
 const ChatContext = createContext<ChatContextValue | undefined>(undefined);
 
-const validateMessage = (message: Message): boolean => {
-  return Boolean(message.role && (message.content || message.tool_calls));
-};
-
 interface ChatProviderProps {
   children: React.ReactNode;
 }
@@ -118,13 +114,44 @@ const ToolCaller: React.FC<ToolCallerProps> = ({ onToolExecutionChange }) => {
             const mcpResponse = await executeToolCall(toolCall);
             const executionTime = Date.now() - executionStartTime;
 
+            // Diagnostic logging for debugging readContent tool result loss
+            logger.debug('Raw mcpResponse for tool', { 
+              toolCallId: toolCall.id, 
+              toolName,
+              mcpResponse 
+            });
+
+            // Normalize MCP content to readable string
+            const normalizeContent = (rawContent: unknown): string => {
+              if (typeof rawContent === 'string') {
+                return rawContent;
+              } else if (Array.isArray(rawContent)) {
+                // MCPContent[] -> prefer text parts
+                const textParts = rawContent
+                  .filter((item: unknown): item is { type: string; text: string } => 
+                    item !== null && 
+                    typeof item === 'object' && 
+                    'type' in item && 
+                    'text' in item &&
+                    (item as { type: unknown }).type === 'text'
+                  )
+                  .map((item) => item.text)
+                  .filter(Boolean);
+                return textParts.length
+                  ? textParts.join('\n')
+                  : JSON.stringify(rawContent);
+              } else {
+                return JSON.stringify(rawContent ?? '');
+              }
+            };
+
             const toolResultMessage: Message = {
               id: createId(),
               assistantId: currentAssistant?.id,
               role: 'tool',
               content: isMCPError(mcpResponse)
                 ? `Error: ${mcpResponse.error.message} (Code: ${mcpResponse.error.code})`
-                : mcpResponse.result?.content || [],
+                : normalizeContent(mcpResponse.result?.content),
               tool_call_id: toolCall.id,
               sessionId: currentSession?.id || '',
             };
@@ -195,7 +222,7 @@ const ToolCaller: React.FC<ToolCallerProps> = ({ onToolExecutionChange }) => {
 };
 
 export function ChatProvider({ children }: ChatProviderProps) {
-  const { messages: history, addMessage } = useSessionHistory();
+  const { messages: history, addMessage, addMessages } = useSessionHistory();
   const { current: currentSession } = useSessionContext();
   const { value: settingValue } = useSettings();
   const { getCurrent: getCurrentAssistant, availableTools } =
@@ -396,25 +423,22 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
         // Process and validate new messages if provided (tool 결과 유실 방지)
         if (messageToAdd?.length) {
-          const processedMessages = await Promise.all(
-            messageToAdd.map(async (message) => {
-              if (!validateMessage(message)) {
-                throw new Error(
-                  'Invalid message: must have role and either content or tool_calls',
-                );
-              }
-
-              const messageWithSession = {
-                ...message,
-                sessionId: currentSession.id,
-              };
-
-              await addMessage(messageWithSession);
-              return messageWithSession;
-            }),
-          );
-
-          messagesToSend = [...messages, ...processedMessages];
+          const messagesWithSession = messageToAdd.map((m) => ({
+            ...m,
+            sessionId: currentSession.id,
+          }));
+          if (typeof addMessages === 'function') {
+            await addMessages(messagesWithSession);
+            messagesToSend = [...messages, ...messagesWithSession];
+          } else {
+            // 안전한 폴백: 순차 저장
+            const persisted: Message[] = [];
+            for (const msg of messagesWithSession) {
+              const added = await addMessage(msg);
+              persisted.push(added);
+            }
+            messagesToSend = [...messages, ...persisted];
+          }
         }
 
         // Cancel 체크를 메시지 추가 후로 이동 (tool 결과는 보존)
@@ -483,6 +507,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       messageWindowSize,
       triggerAIService,
       addMessage,
+      addMessages,
       systemPromptExtensions,
       buildSystemPrompt,
     ],

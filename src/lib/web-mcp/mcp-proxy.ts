@@ -297,9 +297,9 @@ export class WebMCPProxy {
   async callTool(
     serverName: string,
     toolName: string,
-    args: unknown,
+    args: Record<string, unknown> = {},
   ): Promise<WebMCPResponse> {
-    logger.debug('Calling tool', { serverName, toolName });
+    logger.debug('Calling tool', { serverName, toolName, args });
     const result = await this.sendMessage<WebMCPResponse>({
       type: 'callTool',
       serverName,
@@ -307,6 +307,10 @@ export class WebMCPProxy {
       args,
     });
     logger.debug('Tool call completed', { serverName, toolName, result });
+
+    // Log full response for debugging purposes
+    logger.info('callTool response from worker', { serverName, toolName, result });
+
     return result;
   } /**
    * Get proxy status
