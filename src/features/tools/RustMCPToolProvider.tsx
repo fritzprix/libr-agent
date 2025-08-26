@@ -39,6 +39,7 @@ export function RustMCPToolProvider() {
 
   useEffect(() => {
     if (!loading && value) {
+      logger.info("RUST : ", {value});
       Object.entries(value).forEach(([serviceId, tools]) => {
         const cachedTools = tools;
 

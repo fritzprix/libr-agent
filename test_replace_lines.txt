@@ -1,0 +1,5 @@
+Line 1: Original content
+Line 2: Keep this line
+Line 3: Original content to replace
+Line 4: Keep this line too
+Line 5: Another line to replace
