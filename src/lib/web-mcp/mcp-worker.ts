@@ -33,6 +33,7 @@ const log = {
 
 const MODULE_REGISTRY = [
   { key: 'content-store', importPath: './modules/content-store' },
+  { key: 'planning-server', importPath: './modules/planning-server' },
   // Future modules can be added here
 ] as const;
 

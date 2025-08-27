@@ -29,6 +29,8 @@ You have access to built-in tools for file operations, code execution, and web-b
 Tool details and usage instructions are provided separately.
 
 **Available Built-In Tools:** ${availableTools.length} ${isLoadingTauriTools ? '(Loading...)' : ''}
+
+**Important Instruction:** When calling built-in tools, you MUST use the tool name exactly as it appears in the available tools list. Do not add or remove the "builtin." prefix - use it "as is" (e.g., if the tool name is "builtin.file_read", call it as "builtin.file_read", not "file_read" or "builtin.builtin.file_read").
 `);
 
     // 2. Attached Files Section

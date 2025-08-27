@@ -190,7 +190,7 @@ export function BrowserToolProvider() {
             sessionId,
             selector = 'body',
             format = 'markdown',
-            saveRawHtml = false,
+            saveRawHtml = true,
             includeLinks = true,
             maxDepth = 5,
           } = args as {
