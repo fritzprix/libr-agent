@@ -309,7 +309,11 @@ export class WebMCPProxy {
     logger.debug('Tool call completed', { serverName, toolName, result });
 
     // Log full response for debugging purposes
-    logger.info('callTool response from worker', { serverName, toolName, result });
+    logger.info('callTool response from worker', {
+      serverName,
+      toolName,
+      result,
+    });
 
     return result;
   } /**
