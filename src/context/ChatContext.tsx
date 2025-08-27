@@ -115,10 +115,10 @@ const ToolCaller: React.FC<ToolCallerProps> = ({ onToolExecutionChange }) => {
             const executionTime = Date.now() - executionStartTime;
 
             // Diagnostic logging for debugging readContent tool result loss
-            logger.debug('Raw mcpResponse for tool', { 
-              toolCallId: toolCall.id, 
+            logger.debug('Raw mcpResponse for tool', {
+              toolCallId: toolCall.id,
               toolName,
-              mcpResponse 
+              mcpResponse,
             });
 
             // Normalize MCP content to readable string
@@ -128,12 +128,13 @@ const ToolCaller: React.FC<ToolCallerProps> = ({ onToolExecutionChange }) => {
               } else if (Array.isArray(rawContent)) {
                 // MCPContent[] -> prefer text parts
                 const textParts = rawContent
-                  .filter((item: unknown): item is { type: string; text: string } => 
-                    item !== null && 
-                    typeof item === 'object' && 
-                    'type' in item && 
-                    'text' in item &&
-                    (item as { type: unknown }).type === 'text'
+                  .filter(
+                    (item: unknown): item is { type: string; text: string } =>
+                      item !== null &&
+                      typeof item === 'object' &&
+                      'type' in item &&
+                      'text' in item &&
+                      (item as { type: unknown }).type === 'text',
                   )
                   .map((item) => item.text)
                   .filter(Boolean);
@@ -250,6 +251,17 @@ export function ChatProvider({ children }: ChatProviderProps) {
     };
   }, []);
 
+  // 세션 변경 시 streamingMessage 초기화 루틴 (타이밍 문제 해결)
+  useEffect(() => {
+    if (currentSession?.id) {
+      logger.debug('Session changed, ensuring streamingMessage is cleared', {
+        newSessionId: currentSession.id,
+      });
+      setStreamingMessage(null); // 세션 변경 시 무조건 초기화
+      setIsToolExecuting(false); // 툴 실행 상태도 초기화
+    }
+  }, [currentSession?.id]); // currentSession?.id 변경 시 실행
+
   // Register system prompt extension
   const registerSystemPrompt = useCallback(
     (extension: Omit<SystemPromptExtension, 'id'>) => {
@@ -356,6 +368,15 @@ export function ChatProvider({ children }: ChatProviderProps) {
       return history;
     }
 
+    // 세션 불일치 시 streamingMessage 무시 (Race Condition 방지)
+    if (streamingMessage.sessionId !== currentSession?.id) {
+      logger.warn('Streaming message session mismatch in messages calculation', {
+        streamingSessionId: streamingMessage.sessionId,
+        currentSessionId: currentSession?.id,
+      });
+      return history;
+    }
+
     // Check if streaming message already exists in history as finalized
     const existingMessage = history.find(
       (message) => message.id === streamingMessage.id && !message.isStreaming,
@@ -368,11 +389,20 @@ export function ChatProvider({ children }: ChatProviderProps) {
             : msg,
         )
       : [...history, streamingMessage];
-  }, [streamingMessage, history]);
+  }, [streamingMessage, history, currentSession?.id]);
 
   // Handle AI service streaming responses
   useEffect(() => {
     if (!response) return;
+
+    // 세션 불일치 시 response 무시 (Session 검증 강화)
+    if (response.sessionId && response.sessionId !== currentSession?.id) {
+      logger.warn('Ignoring response for different session', {
+        responseSessionId: response.sessionId,
+        currentSessionId: currentSession?.id,
+      });
+      return;
+    }
 
     setStreamingMessage((previous) => {
       if (previous) {
@@ -386,7 +416,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         id: response.id ?? createId(),
         content: response.content ?? '',
         role: 'assistant' as const,
-        sessionId: response.sessionId ?? currentSession?.id ?? '',
+        sessionId: currentSession?.id ?? '',
         isStreaming: response.isStreaming !== false,
       };
     });

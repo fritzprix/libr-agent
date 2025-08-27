@@ -83,12 +83,17 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
         const rawToolsByServer = await listToolsFromConfig(mcpConfig);
         toolsByServer.current = rawToolsByServer;
 
-        const availableTools: MCPTool[] = Object.entries(rawToolsByServer).flatMap(([s, tools]) => {
+        const availableTools: MCPTool[] = Object.entries(
+          rawToolsByServer,
+        ).flatMap(([s, tools]) => {
           if (!aliasToIdTableRef.current.has(s)) {
             aliasToIdTableRef.current.set(toValidJsName(s), s);
           }
-          return tools.map(t => ({ ...t, name: `${toValidJsName(s)}__${t.name}` }));
-        })
+          return tools.map((t) => ({
+            ...t,
+            name: `${toValidJsName(s)}__${t.name}`,
+          }));
+        });
 
         setAvailableTools(availableTools);
 
@@ -171,9 +176,10 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
           );
         }
       } else {
-        throw new Error(`Tool name format invalid, missing '__' delimiter: ${aiProvidedToolName}`);
+        throw new Error(
+          `Tool name format invalid, missing '__' delimiter: ${aiProvidedToolName}`,
+        );
       }
-
     },
     [],
   );
