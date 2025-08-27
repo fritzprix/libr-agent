@@ -7,6 +7,7 @@ use tokio::fs;
 use tokio::process::Command;
 use tokio::time::timeout;
 use tracing::{error, info, warn};
+use uuid::Uuid;
 
 use super::{
     utils::constants::{DEFAULT_EXECUTION_TIMEOUT, MAX_CODE_SIZE, MAX_EXECUTION_TIMEOUT},
@@ -454,7 +455,7 @@ impl SandboxServer {
     }
 
     async fn handle_execute_typescript(&self, args: Value) -> MCPResponse {
-        let request_id = Value::String(uuid::Uuid::new_v4().to_string());
+        let request_id = Value::String(Uuid::new_v4().to_string());
 
         let code = match args.get("code").and_then(|v| v.as_str()) {
             Some(code) => code,
@@ -478,18 +479,202 @@ impl SandboxServer {
             .unwrap_or(DEFAULT_EXECUTION_TIMEOUT)
             .min(MAX_EXECUTION_TIMEOUT);
 
-        // Check if ts-node is available, fallback to node if not
-        let command_result = Command::new("which").arg("ts-node").output().await;
-        let (command, args_vec) =
-            if command_result.is_ok() && command_result.unwrap().status.success() {
-                ("ts-node", vec!["--eval"])
-            } else {
-                warn!("ts-node not found, falling back to node with TypeScript disabled");
-                ("node", vec!["--eval"])
+        // 코드 전달 검증 강화 (직렬화 문제 방지)
+        if let Err(e) = std::str::from_utf8(code.as_bytes()) {
+            error!("Invalid UTF-8 in TypeScript code: {}", e);
+            return MCPResponse {
+                jsonrpc: "2.0".to_string(),
+                id: Some(request_id),
+                result: None,
+                error: Some(MCPError {
+                    code: -32603,
+                    message: "Invalid UTF-8 encoding in code".to_string(),
+                    data: None,
+                }),
             };
+        }
 
-        self.execute_code_in_sandbox(command, &args_vec, code, ".ts", timeout_secs)
-            .await
+        // 코드 크기 검증 (기존과 동일)
+        if code.len() > MAX_CODE_SIZE {
+            return MCPResponse {
+                jsonrpc: "2.0".to_string(),
+                id: Some(request_id),
+                result: None,
+                error: Some(MCPError {
+                    code: -32603,
+                    message: format!(
+                        "Code too large: {} bytes (max: {} bytes)",
+                        code.len(),
+                        MAX_CODE_SIZE
+                    ),
+                    data: None,
+                }),
+            };
+        }
+
+        // Deno 설치 확인
+        let deno_check = Command::new("which").arg("deno").output().await;
+        if !deno_check.is_ok() || !deno_check.unwrap().status.success() {
+            error!("Deno not found on system");
+            return MCPResponse {
+                jsonrpc: "2.0".to_string(),
+                id: Some(request_id),
+                result: None,
+                error: Some(MCPError {
+                    code: -32603,
+                    message: format!(
+                        "Deno is required for TypeScript execution.\\n\\n\
+                        To install Deno automatically, run:\\n\
+                        curl -fsSL https://deno.land/install.sh | sh\\n\\n\
+                        Or using package managers:\\n\
+                        - macOS: brew install deno\\n\
+                        - Windows: winget install deno\\n\
+                        - Linux: curl -fsSL https://deno.land/install.sh | sh\\n\\n\
+                        After installation, restart the application."
+                    ),
+                    data: None,
+                }),
+            };
+        }
+
+        info!("Using Deno for TypeScript execution");
+
+        // 임시 디렉터리 생성 (파일 기반 실행으로 안정성 향상)
+        let temp_dir = match TempDir::new() {
+            Ok(dir) => dir,
+            Err(e) => {
+                error!("Failed to create temporary directory for Deno execution: {}", e);
+                return MCPResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id: Some(request_id),
+                    result: None,
+                    error: Some(MCPError {
+                        code: -32603,
+                        message: format!("Failed to create temp directory: {}", e),
+                        data: None,
+                    }),
+                };
+            }
+        };
+
+        let ts_file = temp_dir.path().join("script.ts");
+
+        // 코드 파일 쓰기 (직렬화 검증 후)
+        if let Err(e) = fs::write(&ts_file, code).await {
+            error!("Failed to write TypeScript file: {}", e);
+            return MCPResponse {
+                jsonrpc: "2.0".to_string(),
+                id: Some(request_id),
+                result: None,
+                error: Some(MCPError {
+                    code: -32603,
+                    message: format!("Failed to write TypeScript file: {}", e),
+                    data: None,
+                }),
+            };
+        }
+
+        // Deno 실행 명령 준비
+        let mut deno_cmd = Command::new("deno");
+        deno_cmd
+            .arg("run")
+            .arg("--allow-read")     // 파일 읽기 허용
+            .arg("--allow-write")    // 파일 쓰기 허용
+            .arg("--allow-net")      // 네트워크 접근 허용 (필요시)
+            .arg("--quiet")          // Deno 출력 최소화
+            .arg(&ts_file);
+
+        // 작업 디렉터리 설정
+        let work_dir = Self::determine_execution_working_dir();
+        deno_cmd.current_dir(&work_dir);
+
+        // 환경 변수 설정 (보안 및 격리)
+        deno_cmd.env_clear();
+        deno_cmd.env("PATH", std::env::var("PATH").unwrap_or_default());
+        if let Some(home_str) = work_dir.to_str() {
+            deno_cmd.env("HOME", home_str);
+        }
+
+        // 타임아웃 설정
+        let timeout_duration = Duration::from_secs(timeout_secs.min(MAX_EXECUTION_TIMEOUT));
+
+        // 실행 및 결과 처리
+        match timeout(timeout_duration, deno_cmd.output()).await {
+            Ok(Ok(output)) => {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                let success = output.status.success();
+
+                let result_text = if success {
+                    if stdout.trim().is_empty() && stderr.trim().is_empty() {
+                        "TypeScript executed successfully (no output)".to_string()
+                    } else if stderr.trim().is_empty() {
+                        format!("Output:\\n{}", stdout.trim())
+                    } else {
+                        format!(
+                            "Output:\\n{}\\n\\nWarnings/Errors:\\n{}",
+                            stdout.trim(),
+                            stderr.trim()
+                        )
+                    }
+                } else {
+                    format!(
+                        "Execution failed (exit code: {}):\\n{}",
+                        output.status.code().unwrap_or(-1),
+                        if stderr.trim().is_empty() {
+                            stdout.trim()
+                        } else {
+                            stderr.trim()
+                        }
+                    )
+                };
+
+                info!(
+                    "TypeScript execution completed via Deno. Success: {}, Output length: {}",
+                    success,
+                    result_text.len()
+                );
+
+                MCPResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id: Some(request_id),
+                    result: Some(json!({
+                        "content": [{
+                            "type": "text",
+                            "text": result_text
+                        }],
+                        "isError": !success
+                    })),
+                    error: None,
+                }
+            }
+            Ok(Err(e)) => {
+                error!("Failed to execute with Deno: {}", e);
+                MCPResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id: Some(request_id),
+                    result: None,
+                    error: Some(MCPError {
+                        code: -32603,
+                        message: format!("Deno execution error: {}", e),
+                        data: None,
+                    }),
+                }
+            }
+            Err(_) => {
+                warn!("TypeScript execution timed out after {} seconds", timeout_secs);
+                MCPResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id: Some(request_id),
+                    result: None,
+                    error: Some(MCPError {
+                        code: -32603,
+                        message: format!("Execution timed out after {} seconds", timeout_secs),
+                        data: None,
+                    }),
+                }
+            }
+        }
     }
 
     async fn handle_execute_shell(&self, args: Value) -> MCPResponse {
