@@ -153,6 +153,10 @@ export function WebMCPProvider({ servers = [] }: WebMCPProviderProps) {
         loadService: () => loadServer(s),
         listTools: () => serverStatesRef.current[s]?.tools || [],
         unloadService: async () => {},
+        getServiceContext: () =>
+          proxyRef.current
+            ? proxyRef.current.getServiceContext(s)
+            : Promise.resolve(''),
       };
       return acc;
     }, {});

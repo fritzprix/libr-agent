@@ -291,7 +291,7 @@ impl SandboxServer {
                     result: None,
                     error: Some(MCPError {
                         code: -32603,
-                        message: format!("Failed to create sandbox: {}", e),
+                        message: format!("Failed to create sandbox: {e}"),
                         data: None,
                     }),
                 };
@@ -299,7 +299,7 @@ impl SandboxServer {
         };
 
         // Write code to temporary file
-        let script_path = temp_dir.path().join(format!("script{}", file_extension));
+        let script_path = temp_dir.path().join(format!("script{file_extension}"));
         if let Err(e) = fs::write(&script_path, code).await {
             error!("Failed to write script file: {}", e);
             return MCPResponse {
@@ -308,7 +308,7 @@ impl SandboxServer {
                 result: None,
                 error: Some(MCPError {
                     code: -32603,
-                    message: format!("Failed to write script: {}", e),
+                    message: format!("Failed to write script: {e}"),
                     data: None,
                 }),
             };
@@ -404,7 +404,7 @@ impl SandboxServer {
                     result: None,
                     error: Some(MCPError {
                         code: -32603,
-                        message: format!("Execution error: {}", e),
+                        message: format!("Execution error: {e}"),
                         data: None,
                     }),
                 }
@@ -417,7 +417,7 @@ impl SandboxServer {
                     result: None,
                     error: Some(MCPError {
                         code: -32603,
-                        message: format!("Execution timed out after {} seconds", timeout_secs),
+                        message: format!("Execution timed out after {timeout_secs} seconds"),
                         data: None,
                     }),
                 }
@@ -514,7 +514,7 @@ impl SandboxServer {
 
         // Deno 설치 확인
         let deno_check = Command::new("which").arg("deno").output().await;
-        if !deno_check.is_ok() || !deno_check.unwrap().status.success() {
+        if deno_check.is_err() || !deno_check.unwrap().status.success() {
             error!("Deno not found on system");
             return MCPResponse {
                 jsonrpc: "2.0".to_string(),
@@ -522,16 +522,14 @@ impl SandboxServer {
                 result: None,
                 error: Some(MCPError {
                     code: -32603,
-                    message: format!(
-                        "Deno is required for TypeScript execution.\\n\\n\
+                    message: "Deno is required for TypeScript execution.\\n\\n\
                         To install Deno automatically, run:\\n\
                         curl -fsSL https://deno.land/install.sh | sh\\n\\n\
                         Or using package managers:\\n\
                         - macOS: brew install deno\\n\
                         - Windows: winget install deno\\n\
                         - Linux: curl -fsSL https://deno.land/install.sh | sh\\n\\n\
-                        After installation, restart the application."
-                    ),
+                        After installation, restart the application.".to_string(),
                     data: None,
                 }),
             };
@@ -543,14 +541,17 @@ impl SandboxServer {
         let temp_dir = match TempDir::new() {
             Ok(dir) => dir,
             Err(e) => {
-                error!("Failed to create temporary directory for Deno execution: {}", e);
+                error!(
+                    "Failed to create temporary directory for Deno execution: {}",
+                    e
+                );
                 return MCPResponse {
                     jsonrpc: "2.0".to_string(),
                     id: Some(request_id),
                     result: None,
                     error: Some(MCPError {
                         code: -32603,
-                        message: format!("Failed to create temp directory: {}", e),
+                        message: format!("Failed to create temp directory: {e}"),
                         data: None,
                     }),
                 };
@@ -568,7 +569,7 @@ impl SandboxServer {
                 result: None,
                 error: Some(MCPError {
                     code: -32603,
-                    message: format!("Failed to write TypeScript file: {}", e),
+                    message: format!("Failed to write TypeScript file: {e}"),
                     data: None,
                 }),
             };
@@ -578,10 +579,10 @@ impl SandboxServer {
         let mut deno_cmd = Command::new("deno");
         deno_cmd
             .arg("run")
-            .arg("--allow-read")     // 파일 읽기 허용
-            .arg("--allow-write")    // 파일 쓰기 허용
-            .arg("--allow-net")      // 네트워크 접근 허용 (필요시)
-            .arg("--quiet")          // Deno 출력 최소화
+            .arg("--allow-read") // 파일 읽기 허용
+            .arg("--allow-write") // 파일 쓰기 허용
+            .arg("--allow-net") // 네트워크 접근 허용 (필요시)
+            .arg("--quiet") // Deno 출력 최소화
             .arg(&ts_file);
 
         // 작업 디렉터리 설정
@@ -656,20 +657,23 @@ impl SandboxServer {
                     result: None,
                     error: Some(MCPError {
                         code: -32603,
-                        message: format!("Deno execution error: {}", e),
+                        message: format!("Deno execution error: {e}"),
                         data: None,
                     }),
                 }
             }
             Err(_) => {
-                warn!("TypeScript execution timed out after {} seconds", timeout_secs);
+                warn!(
+                    "TypeScript execution timed out after {} seconds",
+                    timeout_secs
+                );
                 MCPResponse {
                     jsonrpc: "2.0".to_string(),
                     id: Some(request_id),
                     result: None,
                     error: Some(MCPError {
                         code: -32603,
-                        message: format!("Execution timed out after {} seconds", timeout_secs),
+                        message: format!("Execution timed out after {timeout_secs} seconds"),
                         data: None,
                     }),
                 }
@@ -714,11 +718,11 @@ impl SandboxServer {
         // Execute shell command
         let mut cmd = if cfg!(target_os = "windows") {
             let mut cmd = Command::new("cmd");
-            cmd.args(&["/C", command_str]);
+            cmd.args(["/C", command_str]);
             cmd
         } else {
             let mut cmd = Command::new("sh");
-            cmd.args(&["-c", command_str]);
+            cmd.args(["-c", command_str]);
             cmd
         };
 
@@ -780,7 +784,7 @@ impl SandboxServer {
                     result: None,
                     error: Some(MCPError {
                         code: -32603,
-                        message: format!("Execution error: {}", e),
+                        message: format!("Execution error: {e}"),
                         data: None,
                     }),
                 }
@@ -796,7 +800,7 @@ impl SandboxServer {
                     result: None,
                     error: Some(MCPError {
                         code: -32603,
-                        message: format!("Command timed out after {} seconds", timeout_secs),
+                        message: format!("Command timed out after {timeout_secs} seconds"),
                         data: None,
                     }),
                 }
@@ -836,7 +840,7 @@ impl BuiltinMCPServer for SandboxServer {
                     result: None,
                     error: Some(MCPError {
                         code: -32601,
-                        message: format!("Tool '{}' not found in sandbox server", tool_name),
+                        message: format!("Tool '{tool_name}' not found in sandbox server"),
                         data: None,
                     }),
                 }

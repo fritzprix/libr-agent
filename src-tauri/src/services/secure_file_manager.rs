@@ -19,33 +19,33 @@ impl SecureFileManager {
         let safe_path = self
             .security
             .validate_path(path)
-            .map_err(|e| format!("Security error: {}", e))?;
+            .map_err(|e| format!("Security error: {e}"))?;
 
         // Check if file exists and is a file
         if !safe_path.exists() {
-            return Err(format!("File does not exist: {}", path));
+            return Err(format!("File does not exist: {path}"));
         }
 
         if !safe_path.is_file() {
-            return Err(format!("Path is not a file: {}", path));
+            return Err(format!("Path is not a file: {path}"));
         }
 
         // Check file size
         if let Err(e) = self.security.validate_file_size(&safe_path, MAX_FILE_SIZE) {
-            return Err(format!("File size error: {}", e));
+            return Err(format!("File size error: {e}"));
         }
 
         // Read the file contents
         fs::read(&safe_path)
             .await
-            .map_err(|e| format!("Failed to read file: {}", e))
+            .map_err(|e| format!("Failed to read file: {e}"))
     }
 
     pub async fn write_file(&self, path: &str, content: &[u8]) -> Result<(), String> {
         let safe_path = self
             .security
             .validate_path(path)
-            .map_err(|e| format!("Security error: {}", e))?;
+            .map_err(|e| format!("Security error: {e}"))?;
 
         // Check content size
         if content.len() > MAX_FILE_SIZE {
@@ -60,14 +60,14 @@ impl SecureFileManager {
         if let Some(parent) = safe_path.parent() {
             if let Err(e) = fs::create_dir_all(parent).await {
                 error!("Failed to create parent directory {:?}: {}", parent, e);
-                return Err(format!("Failed to create parent directory: {}", e));
+                return Err(format!("Failed to create parent directory: {e}"));
             }
         }
 
         // Write file
         fs::write(&safe_path, content)
             .await
-            .map_err(|e| format!("Failed to write file: {}", e))?;
+            .map_err(|e| format!("Failed to write file: {e}"))?;
 
         info!("Successfully wrote file: {:?}", safe_path);
         Ok(())
@@ -77,26 +77,26 @@ impl SecureFileManager {
         let safe_path = self
             .security
             .validate_path(path)
-            .map_err(|e| format!("Security error: {}", e))?;
+            .map_err(|e| format!("Security error: {e}"))?;
 
         // Check if file exists and is a file
         if !safe_path.exists() {
-            return Err(format!("File does not exist: {}", path));
+            return Err(format!("File does not exist: {path}"));
         }
 
         if !safe_path.is_file() {
-            return Err(format!("Path is not a file: {}", path));
+            return Err(format!("Path is not a file: {path}"));
         }
 
         // Check file size
         if let Err(e) = self.security.validate_file_size(&safe_path, MAX_FILE_SIZE) {
-            return Err(format!("File size error: {}", e));
+            return Err(format!("File size error: {e}"));
         }
 
         // Read the file contents as string
         fs::read_to_string(&safe_path)
             .await
-            .map_err(|e| format!("Failed to read file: {}", e))
+            .map_err(|e| format!("Failed to read file: {e}"))
     }
 
     pub async fn write_file_string(&self, path: &str, content: &str) -> Result<(), String> {

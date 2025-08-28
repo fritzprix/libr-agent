@@ -243,6 +243,20 @@ async function handleMCPMessage(
         }
       }
 
+      case 'getServiceContext': {
+        if (!serverName) {
+          throw new Error('Server name is required for getServiceContext');
+        }
+        const server = await loadMCPServer(serverName);
+        if (server.getServiceContext) {
+          const context = await server.getServiceContext();
+          return { id, result: context };
+        }
+        // Fallback for servers without getServiceContext
+        const context = `# MCP Server Context\nServer: ${serverName}\nStatus: Connected\nAvailable Tools: ${server.tools.length} tools`;
+        return { id, result: context };
+      }
+
       default: {
         throw new Error(`Unknown MCP message type: ${type}`);
       }

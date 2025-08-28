@@ -316,7 +316,19 @@ export class WebMCPProxy {
     });
 
     return result;
-  } /**
+  }
+
+  async getServiceContext(serverName: string): Promise<string> {
+    logger.debug('Getting service context', { serverName });
+    const result = await this.sendMessage<string>({
+      type: 'getServiceContext',
+      serverName,
+    });
+    logger.debug('Service context received', { serverName, result });
+    return result;
+  }
+
+  /**
    * Get proxy status
    */
   getStatus() {

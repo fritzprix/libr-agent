@@ -217,8 +217,8 @@ export async function closeBrowserSession(sessionId: string): Promise<void> {
   return safeInvoke<void>('close_browser_session', { sessionId });
 }
 
-export async function listBrowserSessions(): Promise<unknown[]> {
-  return safeInvoke<unknown[]>('list_browser_sessions');
+export async function listBrowserSessions(): Promise<BrowserSession[]> {
+  return safeInvoke<BrowserSession[]>('list_browser_sessions');
 }
 
 export async function clickElement(

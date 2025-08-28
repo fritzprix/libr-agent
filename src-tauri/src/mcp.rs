@@ -375,7 +375,7 @@ impl MCPServerManager {
                 result: None,
                 error: Some(MCPError {
                     code: -32002,
-                    message: format!("Server '{}' not found", server_name),
+                    message: format!("Server '{server_name}' not found"),
                     data: None,
                 }),
             }
@@ -770,8 +770,7 @@ impl MCPServerManager {
         args: serde_json::Value,
     ) -> MCPResponse {
         debug!(
-            "call_builtin_tool: server_name='{}', tool_name='{}', args={}",
-            server_name, tool_name, args
+            "call_builtin_tool: server_name='{server_name}', tool_name='{tool_name}', args={args}"
         );
 
         let servers = self.builtin_servers.lock().await;
@@ -807,7 +806,7 @@ impl MCPServerManager {
         // Get external server tools
         match self.list_all_tools().await {
             Ok(external_tools) => all_tools.extend(external_tools),
-            Err(e) => warn!("Failed to get external server tools: {}", e),
+            Err(e) => warn!("Failed to get external server tools: {e}"),
         }
 
         // Get builtin server tools

@@ -2,6 +2,8 @@ import { getLogger } from '@/lib/logger';
 import { MCPResponse, MCPTool } from '@/lib/mcp-types';
 import { toValidJsName } from '@/lib/utils';
 import { ToolCall } from '@/models/chat';
+import { useSystemPrompt } from '@/context/SystemPromptContext';
+import { useSessionContext } from '@/context/SessionContext';
 import {
   createContext,
   ReactNode,
@@ -17,11 +19,20 @@ const logger = getLogger('BuiltInToolProvider');
 
 // --- Interfaces and Types ---
 
+export interface ServiceContextOptions {
+  sessionId?: string;
+  // 향후 확장 가능한 다른 옵션들
+  // storeId?: string;
+  // userId?: string;
+  // scope?: 'session' | 'global' | 'user';
+}
+
 export interface BuiltInService {
   listTools: () => MCPTool[];
   executeTool: (toolCall: ToolCall) => Promise<MCPResponse>;
   loadService?: () => Promise<void>;
   unloadService?: () => Promise<void>;
+  getServiceContext?: (options?: ServiceContextOptions) => Promise<string>;
 }
 
 const BUILTIN_PREFIX = 'builtin.';
@@ -38,6 +49,7 @@ interface BuiltInToolContextType {
   unregister: (serviceId: string) => void;
   availableTools: MCPTool[];
   executeTool: (toolCall: ToolCall) => Promise<MCPResponse>;
+  buildToolPrompt: () => Promise<string>; // 이름 변경 고려
   status: Record<string, ServiceStatus>;
 }
 
@@ -52,6 +64,9 @@ const BuiltInToolContext = createContext<BuiltInToolContextType | null>(null);
 // --- Provider Component ---
 
 export function BuiltInToolProvider({ children }: BuiltInToolProviderProps) {
+  const { register: registerPrompt, unregister: unregisterPrompt } =
+    useSystemPrompt();
+  const { getCurrentSession } = useSessionContext();
   // Simplified state: A single map holds the service and its status.
   const [serviceEntries, setServiceEntries] = useState<
     Map<string, ServiceEntry>
@@ -207,6 +222,56 @@ export function BuiltInToolProvider({ children }: BuiltInToolProviderProps) {
     });
   }, []);
 
+  const buildToolPrompt = useCallback(async (): Promise<string> => {
+    const prompts: string[] = [];
+
+    // 1. Built-in Tools Section
+    const availableToolsCount = availableTools.length;
+    const isLoadingTauriTools = false; // No longer tracked in new API
+
+    prompts.push(`# Available Built-in Tools
+
+You have access to built-in tools for file operations, code execution, and web-based processing.
+Tool details and usage instructions are provided separately.
+
+**Available Built-In Tools:** ${availableToolsCount} ${isLoadingTauriTools ? '(Loading...)' : ''}
+
+**Important Instruction:** When calling built-in tools, you MUST use the tool name exactly as it appears in the available tools list. Do not add or remove the "builtin." prefix - use it "as is" (e.g., if the tool name is "builtin.file_read", call it as "builtin.file_read", not "file_read" or "builtin.builtin.file_read").
+`);
+
+    // 2. Service Contexts Section
+    const currentSession = getCurrentSession();
+    const contextOptions: ServiceContextOptions = {
+      sessionId: currentSession?.id,
+    };
+
+    for (const [serviceId, entry] of serviceEntries.entries()) {
+      if (entry.status === 'ready' && entry.service.getServiceContext) {
+        try {
+          const prompt = await entry.service.getServiceContext(contextOptions);
+          if (prompt) {
+            prompts.push(prompt);
+          }
+        } catch (err) {
+          logger.error('Failed to get service context from service', {
+            serviceId,
+            sessionId: contextOptions.sessionId,
+            err,
+          });
+        }
+      }
+    }
+    return prompts.join('\n\n');
+  }, [serviceEntries, availableTools.length, getCurrentSession]);
+
+  // Register system prompt when component mounts
+  useEffect(() => {
+    const promptId = registerPrompt('builtin-tools', buildToolPrompt, 1);
+    return () => {
+      unregisterPrompt(promptId);
+    };
+  }, [buildToolPrompt, registerPrompt, unregisterPrompt]);
+
   // Memoize the context value to prevent unnecessary re-renders of consumers.
   const contextValue: BuiltInToolContextType = useMemo(
     () => ({
@@ -214,6 +279,7 @@ export function BuiltInToolProvider({ children }: BuiltInToolProviderProps) {
       unregister,
       register,
       executeTool,
+      buildToolPrompt,
       // Derive the public status object from the serviceEntries state.
       status: Object.fromEntries(
         Array.from(serviceEntries.entries()).map(([id, entry]) => [
@@ -222,7 +288,14 @@ export function BuiltInToolProvider({ children }: BuiltInToolProviderProps) {
         ]),
       ),
     }),
-    [availableTools, unregister, register, executeTool, serviceEntries],
+    [
+      availableTools,
+      unregister,
+      register,
+      executeTool,
+      buildToolPrompt,
+      serviceEntries,
+    ],
   );
 
   logger.info('BuiltInToolProvider context updated', {

@@ -1,5 +1,6 @@
 import { getLogger } from '@/lib/logger';
 import type { MCPTool, WebMCPServer } from '@/lib/mcp-types';
+import type { ServiceContextOptions } from '@/features/tools';
 
 const logger = getLogger('planning-server');
 
@@ -257,6 +258,21 @@ const planningServer: WebMCPServer = {
       default:
         throw new Error(`Unknown tool: ${name}`);
     }
+  },
+  async getServiceContext(options?: ServiceContextOptions): Promise<string> {
+    const goal = state.getGoal();
+    const todos = state.listTodos();
+
+    const goalText = goal ? `Current Goal: ${goal.name}` : 'No active goal';
+    const activeTodos = todos.filter((t) => t.status !== 'completed');
+    const todosText =
+      activeTodos.length > 0
+        ? `Active Todos: ${activeTodos.map((t) => t.name).join(', ')}`
+        : 'No active todos';
+
+    // Note: planning-server는 현재 전역 상태를 관리하므로 sessionId를 직접 사용하지 않지만,
+    // 향후 세션별 목표/할일 관리를 위해 인터페이스는 동일하게 맞춰둠
+    return `# Planning Context\n${goalText}\n${todosText}`;
   },
 };
 

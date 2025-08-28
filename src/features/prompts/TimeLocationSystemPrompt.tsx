@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useChatContext } from '@/context/ChatContext';
 import { getLogger } from '@/lib/logger';
+import { useSystemPrompt } from '@/context/SystemPromptContext';
 
 const logger = getLogger('TimeLocationSystemPrompt');
 
@@ -26,7 +26,7 @@ interface LocationInfo {
  * - Falls back gracefully when location is unavailable
  */
 export function TimeLocationSystemPrompt() {
-  const { registerSystemPrompt, unregisterSystemPrompt } = useChatContext();
+  const { register, unregister } = useSystemPrompt();
   const [locationInfo, setLocationInfo] = useState<LocationInfo | null>(null);
   const [isLocationLoading, setIsLocationLoading] = useState(true);
 
@@ -158,20 +158,17 @@ export function TimeLocationSystemPrompt() {
   }, [locationInfo, isLocationLoading]);
 
   useEffect(() => {
-    const id = registerSystemPrompt({
-      content: buildPrompt,
-      priority: 1,
-    });
+    const id = register('time-location', buildPrompt, 1);
 
     logger.debug('Registered time/location system prompt', { promptId: id });
 
     return () => {
-      unregisterSystemPrompt(id);
+      unregister(id);
       logger.debug('Unregistered time/location system prompt', {
         promptId: id,
       });
     };
-  }, [buildPrompt, registerSystemPrompt, unregisterSystemPrompt]);
+  }, [buildPrompt, register, unregister]);
 
   return null;
 }
