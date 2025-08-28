@@ -20,23 +20,14 @@ import { Message } from '@/models/chat';
 import { useSettings } from '../hooks/use-settings';
 import { AIServiceConfig } from '@/lib/ai-service';
 import { isMCPError } from '@/lib/mcp-types';
+import { useSystemPrompt } from './SystemPromptContext';
 
 const logger = getLogger('ChatContext');
-
-interface SystemPromptExtension {
-  id: string;
-  content: string | (() => Promise<string>);
-  priority: number; // Higher number = higher priority
-}
 
 interface ChatContextValue {
   submit: (messageToAdd?: Message[], agentKey?: string) => Promise<Message>;
   isLoading: boolean;
   messages: Message[];
-  registerSystemPrompt: (
-    extension: Omit<SystemPromptExtension, 'id'>,
-  ) => string;
-  unregisterSystemPrompt: (id: string) => void;
   cancel: () => void;
 }
 
@@ -228,15 +219,13 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const { value: settingValue } = useSettings();
   const { getCurrent: getCurrentAssistant, availableTools } =
     useAssistantContext();
+  const { getSystemPrompt } = useSystemPrompt();
   const { availableTools: builtInTools } = useBuiltInTool();
   const cancelRequestRef = useRef(false);
 
   const [streamingMessage, setStreamingMessage] = useState<Message | null>(
     null,
   );
-  const [systemPromptExtensions, setSystemPromptExtensions] = useState<
-    SystemPromptExtension[]
-  >([]);
   const [isToolExecuting, setIsToolExecuting] = useState(false);
 
   // Extract window size with default fallback
@@ -246,7 +235,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
   useEffect(() => {
     return () => {
       setStreamingMessage(null);
-      setSystemPromptExtensions([]);
       setIsToolExecuting(false);
     };
   }, []);
@@ -262,86 +250,18 @@ export function ChatProvider({ children }: ChatProviderProps) {
     }
   }, [currentSession?.id]); // currentSession?.id 변경 시 실행
 
-  // Register system prompt extension
-  const registerSystemPrompt = useCallback(
-    (extension: Omit<SystemPromptExtension, 'id'>) => {
-      const id = createId();
-      const newExtension: SystemPromptExtension = { ...extension, id };
-
-      setSystemPromptExtensions((prev) => {
-        const updated = [...prev, newExtension];
-        // Sort by priority (higher priority first)
-        return updated.sort((a, b) => b.priority - a.priority);
-      });
-
-      logger.debug('Registered system prompt extension', {
-        id,
-        priority: extension.priority,
-      });
-      return id;
-    },
-    [],
-  );
-
-  // Unregister system prompt extension
-  const unregisterSystemPrompt = useCallback((id: string) => {
-    setSystemPromptExtensions((prev) => prev.filter((ext) => ext.id !== id));
-    logger.debug('Unregistered system prompt extension', { id });
-  }, []);
-
-  // Build combined system prompt with extensions
   const buildSystemPrompt = useCallback(async (): Promise<string> => {
     const basePrompt =
       getCurrentAssistant()?.systemPrompt || DEFAULT_SYSTEM_PROMPT;
-
-    if (systemPromptExtensions.length === 0) {
-      return basePrompt;
-    }
-
-    try {
-      // Resolve all extensions with error handling for individual extensions
-      const extensionPrompts = await Promise.allSettled(
-        systemPromptExtensions.map(async (ext) => {
-          try {
-            if (typeof ext.content === 'function') {
-              return await ext.content();
-            }
-            return ext.content;
-          } catch (error) {
-            logger.warn('Failed to resolve system prompt extension', {
-              extensionId: ext.id,
-              error,
-            });
-            return ''; // Return empty string for failed extensions
-          }
-        }),
-      );
-
-      // Extract successful results
-      const resolvedPrompts = extensionPrompts
-        .map((result) => (result.status === 'fulfilled' ? result.value : ''))
-        .filter(Boolean);
-
-      // Combine base prompt with successful extensions
-      const combinedPrompt = [basePrompt, ...resolvedPrompts]
-        .filter(Boolean)
-        .join('\n\n');
-
-      logger.debug('Built combined system prompt', {
-        baseLength: basePrompt.length,
-        extensionsCount: systemPromptExtensions.length,
-        successfulExtensions: resolvedPrompts.length,
-        totalLength: combinedPrompt.length,
-      });
-
-      return combinedPrompt;
-    } catch (error) {
-      logger.error('Error building system prompt, using base prompt', {
-        error,
-      });
-      return basePrompt;
-    }
-  }, [getCurrentAssistant, systemPromptExtensions]);
+    const extensionPrompt = await getSystemPrompt();
+    const combined = [basePrompt, extensionPrompt].filter(Boolean).join('\n\n');
+    logger.info('Built combined system prompt', {
+      baseLength: basePrompt.length,
+      extensionLength: extensionPrompt.length,
+      totalLength: combined.length,
+    });
+    return combined;
+  }, [getCurrentAssistant, getSystemPrompt]);
 
   // AI Service configuration with tools only
   const aiServiceConfig = useMemo(
@@ -370,10 +290,13 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
     // 세션 불일치 시 streamingMessage 무시 (Race Condition 방지)
     if (streamingMessage.sessionId !== currentSession?.id) {
-      logger.warn('Streaming message session mismatch in messages calculation', {
-        streamingSessionId: streamingMessage.sessionId,
-        currentSessionId: currentSession?.id,
-      });
+      logger.warn(
+        'Streaming message session mismatch in messages calculation',
+        {
+          streamingSessionId: streamingMessage.sessionId,
+          currentSessionId: currentSession?.id,
+        },
+      );
       return history;
     }
 
@@ -494,7 +417,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
         logger.debug('Submitting messages with system prompts', {
           userMessagesCount: userMessages.length,
-          extensionsCount: systemPromptExtensions.length,
           agentKey,
         });
 
@@ -538,7 +460,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
       triggerAIService,
       addMessage,
       addMessages,
-      systemPromptExtensions,
       buildSystemPrompt,
     ],
   );
@@ -552,18 +473,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
       submit,
       isLoading,
       messages,
-      registerSystemPrompt,
-      unregisterSystemPrompt,
       cancel: handleCancel,
     }),
-    [
-      messages,
-      submit,
-      isLoading,
-      registerSystemPrompt,
-      unregisterSystemPrompt,
-      handleCancel,
-    ],
+    [messages, submit, isLoading, handleCancel],
   );
 
   return (

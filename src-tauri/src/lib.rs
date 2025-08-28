@@ -60,7 +60,7 @@ async fn sample_from_mcp_server(
     let sampling_options = if let Some(opts) = options {
         Some(
             serde_json::from_value::<mcp::SamplingOptions>(opts)
-                .map_err(|e| format!("Invalid sampling options: {}", e))?,
+                .map_err(|e| format!("Invalid sampling options: {e}"))?,
         )
     } else {
         None
@@ -300,10 +300,10 @@ async fn backup_current_log() -> Result<String, String> {
 
     // 백업 파일명 생성 (타임스탬프 포함)
     let timestamp = Utc::now().format("%Y%m%d_%H%M%S").to_string();
-    let backup_file = log_dir.join(format!("synaptic-flow_{}.log.bak", timestamp));
+    let backup_file = log_dir.join(format!("synaptic-flow_{timestamp}.log.bak"));
 
     // 파일 복사
-    fs::copy(&log_file, &backup_file).map_err(|e| format!("Failed to backup log file: {}", e))?;
+    fs::copy(&log_file, &backup_file).map_err(|e| format!("Failed to backup log file: {e}"))?;
 
     Ok(backup_file.to_string_lossy().to_string())
 }
@@ -317,7 +317,7 @@ async fn clear_current_log() -> Result<(), String> {
     let log_file = log_dir.join("synaptic-flow.log");
 
     if log_file.exists() {
-        fs::write(&log_file, "").map_err(|e| format!("Failed to clear log file: {}", e))?;
+        fs::write(&log_file, "").map_err(|e| format!("Failed to clear log file: {e}"))?;
     }
 
     Ok(())
@@ -335,11 +335,11 @@ async fn list_log_files() -> Result<Vec<String>, String> {
     }
 
     let entries =
-        fs::read_dir(&log_dir).map_err(|e| format!("Failed to read log directory: {}", e))?;
+        fs::read_dir(&log_dir).map_err(|e| format!("Failed to read log directory: {e}"))?;
 
     let mut log_files = Vec::new();
     for entry in entries {
-        let entry = entry.map_err(|e| format!("Failed to read directory entry: {}", e))?;
+        let entry = entry.map_err(|e| format!("Failed to read directory entry: {e}"))?;
         let path = entry.path();
 
         if path.is_file() {
@@ -372,11 +372,11 @@ async fn read_dropped_file(file_path: String) -> Result<Vec<u8>, String> {
 
     // Basic security checks for dropped files
     if !path.exists() {
-        return Err(format!("File does not exist: {}", file_path));
+        return Err(format!("File does not exist: {file_path}"));
     }
 
     if !path.is_file() {
-        return Err(format!("Path is not a file: {}", file_path));
+        return Err(format!("Path is not a file: {file_path}"));
     }
 
     // Check file size (10MB limit)
@@ -413,7 +413,7 @@ async fn read_dropped_file(file_path: String) -> Result<Vec<u8>, String> {
     // Read the file
     fs::read(path)
         .await
-        .map_err(|e| format!("Failed to read file: {}", e))
+        .map_err(|e| format!("Failed to read file: {e}"))
 }
 
 #[tauri::command]
@@ -434,7 +434,7 @@ async fn open_external_url(url: String) -> Result<(), String> {
 
     // Use tauri-plugin-opener to open URL in external browser
     tauri_plugin_opener::open_url(&url, None::<&str>)
-        .map_err(|e| format!("Failed to open URL: {}", e))?;
+        .map_err(|e| format!("Failed to open URL: {e}"))?;
 
     Ok(())
 }
@@ -481,7 +481,7 @@ pub fn run() {
         tauri::Builder::default()
             .plugin(tauri_plugin_dialog::init())
             .plugin(
-                tauri_plugin_log::Builder::new()
+                tauri_plugin_log::Builder::default()
                     .targets([
                         Target::new(TargetKind::Stdout),
                         Target::new(TargetKind::LogDir {
@@ -540,7 +540,8 @@ pub fn run() {
                 navigate_forward,
                 get_element_text,
                 get_element_attribute,
-                find_element
+                find_element,
+                commands::mcp_commands::get_service_context
             ])
             .setup(|app| {
                 println!("🚀 SynapticFlow initializing...");

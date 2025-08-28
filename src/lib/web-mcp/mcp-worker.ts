@@ -33,6 +33,7 @@ const log = {
 
 const MODULE_REGISTRY = [
   { key: 'content-store', importPath: './modules/content-store' },
+  { key: 'planning-server', importPath: './modules/planning-server' },
   // Future modules can be added here
 ] as const;
 
@@ -240,6 +241,20 @@ async function handleMCPMessage(
             `Server ${serverName} does not support text sampling`,
           );
         }
+      }
+
+      case 'getServiceContext': {
+        if (!serverName) {
+          throw new Error('Server name is required for getServiceContext');
+        }
+        const server = await loadMCPServer(serverName);
+        if (server.getServiceContext) {
+          const context = await server.getServiceContext();
+          return { id, result: context };
+        }
+        // Fallback for servers without getServiceContext
+        const context = `# MCP Server Context\nServer: ${serverName}\nStatus: Connected\nAvailable Tools: ${server.tools.length} tools`;
+        return { id, result: context };
       }
 
       default: {

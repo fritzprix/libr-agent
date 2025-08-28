@@ -590,7 +590,7 @@ impl FilesystemServer {
                     return MCPResponse::error(
                         request_id,
                         -32602,
-                        &format!("Invalid replacements format: {}", e),
+                        &format!("Invalid replacements format: {e}"),
                     );
                 }
             };
@@ -603,7 +603,7 @@ impl FilesystemServer {
         {
             Ok(path) => path,
             Err(e) => {
-                return MCPResponse::error(request_id, -32603, &format!("Security error: {}", e));
+                return MCPResponse::error(request_id, -32603, &format!("Security error: {e}"));
             }
         };
 
@@ -614,7 +614,7 @@ impl FilesystemServer {
                 return MCPResponse::error(
                     request_id,
                     -32603,
-                    &format!("Failed to read file: {}", e),
+                    &format!("Failed to read file: {e}"),
                 );
             }
         };
@@ -640,7 +640,7 @@ impl FilesystemServer {
                 return MCPResponse::error(
                     request_id,
                     -32602,
-                    &format!("Line number {} is out of bounds", line_number),
+                    &format!("Line number {line_number} is out of bounds"),
                 );
             }
             replacements_map.insert(line_number, content);
@@ -668,7 +668,7 @@ impl FilesystemServer {
                 }),
             ),
             Err(e) => {
-                MCPResponse::error(request_id, -32603, &format!("Failed to write file: {}", e))
+                MCPResponse::error(request_id, -32603, &format!("Failed to write file: {e}"))
             }
         }
     }
@@ -702,7 +702,7 @@ impl FilesystemServer {
                         return MCPResponse::error(
                             request_id,
                             -32603,
-                            &format!("failed to read file {}: {}", path_str, e),
+                            &format!("failed to read file {path_str}: {e}"),
                         )
                     }
                 },
@@ -710,7 +710,7 @@ impl FilesystemServer {
                     return MCPResponse::error(
                         request_id,
                         -32603,
-                        &format!("Security error: {}", e),
+                        &format!("Security error: {e}"),
                     );
                 }
             }
@@ -730,7 +730,7 @@ impl FilesystemServer {
         {
             Ok(r) => r,
             Err(e) => {
-                return MCPResponse::error(request_id, -32602, &format!("invalid pattern: {}", e))
+                return MCPResponse::error(request_id, -32602, &format!("invalid pattern: {e}"))
             }
         };
 
@@ -794,7 +794,7 @@ impl FilesystemServer {
             Ok(path) => path,
             Err(e) => {
                 error!("Path validation failed: {}", e);
-                return MCPResponse::error(request_id, -32603, &format!("Security error: {}", e));
+                return MCPResponse::error(request_id, -32603, &format!("Security error: {e}"));
             }
         };
 
@@ -807,7 +807,7 @@ impl FilesystemServer {
                 .validate_file_size(&safe_path, MAX_FILE_SIZE)
             {
                 error!("File size validation failed: {}", e);
-                return MCPResponse::error(request_id, -32603, &format!("File size error: {}", e));
+                return MCPResponse::error(request_id, -32603, &format!("File size error: {e}"));
             }
 
             self.read_file_lines_range(&safe_path, start_line, end_line)
@@ -834,7 +834,7 @@ impl FilesystemServer {
             }
             Err(e) => {
                 error!("Failed to read file {}: {}", path_str, e);
-                MCPResponse::error(request_id, -32603, &format!("Failed to read file: {}", e))
+                MCPResponse::error(request_id, -32603, &format!("Failed to read file: {e}"))
             }
         }
     }
@@ -934,7 +934,7 @@ impl FilesystemServer {
                     result: None,
                     error: Some(MCPError {
                         code: -32603,
-                        message: format!("Security error: {}", e),
+                        message: format!("Security error: {e}"),
                         data: None,
                     }),
                 };
@@ -949,8 +949,7 @@ impl FilesystemServer {
             Ok(results) => {
                 let result_text = if results.is_empty() {
                     format!(
-                        "No files found matching pattern '{}' in '{}'",
-                        pattern, search_path
+                        "No files found matching pattern '{pattern}' in '{search_path}'"
                     )
                 } else {
                     format!(
@@ -981,7 +980,7 @@ impl FilesystemServer {
                     result: None,
                     error: Some(MCPError {
                         code: -32603,
-                        message: format!("Search failed: {}", e),
+                        message: format!("Search failed: {e}"),
                         data: None,
                     }),
                 }
@@ -999,7 +998,7 @@ impl FilesystemServer {
         use glob::Pattern;
         use walkdir::WalkDir;
 
-        let glob_pattern = Pattern::new(pattern).map_err(|e| format!("Invalid pattern: {}", e))?;
+        let glob_pattern = Pattern::new(pattern).map_err(|e| format!("Invalid pattern: {e}"))?;
         let mut results = Vec::new();
 
         let walker = if let Some(depth) = max_depth {
@@ -1009,7 +1008,7 @@ impl FilesystemServer {
         };
 
         for entry in walker {
-            let entry = entry.map_err(|e| format!("Walk error: {}", e))?;
+            let entry = entry.map_err(|e| format!("Walk error: {e}"))?;
             let path = entry.path();
 
             // Check file type filter
@@ -1033,7 +1032,7 @@ impl FilesystemServer {
                 {
                     let metadata = entry
                         .metadata()
-                        .map_err(|e| format!("Metadata error: {}", e))?;
+                        .map_err(|e| format!("Metadata error: {e}"))?;
 
                     results.push(json!({
                         "path": path.to_string_lossy(),
@@ -1107,7 +1106,7 @@ impl FilesystemServer {
                     result: None,
                     error: Some(MCPError {
                         code: -32603,
-                        message: format!("Failed to write file: {}", e),
+                        message: format!("Failed to write file: {e}"),
                         data: None,
                     }),
                 }
@@ -1135,7 +1134,7 @@ impl FilesystemServer {
                     result: None,
                     error: Some(MCPError {
                         code: -32603,
-                        message: format!("Security error: {}", e),
+                        message: format!("Security error: {e}"),
                         data: None,
                     }),
                 };
@@ -1212,7 +1211,7 @@ impl FilesystemServer {
                     result: None,
                     error: Some(MCPError {
                         code: -32603,
-                        message: format!("Failed to list directory: {}", e),
+                        message: format!("Failed to list directory: {e}"),
                         data: None,
                     }),
                 }
@@ -1258,7 +1257,7 @@ impl BuiltinMCPServer for FilesystemServer {
                     result: None,
                     error: Some(MCPError {
                         code: -32601,
-                        message: format!("Tool '{}' not found in filesystem server", tool_name),
+                        message: format!("Tool '{tool_name}' not found in filesystem server"),
                         data: None,
                     }),
                 }

@@ -109,7 +109,7 @@ impl BuiltinServerRegistry {
                 result: None,
                 error: Some(crate::mcp::MCPError {
                     code: -32601,
-                    message: format!("Built-in server '{}' not found", server_name),
+                    message: format!("Built-in server '{server_name}' not found"),
                     data: None,
                 }),
             }

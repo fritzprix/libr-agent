@@ -515,6 +515,7 @@ export interface WebMCPServer {
     prompt: string,
     options?: SamplingOptions,
   ) => Promise<SamplingResponse>;
+  getServiceContext?: () => Promise<string>;
 }
 
 /**
@@ -522,7 +523,13 @@ export interface WebMCPServer {
  */
 export interface WebMCPMessage {
   id: string;
-  type: 'listTools' | 'callTool' | 'ping' | 'loadServer' | 'sampleText';
+  type:
+    | 'listTools'
+    | 'callTool'
+    | 'ping'
+    | 'loadServer'
+    | 'sampleText'
+    | 'getServiceContext';
   serverName?: string;
   toolName?: string;
   args?: unknown;

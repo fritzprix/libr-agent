@@ -58,24 +58,21 @@ impl SecurityValidator {
         // 절대경로 금지 - 보안 강화
         if clean_path.is_absolute() {
             return Err(SecurityError::PathTraversal(format!(
-                "Absolute paths not allowed: '{}'",
-                user_path
+                "Absolute paths not allowed: '{user_path}'"
             )));
         }
 
         // Windows 드라이브 경로 금지 (C:, D: 등)
         if user_path.len() >= 2 && user_path.chars().nth(1) == Some(':') {
             return Err(SecurityError::PathTraversal(format!(
-                "Windows drive paths not allowed: '{}'",
-                user_path
+                "Windows drive paths not allowed: '{user_path}'"
             )));
         }
 
         // 상위 디렉터리 탐색 금지
         if user_path.contains("..") {
             return Err(SecurityError::PathTraversal(format!(
-                "Parent directory traversal not allowed: '{}'",
-                user_path
+                "Parent directory traversal not allowed: '{user_path}'"
             )));
         }
 
@@ -88,8 +85,7 @@ impl SecurityValidator {
         if let Some(parent) = absolute_path.parent() {
             if let Err(e) = std::fs::create_dir_all(parent) {
                 return Err(SecurityError::InvalidPath(format!(
-                    "Failed to create directory: {}",
-                    e
+                    "Failed to create directory: {e}"
                 )));
             }
         }

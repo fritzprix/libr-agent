@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { useBuiltInTool } from '.';
+import { useBuiltInTool, ServiceContextOptions } from '.';
 import { useBrowserInvoker } from '@/hooks/use-browser-invoker';
 import { useRustBackend } from '@/hooks/use-rust-backend';
 import { MCPTool, MCPResponse } from '@/lib/mcp-types';
@@ -12,6 +12,7 @@ import {
   inputText as rbInputText,
   pollScriptResult as rbPollScriptResult,
   navigateToUrl as rbNavigateToUrl,
+  BrowserSession,
 } from '@/lib/rust-backend-client';
 import TurndownService from 'turndown';
 import { ToolCall } from '@/models/chat';
@@ -190,7 +191,7 @@ export function BrowserToolProvider() {
             sessionId,
             selector = 'body',
             format = 'markdown',
-            saveRawHtml = false,
+            saveRawHtml = true,
             includeLinks = true,
             maxDepth = 5,
           } = args as {
@@ -910,6 +911,33 @@ export function BrowserToolProvider() {
             ],
           },
         };
+      },
+      getServiceContext: async (
+        options?: ServiceContextOptions,
+      ): Promise<string> => {
+        try {
+          const sessions = await listBrowserSessions();
+          if (sessions.length === 0) {
+            return '# Browser Sessions\nNo active browser sessions.';
+          }
+
+          const sessionInfo = sessions
+            .map(
+              (s: BrowserSession) =>
+                `Session ${s.id}: ${s.url || 'No URL'} (${s.title || 'Untitled'})`,
+            )
+            .join('\n');
+
+          // Note: 브라우저 세션은 현재 전역적으로 관리되므로 sessionId를 직접 사용하지 않지만,
+          // 향후 세션별 브라우저 관리를 위해 인터페이스는 동일하게 맞춰둠
+          return `# Browser Sessions\n${sessionInfo}`;
+        } catch (error) {
+          logger.error('Failed to get browser sessions', {
+            sessionId: options?.sessionId,
+            error,
+          });
+          return '# Browser Sessions\nError loading browser sessions.';
+        }
       },
     };
 

@@ -78,13 +78,12 @@ impl InteractiveBrowserServer {
     ) -> Result<String, String> {
         let session_id = Uuid::new_v4().to_string();
 
-        let window_label = format!("browser-{}", session_id);
+        let window_label = format!("browser-{session_id}");
 
         let session_title = title.unwrap_or("Interactive Browser Agent");
 
         info!(
-            "Creating new browser session: {} for URL: {}",
-            session_id, url
+            "Creating new browser session: {session_id} for URL: {url}"
         );
 
         // Create WebviewWindow (independent browser window)
@@ -92,9 +91,9 @@ impl InteractiveBrowserServer {
         let webview_window = WebviewWindowBuilder::new(
             &self.app_handle,
             &window_label,
-            WebviewUrl::External(url.parse().map_err(|e| format!("Invalid URL: {}", e))?),
+            WebviewUrl::External(url.parse().map_err(|e| format!("Invalid URL: {e}"))?),
         )
-        .title(&format!(
+        .title(format!(
             "{} - {}",
             session_title,
             session_id[..8].to_uppercase()
@@ -105,7 +104,7 @@ impl InteractiveBrowserServer {
         .minimizable(true)
         .center()
         .build()
-        .map_err(|e| format!("Failed to create browser window: {}", e))?;
+        .map_err(|e| format!("Failed to create browser window: {e}"))?;
 
         // Register session
 
@@ -127,7 +126,7 @@ impl InteractiveBrowserServer {
             let mut sessions = self
                 .sessions
                 .write()
-                .map_err(|e| format!("Failed to acquire write lock: {}", e))?;
+                .map_err(|e| format!("Failed to acquire write lock: {e}"))?;
 
             sessions.insert(session_id.clone(), session);
         }
@@ -140,20 +139,19 @@ impl InteractiveBrowserServer {
 
         webview_window.once("tauri://close-requested", move |_| {
             debug!(
-                "Browser window close requested for session: {}",
-                session_id_clone
+                "Browser window close requested for session: {session_id_clone}"
             );
 
             if let Ok(mut sessions) = sessions_clone.write() {
                 if let Some(session) = sessions.get_mut(&session_id_clone) {
                     session.status = SessionStatus::Closed;
 
-                    info!("Session {} marked as closed", session_id_clone);
+                    info!("Session {session_id_clone} marked as closed");
                 }
             }
         });
 
-        info!("Browser session created successfully: {}", session_id);
+        info!("Browser session created successfully: {session_id}");
 
         Ok(session_id)
     }
@@ -161,13 +159,13 @@ impl InteractiveBrowserServer {
     /// Execute JavaScript in a browser session and return request_id for polling
 
     pub async fn execute_script(&self, session_id: &str, script: &str) -> Result<String, String> {
-        debug!("Executing script in session {}: {}", session_id, script);
+        debug!("Executing script in session {session_id}: {script}");
 
         let session = {
             let sessions = self
                 .sessions
                 .read()
-                .map_err(|e| format!("Failed to acquire read lock: {}", e))?;
+                .map_err(|e| format!("Failed to acquire read lock: {e}"))?;
 
             sessions
                 .get(session_id)
@@ -202,31 +200,26 @@ impl InteractiveBrowserServer {
         window.__TAURI__.core.invoke('browser_script_result', {{ payload }});
     }}
 }})();
-"#,
-                script = script,
-                session_id = session_id,
-                request_id = request_id
+"#
             );
 
             // Execute the wrapped script
             match window.eval(&wrapped_script) {
                 Ok(_) => {
                     debug!(
-                        "Script wrapper executed in session: {}, request_id: {}",
-                        session_id, request_id
+                        "Script wrapper executed in session: {session_id}, request_id: {request_id}"
                     );
                     Ok(request_id) // Return request_id immediately
                 }
                 Err(e) => {
                     error!(
-                        "Failed to execute script wrapper in session {}: {}",
-                        session_id, e
+                        "Failed to execute script wrapper in session {session_id}: {e}"
                     );
-                    Err(format!("Failed to execute script: {}", e))
+                    Err(format!("Failed to execute script: {e}"))
                 }
             }
         } else {
-            error!("Browser window not found for session: {}", session_id);
+            error!("Browser window not found for session: {session_id}");
             Err("Browser window not found".to_string())
         }
     }
@@ -234,7 +227,7 @@ impl InteractiveBrowserServer {
     /// Click on a DOM element
 
     pub async fn click_element(&self, session_id: &str, selector: &str) -> Result<String, String> {
-        debug!("Clicking element '{}' in session {}", selector, session_id);
+        debug!("Clicking element '{selector}' in session {session_id}");
 
         let script = format!(
             r#"
@@ -318,8 +311,7 @@ impl InteractiveBrowserServer {
         text: &str,
     ) -> Result<String, String> {
         debug!(
-            "Inputting text '{}' into element '{}' in session {}",
-            text, selector, session_id
+            "Inputting text '{text}' into element '{selector}' in session {session_id}"
         );
 
         let script = format!(
@@ -431,11 +423,10 @@ impl InteractiveBrowserServer {
     /// Scroll the page to specified coordinates
 
     pub async fn scroll_page(&self, session_id: &str, x: i32, y: i32) -> Result<String, String> {
-        debug!("Scrolling page to ({}, {}) in session {}", x, y, session_id);
+        debug!("Scrolling page to ({x}, {y}) in session {session_id}");
 
         let script = format!(
-            "window.scrollTo({}, {}); 'Scrolled to ({}, {})'",
-            x, y, x, y
+            "window.scrollTo({x}, {y}); 'Scrolled to ({x}, {y})'"
         );
 
         self.execute_script(session_id, &script).await
@@ -444,7 +435,7 @@ impl InteractiveBrowserServer {
     /// Get current page URL
 
     pub async fn get_current_url(&self, session_id: &str) -> Result<String, String> {
-        debug!("Getting current URL for session {}", session_id);
+        debug!("Getting current URL for session {session_id}");
 
         let script = "window.location.href";
 
@@ -454,7 +445,7 @@ impl InteractiveBrowserServer {
     /// Get page title
 
     pub async fn get_page_title(&self, session_id: &str) -> Result<String, String> {
-        debug!("Getting page title for session {}", session_id);
+        debug!("Getting page title for session {session_id}");
 
         let script = "document.title";
 
@@ -465,8 +456,7 @@ impl InteractiveBrowserServer {
 
     pub async fn element_exists(&self, session_id: &str, selector: &str) -> Result<bool, String> {
         debug!(
-            "Checking if element '{}' exists in session {}",
-            selector, session_id
+            "Checking if element '{selector}' exists in session {session_id}"
         );
 
         let script = format!(
@@ -500,8 +490,7 @@ return false;
                     result.contains("true") || result.contains("Element clicked successfully");
 
                 debug!(
-                    "Element '{}' exists: {} in session {}",
-                    selector, exists, session_id
+                    "Element '{selector}' exists: {exists} in session {session_id}"
                 );
 
                 Ok(exists)
@@ -509,8 +498,7 @@ return false;
 
             Err(_) => {
                 debug!(
-                    "Element '{}' does not exist in session {}",
-                    selector, session_id
+                    "Element '{selector}' does not exist in session {session_id}"
                 );
 
                 Ok(false)
@@ -535,7 +523,7 @@ return false;
             }
 
             Err(e) => {
-                error!("Failed to list sessions: {}", e);
+                error!("Failed to list sessions: {e}");
 
                 Vec::new()
             }
@@ -545,13 +533,13 @@ return false;
     /// Close a browser session
 
     pub async fn close_session(&self, session_id: &str) -> Result<String, String> {
-        info!("Closing browser session: {}", session_id);
+        info!("Closing browser session: {session_id}");
 
         let session = {
             let sessions = self
                 .sessions
                 .read()
-                .map_err(|e| format!("Failed to acquire read lock: {}", e))?;
+                .map_err(|e| format!("Failed to acquire read lock: {e}"))?;
 
             sessions
                 .get(session_id)
@@ -562,9 +550,9 @@ return false;
         if let Some(window) = self.app_handle.get_webview_window(&session.window_label) {
             window
                 .close()
-                .map_err(|e| format!("Failed to close window: {}", e))?;
+                .map_err(|e| format!("Failed to close window: {e}"))?;
 
-            info!("Browser window closed for session: {}", session_id);
+            info!("Browser window closed for session: {session_id}");
         }
 
         // Remove from sessions map
@@ -573,12 +561,12 @@ return false;
             let mut sessions = self
                 .sessions
                 .write()
-                .map_err(|e| format!("Failed to acquire write lock: {}", e))?;
+                .map_err(|e| format!("Failed to acquire write lock: {e}"))?;
 
             sessions.remove(session_id);
         }
 
-        info!("Session {} closed successfully", session_id);
+        info!("Session {session_id} closed successfully");
 
         Ok("Session closed successfully".to_string())
     }
@@ -586,13 +574,13 @@ return false;
     /// Navigate to a new URL in an existing session
 
     pub async fn navigate_to_url(&self, session_id: &str, url: &str) -> Result<String, String> {
-        info!("Navigating session {} to URL: {}", session_id, url);
+        info!("Navigating session {session_id} to URL: {url}");
 
         let session = {
             let sessions = self
                 .sessions
                 .read()
-                .map_err(|e| format!("Failed to acquire read lock: {}", e))?;
+                .map_err(|e| format!("Failed to acquire read lock: {e}"))?;
 
             sessions
                 .get(session_id)
@@ -601,7 +589,7 @@ return false;
         };
 
         if let Some(_window) = self.app_handle.get_webview_window(&session.window_label) {
-            let script = format!("window.location.href = '{}'; 'Navigated to {}'", url, url);
+            let script = format!("window.location.href = '{url}'; 'Navigated to {url}'");
 
             self.execute_script(session_id, &script).await?;
 
@@ -611,18 +599,18 @@ return false;
                 let mut sessions = self
                     .sessions
                     .write()
-                    .map_err(|e| format!("Failed to acquire write lock: {}", e))?;
+                    .map_err(|e| format!("Failed to acquire write lock: {e}"))?;
 
                 if let Some(session) = sessions.get_mut(session_id) {
                     session.url = url.to_string();
                 }
             }
 
-            info!("Successfully navigated session {} to {}", session_id, url);
+            info!("Successfully navigated session {session_id} to {url}");
 
-            Ok(format!("Navigated to {}", url))
+            Ok(format!("Navigated to {url}"))
         } else {
-            error!("Browser window not found for session: {}", session_id);
+            error!("Browser window not found for session: {session_id}");
 
             Err("Browser window not found".to_string())
         }
@@ -631,7 +619,7 @@ return false;
     /// Get page content (HTML)
 
     pub async fn get_page_content(&self, session_id: &str) -> Result<String, String> {
-        debug!("Getting page content for session {}", session_id);
+        debug!("Getting page content for session {session_id}");
 
         let script = "document.documentElement.outerHTML";
 
@@ -643,8 +631,7 @@ return false;
                     // In a real implementation, we would need to capture the actual HTML
 
                     info!(
-                        "HTML content extraction completed for session: {}",
-                        session_id
+                        "HTML content extraction completed for session: {session_id}"
                     );
 
                     Ok("<!DOCTYPE html><html><head><title>Page Content Extracted</title></head><body><h1>HTML Content Successfully Extracted</h1><p>The page content has been extracted but due to Tauri v2 limitations, the actual HTML content cannot be returned directly.</p></body></html>".to_string())
@@ -660,7 +647,7 @@ return false;
     /// Take a screenshot of the page (placeholder for future implementation)
 
     pub async fn take_screenshot(&self, session_id: &str) -> Result<String, String> {
-        debug!("Taking screenshot for session {}", session_id);
+        debug!("Taking screenshot for session {session_id}");
 
         // This would be implemented when screenshot capability is added
 
@@ -670,7 +657,7 @@ return false;
     /// Poll for script result using request_id
     pub async fn poll_script_result(&self, request_id: &str) -> Result<Option<String>, String> {
         if let Some((_key, result)) = self.script_results.remove(request_id) {
-            debug!("Retrieved script result for request_id: {}", request_id);
+            debug!("Retrieved script result for request_id: {request_id}");
             Ok(Some(result))
         } else {
             Ok(None)
@@ -685,8 +672,7 @@ return false;
         result: String,
     ) -> Result<(), String> {
         debug!(
-            "Storing script result for session: {}, request_id: {}",
-            session_id, request_id
+            "Storing script result for session: {session_id}, request_id: {request_id}"
         );
         self.script_results.insert(request_id, result);
         Ok(())

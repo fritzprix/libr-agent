@@ -1,5 +1,6 @@
 import type { WebMCPServer, MCPTool } from '@/lib/mcp-types';
 import type { JSONSchemaObject } from '@/lib/mcp-types'; // ADDED: JSON 스키마 타입을 명시적으로 가져옵니다.
+import type { ServiceContextOptions } from '@/features/tools';
 import {
   dbService,
   dbUtils,
@@ -912,6 +913,49 @@ const fileStoreServer: WebMCPServer = {
         return similaritySearch(args as SimilaritySearchInput);
       default:
         throw new Error(`Unknown tool: ${name}`);
+    }
+  },
+  async getServiceContext(options?: ServiceContextOptions): Promise<string> {
+    try {
+      const { sessionId } = options || {};
+
+      if (!sessionId) {
+        return '# Attached Files\nNo active session provided.';
+      }
+
+      // Find the store associated with this session
+      const sessionStore = await dbService.sessions.read(sessionId);
+      if (!sessionStore?.storeId) {
+        return '# Attached Files\nNo files currently attached to this session.';
+      }
+
+      // Get contents for this specific session's store
+      const result = await listContent({ storeId: sessionStore.storeId });
+
+      if (!result.contents || result.contents.length === 0) {
+        return '# Attached Files\nNo files currently attached to this session.';
+      }
+
+      const attachedResources = result.contents
+        .map((c) =>
+          JSON.stringify({
+            storeId: c.storeId,
+            contentId: c.contentId,
+            preview: c.preview,
+            filename: c.filename,
+            type: c.mimeType,
+            size: c.size,
+          }),
+        )
+        .join('\n');
+
+      return `# Attached Files\n${attachedResources}`;
+    } catch (error) {
+      logger.error('Failed to build content-store service context', {
+        sessionId: options?.sessionId,
+        error,
+      });
+      return '# Attached Files\nError loading attached files for this session.';
     }
   },
 };
