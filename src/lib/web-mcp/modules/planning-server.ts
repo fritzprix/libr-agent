@@ -45,14 +45,19 @@ class EphemeralState {
     return this.goal;
   }
 
-  updateGoal(updates: Partial<Pick<Goal, 'name' | 'description' | 'status'>>): Goal | null {
+  updateGoal(
+    updates: Partial<Pick<Goal, 'name' | 'description' | 'status'>>,
+  ): Goal | null {
     if (!this.goal) return null;
     Object.assign(this.goal, updates);
     logger.info('Goal updated', { goalId: this.goal.id, updates });
     return this.goal;
   }
 
-  addTodo(name: string, description?: string): { todoId: number; todos: Todo[] } {
+  addTodo(
+    name: string,
+    description?: string,
+  ): { todoId: number; todos: Todo[] } {
     const id = this.todos.length;
     const todo: Todo = {
       id,
@@ -66,7 +71,10 @@ class EphemeralState {
     return { todoId: todo.id, todos: this.todos };
   }
 
-  updateTodo(todoId: number, updates: Partial<Pick<Todo, 'name' | 'description' | 'status'>>): { todo: Todo | null; todos: Todo[] } {
+  updateTodo(
+    todoId: number,
+    updates: Partial<Pick<Todo, 'name' | 'description' | 'status'>>,
+  ): { todo: Todo | null; todos: Todo[] } {
     const todo = this.todos[todoId];
     if (!todo) return { todo: null, todos: this.todos };
     Object.assign(todo, updates);
@@ -78,7 +86,10 @@ class EphemeralState {
     return this.todos;
   }
 
-  addNote(content: string, tags?: string[]): { noteId: number; notes: ThinkNote[] } {
+  addNote(
+    content: string,
+    tags?: string[],
+  ): { noteId: number; notes: ThinkNote[] } {
     const id = this.notes.length;
     const note: ThinkNote = {
       id,
@@ -161,7 +172,10 @@ const tools: MCPTool[] = [
           properties: {
             name: { type: 'string' },
             description: { type: 'string' },
-            status: { type: 'string', enum: ['pending', 'in_progress', 'completed'] },
+            status: {
+              type: 'string',
+              enum: ['pending', 'in_progress', 'completed'],
+            },
           },
         },
       },
@@ -201,23 +215,42 @@ const tools: MCPTool[] = [
 const planningServer: WebMCPServer = {
   name: 'planning-server',
   version: '1.0.0',
-  description: 'Ephemeral planning, thinking, and goal management for AI agents',
+  description:
+    'Ephemeral planning, thinking, and goal management for AI agents',
   tools,
   async callTool(name: string, args: unknown): Promise<unknown> {
     const typedArgs = args as Record<string, unknown>;
     switch (name) {
       case 'create_goal':
-        return state.createGoal(typedArgs.name as string, typedArgs.description as string);
+        return state.createGoal(
+          typedArgs.name as string,
+          typedArgs.description as string,
+        );
       case 'update_goal':
-        return state.updateGoal(typedArgs.updates as Partial<Pick<Goal, 'name' | 'description' | 'status'>>);
+        return state.updateGoal(
+          typedArgs.updates as Partial<
+            Pick<Goal, 'name' | 'description' | 'status'>
+          >,
+        );
       case 'add_todo':
-        return state.addTodo(typedArgs.name as string, typedArgs.description as string);
+        return state.addTodo(
+          typedArgs.name as string,
+          typedArgs.description as string,
+        );
       case 'update_todo':
-        return state.updateTodo(typedArgs.todoId as number, typedArgs.updates as Partial<Pick<Todo, 'name' | 'description' | 'status'>>);
+        return state.updateTodo(
+          typedArgs.todoId as number,
+          typedArgs.updates as Partial<
+            Pick<Todo, 'name' | 'description' | 'status'>
+          >,
+        );
       case 'list_todos':
         return state.listTodos();
       case 'think_note':
-        return state.addNote(typedArgs.content as string, typedArgs.tags as string[]);
+        return state.addNote(
+          typedArgs.content as string,
+          typedArgs.tags as string[],
+        );
       case 'clear_session':
         state.clear();
         return { success: true };

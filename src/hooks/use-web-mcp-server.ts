@@ -77,7 +77,27 @@ class WebMCPProxyManager {
         : tool.name;
 
       serverProxy[methodName] = async (args?: unknown) => {
-        const result = await proxy.callTool(serverName, methodName, args);
+        let safeArgs: Record<string, unknown> | undefined;
+        if (typeof args === 'undefined') {
+          safeArgs = undefined;
+        } else if (
+          typeof args === 'object' &&
+          args !== null &&
+          !Array.isArray(args)
+        ) {
+          safeArgs = args as Record<string, unknown>;
+        } else if (typeof args === 'string') {
+          try {
+            safeArgs = args.length
+              ? (JSON.parse(args) as Record<string, unknown>)
+              : {};
+          } catch {
+            safeArgs = { raw: args };
+          }
+        } else {
+          safeArgs = { value: args };
+        }
+        const result = await proxy.callTool(serverName, methodName, safeArgs);
         return result;
       };
     });

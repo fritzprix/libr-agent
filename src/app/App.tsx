@@ -38,7 +38,9 @@ function App() {
           <BuiltInToolProvider>
             <BrowserToolProvider />
             <RustMCPToolProvider />
-            <WebMCPToolProvider servers={['content-store', 'planning-server']} />
+            <WebMCPToolProvider
+              servers={['content-store', 'planning-server']}
+            />
             <AssistantGroupProvider>
               <AssistantContextProvider>
                 <SessionContextProvider>

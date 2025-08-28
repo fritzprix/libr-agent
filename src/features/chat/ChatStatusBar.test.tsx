@@ -35,7 +35,6 @@ const MockMCPServerProvider = ({
 }) => {
   const defaultValue: MCPServerContextType = {
     availableTools: [],
-    toolsByServer: {},
     isLoading: false,
     error: undefined,
     status: {},

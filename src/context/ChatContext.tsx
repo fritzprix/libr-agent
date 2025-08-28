@@ -370,10 +370,13 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
     // 세션 불일치 시 streamingMessage 무시 (Race Condition 방지)
     if (streamingMessage.sessionId !== currentSession?.id) {
-      logger.warn('Streaming message session mismatch in messages calculation', {
-        streamingSessionId: streamingMessage.sessionId,
-        currentSessionId: currentSession?.id,
-      });
+      logger.warn(
+        'Streaming message session mismatch in messages calculation',
+        {
+          streamingSessionId: streamingMessage.sessionId,
+          currentSessionId: currentSession?.id,
+        },
+      );
       return history;
     }
 
