@@ -150,7 +150,6 @@ export function WebMCPProvider({ servers = [] }: WebMCPProviderProps) {
     return servers.reduce<Record<string, BuiltInService>>((acc, s) => {
       acc[s] = {
         executeTool: (tc) => executeTool(s, tc),
-        loadService: () => loadServer(s),
         listTools: () => serverStatesRef.current[s]?.tools || [],
         unloadService: async () => {},
         getServiceContext: () =>
