@@ -154,7 +154,7 @@ export class WebMCPProxy {
 
   private handleWorkerMessage(event: MessageEvent<MCPResponse>): void {
     const response = event.data;
-    
+
     logger.debug('Received worker message', {
       hasResponse: !!response,
       responseId: response?.id,
@@ -163,7 +163,7 @@ export class WebMCPProxy {
       hasResult: response && 'result' in response,
       errorStructure: response?.error ? Object.keys(response.error) : undefined,
     });
-    
+
     if (!response || response.id === undefined || response.id === null) {
       logger.warn('Invalid worker response - missing id', { response });
       return;
@@ -171,7 +171,9 @@ export class WebMCPProxy {
 
     const pending = this.pendingRequests.get(String(response.id));
     if (!pending) {
-      logger.warn('No pending request found for response', { responseId: response.id });
+      logger.warn('No pending request found for response', {
+        responseId: response.id,
+      });
       return;
     }
 
@@ -180,29 +182,34 @@ export class WebMCPProxy {
 
     try {
       if (response.error) {
-        const errorMessage = typeof response.error === 'string' 
-          ? response.error 
-          : response.error.message || 'Unknown error';
-        logger.error('Worker returned error', { 
-          responseId: response.id, 
+        const errorMessage =
+          typeof response.error === 'string'
+            ? response.error
+            : response.error.message || 'Unknown error';
+        logger.error('Worker returned error', {
+          responseId: response.id,
           error: response.error,
-          errorMessage 
+          errorMessage,
         });
         pending.reject(new Error(errorMessage));
       } else {
-        logger.debug('Worker returned success', { 
+        logger.debug('Worker returned success', {
           responseId: response.id,
-          hasResult: !!response.result 
+          hasResult: !!response.result,
         });
         pending.resolve(response);
       }
     } catch (handleError) {
-      logger.error('Error handling worker message', { 
-        responseId: response.id, 
+      logger.error('Error handling worker message', {
+        responseId: response.id,
         handleError,
-        response 
+        response,
       });
-      pending.reject(handleError instanceof Error ? handleError : new Error(String(handleError)));
+      pending.reject(
+        handleError instanceof Error
+          ? handleError
+          : new Error(String(handleError)),
+      );
     }
   }
 
@@ -224,15 +231,16 @@ export class WebMCPProxy {
     return 'pong';
   }
 
-  async loadServer(
-    serverName: string,
-  ): Promise<{
+  async loadServer(serverName: string): Promise<{
     name: string;
     description?: string;
     version?: string;
     toolCount: number;
   }> {
-    const response = await this.sendMessage<MCPResponse>({ type: 'loadServer', serverName });
+    const response = await this.sendMessage<MCPResponse>({
+      type: 'loadServer',
+      serverName,
+    });
     // Extract JSON content from MCPResponse
     if (response.result?.content?.[0]?.type === 'text') {
       return JSON.parse((response.result.content[0] as MCPTextContent).text);
@@ -250,7 +258,10 @@ export class WebMCPProxy {
   }
 
   async listTools(serverName: string): Promise<MCPTool[]> {
-    const response = await this.sendMessage<MCPResponse>({ type: 'listTools', serverName });
+    const response = await this.sendMessage<MCPResponse>({
+      type: 'listTools',
+      serverName,
+    });
     // Extract JSON content from MCPResponse
     if (response.result?.content?.[0]?.type === 'text') {
       return JSON.parse((response.result.content[0] as MCPTextContent).text);
@@ -272,7 +283,10 @@ export class WebMCPProxy {
   }
 
   async getServiceContext(serverName: string): Promise<string> {
-    const response = await this.sendMessage<MCPResponse>({ type: 'getServiceContext', serverName });
+    const response = await this.sendMessage<MCPResponse>({
+      type: 'getServiceContext',
+      serverName,
+    });
     // Extract text content from MCPResponse
     if (response.result?.content?.[0]?.type === 'text') {
       return (response.result.content[0] as MCPTextContent).text;

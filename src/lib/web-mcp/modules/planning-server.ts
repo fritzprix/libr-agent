@@ -278,7 +278,7 @@ const planningServer: WebMCPServer = {
             typedArgs.name as string,
             typedArgs.description as string,
           ),
-          'create_goal'
+          'create_goal',
         );
       case 'update_goal':
         return normalizeToolResult(
@@ -287,7 +287,7 @@ const planningServer: WebMCPServer = {
               Pick<Goal, 'name' | 'description' | 'status'>
             >,
           ),
-          'update_goal'
+          'update_goal',
         );
       case 'add_todo':
         return normalizeToolResult(
@@ -295,7 +295,7 @@ const planningServer: WebMCPServer = {
             typedArgs.name as string,
             typedArgs.description as string,
           ),
-          'add_todo'
+          'add_todo',
         );
       case 'update_todo':
         return normalizeToolResult(
@@ -305,7 +305,7 @@ const planningServer: WebMCPServer = {
               Pick<Todo, 'name' | 'description' | 'status'>
             >,
           ),
-          'update_todo'
+          'update_todo',
         );
       case 'list_todos':
         return normalizeToolResult(state.listTodos(), 'list_todos');
@@ -315,7 +315,7 @@ const planningServer: WebMCPServer = {
             typedArgs.content as string,
             typedArgs.tags as string[],
           ),
-          'add_observation'
+          'add_observation',
         );
       case 'sequential_thinking':
         return normalizeToolResult(
@@ -325,7 +325,7 @@ const planningServer: WebMCPServer = {
             typedArgs.totalThoughts as number,
             typedArgs.nextThoughtNeeded as boolean,
           ),
-          'sequential_thinking'
+          'sequential_thinking',
         );
       case 'clear_session':
         state.clear();

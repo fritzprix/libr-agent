@@ -18,6 +18,7 @@ import {
 import { WebMCPServerProxy } from '@/hooks/use-web-mcp-server';
 import { ParserFactory } from './parsers/parser-factory';
 import { ParserError } from './parsers/index';
+import { computeContentHash } from '@/lib/content-hash';
 
 // Worker-safe logger that falls back to console if Tauri logger is not available
 const createWorkerSafeLogger = (context: string) => {
@@ -698,7 +699,7 @@ async function addContent(input: AddContentInput): Promise<AddContentOutput> {
       throw new FileStoreError(
         `Invalid storeId: expected string, got ${typeof input.storeId} (${input.storeId})`,
         'INVALID_STORE_ID',
-        { storeId: input.storeId, storeIdType: typeof input.storeId }
+        { storeId: input.storeId, storeIdType: typeof input.storeId },
       );
     }
 
@@ -750,6 +751,42 @@ async function addContent(input: AddContentInput): Promise<AddContentOutput> {
       );
     }
 
+    // Calculate content hash for duplicate detection
+    const contentHash = await computeContentHash(finalContent);
+    logger.info('Content hash calculated', {
+      contentHash,
+      contentLength: finalContent.length,
+    });
+
+    // Check for duplicate content in the same store
+    const existingContent = await dbService.fileContents.findByHashAndStore(
+      contentHash,
+      input.storeId,
+    );
+    if (existingContent) {
+      logger.info('Duplicate content found, returning existing', {
+        existingContentId: existingContent.id,
+        filename: existingContent.filename,
+        contentHash,
+      });
+
+      // Return existing content information without creating new entries
+      const existingChunks = await dbUtils.getFileChunksByContent(
+        existingContent.id,
+      );
+      return {
+        storeId: input.storeId,
+        contentId: existingContent.id,
+        filename: existingContent.filename,
+        mimeType: existingContent.mimeType,
+        size: existingContent.size,
+        lineCount: existingContent.lineCount,
+        preview: existingContent.summary,
+        chunkCount: existingChunks.length,
+        uploadedAt: existingContent.uploadedAt,
+      };
+    }
+
     const contentId = `content_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
     const lines = finalContent.split('\n');
     const summary = lines.slice(0, 20).join('\n');
@@ -764,6 +801,7 @@ async function addContent(input: AddContentInput): Promise<AddContentOutput> {
       content: finalContent,
       lineCount: lines.length,
       summary,
+      contentHash,
     };
 
     const chunksData = textChunker.chunkText(finalContent);
@@ -916,27 +954,27 @@ const fileStoreServer: WebMCPServer = {
       case 'createStore':
         return normalizeToolResult(
           await createStore(args as CreateStoreInput),
-          'createStore'
+          'createStore',
         );
       case 'addContent':
         return normalizeToolResult(
           await addContent(args as AddContentInput),
-          'addContent'
+          'addContent',
         );
       case 'listContent':
         return normalizeToolResult(
           await listContent(args as ListContentInput),
-          'listContent'
+          'listContent',
         );
       case 'readContent':
         return normalizeToolResult(
           await readContent(args as ReadContentInput),
-          'readContent'
+          'readContent',
         );
       case 'similaritySearch':
         return normalizeToolResult(
           await similaritySearch(args as SimilaritySearchInput),
-          'similaritySearch'
+          'similaritySearch',
         );
       default:
         throw new Error(`Unknown tool: ${name}`);
@@ -947,13 +985,16 @@ const fileStoreServer: WebMCPServer = {
       const { sessionId } = options || {};
 
       if (!sessionId || typeof sessionId !== 'string') {
-        logger.error('Invalid sessionId in getServiceContext', { 
-          sessionId, 
-          sessionIdType: typeof sessionId 
-        });
-        return '# Attached Files\nNo active session provided.';
+        logger.debug(
+          'No valid sessionId in getServiceContext - session may be transitioning',
+          {
+            sessionId,
+            sessionIdType: typeof sessionId,
+          },
+        );
+        return '# Attached Files\nNo active session available.';
       }
-      
+
       const sessionStore = await dbService.sessions.read(sessionId);
       if (!sessionStore?.storeId) {
         return '# Attached Files\nNo files currently attached to this session.';

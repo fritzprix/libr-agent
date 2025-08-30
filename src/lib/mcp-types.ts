@@ -535,7 +535,6 @@ export interface WebMCPMessage {
   args?: unknown;
 }
 
-
 /**
  * Web Worker MCP 프록시 설정
  */
@@ -629,4 +628,3 @@ export function testErrorDetection(): void {
     isSuccess: isMCPSuccess(normalizedResponse),
   });
 }
-

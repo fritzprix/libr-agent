@@ -122,9 +122,7 @@ async function loadMCPServer(serverName: string): Promise<WebMCPServer> {
 /**
  * Handle MCP message and return appropriate response
  */
-async function handleMCPMessage(
-  message: WebMCPMessage,
-): Promise<MCPResponse> {
+async function handleMCPMessage(message: WebMCPMessage): Promise<MCPResponse> {
   const { id, type, serverName, toolName, args } = message;
 
   log.debug('Handling MCP message', {
@@ -157,15 +155,21 @@ async function handleMCPMessage(
           jsonrpc: '2.0',
           id,
           result: {
-            content: [{
-              type: 'text',
-              text: JSON.stringify({
-                name: loadedServer.name,
-                description: loadedServer.description,
-                version: loadedServer.version,
-                toolCount: loadedServer.tools.length,
-              }, null, 2),
-            }],
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    name: loadedServer.name,
+                    description: loadedServer.description,
+                    version: loadedServer.version,
+                    toolCount: loadedServer.tools.length,
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
           },
         };
       }
@@ -181,10 +185,12 @@ async function handleMCPMessage(
             jsonrpc: '2.0',
             id,
             result: {
-              content: [{
-                type: 'text',
-                text: JSON.stringify(allTools, null, 2),
-              }],
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(allTools, null, 2),
+                },
+              ],
             },
           };
         } else {
@@ -194,10 +200,12 @@ async function handleMCPMessage(
             jsonrpc: '2.0',
             id,
             result: {
-              content: [{
-                type: 'text',
-                text: JSON.stringify(server.tools, null, 2),
-              }],
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(server.tools, null, 2),
+                },
+              ],
             },
           };
         }
@@ -231,7 +239,7 @@ async function handleMCPMessage(
             ...result,
             id,
           };
-          
+
           log.debug('Returning response from worker', {
             id,
             serverName,
@@ -240,7 +248,7 @@ async function handleMCPMessage(
             hasError: 'error' in response,
             hasResult: 'result' in response,
           });
-          
+
           return response;
         } catch (toolError) {
           log.error('Tool call failed', {
@@ -288,10 +296,12 @@ async function handleMCPMessage(
             jsonrpc: '2.0',
             id,
             result: {
-              content: [{
-                type: 'text',
-                text: JSON.stringify(result, null, 2),
-              }],
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(result, null, 2),
+                },
+              ],
             },
           };
         } else {
@@ -312,10 +322,12 @@ async function handleMCPMessage(
             jsonrpc: '2.0',
             id,
             result: {
-              content: [{
-                type: 'text',
-                text: context,
-              }],
+              content: [
+                {
+                  type: 'text',
+                  text: context,
+                },
+              ],
             },
           };
         }
@@ -325,10 +337,12 @@ async function handleMCPMessage(
           jsonrpc: '2.0',
           id,
           result: {
-            content: [{
-              type: 'text',
-              text: context,
-            }],
+            content: [
+              {
+                type: 'text',
+                text: context,
+              },
+            ],
           },
         };
       }

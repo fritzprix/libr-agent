@@ -29,6 +29,7 @@ export interface FileContent {
   content: string;
   lineCount: number;
   summary: string; // 첫 20줄 요약
+  contentHash?: string; // SHA-256 hash for duplicate detection
 }
 
 export interface FileChunk {
@@ -59,6 +60,13 @@ export interface CRUD<T, U = T> {
   count: () => Promise<number>;
 }
 
+export interface FileContentCRUD extends CRUD<FileContent> {
+  findByHashAndStore: (
+    contentHash: string,
+    storeId: string,
+  ) => Promise<FileContent | undefined>;
+}
+
 export interface DatabaseService {
   assistants: CRUD<Assistant>;
   objects: CRUD<DatabaseObject<unknown>, DatabaseObject<unknown>>;
@@ -66,7 +74,7 @@ export interface DatabaseService {
   messages: CRUD<Message>;
   groups: CRUD<Group>;
   fileStores: CRUD<FileStore>;
-  fileContents: CRUD<FileContent>;
+  fileContents: FileContentCRUD;
   fileChunks: CRUD<FileChunk>;
 }
 
@@ -158,6 +166,20 @@ class LocalDatabase extends Dexie {
       .upgrade(async () => {
         console.log(
           'Upgrading database to version 5 - adding file attachment tables',
+        );
+      });
+
+    // Version 6: Add contentHash field and index for duplicate detection
+    this.version(6)
+      .stores({
+        fileStores: '&id, sessionId, createdAt, updatedAt, name',
+        fileContents:
+          '&id, storeId, filename, uploadedAt, mimeType, contentHash, [storeId+contentHash]',
+        fileChunks: '&id, contentId, chunkIndex',
+      })
+      .upgrade(async () => {
+        console.log(
+          'Upgrading database to version 6 - adding contentHash field and compound index',
         );
       });
   }
@@ -586,6 +608,16 @@ export const dbService: DatabaseService = {
     },
     count: async (): Promise<number> => {
       return LocalDatabase.getInstance().fileContents.count();
+    },
+    findByHashAndStore: async (
+      contentHash: string,
+      storeId: string,
+    ): Promise<FileContent | undefined> => {
+      const db = LocalDatabase.getInstance();
+      return await db.fileContents
+        .where('[storeId+contentHash]')
+        .equals([storeId, contentHash])
+        .first();
     },
   },
   fileChunks: {
