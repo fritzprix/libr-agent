@@ -17,6 +17,8 @@ import { toast } from 'sonner';
 import { useMCPServer } from '@/hooks/use-mcp-server';
 import { MCPTool } from '@/lib/mcp-types';
 
+const logger = getLogger('AssistantContext');
+
 const DEFAULT_PROMPT =
   "You are an AI assistant agent that can use external tools via MCP (Model Context Protocol).\n- Always analyze the user's intent and, if needed, use available tools to provide the best answer.\n- When a tool is required, call the appropriate tool with correct parameters.\n- If the answer can be given without a tool, respond directly.\n- Be concise and clear. If you use a tool, explain the result to the user in natural language.\n- If you are unsure, ask clarifying questions before taking action.";
 
@@ -94,7 +96,6 @@ export const AssistantContextProvider = ({
 
   // Helper to show user-friendly error messages
   const showError = useCallback((message: string, errorObj?: unknown) => {
-    const logger = getLogger('AssistantContext.showError');
     logger.error(message, { error: errorObj });
     toast.error(message);
   }, []);
@@ -103,9 +104,8 @@ export const AssistantContextProvider = ({
 
   const [{ value: assistants, loading, error: loadError }, loadAssistants] =
     useAsyncFn(async () => {
-      const logger = getLogger('AssistantContext.loadAssistants');
       let fetchedAssistants = await dbService.assistants.getPage(0, -1);
-      logger.info('fetched assistants : ', { fetchedAssistants });
+      logger.debug('fetched assistants : ', { fetchedAssistants });
       return fetchedAssistants.items;
     }, []);
 
@@ -166,7 +166,6 @@ export const AssistantContextProvider = ({
           updatedAt: new Date(),
         };
 
-        const logger = getLogger('AssistantContext.upsertAssistant');
         logger.info(`Saving assistant`, { assistantToSave });
 
         await dbService.assistants.upsert(assistantToSave);
@@ -237,8 +236,6 @@ export const AssistantContextProvider = ({
         setCurrentAssistant(a);
         upsertAssistant(a);
       } else {
-        const logger = getLogger('AssistantContext.initializeAssistant');
-        logger.info('assistants : ', { assistants });
         const a = assistants.find((a) => a.isDefault) || assistants[0];
         setCurrentAssistant(a);
       }

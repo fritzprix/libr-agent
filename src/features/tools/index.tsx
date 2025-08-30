@@ -245,21 +245,30 @@ Tool details and usage instructions are provided separately.
       sessionId: currentSession?.id,
     };
 
-    for (const [serviceId, entry] of serviceEntries.entries()) {
-      if (entry.status === 'ready' && entry.service.getServiceContext) {
-        try {
-          const prompt = await entry.service.getServiceContext(contextOptions);
-          if (prompt) {
-            prompts.push(prompt);
+    // Skip service contexts if no valid session is available
+    if (currentSession?.id) {
+      for (const [serviceId, entry] of serviceEntries.entries()) {
+        if (entry.status === 'ready' && entry.service.getServiceContext) {
+          try {
+            const prompt =
+              await entry.service.getServiceContext(contextOptions);
+            if (prompt) {
+              prompts.push(prompt);
+            }
+          } catch (err) {
+            logger.error('Failed to get service context from service', {
+              serviceId,
+              sessionId: contextOptions.sessionId,
+              err,
+            });
           }
-        } catch (err) {
-          logger.error('Failed to get service context from service', {
-            serviceId,
-            sessionId: contextOptions.sessionId,
-            err,
-          });
         }
       }
+    } else {
+      logger.debug('Skipping service contexts - no valid session available', {
+        sessionExists: !!currentSession,
+        sessionId: currentSession?.id,
+      });
     }
     return prompts.join('\n\n');
   }, [serviceEntries, availableTools.length, getCurrentSession]);

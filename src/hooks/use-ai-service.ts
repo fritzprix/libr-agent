@@ -6,6 +6,8 @@ import { getLogger } from '../lib/logger';
 import { useSettings } from './use-settings';
 import { prepareMessagesForLLM } from '../lib/message-preprocessor';
 
+import { selectMessagesWithinContext } from '@/lib/token-utils';
+
 const logger = getLogger('useAIService');
 
 const DEFAULT_SYSTEM_PROMPT = 'You are a helpful assistant.';
@@ -61,13 +63,20 @@ export const useAIService = (config?: AIServiceConfig) => {
           resolvedSystemPrompt = systemPrompt || DEFAULT_SYSTEM_PROMPT;
         }
 
+        // Context enforcement: Truncate messages to fit the context window
+        const safeMessages = selectMessagesWithinContext(
+          processedMessages,
+          provider,
+          model,
+        );
+
         logger.info('Submitting messages to AI service', {
           model,
           systemPrompt: resolvedSystemPrompt,
-          messageCount: processedMessages.length,
+          messageCount: safeMessages.length, // Log the count of messages being sent
         });
 
-        const stream = serviceInstance.streamChat(processedMessages, {
+        const stream = serviceInstance.streamChat(safeMessages, {
           modelName: model,
           systemPrompt: resolvedSystemPrompt,
           availableTools: config?.tools || [],
@@ -158,7 +167,7 @@ export const useAIService = (config?: AIServiceConfig) => {
         setIsLoading(false);
       }
     },
-    [model, config, serviceInstance],
+    [model, provider, config, serviceInstance],
   );
 
   return { response, isLoading, error, submit };

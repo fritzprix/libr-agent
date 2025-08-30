@@ -4,7 +4,7 @@ import { useAsyncFn } from 'react-use';
 // Vite Worker import
 import { getLogger } from '@/lib/logger';
 import { MCPResponse, WebMCPServerState } from '@/lib/mcp-types';
-import { createWebMCPProxy, WebMCPProxy } from '@/lib/web-mcp/mcp-proxy';
+import { WebMCPProxy } from '@/lib/web-mcp/mcp-proxy';
 import { ToolCall } from '@/models/chat';
 import { BuiltInService, useBuiltInTool } from '.';
 import MCPWorker from '../../lib/web-mcp/mcp-worker.ts?worker';
@@ -30,7 +30,7 @@ export function WebMCPProvider({ servers = [] }: WebMCPProviderProps) {
       const workerInstance = new MCPWorker();
 
       // Create new proxy instance with Worker instance
-      const proxy = createWebMCPProxy({ workerInstance });
+      const proxy = new WebMCPProxy({ workerInstance });
       await proxy.initialize();
 
       proxyRef.current = proxy;
@@ -63,9 +63,11 @@ export function WebMCPProvider({ servers = [] }: WebMCPProviderProps) {
       };
 
       // Load the server
+      logger.info('sending loadServer to proxy', { serverName });
       const serverInfo = await proxyRef.current.loadServer(serverName);
 
       // Get tools for this server and add external. prefix
+      logger.info('sending listTools to proxy', { serverName });
       const tools = await proxyRef.current.listTools(serverName);
       serverStatesRef.current[serverName].tools = tools;
 
@@ -99,7 +101,6 @@ export function WebMCPProvider({ servers = [] }: WebMCPProviderProps) {
       if (!proxyRef.current) {
         throw new Error('WebMCP proxy not initialized');
       }
-      // Handle external. prefix for namespace routing
 
       const result = await proxyRef.current.callTool(
         serviceId,
@@ -114,31 +115,8 @@ export function WebMCPProvider({ servers = [] }: WebMCPProviderProps) {
         result,
       });
 
-      // proxy.callTool resolves to the worker's result object (not the full
-      // WebMCPResponse). Use a null id when the worker result doesn't provide
-      // one and stringify the returned object itself so the text payload is
-      // preserved.
-      const maybeResp = result as unknown;
-      const respId =
-        typeof maybeResp === 'object' && maybeResp !== null && 'id' in maybeResp
-          ? (maybeResp as { id?: string | number }).id
-          : null;
-
-      return {
-        id: respId ?? null,
-        jsonrpc: '2.0',
-        result: {
-          content: [
-            {
-              type: 'text',
-              text:
-                typeof result === 'string'
-                  ? result
-                  : JSON.stringify(result, null, 2),
-            },
-          ],
-        },
-      };
+      // proxy.callTool now returns MCPResponse directly
+      return result;
     },
     [],
   );
@@ -150,9 +128,9 @@ export function WebMCPProvider({ servers = [] }: WebMCPProviderProps) {
     return servers.reduce<Record<string, BuiltInService>>((acc, s) => {
       acc[s] = {
         executeTool: (tc) => executeTool(s, tc),
-        loadService: () => loadServer(s),
         listTools: () => serverStatesRef.current[s]?.tools || [],
         unloadService: async () => {},
+        loadService: async () => loadServer(s),
         getServiceContext: () =>
           proxyRef.current
             ? proxyRef.current.getServiceContext(s)
@@ -179,9 +157,9 @@ export function WebMCPProvider({ servers = [] }: WebMCPProviderProps) {
 
   useEffect(() => {
     initializeProxy();
-    return () => {
-      proxyRef.current?.cleanup();
-    };
+    // return () => {
+    //   proxyRef.current?.cleanup();
+    // };
   }, []);
 
   return null;

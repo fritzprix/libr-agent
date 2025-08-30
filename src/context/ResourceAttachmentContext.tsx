@@ -40,8 +40,12 @@ interface ResourceAttachmentContextType {
     mimeType: string,
     filename?: string,
   ) => Promise<AttachmentReference>;
+  addFilesBatch: (
+    files: { url: string; mimeType: string; filename?: string }[],
+  ) => Promise<AttachmentReference[]>;
   removeFile: (ref: AttachmentReference) => Promise<void>;
   clearFiles: () => void;
+  clearPendingFiles: () => void;
   isLoading: boolean;
   /**
    * Get file by its unique content ID
@@ -54,6 +58,10 @@ interface ResourceAttachmentContextType {
    * All files stored in the current session's store
    */
   sessionFiles: AttachmentReference[];
+  /**
+   * Files being attached but not yet confirmed by server
+   */
+  pendingFiles: AttachmentReference[];
   /**
    * Loading state for session files
    */
@@ -79,8 +87,11 @@ interface ResourceAttachmentProviderProps {
 export const ResourceAttachmentProvider: React.FC<
   ResourceAttachmentProviderProps
 > = ({ children }) => {
-  const [files, setFiles] = useState<AttachmentReference[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Flag to prevent automatic refresh during file upload operations
+  const [isFileOperationInProgress, setIsFileOperationInProgress] =
+    useState(false);
 
   // Session files management states
   const [sessionFiles, setSessionFiles] = useState<AttachmentReference[]>([]);
@@ -89,11 +100,17 @@ export const ResourceAttachmentProvider: React.FC<
     null,
   );
 
+  // Pending files state (files being attached but not yet confirmed by server)
+  const [pendingFiles, setPendingFiles] = useState<AttachmentReference[]>([]);
+
   const { current: currentSession, updateSession } = useSessionContext();
   const { server } = useWebMCPServer<ContentStoreServer>('content-store');
 
-  // Track uploaded filenames to prevent duplicate uploads
-  const uploadedFilenamesRef = useRef<string[]>([]);
+  // Track uploaded filenames per storeId to prevent duplicate uploads within the same store
+  const uploadedFilenamesRef = useRef<Map<string, Set<string>>>(new Map());
+
+  // Cache the current session's storeId to avoid race conditions during batch uploads
+  const sessionStoreIdRef = useRef<string | undefined>();
 
   // Reset files when session changes
   const prevSessionIdRef = useRef<string | undefined>();
@@ -166,28 +183,46 @@ export const ResourceAttachmentProvider: React.FC<
         currentSessionId: currentSession?.id,
         sessionName: currentSession?.name,
         assistants: currentSession?.assistants?.map((a) => a.name),
+        storeId: currentSession?.storeId,
         reason: !prevSessionIdRef.current
           ? 'initial_session'
           : 'session_change',
       });
-      setFiles([]);
       // Clear uploaded filenames when session changes
-      uploadedFilenamesRef.current = [];
+      uploadedFilenamesRef.current.clear();
 
       // Clear and refresh session files
       setSessionFiles([]);
+      setPendingFiles([]); // Also clear pending files on session change
       setSessionFilesError(null);
 
+      // Update storeId cache
+      sessionStoreIdRef.current = currentSession?.storeId;
       prevSessionIdRef.current = currentSession?.id;
     }
   }, [currentSession?.id]);
 
-  // Auto-refresh session files when storeId is available
+  // Update storeId cache when currentSession storeId changes
   useEffect(() => {
-    if (currentSession?.storeId) {
+    sessionStoreIdRef.current = currentSession?.storeId;
+  }, [currentSession?.storeId]);
+
+  // Auto-refresh session files when storeId is available
+  // But skip if a file operation is in progress to avoid race conditions
+  useEffect(() => {
+    if (currentSession?.storeId && !isFileOperationInProgress) {
+      logger.debug('Auto-refreshing session files due to storeId change', {
+        storeId: currentSession.storeId,
+        isFileOperationInProgress,
+      });
       refreshSessionFiles();
+    } else if (currentSession?.storeId && isFileOperationInProgress) {
+      logger.debug('Skipping auto-refresh during file operation', {
+        storeId: currentSession.storeId,
+        isFileOperationInProgress,
+      });
     }
-  }, [currentSession?.storeId, refreshSessionFiles]);
+  }, [currentSession?.storeId, refreshSessionFiles, isFileOperationInProgress]);
 
   // Ensure store exists for current session
   const ensureStoreExists = useCallback(
@@ -197,12 +232,22 @@ export const ResourceAttachmentProvider: React.FC<
       }
 
       try {
+        // First check cached storeId to avoid race conditions
+        if (sessionStoreIdRef.current) {
+          logger.debug('Using cached store ID', {
+            sessionId,
+            storeId: sessionStoreIdRef.current,
+          });
+          return sessionStoreIdRef.current;
+        }
+
         // Check if session already has a storeId
         if (currentSession?.storeId) {
           logger.debug('Using existing store ID from session', {
             sessionId,
             storeId: currentSession.storeId,
           });
+          sessionStoreIdRef.current = currentSession.storeId;
           return currentSession.storeId;
         }
 
@@ -214,7 +259,19 @@ export const ResourceAttachmentProvider: React.FC<
           },
         });
 
+        logger.debug('createStore result received', {
+          sessionId,
+          createResult,
+          createResultType: typeof createResult,
+          createResultKeys: createResult ? Object.keys(createResult) : null,
+          storeIdValue: createResult?.storeId,
+          storeIdType: typeof createResult?.storeId,
+        });
+
         const storeId = createResult.storeId;
+
+        // Cache the storeId immediately to prevent race conditions
+        sessionStoreIdRef.current = storeId;
 
         // Update the session with the new storeId
         await updateSession(sessionId, { storeId });
@@ -335,17 +392,8 @@ export const ResourceAttachmentProvider: React.FC<
       // Use the provided filename or extract from original URL
       const actualFilename = filename || extractFilenameFromUrl(url);
 
-      // Check if file is already being uploaded or uploaded to prevent duplicates
-      if (uploadedFilenamesRef.current.includes(actualFilename)) {
-        logger.warn('File upload already in progress or completed', {
-          filename: actualFilename,
-        });
-        const existingFile = files.find((f) => f.filename === actualFilename);
-        if (existingFile) {
-          return existingFile;
-        }
-        throw new Error(`File "${actualFilename}" is already being uploaded`);
-      }
+      // We'll check for store-based duplicates after ensuring store exists
+      // This allows the same filename in different stores while preventing race conditions within the same store
 
       // Log current state for debugging
       logger.debug('Adding file', {
@@ -381,14 +429,37 @@ export const ResourceAttachmentProvider: React.FC<
       }
 
       setIsLoading(true);
+      setIsFileOperationInProgress(true);
       let blobCleanup: (() => void) | null = null;
 
       try {
-        // Add filename to uploaded list to prevent duplicates
-        uploadedFilenamesRef.current.push(actualFilename);
-
         // 1. Ensure store exists for this session
         const storeId = await ensureStoreExists(currentSession.id);
+
+        // Check if file is already being uploaded in this store to prevent race conditions
+        const storeUploads =
+          uploadedFilenamesRef.current.get(storeId) || new Set();
+        if (storeUploads.has(actualFilename)) {
+          logger.warn('File upload already in progress for this store', {
+            filename: actualFilename,
+            storeId,
+          });
+          const existingFile = sessionFiles.find(
+            (f) => f.filename === actualFilename && f.storeId === storeId,
+          );
+          if (existingFile) {
+            return existingFile;
+          }
+          throw new Error(
+            `File "${actualFilename}" is already being uploaded to this session. Please wait for the current upload to complete before trying again.`,
+          );
+        }
+
+        // Add filename to uploaded list for this store to prevent duplicates
+        if (!uploadedFilenamesRef.current.has(storeId)) {
+          uploadedFilenamesRef.current.set(storeId, new Set());
+        }
+        uploadedFilenamesRef.current.get(storeId)!.add(actualFilename);
 
         logger.debug('Adding file to store', {
           filename: actualFilename,
@@ -403,9 +474,11 @@ export const ResourceAttachmentProvider: React.FC<
         const actualMimeType =
           mimeType || blobResult.type || 'application/octet-stream';
 
-        // Check if file already exists in current session (by filename)
-        // Note: This prevents duplicate files with the same name regardless of content
-        const existingFile = files.find(
+        // Check if file already exists in current session or pending files (by filename)
+        const existingFile = sessionFiles.find(
+          (file) => file.filename === actualFilename,
+        );
+        const existingPendingFile = pendingFiles.find(
           (file) => file.filename === actualFilename,
         );
 
@@ -415,6 +488,30 @@ export const ResourceAttachmentProvider: React.FC<
           });
           return existingFile;
         }
+
+        if (existingPendingFile) {
+          logger.warn('File already being uploaded', {
+            filename: actualFilename,
+          });
+          return existingPendingFile;
+        }
+
+        // Create a temporary attachment reference to show in UI immediately
+        const tempAttachment: AttachmentReference = {
+          storeId: storeId,
+          contentId: `temp_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
+          filename: actualFilename,
+          mimeType: actualMimeType,
+          size: blobResult.size || 0,
+          lineCount: 0,
+          preview: actualFilename,
+          uploadedAt: new Date().toISOString(),
+          chunkCount: 0,
+          lastAccessedAt: new Date().toISOString(),
+        };
+
+        // Add to pending files immediately for UI responsiveness
+        setPendingFiles((prev) => [...prev, tempAttachment]);
 
         // Call the content-store server to add content using blob URL
         // This ensures CORS issues are avoided and processing is consistent
@@ -429,6 +526,14 @@ export const ResourceAttachmentProvider: React.FC<
           },
         });
 
+        logger.info('File attachment added successfully', {
+          filename: result.filename,
+          contentId: result.contentId,
+          chunkCount: result.chunkCount,
+          originalUrl: url,
+          wasConverted: !url.startsWith('blob:'),
+        });
+
         // Convert AddContentOutput to AttachmentReference
         const attachment: AttachmentReference = {
           storeId: result.storeId,
@@ -438,31 +543,60 @@ export const ResourceAttachmentProvider: React.FC<
           size: result.size,
           lineCount: result.lineCount,
           preview: result.preview,
-          uploadedAt: result.uploadedAt.toISOString(),
+          uploadedAt:
+            result.uploadedAt instanceof Date
+              ? result.uploadedAt.toISOString()
+              : result.uploadedAt,
           chunkCount: result.chunkCount,
           lastAccessedAt: new Date().toISOString(),
         };
 
-        // Add to files array
-        setFiles((prevFiles) => [...prevFiles, attachment]);
+        // Update the temporary attachment in pendingFiles with real server data
+        // Keep it in pendingFiles until user submits message (UI completion)
+        setPendingFiles((prev) =>
+          prev.map((file) =>
+            file.filename === actualFilename ? attachment : file,
+          ),
+        );
 
-        logger.info('File attachment added successfully', {
-          filename: attachment.filename,
-          contentId: attachment.contentId,
-          chunkCount: attachment.chunkCount,
-          originalUrl: url,
-          wasConverted: !url.startsWith('blob:'),
+        // Also add to session files for server state tracking
+        setSessionFiles((prev) => {
+          // Check if file already exists to avoid duplicates
+          const existingIndex = prev.findIndex(
+            (f) => f.filename === attachment.filename,
+          );
+          if (existingIndex >= 0) {
+            // Replace existing file
+            const updated = [...prev];
+            updated[existingIndex] = attachment;
+            return updated;
+          } else {
+            // Add new file
+            return [...prev, attachment];
+          }
         });
-
-        // Refresh session files after successful file addition
-        await refreshSessionFiles();
 
         return attachment;
       } catch (error) {
-        // Remove filename from uploaded list on error
-        uploadedFilenamesRef.current = uploadedFilenamesRef.current.filter(
-          (f) => f !== actualFilename,
+        // Remove from pending files on error
+        setPendingFiles((prev) =>
+          prev.filter((file) => file.filename !== actualFilename),
         );
+
+        // Remove filename from uploaded list on error (store-specific)
+        try {
+          // 1. Ensure store exists for this session (in case it was created during the failed attempt)
+          const storeId = await ensureStoreExists(currentSession.id);
+          const storeUploads = uploadedFilenamesRef.current.get(storeId);
+          if (storeUploads) {
+            storeUploads.delete(actualFilename);
+          }
+        } catch (storeError) {
+          logger.warn('Failed to clean up upload tracking on error', {
+            filename: actualFilename,
+            storeError,
+          });
+        }
 
         const errorMsg = error instanceof Error ? error.message : String(error);
 
@@ -476,11 +610,13 @@ export const ResourceAttachmentProvider: React.FC<
             filename: actualFilename,
             sessionId: currentSession?.id,
             error: errorMsg,
-            filesInCurrentSession: files.length,
+            filesInCurrentSession: sessionFiles.length,
           });
 
           // Check if we already have this file in our current session's state
-          const existingFile = files.find((f) => f.filename === actualFilename);
+          const existingFile = sessionFiles.find(
+            (f) => f.filename === actualFilename,
+          );
           if (existingFile) {
             logger.info('Returning existing file from current session', {
               contentId: existingFile.contentId,
@@ -490,9 +626,9 @@ export const ResourceAttachmentProvider: React.FC<
             return existingFile;
           }
 
-          // File exists globally but not in current session - inform user
+          // File exists in another session but not in current session - inform user
           throw new Error(
-            `이 파일은 다른 세션에서 이미 업로드되었습니다. 같은 내용의 파일은 한 번만 업로드할 수 있습니다. 파일명: "${actualFilename}"`,
+            `This file content has already been uploaded in the current session. The same content can only be uploaded once within the same session. File: "${actualFilename}"`,
           );
         }
 
@@ -521,10 +657,11 @@ export const ResourceAttachmentProvider: React.FC<
           blobCleanup();
         }
         setIsLoading(false);
+        setIsFileOperationInProgress(false);
       }
     },
     [
-      files,
+      sessionFiles,
       extractFilenameFromUrl,
       convertToBlobUrl,
       server,
@@ -534,29 +671,75 @@ export const ResourceAttachmentProvider: React.FC<
     ],
   );
 
+  // Batch file adding to avoid race conditions
+  const addFilesBatch = useCallback(
+    async (
+      files: { url: string; mimeType: string; filename?: string }[],
+    ): Promise<AttachmentReference[]> => {
+      if (files.length === 0) return [];
+
+      logger.info('Starting batch file upload', { count: files.length });
+      setIsFileOperationInProgress(true);
+
+      try {
+        // Add all files individually (they'll be added to pending state)
+        const results: AttachmentReference[] = [];
+
+        for (const file of files) {
+          try {
+            const result = await addFile(
+              file.url,
+              file.mimeType,
+              file.filename,
+            );
+            results.push(result);
+          } catch (error) {
+            logger.error('Failed to add file in batch', {
+              filename: file.filename,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            // Continue with other files even if one fails
+          }
+        }
+
+        // After all files are processed, do a single refresh to sync state
+        if (results.length > 0) {
+          logger.info('Batch upload completed, refreshing session files', {
+            successful: results.length,
+            total: files.length,
+          });
+          await refreshSessionFiles();
+        }
+
+        return results;
+      } finally {
+        setIsFileOperationInProgress(false);
+      }
+    },
+    [addFile, refreshSessionFiles],
+  );
+
   const removeFile = useCallback(
     async (ref: AttachmentReference): Promise<void> => {
+      setIsFileOperationInProgress(true);
       try {
         logger.debug('Removing file attachment', {
           contentId: ref.contentId,
           filename: ref.filename,
         });
 
-        setFiles((prevFiles) =>
-          prevFiles.filter((file) => file.contentId !== ref.contentId),
-        );
-
-        // Remove from uploaded filenames ref as well
-        uploadedFilenamesRef.current = uploadedFilenamesRef.current.filter(
-          (f) => f !== ref.filename,
-        );
+        // Remove from uploaded filenames ref for the specific store
+        const storeUploads = uploadedFilenamesRef.current.get(ref.storeId);
+        if (storeUploads) {
+          storeUploads.delete(ref.filename);
+        }
 
         logger.info('File attachment removed successfully', {
           filename: ref.filename,
           contentId: ref.contentId,
         });
 
-        // Refresh session files after removal
+        // Refresh session files after removal to reflect the change
         await refreshSessionFiles();
       } catch (error) {
         logger.error('Failed to remove file attachment', {
@@ -578,50 +761,67 @@ export const ResourceAttachmentProvider: React.FC<
         throw new Error(
           `Failed to remove file: ${error instanceof Error ? error.message : String(error)}`,
         );
+      } finally {
+        setIsFileOperationInProgress(false);
       }
     },
     [refreshSessionFiles],
   );
 
   const clearFiles = useCallback(() => {
-    logger.debug('Clearing all file attachments', { count: files.length });
-    setFiles([]);
+    logger.debug('Clearing all file attachments', {
+      sessionCount: sessionFiles.length,
+      pendingCount: pendingFiles.length,
+    });
+    // Clear both pending and session files from UI state
+    setPendingFiles([]);
+    setSessionFiles([]);
     // Clear uploaded filenames ref as well
-    uploadedFilenamesRef.current = [];
+    uploadedFilenamesRef.current.clear();
     logger.info('All file attachments cleared');
+  }, [sessionFiles.length, pendingFiles.length]);
 
-    // Refresh session files after clearing
-    refreshSessionFiles();
-  }, [files.length, refreshSessionFiles]);
+  const clearPendingFiles = useCallback(() => {
+    logger.debug('Clearing pending file attachments', {
+      count: pendingFiles.length,
+    });
+    setPendingFiles([]);
+    logger.info('Pending file attachments cleared');
+  }, [pendingFiles.length]);
 
   const getFileById = useCallback(
     (id: string): AttachmentReference | undefined => {
-      return files.find((file) => file.contentId === id);
+      return sessionFiles.find((file) => file.contentId === id);
     },
-    [files],
+    [sessionFiles],
   );
 
   const contextValue: ResourceAttachmentContextType = useMemo(
     () => ({
-      files,
+      files: sessionFiles, // Use sessionFiles as the single source of truth
       addFile,
+      addFilesBatch,
       removeFile,
       clearFiles,
+      clearPendingFiles,
       isLoading,
       getFileById,
       sessionFiles,
+      pendingFiles,
       isSessionFilesLoading,
       sessionFilesError,
       refreshSessionFiles,
     }),
     [
-      files,
+      sessionFiles,
       addFile,
+      addFilesBatch,
       removeFile,
       clearFiles,
+      clearPendingFiles,
       isLoading,
       getFileById,
-      sessionFiles,
+      pendingFiles,
       isSessionFilesLoading,
       sessionFilesError,
       refreshSessionFiles,

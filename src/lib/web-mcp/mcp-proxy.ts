@@ -1,19 +1,19 @@
 /**
  * 🌐 Web Worker MCP Proxy
  *
- * Provides a clean interface for communicating with MCP servers running in web workers.
- * Handles message passing, error handling, and timeout management.
+ * Provides a clean, robust interface for communicating with MCP servers
+ * running in web workers. It features lazy initialization, ensuring that the
+ * worker is started automatically on the first method call.
  */
-
 import { createId } from '@paralleldrive/cuid2';
 import {
   WebMCPMessage,
-  WebMCPResponse,
   WebMCPProxyConfig,
   MCPTool,
+  MCPResponse,
+  MCPTextContent,
 } from '../mcp-types';
 import { getLogger } from '../logger';
-import { withTimeout } from '../retry-utils';
 
 const logger = getLogger('WebMCPProxy');
 
@@ -38,23 +38,16 @@ export class WebMCPProxy {
       timeout: 30000, // 30 seconds default
       ...config,
     };
-
-    logger.debug('WebMCPProxy created', {
-      workerType: this.config.workerInstance ? 'instance' : 'path',
-      timeout: this.config.timeout,
-    });
   }
 
   /**
-   * Initialize the worker and set up message handling
+   * Explicitly initializes the proxy. This method is idempotent and safe to call multiple times.
+   * If not called manually, it will be invoked automatically by the first API call.
    */
   async initialize(): Promise<void> {
     if (this.isInitialized) {
-      logger.debug('WebMCP proxy already initialized');
       return;
     }
-
-    // Prevent multiple concurrent initializations
     if (this.initializationPromise) {
       return this.initializationPromise;
     }
@@ -69,29 +62,20 @@ export class WebMCPProxy {
 
   private async _doInitialize(): Promise<void> {
     try {
-      logger.info('Initializing WebMCP proxy');
-
-      // Create worker from instance or path
+      logger.info('Initializing WebMCP proxy...');
       if (this.config.workerInstance) {
         this.worker = this.config.workerInstance;
-        logger.debug('Using provided worker instance');
       } else if (this.config.workerPath) {
-        logger.debug('Creating worker from path');
         this.worker = new Worker(this.config.workerPath, { type: 'module' });
       } else {
         throw new Error('Either workerInstance or workerPath must be provided');
       }
 
-      if (!this.worker) {
-        throw new Error('Worker creation failed');
-      }
-
-      // Setup event handlers
       this.worker.onmessage = this.handleWorkerMessage.bind(this);
       this.worker.onerror = this.handleWorkerError.bind(this);
 
-      // Test worker responsiveness with retry
-      await this.ping();
+      // Ping the worker to confirm it's responsive.
+      await this.sendMessage<string>({ type: 'ping' }, true);
 
       this.isInitialized = true;
       logger.info('WebMCP proxy initialized successfully');
@@ -101,46 +85,54 @@ export class WebMCPProxy {
       logger.error('Failed to initialize WebMCP proxy', {
         error: errorMessage,
       });
-
-      this.cleanup();
+      this.cleanup(); // Cleanup on initialization failure
       throw new Error(`Failed to initialize WebMCP proxy: ${errorMessage}`);
     }
   }
 
   /**
-   * Clean up resources
+   * Ensures the proxy is initialized. If not, it starts the initialization
+   * and waits for it to complete.
+   */
+  private async ensureInitialization(): Promise<void> {
+    // The public `initialize` method is already idempotent.
+    await this.initialize();
+  }
+
+  /**
+   * Cleans up resources, terminates the worker, and rejects all pending requests.
    */
   cleanup(): void {
     logger.debug('Cleaning up WebMCP proxy', {
       pendingRequests: this.pendingRequests.size,
     });
-
-    // Reject all pending requests
     for (const [, { reject, timeout }] of this.pendingRequests.entries()) {
       clearTimeout(timeout);
       reject(new Error('Worker terminated'));
     }
     this.pendingRequests.clear();
 
-    // Terminate worker
     if (this.worker) {
       this.worker.terminate();
       this.worker = null;
     }
-
     this.isInitialized = false;
   }
 
   /**
-   * Send a message to the worker and wait for response
+   * The core communication method. Sends a message to the worker and awaits a response.
    */
   private async sendMessage<T = unknown>(
     message: Omit<WebMCPMessage, 'id'>,
+    isInitPing = false,
   ): Promise<T> {
-    if (!this.worker || !this.isInitialized) {
-      throw new Error('WebMCP proxy not initialized');
+    // For the special ping inside `_doInitialize`, skip the full initialization check.
+    if (!isInitPing) {
+      await this.ensureInitialization();
     }
 
+    // At this point, the worker object must exist.
+    const worker = this.worker!;
     const id = createId();
     const fullMessage: WebMCPMessage = { ...message, id };
 
@@ -156,52 +148,73 @@ export class WebMCPProxy {
         timeout,
       });
 
-      logger.debug('Sending message to worker', {
-        type: message.type,
-        id,
-      });
-
-      this.worker!.postMessage(fullMessage);
+      worker.postMessage(fullMessage);
     });
   }
 
-  /**
-   * Handle incoming messages from worker
-   */
-  private handleWorkerMessage(event: MessageEvent<WebMCPResponse>): void {
+  private handleWorkerMessage(event: MessageEvent<MCPResponse>): void {
     const response = event.data;
 
+    logger.debug('Received worker message', {
+      hasResponse: !!response,
+      responseId: response?.id,
+      responseKeys: response ? Object.keys(response) : [],
+      hasError: response && 'error' in response,
+      hasResult: response && 'result' in response,
+      errorStructure: response?.error ? Object.keys(response.error) : undefined,
+    });
+
     if (!response || response.id === undefined || response.id === null) {
-      logger.warn('Invalid response from worker', { response });
+      logger.warn('Invalid worker response - missing id', { response });
       return;
     }
 
-    const responseId = String(response.id);
-    const pending = this.pendingRequests.get(responseId);
+    const pending = this.pendingRequests.get(String(response.id));
     if (!pending) {
-      logger.warn('Response for unknown request', { id: response.id });
+      logger.warn('No pending request found for response', {
+        responseId: response.id,
+      });
       return;
     }
 
-    // Clean up
     clearTimeout(pending.timeout);
-    this.pendingRequests.delete(responseId);
+    this.pendingRequests.delete(String(response.id));
 
-    // Handle response
-    if (response.error) {
-      pending.reject(new Error(response.error));
-    } else {
-      pending.resolve(response.result);
+    try {
+      if (response.error) {
+        const errorMessage =
+          typeof response.error === 'string'
+            ? response.error
+            : response.error.message || 'Unknown error';
+        logger.error('Worker returned error', {
+          responseId: response.id,
+          error: response.error,
+          errorMessage,
+        });
+        pending.reject(new Error(errorMessage));
+      } else {
+        logger.debug('Worker returned success', {
+          responseId: response.id,
+          hasResult: !!response.result,
+        });
+        pending.resolve(response);
+      }
+    } catch (handleError) {
+      logger.error('Error handling worker message', {
+        responseId: response.id,
+        handleError,
+        response,
+      });
+      pending.reject(
+        handleError instanceof Error
+          ? handleError
+          : new Error(String(handleError)),
+      );
     }
   }
 
-  /**
-   * Handle worker errors
-   */
   private handleWorkerError(error: ErrorEvent): void {
     logger.error('Worker error', { message: error.message });
-
-    // Reject all pending requests
     for (const [, { reject, timeout }] of this.pendingRequests.entries()) {
       clearTimeout(timeout);
       reject(new Error(`Worker error: ${error.message}`));
@@ -209,141 +222,75 @@ export class WebMCPProxy {
     this.pendingRequests.clear();
   }
 
-  /**
-   * Test worker responsiveness with retry logic
-   */
-
-  // pingWithRetry 제거됨
-
-  /**
-   * Test worker responsiveness
-   */
   async ping(): Promise<string> {
-    if (!this.worker) {
-      throw new Error('Worker not available');
+    const response = await this.sendMessage<MCPResponse>({ type: 'ping' });
+    // Extract text content from MCPResponse
+    if (response.result?.content?.[0]?.type === 'text') {
+      return (response.result.content[0] as MCPTextContent).text;
     }
-
-    const id = createId();
-    const message: WebMCPMessage = { type: 'ping', id };
-
-    const pingPromise = new Promise<string>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        this.pendingRequests.delete(id);
-        reject(new Error(`Ping timeout after ${this.config.timeout}ms`));
-      }, this.config.timeout);
-
-      this.pendingRequests.set(id, {
-        resolve: resolve as (value: unknown) => void,
-        reject,
-        timeout,
-      });
-
-      this.worker!.postMessage(message);
-    });
-
-    // Apply timeout wrapper for additional safety
-    return withTimeout(pingPromise, this.config.timeout);
+    return 'pong';
   }
 
-  /**
-   * Load an MCP server module in the worker with retry
-   */
   async loadServer(serverName: string): Promise<{
     name: string;
     description?: string;
     version?: string;
     toolCount: number;
   }> {
-    const result = await this.sendMessage<{
-      name: string;
-      description?: string;
-      version?: string;
-      toolCount: number;
-    }>({
+    const response = await this.sendMessage<MCPResponse>({
       type: 'loadServer',
       serverName,
     });
-    logger.info('MCP server loaded', { serverName, result });
-    return result;
+    // Extract JSON content from MCPResponse
+    if (response.result?.content?.[0]?.type === 'text') {
+      return JSON.parse((response.result.content[0] as MCPTextContent).text);
+    }
+    throw new Error('Invalid loadServer response format');
   }
 
-  /**
-   * List all available tools from loaded servers with retry
-   */
   async listAllTools(): Promise<MCPTool[]> {
-    const tools = await this.sendMessage<MCPTool[]>({ type: 'listTools' });
-    logger.debug('Listed all tools', { toolCount: tools.length });
-    return tools;
+    const response = await this.sendMessage<MCPResponse>({ type: 'listTools' });
+    // Extract JSON content from MCPResponse
+    if (response.result?.content?.[0]?.type === 'text') {
+      return JSON.parse((response.result.content[0] as MCPTextContent).text);
+    }
+    return [];
   }
 
-  /**
-   * List tools from a specific server with retry
-   */
   async listTools(serverName: string): Promise<MCPTool[]> {
-    const tools = await this.sendMessage<MCPTool[]>({
+    const response = await this.sendMessage<MCPResponse>({
       type: 'listTools',
       serverName,
     });
-    logger.debug('Listed tools for server', {
-      serverName,
-      toolCount: tools.length,
-    });
-    return tools;
+    // Extract JSON content from MCPResponse
+    if (response.result?.content?.[0]?.type === 'text') {
+      return JSON.parse((response.result.content[0] as MCPTextContent).text);
+    }
+    return [];
   }
 
-  /**
-   * Call a tool on an MCP server with retry
-   */
   async callTool(
     serverName: string,
     toolName: string,
     args: Record<string, unknown> = {},
-  ): Promise<WebMCPResponse> {
-    logger.debug('Calling tool', { serverName, toolName, args });
-    const result = await this.sendMessage<WebMCPResponse>({
+  ): Promise<MCPResponse> {
+    return this.sendMessage<MCPResponse>({
       type: 'callTool',
       serverName,
       toolName,
       args,
     });
-    logger.debug('Tool call completed', { serverName, toolName, result });
-
-    // Log full response for debugging purposes
-    logger.info('callTool response from worker', {
-      serverName,
-      toolName,
-      result,
-    });
-
-    return result;
   }
 
   async getServiceContext(serverName: string): Promise<string> {
-    logger.debug('Getting service context', { serverName });
-    const result = await this.sendMessage<string>({
+    const response = await this.sendMessage<MCPResponse>({
       type: 'getServiceContext',
       serverName,
     });
-    logger.debug('Service context received', { serverName, result });
-    return result;
+    // Extract text content from MCPResponse
+    if (response.result?.content?.[0]?.type === 'text') {
+      return (response.result.content[0] as MCPTextContent).text;
+    }
+    return '';
   }
-
-  /**
-   * Get proxy status
-   */
-  getStatus() {
-    return {
-      initialized: this.isInitialized,
-      pendingRequests: this.pendingRequests.size,
-      workerType: this.config.workerInstance ? 'instance' : 'path',
-      hasWorker: !!this.worker,
-    };
-  }
-}
-
-/**
- * Factory function for creating WebMCP proxy instances
- */
-export function createWebMCPProxy(config: WebMCPProxyConfig): WebMCPProxy {
-  return new WebMCPProxy(config);
 }

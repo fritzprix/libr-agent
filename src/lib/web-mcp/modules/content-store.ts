@@ -1,4 +1,5 @@
-import type { WebMCPServer, MCPTool } from '@/lib/mcp-types';
+import type { WebMCPServer, MCPTool, MCPResponse } from '@/lib/mcp-types';
+import { normalizeToolResult } from '@/lib/mcp-types';
 import type { JSONSchemaObject } from '@/lib/mcp-types'; // ADDED: JSON 스키마 타입을 명시적으로 가져옵니다.
 import type { ServiceContextOptions } from '@/features/tools';
 import {
@@ -17,6 +18,7 @@ import {
 import { WebMCPServerProxy } from '@/hooks/use-web-mcp-server';
 import { ParserFactory } from './parsers/parser-factory';
 import { ParserError } from './parsers/index';
+import { computeContentHash } from '@/lib/content-hash';
 
 // Worker-safe logger that falls back to console if Tauri logger is not available
 const createWorkerSafeLogger = (context: string) => {
@@ -685,10 +687,21 @@ async function addContent(input: AddContentInput): Promise<AddContentOutput> {
   try {
     logger.info('Starting addContent', {
       storeId: input.storeId,
+      storeIdType: typeof input.storeId,
       hasFileUrl: !!input.fileUrl,
       hasContent: !!input.content,
       metadata: input.metadata,
+      inputKeys: Object.keys(input),
     });
+
+    // Validate storeId
+    if (!input.storeId || typeof input.storeId !== 'string') {
+      throw new FileStoreError(
+        `Invalid storeId: expected string, got ${typeof input.storeId} (${input.storeId})`,
+        'INVALID_STORE_ID',
+        { storeId: input.storeId, storeIdType: typeof input.storeId },
+      );
+    }
 
     const store = await dbService.fileStores.read(input.storeId);
     if (!store) {
@@ -738,7 +751,43 @@ async function addContent(input: AddContentInput): Promise<AddContentOutput> {
       );
     }
 
-    const contentId = `content_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    // Calculate content hash for duplicate detection
+    const contentHash = await computeContentHash(finalContent);
+    logger.info('Content hash calculated', {
+      contentHash,
+      contentLength: finalContent.length,
+    });
+
+    // Check for duplicate content in the same store
+    const existingContent = await dbService.fileContents.findByHashAndStore(
+      contentHash,
+      input.storeId,
+    );
+    if (existingContent) {
+      logger.info('Duplicate content found, returning existing', {
+        existingContentId: existingContent.id,
+        filename: existingContent.filename,
+        contentHash,
+      });
+
+      // Return existing content information without creating new entries
+      const existingChunks = await dbUtils.getFileChunksByContent(
+        existingContent.id,
+      );
+      return {
+        storeId: input.storeId,
+        contentId: existingContent.id,
+        filename: existingContent.filename,
+        mimeType: existingContent.mimeType,
+        size: existingContent.size,
+        lineCount: existingContent.lineCount,
+        preview: existingContent.summary,
+        chunkCount: existingChunks.length,
+        uploadedAt: existingContent.uploadedAt,
+      };
+    }
+
+    const contentId = `content_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
     const lines = finalContent.split('\n');
     const summary = lines.slice(0, 20).join('\n');
 
@@ -752,6 +801,7 @@ async function addContent(input: AddContentInput): Promise<AddContentOutput> {
       content: finalContent,
       lineCount: lines.length,
       summary,
+      contentHash,
     };
 
     const chunksData = textChunker.chunkText(finalContent);
@@ -897,20 +947,35 @@ const fileStoreServer: WebMCPServer = {
   version: '1.1.0',
   description: 'File attachment and semantic search system using MCP protocol',
   tools,
-  async callTool(name: string, args: unknown): Promise<unknown> {
+  async callTool(name: string, args: unknown): Promise<MCPResponse> {
     logger.debug('File store tool called', { name, args });
     if (!searchEngine.isReady()) await searchEngine.initialize();
     switch (name) {
       case 'createStore':
-        return createStore(args as CreateStoreInput);
+        return normalizeToolResult(
+          await createStore(args as CreateStoreInput),
+          'createStore',
+        );
       case 'addContent':
-        return addContent(args as AddContentInput);
+        return normalizeToolResult(
+          await addContent(args as AddContentInput),
+          'addContent',
+        );
       case 'listContent':
-        return listContent(args as ListContentInput);
+        return normalizeToolResult(
+          await listContent(args as ListContentInput),
+          'listContent',
+        );
       case 'readContent':
-        return readContent(args as ReadContentInput);
+        return normalizeToolResult(
+          await readContent(args as ReadContentInput),
+          'readContent',
+        );
       case 'similaritySearch':
-        return similaritySearch(args as SimilaritySearchInput);
+        return normalizeToolResult(
+          await similaritySearch(args as SimilaritySearchInput),
+          'similaritySearch',
+        );
       default:
         throw new Error(`Unknown tool: ${name}`);
     }
@@ -919,11 +984,17 @@ const fileStoreServer: WebMCPServer = {
     try {
       const { sessionId } = options || {};
 
-      if (!sessionId) {
-        return '# Attached Files\nNo active session provided.';
+      if (!sessionId || typeof sessionId !== 'string') {
+        logger.debug(
+          'No valid sessionId in getServiceContext - session may be transitioning',
+          {
+            sessionId,
+            sessionIdType: typeof sessionId,
+          },
+        );
+        return '# Attached Files\nNo active session available.';
       }
 
-      // Find the store associated with this session
       const sessionStore = await dbService.sessions.read(sessionId);
       if (!sessionStore?.storeId) {
         return '# Attached Files\nNo files currently attached to this session.';

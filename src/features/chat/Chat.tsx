@@ -31,8 +31,6 @@ import ToolsModal from '../tools/ToolsModal';
 import MessageBubble from './MessageBubble';
 import { TimeLocationSystemPrompt } from '../prompts/TimeLocationSystemPrompt';
 import { useWebMCPServer } from '@/hooks/use-web-mcp-server';
-// import { useWebMCPServer } from '@/hooks/use-web-mcp-server';
-// import { ContentStoreServer } from '@/lib/web-mcp/modules/content-store';
 
 const logger = getLogger('Chat');
 
@@ -430,9 +428,13 @@ function ChatStatusBar({
   );
 }
 
-// Chat Attached Files component - now uses ResourceAttachmentContext
+// Chat Attached Files component - shows only pending files (files being attached)
 function ChatAttachedFiles() {
-  const { files: attachedFiles, removeFile } = useResourceAttachment();
+  const { pendingFiles, removeFile } = useResourceAttachment();
+
+  // Show only pending files (files being attached but not yet confirmed by submit)
+  // Session files are already saved and don't need to be shown in the attachment area
+  const attachedFiles = pendingFiles;
 
   const removeAttachedFile = React.useCallback(
     (file: AttachmentReference) => {
@@ -489,12 +491,17 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
   const { currentAssistant } = useAssistantContext();
   const { submit, isLoading, cancel } = useChatContext();
   const {
-    files: attachedFiles,
+    pendingFiles,
     addFile,
+    addFilesBatch,
     removeFile,
-    clearFiles,
+    clearPendingFiles,
     isLoading: isAttachmentLoading,
   } = useResourceAttachment();
+
+  // Use only pending files for submission to avoid re-submitting already saved files
+  // Session files are already saved and accessible; only newly attached files should be submitted
+  const attachedFiles = pendingFiles;
   const rustBackend = useRustBackend();
 
   // Handle drag and drop events from Tauri
@@ -534,7 +541,28 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
     };
   }, []);
 
-  // Process files with actual file operations
+  // Helper function to determine MIME type based on file extension
+  const getMimeType = useCallback((filename: string): string => {
+    const ext = filename.toLowerCase().split('.').pop();
+    switch (ext) {
+      case 'txt':
+        return 'text/plain';
+      case 'md':
+        return 'text/markdown';
+      case 'json':
+        return 'application/json';
+      case 'pdf':
+        return 'application/pdf';
+      case 'docx':
+        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      case 'xlsx':
+        return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      default:
+        return 'application/octet-stream';
+    }
+  }, []);
+
+  // Process files with batch operations to avoid race conditions
   const processFileDrop = useCallback(
     async (filePaths: string[]) => {
       if (!currentSession) {
@@ -542,10 +570,21 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
         return;
       }
 
-      logger.info('Files dropped:', filePaths);
+      logger.info('Files dropped, processing batch:', {
+        count: filePaths.length,
+        paths: filePaths,
+      });
 
+      // Process all files and prepare for batch upload
+      const filesToUpload: {
+        url: string;
+        mimeType: string;
+        filename: string;
+        cleanup: () => void;
+      }[] = [];
+
+      // First pass: validate and prepare all files
       for (const filePath of filePaths) {
-        let blobUrl = '';
         try {
           // Extract filename from path
           const filename =
@@ -560,7 +599,7 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
             continue;
           }
 
-          logger.debug(`Processing dropped file`, {
+          logger.debug(`Preparing dropped file`, {
             filePath,
             filename,
             sessionId: currentSession?.id,
@@ -572,41 +611,24 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
           // Convert number array to Uint8Array and create a blob
           const uint8Array = new Uint8Array(fileData);
           const blob = new Blob([uint8Array]);
-          blobUrl = URL.createObjectURL(blob);
-
-          // Determine MIME type based on file extension
-          const getMimeType = (filename: string): string => {
-            const ext = filename.toLowerCase().split('.').pop();
-            switch (ext) {
-              case 'txt':
-                return 'text/plain';
-              case 'md':
-                return 'text/markdown';
-              case 'json':
-                return 'application/json';
-              case 'pdf':
-                return 'application/pdf';
-              case 'docx':
-                return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-              case 'xlsx':
-                return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-              default:
-                return 'application/octet-stream';
-            }
-          };
+          const blobUrl = URL.createObjectURL(blob);
 
           const mimeType = getMimeType(filename);
 
-          // Use the blob URL with the ResourceAttachmentContext
-          await addFile(blobUrl, mimeType, filename);
+          filesToUpload.push({
+            url: blobUrl,
+            mimeType,
+            filename,
+            cleanup: () => URL.revokeObjectURL(blobUrl),
+          });
 
-          logger.info(`Dropped file processed successfully`, {
+          logger.debug(`File prepared for batch upload`, {
             filename,
             filePath,
             mimeType,
           });
         } catch (error) {
-          logger.error(`Error processing dropped file ${filePath}:`, {
+          logger.error(`Error preparing dropped file ${filePath}:`, {
             filePath,
             sessionId: currentSession?.id,
             error:
@@ -622,15 +644,37 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
           alert(
             `Error processing file "${filePath}": ${error instanceof Error ? error.message : String(error)}`,
           );
+        }
+      }
+
+      // Second pass: batch upload all prepared files
+      if (filesToUpload.length > 0) {
+        try {
+          const batchFiles = filesToUpload.map((file) => ({
+            url: file.url,
+            mimeType: file.mimeType,
+            filename: file.filename,
+          }));
+
+          logger.info('Starting batch upload', { count: batchFiles.length });
+          const results = await addFilesBatch(batchFiles);
+
+          logger.info('Batch upload completed successfully', {
+            uploaded: results.length,
+            total: batchFiles.length,
+          });
+        } catch (error) {
+          logger.error('Batch upload failed:', error);
+          alert(
+            `Error uploading files: ${error instanceof Error ? error.message : String(error)}`,
+          );
         } finally {
-          // Clean up blob URL to prevent memory leaks
-          if (blobUrl) {
-            URL.revokeObjectURL(blobUrl);
-          }
+          // Clean up all blob URLs to prevent memory leaks
+          filesToUpload.forEach((file) => file.cleanup());
         }
       }
     },
-    [currentSession, addFile],
+    [currentSession, addFilesBatch, getMimeType, rustBackend],
   );
 
   // Handle dropped files with debounce to prevent duplicate events
@@ -680,8 +724,8 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
       };
 
       setInput('');
-      // Clear the attached files from the UI after submission.
-      clearFiles();
+      // Clear only pending files after submission - session files remain available
+      clearPendingFiles();
 
       try {
         await submit([userMessage]);
@@ -695,7 +739,7 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
       attachedFiles,
       currentAssistant,
       currentSession,
-      clearFiles,
+      clearPendingFiles,
       isLoading,
       cancel,
     ],
