@@ -14,6 +14,7 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 
 pub mod builtin;
+pub mod utils;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MCPServerConfig {

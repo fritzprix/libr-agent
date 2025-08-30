@@ -270,6 +270,7 @@ Tool details and usage instructions are provided separately.
         sessionId: currentSession?.id,
       });
     }
+    logger.info('service prompts : ', { prompts });
     return prompts.join('\n\n');
   }, [serviceEntries, availableTools.length, getCurrentSession]);
 

@@ -13,7 +13,7 @@ use super::{
     utils::constants::{DEFAULT_EXECUTION_TIMEOUT, MAX_CODE_SIZE, MAX_EXECUTION_TIMEOUT},
     BuiltinMCPServer,
 };
-use crate::mcp::{JSONSchema, JSONSchemaType, MCPError, MCPResponse, MCPTool};
+use crate::mcp::{utils::schema_builder::*, MCPError, MCPResponse, MCPTool};
 
 pub struct SandboxServer;
 
@@ -43,210 +43,102 @@ impl SandboxServer {
     }
 
     fn create_execute_python_tool() -> MCPTool {
+        let mut props = HashMap::new();
+        props.insert(
+            "code".to_string(),
+            string_prop_with_examples(
+                Some(1),
+                Some(MAX_CODE_SIZE as u32),
+                Some("Python code to execute"),
+                vec![json!("print('Hello, World!')")],
+            ),
+        );
+        props.insert(
+            "timeout".to_string(),
+            integer_prop_with_default(
+                Some(1),
+                Some(MAX_EXECUTION_TIMEOUT as i64),
+                DEFAULT_EXECUTION_TIMEOUT as i64,
+                Some("Timeout in seconds (default: 30)"),
+            ),
+        );
+
         MCPTool {
             name: "execute_python".to_string(),
             title: Some("Execute Python Code".to_string()),
             description: "Execute Python code in a sandboxed environment".to_string(),
-            input_schema: JSONSchema {
-                schema_type: JSONSchemaType::Object {
-                    properties: Some({
-                        let mut props = HashMap::new();
-                        props.insert(
-                            "code".to_string(),
-                            JSONSchema {
-                                schema_type: JSONSchemaType::String {
-                                    min_length: Some(1),
-                                    max_length: Some(MAX_CODE_SIZE as u32),
-                                    pattern: None,
-                                    format: None,
-                                },
-                                title: None,
-                                description: Some("Python code to execute".to_string()),
-                                default: None,
-                                examples: Some(vec![json!("print('Hello, World!')")]),
-                                enum_values: None,
-                                const_value: None,
-                            },
-                        );
-                        props.insert(
-                            "timeout".to_string(),
-                            JSONSchema {
-                                schema_type: JSONSchemaType::Integer {
-                                    minimum: Some(1),
-                                    maximum: Some(MAX_EXECUTION_TIMEOUT as i64),
-                                    exclusive_minimum: None,
-                                    exclusive_maximum: None,
-                                    multiple_of: None,
-                                },
-                                title: None,
-                                description: Some("Timeout in seconds (default: 30)".to_string()),
-                                default: Some(json!(DEFAULT_EXECUTION_TIMEOUT)),
-                                examples: None,
-                                enum_values: None,
-                                const_value: None,
-                            },
-                        );
-                        props
-                    }),
-                    required: Some(vec!["code".to_string()]),
-                    additional_properties: Some(false),
-                    min_properties: None,
-                    max_properties: None,
-                },
-                title: None,
-                description: None,
-                default: None,
-                examples: None,
-                enum_values: None,
-                const_value: None,
-            },
+            input_schema: object_schema(props, vec!["code".to_string()]),
             output_schema: None,
             annotations: None,
         }
     }
 
     fn create_execute_typescript_tool() -> MCPTool {
+        let mut props = HashMap::new();
+        props.insert(
+            "code".to_string(),
+            string_prop_with_examples(
+                Some(1),
+                Some(MAX_CODE_SIZE as u32),
+                Some("TypeScript code to execute"),
+                vec![json!("console.log('Hello, World!');")],
+            ),
+        );
+        props.insert(
+            "timeout".to_string(),
+            integer_prop_with_default(
+                Some(1),
+                Some(MAX_EXECUTION_TIMEOUT as i64),
+                DEFAULT_EXECUTION_TIMEOUT as i64,
+                Some("Timeout in seconds (default: 30)"),
+            ),
+        );
+
         MCPTool {
             name: "execute_typescript".to_string(),
             title: Some("Execute TypeScript Code".to_string()),
             description: "Execute TypeScript code in a sandboxed environment using ts-node"
                 .to_string(),
-            input_schema: JSONSchema {
-                schema_type: JSONSchemaType::Object {
-                    properties: Some({
-                        let mut props = HashMap::new();
-                        props.insert(
-                            "code".to_string(),
-                            JSONSchema {
-                                schema_type: JSONSchemaType::String {
-                                    min_length: Some(1),
-                                    max_length: Some(MAX_CODE_SIZE as u32),
-                                    pattern: None,
-                                    format: None,
-                                },
-                                title: None,
-                                description: Some("TypeScript code to execute".to_string()),
-                                default: None,
-                                examples: Some(vec![json!("console.log('Hello, World!');")]),
-                                enum_values: None,
-                                const_value: None,
-                            },
-                        );
-                        props.insert(
-                            "timeout".to_string(),
-                            JSONSchema {
-                                schema_type: JSONSchemaType::Integer {
-                                    minimum: Some(1),
-                                    maximum: Some(MAX_EXECUTION_TIMEOUT as i64),
-                                    exclusive_minimum: None,
-                                    exclusive_maximum: None,
-                                    multiple_of: None,
-                                },
-                                title: None,
-                                description: Some("Timeout in seconds (default: 30)".to_string()),
-                                default: Some(json!(DEFAULT_EXECUTION_TIMEOUT)),
-                                examples: None,
-                                enum_values: None,
-                                const_value: None,
-                            },
-                        );
-                        props
-                    }),
-                    required: Some(vec!["code".to_string()]),
-                    additional_properties: Some(false),
-                    min_properties: None,
-                    max_properties: None,
-                },
-                title: None,
-                description: None,
-                default: None,
-                examples: None,
-                enum_values: None,
-                const_value: None,
-            },
+            input_schema: object_schema(props, vec!["code".to_string()]),
             output_schema: None,
             annotations: None,
         }
     }
 
     fn create_execute_shell_tool() -> MCPTool {
+        let mut props = HashMap::new();
+        props.insert(
+            "command".to_string(),
+            string_prop_with_examples(
+                Some(1),
+                Some(1000),
+                Some("Shell command to execute"),
+                vec![json!("ls -la"), json!("grep -r 'pattern' .")],
+            ),
+        );
+        props.insert(
+            "timeout".to_string(),
+            integer_prop_with_default(
+                Some(1),
+                Some(300), // 5분 최대
+                30,
+                Some("Timeout in seconds (default: 30)"),
+            ),
+        );
+        props.insert(
+            "working_dir".to_string(),
+            string_prop(
+                Some(1),
+                Some(1000),
+                Some("Working directory for command execution (optional)"),
+            ),
+        );
+
         MCPTool {
             name: "execute_shell".to_string(),
             title: Some("Execute Shell Command".to_string()),
             description: "Execute a shell command in the current environment".to_string(),
-            input_schema: JSONSchema {
-                schema_type: JSONSchemaType::Object {
-                    properties: Some({
-                        let mut props = HashMap::new();
-                        props.insert(
-                            "command".to_string(),
-                            JSONSchema {
-                                schema_type: JSONSchemaType::String {
-                                    min_length: Some(1),
-                                    max_length: Some(1000),
-                                    pattern: None,
-                                    format: None,
-                                },
-                                title: None,
-                                description: Some("Shell command to execute".to_string()),
-                                default: None,
-                                examples: Some(vec![json!("ls -la"), json!("grep -r 'pattern' .")]),
-                                enum_values: None,
-                                const_value: None,
-                            },
-                        );
-                        props.insert(
-                            "timeout".to_string(),
-                            JSONSchema {
-                                schema_type: JSONSchemaType::Integer {
-                                    minimum: Some(1),
-                                    maximum: Some(300), // 5분 최대
-                                    exclusive_minimum: None,
-                                    exclusive_maximum: None,
-                                    multiple_of: None,
-                                },
-                                title: None,
-                                description: Some("Timeout in seconds (default: 30)".to_string()),
-                                default: Some(json!(30)),
-                                examples: None,
-                                enum_values: None,
-                                const_value: None,
-                            },
-                        );
-                        props.insert(
-                            "working_dir".to_string(),
-                            JSONSchema {
-                                schema_type: JSONSchemaType::String {
-                                    min_length: Some(1),
-                                    max_length: Some(1000),
-                                    pattern: None,
-                                    format: None,
-                                },
-                                title: None,
-                                description: Some(
-                                    "Working directory for command execution (optional)"
-                                        .to_string(),
-                                ),
-                                default: None,
-                                examples: None,
-                                enum_values: None,
-                                const_value: None,
-                            },
-                        );
-                        props
-                    }),
-                    required: Some(vec!["command".to_string()]),
-                    additional_properties: Some(false),
-                    min_properties: None,
-                    max_properties: None,
-                },
-                title: None,
-                description: None,
-                default: None,
-                examples: None,
-                enum_values: None,
-                const_value: None,
-            },
+            input_schema: object_schema(props, vec!["command".to_string()]),
             output_schema: None,
             annotations: None,
         }

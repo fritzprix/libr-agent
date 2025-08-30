@@ -20,6 +20,11 @@ export interface AttachmentReference {
   uploadedAt: string; // 업로드 시간 (ISO 8601)
   chunkCount?: number; // 청크 개수 (검색용)
   lastAccessedAt?: string; // 마지막 접근 시간
+  // For pending files only - used during upload process
+  originalUrl?: string; // Original URL or blob URL
+  originalPath?: string; // File system path (Tauri environment)
+  file?: File; // File object (browser environment)
+  blobCleanup?: () => void; // Cleanup function for blob URLs
 }
 
 export interface Message {

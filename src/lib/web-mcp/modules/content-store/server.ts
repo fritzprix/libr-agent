@@ -1,6 +1,6 @@
 import type { WebMCPServer, MCPTool, MCPResponse } from '@/lib/mcp-types';
 import { normalizeToolResult } from '@/lib/mcp-types';
-import type { JSONSchemaObject } from '@/lib/mcp-types'; // ADDED: JSON 스키마 타입을 명시적으로 가져옵니다.
+import type { JSONSchemaObject } from '@/lib/mcp-types';
 import type { ServiceContextOptions } from '@/features/tools';
 import {
   dbService,
@@ -10,36 +10,14 @@ import {
   FileStore,
 } from '@/lib/db';
 import { AttachmentReference } from '@/models/chat';
-import {
-  ISearchEngine,
-  SearchOptions,
-  SearchResult,
-} from '@/models/search-engine';
+import type { SearchResult } from '@/models/search-engine';
 import { WebMCPServerProxy } from '@/hooks/use-web-mcp-server';
-import { ParserFactory } from './parsers/parser-factory';
-import { ParserError } from './parsers/index';
 import { computeContentHash } from '@/lib/content-hash';
+import { BM25SearchEngine } from '../bm25/bm25-search-engine';
 
-// Worker-safe logger that falls back to console if Tauri logger is not available
-const createWorkerSafeLogger = (context: string) => {
-  // Fallback to console logger for Worker environment
-  return {
-    debug: (message: string, data?: unknown) => {
-      console.log(`[${context}][DEBUG] ${message}`, data || '');
-    },
-    info: (message: string, data?: unknown) => {
-      console.log(`[${context}][INFO] ${message}`, data || '');
-    },
-    warn: (message: string, data?: unknown) => {
-      console.warn(`[${context}][WARN] ${message}`, data || '');
-    },
-    error: (message: string, data?: unknown) => {
-      console.error(`[${context}][ERROR] ${message}`, data || '');
-    },
-  };
-};
-
-const logger = createWorkerSafeLogger('content-store');
+// Import from submodules
+import { logger } from './logger';
+import { parseRichFile } from './parser';
 
 // File size limits (in bytes)
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
@@ -63,7 +41,6 @@ class StoreNotFoundError extends FileStoreError {
   }
 }
 
-// FIX: readContent 함수에서 사용되므로 삭제하지 않습니다.
 class ContentNotFoundError extends FileStoreError {
   constructor(contentId: string, storeId?: string) {
     super(`Content not found: ${contentId}`, 'CONTENT_NOT_FOUND', {
@@ -73,7 +50,6 @@ class ContentNotFoundError extends FileStoreError {
   }
 }
 
-// FIX: readContent 함수에서 사용되므로 삭제하지 않습니다.
 class InvalidRangeError extends FileStoreError {
   constructor(fromLine: number, toLine: number, totalLines: number) {
     super(
@@ -91,109 +67,49 @@ interface ParseResult {
   size: number;
 }
 
-// Remove old parsing functions and use the new ParserFactory
-async function parseRichFile(file: File): Promise<string> {
-  try {
-    logger.info('Starting file parsing', {
-      filename: file.name,
-      size: file.size,
-      type: file.type,
-    });
-
-    const result = await ParserFactory.parseFile(file);
-
-    logger.info('File parsing completed', {
-      filename: file.name,
-      contentLength: result.length,
-      preview: result.substring(0, 200) + (result.length > 200 ? '...' : ''),
-    });
-
-    return result;
-  } catch (error) {
-    logger.error('File parsing failed', {
-      filename: file.name,
-      error:
-        error instanceof Error
-          ? {
-              name: error.name,
-              message: error.message,
-              stack: error.stack,
-            }
-          : error,
-    });
-
-    if (error instanceof ParserError) {
-      throw error;
-    }
-    throw error;
-  }
+// Tool input/output interfaces
+export interface CreateStoreInput {
+  metadata?: { name?: string; description?: string; sessionId?: string };
 }
-
-async function parseFileFromUrl(
-  fileUrl: string,
-  metadata?: AddContentInput['metadata'],
-): Promise<ParseResult> {
-  try {
-    const response = await fetch(fileUrl);
-    if (!response.ok) {
-      throw new FileStoreError('Failed to fetch blob URL', 'FETCH_FAILED', {
-        fileUrl,
-        status: response.status,
-      });
-    }
-    const blob = await response.blob();
-
-    // Validate file size
-    if (blob.size > MAX_FILE_SIZE) {
-      throw new FileStoreError(
-        `File size exceeds limit: ${blob.size} bytes (max: ${MAX_FILE_SIZE})`,
-        'FILE_TOO_LARGE',
-        { fileSize: blob.size, maxSize: MAX_FILE_SIZE },
-      );
-    }
-
-    const filename = metadata?.filename || 'unknown_file';
-    const file = new File([blob], filename, { type: blob.type });
-
-    const content = await parseRichFile(file);
-
-    // Validate content length
-    if (content.length > MAX_CONTENT_LENGTH) {
-      throw new FileStoreError(
-        `Content too large: ${content.length} characters (max: ${MAX_CONTENT_LENGTH})`,
-        'CONTENT_TOO_LARGE',
-        { contentLength: content.length, maxLength: MAX_CONTENT_LENGTH },
-      );
-    }
-
-    return {
-      content,
-      filename: file.name,
-      mimeType: file.type,
-      size: file.size,
-    };
-  } catch (error) {
-    logger.error('Failed to parse file from URL', error);
-    if (error instanceof FileStoreError) throw error;
-    throw new FileStoreError('File parsing failed', 'PARSE_FAILED', {
-      fileUrl,
-      originalError: error instanceof Error ? error.message : String(error),
-    });
-  }
+export interface CreateStoreOutput {
+  storeId: string;
+  createdAt: Date;
 }
-
-// FIX: BM25 라이브러리가 반환하는 튜플 형태에 맞게 타입 수정 (TS2488 에러 해결)
-type BM25SearchResult = [string, number];
-
-interface LocalBM25Instance {
-  defineConfig: (config: object) => void;
-  addDoc: (doc: { id: string; text: string }) => void;
-  consolidate: () => void;
-  search: (query: string) => BM25SearchResult[];
+export interface AddContentInput {
+  storeId: string;
+  fileUrl?: string;
+  content?: string;
+  metadata?: {
+    filename?: string;
+    mimeType?: string;
+    size?: number;
+    uploadedAt?: string;
+  };
 }
+export interface AddContentOutput
+  extends Omit<AttachmentReference, 'storeId' | 'contentId' | 'uploadedAt'> {
+  storeId: string;
+  contentId: string;
+  chunkCount: number;
+  uploadedAt: Date;
+}
+export interface ListContentInput {
+  storeId: string;
+  pagination?: { offset?: number; limit?: number };
+}
+export interface ReadContentInput {
+  storeId: string;
+  contentId: string;
+  lineRange: { fromLine: number; toLine?: number };
+}
+export interface SimilaritySearchInput {
+  storeId: string;
+  query: string;
+  options?: { topN?: number; threshold?: number };
+}
+export type ContentSummary = AttachmentReference;
 
 class TextChunker {
-  // ... (TextChunker implementation remains the same)
   private readonly CHUNK_SIZE = 500; // characters
   private readonly OVERLAP_SIZE = 50; // characters
   private readonly MIN_CHUNK_SIZE = 100; // minimum chunk size
@@ -255,7 +171,7 @@ class TextChunker {
   }
 
   private splitIntoSentences(text: string): string[] {
-    const sentences = text.match(/[^.!?]+[.!?]+["]?(\s+|$)/g);
+    const sentences = text.match(/[^.!?]+[.!?]+["']?(\s+|$)/g);
     if (sentences) {
       return sentences.map((s) => s.trim()).filter(Boolean);
     }
@@ -289,232 +205,60 @@ class TextChunker {
   }
 }
 
-class BM25SearchEngine implements ISearchEngine {
-  private bm25Indexes = new Map<string, LocalBM25Instance>();
-  private chunkMappings = new Map<string, Map<string, FileChunk>>();
-  private indexLastUsed = new Map<string, number>();
-  private isInitialized = false;
-  private readonly MAX_INDEXES = 10;
-
-  async initialize(): Promise<void> {
-    if (this.isInitialized) return;
-    logger.info('Initializing BM25 search engine');
-    this.isInitialized = true;
-  }
-
-  async addToIndex(storeId: string, newChunks: FileChunk[]): Promise<void> {
-    if (!this.isInitialized) await this.initialize();
-
-    let bm25 = this.bm25Indexes.get(storeId);
-    let chunkMapping = this.chunkMappings.get(storeId);
-
-    if (!bm25 || !chunkMapping) {
-      const allChunks = await dbUtils.getFileChunksByStore(storeId);
-      await this.rebuildIndex(storeId, allChunks);
-      return;
-    }
-
-    // Filter out chunks that are already in the index to prevent duplicates
-    const newChunksToAdd = newChunks.filter(
-      (chunk) => !chunkMapping.has(chunk.id),
-    );
-
-    if (newChunksToAdd.length === 0) {
-      logger.warn('All chunks already exist in index, skipping', {
-        storeId,
-        requested: newChunks.length,
+async function parseFileFromUrl(
+  fileUrl: string,
+  metadata?: AddContentInput['metadata'],
+): Promise<ParseResult> {
+  try {
+    const response = await fetch(fileUrl);
+    if (!response.ok) {
+      throw new FileStoreError('Failed to fetch blob URL', 'FETCH_FAILED', {
+        fileUrl,
+        status: response.status,
       });
-      return;
+    }
+    const blob = await response.blob();
+
+    // Validate file size
+    if (blob.size > MAX_FILE_SIZE) {
+      throw new FileStoreError(
+        `File size exceeds limit: ${blob.size} bytes (max: ${MAX_FILE_SIZE})`,
+        'FILE_TOO_LARGE',
+        { fileSize: blob.size, maxSize: MAX_FILE_SIZE },
+      );
     }
 
-    // Add new chunks to the index
-    let addedCount = 0;
-    newChunksToAdd.forEach((chunk) => {
-      try {
-        if (!chunk.id || typeof chunk.id !== 'string') {
-          logger.warn('Invalid chunk ID, skipping', { chunkId: chunk.id });
-          return;
-        }
+    const filename = metadata?.filename || 'unknown_file';
+    const file = new File([blob], filename, { type: blob.type });
 
-        const processedText = this.preprocessText(chunk.text);
-        bm25.addDoc({ id: chunk.id, text: processedText });
-        chunkMapping.set(chunk.id, chunk);
-        addedCount++;
-      } catch (chunkError) {
-        logger.error('Failed to add chunk to index', {
-          chunkId: chunk.id,
-          error:
-            chunkError instanceof Error
-              ? chunkError.message
-              : String(chunkError),
-        });
-      }
-    });
+    const content = await parseRichFile(file);
 
-    // Consolidate only if we have documents
-    if (chunkMapping.size > 0) {
-      try {
-        bm25.consolidate();
-      } catch (consolidateError) {
-        logger.warn('BM25 consolidation failed, continuing anyway', {
-          storeId,
-          error:
-            consolidateError instanceof Error
-              ? consolidateError.message
-              : String(consolidateError),
-        });
-      }
+    // Validate content length
+    if (content.length > MAX_CONTENT_LENGTH) {
+      throw new FileStoreError(
+        `Content too large: ${content.length} characters (max: ${MAX_CONTENT_LENGTH})`,
+        'CONTENT_TOO_LARGE',
+        { contentLength: content.length, maxLength: MAX_CONTENT_LENGTH },
+      );
     }
 
-    this.indexLastUsed.set(storeId, Date.now());
-
-    logger.info('Added chunks to search index', {
-      storeId,
-      added: addedCount,
-      requested: newChunks.length,
-      total: chunkMapping.size,
+    return {
+      content,
+      filename: file.name,
+      mimeType: file.type,
+      size: file.size,
+    };
+  } catch (error) {
+    logger.error('Failed to parse file from URL', error);
+    if (error instanceof FileStoreError) throw error;
+    throw new FileStoreError('File parsing failed', 'PARSE_FAILED', {
+      fileUrl,
+      originalError: error instanceof Error ? error.message : String(error),
     });
-  }
-
-  private async rebuildIndex(
-    storeId: string,
-    chunks: FileChunk[],
-  ): Promise<void> {
-    await this.cleanupOldIndexes();
-    const BM25Constructor = (await import('wink-bm25-text-search')).default;
-    const bm25 = BM25Constructor() as LocalBM25Instance;
-
-    bm25.defineConfig({
-      fldWeights: { text: 1 },
-      ovlpNormFactor: 0.5,
-      k1: 1.2,
-      b: 0.75,
-    });
-
-    const chunkMapping = new Map<string, FileChunk>();
-    const addedIds = new Set<string>();
-
-    // Add chunks to index
-    chunks.forEach((chunk) => {
-      if (addedIds.has(chunk.id)) return; // Skip duplicates
-
-      try {
-        const processedText = this.preprocessText(chunk.text);
-        bm25.addDoc({ id: chunk.id, text: processedText });
-        chunkMapping.set(chunk.id, chunk);
-        addedIds.add(chunk.id);
-      } catch (error) {
-        logger.warn('Failed to add chunk during rebuild', {
-          chunkId: chunk.id,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    });
-
-    // Consolidate if we have documents
-    if (addedIds.size > 0) {
-      try {
-        bm25.consolidate();
-      } catch (consolidateError) {
-        logger.warn('BM25 rebuild consolidation failed, continuing anyway', {
-          storeId,
-          error:
-            consolidateError instanceof Error
-              ? consolidateError.message
-              : String(consolidateError),
-        });
-      }
-    }
-
-    this.bm25Indexes.set(storeId, bm25);
-    this.chunkMappings.set(storeId, chunkMapping);
-    this.indexLastUsed.set(storeId, Date.now());
-
-    logger.info('BM25 index rebuilt', {
-      storeId,
-      chunks: addedIds.size,
-      requested: chunks.length,
-    });
-  }
-
-  private async cleanupOldIndexes(): Promise<void> {
-    if (this.bm25Indexes.size < this.MAX_INDEXES) return;
-    const sortedByAge = Array.from(this.indexLastUsed.entries()).sort(
-      ([, a], [, b]) => a - b,
-    );
-    const toRemove = sortedByAge.slice(
-      0,
-      sortedByAge.length - this.MAX_INDEXES + 1,
-    );
-    for (const [storeId] of toRemove) {
-      this.bm25Indexes.delete(storeId);
-      this.chunkMappings.delete(storeId);
-      this.indexLastUsed.delete(storeId);
-    }
-  }
-
-  // ADDED: ISearchEngine 인터페이스를 만족시키기 위해 indexStore 메서드 구현 (TS2420 에러 해결)
-  async indexStore(storeId: string, chunks: FileChunk[]): Promise<void> {
-    await this.rebuildIndex(storeId, chunks);
-  }
-
-  async search(
-    storeId: string,
-    query: string,
-    options: SearchOptions,
-  ): Promise<SearchResult[]> {
-    let bm25 = this.bm25Indexes.get(storeId);
-    const chunkMapping = this.chunkMappings.get(storeId);
-
-    if (!bm25 || !chunkMapping) {
-      const chunks = await dbUtils.getFileChunksByStore(storeId);
-      if (chunks.length === 0) return [];
-      await this.rebuildIndex(storeId, chunks);
-      return this.search(storeId, query, options);
-    }
-
-    this.indexLastUsed.set(storeId, Date.now());
-
-    const processedQuery = this.preprocessText(query);
-    const searchResults = bm25.search(processedQuery);
-
-    return searchResults
-      .filter((result) => result[1] >= (options.threshold || 0))
-      .slice(0, options.topN)
-      .map((result): SearchResult | null => {
-        const chunk = chunkMapping.get(result[0]);
-        if (!chunk) return null;
-        return {
-          contentId: chunk.contentId,
-          chunkId: chunk.id,
-          context: chunk.text,
-          lineRange: [chunk.startLine, chunk.endLine],
-          score: result[1],
-          relevanceType: 'keyword',
-        };
-      })
-      .filter((r): r is SearchResult => r !== null);
-  }
-
-  isReady(): boolean {
-    return this.isInitialized;
-  }
-  async cleanup(): Promise<void> {
-    this.bm25Indexes.clear();
-    this.chunkMappings.clear();
-    this.indexLastUsed.clear();
-    this.isInitialized = false;
-  }
-  private preprocessText(text: string): string {
-    return text
-      .toLowerCase()
-      .replace(/[^\w\s가-힣]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
   }
 }
 
-// FIX: JSONSchemaObject에 맞게 스키마 정의 수정 (TS2741, TS2353 에러 해결)
+// Tool schema definitions
 const tools: MCPTool[] = [
   {
     name: 'createStore',
@@ -565,7 +309,7 @@ const tools: MCPTool[] = [
       },
       required: ['storeId'],
       oneOf: [{ required: ['fileUrl'] }, { required: ['content', 'metadata'] }],
-    } as JSONSchemaObject, // HINT: oneOf를 사용하는 경우 타입 단언이 필요할 수 있습니다.
+    } as JSONSchemaObject,
   },
   {
     name: 'listContent',
@@ -623,50 +367,10 @@ const tools: MCPTool[] = [
   },
 ];
 
-export interface CreateStoreInput {
-  metadata?: { name?: string; description?: string; sessionId?: string };
-}
-export interface CreateStoreOutput {
-  storeId: string;
-  createdAt: Date;
-}
-export interface AddContentInput {
-  storeId: string;
-  fileUrl?: string;
-  content?: string;
-  metadata?: {
-    filename?: string;
-    mimeType?: string;
-    size?: number;
-    uploadedAt?: string;
-  };
-}
-export interface AddContentOutput
-  extends Omit<AttachmentReference, 'storeId' | 'contentId' | 'uploadedAt'> {
-  storeId: string;
-  contentId: string;
-  chunkCount: number;
-  uploadedAt: Date;
-}
-export interface ListContentInput {
-  storeId: string;
-  pagination?: { offset?: number; limit?: number };
-}
-export interface ReadContentInput {
-  storeId: string;
-  contentId: string;
-  lineRange: { fromLine: number; toLine?: number };
-}
-export interface SimilaritySearchInput {
-  storeId: string;
-  query: string;
-  options?: { topN?: number; threshold?: number };
-}
-export type ContentSummary = AttachmentReference;
-
 const searchEngine = new BM25SearchEngine();
 const textChunker = new TextChunker();
 
+// Tool implementation functions
 async function createStore(
   input: CreateStoreInput,
 ): Promise<CreateStoreOutput> {
@@ -847,7 +551,6 @@ async function addContent(input: AddContentInput): Promise<AddContentOutput> {
   }
 }
 
-// FIX: 스텁(stub) 코드를 완전한 구현으로 대체 (TS6133, TS2355 에러 해결)
 async function listContent(
   input: ListContentInput,
 ): Promise<{ contents: ContentSummary[]; total: number; hasMore: boolean }> {
