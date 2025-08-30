@@ -68,9 +68,6 @@ function Chat({ children }: ChatProps) {
 function SessionFilesPopover({ storeId }: { storeId: string }) {
   const {
     sessionFiles,
-    isSessionFilesLoading,
-    sessionFilesError,
-    refreshSessionFiles,
   } = useResourceAttachment();
 
   const [isOpen, setIsOpen] = useState(false);
@@ -161,21 +158,7 @@ function SessionFilesPopover({ storeId }: { storeId: string }) {
             <p className="text-xs text-gray-400">Store ID: {storeId}</p>
           </div>
 
-          {isSessionFilesLoading ? (
-            <div className="p-4 text-center text-xs text-gray-400">
-              파일 목록 로딩 중...
-            </div>
-          ) : sessionFilesError ? (
-            <div className="p-4 text-center text-xs text-red-400">
-              {sessionFilesError}
-              <button
-                onClick={refreshSessionFiles}
-                className="block mt-2 text-blue-400 hover:underline text-xs"
-              >
-                다시 시도
-              </button>
-            </div>
-          ) : sessionFiles.length === 0 ? (
+          {sessionFiles.length === 0 ? (
             <div className="p-4 text-center text-xs text-gray-400">
               저장된 파일이 없습니다.
             </div>
@@ -492,8 +475,8 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
   const { submit, isLoading, cancel } = useChatContext();
   const {
     pendingFiles,
-    addFile,
-    addFilesBatch,
+    addPendingFiles,
+    commitPendingFiles,
     removeFile,
     clearPendingFiles,
     isLoading: isAttachmentLoading,
@@ -647,34 +630,36 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
         }
       }
 
-      // Second pass: batch upload all prepared files
+      // Second pass: add all prepared files to pending state
       if (filesToUpload.length > 0) {
         try {
           const batchFiles = filesToUpload.map((file) => ({
             url: file.url,
             mimeType: file.mimeType,
             filename: file.filename,
+            blobCleanup: file.cleanup, // Pass the cleanup function
           }));
 
-          logger.info('Starting batch upload', { count: batchFiles.length });
-          const results = await addFilesBatch(batchFiles);
+          logger.info('Adding files to pending state', {
+            count: batchFiles.length,
+          });
+          addPendingFiles(batchFiles);
 
-          logger.info('Batch upload completed successfully', {
-            uploaded: results.length,
+          logger.info('Files added to pending state successfully', {
             total: batchFiles.length,
           });
         } catch (error) {
-          logger.error('Batch upload failed:', error);
+          logger.error('Failed to add files to pending state:', error);
           alert(
-            `Error uploading files: ${error instanceof Error ? error.message : String(error)}`,
+            `Error processing files: ${error instanceof Error ? error.message : String(error)}`,
           );
-        } finally {
-          // Clean up all blob URLs to prevent memory leaks
+          // Clean up blob URLs if adding to pending files failed
           filesToUpload.forEach((file) => file.cleanup());
         }
+        // Note: If successfully added to pending state, cleanup is handled by ResourceAttachmentContext
       }
     },
-    [currentSession, addFilesBatch, getMimeType, rustBackend],
+    [currentSession, addPendingFiles, getMimeType, rustBackend],
   );
 
   // Handle dropped files with debounce to prevent duplicate events
@@ -711,20 +696,32 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
       }
 
       // Submit if there's text OR if files are attached.
-      if (!input.trim() && attachedFiles.length === 0) return;
+      if (!input.trim() && pendingFiles.length === 0) return;
       if (!currentAssistant || !currentSession) return;
+
+      let attachedFiles: AttachmentReference[] = [];
+
+      // Commit pending files to server before sending message
+      if (pendingFiles.length > 0) {
+        try {
+          attachedFiles = await commitPendingFiles();
+        } catch (err) {
+          logger.error('Error uploading pending files:', err);
+          alert('파일 업로드 중 오류가 발생했습니다.');
+          return;
+        }
+      }
 
       const userMessage: Message = {
         id: createId(),
         content: input.trim(),
         role: 'user',
         sessionId: currentSession.id,
-        // Include the references of successfully attached files.
+        // Include the references of successfully committed files.
         attachments: attachedFiles,
       };
 
       setInput('');
-      // Clear only pending files after submission - session files remain available
       clearPendingFiles();
 
       try {
@@ -736,9 +733,10 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
     [
       submit,
       input,
-      attachedFiles,
+      pendingFiles,
       currentAssistant,
       currentSession,
+      commitPendingFiles,
       clearPendingFiles,
       isLoading,
       cancel,
@@ -781,8 +779,16 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
           // 1. Create a temporary blob URL for the file.
           fileUrl = URL.createObjectURL(file);
 
-          // 2. Use ResourceAttachmentContext to add file
-          await addFile(fileUrl, file.type, file.name);
+          // 2. Use ResourceAttachmentContext to add file to pending state with File object
+          addPendingFiles([
+            {
+              url: fileUrl,
+              mimeType: file.type,
+              filename: file.name,
+              file: file, // Pass the actual File object
+              blobCleanup: () => URL.revokeObjectURL(fileUrl), // Cleanup function
+            },
+          ]);
 
           logger.info(`File processed successfully`, {
             filename: file.name,
@@ -807,18 +813,18 @@ function ChatInput({ children }: { children?: React.ReactNode }) {
           alert(
             `Error processing file "${file.name}": ${error instanceof Error ? error.message : String(error)}`,
           );
-        } finally {
-          // 3. IMPORTANT: Revoke the blob URL to prevent memory leaks.
+          // Clean up blob URL on error since file wasn't added to pending
           if (fileUrl) {
             URL.revokeObjectURL(fileUrl);
           }
         }
+        // Note: If successful, blob URL cleanup is handled by ResourceAttachmentContext
       }
 
       // Clear the file input so the user can select the same file again.
       e.target.value = '';
     },
-    [currentSession, addFile],
+    [currentSession, addPendingFiles],
   );
 
   // Remove file handler using ResourceAttachmentContext

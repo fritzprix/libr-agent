@@ -1,5 +1,9 @@
 import type { FileChunk } from '@/lib/db';
-import type { ISearchEngine, SearchOptions, SearchResult } from '@/models/search-engine';
+import type {
+  ISearchEngine,
+  SearchOptions,
+  SearchResult,
+} from '@/models/search-engine';
 import type { LocalBM25Instance } from './types';
 
 // Worker-safe logger that falls back to console if Tauri logger is not available
@@ -33,7 +37,7 @@ export class BM25SearchEngine implements ISearchEngine {
   async initialize(): Promise<void> {
     if (this.isInitialized) return;
     logger.info('Initializing BM25 search engine');
-    
+
     // Enhanced initialization: Actually initialize the BM25 library here
     try {
       // Pre-load the BM25 library to ensure it's available
