@@ -1,8 +1,5 @@
-import { getLogger } from '@/lib/logger';
 import type { MCPTool, WebMCPServer } from '@/lib/mcp-types';
-import type { ServiceContextOptions } from '@/features/tools';
 
-const logger = getLogger('planning-server');
 
 // Ephemeral 상태 관리 (메모리 기반)
 interface Goal {
@@ -42,7 +39,6 @@ class EphemeralState {
       status: 'active',
       createdAt: new Date(),
     };
-    logger.info('Goal created', { goalId: this.goal.id });
     return this.goal;
   }
 
@@ -51,7 +47,6 @@ class EphemeralState {
   ): Goal | null {
     if (!this.goal) return null;
     Object.assign(this.goal, updates);
-    logger.info('Goal updated', { goalId: this.goal.id, updates });
     return this.goal;
   }
 
@@ -68,7 +63,6 @@ class EphemeralState {
       createdAt: new Date(),
     };
     this.todos.push(todo);
-    logger.info('Todo added', { todoId: todo.id });
     return { todoId: todo.id, todos: this.todos };
   }
 
@@ -79,7 +73,6 @@ class EphemeralState {
     const todo = this.todos[todoId];
     if (!todo) return { todo: null, todos: this.todos };
     Object.assign(todo, updates);
-    logger.info('Todo updated', { todoId, updates });
     return { todo, todos: this.todos };
   }
 
@@ -99,7 +92,6 @@ class EphemeralState {
       createdAt: new Date(),
     };
     this.notes.push(note);
-    logger.info('Note added', { noteId: note.id });
     return { noteId: note.id, notes: this.notes };
   }
 
@@ -107,7 +99,6 @@ class EphemeralState {
     this.goal = null;
     this.todos = [];
     this.notes = [];
-    logger.info('Session cleared');
   }
 
   getGoal(): Goal | null {
@@ -259,7 +250,9 @@ const planningServer: WebMCPServer = {
         throw new Error(`Unknown tool: ${name}`);
     }
   },
-  async getServiceContext(options?: ServiceContextOptions): Promise<string> {
+  async getServiceContext(): Promise<string> {
+    // reference options to avoid "declared but its value is never read" / "defined but never used"
+
     const goal = state.getGoal();
     const todos = state.listTodos();
 

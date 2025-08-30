@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getLogger } from '../lib/logger';
-import { WebMCPProxy, createWebMCPProxy } from '../lib/web-mcp/mcp-proxy';
+import { WebMCPProxy } from '../lib/web-mcp/mcp-proxy';
 import { MCPTool } from '../lib/mcp-types';
 
 // Vite Worker import
@@ -41,7 +41,7 @@ class WebMCPProxyManager {
 
     logger.debug('Initializing WebMCP proxy');
     const workerInstance = new MCPWorker();
-    this.proxy = createWebMCPProxy({ workerInstance });
+    this.proxy = new WebMCPProxy({ workerInstance });
     await this.proxy.initialize();
     this.initialized = true;
     logger.info('WebMCP proxy initialized');

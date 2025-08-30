@@ -31,8 +31,6 @@ import ToolsModal from '../tools/ToolsModal';
 import MessageBubble from './MessageBubble';
 import { TimeLocationSystemPrompt } from '../prompts/TimeLocationSystemPrompt';
 import { useWebMCPServer } from '@/hooks/use-web-mcp-server';
-// import { useWebMCPServer } from '@/hooks/use-web-mcp-server';
-// import { ContentStoreServer } from '@/lib/web-mcp/modules/content-store';
 
 const logger = getLogger('Chat');
 

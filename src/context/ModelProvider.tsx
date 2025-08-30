@@ -167,7 +167,6 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
 
   const providerOptions = useMemo(() => {
     const providers = llmConfigManager.getProviders();
-    logger.info('📊 Available providers:', providers);
 
     return Object.entries(providers).map(([key, value]) => ({
       label: value.name,

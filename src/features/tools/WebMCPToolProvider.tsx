@@ -4,7 +4,7 @@ import { useAsyncFn } from 'react-use';
 // Vite Worker import
 import { getLogger } from '@/lib/logger';
 import { MCPResponse, WebMCPServerState } from '@/lib/mcp-types';
-import { createWebMCPProxy, WebMCPProxy } from '@/lib/web-mcp/mcp-proxy';
+import { WebMCPProxy } from '@/lib/web-mcp/mcp-proxy';
 import { ToolCall } from '@/models/chat';
 import { BuiltInService, useBuiltInTool } from '.';
 import MCPWorker from '../../lib/web-mcp/mcp-worker.ts?worker';
@@ -30,7 +30,7 @@ export function WebMCPProvider({ servers = [] }: WebMCPProviderProps) {
       const workerInstance = new MCPWorker();
 
       // Create new proxy instance with Worker instance
-      const proxy = createWebMCPProxy({ workerInstance });
+      const proxy = new WebMCPProxy({ workerInstance });
       await proxy.initialize();
 
       proxyRef.current = proxy;
@@ -63,9 +63,11 @@ export function WebMCPProvider({ servers = [] }: WebMCPProviderProps) {
       };
 
       // Load the server
+      logger.info("sending loadServer to proxy", { serverName });
       const serverInfo = await proxyRef.current.loadServer(serverName);
-
+      
       // Get tools for this server and add external. prefix
+      logger.info("sending listTools to proxy", { serverName });
       const tools = await proxyRef.current.listTools(serverName);
       serverStatesRef.current[serverName].tools = tools;
 
@@ -152,6 +154,7 @@ export function WebMCPProvider({ servers = [] }: WebMCPProviderProps) {
         executeTool: (tc) => executeTool(s, tc),
         listTools: () => serverStatesRef.current[s]?.tools || [],
         unloadService: async () => {},
+        loadService: async () => loadServer(s),
         getServiceContext: () =>
           proxyRef.current
             ? proxyRef.current.getServiceContext(s)
@@ -178,9 +181,9 @@ export function WebMCPProvider({ servers = [] }: WebMCPProviderProps) {
 
   useEffect(() => {
     initializeProxy();
-    return () => {
-      proxyRef.current?.cleanup();
-    };
+    // return () => {
+    //   proxyRef.current?.cleanup();
+    // };
   }, []);
 
   return null;
