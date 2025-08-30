@@ -31,12 +31,12 @@ interface ResourceAttachmentContextType {
    * @param files - Array of file objects to add to pending state
    */
   addPendingFiles: (
-    files: Array<{ 
-      url: string; 
-      mimeType: string; 
+    files: Array<{
+      url: string;
+      mimeType: string;
       filename?: string;
-      originalPath?: string;  // File system path (Tauri environment)
-      file?: File;           // File object (browser environment)
+      originalPath?: string; // File system path (Tauri environment)
+      file?: File; // File object (browser environment)
       blobCleanup?: () => void; // Cleanup function for blob URLs
     }>,
   ) => void;
@@ -322,14 +322,16 @@ export const ResourceAttachmentProvider: React.FC<
 
   // Add files to pending state for immediate UI feedback
   const addPendingFiles = useCallback(
-    (files: Array<{ 
-      url: string; 
-      mimeType: string; 
-      filename?: string;
-      originalPath?: string;
-      file?: File;
-      blobCleanup?: () => void;
-    }>) => {
+    (
+      files: Array<{
+        url: string;
+        mimeType: string;
+        filename?: string;
+        originalPath?: string;
+        file?: File;
+        blobCleanup?: () => void;
+      }>,
+    ) => {
       const newPending = files.map((file) => ({
         storeId: currentSession?.storeId || '',
         contentId: `pending_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
@@ -386,23 +388,24 @@ export const ResourceAttachmentProvider: React.FC<
         blobCleanup = () => URL.revokeObjectURL(blobUrl);
         actualMimeType = file.type || mimeType || 'application/octet-stream';
         fileSize = file.size;
-        
+
         logger.debug('Using File object for upload', {
           filename: actualFilename,
           size: fileSize,
-          type: actualMimeType
+          type: actualMimeType,
         });
       } else {
         // Fallback to converting URL to blob
         const blobResult = await convertToBlobUrl(url);
         blobUrl = blobResult.blobUrl;
         blobCleanup = blobResult.cleanup;
-        actualMimeType = mimeType || blobResult.type || 'application/octet-stream';
+        actualMimeType =
+          mimeType || blobResult.type || 'application/octet-stream';
         fileSize = blobResult.size || 0;
-        
+
         logger.debug('Converting URL to blob for upload', {
           originalUrl: url,
-          blobUrl: blobUrl
+          blobUrl: blobUrl,
         });
       }
 
@@ -495,17 +498,17 @@ export const ResourceAttachmentProvider: React.FC<
       await mutateSessionFiles();
 
       // Clean up any blob URLs created for pending files
-      pendingFiles.forEach(file => {
+      pendingFiles.forEach((file) => {
         if (file.blobCleanup) {
           try {
             file.blobCleanup();
             logger.debug('Cleaned up blob URL for committed file', {
-              filename: file.filename
+              filename: file.filename,
             });
           } catch (error) {
             logger.warn('Failed to cleanup blob URL', {
               filename: file.filename,
-              error: error instanceof Error ? error.message : String(error)
+              error: error instanceof Error ? error.message : String(error),
             });
           }
         }

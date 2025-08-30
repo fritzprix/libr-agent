@@ -66,9 +66,7 @@ function Chat({ children }: ChatProps) {
 
 // Session Files Popover component
 function SessionFilesPopover({ storeId }: { storeId: string }) {
-  const {
-    sessionFiles,
-  } = useResourceAttachment();
+  const { sessionFiles } = useResourceAttachment();
 
   const [isOpen, setIsOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<AttachmentReference | null>(

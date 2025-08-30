@@ -1,6 +1,6 @@
 import type { WebMCPServer, MCPTool, MCPResponse } from '@/lib/mcp-types';
 import { normalizeToolResult } from '@/lib/mcp-types';
-import type { JSONSchemaObject } from '@/lib/mcp-types'; // ADDED: JSON 스키마 타입을 명시적으로 가져옵니다.
+import type { JSONSchemaObject } from '@/lib/mcp-types';
 import type { ServiceContextOptions } from '@/features/tools';
 import {
   dbService,
@@ -12,31 +12,12 @@ import {
 import { AttachmentReference } from '@/models/chat';
 import type { SearchResult } from '@/models/search-engine';
 import { WebMCPServerProxy } from '@/hooks/use-web-mcp-server';
-import { ParserFactory } from './parsers/parser-factory';
-import { ParserError } from './parsers/index';
 import { computeContentHash } from '@/lib/content-hash';
-import { BM25SearchEngine } from './bm25';
+import { BM25SearchEngine } from '../bm25/bm25-search-engine';
 
-// Worker-safe logger that falls back to console if Tauri logger is not available
-const createWorkerSafeLogger = (context: string) => {
-  // Fallback to console logger for Worker environment
-  return {
-    debug: (message: string, data?: unknown) => {
-      console.log(`[${context}][DEBUG] ${message}`, data || '');
-    },
-    info: (message: string, data?: unknown) => {
-      console.log(`[${context}][INFO] ${message}`, data || '');
-    },
-    warn: (message: string, data?: unknown) => {
-      console.warn(`[${context}][WARN] ${message}`, data || '');
-    },
-    error: (message: string, data?: unknown) => {
-      console.error(`[${context}][ERROR] ${message}`, data || '');
-    },
-  };
-};
-
-const logger = createWorkerSafeLogger('content-store');
+// Import from submodules
+import { logger } from './logger';
+import { parseRichFile } from './parser';
 
 // File size limits (in bytes)
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
@@ -60,7 +41,6 @@ class StoreNotFoundError extends FileStoreError {
   }
 }
 
-// FIX: readContent 함수에서 사용되므로 삭제하지 않습니다.
 class ContentNotFoundError extends FileStoreError {
   constructor(contentId: string, storeId?: string) {
     super(`Content not found: ${contentId}`, 'CONTENT_NOT_FOUND', {
@@ -70,7 +50,6 @@ class ContentNotFoundError extends FileStoreError {
   }
 }
 
-// FIX: readContent 함수에서 사용되므로 삭제하지 않습니다.
 class InvalidRangeError extends FileStoreError {
   constructor(fromLine: number, toLine: number, totalLines: number) {
     super(
@@ -88,99 +67,49 @@ interface ParseResult {
   size: number;
 }
 
-// Remove old parsing functions and use the new ParserFactory
-async function parseRichFile(file: File): Promise<string> {
-  try {
-    logger.info('Starting file parsing', {
-      filename: file.name,
-      size: file.size,
-      type: file.type,
-    });
-
-    const result = await ParserFactory.parseFile(file);
-
-    logger.info('File parsing completed', {
-      filename: file.name,
-      contentLength: result.length,
-      preview: result.substring(0, 200) + (result.length > 200 ? '...' : ''),
-    });
-
-    return result;
-  } catch (error) {
-    logger.error('File parsing failed', {
-      filename: file.name,
-      error:
-        error instanceof Error
-          ? {
-              name: error.name,
-              message: error.message,
-              stack: error.stack,
-            }
-          : error,
-    });
-
-    if (error instanceof ParserError) {
-      throw error;
-    }
-    throw error;
-  }
+// Tool input/output interfaces
+export interface CreateStoreInput {
+  metadata?: { name?: string; description?: string; sessionId?: string };
 }
-
-async function parseFileFromUrl(
-  fileUrl: string,
-  metadata?: AddContentInput['metadata'],
-): Promise<ParseResult> {
-  try {
-    const response = await fetch(fileUrl);
-    if (!response.ok) {
-      throw new FileStoreError('Failed to fetch blob URL', 'FETCH_FAILED', {
-        fileUrl,
-        status: response.status,
-      });
-    }
-    const blob = await response.blob();
-
-    // Validate file size
-    if (blob.size > MAX_FILE_SIZE) {
-      throw new FileStoreError(
-        `File size exceeds limit: ${blob.size} bytes (max: ${MAX_FILE_SIZE})`,
-        'FILE_TOO_LARGE',
-        { fileSize: blob.size, maxSize: MAX_FILE_SIZE },
-      );
-    }
-
-    const filename = metadata?.filename || 'unknown_file';
-    const file = new File([blob], filename, { type: blob.type });
-
-    const content = await parseRichFile(file);
-
-    // Validate content length
-    if (content.length > MAX_CONTENT_LENGTH) {
-      throw new FileStoreError(
-        `Content too large: ${content.length} characters (max: ${MAX_CONTENT_LENGTH})`,
-        'CONTENT_TOO_LARGE',
-        { contentLength: content.length, maxLength: MAX_CONTENT_LENGTH },
-      );
-    }
-
-    return {
-      content,
-      filename: file.name,
-      mimeType: file.type,
-      size: file.size,
-    };
-  } catch (error) {
-    logger.error('Failed to parse file from URL', error);
-    if (error instanceof FileStoreError) throw error;
-    throw new FileStoreError('File parsing failed', 'PARSE_FAILED', {
-      fileUrl,
-      originalError: error instanceof Error ? error.message : String(error),
-    });
-  }
+export interface CreateStoreOutput {
+  storeId: string;
+  createdAt: Date;
 }
+export interface AddContentInput {
+  storeId: string;
+  fileUrl?: string;
+  content?: string;
+  metadata?: {
+    filename?: string;
+    mimeType?: string;
+    size?: number;
+    uploadedAt?: string;
+  };
+}
+export interface AddContentOutput
+  extends Omit<AttachmentReference, 'storeId' | 'contentId' | 'uploadedAt'> {
+  storeId: string;
+  contentId: string;
+  chunkCount: number;
+  uploadedAt: Date;
+}
+export interface ListContentInput {
+  storeId: string;
+  pagination?: { offset?: number; limit?: number };
+}
+export interface ReadContentInput {
+  storeId: string;
+  contentId: string;
+  lineRange: { fromLine: number; toLine?: number };
+}
+export interface SimilaritySearchInput {
+  storeId: string;
+  query: string;
+  options?: { topN?: number; threshold?: number };
+}
+export type ContentSummary = AttachmentReference;
 
 class TextChunker {
-  // ... (TextChunker implementation remains the same)
   private readonly CHUNK_SIZE = 500; // characters
   private readonly OVERLAP_SIZE = 50; // characters
   private readonly MIN_CHUNK_SIZE = 100; // minimum chunk size
@@ -242,7 +171,7 @@ class TextChunker {
   }
 
   private splitIntoSentences(text: string): string[] {
-    const sentences = text.match(/[^.!?]+[.!?]+["]?(\s+|$)/g);
+    const sentences = text.match(/[^.!?]+[.!?]+["']?(\s+|$)/g);
     if (sentences) {
       return sentences.map((s) => s.trim()).filter(Boolean);
     }
@@ -276,7 +205,60 @@ class TextChunker {
   }
 }
 
-// FIX: JSONSchemaObject에 맞게 스키마 정의 수정 (TS2741, TS2353 에러 해결)
+async function parseFileFromUrl(
+  fileUrl: string,
+  metadata?: AddContentInput['metadata'],
+): Promise<ParseResult> {
+  try {
+    const response = await fetch(fileUrl);
+    if (!response.ok) {
+      throw new FileStoreError('Failed to fetch blob URL', 'FETCH_FAILED', {
+        fileUrl,
+        status: response.status,
+      });
+    }
+    const blob = await response.blob();
+
+    // Validate file size
+    if (blob.size > MAX_FILE_SIZE) {
+      throw new FileStoreError(
+        `File size exceeds limit: ${blob.size} bytes (max: ${MAX_FILE_SIZE})`,
+        'FILE_TOO_LARGE',
+        { fileSize: blob.size, maxSize: MAX_FILE_SIZE },
+      );
+    }
+
+    const filename = metadata?.filename || 'unknown_file';
+    const file = new File([blob], filename, { type: blob.type });
+
+    const content = await parseRichFile(file);
+
+    // Validate content length
+    if (content.length > MAX_CONTENT_LENGTH) {
+      throw new FileStoreError(
+        `Content too large: ${content.length} characters (max: ${MAX_CONTENT_LENGTH})`,
+        'CONTENT_TOO_LARGE',
+        { contentLength: content.length, maxLength: MAX_CONTENT_LENGTH },
+      );
+    }
+
+    return {
+      content,
+      filename: file.name,
+      mimeType: file.type,
+      size: file.size,
+    };
+  } catch (error) {
+    logger.error('Failed to parse file from URL', error);
+    if (error instanceof FileStoreError) throw error;
+    throw new FileStoreError('File parsing failed', 'PARSE_FAILED', {
+      fileUrl,
+      originalError: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+// Tool schema definitions
 const tools: MCPTool[] = [
   {
     name: 'createStore',
@@ -327,7 +309,7 @@ const tools: MCPTool[] = [
       },
       required: ['storeId'],
       oneOf: [{ required: ['fileUrl'] }, { required: ['content', 'metadata'] }],
-    } as JSONSchemaObject, // HINT: oneOf를 사용하는 경우 타입 단언이 필요할 수 있습니다.
+    } as JSONSchemaObject,
   },
   {
     name: 'listContent',
@@ -385,50 +367,10 @@ const tools: MCPTool[] = [
   },
 ];
 
-export interface CreateStoreInput {
-  metadata?: { name?: string; description?: string; sessionId?: string };
-}
-export interface CreateStoreOutput {
-  storeId: string;
-  createdAt: Date;
-}
-export interface AddContentInput {
-  storeId: string;
-  fileUrl?: string;
-  content?: string;
-  metadata?: {
-    filename?: string;
-    mimeType?: string;
-    size?: number;
-    uploadedAt?: string;
-  };
-}
-export interface AddContentOutput
-  extends Omit<AttachmentReference, 'storeId' | 'contentId' | 'uploadedAt'> {
-  storeId: string;
-  contentId: string;
-  chunkCount: number;
-  uploadedAt: Date;
-}
-export interface ListContentInput {
-  storeId: string;
-  pagination?: { offset?: number; limit?: number };
-}
-export interface ReadContentInput {
-  storeId: string;
-  contentId: string;
-  lineRange: { fromLine: number; toLine?: number };
-}
-export interface SimilaritySearchInput {
-  storeId: string;
-  query: string;
-  options?: { topN?: number; threshold?: number };
-}
-export type ContentSummary = AttachmentReference;
-
 const searchEngine = new BM25SearchEngine();
 const textChunker = new TextChunker();
 
+// Tool implementation functions
 async function createStore(
   input: CreateStoreInput,
 ): Promise<CreateStoreOutput> {
@@ -609,7 +551,6 @@ async function addContent(input: AddContentInput): Promise<AddContentOutput> {
   }
 }
 
-// FIX: 스텁(stub) 코드를 완전한 구현으로 대체 (TS6133, TS2355 에러 해결)
 async function listContent(
   input: ListContentInput,
 ): Promise<{ contents: ContentSummary[]; total: number; hasMore: boolean }> {
