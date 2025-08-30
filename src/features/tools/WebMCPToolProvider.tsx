@@ -63,11 +63,11 @@ export function WebMCPProvider({ servers = [] }: WebMCPProviderProps) {
       };
 
       // Load the server
-      logger.info("sending loadServer to proxy", { serverName });
+      logger.info('sending loadServer to proxy', { serverName });
       const serverInfo = await proxyRef.current.loadServer(serverName);
-      
+
       // Get tools for this server and add external. prefix
-      logger.info("sending listTools to proxy", { serverName });
+      logger.info('sending listTools to proxy', { serverName });
       const tools = await proxyRef.current.listTools(serverName);
       serverStatesRef.current[serverName].tools = tools;
 

@@ -79,13 +79,16 @@ export class WebMCPProxy {
       this.isInitialized = true;
       logger.info('WebMCP proxy initialized successfully');
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.error('Failed to initialize WebMCP proxy', { error: errorMessage });
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error('Failed to initialize WebMCP proxy', {
+        error: errorMessage,
+      });
       this.cleanup(); // Cleanup on initialization failure
       throw new Error(`Failed to initialize WebMCP proxy: ${errorMessage}`);
     }
   }
-  
+
   /**
    * Ensures the proxy is initialized. If not, it starts the initialization
    * and waits for it to complete.
@@ -126,7 +129,7 @@ export class WebMCPProxy {
     if (!isInitPing) {
       await this.ensureInitialization();
     }
-    
+
     // At this point, the worker object must exist.
     const worker = this.worker!;
     const id = createId();
@@ -182,7 +185,14 @@ export class WebMCPProxy {
     return this.sendMessage<string>({ type: 'ping' });
   }
 
-  async loadServer(serverName: string): Promise<{ name: string; description?: string; version?: string; toolCount: number; }> {
+  async loadServer(
+    serverName: string,
+  ): Promise<{
+    name: string;
+    description?: string;
+    version?: string;
+    toolCount: number;
+  }> {
     return this.sendMessage({ type: 'loadServer', serverName });
   }
 
@@ -194,8 +204,17 @@ export class WebMCPProxy {
     return this.sendMessage<MCPTool[]>({ type: 'listTools', serverName });
   }
 
-  async callTool<T = unknown>(serverName: string, toolName: string, args: Record<string, unknown> = {}): Promise<T> {
-    return this.sendMessage<T>({ type: 'callTool', serverName, toolName, args });
+  async callTool<T = unknown>(
+    serverName: string,
+    toolName: string,
+    args: Record<string, unknown> = {},
+  ): Promise<T> {
+    return this.sendMessage<T>({
+      type: 'callTool',
+      serverName,
+      toolName,
+      args,
+    });
   }
 
   async getServiceContext(serverName: string): Promise<string> {
