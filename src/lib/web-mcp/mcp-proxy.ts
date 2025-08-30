@@ -8,9 +8,10 @@
 import { createId } from '@paralleldrive/cuid2';
 import {
   WebMCPMessage,
-  WebMCPResponse,
   WebMCPProxyConfig,
   MCPTool,
+  MCPResponse,
+  MCPTextContent,
 } from '../mcp-types';
 import { getLogger } from '../logger';
 
@@ -151,24 +152,57 @@ export class WebMCPProxy {
     });
   }
 
-  private handleWorkerMessage(event: MessageEvent<WebMCPResponse>): void {
+  private handleWorkerMessage(event: MessageEvent<MCPResponse>): void {
     const response = event.data;
+    
+    logger.debug('Received worker message', {
+      hasResponse: !!response,
+      responseId: response?.id,
+      responseKeys: response ? Object.keys(response) : [],
+      hasError: response && 'error' in response,
+      hasResult: response && 'result' in response,
+      errorStructure: response?.error ? Object.keys(response.error) : undefined,
+    });
+    
     if (!response || response.id === undefined || response.id === null) {
+      logger.warn('Invalid worker response - missing id', { response });
       return;
     }
 
     const pending = this.pendingRequests.get(String(response.id));
     if (!pending) {
+      logger.warn('No pending request found for response', { responseId: response.id });
       return;
     }
 
     clearTimeout(pending.timeout);
     this.pendingRequests.delete(String(response.id));
 
-    if (response.error) {
-      pending.reject(new Error(response.error));
-    } else {
-      pending.resolve(response.result);
+    try {
+      if (response.error) {
+        const errorMessage = typeof response.error === 'string' 
+          ? response.error 
+          : response.error.message || 'Unknown error';
+        logger.error('Worker returned error', { 
+          responseId: response.id, 
+          error: response.error,
+          errorMessage 
+        });
+        pending.reject(new Error(errorMessage));
+      } else {
+        logger.debug('Worker returned success', { 
+          responseId: response.id,
+          hasResult: !!response.result 
+        });
+        pending.resolve(response);
+      }
+    } catch (handleError) {
+      logger.error('Error handling worker message', { 
+        responseId: response.id, 
+        handleError,
+        response 
+      });
+      pending.reject(handleError instanceof Error ? handleError : new Error(String(handleError)));
     }
   }
 
@@ -182,7 +216,12 @@ export class WebMCPProxy {
   }
 
   async ping(): Promise<string> {
-    return this.sendMessage<string>({ type: 'ping' });
+    const response = await this.sendMessage<MCPResponse>({ type: 'ping' });
+    // Extract text content from MCPResponse
+    if (response.result?.content?.[0]?.type === 'text') {
+      return (response.result.content[0] as MCPTextContent).text;
+    }
+    return 'pong';
   }
 
   async loadServer(
@@ -193,23 +232,38 @@ export class WebMCPProxy {
     version?: string;
     toolCount: number;
   }> {
-    return this.sendMessage({ type: 'loadServer', serverName });
+    const response = await this.sendMessage<MCPResponse>({ type: 'loadServer', serverName });
+    // Extract JSON content from MCPResponse
+    if (response.result?.content?.[0]?.type === 'text') {
+      return JSON.parse((response.result.content[0] as MCPTextContent).text);
+    }
+    throw new Error('Invalid loadServer response format');
   }
 
   async listAllTools(): Promise<MCPTool[]> {
-    return this.sendMessage<MCPTool[]>({ type: 'listTools' });
+    const response = await this.sendMessage<MCPResponse>({ type: 'listTools' });
+    // Extract JSON content from MCPResponse
+    if (response.result?.content?.[0]?.type === 'text') {
+      return JSON.parse((response.result.content[0] as MCPTextContent).text);
+    }
+    return [];
   }
 
   async listTools(serverName: string): Promise<MCPTool[]> {
-    return this.sendMessage<MCPTool[]>({ type: 'listTools', serverName });
+    const response = await this.sendMessage<MCPResponse>({ type: 'listTools', serverName });
+    // Extract JSON content from MCPResponse
+    if (response.result?.content?.[0]?.type === 'text') {
+      return JSON.parse((response.result.content[0] as MCPTextContent).text);
+    }
+    return [];
   }
 
-  async callTool<T = unknown>(
+  async callTool(
     serverName: string,
     toolName: string,
     args: Record<string, unknown> = {},
-  ): Promise<T> {
-    return this.sendMessage<T>({
+  ): Promise<MCPResponse> {
+    return this.sendMessage<MCPResponse>({
       type: 'callTool',
       serverName,
       toolName,
@@ -218,6 +272,11 @@ export class WebMCPProxy {
   }
 
   async getServiceContext(serverName: string): Promise<string> {
-    return this.sendMessage<string>({ type: 'getServiceContext', serverName });
+    const response = await this.sendMessage<MCPResponse>({ type: 'getServiceContext', serverName });
+    // Extract text content from MCPResponse
+    if (response.result?.content?.[0]?.type === 'text') {
+      return (response.result.content[0] as MCPTextContent).text;
+    }
+    return '';
   }
 }

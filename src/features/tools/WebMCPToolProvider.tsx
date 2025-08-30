@@ -101,7 +101,6 @@ export function WebMCPProvider({ servers = [] }: WebMCPProviderProps) {
       if (!proxyRef.current) {
         throw new Error('WebMCP proxy not initialized');
       }
-      // Handle external. prefix for namespace routing
 
       const result = await proxyRef.current.callTool(
         serviceId,
@@ -116,31 +115,8 @@ export function WebMCPProvider({ servers = [] }: WebMCPProviderProps) {
         result,
       });
 
-      // proxy.callTool resolves to the worker's result object (not the full
-      // WebMCPResponse). Use a null id when the worker result doesn't provide
-      // one and stringify the returned object itself so the text payload is
-      // preserved.
-      const maybeResp = result as unknown;
-      const respId =
-        typeof maybeResp === 'object' && maybeResp !== null && 'id' in maybeResp
-          ? (maybeResp as { id?: string | number }).id
-          : null;
-
-      return {
-        id: respId ?? null,
-        jsonrpc: '2.0',
-        result: {
-          content: [
-            {
-              type: 'text',
-              text:
-                typeof result === 'string'
-                  ? result
-                  : JSON.stringify(result, null, 2),
-            },
-          ],
-        },
-      };
+      // proxy.callTool now returns MCPResponse directly
+      return result;
     },
     [],
   );

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getLogger } from '../lib/logger';
 import { WebMCPProxy } from '../lib/web-mcp/mcp-proxy';
-import { MCPTool } from '../lib/mcp-types';
+import { MCPTool, MCPResponse, MCPTextContent, isMCPSuccess, isMCPError } from '../lib/mcp-types';
 
 // Vite Worker import
 import MCPWorker from '../lib/web-mcp/mcp-worker.ts?worker';
@@ -97,8 +97,38 @@ class WebMCPProxyManager {
         } else {
           safeArgs = { value: args };
         }
-        const result = await proxy.callTool(serverName, methodName, safeArgs);
-        return result;
+        const mcpResponse: MCPResponse = await proxy.callTool(serverName, methodName, safeArgs);
+        
+        // Handle MCP errors
+        if (isMCPError(mcpResponse)) {
+          throw new Error(mcpResponse.error.message);
+        }
+        
+        // Extract result from MCPResponse
+        if (isMCPSuccess(mcpResponse) && mcpResponse.result) {
+          // For content-store responses, try to parse JSON from text content
+          if (mcpResponse.result.content?.[0]?.type === 'text') {
+            const textContent = (mcpResponse.result.content[0] as MCPTextContent).text;
+            try {
+              // Try to parse as JSON (most MCP responses are JSON)
+              return JSON.parse(textContent);
+            } catch {
+              // If JSON parsing fails, return as plain text
+              return textContent;
+            }
+          }
+          
+          // Fallback: return structured content if available
+          if (mcpResponse.result.structuredContent) {
+            return mcpResponse.result.structuredContent;
+          }
+          
+          // Final fallback: return the entire result object
+          return mcpResponse.result;
+        }
+        
+        // If no valid result, throw an error
+        throw new Error('Invalid MCP response: no result data');
       };
     });
 

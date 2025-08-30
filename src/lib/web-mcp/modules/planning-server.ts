@@ -1,4 +1,5 @@
-import type { MCPTool, WebMCPServer } from '@/lib/mcp-types';
+import type { MCPTool, WebMCPServer, MCPResponse } from '@/lib/mcp-types';
+import { normalizeToolResult } from '@/lib/mcp-types';
 
 // Ephemeral 상태 관리 (메모리 기반)
 interface Goal {
@@ -268,49 +269,67 @@ const planningServer: WebMCPServer = {
   description:
     'Ephemeral planning, thinking, and goal management for AI agents',
   tools,
-  async callTool(name: string, args: unknown): Promise<unknown> {
+  async callTool(name: string, args: unknown): Promise<MCPResponse> {
     const typedArgs = args as Record<string, unknown>;
     switch (name) {
       case 'create_goal':
-        return state.createGoal(
-          typedArgs.name as string,
-          typedArgs.description as string,
+        return normalizeToolResult(
+          state.createGoal(
+            typedArgs.name as string,
+            typedArgs.description as string,
+          ),
+          'create_goal'
         );
       case 'update_goal':
-        return state.updateGoal(
-          typedArgs.updates as Partial<
-            Pick<Goal, 'name' | 'description' | 'status'>
-          >,
+        return normalizeToolResult(
+          state.updateGoal(
+            typedArgs.updates as Partial<
+              Pick<Goal, 'name' | 'description' | 'status'>
+            >,
+          ),
+          'update_goal'
         );
       case 'add_todo':
-        return state.addTodo(
-          typedArgs.name as string,
-          typedArgs.description as string,
+        return normalizeToolResult(
+          state.addTodo(
+            typedArgs.name as string,
+            typedArgs.description as string,
+          ),
+          'add_todo'
         );
       case 'update_todo':
-        return state.updateTodo(
-          typedArgs.todoId as number,
-          typedArgs.updates as Partial<
-            Pick<Todo, 'name' | 'description' | 'status'>
-          >,
+        return normalizeToolResult(
+          state.updateTodo(
+            typedArgs.todoId as number,
+            typedArgs.updates as Partial<
+              Pick<Todo, 'name' | 'description' | 'status'>
+            >,
+          ),
+          'update_todo'
         );
       case 'list_todos':
-        return state.listTodos();
+        return normalizeToolResult(state.listTodos(), 'list_todos');
       case 'add_observation':
-        return state.addObservation(
-          typedArgs.content as string,
-          typedArgs.tags as string[],
+        return normalizeToolResult(
+          state.addObservation(
+            typedArgs.content as string,
+            typedArgs.tags as string[],
+          ),
+          'add_observation'
         );
       case 'sequential_thinking':
-        return state.addSequentialThinking(
-          typedArgs.thought as string,
-          typedArgs.thoughtNumber as number,
-          typedArgs.totalThoughts as number,
-          typedArgs.nextThoughtNeeded as boolean,
+        return normalizeToolResult(
+          state.addSequentialThinking(
+            typedArgs.thought as string,
+            typedArgs.thoughtNumber as number,
+            typedArgs.totalThoughts as number,
+            typedArgs.nextThoughtNeeded as boolean,
+          ),
+          'sequential_thinking'
         );
       case 'clear_session':
         state.clear();
-        return { success: true };
+        return normalizeToolResult({ success: true }, 'clear_session');
       default:
         throw new Error(`Unknown tool: ${name}`);
     }

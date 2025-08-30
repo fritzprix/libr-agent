@@ -214,6 +214,15 @@ export const ResourceAttachmentProvider: React.FC<
           },
         });
 
+        logger.debug('createStore result received', {
+          sessionId,
+          createResult,
+          createResultType: typeof createResult,
+          createResultKeys: createResult ? Object.keys(createResult) : null,
+          storeIdValue: createResult?.storeId,
+          storeIdType: typeof createResult?.storeId,
+        });
+
         const storeId = createResult.storeId;
 
         // Update the session with the new storeId
@@ -438,7 +447,7 @@ export const ResourceAttachmentProvider: React.FC<
           size: result.size,
           lineCount: result.lineCount,
           preview: result.preview,
-          uploadedAt: result.uploadedAt.toISOString(),
+          uploadedAt: result.uploadedAt instanceof Date ? result.uploadedAt.toISOString() : result.uploadedAt,
           chunkCount: result.chunkCount,
           lastAccessedAt: new Date().toISOString(),
         };
