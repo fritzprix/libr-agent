@@ -626,9 +626,9 @@ export const ResourceAttachmentProvider: React.FC<
             return existingFile;
           }
 
-          // File exists globally but not in current session - inform user
+          // File exists in another session but not in current session - inform user
           throw new Error(
-            `This file content has already been uploaded in another session. The same content can only be uploaded once across all sessions. File: "${actualFilename}"`,
+            `This file content has already been uploaded in the current session. The same content can only be uploaded once within the same session. File: "${actualFilename}"`,
           );
         }
 
