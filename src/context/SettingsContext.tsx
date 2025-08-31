@@ -38,8 +38,8 @@ export const DEFAULT_SETTING: Settings = {
     (acc, provider) => {
       acc[provider] = {};
       return acc;
-    }, 
-    {} as Record<AIServiceProvider, ServiceConfig>
+    },
+    {} as Record<AIServiceProvider, ServiceConfig>,
   ),
   preferredModel: {
     provider: (DEFAULT_MODEL?.providerId || 'openai') as AIServiceProvider,
@@ -87,11 +87,15 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       ]);
 
       // Handle migration from old format to new format
-      let serviceConfigs: Record<AIServiceProvider, ServiceConfig> = DEFAULT_SETTING.serviceConfigs;
+      let serviceConfigs: Record<AIServiceProvider, ServiceConfig> =
+        DEFAULT_SETTING.serviceConfigs;
       if (serviceConfigsObject) {
         serviceConfigs = {
           ...DEFAULT_SETTING.serviceConfigs,
-          ...(serviceConfigsObject.value as Record<AIServiceProvider, ServiceConfig>),
+          ...(serviceConfigsObject.value as Record<
+            AIServiceProvider,
+            ServiceConfig
+          >),
         };
       } else if (apiKeysObject) {
         // Migrate old format to new format

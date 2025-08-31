@@ -64,7 +64,11 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       <div className="p-6 text-gray-300">
         {/* 고정 높이로 탭 이동 시 크기 변화 방지 */}
         <div className="min-h-[500px] max-h-[600px] overflow-y-auto flex flex-col">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
+          <Tabs
+            value={activeTab}
+            onValueChange={setActiveTab}
+            className="flex-1 flex flex-col"
+          >
             <TabsList>
               <TabsTrigger value="api-key">API Key Settings</TabsTrigger>
               <TabsTrigger value="conversation-model">
@@ -77,63 +81,63 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 {Object.values(AIServiceProvider)
                   .filter((provider) => provider !== AIServiceProvider.Empty)
                   .map((provider) => {
-                  const config = serviceConfigs[provider] || {};
-                  const providerName =
-                    provider.charAt(0).toUpperCase() + provider.slice(1);
+                    const config = serviceConfigs[provider] || {};
+                    const providerName =
+                      provider.charAt(0).toUpperCase() + provider.slice(1);
 
-                  return (
-                    <Card
-                      key={provider}
-                      className="bg-background border shadow-sm"
-                    >
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-foreground text-base font-medium">
-                          {providerName}
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-3">
-                        <div>
-                          <label className="block text-muted-foreground mb-2 text-sm font-medium">
-                            API Key
-                          </label>
-                          <Input
-                            type="password"
-                            placeholder={`Enter your ${providerName} API key`}
-                            value={config.apiKey || ''}
-                            onChange={(e) =>
-                              handleServiceConfigUpdate(
-                                provider,
-                                'apiKey',
-                                e.target.value,
-                              )
-                            }
-                            className="bg-background border text-foreground"
-                          />
-                        </div>
-                        {provider === AIServiceProvider.Ollama && (
+                    return (
+                      <Card
+                        key={provider}
+                        className="bg-background border shadow-sm"
+                      >
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-foreground text-base font-medium">
+                            {providerName}
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
                           <div>
                             <label className="block text-muted-foreground mb-2 text-sm font-medium">
-                              Base URL
+                              API Key
                             </label>
                             <Input
-                              type="url"
-                              placeholder="http://localhost:11434"
-                              value={config.baseUrl || ''}
+                              type="password"
+                              placeholder={`Enter your ${providerName} API key`}
+                              value={config.apiKey || ''}
                               onChange={(e) =>
                                 handleServiceConfigUpdate(
                                   provider,
-                                  'baseUrl',
+                                  'apiKey',
                                   e.target.value,
                                 )
                               }
                               className="bg-background border text-foreground"
                             />
                           </div>
-                        )}
-                      </CardContent>
-                    </Card>
-                  );
-                })}
+                          {provider === AIServiceProvider.Ollama && (
+                            <div>
+                              <label className="block text-muted-foreground mb-2 text-sm font-medium">
+                                Base URL
+                              </label>
+                              <Input
+                                type="url"
+                                placeholder="http://localhost:11434"
+                                value={config.baseUrl || ''}
+                                onChange={(e) =>
+                                  handleServiceConfigUpdate(
+                                    provider,
+                                    'baseUrl',
+                                    e.target.value,
+                                  )
+                                }
+                                className="bg-background border text-foreground"
+                              />
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
               </div>
             </TabsContent>
 
