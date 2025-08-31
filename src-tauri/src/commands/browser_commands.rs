@@ -28,9 +28,7 @@ pub async fn close_browser_session(
     server: State<'_, InteractiveBrowserServer>,
     session_id: String,
 ) -> Result<String, String> {
-    info!(
-        "Command: close_browser_session called for session: {session_id}"
-    );
+    info!("Command: close_browser_session called for session: {session_id}");
 
     match server.close_session(&session_id).await {
         Ok(result) => {
@@ -50,9 +48,7 @@ pub async fn click_element(
     session_id: String,
     selector: String,
 ) -> Result<String, String> {
-    debug!(
-        "Command: click_element called - session: {session_id}, selector: {selector}"
-    );
+    debug!("Command: click_element called - session: {session_id}, selector: {selector}");
 
     match server.click_element(&session_id, &selector).await {
         Ok(result) => {
@@ -60,9 +56,7 @@ pub async fn click_element(
             Ok(result)
         }
         Err(e) => {
-            error!(
-                "Failed to click element '{selector}' in session {session_id}: {e}"
-            );
+            error!("Failed to click element '{selector}' in session {session_id}: {e}");
             Err(e)
         }
     }
@@ -85,9 +79,7 @@ pub async fn input_text(
             Ok(result)
         }
         Err(e) => {
-            error!(
-                "Failed to input text into '{selector}' in session {session_id}: {e}"
-            );
+            error!("Failed to input text into '{selector}' in session {session_id}: {e}");
             Err(e)
         }
     }
@@ -100,9 +92,7 @@ pub async fn scroll_page(
     x: i32,
     y: i32,
 ) -> Result<String, String> {
-    debug!(
-        "Command: scroll_page called - session: {session_id}, x: {x}, y: {y}"
-    );
+    debug!("Command: scroll_page called - session: {session_id}, x: {x}, y: {y}");
 
     match server.scroll_page(&session_id, x, y).await {
         Ok(result) => {
@@ -121,9 +111,7 @@ pub async fn get_current_url(
     server: State<'_, InteractiveBrowserServer>,
     session_id: String,
 ) -> Result<String, String> {
-    debug!(
-        "Command: get_current_url called for session: {session_id}"
-    );
+    debug!("Command: get_current_url called for session: {session_id}");
 
     match server.get_current_url(&session_id).await {
         Ok(url) => {
@@ -131,9 +119,7 @@ pub async fn get_current_url(
             Ok(url)
         }
         Err(e) => {
-            error!(
-                "Failed to get current URL for session {session_id}: {e}"
-            );
+            error!("Failed to get current URL for session {session_id}: {e}");
             Err(e)
         }
     }
@@ -164,9 +150,7 @@ pub async fn element_exists(
     session_id: String,
     selector: String,
 ) -> Result<bool, String> {
-    debug!(
-        "Command: element_exists called - session: {session_id}, selector: {selector}"
-    );
+    debug!("Command: element_exists called - session: {session_id}, selector: {selector}");
 
     match server.element_exists(&session_id, &selector).await {
         Ok(exists) => {
@@ -174,9 +158,7 @@ pub async fn element_exists(
             Ok(exists)
         }
         Err(e) => {
-            error!(
-                "Failed to check element existence '{selector}' in session {session_id}: {e}"
-            );
+            error!("Failed to check element existence '{selector}' in session {session_id}: {e}");
             Err(e)
         }
     }
@@ -199,9 +181,7 @@ pub async fn navigate_to_url(
     session_id: String,
     url: String,
 ) -> Result<String, String> {
-    info!(
-        "Command: navigate_to_url called - session: {session_id}, url: {url}"
-    );
+    info!("Command: navigate_to_url called - session: {session_id}, url: {url}");
 
     match server.navigate_to_url(&session_id, &url).await {
         Ok(result) => {
@@ -209,9 +189,7 @@ pub async fn navigate_to_url(
             Ok(result)
         }
         Err(e) => {
-            error!(
-                "Failed to navigate session {session_id} to {url}: {e}"
-            );
+            error!("Failed to navigate session {session_id} to {url}: {e}");
             Err(e)
         }
     }
@@ -222,9 +200,7 @@ pub async fn get_page_content(
     server: State<'_, InteractiveBrowserServer>,
     session_id: String,
 ) -> Result<String, String> {
-    debug!(
-        "Command: get_page_content called for session: {session_id}"
-    );
+    debug!("Command: get_page_content called for session: {session_id}");
 
     match server.get_page_content(&session_id).await {
         Ok(content) => {
@@ -236,9 +212,7 @@ pub async fn get_page_content(
             Ok(content)
         }
         Err(e) => {
-            error!(
-                "Failed to get page content for session {session_id}: {e}"
-            );
+            error!("Failed to get page content for session {session_id}: {e}");
             Err(e)
         }
     }
@@ -249,9 +223,7 @@ pub async fn take_screenshot(
     server: State<'_, InteractiveBrowserServer>,
     session_id: String,
 ) -> Result<String, String> {
-    debug!(
-        "Command: take_screenshot called for session: {session_id}"
-    );
+    debug!("Command: take_screenshot called for session: {session_id}");
 
     match server.take_screenshot(&session_id).await {
         Ok(result) => {
@@ -259,9 +231,7 @@ pub async fn take_screenshot(
             Ok(result)
         }
         Err(e) => {
-            error!(
-                "Failed to take screenshot for session {session_id}: {e}"
-            );
+            error!("Failed to take screenshot for session {session_id}: {e}");
             Err(e)
         }
     }
@@ -350,9 +320,7 @@ pub async fn navigate_forward(
     server: State<'_, InteractiveBrowserServer>,
     session_id: String,
 ) -> Result<String, String> {
-    debug!(
-        "Command: navigate_forward called for session: {session_id}"
-    );
+    debug!("Command: navigate_forward called for session: {session_id}");
 
     match server
         .execute_script(&session_id, "history.forward(); 'Navigated forward'")
@@ -360,9 +328,7 @@ pub async fn navigate_forward(
     {
         Ok(request_id) => Ok(request_id),
         Err(e) => {
-            error!(
-                "Failed to navigate forward in session {session_id}: {e}"
-            );
+            error!("Failed to navigate forward in session {session_id}: {e}");
             Err(e)
         }
     }
@@ -374,9 +340,7 @@ pub async fn get_element_text(
     session_id: String,
     selector: String,
 ) -> Result<String, String> {
-    debug!(
-        "Command: get_element_text called - session: {session_id}, selector: {selector}"
-    );
+    debug!("Command: get_element_text called - session: {session_id}, selector: {selector}");
 
     let script = format!(
         "const el = document.querySelector('{}'); el ? el.textContent.trim() : null",
@@ -386,9 +350,7 @@ pub async fn get_element_text(
     match server.execute_script(&session_id, &script).await {
         Ok(request_id) => Ok(request_id),
         Err(e) => {
-            error!(
-                "Failed to get element text '{selector}' in session {session_id}: {e}"
-            );
+            error!("Failed to get element text '{selector}' in session {session_id}: {e}");
             Err(e)
         }
     }
@@ -428,9 +390,7 @@ pub async fn find_element(
     session_id: String,
     selector: String,
 ) -> Result<String, String> {
-    debug!(
-        "Command: find_element called - session: {session_id}, selector: {selector}"
-    );
+    debug!("Command: find_element called - session: {session_id}, selector: {selector}");
 
     let script = format!(
         r#"
@@ -469,9 +429,7 @@ pub async fn find_element(
     match server.execute_script(&session_id, &script).await {
         Ok(request_id) => Ok(request_id),
         Err(e) => {
-            error!(
-                "Failed to find element '{selector}' in session {session_id}: {e}"
-            );
+            error!("Failed to find element '{selector}' in session {session_id}: {e}");
             Err(e)
         }
     }

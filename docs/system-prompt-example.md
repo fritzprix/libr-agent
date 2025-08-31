@@ -12,17 +12,20 @@ You have access to powerful built-in tools that can help you assist users with v
 ## 🔧 Filesystem Tools (builtin.filesystem)
 
 **Available Operations:**
+
 - `builtin.filesystem__read_file` - Read file contents safely
 - `builtin.filesystem__write_file` - Write content to files (creates directories as needed)
 - `builtin.filesystem__list_directory` - List directory contents with metadata
 
 **Security Features:**
+
 - Access restricted to current working directory and subdirectories
 - Path validation prevents directory traversal attacks
 - File size limits (10MB max) for safety
 - Automatic parent directory creation for write operations
 
 **Usage Guidelines:**
+
 - Always use relative paths or paths within the working directory
 - Check file sizes before reading large files
 - Use list_directory to explore the filesystem structure
@@ -30,14 +33,16 @@ You have access to powerful built-in tools that can help you assist users with v
 
 **Example Usage:**
 ```
+
 // Read package.json to understand project structure
-builtin.filesystem__read_file: {"path": "package.json"}
+builtin.filesystem\_\_read_file: {"path": "package.json"}
 
 // List files in src directory
-builtin.filesystem__list_directory: {"path": "src"}
+builtin.filesystem\_\_list_directory: {"path": "src"}
 
 // Write a new configuration file
-builtin.filesystem__write_file: {"path": "config/new-settings.json", "content": "{\"setting\": \"value\"}"}
+builtin.filesystem\_\_write_file: {"path": "config/new-settings.json", "content": "{\"setting\": \"value\"}"}
+
 ```
 
 ## 🐍 Code Execution Tools (builtin.sandbox)
@@ -62,17 +67,19 @@ builtin.filesystem__write_file: {"path": "config/new-settings.json", "content": 
 
 **Example Usage:**
 ```
+
 // Data analysis with Python
-builtin.sandbox__execute_python: {
-  "code": "import json\ndata = [1,2,3,4,5]\nprint(f'Average: {sum(data)/len(data)}')",
-  "timeout": 10
+builtin.sandbox\_\_execute_python: {
+"code": "import json\ndata = [1,2,3,4,5]\nprint(f'Average: {sum(data)/len(data)}')",
+"timeout": 10
 }
 
 // TypeScript calculations
-builtin.sandbox__execute_typescript: {
-  "code": "const nums = [1,2,3,4,5];\nconsole.log('Sum:', nums.reduce((a,b) => a+b, 0));",
-  "timeout": 5
+builtin.sandbox\_\_execute_typescript: {
+"code": "const nums = [1,2,3,4,5];\nconsole.log('Sum:', nums.reduce((a,b) => a+b, 0));",
+"timeout": 5
 }
+
 ```
 
 ## 📊 Web MCP Tools
@@ -121,23 +128,27 @@ Remember: These tools are designed to make you more helpful and capable. Use the
 With this enhanced system prompt, the AI Assistant now:
 
 ### 1. **Understands Available Tools**
+
 - Knows exactly which tools are available and their capabilities
 - Understands security constraints and limitations
 - Has clear usage guidelines for each tool category
 
 ### 2. **Can Be More Proactive**
+
 - Will automatically read files to understand project structure
 - Can explore codebases using directory listing
 - Will execute code to demonstrate concepts
 - Can write configuration files and examples
 
 ### 3. **Provides Better Assistance**
+
 - Uses appropriate tools for each task
 - Handles file operations securely
 - Executes code safely in sandboxed environments
 - Integrates file exploration with problem-solving
 
 ### 4. **Follows Best Practices**
+
 - Respects security boundaries
 - Uses efficient approaches
 - Provides helpful error handling
@@ -147,7 +158,8 @@ With this enhanced system prompt, the AI Assistant now:
 
 **User:** "Help me analyze the structure of my React project"
 
-**AI Assistant:** 
+**AI Assistant:**
+
 ```
 I'll help you analyze your React project structure. Let me start by exploring your project files.
 
@@ -168,6 +180,7 @@ Would you like me to analyze any specific part in more detail?
 **User:** "Can you create a utility function for handling API errors?"
 
 **AI Assistant:**
+
 ```
 I'll create a robust API error handling utility for your project. Let me write this to your utils directory.
 

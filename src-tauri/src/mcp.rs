@@ -1,7 +1,7 @@
 // Re-export modular components for backward compatibility
 pub use server::MCPServerManager;
 pub use types::{
-    MCPError, MCPResponse, MCPServerConfig, MCPTool, SamplingOptions, SamplingRequest
+    MCPError, MCPResponse, MCPServerConfig, MCPTool, SamplingOptions, SamplingRequest,
 };
 
 pub mod builtin;

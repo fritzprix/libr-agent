@@ -1,0 +1,11 @@
+# Ignore build output and generated files
+node_modules/
+dist/
+build/
+coverage/
+*.log
+src/**/*.d.ts
+src/**/*.test.ts
+src/**/*.test.tsx
+src-tauri/
+public/

@@ -1,8 +1,13 @@
 import { AIServiceProvider } from '@/lib/ai-service';
 import { useSettings } from '../../hooks/use-settings';
-import { ChangeEvent, useCallback, useState } from 'react';
+import type { ServiceConfig } from '@/context/SettingsContext';
+import { useCallback, useState } from 'react';
 import {
   Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
   Input,
   Modal,
   Tabs,
@@ -19,16 +24,26 @@ interface SettingsModalProps {
 
 export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const {
-    value: { apiKeys, windowSize },
+    value: { serviceConfigs, windowSize },
     update,
   } = useSettings();
   const [activeTab, setActiveTab] = useState('api-key');
 
-  const handleApiKeyUpdate = useCallback(
-    (e: ChangeEvent<HTMLInputElement>, serviceProvider: AIServiceProvider) => {
-      update({ apiKeys: { ...apiKeys, [serviceProvider]: e.target.value } });
+  const handleServiceConfigUpdate = useCallback(
+    (
+      provider: AIServiceProvider,
+      field: keyof ServiceConfig,
+      value: string,
+    ) => {
+      const currentConfig = serviceConfigs[provider] || {};
+      update({
+        serviceConfigs: {
+          ...serviceConfigs,
+          [provider]: { ...currentConfig, [field]: value },
+        },
+      });
     },
-    [update],
+    [update, serviceConfigs],
   );
 
   const handleWindowSizeUpdate = useCallback(
@@ -47,59 +62,112 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       size="xl"
     >
       <div className="p-6 text-gray-300">
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList>
-            <TabsTrigger value="api-key">API Key Settings</TabsTrigger>
-            <TabsTrigger value="conversation-model">
-              Conversation & Model Preferences
-            </TabsTrigger>
-          </TabsList>
+        {/* 고정 높이로 탭 이동 시 크기 변화 방지 */}
+        <div className="min-h-[500px] max-h-[600px] overflow-y-auto flex flex-col">
+          <Tabs
+            value={activeTab}
+            onValueChange={setActiveTab}
+            className="flex-1 flex flex-col"
+          >
+            <TabsList>
+              <TabsTrigger value="api-key">API Key Settings</TabsTrigger>
+              <TabsTrigger value="conversation-model">
+                Conversation & Model Preferences
+              </TabsTrigger>
+            </TabsList>
 
-          <TabsContent value="api-key">
-            <div className="space-y-6 pt-4">
-              {Object.values(AIServiceProvider).map((serviceProvider) => (
-                <div key={serviceProvider}>
-                  <label className="block text-gray-400 mb-2 font-medium">
-                    {serviceProvider.charAt(0).toUpperCase() +
-                      serviceProvider.slice(1)}{' '}
-                    API Key
+            <TabsContent value="api-key" className="pt-4">
+              <div className="flex flex-col gap-6">
+                {Object.values(AIServiceProvider)
+                  .filter((provider) => provider !== AIServiceProvider.Empty)
+                  .map((provider) => {
+                    const config = serviceConfigs[provider] || {};
+                    const providerName =
+                      provider.charAt(0).toUpperCase() + provider.slice(1);
+
+                    return (
+                      <Card
+                        key={provider}
+                        className="bg-background border shadow-sm"
+                      >
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-foreground text-base font-medium">
+                            {providerName}
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                          <div>
+                            <label className="block text-muted-foreground mb-2 text-sm font-medium">
+                              API Key
+                            </label>
+                            <Input
+                              type="password"
+                              placeholder={`Enter your ${providerName} API key`}
+                              value={config.apiKey || ''}
+                              onChange={(e) =>
+                                handleServiceConfigUpdate(
+                                  provider,
+                                  'apiKey',
+                                  e.target.value,
+                                )
+                              }
+                              className="bg-background border text-foreground"
+                            />
+                          </div>
+                          {provider === AIServiceProvider.Ollama && (
+                            <div>
+                              <label className="block text-muted-foreground mb-2 text-sm font-medium">
+                                Base URL
+                              </label>
+                              <Input
+                                type="url"
+                                placeholder="http://localhost:11434"
+                                value={config.baseUrl || ''}
+                                onChange={(e) =>
+                                  handleServiceConfigUpdate(
+                                    provider,
+                                    'baseUrl',
+                                    e.target.value,
+                                  )
+                                }
+                                className="bg-background border text-foreground"
+                              />
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+              </div>
+            </TabsContent>
+
+            <TabsContent value="conversation-model" className="pt-4">
+              <div className="space-y-6">
+                <div>
+                  <label className="block text-muted-foreground mb-2 font-medium">
+                    Message Window Size
                   </label>
                   <Input
-                    type="password"
-                    placeholder={`Enter your ${serviceProvider} API key`}
-                    value={apiKeys[serviceProvider] || ''}
-                    onChange={(e) => handleApiKeyUpdate(e, serviceProvider)}
+                    type="number"
+                    placeholder="e.g., 50"
+                    value={windowSize}
+                    onChange={(e) =>
+                      handleWindowSizeUpdate(parseInt(e.target.value, 10))
+                    }
+                    className="bg-background border text-foreground max-w-xs"
                   />
                 </div>
-              ))}
-            </div>
-          </TabsContent>
 
-          <TabsContent value="conversation-model">
-            <div className="space-y-6 pt-4">
-              <div>
-                <label className="block text-gray-400 mb-2 font-medium">
-                  Message Window Size
-                </label>
-                <Input
-                  type="number"
-                  placeholder="e.g., 50"
-                  value={windowSize}
-                  onChange={(e) =>
-                    handleWindowSizeUpdate(parseInt(e.target.value, 10))
-                  }
-                />
+                <div>
+                  <label className="block text-muted-foreground mb-2 font-medium">
+                    LLM Preference
+                  </label>
+                  <TerminalModelPicker />
+                </div>
               </div>
-
-              <div>
-                <label className="block text-gray-400 mb-2 font-medium">
-                  LLM Preference
-                </label>
-                <TerminalModelPicker />
-              </div>
-            </div>
-          </TabsContent>
-        </Tabs>
+            </TabsContent>
+          </Tabs>
+        </div>
 
         <div className="flex justify-end pt-4">
           <Button onClick={onClose}>Save</Button>

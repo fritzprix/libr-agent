@@ -50,7 +50,7 @@ const ModelOptionsContext = createContext<ModelOptionsContextType | null>(null);
 export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
   const {
     value: {
-      apiKeys,
+      serviceConfigs,
       preferredModel: { model, provider },
     },
     update,
@@ -62,6 +62,17 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
     {},
   );
   const [isRefreshingModels, setIsRefreshingModels] = useState(false);
+
+  // Compute API keys from service configs for backward compatibility
+  const apiKeys = useMemo(() => {
+    return Object.entries(serviceConfigs).reduce(
+      (acc, [provider, config]) => {
+        acc[provider as AIServiceProvider] = config.apiKey || '';
+        return acc;
+      },
+      {} as Record<AIServiceProvider, string>,
+    );
+  }, [serviceConfigs]);
 
   // 현재 프로바이더의 모델 목록 계산
   const models = useMemo(() => {

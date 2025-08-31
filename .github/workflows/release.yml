@@ -31,31 +31,31 @@ jobs:
           releaseName: 'SynapticFlow v__VERSION__'
           releaseBody: |
             🚀 **SynapticFlow v__VERSION__** 
-            
+
             A High-Freedom AI Agent Platform - Infinitely Expandable with MCP!
-            
+
             ## 🎯 What's New
             - Enhanced AI agent role management
             - Improved MCP server integration  
             - Better file attachment handling
             - Performance optimizations
-            
+
             ## 📦 Installation
-            
+
             ### Windows
             Download and run `SynapticFlow_x64_en-US.msi`
-            
+
             ### macOS
             Download `SynapticFlow.app.tar.gz`, extract and copy to Applications folder
-            
+
             ### Linux
             - **Ubuntu/Debian**: Download and install `.deb` package
             - **AppImage**: Download `.AppImage`, make executable and run
-            
+
             ## 🔧 Requirements
             - Windows 10+ / macOS 10.15+ / Linux (modern distribution)
             - 4GB RAM minimum, 8GB recommended
-            
+
             See the assets below to download for your platform.
           releaseDraft: true
           prerelease: false

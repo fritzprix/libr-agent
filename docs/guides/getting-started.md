@@ -44,10 +44,9 @@ This will open the SynapticFlow desktop application.
 1.  **Open the Settings Modal**: Click the gear icon in the application to open the settings.
 2.  **Go to MCP Servers**: Navigate to the MCP Servers section.
 3.  **Add a New Server**: Click "Add Server" and enter the following configuration for a simple filesystem server:
-
-    -   **Name**: `filesystem`
-    -   **Command**: `npx`
-    -   **Arguments**: `-y @modelcontextprotocol/server-filesystem /tmp`
+    - **Name**: `filesystem`
+    - **Command**: `npx`
+    - **Arguments**: `-y @modelcontextprotocol/server-filesystem /tmp`
 
 4.  **Save the Configuration**: Click "Save".
 5.  **Start the Server**: The application will automatically attempt to start the server. You can check its status in the UI.

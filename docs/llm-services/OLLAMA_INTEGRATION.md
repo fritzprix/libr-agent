@@ -49,16 +49,16 @@ You can configure Ollama settings in the SynapticFlow settings:
 
 The following models are preconfigured in SynapticFlow:
 
-| Model | Context Window | Description |
-|-------|----------------|-------------|
-| `llama3.1` | 128,000 | Meta's latest large language model |
-| `llama3.2` | 128,000 | Meta's multimodal model |
-| `llama3.3` | 128,000 | Meta's latest optimized model |
-| `codellama` | 100,000 | Specialized for code generation |
-| `mistral` | 32,000 | High-performance open model |
-| `qwen2.5` | 128,000 | Alibaba's multilingual model |
-| `gemma2` | 8,192 | Google's open model |
-| `deepseek-coder` | 16,384 | Specialized coding model |
+| Model            | Context Window | Description                        |
+| ---------------- | -------------- | ---------------------------------- |
+| `llama3.1`       | 128,000        | Meta's latest large language model |
+| `llama3.2`       | 128,000        | Meta's multimodal model            |
+| `llama3.3`       | 128,000        | Meta's latest optimized model      |
+| `codellama`      | 100,000        | Specialized for code generation    |
+| `mistral`        | 32,000         | High-performance open model        |
+| `qwen2.5`        | 128,000        | Alibaba's multilingual model       |
+| `gemma2`         | 8,192          | Google's open model                |
+| `deepseek-coder` | 16,384         | Specialized coding model           |
 
 ### Adding Custom Models
 
@@ -70,6 +70,7 @@ To use models not listed above:
 ## Features
 
 ### ✅ Supported
+
 - **Streaming Chat**: Real-time response streaming
 - **Model Selection**: Choose from any locally available model
 - **Custom Host**: Connect to remote Ollama instances
@@ -78,6 +79,7 @@ To use models not listed above:
 - **System Prompts**: Set custom system instructions
 
 ### 🚧 Coming Soon
+
 - **Tool Calling**: MCP tool integration (planned for future release)
 - **Image Input**: Support for multimodal models
 - **Custom Parameters**: Advanced model parameters
@@ -95,8 +97,8 @@ const service = AIServiceFactory.getService(
   {
     defaultModel: 'llama3.1',
     temperature: 0.7,
-    maxTokens: 4096
-  }
+    maxTokens: 4096,
+  },
 );
 
 const messages = [
@@ -104,8 +106,8 @@ const messages = [
     id: '1',
     sessionId: 'session-1',
     role: 'user',
-    content: 'Hello, how are you?'
-  }
+    content: 'Hello, how are you?',
+  },
 ];
 
 for await (const chunk of service.streamChat(messages)) {
@@ -124,13 +126,14 @@ const messages = [
     id: '1',
     sessionId: 'session-1',
     role: 'user',
-    content: 'Write a Python function to calculate fibonacci numbers'
-  }
+    content: 'Write a Python function to calculate fibonacci numbers',
+  },
 ];
 
 for await (const chunk of service.streamChat(messages, {
-  systemPrompt: 'You are an expert Python developer. Provide clean, well-documented code.',
-  modelName: 'codellama'
+  systemPrompt:
+    'You are an expert Python developer. Provide clean, well-documented code.',
+  modelName: 'codellama',
 })) {
   const data = JSON.parse(chunk);
   if (data.content) {
@@ -185,20 +188,17 @@ for await (const chunk of service.streamChat(messages, {
 To connect to a remote Ollama instance:
 
 1. Start Ollama with external access:
+
    ```bash
    OLLAMA_HOST=0.0.0.0:11434 ollama serve
    ```
 
 2. Configure SynapticFlow with the remote host:
    ```typescript
-   const service = AIServiceFactory.getService(
-     AIServiceProvider.Ollama,
-     '',
-     {
-       host: 'http://remote-server:11434',
-       defaultModel: 'llama3.1'
-     }
-   );
+   const service = AIServiceFactory.getService(AIServiceProvider.Ollama, '', {
+     host: 'http://remote-server:11434',
+     defaultModel: 'llama3.1',
+   });
    ```
 
 ## Security Considerations
@@ -214,8 +214,8 @@ To connect to a remote Ollama instance:
 
 ```typescript
 class OllamaService extends BaseAIService {
-  constructor(apiKey: string, config?: AIServiceConfig & { host?: string })
-  
+  constructor(apiKey: string, config?: AIServiceConfig & { host?: string });
+
   async *streamChat(
     messages: Message[],
     options?: {
@@ -223,8 +223,8 @@ class OllamaService extends BaseAIService {
       systemPrompt?: string;
       availableTools?: MCPTool[];
       config?: AIServiceConfig;
-    }
-  ): AsyncGenerator<string, void, void>
+    },
+  ): AsyncGenerator<string, void, void>;
 }
 ```
 
@@ -232,13 +232,13 @@ class OllamaService extends BaseAIService {
 
 ```typescript
 interface AIServiceConfig {
-  timeout?: number;           // Request timeout in ms
-  maxRetries?: number;        // Maximum retry attempts
-  retryDelay?: number;        // Delay between retries in ms
-  defaultModel?: string;      // Default model name
-  maxTokens?: number;         // Maximum response tokens
-  temperature?: number;       // Response creativity (0.0-1.0)
-  host?: string;             // Ollama server host URL
+  timeout?: number; // Request timeout in ms
+  maxRetries?: number; // Maximum retry attempts
+  retryDelay?: number; // Delay between retries in ms
+  defaultModel?: string; // Default model name
+  maxTokens?: number; // Maximum response tokens
+  temperature?: number; // Response creativity (0.0-1.0)
+  host?: string; // Ollama server host URL
 }
 ```
 

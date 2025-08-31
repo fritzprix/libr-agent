@@ -16,6 +16,7 @@
 ### 다음 단계:
 
 1. **GitHub 저장소 생성**
+
    ```bash
    # GitHub에서 새 저장소 생성 후
    git remote add origin https://github.com/fritzprix/synaptic-flow.git
@@ -37,8 +38,6 @@
    - 📢 r/rust, r/tauri 커뮤니티에 공유
    - 🐦 트위터에 #SynapticFlow 해시태그로 공유
    - 📺 데모 GIF/비디오 제작
-
-
 
 ## 📊 성공 지표
 

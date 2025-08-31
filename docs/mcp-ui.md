@@ -25,11 +25,11 @@
   <a href="#-license">License</a>
 </p>
 
-----
+---
 
 **`mcp-ui`** brings interactive web components to the [Model Context Protocol](https://modelcontextprotocol.io/introduction) (MCP). Deliver rich, dynamic UI resources directly from your MCP server to be rendered by the client. Take AI interaction to the next level!
 
-> *This project is an experimental community playground for MCP UI ideas. Expect rapid iteration and enhancements!*
+> _This project is an experimental community playground for MCP UI ideas. Expect rapid iteration and enhancements!_
 
 <p align="center">
   <video src="https://github.com/user-attachments/assets/7180c822-2dd9-4f38-9d3e-b67679509483"></video>
@@ -39,9 +39,9 @@
 
 `mcp-ui` is a collection of SDKs comprising:
 
-* **`@mcp-ui/server` (TypeScript)**: Utilities to generate UI resources (`UIResource`) on your MCP server.
-* **`@mcp-ui/client` (TypeScript)**: UI components (e.g., `<UIResourceRenderer />`) to render the UI resources and handle their events.
-* **`mcp_ui_server` (Ruby)**: Utilities to generate UI resources on your MCP server in a Ruby environment.
+- **`@mcp-ui/server` (TypeScript)**: Utilities to generate UI resources (`UIResource`) on your MCP server.
+- **`@mcp-ui/client` (TypeScript)**: UI components (e.g., `<UIResourceRenderer />`) to render the UI resources and handle their events.
+- **`mcp_ui_server` (Ruby)**: Utilities to generate UI resources on your MCP server in a Ruby environment.
 
 Together, they let you define reusable UI snippets on the server side, seamlessly and securely render them in the client, and react to their actions in the MCP host environment.
 
@@ -50,25 +50,29 @@ Together, they let you define reusable UI snippets on the server side, seamlessl
 In essence, by using `mcp-ui` SDKs, servers and hosts can agree on contracts that enable them to create and render interactive UI snippets (as a path to a standardized UI approach in MCP).
 
 ### UI Resource
+
 The primary payload returned from the server to the client is the `UIResource`:
 
 ```ts
 interface UIResource {
   type: 'resource';
   resource: {
-    uri: string;       // e.g., ui://component/id
-    mimeType: 'text/html' | 'text/uri-list' | 'application/vnd.mcp-ui.remote-dom'; // text/html for HTML content, text/uri-list for URL content, application/vnd.mcp-ui.remote-dom for remote-dom content (Javascript)
-    text?: string;      // Inline HTML, external URL, or remote-dom script
-    blob?: string;      // Base64-encoded HTML, URL, or remote-dom script
+    uri: string; // e.g., ui://component/id
+    mimeType:
+      | 'text/html'
+      | 'text/uri-list'
+      | 'application/vnd.mcp-ui.remote-dom'; // text/html for HTML content, text/uri-list for URL content, application/vnd.mcp-ui.remote-dom for remote-dom content (Javascript)
+    text?: string; // Inline HTML, external URL, or remote-dom script
+    blob?: string; // Base64-encoded HTML, URL, or remote-dom script
   };
 }
 ```
 
-* **`uri`**: Unique identifier for caching and routing
-  * `ui://…` — UI resources (rendering method determined by mimeType)
-* **`mimeType`**: `text/html` for HTML content (iframe srcDoc), `text/uri-list` for URL content (iframe src), `application/vnd.mcp-ui.remote-dom` for remote-dom content (Javascript)
-  * **MCP-UI requires a single URL**: While `text/uri-list` format supports multiple URLs, MCP-UI uses only the first valid `http/s` URL and warns if additional URLs are found
-* **`text` vs. `blob`**: Choose `text` for simple strings; use `blob` for larger or encoded content.
+- **`uri`**: Unique identifier for caching and routing
+  - `ui://…` — UI resources (rendering method determined by mimeType)
+- **`mimeType`**: `text/html` for HTML content (iframe srcDoc), `text/uri-list` for URL content (iframe src), `application/vnd.mcp-ui.remote-dom` for remote-dom content (Javascript)
+  - **MCP-UI requires a single URL**: While `text/uri-list` format supports multiple URLs, MCP-UI uses only the first valid `http/s` URL and warns if additional URLs are found
+- **`text` vs. `blob`**: Choose `text` for simple strings; use `blob` for larger or encoded content.
 
 ### Resource Renderer
 
@@ -79,6 +83,7 @@ It is available as a React component and as a Web Component.
 **React Component**
 
 It accepts the following props:
+
 - **`resource`**: The resource object from an MCP Tool response. It must include `uri`, `mimeType`, and content (`text`, `blob`)
 - **`onUIAction`**: Optional callback for handling UI actions from the resource:
   ```typescript
@@ -104,6 +109,7 @@ It accepts the following props:
 The Web Component is available as `<ui-resource-renderer>`. It accepts the same props as the React component, but they must be passed as strings.
 
 Example:
+
 ```html
 <ui-resource-renderer
   resource='{ "mimeType": "text/html", "text": "<h2>Hello from the Web Component!</h2>" }'
@@ -111,6 +117,7 @@ Example:
 ```
 
 The `onUIAction` prop can be handled by attaching an event listener to the component:
+
 ```javascript
 const renderer = document.querySelector('ui-resource-renderer');
 renderer.addEventListener('onUIAction', (event) => {
@@ -126,15 +133,15 @@ The Web Component is available in the `@mcp-ui/client` package at `dist/ui-resou
 
 Rendered using the internal `<HTMLResourceRenderer />` component, which displays content inside an `<iframe>`. This is suitable for self-contained HTML or embedding external apps.
 
-*   **`mimeType`**:
-    *   `text/html`: Renders inline HTML content.
-    *   `text/uri-list`: Renders an external URL. MCP-UI uses the first valid `http/s` URL.
+- **`mimeType`**:
+  - `text/html`: Renders inline HTML content.
+  - `text/uri-list`: Renders an external URL. MCP-UI uses the first valid `http/s` URL.
 
 #### Remote DOM (`application/vnd.mcp-ui.remote-dom`)
 
 Rendered using the internal `<RemoteDOMResourceRenderer />` component, which utilizes Shopify's [`remote-dom`](https://github.com/Shopify/remote-dom). The server responds with a script that describes the UI and events. On the host, the script is securely rendered in a sandboxed iframe, and the UI changes are communicated to the host in JSON, where they're rendered using the host's component library. This is more flexible than iframes and allows for UIs that match the host's look-and-feel.
 
-* **`mimeType`**: `application/vnd.mcp-ui.remote-dom+javascript; framework={react | webcomponents}`
+- **`mimeType`**: `application/vnd.mcp-ui.remote-dom+javascript; framework={react | webcomponents}`
 
 ### UI Action
 
@@ -163,7 +170,7 @@ gem install mcp_ui_server
 
 ## 🚀 Getting Started
 
-You can use [GitMCP](https://gitmcp.io/idosal/mcp-ui) to give your IDE access to `mcp-ui`'s latest documentation! 
+You can use [GitMCP](https://gitmcp.io/idosal/mcp-ui) to give your IDE access to `mcp-ui`'s latest documentation!
 
 ### TypeScript
 
@@ -172,9 +179,9 @@ You can use [GitMCP](https://gitmcp.io/idosal/mcp-ui) to give your IDE access to
    ```ts
    import { createUIResource } from '@mcp-ui/server';
    import {
-    createRemoteComponent,
-    createRemoteDocument,
-    createRemoteText,
+     createRemoteComponent,
+     createRemoteDocument,
+     createRemoteText,
    } from '@remote-dom/core';
 
    // Inline HTML
@@ -238,41 +245,41 @@ You can use [GitMCP](https://gitmcp.io/idosal/mcp-ui) to give your IDE access to
 
 **Server-side**: Build your UI resources
 
-   ```ruby
-   require 'mcp_ui_server'
+```ruby
+require 'mcp_ui_server'
 
-   # Inline HTML
-   html_resource = McpUiServer.create_ui_resource(
-     uri: 'ui://greeting/1',
-     content: { type: :raw_html, htmlString: '<p>Hello, from Ruby!</p>' },
-     encoding: :text
-   )
+# Inline HTML
+html_resource = McpUiServer.create_ui_resource(
+  uri: 'ui://greeting/1',
+  content: { type: :raw_html, htmlString: '<p>Hello, from Ruby!</p>' },
+  encoding: :text
+)
 
-   # External URL
-   external_url_resource = McpUiServer.create_ui_resource(
-     uri: 'ui://greeting/2',
-     content: { type: :external_url, iframeUrl: 'https://example.com' },
-     encoding: :text
-   )
+# External URL
+external_url_resource = McpUiServer.create_ui_resource(
+  uri: 'ui://greeting/2',
+  content: { type: :external_url, iframeUrl: 'https://example.com' },
+  encoding: :text
+)
 
-   # remote-dom
-   remote_dom_resource = McpUiServer.create_ui_resource(
-     uri: 'ui://remote-component/action-button',
-     content: {
-       type: :remote_dom,
-       script: "
-        const button = document.createElement('ui-button');
-        button.setAttribute('label', 'Click me from Ruby!');
-        button.addEventListener('press', () => {
-          window.parent.postMessage({ type: 'tool', payload: { toolName: 'uiInteraction', params: { action: 'button-click', from: 'ruby-remote-dom' } } }, '*');
-        });
-        root.appendChild(button);
-        ",
-       framework: :react,
-     },
-     encoding: :text
-   )
-   ```
+# remote-dom
+remote_dom_resource = McpUiServer.create_ui_resource(
+  uri: 'ui://remote-component/action-button',
+  content: {
+    type: :remote_dom,
+    script: "
+     const button = document.createElement('ui-button');
+     button.setAttribute('label', 'Click me from Ruby!');
+     button.addEventListener('press', () => {
+       window.parent.postMessage({ type: 'tool', payload: { toolName: 'uiInteraction', params: { action: 'button-click', from: 'ruby-remote-dom' } } }, '*');
+     });
+     root.appendChild(button);
+     ",
+    framework: :react,
+  },
+  encoding: :text
+)
+```
 
 ## 🚶 Walkthrough
 
@@ -286,46 +293,46 @@ These guides will show you how to add a `mcp-ui` endpoint to an existing server,
 ## 🌍 Examples
 
 **Client Examples**
-* [ui-inspector](https://github.com/idosal/ui-inspector) - inspect local `mcp-ui`-enabled servers.
-* [MCP-UI Chat](https://github.com/idosal/scira-mcp-ui-chat) - interactive chat built with the `mcp-ui` client. Check out the [hosted version](https://scira-mcp-chat-git-main-idosals-projects.vercel.app/)!
-* MCP-UI RemoteDOM Playground (`examples/remote-dom-demo`) - local demo app to test RemoteDOM resources (intended for hosts)
-* MCP-UI Web Component Demo (`examples/wc-demo`) - local demo app to test the Web Component
+
+- [ui-inspector](https://github.com/idosal/ui-inspector) - inspect local `mcp-ui`-enabled servers.
+- [MCP-UI Chat](https://github.com/idosal/scira-mcp-ui-chat) - interactive chat built with the `mcp-ui` client. Check out the [hosted version](https://scira-mcp-chat-git-main-idosals-projects.vercel.app/)!
+- MCP-UI RemoteDOM Playground (`examples/remote-dom-demo`) - local demo app to test RemoteDOM resources (intended for hosts)
+- MCP-UI Web Component Demo (`examples/wc-demo`) - local demo app to test the Web Component
 
 **Server Examples**
-* **TypeScript**: A [full-featured server](examples/server) that is deployed to a hosted environment for easy testing.
-  * **[`typescript-server-demo`](./examples/typescript-server-demo)**: A simple Typescript server that demonstrates how to generate UI resources.
-  * **server**: A [full-featured Typescript server](examples/server) that is deployed to a hosted Cloudflare environment for easy testing.
-    * **HTTP Streaming**: `https://remote-mcp-server-authless.idosalomon.workers.dev/mcp`
-    * **SSE**: `https://remote-mcp-server-authless.idosalomon.workers.dev/sse`
-* **Ruby**: A barebones [demo server](/examples/ruby-server-demo) that shows how to use `mcp_ui_server` and `mcp` gems together.
+
+- **TypeScript**: A [full-featured server](examples/server) that is deployed to a hosted environment for easy testing.
+  - **[`typescript-server-demo`](./examples/typescript-server-demo)**: A simple Typescript server that demonstrates how to generate UI resources.
+  - **server**: A [full-featured Typescript server](examples/server) that is deployed to a hosted Cloudflare environment for easy testing.
+    - **HTTP Streaming**: `https://remote-mcp-server-authless.idosalomon.workers.dev/mcp`
+    - **SSE**: `https://remote-mcp-server-authless.idosalomon.workers.dev/sse`
+- **Ruby**: A barebones [demo server](/examples/ruby-server-demo) that shows how to use `mcp_ui_server` and `mcp` gems together.
 
 Drop those URLs into any MCP-compatible host to see `mcp-ui` in action. For a supported local inspector, see the [ui-inspector](https://github.com/idosal/ui-inspector).
 
-
-
 ## 🔒 Security
-Host and user security is one of `mcp-ui`'s primary concerns. In all content types, the remote code is executed in a sandboxed iframe.
 
+Host and user security is one of `mcp-ui`'s primary concerns. In all content types, the remote code is executed in a sandboxed iframe.
 
 ## 🛣️ Roadmap
 
-- [X] Add online playground
-- [X] Expand UI Action API (beyond tool calls)
-- [X] Support Web Components
-- [X] Support Remote-DOM
+- [x] Add online playground
+- [x] Expand UI Action API (beyond tool calls)
+- [x] Support Web Components
+- [x] Support Remote-DOM
 - [ ] Add component libraries (in progress)
 - [ ] Add SDKs for additional programming languages (in progress; Ruby available)
 - [ ] Support additional frontend frameworks
 - [ ] Add declarative UI content type
 - [ ] Support generative UI?
-      
+
 ## Core Team
+
 `mcp-ui` is a project by [Ido Salomon](https://x.com/idosal1), in collaboration with [Liad Yosef](https://x.com/liadyosef).
 
 ## 🤝 Contributing
 
 Contributions, ideas, and bug reports are welcome! See the [contribution guidelines](https://github.com/idosal/mcp-ui/blob/main/.github/CONTRIBUTING.md) to get started.
-
 
 ## 📄 License
 

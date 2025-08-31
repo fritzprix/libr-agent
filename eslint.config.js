@@ -1,13 +1,13 @@
-import globals from "globals";
-import pluginJs from "@eslint/js";
-import tseslintParser from "@typescript-eslint/parser";
-import tseslintPlugin from "@typescript-eslint/eslint-plugin";
-import pluginReact from "eslint-plugin-react";
+import globals from 'globals';
+import pluginJs from '@eslint/js';
+import tseslintParser from '@typescript-eslint/parser';
+import tseslintPlugin from '@typescript-eslint/eslint-plugin';
+import pluginReact from 'eslint-plugin-react';
 
 export default [
-  { 
-    files: ["**/*.{js,mjs,cjs,ts,jsx,tsx}"],
-    ignores: ["dist/**", "src-tauri/target/**"],
+  {
+    files: ['**/*.{js,mjs,cjs,ts,jsx,tsx}'],
+    ignores: ['dist/**', 'src-tauri/target/**'],
   },
   {
     languageOptions: {
@@ -16,8 +16,8 @@ export default [
         ecmaFeatures: {
           jsx: true,
         },
-        ecmaVersion: "latest",
-        sourceType: "module",
+        ecmaVersion: 'latest',
+        sourceType: 'module',
       },
       globals: { ...globals.browser, ...globals.node },
     },
@@ -26,7 +26,7 @@ export default [
   pluginJs.configs.recommended,
   {
     plugins: {
-      "@typescript-eslint": tseslintPlugin,
+      '@typescript-eslint': tseslintPlugin,
     },
     rules: tseslintPlugin.configs.recommended.rules,
   },
@@ -36,12 +36,12 @@ export default [
     },
     settings: {
       react: {
-        version: "detect"
-      }
+        version: 'detect',
+      },
     },
     rules: {
       ...pluginReact.configs.recommended.rules,
-      ...pluginReact.configs["jsx-runtime"].rules,
+      ...pluginReact.configs['jsx-runtime'].rules,
     },
   },
   {

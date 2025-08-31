@@ -11,7 +11,7 @@ The MCP browser agent was experiencing a critical race condition where `result_w
 Based on detailed log analysis of `logs.txt`, the issue was a **timing race condition**:
 
 ```
-[2025-08-21][08:53:31] handle_script_result: Called for session_id: 'be607787...' 
+[2025-08-21][08:53:31] handle_script_result: Called for session_id: 'be607787...'
 [2025-08-21][08:53:38] execute_script: Inserted waiter for session_id: 'be607787...'
 [2025-08-21][08:53:38] handle_script_result: Called for session_id: 'be607787...'
 [2025-08-21][08:53:38] handle_script_result: Available waiters before removal: []
@@ -20,7 +20,7 @@ Based on detailed log analysis of `logs.txt`, the issue was a **timing race cond
 ### The Race Condition
 
 1. **Step 1**: `execute_script` inserts waiter into HashMap
-2. **Step 2**: JavaScript executes via `window.eval()` 
+2. **Step 2**: JavaScript executes via `window.eval()`
 3. **Step 3**: JavaScript **immediately and synchronously** calls `window.__TAURI_INTERNALS__.invoke('browser_script_result', ...)`
 4. **Step 4**: `handle_script_result` executes and removes waiter from HashMap
 5. **Step 5**: `execute_script` continues to `tokio::time::timeout(...)` - but waiter is already gone!
@@ -30,7 +30,7 @@ The JavaScript was executing faster than the Rust async runtime could proceed to
 ### Technical Details
 
 - **JavaScript execution**: Synchronous, immediate
-- **Rust async progression**: Requires yield points and scheduler cooperation  
+- **Rust async progression**: Requires yield points and scheduler cooperation
 - **Result**: JavaScript callback arrives before Rust starts waiting
 - **Consequence**: Waiter removed, timeout occurs, script execution fails
 
@@ -44,9 +44,9 @@ Introduced **asynchronous delay** in JavaScript to ensure Rust receiver is ready
 // BEFORE (synchronous - causes race condition)
 window.__TAURI_INTERNALS__.invoke('browser_script_result', { payload });
 
-// AFTER (asynchronous with delay - prevents race condition)  
-setTimeout(function() {
-    window.__TAURI_INTERNALS__.invoke('browser_script_result', { payload });
+// AFTER (asynchronous with delay - prevents race condition)
+setTimeout(function () {
+  window.__TAURI_INTERNALS__.invoke('browser_script_result', { payload });
 }, 100);
 ```
 
@@ -88,7 +88,7 @@ let wrapped_script = format!(
         // Error handling with same async pattern
         const errorStr = 'Error: ' + error.message;
         const payload = {{ sessionId: '{session_id}', result: errorStr }};
-        
+
         setTimeout(function() {{
             window.__TAURI_INTERNALS__.invoke('browser_script_result', {{ payload }});
         }}, 100);
@@ -105,6 +105,7 @@ let wrapped_script = format!(
 ### Log Pattern Verification
 
 **Expected behavior after fix**:
+
 ```
 [INFO] execute_script: Inserted waiter for session_id: 'xxx', current waiters: ["xxx"]
 [INFO] execute_script: Script wrapper executed, now waiting for result
@@ -141,6 +142,7 @@ let wrapped_script = format!(
 4. **IPC mechanism changes**: High complexity, broader impact
 
 **Selected solution** (setTimeout) provides the best balance of:
+
 - **Simplicity**: Minimal code changes
 - **Reliability**: Guaranteed async behavior
 - **Compatibility**: Works across all browsers

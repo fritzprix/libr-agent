@@ -228,7 +228,9 @@ console.log('Connected servers:', connectedServers);
 ```typescript
 import { invoke } from '@tauri-apps/api/tauri';
 
-const isAlive = await invoke('check_server_status', { serverName: 'filesystem' });
+const isAlive = await invoke('check_server_status', {
+  serverName: 'filesystem',
+});
 console.log('Server status:', isAlive ? 'Alive' : 'Not Responding');
 ```
 

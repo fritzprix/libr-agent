@@ -11,6 +11,7 @@ The MCP browser agent was experiencing a critical issue where `result_waiters` H
 ## Root Cause Analysis
 
 The issue manifested with the following pattern:
+
 1. `execute_script` creates oneshot channel and inserts into `result_waiters`
 2. JavaScript executes successfully and calls `window.__TAURI_INTERNALS__.invoke('browser_script_result', { payload })`
 3. `handle_script_result` is called but finds waiters HashMap empty
@@ -21,12 +22,14 @@ The issue manifested with the following pattern:
 ### 1. Enhanced Logging System
 
 #### execute_script Logging
+
 - Added detailed session ID tracking with single quotes for clarity
 - Log waiter insertion with current waiters state
 - Enhanced script execution status logging
 - Detailed timeout and cleanup logging with waiter state
 
 #### handle_script_result Logging
+
 - Log received session ID and result data
 - Show available waiters before removal attempt
 - Enhanced error logging for missing waiters
@@ -51,6 +54,7 @@ pub fn insert_test_waiter_debug(&self, session_id: &str) -> Result<tokio::sync::
 Created `browser_debug.rs` module with:
 
 #### BrowserDebugger Struct
+
 - Waiter lifecycle testing
 - Session ID format consistency testing
 - Race condition simulation
@@ -58,12 +62,14 @@ Created `browser_debug.rs` module with:
 - Comprehensive diagnostic runner
 
 #### Key Test Functions
+
 - `test_waiter_lifecycle()`: Tests manual waiter insertion/retrieval
 - `test_session_id_formats()`: Tests various ID formats for consistency
 - `simulate_race_condition()`: Tests concurrent operations
 - `monitor_waiters()`: Continuous monitoring for unexpected changes
 
 #### Tauri Command Integration
+
 ```rust
 #[tauri::command]
 pub async fn run_browser_diagnostic(
@@ -75,11 +81,13 @@ pub async fn run_browser_diagnostic(
 ### 4. Enhanced Error Detection
 
 #### Session ID Mismatch Detection
+
 - Compare session IDs character by character
 - Detect partial matches that might indicate formatting issues
 - Log potential UUID format inconsistencies
 
 #### Lock Acquisition Monitoring
+
 - Enhanced error handling for mutex lock failures
 - Better reporting of lock contention issues
 - Detailed cleanup operation logging
@@ -87,19 +95,25 @@ pub async fn run_browser_diagnostic(
 ## Key Diagnostic Features
 
 ### 1. Real-time Waiter State Logging
+
 Every operation now logs the complete state of the waiters HashMap, making it easy to track when and why waiters disappear.
 
 ### 2. Session ID Analysis
+
 The diagnostic system tests multiple session ID formats:
+
 - Standard UUID format
 - Simple test IDs
 - Exact IDs from error logs
 
 ### 3. Race Condition Detection
+
 Concurrent operation simulation helps identify timing-related issues.
 
 ### 4. Frontend Integration
+
 Simple command to run diagnostics from the frontend:
+
 ```javascript
 const result = await invoke('run_browser_diagnostic', { sessionId: 'your-id' });
 ```
@@ -107,12 +121,14 @@ const result = await invoke('run_browser_diagnostic', { sessionId: 'your-id' });
 ## Usage Instructions
 
 ### For Immediate Debugging
+
 1. Enable INFO/DEBUG logging
 2. Run the diagnostic command with the problematic session ID
 3. Monitor logs for the detailed execution flow
 4. Compare waiter insertion vs. retrieval timing
 
 ### For Ongoing Monitoring
+
 1. Use the enhanced logging to track all script executions
 2. Look for patterns in session ID mismatches
 3. Monitor for lock acquisition failures
@@ -121,6 +137,7 @@ const result = await invoke('run_browser_diagnostic', { sessionId: 'your-id' });
 ## Expected Log Patterns
 
 ### Normal Operation
+
 ```
 [INFO] execute_script: Inserted waiter for session_id: 'xxx', current waiters: ["xxx"]
 [INFO] execute_script: Script wrapper executed in session: 'xxx'
@@ -130,6 +147,7 @@ const result = await invoke('run_browser_diagnostic', { sessionId: 'your-id' });
 ```
 
 ### Problem Cases
+
 ```
 [INFO] execute_script: Inserted waiter for session_id: 'xxx', current waiters: ["xxx"]
 [INFO] execute_script: Script wrapper executed in session: 'xxx'
@@ -141,6 +159,7 @@ const result = await invoke('run_browser_diagnostic', { sessionId: 'your-id' });
 ## Files Modified/Added
 
 ### Modified
+
 - `src-tauri/src/services/interactive_browser_server.rs`
   - Enhanced logging throughout
   - Added debug methods
@@ -156,6 +175,7 @@ const result = await invoke('run_browser_diagnostic', { sessionId: 'your-id' });
   - Added diagnostic command registration
 
 ### Added
+
 - `src-tauri/src/services/browser_debug.rs`
   - Complete diagnostic system
   - Test utilities

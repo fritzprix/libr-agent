@@ -105,8 +105,8 @@ print(chat_completion.choices[0].message.content)
 
 The following options have minor differences:
 
-* `stop`: the returned string includes the stop word for Fireworks while it's omitted for OpenAI (it can be easily truncated on client side)
-* `max_tokens`: behaves differently if the model context length is exceeded. If the length of `prompt` or `messages` plus `max_tokens` is higher than the model's context window, `max_tokens` will be adjusted lower accordingly. OpenAI returns invalid request error in this situation. This behavior can be adjusted by `context_length_exceeded_behavior` parameter.
+- `stop`: the returned string includes the stop word for Fireworks while it's omitted for OpenAI (it can be easily truncated on client side)
+- `max_tokens`: behaves differently if the model context length is exceeded. If the length of `prompt` or `messages` plus `max_tokens` is higher than the model's context window, `max_tokens` will be adjusted lower accordingly. OpenAI returns invalid request error in this situation. This behavior can be adjusted by `context_length_exceeded_behavior` parameter.
 
 ### Token usage for streaming responses
 
@@ -115,7 +115,7 @@ OpenAI API returns usage stats (number of tokens in prompt and completion) for n
 Fireworks.ai returns usage stats in both cases. For streaming responses, the `usage` field is returned in the very last chunk on the response (i.e. the one having `finish_reason` set). For example:
 
 ```bash cURL
-curl --request POST \           
+curl --request POST \
      --url https://api.fireworks.ai/inference/v1/completions \
      --header "accept: application/json" \
      --header "authorization: Bearer $API_KEY" \
@@ -125,11 +125,11 @@ curl --request POST \
 
 ```
 data: {..., "choices":[{"text":"\n  print('Hello,","index":0,"finish_reason":null,"logprobs":null}],"usage":null}
-       
+
 data: {..., "choices":[{"text":" World!')\n\n\n","index":0,"finish_reason":null,"logprobs":null}],"usage":null}
-       
+
 data: {..., "choices":[{"text":"say_hello_","index":0,"finish_reason":null,"logprobs":null}],"usage":null}
-       
+
 data: {..., "choices":[{"text":"world()\n","index":0,"finish_reason":"stop","logprobs":null}],"usage":{"prompt_tokens":7,"total_tokens":24,"completion_tokens":17}}
 
 data: [DONE]
@@ -138,18 +138,18 @@ data: [DONE]
 <Note>
   Note, that if you're using OpenAI SDK, they `usage` field won't be listed in the SDK's structure definition. But it can be accessed directly. For example:
 
-  * In Python SDK, you can access the attribute directly, e.g. `for chunk in openai.ChatCompletion.create(...): print(chunk["usage"])`.
-  * In TypeScript SDK, you need to cast away the typing, e.g. `for await (const chunk of await openai.chat.completions.create(...)) { console.log((chunk as any).usage); }`.
-</Note>
+- In Python SDK, you can access the attribute directly, e.g. `for chunk in openai.ChatCompletion.create(...): print(chunk["usage"])`.
+- In TypeScript SDK, you need to cast away the typing, e.g. `for await (const chunk of await openai.chat.completions.create(...)) { console.log((chunk as any).usage); }`.
+  </Note>
 
 ### Not supported options
 
 The following options are not yet supported:
 
-* `presence_penalty`
-* `frequency_penalty`
-* `best_of`: you can use `n` instead
-* `logit_bias`
-* `functions`: you can use our [LangChain integration](https://python.langchain.com/docs/integrations/providers/fireworks) to achieve similar functionality client-side
+- `presence_penalty`
+- `frequency_penalty`
+- `best_of`: you can use `n` instead
+- `logit_bias`
+- `functions`: you can use our [LangChain integration](https://python.langchain.com/docs/integrations/providers/fireworks) to achieve similar functionality client-side
 
 Please reach out to us on [Discord](https://discord.gg/fireworks-ai) if you have a use case requiring one of these.

@@ -85,10 +85,7 @@ pub fn boolean_prop(description: Option<&str>) -> JSONSchema {
 }
 
 /// Creates an object schema with properties and required fields
-pub fn object_schema(
-    properties: HashMap<String, JSONSchema>,
-    required: Vec<String>,
-) -> JSONSchema {
+pub fn object_schema(properties: HashMap<String, JSONSchema>, required: Vec<String>) -> JSONSchema {
     JSONSchema {
         schema_type: JSONSchemaType::Object {
             properties: Some(properties),

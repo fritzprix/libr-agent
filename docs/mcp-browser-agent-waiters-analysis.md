@@ -11,6 +11,7 @@
 ## 2. 코드 흐름 (핵심 부분)
 
 ### execute_script
+
 ```rust
 let (tx, rx) = oneshot::channel();
 {
@@ -23,6 +24,7 @@ let (tx, rx) = oneshot::channel();
 ```
 
 ### handle_script_result
+
 ```rust
 if let Ok(mut waiters) = self.result_waiters.lock() {
     let keys: Vec<String> = waiters.keys().cloned().collect();
@@ -45,6 +47,7 @@ if let Ok(mut waiters) = self.result_waiters.lock() {
 [2025-08-21][07:11:56][tauri_mcp_agent_lib::services::interactive_browser_server][INFO] Script wrapper executed in session: 6d958f16-ada5-4b85-abae-bb52e8188972
 [2025-08-21][07:11:56][tauri_mcp_agent_lib::services::interactive_browser_server][INFO] handle_script_result: 6d958f16-ada5-4b85-abae-bb52e8188972 / []
 ```
+
 - JS에서 invoke가 호출되어 Rust의 handle_script_result가 실행됨
 - 하지만 waiters의 keys가 비어 있음 (즉, session_id가 없음)
 
@@ -55,12 +58,12 @@ if let Ok(mut waiters) = self.result_waiters.lock() {
 - 혹은, lock/스레드/비동기 환경에서 race condition이 발생해 waiters가 비는 타이밍 문제
 - 중복 호출, session_id 오타, 혹은 insert/remove 시점의 불일치 가능성
 - 타임라인 해설
-JS에서 invoke가 호출되어 Rust의 handle_script_result가 실행됨
-하지만 waiters의 keys가 이미 비어 있음 (즉, session_id가 없음)
-그 뒤에야 Rust에서 timeout이 발생함
-중요한 점
-waiters가 비어 있는 원인은 timeout이 아님!
-오히려 handle_script_result가 먼저 호출되어 waiters가 비어 있다는 로그가 남고, 그 뒤에 timeout이 발생한다는 점에서, timeout이 waiters를 비우는 직접적인 원인이 아니라는 것이 명확합니다.
+  JS에서 invoke가 호출되어 Rust의 handle_script_result가 실행됨
+  하지만 waiters의 keys가 이미 비어 있음 (즉, session_id가 없음)
+  그 뒤에야 Rust에서 timeout이 발생함
+  중요한 점
+  waiters가 비어 있는 원인은 timeout이 아님!
+  오히려 handle_script_result가 먼저 호출되어 waiters가 비어 있다는 로그가 남고, 그 뒤에 timeout이 발생한다는 점에서, timeout이 waiters를 비우는 직접적인 원인이 아니라는 것이 명확합니다.
 
 ## 5. 진단 포인트
 

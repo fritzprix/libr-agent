@@ -105,13 +105,22 @@ import OpenAI, { toFile } from 'openai';
 const client = new OpenAI();
 
 // If you have access to Node `fs` we recommend using `fs.createReadStream()`:
-await client.files.create({ file: fs.createReadStream('input.jsonl'), purpose: 'fine-tune' });
+await client.files.create({
+  file: fs.createReadStream('input.jsonl'),
+  purpose: 'fine-tune',
+});
 
 // Or if you have the web `File` API you can pass a `File` instance:
-await client.files.create({ file: new File(['my bytes'], 'input.jsonl'), purpose: 'fine-tune' });
+await client.files.create({
+  file: new File(['my bytes'], 'input.jsonl'),
+  purpose: 'fine-tune',
+});
 
 // You can also pass a `fetch` `Response`:
-await client.files.create({ file: await fetch('https://somesite/input.jsonl'), purpose: 'fine-tune' });
+await client.files.create({
+  file: await fetch('https://somesite/input.jsonl'),
+  purpose: 'fine-tune',
+});
 
 // Finally, if none of the above are convenient, you can use our `toFile` helper:
 await client.files.create({
@@ -271,7 +280,9 @@ The Realtime API enables you to build low-latency, multi-modal conversational ex
 ```ts
 import { OpenAIRealtimeWebSocket } from 'openai/beta/realtime/websocket';
 
-const rt = new OpenAIRealtimeWebSocket({ model: 'gpt-4o-realtime-preview-2024-12-17' });
+const rt = new OpenAIRealtimeWebSocket({
+  model: 'gpt-4o-realtime-preview-2024-12-17',
+});
 
 rt.on('response.text.delta', (event) => process.stdout.write(event.delta));
 ```
@@ -289,7 +300,10 @@ class instead of the `OpenAI` class.
 
 ```ts
 import { AzureOpenAI } from 'openai';
-import { getBearerTokenProvider, DefaultAzureCredential } from '@azure/identity';
+import {
+  getBearerTokenProvider,
+  DefaultAzureCredential,
+} from '@azure/identity';
 
 const credential = new DefaultAzureCredential();
 const scope = 'https://cognitiveservices.azure.com/.default';
@@ -354,7 +368,10 @@ Note that requests which time out will be [retried twice by default](#retries).
 All object responses in the SDK provide a `_request_id` property which is added from the `x-request-id` response header so that you can quickly log failing requests and report them back to OpenAI.
 
 ```ts
-const response = await client.responses.create({ model: 'gpt-4o', input: 'testing 123' });
+const response = await client.responses.create({
+  model: 'gpt-4o',
+  input: 'testing 123',
+});
 console.log(response._request_id); // req_123
 ```
 
@@ -379,7 +396,9 @@ You can use the `for await … of` syntax to iterate through items across all pa
 async function fetchAllFineTuningJobs(params) {
   const allFineTuningJobs = [];
   // Automatically fetches more pages as needed.
-  for await (const fineTuningJob of client.fineTuning.jobs.list({ limit: 20 })) {
+  for await (const fineTuningJob of client.fineTuning.jobs.list({
+    limit: 20,
+  })) {
     allFineTuningJobs.push(fineTuningJob);
   }
   return allFineTuningJobs;
@@ -408,7 +427,9 @@ The Realtime API enables you to build low-latency, multi-modal conversational ex
 ```ts
 import { OpenAIRealtimeWebSocket } from 'openai/beta/realtime/websocket';
 
-const rt = new OpenAIRealtimeWebSocket({ model: 'gpt-4o-realtime-preview-2024-12-17' });
+const rt = new OpenAIRealtimeWebSocket({
+  model: 'gpt-4o-realtime-preview-2024-12-17',
+});
 
 rt.on('response.text.delta', (event) => process.stdout.write(event.delta));
 ```
@@ -426,7 +447,10 @@ class instead of the `OpenAI` class.
 
 ```ts
 import { AzureOpenAI } from 'openai';
-import { getBearerTokenProvider, DefaultAzureCredential } from '@azure/identity';
+import {
+  getBearerTokenProvider,
+  DefaultAzureCredential,
+} from '@azure/identity';
 
 const credential = new DefaultAzureCredential();
 const scope = 'https://cognitiveservices.azure.com/.default';
@@ -641,7 +665,9 @@ const client = new OpenAI({
 ```ts
 import OpenAI from 'npm:openai';
 
-const httpClient = Deno.createHttpClient({ proxy: { url: 'http://localhost:8888' } });
+const httpClient = Deno.createHttpClient({
+  proxy: { url: 'http://localhost:8888' },
+});
 const client = new OpenAI({
   fetchOptions: {
     client: httpClient,
@@ -688,7 +714,6 @@ The following runtimes are supported:
   ### When might this not be dangerous?
 
   In certain scenarios where enabling browser support might not pose significant risks:
-
   - Internal Tools: If the application is used solely within a controlled internal environment where the users are trusted, the risk of credential exposure can be mitigated.
   - Public APIs with Limited Scope: If your API has very limited scope and the exposed credentials do not grant access to sensitive data or critical operations, the potential impact of exposure is reduced.
   - Development or debugging purpose: Enabling this feature temporarily might be acceptable, provided the credentials are short-lived, aren't also used in production environments, or are frequently rotated.

@@ -11,13 +11,13 @@ npm i ollama
 ## Usage
 
 ```javascript
-import ollama from 'ollama'
+import ollama from 'ollama';
 
 const response = await ollama.chat({
   model: 'llama3.1',
   messages: [{ role: 'user', content: 'Why is the sky blue?' }],
-})
-console.log(response.message.content)
+});
+console.log(response.message.content);
 ```
 
 ### Browser Usage
@@ -25,7 +25,7 @@ console.log(response.message.content)
 To use the library without node, import the browser module.
 
 ```javascript
-import ollama from 'ollama/browser'
+import ollama from 'ollama/browser';
 ```
 
 ## Streaming responses
@@ -33,16 +33,16 @@ import ollama from 'ollama/browser'
 Response streaming can be enabled by setting `stream: true`, modifying function calls to return an `AsyncGenerator` where each part is an object in the stream.
 
 ```javascript
-import ollama from 'ollama'
+import ollama from 'ollama';
 
-const message = { role: 'user', content: 'Why is the sky blue?' }
+const message = { role: 'user', content: 'Why is the sky blue?' };
 const response = await ollama.chat({
   model: 'llama3.1',
   messages: [message],
   stream: true,
-})
+});
 for await (const part of response) {
-  process.stdout.write(part.message.content)
+  process.stdout.write(part.message.content);
 }
 ```
 
@@ -53,17 +53,16 @@ The Ollama JavaScript library's API is designed around the [Ollama REST API](htt
 ### chat
 
 ```javascript
-ollama.chat(request)
+ollama.chat(request);
 ```
 
 - `request` `<Object>`: The request object containing chat parameters.
-
   - `model` `<string>` The name of the model to use for the chat.
   - `messages` `<Message[]>`: Array of message objects representing the chat history.
     - `role` `<string>`: The role of the message sender ('user', 'system', or 'assistant').
     - `content` `<string>`: The content of the message.
     - `images` `<Uint8Array[] | string[]>`: (Optional) Images to be included in the message, either as Uint8Array or base64 encoded strings.
-    - `tool_name` `<string>`: (Optional) Add the name of the tool that was executed to inform the model of the result 
+    - `tool_name` `<string>`: (Optional) Add the name of the tool that was executed to inform the model of the result
   - `format` `<string>`: (Optional) Set the expected format of the response (`json`).
   - `stream` `<boolean>`: (Optional) When true an `AsyncGenerator` is returned.
   - `think` `<boolean>`: (Optional) When true, the model will think about the response before responding. Requires thinking support from the model.
@@ -76,7 +75,7 @@ ollama.chat(request)
 ### generate
 
 ```javascript
-ollama.generate(request)
+ollama.generate(request);
 ```
 
 - `request` `<Object>`: The request object containing generate parameters.
@@ -97,7 +96,7 @@ ollama.generate(request)
 ### pull
 
 ```javascript
-ollama.pull(request)
+ollama.pull(request);
 ```
 
 - `request` `<Object>`: The request object containing pull parameters.
@@ -109,7 +108,7 @@ ollama.pull(request)
 ### push
 
 ```javascript
-ollama.push(request)
+ollama.push(request);
 ```
 
 - `request` `<Object>`: The request object containing push parameters.
@@ -121,7 +120,7 @@ ollama.push(request)
 ### create
 
 ```javascript
-ollama.create(request)
+ollama.create(request);
 ```
 
 - `request` `<Object>`: The request object containing create parameters.
@@ -142,7 +141,7 @@ Note: The `files` parameter is not currently supported in `ollama-js`.
 ### delete
 
 ```javascript
-ollama.delete(request)
+ollama.delete(request);
 ```
 
 - `request` `<Object>`: The request object containing delete parameters.
@@ -152,7 +151,7 @@ ollama.delete(request)
 ### copy
 
 ```javascript
-ollama.copy(request)
+ollama.copy(request);
 ```
 
 - `request` `<Object>`: The request object containing copy parameters.
@@ -163,7 +162,7 @@ ollama.copy(request)
 ### list
 
 ```javascript
-ollama.list()
+ollama.list();
 ```
 
 - Returns: `<ListResponse>`
@@ -171,7 +170,7 @@ ollama.list()
 ### show
 
 ```javascript
-ollama.show(request)
+ollama.show(request);
 ```
 
 - `request` `<Object>`: The request object containing show parameters.
@@ -184,7 +183,7 @@ ollama.show(request)
 ### embed
 
 ```javascript
-ollama.embed(request)
+ollama.embed(request);
 ```
 
 - `request` `<Object>`: The request object containing embedding parameters.
@@ -198,7 +197,7 @@ ollama.embed(request)
 ### ps
 
 ```javascript
-ollama.ps()
+ollama.ps();
 ```
 
 - Returns: `<ListResponse>`
@@ -206,7 +205,7 @@ ollama.ps()
 ### abort
 
 ```javascript
-ollama.abort()
+ollama.abort();
 ```
 
 This method will abort **all** streamed generations currently running with the client instance.
@@ -223,13 +222,13 @@ A custom client can be created with the following fields:
 - `headers` `<Object>`: (Optional) Custom headers to include with every request.
 
 ```javascript
-import { Ollama } from 'ollama'
+import { Ollama } from 'ollama';
 
-const ollama = new Ollama({ host: 'http://127.0.0.1:11434' })
+const ollama = new Ollama({ host: 'http://127.0.0.1:11434' });
 const response = await ollama.chat({
   model: 'llama3.1',
   messages: [{ role: 'user', content: 'Why is the sky blue?' }],
-})
+});
 ```
 
 ## Custom Headers
@@ -237,7 +236,7 @@ const response = await ollama.chat({
 You can set custom headers that will be included with every request:
 
 ```javascript
-import { Ollama } from 'ollama'
+import { Ollama } from 'ollama';
 
 const ollama = new Ollama({
   host: 'http://127.0.0.1:11434',
@@ -246,7 +245,7 @@ const ollama = new Ollama({
     'X-Custom-Header': 'custom-value',
     'User-Agent': 'MyApp/1.0',
   },
-})
+});
 ```
 
 ## Building

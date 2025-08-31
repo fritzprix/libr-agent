@@ -4,8 +4,8 @@ This document outlines the process for releasing new versions of SynapticFlow.
 
 ## 1. Versioning
 
--   **Semantic Versioning**: The project follows Semantic Versioning (SemVer).
--   **Tags**: Each release is marked with a Git tag (e.g., `v1.2.3`).
+- **Semantic Versioning**: The project follows Semantic Versioning (SemVer).
+- **Tags**: Each release is marked with a Git tag (e.g., `v1.2.3`).
 
 ## 2. Release Checklist
 
@@ -20,4 +20,4 @@ This document outlines the process for releasing new versions of SynapticFlow.
 
 ## 3. Automated Releases
 
--   **GitHub Actions**: The release process is automated using GitHub Actions. The `release.yml` workflow handles the building, tagging, and releasing of new versions.
+- **GitHub Actions**: The release process is automated using GitHub Actions. The `release.yml` workflow handles the building, tagging, and releasing of new versions.
