@@ -530,17 +530,60 @@ export const ResourceAttachmentProvider: React.FC<
 
   const removeFile = useCallback(
     async (ref: AttachmentReference): Promise<void> => {
+      logger.debug('Removing file attachment', {
+        contentId: ref.contentId,
+        filename: ref.filename,
+        isPending: ref.contentId.startsWith('pending_'),
+      });
+
+      // Check if this is a pending file (not yet saved to server)
+      if (ref.contentId.startsWith('pending_')) {
+        // Handle pending file removal - remove from local state
+        const fileToRemove = pendingFiles.find(
+          (file) => file.contentId === ref.contentId,
+        );
+
+        if (fileToRemove) {
+          // Clean up blob URL if it exists
+          if (fileToRemove.blobCleanup) {
+            try {
+              fileToRemove.blobCleanup();
+              logger.debug('Cleaned up blob URL for pending file', {
+                filename: fileToRemove.filename,
+              });
+            } catch (error) {
+              logger.warn('Failed to cleanup blob URL for pending file', {
+                filename: fileToRemove.filename,
+                error: error instanceof Error ? error.message : String(error),
+              });
+            }
+          }
+
+          // Remove from pending files array
+          setPendingFiles((prev) =>
+            prev.filter((file) => file.contentId !== ref.contentId),
+          );
+
+          logger.info('Pending file removed successfully from UI', {
+            filename: ref.filename,
+            contentId: ref.contentId,
+          });
+        } else {
+          logger.warn('Pending file not found in pendingFiles array', {
+            contentId: ref.contentId,
+            filename: ref.filename,
+          });
+        }
+        return;
+      }
+
+      // Handle session file removal from server
       setIsLoading(true);
       try {
-        logger.debug('Removing file attachment', {
-          contentId: ref.contentId,
-          filename: ref.filename,
-        });
-
         // TODO: Call server.removeContent when available
         // For now, we'll just refresh to reflect server state
 
-        logger.info('File attachment removed successfully', {
+        logger.info('Session file attachment removed successfully', {
           filename: ref.filename,
           contentId: ref.contentId,
         });
@@ -548,7 +591,7 @@ export const ResourceAttachmentProvider: React.FC<
         // Refresh session files after removal to reflect the change
         await mutateSessionFiles();
       } catch (error) {
-        logger.error('Failed to remove file attachment', {
+        logger.error('Failed to remove session file attachment', {
           ref: {
             contentId: ref.contentId,
             filename: ref.filename,
@@ -563,7 +606,7 @@ export const ResourceAttachmentProvider: React.FC<
         setIsLoading(false);
       }
     },
-    [mutateSessionFiles],
+    [mutateSessionFiles, pendingFiles],
   );
 
   const clearPendingFiles = useCallback(() => {
