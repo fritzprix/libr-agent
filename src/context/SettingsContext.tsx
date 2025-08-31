@@ -20,8 +20,13 @@ interface ModelChoice {
   model: string;
 }
 
+export interface ServiceConfig {
+  apiKey?: string;
+  baseUrl?: string;
+}
+
 export interface Settings {
-  apiKeys: Record<AIServiceProvider, string>;
+  serviceConfigs: Record<AIServiceProvider, ServiceConfig>;
   preferredModel: ModelChoice;
   windowSize: number;
 }
@@ -29,7 +34,13 @@ export interface Settings {
 const DEFAULT_MODEL = llmConfigManager.recommendModel({});
 
 export const DEFAULT_SETTING: Settings = {
-  apiKeys: {} as Record<AIServiceProvider, string>,
+  serviceConfigs: Object.values(AIServiceProvider).reduce(
+    (acc, provider) => {
+      acc[provider] = {};
+      return acc;
+    }, 
+    {} as Record<AIServiceProvider, ServiceConfig>
+  ),
   preferredModel: {
     provider: (DEFAULT_MODEL?.providerId || 'openai') as AIServiceProvider,
     model: DEFAULT_MODEL?.modelId || '',
@@ -63,19 +74,48 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [openSettingModal, setOpenSettingModal] = useState(false);
   const [{ value, loading, error }, load] = useAsyncFn(async () => {
     try {
-      const [apiKeysObject, preferredModelObject, windowSizeObject] =
-        await Promise.all([
-          dbService.objects.read('apiKeys'),
-          dbService.objects.read('preferredModel'),
-          dbService.objects.read('windowSize'),
-        ]);
+      const [
+        serviceConfigsObject,
+        apiKeysObject,
+        preferredModelObject,
+        windowSizeObject,
+      ] = await Promise.all([
+        dbService.objects.read('serviceConfigs'),
+        dbService.objects.read('apiKeys'), // for backward compatibility
+        dbService.objects.read('preferredModel'),
+        dbService.objects.read('windowSize'),
+      ]);
+
+      // Handle migration from old format to new format
+      let serviceConfigs: Record<AIServiceProvider, ServiceConfig> = DEFAULT_SETTING.serviceConfigs;
+      if (serviceConfigsObject) {
+        serviceConfigs = {
+          ...DEFAULT_SETTING.serviceConfigs,
+          ...(serviceConfigsObject.value as Record<AIServiceProvider, ServiceConfig>),
+        };
+      } else if (apiKeysObject) {
+        // Migrate old format to new format
+        const oldApiKeys = apiKeysObject.value as Record<
+          AIServiceProvider,
+          string
+        >;
+        serviceConfigs = Object.entries(oldApiKeys).reduce(
+          (acc, [provider, apiKey]) => {
+            acc[provider as AIServiceProvider] = { apiKey };
+            return acc;
+          },
+          { ...DEFAULT_SETTING.serviceConfigs },
+        );
+        // Save migrated data
+        await dbService.objects.upsert({
+          key: 'serviceConfigs',
+          value: serviceConfigs,
+        });
+      }
+
       const settings: Settings = {
         ...DEFAULT_SETTING,
-        ...(apiKeysObject
-          ? {
-              apiKeys: apiKeysObject.value as Record<AIServiceProvider, string>,
-            }
-          : {}),
+        serviceConfigs,
         ...(preferredModelObject
           ? { preferredModel: preferredModelObject.value as ModelChoice }
           : {}),
@@ -98,9 +138,15 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const update = useCallback(
     async (settings: Partial<Settings>) => {
       try {
-        if (settings.apiKeys) {
-          const newApiKeys = { ...(value?.apiKeys || {}), ...settings.apiKeys };
-          await dbService.objects.upsert({ key: 'apiKeys', value: newApiKeys });
+        if (settings.serviceConfigs) {
+          const newServiceConfigs = {
+            ...(value?.serviceConfigs || {}),
+            ...settings.serviceConfigs,
+          };
+          await dbService.objects.upsert({
+            key: 'serviceConfigs',
+            value: newServiceConfigs,
+          });
         }
         if (settings.preferredModel) {
           await dbService.objects.upsert({

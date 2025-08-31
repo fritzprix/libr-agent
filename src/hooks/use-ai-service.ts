@@ -16,7 +16,7 @@ export const useAIService = (config?: AIServiceConfig) => {
   const {
     value: {
       preferredModel: { model, provider },
-      apiKeys,
+      serviceConfigs,
     },
   } = useSettings();
   const [response, setResponse] = useState<Message | null>(null);
@@ -25,16 +25,15 @@ export const useAIService = (config?: AIServiceConfig) => {
   useEffect(() => {
     logger.info('use_ai_service:', { config: config?.tools });
   }, []);
-  const serviceInstance = useMemo(
-    () =>
-      AIServiceFactory.getService(provider, apiKeys[provider], {
-        defaultModel: model,
-        maxRetries: 3,
-        maxTokens: 4096,
-        ...config,
-      }),
-    [provider, apiKeys, model, config],
-  );
+  const serviceInstance = useMemo(() => {
+    const apiKey = serviceConfigs[provider]?.apiKey || '';
+    return AIServiceFactory.getService(provider, apiKey, {
+      defaultModel: model,
+      maxRetries: 3,
+      maxTokens: 4096,
+      ...config,
+    });
+  }, [provider, serviceConfigs, model, config]);
 
   const submit = useCallback(
     async (
