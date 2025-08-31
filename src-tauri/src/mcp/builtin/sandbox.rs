@@ -421,7 +421,8 @@ impl SandboxServer {
                         - macOS: brew install deno\\n\
                         - Windows: winget install deno\\n\
                         - Linux: curl -fsSL https://deno.land/install.sh | sh\\n\\n\
-                        After installation, restart the application.".to_string(),
+                        After installation, restart the application."
+                        .to_string(),
                     data: None,
                 }),
             };

@@ -82,9 +82,7 @@ impl InteractiveBrowserServer {
 
         let session_title = title.unwrap_or("Interactive Browser Agent");
 
-        info!(
-            "Creating new browser session: {session_id} for URL: {url}"
-        );
+        info!("Creating new browser session: {session_id} for URL: {url}");
 
         // Create WebviewWindow (independent browser window)
 
@@ -138,9 +136,7 @@ impl InteractiveBrowserServer {
         let session_id_clone = session_id.clone();
 
         webview_window.once("tauri://close-requested", move |_| {
-            debug!(
-                "Browser window close requested for session: {session_id_clone}"
-            );
+            debug!("Browser window close requested for session: {session_id_clone}");
 
             if let Ok(mut sessions) = sessions_clone.write() {
                 if let Some(session) = sessions.get_mut(&session_id_clone) {
@@ -212,9 +208,7 @@ impl InteractiveBrowserServer {
                     Ok(request_id) // Return request_id immediately
                 }
                 Err(e) => {
-                    error!(
-                        "Failed to execute script wrapper in session {session_id}: {e}"
-                    );
+                    error!("Failed to execute script wrapper in session {session_id}: {e}");
                     Err(format!("Failed to execute script: {e}"))
                 }
             }
@@ -310,9 +304,7 @@ impl InteractiveBrowserServer {
 
         text: &str,
     ) -> Result<String, String> {
-        debug!(
-            "Inputting text '{text}' into element '{selector}' in session {session_id}"
-        );
+        debug!("Inputting text '{text}' into element '{selector}' in session {session_id}");
 
         let script = format!(
             r#"
@@ -425,9 +417,7 @@ impl InteractiveBrowserServer {
     pub async fn scroll_page(&self, session_id: &str, x: i32, y: i32) -> Result<String, String> {
         debug!("Scrolling page to ({x}, {y}) in session {session_id}");
 
-        let script = format!(
-            "window.scrollTo({x}, {y}); 'Scrolled to ({x}, {y})'"
-        );
+        let script = format!("window.scrollTo({x}, {y}); 'Scrolled to ({x}, {y})'");
 
         self.execute_script(session_id, &script).await
     }
@@ -455,9 +445,7 @@ impl InteractiveBrowserServer {
     /// Check if a DOM element exists
 
     pub async fn element_exists(&self, session_id: &str, selector: &str) -> Result<bool, String> {
-        debug!(
-            "Checking if element '{selector}' exists in session {session_id}"
-        );
+        debug!("Checking if element '{selector}' exists in session {session_id}");
 
         let script = format!(
             r#"
@@ -489,17 +477,13 @@ return false;
                 let exists =
                     result.contains("true") || result.contains("Element clicked successfully");
 
-                debug!(
-                    "Element '{selector}' exists: {exists} in session {session_id}"
-                );
+                debug!("Element '{selector}' exists: {exists} in session {session_id}");
 
                 Ok(exists)
             }
 
             Err(_) => {
-                debug!(
-                    "Element '{selector}' does not exist in session {session_id}"
-                );
+                debug!("Element '{selector}' does not exist in session {session_id}");
 
                 Ok(false)
             }
@@ -630,9 +614,7 @@ return false;
 
                     // In a real implementation, we would need to capture the actual HTML
 
-                    info!(
-                        "HTML content extraction completed for session: {session_id}"
-                    );
+                    info!("HTML content extraction completed for session: {session_id}");
 
                     Ok("<!DOCTYPE html><html><head><title>Page Content Extracted</title></head><body><h1>HTML Content Successfully Extracted</h1><p>The page content has been extracted but due to Tauri v2 limitations, the actual HTML content cannot be returned directly.</p></body></html>".to_string())
                 } else {
@@ -671,9 +653,7 @@ return false;
         request_id: String,
         result: String,
     ) -> Result<(), String> {
-        debug!(
-            "Storing script result for session: {session_id}, request_id: {request_id}"
-        );
+        debug!("Storing script result for session: {session_id}, request_id: {request_id}");
         self.script_results.insert(request_id, result);
         Ok(())
     }

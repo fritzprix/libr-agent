@@ -6,7 +6,7 @@ use tokio::fs;
 use tracing::{error, info};
 
 use super::{utils::constants::MAX_FILE_SIZE, BuiltinMCPServer};
-use crate::mcp::{utils::schema_builder::*, MCPError, MCPResponse, MCPTool};
+use crate::mcp::{utils::schema_builder::*, MCPResponse, MCPTool};
 use crate::services::SecureFileManager;
 
 pub struct FilesystemServer {
@@ -30,16 +30,80 @@ impl FilesystemServer {
         Self { file_manager }
     }
 
+    /// Generate a new request ID for MCP responses
+    fn generate_request_id() -> Value {
+        Value::String(cuid2::create_id())
+    }
+
+    /// Create a success response with text content
+    fn success_response(request_id: Value, message: &str) -> MCPResponse {
+        MCPResponse::success(
+            request_id,
+            json!({
+                "content": [{
+                    "type": "text",
+                    "text": message
+                }]
+            }),
+        )
+    }
+
+    /// Create an error response with consistent formatting
+    fn error_response(request_id: Value, code: i32, message: &str) -> MCPResponse {
+        MCPResponse::error(request_id, code, message)
+    }
+
+    /// Validate path using SecureFileManager and return appropriate error response if invalid
+    fn validate_path_with_error(
+        &self,
+        path_str: &str,
+        request_id: &Value,
+    ) -> Result<std::path::PathBuf, MCPResponse> {
+        match self
+            .file_manager
+            .get_security_validator()
+            .validate_path(path_str)
+        {
+            Ok(path) => Ok(path),
+            Err(e) => {
+                error!("Path validation failed: {}", e);
+                Err(Self::error_response(
+                    request_id.clone(),
+                    -32603,
+                    &format!("Security error: {e}"),
+                ))
+            }
+        }
+    }
+
     fn create_read_file_tool() -> MCPTool {
         let mut props = HashMap::new();
-        props.insert("path".to_string(), string_prop(Some(1), Some(1000), Some("Path to the file to read")));
-        props.insert("start_line".to_string(), integer_prop(Some(1), None, Some("Starting line number (1-based, optional)")));
-        props.insert("end_line".to_string(), integer_prop(Some(1), None, Some("Ending line number (1-based, optional)")));
+        props.insert(
+            "path".to_string(),
+            string_prop(Some(1), Some(1000), Some("Path to the file to read")),
+        );
+        props.insert(
+            "start_line".to_string(),
+            integer_prop(
+                Some(1),
+                None,
+                Some("Starting line number (1-based, optional)"),
+            ),
+        );
+        props.insert(
+            "end_line".to_string(),
+            integer_prop(
+                Some(1),
+                None,
+                Some("Ending line number (1-based, optional)"),
+            ),
+        );
 
         MCPTool {
             name: "read_file".to_string(),
             title: Some("Read File".to_string()),
-            description: "Read the contents of a file, optionally specifying line ranges".to_string(),
+            description: "Read the contents of a file, optionally specifying line ranges"
+                .to_string(),
             input_schema: object_schema(props, vec!["path".to_string()]),
             output_schema: None,
             annotations: None,
@@ -48,9 +112,26 @@ impl FilesystemServer {
 
     fn create_write_file_tool() -> MCPTool {
         let mut props = HashMap::new();
-        props.insert("path".to_string(), string_prop(Some(1), Some(1000), Some("Path to the file to write")));
-        props.insert("content".to_string(), string_prop(None, Some(MAX_FILE_SIZE as u32), Some("Content to write to the file")));
-        props.insert("mode".to_string(), string_prop(None, None, Some("Write mode: 'w' for overwrite (default), 'a' for append")));
+        props.insert(
+            "path".to_string(),
+            string_prop(Some(1), Some(1000), Some("Path to the file to write")),
+        );
+        props.insert(
+            "content".to_string(),
+            string_prop(
+                None,
+                Some(MAX_FILE_SIZE as u32),
+                Some("Content to write to the file"),
+            ),
+        );
+        props.insert(
+            "mode".to_string(),
+            string_prop(
+                None,
+                None,
+                Some("Write mode: 'w' for overwrite (default), 'a' for append"),
+            ),
+        );
 
         MCPTool {
             name: "write_file".to_string(),
@@ -64,7 +145,10 @@ impl FilesystemServer {
 
     fn create_list_directory_tool() -> MCPTool {
         let mut props = HashMap::new();
-        props.insert("path".to_string(), string_prop(Some(1), Some(1000), Some("Path to the directory to list")));
+        props.insert(
+            "path".to_string(),
+            string_prop(Some(1), Some(1000), Some("Path to the directory to list")),
+        );
 
         MCPTool {
             name: "list_directory".to_string(),
@@ -78,24 +162,60 @@ impl FilesystemServer {
 
     fn create_replace_lines_in_file_tool() -> MCPTool {
         let mut item_props = HashMap::new();
-        item_props.insert("start_line".to_string(), integer_prop(Some(1), None, Some("Starting line number (1-based)")));
-        item_props.insert("end_line".to_string(), integer_prop(Some(1), None, Some("Ending line number (1-based, optional). If not provided, equals start_line")));
-        item_props.insert("content".to_string(), string_prop(None, None, Some("The new content for the line range")));
-        
+        item_props.insert(
+            "start_line".to_string(),
+            integer_prop(Some(1), None, Some("Starting line number (1-based)")),
+        );
+        item_props.insert(
+            "end_line".to_string(),
+            integer_prop(
+                Some(1),
+                None,
+                Some("Ending line number (1-based, optional). If not provided, equals start_line"),
+            ),
+        );
+        item_props.insert(
+            "content".to_string(),
+            string_prop(None, None, Some("The new content for the line range")),
+        );
+
         // 기존 line_number 지원을 위한 backward compatibility
-        item_props.insert("line_number".to_string(), integer_prop(Some(1), None, Some("The 1-based line number to replace (deprecated, use start_line)")));
-        
-        let replacement_item_schema = object_schema(item_props, vec!["start_line".to_string(), "content".to_string()]);
-        
+        item_props.insert(
+            "line_number".to_string(),
+            integer_prop(
+                Some(1),
+                None,
+                Some("The 1-based line number to replace (deprecated, use start_line)"),
+            ),
+        );
+
+        let replacement_item_schema = object_schema(
+            item_props,
+            vec!["start_line".to_string(), "content".to_string()],
+        );
+
         let mut props = HashMap::new();
-        props.insert("path".to_string(), string_prop(Some(1), Some(1000), Some("Path to the file to modify")));
-        props.insert("replacements".to_string(), array_schema(replacement_item_schema, Some("An array of line replacement objects")));
+        props.insert(
+            "path".to_string(),
+            string_prop(Some(1), Some(1000), Some("Path to the file to modify")),
+        );
+        props.insert(
+            "replacements".to_string(),
+            array_schema(
+                replacement_item_schema,
+                Some("An array of line replacement objects"),
+            ),
+        );
 
         MCPTool {
             name: "replace_lines_in_file".to_string(),
             title: Some("Replace Lines in File".to_string()),
-            description: "Replace specific lines or line ranges in a file with new content".to_string(),
-            input_schema: object_schema(props, vec!["path".to_string(), "replacements".to_string()]),
+            description: "Replace specific lines or line ranges in a file with new content"
+                .to_string(),
+            input_schema: object_schema(
+                props,
+                vec!["path".to_string(), "replacements".to_string()],
+            ),
             output_schema: None,
             annotations: None,
         }
@@ -103,11 +223,34 @@ impl FilesystemServer {
 
     fn create_grep_tool() -> MCPTool {
         let mut props = HashMap::new();
-        props.insert("pattern".to_string(), string_prop(Some(1), None, Some("Regex pattern to search for")));
-        props.insert("path".to_string(), string_prop(Some(1), Some(1000), Some("Path to the file to search (exclusive with 'input')")));
-        props.insert("input".to_string(), string_prop(Some(1), None, Some("Input string to search (exclusive with 'path')")));
-        props.insert("ignore_case".to_string(), boolean_prop(Some("Perform case-insensitive matching")));
-        props.insert("line_numbers".to_string(), boolean_prop(Some("Include line numbers in the output")));
+        props.insert(
+            "pattern".to_string(),
+            string_prop(Some(1), None, Some("Regex pattern to search for")),
+        );
+        props.insert(
+            "path".to_string(),
+            string_prop(
+                Some(1),
+                Some(1000),
+                Some("Path to the file to search (exclusive with 'input')"),
+            ),
+        );
+        props.insert(
+            "input".to_string(),
+            string_prop(
+                Some(1),
+                None,
+                Some("Input string to search (exclusive with 'path')"),
+            ),
+        );
+        props.insert(
+            "ignore_case".to_string(),
+            boolean_prop(Some("Perform case-insensitive matching")),
+        );
+        props.insert(
+            "line_numbers".to_string(),
+            boolean_prop(Some("Include line numbers in the output")),
+        );
 
         MCPTool {
             name: "grep".to_string(),
@@ -121,10 +264,34 @@ impl FilesystemServer {
 
     fn create_search_files_tool() -> MCPTool {
         let mut props = HashMap::new();
-        props.insert("pattern".to_string(), string_prop(Some(1), Some(500), Some("Glob pattern to match files (e.g., '*.rs', '**/*.tsx')")));
-        props.insert("path".to_string(), string_prop(Some(1), Some(1000), Some("Root path to search from")));
-        props.insert("max_depth".to_string(), integer_prop(Some(1), Some(50), Some("Maximum depth to search (optional)")));
-        props.insert("file_type".to_string(), string_prop(None, None, Some("Filter by file type: 'file', 'dir', or 'both'")));
+        props.insert(
+            "pattern".to_string(),
+            string_prop(
+                Some(1),
+                Some(500),
+                Some("Glob pattern to match files (e.g., '*.rs', '**/*.tsx')"),
+            ),
+        );
+        props.insert(
+            "path".to_string(),
+            string_prop(Some(1), Some(1000), Some("Root path to search from")),
+        );
+        props.insert(
+            "max_depth".to_string(),
+            integer_prop(
+                Some(1),
+                Some(50),
+                Some("Maximum depth to search (optional)"),
+            ),
+        );
+        props.insert(
+            "file_type".to_string(),
+            string_prop(
+                None,
+                None,
+                Some("Filter by file type: 'file', 'dir', or 'both'"),
+            ),
+        );
 
         MCPTool {
             name: "search_files".to_string(),
@@ -137,19 +304,23 @@ impl FilesystemServer {
     }
 
     async fn handle_replace_lines_in_file(&self, args: Value) -> MCPResponse {
-        let request_id = Value::String(uuid::Uuid::new_v4().to_string());
+        let request_id = Self::generate_request_id();
 
         let path_str = match args.get("path").and_then(|v| v.as_str()) {
             Some(path) => path,
             None => {
-                return MCPResponse::error(request_id, -32602, "Missing required parameter: path");
+                return Self::error_response(
+                    request_id,
+                    -32602,
+                    "Missing required parameter: path",
+                );
             }
         };
 
         let replacements_val = match args.get("replacements") {
             Some(val) => val,
             None => {
-                return MCPResponse::error(
+                return Self::error_response(
                     request_id,
                     -32602,
                     "Missing required parameter: replacements",
@@ -161,7 +332,7 @@ impl FilesystemServer {
             match serde_json::from_value(replacements_val.clone()) {
                 Ok(r) => r,
                 Err(e) => {
-                    return MCPResponse::error(
+                    return Self::error_response(
                         request_id,
                         -32602,
                         &format!("Invalid replacements format: {e}"),
@@ -170,22 +341,16 @@ impl FilesystemServer {
             };
 
         // 경로 유효성 검사
-        let safe_path = match self
-            .file_manager
-            .get_security_validator()
-            .validate_path(path_str)
-        {
+        let safe_path = match self.validate_path_with_error(path_str, &request_id) {
             Ok(path) => path,
-            Err(e) => {
-                return MCPResponse::error(request_id, -32603, &format!("Security error: {e}"));
-            }
+            Err(error_response) => return error_response,
         };
 
         // 파일 읽기
         let lines = match self.read_file_lines(&safe_path).await {
             Ok(lines) => lines,
             Err(e) => {
-                return MCPResponse::error(
+                return Self::error_response(
                     request_id,
                     -32603,
                     &format!("Failed to read file: {e}"),
@@ -204,34 +369,44 @@ impl FilesystemServer {
                     match rep.get("line_number").and_then(|v| v.as_u64()) {
                         Some(num) => num as usize,
                         None => {
-                            return MCPResponse::error(request_id, -32602, "Missing start_line or line_number");
+                            return Self::error_response(
+                                request_id,
+                                -32602,
+                                "Missing start_line or line_number",
+                            );
                         }
                     }
                 }
             };
-            
-            let end_line = rep.get("end_line")
+
+            let end_line = rep
+                .get("end_line")
                 .and_then(|v| v.as_u64())
                 .map(|n| n as usize)
                 .unwrap_or(start_line); // 기본값: start_line과 동일
-            
+
             // 범위 검증
             if start_line > end_line {
-                return MCPResponse::error(request_id, -32602, "start_line must be <= end_line");
+                return Self::error_response(request_id, -32602, "start_line must be <= end_line");
             }
-            
+
             if start_line == 0 || end_line > new_lines.len() {
-                return MCPResponse::error(
+                return Self::error_response(
                     request_id,
                     -32602,
-                    &format!("Line range {}-{} is out of bounds (file has {} lines)", start_line, end_line, new_lines.len()),
+                    &format!(
+                        "Line range {}-{} is out of bounds (file has {} lines)",
+                        start_line,
+                        end_line,
+                        new_lines.len()
+                    ),
                 );
             }
-            
+
             let content = match rep.get("content").and_then(|v| v.as_str()) {
                 Some(s) => s.to_string(),
                 None => {
-                    return MCPResponse::error(request_id, -32602, "Invalid content format");
+                    return Self::error_response(request_id, -32602, "Invalid content format");
                 }
             };
 
@@ -245,7 +420,7 @@ impl FilesystemServer {
             let parts: Vec<&str> = range_key.split('-').collect();
             let start_line: usize = parts[0].parse().unwrap();
             let end_line: usize = parts[1].parse().unwrap();
-            
+
             if start_line == end_line {
                 // 단일 줄 교체
                 new_lines[start_line - 1] = content;
@@ -262,27 +437,22 @@ impl FilesystemServer {
             .write_file_string(path_str, &new_content)
             .await
         {
-            Ok(_) => MCPResponse::success(
+            Ok(_) => Self::success_response(
                 request_id,
-                json!({
-                    "content": [{
-                        "type": "text",
-                        "text": format!("Successfully replaced lines in file {}", path_str)
-                    }]
-                }),
+                &format!("Successfully replaced lines in file {}", path_str),
             ),
             Err(e) => {
-                MCPResponse::error(request_id, -32603, &format!("Failed to write file: {e}"))
+                Self::error_response(request_id, -32603, &format!("Failed to write file: {e}"))
             }
         }
     }
 
     async fn handle_grep(&self, args: Value) -> MCPResponse {
-        let request_id = Value::String(uuid::Uuid::new_v4().to_string());
+        let request_id = Self::generate_request_id();
 
         let pattern = match args.get("pattern").and_then(|v| v.as_str()) {
             Some(p) => p,
-            None => return MCPResponse::error(request_id, -32602, "missing 'pattern' argument"),
+            None => return Self::error_response(request_id, -32602, "missing 'pattern' argument"),
         };
 
         let ignore_case = args
@@ -303,15 +473,15 @@ impl FilesystemServer {
                 Ok(safe_path) => match tokio::fs::read_to_string(safe_path).await {
                     Ok(s) => s,
                     Err(e) => {
-                        return MCPResponse::error(
+                        return Self::error_response(
                             request_id,
                             -32603,
                             &format!("failed to read file {path_str}: {e}"),
-                        )
+                        );
                     }
                 },
                 Err(e) => {
-                    return MCPResponse::error(
+                    return Self::error_response(
                         request_id,
                         -32603,
                         &format!("Security error: {e}"),
@@ -321,7 +491,7 @@ impl FilesystemServer {
         } else if let Some(s) = args.get("input").and_then(|v| v.as_str()) {
             s.to_string()
         } else {
-            return MCPResponse::error(
+            return Self::error_response(
                 request_id,
                 -32602,
                 "either 'path' or 'input' must be provided",
@@ -334,7 +504,7 @@ impl FilesystemServer {
         {
             Ok(r) => r,
             Err(e) => {
-                return MCPResponse::error(request_id, -32602, &format!("invalid pattern: {e}"))
+                return Self::error_response(request_id, -32602, &format!("invalid pattern: {e}"))
             }
         };
 
@@ -349,24 +519,27 @@ impl FilesystemServer {
             }
         }
 
-        MCPResponse::success(
+        Self::success_response(
             request_id,
-            json!({
-                "content": [{
-                    "type": "text",
-                    "text": format!("Found {} matches:\n{}", matches.len(), serde_json::to_string_pretty(&matches).unwrap_or_default())
-                }]
-            }),
+            &format!(
+                "Found {} matches:\n{}",
+                matches.len(),
+                serde_json::to_string_pretty(&matches).unwrap_or_default()
+            ),
         )
     }
 
     async fn handle_read_file(&self, args: Value) -> MCPResponse {
-        let request_id = Value::String(uuid::Uuid::new_v4().to_string());
+        let request_id = Self::generate_request_id();
 
         let path_str = match args.get("path").and_then(|v| v.as_str()) {
             Some(path) => path,
             None => {
-                return MCPResponse::error(request_id, -32602, "Missing required parameter: path");
+                return Self::error_response(
+                    request_id,
+                    -32602,
+                    "Missing required parameter: path",
+                );
             }
         };
 
@@ -382,7 +555,7 @@ impl FilesystemServer {
         // Validate line range
         if let (Some(start), Some(end)) = (start_line, end_line) {
             if start > end {
-                return MCPResponse::error(
+                return Self::error_response(
                     request_id,
                     -32602,
                     "start_line must be less than or equal to end_line",
@@ -390,16 +563,9 @@ impl FilesystemServer {
             }
         }
 
-        let safe_path = match self
-            .file_manager
-            .get_security_validator()
-            .validate_path(path_str)
-        {
+        let safe_path = match self.validate_path_with_error(path_str, &request_id) {
             Ok(path) => path,
-            Err(e) => {
-                error!("Path validation failed: {}", e);
-                return MCPResponse::error(request_id, -32603, &format!("Security error: {e}"));
-            }
+            Err(error_response) => return error_response,
         };
 
         // Read file with line range support using SecureFileManager
@@ -411,7 +577,7 @@ impl FilesystemServer {
                 .validate_file_size(&safe_path, MAX_FILE_SIZE)
             {
                 error!("File size validation failed: {}", e);
-                return MCPResponse::error(request_id, -32603, &format!("File size error: {e}"));
+                return Self::error_response(request_id, -32603, &format!("File size error: {e}"));
             }
 
             self.read_file_lines_range(&safe_path, start_line, end_line)
@@ -426,19 +592,11 @@ impl FilesystemServer {
         match content {
             Ok(content) => {
                 info!("Successfully read file: {}", path_str);
-                MCPResponse::success(
-                    request_id,
-                    json!({
-                        "content": [{
-                            "type": "text",
-                            "text": content
-                        }]
-                    }),
-                )
+                Self::success_response(request_id, &content)
             }
             Err(e) => {
                 error!("Failed to read file {}: {}", path_str, e);
-                MCPResponse::error(request_id, -32603, &format!("Failed to read file: {e}"))
+                Self::error_response(request_id, -32603, &format!("Failed to read file: {e}"))
             }
         }
     }
@@ -495,21 +653,16 @@ impl FilesystemServer {
     }
 
     async fn handle_search_files(&self, args: Value) -> MCPResponse {
-        let request_id = Value::String(uuid::Uuid::new_v4().to_string());
+        let request_id = Self::generate_request_id();
 
         let pattern = match args.get("pattern").and_then(|v| v.as_str()) {
             Some(pattern) => pattern,
             None => {
-                return MCPResponse {
-                    jsonrpc: "2.0".to_string(),
-                    id: Some(request_id),
-                    result: None,
-                    error: Some(MCPError {
-                        code: -32602,
-                        message: "Missing required parameter: pattern".to_string(),
-                        data: None,
-                    }),
-                };
+                return Self::error_response(
+                    request_id,
+                    -32602,
+                    "Missing required parameter: pattern",
+                );
             }
         };
 
@@ -524,25 +677,9 @@ impl FilesystemServer {
             .unwrap_or("both");
 
         // Validate search path security using SecureFileManager
-        let safe_path = match self
-            .file_manager
-            .get_security_validator()
-            .validate_path(search_path)
-        {
+        let safe_path = match self.validate_path_with_error(search_path, &request_id) {
             Ok(path) => path,
-            Err(e) => {
-                error!("Path validation failed: {}", e);
-                return MCPResponse {
-                    jsonrpc: "2.0".to_string(),
-                    id: Some(request_id),
-                    result: None,
-                    error: Some(MCPError {
-                        code: -32603,
-                        message: format!("Security error: {e}"),
-                        data: None,
-                    }),
-                };
-            }
+            Err(error_response) => return error_response,
         };
 
         // Search files
@@ -552,9 +689,7 @@ impl FilesystemServer {
         {
             Ok(results) => {
                 let result_text = if results.is_empty() {
-                    format!(
-                        "No files found matching pattern '{pattern}' in '{search_path}'"
-                    )
+                    format!("No files found matching pattern '{pattern}' in '{search_path}'")
                 } else {
                     format!(
                         "Found {} files matching pattern '{}':\n{}",
@@ -564,30 +699,11 @@ impl FilesystemServer {
                     )
                 };
 
-                MCPResponse {
-                    jsonrpc: "2.0".to_string(),
-                    id: Some(request_id),
-                    result: Some(json!({
-                        "content": [{
-                            "type": "text",
-                            "text": result_text
-                        }]
-                    })),
-                    error: None,
-                }
+                Self::success_response(request_id, &result_text)
             }
             Err(e) => {
                 error!("File search failed: {}", e);
-                MCPResponse {
-                    jsonrpc: "2.0".to_string(),
-                    id: Some(request_id),
-                    result: None,
-                    error: Some(MCPError {
-                        code: -32603,
-                        message: format!("Search failed: {e}"),
-                        data: None,
-                    }),
-                }
+                Self::error_response(request_id, -32603, &format!("Search failed: {e}"))
             }
         }
     }
@@ -652,124 +768,78 @@ impl FilesystemServer {
     }
 
     async fn handle_write_file(&self, args: Value) -> MCPResponse {
-        let request_id = Value::String(uuid::Uuid::new_v4().to_string());
+        let request_id = Self::generate_request_id();
 
         let path_str = match args.get("path").and_then(|v| v.as_str()) {
             Some(path) => path,
             None => {
-                return MCPResponse {
-                    jsonrpc: "2.0".to_string(),
-                    id: Some(request_id),
-                    result: None,
-                    error: Some(MCPError {
-                        code: -32602,
-                        message: "Missing required parameter: path".to_string(),
-                        data: None,
-                    }),
-                };
+                return Self::error_response(
+                    request_id,
+                    -32602,
+                    "Missing required parameter: path",
+                );
             }
         };
 
         let content = match args.get("content").and_then(|v| v.as_str()) {
             Some(content) => content,
             None => {
-                return MCPResponse {
-                    jsonrpc: "2.0".to_string(),
-                    id: Some(request_id),
-                    result: None,
-                    error: Some(MCPError {
-                        code: -32602,
-                        message: "Missing required parameter: content".to_string(),
-                        data: None,
-                    }),
-                };
+                return Self::error_response(
+                    request_id,
+                    -32602,
+                    "Missing required parameter: content",
+                );
             }
         };
 
-        let mode = args.get("mode")
-            .and_then(|v| v.as_str())
-            .unwrap_or("w");
+        let mode = args.get("mode").and_then(|v| v.as_str()).unwrap_or("w");
 
         // Use SecureFileManager to write file
         let result = match mode {
             "w" => {
                 // 기존 덮어쓰기 로직
                 self.file_manager.write_file_string(path_str, content).await
-            },
+            }
             "a" => {
                 // 새로 구현할 append 로직
-                self.file_manager.append_file_string(path_str, content).await
-            },
+                self.file_manager
+                    .append_file_string(path_str, content)
+                    .await
+            }
             _ => {
-                return MCPResponse {
-                    jsonrpc: "2.0".to_string(),
-                    id: Some(request_id),
-                    result: None,
-                    error: Some(MCPError {
-                        code: -32602,
-                        message: "Invalid mode. Use 'w' or 'a'".to_string(),
-                        data: None,
-                    }),
-                };
+                return Self::error_response(request_id, -32602, "Invalid mode. Use 'w' or 'a'");
             }
         };
 
         match result {
             Ok(()) => {
                 info!("Successfully wrote file: {}", path_str);
-                MCPResponse {
-                    jsonrpc: "2.0".to_string(),
-                    id: Some(request_id),
-                    result: Some(json!({
-                        "content": [{
-                            "type": "text",
-                            "text": format!("Successfully wrote {} bytes to {} (mode: {})", content.len(), path_str, mode)
-                        }]
-                    })),
-                    error: None,
-                }
+                Self::success_response(
+                    request_id,
+                    &format!(
+                        "Successfully wrote {} bytes to {} (mode: {})",
+                        content.len(),
+                        path_str,
+                        mode
+                    ),
+                )
             }
             Err(e) => {
                 error!("Failed to write file {}: {}", path_str, e);
-                MCPResponse {
-                    jsonrpc: "2.0".to_string(),
-                    id: Some(request_id),
-                    result: None,
-                    error: Some(MCPError {
-                        code: -32603,
-                        message: format!("Failed to write file: {e}"),
-                        data: None,
-                    }),
-                }
+                Self::error_response(request_id, -32603, &format!("Failed to write file: {e}"))
             }
         }
     }
 
     async fn handle_list_directory(&self, args: Value) -> MCPResponse {
-        let request_id = Value::String(uuid::Uuid::new_v4().to_string());
+        let request_id = Self::generate_request_id();
 
         let path_str = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
 
         // Validate path security using SecureFileManager
-        let safe_path = match self
-            .file_manager
-            .get_security_validator()
-            .validate_path(path_str)
-        {
+        let safe_path = match self.validate_path_with_error(path_str, &request_id) {
             Ok(path) => path,
-            Err(e) => {
-                error!("Path validation failed: {}", e);
-                return MCPResponse {
-                    jsonrpc: "2.0".to_string(),
-                    id: Some(request_id),
-                    result: None,
-                    error: Some(MCPError {
-                        code: -32603,
-                        message: format!("Security error: {e}"),
-                        data: None,
-                    }),
-                };
-            }
+            Err(error_response) => return error_response,
         };
 
         // List directory contents
@@ -821,31 +891,22 @@ impl FilesystemServer {
                     safe_path,
                     items.len()
                 );
-                MCPResponse {
-                    jsonrpc: "2.0".to_string(),
-                    id: Some(request_id),
-                    result: Some(json!({
-                        "content": [{
-                            "type": "text",
-                            "text": format!("Directory listing for {}:\n{}", path_str,
-                                serde_json::to_string_pretty(&items).unwrap_or_default())
-                        }]
-                    })),
-                    error: None,
-                }
+                Self::success_response(
+                    request_id,
+                    &format!(
+                        "Directory listing for {}:\n{}",
+                        path_str,
+                        serde_json::to_string_pretty(&items).unwrap_or_default()
+                    ),
+                )
             }
             Err(e) => {
                 error!("Failed to list directory {:?}: {}", safe_path, e);
-                MCPResponse {
-                    jsonrpc: "2.0".to_string(),
-                    id: Some(request_id),
-                    result: None,
-                    error: Some(MCPError {
-                        code: -32603,
-                        message: format!("Failed to list directory: {e}"),
-                        data: None,
-                    }),
-                }
+                Self::error_response(
+                    request_id,
+                    -32603,
+                    &format!("Failed to list directory: {e}"),
+                )
             }
         }
     }
@@ -881,17 +942,12 @@ impl BuiltinMCPServer for FilesystemServer {
             "replace_lines_in_file" => self.handle_replace_lines_in_file(args).await,
             "grep" => self.handle_grep(args).await,
             _ => {
-                let request_id = Value::String(uuid::Uuid::new_v4().to_string());
-                MCPResponse {
-                    jsonrpc: "2.0".to_string(),
-                    id: Some(request_id),
-                    result: None,
-                    error: Some(MCPError {
-                        code: -32601,
-                        message: format!("Tool '{tool_name}' not found in filesystem server"),
-                        data: None,
-                    }),
-                }
+                let request_id = Self::generate_request_id();
+                Self::error_response(
+                    request_id,
+                    -32601,
+                    &format!("Tool '{tool_name}' not found in filesystem server"),
+                )
             }
         }
     }
