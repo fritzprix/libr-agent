@@ -5,6 +5,7 @@ A flexible, composable chat interface built with React using a compound componen
 ## Overview
 
 The Chat component has been refactored from a single large file into:
+
 - **Main Container**: `Chat.tsx` (50 lines) - provides context and layout structure
 - **Components**: Individual UI components in `components/` directory
 - **Hooks**: Custom hooks in `hooks/` directory for state and file management
@@ -320,12 +321,14 @@ src/features/chat/
 ### Component Responsibilities
 
 #### Chat.tsx (Main Container)
+
 - Provides `ChatProvider` context to all children
 - Manages `ToolsModal` visibility with `useChatState` hook
 - Validates session existence
 - Defines compound component pattern via static properties
 
 #### Components Directory
+
 - **ChatHeader**: Session title, terminal styling, session files access
 - **ChatMessages**: Message display, auto-scroll, loading states
 - **ChatStatusBar**: Model selection, tool count display, extensible status
@@ -335,16 +338,19 @@ src/features/chat/
 - **SessionFilesPopover**: Modal for browsing session file attachments
 
 #### Hooks Directory
+
 - **useChatState**: Simple state management for tools modal visibility
 - **useFileAttachment**: Complex file handling including drag-drop events, validation, Rust backend integration, and pending file management
 
 ## File Attachment Support
 
 ### Supported File Types
+
 - Text files (`.txt`, `.md`, `.json`)
 - Document files (`.pdf`, `.docx`, `.xlsx`)
 
 ### Features
+
 - **Drag & Drop**: Drop files directly into the chat interface
 - **Button Upload**: Traditional file picker button
 - **Debouncing**: Prevents duplicate processing from rapid events (10ms timeout)
@@ -353,6 +359,7 @@ src/features/chat/
 - **Duplicate Prevention**: Single hook instance prevents double processing
 
 ### File Processing Pipeline
+
 1. File dropped/selected → `useFileAttachment` hook
 2. Validation (type, size) → Error handling if invalid
 3. Rust backend processing → `rustBackend.readDroppedFile()`
@@ -365,16 +372,19 @@ src/features/chat/
 State is managed through a combination of React Context and custom hooks:
 
 ### ChatContext (Global State)
+
 - `messages` - Message history array
-- `isLoading` - Chat submission state  
+- `isLoading` - Chat submission state
 - `submit()` - Function to send messages
 - `cancel()` - Function to cancel current request
 
 ### Custom Hooks (Local State)
+
 - **useChatState**: `showToolsDetail` - Tools modal visibility
 - **useFileAttachment**: File handling state including `pendingFiles`, `dragState`, attachment functions
 
 ### Context Dependencies
+
 - `SessionContext` - Current session and validation
 - `AssistantContext` - Current assistant configuration
 - `ResourceAttachmentContext` - File attachment management
@@ -474,14 +484,17 @@ The component uses Tailwind CSS with a terminal/console theme:
 ## Dependencies
 
 ### Core Dependencies
+
 - React 18+ with hooks (useState, useCallback, useEffect, useRef)
 - `@paralleldrive/cuid2` - Message ID generation
 
 ### Tauri Integration
+
 - `@tauri-apps/api/webview` - Drag-and-drop event handling
 - Custom Rust backend client for file processing
 
 ### Internal Dependencies
+
 - `@/context/ChatContext` - Chat state management
 - `@/context/SessionContext` - Session validation
 - `@/context/ResourceAttachmentContext` - File attachment state
@@ -489,6 +502,7 @@ The component uses Tailwind CSS with a terminal/console theme:
 - Tailwind CSS for styling
 
 ### File Processing
+
 - Rust backend for secure file reading
 - Blob URL management for file previews
 - MIME type detection and validation
@@ -496,12 +510,14 @@ The component uses Tailwind CSS with a terminal/console theme:
 ## Recent Improvements
 
 ### Drag & Drop Bug Fixes (Phase 3 Completion)
+
 - **Fixed infinite re-rendering** in `useFileAttachment` hook by using empty dependency array `[]`
 - **Eliminated duplicate file processing** by removing dual hook instantiation in `ChatInput`
 - **Added proper debouncing** with 10ms timeout to prevent rapid-fire events
 - **Maintained type safety** with proper TypeScript interfaces for Tauri events
 
 ### Refactoring Highlights
+
 - **Reduced main component size** from 940 lines to 50 lines
 - **Improved maintainability** with clear separation of concerns
 - **Enhanced testability** with isolated hooks and components

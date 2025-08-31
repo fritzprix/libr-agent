@@ -1,4 +1,4 @@
-use crate::mcp::{JSONSchema, JSONSchemaType};
+use crate::mcp::schema::{JSONSchema, JSONSchemaType};
 use serde_json::Value;
 use std::collections::HashMap;
 
