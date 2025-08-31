@@ -44,7 +44,7 @@ jobs:
       run: pnpm lint
 
     - name: 🎨 Format check
-      run: pnpm format:check || echo "Format check not available"
+      run: npx prettier --check "src/**/*.{ts,tsx,js,jsx,json,css,scss,md}"
 
     - name: �🔧 Install Tauri dependencies (Ubuntu)
       if: matrix.os == 'ubuntu-latest'
@@ -71,6 +71,28 @@ jobs:
 
     - name: 🦀 Check Rust
       run: cd src-tauri && cargo check
+
+    # Code Quality Checks (PR only)
+    - name: 🔍 Rust Clippy (PR)
+      if: github.event_name == 'pull_request'
+      run: cd src-tauri && cargo clippy -- -D warnings
+
+    - name: 🎨 Rust Format Check (PR)
+      if: github.event_name == 'pull_request'
+      run: cd src-tauri && cargo fmt --check
+
+    # Security Checks (PR only)
+    - name: 🔒 npm audit (PR)
+      if: github.event_name == 'pull_request'
+      run: pnpm audit --audit-level high
+      continue-on-error: true
+
+    - name: 🔒 Cargo audit (PR)
+      if: github.event_name == 'pull_request'
+      run: |
+        cargo install cargo-audit
+        cd src-tauri && cargo audit
+      continue-on-error: true
 
   build:
     name: 🔨 Build
