@@ -44,7 +44,7 @@ jobs:
       run: pnpm lint
 
     - name: 🎨 Format check
-      run: npx prettier --check "src/**/*.{ts,tsx,js,jsx,json,css,scss,md}"
+      run: pnpm format:check
 
     - name: �🔧 Install Tauri dependencies (Ubuntu)
       if: matrix.os == 'ubuntu-latest'
