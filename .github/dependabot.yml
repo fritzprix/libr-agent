@@ -1,33 +1,33 @@
 version: 2
 updates:
   # Frontend dependencies (package.json)
-  - package-ecosystem: "npm"
-    directory: "/"
+  - package-ecosystem: 'npm'
+    directory: '/'
     schedule:
-      interval: "weekly"
+      interval: 'weekly'
     assignees:
-      - "fritzprix"
+      - 'fritzprix'
     open-pull-requests-limit: 10
     groups:
       dev-dependencies:
-        dependency-type: "development"
+        dependency-type: 'development'
       production-dependencies:
-        dependency-type: "production"
+        dependency-type: 'production'
 
-  # Rust dependencies (Cargo.toml)  
-  - package-ecosystem: "cargo"
-    directory: "/src-tauri"
+  # Rust dependencies (Cargo.toml)
+  - package-ecosystem: 'cargo'
+    directory: '/src-tauri'
     schedule:
-      interval: "weekly"
+      interval: 'weekly'
     assignees:
-      - "fritzprix"
+      - 'fritzprix'
     open-pull-requests-limit: 10
 
   # GitHub Actions
-  - package-ecosystem: "github-actions"
-    directory: "/"
+  - package-ecosystem: 'github-actions'
+    directory: '/'
     schedule:
-      interval: "weekly"
+      interval: 'weekly'
     assignees:
-      - "fritzprix"
+      - 'fritzprix'
     open-pull-requests-limit: 5

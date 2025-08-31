@@ -23,16 +23,18 @@ MCP-UI brings interactive web components to the Model Context Protocol. Instead 
 ### Key Components
 
 #### UIResource Type
+
 ```typescript
 interface UIResource {
-  uri?: string;        // ui://... identifier
-  mimeType: string;    // 'text/html' | 'text/uri-list' | 'application/vnd.mcp-ui.remote-dom'
-  text?: string;       // Inline content
-  blob?: string;       // Base64-encoded content
+  uri?: string; // ui://... identifier
+  mimeType: string; // 'text/html' | 'text/uri-list' | 'application/vnd.mcp-ui.remote-dom'
+  text?: string; // Inline content
+  blob?: string; // Base64-encoded content
 }
 ```
 
 #### Message Model Extension
+
 ```typescript
 interface Message {
   // ... existing fields
@@ -71,18 +73,20 @@ function createInteractiveChart(): MCPResponse {
           }
         </script>
       </div>
-    `
+    `,
   };
 
   return {
     jsonrpc: '2.0',
     id: 'chart-tool-123',
     result: {
-      content: [{
-        type: 'resource',
-        resource: uiResource
-      } as MCPUIResourceContent]
-    }
+      content: [
+        {
+          type: 'resource',
+          resource: uiResource,
+        } as MCPUIResourceContent,
+      ],
+    },
   };
 }
 ```
@@ -94,18 +98,20 @@ function createDocumentationViewer(url: string): MCPResponse {
   const uiResource: UIResource = {
     uri: 'ui://docs/viewer',
     mimeType: 'text/uri-list',
-    text: url
+    text: url,
   };
 
   return {
     jsonrpc: '2.0',
     id: 'docs-viewer-123',
     result: {
-      content: [{
-        type: 'resource',
-        resource: uiResource
-      } as MCPUIResourceContent]
-    }
+      content: [
+        {
+          type: 'resource',
+          resource: uiResource,
+        } as MCPUIResourceContent,
+      ],
+    },
   };
 }
 ```
@@ -115,45 +121,61 @@ function createDocumentationViewer(url: string): MCPResponse {
 UI components can interact with the host through standardized actions:
 
 ### Tool Calls
+
 ```javascript
 // From within iframe/component
-window.parent.postMessage({
-  type: 'tool',
-  payload: {
-    toolName: 'update_data',
-    params: { id: 123, value: 'new_value' }
-  }
-}, '*');
+window.parent.postMessage(
+  {
+    type: 'tool',
+    payload: {
+      toolName: 'update_data',
+      params: { id: 123, value: 'new_value' },
+    },
+  },
+  '*',
+);
 ```
 
 ### User Prompts
+
 ```javascript
-window.parent.postMessage({
-  type: 'prompt',
-  payload: {
-    prompt: 'Please explain this data visualization'
-  }
-}, '*');
+window.parent.postMessage(
+  {
+    type: 'prompt',
+    payload: {
+      prompt: 'Please explain this data visualization',
+    },
+  },
+  '*',
+);
 ```
 
 ### Notifications
+
 ```javascript
-window.parent.postMessage({
-  type: 'notify',
-  payload: {
-    message: 'Data updated successfully!'
-  }
-}, '*');
+window.parent.postMessage(
+  {
+    type: 'notify',
+    payload: {
+      message: 'Data updated successfully!',
+    },
+  },
+  '*',
+);
 ```
 
 ### External Links
+
 ```javascript
-window.parent.postMessage({
-  type: 'link',
-  payload: {
-    url: 'https://example.com/docs'
-  }
-}, '*');
+window.parent.postMessage(
+  {
+    type: 'link',
+    payload: {
+      url: 'https://example.com/docs',
+    },
+  },
+  '*',
+);
 ```
 
 ## 🔒 Security
@@ -163,9 +185,9 @@ window.parent.postMessage({
 All HTML content is rendered in sandboxed iframes with restricted permissions:
 
 ```html
-<iframe 
+<iframe
   sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"
-  srcDoc="..."
+  srcdoc="..."
 />
 ```
 
@@ -188,7 +210,7 @@ import { mcpUiDemoTools } from '@/examples/mcp-ui-demo';
 // Create HTML demo
 const htmlDemo = mcpUiDemoTools.createHtmlDemo();
 
-// Create URL demo  
+// Create URL demo
 const urlDemo = mcpUiDemoTools.createUrlDemo();
 
 // Create mixed content demo
@@ -249,8 +271,8 @@ Customize iframe behavior:
   resource={uiResource}
   htmlProps={{
     style: { height: '600px' },
-    iframeProps: { 
-      sandbox: 'allow-scripts allow-same-origin' 
+    iframeProps: {
+      sandbox: 'allow-scripts allow-same-origin'
     },
     autoResizeIframe: true,
     iframeRenderData: { theme: 'dark', user: currentUser }
@@ -263,21 +285,25 @@ Customize iframe behavior:
 ### Common Issues
 
 **UIResource not rendering:**
+
 - Check `Message.uiResource` is populated
 - Verify `mimeType` is supported
 - Check console for React errors
 
 **Iframe not loading:**
+
 - Verify HTML is valid
 - Check for Content Security Policy issues
 - Ensure sandbox permissions are sufficient
 
 **UI Actions not working:**
+
 - Verify postMessage format is correct
 - Check message event listeners are active
 - Ensure action handlers are implemented
 
 **External URLs blocked:**
+
 - Check for X-Frame-Options header
 - Verify URL is accessible
 - Use fallback link rendering
@@ -296,7 +322,7 @@ logger.setLevel('debug');
 
 - **Official MCP-UI Client Integration**: Replace custom implementation with @mcp-ui/client
 - **Remote DOM Integration**: Full remote-dom framework support
-- **Component Libraries**: Pre-built component collections  
+- **Component Libraries**: Pre-built component collections
 - **Theme Support**: Automatic host theme propagation
 - **State Persistence**: Component state preservation across renders
 - **WebComponent Support**: Native web component rendering

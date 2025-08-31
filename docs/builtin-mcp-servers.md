@@ -9,11 +9,13 @@ SynapticFlow now includes built-in MCP servers that provide essential functional
 Provides secure file system operations within the current working directory.
 
 #### Available Tools:
+
 - `read_file` - Read the contents of a file
 - `write_file` - Write content to a file
 - `list_directory` - List contents of a directory
 
 #### Security Features:
+
 - Path validation to prevent directory traversal attacks
 - Access restricted to current working directory and subdirectories
 - File size limits to prevent memory exhaustion
@@ -24,10 +26,12 @@ Provides secure file system operations within the current working directory.
 Executes code in isolated sandbox environments.
 
 #### Available Tools:
+
 - `execute_python` - Execute Python code safely
 - `execute_typescript` - Execute TypeScript code using ts-node
 
 #### Security Features:
+
 - Isolated temporary directory execution
 - Environment variable isolation
 - Execution timeout limits (1-60 seconds, default 30)
@@ -48,50 +52,53 @@ console.log('Built-in servers:', servers);
 
 // List all built-in tools
 const tools = await tauriMCPClient.listBuiltinTools();
-console.log('Available tools:', tools.map(t => t.name));
+console.log(
+  'Available tools:',
+  tools.map((t) => t.name),
+);
 
 // Read a file
 const readResult = await tauriMCPClient.callBuiltinTool(
   'builtin.filesystem',
   'read_file',
-  { path: 'README.md' }
+  { path: 'README.md' },
 );
 
 // Write a file
 const writeResult = await tauriMCPClient.callBuiltinTool(
   'builtin.filesystem',
   'write_file',
-  { 
-    path: 'output.txt', 
-    content: 'Hello from SynapticFlow!' 
-  }
+  {
+    path: 'output.txt',
+    content: 'Hello from SynapticFlow!',
+  },
 );
 
 // List directory contents
 const listResult = await tauriMCPClient.callBuiltinTool(
   'builtin.filesystem',
   'list_directory',
-  { path: '.' }
+  { path: '.' },
 );
 
 // Execute Python code
 const pythonResult = await tauriMCPClient.callBuiltinTool(
   'builtin.sandbox',
   'execute_python',
-  { 
+  {
     code: 'print("Hello from Python!")\nprint(2 + 2)',
-    timeout: 10
-  }
+    timeout: 10,
+  },
 );
 
 // Execute TypeScript code
 const tsResult = await tauriMCPClient.callBuiltinTool(
   'builtin.sandbox',
   'execute_typescript',
-  { 
+  {
     code: 'console.log("Hello from TypeScript!"); console.log(2 + 2);',
-    timeout: 5
-  }
+    timeout: 5,
+  },
 );
 
 // Use unified API (works with both external and built-in servers)
@@ -99,7 +106,7 @@ const unifiedTools = await tauriMCPClient.listAllToolsUnified();
 const unifiedResult = await tauriMCPClient.callToolUnified(
   'builtin.filesystem',
   'read_file',
-  { path: 'package.json' }
+  { path: 'package.json' },
 );
 ```
 
@@ -109,24 +116,24 @@ const unifiedResult = await tauriMCPClient.callToolUnified(
 import { invoke } from '@tauri-apps/api/core';
 
 // List built-in servers
-const servers = await invoke('list_builtin.servers') as string[];
+const servers = (await invoke('list_builtin.servers')) as string[];
 
 // List built-in tools
-const tools = await invoke('list_builtin.tools') as MCPTool[];
+const tools = (await invoke('list_builtin.tools')) as MCPTool[];
 
 // Call built-in tool
-const result = await invoke('call_builtin.tool', {
+const result = (await invoke('call_builtin.tool', {
   serverName: 'builtin.filesystem',
   toolName: 'read_file',
-  args: { path: 'example.txt' }
-}) as MCPResponse;
+  args: { path: 'example.txt' },
+})) as MCPResponse;
 
 // Unified API - automatically routes to appropriate server
-const unifiedResult = await invoke('call_tool_unified', {
+const unifiedResult = (await invoke('call_tool_unified', {
   serverName: 'builtin.sandbox',
   toolName: 'execute_python',
-  args: { code: 'print("Hello!")', timeout: 10 }
-}) as MCPResponse;
+  args: { code: 'print("Hello!")', timeout: 10 },
+})) as MCPResponse;
 ```
 
 ## Response Format
@@ -135,14 +142,14 @@ All tool calls return responses in the standard MCP format:
 
 ```typescript
 interface MCPResponse {
-  jsonrpc: string;          // Always "2.0"
-  id?: any;                 // Request identifier
+  jsonrpc: string; // Always "2.0"
+  id?: any; // Request identifier
   result?: {
     content: Array<{
-      type: "text";
+      type: 'text';
       text: string;
     }>;
-    isError?: boolean;      // For sandbox execution results
+    isError?: boolean; // For sandbox execution results
   };
   error?: {
     code: number;
@@ -159,10 +166,12 @@ interface MCPResponse {
   "jsonrpc": "2.0",
   "id": "uuid-string",
   "result": {
-    "content": [{
-      "type": "text",
-      "text": "File contents here..."
-    }]
+    "content": [
+      {
+        "type": "text",
+        "text": "File contents here..."
+      }
+    ]
   }
 }
 ```
@@ -199,10 +208,10 @@ interface MCPResponse {
 
 ## Error Codes
 
-| Code | Description |
-|------|-------------|
-| -32601 | Tool not found |
-| -32602 | Invalid parameters (missing required parameters) |
+| Code   | Description                                                    |
+| ------ | -------------------------------------------------------------- |
+| -32601 | Tool not found                                                 |
+| -32602 | Invalid parameters (missing required parameters)               |
 | -32603 | Internal error (security violations, execution failures, etc.) |
 
 ## Integration with AI Services
@@ -214,10 +223,10 @@ Built-in tools work seamlessly with AI services and can be included in tool call
 const allTools = await tauriMCPClient.listAllToolsUnified();
 
 // Tools are automatically formatted for AI service consumption
-const aiCompatibleTools = allTools.map(tool => ({
+const aiCompatibleTools = allTools.map((tool) => ({
   name: tool.name,
   description: tool.description,
-  parameters: tool.input_schema
+  parameters: tool.input_schema,
 }));
 ```
 

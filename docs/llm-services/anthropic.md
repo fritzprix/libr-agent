@@ -195,7 +195,9 @@ const client = new Anthropic();
 
 // If you have access to Node `fs` we recommend using `fs.createReadStream()`:
 await client.beta.files.upload({
-  file: await toFile(fs.createReadStream('/path/to/file'), undefined, { type: 'application/json' }),
+  file: await toFile(fs.createReadStream('/path/to/file'), undefined, {
+    type: 'application/json',
+  }),
   betas: ['files-api-2025-04-14'],
 });
 
@@ -355,7 +357,9 @@ You can use the `for await … of` syntax to iterate through items across all pa
 async function fetchAllMessageBatches(params) {
   const allMessageBatches = [];
   // Automatically fetches more pages as needed.
-  for await (const messageBatch of client.messages.batches.list({ limit: 20 })) {
+  for await (const messageBatch of client.messages.batches.list({
+    limit: 20,
+  })) {
     allMessageBatches.push(messageBatch);
   }
   return allMessageBatches;
@@ -602,7 +606,9 @@ const client = new Anthropic({
 ```ts
 import Anthropic from 'npm:@anthropic-ai/sdk';
 
-const httpClient = Deno.createHttpClient({ proxy: { url: 'http://localhost:8888' } });
+const httpClient = Deno.createHttpClient({
+  proxy: { url: 'http://localhost:8888' },
+});
 const client = new Anthropic({
   fetchOptions: {
     client: httpClient,
@@ -611,37 +617,39 @@ const client = new Anthropic({
 ```
 
 ### Beta Features
-We introduce beta features before they are generally available to get early feedback and test new functionality. You can check the availability of  all of Claude's capabilities and tools [here](https://docs.anthropic.com/en/docs/build-with-claude/overview).
+
+We introduce beta features before they are generally available to get early feedback and test new functionality. You can check the availability of all of Claude's capabilities and tools [here](https://docs.anthropic.com/en/docs/build-with-claude/overview).
 
 You can access most beta API features through the beta property of the client. To enable a particular beta feature, you need to add the appropriate [beta header](https://docs.anthropic.com/en/api/beta-headers) to the `betas` field when creating a message.
 
 For example, to use code execution:
+
 ```ts
 import Anthropic from 'npm:@anthropic-ai/sdk';
 
 const client = new Anthropic();
 const response = await client.beta.messages.create({
   max_tokens: 1024,
-  model: "claude-sonnet-4-20250514",
+  model: 'claude-sonnet-4-20250514',
   messages: [
     {
-      role: "user",
+      role: 'user',
       content: [
         {
-          type: "text",
+          type: 'text',
           text: "What's 4242424242 * 4242424242?.",
-        }
-      ]
-    }
+        },
+      ],
+    },
   ],
   tools: [
     {
-      name: "code_execution",
-      type: "code_execution_20250522",
-    }
+      name: 'code_execution',
+      type: 'code_execution_20250522',
+    },
   ],
-  betas: ["code-execution-2025-05-22"]
-})
+  betas: ['code-execution-2025-05-22'],
+});
 ```
 
 ## Frequently Asked Questions

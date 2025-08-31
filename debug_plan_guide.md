@@ -13,4 +13,4 @@
   - 해결 여부
   - 결과에 대한 분석 및 새로운 탐색 방향 제시
 - file 규칙
-  - ./docs/history/debug_{yyyyMMdd_hhmm}.md
+  - ./docs/history/debug\_{yyyyMMdd_hhmm}.md

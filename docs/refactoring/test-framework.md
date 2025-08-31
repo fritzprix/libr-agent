@@ -7,16 +7,19 @@ This document defines the testing strategy and framework to ensure safe refactor
 ## Testing Principles
 
 ### 1. Test First, Refactor Second
+
 - Write comprehensive tests before any refactoring
 - Ensure existing functionality is fully covered
 - Create safety nets for complex operations
 
 ### 2. Incremental Validation
+
 - Test each refactoring phase independently
 - Maintain working state between phases
 - Quick rollback capability at any point
 
 ### 3. Automated Quality Gates
+
 - Automated test execution on every change
 - Build verification tests (BVT)
 - Performance regression detection
@@ -26,6 +29,7 @@ This document defines the testing strategy and framework to ensure safe refactor
 ### Unit Tests (Isolated Module Testing)
 
 #### BrowserToolProvider.tsx Tests
+
 ```typescript
 // Test individual tool modules after extraction
 describe('CreateSessionTool', () => {
@@ -42,16 +46,16 @@ describe('CreateSessionTool', () => {
 
   it('should execute successfully with valid args', async () => {
     const mockCreateBrowserSession = vi.fn().mockResolvedValue('session-123');
-    const result = await createSessionTool.execute({ 
+    const result = await createSessionTool.execute({
       url: 'https://example.com',
-      title: 'Test Session'
+      title: 'Test Session',
     });
     expect(result).toBe('Browser session created successfully: session-123');
   });
 
   it('should handle missing optional parameters', async () => {
-    const result = await createSessionTool.execute({ 
-      url: 'https://example.com'
+    const result = await createSessionTool.execute({
+      url: 'https://example.com',
     });
     expect(result).toContain('Browser session created successfully');
   });
@@ -59,25 +63,26 @@ describe('CreateSessionTool', () => {
 ```
 
 #### Chat.tsx Component Tests
+
 ```typescript
 // Test extracted hooks
 describe('useChatState', () => {
   it('should manage showToolsDetail state correctly', () => {
     const { result } = renderHook(() => useChatState());
-    
+
     expect(result.current.showToolsDetail).toBe(false);
-    
+
     act(() => {
       result.current.setShowToolsDetail(true);
     });
-    
+
     expect(result.current.showToolsDetail).toBe(true);
   });
 
   it('should handle session state changes', () => {
     const mockSession = createMockSession();
     const { result } = renderHook(() => useChatState(mockSession));
-    
+
     expect(result.current.currentSession).toEqual(mockSession);
   });
 });
@@ -86,18 +91,19 @@ describe('useChatState', () => {
 describe('SessionFilesPopover', () => {
   it('should render with correct props', () => {
     render(
-      <SessionFilesPopover 
+      <SessionFilesPopover
         session={mockSession}
         onFileSelect={mockOnFileSelect}
       />
     );
-    
+
     expect(screen.getByTestId('session-files-popover')).toBeInTheDocument();
   });
 });
 ```
 
 #### db.ts Module Tests
+
 ```typescript
 // Test separated CRUD operations
 describe('CRUDService', () => {
@@ -109,16 +115,16 @@ describe('CRUDService', () => {
     it('should create new item with generated ID', async () => {
       const mockItem = { name: 'Test Item' };
       const result = await crudService.create(mockItem);
-      
+
       expect(result).toMatch(/^[a-z0-9]+$/); // CUID format
       expect(mockDb.table).toHaveBeenCalledWith(expect.any(String));
     });
 
     it('should validate required fields', async () => {
       const invalidItem = {};
-      await expect(crudService.create(invalidItem))
-        .rejects
-        .toThrow('Validation failed');
+      await expect(crudService.create(invalidItem)).rejects.toThrow(
+        'Validation failed',
+      );
     });
   });
 
@@ -126,10 +132,10 @@ describe('CRUDService', () => {
     it('should update existing item', async () => {
       const updates = { name: 'Updated Name' };
       await crudService.update('item-123', updates);
-      
+
       expect(mockDb.table.modify).toHaveBeenCalledWith({
         ...updates,
-        updatedAt: expect.any(Date)
+        updatedAt: expect.any(Date),
       });
     });
   });
@@ -137,6 +143,7 @@ describe('CRUDService', () => {
 ```
 
 #### Rust Module Tests
+
 ```rust
 // src-tauri/src/mcp/utils/schema_builder.rs tests
 #[cfg(test)]
@@ -146,7 +153,7 @@ mod tests {
     #[test]
     fn test_string_prop_basic() {
         let schema = string_prop(Some(1), Some(100), Some("Test description"));
-        
+
         assert_eq!(schema.description, Some("Test description".to_string()));
         if let JSONSchemaType::String { min_length, max_length } = schema.schema_type {
             assert_eq!(min_length, Some(1));
@@ -160,9 +167,9 @@ mod tests {
     fn test_object_schema_with_required() {
         let mut props = HashMap::new();
         props.insert("name".to_string(), string_prop(Some(1), None, None));
-        
+
         let schema = object_schema(props, vec!["name".to_string()]);
-        
+
         if let JSONSchemaType::Object { required, .. } = schema.schema_type {
             assert_eq!(required, Some(vec!["name".to_string()]));
         } else {
@@ -180,10 +187,10 @@ mod tests {
     #[tokio_test]
     async fn test_create_read_file_tool() {
         let tool = create_read_file_tool();
-        
+
         assert_eq!(tool.name, "read_file");
         assert!(!tool.description.is_empty());
-        
+
         // Test schema structure
         if let JSONSchemaType::Object { properties, required, .. } = &tool.input_schema.schema_type {
             assert!(properties.is_some());
@@ -195,7 +202,7 @@ mod tests {
     async fn test_filesystem_server_tools() {
         let server = FilesystemServer;
         let tools = server.get_tools().await.unwrap();
-        
+
         assert!(!tools.is_empty());
         assert!(tools.iter().any(|t| t.name == "read_file"));
         assert!(tools.iter().any(|t| t.name == "write_file"));
@@ -206,6 +213,7 @@ mod tests {
 ### Integration Tests (Cross-Module Testing)
 
 #### Tool Provider Integration
+
 ```typescript
 describe('BrowserToolProvider Integration', () => {
   beforeEach(() => {
@@ -251,12 +259,13 @@ describe('BrowserToolProvider Integration', () => {
 });
 ```
 
-#### Chat Component Integration  
+#### Chat Component Integration
+
 ```typescript
 describe('Chat Integration Tests', () => {
   it('should compose all sub-components correctly', () => {
     const mockSession = createMockSession();
-    
+
     render(
       <SessionContext.Provider value={{ current: mockSession }}>
         <Chat>
@@ -288,6 +297,7 @@ describe('Chat Integration Tests', () => {
 ```
 
 #### Database Integration
+
 ```typescript
 describe('Database Service Integration', () => {
   beforeEach(async () => {
@@ -313,8 +323,8 @@ describe('Database Service Integration', () => {
   });
 
   it('should maintain data consistency during concurrent operations', async () => {
-    const operations = Array.from({ length: 10 }, (_, i) => 
-      dbService.assistants.create({ name: `Assistant ${i}` })
+    const operations = Array.from({ length: 10 }, (_, i) =>
+      dbService.assistants.create({ name: `Assistant ${i}` }),
     );
 
     const results = await Promise.all(operations);
@@ -327,6 +337,7 @@ describe('Database Service Integration', () => {
 ### Regression Tests (Feature Preservation)
 
 #### Critical Path Testing
+
 ```typescript
 describe('Critical Path Regression Tests', () => {
   it('should complete full browser tool workflow', async () => {
@@ -362,7 +373,7 @@ describe('Critical Path Regression Tests', () => {
 
   it('should maintain chat functionality', async () => {
     const mockMessage = createMockMessage();
-    
+
     render(
       <FullTestWrapper>
         <Chat />
@@ -385,13 +396,13 @@ describe('Critical Path Regression Tests', () => {
 ### Performance Tests
 
 #### Bundle Size Monitoring
+
 ```typescript
 describe('Performance Regression Tests', () => {
   it('should not exceed bundle size limits', async () => {
     const stats = await getBuildStats();
-    const mainChunkSize = stats.assets
-      .find(asset => asset.name.includes('index'))
-      ?.size || 0;
+    const mainChunkSize =
+      stats.assets.find((asset) => asset.name.includes('index'))?.size || 0;
 
     // After refactoring, main chunk should be under 2MB
     expect(mainChunkSize).toBeLessThan(2 * 1024 * 1024);
@@ -399,7 +410,7 @@ describe('Performance Regression Tests', () => {
 
   it('should load tools within performance budget', async () => {
     const startTime = performance.now();
-    
+
     const { result } = renderHook(() => useBuiltInTool(), {
       wrapper: BrowserToolProvider,
     });
@@ -417,11 +428,12 @@ describe('Performance Regression Tests', () => {
 ### Worker Compatibility Tests
 
 #### Web Worker Integration
+
 ```typescript
 describe('Worker Compatibility Tests', () => {
   it('should load MCP servers in worker context', async () => {
-    const worker = new Worker('/src/lib/web-mcp/mcp-worker.ts', { 
-      type: 'module' 
+    const worker = new Worker('/src/lib/web-mcp/mcp-worker.ts', {
+      type: 'module',
     });
 
     const response = await sendWorkerMessage(worker, {
@@ -436,7 +448,7 @@ describe('Worker Compatibility Tests', () => {
 
   it('should handle tool calls through worker', async () => {
     const worker = createTestWorker();
-    
+
     const response = await sendWorkerMessage(worker, {
       id: 'test-2',
       type: 'callTool',
@@ -453,6 +465,7 @@ describe('Worker Compatibility Tests', () => {
 ## Test Utilities and Helpers
 
 ### Mock Factories
+
 ```typescript
 // test-utils/mock-factories.ts
 export const createMockSession = (overrides = {}) => ({
@@ -484,6 +497,7 @@ export const createMockTool = (overrides = {}) => ({
 ```
 
 ### Test Wrappers
+
 ```typescript
 // test-utils/test-wrappers.tsx
 export const TestContextWrapper = ({ children, session = null }) => (
@@ -510,6 +524,7 @@ export const FullTestWrapper = ({ children }) => (
 ```
 
 ### Database Test Utilities
+
 ```typescript
 // test-utils/db-test-utils.ts
 export const setupTestDatabase = async () => {
@@ -545,6 +560,7 @@ export const seedTestData = async (db) => {
 ## Automated Quality Gates
 
 ### Pre-commit Hooks
+
 ```bash
 #!/bin/bash
 # .husky/pre-commit
@@ -567,6 +583,7 @@ echo "✅ All quality gates passed"
 ```
 
 ### CI/CD Pipeline Tests
+
 ```yaml
 # .github/workflows/refactoring-tests.yml
 name: Refactoring Quality Gates
@@ -586,20 +603,20 @@ jobs:
     strategy:
       matrix:
         test-type: [unit, integration, regression]
-    
+
     steps:
       - uses: actions/checkout@v3
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: '18'
-          
+
       - name: Install dependencies
         run: pnpm install
-        
+
       - name: Run ${{ matrix.test-type }} tests
         run: pnpm test:${{ matrix.test-type }}
-        
+
       - name: Check bundle size
         if: matrix.test-type == 'integration'
         run: |
@@ -610,21 +627,25 @@ jobs:
 ## Measurement and Reporting
 
 ### Test Coverage Requirements
+
 - **Unit Tests**: >80% coverage for extracted modules
-- **Integration Tests**: >90% coverage for critical paths  
+- **Integration Tests**: >90% coverage for critical paths
 - **Regression Tests**: 100% coverage for existing features
 
 ### Performance Benchmarks
+
 - **Build Time**: Should not increase by >10%
 - **Bundle Size**: Main chunk <2MB after refactoring
 - **Test Execution**: All tests complete in <60 seconds
 
 ### Quality Metrics
+
 - **Code Duplication**: Reduce by >70% in target files
 - **Cyclomatic Complexity**: <10 per function
 - **File Size**: All files <500 lines after refactoring
 
 ### Reporting Dashboard
+
 ```typescript
 // scripts/generate-test-report.ts
 interface TestReport {
@@ -655,12 +676,14 @@ export const generateTestReport = async (): Promise<TestReport> => {
 ## Emergency Procedures
 
 ### Rollback Process
+
 1. **Immediate**: Revert last commit if tests fail
-2. **Investigation**: Run isolated test suites to identify issues  
+2. **Investigation**: Run isolated test suites to identify issues
 3. **Recovery**: Apply targeted fixes or rollback entire phase
 4. **Verification**: Re-run full test suite before continuing
 
 ### Debugging Failed Refactoring
+
 ```bash
 # Debug script for failed refactoring
 #!/bin/bash

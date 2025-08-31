@@ -60,9 +60,9 @@ Output: { contents: ContentSummary[] }
 
 ```typescript
 // Reads specific line ranges
-Input: { 
-  storeId: string, 
-  contentId: string, 
+Input: {
+  storeId: string,
+  contentId: string,
   lineRange: { fromLine: number, toLine?: number }
 }
 Output: { content: string, lineRange: [number, number] }
@@ -90,7 +90,7 @@ interface ContentSummary {
   filename: string;
   mimeType: string;
   lineCount: number;
-  preview: string;      // First 10-20 lines
+  preview: string; // First 10-20 lines
   chunkCount: number;
   size: number;
   uploadedAt: string;
@@ -166,7 +166,7 @@ interface Message {
 ```typescript
 const attachmentContext = `
 ## Available Files
-${summaries.map(s => `- ${s.filename} (${s.lineCount} lines): ${s.preview}`).join('\n')}
+${summaries.map((s) => `- ${s.filename} (${s.lineCount} lines): ${s.preview}`).join('\n')}
 
 Use similarity search to find relevant content when needed.
 `;
@@ -178,8 +178,8 @@ Use similarity search to find relevant content when needed.
 
 ```typescript
 // Auto-create store for new session
-const storeId = await createStore({ 
-  metadata: { sessionId, name: "Session Files" }
+const storeId = await createStore({
+  metadata: { sessionId, name: 'Session Files' },
 });
 ```
 
@@ -190,7 +190,7 @@ const storeId = await createStore({
 const { contentId } = await addContent({
   storeId,
   content: fileText,
-  metadata: { filename, mimeType, size }
+  metadata: { filename, mimeType, size },
 });
 ```
 
@@ -208,15 +208,15 @@ message.attachmentSummaries = summaries.contents;
 // LLM searches when needed
 const results = await similaritySearch({
   storeId,
-  query: "API configuration",
-  options: { topN: 3 }
+  query: 'API configuration',
+  options: { topN: 3 },
 });
 
 // LLM reads specific content
 const content = await readContent({
   storeId,
-  contentId: "file_123",
-  lineRange: { fromLine: 45, toLine: 60 }
+  contentId: 'file_123',
+  lineRange: { fromLine: 45, toLine: 60 },
 });
 ```
 

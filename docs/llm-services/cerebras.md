@@ -18,6 +18,7 @@ It is generated with [Stainless](https://www.stainless.com/).
 At Cerebras, we've developed the world's largest and fastest AI processor, the Wafer-Scale Engine-3 (WSE-3). The Cerebras CS-3 system, powered by the WSE-3, represents a new class of AI supercomputer that sets the standard for generative AI training and inference with unparalleled performance and scalability.
 
 With Cerebras as your inference provider, you can:
+
 - Achieve unprecedented speed for AI inference workloads
 - Build commercially with high throughput
 - Effortlessly scale your AI workloads with our seamless clustering technology
@@ -27,12 +28,15 @@ Our CS-3 systems can be quickly and easily clustered to create the largest AI su
 Want to experience the power of Cerebras? Check out our [website](https://cerebras.net) for more resources and explore options for accessing our technology through the Cerebras Cloud or on-premise deployments!
 
 ## Installation
+
 ```
 npm install @cerebras/cerebras_cloud_sdk
 ```
 
 ## API Key
+
 Get an API Key from [cloud.cerebras.ai](https://cloud.cerebras.ai/) and add it to your environment variables:
+
 ```
 export CEREBRAS_API_KEY="your-api-key-here"
 ```
@@ -42,7 +46,9 @@ export CEREBRAS_API_KEY="your-api-key-here"
 The full API of this library can be found in [api.md](api.md).
 
 ### Chat Completion
+
 <!-- RUN TEST: ChatStandard -->
+
 ```ts
 import Cerebras from '@cerebras/cerebras_cloud_sdk';
 
@@ -63,7 +69,9 @@ main();
 ```
 
 ### Text Completion
+
 <!-- RUN TEST: TextStandard -->
+
 ```ts
 import Cerebras from '@cerebras/cerebras_cloud_sdk';
 
@@ -73,7 +81,7 @@ const client = new Cerebras({
 
 async function main() {
   const completion = await client.completions.create({
-    prompt: "It was a dark and stormy ",
+    prompt: 'It was a dark and stormy ',
     model: 'llama3.1-8b',
   });
 
@@ -90,7 +98,9 @@ We provide support for streaming responses using Server Sent Events (SSE).
 Note that when streaming, `usage` and `time_info` will be information will only be included in the final chunk.
 
 ### Chat Completion
+
 <!-- RUN TEST: ChatStreaming -->
+
 ```ts
 import Cerebras from '@cerebras/cerebras_cloud_sdk';
 
@@ -113,7 +123,9 @@ main();
 ```
 
 ### Text Completion
+
 <!-- RUN TEST: TextStreaming -->
+
 ```ts
 import Cerebras from '@cerebras/cerebras_cloud_sdk';
 
@@ -123,7 +135,7 @@ const client = new Cerebras({
 
 async function main() {
   const stream = await client.completions.create({
-    prompt: "It was a dark and stormy ",
+    prompt: 'It was a dark and stormy ',
     model: 'llama3.1-8b',
     max_tokens: 10,
     stream: true,
@@ -144,6 +156,7 @@ or call `stream.controller.abort()`.
 This library includes TypeScript definitions for all request params and response fields. You may import and use them like so:
 
 <!-- RUN TEST: Types -->
+
 ```ts
 import Cerebras from '@cerebras/cerebras_cloud_sdk';
 
@@ -156,7 +169,8 @@ async function main() {
     messages: [{ role: 'user', content: 'Why is fast inference important?' }],
     model: 'llama3.1-8b',
   };
-  const chatCompletion: Cerebras.Chat.ChatCompletion = await client.chat.completions.create(params);
+  const chatCompletion: Cerebras.Chat.ChatCompletion =
+    await client.chat.completions.create(params);
 }
 
 main();
@@ -171,6 +185,7 @@ or if the API returns a non-success status code (i.e., 4xx or 5xx response),
 a subclass of `APIError` will be thrown:
 
 <!-- RUN TEST: Error -->
+
 ```ts
 import Cerebras from '@cerebras/cerebras_cloud_sdk';
 
@@ -221,6 +236,7 @@ Connection errors (for example, due to a network connectivity problem), 408 Requ
 You can use the `maxRetries` option to configure or disable this:
 
 <!-- RUN TEST: Retries -->
+
 ```js
 import Cerebras from '@cerebras/cerebras_cloud_sdk';
 
@@ -230,9 +246,15 @@ const client = new Cerebras({
 });
 
 // Or, configure per-request:
-await client.chat.completions.create({ messages: [{ role: 'user', content: 'Why is fast inference important?' }], model: 'llama3.1-8b' }, {
-  maxRetries: 5,
-});
+await client.chat.completions.create(
+  {
+    messages: [{ role: 'user', content: 'Why is fast inference important?' }],
+    model: 'llama3.1-8b',
+  },
+  {
+    maxRetries: 5,
+  },
+);
 ```
 
 ### Timeouts
@@ -240,6 +262,7 @@ await client.chat.completions.create({ messages: [{ role: 'user', content: 'Why 
 Requests time out after 1 minute by default. You can configure this with a `timeout` option:
 
 <!-- RUN TEST: Timeout -->
+
 ```ts
 import Cerebras from '@cerebras/cerebras_cloud_sdk';
 
@@ -249,9 +272,15 @@ const client = new Cerebras({
 });
 
 // Override per-request:
-await client.chat.completions.create({ messages: [{ role: 'user', content: 'Why is fast inference important?' }], model: 'llama3.1-8b' }, {
-  timeout: 5 * 1000,
-});
+await client.chat.completions.create(
+  {
+    messages: [{ role: 'user', content: 'Why is fast inference important?' }],
+    model: 'llama3.1-8b',
+  },
+  {
+    timeout: 5 * 1000,
+  },
+);
 ```
 
 On timeout, an `APIConnectionTimeoutError` is thrown.
@@ -267,19 +296,26 @@ The "raw" `Response` returned by `fetch()` can be accessed through the `.asRespo
 You can also use the `.withResponse()` method to get the raw `Response` along with the parsed data.
 
 <!-- RUN TEST: Advanced -->
+
 ```ts
 import Cerebras from '@cerebras/cerebras_cloud_sdk';
 
 const client = new Cerebras();
 
 const response = await client.chat.completions
-  .create({ messages: [{ role: 'user', content: 'Why is fast inference important?' }], model: 'llama3.1-8b' })
+  .create({
+    messages: [{ role: 'user', content: 'Why is fast inference important?' }],
+    model: 'llama3.1-8b',
+  })
   .asResponse();
 console.log(response.headers.get('X-My-Header'));
 console.log(response.statusText); // access the underlying Response object
 
 const { data: chatCompletion, response: raw } = await client.chat.completions
-  .create({ messages: [{ role: 'user', content: 'Why is fast inference important?' }], model: 'llama3.1-8b' })
+  .create({
+    messages: [{ role: 'user', content: 'Why is fast inference important?' }],
+    model: 'llama3.1-8b',
+  })
   .withResponse();
 console.log(raw.headers.get('X-My-Header'));
 console.log(chatCompletion);

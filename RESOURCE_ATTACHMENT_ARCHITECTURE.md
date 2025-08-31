@@ -11,6 +11,7 @@ This refactored architecture provides a clean, scalable foundation for handling 
 **Purpose**: Centralized state management for file attachments using React Context API.
 
 **Key Features**:
+
 - State management for attached files
 - Basic file operations (add, remove, clear)
 - File lookup by ID
@@ -18,10 +19,15 @@ This refactored architecture provides a clean, scalable foundation for handling 
 - Proper TypeScript typing
 
 **Interface**:
+
 ```typescript
 interface ResourceAttachmentContextType {
   files: AttachmentReference[];
-  addFile: (url: string, mimeType: string, filename?: string) => Promise<AttachmentReference>;
+  addFile: (
+    url: string,
+    mimeType: string,
+    filename?: string,
+  ) => Promise<AttachmentReference>;
   removeFile: (ref: AttachmentReference) => Promise<void>;
   clearFiles: () => void;
   isLoading: boolean;
@@ -34,6 +40,7 @@ interface ResourceAttachmentContextType {
 **Purpose**: Business logic layer that handles actual file processing using MCP tools.
 
 **Key Features**:
+
 - File processing with MCP integration points
 - Support for local files and web URLs
 - Content preview generation
@@ -42,6 +49,7 @@ interface ResourceAttachmentContextType {
 - Extensible for different file types
 
 **Main Methods**:
+
 - `processFile()` - Process and create attachment references
 - `getFileContent()` - Retrieve full file content
 - `searchInFile()` - Search within specific files
@@ -52,6 +60,7 @@ interface ResourceAttachmentContextType {
 **Purpose**: High-level interface combining context state with service layer operations.
 
 **Key Features**:
+
 - Combines context state management with service operations
 - File processing with full MCP integration
 - Search across all attached files
@@ -59,6 +68,7 @@ interface ResourceAttachmentContextType {
 - Error handling and logging
 
 **Enhanced Methods**:
+
 - `addAndProcessFile()` - Add and fully process files
 - `getFileContent()` - Get full content using service layer
 - `searchInFile()` / `searchInAllFiles()` - Search functionality
@@ -67,12 +77,13 @@ interface ResourceAttachmentContextType {
 ## Usage Examples
 
 ### Basic Usage (Context Only)
+
 ```typescript
 import { useResourceAttachment } from '@/context/ResourceAttachmentContext';
 
 function FileManager() {
   const { files, addFile, removeFile, isLoading } = useResourceAttachment();
-  
+
   const handleAddFile = async () => {
     try {
       const attachment = await addFile('path/to/file.txt', 'text/plain');
@@ -81,7 +92,7 @@ function FileManager() {
       console.error('Failed to add file:', error);
     }
   };
-  
+
   return (
     <div>
       {files.map(file => (
@@ -95,17 +106,18 @@ function FileManager() {
 ```
 
 ### Enhanced Usage (With Service Integration)
+
 ```typescript
 import { useResourceAttachmentService } from '@/hooks/use-resource-attachment-service';
 
 function AdvancedFileManager() {
-  const { 
-    files, 
-    addAndProcessFile, 
-    searchInAllFiles, 
-    getFileStats 
+  const {
+    files,
+    addAndProcessFile,
+    searchInAllFiles,
+    getFileStats
   } = useResourceAttachmentService();
-  
+
   const handleAddFile = async () => {
     try {
       // This will use MCP tools for full processing
@@ -120,7 +132,7 @@ function AdvancedFileManager() {
       console.error('Failed to process file:', error);
     }
   };
-  
+
   const handleSearch = async () => {
     try {
       const results = await searchInAllFiles('important keyword');
@@ -129,10 +141,10 @@ function AdvancedFileManager() {
       console.error('Search failed:', error);
     }
   };
-  
+
   const stats = getFileStats();
   console.log('File statistics:', stats);
-  
+
   return (
     <div>
       <h3>Files: {stats.totalFiles}</h3>
@@ -148,16 +160,19 @@ function AdvancedFileManager() {
 The system is designed with clear integration points for MCP tools:
 
 ### File System Operations
+
 - **Local files**: Use MCP file system tools to read content, get metadata
 - **Web URLs**: Use MCP web scraping tools to fetch and process content
 - **Document processing**: Use specialized MCP tools for different file formats
 
 ### Content Processing
+
 - **Text extraction**: From PDFs, documents, images
 - **Metadata extraction**: File properties, document info
 - **Content chunking**: For large documents and search optimization
 
 ### Search and Retrieval
+
 - **Semantic search**: Using MCP-powered search tools
 - **Content indexing**: For fast retrieval
 - **Cross-file search**: Search across multiple attached files

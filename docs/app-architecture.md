@@ -12,6 +12,7 @@ It is meant as a concise guide for contributors and maintainers to quickly under
 - Backend: `src-tauri/` — Rust (Tauri) code that manages native MCP servers, builtin MCP servers (filesystem, sandbox), and exposes Tauri commands.
 
 The app is a desktop client that integrates multiple MCP (Model Context Protocol) tool sources:
+
 - External MCP servers launched/managed via Tauri (stdio-based MCPs).
 - Built-in MCP servers implemented in Rust (filesystem, sandbox/code-execution, etc.).
 - Web-based MCP tools running in WebWorkers (web-mcp).
@@ -59,9 +60,11 @@ The top-level `App` component composes the application providers and routes. Ord
 - `ModelOptionsProvider` — model selection and LLM providers configuration (local vs external).
 
 UI-level wrappers:
+
 - `SidebarProvider` — UI sidebar state.
 
 Routing: `Routes` maps paths to containers:
+
 - `/`, `/chat/single` → `SingleChatContainer` (single-assistant chat)
 - `/chat/group` → `GroupChatContainer` (multi-assistant/group chat)
 - `/assistants`, `/assistants/groups` → assistant management UIs
@@ -144,6 +147,7 @@ Key point: the providers connect the UI to multiple MCP tool sources so the chat
 ---
 
 ## 8. Next steps I can perform (pick one)
+
 - Update `README.md` to reflect implemented builtin tools (content-store, filesystem, sandbox) and the project's goals (user-friendly tool integration, multi-LLM support).
 - Run a TypeScript typecheck (`pnpm build` / `tsc`) and `cargo check` to surface compile-time issues in Rust (I can do this and fix low-risk problems like Path→OsStr conversions).
 - Add small unit tests for `SecurityValidator` symlink/canonicalization checks.

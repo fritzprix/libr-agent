@@ -9,7 +9,7 @@
 - 수정이 필요한 코드 및 수정부분의 코드 스니핏
 - 재사용 가능한 연관 코드 (파일 경로, 주요 기능, 인터페이스 등 포함)
 - file 규칙
-  - ./docs/history/refactoring_{yyyyMMdd_hhmm}.md
+  - ./docs/history/refactoring\_{yyyyMMdd_hhmm}.md
 
 ## 주의 사항
 

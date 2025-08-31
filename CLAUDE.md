@@ -9,30 +9,35 @@ SynapticFlow is a next-generation desktop AI agent platform that combines the li
 ## Key Features
 
 **AI Agent Management:**
+
 - Advanced Role Management: Create/edit/delete AI agent roles with sophisticated configurations
 - Custom System Prompts: Define unique AI personalities and behaviors for each role
 - Multi-Agent Collaboration: Coordinate multiple agents working together on complex tasks
 - Agent Configuration Sharing: Export and import agent configurations
 
 **LLM Provider Support:**
+
 - 8 Major Providers: OpenAI, Anthropic, Google, Groq, Fireworks, Cerebras, Ollama, Empty
 - 50+ Models: Including reasoning models (o3, DeepSeek R1, Qwen3)
 - Cost Optimization: Real-time cost tracking and model comparison
 - Massive Context: Up to 2M tokens support (Gemini 2.5 Pro)
 
 **Built-in Tool Ecosystem:**
+
 - SecureFileManager: Advanced file operations with path validation
 - Code Execution: Python and TypeScript sandboxed environments
 - Browser Automation: Interactive web scraping and automation
 - Content Processing: PDF, DOCX, XLSX parsing with full-text search
 
 **MCP Integration:**
+
 - Real-time MCP Connection: Advanced stdio protocol implementation
 - Dual Backend Support: Both Rust Tauri and Web Worker implementations
 - Security Validation: Built-in SecurityValidator with comprehensive protection
 - Tool Execution Context: Unified calling interface across all backends
 
 **User Experience:**
+
 - Modern UI: Clean, terminal-style interface with 20+ shadcn/ui components
 - Session Management: Organize conversations with file attachments and context
 - Centralized Configuration: All settings managed within the app
@@ -41,6 +46,7 @@ SynapticFlow is a next-generation desktop AI agent platform that combines the li
 ## Technology Stack
 
 **Core Framework:**
+
 - PNPM (Package Manager)
 - Tauri 2.x (Latest cross-platform desktop framework)
 - React 18.3 (Modern UI with concurrent features)
@@ -48,6 +54,7 @@ SynapticFlow is a next-generation desktop AI agent platform that combines the li
 - RMCP 0.2.1 (Rust-based Model Context Protocol client)
 
 **Frontend Technologies:**
+
 - Tailwind CSS 4.x (Latest utility-first styling)
 - Radix UI (Accessible component primitives)
 - Dexie (TypeScript-friendly IndexedDB wrapper)
@@ -55,6 +62,7 @@ SynapticFlow is a next-generation desktop AI agent platform that combines the li
 - Vite (Fast development and build tool)
 
 **Backend Technologies:**
+
 - Rust (High-performance native operations)
 - Tokio (Async runtime for concurrent operations)
 - SecurityValidator (Built-in security validation)

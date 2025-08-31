@@ -24,6 +24,7 @@ ResourceAttachmentContext와 file-store MCP 서버를 Chat 시스템에 통합�
 ### 현재 file-store.ts의 문제
 
 하나의 파일에 너무 많은 책임이 집중:
+
 - 파일 저장/관리 (MCP 서버)
 - 텍스트 청킹 (TextChunker 클래스)
 - 텍스트 검색 (BM25SearchEngine)
@@ -51,16 +52,18 @@ src/lib/file-processing/
 
 ```tsx
 // message.attachments가 있으면 파일 정보 표시
-{message.attachments && message.attachments.length > 0 && (
-  <div className="mb-3 p-3 bg-muted/30 rounded-lg">
-    <div className="text-sm mb-2">📎 {message.attachments.length}개 파일</div>
-    {message.attachments.map((attachment) => (
-      <div key={attachment.contentId} className="text-xs">
-        📄 {attachment.filename} ({attachment.size} bytes)
-      </div>
-    ))}
-  </div>
-)}
+{
+  message.attachments && message.attachments.length > 0 && (
+    <div className="mb-3 p-3 bg-muted/30 rounded-lg">
+      <div className="text-sm mb-2">📎 {message.attachments.length}개 파일</div>
+      {message.attachments.map((attachment) => (
+        <div key={attachment.contentId} className="text-xs">
+          📄 {attachment.filename} ({attachment.size} bytes)
+        </div>
+      ))}
+    </div>
+  );
+}
 ```
 
 ### 2. Chat.tsx 수정
@@ -85,9 +88,9 @@ const handleFileAttachment = async (e: React.ChangeEvent<HTMLInputElement>) => {
 const handleSubmit = async () => {
   const userMessage: Message = {
     // ...기존 필드들...
-    attachments: files.length > 0 ? [...files] : undefined
+    attachments: files.length > 0 ? [...files] : undefined,
   };
-  
+
   clearFiles(); // 전송 후 첨부 상태 초기화
   await submit([userMessage]);
 };
@@ -98,33 +101,41 @@ const handleSubmit = async () => {
 첨부 파일 내용을 AI 시스템 메시지에 포함:
 
 ```tsx
-const extractAttachmentContext = async (messages: Message[]): Promise<string> => {
+const extractAttachmentContext = async (
+  messages: Message[],
+): Promise<string> => {
   if (!fileStore) return '';
 
   const attachmentContents: string[] = [];
-  
+
   for (const message of messages) {
     if (message.attachments?.length) {
       for (const attachment of message.attachments) {
-        const content = await fileStore.retrieve_file({ id: attachment.contentId });
-        attachmentContents.push(`--- ${attachment.filename} ---\n${content.content}`);
+        const content = await fileStore.retrieve_file({
+          id: attachment.contentId,
+        });
+        attachmentContents.push(
+          `--- ${attachment.filename} ---\n${content.content}`,
+        );
       }
     }
   }
 
-  return attachmentContents.length > 0 
+  return attachmentContents.length > 0
     ? `\n첨부된 파일들:\n\n${attachmentContents.join('\n\n')}\n`
     : '';
 };
 
 const submit = async (messages: Message[]) => {
   const attachmentContext = await extractAttachmentContext(messages);
-  
+
   const stream = serviceInstance.streamChat(messages, {
     systemPrompt: [
       getCurrentAssistant()?.systemPrompt || DEFAULT_SYSTEM_PROMPT,
-      attachmentContext // 첨부 파일 내용 추가
-    ].filter(Boolean).join('\n\n'),
+      attachmentContext, // 첨부 파일 내용 추가
+    ]
+      .filter(Boolean)
+      .join('\n\n'),
   });
 };
 ```
@@ -137,7 +148,7 @@ file-store.ts에서 TextChunker 클래스를 별도 파일로 이동:
 // src/lib/file-processing/text-chunker.ts
 export class TextChunker {
   constructor(private chunkSize: number = 500) {}
-  
+
   chunkText(text: string): string[] {
     // 기존 구현 그대로 이동
   }
@@ -154,7 +165,7 @@ export const extractTextFromFile = async (file: File): Promise<string> => {
   if (file.type.startsWith('text/')) {
     return await file.text();
   }
-  
+
   // PDF 등 다른 타입은 향후 구현
   throw new Error(`Unsupported file type: ${file.type}`);
 };

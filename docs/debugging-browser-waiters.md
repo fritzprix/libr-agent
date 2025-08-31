@@ -7,6 +7,7 @@ This document provides instructions for debugging the MCP browser agent waiters 
 ## Issue Summary
 
 The problem manifests as:
+
 1. `execute_script` creates a oneshot channel and inserts it into `result_waiters` with `session_id` as key
 2. JavaScript executes and calls `window.__TAURI_INTERNALS__.invoke('browser_script_result', { payload })`
 3. Rust's `handle_script_result` is called but finds the waiters HashMap empty
@@ -17,6 +18,7 @@ The problem manifests as:
 The codebase has been enhanced with detailed logging to help diagnose this issue:
 
 ### execute_script Logging
+
 - Session ID being processed
 - Waiter insertion confirmation with current waiters list
 - Script execution status
@@ -24,6 +26,7 @@ The codebase has been enhanced with detailed logging to help diagnose this issue
 - Cleanup operations with remaining waiters
 
 ### handle_script_result Logging
+
 - Session ID received from JavaScript
 - Current waiters before attempting removal
 - Success/failure of waiter lookup and removal
@@ -31,6 +34,7 @@ The codebase has been enhanced with detailed logging to help diagnose this issue
 - Final waiters state
 
 ### Log Analysis Points
+
 Look for these patterns in the logs:
 
 ```
@@ -56,17 +60,19 @@ pub async fn run_browser_diagnostic(
 ```
 
 #### Usage from Frontend
+
 ```javascript
 import { invoke } from '@tauri-apps/api/tauri';
 
 // Run diagnostic for a specific session
-const result = await invoke('run_browser_diagnostic', { 
-    sessionId: 'your-session-id-here' 
+const result = await invoke('run_browser_diagnostic', {
+  sessionId: 'your-session-id-here',
 });
 console.log('Diagnostic result:', result);
 ```
 
 #### What the Diagnostic Tests
+
 1. **Waiter Lifecycle Test**: Manually inserts and retrieves waiters
 2. **Session ID Format Consistency**: Tests various ID formats
 3. **Race Condition Simulation**: Tests concurrent operations
@@ -105,16 +111,19 @@ const result = await invoke('run_browser_diagnostic', { sessionId });
 When running `execute_script`, watch for:
 
 1. **Waiter Insertion**: Confirm the waiter is actually inserted
+
    ```
    [INFO] execute_script: Inserted waiter for session_id: 'xxx', current waiters: ["xxx"]
    ```
 
 2. **JavaScript Execution**: Confirm the script wrapper is executed
+
    ```
    [INFO] execute_script: Script wrapper executed in session: 'xxx'
    ```
 
 3. **Result Handler Call**: Check if `handle_script_result` is called
+
    ```
    [INFO] handle_script_result: Called for session_id: 'xxx'
    ```
@@ -127,6 +136,7 @@ When running `execute_script`, watch for:
 ### Step 4: Session ID Format Analysis
 
 The diagnostic will test different session ID formats to identify potential mismatches:
+
 - Standard UUID format
 - Simple test IDs
 - The exact format from your error logs
@@ -138,21 +148,25 @@ The diagnostic simulates concurrent operations to identify timing issues.
 ## Common Causes and Solutions
 
 ### 1. Session ID Mismatch
+
 **Symptoms**: Different session IDs in insert vs. retrieve operations
 **Check**: Compare session IDs in logs, look for format differences
 **Solution**: Ensure consistent ID generation and usage
 
 ### 2. Race Condition
+
 **Symptoms**: Waiter disappears before JavaScript can invoke the result handler
 **Check**: Timing of operations in logs
 **Solution**: Review locking strategy and operation ordering
 
 ### 3. Lock Contention
+
 **Symptoms**: Failed to acquire lock errors
 **Check**: Lock acquisition failures in logs
 **Solution**: Review mutex usage patterns
 
 ### 4. JavaScript Invocation Issues
+
 **Symptoms**: `handle_script_result` never called
 **Check**: Browser console for JavaScript errors
 **Solution**: Verify Tauri IPC setup and JavaScript execution
@@ -160,19 +174,25 @@ The diagnostic simulates concurrent operations to identify timing issues.
 ## Additional Debugging Tips
 
 ### Browser Console Monitoring
+
 Check the browser console for messages like:
+
 ```
 [TAURI INJECTION] Sending to browser_script_result: {sessionId: "...", result: "..."}
 ```
 
 ### Session ID Validation
+
 Ensure session IDs:
+
 - Are properly generated (UUID format recommended)
 - Are consistently formatted between Rust and JavaScript
 - Don't contain special characters that could cause issues
 
 ### Timing Analysis
+
 Look for the sequence:
+
 1. Waiter inserted
 2. Script executed
 3. JavaScript calls result handler
