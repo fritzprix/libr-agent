@@ -430,9 +430,9 @@ function ChatAttachedFiles() {
     <div className="px-4 py-2 border-t">
       <div className="text-xs mb-2">📎 Attached Files:</div>
       <div className="flex flex-wrap gap-2">
-        {attachedFiles.map((file, index) => (
+        {attachedFiles.map((file) => (
           <div
-            key={index}
+            key={file.contentId}
             className="flex items-center px-2 py-1 rounded border border-gray-700"
           >
             <span className="text-xs truncate max-w-[150px]">
