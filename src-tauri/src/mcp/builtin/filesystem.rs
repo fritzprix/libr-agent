@@ -50,11 +50,12 @@ impl FilesystemServer {
         let mut props = HashMap::new();
         props.insert("path".to_string(), string_prop(Some(1), Some(1000), Some("Path to the file to write")));
         props.insert("content".to_string(), string_prop(None, Some(MAX_FILE_SIZE as u32), Some("Content to write to the file")));
+        props.insert("mode".to_string(), string_prop(None, None, Some("Write mode: 'w' for overwrite (default), 'a' for append")));
 
         MCPTool {
             name: "write_file".to_string(),
             title: Some("Write File".to_string()),
-            description: "Write content to a file".to_string(),
+            description: "Write content to a file with optional append mode".to_string(),
             input_schema: object_schema(props, vec!["path".to_string(), "content".to_string()]),
             output_schema: None,
             annotations: None,
@@ -77,10 +78,14 @@ impl FilesystemServer {
 
     fn create_replace_lines_in_file_tool() -> MCPTool {
         let mut item_props = HashMap::new();
-        item_props.insert("line_number".to_string(), integer_prop(Some(1), None, Some("The 1-based line number to replace")));
-        item_props.insert("content".to_string(), string_prop(None, None, Some("The new content for the line")));
+        item_props.insert("start_line".to_string(), integer_prop(Some(1), None, Some("Starting line number (1-based)")));
+        item_props.insert("end_line".to_string(), integer_prop(Some(1), None, Some("Ending line number (1-based, optional). If not provided, equals start_line")));
+        item_props.insert("content".to_string(), string_prop(None, None, Some("The new content for the line range")));
         
-        let replacement_item_schema = object_schema(item_props, vec!["line_number".to_string(), "content".to_string()]);
+        // 기존 line_number 지원을 위한 backward compatibility
+        item_props.insert("line_number".to_string(), integer_prop(Some(1), None, Some("The 1-based line number to replace (deprecated, use start_line)")));
+        
+        let replacement_item_schema = object_schema(item_props, vec!["start_line".to_string(), "content".to_string()]);
         
         let mut props = HashMap::new();
         props.insert("path".to_string(), string_prop(Some(1), Some(1000), Some("Path to the file to modify")));
@@ -89,7 +94,7 @@ impl FilesystemServer {
         MCPTool {
             name: "replace_lines_in_file".to_string(),
             title: Some("Replace Lines in File".to_string()),
-            description: "Replace specific lines in a file with new content".to_string(),
+            description: "Replace specific lines or line ranges in a file with new content".to_string(),
             input_schema: object_schema(props, vec!["path".to_string(), "replacements".to_string()]),
             output_schema: None,
             annotations: None,
@@ -189,15 +194,40 @@ impl FilesystemServer {
         };
 
         let mut new_lines = lines.clone();
-        let mut replacements_map: HashMap<usize, String> = HashMap::new();
+        let mut replacements_map: HashMap<String, String> = HashMap::new();
 
         for rep in replacements {
-            let line_number = match rep.get("line_number").and_then(|v| v.as_u64()) {
+            let start_line = match rep.get("start_line").and_then(|v| v.as_u64()) {
                 Some(num) => num as usize,
                 None => {
-                    return MCPResponse::error(request_id, -32602, "Invalid line_number format");
+                    // backward compatibility: line_number fallback
+                    match rep.get("line_number").and_then(|v| v.as_u64()) {
+                        Some(num) => num as usize,
+                        None => {
+                            return MCPResponse::error(request_id, -32602, "Missing start_line or line_number");
+                        }
+                    }
                 }
             };
+            
+            let end_line = rep.get("end_line")
+                .and_then(|v| v.as_u64())
+                .map(|n| n as usize)
+                .unwrap_or(start_line); // 기본값: start_line과 동일
+            
+            // 범위 검증
+            if start_line > end_line {
+                return MCPResponse::error(request_id, -32602, "start_line must be <= end_line");
+            }
+            
+            if start_line == 0 || end_line > new_lines.len() {
+                return MCPResponse::error(
+                    request_id,
+                    -32602,
+                    &format!("Line range {}-{} is out of bounds (file has {} lines)", start_line, end_line, new_lines.len()),
+                );
+            }
+            
             let content = match rep.get("content").and_then(|v| v.as_str()) {
                 Some(s) => s.to_string(),
                 None => {
@@ -205,19 +235,24 @@ impl FilesystemServer {
                 }
             };
 
-            if line_number == 0 || line_number > new_lines.len() {
-                return MCPResponse::error(
-                    request_id,
-                    -32602,
-                    &format!("Line number {line_number} is out of bounds"),
-                );
-            }
-            replacements_map.insert(line_number, content);
+            // 범위 교체를 위한 키 생성 (start_line-end_line 형식)
+            let range_key = format!("{}-{}", start_line, end_line);
+            replacements_map.insert(range_key, content);
         }
 
-        // 라인 교체 (인덱스 기반)
-        for (line_number, content) in replacements_map {
-            new_lines[line_number - 1] = content;
+        // 범위 교체 처리
+        for (range_key, content) in replacements_map {
+            let parts: Vec<&str> = range_key.split('-').collect();
+            let start_line: usize = parts[0].parse().unwrap();
+            let end_line: usize = parts[1].parse().unwrap();
+            
+            if start_line == end_line {
+                // 단일 줄 교체
+                new_lines[start_line - 1] = content;
+            } else {
+                // 범위 교체: start_line부터 end_line까지를 content로 교체
+                new_lines.splice((start_line - 1)..end_line, vec![content]);
+            }
         }
 
         // 파일 쓰기
@@ -651,8 +686,35 @@ impl FilesystemServer {
             }
         };
 
+        let mode = args.get("mode")
+            .and_then(|v| v.as_str())
+            .unwrap_or("w");
+
         // Use SecureFileManager to write file
-        match self.file_manager.write_file_string(path_str, content).await {
+        let result = match mode {
+            "w" => {
+                // 기존 덮어쓰기 로직
+                self.file_manager.write_file_string(path_str, content).await
+            },
+            "a" => {
+                // 새로 구현할 append 로직
+                self.file_manager.append_file_string(path_str, content).await
+            },
+            _ => {
+                return MCPResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id: Some(request_id),
+                    result: None,
+                    error: Some(MCPError {
+                        code: -32602,
+                        message: "Invalid mode. Use 'w' or 'a'".to_string(),
+                        data: None,
+                    }),
+                };
+            }
+        };
+
+        match result {
             Ok(()) => {
                 info!("Successfully wrote file: {}", path_str);
                 MCPResponse {
@@ -661,7 +723,7 @@ impl FilesystemServer {
                     result: Some(json!({
                         "content": [{
                             "type": "text",
-                            "text": format!("Successfully wrote {} bytes to {}", content.len(), path_str)
+                            "text": format!("Successfully wrote {} bytes to {} (mode: {})", content.len(), path_str, mode)
                         }]
                     })),
                     error: None,

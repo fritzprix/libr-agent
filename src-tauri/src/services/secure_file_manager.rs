@@ -103,6 +103,33 @@ impl SecureFileManager {
         self.write_file(path, content.as_bytes()).await
     }
 
+    pub async fn append_file_string(&self, path: &str, content: &str) -> Result<(), String> {
+        let safe_path = self
+            .security
+            .validate_path(path)
+            .map_err(|e| format!("Security error: {e}"))?;
+
+        // 파일이 존재하지 않으면 생성
+        if !safe_path.exists() {
+            return self.write_file_string(path, content).await;
+        }
+
+        // Open the existing file and append content
+        use tokio::io::AsyncWriteExt;
+        let mut file = tokio::fs::OpenOptions::new()
+            .append(true)
+            .open(&safe_path)
+            .await
+            .map_err(|e| format!("Failed to open file for append: {e}"))?;
+
+        file.write_all(content.as_bytes())
+            .await
+            .map_err(|e| format!("Failed to append to file: {e}"))?;
+
+        info!("Successfully appended to file: {:?}", safe_path);
+        Ok(())
+    }
+
     pub fn get_security_validator(&self) -> &SecurityValidator {
         &self.security
     }

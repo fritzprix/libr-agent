@@ -15,6 +15,11 @@ import type {
   SamplingOptions,
 } from '../mcp-types';
 
+// Static imports for MCP server modules to avoid Vite dynamic import warnings
+// This approach provides better bundling compatibility and type safety
+import contentStoreServer from './modules/content-store';
+import planningServer from './modules/planning-server';
+
 // Add console logging for debugging since we can't use our logger in worker context
 const log = {
   debug: (message: string, data?: unknown) => {
@@ -31,38 +36,39 @@ const log = {
   },
 };
 
+// Static module registry - using direct imports instead of dynamic imports
+// This eliminates Vite bundling warnings and provides better type safety
 const MODULE_REGISTRY = [
-  { key: 'content-store', importPath: './modules/content-store' },
-  { key: 'planning-server', importPath: './modules/planning-server' },
-  // Future modules can be added here
+  { key: 'content-store', module: contentStoreServer },
+  { key: 'planning-server', module: planningServer },
+  // Future modules can be added here with static imports
 ] as const;
 
+// Initialize server instances directly with static modules
 const serverInstances = new Map<string, WebMCPServer | null>(
-  MODULE_REGISTRY.map(({ key }) => [key, null]),
+  MODULE_REGISTRY.map(({ key, module }) => [key, module]),
 );
 
+/**
+ * Load MCP servers - simplified with static imports
+ * Since we're using static imports, servers are already loaded at initialization
+ */
 async function loadServers(): Promise<void> {
   try {
-    log.debug('Loading MCP servers');
+    log.debug('MCP servers already loaded via static imports');
 
-    const modulePromises = MODULE_REGISTRY.map(
-      ({ importPath }) => import(importPath),
-    );
-    const results = await Promise.allSettled(modulePromises);
-
-    results.forEach((result, index) => {
-      const { key } = MODULE_REGISTRY[index];
-      if (result.status === 'fulfilled') {
-        serverInstances.set(key, result.value.default);
-        log.debug(`${key} server loaded`);
+    // Log loaded servers for debugging
+    MODULE_REGISTRY.forEach(({ key, module }) => {
+      if (module) {
+        log.debug(`${key} server loaded statically`);
       } else {
-        log.error(`Failed to load ${key} server`, result.reason);
+        log.warn(`${key} server module is null`);
       }
     });
 
-    log.info('Server loading completed');
+    log.info('Static server loading completed');
   } catch (error) {
-    log.error('Critical error during server loading', error);
+    log.error('Critical error during static server loading', error);
   }
 }
 
@@ -82,8 +88,13 @@ async function loadMCPServer(serverName: string): Promise<WebMCPServer> {
   }
 
   try {
-    // Ensure servers are loaded
-    if (Array.from(serverInstances.values()).every((s) => s === null)) {
+    // Servers are already loaded via static imports, no need to load dynamically
+    // This check is kept for safety but should always pass with static imports
+    const allServersLoaded = Array.from(serverInstances.values()).every(
+      (s) => s !== null,
+    );
+    if (!allServersLoaded) {
+      log.warn('Some servers are not loaded, attempting to reload');
       await loadServers();
     }
 
