@@ -1,21 +1,28 @@
 # Modular Chat Component
 
-A flexible, composable chat interface built with React that allows you to create customizable chat experiences using a compound component pattern.
+A flexible, composable chat interface built with React using a compound component pattern. The Chat component has been refactored from a monolithic 940-line component into a modular architecture with separate components, hooks, and clear separation of concerns.
 
 ## Overview
 
-The Chat component has been refactored from a monolithic structure into modular, reusable components that can be composed together to create different chat layouts and experiences. This approach provides maximum flexibility while maintaining all the original functionality.
+The Chat component has been refactored from a single large file into:
+- **Main Container**: `Chat.tsx` (50 lines) - provides context and layout structure
+- **Components**: Individual UI components in `components/` directory
+- **Hooks**: Custom hooks in `hooks/` directory for state and file management
+- **Compound Pattern**: Static properties on Chat for accessing subcomponents
+
+This approach provides maximum flexibility while maintaining all the original functionality including drag-and-drop file attachments, tool integration, and message management.
 
 ## Features
 
 - 🧩 **Modular Design**: Compose your chat interface from individual components
-- 🔄 **Shared State**: All components automatically share state through React Context
-- 📁 **File Attachments**: Support for text file uploads with preview
-- 🔧 **Tool Integration**: Built-in support for MCP and local tools
-- 💬 **Message History**: Automatic message management and display
+- 🔄 **Shared State**: All components automatically share state through React Context (`ChatProvider`)
+- 📁 **File Attachments**: Drag-and-drop and button-based file uploads with debouncing
+- 🔧 **Tool Integration**: Built-in support for MCP servers and browser tools
+- 💬 **Message History**: Automatic message management with proper scrolling
 - 🎨 **Customizable**: Easy to extend and customize each section
 - 📱 **Responsive**: Works across different screen sizes
 - ⌨️ **Keyboard Shortcuts**: Submit with Enter, file shortcuts
+- 🪝 **Custom Hooks**: `useChatState` and `useFileAttachment` for state management
 
 ## Quick Start
 
@@ -289,39 +296,88 @@ function App() {
 - All original functionality is preserved but must be composed explicitly
 - No props have changed - all customization now happens through composition
 
+## Architecture
+
+### Directory Structure
+
+```
+src/features/chat/
+├── Chat.tsx                 # Main container component (50 lines)
+├── components/              # UI Components
+│   ├── ChatHeader.tsx      # Terminal-style header with session files
+│   ├── ChatMessages.tsx    # Message history display with auto-scroll
+│   ├── ChatStatusBar.tsx   # Model picker and tools status
+│   ├── ChatAttachedFiles.tsx # File attachment display
+│   ├── ChatInput.tsx       # Input form with file support
+│   ├── ChatBottom.tsx      # Container for bottom elements
+│   └── SessionFilesPopover.tsx # Session file browser modal
+├── hooks/                  # Custom Hooks
+│   ├── useChatState.ts     # Tools modal state management
+│   └── useFileAttachment.ts # File drag-drop and attachment logic
+└── README.md               # This documentation
+```
+
+### Component Responsibilities
+
+#### Chat.tsx (Main Container)
+- Provides `ChatProvider` context to all children
+- Manages `ToolsModal` visibility with `useChatState` hook
+- Validates session existence
+- Defines compound component pattern via static properties
+
+#### Components Directory
+- **ChatHeader**: Session title, terminal styling, session files access
+- **ChatMessages**: Message display, auto-scroll, loading states
+- **ChatStatusBar**: Model selection, tool count display, extensible status
+- **ChatAttachedFiles**: File attachment preview and removal
+- **ChatInput**: Text input, file attachment, form submission
+- **ChatBottom**: Layout container for bottom UI elements
+- **SessionFilesPopover**: Modal for browsing session file attachments
+
+#### Hooks Directory
+- **useChatState**: Simple state management for tools modal visibility
+- **useFileAttachment**: Complex file handling including drag-drop events, validation, Rust backend integration, and pending file management
+
 ## File Attachment Support
 
 ### Supported File Types
-
 - Text files (`.txt`, `.md`, `.json`)
-- Code files (`.js`, `.ts`, `.tsx`, `.jsx`, `.py`, `.java`, `.cpp`, `.c`, `.h`)
-- Web files (`.css`, `.html`, `.xml`)
-- Data files (`.yaml`, `.yml`, `.csv`)
+- Document files (`.pdf`, `.docx`, `.xlsx`)
 
-### File Size Limits
+### Features
+- **Drag & Drop**: Drop files directly into the chat interface
+- **Button Upload**: Traditional file picker button
+- **Debouncing**: Prevents duplicate processing from rapid events (10ms timeout)
+- **Validation**: Automatic file type and format checking
+- **Preview**: File content preview in attachment bubbles
+- **Duplicate Prevention**: Single hook instance prevents double processing
 
-- Maximum file size: 1MB per file
-- Multiple files can be attached
-- Files are automatically validated
-
-### File Handling
-
-```jsx
-// Files are automatically processed and included in message content
-// Format: [File: filename.ext]\n{content}\n
-```
+### File Processing Pipeline
+1. File dropped/selected → `useFileAttachment` hook
+2. Validation (type, size) → Error handling if invalid
+3. Rust backend processing → `rustBackend.readDroppedFile()`
+4. Blob URL creation → Added to pending files via `ResourceAttachmentContext`
+5. UI display → `ChatAttachedFiles` component
+6. Message submission → Included as `AttachmentReference[]`
 
 ## State Management
 
-All state is managed internally by the `Chat` component and shared through React Context:
+State is managed through a combination of React Context and custom hooks:
 
-- `input` - Current input text
-- `attachedFiles` - Array of attached files
-- `showToolsDetail` - Tools modal visibility
-- `availableTools` - Combined MCP and local tools
-- `isLoading` - Chat submission state
-- `messages` - Message history
-- `currentSession` - Active chat session
+### ChatContext (Global State)
+- `messages` - Message history array
+- `isLoading` - Chat submission state  
+- `submit()` - Function to send messages
+- `cancel()` - Function to cancel current request
+
+### Custom Hooks (Local State)
+- **useChatState**: `showToolsDetail` - Tools modal visibility
+- **useFileAttachment**: File handling state including `pendingFiles`, `dragState`, attachment functions
+
+### Context Dependencies
+- `SessionContext` - Current session and validation
+- `AssistantContext` - Current assistant configuration
+- `ResourceAttachmentContext` - File attachment management
 
 ## Error Handling
 
@@ -417,21 +473,71 @@ The component uses Tailwind CSS with a terminal/console theme:
 
 ## Dependencies
 
-- React 18+
-- `@paralleldrive/cuid2` - ID generation
-- Custom hooks and contexts (see imports)
+### Core Dependencies
+- React 18+ with hooks (useState, useCallback, useEffect, useRef)
+- `@paralleldrive/cuid2` - Message ID generation
+
+### Tauri Integration
+- `@tauri-apps/api/webview` - Drag-and-drop event handling
+- Custom Rust backend client for file processing
+
+### Internal Dependencies
+- `@/context/ChatContext` - Chat state management
+- `@/context/SessionContext` - Session validation
+- `@/context/ResourceAttachmentContext` - File attachment state
+- `@/components/ui/*` - Shared UI components
 - Tailwind CSS for styling
+
+### File Processing
+- Rust backend for secure file reading
+- Blob URL management for file previews
+- MIME type detection and validation
+
+## Recent Improvements
+
+### Drag & Drop Bug Fixes (Phase 3 Completion)
+- **Fixed infinite re-rendering** in `useFileAttachment` hook by using empty dependency array `[]`
+- **Eliminated duplicate file processing** by removing dual hook instantiation in `ChatInput`
+- **Added proper debouncing** with 10ms timeout to prevent rapid-fire events
+- **Maintained type safety** with proper TypeScript interfaces for Tauri events
+
+### Refactoring Highlights
+- **Reduced main component size** from 940 lines to 50 lines
+- **Improved maintainability** with clear separation of concerns
+- **Enhanced testability** with isolated hooks and components
+- **Preserved all functionality** including file attachments and tool integration
 
 ## Contributing
 
 When extending the Chat component:
 
-1. Keep state management in the main `Chat` component
-2. Use the shared context for accessing state
-3. Follow the compound component pattern
+1. Keep state management in React Context or custom hooks
+2. Use the compound component pattern for new UI elements
+3. Follow the established directory structure (`components/`, `hooks/`)
 4. Maintain backward compatibility
-5. Add proper TypeScript types
-6. Include examples in documentation
+5. Add proper TypeScript types and interfaces
+6. Include comprehensive error handling
+7. Test drag-and-drop functionality thoroughly
+8. Update this README with new features
+
+## Troubleshooting
+
+### Common Issues
+
+1. **"Chat component should only be rendered when currentSession exists"**
+   - Ensure `SessionContext` is properly initialized before rendering Chat
+
+2. **Drag and drop not working**
+   - Check that `useFileAttachment` is only called once per component
+   - Verify Tauri permissions for file access
+
+3. **Duplicate file processing**
+   - Ensure single instance of `useFileAttachment` hook per component
+   - Check for proper debouncing in drag handlers
+
+4. **Files not appearing in UI**
+   - Verify `ResourceAttachmentContext` is properly connected
+   - Check that `addPendingFiles` is being called successfully
 
 ## License
 

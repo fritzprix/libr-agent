@@ -539,8 +539,10 @@ export const ResourceAttachmentProvider: React.FC<
       // Check if this is a pending file (not yet saved to server)
       if (ref.contentId.startsWith('pending_')) {
         // Handle pending file removal - remove from local state
-        const fileToRemove = pendingFiles.find(file => file.contentId === ref.contentId);
-        
+        const fileToRemove = pendingFiles.find(
+          (file) => file.contentId === ref.contentId,
+        );
+
         if (fileToRemove) {
           // Clean up blob URL if it exists
           if (fileToRemove.blobCleanup) {
@@ -556,10 +558,12 @@ export const ResourceAttachmentProvider: React.FC<
               });
             }
           }
-          
+
           // Remove from pending files array
-          setPendingFiles(prev => prev.filter(file => file.contentId !== ref.contentId));
-          
+          setPendingFiles((prev) =>
+            prev.filter((file) => file.contentId !== ref.contentId),
+          );
+
           logger.info('Pending file removed successfully from UI', {
             filename: ref.filename,
             contentId: ref.contentId,
