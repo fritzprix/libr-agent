@@ -10,6 +10,14 @@ import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';
 const logger = getLogger('AnthropicService');
 
+interface ToolCallAccumulator {
+  id: string;
+  name: string;
+  partialJson: string;
+  index: number;
+  yielded: boolean; // 이미 yield했는지 추적
+}
+
 export class AnthropicService extends BaseAIService {
   private anthropic: Anthropic;
 
@@ -57,7 +65,12 @@ export class AnthropicService extends BaseAIService {
         }),
       );
 
+      // Tool call accumulator for partial JSON streaming
+      const toolCallAccumulators = new Map<number, ToolCallAccumulator>();
+
       for await (const chunk of completion) {
+        logger.debug('Received chunk from Anthropic', { chunk });
+
         if (
           chunk.type === 'content_block_delta' &&
           chunk.delta.type === 'text_delta'
@@ -68,11 +81,109 @@ export class AnthropicService extends BaseAIService {
           chunk.delta.type === 'thinking_delta'
         ) {
           yield JSON.stringify({ thinking: chunk.delta.thinking });
+        } else if (chunk.type === 'content_block_start') {
+          // Initialize accumulator for new tool call
+          if (chunk.content_block.type === 'tool_use') {
+            toolCallAccumulators.set(chunk.index, {
+              id: chunk.content_block.id,
+              name: chunk.content_block.name,
+              partialJson: '',
+              index: chunk.index,
+              yielded: false, // 초기값은 false
+            });
+            logger.debug('Started tool call accumulation', {
+              index: chunk.index,
+              id: chunk.content_block.id,
+              name: chunk.content_block.name,
+            });
+          }
         } else if (
           chunk.type === 'content_block_delta' &&
           chunk.delta.type === 'input_json_delta'
         ) {
-          yield JSON.stringify({ tool_calls: chunk.delta.partial_json });
+          // Accumulate partial JSON
+          const accumulator = toolCallAccumulators.get(chunk.index);
+          if (accumulator) {
+            accumulator.partialJson += chunk.delta.partial_json;
+            logger.debug('Accumulated partial JSON', {
+              index: chunk.index,
+              partialJson: accumulator.partialJson,
+            });
+
+            // Try to parse the accumulated JSON only if not already yielded
+            if (!accumulator.yielded) {
+              try {
+                const parsedInput = JSON.parse(accumulator.partialJson);
+                // If parsing succeeds, yield the tool call and mark as yielded
+                yield JSON.stringify({
+                  tool_calls: [
+                    {
+                      id: accumulator.id,
+                      function: {
+                        name: accumulator.name,
+                        arguments: JSON.stringify(parsedInput),
+                      },
+                    },
+                  ],
+                });
+                accumulator.yielded = true; // 중복 yield 방지
+                logger.debug('Tool call yielded successfully', {
+                  index: chunk.index,
+                  id: accumulator.id,
+                  name: accumulator.name,
+                });
+              } catch (parseError) {
+                // Continue accumulating if JSON is still incomplete
+                logger.debug('JSON still incomplete, continuing accumulation', {
+                  error: parseError,
+                  partialJson: accumulator.partialJson,
+                });
+              }
+            }
+          }
+        } else if (chunk.type === 'content_block_stop') {
+          // Final attempt to parse accumulated JSON only if not already yielded
+          const accumulator = toolCallAccumulators.get(chunk.index);
+          if (accumulator && accumulator.partialJson && !accumulator.yielded) {
+            try {
+              const parsedInput = JSON.parse(accumulator.partialJson);
+              logger.info('Tool call completed on content_block_stop', {
+                id: accumulator.id,
+                name: accumulator.name,
+                input: parsedInput,
+              });
+              // Final tool call yield if not already done
+              yield JSON.stringify({
+                tool_calls: [
+                  {
+                    id: accumulator.id,
+                    function: {
+                      name: accumulator.name,
+                      arguments: JSON.stringify(parsedInput),
+                    },
+                  },
+                ],
+              });
+              accumulator.yielded = true;
+            } catch (parseError) {
+              logger.error('Failed to parse final tool call JSON', {
+                error: parseError,
+                partialJson: accumulator.partialJson,
+                toolId: accumulator.id,
+                toolName: accumulator.name,
+              });
+            }
+          }
+          
+          // Clean up accumulator regardless of yield status
+          if (accumulator) {
+            toolCallAccumulators.delete(chunk.index);
+            logger.debug('Cleaned up tool call accumulator', {
+              index: chunk.index,
+              id: accumulator.id,
+              wasYielded: accumulator.yielded,
+            });
+          }
         }
       }
     } catch (error) {
@@ -97,6 +208,21 @@ export class AnthropicService extends BaseAIService {
           content: this.processMessageContent(m.content),
         });
       } else if (m.role === 'assistant') {
+        // Filter out empty assistant messages that would cause API errors
+        const hasContent =
+          m.content &&
+          (typeof m.content === 'string'
+            ? m.content.trim().length > 0
+            : m.content.length > 0);
+        const hasToolCalls = m.tool_calls && m.tool_calls.length > 0;
+        const hasToolUse = m.tool_use;
+
+        // Skip empty assistant messages to prevent 400 errors
+        if (!hasContent && !hasToolCalls && !hasToolUse) {
+          logger.debug('Skipping empty assistant message', { messageId: m.id });
+          continue;
+        }
+
         if (m.tool_calls) {
           anthropicMessages.push({
             role: 'assistant',
@@ -119,7 +245,7 @@ export class AnthropicService extends BaseAIService {
               },
             ],
           });
-        } else {
+        } else if (hasContent) {
           anthropicMessages.push({
             role: 'assistant',
             content: this.processMessageContent(m.content),
