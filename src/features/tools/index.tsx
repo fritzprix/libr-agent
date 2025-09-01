@@ -35,7 +35,7 @@ export interface BuiltInService {
   getServiceContext?: (options?: ServiceContextOptions) => Promise<string>;
 }
 
-const BUILTIN_PREFIX = 'builtin.';
+const BUILTIN_PREFIX = 'builtin_';
 
 type ServiceStatus = 'loading' | 'error' | 'ready';
 
@@ -185,7 +185,7 @@ export function BuiltInToolProvider({ children }: BuiltInToolProviderProps) {
       strippedToolName = toolcall.function.name;
       logger.warn('tool call does not have builtin prefix', { toolcall });
     } else {
-      strippedToolName = toolcall.function.name.replace(BUILTIN_PREFIX, '');
+      strippedToolName = toolcall.function.name.slice(BUILTIN_PREFIX.length);
     }
 
     const idx = strippedToolName.indexOf('__');
@@ -236,7 +236,7 @@ Tool details and usage instructions are provided separately.
 
 **Available Built-In Tools:** ${availableToolsCount} ${isLoadingTauriTools ? '(Loading...)' : ''}
 
-**Important Instruction:** When calling built-in tools, you MUST use the tool name exactly as it appears in the available tools list. Do not add or remove the "builtin." prefix - use it "as is" (e.g., if the tool name is "builtin.file_read", call it as "builtin.file_read", not "file_read" or "builtin.builtin.file_read").
+**Important Instruction:** When calling built-in tools, you MUST use the tool name exactly as it appears in the available tools list. Do not add or remove the "${BUILTIN_PREFIX}" prefix - use it "as is" (e.g., if the tool name is "${BUILTIN_PREFIX}file_read", call it as "${BUILTIN_PREFIX}file_read", not "file_read" or "${BUILTIN_PREFIX}${BUILTIN_PREFIX}file_read").
 `);
 
     // 2. Service Contexts Section

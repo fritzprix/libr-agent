@@ -2,11 +2,11 @@ import Cerebras from '@cerebras/cerebras_cloud_sdk';
 import { getLogger } from '../logger';
 import { Message, ToolCall } from '@/models/chat';
 import { MCPTool } from '../mcp-types';
-import { AIServiceProvider, AIServiceConfig, AIServiceError } from './types';
+import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';
 import { convertMCPToolsToCerebrasTools } from './tool-converters';
 
-const logger = getLogger('AIService');
+const logger = getLogger('CerebrasService');
 
 // Constants
 const DEFAULT_MODEL = 'llama3.1-8b';
@@ -64,9 +64,7 @@ export class CerebrasService extends BaseAIService {
     messages: Message[],
     options: StreamChatOptions = {},
   ): AsyncGenerator<string, void, void> {
-    this.validateMessages(messages);
-
-    const config = { ...this.defaultConfig, ...options.config };
+    const { config } = this.prepareStreamChat(messages, options);
 
     try {
       const cerebrasMessages = this.convertToCerebrasMessages(
@@ -105,7 +103,7 @@ export class CerebrasService extends BaseAIService {
         }
       }
     } catch (error: unknown) {
-      this.handleStreamError(error, messages, options, config);
+      this.handleStreamingError(error, { messages, options, config });
     }
   }
 
@@ -303,34 +301,16 @@ export class CerebrasService extends BaseAIService {
     };
   }
 
-  private handleStreamError(
-    error: unknown,
-    messages: Message[],
-    options: StreamChatOptions,
-    config: AIServiceConfig,
-  ): never {
-    const serviceProvider = this.getProvider();
-    const errorMessage =
-      error instanceof Error ? error.message : 'Unknown error';
-    const errorStack = error instanceof Error ? error.stack : undefined;
+  // Implementation of abstract methods from BaseAIService
+  protected createSystemMessage(systemPrompt: string): unknown {
+    return {
+      role: 'system',
+      content: systemPrompt.trim(),
+    };
+  }
 
-    logger.error(`${serviceProvider} streaming failed`, {
-      error: errorMessage,
-      stack: errorStack,
-      requestData: {
-        model: options.modelName || config.defaultModel || DEFAULT_MODEL,
-        messagesCount: messages.length,
-        hasTools: !!options.availableTools?.length,
-        systemPrompt: !!options.systemPrompt,
-      },
-    });
-
-    throw new AIServiceError(
-      `${serviceProvider} streaming failed: ${errorMessage}`,
-      serviceProvider,
-      undefined,
-      error instanceof Error ? error : undefined,
-    );
+  protected convertSingleMessage(message: Message): unknown {
+    return this.convertMessage(message);
   }
 
   dispose(): void {

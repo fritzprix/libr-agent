@@ -3,11 +3,9 @@ import { ChatCompletionTool as OpenAIChatCompletionTool } from 'openai/resources
 import { getLogger } from '../logger';
 import { Message } from '@/models/chat';
 import { MCPTool } from '../mcp-types';
-import { AIServiceProvider, AIServiceConfig, AIServiceError } from './types';
+import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';
-import { convertMCPToolsToProviderTools } from './tool-converters';
-
-const logger = getLogger('AIService');
+const logger = getLogger('OpenAIService');
 
 export class OpenAIService extends BaseAIService {
   protected openai: OpenAI;
@@ -33,18 +31,11 @@ export class OpenAIService extends BaseAIService {
       config?: AIServiceConfig;
     } = {},
   ): AsyncGenerator<string, void, void> {
-    this.validateMessages(messages);
-
-    const config = { ...this.defaultConfig, ...options.config };
+    const { config, tools } = this.prepareStreamChat(messages, options);
     const provider = this.getProvider();
 
     if (options.availableTools) {
-      logger.info('tool calls: ', {
-        tools: convertMCPToolsToProviderTools(
-          options?.availableTools,
-          provider,
-        ),
-      });
+      logger.info('tool calls: ', { tools });
     }
 
     try {
@@ -54,6 +45,15 @@ export class OpenAIService extends BaseAIService {
       );
 
       let modelName = options.modelName || config.defaultModel || 'gpt-4-turbo';
+
+      // Handle Fireworks prefix
+      const fireworksPrefix = 'accounts/fireworks/models/';
+      if (
+        provider === AIServiceProvider.Fireworks &&
+        !modelName.startsWith(fireworksPrefix)
+      ) {
+        modelName = `${fireworksPrefix}${modelName}`;
+      }
 
       logger.info(`${provider} call : `, {
         model: modelName,
@@ -66,12 +66,7 @@ export class OpenAIService extends BaseAIService {
           messages: openaiMessages,
           max_completion_tokens: config.maxTokens,
           stream: true,
-          tools: options.availableTools
-            ? (convertMCPToolsToProviderTools(
-                options.availableTools,
-                provider,
-              ) as OpenAIChatCompletionTool[])
-            : undefined,
+          tools: tools as OpenAIChatCompletionTool[],
           tool_choice: options.availableTools ? 'auto' : undefined,
         }),
       );
@@ -88,34 +83,7 @@ export class OpenAIService extends BaseAIService {
         }
       }
     } catch (error) {
-      const serviceProvider = this.getProvider();
-      let modelName = options.modelName || config.defaultModel || 'gpt-4-turbo';
-      const fireworksPrefix = 'accounts/fireworks/models/';
-      if (
-        serviceProvider === AIServiceProvider.Fireworks &&
-        !modelName.startsWith(fireworksPrefix)
-      ) {
-        modelName = `${fireworksPrefix}${modelName}`;
-      }
-      logger.error(`${serviceProvider} streaming failed`, {
-        error: error,
-        message: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : undefined,
-        requestData: {
-          model: modelName,
-          messagesCount: messages.length,
-          hasTools: !!options.availableTools?.length,
-          systemPrompt: !!options.systemPrompt,
-        },
-      });
-      throw new AIServiceError(
-        `${serviceProvider} streaming failed: ${
-          error instanceof Error ? error.message : 'Unknown error'
-        }`,
-        serviceProvider,
-        undefined,
-        error instanceof Error ? error : undefined,
-      );
+      this.handleStreamingError(error, { messages, options, config });
     }
   }
 
@@ -164,6 +132,52 @@ export class OpenAIService extends BaseAIService {
       }
     }
     return openaiMessages;
+  }
+
+  // Implementation of abstract methods from BaseAIService
+  protected createSystemMessage(systemPrompt: string): unknown {
+    return { role: 'system', content: systemPrompt };
+  }
+
+  protected convertSingleMessage(message: Message): unknown {
+    if (message.role === 'user') {
+      return {
+        role: 'user',
+        content: this.processMessageContent(message.content),
+      };
+    } else if (message.role === 'assistant') {
+      if (message.tool_calls && message.tool_calls.length > 0) {
+        return {
+          role: 'assistant',
+          content: this.processMessageContent(message.content) || null,
+          tool_calls: message.tool_calls,
+        };
+      } else {
+        return {
+          role: 'assistant',
+          content: this.processMessageContent(message.content),
+        };
+      }
+    } else if (message.role === 'tool') {
+      if (message.tool_call_id) {
+        return {
+          role: 'tool',
+          tool_call_id: message.tool_call_id,
+          content: this.processMessageContent(message.content),
+        };
+      } else {
+        logger.warn(
+          `Tool message missing tool_call_id: ${JSON.stringify(message)}`,
+        );
+        return null;
+      }
+    } else if (message.role === 'system') {
+      return {
+        role: 'system',
+        content: this.processMessageContent(message.content),
+      };
+    }
+    return null;
   }
 
   dispose(): void {

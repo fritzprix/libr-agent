@@ -4,11 +4,9 @@ import { getLogger } from '../logger';
 import { Message } from '@/models/chat';
 import { MCPTool } from '../mcp-types';
 import { llmConfigManager } from '../llm-config-manager';
-import { AIServiceProvider, AIServiceConfig, AIServiceError } from './types';
+import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';
-import { convertMCPToolsToProviderTools } from './tool-converters';
-
-const logger = getLogger('AIService');
+const logger = getLogger('GroqService');
 
 export class GroqService extends BaseAIService {
   private groq: Groq;
@@ -34,10 +32,8 @@ export class GroqService extends BaseAIService {
       config?: AIServiceConfig;
     } = {},
   ): AsyncGenerator<string, void, void> {
-    this.validateMessages(messages);
+    const { config, tools } = this.prepareStreamChat(messages, options);
     logger.info('tools : ', { availableTools: options.availableTools });
-
-    const config = { ...this.defaultConfig, ...options.config };
 
     try {
       const groqMessages = this.convertToGroqMessages(
@@ -59,12 +55,7 @@ export class GroqService extends BaseAIService {
           max_tokens: config.maxTokens,
           reasoning_format: model?.supportReasoning ? 'parsed' : undefined,
           stream: true,
-          tools: options.availableTools
-            ? (convertMCPToolsToProviderTools(
-                options.availableTools,
-                AIServiceProvider.Groq,
-              ) as GroqChatCompletionTool[])
-            : undefined,
+          tools: tools as GroqChatCompletionTool[],
           tool_choice: options.availableTools ? 'auto' : undefined,
         }),
       );
@@ -83,14 +74,7 @@ export class GroqService extends BaseAIService {
         }
       }
     } catch (error) {
-      throw new AIServiceError(
-        `Groq streaming failed: ${
-          error instanceof Error ? error.message : 'Unknown error'
-        }`,
-        AIServiceProvider.Groq,
-        undefined,
-        error instanceof Error ? error : undefined,
-      );
+      this.handleStreamingError(error, { messages, options, config });
     }
   }
 
@@ -143,6 +127,57 @@ export class GroqService extends BaseAIService {
       }
     }
     return groqMessages;
+  }
+
+  // Implementation of abstract methods from BaseAIService
+  protected createSystemMessage(systemPrompt: string): unknown {
+    return { role: 'system', content: systemPrompt };
+  }
+
+  protected convertSingleMessage(message: Message): unknown {
+    if (message.role === 'user') {
+      return {
+        role: 'user',
+        content: this.processMessageContent(message.content),
+      };
+    } else if (message.role === 'assistant') {
+      if (message.tool_calls && message.tool_calls.length > 0) {
+        return {
+          role: 'assistant',
+          content: this.processMessageContent(message.content) || null,
+          tool_calls: message.tool_calls,
+        };
+      } else if (message.thinking) {
+        return {
+          role: 'assistant',
+          content: this.processMessageContent(message.content),
+        };
+      } else {
+        return {
+          role: 'assistant',
+          content: this.processMessageContent(message.content),
+        };
+      }
+    } else if (message.role === 'tool') {
+      if (message.tool_call_id) {
+        return {
+          role: 'tool',
+          tool_call_id: message.tool_call_id,
+          content: this.processMessageContent(message.content),
+        };
+      } else {
+        logger.warn(
+          `Tool message missing tool_call_id: ${JSON.stringify(message)}`,
+        );
+        return null;
+      }
+    } else if (message.role === 'system') {
+      return {
+        role: 'system',
+        content: this.processMessageContent(message.content),
+      };
+    }
+    return null;
   }
 
   dispose(): void {

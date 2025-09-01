@@ -106,36 +106,11 @@ const ToolCaller: React.FC<ToolCallerProps> = ({ onToolExecutionChange }) => {
             const executionTime = Date.now() - executionStartTime;
 
             // Diagnostic logging for debugging readContent tool result loss
-            logger.debug('Raw mcpResponse for tool', {
+            logger.info('Raw mcpResponse for tool', {
               toolCallId: toolCall.id,
               toolName,
               mcpResponse,
             });
-
-            // Normalize MCP content to readable string
-            const normalizeContent = (rawContent: unknown): string => {
-              if (typeof rawContent === 'string') {
-                return rawContent;
-              } else if (Array.isArray(rawContent)) {
-                // MCPContent[] -> prefer text parts
-                const textParts = rawContent
-                  .filter(
-                    (item: unknown): item is { type: string; text: string } =>
-                      item !== null &&
-                      typeof item === 'object' &&
-                      'type' in item &&
-                      'text' in item &&
-                      (item as { type: unknown }).type === 'text',
-                  )
-                  .map((item) => item.text)
-                  .filter(Boolean);
-                return textParts.length
-                  ? textParts.join('\n')
-                  : JSON.stringify(rawContent);
-              } else {
-                return JSON.stringify(rawContent ?? '');
-              }
-            };
 
             const toolResultMessage: Message = {
               id: createId(),
@@ -143,7 +118,7 @@ const ToolCaller: React.FC<ToolCallerProps> = ({ onToolExecutionChange }) => {
               role: 'tool',
               content: isMCPError(mcpResponse)
                 ? `Error: ${mcpResponse.error.message} (Code: ${mcpResponse.error.code})`
-                : normalizeContent(mcpResponse.result?.content),
+                : mcpResponse.result?.content || '',
               tool_call_id: toolCall.id,
               sessionId: currentSession?.id || '',
             };

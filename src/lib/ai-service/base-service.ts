@@ -13,6 +13,8 @@ import {
 } from './types';
 import { ModelInfo, llmConfigManager } from '../llm-config-manager';
 import { withRetry, withTimeout } from '../retry-utils';
+import { convertMCPToolsToProviderTools } from './tool-converters';
+import { getLogger } from '../logger';
 
 // --- Base Service Class with Common Functionality ---
 
@@ -24,6 +26,8 @@ export abstract class BaseAIService implements IAIService {
     maxTokens: 4096,
     temperature: 0.7,
   };
+
+  protected logger = getLogger('BaseAIService');
 
   constructor(
     protected apiKey: string,
@@ -142,6 +146,109 @@ export abstract class BaseAIService implements IAIService {
   }
 
   /**
+   * Common error handling helper for streaming operations
+   */
+  protected handleStreamingError(
+    error: unknown,
+    context: {
+      messages: Message[];
+      options: {
+        modelName?: string;
+        systemPrompt?: string;
+        availableTools?: MCPTool[];
+        config?: AIServiceConfig;
+      };
+      config: AIServiceConfig;
+    },
+  ): never {
+    const serviceProvider = this.getProvider();
+    const errorMessage =
+      error instanceof Error ? error.message : 'Unknown error';
+    const errorStack = error instanceof Error ? error.stack : undefined;
+
+    this.logger.error(`${serviceProvider} streaming failed`, {
+      error: errorMessage,
+      stack: errorStack,
+      requestData: {
+        model: context.options.modelName || context.config.defaultModel,
+        messagesCount: context.messages.length,
+        hasTools: !!context.options.availableTools?.length,
+        systemPrompt: !!context.options.systemPrompt,
+      },
+    });
+
+    throw new AIServiceError(
+      `${serviceProvider} streaming failed: ${errorMessage}`,
+      serviceProvider,
+      undefined,
+      error instanceof Error ? error : undefined,
+    );
+  }
+
+  /**
+   * Configuration merge helper
+   */
+  protected mergeConfig(options?: {
+    config?: AIServiceConfig;
+  }): AIServiceConfig {
+    return { ...this.defaultConfig, ...options?.config };
+  }
+
+  /**
+   * streamChat preprocessing common logic
+   */
+  protected prepareStreamChat(
+    messages: Message[],
+    options: {
+      modelName?: string;
+      systemPrompt?: string;
+      availableTools?: MCPTool[];
+      config?: AIServiceConfig;
+    } = {},
+  ): {
+    config: AIServiceConfig;
+    tools?: unknown[];
+  } {
+    this.validateMessages(messages);
+    const config = this.mergeConfig(options);
+
+    const tools = options.availableTools
+      ? convertMCPToolsToProviderTools(
+          options.availableTools,
+          this.getProvider(),
+        )
+      : undefined;
+
+    return { config, tools };
+  }
+
+  /**
+   * Basic message conversion template method
+   */
+  protected convertMessagesTemplate(
+    messages: Message[],
+    systemPrompt?: string,
+  ): unknown[] {
+    const result: unknown[] = [];
+
+    if (systemPrompt) {
+      const systemMessage = this.createSystemMessage(systemPrompt);
+      if (systemMessage) {
+        result.push(systemMessage);
+      }
+    }
+
+    for (const message of messages) {
+      const converted = this.convertSingleMessage(message);
+      if (converted) {
+        result.push(converted);
+      }
+    }
+
+    return result;
+  }
+
+  /**
    * Default implementation returns models from llmConfigManager for the provider.
    * Override this method for services that need dynamic model discovery (e.g., Ollama).
    */
@@ -156,6 +263,10 @@ export abstract class BaseAIService implements IAIService {
     // Record<string, ModelInfo>를 ModelInfo[]로 변환
     return Object.values(models);
   }
+
+  // Provider-specific abstract methods that must be implemented by subclasses
+  protected abstract createSystemMessage(systemPrompt: string): unknown;
+  protected abstract convertSingleMessage(message: Message): unknown;
 
   abstract streamChat(
     messages: Message[],

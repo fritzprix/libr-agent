@@ -6,18 +6,19 @@ import {
 import { getLogger } from '../logger';
 import { Message } from '@/models/chat';
 import { MCPTool } from '../mcp-types';
-import { AIServiceProvider, AIServiceConfig, AIServiceError } from './types';
+import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';
-import { convertMCPToolsToProviderTools } from './tool-converters';
-
-const logger = getLogger('AIService');
+const logger = getLogger('AnthropicService');
 
 export class AnthropicService extends BaseAIService {
   private anthropic: Anthropic;
 
   constructor(apiKey: string, config?: AIServiceConfig) {
     super(apiKey, config);
-    this.anthropic = new Anthropic({ apiKey: this.apiKey });
+    this.anthropic = new Anthropic({
+      apiKey: this.apiKey,
+      dangerouslyAllowBrowser: true,
+    });
   }
 
   getProvider(): AIServiceProvider {
@@ -33,9 +34,7 @@ export class AnthropicService extends BaseAIService {
       config?: AIServiceConfig;
     } = {},
   ): AsyncGenerator<string, void, void> {
-    this.validateMessages(messages);
-
-    const config = { ...this.defaultConfig, ...options.config };
+    const { config, tools } = this.prepareStreamChat(messages, options);
 
     try {
       const anthropicMessages = this.convertToAnthropicMessages(messages);
@@ -54,12 +53,7 @@ export class AnthropicService extends BaseAIService {
             type: 'enabled',
           },
           system: options.systemPrompt,
-          tools: options.availableTools
-            ? (convertMCPToolsToProviderTools(
-                options.availableTools,
-                AIServiceProvider.Anthropic,
-              ) as AnthropicTool[])
-            : undefined,
+          tools: tools as AnthropicTool[],
         }),
       );
 
@@ -82,14 +76,7 @@ export class AnthropicService extends BaseAIService {
         }
       }
     } catch (error) {
-      throw new AIServiceError(
-        `Anthropic streaming failed: ${
-          error instanceof Error ? error.message : 'Unknown error'
-        }`,
-        AIServiceProvider.Anthropic,
-        undefined,
-        error instanceof Error ? error : undefined,
-      );
+      this.handleStreamingError(error, { messages, options, config });
     }
   }
 
@@ -154,6 +141,70 @@ export class AnthropicService extends BaseAIService {
       }
     }
     return anthropicMessages;
+  }
+
+  // Implementation of abstract methods from BaseAIService
+  protected createSystemMessage(systemPrompt: string): unknown {
+    // Anthropic handles system messages separately as a parameter, not as a message
+    void systemPrompt;
+    return null;
+  }
+
+  protected convertSingleMessage(message: Message): unknown {
+    if (message.role === 'system') {
+      // System messages are handled separately in the API call
+      return null;
+    }
+
+    if (message.role === 'user') {
+      return {
+        role: 'user',
+        content: this.processMessageContent(message.content),
+      };
+    } else if (message.role === 'assistant') {
+      if (message.tool_calls) {
+        return {
+          role: 'assistant',
+          content: message.tool_calls.map((tc) => ({
+            type: 'tool_use' as const,
+            id: tc.id,
+            name: tc.function.name,
+            input: JSON.parse(tc.function.arguments),
+          })),
+        };
+      } else if (message.tool_use) {
+        return {
+          role: 'assistant',
+          content: [
+            {
+              type: 'tool_use' as const,
+              id: message.tool_use.id,
+              name: message.tool_use.name,
+              input: message.tool_use.input,
+            },
+          ],
+        };
+      } else {
+        return {
+          role: 'assistant',
+          content: this.processMessageContent(message.content),
+        };
+      }
+    } else if (message.role === 'tool') {
+      return {
+        role: 'user',
+        content: [
+          {
+            type: 'tool_result' as const,
+            tool_use_id: message.tool_call_id!,
+            content: this.processMessageContent(message.content),
+          },
+        ],
+      };
+    } else {
+      logger.warn(`Unsupported message role for Anthropic: ${message.role}`);
+      return null;
+    }
   }
 
   dispose(): void {
