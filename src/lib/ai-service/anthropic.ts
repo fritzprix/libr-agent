@@ -81,6 +81,11 @@ export class AnthropicService extends BaseAIService {
           chunk.delta.type === 'thinking_delta'
         ) {
           yield JSON.stringify({ thinking: chunk.delta.thinking });
+        } else if (
+          chunk.type === 'content_block_delta' &&
+          chunk.delta.type === 'signature_delta'
+        ) {
+          yield JSON.stringify({ thinkingSignature: chunk.delta.signature });
         } else if (chunk.type === 'content_block_start') {
           // Initialize accumulator for new tool call
           if (chunk.content_block.type === 'tool_use') {
@@ -174,7 +179,7 @@ export class AnthropicService extends BaseAIService {
               });
             }
           }
-          
+
           // Clean up accumulator regardless of yield status
           if (accumulator) {
             toolCallAccumulators.delete(chunk.index);
@@ -223,32 +228,48 @@ export class AnthropicService extends BaseAIService {
           continue;
         }
 
+        // Build content array with thinking block first if present
+        const content = [];
+
+        // Add thinking block as first element if exists
+        if (m.thinking) {
+          content.push({
+            type: 'thinking' as const,
+            thinking: m.thinking,
+            signature: m.thinkingSignature,
+          });
+        }
+
+        // Add tool_use or text content after thinking
         if (m.tool_calls) {
-          anthropicMessages.push({
-            role: 'assistant',
-            content: m.tool_calls.map((tc) => ({
+          content.push(
+            ...m.tool_calls.map((tc) => ({
               type: 'tool_use' as const,
               id: tc.id,
               name: tc.function.name,
               input: JSON.parse(tc.function.arguments),
             })),
-          });
+          );
         } else if (m.tool_use) {
-          anthropicMessages.push({
-            role: 'assistant',
-            content: [
-              {
-                type: 'tool_use' as const,
-                id: m.tool_use.id,
-                name: m.tool_use.name,
-                input: m.tool_use.input,
-              },
-            ],
+          content.push({
+            type: 'tool_use' as const,
+            id: m.tool_use.id,
+            name: m.tool_use.name,
+            input: m.tool_use.input,
           });
         } else if (hasContent) {
+          const processedContent = this.processMessageContent(m.content);
+          if (Array.isArray(processedContent)) {
+            content.push(...processedContent);
+          } else {
+            content.push({ type: 'text' as const, text: processedContent });
+          }
+        }
+
+        if (content.length > 0) {
           anthropicMessages.push({
             role: 'assistant',
-            content: this.processMessageContent(m.content),
+            content,
           });
         }
       } else if (m.role === 'tool') {
@@ -288,34 +309,48 @@ export class AnthropicService extends BaseAIService {
         content: this.processMessageContent(message.content),
       };
     } else if (message.role === 'assistant') {
+      // Build content array with thinking block first if present
+      const content = [];
+
+      // Add thinking block as first element if exists
+      if (message.thinking) {
+        content.push({
+          type: 'thinking' as const,
+          thinking: message.thinking,
+          signature: message.thinkingSignature,
+        });
+      }
+
+      // Add tool_use or text content after thinking
       if (message.tool_calls) {
-        return {
-          role: 'assistant',
-          content: message.tool_calls.map((tc) => ({
+        content.push(
+          ...message.tool_calls.map((tc) => ({
             type: 'tool_use' as const,
             id: tc.id,
             name: tc.function.name,
             input: JSON.parse(tc.function.arguments),
           })),
-        };
+        );
       } else if (message.tool_use) {
-        return {
-          role: 'assistant',
-          content: [
-            {
-              type: 'tool_use' as const,
-              id: message.tool_use.id,
-              name: message.tool_use.name,
-              input: message.tool_use.input,
-            },
-          ],
-        };
-      } else {
-        return {
-          role: 'assistant',
-          content: this.processMessageContent(message.content),
-        };
+        content.push({
+          type: 'tool_use' as const,
+          id: message.tool_use.id,
+          name: message.tool_use.name,
+          input: message.tool_use.input,
+        });
+      } else if (message.content) {
+        const processedContent = this.processMessageContent(message.content);
+        if (Array.isArray(processedContent)) {
+          content.push(...processedContent);
+        } else {
+          content.push({ type: 'text' as const, text: processedContent });
+        }
       }
+
+      return {
+        role: 'assistant',
+        content,
+      };
     } else if (message.role === 'tool') {
       return {
         role: 'user',

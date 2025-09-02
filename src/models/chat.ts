@@ -36,6 +36,7 @@ export interface Message {
   tool_call_id?: string;
   isStreaming?: boolean;
   thinking?: string;
+  thinkingSignature?: string;
   assistantId?: string; // Optional, used for tracking in multi-agent scenarios
   attachments?: AttachmentReference[]; // MCP 기반 파일 첨부 참조로 변경
   tool_use?: { id: string; name: string; input: Record<string, unknown> };

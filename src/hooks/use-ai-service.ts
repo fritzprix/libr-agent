@@ -44,6 +44,7 @@ export const useAIService = (config?: AIServiceConfig) => {
       let currentResponseId = createId();
       let fullContent = '';
       let thinking = '';
+      let thinkingSignature = '';
       let toolCalls: ToolCall[] = [];
       let finalMessage: Message | null = null;
 
@@ -96,6 +97,9 @@ export const useAIService = (config?: AIServiceConfig) => {
           if (parsedChunk.thinking) {
             thinking += parsedChunk.thinking;
           }
+          if (parsedChunk.thinkingSignature) {
+            thinkingSignature = parsedChunk.thinkingSignature as string;
+          }
           if (parsedChunk.tool_calls && Array.isArray(parsedChunk.tool_calls)) {
             (
               parsedChunk.tool_calls as (ToolCall & { index: number })[]
@@ -130,6 +134,7 @@ export const useAIService = (config?: AIServiceConfig) => {
             role: 'assistant',
             isStreaming: true,
             thinking,
+            thinkingSignature,
             tool_calls: toolCalls,
             sessionId: messages[0]?.sessionId || '', // Add sessionId
           };
@@ -148,6 +153,7 @@ export const useAIService = (config?: AIServiceConfig) => {
             content:
               'I apologize, but I encountered an issue and cannot provide a response at this time.',
             thinking,
+            thinkingSignature,
             role: 'assistant',
             isStreaming: false,
             tool_calls: [],
@@ -158,6 +164,7 @@ export const useAIService = (config?: AIServiceConfig) => {
             id: currentResponseId,
             content: fullContent,
             thinking,
+            thinkingSignature,
             role: 'assistant',
             isStreaming: false,
             tool_calls: toolCalls,
