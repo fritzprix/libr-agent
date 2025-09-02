@@ -18,13 +18,8 @@ use uuid::Uuid;
 
 pub struct BrowserSession {
     pub id: String,
-
     pub window_label: String,
-
     pub url: String,
-
-    pub title: String,
-
     pub created_at: DateTime<Utc>,
 
     pub status: SessionStatus,
@@ -68,7 +63,6 @@ impl InteractiveBrowserServer {
     }
 
     /// Create a new browser session using Tauri's multiwindow pattern
-
     pub async fn create_browser_session(
         &self,
 
@@ -113,8 +107,6 @@ impl InteractiveBrowserServer {
 
             url: url.to_string(),
 
-            title: session_title.to_string(),
-
             created_at: Utc::now(),
 
             status: SessionStatus::Active,
@@ -153,7 +145,6 @@ impl InteractiveBrowserServer {
     }
 
     /// Execute JavaScript in a browser session and return request_id for polling
-
     pub async fn execute_script(&self, session_id: &str, script: &str) -> Result<String, String> {
         debug!("Executing script in session {session_id}: {script}");
 
@@ -219,7 +210,6 @@ impl InteractiveBrowserServer {
     }
 
     /// Click on a DOM element
-
     pub async fn click_element(&self, session_id: &str, selector: &str) -> Result<String, String> {
         debug!("Clicking element '{selector}' in session {session_id}");
 
@@ -294,7 +284,6 @@ impl InteractiveBrowserServer {
     }
 
     /// Input text into a form field
-
     pub async fn input_text(
         &self,
 
@@ -413,7 +402,6 @@ impl InteractiveBrowserServer {
     }
 
     /// Scroll the page to specified coordinates
-
     pub async fn scroll_page(&self, session_id: &str, x: i32, y: i32) -> Result<String, String> {
         debug!("Scrolling page to ({x}, {y}) in session {session_id}");
 
@@ -423,7 +411,6 @@ impl InteractiveBrowserServer {
     }
 
     /// Get current page URL
-
     pub async fn get_current_url(&self, session_id: &str) -> Result<String, String> {
         debug!("Getting current URL for session {session_id}");
 
@@ -433,7 +420,6 @@ impl InteractiveBrowserServer {
     }
 
     /// Get page title
-
     pub async fn get_page_title(&self, session_id: &str) -> Result<String, String> {
         debug!("Getting page title for session {session_id}");
 
@@ -443,7 +429,6 @@ impl InteractiveBrowserServer {
     }
 
     /// Check if a DOM element exists
-
     pub async fn element_exists(&self, session_id: &str, selector: &str) -> Result<bool, String> {
         debug!("Checking if element '{selector}' exists in session {session_id}");
 
@@ -491,7 +476,6 @@ return false;
     }
 
     /// Get all active sessions
-
     pub fn list_sessions(&self) -> Vec<BrowserSession> {
         match self.sessions.read() {
             Ok(sessions) => {
@@ -515,7 +499,6 @@ return false;
     }
 
     /// Close a browser session
-
     pub async fn close_session(&self, session_id: &str) -> Result<String, String> {
         info!("Closing browser session: {session_id}");
 
@@ -556,7 +539,6 @@ return false;
     }
 
     /// Navigate to a new URL in an existing session
-
     pub async fn navigate_to_url(&self, session_id: &str, url: &str) -> Result<String, String> {
         info!("Navigating session {session_id} to URL: {url}");
 
@@ -601,7 +583,6 @@ return false;
     }
 
     /// Get page content (HTML)
-
     pub async fn get_page_content(&self, session_id: &str) -> Result<String, String> {
         debug!("Getting page content for session {session_id}");
 
@@ -627,7 +608,6 @@ return false;
     }
 
     /// Take a screenshot of the page (placeholder for future implementation)
-
     pub async fn take_screenshot(&self, session_id: &str) -> Result<String, String> {
         debug!("Taking screenshot for session {session_id}");
 

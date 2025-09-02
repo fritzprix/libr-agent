@@ -150,7 +150,8 @@ const state = new EphemeralState();
 const tools: MCPTool[] = [
   {
     name: 'create_goal',
-    description: 'Create a single goal for the session. Use when starting a new or complex task.',
+    description:
+      'Create a single goal for the session. Use when starting a new or complex task.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -162,7 +163,8 @@ const tools: MCPTool[] = [
   },
   {
     name: 'update_goal',
-    description: 'Update the current goal and return the final state. Use when the goal changes or progresses.',
+    description:
+      'Update the current goal and return the final state. Use when the goal changes or progresses.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -180,7 +182,8 @@ const tools: MCPTool[] = [
   },
   {
     name: 'add_todo',
-    description: 'Add a todo item to the goal. Use to break down a goal into actionable steps, especially for multi-step tasks.',
+    description:
+      'Add a todo item to the goal. Use to break down a goal into actionable steps, especially for multi-step tasks.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -192,7 +195,8 @@ const tools: MCPTool[] = [
   },
   {
     name: 'update_todo',
-    description: 'Update a todo item and return the final state. Use to track progress or revise steps in a complex workflow.',
+    description:
+      'Update a todo item and return the final state. Use to track progress or revise steps in a complex workflow.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -214,7 +218,8 @@ const tools: MCPTool[] = [
   },
   {
     name: 'list_todos',
-    description: 'List all current todo items. Use to review tasks, especially when managing multiple steps.',
+    description:
+      'List all current todo items. Use to review tasks, especially when managing multiple steps.',
     inputSchema: {
       type: 'object',
       properties: {},
@@ -255,7 +260,8 @@ const tools: MCPTool[] = [
   },
   {
     name: 'clear_session',
-    description: 'Clear all session state (goal, todos, observations, and sequential thinking). Use to reset everything and start fresh.',
+    description:
+      'Clear all session state (goal, todos, observations, and sequential thinking). Use to reset everything and start fresh.',
     inputSchema: {
       type: 'object',
       properties: {},
