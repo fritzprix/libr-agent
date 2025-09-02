@@ -111,7 +111,7 @@ export class GeminiService extends BaseAIService {
       });
 
       for await (const chunk of result) {
-        logger.info("chunk : ", {chunk});
+        logger.info('chunk : ', { chunk });
         if (chunk.functionCalls && chunk.functionCalls.length > 0) {
           yield JSON.stringify({
             tool_calls: chunk.functionCalls.map((fc: FunctionCall) => {

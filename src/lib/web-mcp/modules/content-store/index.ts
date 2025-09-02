@@ -22,7 +22,7 @@ export type {
   AddContentOutput,
   ListContentInput,
   ReadContentInput,
-  SimilaritySearchInput,
+  KeywordSimilaritySearchInput,
   ContentSummary,
   ContentStoreServer,
 } from './server';

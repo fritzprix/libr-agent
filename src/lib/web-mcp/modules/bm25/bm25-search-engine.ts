@@ -4,7 +4,9 @@ import type {
   SearchOptions,
   SearchResult,
 } from '@/models/search-engine';
-import type { LocalBM25Instance } from './types';
+import type { BMDocument } from './types';
+import * as okapibm25 from 'okapibm25';
+const BM25 = okapibm25.default;
 
 // Worker-safe logger that falls back to console if Tauri logger is not available
 const createWorkerSafeLogger = (context: string) => {
@@ -28,101 +30,40 @@ const createWorkerSafeLogger = (context: string) => {
 const logger = createWorkerSafeLogger('bm25-search-engine');
 
 export class BM25SearchEngine implements ISearchEngine {
-  private bm25Indexes = new Map<string, LocalBM25Instance>();
-  private chunkMappings = new Map<string, Map<string, FileChunk>>();
+  private storeChunks = new Map<string, FileChunk[]>();
   private indexLastUsed = new Map<string, number>();
   private isInitialized = false;
   private readonly MAX_INDEXES = 10;
 
   async initialize(): Promise<void> {
     if (this.isInitialized) return;
-    logger.info('Initializing BM25 search engine');
-
-    // Enhanced initialization: Actually initialize the BM25 library here
-    try {
-      // Pre-load the BM25 library to ensure it's available
-      await import('wink-bm25-text-search');
-      logger.info('BM25 library loaded successfully');
-      this.isInitialized = true;
-    } catch (error) {
-      logger.error('Failed to initialize BM25 library', error);
-      throw new Error('BM25 search engine initialization failed');
-    }
+    // okapibm25 requires no special initialization
+    this.isInitialized = true;
+    logger.info('OkapiBM25 search engine initialized');
   }
 
   async addToIndex(storeId: string, newChunks: FileChunk[]): Promise<void> {
     if (!this.isInitialized) await this.initialize();
 
-    let bm25 = this.bm25Indexes.get(storeId);
-    let chunkMapping = this.chunkMappings.get(storeId);
+    const existingChunks = this.storeChunks.get(storeId) || [];
+    const allChunks = [...existingChunks];
 
-    if (!bm25 || !chunkMapping) {
-      // For web-mcp modules, we need to use dbUtils import from parent module
-      const { dbUtils } = await import('@/lib/db');
-      const allChunks = await dbUtils.getFileChunksByStore(storeId);
-      await this.rebuildIndex(storeId, allChunks);
-      return;
-    }
-
-    // Filter out chunks that are already in the index to prevent duplicates
-    const newChunksToAdd = newChunks.filter(
-      (chunk) => !chunkMapping.has(chunk.id),
-    );
-
-    if (newChunksToAdd.length === 0) {
-      logger.warn('All chunks already exist in index, skipping', {
-        storeId,
-        requested: newChunks.length,
-      });
-      return;
-    }
-
-    // Add new chunks to the index
     let addedCount = 0;
-    newChunksToAdd.forEach((chunk) => {
-      try {
-        if (!chunk.id || typeof chunk.id !== 'string') {
-          logger.warn('Invalid chunk ID, skipping', { chunkId: chunk.id });
-          return;
-        }
-
-        const processedText = this.preprocessText(chunk.text);
-        bm25.addDoc({ id: chunk.id, text: processedText });
-        chunkMapping.set(chunk.id, chunk);
+    newChunks.forEach((newChunk) => {
+      if (!allChunks.some((existing) => existing.id === newChunk.id)) {
+        allChunks.push(newChunk);
         addedCount++;
-      } catch (chunkError) {
-        logger.error('Failed to add chunk to index', {
-          chunkId: chunk.id,
-          error:
-            chunkError instanceof Error
-              ? chunkError.message
-              : String(chunkError),
-        });
       }
     });
 
-    // Consolidate only if we have documents
-    if (chunkMapping.size > 0) {
-      try {
-        bm25.consolidate();
-      } catch (consolidateError) {
-        logger.warn('BM25 consolidation failed, continuing anyway', {
-          storeId,
-          error:
-            consolidateError instanceof Error
-              ? consolidateError.message
-              : String(consolidateError),
-        });
-      }
-    }
-
+    this.storeChunks.set(storeId, allChunks);
     this.indexLastUsed.set(storeId, Date.now());
 
     logger.info('Added chunks to search index', {
       storeId,
       added: addedCount,
       requested: newChunks.length,
-      total: chunkMapping.size,
+      total: allChunks.length,
     });
   }
 
@@ -131,64 +72,30 @@ export class BM25SearchEngine implements ISearchEngine {
     chunks: FileChunk[],
   ): Promise<void> {
     await this.cleanupOldIndexes();
-    const BM25Constructor = (await import('wink-bm25-text-search')).default;
-    const bm25 = BM25Constructor() as LocalBM25Instance;
 
-    bm25.defineConfig({
-      fldWeights: { text: 1 },
-      ovlpNormFactor: 0.5,
-      k1: 1.2,
-      b: 0.75,
-    });
-
-    const chunkMapping = new Map<string, FileChunk>();
+    // Simply store the chunks - no complex initialization needed
+    const uniqueChunks: FileChunk[] = [];
     const addedIds = new Set<string>();
 
-    // Add chunks to index
     chunks.forEach((chunk) => {
-      if (addedIds.has(chunk.id)) return; // Skip duplicates
-
-      try {
-        const processedText = this.preprocessText(chunk.text);
-        bm25.addDoc({ id: chunk.id, text: processedText });
-        chunkMapping.set(chunk.id, chunk);
+      if (!addedIds.has(chunk.id)) {
+        uniqueChunks.push(chunk);
         addedIds.add(chunk.id);
-      } catch (error) {
-        logger.warn('Failed to add chunk during rebuild', {
-          chunkId: chunk.id,
-          error: error instanceof Error ? error.message : String(error),
-        });
       }
     });
 
-    // Consolidate if we have documents
-    if (addedIds.size > 0) {
-      try {
-        bm25.consolidate();
-      } catch (consolidateError) {
-        logger.warn('BM25 rebuild consolidation failed, continuing anyway', {
-          storeId,
-          error:
-            consolidateError instanceof Error
-              ? consolidateError.message
-              : String(consolidateError),
-        });
-      }
-    }
-
-    this.bm25Indexes.set(storeId, bm25);
-    this.chunkMappings.set(storeId, chunkMapping);
+    this.storeChunks.set(storeId, uniqueChunks);
     this.indexLastUsed.set(storeId, Date.now());
 
     logger.info('BM25 index rebuilt', {
       storeId,
-      chunks: addedIds.size,
+      chunks: uniqueChunks.length,
       requested: chunks.length,
     });
   }
 
   private async cleanupOldIndexes(): Promise<void> {
-    if (this.bm25Indexes.size < this.MAX_INDEXES) return;
+    if (this.storeChunks.size < this.MAX_INDEXES) return;
     const sortedByAge = Array.from(this.indexLastUsed.entries()).sort(
       ([, a], [, b]) => a - b,
     );
@@ -197,8 +104,7 @@ export class BM25SearchEngine implements ISearchEngine {
       sortedByAge.length - this.MAX_INDEXES + 1,
     );
     for (const [storeId] of toRemove) {
-      this.bm25Indexes.delete(storeId);
-      this.chunkMappings.delete(storeId);
+      this.storeChunks.delete(storeId);
       this.indexLastUsed.delete(storeId);
     }
   }
@@ -213,38 +119,95 @@ export class BM25SearchEngine implements ISearchEngine {
     query: string,
     options: SearchOptions,
   ): Promise<SearchResult[]> {
-    let bm25 = this.bm25Indexes.get(storeId);
-    const chunkMapping = this.chunkMappings.get(storeId);
+    const startTime = Date.now();
+    const chunks = this.storeChunks.get(storeId);
 
-    if (!bm25 || !chunkMapping) {
+    if (!chunks || chunks.length === 0) {
       const { dbUtils } = await import('@/lib/db');
-      const chunks = await dbUtils.getFileChunksByStore(storeId);
-      if (chunks.length === 0) return [];
-      await this.rebuildIndex(storeId, chunks);
+      const dbChunks = await dbUtils.getFileChunksByStore(storeId);
+      if (dbChunks.length === 0) return [];
+      await this.rebuildIndex(storeId, dbChunks);
       return this.search(storeId, query, options);
     }
 
     this.indexLastUsed.set(storeId, Date.now());
 
-    const processedQuery = this.preprocessText(query);
-    const searchResults = bm25.search(processedQuery);
+    const documents = chunks.map((chunk) => this.preprocessText(chunk.text));
+    const queryTerms = this.preprocessText(query).split(/\s+/).filter(Boolean);
 
-    return searchResults
-      .filter((result) => result[1] >= (options.threshold || 0))
+    logger.info('Search debug info', {
+      storeId,
+      chunksCount: chunks.length,
+      documentsCount: documents.length,
+      queryTerms,
+      sampleDocument: documents[0]?.substring(0, 50),
+    });
+
+    if (queryTerms.length === 0) return [];
+
+    const results = BM25(
+      documents,
+      queryTerms,
+      { k1: 1.2, b: 0.75 },
+      (a: BMDocument, b: BMDocument) => b.score - a.score,
+    ) as BMDocument[];
+
+    logger.info('BM25 raw results', {
+      storeId,
+      rawResultsCount: results.length,
+      resultsType: typeof results,
+      isArray: Array.isArray(results),
+      sampleResult: results[0]
+        ? {
+            score: results[0].score,
+            documentPreview:
+              results[0].document?.substring(0, 50) || 'NO DOCUMENT',
+            resultKeys: Object.keys(results[0]),
+          }
+        : null,
+    });
+
+    const searchResults = results
+      .filter((result) => result.score >= (options.threshold || 0))
       .slice(0, options.topN)
       .map((result): SearchResult | null => {
-        const chunk = chunkMapping.get(result[0]);
-        if (!chunk) return null;
+        const originalIndex = documents.indexOf(result.document);
+        logger.debug('Mapping result', {
+          resultDocument: result.document.substring(0, 50),
+          originalIndex,
+          score: result.score,
+        });
+
+        if (originalIndex === -1) {
+          logger.warn('Could not find original index for result', {
+            resultDocument: result.document,
+            availableDocuments: documents.map((d) => d.substring(0, 50)),
+          });
+          return null;
+        }
+
+        const chunk = chunks[originalIndex];
+
         return {
           contentId: chunk.contentId,
           chunkId: chunk.id,
           context: chunk.text,
           lineRange: [chunk.startLine, chunk.endLine],
-          score: result[1],
+          score: result.score,
           relevanceType: 'keyword',
         };
       })
-      .filter((r): r is SearchResult => r !== null);
+      .filter((result): result is SearchResult => result !== null);
+
+    const endTime = Date.now();
+    logger.info('Search completed', {
+      storeId,
+      query,
+      resultsCount: searchResults.length,
+      processingTime: endTime - startTime,
+    });
+
+    return searchResults;
   }
 
   isReady(): boolean {
@@ -252,8 +215,7 @@ export class BM25SearchEngine implements ISearchEngine {
   }
 
   async cleanup(): Promise<void> {
-    this.bm25Indexes.clear();
-    this.chunkMappings.clear();
+    this.storeChunks.clear();
     this.indexLastUsed.clear();
     this.isInitialized = false;
   }

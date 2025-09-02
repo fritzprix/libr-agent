@@ -43,7 +43,7 @@ ${JSON.stringify(attachment, null, 2)}
 <!-- 
 To read the full content of this file, use:
 - readContent(storeId: "${attachment.storeId}", contentId: "${attachment.contentId}", lineRange: {fromLine: 1, toLine: 200})
-- For similarity search: similaritySearch(storeId: "${attachment.storeId}", query: "your search query")
+- For keyword-based similarity search: keywordSimilaritySearch(storeId: "${attachment.storeId}", query: "your search query")
 - For file list: listContent(storeId: "${attachment.storeId}")
 -->
 </attachment_${i}>`;

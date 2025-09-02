@@ -102,7 +102,7 @@ export interface ReadContentInput {
   contentId: string;
   lineRange: { fromLine: number; toLine?: number };
 }
-export interface SimilaritySearchInput {
+export interface KeywordSimilaritySearchInput {
   storeId: string;
   query: string;
   options?: { topN?: number; threshold?: number };
@@ -347,8 +347,9 @@ const tools: MCPTool[] = [
     },
   },
   {
-    name: 'similaritySearch',
-    description: 'Semantic search across content',
+    name: 'keywordSimilaritySearch',
+    description:
+      'Keyword-based similarity search across content using BM25 algorithm',
     inputSchema: {
       type: 'object',
       properties: {
@@ -630,12 +631,12 @@ async function readContent(
   }
 }
 
-async function similaritySearch(
-  input: SimilaritySearchInput,
+async function keywordSimilaritySearch(
+  input: KeywordSimilaritySearchInput,
 ): Promise<{ results: SearchResult[] }> {
   const options = {
     topN: input.options?.topN || 5,
-    threshold: input.options?.threshold || 0.1,
+    threshold: input.options?.threshold || 0.0, // 임시로 0으로 변경하여 테스트
   };
   const results = await searchEngine.search(
     input.storeId,
@@ -674,10 +675,10 @@ const fileStoreServer: WebMCPServer = {
           await readContent(args as ReadContentInput),
           'readContent',
         );
-      case 'similaritySearch':
+      case 'keywordSimilaritySearch':
         return normalizeToolResult(
-          await similaritySearch(args as SimilaritySearchInput),
-          'similaritySearch',
+          await keywordSimilaritySearch(args as KeywordSimilaritySearchInput),
+          'keywordSimilaritySearch',
         );
       default:
         throw new Error(`Unknown tool: ${name}`);
@@ -743,8 +744,8 @@ export interface ContentStoreServer extends WebMCPServerProxy {
   readContent(
     input: ReadContentInput,
   ): Promise<{ content: string; lineRange: [number, number] }>;
-  similaritySearch(
-    input: SimilaritySearchInput,
+  keywordSimilaritySearch(
+    input: KeywordSimilaritySearchInput,
   ): Promise<{ results: SearchResult[] }>;
 }
 
