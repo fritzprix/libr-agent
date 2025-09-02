@@ -2,11 +2,12 @@ import { get_encoding } from '@dqbd/tiktoken';
 import type { Message } from '@/models/chat';
 import { llmConfigManager } from './llm-config-manager';
 import { getLogger } from './logger';
+import { AIServiceProvider } from './ai-service/types';
 
 const logger = getLogger('token-utils');
 
 /**
- * BPE(cl100k_base) 기준으로 메시지의 토큰 수를 추정합니다.
+ * Estimates token count for a message using BPE (cl100k_base) encoding.
  */
 export function estimateTokensBPE(message: Message): number {
   const text = `${message.role}: ${message.content ?? ''}`;
@@ -17,8 +18,8 @@ export function estimateTokensBPE(message: Message): number {
 }
 
 /**
- * 모델의 contextWindow에서 10% 마진을 적용하여, 초과하지 않는 메시지 배열을 반환합니다.
- * Anthropic의 경우 tool 체인 경계를 고려하여 완전한 체인만 포함합니다.
+ * Returns a message array that fits within the model's context window with 10% margin.
+ * For Anthropic providers, considers tool chain boundaries to include only complete chains.
  */
 export function selectMessagesWithinContext(
   messages: Message[],
@@ -42,8 +43,8 @@ export function selectMessagesWithinContext(
     const tokens = estimateTokensBPE(msg);
 
     if (totalTokens + tokens > safeWindow) {
-      // Anthropic인 경우 tool 체인 경계 검사
-      if (providerId === 'anthropic') {
+      // Anthropic providers require tool chain boundary checking
+      if (providerId === AIServiceProvider.Anthropic) {
         const hasIncompleteToolChain = checkIncompleteToolChain(selected, msg);
         if (hasIncompleteToolChain) {
           logger.info(
@@ -54,7 +55,7 @@ export function selectMessagesWithinContext(
               totalTokens,
             },
           );
-          // tool 체인을 완전하게 만들기 위해 일부 메시지 제거
+          // Remove incomplete tool chains to maintain integrity
           const adjustedSelected = removeIncompleteToolChains(selected);
           return adjustedSelected;
         }
@@ -74,14 +75,14 @@ export function selectMessagesWithinContext(
 }
 
 /**
- * Tool 체인 완전성 검사 헬퍼 함수
- * 선택된 메시지에 tool_use가 있는데 대응하는 tool_result가 없는지 확인
+ * Tool chain completeness check helper function
+ * Checks if selected messages have tool_use without corresponding tool_result
  */
 function checkIncompleteToolChain(
   selected: Message[],
   candidateMsg: Message,
 ): boolean {
-  // 현재 선택된 메시지들에서 tool_use ID들 수집
+  // Collect tool_use IDs from currently selected messages
   const toolUseIds = new Set<string>();
   for (const msg of selected) {
     if (msg.role === 'assistant' && msg.tool_calls) {
@@ -89,12 +90,12 @@ function checkIncompleteToolChain(
     }
   }
 
-  // candidate 메시지도 포함해서 검사
+  // Also include candidate message in the check
   if (candidateMsg.role === 'assistant' && candidateMsg.tool_calls) {
     candidateMsg.tool_calls.forEach((tc) => toolUseIds.add(tc.id));
   }
 
-  // tool_result로 완료된 tool_use 확인
+  // Identify completed tool_use with tool_result
   const completedToolUseIds = new Set<string>();
   for (const msg of selected) {
     if (
@@ -106,7 +107,7 @@ function checkIncompleteToolChain(
     }
   }
 
-  // candidate 메시지도 포함해서 검사
+  // Also include candidate message in the check
   if (
     candidateMsg.role === 'tool' &&
     candidateMsg.tool_call_id &&
@@ -115,7 +116,7 @@ function checkIncompleteToolChain(
     completedToolUseIds.add(candidateMsg.tool_call_id);
   }
 
-  // 불완전한 tool_use가 있는지 확인
+  // Check for incomplete tool_use
   const incompleteToolUses = Array.from(toolUseIds).filter(
     (id) => !completedToolUseIds.has(id),
   );
@@ -133,20 +134,20 @@ function checkIncompleteToolChain(
 }
 
 /**
- * 불완전한 tool 체인을 제거하여 완전한 체인만 남김
+ * Removes incomplete tool chains to keep only complete chains
  */
 function removeIncompleteToolChains(messages: Message[]): Message[] {
   const toolUseIds = new Set<string>();
   const completedToolUseIds = new Set<string>();
 
-  // 모든 tool_use ID 수집
+  // Collect all tool_use IDs
   for (const msg of messages) {
     if (msg.role === 'assistant' && msg.tool_calls) {
       msg.tool_calls.forEach((tc) => toolUseIds.add(tc.id));
     }
   }
 
-  // 완료된 tool_use ID 수집
+  // Collect completed tool_use IDs
   for (const msg of messages) {
     if (
       msg.role === 'tool' &&

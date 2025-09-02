@@ -15,7 +15,7 @@ interface ToolCallAccumulator {
   name: string;
   partialJson: string;
   index: number;
-  yielded: boolean; // 이미 yield했는지 추적
+  yielded: boolean; // Track if already yielded to prevent duplicates
 }
 
 export class AnthropicService extends BaseAIService {
@@ -115,7 +115,7 @@ export class AnthropicService extends BaseAIService {
               name: chunk.content_block.name,
               partialJson: '',
               index: chunk.index,
-              yielded: false, // 초기값은 false
+              yielded: false, // Initial value is false
             });
             logger.debug('Started tool call accumulation', {
               index: chunk.index,
@@ -152,7 +152,7 @@ export class AnthropicService extends BaseAIService {
                     },
                   ],
                 });
-                accumulator.yielded = true; // 중복 yield 방지
+                accumulator.yielded = true; // Prevent duplicate yields
                 logger.debug('Tool call yielded successfully', {
                   index: chunk.index,
                   id: accumulator.id,

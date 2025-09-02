@@ -5,14 +5,25 @@ import { getLogger } from './logger';
 const logger = getLogger('message-preprocessor');
 
 /**
+ * Type guard to check if an MCPContent item has text property
+ */
+function hasTextProperty(
+  item: MCPContent,
+): item is MCPContent & { text: string } {
+  return (
+    item.type === 'text' && 'text' in item && typeof item.text === 'string'
+  );
+}
+
+/**
  * Normalizes MCPContent arrays to string format for LLM consumption
  */
 function normalizeContentForLLM(content: string | MCPContent[]): string {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) {
     return content
-      .filter((item) => item.type === 'text')
-      .map((item) => (item as { text: string }).text)
+      .filter(hasTextProperty)
+      .map((item) => item.text)
       .join('\n');
   }
   return '';
