@@ -41,12 +41,16 @@ impl SandboxServer {
                     // Fallback to temp directory if session manager fails
                     tracing::warn!("Failed to get session manager for sandbox, falling back to temp directory: {}", e);
                     let tmp = std::env::temp_dir().join("synaptic-flow");
-                    
+
                     // 디렉터리 생성 확인
                     if let Err(e) = std::fs::create_dir_all(&tmp) {
-                        tracing::error!("Failed to create fallback sandbox workspace: {:?}: {}", tmp, e);
+                        tracing::error!(
+                            "Failed to create fallback sandbox workspace: {:?}: {}",
+                            tmp,
+                            e
+                        );
                     }
-                    
+
                     info!("Using fallback sandbox workspace: {:?}", tmp);
                     tmp
                 }

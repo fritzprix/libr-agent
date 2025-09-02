@@ -1,7 +1,7 @@
-use std::sync::{Arc, RwLock, OnceLock};
-use std::path::PathBuf;
+use log::{error, info, warn};
 use std::fs;
-use log::{info, warn, error};
+use std::path::PathBuf;
+use std::sync::{Arc, OnceLock, RwLock};
 
 static SESSION_MANAGER: OnceLock<SessionManager> = OnceLock::new();
 
@@ -49,7 +49,9 @@ impl SessionManager {
 
         // Update current session
         {
-            let mut current = self.current_session.write()
+            let mut current = self
+                .current_session
+                .write()
                 .map_err(|e| format!("Failed to acquire write lock: {e}"))?;
             *current = Some(session_id.clone());
         }
@@ -69,11 +71,12 @@ impl SessionManager {
     }
 
     pub fn get_session_workspace_dir(&self) -> PathBuf {
-        let session_id = self.get_current_session()
+        let session_id = self
+            .get_current_session()
             .unwrap_or_else(|| "default".to_string());
-        
+
         let workspace_dir = self.base_data_dir.join("workspaces").join(session_id);
-        
+
         // Ensure directory exists
         if let Err(e) = fs::create_dir_all(&workspace_dir) {
             warn!("Failed to create workspace directory {workspace_dir:?}: {e}");
@@ -98,14 +101,18 @@ impl SessionManager {
 
     pub fn list_sessions(&self) -> Result<Vec<String>, String> {
         let workspaces_dir = self.base_data_dir.join("workspaces");
-        
+
         let entries = fs::read_dir(&workspaces_dir)
             .map_err(|e| format!("Failed to read workspaces directory: {e}"))?;
 
         let mut sessions = Vec::new();
         for entry in entries {
             let entry = entry.map_err(|e| format!("Failed to read directory entry: {e}"))?;
-            if entry.file_type().map_err(|e| format!("Failed to get file type: {e}"))?.is_dir() {
+            if entry
+                .file_type()
+                .map_err(|e| format!("Failed to get file type: {e}"))?
+                .is_dir()
+            {
                 if let Some(name) = entry.file_name().to_str() {
                     sessions.push(name.to_string());
                 }
@@ -126,7 +133,7 @@ pub fn get_session_manager() -> Result<&'static SessionManager, String> {
             let _ = std::fs::create_dir_all(temp_base.join("workspaces").join("default"));
             let _ = std::fs::create_dir_all(temp_base.join("logs"));
             let _ = std::fs::create_dir_all(temp_base.join("config"));
-            
+
             SessionManager {
                 current_session: Arc::new(RwLock::new(None)),
                 base_data_dir: temp_base,

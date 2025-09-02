@@ -1,7 +1,7 @@
+use crate::session::get_session_manager;
 use path_clean::PathClean;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
-use crate::session::get_session_manager;
 
 #[derive(Error, Debug)]
 pub enum SecurityError {
@@ -36,14 +36,17 @@ impl SecurityValidator {
                 }
                 Err(e) => {
                     // Fallback to temp directory if session manager fails
-                    tracing::warn!("Failed to get session manager, falling back to temp directory: {}", e);
+                    tracing::warn!(
+                        "Failed to get session manager, falling back to temp directory: {}",
+                        e
+                    );
                     let tmp = std::env::temp_dir().join("synaptic-flow");
-                    
+
                     // 디렉터리 생성 확인
                     if let Err(e) = std::fs::create_dir_all(&tmp) {
                         tracing::error!("Failed to create app workspace: {:?}: {}", tmp, e);
                     }
-                    
+
                     tracing::info!("Using fallback workspace: {:?}", tmp);
                     tmp
                 }
