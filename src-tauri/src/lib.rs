@@ -6,10 +6,12 @@ use tauri_plugin_log::{Target, TargetKind};
 mod commands;
 mod mcp;
 mod services;
+mod session;
 
 use commands::browser_commands::*;
 use mcp::{MCPResponse, MCPServerConfig, MCPServerManager};
 use services::{InteractiveBrowserServer, SecureFileManager};
+use session::get_session_manager;
 
 // 전역 MCP 서버 매니저
 static MCP_MANAGER: OnceLock<MCPServerManager> = OnceLock::new();
@@ -245,42 +247,39 @@ async fn call_builtin_tool(
         .await
 }
 
+// Session management commands
+#[tauri::command]
+async fn set_current_session(session_id: String) -> Result<(), String> {
+    get_session_manager()?.set_session(session_id)
+}
+
+#[tauri::command]
+async fn get_current_session() -> Result<Option<String>, String> {
+    Ok(get_session_manager()?.get_current_session())
+}
+
+#[tauri::command]
+async fn get_session_workspace_dir() -> Result<String, String> {
+    let path = get_session_manager()?.get_session_workspace_dir();
+    Ok(path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+async fn list_sessions() -> Result<Vec<String>, String> {
+    get_session_manager()?.list_sessions()
+}
+
+#[tauri::command]
+async fn get_app_data_dir() -> Result<String, String> {
+    let path = get_session_manager()?.get_base_data_dir();
+    Ok(path.to_string_lossy().to_string())
+}
+
 // 로그 파일 관리 명령들
 #[tauri::command]
 async fn get_app_logs_dir() -> Result<String, String> {
-    use std::env;
-    use std::path::PathBuf;
-
-    // 플랫폼에 따른 로그 디렉토리 경로 결정 (Tauri 공식 경로)
-    #[cfg(target_os = "windows")]
-    let log_dir = {
-        let local_appdata = env::var("LOCALAPPDATA")
-            .map_err(|_| "Failed to get LOCALAPPDATA directory".to_string())?;
-        PathBuf::from(local_appdata)
-            .join("com.synaptic-flow.app")
-            .join("logs")
-    };
-
-    #[cfg(target_os = "macos")]
-    let log_dir = {
-        let home = env::var("HOME").map_err(|_| "Failed to get HOME directory".to_string())?;
-        PathBuf::from(home)
-            .join("Library")
-            .join("Logs")
-            .join("com.synaptic-flow.app")
-    };
-
-    #[cfg(target_os = "linux")]
-    let log_dir = {
-        let home = env::var("HOME").map_err(|_| "Failed to get HOME directory".to_string())?;
-        PathBuf::from(home)
-            .join(".local")
-            .join("share")
-            .join("com.synaptic-flow.app")
-            .join("logs")
-    };
-
-    Ok(log_dir.to_string_lossy().to_string())
+    let path = get_session_manager()?.get_logs_dir();
+    Ok(path.to_string_lossy().to_string())
 }
 
 #[tauri::command]
@@ -512,6 +511,12 @@ pub fn run() {
                 call_builtin_tool,
                 list_all_tools_unified,
                 call_tool_unified,
+                // Session management commands
+                set_current_session,
+                get_current_session,
+                get_session_workspace_dir,
+                list_sessions,
+                get_app_data_dir,
                 get_app_logs_dir,
                 backup_current_log,
                 clear_current_log,

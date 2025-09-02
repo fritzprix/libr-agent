@@ -14,6 +14,7 @@ use super::{
     BuiltinMCPServer,
 };
 use crate::mcp::{utils::schema_builder::*, MCPError, MCPResponse, MCPTool};
+use crate::session::get_session_manager;
 
 pub struct SandboxServer;
 
@@ -22,23 +23,34 @@ impl SandboxServer {
         Self
     }
 
-    /// 작업 디렉터리 결정 (FilesystemServer와 동일한 로직)
+    /// 작업 디렉터리 결정 (세션 기반으로 업데이트)
     fn determine_execution_working_dir() -> std::path::PathBuf {
         use std::path::PathBuf;
 
         if let Ok(root) = std::env::var("SYNAPTICFLOW_PROJECT_ROOT") {
             PathBuf::from(root)
         } else {
-            // FilesystemServer와 동일한 앱 워크스페이스 사용
-            let tmp = std::env::temp_dir().join("synaptic-flow");
-
-            // 디렉터리 생성 확인
-            if let Err(e) = std::fs::create_dir_all(&tmp) {
-                tracing::error!("Failed to create sandbox workspace: {:?}: {}", tmp, e);
+            // 세션 기반 워크스페이스 사용
+            match get_session_manager() {
+                Ok(manager) => {
+                    let workspace_dir = manager.get_session_workspace_dir();
+                    info!("Using session-based sandbox workspace: {:?}", workspace_dir);
+                    workspace_dir
+                }
+                Err(e) => {
+                    // Fallback to temp directory if session manager fails
+                    tracing::warn!("Failed to get session manager for sandbox, falling back to temp directory: {}", e);
+                    let tmp = std::env::temp_dir().join("synaptic-flow");
+                    
+                    // 디렉터리 생성 확인
+                    if let Err(e) = std::fs::create_dir_all(&tmp) {
+                        tracing::error!("Failed to create fallback sandbox workspace: {:?}: {}", tmp, e);
+                    }
+                    
+                    info!("Using fallback sandbox workspace: {:?}", tmp);
+                    tmp
+                }
             }
-
-            info!("Using sandbox app workspace: {:?}", tmp);
-            tmp
         }
     }
 
