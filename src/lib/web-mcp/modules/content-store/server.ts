@@ -262,16 +262,28 @@ async function parseFileFromUrl(
 const tools: MCPTool[] = [
   {
     name: 'createStore',
-    description: 'Create a new content store for file management',
+    description:
+      'Create a new content store for organized file management and search. Each store acts as an isolated container with automatic metadata tracking, session grouping, and unique ID generation.',
     inputSchema: {
       type: 'object',
       properties: {
         metadata: {
           type: 'object',
           properties: {
-            name: { type: 'string' },
-            description: { type: 'string' },
-            sessionId: { type: 'string' },
+            name: {
+              type: 'string',
+              description:
+                'Human-readable name for the store (e.g., "Project Documents", "Research Papers")',
+            },
+            description: {
+              type: 'string',
+              description:
+                "Optional detailed description of the store's purpose",
+            },
+            sessionId: {
+              type: 'string',
+              description: 'Session identifier for grouping related stores',
+            },
           },
         },
       },
@@ -280,31 +292,51 @@ const tools: MCPTool[] = [
   {
     name: 'addContent',
     description:
-      'Add file content by parsing a file URL or using pre-parsed text.',
+      'Add and process file content with automatic parsing, chunking, and indexing. Supports various file formats (PDF, DOCX, TXT, etc.) via URL or direct text input. Features automatic duplicate detection, content hashing, and BM25 search index generation. Files are chunked into ~500 character segments with 50-character overlap for optimal search performance.',
     inputSchema: {
       type: 'object',
       properties: {
         storeId: {
           type: 'string',
-          description: 'ID of the store to add content to',
+          description: 'ID of the target store to add content to',
         },
         fileUrl: {
           type: 'string',
-          description: 'Blob URL of the file to be parsed and added.',
+          description:
+            'URL of the file to parse and add. Supports blob:, file:, http:, https:, and data: URLs. Maximum file size: 50MB.',
         },
         content: {
           type: 'string',
-          description: 'Pre-parsed text content (for backward compatibility).',
+          description:
+            'Pre-parsed text content for direct input (alternative to fileUrl). Maximum length: 10MB. Requires metadata.filename when used.',
         },
         metadata: {
           type: 'object',
           properties: {
-            filename: { type: 'string' },
-            mimeType: { type: 'string' },
-            size: { type: 'number' },
-            uploadedAt: { type: 'string', format: 'date-time' },
+            filename: {
+              type: 'string',
+              description:
+                'Original filename with extension. Required when using content parameter.',
+            },
+            mimeType: {
+              type: 'string',
+              description:
+                'MIME type of the file (e.g., "text/plain", "application/pdf"). Auto-detected if not provided.',
+            },
+            size: {
+              type: 'number',
+              description:
+                'File size in bytes. Auto-calculated if not provided.',
+            },
+            uploadedAt: {
+              type: 'string',
+              format: 'date-time',
+              description:
+                'Upload timestamp in ISO format. Defaults to current time.',
+            },
           },
-          description: 'File metadata. Partially optional when using fileUrl.',
+          description:
+            'File metadata. When using fileUrl, most fields are auto-detected. When using content, filename is required.',
         },
       },
       required: ['storeId'],
@@ -313,14 +345,29 @@ const tools: MCPTool[] = [
   },
   {
     name: 'listContent',
-    description: 'List content summaries in a store',
+    description:
+      'Retrieve a paginated list of content summaries within a store. Returns metadata including filename, size, line count, preview text, and upload timestamps for efficient content browsing.',
     inputSchema: {
       type: 'object',
       properties: {
-        storeId: { type: 'string' },
+        storeId: {
+          type: 'string',
+          description: 'ID of the store to list content from',
+        },
         pagination: {
           type: 'object',
-          properties: { offset: { type: 'number' }, limit: { type: 'number' } },
+          properties: {
+            offset: {
+              type: 'number',
+              description: 'Number of items to skip (default: 0, min: 0)',
+            },
+            limit: {
+              type: 'number',
+              description:
+                'Maximum number of items to return (default: 50, max: 100)',
+            },
+          },
+          description: 'Pagination parameters for large content lists',
         },
       },
       required: ['storeId'],
@@ -328,19 +375,34 @@ const tools: MCPTool[] = [
   },
   {
     name: 'readContent',
-    description: 'Read specific line ranges from content',
+    description:
+      'Read specific line ranges from stored content. Useful for previewing sections, extracting snippets, or reading large files incrementally without loading entire content into memory.',
     inputSchema: {
       type: 'object',
       properties: {
-        storeId: { type: 'string' },
-        contentId: { type: 'string' },
+        storeId: {
+          type: 'string',
+          description: 'ID of the store containing the content',
+        },
+        contentId: {
+          type: 'string',
+          description: 'ID of the specific content to read',
+        },
         lineRange: {
           type: 'object',
           properties: {
-            fromLine: { type: 'number' },
-            toLine: { type: 'number' },
+            fromLine: {
+              type: 'number',
+              description: 'Starting line number (1-based indexing, inclusive)',
+            },
+            toLine: {
+              type: 'number',
+              description:
+                'Ending line number (1-based indexing, inclusive). If omitted, reads to end of file.',
+            },
           },
           required: ['fromLine'],
+          description: 'Line range specification for targeted content reading',
         },
       },
       required: ['storeId', 'contentId', 'lineRange'],
@@ -349,18 +411,37 @@ const tools: MCPTool[] = [
   {
     name: 'keywordSimilaritySearch',
     description:
-      'Keyword-based similarity search across content using BM25 algorithm',
+      'Perform advanced keyword-based similarity search using the BM25 (Best Matching 25) algorithm. Searches across all content chunks within a store, ranking results by relevance score based on term frequency and document frequency. Supports multi-keyword queries and returns chunk-level results with context.',
     inputSchema: {
       type: 'object',
       properties: {
-        storeId: { type: 'string' },
-        query: { type: 'string' },
+        storeId: {
+          type: 'string',
+          description: 'ID of the store to search within',
+        },
+        query: {
+          type: 'string',
+          description:
+            'Search query with keywords separated by spaces. Supports multiple terms for complex queries.',
+        },
         options: {
           type: 'object',
           properties: {
-            topN: { type: 'number', default: 5 },
-            threshold: { type: 'number', default: 0.5 },
+            topN: {
+              type: 'number',
+              default: 5,
+              description:
+                'Maximum number of results to return (default: 5, recommended range: 1-50)',
+            },
+            threshold: {
+              type: 'number',
+              default: 0.5,
+              description:
+                'Minimum relevance score threshold for filtering results (default: 0.5, range: 0.0-1.0)',
+            },
           },
+          description:
+            'Search configuration options for result filtering and ranking',
         },
       },
       required: ['storeId', 'query'],
