@@ -33,6 +33,17 @@ export class AnthropicService extends BaseAIService {
     return AIServiceProvider.Anthropic;
   }
 
+  private shouldEnableThinking(
+    modelName?: string,
+    config?: AIServiceConfig,
+  ): boolean {
+    // Only enable thinking for models that support it
+    // Extended thinking is available for Claude 3.5 Sonnet and later models
+    const model =
+      modelName || config?.defaultModel || 'claude-3-sonnet-20240229';
+    return model.includes('claude-3-5') || model.includes('claude-3-opus');
+  }
+
   async *streamChat(
     messages: Message[],
     options: {
@@ -42,11 +53,19 @@ export class AnthropicService extends BaseAIService {
       config?: AIServiceConfig;
     } = {},
   ): AsyncGenerator<string, void, void> {
-    const { config, tools } = this.prepareStreamChat(messages, options);
+    const { config, tools, sanitizedMessages } = this.prepareStreamChat(
+      messages,
+      options,
+    );
 
     try {
-      const anthropicMessages = this.convertToAnthropicMessages(messages);
+      const anthropicMessages =
+        this.convertToAnthropicMessages(sanitizedMessages);
 
+      const shouldEnableThinking = this.shouldEnableThinking(
+        options.modelName,
+        config,
+      );
       const completion = await this.withRetry(() =>
         this.anthropic.messages.create({
           model:
@@ -56,10 +75,12 @@ export class AnthropicService extends BaseAIService {
           max_tokens: config.maxTokens!,
           messages: anthropicMessages,
           stream: true,
-          thinking: {
-            budget_tokens: 1024,
-            type: 'enabled',
-          },
+          ...(shouldEnableThinking && {
+            thinking: {
+              budget_tokens: 1024,
+              type: 'enabled',
+            },
+          }),
           system: options.systemPrompt,
           tools: tools as AnthropicTool[],
         }),
@@ -200,6 +221,50 @@ export class AnthropicService extends BaseAIService {
     messages: Message[],
   ): AnthropicMessageParam[] {
     const anthropicMessages: AnthropicMessageParam[] = [];
+    const toolUseIds = new Set<string>();
+    const toolResultIds = new Set<string>();
+
+    // 디버깅을 위한 tool 체인 추적
+    for (const m of messages) {
+      if (m.role === 'assistant' && m.tool_use) {
+        toolUseIds.add(m.tool_use.id);
+      } else if (m.role === 'assistant' && m.tool_calls) {
+        m.tool_calls.forEach((tc) => toolUseIds.add(tc.id));
+      } else if (m.role === 'tool' && m.tool_call_id) {
+        toolResultIds.add(m.tool_call_id);
+      }
+    }
+
+    // 체인 완전성 검증
+    const unmatchedToolUses = Array.from(toolUseIds).filter(
+      (id) => !toolResultIds.has(id),
+    );
+    const unmatchedToolResults = Array.from(toolResultIds).filter(
+      (id) => !toolUseIds.has(id),
+    );
+
+    if (unmatchedToolUses.length > 0 || unmatchedToolResults.length > 0) {
+      logger.error(
+        'Tool chain integrity violation detected before Anthropic API call',
+        {
+          unmatchedToolUses,
+          unmatchedToolResults,
+          totalMessages: messages.length,
+          toolUseIds: Array.from(toolUseIds),
+          toolResultIds: Array.from(toolResultIds),
+        },
+      );
+      // 이 시점에서 에러를 발생시켜 API 호출 전에 문제를 감지
+      throw new Error(
+        `Incomplete tool chain: ${unmatchedToolUses.length} unmatched tool_use, ${unmatchedToolResults.length} unmatched tool_result`,
+      );
+    }
+
+    logger.debug('Tool chain integrity verification passed', {
+      totalMessages: messages.length,
+      toolUseCount: toolUseIds.size,
+      toolResultCount: toolResultIds.size,
+    });
 
     for (const m of messages) {
       if (m.role === 'system') {
@@ -236,7 +301,7 @@ export class AnthropicService extends BaseAIService {
           content.push({
             type: 'thinking' as const,
             thinking: m.thinking,
-            signature: m.thinkingSignature,
+            signature: m.thinkingSignature || '',
           });
         }
 
@@ -259,11 +324,7 @@ export class AnthropicService extends BaseAIService {
           });
         } else if (hasContent) {
           const processedContent = this.processMessageContent(m.content);
-          if (Array.isArray(processedContent)) {
-            content.push(...processedContent);
-          } else {
-            content.push({ type: 'text' as const, text: processedContent });
-          }
+          content.push({ type: 'text' as const, text: processedContent });
         }
 
         if (content.length > 0) {
@@ -273,12 +334,18 @@ export class AnthropicService extends BaseAIService {
           });
         }
       } else if (m.role === 'tool') {
+        if (!m.tool_call_id) {
+          logger.warn('Tool message missing tool_call_id, skipping', {
+            messageId: m.id,
+          });
+          continue;
+        }
         anthropicMessages.push({
           role: 'user',
           content: [
             {
               type: 'tool_result' as const,
-              tool_use_id: m.tool_call_id!,
+              tool_use_id: m.tool_call_id,
               content: this.processMessageContent(m.content),
             },
           ],
@@ -317,7 +384,7 @@ export class AnthropicService extends BaseAIService {
         content.push({
           type: 'thinking' as const,
           thinking: message.thinking,
-          signature: message.thinkingSignature,
+          signature: message.thinkingSignature || '',
         });
       }
 
@@ -340,11 +407,7 @@ export class AnthropicService extends BaseAIService {
         });
       } else if (message.content) {
         const processedContent = this.processMessageContent(message.content);
-        if (Array.isArray(processedContent)) {
-          content.push(...processedContent);
-        } else {
-          content.push({ type: 'text' as const, text: processedContent });
-        }
+        content.push({ type: 'text' as const, text: processedContent });
       }
 
       return {
@@ -352,12 +415,18 @@ export class AnthropicService extends BaseAIService {
         content,
       };
     } else if (message.role === 'tool') {
+      if (!message.tool_call_id) {
+        logger.warn('Tool message missing tool_call_id, skipping', {
+          messageId: message.id,
+        });
+        return null;
+      }
       return {
         role: 'user',
         content: [
           {
             type: 'tool_result' as const,
-            tool_use_id: message.tool_call_id!,
+            tool_use_id: message.tool_call_id,
             content: this.processMessageContent(message.content),
           },
         ],

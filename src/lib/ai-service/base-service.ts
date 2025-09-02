@@ -14,6 +14,7 @@ import {
 import { ModelInfo, llmConfigManager } from '../llm-config-manager';
 import { withRetry, withTimeout } from '../retry-utils';
 import { convertMCPToolsToProviderTools } from './tool-converters';
+import { MessageNormalizer } from './message-normalizer';
 import { getLogger } from '../logger';
 
 // --- Base Service Class with Common Functionality ---
@@ -208,6 +209,7 @@ export abstract class BaseAIService implements IAIService {
   ): {
     config: AIServiceConfig;
     tools?: unknown[];
+    sanitizedMessages: Message[];
   } {
     this.validateMessages(messages);
     const config = this.mergeConfig(options);
@@ -219,7 +221,21 @@ export abstract class BaseAIService implements IAIService {
         )
       : undefined;
 
-    return { config, tools };
+    // Apply vendor-specific message sanitization
+    const sanitizedMessages = this.sanitizeMessages(messages);
+
+    return { config, tools, sanitizedMessages };
+  }
+
+  /**
+   * Sanitize messages for vendor-specific compatibility
+   * Base implementation uses MessageNormalizer, but services can override
+   */
+  protected sanitizeMessages(messages: Message[]): Message[] {
+    return MessageNormalizer.sanitizeMessagesForProvider(
+      messages,
+      this.getProvider(),
+    );
   }
 
   /**
