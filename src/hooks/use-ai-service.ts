@@ -1,6 +1,6 @@
 import { Message, ToolCall } from '@/models/chat';
 import { createId } from '@paralleldrive/cuid2';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { AIServiceConfig, AIServiceFactory } from '../lib/ai-service';
 import { getLogger } from '../lib/logger';
 import { useSettings } from './use-settings';
@@ -22,9 +22,6 @@ export const useAIService = (config?: AIServiceConfig) => {
   const [response, setResponse] = useState<Message | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
-  useEffect(() => {
-    logger.info('use_ai_service:', { config: config?.tools });
-  }, []);
   const serviceInstance = useMemo(() => {
     const apiKey = serviceConfigs[provider]?.apiKey || '';
     return AIServiceFactory.getService(provider, apiKey, {
@@ -47,6 +44,7 @@ export const useAIService = (config?: AIServiceConfig) => {
       let currentResponseId = createId();
       let fullContent = '';
       let thinking = '';
+      let thinkingSignature = '';
       let toolCalls: ToolCall[] = [];
       let finalMessage: Message | null = null;
 
@@ -99,6 +97,9 @@ export const useAIService = (config?: AIServiceConfig) => {
           if (parsedChunk.thinking) {
             thinking += parsedChunk.thinking;
           }
+          if (parsedChunk.thinkingSignature) {
+            thinkingSignature = parsedChunk.thinkingSignature as string;
+          }
           if (parsedChunk.tool_calls && Array.isArray(parsedChunk.tool_calls)) {
             (
               parsedChunk.tool_calls as (ToolCall & { index: number })[]
@@ -133,6 +134,7 @@ export const useAIService = (config?: AIServiceConfig) => {
             role: 'assistant',
             isStreaming: true,
             thinking,
+            thinkingSignature,
             tool_calls: toolCalls,
             sessionId: messages[0]?.sessionId || '', // Add sessionId
           };
@@ -140,16 +142,43 @@ export const useAIService = (config?: AIServiceConfig) => {
           setResponse(finalMessage);
         }
 
-        finalMessage = {
-          id: currentResponseId,
-          content: fullContent,
-          thinking,
-          role: 'assistant',
-          isStreaming: false,
-          tool_calls: toolCalls,
-          sessionId: messages[0]?.sessionId || '', // Add sessionId
-        };
-        logger.info('message : ', { finalMessage });
+        // Check if the response is empty to prevent API errors
+        const hasContent = fullContent.trim().length > 0;
+        const hasToolCalls = toolCalls.length > 0;
+
+        if (!hasContent && !hasToolCalls) {
+          logger.debug('Empty response detected, creating placeholder message');
+          finalMessage = {
+            id: currentResponseId,
+            content:
+              'I apologize, but I encountered an issue and cannot provide a response at this time.',
+            thinking,
+            thinkingSignature,
+            role: 'assistant',
+            isStreaming: false,
+            tool_calls: [],
+            sessionId: messages[0]?.sessionId || '',
+          };
+        } else {
+          finalMessage = {
+            id: currentResponseId,
+            content: fullContent,
+            thinking,
+            thinkingSignature,
+            role: 'assistant',
+            isStreaming: false,
+            tool_calls: toolCalls,
+            sessionId: messages[0]?.sessionId || '', // Add sessionId
+          };
+        }
+
+        logger.info('Final message:', {
+          finalMessage,
+          hasContent,
+          hasToolCalls,
+          contentLength: fullContent.length,
+          toolCallsCount: toolCalls.length,
+        });
         setResponse(finalMessage);
         return finalMessage!;
       } catch (err) {

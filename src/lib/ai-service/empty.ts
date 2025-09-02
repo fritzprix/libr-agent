@@ -19,6 +19,17 @@ export class EmptyAIService extends BaseAIService {
     // Yield nothing, this is an empty service
   }
 
+  // Implementation of abstract methods from BaseAIService
+  protected createSystemMessage(systemPrompt: string): unknown {
+    void systemPrompt;
+    return null;
+  }
+
+  protected convertSingleMessage(message: unknown): unknown {
+    void message;
+    return null;
+  }
+
   dispose(): void {
     // No-op
   }

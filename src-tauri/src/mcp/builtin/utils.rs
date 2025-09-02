@@ -1,3 +1,4 @@
+use crate::session::get_session_manager;
 use path_clean::PathClean;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -26,16 +27,30 @@ impl SecurityValidator {
             // 1. 명시적 프로젝트 루트 환경변수
             PathBuf::from(root)
         } else {
-            // 2. 확실한 앱 전용 워크스페이스 사용
-            let tmp = std::env::temp_dir().join("synaptic-flow");
+            // 2. 세션 기반 워크스페이스 사용
+            match get_session_manager() {
+                Ok(manager) => {
+                    let workspace_dir = manager.get_session_workspace_dir();
+                    tracing::info!("Using session workspace: {:?}", workspace_dir);
+                    workspace_dir
+                }
+                Err(e) => {
+                    // Fallback to temp directory if session manager fails
+                    tracing::warn!(
+                        "Failed to get session manager, falling back to temp directory: {}",
+                        e
+                    );
+                    let tmp = std::env::temp_dir().join("synaptic-flow");
 
-            // 디렉터리 생성 확인
-            if let Err(e) = std::fs::create_dir_all(&tmp) {
-                tracing::error!("Failed to create app workspace: {:?}: {}", tmp, e);
+                    // 디렉터리 생성 확인
+                    if let Err(e) = std::fs::create_dir_all(&tmp) {
+                        tracing::error!("Failed to create app workspace: {:?}: {}", tmp, e);
+                    }
+
+                    tracing::info!("Using fallback workspace: {:?}", tmp);
+                    tmp
+                }
             }
-
-            tracing::info!("Using app workspace: {:?}", tmp);
-            tmp
         };
 
         tracing::info!("SecurityValidator base_dir = {:?}", base_dir);

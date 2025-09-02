@@ -86,8 +86,8 @@ impl BuiltinServerRegistry {
 
     pub fn list_tools_for_server(&self, server_name: &str) -> Vec<MCPTool> {
         // Remove "builtin." prefix if present
-        let normalized_server_name = if server_name.starts_with("builtin.") {
-            &server_name[8..]
+        let normalized_server_name = if let Some(stripped) = server_name.strip_prefix("builtin.") {
+            stripped
         } else {
             server_name
         };

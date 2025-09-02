@@ -405,7 +405,6 @@ impl MCPServerManager {
     }
 
     /// Built-in server methods
-
     /// List all available builtin servers
     pub async fn list_builtin_servers(&self) -> Vec<String> {
         let servers = self.builtin_servers.lock().await;

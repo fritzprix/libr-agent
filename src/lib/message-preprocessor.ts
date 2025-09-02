@@ -1,15 +1,44 @@
 import { Message } from '@/models/chat';
+import type { MCPContent } from './mcp-types';
 import { getLogger } from './logger';
 
 const logger = getLogger('message-preprocessor');
 
 /**
+ * Type guard to check if an MCPContent item has text property
+ */
+function hasTextProperty(
+  item: MCPContent,
+): item is MCPContent & { text: string } {
+  return (
+    item.type === 'text' && 'text' in item && typeof item.text === 'string'
+  );
+}
+
+/**
+ * Normalizes MCPContent arrays to string format for LLM consumption
+ */
+function normalizeContentForLLM(content: string | MCPContent[]): string {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .filter(hasTextProperty)
+      .map((item) => item.text)
+      .join('\n');
+  }
+  return '';
+}
+
+/**
  * Prepares a message for LLM by including attachment metadata and content-store tool usage guides
  */
 export async function prepareMessageForLLM(message: Message): Promise<Message> {
-  // If no attachments, return as-is
+  // If no attachments, just normalize content
   if (!message.attachments || message.attachments.length === 0) {
-    return message;
+    return {
+      ...message,
+      content: normalizeContentForLLM(message.content),
+    };
   }
 
   logger.debug('Preprocessing message with attachments', {
@@ -25,17 +54,18 @@ ${JSON.stringify(attachment, null, 2)}
 <!-- 
 To read the full content of this file, use:
 - readContent(storeId: "${attachment.storeId}", contentId: "${attachment.contentId}", lineRange: {fromLine: 1, toLine: 200})
-- For similarity search: similaritySearch(storeId: "${attachment.storeId}", query: "your search query")
+- For keyword-based similarity search: keywordSimilaritySearch(storeId: "${attachment.storeId}", query: "your search query")
 - For file list: listContent(storeId: "${attachment.storeId}")
 -->
 </attachment_${i}>`;
     });
 
-    // Combine original content with attachment information
+    // Normalize content for LLM and combine with attachment information
+    const normalizedContent = normalizeContentForLLM(message.content);
     const enhancedContent =
       message.attachments.length > 0
-        ? `${message.content}\n\n${attachmentContents.join('\n\n')}`
-        : message.content;
+        ? `${normalizedContent}\n\n${attachmentContents.join('\n\n')}`
+        : normalizedContent;
 
     const processedMessage = {
       ...message,
@@ -44,7 +74,10 @@ To read the full content of this file, use:
 
     logger.debug('Message preprocessing completed', {
       messageId: message.id,
-      originalContentLength: message.content.length,
+      originalContentLength:
+        typeof message.content === 'string'
+          ? message.content.length
+          : JSON.stringify(message.content).length,
       enhancedContentLength: enhancedContent.length,
     });
 

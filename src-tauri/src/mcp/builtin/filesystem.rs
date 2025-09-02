@@ -58,7 +58,7 @@ impl FilesystemServer {
         &self,
         path_str: &str,
         request_id: &Value,
-    ) -> Result<std::path::PathBuf, MCPResponse> {
+    ) -> Result<std::path::PathBuf, Box<MCPResponse>> {
         match self
             .file_manager
             .get_security_validator()
@@ -67,11 +67,11 @@ impl FilesystemServer {
             Ok(path) => Ok(path),
             Err(e) => {
                 error!("Path validation failed: {}", e);
-                Err(Self::error_response(
+                Err(Box::new(Self::error_response(
                     request_id.clone(),
                     -32603,
                     &format!("Security error: {e}"),
-                ))
+                )))
             }
         }
     }
@@ -343,7 +343,7 @@ impl FilesystemServer {
         // 경로 유효성 검사
         let safe_path = match self.validate_path_with_error(path_str, &request_id) {
             Ok(path) => path,
-            Err(error_response) => return error_response,
+            Err(error_response) => return *error_response,
         };
 
         // 파일 읽기
@@ -411,7 +411,7 @@ impl FilesystemServer {
             };
 
             // 범위 교체를 위한 키 생성 (start_line-end_line 형식)
-            let range_key = format!("{}-{}", start_line, end_line);
+            let range_key = format!("{start_line}-{end_line}");
             replacements_map.insert(range_key, content);
         }
 
@@ -439,7 +439,7 @@ impl FilesystemServer {
         {
             Ok(_) => Self::success_response(
                 request_id,
-                &format!("Successfully replaced lines in file {}", path_str),
+                &format!("Successfully replaced lines in file {path_str}"),
             ),
             Err(e) => {
                 Self::error_response(request_id, -32603, &format!("Failed to write file: {e}"))
@@ -565,7 +565,7 @@ impl FilesystemServer {
 
         let safe_path = match self.validate_path_with_error(path_str, &request_id) {
             Ok(path) => path,
-            Err(error_response) => return error_response,
+            Err(error_response) => return *error_response,
         };
 
         // Read file with line range support using SecureFileManager
@@ -679,7 +679,7 @@ impl FilesystemServer {
         // Validate search path security using SecureFileManager
         let safe_path = match self.validate_path_with_error(search_path, &request_id) {
             Ok(path) => path,
-            Err(error_response) => return error_response,
+            Err(error_response) => return *error_response,
         };
 
         // Search files
@@ -839,7 +839,7 @@ impl FilesystemServer {
         // Validate path security using SecureFileManager
         let safe_path = match self.validate_path_with_error(path_str, &request_id) {
             Ok(path) => path,
-            Err(error_response) => return error_response,
+            Err(error_response) => return *error_response,
         };
 
         // List directory contents

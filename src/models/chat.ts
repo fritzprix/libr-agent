@@ -35,7 +35,10 @@ export interface Message {
   tool_calls?: ToolCall[];
   tool_call_id?: string;
   isStreaming?: boolean;
+  /** AI model's internal reasoning process (e.g., chain-of-thought) */
   thinking?: string;
+  /** Cryptographic signature or identifier for the thinking content, used for verification or tracking */
+  thinkingSignature?: string;
   assistantId?: string; // Optional, used for tracking in multi-agent scenarios
   attachments?: AttachmentReference[]; // MCP 기반 파일 첨부 참조로 변경
   tool_use?: { id: string; name: string; input: Record<string, unknown> };
