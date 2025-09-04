@@ -2,8 +2,7 @@ use crate::mcp::{MCPResponse, MCPTool};
 use async_trait::async_trait;
 use serde_json::Value;
 
-pub mod filesystem;
-pub mod sandbox;
+pub mod workspace;
 pub mod utils;
 
 /// Trait for built-in MCP servers
@@ -47,11 +46,10 @@ impl BuiltinServerRegistry {
         // Create shared SecureFileManager instance
         let file_manager = std::sync::Arc::new(crate::services::SecureFileManager::new());
 
-        // Register built-in servers
-        registry.register_server(Box::new(filesystem::FilesystemServer::new(
+        // Register built-in workspace server (replaces filesystem and sandbox)
+        registry.register_server(Box::new(workspace::WorkspaceServer::new(
             file_manager.clone(),
         )));
-        registry.register_server(Box::new(sandbox::SandboxServer::new()));
 
         // Browser Agent server removed to prevent duplicate tools.
         // Browser functionality now provided by frontend BrowserToolProvider.

@@ -330,14 +330,108 @@ logger.setLevel('debug');
 
 ## 📋 Current Implementation Notes
 
-The current implementation uses a **custom UIResourceRenderer** that provides full functionality for HTML and external URL resources. While @mcp-ui/client is installed as a dependency, we use our own implementation to ensure:
+The current implementation **uses the official @mcp-ui/client library** for UIResource rendering while maintaining full customization capabilities. Here's how external packages are used:
 
-- **Stability**: No external library breaking changes
-- **Customization**: Tailored to SynapticFlow's specific needs
-- **Performance**: Optimized for our use case
-- **Control**: Full control over security and rendering behavior
+### 🔧 External Package Usage
 
-Future versions may integrate the official @mcp-ui/client components as they mature.
+#### ✅ Currently Used: @mcp-ui/client
+- **Package**: `@mcp-ui/client: ^5.6.2` (installed and actively used)
+- **Usage**: 
+  ```typescript
+  import { UIResourceRenderer as ExternalUIResourceRenderer } from '@mcp-ui/client';
+  ```
+- **Purpose**: Official MCP-UI rendering with standard compliance
+- **Location**: `src/components/ui/UIResourceRenderer.tsx`
+
+#### ✅ Available: @mcp-ui/server  
+- **Package**: `@mcp-ui/server: ^5.2.0` (installed, ready for server-side usage)
+- **Purpose**: Server-side UIResource creation utilities
+- **Usage Example**:
+  ```typescript
+  import { createUIResource } from '@mcp-ui/server';
+  
+  const htmlResource = createUIResource({
+    uri: 'ui://greeting/1',
+    content: { type: 'rawHtml', htmlString: '<p>Hello, MCP UI!</p>' },
+    encoding: 'text',
+  });
+  ```
+
+#### 🚫 Not Used: @remote-dom/core
+- **Status**: Not installed (would need manual installation)
+- **Purpose**: Remote DOM framework for native component rendering
+- **Would Enable**: `application/vnd.mcp-ui.remote-dom` support
+
+### 💡 UIResource Creation Options
+
+#### Option 1: Manual Creation (Currently Used)
+```typescript
+// Direct object creation - no external dependencies
+const uiResource: UIResource = {
+  uri: 'ui://charts/bar-chart',
+  mimeType: 'text/html',
+  text: '<div>Custom HTML content</div>',
+};
+```
+
+#### Option 2: @mcp-ui/server Helper (Available)
+```typescript
+// Using official server utilities - recommended for standardization
+import { createUIResource } from '@mcp-ui/server';
+
+const uiResource = createUIResource({
+  uri: 'ui://charts/bar-chart',
+  content: { type: 'rawHtml', htmlString: '<div>Custom HTML content</div>' },
+  encoding: 'text',
+});
+```
+
+#### Option 3: Remote-DOM (Requires Installation)
+```typescript
+// Requires: npm install @remote-dom/core
+import { createRemoteComponent } from '@remote-dom/core';
+
+const remoteDomResource = createUIResource({
+  uri: 'ui://remote-component/button',
+  content: {
+    type: 'remoteDom',
+    script: `const button = document.createElement('ui-button');...`,
+    framework: 'react',
+  },
+  encoding: 'text',
+});
+```
+
+### 🎯 Recommendation for Export Feature
+
+For the workspace export functionality, you can use either approach:
+
+**Option A: Manual Creation (Simpler)**
+```rust
+// In Rust MCP server
+let ui_resource = json!({
+    "type": "resource",
+    "resource": {
+        "uri": format!("ui://export/file/{}", request_id),
+        "mimeType": "text/html",
+        "text": html_content
+    }
+});
+```
+
+**Option B: @mcp-ui/server (Standardized)**
+```typescript
+// If implementing in TypeScript/Node.js MCP server
+import { createUIResource } from '@mcp-ui/server';
+
+const exportUI = createUIResource({
+  uri: `ui://export/file/${requestId}`,
+  content: { type: 'rawHtml', htmlString: htmlContent },
+  encoding: 'text',
+});
+```
+
+The current SynapticFlow implementation **fully supports both approaches** since it uses the official @mcp-ui/client for rendering, ensuring complete compatibility with the MCP-UI standard.
 
 ## 📚 References
 
