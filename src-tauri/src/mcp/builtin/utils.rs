@@ -58,6 +58,20 @@ impl SecurityValidator {
         Self { base_dir }
     }
 
+    pub fn new_with_base_dir(base_dir: PathBuf) -> Self {
+        tracing::info!(
+            "SecurityValidator created with custom base_dir = {:?}",
+            base_dir
+        );
+
+        // Ensure the base directory exists
+        if let Err(e) = std::fs::create_dir_all(&base_dir) {
+            tracing::error!("Failed to create base directory {:?}: {}", base_dir, e);
+        }
+
+        Self { base_dir }
+    }
+
     /// Validate and clean a file path to prevent directory traversal
     pub fn validate_path(&self, user_path: &str) -> Result<PathBuf, SecurityError> {
         // 디버깅을 위한 로깅 추가
