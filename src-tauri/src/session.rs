@@ -1,3 +1,4 @@
+use crate::services::SecureFileManager;
 use log::{error, info, warn};
 use std::fs;
 use std::path::PathBuf;
@@ -5,6 +6,7 @@ use std::sync::{Arc, OnceLock, RwLock};
 
 static SESSION_MANAGER: OnceLock<SessionManager> = OnceLock::new();
 
+#[derive(Clone)]
 pub struct SessionManager {
     current_session: Arc<RwLock<Option<String>>>,
     base_data_dir: PathBuf,
@@ -121,6 +123,12 @@ impl SessionManager {
 
         sessions.sort();
         Ok(sessions)
+    }
+
+    /// Get a SecureFileManager instance configured for the current session's workspace
+    pub fn get_file_manager(&self) -> Arc<SecureFileManager> {
+        let workspace_dir = self.get_session_workspace_dir();
+        Arc::new(SecureFileManager::new_with_base_dir(workspace_dir))
     }
 }
 

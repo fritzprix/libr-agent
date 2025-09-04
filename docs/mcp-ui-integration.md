@@ -335,21 +335,26 @@ The current implementation **uses the official @mcp-ui/client library** for UIRe
 ### 🔧 External Package Usage
 
 #### ✅ Currently Used: @mcp-ui/client
+
 - **Package**: `@mcp-ui/client: ^5.6.2` (installed and actively used)
-- **Usage**: 
+- **Usage**:
+
   ```typescript
   import { UIResourceRenderer as ExternalUIResourceRenderer } from '@mcp-ui/client';
   ```
+
 - **Purpose**: Official MCP-UI rendering with standard compliance
 - **Location**: `src/components/ui/UIResourceRenderer.tsx`
 
-#### ✅ Available: @mcp-ui/server  
+#### ✅ Available: @mcp-ui/server
+
 - **Package**: `@mcp-ui/server: ^5.2.0` (installed, ready for server-side usage)
 - **Purpose**: Server-side UIResource creation utilities
 - **Usage Example**:
+
   ```typescript
   import { createUIResource } from '@mcp-ui/server';
-  
+
   const htmlResource = createUIResource({
     uri: 'ui://greeting/1',
     content: { type: 'rawHtml', htmlString: '<p>Hello, MCP UI!</p>' },
@@ -358,6 +363,7 @@ The current implementation **uses the official @mcp-ui/client library** for UIRe
   ```
 
 #### 🚫 Not Used: @remote-dom/core
+
 - **Status**: Not installed (would need manual installation)
 - **Purpose**: Remote DOM framework for native component rendering
 - **Would Enable**: `application/vnd.mcp-ui.remote-dom` support
@@ -365,6 +371,7 @@ The current implementation **uses the official @mcp-ui/client library** for UIRe
 ### 💡 UIResource Creation Options
 
 #### Option 1: Manual Creation (Currently Used)
+
 ```typescript
 // Direct object creation - no external dependencies
 const uiResource: UIResource = {
@@ -375,6 +382,7 @@ const uiResource: UIResource = {
 ```
 
 #### Option 2: @mcp-ui/server Helper (Available)
+
 ```typescript
 // Using official server utilities - recommended for standardization
 import { createUIResource } from '@mcp-ui/server';
@@ -387,6 +395,7 @@ const uiResource = createUIResource({
 ```
 
 #### Option 3: Remote-DOM (Requires Installation)
+
 ```typescript
 // Requires: npm install @remote-dom/core
 import { createRemoteComponent } from '@remote-dom/core';
@@ -407,6 +416,7 @@ const remoteDomResource = createUIResource({
 For the workspace export functionality, you can use either approach:
 
 **Option A: Manual Creation (Simpler)**
+
 ```rust
 // In Rust MCP server
 let ui_resource = json!({
@@ -420,6 +430,7 @@ let ui_resource = json!({
 ```
 
 **Option B: @mcp-ui/server (Standardized)**
+
 ```typescript
 // If implementing in TypeScript/Node.js MCP server
 import { createUIResource } from '@mcp-ui/server';

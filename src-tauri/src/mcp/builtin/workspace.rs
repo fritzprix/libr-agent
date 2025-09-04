@@ -2,37 +2,43 @@ use async_trait::async_trait;
 use regex;
 use serde_json::{json, Value};
 use std::collections::HashMap;
+use std::io::Write;
 use std::time::Duration;
 use tempfile::TempDir;
 use tokio::fs;
 use tokio::process::Command;
 use tokio::time::timeout;
 use tracing::{error, info, warn};
+use zip::write::FileOptions;
 
 use super::{
-    utils::constants::{DEFAULT_EXECUTION_TIMEOUT, MAX_CODE_SIZE, MAX_EXECUTION_TIMEOUT, MAX_FILE_SIZE},
+    utils::constants::{
+        DEFAULT_EXECUTION_TIMEOUT, MAX_CODE_SIZE, MAX_EXECUTION_TIMEOUT, MAX_FILE_SIZE,
+    },
     BuiltinMCPServer,
 };
 use crate::mcp::{utils::schema_builder::*, MCPResponse, MCPTool};
 use crate::services::SecureFileManager;
+use crate::session::SessionManager;
 
 pub struct WorkspaceServer {
-    file_manager: std::sync::Arc<SecureFileManager>,
+    session_manager: std::sync::Arc<SessionManager>,
 }
 
 impl WorkspaceServer {
-    pub fn new(file_manager: std::sync::Arc<SecureFileManager>) -> Self {
-        // workspace 디렉토리 로그
-        info!(
-            "WorkspaceServer using workspace directory: {:?}",
-            file_manager.base_dir()
-        );
-        Self { file_manager }
+    pub fn new(session_manager: std::sync::Arc<SessionManager>) -> Self {
+        info!("WorkspaceServer using session-based workspace management");
+        Self { session_manager }
     }
 
-    /// SecureFileManager와 동일한 workspace 디렉토리 사용
-    fn get_workspace_dir(&self) -> &std::path::Path {
-        self.file_manager.base_dir()
+    /// SessionManager를 통한 현재 활성 세션의 워크스페이스 사용
+    fn get_workspace_dir(&self) -> std::path::PathBuf {
+        self.session_manager.get_session_workspace_dir()
+    }
+
+    /// 동적 파일 매니저 생성 (현재 세션 기반)
+    fn get_file_manager(&self) -> std::sync::Arc<SecureFileManager> {
+        self.session_manager.get_file_manager()
     }
 
     /// Generate a new request ID for MCP responses
@@ -58,14 +64,14 @@ impl WorkspaceServer {
         MCPResponse::error(request_id, code, message)
     }
 
-    /// Validate path using SecureFileManager and return appropriate error response if invalid
+    /// 파일 경로 검증 (세션 워크스페이스 기반)
     fn validate_path_with_error(
         &self,
         path_str: &str,
         request_id: &Value,
     ) -> Result<std::path::PathBuf, Box<MCPResponse>> {
-        match self
-            .file_manager
+        let file_manager = self.get_file_manager();
+        match file_manager
             .get_security_validator()
             .validate_path(path_str)
         {
@@ -452,11 +458,11 @@ impl WorkspaceServer {
             Err(error_response) => return *error_response,
         };
 
-        // Read file with line range support using SecureFileManager
+        // Read file with line range support using dynamic session-based file manager
+        let file_manager = self.get_file_manager();
         let content = if start_line.is_some() || end_line.is_some() {
             // Check file size
-            if let Err(e) = self
-                .file_manager
+            if let Err(e) = file_manager
                 .get_security_validator()
                 .validate_file_size(&safe_path, MAX_FILE_SIZE)
             {
@@ -467,7 +473,7 @@ impl WorkspaceServer {
             self.read_file_lines_range(&safe_path, start_line, end_line)
                 .await
         } else {
-            self.file_manager
+            file_manager
                 .read_file_as_string(path_str)
                 .await
                 .map_err(|e| e.to_string())
@@ -563,18 +569,11 @@ impl WorkspaceServer {
 
         let mode = args.get("mode").and_then(|v| v.as_str()).unwrap_or("w");
 
-        // Use SecureFileManager to write file
+        // 동적으로 현재 세션의 파일 매니저 사용
+        let file_manager = self.get_file_manager();
         let result = match mode {
-            "w" => {
-                // 기존 덮어쓰기 로직
-                self.file_manager.write_file_string(path_str, content).await
-            }
-            "a" => {
-                // 새로 구현할 append 로직
-                self.file_manager
-                    .append_file_string(path_str, content)
-                    .await
-            }
+            "w" => file_manager.write_file_string(path_str, content).await,
+            "a" => file_manager.append_file_string(path_str, content).await,
             _ => {
                 return Self::error_response(request_id, -32602, "Invalid mode. Use 'w' or 'a'");
             }
@@ -704,7 +703,7 @@ impl WorkspaceServer {
             .and_then(|v| v.as_str())
             .unwrap_or("both");
 
-        // Validate search path security using SecureFileManager
+        // Validate search path security using dynamic file manager
         let safe_path = match self.validate_path_with_error(search_path, &request_id) {
             Ok(path) => path,
             Err(error_response) => return *error_response,
@@ -924,11 +923,8 @@ impl WorkspaceServer {
 
         // 파일 쓰기
         let new_content = new_lines.join("\n");
-        match self
-            .file_manager
-            .write_file_string(path_str, &new_content)
-            .await
-        {
+        let file_manager = self.get_file_manager();
+        match file_manager.write_file_string(path_str, &new_content).await {
             Ok(_) => Self::success_response(
                 request_id,
                 &format!("Successfully replaced lines in file {path_str}"),
@@ -957,8 +953,8 @@ impl WorkspaceServer {
             .unwrap_or(false);
 
         let input_text = if let Some(path_str) = args.get("path").and_then(|v| v.as_str()) {
-            match self
-                .file_manager
+            let file_manager = self.get_file_manager();
+            match file_manager
                 .get_security_validator()
                 .validate_path(path_str)
             {
@@ -1074,10 +1070,10 @@ impl WorkspaceServer {
         }
         cmd.arg(&script_path);
 
-        // 핵심 변경: SecureFileManager의 workspace 디렉토리 사용
+        // 핵심 변경: SessionManager의 workspace 디렉토리 사용
         let work_dir = self.get_workspace_dir();
         info!("Code execution in workspace: {:?}", work_dir);
-        cmd.current_dir(work_dir);
+        cmd.current_dir(&work_dir);
 
         // Clear environment variables for isolation
         cmd.env_clear();
@@ -1184,11 +1180,7 @@ impl WorkspaceServer {
         // 코드 전달 검증 강화 (직렬화 문제 방지)
         if let Err(e) = std::str::from_utf8(code.as_bytes()) {
             error!("Invalid UTF-8 in TypeScript code: {}", e);
-            return Self::error_response(
-                request_id,
-                -32603,
-                "Invalid UTF-8 encoding in code",
-            );
+            return Self::error_response(request_id, -32603, "Invalid UTF-8 encoding in code");
         }
 
         // 코드 크기 검증 (기존과 동일)
@@ -1429,6 +1421,549 @@ impl WorkspaceServer {
             }
         }
     }
+
+    /// Create a success response with both text description and UIResource content
+    fn success_response_with_text_and_resource(
+        request_id: Value,
+        message: &str,
+        ui_resource: Value,
+    ) -> MCPResponse {
+        MCPResponse::success(
+            request_id,
+            json!({
+                "content": [
+                    {
+                        "type": "text",
+                        "text": message
+                    },
+                    ui_resource
+                ]
+            }),
+        )
+    }
+
+    /// UIResource 생성 (MCP-UI 표준 준수)
+    fn create_export_ui_resource(
+        &self,
+        request_id: u64,
+        title: &str,
+        files: &[String],
+        export_type: &str,
+        download_path: &str,
+        content: String,
+    ) -> Value {
+        // MCP-UI 표준 UIResource 형식
+        json!({
+            "type": "resource",
+            "resource": {
+                "uri": format!("ui://export/{}/{}", export_type.to_lowercase(), request_id),
+                "mimeType": "text/html",
+                "text": content,
+                "title": title,
+                "annotations": {
+                    "export_type": export_type,
+                    "file_count": files.len(),
+                    "download_path": download_path,
+                    "created_at": chrono::Utc::now().to_rfc3339()
+                }
+            }
+        })
+    }
+
+    /// HTML UIResource 생성 (postMessage 통신 사용)
+    fn create_html_export_ui(
+        &self,
+        title: &str,
+        files: &[String],
+        export_type: &str,
+        download_path: &str,
+        _display_name: &str,
+    ) -> String {
+        let files_list = files
+            .iter()
+            .map(|f| format!("<li class='file-item'>{}</li>", html_escape::encode_text(f)))
+            .collect::<Vec<_>>()
+            .join("");
+
+        format!(
+            r#"<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{}</title>
+    <style>
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+        }}
+        .container {{
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 30px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+        }}
+        h1 {{
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }}
+        .export-info {{
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }}
+        .download-btn {{
+            background: linear-gradient(45deg, #2196F3, #21CBF3);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px 0 rgba(33, 150, 243, 0.3);
+        }}
+        .download-btn:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px 0 rgba(33, 150, 243, 0.5);
+        }}
+        .download-btn:disabled {{
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }}
+        .status-message {{
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+        }}
+        .success {{ background-color: rgba(76, 175, 80, 0.3); }}
+        .error {{ background-color: rgba(244, 67, 54, 0.3); }}
+        .loading {{ background-color: rgba(255, 193, 7, 0.3); }}
+        ul {{ padding: 0; list-style: none; }}
+        .file-item {{
+            background: rgba(255, 255, 255, 0.1);
+            margin: 5px 0;
+            padding: 8px 12px;
+            border-radius: 5px;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎉 {}</h1>
+        <div class="export-info">
+            <h3>📦 Export Type: {}</h3>
+            <p>📅 Created: {}</p>
+            <p>📁 Files: {} items</p>
+            <h4>📋 Included Files:</h4>
+            <ul>{}</ul>
+        </div>
+        <div style="text-align: center;">
+            <button id="downloadBtn" onclick="downloadFile()" class="download-btn">
+                ⬇️ Download Now
+            </button>
+            <div id="statusMessage" class="status-message" style="display: none;"></div>
+        </div>
+    </div>
+
+    <script>
+        const downloadBtn = document.getElementById('downloadBtn');
+        const statusMessage = document.getElementById('statusMessage');
+
+        async function downloadFile() {{
+            downloadBtn.disabled = true;
+            downloadBtn.textContent = '⏳ Downloading...';
+            showStatus('Preparing download...', 'loading');
+
+            try {{
+                // MCP-UI 표준 Tool Call Action으로 다운로드 요청
+                window.parent.postMessage({{
+                    type: 'tool',
+                    payload: {{
+                        toolName: 'download_workspace_file',
+                        params: {{
+                            filePath: '{}'
+                        }}
+                    }}
+                }}, '*');
+
+                showStatus('Download request sent!', 'success');
+            }} catch (error) {{
+                console.error('Download failed:', error);
+                showStatus('Download failed: ' + error.message, 'error');
+                resetButton();
+            }}
+        }}
+
+        function showStatus(message, type) {{
+            statusMessage.textContent = message;
+            statusMessage.className = 'status-message ' + type;
+            statusMessage.style.display = 'block';
+        }}
+
+        function resetButton() {{
+            downloadBtn.disabled = false;
+            downloadBtn.textContent = '⬇️ Download Now';
+        }}
+
+        // Listen for download completion from parent
+        window.addEventListener('message', function(event) {{
+            // Security: Only accept messages from the parent window
+            if (event.source !== window.parent) {{
+                return;
+            }}
+
+            if (event.data.type === 'download_complete') {{
+                if (event.data.success) {{
+                    showStatus('✅ Download completed successfully!', 'success');
+                }} else {{
+                    showStatus('❌ Download failed: ' + event.data.error, 'error');
+                }}
+                resetButton();
+            }}
+        }});
+    </script>
+</body>
+</html>"#,
+            html_escape::encode_text(title),
+            html_escape::encode_text(title),
+            html_escape::encode_text(export_type),
+            chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC"),
+            files.len(),
+            files_list,
+            html_escape::encode_text(download_path)
+        )
+    }
+
+    /// Export 디렉토리 초기화
+    fn ensure_exports_directory(&self) -> Result<std::path::PathBuf, String> {
+        let exports_dir = self.get_workspace_dir().join("exports");
+
+        // files 및 packages 하위 디렉토리 생성
+        let files_dir = exports_dir.join("files");
+        let packages_dir = exports_dir.join("packages");
+
+        for dir in [&exports_dir, &files_dir, &packages_dir] {
+            if !dir.exists() {
+                std::fs::create_dir_all(dir)
+                    .map_err(|e| format!("Failed to create directory {:?}: {}", dir, e))?;
+            }
+        }
+
+        Ok(exports_dir)
+    }
+
+    async fn handle_export_file(&self, args: Value) -> MCPResponse {
+        let request_id = Self::generate_request_id();
+
+        // 파라미터 파싱
+        let path = match args.get("path").and_then(|v| v.as_str()) {
+            Some(path) => path,
+            None => {
+                return Self::error_response(
+                    request_id,
+                    -32602,
+                    "Missing required parameter: path",
+                );
+            }
+        };
+        let display_name = args
+            .get("display_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or(path)
+            .to_string();
+
+        // 소스 파일 경로 검증
+        let source_path = self.get_workspace_dir().join(path);
+        if !source_path.exists() || !source_path.is_file() {
+            return Self::error_response(
+                request_id,
+                -32603,
+                "File not found or is not a regular file",
+            );
+        }
+
+        // exports 디렉토리 준비
+        let exports_dir = match self.ensure_exports_directory() {
+            Ok(dir) => dir,
+            Err(e) => return Self::error_response(request_id, -32603, &e),
+        };
+
+        // 고유한 export 파일명 생성
+        let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
+        let file_stem = source_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("file");
+        let file_ext = source_path
+            .extension()
+            .and_then(|s| s.to_str())
+            .unwrap_or("");
+        let export_filename = if file_ext.is_empty() {
+            format!("{}_{}", file_stem, timestamp)
+        } else {
+            format!("{}_{}.{}", file_stem, timestamp, file_ext)
+        };
+
+        // 파일 복사
+        let export_path = exports_dir.join("files").join(&export_filename);
+        if let Err(e) = std::fs::copy(&source_path, &export_path) {
+            return Self::error_response(
+                request_id,
+                -32603,
+                &format!("Failed to copy file: {}", e),
+            );
+        }
+
+        let relative_path = format!("exports/files/{}", export_filename);
+        let source_path_str = path;
+
+        // Generate unique request_id as u64 for UIResource
+        let uid = cuid2::create_id();
+        let ui_request_id: u64 = uid
+            .chars()
+            .filter_map(|c| c.to_digit(36))
+            .fold(0u64, |acc, d| acc.wrapping_mul(36).wrapping_add(d as u64));
+
+        // HTML UIResource 생성
+        let html_content = self.create_html_export_ui(
+            &format!("File Export: {}", display_name),
+            &[source_path_str.to_string()],
+            "Single File",
+            &relative_path,
+            &display_name,
+        );
+
+        let ui_resource = self.create_export_ui_resource(
+            ui_request_id,
+            &format!("File Export: {}", display_name),
+            &[source_path_str.to_string()],
+            "Single File",
+            &relative_path,
+            html_content,
+        );
+
+        let success_message = format!(
+            "파일 '{}'이(가) 성공적으로 export되었습니다. 아래 링크에서 다운로드할 수 있습니다.",
+            display_name
+        );
+
+        Self::success_response_with_text_and_resource(request_id, &success_message, ui_resource)
+    }
+
+    async fn handle_export_zip(&self, args: Value) -> MCPResponse {
+        let request_id = Self::generate_request_id();
+
+        // 파라미터 파싱
+        let files_array = match args.get("files").and_then(|v| v.as_array()) {
+            Some(files) => files,
+            None => {
+                return Self::error_response(
+                    request_id,
+                    -32602,
+                    "Missing required parameter: files (array)",
+                );
+            }
+        };
+        let package_name = args
+            .get("package_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("workspace_export")
+            .to_string();
+
+        if files_array.is_empty() {
+            return Self::error_response(request_id, -32602, "Files array cannot be empty");
+        }
+
+        // exports 디렉토리 준비
+        let exports_dir = match self.ensure_exports_directory() {
+            Ok(dir) => dir,
+            Err(e) => return Self::error_response(request_id, -32603, &e),
+        };
+
+        // 고유한 ZIP 파일명 생성
+        let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
+        let zip_filename = format!("{}_{}.zip", package_name, timestamp);
+        let zip_path = exports_dir.join("packages").join(&zip_filename);
+
+        // ZIP 파일 생성
+        let zip_file = match std::fs::File::create(&zip_path) {
+            Ok(file) => file,
+            Err(e) => {
+                return Self::error_response(
+                    request_id,
+                    -32603,
+                    &format!("Failed to create ZIP file: {}", e),
+                )
+            }
+        };
+
+        let mut zip = zip::ZipWriter::new(zip_file);
+        let options = FileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated)
+            .unix_permissions(0o755);
+
+        // 파일들을 ZIP에 추가
+        let mut processed_files = Vec::new();
+        for file_value in files_array {
+            let file_path = match file_value.as_str() {
+                Some(path) => path,
+                None => continue,
+            };
+
+            let source_path = self.get_workspace_dir().join(file_path);
+            if !source_path.exists() || !source_path.is_file() {
+                continue; // 존재하지 않는 파일은 건너뛰기
+            }
+
+            // ZIP 내부 경로 설정 (디렉토리 구조 유지)
+            let archive_path = file_path.replace("\\", "/");
+
+            match zip.start_file(&archive_path, options) {
+                Ok(_) => {} // 성공적으로 파일 시작
+                Err(e) => {
+                    error!("Failed to start file in ZIP: {}", e);
+                    continue;
+                }
+            }
+
+            match std::fs::read(&source_path) {
+                Ok(content) => {
+                    if let Err(e) = zip.write_all(&content) {
+                        error!("Failed to write file content to ZIP: {}", e);
+                        continue;
+                    }
+                    processed_files.push(file_path.to_string());
+                }
+                Err(e) => {
+                    error!("Failed to read file {}: {}", file_path, e);
+                    continue;
+                }
+            }
+        }
+
+        // ZIP 파일 완료
+        if let Err(e) = zip.finish() {
+            return Self::error_response(
+                request_id,
+                -32603,
+                &format!("Failed to finalize ZIP: {}", e),
+            );
+        }
+
+        if processed_files.is_empty() {
+            return Self::error_response(
+                request_id,
+                -32603,
+                "No files were successfully added to ZIP",
+            );
+        }
+
+        let relative_path = format!("exports/packages/{}", zip_filename);
+
+        // Generate unique request_id as u64 for UIResource
+        let uid = cuid2::create_id();
+        let ui_request_id: u64 = uid
+            .chars()
+            .filter_map(|c| c.to_digit(36))
+            .fold(0u64, |acc, d| acc.wrapping_mul(36).wrapping_add(d as u64));
+
+        // HTML UIResource 생성
+        let html_content = self.create_html_export_ui(
+            &format!("ZIP Package: {}", package_name),
+            &processed_files,
+            "ZIP Package",
+            &relative_path,
+            &zip_filename,
+        );
+
+        let ui_resource = self.create_export_ui_resource(
+            ui_request_id,
+            &format!("ZIP Package: {}", package_name),
+            &processed_files,
+            "ZIP Package",
+            &relative_path,
+            html_content,
+        );
+
+        let success_message = format!(
+            "ZIP 패키지 '{}'이(가) 성공적으로 생성되었습니다. {}개 파일이 포함되어 있으며, 아래 링크에서 다운로드할 수 있습니다.",
+            package_name,
+            processed_files.len()
+        );
+
+        Self::success_response_with_text_and_resource(request_id, &success_message, ui_resource)
+    }
+
+    fn create_export_file_tool() -> MCPTool {
+        let mut props = HashMap::new();
+        props.insert(
+            "path".to_string(),
+            string_prop(Some(1), Some(1000), Some("Workspace 내 export할 파일 경로")),
+        );
+        props.insert(
+            "display_name".to_string(),
+            string_prop(None, None, Some("다운로드시 표시할 파일명 (선택적)")),
+        );
+        props.insert(
+            "description".to_string(),
+            string_prop(None, None, Some("파일 설명 (선택적)")),
+        );
+
+        MCPTool {
+            name: "export_file".to_string(),
+            title: Some("Export Single File".to_string()),
+            description: "Export a single file from workspace for download with interactive UI"
+                .to_string(),
+            input_schema: object_schema(props, vec!["path".to_string()]),
+            output_schema: None,
+            annotations: None,
+        }
+    }
+
+    fn create_export_zip_tool() -> MCPTool {
+        let mut props = HashMap::new();
+        props.insert(
+            "files".to_string(),
+            array_schema(
+                string_prop(Some(1), Some(1000), None),
+                Some("Export할 파일 경로들의 배열"),
+            ),
+        );
+        props.insert(
+            "package_name".to_string(),
+            string_prop(
+                None,
+                Some(50),
+                Some("ZIP 패키지명 (선택적, 기본값: workspace_export)"),
+            ),
+        );
+        props.insert(
+            "description".to_string(),
+            string_prop(None, None, Some("패키지 설명 (선택적)")),
+        );
+
+        MCPTool {
+            name: "export_zip".to_string(),
+            title: Some("Export ZIP Package".to_string()),
+            description: "Export multiple files as a ZIP package for download with interactive UI"
+                .to_string(),
+            input_schema: object_schema(props, vec!["files".to_string()]),
+            output_schema: None,
+            annotations: None,
+        }
+    }
 }
 
 #[async_trait]
@@ -1454,6 +1989,9 @@ impl BuiltinMCPServer for WorkspaceServer {
             Self::create_execute_python_tool(),
             Self::create_execute_typescript_tool(),
             Self::create_execute_shell_tool(),
+            // Export 도구들
+            Self::create_export_file_tool(),
+            Self::create_export_zip_tool(),
         ]
     }
 
@@ -1470,6 +2008,9 @@ impl BuiltinMCPServer for WorkspaceServer {
             "execute_python" => self.handle_execute_python(args).await,
             "execute_typescript" => self.handle_execute_typescript(args).await,
             "execute_shell" => self.handle_execute_shell(args).await,
+            // Export 도구들
+            "export_file" => self.handle_export_file(args).await,
+            "export_zip" => self.handle_export_zip(args).await,
             _ => {
                 let request_id = Self::generate_request_id();
                 Self::error_response(

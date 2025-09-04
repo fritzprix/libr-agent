@@ -66,6 +66,10 @@ export const useRustBackend = () => {
     // External URL handling
     openExternalUrl: client.openExternalUrl,
 
+    // File Download Operations
+    downloadWorkspaceFile: client.downloadWorkspaceFile,
+    exportAndDownloadZip: client.exportAndDownloadZip,
+
     // Utility
     greet: client.greet,
 

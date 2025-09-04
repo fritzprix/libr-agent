@@ -17,7 +17,11 @@ use session::get_session_manager;
 static MCP_MANAGER: OnceLock<MCPServerManager> = OnceLock::new();
 
 fn get_mcp_manager() -> &'static MCPServerManager {
-    MCP_MANAGER.get_or_init(MCPServerManager::new)
+    MCP_MANAGER.get_or_init(|| {
+        let session_manager = get_session_manager().expect("SessionManager not initialized");
+        let session_manager_arc = std::sync::Arc::new(session_manager.clone());
+        MCPServerManager::new_with_session_manager(session_manager_arc)
+    })
 }
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -457,6 +461,191 @@ async fn call_tool_unified(
         .await
 }
 
+#[tauri::command]
+async fn download_workspace_file(
+    app_handle: tauri::AppHandle,
+    file_path: String,
+) -> Result<String, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    // SecureFileManager를 통해 workspace 디렉토리 가져오기
+    let session_manager = get_session_manager().map_err(|e| e.to_string())?;
+    let workspace_dir = session_manager.get_session_workspace_dir();
+
+    // 요청된 파일의 전체 경로 구성
+    let full_path = workspace_dir.join(&file_path);
+
+    // 파일 존재 및 보안 검증
+    if !full_path.exists() {
+        return Err(format!("File not found: {}", file_path));
+    }
+
+    if !full_path.starts_with(&workspace_dir) {
+        return Err("Access denied: Path outside workspace".to_string());
+    }
+
+    // 파일명 추출
+    let file_name = full_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("download");
+
+    // 파일 내용 읽기
+    let file_content = match tokio::fs::read(&full_path).await {
+        Ok(content) => content,
+        Err(e) => return Err(format!("Failed to read file: {}", e)),
+    };
+
+    // 파일 저장 다이얼로그 표시 및 저장 (콜백 방식)
+    let (tx, rx) = tokio::sync::oneshot::channel::<Result<String, String>>();
+
+    app_handle
+        .dialog()
+        .file()
+        .set_file_name(file_name)
+        .save_file(move |file_path_opt| {
+            let save_result = if let Some(save_path) = file_path_opt {
+                match save_path.into_path() {
+                    Ok(path_buf) => match std::fs::write(&path_buf, &file_content) {
+                        Ok(_) => {
+                            log::info!("File downloaded successfully to: {:?}", path_buf);
+                            Ok("File downloaded successfully".to_string())
+                        }
+                        Err(e) => Err(format!("Failed to save file: {}", e)),
+                    },
+                    Err(e) => Err(format!("Failed to convert file path: {}", e)),
+                }
+            } else {
+                Ok("Download cancelled by user".to_string())
+            };
+
+            let _ = tx.send(save_result);
+        });
+
+    // Wait for the callback to complete with a reasonable timeout
+    match tokio::time::timeout(std::time::Duration::from_secs(30), rx).await {
+        Ok(Ok(result)) => result,
+        Ok(Err(_)) => Err("Internal communication error".to_string()),
+        Err(_) => Err("Dialog timeout - please try again".to_string()),
+    }
+}
+
+#[tauri::command]
+async fn export_and_download_zip(
+    app_handle: tauri::AppHandle,
+    files: Vec<String>,
+    package_name: String,
+) -> Result<String, String> {
+    use std::io::Write;
+    use tauri_plugin_dialog::DialogExt;
+    use zip::{write::FileOptions, ZipWriter};
+
+    let session_manager = get_session_manager().map_err(|e| e.to_string())?;
+    let workspace_dir = session_manager.get_session_workspace_dir();
+
+    if files.is_empty() {
+        return Err("Files array cannot be empty".to_string());
+    }
+
+    // 임시 ZIP 파일 생성
+    let temp_dir = tempfile::tempdir().map_err(|e| format!("Failed to create temp dir: {}", e))?;
+    let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
+    let zip_filename = format!("{}_{}.zip", package_name, timestamp);
+    let temp_zip_path = temp_dir.path().join(&zip_filename);
+
+    // ZIP 파일 생성
+    let zip_file = std::fs::File::create(&temp_zip_path)
+        .map_err(|e| format!("Failed to create ZIP file: {}", e))?;
+
+    let mut zip = ZipWriter::new(zip_file);
+    let options = FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+
+    // 파일들을 ZIP에 추가
+    let mut processed_files = Vec::new();
+    for file_path in &files {
+        let source_path = workspace_dir.join(file_path);
+
+        if !source_path.exists() || !source_path.is_file() {
+            continue; // 존재하지 않는 파일은 건너뛰기
+        }
+
+        // ZIP 내부 경로 설정 (디렉토리 구조 유지)
+        let archive_path = file_path.replace("\\", "/");
+
+        match zip.start_file(&archive_path, options) {
+            Ok(_) => {}
+            Err(e) => {
+                log::error!("Failed to start file in ZIP: {}", e);
+                continue;
+            }
+        }
+
+        match std::fs::read(&source_path) {
+            Ok(content) => {
+                if let Err(e) = zip.write_all(&content) {
+                    log::error!("Failed to write file content to ZIP: {}", e);
+                    continue;
+                }
+                processed_files.push(file_path.clone());
+            }
+            Err(e) => {
+                log::error!("Failed to read file {}: {}", file_path, e);
+                continue;
+            }
+        }
+    }
+
+    // ZIP 파일 완료
+    zip.finish()
+        .map_err(|e| format!("Failed to finalize ZIP: {}", e))?;
+
+    if processed_files.is_empty() {
+        return Err("No files were successfully added to ZIP".to_string());
+    }
+
+    // ZIP 파일 내용 읽기 (콜백에서 사용하기 위해)
+    let zip_content = tokio::fs::read(&temp_zip_path)
+        .await
+        .map_err(|e| format!("Failed to read ZIP file: {}", e))?;
+
+    // 파일 저장 다이얼로그 표시 및 저장 (콜백 방식)
+    let (tx, rx) = tokio::sync::oneshot::channel::<Result<String, String>>();
+    let processed_files_count = processed_files.len();
+
+    app_handle
+        .dialog()
+        .file()
+        .set_file_name(&zip_filename)
+        .save_file(move |file_path_opt| {
+            let save_result = if let Some(save_path) = file_path_opt {
+                match save_path.into_path() {
+                    Ok(path_buf) => match std::fs::write(&path_buf, &zip_content) {
+                        Ok(_) => {
+                            log::info!("ZIP file downloaded successfully to: {:?}", path_buf);
+                            Ok(format!(
+                                "ZIP file with {} files downloaded successfully",
+                                processed_files_count
+                            ))
+                        }
+                        Err(e) => Err(format!("Failed to save ZIP file: {}", e)),
+                    },
+                    Err(e) => Err(format!("Failed to convert file path: {}", e)),
+                }
+            } else {
+                Ok("Download cancelled by user".to_string())
+            };
+
+            let _ = tx.send(save_result);
+        });
+
+    // Wait for the callback to complete with a reasonable timeout
+    match tokio::time::timeout(std::time::Duration::from_secs(30), rx).await {
+        Ok(Ok(result)) => result,
+        Ok(Err(_)) => Err("Internal communication error".to_string()),
+        Err(_) => Err("Dialog timeout - please try again".to_string()),
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Set up custom panic handler for better error reporting
@@ -511,6 +700,9 @@ pub fn run() {
                 call_builtin_tool,
                 list_all_tools_unified,
                 call_tool_unified,
+                // Download commands
+                download_workspace_file,
+                export_and_download_zip,
                 // Session management commands
                 set_current_session,
                 get_current_session,
@@ -561,11 +753,8 @@ pub fn run() {
                 app.manage(browser_server);
                 println!("✅ Interactive Browser Server initialized");
 
-                // Initialize builtin servers with AppHandle for Browser Agent support
-                tauri::async_runtime::spawn(async move {
-                    get_mcp_manager().initialize_builtin_servers().await;
-                    println!("✅ Builtin servers initialized with Browser Agent support");
-                });
+                // Builtin servers are now automatically initialized with SessionManager in get_mcp_manager()
+                println!("✅ Builtin servers initialized with SessionManager support");
 
                 // Verify WebView can be created safely
                 #[cfg(target_os = "linux")]

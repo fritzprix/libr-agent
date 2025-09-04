@@ -1,9 +1,10 @@
 use crate::mcp::{MCPResponse, MCPTool};
+use crate::session::SessionManager;
 use async_trait::async_trait;
 use serde_json::Value;
 
-pub mod workspace;
 pub mod utils;
+pub mod workspace;
 
 /// Trait for built-in MCP servers
 #[async_trait]
@@ -35,21 +36,22 @@ pub struct BuiltinServerRegistry {
 
 impl BuiltinServerRegistry {
     pub fn new() -> Self {
-        Self::with_app_handle()
+        // This method now requires a session_manager parameter
+        panic!("Use new_with_session_manager instead")
     }
 
     pub fn with_app_handle() -> Self {
+        // This method now requires a session_manager parameter
+        panic!("Use new_with_session_manager instead")
+    }
+
+    pub fn new_with_session_manager(session_manager: std::sync::Arc<SessionManager>) -> Self {
         let mut registry = Self {
             servers: std::collections::HashMap::new(),
         };
 
-        // Create shared SecureFileManager instance
-        let file_manager = std::sync::Arc::new(crate::services::SecureFileManager::new());
-
-        // Register built-in workspace server (replaces filesystem and sandbox)
-        registry.register_server(Box::new(workspace::WorkspaceServer::new(
-            file_manager.clone(),
-        )));
+        // Register built-in workspace server with SessionManager
+        registry.register_server(Box::new(workspace::WorkspaceServer::new(session_manager)));
 
         // Browser Agent server removed to prevent duplicate tools.
         // Browser functionality now provided by frontend BrowserToolProvider.

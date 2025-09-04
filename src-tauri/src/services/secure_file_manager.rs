@@ -15,6 +15,12 @@ impl SecureFileManager {
         }
     }
 
+    pub fn new_with_base_dir(base_dir: std::path::PathBuf) -> Self {
+        Self {
+            security: SecurityValidator::new_with_base_dir(base_dir),
+        }
+    }
+
     pub async fn read_file(&self, path: &str) -> Result<Vec<u8>, String> {
         let safe_path = self
             .security
