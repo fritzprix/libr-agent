@@ -155,11 +155,6 @@ impl SecurityValidator {
         }
         Ok(())
     }
-
-    /// Get the base directory
-    pub fn base_dir(&self) -> &Path {
-        &self.base_dir
-    }
 }
 
 impl Default for SecurityValidator {
@@ -172,15 +167,6 @@ impl Default for SecurityValidator {
 pub mod constants {
     /// Maximum file size for reading (10MB)
     pub const MAX_FILE_SIZE: usize = 10 * 1024 * 1024;
-
-    /// Maximum code size for sandbox execution (10KB)
-    pub const MAX_CODE_SIZE: usize = 10 * 1024;
-
-    /// Default timeout for code execution (30 seconds)
-    pub const DEFAULT_EXECUTION_TIMEOUT: u64 = 30;
-
-    /// Maximum execution timeout (60 seconds)
-    pub const MAX_EXECUTION_TIMEOUT: u64 = 60;
 }
 
 #[cfg(test)]

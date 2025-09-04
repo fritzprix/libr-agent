@@ -1,4 +1,3 @@
-use std::path::Path;
 use tokio::fs;
 use tracing::{error, info};
 
@@ -138,10 +137,6 @@ impl SecureFileManager {
 
     pub fn get_security_validator(&self) -> &SecurityValidator {
         &self.security
-    }
-
-    pub fn base_dir(&self) -> &Path {
-        self.security.base_dir()
     }
 }
 
