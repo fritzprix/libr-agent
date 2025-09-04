@@ -15,6 +15,7 @@ use crate::mcp::schema::JSONSchemaType;
 use crate::mcp::types::{
     MCPConnection, MCPError, MCPResponse, MCPServerConfig, MCPTool, SamplingRequest,
 };
+use crate::session::SessionManager;
 
 pub struct MCPServerManager {
     connections: Arc<Mutex<HashMap<String, MCPConnection>>>,
@@ -29,11 +30,29 @@ impl MCPServerManager {
         }
     }
 
-    /// Initialize builtin servers with AppHandle
+    pub fn new_with_session_manager(session_manager: Arc<SessionManager>) -> Self {
+        let server_manager = Self {
+            connections: Arc::new(Mutex::new(HashMap::new())),
+            builtin_servers: Arc::new(Mutex::new(None)),
+        };
+
+        // Initialize builtin servers immediately with SessionManager
+        let builtin_registry =
+            crate::mcp::builtin::BuiltinServerRegistry::new_with_session_manager(session_manager);
+        *server_manager
+            .builtin_servers
+            .try_lock()
+            .expect("Failed to initialize builtin servers") = Some(builtin_registry);
+        info!("Initialized MCPServerManager with SessionManager-based builtin servers");
+
+        server_manager
+    }
+
+    /// Initialize builtin servers with SessionManager (deprecated - use new_with_session_manager)
     pub async fn initialize_builtin_servers(&self) {
-        let mut servers = self.builtin_servers.lock().await;
-        *servers = Some(crate::mcp::builtin::BuiltinServerRegistry::with_app_handle());
-        info!("Initialized builtin servers with AppHandle support");
+        warn!("initialize_builtin_servers is deprecated - use new_with_session_manager instead");
+        // This method is now deprecated and will panic if used
+        panic!("Use new_with_session_manager constructor instead");
     }
 
     /// MCP 서버를 시작하고 연결합니다

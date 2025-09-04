@@ -25,7 +25,11 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src ipc://localhost"
+      "csp": "default-src 'self'; connect-src ipc://localhost",
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$RESOURCE/**", "workspace/**"]
+      }
     },
     "trayIcon": {
       "iconPath": "icons/icon.png"

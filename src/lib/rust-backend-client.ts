@@ -278,6 +278,21 @@ export async function openExternalUrl(url: string): Promise<void> {
 }
 
 // ========================================
+// File Download Operations
+// ========================================
+
+export async function downloadWorkspaceFile(filePath: string): Promise<string> {
+  return safeInvoke<string>('download_workspace_file', { filePath });
+}
+
+export async function exportAndDownloadZip(
+  files: string[],
+  packageName: string,
+): Promise<string> {
+  return safeInvoke<string>('export_and_download_zip', { files, packageName });
+}
+
+// ========================================
 // Utility
 // ========================================
 
@@ -313,5 +328,7 @@ export default {
   clearCurrentLog,
   listLogFiles,
   openExternalUrl,
+  downloadWorkspaceFile,
+  exportAndDownloadZip,
   greet,
 };
