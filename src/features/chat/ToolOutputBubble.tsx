@@ -3,6 +3,7 @@ import { Message } from '@/models/chat';
 import { BaseBubble } from '@/components/ui/BaseBubble';
 import { JsonViewer } from '@/components/ui/JsonViewer';
 import MessageRenderer from '@/components/MessageRenderer';
+import { separateContent } from '@/lib/content-utils';
 
 interface ToolOutputBubbleProps {
   message: Message;
@@ -17,13 +18,7 @@ export const ToolOutputBubble: React.FC<ToolOutputBubbleProps> = ({
 
   // If content is MCPContent array, separate UI and text content
   if (Array.isArray(content)) {
-    const uiContentTypes = ['resource', 'image', 'audio', 'resource_link'];
-    const uiContent = content.filter((item) =>
-      uiContentTypes.includes(item.type),
-    );
-    const textContent = content.filter(
-      (item) => !uiContentTypes.includes(item.type),
-    );
+    const { uiContent, textContent } = separateContent(content);
 
     return (
       <div className="space-y-4">
