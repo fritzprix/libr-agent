@@ -35,16 +35,6 @@ pub struct BuiltinServerRegistry {
 }
 
 impl BuiltinServerRegistry {
-    pub fn new() -> Self {
-        // This method now requires a session_manager parameter
-        panic!("Use new_with_session_manager instead")
-    }
-
-    pub fn with_app_handle() -> Self {
-        // This method now requires a session_manager parameter
-        panic!("Use new_with_session_manager instead")
-    }
-
     pub fn new_with_session_manager(session_manager: std::sync::Arc<SessionManager>) -> Self {
         let mut registry = Self {
             servers: std::collections::HashMap::new(),
@@ -114,11 +104,5 @@ impl BuiltinServerRegistry {
                 }),
             }
         }
-    }
-}
-
-impl Default for BuiltinServerRegistry {
-    fn default() -> Self {
-        Self::new()
     }
 }

@@ -155,11 +155,6 @@ impl SecurityValidator {
         }
         Ok(())
     }
-
-    /// Get the base directory
-    pub fn base_dir(&self) -> &Path {
-        &self.base_dir
-    }
 }
 
 impl Default for SecurityValidator {

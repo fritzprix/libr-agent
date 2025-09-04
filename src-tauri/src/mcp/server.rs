@@ -23,13 +23,6 @@ pub struct MCPServerManager {
 }
 
 impl MCPServerManager {
-    pub fn new() -> Self {
-        Self {
-            connections: Arc::new(Mutex::new(HashMap::new())),
-            builtin_servers: Arc::new(Mutex::new(None)),
-        }
-    }
-
     pub fn new_with_session_manager(session_manager: Arc<SessionManager>) -> Self {
         let server_manager = Self {
             connections: Arc::new(Mutex::new(HashMap::new())),
@@ -46,13 +39,6 @@ impl MCPServerManager {
         info!("Initialized MCPServerManager with SessionManager-based builtin servers");
 
         server_manager
-    }
-
-    /// Initialize builtin servers with SessionManager (deprecated - use new_with_session_manager)
-    pub async fn initialize_builtin_servers(&self) {
-        warn!("initialize_builtin_servers is deprecated - use new_with_session_manager instead");
-        // This method is now deprecated and will panic if used
-        panic!("Use new_with_session_manager constructor instead");
     }
 
     /// MCP 서버를 시작하고 연결합니다
