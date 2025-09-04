@@ -1,4 +1,3 @@
-
 use serde_json::{json, Value};
 
 pub fn success_response_with_text_and_resource(

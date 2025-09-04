@@ -1,4 +1,3 @@
-
 use async_trait::async_trait;
 use serde_json::Value;
 use std::sync::Arc;
@@ -86,11 +85,7 @@ impl BuiltinMCPServer for WorkspaceServer {
             "export_zip" => self.handle_export_zip(args).await,
             _ => {
                 let request_id = Self::generate_request_id();
-                Self::error_response(
-                    request_id,
-                    -32601,
-                    &format!("Tool '{tool_name}' not found"),
-                )
+                Self::error_response(request_id, -32601, &format!("Tool '{tool_name}' not found"))
             }
         }
     }

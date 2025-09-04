@@ -1,4 +1,3 @@
-
 use crate::mcp::{utils::schema_builder::*, MCPTool};
 
 use std::collections::HashMap;
@@ -75,11 +74,7 @@ pub fn create_list_directory_tool() -> MCPTool {
     let mut props = HashMap::new();
     props.insert(
         "path".to_string(),
-        string_prop(
-            Some(1),
-            Some(1000),
-            Some("Path to the directory to list"),
-        ),
+        string_prop(Some(1), Some(1000), Some("Path to the directory to list")),
     );
 
     MCPTool {
@@ -184,10 +179,7 @@ pub fn create_replace_lines_in_file_tool() -> MCPTool {
         name: "replace_lines_in_file".to_string(),
         title: Some("Replace Lines in File".to_string()),
         description: "Replace specific lines or line ranges in a file with new content".to_string(),
-        input_schema: object_schema(
-            props,
-            vec!["path".to_string(), "replacements".to_string()],
-        ),
+        input_schema: object_schema(props, vec!["path".to_string(), "replacements".to_string()]),
         output_schema: None,
         annotations: None,
     }

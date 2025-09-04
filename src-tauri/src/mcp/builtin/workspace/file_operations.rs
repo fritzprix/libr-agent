@@ -1,11 +1,10 @@
-
 use super::WorkspaceServer;
 use crate::mcp::MCPResponse;
+use regex;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use tokio::fs;
 use tracing::{error, info};
-use regex;
 
 impl WorkspaceServer {
     fn validate_path_with_error(
@@ -375,8 +374,11 @@ impl WorkspaceServer {
             }
 
             if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
-                if glob_pattern.matches(file_name) || glob_pattern.matches(&path.to_string_lossy()) {
-                    let metadata = entry.metadata().map_err(|e| format!("Metadata error: {e}"))?;
+                if glob_pattern.matches(file_name) || glob_pattern.matches(&path.to_string_lossy())
+                {
+                    let metadata = entry
+                        .metadata()
+                        .map_err(|e| format!("Metadata error: {e}"))?;
 
                     results.push(json!({
                         "path": path.to_string_lossy(),

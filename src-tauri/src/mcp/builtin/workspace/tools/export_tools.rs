@@ -1,4 +1,3 @@
-
 use crate::mcp::{utils::schema_builder::*, MCPTool};
 use std::collections::HashMap;
 
@@ -6,11 +5,7 @@ pub fn create_export_file_tool() -> MCPTool {
     let mut props = HashMap::new();
     props.insert(
         "path".to_string(),
-        string_prop(
-            Some(1),
-            Some(1000),
-            Some("Workspace 내 export할 파일 경로"),
-        ),
+        string_prop(Some(1), Some(1000), Some("Workspace 내 export할 파일 경로")),
     );
     props.insert(
         "display_name".to_string(),

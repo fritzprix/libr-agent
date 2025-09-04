@@ -1,4 +1,3 @@
-
 use serde_json::Value;
 use std::io::Write;
 use tracing::error;
@@ -58,11 +57,7 @@ impl WorkspaceServer {
 
         let export_path = exports_dir.join("files").join(&export_filename);
         if let Err(e) = std::fs::copy(&source_path, &export_path) {
-            return Self::error_response(
-                request_id,
-                -32603,
-                &format!("Failed to copy file: {e}"),
-            );
+            return Self::error_response(request_id, -32603, &format!("Failed to copy file: {e}"));
         }
 
         let relative_path = format!("exports/files/{export_filename}");
