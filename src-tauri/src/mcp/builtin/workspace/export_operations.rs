@@ -51,9 +51,9 @@ impl WorkspaceServer {
             .and_then(|s| s.to_str())
             .unwrap_or("");
         let export_filename = if file_ext.is_empty() {
-            format!("{}_{}", file_stem, timestamp)
+            format!("{file_stem}_{timestamp}")
         } else {
-            format!("{}_{}.{}", file_stem, timestamp, file_ext)
+            format!("{file_stem}_{timestamp}.{file_ext}")
         };
 
         let export_path = exports_dir.join("files").join(&export_filename);
@@ -61,11 +61,11 @@ impl WorkspaceServer {
             return Self::error_response(
                 request_id,
                 -32603,
-                &format!("Failed to copy file: {}", e),
+                &format!("Failed to copy file: {e}"),
             );
         }
 
-        let relative_path = format!("exports/files/{}", export_filename);
+        let relative_path = format!("exports/files/{export_filename}");
         let source_path_str = path;
 
         let uid = cuid2::create_id();
@@ -75,7 +75,7 @@ impl WorkspaceServer {
             .fold(0u64, |acc, d| acc.wrapping_mul(36).wrapping_add(d as u64));
 
         let html_content = ui_resources::create_html_export_ui(
-            &format!("File Export: {}", display_name),
+            &format!("File Export: {display_name}"),
             &[source_path_str.to_string()],
             "Single File",
             &relative_path,
@@ -84,7 +84,7 @@ impl WorkspaceServer {
 
         let ui_resource = ui_resources::create_export_ui_resource(
             ui_request_id,
-            &format!("File Export: {}", display_name),
+            &format!("File Export: {display_name}"),
             &[source_path_str.to_string()],
             "Single File",
             &relative_path,
@@ -92,8 +92,7 @@ impl WorkspaceServer {
         );
 
         let success_message = format!(
-            "파일 '{}'이(가) 성공적으로 export되었습니다. 아래 링크에서 다운로드할 수 있습니다.",
-            display_name
+            "파일 '{display_name}'이(가) 성공적으로 export되었습니다. 아래 링크에서 다운로드할 수 있습니다."
         );
 
         ui_resources::success_response_with_text_and_resource(
@@ -132,7 +131,7 @@ impl WorkspaceServer {
         };
 
         let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
-        let zip_filename = format!("{}_{}.zip", package_name, timestamp);
+        let zip_filename = format!("{package_name}_{timestamp}.zip");
         let zip_path = exports_dir.join("packages").join(&zip_filename);
 
         let zip_file = match std::fs::File::create(&zip_path) {
@@ -141,7 +140,7 @@ impl WorkspaceServer {
                 return Self::error_response(
                     request_id,
                     -32603,
-                    &format!("Failed to create ZIP file: {}", e),
+                    &format!("Failed to create ZIP file: {e}"),
                 )
             }
         };
@@ -192,7 +191,7 @@ impl WorkspaceServer {
             return Self::error_response(
                 request_id,
                 -32603,
-                &format!("Failed to finalize ZIP: {}", e),
+                &format!("Failed to finalize ZIP: {e}"),
             );
         }
 
@@ -204,7 +203,7 @@ impl WorkspaceServer {
             );
         }
 
-        let relative_path = format!("exports/packages/{}", zip_filename);
+        let relative_path = format!("exports/packages/{zip_filename}");
 
         let uid = cuid2::create_id();
         let ui_request_id: u64 = uid
@@ -213,7 +212,7 @@ impl WorkspaceServer {
             .fold(0u64, |acc, d| acc.wrapping_mul(36).wrapping_add(d as u64));
 
         let html_content = ui_resources::create_html_export_ui(
-            &format!("ZIP Package: {}", package_name),
+            &format!("ZIP Package: {package_name}"),
             &processed_files,
             "ZIP Package",
             &relative_path,
@@ -222,7 +221,7 @@ impl WorkspaceServer {
 
         let ui_resource = ui_resources::create_export_ui_resource(
             ui_request_id,
-            &format!("ZIP Package: {}", package_name),
+            &format!("ZIP Package: {package_name}"),
             &processed_files,
             "ZIP Package",
             &relative_path,
@@ -251,7 +250,7 @@ impl WorkspaceServer {
         for dir in [&exports_dir, &files_dir, &packages_dir] {
             if !dir.exists() {
                 std::fs::create_dir_all(dir)
-                    .map_err(|e| format!("Failed to create directory {:?}: {}", dir, e))?;
+                    .map_err(|e| format!("Failed to create directory {dir:?}: {e}"))?;
             }
         }
 

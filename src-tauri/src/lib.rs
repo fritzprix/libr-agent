@@ -477,7 +477,7 @@ async fn download_workspace_file(
 
     // 파일 존재 및 보안 검증
     if !full_path.exists() {
-        return Err(format!("File not found: {}", file_path));
+        return Err(format!("File not found: {file_path}"));
     }
 
     if !full_path.starts_with(&workspace_dir) {
@@ -493,7 +493,7 @@ async fn download_workspace_file(
     // 파일 내용 읽기
     let file_content = match tokio::fs::read(&full_path).await {
         Ok(content) => content,
-        Err(e) => return Err(format!("Failed to read file: {}", e)),
+        Err(e) => return Err(format!("Failed to read file: {e}")),
     };
 
     // 파일 저장 다이얼로그 표시 및 저장 (콜백 방식)
@@ -508,12 +508,12 @@ async fn download_workspace_file(
                 match save_path.into_path() {
                     Ok(path_buf) => match std::fs::write(&path_buf, &file_content) {
                         Ok(_) => {
-                            log::info!("File downloaded successfully to: {:?}", path_buf);
+                            log::info!("File downloaded successfully to: {path_buf:?}");
                             Ok("File downloaded successfully".to_string())
                         }
-                        Err(e) => Err(format!("Failed to save file: {}", e)),
+                        Err(e) => Err(format!("Failed to save file: {e}")),
                     },
-                    Err(e) => Err(format!("Failed to convert file path: {}", e)),
+                    Err(e) => Err(format!("Failed to convert file path: {e}")),
                 }
             } else {
                 Ok("Download cancelled by user".to_string())
@@ -548,14 +548,14 @@ async fn export_and_download_zip(
     }
 
     // 임시 ZIP 파일 생성
-    let temp_dir = tempfile::tempdir().map_err(|e| format!("Failed to create temp dir: {}", e))?;
+    let temp_dir = tempfile::tempdir().map_err(|e| format!("Failed to create temp dir: {e}"))?;
     let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
-    let zip_filename = format!("{}_{}.zip", package_name, timestamp);
+    let zip_filename = format!("{package_name}_{timestamp}.zip");
     let temp_zip_path = temp_dir.path().join(&zip_filename);
 
     // ZIP 파일 생성
     let zip_file = std::fs::File::create(&temp_zip_path)
-        .map_err(|e| format!("Failed to create ZIP file: {}", e))?;
+        .map_err(|e| format!("Failed to create ZIP file: {e}"))?;
 
     let mut zip = ZipWriter::new(zip_file);
     let options = FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
@@ -575,7 +575,7 @@ async fn export_and_download_zip(
         match zip.start_file(&archive_path, options) {
             Ok(_) => {}
             Err(e) => {
-                log::error!("Failed to start file in ZIP: {}", e);
+                log::error!("Failed to start file in ZIP: {e}");
                 continue;
             }
         }
@@ -583,13 +583,13 @@ async fn export_and_download_zip(
         match std::fs::read(&source_path) {
             Ok(content) => {
                 if let Err(e) = zip.write_all(&content) {
-                    log::error!("Failed to write file content to ZIP: {}", e);
+                    log::error!("Failed to write file content to ZIP: {e}");
                     continue;
                 }
                 processed_files.push(file_path.clone());
             }
             Err(e) => {
-                log::error!("Failed to read file {}: {}", file_path, e);
+                log::error!("Failed to read file {file_path}: {e}");
                 continue;
             }
         }
@@ -597,7 +597,7 @@ async fn export_and_download_zip(
 
     // ZIP 파일 완료
     zip.finish()
-        .map_err(|e| format!("Failed to finalize ZIP: {}", e))?;
+        .map_err(|e| format!("Failed to finalize ZIP: {e}"))?;
 
     if processed_files.is_empty() {
         return Err("No files were successfully added to ZIP".to_string());
@@ -606,7 +606,7 @@ async fn export_and_download_zip(
     // ZIP 파일 내용 읽기 (콜백에서 사용하기 위해)
     let zip_content = tokio::fs::read(&temp_zip_path)
         .await
-        .map_err(|e| format!("Failed to read ZIP file: {}", e))?;
+        .map_err(|e| format!("Failed to read ZIP file: {e}"))?;
 
     // 파일 저장 다이얼로그 표시 및 저장 (콜백 방식)
     let (tx, rx) = tokio::sync::oneshot::channel::<Result<String, String>>();
@@ -621,15 +621,14 @@ async fn export_and_download_zip(
                 match save_path.into_path() {
                     Ok(path_buf) => match std::fs::write(&path_buf, &zip_content) {
                         Ok(_) => {
-                            log::info!("ZIP file downloaded successfully to: {:?}", path_buf);
+                            log::info!("ZIP file downloaded successfully to: {path_buf:?}");
                             Ok(format!(
-                                "ZIP file with {} files downloaded successfully",
-                                processed_files_count
+                                "ZIP file with {processed_files_count} files downloaded successfully"
                             ))
                         }
-                        Err(e) => Err(format!("Failed to save ZIP file: {}", e)),
+                        Err(e) => Err(format!("Failed to save ZIP file: {e}")),
                     },
-                    Err(e) => Err(format!("Failed to convert file path: {}", e)),
+                    Err(e) => Err(format!("Failed to convert file path: {e}")),
                 }
             } else {
                 Ok("Download cancelled by user".to_string())

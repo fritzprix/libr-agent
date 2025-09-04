@@ -43,18 +43,18 @@ impl WorkspaceServer {
                 return Self::error_response(
                     request_id,
                     -32603,
-                    &format!("Failed to create temporary directory: {}", e),
+                    &format!("Failed to create temporary directory: {e}"),
                 )
             }
         };
 
         // Write code to temporary file
-        let script_path = temp_dir.path().join(format!("script{}", file_extension));
+        let script_path = temp_dir.path().join(format!("script{file_extension}"));
         if let Err(e) = fs::write(&script_path, code).await {
             return Self::error_response(
                 request_id,
                 -32603,
-                &format!("Failed to write script file: {}", e),
+                &format!("Failed to write script file: {e}"),
             );
         }
 
@@ -118,12 +118,12 @@ impl WorkspaceServer {
             Ok(Err(e)) => Self::error_response(
                 request_id,
                 -32603,
-                &format!("Failed to execute command: {}", e),
+                &format!("Failed to execute command: {e}"),
             ),
             Err(_) => Self::error_response(
                 request_id,
                 -32603,
-                &format!("Command execution timed out after {} seconds", timeout_secs),
+                &format!("Command execution timed out after {timeout_secs} seconds"),
             ),
         }
     }

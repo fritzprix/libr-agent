@@ -89,7 +89,7 @@ impl BuiltinMCPServer for WorkspaceServer {
                 Self::error_response(
                     request_id,
                     -32601,
-                    &format!("Tool '{}' not found", tool_name),
+                    &format!("Tool '{tool_name}' not found"),
                 )
             }
         }
