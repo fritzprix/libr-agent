@@ -11,6 +11,116 @@ use crate::mcp::MCPResponse;
 use tokio::fs;
 
 impl WorkspaceServer {
+    /// LLM이 생성한 Shell 명령어의 따옴표 문제를 자동으로 보정
+    fn normalize_shell_command(raw_command: &str) -> String {
+        let mut normalized = raw_command.to_string();
+
+        // 1. 불완전한 따옴표 쌍 감지 및 보정
+        let double_quote_count = normalized.chars().filter(|&c| c == '"').count();
+        let single_quote_count = normalized.chars().filter(|&c| c == '\'').count();
+
+        // 2. 홀수 개의 따옴표가 있으면 마지막에 추가
+        if double_quote_count % 2 != 0 {
+            normalized.push('"');
+            info!("Shell command: Added missing double quote");
+        }
+        if single_quote_count % 2 != 0 {
+            normalized.push('\'');
+            info!("Shell command: Added missing single quote");
+        }
+
+        // 3. 연속된 따옴표 보정 패턴들
+        // "echo "hello"" -> "echo \"hello\""
+        if normalized.contains("\"\"") {
+            normalized = Self::fix_consecutive_quotes(&normalized);
+        }
+
+        normalized
+    }
+
+    /// 연속된 따옴표를 문맥에 따라 보정
+    fn fix_consecutive_quotes(input: &str) -> String {
+        let mut result = String::new();
+        let chars: Vec<char> = input.chars().collect();
+        let mut i = 0;
+
+        while i < chars.len() {
+            if i + 1 < chars.len() && chars[i] == '"' && chars[i + 1] == '"' {
+                // 연속된 따옴표 발견
+                if i > 0 && chars[i - 1] != ' ' && chars[i - 1] != '=' {
+                    // 앞에 공백이나 등호가 없으면 첫 번째는 이스케이프
+                    result.push('\\');
+                    result.push('"');
+                    i += 1; // 두 번째 따옴표는 다음 루프에서 처리
+                } else if i + 2 < chars.len() && chars[i + 2] != ' ' {
+                    // 뒤에 공백이 없으면 두 번째는 이스케이프
+                    result.push('"');
+                    result.push('\\');
+                    result.push('"');
+                    i += 2;
+                } else {
+                    // 기본적으로 첫 번째만 남기고 두 번째 제거
+                    result.push('"');
+                    i += 2;
+                }
+            } else {
+                result.push(chars[i]);
+                i += 1;
+            }
+        }
+
+        result
+    }
+
+    /// Python/TypeScript 코드의 문자열 문제를 보정
+    fn normalize_code_string(raw_code: &str, language: &str) -> String {
+        let mut normalized = raw_code.to_string();
+
+        // 1. 불완전한 따옴표 쌍 감지 및 보정
+        let double_quote_count = normalized.chars().filter(|&c| c == '"').count();
+        let single_quote_count = normalized.chars().filter(|&c| c == '\'').count();
+
+        // 2. 언어별 특수 처리
+        match language {
+            "python" => {
+                // Python에서 홀수 개의 따옴표 보정
+                if double_quote_count % 2 != 0 {
+                    normalized.push('"');
+                    info!("Python code: Added missing double quote");
+                }
+                if single_quote_count % 2 != 0 {
+                    normalized.push('\'');
+                    info!("Python code: Added missing single quote");
+                }
+
+            }
+            "typescript" => {
+                // TypeScript에서 홀수 개의 따옴표 보정
+                if double_quote_count % 2 != 0 {
+                    normalized.push('"');
+                    info!("TypeScript code: Added missing double quote");
+                }
+                if single_quote_count % 2 != 0 {
+                    normalized.push('\'');
+                    info!("TypeScript code: Added missing single quote");
+                }
+            }
+            _ => {
+                // 일반적인 따옴표 균형 보정
+                if double_quote_count % 2 != 0 {
+                    normalized.push('"');
+                    info!("Code: Added missing double quote");
+                }
+                if single_quote_count % 2 != 0 {
+                    normalized.push('\'');
+                    info!("Code: Added missing single quote");
+                }
+            }
+        }
+
+        normalized
+    }
+
     // Code execution handlers (adapted from sandbox.rs)
     async fn execute_code_in_sandbox(
         &self,
@@ -95,24 +205,38 @@ impl WorkspaceServer {
             Ok(Ok(output)) => {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 let stderr = String::from_utf8_lossy(&output.stderr);
+                let success = output.status.success();
+                let exit_code = output.status.code().unwrap_or(-1);
 
-                let result = if output.status.success() {
-                    serde_json::json!({
-                        "success": true,
-                        "stdout": stdout,
-                        "stderr": stderr,
-                        "exit_code": output.status.code()
-                    })
+                // 표준 MCP 응답 형식으로 변환
+                let result_text = if success {
+                    if stdout.trim().is_empty() && stderr.trim().is_empty() {
+                        "Code executed successfully (no output)".to_string()
+                    } else if stderr.trim().is_empty() {
+                        format!("Code executed successfully:\n{}", stdout.trim())
+                    } else {
+                        format!(
+                            "Code executed successfully:\nOutput:\n{}\n\nWarnings/Errors:\n{}",
+                            stdout.trim(),
+                            stderr.trim()
+                        )
+                    }
                 } else {
-                    serde_json::json!({
-                        "success": false,
-                        "stdout": stdout,
-                        "stderr": stderr,
-                        "exit_code": output.status.code()
-                    })
+                    format!(
+                        "Code execution failed (exit code: {}):\nSTDOUT:\n{}\n\nSTDERR:\n{}",
+                        exit_code,
+                        stdout.trim(),
+                        stderr.trim()
+                    )
                 };
 
-                MCPResponse::success(request_id, result)
+                info!(
+                    "Code execution completed. Command: {}, Success: {}, Output length: {}",
+                    command, success, result_text.len()
+                );
+
+                // 표준 MCP 형식으로 응답
+                Self::success_response(request_id, &result_text)
             }
             Ok(Err(e)) => Self::error_response(
                 request_id,
@@ -130,7 +254,7 @@ impl WorkspaceServer {
     pub async fn handle_execute_python(&self, args: Value) -> MCPResponse {
         let request_id = Self::generate_request_id();
 
-        let code = match args.get("code").and_then(|v| v.as_str()) {
+        let raw_code = match args.get("code").and_then(|v| v.as_str()) {
             Some(code) => code,
             None => {
                 return Self::error_response(
@@ -141,16 +265,24 @@ impl WorkspaceServer {
             }
         };
 
+        // LLM 입력 정규화
+        let normalized_code = Self::normalize_code_string(raw_code, "python");
+
+        // 보정이 발생한 경우 로그 출력
+        if normalized_code != raw_code {
+            info!("Python code normalized for execution");
+        }
+
         let timeout_secs = utils::validate_timeout(args.get("timeout").and_then(|v| v.as_u64()));
 
-        self.execute_code_in_sandbox("python3", &[], code, ".py", timeout_secs)
+        self.execute_code_in_sandbox("python3", &[], &normalized_code, ".py", timeout_secs)
             .await
     }
 
     pub async fn handle_execute_typescript(&self, args: Value) -> MCPResponse {
         let request_id = Self::generate_request_id();
 
-        let code = match args.get("code").and_then(|v| v.as_str()) {
+        let raw_code = match args.get("code").and_then(|v| v.as_str()) {
             Some(code) => code,
             None => {
                 return Self::error_response(
@@ -161,20 +293,28 @@ impl WorkspaceServer {
             }
         };
 
+        // LLM 입력 정규화
+        let normalized_code = Self::normalize_code_string(raw_code, "typescript");
+
+        // 보정이 발생한 경우 로그 출력
+        if normalized_code != raw_code {
+            info!("TypeScript code normalized for execution");
+        }
+
         let timeout_secs = utils::validate_timeout(args.get("timeout").and_then(|v| v.as_u64()));
 
-        if let Err(e) = std::str::from_utf8(code.as_bytes()) {
+        if let Err(e) = std::str::from_utf8(normalized_code.as_bytes()) {
             error!("Invalid UTF-8 in TypeScript code: {}", e);
             return Self::error_response(request_id, -32603, "Invalid UTF-8 encoding in code");
         }
 
-        if code.len() > MAX_CODE_SIZE {
+        if normalized_code.len() > MAX_CODE_SIZE {
             return Self::error_response(
                 request_id,
                 -32603,
                 &format!(
                     "Code too large: {} bytes (max: {} bytes)",
-                    code.len(),
+                    normalized_code.len(),
                     MAX_CODE_SIZE
                 ),
             );
@@ -216,7 +356,7 @@ impl WorkspaceServer {
 
         let ts_file = temp_dir.path().join("script.ts");
 
-        if let Err(e) = fs::write(&ts_file, code).await {
+        if let Err(e) = fs::write(&ts_file, &normalized_code).await {
             error!("Failed to write TypeScript file: {}", e);
             return Self::error_response(
                 request_id,
@@ -304,7 +444,7 @@ impl WorkspaceServer {
     pub async fn handle_execute_shell(&self, args: Value) -> MCPResponse {
         let request_id = Self::generate_request_id();
 
-        let command_str = match args.get("command").and_then(|v| v.as_str()) {
+        let raw_command = match args.get("command").and_then(|v| v.as_str()) {
             Some(cmd) => cmd,
             None => {
                 return Self::error_response(
@@ -314,6 +454,17 @@ impl WorkspaceServer {
                 );
             }
         };
+
+        // LLM 입력 정규화
+        let command_str = Self::normalize_shell_command(raw_command);
+
+        // 보정이 발생한 경우 로그 출력
+        if command_str != raw_command {
+            info!(
+                "Shell command normalized: '{}' -> '{}'",
+                raw_command, command_str
+            );
+        }
 
         let timeout_secs = utils::validate_timeout(args.get("timeout").and_then(|v| v.as_u64()));
 
@@ -327,11 +478,11 @@ impl WorkspaceServer {
 
         let mut cmd = if cfg!(target_os = "windows") {
             let mut cmd = Command::new("cmd");
-            cmd.args(["/C", command_str]);
+            cmd.args(["/C", &command_str]);
             cmd
         } else {
             let mut cmd = Command::new("sh");
-            cmd.args(["-c", command_str]);
+            cmd.args(["-c", &command_str]);
             cmd
         };
 
