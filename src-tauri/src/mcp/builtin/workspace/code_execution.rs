@@ -92,7 +92,6 @@ impl WorkspaceServer {
                     normalized.push('\'');
                     info!("Python code: Added missing single quote");
                 }
-
             }
             "typescript" => {
                 // TypeScript에서 홀수 개의 따옴표 보정
@@ -232,7 +231,9 @@ impl WorkspaceServer {
 
                 info!(
                     "Code execution completed. Command: {}, Success: {}, Output length: {}",
-                    command, success, result_text.len()
+                    command,
+                    success,
+                    result_text.len()
                 );
 
                 // 표준 MCP 형식으로 응답

@@ -59,7 +59,7 @@ impl BuiltinServerRegistry {
                         }
                     }
                 }
-                
+
                 // Handle code execution parameters
                 if let Some(code_value) = obj.get("code").cloned() {
                     if let Value::String(code_str) = code_value {
@@ -70,7 +70,7 @@ impl BuiltinServerRegistry {
                         }
                     }
                 }
-                
+
                 // Handle shell command parameters
                 if let Some(command_value) = obj.get("command").cloned() {
                     if let Value::String(command_str) = command_value {
@@ -81,43 +81,45 @@ impl BuiltinServerRegistry {
                         }
                     }
                 }
-                
+
                 Value::Object(obj)
             }
             _ => args,
         }
     }
-    
+
     /// Normalize raw JSON string from frontend
     fn normalize_raw_json_string(raw_json: &str) -> String {
         let mut normalized = raw_json.to_string();
-        
+
         // Fix common JSON escaping issues
         // Pattern: "code":"print("hello")" -> "code":"print(\"hello\")"
         if normalized.contains("\":\"") && !normalized.ends_with("\"}") {
             // Try to balance quotes in JSON values
             normalized = Self::fix_json_string_values(&normalized);
         }
-        
+
         normalized
     }
-    
+
     /// Fix JSON string values with unescaped quotes
     fn fix_json_string_values(json_str: &str) -> String {
         let mut result = String::new();
         let chars: Vec<char> = json_str.chars().collect();
         let mut i = 0;
         let mut in_string_value = false;
-        
+
         while i < chars.len() {
             let current = chars[i];
-            
+
             if current == '"' {
                 if i > 0 && chars[i - 1] == ':' && !in_string_value {
                     // Starting a string value
                     in_string_value = true;
                     result.push(current);
-                } else if in_string_value && (i + 1 >= chars.len() || chars[i + 1] == ',' || chars[i + 1] == '}') {
+                } else if in_string_value
+                    && (i + 1 >= chars.len() || chars[i + 1] == ',' || chars[i + 1] == '}')
+                {
                     // Ending a string value
                     in_string_value = false;
                     result.push(current);
@@ -133,35 +135,35 @@ impl BuiltinServerRegistry {
             }
             i += 1;
         }
-        
+
         result
     }
-    
+
     /// Extract parameters from malformed JSON as fallback
     fn extract_from_malformed_json(malformed: &str) -> Value {
         let mut result = serde_json::Map::new();
-        
+
         // Try to extract code parameter
         if let Some(code_match) = Self::extract_parameter_value(malformed, "code") {
             result.insert("code".to_string(), Value::String(code_match));
         }
-        
-        // Try to extract command parameter  
+
+        // Try to extract command parameter
         if let Some(command_match) = Self::extract_parameter_value(malformed, "command") {
             result.insert("command".to_string(), Value::String(command_match));
         }
-        
+
         info!("Extracted parameters from malformed JSON: {:?}", result);
         Value::Object(result)
     }
-    
+
     /// Extract a parameter value from malformed JSON using regex-like pattern matching
     fn extract_parameter_value(json_str: &str, param_name: &str) -> Option<String> {
         let pattern = format!("\"{}\":\"", param_name);
         if let Some(start_idx) = json_str.find(&pattern) {
             let value_start = start_idx + pattern.len();
             let remaining = &json_str[value_start..];
-            
+
             // Find the end of the value (looking for closing quote or end of object)
             let mut end_idx = 0;
             let mut quote_count = 0;
@@ -169,15 +171,17 @@ impl BuiltinServerRegistry {
                 if c == '"' {
                     quote_count += 1;
                     // If we have an odd number of quotes and we're at a logical end point
-                    if quote_count % 2 == 1 && (i + 1 >= remaining.len() || 
-                        remaining.chars().nth(i + 1) == Some('}') ||
-                        remaining.chars().nth(i + 1) == Some(',')) {
+                    if quote_count % 2 == 1
+                        && (i + 1 >= remaining.len()
+                            || remaining.chars().nth(i + 1) == Some('}')
+                            || remaining.chars().nth(i + 1) == Some(','))
+                    {
                         end_idx = i;
                         break;
                     }
                 }
             }
-            
+
             if end_idx > 0 {
                 let extracted = remaining[..end_idx].to_string();
                 info!("Extracted {} parameter: '{}'", param_name, extracted);
@@ -186,60 +190,60 @@ impl BuiltinServerRegistry {
         }
         None
     }
-    
+
     /// Normalize code parameters (Python/TypeScript)
     fn normalize_code_parameter(code: &str) -> String {
         let mut normalized = code.to_string();
-        
+
         // Fix unmatched quotes
         let double_quote_count = normalized.chars().filter(|&c| c == '"').count();
         let single_quote_count = normalized.chars().filter(|&c| c == '\'').count();
-        
+
         if double_quote_count % 2 != 0 {
             normalized.push('"');
             info!("Fixed unmatched double quote in code parameter");
         }
-        
+
         if single_quote_count % 2 != 0 {
             normalized.push('\'');
             info!("Fixed unmatched single quote in code parameter");
         }
-        
+
         normalized
     }
-    
+
     /// Normalize shell command parameters
     fn normalize_command_parameter(command: &str) -> String {
         let mut normalized = command.to_string();
-        
+
         // Fix unmatched quotes
         let double_quote_count = normalized.chars().filter(|&c| c == '"').count();
         let single_quote_count = normalized.chars().filter(|&c| c == '\'').count();
-        
+
         if double_quote_count % 2 != 0 {
             normalized.push('"');
             info!("Fixed unmatched double quote in command parameter");
         }
-        
+
         if single_quote_count % 2 != 0 {
             normalized.push('\'');
             info!("Fixed unmatched single quote in command parameter");
         }
-        
+
         // Fix consecutive quotes pattern like echo "hello""
         if normalized.contains("\"\"") {
             normalized = Self::fix_consecutive_quotes_in_command(&normalized);
         }
-        
+
         normalized
     }
-    
+
     /// Fix consecutive quotes in shell commands
     fn fix_consecutive_quotes_in_command(input: &str) -> String {
         let mut result = String::new();
         let chars: Vec<char> = input.chars().collect();
         let mut i = 0;
-        
+
         while i < chars.len() {
             if i + 1 < chars.len() && chars[i] == '"' && chars[i + 1] == '"' {
                 // Found consecutive quotes - add only one
@@ -251,7 +255,7 @@ impl BuiltinServerRegistry {
                 i += 1;
             }
         }
-        
+
         result
     }
 
