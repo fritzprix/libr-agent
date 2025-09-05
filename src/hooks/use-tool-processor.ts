@@ -15,7 +15,10 @@ interface UseToolProcessorConfig {
   submit: (messageToAdd?: Message[], agentKey?: string) => Promise<Message>;
 }
 
-export const useToolProcessor = ({ onToolExecutionChange, submit }: UseToolProcessorConfig) => {
+export const useToolProcessor = ({
+  onToolExecutionChange,
+  submit,
+}: UseToolProcessorConfig) => {
   const { current: currentSession } = useSessionContext();
   const { currentAssistant } = useAssistantContext();
   const { executeToolCall } = useUnifiedMCP();

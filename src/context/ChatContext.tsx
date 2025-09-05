@@ -316,11 +316,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     [messages, submit, isLoading, handleCancel],
   );
 
-  return (
-    <ChatContext.Provider value={value}>
-      {children}
-    </ChatContext.Provider>
-  );
+  return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
 }
 
 export function useChatContext(): ChatContextValue {
