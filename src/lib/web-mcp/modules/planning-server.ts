@@ -363,14 +363,8 @@ const planningServer: WebMCPServer = {
 
     return `
 # Instruction
-AI Agents have memory limitations (Context Window), so complex or long-term tasks must be recorded as goals, todos, and observations.
-Use the tools below to manage goals, todos, observations, and reasoning.
-
-# Tools
-- create_goal: Create a goal
-- add_todo: Add a todo item
-- add_observation: Record important facts (max 10 items)
-- sequential_thinking: Record step-by-step reasoning
+You have memory limitations (Context Window). For complex or long-term tasks, record and manage your goals, actionable steps, important facts, and reasoning processes.
+Organize and update your objectives, break down tasks, capture key insights, and track your thought process as needed.
 
 # Context Information
 ${goalText}
@@ -379,8 +373,8 @@ ${observationsText}
 ${thinkingText}
 
 # Prompt
-Select appropriate tools to suggest or execute the next action based on the current situation.
-    `.trim();
+Based on the current situation, determine and suggest the next appropriate action to progress toward your objectives.
+  `.trim();
   },
 };
 
