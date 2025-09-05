@@ -1,7 +1,7 @@
 import { useMCPServer } from './use-mcp-server';
 // import { useWebMCPTools } from './use-web-mcp';
 import { useBuiltInTool } from '@/features/tools';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef, useEffect } from 'react';
 import { MCPResponse, MCPTool } from '@/lib/mcp-types';
 import { ToolCall } from '@/models/chat';
 import { getLogger } from '@/lib/logger';
@@ -21,6 +21,19 @@ export const useUnifiedMCP = () => {
     availableTools: rustBuiltinTools,
   } = useBuiltInTool();
 
+  // Cache for tool name resolution to improve performance
+  const resolutionCacheRef = useRef<Map<string, string | null>>(new Map());
+
+  // Stable references for external dependencies to prevent unnecessary re-renders
+  const executeExternalRef = useRef(executeExternalMCP);
+  const executeRustBuiltinRef = useRef(executeRustBuiltinTool);
+
+  // Update refs when dependencies change
+  useEffect(() => {
+    executeExternalRef.current = executeExternalMCP;
+    executeRustBuiltinRef.current = executeRustBuiltinTool;
+  });
+
   // Create lookup map for fast tool type resolution
   const toolTypeMap = useMemo((): Map<string, BackendType> => {
     const map = new Map<string, BackendType>();
@@ -39,6 +52,9 @@ export const useUnifiedMCP = () => {
     rustBuiltinTools.forEach((tool: MCPTool) => {
       map.set(tool.name, 'BuiltInRust');
     });
+
+    // Clear cache when tool map changes to ensure consistency
+    resolutionCacheRef.current.clear();
 
     logger.debug('Tool type map created', {
       externalTools: externalTools.length,
@@ -61,54 +77,69 @@ export const useUnifiedMCP = () => {
     else return 'external';
   }, []);
 
-  // Intelligent tool name resolution - maps LLM-called names to actual prefixed names
+  // Intelligent tool name resolution with caching - maps LLM-called names to actual prefixed names
   const resolveToolName = useCallback(
     (calledToolName: string): string | null => {
+      // Check cache first for improved performance
+      const cached = resolutionCacheRef.current.get(calledToolName);
+      if (cached !== undefined) {
+        return cached;
+      }
+
+      let resolved: string | null = null;
+
       // 1. Check exact match first (already prefixed)
       if (toolTypeMap.has(calledToolName)) {
-        return calledToolName;
-      }
-
-      // 2. Look for tools that end with the called name (LLM using base name)
-      for (const [registeredName, type] of toolTypeMap.entries()) {
-        if (type === 'ExternalMCP') {
-          // Check server__toolName pattern
-          const parts = registeredName.split('__');
-          if (parts.length >= 2) {
-            const baseName = parts.slice(1).join('__');
-            if (baseName === calledToolName) {
-              logger.debug('Resolved tool name', {
-                calledName: calledToolName,
-                resolvedName: registeredName,
-                pattern: 'server__tool',
-              });
-              return registeredName;
+        resolved = calledToolName;
+      } else {
+        // 2. Look for tools that end with the called name (LLM using base name)
+        for (const [registeredName, type] of toolTypeMap.entries()) {
+          if (type === 'ExternalMCP') {
+            // Check server__toolName pattern
+            const parts = registeredName.split('__');
+            if (parts.length >= 2) {
+              const baseName = parts.slice(1).join('__');
+              if (baseName === calledToolName) {
+                logger.debug('Resolved tool name', {
+                  calledName: calledToolName,
+                  resolvedName: registeredName,
+                  pattern: 'server__tool',
+                });
+                resolved = registeredName;
+                break;
+              }
+            }
+          }
+          if (type === 'BuiltInWeb' || type === 'BuiltInRust') {
+            const nameWithoutPrefix = registeredName.replace(/^builtin\./, '');
+            const parts = nameWithoutPrefix.split('__');
+            if (parts.length >= 2) {
+              const baseName = parts.slice(1).join('__');
+              if (baseName === calledToolName) {
+                logger.debug('Resolved tool name', {
+                  calledName: calledToolName,
+                  resolvedName: registeredName,
+                  pattern: 'builtin.server__tool',
+                });
+                resolved = registeredName;
+                break;
+              }
             }
           }
         }
-        if (type === 'BuiltInWeb' || type === 'BuiltInRust') {
-          const nameWithoutPrefix = registeredName.replace(/^builtin\./, '');
-          const parts = nameWithoutPrefix.split('__');
-          if (parts.length >= 2) {
-            const baseName = parts.slice(1).join('__');
-            if (baseName === calledToolName) {
-              logger.debug('Resolved tool name', {
-                calledName: calledToolName,
-                resolvedName: registeredName,
-                pattern: 'builtin.server__tool',
-              });
-              return registeredName;
-            }
-          }
-        }
       }
 
-      // 4. No resolution found
-      logger.warn('Could not resolve tool name', {
-        calledName: calledToolName,
-        availableTools: Array.from(toolTypeMap.keys()),
-      });
-      return null;
+      if (!resolved) {
+        // No resolution found
+        logger.warn('Could not resolve tool name', {
+          calledName: calledToolName,
+          availableTools: Array.from(toolTypeMap.keys()),
+        });
+      }
+
+      // Cache the result (including null results to avoid repeated failed lookups)
+      resolutionCacheRef.current.set(calledToolName, resolved);
+      return resolved;
     },
     [toolTypeMap, getToolNamespace],
   );
@@ -135,7 +166,7 @@ export const useUnifiedMCP = () => {
     [toolTypeMap],
   );
 
-  // Unified tool execution
+  // Unified tool execution with stable references
   const executeToolCall = useCallback(
     async (toolCall: ToolCall): Promise<MCPResponse> => {
       const calledToolName = toolCall.function.name;
@@ -201,9 +232,9 @@ export const useUnifiedMCP = () => {
         if (toolType === 'BuiltInWeb') {
           throw new Error('Web MCP tools are currently disabled');
         } else if (toolType === 'BuiltInRust') {
-          return await executeRustBuiltinTool(actualToolCall);
+          return await executeRustBuiltinRef.current(actualToolCall);
         } else {
-          return await executeExternalMCP(actualToolCall);
+          return await executeExternalRef.current(actualToolCall);
         }
       } catch (error) {
         logger.error(`Tool execution failed for ${resolvedToolName}:`, error);
@@ -227,14 +258,7 @@ export const useUnifiedMCP = () => {
         };
       }
     },
-    [
-      getToolType,
-      getToolNamespace,
-      executeExternalMCP,
-      executeRustBuiltinTool,
-      // executeWebBuiltinTool, // disabled
-      toolTypeMap,
-    ],
+    [], // Empty dependency array for stable reference
   );
 
   // Get tool by name

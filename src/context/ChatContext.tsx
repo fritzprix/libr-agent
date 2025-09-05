@@ -7,19 +7,17 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { useAsyncFn } from 'react-use';
 import { useSessionContext } from './SessionContext';
 import { useSessionHistory } from './SessionHistoryContext';
 import { useAIService } from '../hooks/use-ai-service';
 import { useAssistantContext } from './AssistantContext';
 import { useBuiltInTool } from '@/features/tools';
-import { useUnifiedMCP } from '../hooks/use-unified-mcp';
+import { useToolProcessor } from '../hooks/use-tool-processor';
 import { createId } from '@paralleldrive/cuid2';
 import { getLogger } from '../lib/logger';
 import { Message } from '@/models/chat';
 import { useSettings } from '../hooks/use-settings';
 import { AIServiceConfig } from '@/lib/ai-service';
-import { isMCPError } from '@/lib/mcp-types';
 import { useSystemPrompt } from './SystemPromptContext';
 
 const logger = getLogger('ChatContext');
@@ -38,155 +36,6 @@ interface ChatProviderProps {
 }
 
 const DEFAULT_SYSTEM_PROMPT = 'You are a helpful assistant.';
-
-// ToolCaller 컴포넌트 - callback prop으로 tool 실행 상태 관리
-interface ToolCallerProps {
-  onToolExecutionChange: (isExecuting: boolean) => void;
-}
-
-const ToolCaller: React.FC<ToolCallerProps> = ({ onToolExecutionChange }) => {
-  const { current: currentSession } = useSessionContext();
-  const { currentAssistant } = useAssistantContext();
-  const { messages, submit } = useChatContext();
-  const { executeToolCall } = useUnifiedMCP();
-
-  const lastProcessedMessageId = useRef<string | null>(null);
-
-  const [{ loading }, execute] = useAsyncFn(
-    async (tcMessage: Message) => {
-      if (!tcMessage.tool_calls || tcMessage.tool_calls.length === 0) {
-        logger.warn('No tool calls found in message');
-        return;
-      }
-
-      // Tool 실행 시작을 부모에게 알림
-      onToolExecutionChange(true);
-
-      try {
-        logger.info('Starting tool execution batch', {
-          toolCallCount: tcMessage.tool_calls.length,
-          messageId: tcMessage.id,
-        });
-
-        // Tool Call ID 검증 강화
-        const validateToolCallId = (toolCall: { id: string }): boolean => {
-          // Tool call ID가 유효한지 검증
-          return Boolean(toolCall.id && toolCall.id.trim().length > 0);
-        };
-
-        // Tool 실행 전 검증 로직 추가
-        for (const toolCall of tcMessage.tool_calls) {
-          if (!validateToolCallId(toolCall)) {
-            logger.error('Invalid tool call ID detected', { toolCall });
-            // 유효하지 않은 ID의 경우 새로운 deterministic ID 생성
-            toolCall.id = `fallback_${Math.abs(
-              JSON.stringify(toolCall.function)
-                .split('')
-                .reduce((a, b) => {
-                  a = (a << 5) - a + b.charCodeAt(0);
-                  return a & a;
-                }, 0),
-            ).toString(36)}`;
-          }
-        }
-
-        const toolResults: Message[] = [];
-
-        for (const toolCall of tcMessage.tool_calls) {
-          const toolName = toolCall.function.name;
-          const executionStartTime = Date.now();
-
-          try {
-            logger.debug('Executing tool', {
-              toolName,
-              toolCallId: toolCall.id,
-            });
-
-            const mcpResponse = await executeToolCall(toolCall);
-            const executionTime = Date.now() - executionStartTime;
-
-            // Diagnostic logging for debugging readContent tool result loss
-            logger.info('Raw mcpResponse for tool', {
-              toolCallId: toolCall.id,
-              toolName,
-              mcpResponse,
-            });
-
-            const toolResultMessage: Message = {
-              id: createId(),
-              assistantId: currentAssistant?.id,
-              role: 'tool',
-              content: isMCPError(mcpResponse)
-                ? `Error: ${mcpResponse.error.message} (Code: ${mcpResponse.error.code})`
-                : mcpResponse.result?.content || '',
-              tool_call_id: toolCall.id,
-              sessionId: currentSession?.id || '',
-            };
-
-            toolResults.push(toolResultMessage);
-
-            logger.info('Tool execution completed', {
-              toolName,
-              success: !isMCPError(mcpResponse),
-              executionTime,
-            });
-          } catch (error) {
-            logger.error('Tool execution failed', { toolName, error });
-
-            const errorMessage: Message = {
-              id: createId(),
-              assistantId: currentAssistant?.id,
-              role: 'tool',
-              content: `Error executing ${toolName}: ${error instanceof Error ? error.message : 'Unknown error'}`,
-              sessionId: currentSession?.id || '',
-              tool_call_id: toolCall.id,
-            };
-
-            toolResults.push(errorMessage);
-          }
-        }
-
-        if (toolResults.length > 0) {
-          logger.info('Submitting tool results', {
-            resultCount: toolResults.length,
-            messageId: tcMessage.id,
-          });
-
-          await submit(toolResults, currentAssistant?.id);
-        }
-      } finally {
-        // Tool 실행 완료를 부모에게 알림
-        onToolExecutionChange(false);
-      }
-    },
-    [
-      submit,
-      executeToolCall,
-      currentAssistant,
-      currentSession,
-      onToolExecutionChange,
-    ],
-  );
-
-  useEffect(() => {
-    const lastMessage = messages[messages.length - 1];
-    if (
-      lastMessage &&
-      lastMessage.role === 'assistant' &&
-      lastMessage.tool_calls &&
-      lastMessage.tool_calls.length > 0 &&
-      !lastMessage.isStreaming &&
-      !loading &&
-      lastMessage.id &&
-      lastProcessedMessageId.current !== lastMessage.id
-    ) {
-      lastProcessedMessageId.current = lastMessage.id;
-      execute(lastMessage);
-    }
-  }, [messages, execute, loading]);
-
-  return null;
-};
 
 export function ChatProvider({ children }: ChatProviderProps) {
   const { messages: history, addMessage, addMessages } = useSessionHistory();
@@ -443,6 +292,20 @@ export function ChatProvider({ children }: ChatProviderProps) {
     cancelRequestRef.current = true;
   }, []);
 
+  // Initialize tool processor hook after submit function is defined
+  const { processToolCalls } = useToolProcessor({
+    onToolExecutionChange: setIsToolExecuting,
+    submit,
+  });
+
+  // Process tool calls when messages change
+  useEffect(() => {
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage) {
+      processToolCalls(lastMessage);
+    }
+  }, [messages, processToolCalls]);
+
   const value: ChatContextValue = useMemo(
     () => ({
       submit,
@@ -456,8 +319,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
   return (
     <ChatContext.Provider value={value}>
       {children}
-      {/* ToolCaller를 자동으로 포함 - 사용자가 수동으로 추가할 필요 없음 */}
-      <ToolCaller onToolExecutionChange={setIsToolExecuting} />
     </ChatContext.Provider>
   );
 }
