@@ -7,13 +7,6 @@ export interface MCPServerConfig {
   [key: string]: unknown;
 }
 
-export interface MCPResponse {
-  success: boolean;
-  data?: unknown;
-  error?: string;
-  [key: string]: unknown;
-}
-
 // File system related types
 export interface FileReadParams {
   filePath: string;

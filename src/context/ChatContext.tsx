@@ -19,14 +19,22 @@ import { Message } from '@/models/chat';
 import { useSettings } from '../hooks/use-settings';
 import { AIServiceConfig } from '@/lib/ai-service';
 import { useSystemPrompt } from './SystemPromptContext';
+import { stringToMCPContentArray } from '@/lib/utils';
 
 const logger = getLogger('ChatContext');
 
 interface ChatContextValue {
   submit: (messageToAdd?: Message[], agentKey?: string) => Promise<Message>;
   isLoading: boolean;
+  isToolExecuting: boolean;
   messages: Message[];
   cancel: () => void;
+  addToMessageQueue: (message: Partial<Message>) => void;
+  pendingCancel: boolean;
+  handleUIAction: (action: {
+    type: string;
+    payload: { prompt: string };
+  }) => Promise<void>;
 }
 
 const ChatContext = createContext<ChatContextValue | undefined>(undefined);
@@ -50,7 +58,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const [streamingMessage, setStreamingMessage] = useState<Message | null>(
     null,
   );
-  const [isToolExecuting, setIsToolExecuting] = useState(false);
+  const [pendingCancel, setPendingCancel] = useState(false);
+  const [messageQueue, setMessageQueue] = useState<Message[]>([]);
 
   // Extract window size with default fallback
   const messageWindowSize = settingValue?.windowSize ?? 20;
@@ -59,7 +68,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
   useEffect(() => {
     return () => {
       setStreamingMessage(null);
-      setIsToolExecuting(false);
+      setPendingCancel(false);
+      setMessageQueue([]);
     };
   }, []);
 
@@ -70,7 +80,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
         newSessionId: currentSession.id,
       });
       setStreamingMessage(null); // 세션 변경 시 무조건 초기화
-      setIsToolExecuting(false); // 툴 실행 상태도 초기화
+      setPendingCancel(false); // Cancel 상태 초기화
+      setMessageQueue([]); // 메시지 큐 초기화
     }
   }, [currentSession?.id]); // currentSession?.id 변경 시 실행
 
@@ -86,6 +97,31 @@ export function ChatProvider({ children }: ChatProviderProps) {
     });
     return combined;
   }, [getCurrentAssistant, getSystemPrompt]);
+
+  // Message queue management function
+  const addToMessageQueue = useCallback(
+    (message: Partial<Message>) => {
+      if (!currentSession?.id) {
+        logger.warn('No current session available for queuing message');
+        return;
+      }
+
+      const queuedMessage: Message = {
+        id: createId(),
+        role: 'user',
+        sessionId: currentSession.id,
+        content: stringToMCPContentArray(''),
+        ...message,
+      };
+
+      setMessageQueue((prev) => [...prev, queuedMessage]);
+      logger.info('Message added to queue', {
+        messageId: queuedMessage.id,
+        queueLength: messageQueue.length + 1,
+      });
+    },
+    [currentSession, messageQueue.length],
+  );
 
   // AI Service configuration with tools only
   const aiServiceConfig = useMemo(
@@ -103,8 +139,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     response,
   } = useAIService(aiServiceConfig);
 
-  // Combined loading state: AI service loading OR tool execution
-  const isLoading = aiServiceLoading || isToolExecuting;
+
 
   // Combine history with streaming message, avoiding duplicates
   const messages = useMemo(() => {
@@ -224,7 +259,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
           logger.info('Request cancelled after message persistence');
           return {
             id: createId(),
-            content: 'Request cancelled',
+            content: stringToMCPContentArray('Request cancelled'),
             role: 'system',
             sessionId: currentSession.id,
             isStreaming: false,
@@ -288,15 +323,61 @@ export function ChatProvider({ children }: ChatProviderProps) {
     ],
   );
 
+  // UIResource event handler
+  const handleUIAction = useCallback(
+    async (action: { type: string; payload: { prompt: string } }) => {
+      if (action.type === 'prompt') {
+        logger.info('Received prompt response from UIResource', {
+          response: action.payload.prompt,
+        });
+
+        if (!currentSession) {
+          logger.error('No current session available for UIResource prompt');
+          return;
+        }
+
+        const userMessage: Message = {
+          id: createId(),
+          role: 'user',
+          content: stringToMCPContentArray(action.payload.prompt),
+          sessionId: currentSession.id,
+        };
+
+        await submit([userMessage]);
+      }
+    },
+    [currentSession, submit],
+  );
+
   const handleCancel = useCallback(() => {
+    setPendingCancel(true);
     cancelRequestRef.current = true;
+
+    // Reset pendingCancel after a delay to show visual feedback
+    setTimeout(() => {
+      setPendingCancel(false);
+    }, 1000);
   }, []);
 
-  // Initialize tool processor hook after submit function is defined
-  const { processToolCalls } = useToolProcessor({
-    onToolExecutionChange: setIsToolExecuting,
+    // Tool processor will be initialized after submit is defined
+  const { processToolCalls, isProcessing } = useToolProcessor({
     submit,
   });
+  // Process queued messages when tool execution completes
+  useEffect(() => {
+    if (!isProcessing && messageQueue.length > 0) {
+      const nextMessage = messageQueue[0];
+      logger.info('Processing queued message', {
+        messageId: nextMessage.id,
+        remainingInQueue: messageQueue.length - 1,
+      });
+
+      setMessageQueue((prev) => prev.slice(1));
+      submit([nextMessage]);
+    }
+  }, [isProcessing, messageQueue, submit]);
+
+
 
   // Process tool calls when messages change
   useEffect(() => {
@@ -306,14 +387,30 @@ export function ChatProvider({ children }: ChatProviderProps) {
     }
   }, [messages, processToolCalls]);
 
+    // Combined loading state: AI service loading OR tool execution
+  const isLoading = aiServiceLoading || isProcessing;
+
   const value: ChatContextValue = useMemo(
     () => ({
       submit,
       isLoading,
+      isToolExecuting: isProcessing,
       messages,
       cancel: handleCancel,
+      addToMessageQueue,
+      pendingCancel,
+      handleUIAction,
     }),
-    [messages, submit, isLoading, handleCancel],
+    [
+      messages,
+      submit,
+      isLoading,
+      isProcessing,
+      handleCancel,
+      addToMessageQueue,
+      pendingCancel,
+      handleUIAction,
+    ],
   );
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;

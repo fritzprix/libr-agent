@@ -7,7 +7,7 @@ import { getLogger } from '@/lib/logger';
 const logger = getLogger('MessageRenderer');
 
 interface MessageRendererProps {
-  content: string | MCPContent[];
+  content: MCPContent[];
   className?: string;
 }
 

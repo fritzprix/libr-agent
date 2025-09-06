@@ -61,110 +61,97 @@ class EphemeralState {
 const state = new EphemeralState();
 
 /**
- * Goal과 Todo 현황을 HTML로 생성
+ * Generate HTML content for promptUser tool
  */
-function generateGoalTodosHTML(
-  goal: string | null,
-  todos: SimpleTodo[],
-): string {
-  const goalSection = goal
-    ? `
-      <div class="goal-section" style="margin-bottom: 16px; padding: 12px; border-left: 4px solid #2563eb; background: #f8fafc;">
-        <h3 style="margin: 0 0 8px 0; color: #1e40af;">🎯 Current Goal</h3>
-        <div style="font-weight: bold; color: #1f2937;">${goal}</div>
-      </div>
-    `
-    : `
-      <div class="goal-section" style="margin-bottom: 16px; padding: 12px; border-left: 4px solid #d1d5db; background: #f9fafb;">
-        <h3 style="margin: 0; color: #6b7280;">🎯 No Active Goal</h3>
-      </div>
-    `;
+function generatePromptHTML(params: {
+  question: string;
+  type: string;
+  options?: string[];
+}): string {
+  const { question, type, options } = params;
 
-  const todosSection = `
-    <div class="todos-section">
-      <h3 style="margin: 0 0 12px 0; color: #1f2937;">📋 Todo List (${todos.length})</h3>
-      ${
-        todos.length === 0
-          ? '<div style="color: #6b7280; font-style: italic;">No todos yet</div>'
-          : todos
+  let inputSection = '';
+  switch (type) {
+    case 'yesno':
+      inputSection = `
+        <div style="margin-top: 16px;">
+          <button onclick="window.parent.postMessage({type: 'ui_action', action: {type: 'prompt', payload: {prompt: 'yes'}}}, '*')" 
+                  style="margin-right: 12px; padding: 8px 16px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer;">
+            Yes
+          </button>
+          <button onclick="window.parent.postMessage({type: 'ui_action', action: {type: 'prompt', payload: {prompt: 'no'}}}, '*')" 
+                  style="padding: 8px 16px; background: #6b7280; color: white; border: none; border-radius: 6px; cursor: pointer;">
+            No
+          </button>
+        </div>
+      `;
+      break;
+    case 'options':
+      if (options && options.length > 0) {
+        inputSection = `
+          <div style="margin-top: 16px;">
+            ${options
               .map(
-                (todo, index) => `
-          <div style="margin-bottom: 8px; padding: 8px; border: 1px solid #e5e7eb; border-radius: 6px; background: #ffffff;">
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <span style="font-size: 12px; color: #6b7280;">#${index}</span>
-              <span style="padding: 2px 6px; border-radius: 8px; font-size: 11px; background: ${
-                todo.status === 'completed'
-                  ? '#dcfce7; color: #166534'
-                  : '#f3f4f6; color: #374151'
-              };">
-                ${todo.status}
-              </span>
-              <span style="font-weight: 500; color: #1f2937;">${todo.name}</span>
-            </div>
-          </div>
-        `,
+                (option) => `
+              <button onclick="window.parent.postMessage({type: 'ui_action', action: {type: 'prompt', payload: {prompt: '${option}'}}}, '*')" 
+                      style="display: block; width: 100%; margin-bottom: 8px; padding: 8px 16px; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 6px; cursor: pointer; text-align: left;">
+                ${option}
+              </button>
+            `,
               )
-              .join('')
+              .join('')}
+          </div>
+        `;
       }
-    </div>
-  `;
+      break;
+    case 'text':
+      inputSection = `
+        <div style="margin-top: 16px;">
+          <input type="text" id="textInput" placeholder="Type your response..." 
+                 style="width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; margin-bottom: 8px;">
+          <button onclick="
+                    const input = document.getElementById('textInput');
+                    if (input.value.trim()) {
+                      window.parent.postMessage({type: 'ui_action', action: {type: 'prompt', payload: {prompt: input.value}}}, '*');
+                    }
+                  " 
+                  style="padding: 8px 16px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer;">
+            Submit
+          </button>
+        </div>
+      `;
+      break;
+  }
 
   return `
-    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0; padding: 16px; line-height: 1.5;">
-      <h2 style="margin: 0 0 16px 0; color: #1f2937; border-bottom: 2px solid #e5e7eb; padding-bottom: 8px;">
-        📊 Goals & Todos Overview
-      </h2>
-      ${goalSection}
-      ${todosSection}
-      <div style="margin-top: 16px; padding: 8px; background: #f3f4f6; border-radius: 6px; font-size: 12px; color: #6b7280;">
-        Last updated: ${new Date().toLocaleString()}
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 500px; margin: 0; padding: 20px; line-height: 1.5;">
+      <div style="margin-bottom: 16px; padding: 16px; background: #f8fafc; border-left: 4px solid #2563eb; border-radius: 6px;">
+        <h3 style="margin: 0 0 8px 0; color: #1e40af;">❓ User Input Required</h3>
+        <div style="color: #1f2937; font-size: 16px;">${question}</div>
       </div>
+      ${inputSection}
     </div>
   `;
 }
 
 /**
- * Goal/Todo UIResource 생성 - @mcp-ui/server 표준 사용
+ * Create UIResource for promptUser tool
  */
-function createGoalTodosUIResource(goal: string | null, todos: SimpleTodo[]) {
-  const htmlContent = generateGoalTodosHTML(goal, todos);
+function createPromptUIResource(params: {
+  question: string;
+  type: string;
+  options?: string[];
+}) {
+  const htmlContent = generatePromptHTML(params);
 
   return createUIResource({
-    uri: `ui://planning/overview/${Date.now()}`,
+    uri: `ui://prompt/${Date.now()}`,
     content: {
       type: 'rawHtml',
       htmlString: htmlContent,
     },
     encoding: 'text',
   });
-}
-
-/**
- * UIResource를 포함한 Tool 결과 정규화
- */
-function normalizeToolResultWithUI(
-  result: unknown,
-  toolName: string,
-  uiResource?: unknown,
-): MCPResponse {
-  const baseResponse = normalizeToolResult(result, toolName);
-
-  if (uiResource && baseResponse.result?.content) {
-    // @mcp-ui/server createUIResource returns { type: "resource", resource: {...} }
-    // We can use it directly since it already has the correct structure
-    baseResponse.result.content.unshift(
-      uiResource as {
-        type: 'resource';
-        resource: {
-          uri: string;
-          mimeType: string;
-          text: string;
-        };
-      },
-    );
-  }
-
-  return baseResponse;
 }
 
 // Simplified tool definitions - flat schemas for Gemini API compatibility
@@ -232,6 +219,20 @@ const tools: MCPTool[] = [
       properties: {},
     },
   },
+  {
+    name: 'promptUser',
+    description:
+      'Ask the user for additional information during task execution',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        question: { type: 'string' },
+        type: { type: 'string', enum: ['yesno', 'options', 'text'] },
+        options: { type: 'array', items: { type: 'string' } },
+      },
+      required: ['question', 'type'],
+    },
+  },
 ];
 
 const planningServer: WebMCPServer = {
@@ -245,47 +246,80 @@ const planningServer: WebMCPServer = {
     switch (name) {
       case 'create_goal': {
         const result = state.createGoal(typedArgs.goal as string);
-        const uiResource = createGoalTodosUIResource(
-          state.getGoal(),
-          state.getTodos(),
-        );
-        return normalizeToolResultWithUI(result, 'create_goal', uiResource);
+        return normalizeToolResult(`Goal created: "${result}"`, 'create_goal');
       }
       case 'clear_goal': {
         const result = state.clearGoal();
-        const uiResource = createGoalTodosUIResource(
-          state.getGoal(),
-          state.getTodos(),
+        return normalizeToolResult(
+          result.success ? 'Goal cleared successfully' : 'Failed to clear goal',
+          'clear_goal',
         );
-        return normalizeToolResultWithUI(result, 'clear_goal', uiResource);
       }
       case 'add_todo': {
         const result = state.addTodo(typedArgs.name as string);
-        const uiResource = createGoalTodosUIResource(
-          state.getGoal(),
-          state.getTodos(),
+        return normalizeToolResult(
+          result.success
+            ? `Todo added: "${typedArgs.name}" (Total: ${result.todos.length})`
+            : 'Failed to add todo',
+          'add_todo',
         );
-        return normalizeToolResultWithUI(result, 'add_todo', uiResource);
       }
       case 'toggle_todo': {
         const result = state.toggleTodo(typedArgs.index as number);
-        const uiResource = createGoalTodosUIResource(
-          state.getGoal(),
-          state.getTodos(),
-        );
-        return normalizeToolResultWithUI(result, 'toggle_todo', uiResource);
+        if (result.todo) {
+          return normalizeToolResult(
+            `Todo "${result.todo.name}" marked as ${result.todo.status}`,
+            'toggle_todo',
+          );
+        } else {
+          return normalizeToolResult(
+            `Todo at index ${typedArgs.index} not found`,
+            'toggle_todo',
+          );
+        }
       }
       case 'clear_todos': {
         const result = state.clearTodos();
-        const uiResource = createGoalTodosUIResource(
-          state.getGoal(),
-          state.getTodos(),
+        return normalizeToolResult(
+          result.success ? 'All todos cleared' : 'Failed to clear todos',
+          'clear_todos',
         );
-        return normalizeToolResultWithUI(result, 'clear_todos', uiResource);
       }
       case 'clear_session':
         state.clear();
-        return normalizeToolResult({ success: true }, 'clear_session');
+        return normalizeToolResult('Session state cleared', 'clear_session');
+      case 'promptUser': {
+        const params = typedArgs as {
+          question: string;
+          type: string;
+          options?: string[];
+        };
+        const uiResource = createPromptUIResource(params);
+        const baseResponse = normalizeToolResult(
+          {
+            success: true,
+            question: params.question,
+            type: params.type,
+            options: params.options,
+          },
+          'promptUser',
+        );
+
+        if (baseResponse.result?.content) {
+          baseResponse.result.content.unshift(
+            uiResource as {
+              type: 'resource';
+              resource: {
+                uri: string;
+                mimeType: string;
+                text: string;
+              };
+            },
+          );
+        }
+
+        return baseResponse;
+      }
       default:
         throw new Error(`Unknown tool: ${name}`);
     }

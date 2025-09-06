@@ -1,6 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import { Button, FileAttachment, Input } from '@/components/ui';
-import { Send, X } from 'lucide-react';
+import { Send, Square, Loader2 } from 'lucide-react';
 import { useAssistantContext } from '@/context/AssistantContext';
 import { useSessionContext } from '@/context/SessionContext';
 import { useChatContext } from '@/context/ChatContext';
@@ -8,6 +8,7 @@ import { useFileAttachment } from '../hooks/useFileAttachment';
 import { getLogger } from '@/lib/logger';
 import { AttachmentReference, Message } from '@/models/chat';
 import { createId } from '@paralleldrive/cuid2';
+import { stringToMCPContentArray } from '@/lib/utils';
 
 const logger = getLogger('ChatInput');
 
@@ -20,7 +21,14 @@ export function ChatInput({ children }: ChatInputProps) {
 
   const { current: currentSession } = useSessionContext();
   const { currentAssistant } = useAssistantContext();
-  const { submit, isLoading, cancel } = useChatContext();
+  const {
+    submit,
+    isLoading,
+    isToolExecuting,
+    cancel,
+    addToMessageQueue,
+    pendingCancel,
+  } = useChatContext();
   const {
     pendingFiles,
     commitPendingFiles,
@@ -44,11 +52,6 @@ export function ChatInput({ children }: ChatInputProps) {
     async (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault();
 
-      if (isLoading) {
-        cancel();
-        return;
-      }
-
       if (!input.trim() && pendingFiles.length === 0) return;
       if (!currentAssistant || !currentSession) return;
 
@@ -64,21 +67,33 @@ export function ChatInput({ children }: ChatInputProps) {
         }
       }
 
-      const userMessage: Message = {
-        id: createId(),
-        content: input.trim(),
-        role: 'user',
-        sessionId: currentSession.id,
-        attachments: attachedFiles,
-      };
+      if (isToolExecuting) {
+        // Tool 실행 중이면 메시지를 큐에 추가
+        addToMessageQueue({
+          content: stringToMCPContentArray(input.trim()),
+          attachments: attachedFiles,
+        });
+        setInput('');
+        clearPendingFiles();
+        logger.info('Message queued during tool execution');
+      } else {
+        // 일반 전송
+        const userMessage: Message = {
+          id: createId(),
+          content: stringToMCPContentArray(input.trim()),
+          role: 'user',
+          sessionId: currentSession.id,
+          attachments: attachedFiles,
+        };
 
-      setInput('');
-      clearPendingFiles();
+        setInput('');
+        clearPendingFiles();
 
-      try {
-        await submit([userMessage]);
-      } catch (err) {
-        logger.error('Error submitting message:', err);
+        try {
+          await submit([userMessage]);
+        } catch (err) {
+          logger.error('Error submitting message:', err);
+        }
       }
     },
     [
@@ -89,10 +104,14 @@ export function ChatInput({ children }: ChatInputProps) {
       currentSession,
       commitPendingFiles,
       clearPendingFiles,
-      isLoading,
-      cancel,
+      isToolExecuting,
+      addToMessageQueue,
     ],
   );
+
+  const handleCancel = useCallback(() => {
+    cancel();
+  }, [cancel]);
 
   const removeAttachedFile = React.useCallback(
     (filename: string) => {
@@ -109,13 +128,12 @@ export function ChatInput({ children }: ChatInputProps) {
   return (
     <form
       onSubmit={handleSubmit}
-      className={`px-4 py-4 border-t flex items-center gap-2 transition-colors ${
-        dragState === 'valid'
+      className={`px-4 py-4 border-t flex items-center gap-2 transition-colors ${dragState === 'valid'
           ? 'bg-green-500/10 border-green-500'
           : dragState === 'invalid'
             ? 'bg-destructive/10 border-destructive'
             : ''
-      }`}
+        }`}
     >
       <span className="font-bold flex-shrink-0">$</span>
       <div className="flex-1 flex items-center gap-2 min-w-0">
@@ -132,13 +150,12 @@ export function ChatInput({ children }: ChatInputProps) {
                 : 'Query agent or drop files...'
           }
           disabled={isLoading || isAttachmentLoading}
-          className={`flex-1 min-w-0 transition-colors ${
-            dragState === 'valid'
+          className={`flex-1 min-w-0 transition-colors ${dragState === 'valid'
               ? 'border-green-500 bg-green-500/10'
               : dragState === 'invalid'
                 ? 'border-destructive bg-destructive/10'
                 : ''
-          }`}
+            }`}
           autoComplete="off"
           spellCheck="false"
         />
@@ -160,18 +177,35 @@ export function ChatInput({ children }: ChatInputProps) {
         {children}
       </div>
 
-      <Button
-        type="submit"
-        disabled={
-          isAttachmentLoading ||
-          (!isLoading && !input.trim() && attachedFiles.length === 0)
-        }
-        variant="ghost"
-        size="icon"
-        title={isLoading ? 'Cancel request' : 'Send message'}
-      >
-        {isLoading ? <X className="h-4 w-4" /> : <Send className="h-4 w-4" />}
-      </Button>
+      <div className="flex gap-2">
+        <Button
+          type="submit"
+          disabled={
+            isAttachmentLoading || (!input.trim() && attachedFiles.length === 0)
+          }
+          variant="ghost"
+          size="icon"
+          title={isToolExecuting ? 'Queue message' : 'Send message'}
+        >
+          <Send className="h-4 w-4" />
+        </Button>
+
+        {isLoading && (
+          <Button
+            onClick={handleCancel}
+            variant="destructive"
+            size="icon"
+            disabled={pendingCancel}
+            title={pendingCancel ? 'Cancelling...' : 'Cancel request'}
+          >
+            {pendingCancel ? (
+              <Loader2 className="h-4 w-4 animate-spin text-amber-500" />
+            ) : (
+              <Square className="h-4 w-4" />
+            )}
+          </Button>
+        )}
+      </div>
     </form>
   );
 }
