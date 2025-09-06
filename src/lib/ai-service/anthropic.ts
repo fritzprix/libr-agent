@@ -279,8 +279,7 @@ export class AnthropicService extends BaseAIService {
         });
       } else if (m.role === 'assistant') {
         // Filter out empty assistant messages that would cause API errors
-        const hasContent =
-          m.content && m.content.length > 0;
+        const hasContent = m.content && m.content.length > 0;
         const hasToolCalls = m.tool_calls && m.tool_calls.length > 0;
         const hasToolUse = m.tool_use;
 

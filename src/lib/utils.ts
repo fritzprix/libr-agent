@@ -2,7 +2,9 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
 // Converts a string to MCPContent[] with type 'text'
-export function stringToMCPContentArray(text: string): { type: 'text'; text: string }[] {
+export function stringToMCPContentArray(
+  text: string,
+): { type: 'text'; text: string }[] {
   return [{ type: 'text', text }];
 }
 

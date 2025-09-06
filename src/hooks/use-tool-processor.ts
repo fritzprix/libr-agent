@@ -129,7 +129,6 @@ export const useToolProcessor = ({ submit }: UseToolProcessorConfig) => {
         // Wait for all tool calls to complete in parallel
         const toolResults = await Promise.all(toolPromises);
         const messages = toolResults.map((result) => result.message);
-        
 
         if (messages.length > 0) {
           const hasUIResults = toolResults.some((result) => result.hasUi);

@@ -139,8 +139,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
     response,
   } = useAIService(aiServiceConfig);
 
-
-
   // Combine history with streaming message, avoiding duplicates
   const messages = useMemo(() => {
     if (!streamingMessage) {
@@ -359,7 +357,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     }, 1000);
   }, []);
 
-    // Tool processor will be initialized after submit is defined
+  // Tool processor will be initialized after submit is defined
   const { processToolCalls, isProcessing } = useToolProcessor({
     submit,
   });
@@ -377,8 +375,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
     }
   }, [isProcessing, messageQueue, submit]);
 
-
-
   // Process tool calls when messages change
   useEffect(() => {
     const lastMessage = messages[messages.length - 1];
@@ -387,7 +383,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     }
   }, [messages, processToolCalls]);
 
-    // Combined loading state: AI service loading OR tool execution
+  // Combined loading state: AI service loading OR tool execution
   const isLoading = aiServiceLoading || isProcessing;
 
   const value: ChatContextValue = useMemo(

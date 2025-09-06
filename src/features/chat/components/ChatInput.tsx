@@ -128,12 +128,13 @@ export function ChatInput({ children }: ChatInputProps) {
   return (
     <form
       onSubmit={handleSubmit}
-      className={`px-4 py-4 border-t flex items-center gap-2 transition-colors ${dragState === 'valid'
+      className={`px-4 py-4 border-t flex items-center gap-2 transition-colors ${
+        dragState === 'valid'
           ? 'bg-green-500/10 border-green-500'
           : dragState === 'invalid'
             ? 'bg-destructive/10 border-destructive'
             : ''
-        }`}
+      }`}
     >
       <span className="font-bold flex-shrink-0">$</span>
       <div className="flex-1 flex items-center gap-2 min-w-0">
@@ -150,12 +151,13 @@ export function ChatInput({ children }: ChatInputProps) {
                 : 'Query agent or drop files...'
           }
           disabled={isLoading || isAttachmentLoading}
-          className={`flex-1 min-w-0 transition-colors ${dragState === 'valid'
+          className={`flex-1 min-w-0 transition-colors ${
+            dragState === 'valid'
               ? 'border-green-500 bg-green-500/10'
               : dragState === 'invalid'
                 ? 'border-destructive bg-destructive/10'
                 : ''
-            }`}
+          }`}
           autoComplete="off"
           spellCheck="false"
         />

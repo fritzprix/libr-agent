@@ -8,14 +8,13 @@ const logger = getLogger('message-preprocessor');
  * Type guard to check if an MCPContent item has text property
  */
 
-
 /**
  * Prepares a message for LLM by including attachment metadata and content-store tool usage guides
  */
 export async function prepareMessageForLLM(message: Message): Promise<Message> {
   // If no attachments, just normalize content
   if (!message.attachments || message.attachments.length === 0) {
-    return message
+    return message;
   }
 
   logger.debug('Preprocessing message with attachments', {
@@ -42,10 +41,9 @@ To read the full content of this file, use:
       ...message,
       content: [
         ...message.content,
-        ...stringToMCPContentArray(attachmentContents.join("\n\n"))
+        ...stringToMCPContentArray(attachmentContents.join('\n\n')),
       ],
     };
-
 
     return processedMessage;
   } catch (error) {

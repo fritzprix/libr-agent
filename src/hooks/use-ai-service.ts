@@ -151,7 +151,9 @@ export const useAIService = (config?: AIServiceConfig) => {
           logger.debug('Empty response detected, creating placeholder message');
           finalMessage = {
             id: currentResponseId,
-            content: stringToMCPContentArray('I apologize, but I encountered an issue and cannot provide a response at this time.'),
+            content: stringToMCPContentArray(
+              'I apologize, but I encountered an issue and cannot provide a response at this time.',
+            ),
             thinking,
             thinkingSignature,
             role: 'assistant',
