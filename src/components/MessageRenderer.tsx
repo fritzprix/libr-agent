@@ -2,8 +2,7 @@ import React, { useCallback } from 'react';
 import type { MCPContent } from '@/lib/mcp-types';
 import { useRustBackend } from '@/hooks/use-rust-backend';
 import { getLogger } from '@/lib/logger';
-import { UIResourceRenderer } from '@mcp-ui/client';
-import { UIActionResult } from '@mcp-ui/server';
+import { basicComponentLibrary, UIResourceRenderer, UIActionResult } from '@mcp-ui/client';
 import { useUnifiedMCP } from '@/hooks/use-unified-mcp';
 import { createId } from '@paralleldrive/cuid2';
 import { useChatContext } from '@/context/ChatContext';
@@ -11,6 +10,7 @@ import { useSessionContext } from '@/context/SessionContext';
 import { Message } from '@/models/chat';
 import { stringToMCPContentArray } from '@/lib/utils';
 import { useAssistantContext } from '@/context/AssistantContext';
+import { useTheme } from 'next-themes';
 
 const logger = getLogger('MessageRenderer');
 
@@ -28,6 +28,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
   const { submit } = useChatContext();
   const { getCurrentSession } = useSessionContext();
   const { getCurrent } = useAssistantContext();
+  const { theme } = useTheme();
 
   const handleLinkClick = async (e: React.MouseEvent, url: string) => {
     e.preventDefault();
@@ -182,23 +183,19 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
               </div>
             );
           case 'resource':
+            logger.info("resource : ", {resource : item.resource})
             return (
               <UIResourceRenderer
                 key={index}
+                remoteDomProps={{
+                  library: basicComponentLibrary
+                }}
+                htmlProps={{
+                  iframeRenderData: { theme }
+                }}
                 onUIAction={handleUIAction}
                 supportedContentTypes={['remoteDom', 'rawHtml', 'externalUrl']}
-                resource={
-                  (
-                    item as {
-                      resource: {
-                        uri?: string;
-                        mimeType: string;
-                        text?: string;
-                        blob?: string;
-                      };
-                    }
-                  ).resource
-                }
+                resource={item.resource}
               />
             );
           case 'image': {

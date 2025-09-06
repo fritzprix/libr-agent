@@ -1,4 +1,4 @@
-import type { MCPTool, WebMCPServer, MCPResponse } from '@/lib/mcp-types';
+import type { MCPTool, WebMCPServer, MCPResponse, MCPContent } from '@/lib/mcp-types';
 import { normalizeToolResult } from '@/lib/mcp-types';
 import { createUIResource } from '@mcp-ui/server';
 
@@ -294,7 +294,8 @@ const planningServer: WebMCPServer = {
           type: string;
           options?: string[];
         };
-        const uiResource = createPromptUIResource(params);
+        const uiResource: MCPContent  = createPromptUIResource(params);
+        
         const baseResponse = normalizeToolResult(
           {
             success: true,
@@ -307,14 +308,7 @@ const planningServer: WebMCPServer = {
 
         if (baseResponse.result?.content) {
           baseResponse.result.content.unshift(
-            uiResource as {
-              type: 'resource';
-              resource: {
-                uri: string;
-                mimeType: string;
-                text: string;
-              };
-            },
+            uiResource
           );
         }
 
