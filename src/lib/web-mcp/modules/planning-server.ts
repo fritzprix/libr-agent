@@ -1,152 +1,175 @@
-import type { MCPTool, WebMCPServer, MCPResponse } from '@/lib/mcp-types';
+import type {
+  MCPTool,
+  WebMCPServer,
+  MCPResponse,
+} from '@/lib/mcp-types';
 import { normalizeToolResult } from '@/lib/mcp-types';
+import { createUIResource } from '@mcp-ui/server';
 
-// Ephemeral 상태 관리 (메모리 기반)
-interface Goal {
-  id: number;
+// Simplified data structures for Gemini API compatibility
+interface SimpleTodo {
   name: string;
-  description?: string;
-  status: 'active' | 'completed' | 'paused';
-  createdAt: Date;
-}
-
-interface Todo {
-  id: number;
-  name: string;
-  description?: string;
-  status: 'pending' | 'in_progress' | 'completed';
-  createdAt: Date;
-}
-
-interface Observation {
-  id: number;
-  content: string;
-  tags?: string[];
-  createdAt: Date;
-}
-
-interface SequentialThinking {
-  thoughtNumber: number;
-  totalThoughts: number;
-  thought: string;
-  nextThoughtNeeded: boolean;
-  createdAt: Date;
+  status: 'pending' | 'completed';
 }
 
 class EphemeralState {
-  private goal: Goal | null = null;
-  private todos: Todo[] = [];
-  private observations: Observation[] = [];
-  private sequentialThinking: SequentialThinking[] = [];
+  private goal: string | null = null;
+  private todos: SimpleTodo[] = [];
 
-  createGoal(name: string, description?: string): Goal {
-    const id = 0;
-    this.goal = {
-      id,
-      name,
-      description,
-      status: 'active',
-      createdAt: new Date(),
-    };
+  createGoal(goal: string): string {
+    this.goal = goal;
     return this.goal;
   }
 
-  updateGoal(
-    updates: Partial<Pick<Goal, 'name' | 'description' | 'status'>>,
-  ): Goal | null {
-    if (!this.goal) return null;
-    Object.assign(this.goal, updates);
-    return this.goal;
+  clearGoal(): { success: boolean } {
+    this.goal = null;
+    return { success: true };
   }
 
-  addTodo(
-    name: string,
-    description?: string,
-  ): { todoId: number; todos: Todo[] } {
-    const id = this.todos.length;
-    const todo: Todo = {
-      id,
+  addTodo(name: string): { success: boolean; todos: SimpleTodo[] } {
+    const todo: SimpleTodo = {
       name,
-      description,
       status: 'pending',
-      createdAt: new Date(),
     };
     this.todos.push(todo);
-    return { todoId: todo.id, todos: this.todos };
+    return { success: true, todos: this.todos };
   }
 
-  updateTodo(
-    todoId: number,
-    updates: Partial<Pick<Todo, 'name' | 'description' | 'status'>>,
-  ): { todo: Todo | null; todos: Todo[] } {
-    const todo = this.todos[todoId];
+  toggleTodo(index: number): { todo: SimpleTodo | null; todos: SimpleTodo[] } {
+    const todo = this.todos[index];
     if (!todo) return { todo: null, todos: this.todos };
-    Object.assign(todo, updates);
+    
+    todo.status = todo.status === 'completed' ? 'pending' : 'completed';
     return { todo, todos: this.todos };
   }
 
-  listTodos(): Todo[] {
-    return this.todos;
-  }
-
-  addObservation(
-    content: string,
-    tags?: string[],
-  ): { observationId: number; observations: Observation[] } {
-    if (this.observations.length >= 10) {
-      this.observations.shift(); // Remove oldest observation
-    }
-    const id = this.observations.length;
-    const observation: Observation = {
-      id,
-      content,
-      tags,
-      createdAt: new Date(),
-    };
-    this.observations.push(observation);
-    return { observationId: observation.id, observations: this.observations };
-  }
-
-  addSequentialThinking(
-    thought: string,
-    thoughtNumber: number,
-    totalThoughts: number,
-    nextThoughtNeeded: boolean,
-  ): SequentialThinking {
-    const thinking: SequentialThinking = {
-      thoughtNumber,
-      totalThoughts,
-      thought,
-      nextThoughtNeeded,
-      createdAt: new Date(),
-    };
-    this.sequentialThinking.push(thinking);
-    return thinking;
-  }
-
-  getObservations(): Observation[] {
-    return this.observations;
-  }
-
-  getSequentialThinking(): SequentialThinking[] {
-    return this.sequentialThinking;
+  clearTodos(): { success: boolean } {
+    this.todos = [];
+    return { success: true };
   }
 
   clear(): void {
     this.goal = null;
     this.todos = [];
-    this.observations = [];
-    this.sequentialThinking = [];
   }
 
-  getGoal(): Goal | null {
+  getGoal(): string | null {
     return this.goal;
+  }
+
+  getTodos(): SimpleTodo[] {
+    return this.todos;
   }
 }
 
 const state = new EphemeralState();
 
-// Tool definitions
+/**
+ * Goal과 Todo 현황을 HTML로 생성
+ */
+function generateGoalTodosHTML(goal: string | null, todos: SimpleTodo[]): string {
+  const goalSection = goal
+    ? `
+      <div class="goal-section" style="margin-bottom: 16px; padding: 12px; border-left: 4px solid #2563eb; background: #f8fafc;">
+        <h3 style="margin: 0 0 8px 0; color: #1e40af;">🎯 Current Goal</h3>
+        <div style="font-weight: bold; color: #1f2937;">${goal}</div>
+      </div>
+    `
+    : `
+      <div class="goal-section" style="margin-bottom: 16px; padding: 12px; border-left: 4px solid #d1d5db; background: #f9fafb;">
+        <h3 style="margin: 0; color: #6b7280;">🎯 No Active Goal</h3>
+      </div>
+    `;
+
+  const todosSection = `
+    <div class="todos-section">
+      <h3 style="margin: 0 0 12px 0; color: #1f2937;">📋 Todo List (${todos.length})</h3>
+      ${
+        todos.length === 0
+          ? '<div style="color: #6b7280; font-style: italic;">No todos yet</div>'
+          : todos
+              .map(
+                (todo, index) => `
+          <div style="margin-bottom: 8px; padding: 8px; border: 1px solid #e5e7eb; border-radius: 6px; background: #ffffff;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 12px; color: #6b7280;">#${index}</span>
+              <span style="padding: 2px 6px; border-radius: 8px; font-size: 11px; background: ${
+                todo.status === 'completed'
+                  ? '#dcfce7; color: #166534'
+                  : '#f3f4f6; color: #374151'
+              };">
+                ${todo.status}
+              </span>
+              <span style="font-weight: 500; color: #1f2937;">${todo.name}</span>
+            </div>
+          </div>
+        `,
+              )
+              .join('')
+      }
+    </div>
+  `;
+
+  return `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0; padding: 16px; line-height: 1.5;">
+      <h2 style="margin: 0 0 16px 0; color: #1f2937; border-bottom: 2px solid #e5e7eb; padding-bottom: 8px;">
+        📊 Goals & Todos Overview
+      </h2>
+      ${goalSection}
+      ${todosSection}
+      <div style="margin-top: 16px; padding: 8px; background: #f3f4f6; border-radius: 6px; font-size: 12px; color: #6b7280;">
+        Last updated: ${new Date().toLocaleString()}
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Goal/Todo UIResource 생성 - @mcp-ui/server 표준 사용
+ */
+function createGoalTodosUIResource(
+  goal: string | null,
+  todos: SimpleTodo[],
+) {
+  const htmlContent = generateGoalTodosHTML(goal, todos);
+
+  return createUIResource({
+    uri: `ui://planning/overview/${Date.now()}`,
+    content: {
+      type: 'rawHtml',
+      htmlString: htmlContent,
+    },
+    encoding: 'text',
+  });
+}
+
+/**
+ * UIResource를 포함한 Tool 결과 정규화
+ */
+function normalizeToolResultWithUI(
+  result: unknown,
+  toolName: string,
+  uiResource?: unknown,
+): MCPResponse {
+  const baseResponse = normalizeToolResult(result, toolName);
+
+  if (uiResource && baseResponse.result?.content) {
+    // @mcp-ui/server createUIResource returns { type: "resource", resource: {...} }
+    // We can use it directly since it already has the correct structure
+    baseResponse.result.content.unshift(uiResource as {
+      type: 'resource';
+      resource: {
+        uri: string;
+        mimeType: string;
+        text: string;
+      };
+    });
+  }
+
+  return baseResponse;
+}
+
+// Simplified tool definitions - flat schemas for Gemini API compatibility
 const tools: MCPTool[] = [
   {
     name: 'create_goal',
@@ -155,113 +178,57 @@ const tools: MCPTool[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        name: { type: 'string' },
-        description: { type: 'string' },
+        goal: { type: 'string' },
       },
-      required: ['name'],
+      required: ['goal'],
     },
   },
   {
-    name: 'update_goal',
+    name: 'clear_goal',
     description:
-      'Update the current goal and return the final state. Use when the goal changes or progresses.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        updates: {
-          type: 'object',
-          properties: {
-            name: { type: 'string' },
-            description: { type: 'string' },
-            status: { type: 'string', enum: ['active', 'completed', 'paused'] },
-          },
-        },
-      },
-      required: ['updates'],
-    },
-  },
-  {
-    name: 'add_todo',
-    description:
-      'Add a todo item to the goal. Use to break down a goal into actionable steps, especially for multi-step tasks.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        name: { type: 'string' },
-        description: { type: 'string' },
-      },
-      required: ['name'],
-    },
-  },
-  {
-    name: 'update_todo',
-    description:
-      'Update a todo item and return the final state. Use to track progress or revise steps in a complex workflow.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        todoId: { type: 'number' },
-        updates: {
-          type: 'object',
-          properties: {
-            name: { type: 'string' },
-            description: { type: 'string' },
-            status: {
-              type: 'string',
-              enum: ['pending', 'in_progress', 'completed'],
-            },
-          },
-        },
-      },
-      required: ['todoId', 'updates'],
-    },
-  },
-  {
-    name: 'list_todos',
-    description:
-      'List all current todo items. Use to review tasks, especially when managing multiple steps.',
+      'Clear the current goal. Use when finishing or abandoning the current goal.',
     inputSchema: {
       type: 'object',
       properties: {},
     },
   },
   {
-    name: 'add_observation',
+    name: 'add_todo',
     description:
-      'Record important facts and observations discovered during work or planning. Use to capture key insights in complex tasks (max 10).',
+      'Add a todo item to the goal. Use to break down a goal into actionable steps.',
     inputSchema: {
       type: 'object',
       properties: {
-        content: { type: 'string' },
-        tags: { type: 'array', items: { type: 'string' } },
+        name: { type: 'string' },
       },
-      required: ['content'],
+      required: ['name'],
     },
   },
   {
-    name: 'sequential_thinking',
+    name: 'toggle_todo',
     description:
-      'Record step-by-step thoughts for complex problem solving, tracking each stage of reasoning. Use when a task requires multiple reasoning steps.',
+      'Toggle a todo between pending and completed status using its index.',
     inputSchema: {
       type: 'object',
       properties: {
-        thought: { type: 'string' },
-        thoughtNumber: { type: 'number' },
-        totalThoughts: { type: 'number' },
-        nextThoughtNeeded: { type: 'boolean' },
+        index: { type: 'number' },
       },
-      required: [
-        'thought',
-        'thoughtNumber',
-        'totalThoughts',
-        'nextThoughtNeeded',
-      ],
+      required: ['index'],
+    },
+  },
+  {
+    name: 'clear_todos',
+    description:
+      'Clear all todo items. Use when resetting or finishing all tasks.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
     },
   },
   {
     name: 'clear_session',
     description:
-      'Clear all session state (goal, todos, observations, and sequential thinking). Use to reset everything and start fresh.',
+      'Clear all session state (goal and todos). Use to reset everything and start fresh.',
     inputSchema: {
       type: 'object',
       properties: {},
@@ -271,68 +238,53 @@ const tools: MCPTool[] = [
 
 const planningServer: WebMCPServer = {
   name: 'planning-server',
-  version: '1.0.0',
+  version: '2.0.0',
   description:
-    'Ephemeral planning, thinking, and goal management for AI agents',
+    'Simplified ephemeral planning and goal management for AI agents with Gemini API compatibility',
   tools,
   async callTool(name: string, args: unknown): Promise<MCPResponse> {
     const typedArgs = args as Record<string, unknown>;
     switch (name) {
-      case 'create_goal':
-        return normalizeToolResult(
-          state.createGoal(
-            typedArgs.name as string,
-            typedArgs.description as string,
-          ),
-          'create_goal',
+      case 'create_goal': {
+        const result = state.createGoal(typedArgs.goal as string);
+        const uiResource = createGoalTodosUIResource(
+          state.getGoal(),
+          state.getTodos(),
         );
-      case 'update_goal':
-        return normalizeToolResult(
-          state.updateGoal(
-            typedArgs.updates as Partial<
-              Pick<Goal, 'name' | 'description' | 'status'>
-            >,
-          ),
-          'update_goal',
+        return normalizeToolResultWithUI(result, 'create_goal', uiResource);
+      }
+      case 'clear_goal': {
+        const result = state.clearGoal();
+        const uiResource = createGoalTodosUIResource(
+          state.getGoal(),
+          state.getTodos(),
         );
-      case 'add_todo':
-        return normalizeToolResult(
-          state.addTodo(
-            typedArgs.name as string,
-            typedArgs.description as string,
-          ),
-          'add_todo',
+        return normalizeToolResultWithUI(result, 'clear_goal', uiResource);
+      }
+      case 'add_todo': {
+        const result = state.addTodo(typedArgs.name as string);
+        const uiResource = createGoalTodosUIResource(
+          state.getGoal(),
+          state.getTodos(),
         );
-      case 'update_todo':
-        return normalizeToolResult(
-          state.updateTodo(
-            typedArgs.todoId as number,
-            typedArgs.updates as Partial<
-              Pick<Todo, 'name' | 'description' | 'status'>
-            >,
-          ),
-          'update_todo',
+        return normalizeToolResultWithUI(result, 'add_todo', uiResource);
+      }
+      case 'toggle_todo': {
+        const result = state.toggleTodo(typedArgs.index as number);
+        const uiResource = createGoalTodosUIResource(
+          state.getGoal(),
+          state.getTodos(),
         );
-      case 'list_todos':
-        return normalizeToolResult(state.listTodos(), 'list_todos');
-      case 'add_observation':
-        return normalizeToolResult(
-          state.addObservation(
-            typedArgs.content as string,
-            typedArgs.tags as string[],
-          ),
-          'add_observation',
+        return normalizeToolResultWithUI(result, 'toggle_todo', uiResource);
+      }
+      case 'clear_todos': {
+        const result = state.clearTodos();
+        const uiResource = createGoalTodosUIResource(
+          state.getGoal(),
+          state.getTodos(),
         );
-      case 'sequential_thinking':
-        return normalizeToolResult(
-          state.addSequentialThinking(
-            typedArgs.thought as string,
-            typedArgs.thoughtNumber as number,
-            typedArgs.totalThoughts as number,
-            typedArgs.nextThoughtNeeded as boolean,
-          ),
-          'sequential_thinking',
-        );
+        return normalizeToolResultWithUI(result, 'clear_todos', uiResource);
+      }
       case 'clear_session':
         state.clear();
         return normalizeToolResult({ success: true }, 'clear_session');
@@ -342,35 +294,23 @@ const planningServer: WebMCPServer = {
   },
   async getServiceContext(): Promise<string> {
     const goal = state.getGoal();
-    const todos = state.listTodos();
-    const observations = state.getObservations();
-    const sequentialThinking = state.getSequentialThinking();
+    const todos = state.getTodos();
 
-    const goalText = goal ? `Current Goal: ${goal.name}` : 'No active goal';
+    const goalText = goal ? `Current Goal: ${goal}` : 'No active goal';
     const activeTodos = todos.filter((t) => t.status !== 'completed');
     const todosText =
       activeTodos.length > 0
         ? `Active Todos: ${activeTodos.map((t) => t.name).join(', ')}`
         : 'No active todos';
-    const observationsText =
-      observations.length > 0
-        ? `Observations: ${observations.map((o) => o.content.substring(0, 50) + '...').join('; ')}`
-        : 'No observations';
-    const thinkingText =
-      sequentialThinking.length > 0
-        ? `Sequential Thinking: ${sequentialThinking[sequentialThinking.length - 1].thought.substring(0, 50)}...`
-        : 'No sequential thinking';
 
     return `
 # Instruction
-You have memory limitations (Context Window). For complex or long-term tasks, record and manage your goals, actionable steps, important facts, and reasoning processes.
-Organize and update your objectives, break down tasks, capture key insights, and track your thought process as needed.
+You have memory limitations (Context Window). For complex or long-term tasks, record and manage your goals and actionable steps.
+Organize and update your objectives, break down tasks as needed.
 
 # Context Information
 ${goalText}
 ${todosText}
-${observationsText}
-${thinkingText}
 
 # Prompt
 Based on the current situation, determine and suggest the next appropriate action to progress toward your objectives.
