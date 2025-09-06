@@ -14,19 +14,19 @@ get_tauri_log_path() {
     fi
 }
 
-# Fallback to standard dirs crate paths (matching the new backend implementation)
+# Fallback to standard dirs crate paths (matching Tauri log plugin implementation)
 if [[ "$OSTYPE" == "darwin"* ]]; then
-    # macOS - using dirs::data_dir() equivalent
-    DEFAULT_SRC="$HOME/Library/Application Support/com.synaptic-flow.app/logs/synaptic-flow.log"
+    # macOS - using Tauri log plugin path
+    DEFAULT_SRC="$HOME/Library/Application Support/com.fritzprix.synapticflow/logs/synaptic-flow.log"
 elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    # Linux - using dirs::data_dir() equivalent  
-    DEFAULT_SRC="$HOME/.local/share/com.synaptic-flow.app/logs/synaptic-flow.log"
+    # Linux - using Tauri log plugin path  
+    DEFAULT_SRC="$HOME/.local/share/com.fritzprix.synapticflow/logs/synaptic-flow.log"
 elif [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
-    # Windows - using dirs::data_dir() equivalent
-    DEFAULT_SRC="$APPDATA/com.synaptic-flow.app/logs/synaptic-flow.log"
+    # Windows - using Tauri log plugin path
+    DEFAULT_SRC="$APPDATA/com.fritzprix.synapticflow/logs/synaptic-flow.log"
 else
     # Unknown OS, try Linux path as fallback
-    DEFAULT_SRC="$HOME/.local/share/com.synaptic-flow.app/logs/synaptic-flow.log"
+    DEFAULT_SRC="$HOME/.local/share/com.fritzprix.synapticflow/logs/synaptic-flow.log"
 fi
 
 SRC="${2:-$DEFAULT_SRC}"

@@ -3,6 +3,7 @@ import { Message } from '@/models/chat';
 import { BaseBubble } from '@/components/ui/BaseBubble';
 import { JsonViewer } from '@/components/ui/JsonViewer';
 import MessageRenderer from '@/components/MessageRenderer';
+import { separateContent } from '@/lib/content-utils';
 
 interface ToolOutputBubbleProps {
   message: Message;
@@ -15,22 +16,34 @@ export const ToolOutputBubble: React.FC<ToolOutputBubbleProps> = ({
 }) => {
   const { content } = message;
 
-  // If content is MCPContent array, use MessageRenderer directly
+  // If content is MCPContent array, separate UI and text content
   if (Array.isArray(content)) {
+    const { uiContent, textContent } = separateContent(content);
+
     return (
-      <BaseBubble
-        title="Tool Output"
-        badge={
-          <span className="px-2 py-1 bg-primary text-primary-foreground text-xs rounded-full">
-            MCP
-          </span>
-        }
-        defaultExpanded={defaultExpanded}
-        copyData={JSON.stringify(content, null, 2)}
-        collapsedSummary={<span>{content.length} content items</span>}
-      >
-        <MessageRenderer content={content} className="text-sm" />
-      </BaseBubble>
+      <div className="space-y-4">
+        {/* UI Resource is always displayed */}
+        {uiContent.length > 0 && (
+          <MessageRenderer content={uiContent} className="text-sm" />
+        )}
+
+        {/* Text is collapsible */}
+        {textContent.length > 0 && (
+          <BaseBubble
+            title="Tool Output Details"
+            badge={
+              <span className="px-2 py-1 bg-primary text-primary-foreground text-xs rounded-full">
+                MCP
+              </span>
+            }
+            defaultExpanded={defaultExpanded}
+            copyData={JSON.stringify(textContent, null, 2)}
+            collapsedSummary={<span>{textContent.length} content items</span>}
+          >
+            <MessageRenderer content={textContent} className="text-sm" />
+          </BaseBubble>
+        )}
+      </div>
     );
   }
 
