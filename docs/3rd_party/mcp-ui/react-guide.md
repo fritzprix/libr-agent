@@ -12,17 +12,17 @@ npm i @mcp-ui/client
 
 ## Rendering Remote DOM Resources
 
-This example shows how to render a `remoteDom` resource. This requires a `remoteElements` and `componentLibrary` (minimal default provided)  to be passed to the `UIResourceRenderer`.
+This example shows how to render a `remoteDom` resource. This requires a `remoteElements` and `componentLibrary` (minimal default provided) to be passed to the `UIResourceRenderer`.
 
 ```tsx
 import React, { useState } from 'react';
-import { 
-  UIResourceRenderer, 
+import {
+  UIResourceRenderer,
   UIActionResult,
   basicComponentLibrary,
   remoteTextDefinition,
   remoteButtonDefinition,
-  isUIResource
+  isUIResource,
 } from '@mcp-ui/client';
 
 const remoteDomScript = `
@@ -49,7 +49,10 @@ const AppWithRemoteDOM: React.FC = () => {
 
   const handleGenericMcpAction = async (result: UIActionResult) => {
     if (result.type === 'tool') {
-      setLastAction({ tool: result.payload.toolName, params: result.payload.params });
+      setLastAction({
+        tool: result.payload.toolName,
+        params: result.payload.params,
+      });
     }
     return { status: 'Action handled' };
   };
@@ -79,13 +82,13 @@ const AppWithRemoteDOM: React.FC = () => {
 
 ```tsx
 import React, { useState } from 'react';
-import { 
-  UIResourceRenderer, 
+import {
+  UIResourceRenderer,
   UIActionResult,
   basicComponentLibrary,
   remoteTextDefinition,
   remoteButtonDefinition,
-  isUIResource
+  isUIResource,
 } from '@mcp-ui/client';
 
 // Simulate fetching an MCP UI resource
@@ -133,7 +136,8 @@ const fetchMcpResource = async (id: string): Promise<any> => {
       type: 'resource',
       resource: {
         uri: 'ui://remote-component/action-button',
-        mimeType: 'application/vnd.mcp-ui.remote-dom+javascript; framework=react',
+        mimeType:
+          'application/vnd.mcp-ui.remote-dom+javascript; framework=react',
         text: remoteDomScript,
       },
     };
@@ -142,9 +146,7 @@ const fetchMcpResource = async (id: string): Promise<any> => {
 };
 
 const App: React.FC = () => {
-  const [uiResource, setUIResource] = useState<UIResource | null>(
-    null,
-  );
+  const [uiResource, setUIResource] = useState<UIResource | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastAction, setLastAction] = useState<any>(null);
@@ -164,8 +166,14 @@ const App: React.FC = () => {
 
   const handleGenericMcpAction = async (result: UIActionResult) => {
     if (result.type === 'tool') {
-      console.log(`Action received in host app - Tool: ${result.payload.toolName}, Params:`, result.payload.params);
-      setLastAction({ tool: result.payload.toolName, params: result.payload.params });
+      console.log(
+        `Action received in host app - Tool: ${result.payload.toolName}, Params:`,
+        result.payload.params,
+      );
+      setLastAction({
+        tool: result.payload.toolName,
+        params: result.payload.params,
+      });
     } else if (result.type === 'prompt') {
       console.log(`Prompt received in host app:`, result.payload.prompt);
       setLastAction({ prompt: result.payload.prompt });
@@ -187,18 +195,12 @@ const App: React.FC = () => {
   return (
     <div>
       <h1>MCP-UI Client Demo</h1>
-      <button onClick={() => loadResource('raw')}>
-        Load raw HTML (Text)
-      </button>
-      <button onClick={() => loadResource('blob')}>
-        Load raw HTML (Blob)
-      </button>
+      <button onClick={() => loadResource('raw')}>Load raw HTML (Text)</button>
+      <button onClick={() => loadResource('blob')}>Load raw HTML (Blob)</button>
       <button onClick={() => loadResource('external')}>
         Load External App (URL)
       </button>
-      <button onClick={() => loadResource('remote')}>
-        Load Remote DOM
-      </button>
+      <button onClick={() => loadResource('remote')}>Load Remote DOM</button>
 
       {loading && <p>Loading resource...</p>}
       {error && <p style={{ color: 'red' }}>Error: {error}</p>}
@@ -249,14 +251,14 @@ function ResourceList({ mcpResponses }) {
           return (
             <div key={index}>
               <h3>UI Resource: {response.resource.uri}</h3>
-              <UIResourceRenderer 
-                resource={response.resource} 
+              <UIResourceRenderer
+                resource={response.resource}
                 onUIAction={handleAction}
               />
             </div>
           );
         }
-        
+
         // Handle other response types
         return (
           <div key={index}>
@@ -270,8 +272,9 @@ function ResourceList({ mcpResponses }) {
 ```
 
 This is equivalent to the manual check:
+
 ```typescript
-response.type === 'resource' && response.resource.uri?.startsWith('ui://')
+response.type === 'resource' && response.resource.uri?.startsWith('ui://');
 ```
 
 But provides better type safety and is more concise.
@@ -288,12 +291,11 @@ When an action from the iframe requires asynchronous processing on the host, the
 2.  **Host Acknowledgment**: The `UIResourceRenderer` automatically sends a `ui-message-received` message back to the iframe to acknowledge receipt.
 3.  **Host Processing**: The `onUIAction` function provided to the renderer is executed. This function can be `async` and performs the long-running task.
 4.  **Host Response**:
-    *   If the `onUIAction` promise resolves, `UIResourceRenderer` sends a `ui-message-response` with the resolved value as the `response`.
-    *   If the `onUIAction` promise rejects (throws an error), it sends a `ui-message-response` with the error details as the `error`.
+    - If the `onUIAction` promise resolves, `UIResourceRenderer` sends a `ui-message-response` with the resolved value as the `response`.
+    - If the `onUIAction` promise rejects (throws an error), it sends a `ui-message-response` with the error details as the `error`.
 5.  **Iframe Updates**: The iframe listens for these messages and updates its UI accordingly.
 
 ### Example
-
 
 #### 1. In the iframe: Initiating the request
 
@@ -320,23 +322,23 @@ function makeRequest() {
   // Send the request to the host.
   window.parent.postMessage(
     {
-      type: "ui-request-data",
+      type: 'ui-request-data',
       messageId,
       payload: {
-        requestType: "get-payment-methods",
+        requestType: 'get-payment-methods',
         params: {
           // any params needed for the request
         },
       },
     },
-    "*"
+    '*',
   );
 
   // You can update the UI to a loading state here.
 }
 
 // Example: trigger the request on a button click.
-button.addEventListener("click", makeRequest);
+button.addEventListener('click', makeRequest);
 ```
 
 #### 2. In the host: Receiving and processing the request
@@ -344,23 +346,23 @@ button.addEventListener("click", makeRequest);
 The host listens for messages from the iframe. When it receives a request with a `messageId`, it can optionally send an acknowledgment and then starts the asynchronous work.
 
 ```typescript
-window.addEventListener("message", async (event) => {
+window.addEventListener('message', async (event) => {
   const { type, messageId, payload } = event.data;
 
   // Acknowledge receipt of the message
   if (messageId && event.source) {
     (event.source as Window).postMessage(
       {
-        type: "ui-message-received",
+        type: 'ui-message-received',
         messageId: messageId,
       },
-      { targetOrigin: "*" }
+      { targetOrigin: '*' },
     );
   }
 
-  if (type === "ui-request-data") {
+  if (type === 'ui-request-data') {
     const { requestType, params } = payload;
-    if (requestType === "get-payment-methods") {
+    if (requestType === 'get-payment-methods') {
       try {
         // 3. Perform the async operation
         const paymentMethods = await fetchPaymentMethods(params);
@@ -369,11 +371,11 @@ window.addEventListener("message", async (event) => {
         if (event.source) {
           (event.source as Window).postMessage(
             {
-              type: "ui-message-response",
+              type: 'ui-message-response',
               messageId: messageId,
               payload: { response: { paymentMethods } },
             },
-            { targetOrigin: "*" }
+            { targetOrigin: '*' },
           );
         }
       } catch (error) {
@@ -381,11 +383,11 @@ window.addEventListener("message", async (event) => {
         if (event.source) {
           (event.source as Window).postMessage(
             {
-              type: "ui-message-response",
+              type: 'ui-message-response',
               messageId: messageId,
               payload: { error },
             },
-            { targetOrigin: "*" }
+            { targetOrigin: '*' },
           );
         }
       }
@@ -399,7 +401,7 @@ window.addEventListener("message", async (event) => {
 The iframe needs a listener to handle messages from the host. It can use the `messageId` to match responses to the original requests.
 
 ```typescript
-window.addEventListener("message", (event) => {
+window.addEventListener('message', (event) => {
   const { type, messageId, payload } = event.data;
 
   // Check if it's a response to a request we're waiting for.
@@ -407,27 +409,26 @@ window.addEventListener("message", (event) => {
     return;
   }
 
-  if (type === "ui-message-received") {
+  if (type === 'ui-message-received') {
     // The host has acknowledged the request. You can update the UI.
     console.log(`Request ${messageId} is being processed...`);
     // e.g., show a more specific loading indicator.
   }
 
-  if (type === "ui-message-response") {
+  if (type === 'ui-message-response') {
     const { response, error } = payload;
-    
+
     // Retrieve the original callback.
     const callback = requests.get(messageId);
     if (callback) {
       callback(response, error);
     }
-    
+
     // Clean up the request from the map.
     requests.delete(messageId);
   }
 });
 ```
-
 
 This pattern is crucial for building responsive and user-friendly UIs, especially when interacting with potentially slow backend operations.
 
@@ -487,17 +488,19 @@ const ThemeableApp: React.FC = () => {
         color: var(--text-color);
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       }
-    `
+    `,
   };
 
   return (
     <div style={{ padding: '20px' }}>
       <h1>Themed MCP-UI Example</h1>
-      
+
       {/* Theme switcher */}
       <div style={{ marginBottom: '20px' }}>
-        <button 
-          onClick={() => setCurrentTheme(currentTheme === 'light' ? 'dark' : 'light')}
+        <button
+          onClick={() =>
+            setCurrentTheme(currentTheme === 'light' ? 'dark' : 'light')
+          }
         >
           Switch to {currentTheme === 'light' ? 'Dark' : 'Light'} Theme
         </button>
@@ -515,9 +518,9 @@ const ThemeableApp: React.FC = () => {
               // You can pass any additional data your iframe needs
               additionalConfig: {
                 animations: true,
-                fontSize: '16px'
-              }
-            }
+                fontSize: '16px',
+              },
+            },
           }}
         />
       </div>
@@ -534,62 +537,62 @@ In your iframe's HTML content, implement the render data lifecycle:
 
 ```html
 <script>
-// In the iframe's script
-const urlParams = new URLSearchParams(window.location.search);
-if (urlParams.get("waitForRenderData") === "true") {
-  let customRenderData = null;
+  // In the iframe's script
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get("waitForRenderData") === "true") {
+    let customRenderData = null;
 
-  // The parent will send this message on load or when we notify it we're ready
-  window.addEventListener("message", (event) => {
-    // Add origin checks for security in production
-    if (event.data.type === "ui-lifecycle-iframe-render-data") {
-      // If the iframe has already received data, we don't need to do anything
-      if (customRenderData) {
-        return;
-      } else {
-        customRenderData = event.data.payload.renderData;
-        // Now you can render the UI with the received data
-        renderUI(customRenderData);
+    // The parent will send this message on load or when we notify it we're ready
+    window.addEventListener("message", (event) => {
+      // Add origin checks for security in production
+      if (event.data.type === "ui-lifecycle-iframe-render-data") {
+        // If the iframe has already received data, we don't need to do anything
+        if (customRenderData) {
+          return;
+        } else {
+          customRenderData = event.data.payload.renderData;
+          // Now you can render the UI with the received data
+          renderUI(customRenderData);
+        }
+      }
+    });
+
+    // We can let the parent know we're ready to receive data
+    window.parent.postMessage({ type: "ui-lifecycle-iframe-ready" }, "*");
+  } else {
+    // If the iframe doesn't need to wait for data, we can render the default UI immediately
+    renderUI();
+  }
+
+  function renderUI(renderData = null) {
+    const statusEl = document.getElementById('status');
+
+    if (renderData) {
+      // Apply custom CSS
+      if (renderData.customCss) {
+        const styleElement = document.createElement('style');
+        styleElement.textContent = renderData.customCss;
+        document.head.appendChild(styleElement);
+      }
+
+      // Use other render data
+      if (statusEl) {
+        statusEl.innerHTML = \\`
+          <strong>✅ Theme Applied!</strong><br>
+          Theme: \${renderData.theme || 'unknown'}<br>
+          Additional config: \${JSON.stringify(renderData.additionalConfig || {}, null, 2)}
+        \\`;
+      }
+
+      // You can access any custom data passed in iframeRenderData
+      console.log('Render data received:', renderData);
+    } else {
+      // Default rendering without theme data
+      if (statusEl) {
+        statusEl.innerHTML = '<em>No theme data received - using defaults</em>';
       }
     }
-  });
-  
-  // We can let the parent know we're ready to receive data
-  window.parent.postMessage({ type: "ui-lifecycle-iframe-ready" }, "*");
-} else {
-  // If the iframe doesn't need to wait for data, we can render the default UI immediately
-  renderUI();
-}
-
-function renderUI(renderData = null) {
-  const statusEl = document.getElementById('status');
-  
-  if (renderData) {
-    // Apply custom CSS
-    if (renderData.customCss) {
-      const styleElement = document.createElement('style');
-      styleElement.textContent = renderData.customCss;
-      document.head.appendChild(styleElement);
-    }
-    
-    // Use other render data
-    if (statusEl) {
-      statusEl.innerHTML = \\`
-        <strong>✅ Theme Applied!</strong><br>
-        Theme: \${renderData.theme || 'unknown'}<br>
-        Additional config: \${JSON.stringify(renderData.additionalConfig || {}, null, 2)}
-      \\`;
-    }
-    
-    // You can access any custom data passed in iframeRenderData
-    console.log('Render data received:', renderData);
-  } else {
-    // Default rendering without theme data
-    if (statusEl) {
-      statusEl.innerHTML = '<em>No theme data received - using defaults</em>';
-    }
   }
-}
 </script>
 ```
 
@@ -603,19 +606,19 @@ const advancedThemeData = {
     secondary: '#6c757d',
     success: '#28a745',
     warning: '#ffc107',
-    danger: '#dc3545'
+    danger: '#dc3545',
   },
   fonts: {
     heading: 'Georgia, serif',
     body: 'Arial, sans-serif',
-    mono: 'Monaco, monospace'
+    mono: 'Monaco, monospace',
   },
   spacing: {
     sm: '8px',
     md: '16px',
     lg: '24px',
-    xl: '32px'
-  }
+    xl: '32px',
+  },
 };
 
 // Pass to iframe
@@ -623,9 +626,9 @@ const advancedThemeData = {
   resource={resource}
   onUIAction={handleUIAction}
   htmlProps={{
-    iframeRenderData: { themeConfig: advancedThemeData }
+    iframeRenderData: { themeConfig: advancedThemeData },
   }}
-/>
+/>;
 ```
 
 ### Benefits of This Approach

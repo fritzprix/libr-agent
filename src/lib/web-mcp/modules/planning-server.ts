@@ -1,4 +1,4 @@
-import type { MCPTool, WebMCPServer, MCPResponse, MCPContent } from '@/lib/mcp-types';
+import type { MCPTool, WebMCPServer, MCPResponse } from '@/lib/mcp-types';
 import { normalizeToolResult } from '@/lib/mcp-types';
 import { createUIResource } from '@mcp-ui/server';
 
@@ -7,6 +7,8 @@ interface SimpleTodo {
   name: string;
   status: 'pending' | 'completed';
 }
+
+type PromptType = "options" | "text"
 
 class EphemeralState {
   private goal: string | null = null;
@@ -60,95 +62,162 @@ class EphemeralState {
 
 const state = new EphemeralState();
 
-/**
- * Generate HTML content for promptUser tool
- */
-function generatePromptHTML(params: {
+// Argument type for promptUser tool
+type PromptUserArgs = {
   question: string;
-  type: string;
+  type: PromptType;
   options?: string[];
-}): string {
-  const { question, type, options } = params;
+};
 
-  let inputSection = '';
-  switch (type) {
-    case 'yesno':
-      inputSection = `
-        <div style="margin-top: 16px;">
-          <button onclick="window.parent.postMessage({type: 'prompt', payload: {prompt: 'yes'}}, '*')" 
-                  style="margin-right: 12px; padding: 8px 16px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer;">
-            Yes
-          </button>
-          <button onclick="window.parent.postMessage({type: 'prompt', payload: {prompt: 'no'}}, '*')" 
-                  style="padding: 8px 16px; background: #6b7280; color: white; border: none; border-radius: 6px; cursor: pointer;">
-            No
-          </button>
-        </div>
-      `;
-      break;
-    case 'options':
-      if (options && options.length > 0) {
-        inputSection = `
-          <div style="margin-top: 16px;">
-            ${options
-              .map(
-                (option) => `
-              <button onclick="window.parent.postMessage({type: 'prompt', payload: {prompt: '${option}'}}, '*')" 
-                      style="display: block; width: 100%; margin-bottom: 8px; padding: 8px 16px; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 6px; cursor: pointer; text-align: left;">
-                ${option}
-              </button>
-            `,
-              )
-              .join('')}
-          </div>
-        `;
-      }
-      break;
-    case 'text':
-      inputSection = `
-        <div style="margin-top: 16px;">
-          <input type="text" id="textInput" placeholder="Type your response..." 
-                 style="width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; margin-bottom: 8px;">
-          <button onclick="
-                    const input = document.getElementById('textInput');
-                    if (input.value.trim()) {
-                      window.parent.postMessage({type: 'prompt', payload: {prompt: input.value}}, '*');
-                    }
-                  " 
-                  style="padding: 8px 16px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer;">
-            Submit
-          </button>
-        </div>
-      `;
-      break;
+/**
+ * Validate promptUser arguments
+ */
+function validatePromptUserArgs(args: Record<string, unknown>): PromptUserArgs {
+  if (!args.question || typeof args.question !== 'string') {
+    throw new Error('question is required and must be a string');
   }
 
-  return `
-    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 500px; margin: 0; padding: 20px; line-height: 1.5;">
-      <div style="margin-bottom: 16px; padding: 16px; background: #f8fafc; border-left: 4px solid #2563eb; border-radius: 6px;">
-        <h3 style="margin: 0 0 8px 0; color: #1e40af;">❓ User Input Required</h3>
-        <div style="color: #1f2937; font-size: 16px;">${question}</div>
-      </div>
-      ${inputSection}
-    </div>
-  `;
+  if (!args.type || typeof args.type !== 'string') {
+    throw new Error('type is required and must be a string');
+  }
+
+  const validTypes: PromptType[] = ['options', 'text'];
+  if (!validTypes.includes(args.type as PromptType)) {
+    throw new Error(`type must be one of: ${validTypes.join(', ')}`);
+  }
+
+  if (args.type === 'options') {
+    if (!args.options || !Array.isArray(args.options)) {
+      throw new Error('options array is required when type is "options"');
+    }
+    if (args.options.length === 0) {
+      throw new Error('options array cannot be empty');
+    }
+    if (!args.options.every((option) => typeof option === 'string')) {
+      throw new Error('all options must be strings');
+    }
+  }
+
+  return args as PromptUserArgs;
 }
 
 /**
- * Create UIResource for promptUser tool
+ * [NEW] Generate Remote DOM script for the promptUser tool.
+ * This script will be executed on the client-side to build the UI dynamically.
  */
-function createPromptUIResource(params: {
-  question: string;
-  type: string;
-  options?: string[];
-}) {
-  const htmlContent = generatePromptHTML(params);
+function generatePromptRemoteDomScript(params: PromptUserArgs): string {
+  // Safely serialize parameters to be embedded in the script string
+  const question = JSON.stringify(params.question);
+  const type = JSON.stringify(params.type);
+  const options = JSON.stringify(params.options || []);
+
+  return `
+    // Helper function to create an element with styles
+    function createElement(tag, styles, textContent) {
+      const el = document.createElement(tag);
+      if (textContent) el.textContent = textContent;
+      Object.assign(el.style, styles);
+      return el;
+    }
+
+    // Main container
+    const container = createElement('div', {
+      fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+      maxWidth: '500px',
+      margin: '0',
+      padding: '20px',
+      lineHeight: '1.5',
+    });
+
+    // Header section with the question
+    const header = createElement('div', {
+      marginBottom: '16px',
+      padding: '16px',
+      background: '#f8fafc',
+      borderLeft: '4px solid #2563eb',
+      borderRadius: '6px',
+    });
+
+    const title = createElement('h3', { margin: '0 0 8px 0', color: '#1e40af' }, '❓ User Input Required');
+    const questionDiv = createElement('div', { color: '#1f2937', fontSize: '16px' }, ${question});
+    
+    header.appendChild(title);
+    header.appendChild(questionDiv);
+    container.appendChild(header);
+    
+    // Input section that varies by type
+    const inputContainer = createElement('div', { marginTop: '16px' });
+    const typeValue = ${type};
+    const optionsValue = ${options};
+    
+    switch (typeValue) {
+      case 'yesno': {
+        const yesButton = createElement('button', {
+          marginRight: '12px', padding: '8px 16px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer'
+        }, 'Yes');
+        yesButton.addEventListener('click', () => window.parent.postMessage({ type: 'prompt', payload: { prompt: 'yes' } }, '*'));
+
+        const noButton = createElement('button', {
+          padding: '8px 16px', background: '#6b7280', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer'
+        }, 'No');
+        noButton.addEventListener('click', () => window.parent.postMessage({ type: 'prompt', payload: { prompt: 'no' } }, '*'));
+
+        inputContainer.appendChild(yesButton);
+        inputContainer.appendChild(noButton);
+        break;
+      }
+      case 'options': {
+        optionsValue.forEach(optionText => {
+          const optionButton = createElement('button', {
+            display: 'block', width: '100%', marginBottom: '8px', padding: '8px 16px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '6px', cursor: 'pointer', textAlign: 'left'
+          }, optionText);
+          optionButton.addEventListener('click', () => window.parent.postMessage({ type: 'prompt', payload: { prompt: optionText } }, '*'));
+          inputContainer.appendChild(optionButton);
+        });
+        break;
+      }
+      case 'text': {
+        const textInput = createElement('input', {
+          width: 'calc(100% - 24px)', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '6px', marginBottom: '8px'
+        });
+        textInput.type = 'text';
+        textInput.placeholder = 'Type your response...';
+        
+        const submitButton = createElement('button', {
+          padding: '8px 16px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer'
+        }, 'Submit');
+        submitButton.addEventListener('click', () => {
+          if (textInput.value.trim()) {
+            window.parent.postMessage({ type: 'prompt', payload: { prompt: textInput.value } }, '*');
+          }
+        });
+        
+        inputContainer.appendChild(textInput);
+        inputContainer.appendChild(submitButton);
+        break;
+      }
+    }
+    
+    container.appendChild(inputContainer);
+    // Attach the fully constructed UI to the root element provided by the client
+    root.appendChild(container);
+  `;
+}
+
+
+/**
+ * [MODIFIED] Create UIResource for promptUser tool using Remote DOM.
+ */
+function createPromptUIResource(params: PromptUserArgs) {
+  // Generate the JavaScript script instead of HTML
+  const remoteDomScript = generatePromptRemoteDomScript(params);
 
   return createUIResource({
     uri: `ui://prompt/${Date.now()}`,
     content: {
-      type: 'rawHtml',
-      htmlString: htmlContent,
+      type: 'remoteDom', // Use 'remoteDom' type
+      script: remoteDomScript, // Pass the script content
+      framework: 'webcomponents', // Indicates vanilla JS, no framework needed
     },
     encoding: 'text',
   });
@@ -156,77 +225,45 @@ function createPromptUIResource(params: {
 
 // Simplified tool definitions - flat schemas for Gemini API compatibility
 const tools: MCPTool[] = [
+    // ... (other tools remain the same) ...
   {
     name: 'create_goal',
-    description:
-      'Create a single goal for the session. Use when starting a new or complex task.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        goal: { type: 'string' },
-      },
-      required: ['goal'],
-    },
+    description: 'Create a single goal for the session. Use when starting a new or complex task.',
+    inputSchema: { type: 'object', properties: { goal: { type: 'string' } }, required: ['goal'] },
   },
   {
     name: 'clear_goal',
-    description:
-      'Clear the current goal. Use when finishing or abandoning the current goal.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-    },
+    description: 'Clear the current goal. Use when finishing or abandoning the current goal.',
+    inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'add_todo',
-    description:
-      'Add a todo item to the goal. Use to break down a goal into actionable steps.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        name: { type: 'string' },
-      },
-      required: ['name'],
-    },
+    description: 'Add a todo item to the goal. Use to break down a goal into actionable steps.',
+    inputSchema: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] },
   },
   {
     name: 'toggle_todo',
-    description:
-      'Toggle a todo between pending and completed status using its index.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        index: { type: 'number' },
-      },
-      required: ['index'],
-    },
+    description: 'Toggle a todo between pending and completed status using its index.',
+    inputSchema: { type: 'object', properties: { index: { type: 'number' } }, required: ['index'] },
   },
   {
     name: 'clear_todos',
-    description:
-      'Clear all todo items. Use when resetting or finishing all tasks.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-    },
+    description: 'Clear all todo items. Use when resetting or finishing all tasks.',
+    inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'clear_session',
-    description:
-      'Clear all session state (goal and todos). Use to reset everything and start fresh.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-    },
+    description: 'Clear all session state (goal and todos). Use to reset everything and start fresh.',
+    inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'promptUser',
-    description:
-      'Ask the user for additional information during task execution',
+    description: 'Ask the user for additional information during task execution',
     inputSchema: {
       type: 'object',
       properties: {
         question: { type: 'string' },
+        // [MODIFIED] Added 'yesno' to the schema to match implementation
         type: { type: 'string', enum: ['yesno', 'options', 'text'] },
         options: { type: 'array', items: { type: 'string' } },
       },
@@ -238,12 +275,12 @@ const tools: MCPTool[] = [
 const planningServer: WebMCPServer = {
   name: 'planning-server',
   version: '2.0.0',
-  description:
-    'Simplified ephemeral planning and goal management for AI agents with Gemini API compatibility',
+  description: 'Simplified ephemeral planning and goal management for AI agents with Gemini API compatibility',
   tools,
   async callTool(name: string, args: unknown): Promise<MCPResponse> {
     const typedArgs = args as Record<string, unknown>;
     switch (name) {
+      // ... (other tool cases remain the same) ...
       case 'create_goal': {
         const result = state.createGoal(typedArgs.goal as string);
         return normalizeToolResult(`Goal created: "${result}"`, 'create_goal');
@@ -289,29 +326,15 @@ const planningServer: WebMCPServer = {
         state.clear();
         return normalizeToolResult('Session state cleared', 'clear_session');
       case 'promptUser': {
-        const params = typedArgs as {
-          question: string;
-          type: string;
-          options?: string[];
-        };
-        const uiResource: MCPContent  = createPromptUIResource(params);
-        
+        // This part remains the same, but it now calls the new remote-dom functions
+        const params = validatePromptUserArgs(typedArgs);
+        const uiResource = createPromptUIResource(params);
         const baseResponse = normalizeToolResult(
-          {
-            success: true,
-            question: params.question,
-            type: params.type,
-            options: params.options,
-          },
+          { success: true, ...params },
           'promptUser',
         );
 
-        if (baseResponse.result?.content) {
-          baseResponse.result.content.unshift(
-            uiResource
-          );
-        }
-
+        baseResponse.result?.content?.unshift(uiResource);
         return baseResponse;
       }
       default:

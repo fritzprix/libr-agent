@@ -17,9 +17,7 @@ npm i @mcp-ui/server
 The core function is `createUIResource`.
 
 ```typescript
-import {
-  createUIResource,
-} from '@mcp-ui/server';
+import { createUIResource } from '@mcp-ui/server';
 
 // Using a shared enum value (just for demonstration)
 console.log('Shared Enum from server usage:', PlaceholderEnum.FOO);
@@ -149,17 +147,23 @@ import { createUIResource } from '@mcp-ui/server';
 // Example 7: Using standard metadata
 const resourceWithMetadata = createUIResource({
   uri: 'ui://analytics/dashboard',
-  content: { type: 'rawHtml', htmlString: '<div id="dashboard">Loading...</div>' },
+  content: {
+    type: 'rawHtml',
+    htmlString: '<div id="dashboard">Loading...</div>',
+  },
   encoding: 'text',
   metadata: {
     title: 'Analytics Dashboard',
     description: 'Real-time analytics and metrics',
     created: '2024-01-15T10:00:00Z',
     author: 'Analytics Team',
-    preferredRenderContext: 'sidebar'
-  }
+    preferredRenderContext: 'sidebar',
+  },
 });
-console.log('Resource with metadata:', JSON.stringify(resourceWithMetadata, null, 2));
+console.log(
+  'Resource with metadata:',
+  JSON.stringify(resourceWithMetadata, null, 2),
+);
 /* Output includes:
 {
   "type": "resource",
@@ -181,18 +185,24 @@ console.log('Resource with metadata:', JSON.stringify(resourceWithMetadata, null
 // Example 8: Using uiMetadata for client-side configuration
 const resourceWithUIMetadata = createUIResource({
   uri: 'ui://chart/interactive',
-  content: { type: 'externalUrl', iframeUrl: 'https://charts.example.com/widget' },
+  content: {
+    type: 'externalUrl',
+    iframeUrl: 'https://charts.example.com/widget',
+  },
   encoding: 'text',
   uiMetadata: {
     'preferred-frame-size': ['800px', '600px'],
-    'initial-render-data': { 
-      theme: 'dark', 
+    'initial-render-data': {
+      theme: 'dark',
       chartType: 'bar',
-      dataSet: 'quarterly-sales' 
+      dataSet: 'quarterly-sales',
     },
-  }
+  },
 });
-console.log('Resource with UI metadata:', JSON.stringify(resourceWithUIMetadata, null, 2));
+console.log(
+  'Resource with UI metadata:',
+  JSON.stringify(resourceWithUIMetadata, null, 2),
+);
 /* Output includes:
 {
   "type": "resource",
@@ -220,11 +230,14 @@ const resourceWithProps = createUIResource({
   resourceProps: {
     annotations: {
       audience: ['developers', 'admins'],
-      priority: 'high'
-    }
-  }
+      priority: 'high',
+    },
+  },
 });
-console.log('Resource with additional props:', JSON.stringify(resourceWithProps, null, 2));
+console.log(
+  'Resource with additional props:',
+  JSON.stringify(resourceWithProps, null, 2),
+);
 /* Output includes:
 {
   "type": "resource",
@@ -244,7 +257,7 @@ console.log('Resource with additional props:', JSON.stringify(resourceWithProps,
 ### Metadata Best Practices
 
 - **Use `metadata` for standard MCP resource information** like titles, descriptions, timestamps, and authorship
-- **Use `uiMetadata` for client rendering hints** like preferred sizes, initial data, and context preferences  
+- **Use `uiMetadata` for client rendering hints** like preferred sizes, initial data, and context preferences
 - **Use `resourceProps` for MCP specification properties** like annotations, descriptions at the resource level, and other standard fields
 
 ## Advanced URI List Example

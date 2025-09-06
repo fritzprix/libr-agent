@@ -7,7 +7,7 @@
  * 참조: https://modelcontextprotocol.io/
  */
 
-import { UIResource } from "@mcp-ui/server";
+import { UIResource } from '@mcp-ui/server';
 
 // ========================================
 // 🔧 JSON Schema Types (MCP 사양 준수)
@@ -119,9 +119,8 @@ export interface MCPResourceLinkContent {
   annotations?: Record<string, unknown>;
 }
 
-
 // 통합된 Resource content type (기존 두 타입을 하나로 병합)
-type MCPResourceContent = UIResource
+type MCPResourceContent = UIResource;
 
 export type MCPContent =
   | MCPTextContent

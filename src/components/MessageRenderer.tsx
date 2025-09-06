@@ -2,7 +2,14 @@ import React, { useCallback } from 'react';
 import type { MCPContent } from '@/lib/mcp-types';
 import { useRustBackend } from '@/hooks/use-rust-backend';
 import { getLogger } from '@/lib/logger';
-import { basicComponentLibrary, UIResourceRenderer, UIActionResult } from '@mcp-ui/client';
+import {
+  basicComponentLibrary,
+  UIResourceRenderer,
+  UIActionResult,
+  remoteButtonDefinition,
+  remoteTextDefinition,
+  remoteCardDefinition,
+} from '@mcp-ui/client';
 import { useUnifiedMCP } from '@/hooks/use-unified-mcp';
 import { createId } from '@paralleldrive/cuid2';
 import { useChatContext } from '@/context/ChatContext';
@@ -28,7 +35,6 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
   const { submit } = useChatContext();
   const { getCurrentSession } = useSessionContext();
   const { getCurrent } = useAssistantContext();
-  const { theme } = useTheme();
 
   const handleLinkClick = async (e: React.MouseEvent, url: string) => {
     e.preventDefault();
@@ -183,15 +189,13 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
               </div>
             );
           case 'resource':
-            logger.info("resource : ", {resource : item.resource})
+            logger.info('resource : ', { resource: item.resource });
             return (
               <UIResourceRenderer
                 key={index}
                 remoteDomProps={{
-                  library: basicComponentLibrary
-                }}
-                htmlProps={{
-                  iframeRenderData: { theme }
+                  library: basicComponentLibrary,
+                  remoteElements: [remoteButtonDefinition, remoteTextDefinition, remoteCardDefinition ],
                 }}
                 onUIAction={handleUIAction}
                 supportedContentTypes={['remoteDom', 'rawHtml', 'externalUrl']}
