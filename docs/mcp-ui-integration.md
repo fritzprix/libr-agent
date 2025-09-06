@@ -398,7 +398,7 @@ const uiResource = createUIResource({
 
 ```typescript
 // Requires: npm install @remote-dom/core
-import { createRemoteComponent } from '@remote-dom/core';
+import { createUIResource } from '@mcp-ui/server';
 
 const remoteDomResource = createUIResource({
   uri: 'ui://remote-component/button',

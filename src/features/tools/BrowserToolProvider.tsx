@@ -3,6 +3,7 @@ import { useBuiltInTool, ServiceContextOptions } from '.';
 import { useBrowserInvoker } from '@/hooks/use-browser-invoker';
 import { useRustBackend } from '@/hooks/use-rust-backend';
 import { MCPResponse } from '@/lib/mcp-types';
+import { isMCPResponse, createMCPTextResponse } from '@/lib/mcp-response-utils';
 import { getLogger } from '@/lib/logger';
 import { listBrowserSessions, BrowserSession } from '@/lib/rust-backend-client';
 import { ToolCall } from '@/models/chat';
@@ -152,21 +153,16 @@ export function BrowserToolProvider() {
           }
         }
 
-        return {
-          jsonrpc: '2.0',
-          id: toolCall.id,
-          result: {
-            content: [
-              {
-                type: 'text',
-                text:
-                  typeof result === 'string'
-                    ? result
-                    : JSON.stringify(result, null, 2),
-              },
-            ],
-          },
-        };
+        // Check if result is already an MCPResponse, return it directly with correct ID
+        if (isMCPResponse(result)) {
+          return { ...result, id: toolCall.id };
+        }
+
+        // Fallback for legacy tools that don't return MCPResponse
+        return createMCPTextResponse(
+          typeof result === 'string' ? result : JSON.stringify(result, null, 2),
+          toolCall.id,
+        );
       },
       getServiceContext: async (
         options?: ServiceContextOptions,

@@ -75,11 +75,11 @@ function generatePromptHTML(params: {
     case 'yesno':
       inputSection = `
         <div style="margin-top: 16px;">
-          <button onclick="window.parent.postMessage({type: 'ui_action', action: {type: 'prompt', payload: {prompt: 'yes'}}}, '*')" 
+          <button onclick="window.parent.postMessage({type: 'prompt', payload: {prompt: 'yes'}}, '*')" 
                   style="margin-right: 12px; padding: 8px 16px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer;">
             Yes
           </button>
-          <button onclick="window.parent.postMessage({type: 'ui_action', action: {type: 'prompt', payload: {prompt: 'no'}}}, '*')" 
+          <button onclick="window.parent.postMessage({type: 'prompt', payload: {prompt: 'no'}}, '*')" 
                   style="padding: 8px 16px; background: #6b7280; color: white; border: none; border-radius: 6px; cursor: pointer;">
             No
           </button>
@@ -93,7 +93,7 @@ function generatePromptHTML(params: {
             ${options
               .map(
                 (option) => `
-              <button onclick="window.parent.postMessage({type: 'ui_action', action: {type: 'prompt', payload: {prompt: '${option}'}}}, '*')" 
+              <button onclick="window.parent.postMessage({type: 'prompt', payload: {prompt: '${option}'}}, '*')" 
                       style="display: block; width: 100%; margin-bottom: 8px; padding: 8px 16px; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 6px; cursor: pointer; text-align: left;">
                 ${option}
               </button>
@@ -112,7 +112,7 @@ function generatePromptHTML(params: {
           <button onclick="
                     const input = document.getElementById('textInput');
                     if (input.value.trim()) {
-                      window.parent.postMessage({type: 'ui_action', action: {type: 'prompt', payload: {prompt: input.value}}}, '*');
+                      window.parent.postMessage({type: 'prompt', payload: {prompt: input.value}}, '*');
                     }
                   " 
                   style="padding: 8px 16px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer;">

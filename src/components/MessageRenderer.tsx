@@ -1,8 +1,16 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import type { MCPContent } from '@/lib/mcp-types';
-import UIResourceRenderer from './ui/UIResourceRenderer';
 import { useRustBackend } from '@/hooks/use-rust-backend';
 import { getLogger } from '@/lib/logger';
+import { UIResourceRenderer } from '@mcp-ui/client';
+import { UIActionResult } from '@mcp-ui/server';
+import { useUnifiedMCP } from '@/hooks/use-unified-mcp';
+import { createId } from '@paralleldrive/cuid2';
+import { useChatContext } from '@/context/ChatContext';
+import { useSessionContext } from '@/context/SessionContext';
+import { Message } from '@/models/chat';
+import { stringToMCPContentArray } from '@/lib/utils';
+import { useAssistantContext } from '@/context/AssistantContext';
 
 const logger = getLogger('MessageRenderer');
 
@@ -16,6 +24,10 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
   className = '',
 }) => {
   const { openExternalUrl } = useRustBackend();
+  const { executeToolCall } = useUnifiedMCP();
+  const { submit } = useChatContext();
+  const { getCurrentSession } = useSessionContext();
+  const { getCurrent } = useAssistantContext();
 
   const handleLinkClick = async (e: React.MouseEvent, url: string) => {
     e.preventDefault();
@@ -39,6 +51,126 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
     return <div className={`message-text ${className}`}>{content}</div>;
   }
 
+  const handleUIAction = useCallback(
+    async (result: UIActionResult) => {
+      logger.info('UI action received', {
+        type: result.type,
+        payload: result.payload,
+      });
+
+      const sessionId = getCurrentSession()?.id;
+      const assistantId = getCurrent()?.id;
+
+      if (!sessionId) {
+        logger.warn('No active session available for UI action');
+        return;
+      }
+
+      try {
+        switch (result.type) {
+          case 'tool': {
+            logger.info('Tool call requested from UI', {
+              toolName: result.payload.toolName,
+              params: result.payload.params,
+            });
+
+            await executeToolCall({
+              id: createId(),
+              type: 'function',
+              function: {
+                name: result.payload.toolName,
+                arguments: JSON.stringify(result.payload.params),
+              },
+            });
+            break;
+          }
+
+          case 'intent': {
+            logger.info('Intent requested from UI', {
+              intent: result.payload.intent,
+              params: result.payload.params,
+            });
+
+            // Intent를 자연어 프롬프트로 변환
+            const intentText = `User intent: ${result.payload.intent}`;
+            const paramsText = result.payload.params
+              ? `\nParameters: ${JSON.stringify(result.payload.params, null, 2)}`
+              : '';
+
+            const intentMessage: Message = {
+              id: createId(),
+              content: stringToMCPContentArray(intentText + paramsText),
+              role: 'user',
+              sessionId,
+              assistantId,
+            };
+
+            await submit([intentMessage]);
+            break;
+          }
+
+          case 'prompt': {
+            logger.info('User prompt requested from UI', {
+              prompt: result.payload.prompt,
+            });
+
+            const promptMessage: Message = {
+              id: createId(),
+              content: stringToMCPContentArray(result.payload.prompt),
+              role: 'user',
+              sessionId,
+              assistantId,
+            };
+
+            await submit([promptMessage]);
+            break;
+          }
+
+          case 'link': {
+            logger.info('External link requested from UI', {
+              url: result.payload.url,
+            });
+
+            await openExternalUrl(result.payload.url);
+            break;
+          }
+
+          case 'notify': {
+            logger.info('Notification requested from UI', {
+              message: result.payload.message,
+            });
+
+            // 알림을 시스템 메시지로 채팅에 추가
+            const notificationMessage: Message = {
+              id: createId(),
+              content: stringToMCPContentArray(`🔔 ${result.payload.message}`),
+              role: 'system',
+              sessionId,
+              assistantId,
+            };
+
+            await submit([notificationMessage]);
+            break;
+          }
+
+          default: {
+            logger.warn('Unknown UI action type', {
+              type: (result as { type: string }).type,
+              result,
+            });
+            break;
+          }
+        }
+      } catch (error) {
+        logger.error('Failed to handle UI action', {
+          type: result.type,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    },
+    [executeToolCall, handleLinkClick, submit, getCurrentSession, getCurrent],
+  );
+
   return (
     <div className={`message-content ${className}`}>
       {content.map((item, index) => {
@@ -53,6 +185,8 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
             return (
               <UIResourceRenderer
                 key={index}
+                onUIAction={handleUIAction}
+                supportedContentTypes={['remoteDom', 'rawHtml', 'externalUrl']}
                 resource={
                   (
                     item as {

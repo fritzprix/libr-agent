@@ -1,15 +1,16 @@
-import { MCPTool } from '@/lib/mcp-types';
+import { MCPTool, MCPResponse } from '@/lib/mcp-types';
 
 /**
- * Extended MCPTool type that includes execute function
+ * Extended MCPTool type that includes execute function with strict type safety
  * Used locally within browser tools to define executable tool objects
  */
-export type LocalMCPTool = MCPTool & {
-  execute: (args: Record<string, unknown>) => Promise<unknown>;
+export type StrictLocalMCPTool = MCPTool & {
+  execute: (args: Record<string, unknown>) => Promise<MCPResponse>;
 };
 
 /**
  * Browser tool execute function that may need executeScript injection
+ * Legacy type for backward compatibility during migration
  */
 export type BrowserToolExecuteFunction = (
   args: Record<string, unknown>,
@@ -18,7 +19,16 @@ export type BrowserToolExecuteFunction = (
 
 /**
  * Enhanced LocalMCPTool for browser tools that need executeScript
+ * Uses legacy type for backward compatibility during migration
  */
 export type BrowserLocalMCPTool = MCPTool & {
   execute: BrowserToolExecuteFunction;
+};
+
+/**
+ * @deprecated Use StrictLocalMCPTool instead for better type safety
+ * Legacy type kept for backwards compatibility during migration
+ */
+export type LocalMCPTool = MCPTool & {
+  execute: (args: Record<string, unknown>) => Promise<unknown>;
 };
