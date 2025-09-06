@@ -1,8 +1,4 @@
-import type {
-  MCPTool,
-  WebMCPServer,
-  MCPResponse,
-} from '@/lib/mcp-types';
+import type { MCPTool, WebMCPServer, MCPResponse } from '@/lib/mcp-types';
 import { normalizeToolResult } from '@/lib/mcp-types';
 import { createUIResource } from '@mcp-ui/server';
 
@@ -38,7 +34,7 @@ class EphemeralState {
   toggleTodo(index: number): { todo: SimpleTodo | null; todos: SimpleTodo[] } {
     const todo = this.todos[index];
     if (!todo) return { todo: null, todos: this.todos };
-    
+
     todo.status = todo.status === 'completed' ? 'pending' : 'completed';
     return { todo, todos: this.todos };
   }
@@ -67,7 +63,10 @@ const state = new EphemeralState();
 /**
  * Goal과 Todo 현황을 HTML로 생성
  */
-function generateGoalTodosHTML(goal: string | null, todos: SimpleTodo[]): string {
+function generateGoalTodosHTML(
+  goal: string | null,
+  todos: SimpleTodo[],
+): string {
   const goalSection = goal
     ? `
       <div class="goal-section" style="margin-bottom: 16px; padding: 12px; border-left: 4px solid #2563eb; background: #f8fafc;">
@@ -127,10 +126,7 @@ function generateGoalTodosHTML(goal: string | null, todos: SimpleTodo[]): string
 /**
  * Goal/Todo UIResource 생성 - @mcp-ui/server 표준 사용
  */
-function createGoalTodosUIResource(
-  goal: string | null,
-  todos: SimpleTodo[],
-) {
+function createGoalTodosUIResource(goal: string | null, todos: SimpleTodo[]) {
   const htmlContent = generateGoalTodosHTML(goal, todos);
 
   return createUIResource({
@@ -156,14 +152,16 @@ function normalizeToolResultWithUI(
   if (uiResource && baseResponse.result?.content) {
     // @mcp-ui/server createUIResource returns { type: "resource", resource: {...} }
     // We can use it directly since it already has the correct structure
-    baseResponse.result.content.unshift(uiResource as {
-      type: 'resource';
-      resource: {
-        uri: string;
-        mimeType: string;
-        text: string;
-      };
-    });
+    baseResponse.result.content.unshift(
+      uiResource as {
+        type: 'resource';
+        resource: {
+          uri: string;
+          mimeType: string;
+          text: string;
+        };
+      },
+    );
   }
 
   return baseResponse;
