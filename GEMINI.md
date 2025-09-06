@@ -74,6 +74,7 @@ synaptic-flow/
 - Use 2 spaces for indentation across all files.
 - Use descriptive variable names in both Rust and TypeScript.
 - Follow consistent naming conventions for files and directories.
+- **All comments must be written in English.** Use clear, descriptive English comments for all code documentation, inline comments, and docstrings.
 
 ### Rust Backend (`src-tauri/`)
 
