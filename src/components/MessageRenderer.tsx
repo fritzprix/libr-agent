@@ -1,5 +1,6 @@
 import React, { useCallback } from 'react';
 import type { MCPContent } from '@/lib/mcp-types';
+import { extractServiceInfoFromContent } from '@/lib/mcp-types';
 import { useRustBackend } from '@/hooks/use-rust-backend';
 import { getLogger } from '@/lib/logger';
 import {
@@ -9,6 +10,8 @@ import {
   remoteButtonDefinition,
   remoteTextDefinition,
   remoteCardDefinition,
+  remoteImageDefinition,
+  remoteStackDefinition,
 } from '@mcp-ui/client';
 import { useUnifiedMCP } from '@/hooks/use-unified-mcp';
 import { createId } from '@paralleldrive/cuid2';
@@ -17,7 +20,6 @@ import { useSessionContext } from '@/context/SessionContext';
 import { Message } from '@/models/chat';
 import { stringToMCPContentArray } from '@/lib/utils';
 import { useAssistantContext } from '@/context/AssistantContext';
-import { useTheme } from 'next-themes';
 
 const logger = getLogger('MessageRenderer');
 
@@ -35,6 +37,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
   const { submit } = useChatContext();
   const { getCurrentSession } = useSessionContext();
   const { getCurrent } = useAssistantContext();
+  const tauriCommands = useRustBackend();
 
   const handleLinkClick = async (e: React.MouseEvent, url: string) => {
     e.preventDefault();
@@ -80,13 +83,131 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
               toolName: result.payload.toolName,
               params: result.payload.params,
             });
+            const { toolName, params = {} } = result.payload;
 
+            // prefix 기반 라우팅: tauri: 접두사가 있으면 내부 Tauri 명령어로 처리
+            if (toolName.startsWith('tauri:')) {
+              const [, strippedCommand] = toolName.split('tauri:');
+
+              // tauriCommands 객체에서 해당 메서드가 존재하는지 확인
+              if (
+                strippedCommand &&
+                typeof tauriCommands[
+                  strippedCommand as keyof typeof tauriCommands
+                ] === 'function'
+              ) {
+                logger.info('Executing Tauri command', {
+                  strippedCommand,
+                  params,
+                });
+
+                try {
+                  let result: string;
+
+                  // 각 Tauri 명령어별로 명시적 처리
+                  switch (strippedCommand) {
+                    case 'downloadWorkspaceFile': {
+                      result = await tauriCommands.downloadWorkspaceFile(
+                        params.filePath as string,
+                      );
+                      break;
+                    }
+                    case 'exportAndDownloadZip': {
+                      result = await tauriCommands.exportAndDownloadZip(
+                        params.files as string[],
+                        params.packageName as string,
+                      );
+                      break;
+                    }
+                    case 'openExternalUrl': {
+                      await tauriCommands.openExternalUrl(params.url as string);
+                      result = 'External URL opened successfully';
+                      break;
+                    }
+                    default: {
+                      throw new Error(
+                        `Unsupported Tauri command: ${strippedCommand}`,
+                      );
+                    }
+                  }
+
+                  logger.info('Tauri command completed successfully', {
+                    strippedCommand,
+                    result,
+                  });
+
+                  // 성공 메시지를 채팅에 추가
+                  const successMessage: Message = {
+                    id: createId(),
+                    content: stringToMCPContentArray(`✅ ${result}`),
+                    role: 'system',
+                    sessionId,
+                    assistantId,
+                  };
+                  await submit([successMessage]);
+                } catch (error) {
+                  logger.error('Tauri command failed', {
+                    strippedCommand,
+                    error,
+                  });
+
+                  // 에러 메시지를 채팅에 추가
+                  const errorMessage: Message = {
+                    id: createId(),
+                    content: stringToMCPContentArray(
+                      `❌ ${strippedCommand} failed: ${error instanceof Error ? error.message : String(error)}`,
+                    ),
+                    role: 'system',
+                    sessionId,
+                    assistantId,
+                  };
+                  await submit([errorMessage]);
+                }
+                return; // Tauri 명령어 처리 완료
+              } else {
+                logger.warn('Tauri command not found', {
+                  strippedCommand,
+                  availableMethods: Object.keys(tauriCommands),
+                });
+              }
+            }
+
+            // MCP 도구 호출 개선: content에서 service info 추출
+            const serviceInfo = extractServiceInfoFromContent(content);
+
+            let finalToolName = toolName;
+            if (serviceInfo) {
+              const isBaseName =
+                !toolName.includes('__') && !toolName.startsWith('builtin.');
+
+              if (isBaseName) {
+                finalToolName =
+                  serviceInfo.backendType === 'ExternalMCP'
+                    ? `${serviceInfo.serverName}__${toolName}`
+                    : `builtin.${serviceInfo.serverName}__${toolName}`;
+
+                logger.info('Tool name resolved using service context', {
+                  originalName: toolName,
+                  resolvedName: finalToolName,
+                  serviceInfo,
+                });
+              }
+            } else {
+              logger.warn(
+                'No service context available, using original tool name',
+                {
+                  toolName,
+                },
+              );
+            }
+
+            // 통합된 MCP 도구 호출
             await executeToolCall({
               id: createId(),
               type: 'function',
               function: {
-                name: result.payload.toolName,
-                arguments: JSON.stringify(result.payload.params),
+                name: finalToolName,
+                arguments: JSON.stringify(params),
               },
             });
             break;
@@ -179,12 +300,15 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
   );
 
   return (
-    <div className={`message-content ${className}`}>
+    <div className={`flex flex-col gap-2 ${className}`}>
       {content.map((item, index) => {
         switch (item.type) {
           case 'text':
             return (
-              <div key={index} className="content-text">
+              <div
+                key={index}
+                className="text-sm text-gray-700 leading-relaxed"
+              >
                 {(item as { text: string }).text}
               </div>
             );
@@ -195,10 +319,16 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
                 key={index}
                 remoteDomProps={{
                   library: basicComponentLibrary,
-                  remoteElements: [remoteButtonDefinition, remoteTextDefinition, remoteCardDefinition ],
+                  remoteElements: [
+                    remoteButtonDefinition,
+                    remoteTextDefinition,
+                    remoteCardDefinition,
+                    remoteImageDefinition,
+                    remoteStackDefinition,
+                  ],
                 }}
                 onUIAction={handleUIAction}
-                supportedContentTypes={['remoteDom', 'rawHtml', 'externalUrl']}
+                supportedContentTypes={['rawHtml', 'externalUrl', 'remoteDom']}
                 resource={item.resource}
               />
             );
@@ -215,14 +345,14 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
                 key={index}
                 src={imageSrc}
                 alt="Tool output"
-                className="content-image max-w-full h-auto"
+                className="max-w-full h-auto rounded-lg shadow-sm"
               />
             ) : null;
           }
           case 'audio': {
             const audioItem = item as { data?: string; mimeType?: string };
             return audioItem.data ? (
-              <audio key={index} controls className="content-audio">
+              <audio key={index} controls className="w-full">
                 <source src={audioItem.data} type={audioItem.mimeType} />
                 Your browser does not support the audio element.
               </audio>
@@ -235,11 +365,11 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
               description?: string;
             };
             return (
-              <div key={index} className="content-resource-link">
+              <div key={index} className="p-2 border rounded-lg bg-gray-50">
                 <a
                   href={linkItem.uri}
                   onClick={(e) => handleLinkClick(e, linkItem.uri)}
-                  className="text-blue-600 hover:text-blue-800 underline cursor-pointer"
+                  className="text-blue-600 hover:text-blue-800 underline"
                 >
                   {linkItem.name}
                 </a>
@@ -253,7 +383,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
           }
           default:
             return (
-              <div key={index} className="content-unknown text-gray-500">
+              <div key={index} className="text-gray-500 italic">
                 [{'type' in item ? (item as { type: string }).type : 'unknown'}]
               </div>
             );

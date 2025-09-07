@@ -15,9 +15,9 @@ This ensures that no arbitrary code from the server runs in the main application
 
 ## Props
 
--   **`resource`**: The `resource` object from an MCP message. The `mimeType` must be `application/vnd.mcp-ui.remote-dom+javascript; framework={react | webcomponents}`.
--   **`library`**: A component library that maps remote element tag names (e.g., "button") to your host's React components.
--   **`onUIAction`**: A callback function to handle events (e.g., button clicks) initiated from the remote UI.
+- **`resource`**: The `resource` object from an MCP message. The `mimeType` must be `application/vnd.mcp-ui.remote-dom+javascript; framework={react | webcomponents}`.
+- **`library`**: A component library that maps remote element tag names (e.g., "button") to your host's React components.
+- **`onUIAction`**: A callback function to handle events (e.g., button clicks) initiated from the remote UI.
 
 ## Component Libraries
 
@@ -35,7 +35,7 @@ const customLibrary = new Map([
   ['info-card', MyCard],
 ]);
 
-<RemoteDOMResourceRenderer resource={resource} library={customLibrary} />
+<RemoteDOMResourceRenderer resource={resource} library={customLibrary} />;
 ```
 
 If the remote DOM contains `<fancy-button>`, it will be rendered using your `MyButton` component.
@@ -64,4 +64,4 @@ function App({ mcpResource }) {
   }
   return <p>Unsupported resource</p>;
 }
-``` 
+```

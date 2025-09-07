@@ -2,7 +2,7 @@ import { useMCPServer } from './use-mcp-server';
 // import { useWebMCPTools } from './use-web-mcp';
 import { useBuiltInTool } from '@/features/tools';
 import { useCallback, useMemo, useRef, useEffect } from 'react';
-import { MCPResponse, MCPTool } from '@/lib/mcp-types';
+import { MCPResponse, MCPTool, ServiceInfo } from '@/lib/mcp-types';
 import { ToolCall } from '@/models/chat';
 import { getLogger } from '@/lib/logger';
 
@@ -166,6 +166,29 @@ export const useUnifiedMCP = () => {
     [toolTypeMap],
   );
 
+  // Service info extraction utility function
+  const extractServiceInfo = useCallback(
+    (resolvedToolName: string, toolType: BackendType): ServiceInfo => {
+      if (toolType === 'ExternalMCP') {
+        const [serverName, ...toolNameParts] = resolvedToolName.split('__');
+        return {
+          serverName,
+          toolName: toolNameParts.join('__'),
+          backendType: toolType,
+        };
+      } else {
+        const withoutPrefix = resolvedToolName.replace('builtin.', '');
+        const [serverName, ...toolNameParts] = withoutPrefix.split('__');
+        return {
+          serverName,
+          toolName: toolNameParts.join('__'),
+          backendType: toolType,
+        };
+      }
+    },
+    [],
+  );
+
   // Unified tool execution with stable references
   const executeToolCall = useCallback(
     async (toolCall: ToolCall): Promise<MCPResponse> => {
@@ -229,13 +252,28 @@ export const useUnifiedMCP = () => {
       };
 
       try {
+        let response: MCPResponse;
+
         if (toolType === 'BuiltInWeb') {
           throw new Error('Web MCP tools are currently disabled');
         } else if (toolType === 'BuiltInRust') {
-          return await executeRustBuiltinRef.current(actualToolCall);
+          response = await executeRustBuiltinRef.current(actualToolCall);
         } else {
-          return await executeExternalRef.current(actualToolCall);
+          response = await executeExternalRef.current(actualToolCall);
         }
+
+        // Service info 추출
+        const serviceInfo = extractServiceInfo(resolvedToolName, toolType);
+
+        // MCPResponse의 content에 serviceInfo 추가
+        if (response.result?.content) {
+          response.result.content = response.result.content.map((content) => ({
+            ...content,
+            serviceInfo,
+          }));
+        }
+
+        return response;
       } catch (error) {
         logger.error(`Tool execution failed for ${resolvedToolName}:`, error);
 

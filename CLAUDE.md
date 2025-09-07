@@ -159,6 +159,11 @@ interface Config {
 ### CSS/Styling
 
 - Use `shadcn/ui` components for building accessible, consistent, and customizable UI elements. Prefer shadcn/ui for new UI components unless a custom solution is required.
+- **Tailwind CSS Class Usage Guidelines:**
+  - Avoid using arbitrary class names (e.g., `content-text`) that are not Tailwind utility classes, as they may be removed by PurgeCSS during build.
+  - Use Tailwind utility classes instead: `className="text-sm text-gray-700 leading-relaxed"`
+  - If custom classes are needed, define them in CSS files or add to Tailwind's safelist in `tailwind.config.js`
+  - For dynamic or conditional styling, use Tailwind's arbitrary value syntax: `className="[custom-value]"`
 
 ## Architecture
 

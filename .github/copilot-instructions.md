@@ -8,26 +8,65 @@ SynapticFlow is a next-generation desktop AI agent platform that combines the li
 
 ## Key Features
 
-- Role Management System: Create/edit/delete various AI agent roles.
-- System Prompt: Define custom AI personalities for each role.
-- Real-time MCP Connection: Run local MCP servers via stdio protocol.
-- Tool Calling System: Call tools from the MCP server in real-time.
-- IndexedDB Storage: Store roles/conversations in a browser local database.
-- Tauri Backend: High-performance native desktop app framework.
-- UI Components: Modern terminal-style interface.
-- Centralized Configuration Management: All settings, including API keys, models, and message window sizes, are managed and permanently stored within the app.
-- Agent and Multi-Agent Configuration Sharing/Extraction: Easily export and import agent and Multi-Agent configurations.
+**AI Agent Management:**
+
+- Advanced Role Management: Create/edit/delete AI agent roles with sophisticated configurations
+- Custom System Prompts: Define unique AI personalities and behaviors for each role
+- Multi-Agent Collaboration: Coordinate multiple agents working together on complex tasks
+- Agent Configuration Sharing: Export and import agent configurations
+
+**LLM Provider Support:**
+
+- 8 Major Providers: OpenAI, Anthropic, Google, Groq, Fireworks, Cerebras, Ollama, Empty
+- 50+ Models: Including reasoning models (o3, DeepSeek R1, Qwen3)
+- Cost Optimization: Real-time cost tracking and model comparison
+- Massive Context: Up to 2M tokens support (Gemini 2.5 Pro)
+
+**Built-in Tool Ecosystem:**
+
+- SecureFileManager: Advanced file operations with path validation
+- Code Execution: Python and TypeScript sandboxed environments
+- Browser Automation: Interactive web scraping and automation
+- Content Processing: PDF, DOCX, XLSX parsing with full-text search
+
+**MCP Integration:**
+
+- Real-time MCP Connection: Advanced stdio protocol implementation
+- Dual Backend Support: Both Rust Tauri and Web Worker implementations
+- Security Validation: Built-in SecurityValidator with comprehensive protection
+- Tool Execution Context: Unified calling interface across all backends
+
+**User Experience:**
+
+- Modern UI: Clean, terminal-style interface with 20+ shadcn/ui components
+- Session Management: Organize conversations with file attachments and context
+- Centralized Configuration: All settings managed within the app
+- Performance: Ultra-fast responses with Cerebras (1,800+ tokens/sec)
 
 ## Technology Stack
 
-- PNPM
-- Tauri (Rust + WebView)
-- React 18
-- TypeScript
-- RMCP (Rust-based Model Context Protocol client)
-- Tailwind CSS
-- IndexedDB
-- Vite
+**Core Framework:**
+
+- PNPM (Package Manager)
+- Tauri 2.x (Latest cross-platform desktop framework)
+- React 18.3 (Modern UI with concurrent features)
+- TypeScript 5.6 (Advanced type safety)
+- RMCP 0.2.1 (Rust-based Model Context Protocol client)
+
+**Frontend Technologies:**
+
+- Tailwind CSS 4.x (Latest utility-first styling)
+- Radix UI (Accessible component primitives)
+- Dexie (TypeScript-friendly IndexedDB wrapper)
+- Zustand (Lightweight state management)
+- Vite (Fast development and build tool)
+
+**Backend Technologies:**
+
+- Rust (High-performance native operations)
+- Tokio (Async runtime for concurrent operations)
+- SecurityValidator (Built-in security validation)
+- Warp (HTTP server for browser automation)
 
 ## File Structure
 
@@ -74,6 +113,7 @@ synaptic-flow/
 - Use 2 spaces for indentation across all files.
 - Use descriptive variable names in both Rust and TypeScript.
 - Follow consistent naming conventions for files and directories.
+- **All comments must be written in English.** Use clear, descriptive English comments for all code documentation, inline comments, and docstrings.
 
 ### Rust Backend (`src-tauri/`)
 
@@ -119,6 +159,11 @@ interface Config {
 ### CSS/Styling
 
 - Use `shadcn/ui` components for building accessible, consistent, and customizable UI elements. Prefer shadcn/ui for new UI components unless a custom solution is required.
+- **Tailwind CSS Class Usage Guidelines:**
+  - Avoid using arbitrary class names (e.g., `content-text`) that are not Tailwind utility classes, as they may be removed by PurgeCSS during build.
+  - Use Tailwind utility classes instead: `className="text-sm text-gray-700 leading-relaxed"`
+  - If custom classes are needed, define them in CSS files or add to Tailwind's safelist in `tailwind.config.js`
+  - For dynamic or conditional styling, use Tailwind's arbitrary value syntax: `className="[custom-value]"`
 
 ## Architecture
 
@@ -188,9 +233,9 @@ The project uses a centralized logging system located at `src/lib/logger.ts` tha
 
 ### Core Framework
 
-- `@tauri-apps/api`: Version 1.x - Frontend-backend communication
-- `@tauri-apps/cli`: Version 1.x - Development and build tools
-- `tauri`: Version 1.x - Rust backend framework
+- `@tauri-apps/api`: Version 2.x - Enhanced frontend-backend communication
+- `@tauri-apps/cli`: Version 2.x - Latest development and build tools
+- `tauri`: Version 2.x - Advanced Rust backend framework with improved security
 
 ### Frontend Dependencies
 
