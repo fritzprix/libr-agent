@@ -159,7 +159,7 @@ impl BuiltinServerRegistry {
 
     /// Extract a parameter value from malformed JSON using regex-like pattern matching
     fn extract_parameter_value(json_str: &str, param_name: &str) -> Option<String> {
-        let pattern = format!("\"{}\":\"", param_name);
+        let pattern = format!("\"{param_name}\":\"");
         if let Some(start_idx) = json_str.find(&pattern) {
             let value_start = start_idx + pattern.len();
             let remaining = &json_str[value_start..];
