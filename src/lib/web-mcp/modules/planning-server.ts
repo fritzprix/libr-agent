@@ -36,12 +36,12 @@ class EphemeralState {
   toggleTodo(index: number): { todo: SimpleTodo | null; todos: SimpleTodo[] } {
     // Adjust for 1-based user input (subtract 1 for 0-based array access)
     const adjustedIndex = index - 1;
-    
+
     // Validate the adjusted index
     if (adjustedIndex < 0 || adjustedIndex >= this.todos.length) {
       return { todo: null, todos: this.todos };
     }
-    
+
     const todo = this.todos[adjustedIndex];
     if (!todo) return { todo: null, todos: this.todos };
 
@@ -91,11 +91,12 @@ const tools: MCPTool[] = [
       'Create a single goal for the session. Use when starting a new or complex task.',
     inputSchema: {
       type: 'object',
-      properties: { 
-        goal: { 
-          type: 'string', 
-          description: 'The goal text to set for the session (e.g., "Complete project setup").' 
-        } 
+      properties: {
+        goal: {
+          type: 'string',
+          description:
+            'The goal text to set for the session (e.g., "Complete project setup").',
+        },
       },
       required: ['goal'],
     },
@@ -112,11 +113,12 @@ const tools: MCPTool[] = [
       'Add a todo item to the goal. Use to break down a goal into actionable steps.',
     inputSchema: {
       type: 'object',
-      properties: { 
-        name: { 
-          type: 'string', 
-          description: 'The name or description of the todo item to add (e.g., "Write documentation").' 
-        } 
+      properties: {
+        name: {
+          type: 'string',
+          description:
+            'The name or description of the todo item to add (e.g., "Write documentation").',
+        },
       },
       required: ['name'],
     },
@@ -127,12 +129,13 @@ const tools: MCPTool[] = [
       'Toggle a todo between pending and completed status using its 1-based index (e.g., 1 for the first todo, 2 for the second).',
     inputSchema: {
       type: 'object',
-      properties: { 
-        index: { 
-          type: 'number', 
-          minimum: 1, 
-          description: 'The 1-based index of the todo to toggle (must be a positive integer)' 
-        } 
+      properties: {
+        index: {
+          type: 'number',
+          minimum: 1,
+          description:
+            'The 1-based index of the todo to toggle (must be a positive integer)',
+        },
       },
       required: ['index'],
     },
@@ -155,11 +158,12 @@ const tools: MCPTool[] = [
       'Add a new observation to the session. Observations are recent events, user feedback, or system messages.',
     inputSchema: {
       type: 'object',
-      properties: { 
-        observation: { 
-          type: 'string', 
-          description: 'The observation text to add (e.g., "User requested feature X").' 
-        } 
+      properties: {
+        observation: {
+          type: 'string',
+          description:
+            'The observation text to add (e.g., "User requested feature X").',
+        },
       },
       required: ['observation'],
     },
@@ -204,7 +208,7 @@ const planningServer: WebMCPServer = {
             'toggle_todo',
           );
         }
-        
+
         const result = state.toggleTodo(index);
         if (result.todo) {
           return normalizeToolResult(
