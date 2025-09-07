@@ -13,7 +13,6 @@ import { useRustBackend } from '../hooks/use-rust-backend';
 import {
   MCPResponse,
   MCPTool,
-  normalizeToolResult,
   SamplingOptions,
   SamplingResponse,
 } from '../lib/mcp-types';
@@ -142,10 +141,14 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
         if (!serverName || !toolName) {
           const errorMsg = `Could not determine server/tool name from '${aiProvidedToolName}'`;
           logger.error(errorMsg);
-          return normalizeToolResult(
-            { error: errorMsg, success: false },
-            aiProvidedToolName,
-          );
+          return {
+            jsonrpc: '2.0',
+            id: aiProvidedToolName,
+            error: {
+              code: -32601,
+              message: errorMsg,
+            },
+          };
         }
 
         const toolArguments: Record<string, unknown> = JSON.parse(
@@ -158,22 +161,25 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
             toolName,
             toolArguments,
           );
-          logger.debug(`MCP Response for ${aiProvidedToolName}:`, {
+          
+          logger.info(`MCP Response for ${aiProvidedToolName}:`, {
             rawResponse,
           });
 
-          const mcpResponse = normalizeToolResult(
-            rawResponse,
-            aiProvidedToolName,
-          );
-          return mcpResponse;
+          // Rust backend already returns standard MCPResponse format
+          // No normalization needed - this preserves UI resources
+          return rawResponse;
         } catch (execError) {
           const errorMsg = `Tool execution failed: ${execError instanceof Error ? execError.message : String(execError)}`;
           logger.error(errorMsg, { execError });
-          return normalizeToolResult(
-            { error: errorMsg, success: false },
-            aiProvidedToolName,
-          );
+          return {
+            jsonrpc: '2.0',
+            id: aiProvidedToolName,
+            error: {
+              code: -32603,
+              message: errorMsg,
+            },
+          };
         }
       } else {
         throw new Error(
