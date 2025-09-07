@@ -161,7 +161,7 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
             toolName,
             toolArguments,
           );
-          
+
           logger.info(`MCP Response for ${aiProvidedToolName}:`, {
             rawResponse,
           });
