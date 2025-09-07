@@ -71,9 +71,9 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
       return dbUtils.getMessagesPageForSession(sessionId, page, PAGE_SIZE);
     },
     {
-      revalidateOnFocus: true,
-      revalidateOnReconnect: true,
-      revalidateIfStale: true,
+      revalidateOnFocus: false, // Prevent automatic refetch on focus to avoid race conditions
+      revalidateOnReconnect: true, // Keep network reconnection revalidation
+      revalidateIfStale: false, // Manual refresh only to prevent message loss
     },
   );
 

@@ -159,11 +159,11 @@ pub fn create_html_export_ui(
             showStatus('Preparing download...', 'loading');
 
             try {{
-                // MCP-UI 표준 Tool Call Action으로 다운로드 요청
+                // Tauri 내부 명령어로 다운로드 요청 (prefix 기반 라우팅)
                 window.parent.postMessage({{
                     type: 'tool',
                     payload: {{
-                        toolName: 'download_workspace_file',
+                        toolName: 'tauri:downloadWorkspaceFile',
                         params: {{
                             filePath: '{}'
                         }}

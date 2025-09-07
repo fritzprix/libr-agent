@@ -23,7 +23,7 @@ echo "=========================================="
 
 # Find and count lines for source files (excluding total lines)
 find ./src ./src-tauri/src ./docs -type f \
-  \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx" -o -name "*.rs" -o -name "*.md" \) \
+  \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx" -o -name "*.rs" \) \
   ! -path "*/node_modules/*" \
   ! -path "*/dist/*" \
   ! -path "*/target/*" \
@@ -53,7 +53,7 @@ echo "✅ Scan complete!"
 
 # Calculate and display total lines separately with emphasis
 TOTAL_LINES=$(find ./src ./src-tauri/src ./docs -type f \
-  \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx" -o -name "*.rs" -o -name "*.md" \) \
+  \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx" -o -name "*.rs" \) \
   ! -path "*/node_modules/*" \
   ! -path "*/dist/*" \
   ! -path "*/target/*" \
@@ -69,7 +69,7 @@ echo -e "${BLUE}📊 📈 TOTAL LINES IN CODEBASE: ${TOTAL_LINES}${NC}"
 
 # Show total count of large files
 TOTAL_COUNT=$(find ./src ./src-tauri/src ./docs -type f \
-  \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx" -o -name "*.rs" -o -name "*.md" \) \
+  \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx" -o -name "*.rs" \) \
   ! -path "*/node_modules/*" \
   ! -path "*/dist/*" \
   ! -path "*/target/*" \

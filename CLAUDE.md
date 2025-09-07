@@ -113,6 +113,7 @@ synaptic-flow/
 - Use 2 spaces for indentation across all files.
 - Use descriptive variable names in both Rust and TypeScript.
 - Follow consistent naming conventions for files and directories.
+- **All comments must be written in English.** Use clear, descriptive English comments for all code documentation, inline comments, and docstrings.
 
 ### Rust Backend (`src-tauri/`)
 
@@ -158,6 +159,11 @@ interface Config {
 ### CSS/Styling
 
 - Use `shadcn/ui` components for building accessible, consistent, and customizable UI elements. Prefer shadcn/ui for new UI components unless a custom solution is required.
+- **Tailwind CSS Class Usage Guidelines:**
+  - Avoid using arbitrary class names (e.g., `content-text`) that are not Tailwind utility classes, as they may be removed by PurgeCSS during build.
+  - Use Tailwind utility classes instead: `className="text-sm text-gray-700 leading-relaxed"`
+  - If custom classes are needed, define them in CSS files or add to Tailwind's safelist in `tailwind.config.js`
+  - For dynamic or conditional styling, use Tailwind's arbitrary value syntax: `className="[custom-value]"`
 
 ## Architecture
 

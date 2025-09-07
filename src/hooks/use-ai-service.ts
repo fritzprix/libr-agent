@@ -7,6 +7,7 @@ import { useSettings } from './use-settings';
 import { prepareMessagesForLLM } from '../lib/message-preprocessor';
 
 import { selectMessagesWithinContext } from '@/lib/token-utils';
+import { stringToMCPContentArray } from '@/lib/utils';
 
 const logger = getLogger('useAIService');
 
@@ -130,7 +131,7 @@ export const useAIService = (config?: AIServiceConfig) => {
 
           finalMessage = {
             id: currentResponseId,
-            content: fullContent,
+            content: stringToMCPContentArray(fullContent),
             role: 'assistant',
             isStreaming: true,
             thinking,
@@ -150,8 +151,9 @@ export const useAIService = (config?: AIServiceConfig) => {
           logger.debug('Empty response detected, creating placeholder message');
           finalMessage = {
             id: currentResponseId,
-            content:
+            content: stringToMCPContentArray(
               'I apologize, but I encountered an issue and cannot provide a response at this time.',
+            ),
             thinking,
             thinkingSignature,
             role: 'assistant',
@@ -162,7 +164,7 @@ export const useAIService = (config?: AIServiceConfig) => {
         } else {
           finalMessage = {
             id: currentResponseId,
-            content: fullContent,
+            content: stringToMCPContentArray(fullContent),
             thinking,
             thinkingSignature,
             role: 'assistant',

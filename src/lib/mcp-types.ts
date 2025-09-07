@@ -7,6 +7,8 @@
  * 참조: https://modelcontextprotocol.io/
  */
 
+import { UIResource } from '@mcp-ui/server';
+
 // ========================================
 // 🔧 JSON Schema Types (MCP 사양 준수)
 // ========================================
@@ -92,6 +94,7 @@ export interface MCPTextContent {
   type: 'text';
   text: string;
   annotations?: Record<string, unknown>;
+  serviceInfo?: ServiceInfo;
 }
 
 export interface MCPImageContent {
@@ -99,6 +102,7 @@ export interface MCPImageContent {
   data: string; // base64
   mimeType: string;
   annotations?: Record<string, unknown>;
+  serviceInfo?: ServiceInfo;
 }
 
 export interface MCPAudioContent {
@@ -106,6 +110,7 @@ export interface MCPAudioContent {
   data: string; // base64
   mimeType: string;
   annotations?: Record<string, unknown>;
+  serviceInfo?: ServiceInfo;
 }
 
 export interface MCPResourceLinkContent {
@@ -115,24 +120,13 @@ export interface MCPResourceLinkContent {
   description?: string;
   mimeType?: string;
   annotations?: Record<string, unknown>;
-}
-
-// UIResource interface for MCP-UI integration (확장하여 MCP 표준과 호환)
-export interface UIResource {
-  uri?: string; // ui://... 형태 권장 (MCP 표준에서는 필수이지만 UI에서는 optional)
-  mimeType: string; // 'text/html' | 'text/uri-list' | 'application/vnd.mcp-ui.remote-dom'
-  text?: string; // inline HTML or remote-dom script
-  blob?: string; // base64-encoded content when used
-  // MCP 표준 추가 필드 (UI에서는 optional)
-  title?: string;
-  annotations?: Record<string, unknown>;
+  serviceInfo?: ServiceInfo;
 }
 
 // 통합된 Resource content type (기존 두 타입을 하나로 병합)
-export interface MCPResourceContent {
-  type: 'resource';
-  resource: UIResource; // UIResource로 통일하여 UI와 표준 MCP 모두 지원
-}
+type MCPResourceContent = UIResource & {
+  serviceInfo?: ServiceInfo;
+};
 
 export type MCPContent =
   | MCPTextContent
@@ -140,6 +134,38 @@ export type MCPContent =
   | MCPAudioContent
   | MCPResourceLinkContent
   | MCPResourceContent;
+
+// ========================================
+// 🔧 Service Context Types (for tool resolution)
+// ========================================
+
+export interface ServiceInfo {
+  serverName: string;
+  toolName: string;
+  backendType: 'ExternalMCP' | 'BuiltInWeb' | 'BuiltInRust';
+}
+
+export function hasServiceInfo(
+  content: MCPContent,
+): content is MCPContent & { serviceInfo: ServiceInfo } {
+  return (
+    content &&
+    typeof content === 'object' &&
+    'serviceInfo' in content &&
+    content.serviceInfo !== undefined
+  );
+}
+
+export function extractServiceInfoFromContent(
+  content: MCPContent[],
+): ServiceInfo | null {
+  for (const item of content) {
+    if (hasServiceInfo(item)) {
+      return item.serviceInfo;
+    }
+  }
+  return null;
+}
 
 // ========================================
 // 🔄 MCP Protocol Types (JSON-RPC 2.0 준수)
@@ -199,6 +225,27 @@ export interface MCPResponse {
   id: string | number | null;
   result?: MCPResult | SamplingResult;
   error?: MCPError;
+}
+
+/**
+ * Extended MCP Response with service context information
+ * Service context를 보존하여 UI에서 정확한 tool 재호출을 지원
+ */
+export interface ExtendedMCPResponse extends MCPResponse {
+  serviceInfo?: {
+    serverName: string;
+    toolName: string;
+    backendType: 'ExternalMCP' | 'BuiltInWeb' | 'BuiltInRust';
+  };
+}
+
+/**
+ * Check if response is ExtendedMCPResponse (type guard)
+ */
+export function isExtendedResponse(
+  response: MCPResponse,
+): response is ExtendedMCPResponse {
+  return response && typeof response === 'object' && 'serviceInfo' in response;
 }
 
 // ========================================

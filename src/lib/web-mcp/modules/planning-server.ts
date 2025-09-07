@@ -1,153 +1,90 @@
 import type { MCPTool, WebMCPServer, MCPResponse } from '@/lib/mcp-types';
 import { normalizeToolResult } from '@/lib/mcp-types';
 
-// Ephemeral 상태 관리 (메모리 기반)
-interface Goal {
-  id: number;
+// Simplified data structures for Gemini API compatibility
+interface SimpleTodo {
   name: string;
-  description?: string;
-  status: 'active' | 'completed' | 'paused';
-  createdAt: Date;
+  status: 'pending' | 'completed';
 }
 
-interface Todo {
-  id: number;
-  name: string;
-  description?: string;
-  status: 'pending' | 'in_progress' | 'completed';
-  createdAt: Date;
-}
-
-interface Observation {
-  id: number;
-  content: string;
-  tags?: string[];
-  createdAt: Date;
-}
-
-interface SequentialThinking {
-  thoughtNumber: number;
-  totalThoughts: number;
-  thought: string;
-  nextThoughtNeeded: boolean;
-  createdAt: Date;
-}
+const MAX_OBSERVATIONS = 5;
 
 class EphemeralState {
-  private goal: Goal | null = null;
-  private todos: Todo[] = [];
-  private observations: Observation[] = [];
-  private sequentialThinking: SequentialThinking[] = [];
+  private goal: string | null = null;
+  private todos: SimpleTodo[] = [];
+  private observations: string[] = [];
 
-  createGoal(name: string, description?: string): Goal {
-    const id = 0;
-    this.goal = {
-      id,
-      name,
-      description,
-      status: 'active',
-      createdAt: new Date(),
-    };
+  createGoal(goal: string): string {
+    this.goal = goal;
     return this.goal;
   }
 
-  updateGoal(
-    updates: Partial<Pick<Goal, 'name' | 'description' | 'status'>>,
-  ): Goal | null {
-    if (!this.goal) return null;
-    Object.assign(this.goal, updates);
-    return this.goal;
+  clearGoal(): { success: boolean } {
+    this.goal = null;
+    return { success: true };
   }
 
-  addTodo(
-    name: string,
-    description?: string,
-  ): { todoId: number; todos: Todo[] } {
-    const id = this.todos.length;
-    const todo: Todo = {
-      id,
+  addTodo(name: string): { success: boolean; todos: SimpleTodo[] } {
+    const todo: SimpleTodo = {
       name,
-      description,
       status: 'pending',
-      createdAt: new Date(),
     };
     this.todos.push(todo);
-    return { todoId: todo.id, todos: this.todos };
+    return { success: true, todos: this.todos };
   }
 
-  updateTodo(
-    todoId: number,
-    updates: Partial<Pick<Todo, 'name' | 'description' | 'status'>>,
-  ): { todo: Todo | null; todos: Todo[] } {
-    const todo = this.todos[todoId];
+  toggleTodo(index: number): { todo: SimpleTodo | null; todos: SimpleTodo[] } {
+    // Adjust for 1-based user input (subtract 1 for 0-based array access)
+    const adjustedIndex = index - 1;
+
+    // Validate the adjusted index
+    if (adjustedIndex < 0 || adjustedIndex >= this.todos.length) {
+      return { todo: null, todos: this.todos };
+    }
+
+    const todo = this.todos[adjustedIndex];
     if (!todo) return { todo: null, todos: this.todos };
-    Object.assign(todo, updates);
+
+    todo.status = todo.status === 'completed' ? 'pending' : 'completed';
     return { todo, todos: this.todos };
   }
 
-  listTodos(): Todo[] {
-    return this.todos;
-  }
-
-  addObservation(
-    content: string,
-    tags?: string[],
-  ): { observationId: number; observations: Observation[] } {
-    if (this.observations.length >= 10) {
-      this.observations.shift(); // Remove oldest observation
-    }
-    const id = this.observations.length;
-    const observation: Observation = {
-      id,
-      content,
-      tags,
-      createdAt: new Date(),
-    };
-    this.observations.push(observation);
-    return { observationId: observation.id, observations: this.observations };
-  }
-
-  addSequentialThinking(
-    thought: string,
-    thoughtNumber: number,
-    totalThoughts: number,
-    nextThoughtNeeded: boolean,
-  ): SequentialThinking {
-    const thinking: SequentialThinking = {
-      thoughtNumber,
-      totalThoughts,
-      thought,
-      nextThoughtNeeded,
-      createdAt: new Date(),
-    };
-    this.sequentialThinking.push(thinking);
-    return thinking;
-  }
-
-  getObservations(): Observation[] {
-    return this.observations;
-  }
-
-  getSequentialThinking(): SequentialThinking[] {
-    return this.sequentialThinking;
+  clearTodos(): { success: boolean } {
+    this.todos = [];
+    return { success: true };
   }
 
   clear(): void {
     this.goal = null;
     this.todos = [];
     this.observations = [];
-    this.sequentialThinking = [];
   }
 
-  getGoal(): Goal | null {
+  getGoal(): string | null {
     return this.goal;
+  }
+
+  getTodos(): SimpleTodo[] {
+    return this.todos;
+  }
+
+  addObservation(observation: string): void {
+    this.observations.push(observation);
+    if (this.observations.length > MAX_OBSERVATIONS) {
+      this.observations.shift();
+    }
+  }
+
+  getObservations(): string[] {
+    return [...this.observations];
   }
 }
 
 const state = new EphemeralState();
 
-// Tool definitions
+// Simplified tool definitions - flat schemas for Gemini API compatibility
 const tools: MCPTool[] = [
+  // ... (other tools remain the same) ...
   {
     name: 'create_goal',
     description:
@@ -155,232 +92,198 @@ const tools: MCPTool[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        name: { type: 'string' },
-        description: { type: 'string' },
+        goal: {
+          type: 'string',
+          description:
+            'The goal text to set for the session (e.g., "Complete project setup").',
+        },
       },
-      required: ['name'],
+      required: ['goal'],
     },
   },
   {
-    name: 'update_goal',
+    name: 'clear_goal',
     description:
-      'Update the current goal and return the final state. Use when the goal changes or progresses.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        updates: {
-          type: 'object',
-          properties: {
-            name: { type: 'string' },
-            description: { type: 'string' },
-            status: { type: 'string', enum: ['active', 'completed', 'paused'] },
-          },
-        },
-      },
-      required: ['updates'],
-    },
+      'Clear the current goal. Use when finishing or abandoning the current goal.',
+    inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'add_todo',
     description:
-      'Add a todo item to the goal. Use to break down a goal into actionable steps, especially for multi-step tasks.',
+      'Add a todo item to the goal. Use to break down a goal into actionable steps.',
     inputSchema: {
       type: 'object',
       properties: {
-        name: { type: 'string' },
-        description: { type: 'string' },
+        name: {
+          type: 'string',
+          description:
+            'The name or description of the todo item to add (e.g., "Write documentation").',
+        },
       },
       required: ['name'],
     },
   },
   {
-    name: 'update_todo',
+    name: 'toggle_todo',
     description:
-      'Update a todo item and return the final state. Use to track progress or revise steps in a complex workflow.',
+      'Toggle a todo between pending and completed status using its 1-based index (e.g., 1 for the first todo, 2 for the second).',
     inputSchema: {
       type: 'object',
       properties: {
-        todoId: { type: 'number' },
-        updates: {
-          type: 'object',
-          properties: {
-            name: { type: 'string' },
-            description: { type: 'string' },
-            status: {
-              type: 'string',
-              enum: ['pending', 'in_progress', 'completed'],
-            },
-          },
+        index: {
+          type: 'number',
+          minimum: 1,
+          description:
+            'The 1-based index of the todo to toggle (must be a positive integer)',
         },
       },
-      required: ['todoId', 'updates'],
+      required: ['index'],
     },
   },
   {
-    name: 'list_todos',
+    name: 'clear_todos',
     description:
-      'List all current todo items. Use to review tasks, especially when managing multiple steps.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-    },
-  },
-  {
-    name: 'add_observation',
-    description:
-      'Record important facts and observations discovered during work or planning. Use to capture key insights in complex tasks (max 10).',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        content: { type: 'string' },
-        tags: { type: 'array', items: { type: 'string' } },
-      },
-      required: ['content'],
-    },
-  },
-  {
-    name: 'sequential_thinking',
-    description:
-      'Record step-by-step thoughts for complex problem solving, tracking each stage of reasoning. Use when a task requires multiple reasoning steps.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        thought: { type: 'string' },
-        thoughtNumber: { type: 'number' },
-        totalThoughts: { type: 'number' },
-        nextThoughtNeeded: { type: 'boolean' },
-      },
-      required: [
-        'thought',
-        'thoughtNumber',
-        'totalThoughts',
-        'nextThoughtNeeded',
-      ],
-    },
+      'Clear all todo items. Use when resetting or finishing all tasks.',
+    inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'clear_session',
     description:
-      'Clear all session state (goal, todos, observations, and sequential thinking). Use to reset everything and start fresh.',
+      'Clear all session state (goal, todos, and observations). Use to reset everything and start fresh.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'add_observation',
+    description:
+      'Add a new observation to the session. Observations are recent events, user feedback, or system messages.',
     inputSchema: {
       type: 'object',
-      properties: {},
+      properties: {
+        observation: {
+          type: 'string',
+          description:
+            'The observation text to add (e.g., "User requested feature X").',
+        },
+      },
+      required: ['observation'],
     },
   },
 ];
 
 const planningServer: WebMCPServer = {
   name: 'planning-server',
-  version: '1.0.0',
+  version: '2.1.0',
   description:
-    'Ephemeral planning, thinking, and goal management for AI agents',
+    'Ephemeral planning and goal management for AI agents with bounded observation queue',
   tools,
   async callTool(name: string, args: unknown): Promise<MCPResponse> {
     const typedArgs = args as Record<string, unknown>;
     switch (name) {
-      case 'create_goal':
+      // ... (other tool cases remain the same) ...
+      case 'create_goal': {
+        const result = state.createGoal(typedArgs.goal as string);
+        return normalizeToolResult(`Goal created: "${result}"`, 'create_goal');
+      }
+      case 'clear_goal': {
+        const result = state.clearGoal();
         return normalizeToolResult(
-          state.createGoal(
-            typedArgs.name as string,
-            typedArgs.description as string,
-          ),
-          'create_goal',
+          result.success ? 'Goal cleared successfully' : 'Failed to clear goal',
+          'clear_goal',
         );
-      case 'update_goal':
+      }
+      case 'add_todo': {
+        const result = state.addTodo(typedArgs.name as string);
         return normalizeToolResult(
-          state.updateGoal(
-            typedArgs.updates as Partial<
-              Pick<Goal, 'name' | 'description' | 'status'>
-            >,
-          ),
-          'update_goal',
-        );
-      case 'add_todo':
-        return normalizeToolResult(
-          state.addTodo(
-            typedArgs.name as string,
-            typedArgs.description as string,
-          ),
+          result.success
+            ? `Todo added: "${typedArgs.name}" (Total: ${result.todos.length})`
+            : 'Failed to add todo',
           'add_todo',
         );
-      case 'update_todo':
+      }
+      case 'toggle_todo': {
+        const index = typedArgs.index as number;
+        if (!Number.isInteger(index) || index < 1) {
+          return normalizeToolResult(
+            `Invalid index: ${index}. Index must be a positive integer (1-based).`,
+            'toggle_todo',
+          );
+        }
+
+        const result = state.toggleTodo(index);
+        if (result.todo) {
+          return normalizeToolResult(
+            `Todo "${result.todo.name}" marked as ${result.todo.status}`,
+            'toggle_todo',
+          );
+        } else {
+          return normalizeToolResult(
+            `Todo at index ${index} not found. Valid indices: 1 to ${result.todos.length}`,
+            'toggle_todo',
+          );
+        }
+      }
+      case 'clear_todos': {
+        const result = state.clearTodos();
         return normalizeToolResult(
-          state.updateTodo(
-            typedArgs.todoId as number,
-            typedArgs.updates as Partial<
-              Pick<Todo, 'name' | 'description' | 'status'>
-            >,
-          ),
-          'update_todo',
+          result.success ? 'All todos cleared' : 'Failed to clear todos',
+          'clear_todos',
         );
-      case 'list_todos':
-        return normalizeToolResult(state.listTodos(), 'list_todos');
-      case 'add_observation':
-        return normalizeToolResult(
-          state.addObservation(
-            typedArgs.content as string,
-            typedArgs.tags as string[],
-          ),
-          'add_observation',
-        );
-      case 'sequential_thinking':
-        return normalizeToolResult(
-          state.addSequentialThinking(
-            typedArgs.thought as string,
-            typedArgs.thoughtNumber as number,
-            typedArgs.totalThoughts as number,
-            typedArgs.nextThoughtNeeded as boolean,
-          ),
-          'sequential_thinking',
-        );
+      }
       case 'clear_session':
         state.clear();
-        return normalizeToolResult({ success: true }, 'clear_session');
+        return normalizeToolResult('Session state cleared', 'clear_session');
+      case 'add_observation': {
+        state.addObservation(typedArgs.observation as string);
+        return normalizeToolResult(
+          'Observation added to session',
+          'add_observation',
+        );
+      }
       default:
         throw new Error(`Unknown tool: ${name}`);
     }
   },
   async getServiceContext(): Promise<string> {
     const goal = state.getGoal();
-    const todos = state.listTodos();
+    const todos = state.getTodos();
     const observations = state.getObservations();
-    const sequentialThinking = state.getSequentialThinking();
 
-    const goalText = goal ? `Current Goal: ${goal.name}` : 'No active goal';
-    const activeTodos = todos.filter((t) => t.status !== 'completed');
+    const goalText = goal ? `Current Goal: ${goal}` : 'No active goal';
     const todosText =
-      activeTodos.length > 0
-        ? `Active Todos: ${activeTodos.map((t) => t.name).join(', ')}`
-        : 'No active todos';
-    const observationsText =
+      todos.length > 0
+        ? `Todos:\n${todos
+            .map(
+              (t, idx) =>
+                `  ${idx + 1}. [${t.status === 'completed' ? '✔' : ' '}] ${t.name}`,
+            )
+            .join('\n')}`
+        : 'Todos: (none)';
+    const obsText =
       observations.length > 0
-        ? `Observations: ${observations.map((o) => o.content.substring(0, 50) + '...').join('; ')}`
-        : 'No observations';
-    const thinkingText =
-      sequentialThinking.length > 0
-        ? `Sequential Thinking: ${sequentialThinking[sequentialThinking.length - 1].thought.substring(0, 50)}...`
-        : 'No sequential thinking';
+        ? `Recent Observations:\n${observations
+            .map((obs, idx) => `  ${idx + 1}. ${obs}`)
+            .join('\n')}`
+        : 'Recent Observations: (none)';
 
     return `
 # Instruction
-AI Agents have memory limitations (Context Window), so complex or long-term tasks must be recorded as goals, todos, and observations.
-Use the tools below to manage goals, todos, observations, and reasoning.
+ALWAYS START BY CREATING A PLAN before beginning any task:
+1. First, create a clear goal using 'create_goal' for any new or complex task
+2. Break down the goal into specific, actionable todos using 'add_todo'
+3. Execute todos step by step, marking them complete with 'toggle_todo'
+4. Record important observations, user feedback, or results with 'add_observation'
+5. Use memory limitations as an opportunity to organize and structure your work
 
-# Tools
-- create_goal: Create a goal
-- add_todo: Add a todo item
-- add_observation: Record important facts (max 10 items)
-- sequential_thinking: Record step-by-step reasoning
+Remember: Planning prevents poor performance. Always plan before you act.
 
 # Context Information
 ${goalText}
 ${todosText}
-${observationsText}
-${thinkingText}
+${obsText}
 
 # Prompt
-Select appropriate tools to suggest or execute the next action based on the current situation.
-    `.trim();
+Based on the current situation, determine and suggest the next appropriate action to progress toward your objectives. If no goal exists, start by creating one.
+  `.trim();
   },
 };
 

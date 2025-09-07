@@ -7,28 +7,34 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { useAsyncFn } from 'react-use';
 import { useSessionContext } from './SessionContext';
 import { useSessionHistory } from './SessionHistoryContext';
 import { useAIService } from '../hooks/use-ai-service';
 import { useAssistantContext } from './AssistantContext';
 import { useBuiltInTool } from '@/features/tools';
-import { useUnifiedMCP } from '../hooks/use-unified-mcp';
+import { useToolProcessor } from '../hooks/use-tool-processor';
 import { createId } from '@paralleldrive/cuid2';
 import { getLogger } from '../lib/logger';
 import { Message } from '@/models/chat';
 import { useSettings } from '../hooks/use-settings';
 import { AIServiceConfig } from '@/lib/ai-service';
-import { isMCPError } from '@/lib/mcp-types';
 import { useSystemPrompt } from './SystemPromptContext';
+import { stringToMCPContentArray } from '@/lib/utils';
 
 const logger = getLogger('ChatContext');
 
 interface ChatContextValue {
   submit: (messageToAdd?: Message[], agentKey?: string) => Promise<Message>;
   isLoading: boolean;
+  isToolExecuting: boolean;
   messages: Message[];
   cancel: () => void;
+  addToMessageQueue: (message: Partial<Message>) => void;
+  pendingCancel: boolean;
+  handleUIAction: (action: {
+    type: string;
+    payload: { prompt: string };
+  }) => Promise<void>;
 }
 
 const ChatContext = createContext<ChatContextValue | undefined>(undefined);
@@ -38,155 +44,6 @@ interface ChatProviderProps {
 }
 
 const DEFAULT_SYSTEM_PROMPT = 'You are a helpful assistant.';
-
-// ToolCaller 컴포넌트 - callback prop으로 tool 실행 상태 관리
-interface ToolCallerProps {
-  onToolExecutionChange: (isExecuting: boolean) => void;
-}
-
-const ToolCaller: React.FC<ToolCallerProps> = ({ onToolExecutionChange }) => {
-  const { current: currentSession } = useSessionContext();
-  const { currentAssistant } = useAssistantContext();
-  const { messages, submit } = useChatContext();
-  const { executeToolCall } = useUnifiedMCP();
-
-  const lastProcessedMessageId = useRef<string | null>(null);
-
-  const [{ loading }, execute] = useAsyncFn(
-    async (tcMessage: Message) => {
-      if (!tcMessage.tool_calls || tcMessage.tool_calls.length === 0) {
-        logger.warn('No tool calls found in message');
-        return;
-      }
-
-      // Tool 실행 시작을 부모에게 알림
-      onToolExecutionChange(true);
-
-      try {
-        logger.info('Starting tool execution batch', {
-          toolCallCount: tcMessage.tool_calls.length,
-          messageId: tcMessage.id,
-        });
-
-        // Tool Call ID 검증 강화
-        const validateToolCallId = (toolCall: { id: string }): boolean => {
-          // Tool call ID가 유효한지 검증
-          return Boolean(toolCall.id && toolCall.id.trim().length > 0);
-        };
-
-        // Tool 실행 전 검증 로직 추가
-        for (const toolCall of tcMessage.tool_calls) {
-          if (!validateToolCallId(toolCall)) {
-            logger.error('Invalid tool call ID detected', { toolCall });
-            // 유효하지 않은 ID의 경우 새로운 deterministic ID 생성
-            toolCall.id = `fallback_${Math.abs(
-              JSON.stringify(toolCall.function)
-                .split('')
-                .reduce((a, b) => {
-                  a = (a << 5) - a + b.charCodeAt(0);
-                  return a & a;
-                }, 0),
-            ).toString(36)}`;
-          }
-        }
-
-        const toolResults: Message[] = [];
-
-        for (const toolCall of tcMessage.tool_calls) {
-          const toolName = toolCall.function.name;
-          const executionStartTime = Date.now();
-
-          try {
-            logger.debug('Executing tool', {
-              toolName,
-              toolCallId: toolCall.id,
-            });
-
-            const mcpResponse = await executeToolCall(toolCall);
-            const executionTime = Date.now() - executionStartTime;
-
-            // Diagnostic logging for debugging readContent tool result loss
-            logger.info('Raw mcpResponse for tool', {
-              toolCallId: toolCall.id,
-              toolName,
-              mcpResponse,
-            });
-
-            const toolResultMessage: Message = {
-              id: createId(),
-              assistantId: currentAssistant?.id,
-              role: 'tool',
-              content: isMCPError(mcpResponse)
-                ? `Error: ${mcpResponse.error.message} (Code: ${mcpResponse.error.code})`
-                : mcpResponse.result?.content || '',
-              tool_call_id: toolCall.id,
-              sessionId: currentSession?.id || '',
-            };
-
-            toolResults.push(toolResultMessage);
-
-            logger.info('Tool execution completed', {
-              toolName,
-              success: !isMCPError(mcpResponse),
-              executionTime,
-            });
-          } catch (error) {
-            logger.error('Tool execution failed', { toolName, error });
-
-            const errorMessage: Message = {
-              id: createId(),
-              assistantId: currentAssistant?.id,
-              role: 'tool',
-              content: `Error executing ${toolName}: ${error instanceof Error ? error.message : 'Unknown error'}`,
-              sessionId: currentSession?.id || '',
-              tool_call_id: toolCall.id,
-            };
-
-            toolResults.push(errorMessage);
-          }
-        }
-
-        if (toolResults.length > 0) {
-          logger.info('Submitting tool results', {
-            resultCount: toolResults.length,
-            messageId: tcMessage.id,
-          });
-
-          await submit(toolResults, currentAssistant?.id);
-        }
-      } finally {
-        // Tool 실행 완료를 부모에게 알림
-        onToolExecutionChange(false);
-      }
-    },
-    [
-      submit,
-      executeToolCall,
-      currentAssistant,
-      currentSession,
-      onToolExecutionChange,
-    ],
-  );
-
-  useEffect(() => {
-    const lastMessage = messages[messages.length - 1];
-    if (
-      lastMessage &&
-      lastMessage.role === 'assistant' &&
-      lastMessage.tool_calls &&
-      lastMessage.tool_calls.length > 0 &&
-      !lastMessage.isStreaming &&
-      !loading &&
-      lastMessage.id &&
-      lastProcessedMessageId.current !== lastMessage.id
-    ) {
-      lastProcessedMessageId.current = lastMessage.id;
-      execute(lastMessage);
-    }
-  }, [messages, execute, loading]);
-
-  return null;
-};
 
 export function ChatProvider({ children }: ChatProviderProps) {
   const { messages: history, addMessage, addMessages } = useSessionHistory();
@@ -201,7 +58,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const [streamingMessage, setStreamingMessage] = useState<Message | null>(
     null,
   );
-  const [isToolExecuting, setIsToolExecuting] = useState(false);
+  const [pendingCancel, setPendingCancel] = useState(false);
+  const [messageQueue, setMessageQueue] = useState<Message[]>([]);
 
   // Extract window size with default fallback
   const messageWindowSize = settingValue?.windowSize ?? 20;
@@ -210,7 +68,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
   useEffect(() => {
     return () => {
       setStreamingMessage(null);
-      setIsToolExecuting(false);
+      setPendingCancel(false);
+      setMessageQueue([]);
     };
   }, []);
 
@@ -221,7 +80,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
         newSessionId: currentSession.id,
       });
       setStreamingMessage(null); // 세션 변경 시 무조건 초기화
-      setIsToolExecuting(false); // 툴 실행 상태도 초기화
+      setPendingCancel(false); // Cancel 상태 초기화
+      setMessageQueue([]); // 메시지 큐 초기화
     }
   }, [currentSession?.id]); // currentSession?.id 변경 시 실행
 
@@ -238,6 +98,31 @@ export function ChatProvider({ children }: ChatProviderProps) {
     return combined;
   }, [getCurrentAssistant, getSystemPrompt]);
 
+  // Message queue management function
+  const addToMessageQueue = useCallback(
+    (message: Partial<Message>) => {
+      if (!currentSession?.id) {
+        logger.warn('No current session available for queuing message');
+        return;
+      }
+
+      const queuedMessage: Message = {
+        id: createId(),
+        role: 'user',
+        sessionId: currentSession.id,
+        content: stringToMCPContentArray(''),
+        ...message,
+      };
+
+      setMessageQueue((prev) => [...prev, queuedMessage]);
+      logger.info('Message added to queue', {
+        messageId: queuedMessage.id,
+        queueLength: messageQueue.length + 1,
+      });
+    },
+    [currentSession, messageQueue.length],
+  );
+
   // AI Service configuration with tools only
   const aiServiceConfig = useMemo(
     (): AIServiceConfig => ({
@@ -253,9 +138,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
     isLoading: aiServiceLoading,
     response,
   } = useAIService(aiServiceConfig);
-
-  // Combined loading state: AI service loading OR tool execution
-  const isLoading = aiServiceLoading || isToolExecuting;
 
   // Combine history with streaming message, avoiding duplicates
   const messages = useMemo(() => {
@@ -375,7 +257,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
           logger.info('Request cancelled after message persistence');
           return {
             id: createId(),
-            content: 'Request cancelled',
+            content: stringToMCPContentArray('Request cancelled'),
             role: 'system',
             sessionId: currentSession.id,
             isStreaming: false,
@@ -439,27 +321,95 @@ export function ChatProvider({ children }: ChatProviderProps) {
     ],
   );
 
+  // UIResource event handler
+  const handleUIAction = useCallback(
+    async (action: { type: string; payload: { prompt: string } }) => {
+      if (action.type === 'prompt') {
+        logger.info('Received prompt response from UIResource', {
+          response: action.payload.prompt,
+        });
+
+        if (!currentSession) {
+          logger.error('No current session available for UIResource prompt');
+          return;
+        }
+
+        const userMessage: Message = {
+          id: createId(),
+          role: 'user',
+          content: stringToMCPContentArray(action.payload.prompt),
+          sessionId: currentSession.id,
+        };
+
+        await submit([userMessage]);
+      }
+    },
+    [currentSession, submit],
+  );
+
   const handleCancel = useCallback(() => {
+    setPendingCancel(true);
     cancelRequestRef.current = true;
+
+    // Reset pendingCancel after a delay to show visual feedback
+    setTimeout(() => {
+      setPendingCancel(false);
+    }, 1000);
   }, []);
+
+  // Tool processor will be initialized after submit is defined
+  const { processToolCalls, isProcessing } = useToolProcessor({
+    submit,
+  });
+  // Process queued messages when tool execution completes
+  useEffect(() => {
+    if (!isProcessing && messageQueue.length > 0) {
+      const nextMessage = messageQueue[0];
+      logger.info('Processing queued message', {
+        messageId: nextMessage.id,
+        remainingInQueue: messageQueue.length - 1,
+      });
+
+      setMessageQueue((prev) => prev.slice(1));
+      submit([nextMessage]);
+    }
+  }, [isProcessing, messageQueue, submit]);
+
+  // Process tool calls when messages change
+  useEffect(() => {
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage) {
+      processToolCalls(lastMessage);
+    }
+  }, [messages, processToolCalls]);
+
+  // Combined loading state: AI service loading OR tool execution
+  const isLoading = aiServiceLoading || isProcessing;
 
   const value: ChatContextValue = useMemo(
     () => ({
       submit,
       isLoading,
+      isToolExecuting: isProcessing,
       messages,
       cancel: handleCancel,
+      addToMessageQueue,
+      pendingCancel,
+      handleUIAction,
     }),
-    [messages, submit, isLoading, handleCancel],
+    [
+      messages,
+      submit,
+      isLoading,
+      isProcessing,
+      handleCancel,
+      addToMessageQueue,
+      pendingCancel,
+      handleUIAction,
+    ],
   );
 
-  return (
-    <ChatContext.Provider value={value}>
-      {children}
-      {/* ToolCaller를 자동으로 포함 - 사용자가 수동으로 추가할 필요 없음 */}
-      <ToolCaller onToolExecutionChange={setIsToolExecuting} />
-    </ChatContext.Provider>
-  );
+  return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
 }
 
 export function useChatContext(): ChatContextValue {

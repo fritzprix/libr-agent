@@ -1,6 +1,11 @@
 import { getLogger } from '@/lib/logger';
 import { BROWSER_TOOL_SCHEMAS } from './helpers';
 import { BrowserLocalMCPTool } from './types';
+import {
+  createMCPStructuredResponse,
+  createMCPErrorResponse,
+} from '@/lib/mcp-response-utils';
+import { createId } from '@paralleldrive/cuid2';
 import TurndownService from 'turndown';
 
 const logger = getLogger('ExtractContentTool');
@@ -203,12 +208,21 @@ export const extractContentTool: BrowserLocalMCPTool = {
         format: format,
       };
 
-      return JSON.stringify(result, null, 2);
+      // Return structured MCP response
+      const textContent =
+        typeof result.content === 'string'
+          ? result.content
+          : JSON.stringify(result.content, null, 2);
+
+      return createMCPStructuredResponse(textContent, result, createId());
     } catch (error) {
       logger.error('Error in browser_extractContent:', error);
-      return JSON.stringify({
-        error: `Failed to extract content: ${error instanceof Error ? error.message : String(error)}`,
-      });
+      return createMCPErrorResponse(
+        -32603, // Internal error
+        `Failed to extract content: ${error instanceof Error ? error.message : String(error)}`,
+        { toolName: 'extractContent', args },
+        createId(),
+      );
     }
   },
 };
