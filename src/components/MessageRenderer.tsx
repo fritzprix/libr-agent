@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Copy, Check } from 'lucide-react';
 import type { MCPContent } from '@/lib/mcp-types';
@@ -52,6 +52,32 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
 
   // content 결정: message가 있으면 message.content 사용, 없으면 props.content 사용
   const finalContent: MCPContent[] = message?.content || content || [];
+
+  // Keep latest content in a ref to avoid recreating callbacks on each render
+  const contentRef = useRef<MCPContent[]>(finalContent);
+  useEffect(() => {
+    contentRef.current = finalContent;
+  }, [finalContent]);
+
+  // Memoize renderer props to keep identity stable across re-renders
+  const remoteDomProps = useMemo(
+    () => ({
+      library: basicComponentLibrary,
+      remoteElements: [
+        remoteButtonDefinition,
+        remoteTextDefinition,
+        remoteCardDefinition,
+        remoteImageDefinition,
+        remoteStackDefinition,
+      ],
+    }),
+    [],
+  );
+
+  const supportedContentTypes = useMemo(
+    () => ['rawHtml', 'externalUrl', 'remoteDom'] as const,
+    [],
+  );
 
   const handleLinkClick = async (e: React.MouseEvent, url: string) => {
     e.preventDefault();
@@ -151,14 +177,15 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
                   });
 
                   // 실행 완료 후 tool call + tool result 메시지 쌍을 함께 추가
-                  const [toolCallMessage, successMessage] = createToolMessagePair(
-                    `tauri:${strippedCommand}`,
-                    params,
-                    stringToMCPContentArray(`✅ ${result}`),
-                    toolCallId,
-                    sessionId,
-                    assistantId,
-                  );
+                  const [toolCallMessage, successMessage] =
+                    createToolMessagePair(
+                      `tauri:${strippedCommand}`,
+                      params,
+                      stringToMCPContentArray(`✅ ${result}`),
+                      toolCallId,
+                      sessionId,
+                      assistantId,
+                    );
 
                   // 메시지 쌍을 함께 추가
                   await submit([toolCallMessage, successMessage]);
@@ -190,8 +217,10 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
                 });
               }
             } else {
-              // MCP 도구 호출 개선: content에서 service info 추출
-              const serviceInfo = extractServiceInfoFromContent(finalContent);
+              // MCP 도구 호출 개선: latest content에서 service info 추출
+              const serviceInfo = extractServiceInfoFromContent(
+                contentRef.current,
+              );
               let finalToolName = toolName;
               if (serviceInfo) {
                 const isBaseName =
@@ -233,32 +262,34 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
 
               // 도구 실행 완료 후 tool call + tool result 메시지 쌍을 함께 추가
               if (response && response.result && response.result.content) {
-                const [toolCallMessage, toolResultMessage] = createToolMessagePair(
-                  finalToolName,
-                  params,
-                  response.result.content,
-                  toolCallId,
-                  sessionId,
-                  assistantId,
-                );
+                const [toolCallMessage, toolResultMessage] =
+                  createToolMessagePair(
+                    finalToolName,
+                    params,
+                    response.result.content,
+                    toolCallId,
+                    sessionId,
+                    assistantId,
+                  );
                 // 메시지 쌍을 함께 추가
                 await submit([toolCallMessage, toolResultMessage]);
               } else if (response && response.error) {
-                const [toolCallMessage, errorResultMessage] = createToolMessagePair(
-                  finalToolName,
-                  params,
-                  stringToMCPContentArray(
-                    `❌ Tool execution failed: ${response.error.message}`,
-                  ),
-                  toolCallId,
-                  sessionId,
-                  assistantId,
-                );
+                const [toolCallMessage, errorResultMessage] =
+                  createToolMessagePair(
+                    finalToolName,
+                    params,
+                    stringToMCPContentArray(
+                      `❌ Tool execution failed: ${response.error.message}`,
+                    ),
+                    toolCallId,
+                    sessionId,
+                    assistantId,
+                  );
                 // 에러 시에도 메시지 쌍을 함께 추가
                 await submit([toolCallMessage, errorResultMessage]);
               }
             }
-            break;
+            return { status: 'tool-submitted', tool: toolName };
           }
 
           case 'intent': {
@@ -280,7 +311,10 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
             );
 
             await submit([intentMessage]);
-            break;
+            return {
+              status: 'intent-submitted',
+              intent: result.payload.intent,
+            };
           }
 
           case 'prompt': {
@@ -295,7 +329,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
             );
 
             await submit([promptMessage]);
-            break;
+            return { status: 'prompt-submitted' };
           }
 
           case 'link': {
@@ -304,7 +338,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
             });
 
             await openExternalUrl(result.payload.url);
-            break;
+            return { status: 'link-opened' };
           }
 
           case 'notify': {
@@ -320,7 +354,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
             );
 
             await submit([notificationMessage]);
-            break;
+            return { status: 'notified' };
           }
 
           default: {
@@ -328,7 +362,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
               type: (result as { type: string }).type,
               result,
             });
-            break;
+            return { status: 'unknown-action' };
           }
         }
       } catch (error) {
@@ -336,9 +370,13 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
           type: result.type,
           error: error instanceof Error ? error.message : String(error),
         });
+        return {
+          status: 'error',
+          message: error instanceof Error ? error.message : String(error),
+        };
       }
     },
-    [executeToolCall, submit, getCurrentSession, getCurrent, finalContent],
+    [executeToolCall, submit, getCurrentSession, getCurrent],
   );
 
   if (!finalContent.length) {
@@ -348,15 +386,13 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
   return (
     <div className={`flex flex-col gap-2 ${className}`}>
       {finalContent.map((item, index) => {
+        const key = `${message?.id}_${item.type}_${index}`;
         switch (item.type) {
           case 'text': {
             const textItem = item as { text: string };
 
             return (
-              <div
-                key={index}
-                className="group relative text-sm leading-relaxed"
-              >
+              <div key={key} className="group relative text-sm leading-relaxed">
                 {/* Copy button for individual text */}
                 <button
                   onClick={async () => {
@@ -395,21 +431,16 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
           }
           case 'resource':
             logger.info('resource : ', { resource: item.resource });
+            // Prefer a stable, unique key to ensure proper mount/unmount semantics
+            // Use message.id + resource.uri to avoid index-based reordering issues
+            // Also, pass stable props to avoid unnecessary teardown in the renderer
             return (
               <UIResourceRenderer
-                key={index}
-                remoteDomProps={{
-                  library: basicComponentLibrary,
-                  remoteElements: [
-                    remoteButtonDefinition,
-                    remoteTextDefinition,
-                    remoteCardDefinition,
-                    remoteImageDefinition,
-                    remoteStackDefinition,
-                  ],
-                }}
+                key={key}
+                remoteDomProps={remoteDomProps}
                 onUIAction={handleUIAction}
-                supportedContentTypes={['rawHtml', 'externalUrl', 'remoteDom']}
+                supportedContentTypes={[...supportedContentTypes]}
+                htmlProps={{ autoResizeIframe: { height: true } }}
                 resource={item.resource}
               />
             );
@@ -423,7 +454,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
               imageItem.data || imageItem.source?.data || imageItem.source?.uri;
             return imageSrc ? (
               <img
-                key={index}
+                key={key}
                 src={imageSrc}
                 alt="Tool output"
                 className="max-w-full h-auto rounded-lg shadow-sm"
@@ -433,7 +464,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
           case 'audio': {
             const audioItem = item as { data?: string; mimeType?: string };
             return audioItem.data ? (
-              <audio key={index} controls className="w-full">
+              <audio key={key} controls className="w-full">
                 <source src={audioItem.data} type={audioItem.mimeType} />
                 Your browser does not support the audio element.
               </audio>
@@ -446,7 +477,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
               description?: string;
             };
             return (
-              <div key={index} className="p-2 border rounded-lg bg-gray-50">
+              <div key={key} className="p-2 border rounded-lg bg-gray-50">
                 <a
                   href={linkItem.uri}
                   onClick={(e) => handleLinkClick(e, linkItem.uri)}
@@ -464,7 +495,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
           }
           default:
             return (
-              <div key={index} className="text-gray-500 italic">
+              <div key={key} className="text-gray-500 italic">
                 [{'type' in item ? (item as { type: string }).type : 'unknown'}]
               </div>
             );
