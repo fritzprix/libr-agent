@@ -1,6 +1,7 @@
 import { createId } from '@paralleldrive/cuid2';
 import { Message } from '@/models/chat';
 import { stringToMCPContentArray } from '@/lib/utils';
+import { MCPContent } from '@/lib/mcp-types';
 
 /**
  * 시스템 메시지를 생성하는 헬퍼 함수
@@ -34,11 +35,57 @@ export const createUserMessage = (
 });
 
 /**
+ * 스트리밍 어시스턴트 메시지를 생성하는 헬퍼 함수
+ * ID를 명시적으로 고정할 수 있어 streaming 과정에서 일관성 유지
+ */
+export const createStreamingMessage = (
+  id: string,
+  content: MCPContent[],
+  sessionId: string,
+  assistantId?: string,
+  options?: {
+    thinking?: string;
+    thinkingSignature?: string;
+    tool_calls?: import('@/models/chat').ToolCall[];
+    isStreaming?: boolean;
+  },
+): Message => ({
+  id,
+  content,
+  role: 'assistant',
+  sessionId,
+  assistantId,
+  ...options,
+});
+
+/**
+ * 어시스턴트 메시지를 생성하는 헬퍼 함수
+ */
+export const createAssistantMessage = (
+  content: MCPContent[],
+  sessionId: string,
+  assistantId?: string,
+  options?: {
+    thinking?: string;
+    thinkingSignature?: string;
+    tool_calls?: import('@/models/chat').ToolCall[];
+    isStreaming?: boolean;
+  },
+): Message => ({
+  id: createId(),
+  content,
+  role: 'assistant',
+  sessionId,
+  assistantId,
+  ...options,
+});
+
+/**
  * 도구 실행 결과 메시지를 생성하는 헬퍼 함수
  * AI 서비스별 제약사항을 고려한 안전한 tool 메시지 생성
  */
 export const createToolMessage = (
-  content: ReturnType<typeof stringToMCPContentArray>,
+  content: MCPContent[],
   toolCallId: string, // ✅ tool_call_id 필수 파라미터
   sessionId: string,
   assistantId?: string,
@@ -80,11 +127,10 @@ export const createToolSuccessMessage = (
 export const createToolMessagePair = (
   toolName: string,
   params: Record<string, unknown>,
-  result: string | ReturnType<typeof stringToMCPContentArray>,
+  result: MCPContent[],
   toolCallId: string,
   sessionId: string,
   assistantId?: string,
-  isError = false,
 ): [Message, Message] => {
   const toolCallMessage: Message = {
     id: createId(),
@@ -104,14 +150,9 @@ export const createToolMessagePair = (
     assistantId,
   };
 
-  const content =
-    typeof result === 'string'
-      ? stringToMCPContentArray(isError ? `❌ ${result}` : `✅ ${result}`)
-      : result;
-
   const toolResultMessage: Message = {
     id: createId(),
-    content,
+    content: result,
     role: 'tool',
     tool_call_id: toolCallId,
     sessionId,

@@ -23,6 +23,11 @@ import { useChatContext } from '@/context/ChatContext';
 import { useSessionContext } from '@/context/SessionContext';
 import { stringToMCPContentArray } from '@/lib/utils';
 import { useAssistantContext } from '@/context/AssistantContext';
+import {
+  createSystemMessage,
+  createUserMessage,
+  createToolMessagePair,
+} from '@/lib/chat-utils';
 
 const logger = getLogger('MessageRenderer');
 
@@ -146,32 +151,14 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
                   });
 
                   // 실행 완료 후 tool call + tool result 메시지 쌍을 함께 추가
-                  const toolCallMessage: Message = {
-                    id: createId(),
-                    content: [],
-                    role: 'assistant',
-                    tool_calls: [
-                      {
-                        id: toolCallId,
-                        type: 'function',
-                        function: {
-                          name: `tauri:${strippedCommand}`,
-                          arguments: JSON.stringify(params),
-                        },
-                      },
-                    ],
+                  const [toolCallMessage, successMessage] = createToolMessagePair(
+                    `tauri:${strippedCommand}`,
+                    params,
+                    stringToMCPContentArray(`✅ ${result}`),
+                    toolCallId,
                     sessionId,
                     assistantId,
-                  };
-
-                  const successMessage: Message = {
-                    id: createId(),
-                    content: stringToMCPContentArray(`✅ ${result}`),
-                    role: 'tool',
-                    tool_call_id: toolCallId,
-                    sessionId,
-                    assistantId,
-                  };
+                  );
 
                   // 메시지 쌍을 함께 추가
                   await submit([toolCallMessage, successMessage]);
@@ -182,34 +169,16 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
                   });
 
                   // 에러 시에도 tool call + tool result 메시지 쌍을 함께 추가
-                  const toolCallMessage: Message = {
-                    id: createId(),
-                    content: [],
-                    role: 'assistant',
-                    tool_calls: [
-                      {
-                        id: toolCallId,
-                        type: 'function',
-                        function: {
-                          name: `tauri:${strippedCommand}`,
-                          arguments: JSON.stringify(params),
-                        },
-                      },
-                    ],
-                    sessionId,
-                    assistantId,
-                  };
-
-                  const errorMessage: Message = {
-                    id: createId(),
-                    content: stringToMCPContentArray(
+                  const [toolCallMessage, errorMessage] = createToolMessagePair(
+                    `tauri:${strippedCommand}`,
+                    params,
+                    stringToMCPContentArray(
                       `❌ ${strippedCommand} failed: ${error instanceof Error ? error.message : String(error)}`,
                     ),
-                    role: 'tool',
-                    tool_call_id: toolCallId,
+                    toolCallId,
                     sessionId,
                     assistantId,
-                  };
+                  );
 
                   // 에러 메시지 쌍을 함께 추가
                   await submit([toolCallMessage, errorMessage]);
@@ -263,46 +232,28 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
               });
 
               // 도구 실행 완료 후 tool call + tool result 메시지 쌍을 함께 추가
-              const toolCallMessage: Message = {
-                id: createId(),
-                content: [], // Tool call은 content가 비어있을 수 있음
-                role: 'assistant',
-                tool_calls: [
-                  {
-                    id: toolCallId,
-                    type: 'function',
-                    function: {
-                      name: finalToolName,
-                      arguments: JSON.stringify(params),
-                    },
-                  },
-                ],
-                sessionId,
-                assistantId,
-              };
-
               if (response && response.result && response.result.content) {
-                const toolResultMessage: Message = {
-                  id: createId(),
-                  content: response.result.content,
-                  role: 'tool',
-                  tool_call_id: toolCallId,
+                const [toolCallMessage, toolResultMessage] = createToolMessagePair(
+                  finalToolName,
+                  params,
+                  response.result.content,
+                  toolCallId,
                   sessionId,
                   assistantId,
-                };
+                );
                 // 메시지 쌍을 함께 추가
                 await submit([toolCallMessage, toolResultMessage]);
               } else if (response && response.error) {
-                const errorResultMessage: Message = {
-                  id: createId(),
-                  content: stringToMCPContentArray(
+                const [toolCallMessage, errorResultMessage] = createToolMessagePair(
+                  finalToolName,
+                  params,
+                  stringToMCPContentArray(
                     `❌ Tool execution failed: ${response.error.message}`,
                   ),
-                  role: 'tool',
-                  tool_call_id: toolCallId,
+                  toolCallId,
                   sessionId,
                   assistantId,
-                };
+                );
                 // 에러 시에도 메시지 쌍을 함께 추가
                 await submit([toolCallMessage, errorResultMessage]);
               }
@@ -322,13 +273,11 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
               ? `\nParameters: ${JSON.stringify(result.payload.params, null, 2)}`
               : '';
 
-            const intentMessage: Message = {
-              id: createId(),
-              content: stringToMCPContentArray(intentText + paramsText),
-              role: 'user',
+            const intentMessage = createUserMessage(
+              intentText + paramsText,
               sessionId,
               assistantId,
-            };
+            );
 
             await submit([intentMessage]);
             break;
@@ -339,13 +288,11 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
               prompt: result.payload.prompt,
             });
 
-            const promptMessage: Message = {
-              id: createId(),
-              content: stringToMCPContentArray(result.payload.prompt),
-              role: 'user',
+            const promptMessage = createUserMessage(
+              result.payload.prompt,
               sessionId,
               assistantId,
-            };
+            );
 
             await submit([promptMessage]);
             break;
@@ -366,13 +313,11 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
             });
 
             // 알림을 시스템 메시지로 채팅에 추가
-            const notificationMessage: Message = {
-              id: createId(),
-              content: stringToMCPContentArray(`🔔 ${result.payload.message}`),
-              role: 'system',
+            const notificationMessage = createSystemMessage(
+              `🔔 ${result.payload.message}`,
               sessionId,
               assistantId,
-            };
+            );
 
             await submit([notificationMessage]);
             break;

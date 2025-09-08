@@ -8,6 +8,7 @@ import { prepareMessagesForLLM } from '../lib/message-preprocessor';
 
 import { selectMessagesWithinContext } from '@/lib/token-utils';
 import { stringToMCPContentArray } from '@/lib/utils';
+import { createStreamingMessage } from '@/lib/chat-utils';
 
 const logger = getLogger('useAIService');
 
@@ -129,16 +130,18 @@ export const useAIService = (config?: AIServiceConfig) => {
             fullContent += parsedChunk.content;
           }
 
-          finalMessage = {
-            id: currentResponseId,
-            content: stringToMCPContentArray(fullContent),
-            role: 'assistant',
-            isStreaming: true,
-            thinking,
-            thinkingSignature,
-            tool_calls: toolCalls,
-            sessionId: messages[0]?.sessionId || '', // Add sessionId
-          };
+          finalMessage = createStreamingMessage(
+            currentResponseId,
+            stringToMCPContentArray(fullContent),
+            messages[0]?.sessionId || '',
+            undefined, // assistantId
+            {
+              thinking,
+              thinkingSignature,
+              tool_calls: toolCalls,
+              isStreaming: true,
+            },
+          );
 
           setResponse(finalMessage);
         }
@@ -149,29 +152,33 @@ export const useAIService = (config?: AIServiceConfig) => {
 
         if (!hasContent && !hasToolCalls) {
           logger.debug('Empty response detected, creating placeholder message');
-          finalMessage = {
-            id: currentResponseId,
-            content: stringToMCPContentArray(
+          finalMessage = createStreamingMessage(
+            currentResponseId,
+            stringToMCPContentArray(
               'I apologize, but I encountered an issue and cannot provide a response at this time.',
             ),
-            thinking,
-            thinkingSignature,
-            role: 'assistant',
-            isStreaming: false,
-            tool_calls: [],
-            sessionId: messages[0]?.sessionId || '',
-          };
+            messages[0]?.sessionId || '',
+            undefined, // assistantId
+            {
+              thinking,
+              thinkingSignature,
+              tool_calls: [],
+              isStreaming: false,
+            },
+          );
         } else {
-          finalMessage = {
-            id: currentResponseId,
-            content: stringToMCPContentArray(fullContent),
-            thinking,
-            thinkingSignature,
-            role: 'assistant',
-            isStreaming: false,
-            tool_calls: toolCalls,
-            sessionId: messages[0]?.sessionId || '', // Add sessionId
-          };
+          finalMessage = createStreamingMessage(
+            currentResponseId,
+            stringToMCPContentArray(fullContent),
+            messages[0]?.sessionId || '',
+            undefined, // assistantId
+            {
+              thinking,
+              thinkingSignature,
+              tool_calls: toolCalls,
+              isStreaming: false,
+            },
+          );
         }
 
         logger.info('Final message:', {
