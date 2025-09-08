@@ -6,9 +6,9 @@ import { useSessionContext } from '@/context/SessionContext';
 import { useChatContext } from '@/context/ChatContext';
 import { useFileAttachment } from '../hooks/useFileAttachment';
 import { getLogger } from '@/lib/logger';
-import { AttachmentReference, Message } from '@/models/chat';
-import { createId } from '@paralleldrive/cuid2';
+import { AttachmentReference } from '@/models/chat';
 import { stringToMCPContentArray } from '@/lib/utils';
+import { createUserMessage } from '@/lib/chat-utils';
 
 const logger = getLogger('ChatInput');
 
@@ -78,13 +78,12 @@ export function ChatInput({ children }: ChatInputProps) {
         logger.info('Message queued during tool execution');
       } else {
         // 일반 전송
-        const userMessage: Message = {
-          id: createId(),
-          content: stringToMCPContentArray(input.trim()),
-          role: 'user',
-          sessionId: currentSession.id,
-          attachments: attachedFiles,
-        };
+        const userMessage = createUserMessage(input.trim(), currentSession.id);
+
+        // 첨부파일이 있으면 추가
+        if (attachedFiles.length > 0) {
+          userMessage.attachments = attachedFiles;
+        }
 
         setInput('');
         clearPendingFiles();
