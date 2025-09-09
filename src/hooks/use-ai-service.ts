@@ -1,5 +1,4 @@
 import { Message, ToolCall } from '@/models/chat';
-import { MCPContent } from '@/lib/mcp-types';
 import { createId } from '@paralleldrive/cuid2';
 import { useCallback, useMemo, useState } from 'react';
 import { AIServiceConfig, AIServiceFactory } from '../lib/ai-service';
@@ -24,17 +23,6 @@ const sanitizeJsonField = (value: string): string => {
   }
 };
 
-// MCPContent 안전성 처리
-const sanitizeContent = (content: MCPContent): MCPContent => {
-  if (content.type === 'text') {
-    return {
-      ...content,
-      text: sanitizeJsonField(content.text),
-    };
-  }
-  return content; // 다른 타입은 그대로 유지
-};
-
 // ToolCall 안전성 처리
 const sanitizeToolCall = (toolCall: ToolCall): ToolCall => {
   return {
@@ -49,11 +37,6 @@ const sanitizeToolCall = (toolCall: ToolCall): ToolCall => {
 // Message 전체 안전성 처리
 const sanitizeMessage = (message: Message): Message => {
   const sanitized = { ...message };
-
-  // content 배열 처리
-  if (sanitized.content) {
-    sanitized.content = sanitized.content.map(sanitizeContent);
-  }
 
   // tool_calls 처리
   if (sanitized.tool_calls) {

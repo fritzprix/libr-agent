@@ -8,6 +8,7 @@ import {
 import { createId } from '@paralleldrive/cuid2';
 import TurndownService from 'turndown';
 import { parseHTMLToStructured, parseHTMLToDOMMap } from '@/lib/html-parser';
+import { cleanMarkdownText } from '@/lib/text-utils';
 
 const logger = getLogger('ExtractContentTool');
 
@@ -104,7 +105,12 @@ export const extractContentTool: BrowserLocalMCPTool = {
           replacement: () => '\n',
         });
 
-        result.content = turndownService.turndown(rawHtml);
+        let markdown = turndownService.turndown(rawHtml);
+
+        // Cleanup markdown using shared utility
+        markdown = cleanMarkdownText(markdown);
+
+        result.content = markdown;
         result.format = 'markdown';
       } else if (format === 'json') {
         // JSON structured extraction using TypeScript parser
@@ -133,10 +139,10 @@ export const extractContentTool: BrowserLocalMCPTool = {
       } else if (format === 'dom-map') {
         // DOM Map extraction using TypeScript parser
         const domMapResult = parseHTMLToDOMMap(rawHtml, {
-          maxDepth: Math.min(maxDepth, 3), // Limit DOM map depth for performance
-          maxChildren: 10,
-          maxTextLength: 50,
-          includeInteractiveOnly: true,
+          maxDepth: Math.min(maxDepth, 10),
+          maxChildren: 20,
+          maxTextLength: 100,
+          includeInteractiveOnly: false,
         });
 
         if (domMapResult.error) {

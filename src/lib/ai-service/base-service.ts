@@ -99,11 +99,7 @@ export abstract class BaseAIService implements IAIService {
   /**
    * MCPContent 배열을 LLM용 텍스트로 변환
    */
-  protected processMessageContent(content: string | MCPContent[]): string {
-    if (typeof content === 'string') {
-      return content;
-    }
-
+  protected processMessageContent(content: MCPContent[]): string {
     // MCPContent 배열에서 텍스트만 추출
     return content
       .filter((item) => item.type === 'text')
@@ -115,12 +111,8 @@ export abstract class BaseAIService implements IAIService {
    * MLM용 - 이미지 content도 처리
    */
   protected processMultiModalContent(
-    content: string | MCPContent[],
+    content: MCPContent[],
   ): Array<{ type: string; text?: string; image?: string }> {
-    if (typeof content === 'string') {
-      return [{ type: 'text', text: content }];
-    }
-
     return content.map((item) => {
       switch (item.type) {
         case 'text':
