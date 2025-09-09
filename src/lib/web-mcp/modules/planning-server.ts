@@ -171,7 +171,7 @@ const tools: MCPTool[] = [
 ];
 
 const planningServer: WebMCPServer = {
-  name: 'planning-server',
+  name: 'planning',
   version: '2.1.0',
   description:
     'Ephemeral planning and goal management for AI agents with bounded observation queue',

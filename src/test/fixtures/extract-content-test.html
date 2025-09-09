@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ExtractContentTool Test Page</title>
+    <script>
+      // This script should be filtered out
+      console.log('This should not appear in extracted content');
+    </script>
+    <style>
+      /* This style should be filtered out */
+      .hidden {
+        display: none;
+      }
+      .invisible {
+        visibility: hidden;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Test Section: Basic Elements -->
+    <div id="test-basic" class="test-section">
+      <h1>Basic Elements Test</h1>
+      <h2>Subheading</h2>
+      <h3>Sub-subheading</h3>
+      <p>
+        This is a regular paragraph with <strong>bold text</strong>,
+        <em>italic text</em>, and <code>inline code</code>.
+      </p>
+      <p>
+        Another paragraph with
+        <a href="https://example.com">external link</a> and
+        <a href="/internal">internal link</a>.
+      </p>
+      <blockquote>
+        This is a blockquote with multiple lines. It should be properly
+        formatted in markdown.
+      </blockquote>
+      <ul>
+        <li>Unordered list item 1</li>
+        <li>Unordered list item 2 with <strong>formatting</strong></li>
+        <li>Unordered list item 3</li>
+      </ul>
+      <ol>
+        <li>Ordered list item 1</li>
+        <li>Ordered list item 2</li>
+        <li>Ordered list item 3</li>
+      </ol>
+    </div>
+
+    <!-- Test Section: Forms -->
+    <div id="test-forms" class="test-section">
+      <h2>Form Elements Test</h2>
+      <form id="sample-form" action="/submit" method="post">
+        <fieldset>
+          <legend>User Information</legend>
+
+          <label for="fullname">Full Name:</label>
+          <input
+            type="text"
+            id="fullname"
+            name="fullname"
+            placeholder="Enter your full name"
+            required
+          />
+
+          <label for="email">Email Address:</label>
+          <input
+            type="email"
+            id="email"
+            name="email"
+            placeholder="user@example.com"
+            required
+          />
+
+          <label for="password">Password:</label>
+          <input
+            type="password"
+            id="password"
+            name="password"
+            placeholder="Enter password"
+            required
+          />
+
+          <label for="age">Age:</label>
+          <input
+            type="number"
+            id="age"
+            name="age"
+            min="18"
+            max="120"
+            placeholder="Enter your age"
+          />
+
+          <label for="country">Country:</label>
+          <select id="country" name="country">
+            <option value="">Select a country</option>
+            <option value="us">United States</option>
+            <option value="uk">United Kingdom</option>
+            <option value="ca">Canada</option>
+            <option value="au">Australia</option>
+          </select>
+
+          <fieldset>
+            <legend>Preferences</legend>
+            <input
+              type="checkbox"
+              id="newsletter"
+              name="newsletter"
+              value="yes"
+            />
+            <label for="newsletter">Subscribe to newsletter</label>
+
+            <input
+              type="radio"
+              id="theme-light"
+              name="theme"
+              value="light"
+              checked
+            />
+            <label for="theme-light">Light theme</label>
+
+            <input type="radio" id="theme-dark" name="theme" value="dark" />
+            <label for="theme-dark">Dark theme</label>
+          </fieldset>
+
+          <label for="comments">Additional Comments:</label>
+          <textarea
+            id="comments"
+            name="comments"
+            rows="4"
+            cols="50"
+            placeholder="Enter any additional comments"
+          ></textarea>
+
+          <button type="submit" class="submit-btn">Submit Form</button>
+          <button type="reset" class="reset-btn">Reset Form</button>
+        </fieldset>
+      </form>
+    </div>
+
+    <!-- Test Section: Media -->
+    <div id="test-media" class="test-section">
+      <h2>Media Elements Test</h2>
+
+      <figure>
+        <img
+          src="https://via.placeholder.com/300x200"
+          alt="Sample image for testing"
+          title="Test Image"
+        />
+        <figcaption>This is a sample image with caption</figcaption>
+      </figure>
+
+      <video controls width="320" height="240">
+        <source src="sample-video.mp4" type="video/mp4" />
+        <source src="sample-video.webm" type="video/webm" />
+        Your browser does not support the video tag.
+      </video>
+
+      <audio controls>
+        <source src="sample-audio.mp3" type="audio/mpeg" />
+        <source src="sample-audio.ogg" type="audio/ogg" />
+        Your browser does not support the audio tag.
+      </audio>
+
+      <iframe
+        src="https://example.com/embed"
+        width="400"
+        height="300"
+        title="Sample embedded content"
+      ></iframe>
+    </div>
+
+    <!-- Test Section: Tables -->
+    <div id="test-tables" class="test-section">
+      <h2>Table Elements Test</h2>
+
+      <table id="data-table" border="1">
+        <caption>
+          Sample Data Table
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Name</th>
+            <th scope="col">Age</th>
+            <th scope="col">City</th>
+            <th scope="col">Occupation</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>John Doe</td>
+            <td>30</td>
+            <td>New York</td>
+            <td>Software Engineer</td>
+          </tr>
+          <tr>
+            <td>Jane Smith</td>
+            <td>28</td>
+            <td>London</td>
+            <td>UX Designer</td>
+          </tr>
+          <tr>
+            <td>Bob Johnson</td>
+            <td>35</td>
+            <td>Toronto</td>
+            <td>Project Manager</td>
+          </tr>
+        </tbody>
+        <tfoot>
+          <tr>
+            <td colspan="4">Total: 3 employees</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <!-- Test Section: Nested Structure -->
+    <div id="test-nested" class="test-section">
+      <h2>Nested Structure Test</h2>
+
+      <nav class="main-navigation">
+        <ul class="nav-list">
+          <li class="nav-item">
+            <a href="/home" class="nav-link active">Home</a>
+          </li>
+          <li class="nav-item">
+            <a href="/products" class="nav-link">Products</a>
+            <ul class="sub-nav">
+              <li><a href="/products/laptops">Laptops</a></li>
+              <li><a href="/products/phones">Phones</a></li>
+              <li><a href="/products/tablets">Tablets</a></li>
+            </ul>
+          </li>
+          <li class="nav-item">
+            <a href="/about" class="nav-link">About</a>
+          </li>
+          <li class="nav-item">
+            <a href="/contact" class="nav-link">Contact</a>
+          </li>
+        </ul>
+      </nav>
+
+      <article class="blog-post">
+        <header class="post-header">
+          <h3>Sample Blog Post</h3>
+          <div class="post-meta">
+            <span class="author">By: John Author</span>
+            <span class="date">Date: 2024-01-15</span>
+            <span class="category">Category: Technology</span>
+          </div>
+        </header>
+
+        <div class="post-content">
+          <p>
+            This is the first paragraph of the blog post. It contains
+            <strong>important information</strong>.
+          </p>
+
+          <div class="highlight-box">
+            <h4>Important Note</h4>
+            <p>This is a highlighted section within the blog post.</p>
+          </div>
+
+          <div class="code-block">
+            <pre><code>
+function example() {
+  console.log("This is a code example");
+  return true;
+}
+          </code></pre>
+          </div>
+
+          <p>
+            Final paragraph with <a href="#footnote1">footnote reference</a>.
+          </p>
+        </div>
+
+        <footer class="post-footer">
+          <div class="tags">
+            <span class="tag">JavaScript</span>
+            <span class="tag">Web Development</span>
+            <span class="tag">Programming</span>
+          </div>
+        </footer>
+      </article>
+    </div>
+
+    <!-- Test Section: Special Characters and Encoding -->
+    <div id="test-special" class="test-section">
+      <h2>Special Characters & Encoding Test</h2>
+
+      <p>Unicode characters: ñ, ö, ü, ß, æ, ø, å</p>
+      <p>Mathematical symbols: ∑, ∆, π, ∞, ≤, ≥, ≠</p>
+      <p>Currency symbols: $, €, £, ¥, ₹, ₽</p>
+      <p>Emojis: 😀, 🌟, 🚀, 💻, 📱, 🎯</p>
+      <p>HTML entities: &amp;, &lt;, &gt;, &quot;, &#39;</p>
+
+      <div class="multilingual">
+        <p lang="zh">中文测试内容</p>
+        <p lang="ja">日本語のテスト</p>
+        <p lang="ko">한국어 테스트</p>
+        <p lang="ar">اختبار اللغة العربية</p>
+        <p lang="ru">Тест на русском языке</p>
+      </div>
+
+      <div class="special-formatting">
+        <p>Text with <sup>superscript</sup> and <sub>subscript</sub></p>
+        <p><mark>Highlighted text</mark> and <del>deleted text</del></p>
+        <p>
+          <ins>Inserted text</ins> and <abbr title="Abbreviation">abbr</abbr>
+        </p>
+      </div>
+    </div>
+
+    <!-- Test Section: Hidden and Display Elements -->
+    <div id="test-visibility" class="test-section">
+      <h2>Visibility Test</h2>
+
+      <p>This paragraph is visible.</p>
+
+      <div class="hidden">
+        This content is hidden with CSS display: none and should not be
+        extracted.
+      </div>
+
+      <div class="invisible">
+        This content is invisible with CSS visibility: hidden and should not be
+        extracted.
+      </div>
+
+      <div style="display: none">
+        This content is hidden with inline style and should not be extracted.
+      </div>
+
+      <div style="visibility: hidden">
+        This content is invisible with inline style and should not be extracted.
+      </div>
+
+      <noscript> This noscript content should be filtered out. </noscript>
+
+      <p>This paragraph is also visible.</p>
+    </div>
+
+    <!-- Test Section: Interactive Elements -->
+    <div id="test-interactive" class="test-section">
+      <h2>Interactive Elements Test</h2>
+
+      <div class="button-group">
+        <button type="button" id="primary-btn" class="btn btn-primary">
+          Primary Button
+        </button>
+        <button
+          type="button"
+          id="secondary-btn"
+          class="btn btn-secondary"
+          disabled
+        >
+          Disabled Button
+        </button>
+        <button
+          type="button"
+          id="danger-btn"
+          class="btn btn-danger"
+          onclick="alert('clicked')"
+        >
+          Danger Button
+        </button>
+      </div>
+
+      <div class="link-group">
+        <a href="mailto:test@example.com" class="email-link">Email Link</a>
+        <a href="tel:+1234567890" class="phone-link">Phone Link</a>
+        <a href="https://external.com" target="_blank" rel="noopener"
+          >External Link</a
+        >
+        <a href="#section1" class="anchor-link">Anchor Link</a>
+      </div>
+
+      <details>
+        <summary>Expandable Details</summary>
+        <p>
+          This content is initially hidden and can be expanded by clicking the
+          summary.
+        </p>
+      </details>
+
+      <dialog id="sample-dialog">
+        <p>This is a dialog element.</p>
+        <button type="button">Close Dialog</button>
+      </dialog>
+    </div>
+
+    <!-- Test Section: Long Content for Size Testing -->
+    <div id="test-large-content" class="test-section">
+      <h2>Large Content Test</h2>
+      <div class="large-text">
+        Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod
+        tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim
+        veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea
+        commodo consequat. Duis aute irure dolor in reprehenderit in voluptate
+        velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint
+        occaecat cupidatat non proident, sunt in culpa qui officia deserunt
+        mollit anim id est laborum. Sed ut perspiciatis unde omnis iste natus
+        error sit voluptatem accusantium doloremque laudantium, totam rem
+        aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto
+        beatae vitae dicta sunt explicabo. Nemo enim ipsam voluptatem quia
+        voluptas sit aspernatur aut odit aut fugit, sed quia consequuntur magni
+        dolores eos qui ratione voluptatem sequi nesciunt. Neque porro quisquam
+        est, qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit,
+        sed quia non numquam eius modi tempora incidunt ut labore et dolore
+        magnam aliquam quaerat voluptatem. Ut enim ad minima veniam, quis
+        nostrum exercitationem ullam corporis suscipit laboriosam, nisi ut
+        aliquid ex ea commodi consequatur. Quis autem vel eum iure reprehenderit
+        qui in ea voluptate velit esse quam nihil molestiae consequatur, vel
+        illum qui dolorem eum fugiat quo voluptas nulla pariatur.
+      </div>
+    </div>
+
+    <!-- Test Section: Edge Cases -->
+    <div id="test-edge-cases" class="test-section">
+      <h2>Edge Cases Test</h2>
+
+      <!-- Empty elements -->
+      <div class="empty-div"></div>
+      <p class="empty-paragraph"></p>
+      <span class="empty-span"></span>
+
+      <!-- Elements with only whitespace -->
+      <div class="whitespace-only"></div>
+
+      <!-- Deeply nested structure -->
+      <div class="level-1">
+        <div class="level-2">
+          <div class="level-3">
+            <div class="level-4">
+              <div class="level-5">
+                <div class="level-6">
+                  <p>Deep nested content</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Self-closing elements -->
+      <img src="test.jpg" alt="Self-closing image" />
+      <br />
+      <hr />
+      <input type="text" value="Self-closing input" />
+    </div>
+
+    <footer id="page-footer">
+      <p>&copy; 2024 ExtractContentTool Test Page. All rights reserved.</p>
+      <div class="footer-links">
+        <a href="/privacy">Privacy Policy</a>
+        <a href="/terms">Terms of Service</a>
+        <a href="/contact">Contact Us</a>
+      </div>
+    </footer>
+  </body>
+</html>

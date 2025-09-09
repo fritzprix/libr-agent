@@ -1,0 +1,113 @@
+<!-- filepath: /Users/1111108/my_work/synaptic-flow/src/test/test_mock-test-page.html -->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>ExtractContentTool Test Page</title>
+    <!-- Test: Should ignore <style> and <script> tags -->
+    <style>
+      .hidden {
+        display: none;
+      }
+      .red {
+        color: red;
+      }
+    </style>
+    <script>
+      // Should be ignored by extractor
+      window.testScript = true;
+    </script>
+  </head>
+  <body>
+    <!-- Test: Heading extraction -->
+    <h1 id="main-title" class="red">Main Title</h1>
+    <h2>Subheading</h2>
+
+    <!-- Test: Paragraph extraction -->
+    <p id="intro">This is an introductory paragraph.</p>
+
+    <!-- Test: List extraction -->
+    <ul id="features-list">
+      <li>Feature A</li>
+      <li>Feature B</li>
+      <li>Feature C</li>
+    </ul>
+
+    <!-- Test: Link extraction with href -->
+    <a id="test-link" href="https://example.com" title="Example Link"
+      >Visit Example</a
+    >
+
+    <!-- Test: Image extraction with src and alt -->
+    <img id="test-image" src="test.png" alt="Test Image" title="Image Title" />
+
+    <!-- Test: Button extraction -->
+    <button id="test-button" class="btn">Click Me</button>
+
+    <!-- Test: Form extraction -->
+    <form id="test-form">
+      <input type="text" name="username" value="user1" />
+      <input type="password" name="password" />
+      <button type="submit">Submit</button>
+    </form>
+
+    <!-- Test: Table extraction -->
+    <table id="test-table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Value</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Alpha</td>
+          <td>1</td>
+        </tr>
+        <tr>
+          <td>Beta</td>
+          <td>2</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- Test: Nested elements for maxDepth -->
+    <div id="nested">
+      <div>
+        <div>
+          <span>Level 3</span>
+          <div>
+            <span>Level 4</span>
+            <div>
+              <span>Level 5</span>
+              <div>
+                <span>Level 6 (should be excluded if maxDepth=5)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Test: Hidden element should be ignored -->
+    <div id="hidden-div" class="hidden">This should not be extracted</div>
+
+    <!-- Test: <noscript> exclusion -->
+    <noscript>This is noscript content</noscript>
+
+    <!-- Test: <br> line breaks for Markdown -->
+    <p id="breaks">Line one.<br />Line two.<br />Line three.</p>
+
+    <!-- Test: Meta and link tags in head should be ignored -->
+    <meta name="description" content="Test page for ExtractContentTool" />
+    <link rel="stylesheet" href="style.css" />
+
+    <!-- Test: iframe, video, audio meaningful elements -->
+    <iframe id="test-iframe" src="about:blank" title="Test Iframe"></iframe>
+    <video id="test-video" src="video.mp4" controls></video>
+    <audio id="test-audio" src="audio.mp3" controls></audio>
+
+    <!-- Test: Element with no text and no children (should be excluded unless meaningful) -->
+    <div id="empty-div"></div>
+  </body>
+</html>

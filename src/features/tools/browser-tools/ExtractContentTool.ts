@@ -7,6 +7,7 @@ import {
 } from '@/lib/mcp-response-utils';
 import { createId } from '@paralleldrive/cuid2';
 import TurndownService from 'turndown';
+import { parseHTMLToStructured, parseHTMLToDOMMap } from '@/lib/html-parser';
 
 const logger = getLogger('ExtractContentTool');
 
@@ -25,7 +26,7 @@ export const extractContentTool: BrowserLocalMCPTool = {
       },
       format: {
         type: 'string',
-        enum: ['markdown', 'json'],
+        enum: ['markdown', 'json', 'dom-map'],
         description: 'Output format (default: markdown)',
       },
       saveRawHtml: {
@@ -54,7 +55,7 @@ export const extractContentTool: BrowserLocalMCPTool = {
     } = args as {
       sessionId: string;
       selector?: string;
-      format?: 'markdown' | 'json';
+      format?: 'markdown' | 'json' | 'dom-map';
       saveRawHtml?: boolean;
       includeLinks?: boolean;
       maxDepth?: number;
@@ -77,9 +78,12 @@ export const extractContentTool: BrowserLocalMCPTool = {
         `document.querySelector('${selector.replace(/'/g, "\\'")}').outerHTML`,
       );
       if (!rawHtml || typeof rawHtml !== 'string') {
-        return JSON.stringify({
-          error: 'Failed to extract HTML from the page.',
-        });
+        return createMCPErrorResponse(
+          -32603,
+          'Failed to extract HTML from the page.',
+          { toolName: 'extractContent', args },
+          createId(),
+        );
       }
 
       let result: Record<string, unknown> = {};
@@ -102,94 +106,49 @@ export const extractContentTool: BrowserLocalMCPTool = {
 
         result.content = turndownService.turndown(rawHtml);
         result.format = 'markdown';
-      } else {
-        // JSON structured extraction
-        const script = `
-(function() {
-  function extractStructuredContent(element, depth = 0, maxDepth = ${maxDepth}) {
-    if (depth > maxDepth || !element) return null;
-    
-    // Skip script, style, and hidden elements
-    if (['SCRIPT', 'STYLE', 'NOSCRIPT', 'META', 'LINK', 'HEAD'].includes(element.tagName)) {
-      return null;
-    }
-    
-    // Check if element is visible
-    const style = window.getComputedStyle(element);
-    if (style.display === 'none' || style.visibility === 'hidden') {
-      return null;
-    }
-    
-    const result = {
-      tag: element.tagName.toLowerCase(),
-      text: '',
-      children: []
-    };
-    
-    // Add meaningful attributes
-    if (element.id) result.id = element.id;
-    if (element.className && typeof element.className === 'string') {
-      result.class = element.className.trim();
-    }
-    if (${includeLinks} && element.href) result.href = element.href;
-    if (element.src) result.src = element.src;
-    if (element.alt) result.alt = element.alt;
-    if (element.title) result.title = element.title;
-    
-    // Extract text content
-    let textContent = '';
-    for (let child of element.childNodes) {
-      if (child.nodeType === Node.TEXT_NODE) {
-        const text = child.textContent.trim();
-        if (text) textContent += text + ' ';
-      }
-    }
-    if (textContent.trim()) {
-      result.text = textContent.trim();
-    }
-    
-    // Process child elements
-    const childElements = Array.from(element.children);
-    for (let child of childElements) {
-      const childResult = extractStructuredContent(child, depth + 1, maxDepth);
-      if (childResult) {
-        result.children.push(childResult);
-      }
-    }
-    
-    // If no text and no meaningful children, return null unless it's a meaningful element
-    const meaningfulElements = ['a', 'button', 'input', 'img', 'video', 'audio', 'iframe', 'form', 'table'];
-    if (!result.text && result.children.length === 0 && !meaningfulElements.includes(result.tag)) {
-      return null;
-    }
-    
-    return result;
-  }
-  
-  const targetElement = document.querySelector('${selector.replace(/'/g, "\\'")}');
-  if (!targetElement) {
-    return { error: 'Element not found with selector: ${selector}' };
-  }
-  
-  const structured = extractStructuredContent(targetElement);
-  
-  // Add page metadata
-  const pageInfo = {
-    title: document.title,
-    url: window.location.href,
-    timestamp: new Date().toISOString(),
-    content: structured
-  };
-  
-  return pageInfo;
-})()`;
+      } else if (format === 'json') {
+        // JSON structured extraction using TypeScript parser
+        const structuredResult = parseHTMLToStructured(rawHtml, {
+          maxDepth,
+          includeLinks,
+          maxTextLength: 1000,
+        });
 
-        const jsonResult = await executeScript(sessionId, script);
-        try {
-          result = JSON.parse(jsonResult);
-        } catch {
-          result = { content: jsonResult, format: 'json' };
+        if (structuredResult.error) {
+          return createMCPErrorResponse(
+            -32603,
+            `Failed to parse HTML: ${structuredResult.error}`,
+            { toolName: 'extractContent', args },
+            createId(),
+          );
         }
+
+        result = {
+          title: structuredResult.metadata.title,
+          url: structuredResult.metadata.url,
+          timestamp: structuredResult.metadata.timestamp,
+          content: structuredResult.content,
+          format: 'json',
+        };
+      } else if (format === 'dom-map') {
+        // DOM Map extraction using TypeScript parser
+        const domMapResult = parseHTMLToDOMMap(rawHtml, {
+          maxDepth: Math.min(maxDepth, 3), // Limit DOM map depth for performance
+          maxChildren: 10,
+          maxTextLength: 50,
+          includeInteractiveOnly: true,
+        });
+
+        if (domMapResult.error) {
+          return createMCPErrorResponse(
+            -32603,
+            `Failed to create DOM map: ${domMapResult.error}`,
+            { toolName: 'extractContent', args },
+            createId(),
+          );
+        }
+
+        result = domMapResult as unknown as Record<string, unknown>;
       }
 
       // Note: Save Raw HTML functionality will be handled by the main provider
@@ -199,20 +158,23 @@ export const extractContentTool: BrowserLocalMCPTool = {
         result.save_html_requested = true;
       }
 
-      result.metadata = {
-        extraction_timestamp: new Date().toISOString(),
-        content_length:
-          typeof result.content === 'string' ? result.content.length : 0,
-        raw_html_size: rawHtml.length,
-        selector: selector,
-        format: format,
-      };
+      // Add metadata if not already present (dom-map format already includes metadata)
+      if (!result.metadata) {
+        result.metadata = {
+          extraction_timestamp: new Date().toISOString(),
+          content_length:
+            typeof result.content === 'string' ? result.content.length : 0,
+          raw_html_size: rawHtml.length,
+          selector: selector,
+          format: format,
+        };
+      }
 
       // Return structured MCP response
       const textContent =
         typeof result.content === 'string'
           ? result.content
-          : JSON.stringify(result.content, null, 2);
+          : JSON.stringify(result.content || result.domMap, null, 2);
 
       return createMCPStructuredResponse(textContent, result, createId());
     } catch (error) {
