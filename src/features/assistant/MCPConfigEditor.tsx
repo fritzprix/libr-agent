@@ -21,7 +21,19 @@ export default function MCPConfigEditor({
 
   const handleFormatJson = useCallback(() => {
     try {
-      const parsed = JSON.parse(mcpConfigText);
+      // Fix all types of unicode quotes before parsing
+      const fixedJson = mcpConfigText
+        .replace(/[""]/g, '"')      // Left/right double quotation marks
+        .replace(/['']/g, "'")      // Left/right single quotation marks
+        .replace(/[‚„]/g, '"')      // Low quotation marks
+        .replace(/[‹›]/g, "'")      // Single angle quotation marks
+        .replace(/[«»]/g, '"')      // Double angle quotation marks
+        .replace(/[\u201C\u201D]/g, '"')  // Unicode left/right double quotes
+        .replace(/[\u2018\u2019]/g, "'")  // Unicode left/right single quotes
+        .replace(/[\u201E\u201A]/g, '"')  // Unicode low quotes
+        .replace(/[\u2039\u203A]/g, "'"); // Unicode angle quotes
+      
+      const parsed = JSON.parse(fixedJson);
       const formatted = JSON.stringify(parsed, null, 2);
       onChange(formatted);
       toast.success('JSON이 올바르게 포맷되었습니다.');
