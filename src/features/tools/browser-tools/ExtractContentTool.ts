@@ -14,7 +14,7 @@ const logger = getLogger('ExtractContentTool');
 export const extractContentTool: BrowserLocalMCPTool = {
   name: 'extractContent',
   description:
-    'Extracts page content as Markdown (default) or structured JSON. Saves raw HTML optionally.',
+    'Extracts page content as DOM Map (default) or structured JSON/Markdown. Saves raw HTML optionally.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -27,7 +27,7 @@ export const extractContentTool: BrowserLocalMCPTool = {
       format: {
         type: 'string',
         enum: ['markdown', 'json', 'dom-map'],
-        description: 'Output format (default: markdown)',
+        description: 'Output format (default: dom-map)',
       },
       saveRawHtml: {
         type: 'boolean',
