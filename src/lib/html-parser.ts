@@ -130,7 +130,10 @@ function isValidCSSIdentifier(str: string): boolean {
 
 // Error types for better error handling
 class HTMLParseError extends Error {
-  constructor(message: string, public readonly cause?: unknown) {
+  constructor(
+    message: string,
+    public readonly cause?: unknown,
+  ) {
     super(message);
     this.name = 'HTMLParseError';
   }
@@ -155,7 +158,9 @@ export function parseHTMLToStructured(
   try {
     // Handle null/undefined input
     if (!htmlString || typeof htmlString !== 'string') {
-      return createErrorResult('Invalid HTML input: input is null, undefined, or not a string');
+      return createErrorResult(
+        'Invalid HTML input: input is null, undefined, or not a string',
+      );
     }
 
     if (htmlString.length === 0) {
@@ -164,7 +169,7 @@ export function parseHTMLToStructured(
 
     const doc = parseHTMLDocument(htmlString);
     const bodyElement = doc.body || doc.documentElement;
-    
+
     if (!bodyElement) {
       return createErrorResult('No body or document element found');
     }
@@ -192,7 +197,9 @@ export function parseHTMLToDOMMap(
   try {
     // Handle null/undefined input
     if (!htmlString || typeof htmlString !== 'string') {
-      return createDOMMapErrorResult('Invalid HTML input: input is null, undefined, or not a string');
+      return createDOMMapErrorResult(
+        'Invalid HTML input: input is null, undefined, or not a string',
+      );
     }
 
     if (htmlString.length === 0) {
@@ -201,7 +208,7 @@ export function parseHTMLToDOMMap(
 
     const doc = parseHTMLDocument(htmlString);
     const bodyElement = doc.body || doc.documentElement;
-    
+
     if (!bodyElement) {
       return createDOMMapErrorResult('No body or document element found');
     }
@@ -248,7 +255,9 @@ function parseHTMLDocument(htmlString: string): Document {
   // Check for parser errors
   const parserError = doc.querySelector('parsererror');
   if (parserError) {
-    throw new DOMParserError(`Failed to parse HTML: ${parserError.textContent || 'Unknown parser error'}`);
+    throw new DOMParserError(
+      `Failed to parse HTML: ${parserError.textContent || 'Unknown parser error'}`,
+    );
   }
 
   return doc;
@@ -275,7 +284,10 @@ function createDOMMapErrorResult(errorMessage: string): DOMMapResult {
   };
 }
 
-function handleParsingError(error: unknown, context: string): StructuredContent {
+function handleParsingError(
+  error: unknown,
+  context: string,
+): StructuredContent {
   if (error instanceof DOMParserError) {
     logger.error(`${context} - DOM Parser Error:`, error.message);
     return createErrorResult(`DOM parsing failed: ${error.message}`);
@@ -334,22 +346,22 @@ function extractMetaURL(doc: Document): string | undefined {
 function extractTextContent(element: Element, maxLength: number): string {
   // Get all text content including nested elements
   const allText = element.textContent?.trim() || '';
-  
+
   // If there's no text at all, return empty
   if (!allText) {
     return '';
   }
-  
+
   // If element has no children, return the text directly
   if (element.children.length === 0) {
     return allText.length > maxLength
       ? allText.substring(0, maxLength) + '...'
       : allText;
   }
-  
+
   // For elements with children, we need to be smarter about text extraction
   // to avoid duplication when children are parsed separately
-  
+
   // Extract only direct text nodes to avoid duplication
   let directText = '';
   for (let i = 0; i < element.childNodes.length; i++) {
@@ -358,17 +370,17 @@ function extractTextContent(element: Element, maxLength: number): string {
       directText += child.textContent;
     }
   }
-  
+
   // Clean up whitespace
   directText = directText.trim();
-  
+
   // If there's meaningful direct text, use it
   if (directText && directText.length > 2) {
     return directText.length > maxLength
       ? directText.substring(0, maxLength) + '...'
       : directText;
   }
-  
+
   // If no meaningful direct text, but element has short text content,
   // it might be a leaf-like element that should include its text
   if (allText.length <= 100 && element.children.length <= 3) {
@@ -376,11 +388,9 @@ function extractTextContent(element: Element, maxLength: number): string {
       ? allText.substring(0, maxLength) + '...'
       : allText;
   }
-  
+
   return '';
 }
-
-
 
 function parseElementToStructured(
   element: Element,
@@ -490,7 +500,7 @@ function parseElementToDOMMap(
   if (className.trim()) {
     const classes = className.trim().split(/\s+/);
     // Use first valid CSS class
-    const validClass = classes.find(cls => isValidCSSIdentifier(cls));
+    const validClass = classes.find((cls) => isValidCSSIdentifier(cls));
     if (validClass) result.class = validClass;
   }
 
@@ -527,7 +537,7 @@ function parseElementToDOMMap(
 
   // Optimized child processing
   let childElements: Element[];
-  
+
   if (options.includeInteractiveOnly) {
     // Filter and sort interactive elements
     childElements = [];
@@ -547,7 +557,7 @@ function parseElementToDOMMap(
     childElements.sort((a, b) => {
       const aId = a.getAttribute('id');
       const bId = b.getAttribute('id');
-      
+
       if (aId && !bId) return -1;
       if (!aId && bId) return 1;
 
@@ -570,7 +580,7 @@ function parseElementToDOMMap(
 
   // Limit children count
   const childLimit = Math.min(childElements.length, options.maxChildren);
-  
+
   for (let i = 0; i < childLimit; i++) {
     const child = childElements[i];
     const childResult = parseElementToDOMMap(child, depth + 1, options);
@@ -605,7 +615,7 @@ function generateSelector(element: Element): string {
   const className = element.getAttribute('class');
   if (className?.trim()) {
     const classes = className.trim().split(/\s+/);
-    const validClass = classes.find(cls => isValidCSSIdentifier(cls));
+    const validClass = classes.find((cls) => isValidCSSIdentifier(cls));
     if (validClass) {
       return '.' + validClass;
     }
