@@ -24,48 +24,6 @@ const sanitizeJsonField = (value: string): string => {
   }
 };
 
-// 스트리밍 청크 검증 및 복구
-const validateStreamChunk = (chunk: string): string => {
-  if (!chunk || typeof chunk !== 'string') {
-    return '{"content": ""}';
-  }
-
-  // 빈 문자열이나 공백만 있는 경우
-  if (chunk.trim() === '') {
-    return '{"content": ""}';
-  }
-
-  // 이미 유효한 JSON인지 확인
-  try {
-    JSON.parse(chunk);
-    return chunk;
-  } catch {
-    // JSON이 불완전한 경우 복구 시도
-    const trimmedChunk = chunk.trim();
-
-    // 중괄호로 시작하지만 끝나지 않는 경우
-    if (trimmedChunk.startsWith('{') && !trimmedChunk.endsWith('}')) {
-      logger.debug('Incomplete JSON chunk detected, attempting recovery', {
-        originalLength: trimmedChunk.length,
-        chunk: trimmedChunk.substring(0, 100) + '...',
-      });
-
-      // 간단한 복구: 누락된 닫는 중괄호 추가
-      const recovered = trimmedChunk + '}';
-      try {
-        JSON.parse(recovered);
-        return recovered;
-      } catch {
-        // 복구 실패시 안전한 기본값 반환
-        return `{"content": ${JSON.stringify(trimmedChunk)}}`;
-      }
-    }
-
-    // JSON이 아닌 일반 텍스트인 경우
-    return `{"content": ${JSON.stringify(trimmedChunk)}}`;
-  }
-};
-
 // MCPContent 안전성 처리
 const sanitizeContent = (content: MCPContent): MCPContent => {
   if (content.type === 'text') {
@@ -186,18 +144,8 @@ export const useAIService = (config?: AIServiceConfig) => {
 
           try {
             // Validate and potentially recover the chunk before parsing
-            const validatedChunk = validateStreamChunk(chunk);
-            parsedChunk = JSON.parse(validatedChunk);
-          } catch (parseError) {
-            // Final fallback: treat as plain text content
-            logger.warn('Failed to parse chunk even after validation', {
-              originalChunk: chunk.substring(0, 100) + '...',
-              chunkType: typeof chunk,
-              error:
-                parseError instanceof Error
-                  ? parseError.message
-                  : 'Unknown parse error',
-            });
+            parsedChunk = JSON.parse(chunk);
+          } catch {
             parsedChunk = { content: chunk };
           }
 
