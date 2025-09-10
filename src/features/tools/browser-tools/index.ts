@@ -18,7 +18,6 @@ export { extractContentTool } from './ExtractContentTool';
 
 // Types and helpers
 export type {
-  LocalMCPTool,
   BrowserLocalMCPTool,
   StrictLocalMCPTool,
   StrictBrowserMCPTool,
