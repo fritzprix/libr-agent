@@ -6,42 +6,32 @@
 
 SynapticFlow is a next-generation desktop AI agent platform that combines the lightness of Tauri with the intuitiveness of React. Users can automate all daily tasks by giving AI agents their own unique personalities and abilities.
 
-## Key Features
+## Key Architecture Patterns
 
-**AI Agent Management:**
+**Dual MCP Backend System:**
 
-- Advanced Role Management: Create/edit/delete AI agent roles with sophisticated configurations
-- Custom System Prompts: Define unique AI personalities and behaviors for each role
-- Multi-Agent Collaboration: Coordinate multiple agents working together on complex tasks
-- Agent Configuration Sharing: Export and import agent configurations
+- **Rust Tauri Backend**: Native stdio MCP server communication via `MCPServerManager`
+- **Web Worker Backend**: Browser-based MCP servers for dependency-free execution (`src/lib/web-mcp/`)
+- **Unified API**: `rust-backend-client.ts` provides consistent interface using `safeInvoke()` wrapper
 
-**LLM Provider Support:**
+**Feature-Based Organization:**
 
-- 8 Major Providers: OpenAI, Anthropic, Google, Groq, Fireworks, Cerebras, Ollama, Empty
-- 50+ Models: Including reasoning models (o3, DeepSeek R1, Qwen3)
-- Cost Optimization: Real-time cost tracking and model comparison
-- Massive Context: Up to 2M tokens support (Gemini 2.5 Pro)
+- Each feature in `src/features/` contains components, hooks, and README documentation
+- Compound component patterns (e.g., `Chat.Header`, `Chat.Messages`, `Chat.Input`)
+- React Context providers for state sharing (`ChatProvider`, `EditorProvider`, `WebMCPProvider`)
 
-**Built-in Tool Ecosystem:**
+**Service Layer Pattern:**
 
-- SecureFileManager: Advanced file operations with path validation
-- Code Execution: Python and TypeScript sandboxed environments
-- Browser Automation: Interactive web scraping and automation
-- Content Processing: PDF, DOCX, XLSX parsing with full-text search
+- `src/lib/` contains business logic and Tauri command wrappers
+- Centralized logging via `getLogger('ComponentName')` instead of console methods
+- All API communication through service classes with error handling
 
-**MCP Integration:**
+**Key Features:**
 
-- Real-time MCP Connection: Advanced stdio protocol implementation
-- Dual Backend Support: Both Rust Tauri and Web Worker implementations
-- Security Validation: Built-in SecurityValidator with comprehensive protection
-- Tool Execution Context: Unified calling interface across all backends
-
-**User Experience:**
-
-- Modern UI: Clean, terminal-style interface with 20+ shadcn/ui components
-- Session Management: Organize conversations with file attachments and context
-- Centralized Configuration: All settings managed within the app
-- Performance: Ultra-fast responses with Cerebras (1,800+ tokens/sec)
+- **AI Agent Management**: Role-based system prompts and multi-agent collaboration
+- **LLM Provider Support**: 8 providers, 50+ models including reasoning models (o3, DeepSeek R1)
+- **Built-in Tool Ecosystem**: SecureFileManager, code execution, browser automation
+- **MCP Integration**: Real-time stdio protocol with security validation
 
 ## Technology Stack
 
@@ -103,8 +93,6 @@ synaptic-flow/
 3. Start development: `pnpm tauri dev`
 4. Build for production: `pnpm tauri build`
 5. API keys are managed in-app via the settings modal (not in .env files).
-
-# SynapticFlow Project Guidelines
 
 ## Coding Style
 
@@ -335,6 +323,33 @@ These steps must be completed successfully before considering any refactoring ta
 - No TypeScript compilation errors
 - Proper formatting standards are maintained
 - The application remains buildable after changes
+
+### Critical Development Patterns
+
+**MCP Communication:**
+
+- Always use `safeInvoke()` from `rust-backend-client.ts` for Tauri command calls
+- MCP servers are managed through global `MCPServerManager` in Rust backend
+- Web Worker MCP servers use `WebMCPProvider` context for browser-based tools
+
+**Component Architecture:**
+
+- Feature components follow compound patterns: `Chat.Header`, `Chat.Messages`, `Chat.Input`
+- Each feature directory contains `components/`, `hooks/`, and `README.md`
+- Use React Context for cross-component state sharing, not prop drilling
+
+**Error Handling:**
+
+- Backend commands return `Result<T, String>` in Rust
+- Frontend wraps all Tauri calls in try-catch with centralized error logging
+- Use structured error objects, never throw raw strings
+
+**Development Commands:**
+
+- `pnpm tauri dev` - Development with hot reload (port 1420)
+- `pnpm tauri build` - Production build for distribution
+- `pnpm dead-code` - Find unused code with unimported tool
+- `pnpm refactor:validate` - Complete validation pipeline
 
 ## Security Considerations
 

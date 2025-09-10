@@ -40,7 +40,7 @@ const log = {
 // This eliminates Vite bundling warnings and provides better type safety
 const MODULE_REGISTRY = [
   { key: 'content-store', module: contentStoreServer },
-  { key: 'planning-server', module: planningServer },
+  { key: 'planning', module: planningServer },
   // Future modules can be added here with static imports
 ] as const;
 

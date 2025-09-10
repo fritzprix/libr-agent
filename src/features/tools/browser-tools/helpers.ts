@@ -3,25 +3,30 @@ import { pollScriptResult } from '@/lib/rust-backend-client';
 /**
  * Common schema definitions for browser tools to reduce duplication
  */
-export const BROWSER_TOOL_SCHEMAS = {
+interface SchemaProperty {
+  type: 'string';
+  description: string;
+}
+
+export const BROWSER_TOOL_SCHEMAS: Record<string, SchemaProperty> = {
   sessionId: {
-    type: 'string' as const,
+    type: 'string',
     description: 'The ID of the browser session.',
   },
   selector: {
-    type: 'string' as const,
+    type: 'string',
     description: 'CSS selector of the element.',
   },
   url: {
-    type: 'string' as const,
+    type: 'string',
     description: 'The URL to navigate to.',
   },
   text: {
-    type: 'string' as const,
+    type: 'string',
     description: 'Text content to input.',
   },
   title: {
-    type: 'string' as const,
+    type: 'string',
     description: 'Optional title for the browser session window.',
   },
 };
@@ -54,6 +59,18 @@ export interface ElementState {
 }
 
 /**
+ * Validates if parsed result has ElementState structure
+ */
+function isValidElementState(parsed: unknown): parsed is ElementState {
+  if (!parsed || typeof parsed !== 'object') {
+    return false;
+  }
+
+  const obj = parsed as Record<string, unknown>;
+  return typeof obj.exists === 'boolean' && typeof obj.selector === 'string';
+}
+
+/**
  * Enhanced element state checking function
  * Checks element existence, visibility, and interaction capability
  */
@@ -63,9 +80,29 @@ export async function checkElementState(
   selector: string,
   action: 'click' | 'input',
 ): Promise<ElementState> {
+  // Input validation
+  if (!sessionId || typeof sessionId !== 'string') {
+    return {
+      exists: false,
+      selector,
+      error: 'Invalid sessionId: must be a non-empty string',
+    };
+  }
+
+  if (!selector || typeof selector !== 'string') {
+    return {
+      exists: false,
+      selector: selector || '',
+      error: 'Invalid selector: must be a non-empty string',
+    };
+  }
+
+  // Safe selector injection using JSON.stringify
   const script = `
 (function() {
-  const selector = '${selector.replace(/'/g, "\\'")}';
+  const selector = ${JSON.stringify(selector)};
+  const action = ${JSON.stringify(action)};
+  
   try {
     const el = document.querySelector(selector);
     if (!el) return JSON.stringify({ exists: false, selector });
@@ -74,7 +111,7 @@ export async function checkElementState(
     const style = window.getComputedStyle(el);
     const visible = !!(rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden');
     
-    if ('${action}' === 'input') {
+    if (action === 'input') {
       const disabled = el.disabled || el.hasAttribute('disabled') || el.readOnly || el.hasAttribute('readonly');
       const inputable = visible && !disabled && style.pointerEvents !== 'none';
       
@@ -116,8 +153,46 @@ export async function checkElementState(
   }
 })()`;
 
-  const result = await executeScript(sessionId, script);
-  return JSON.parse(result) as ElementState;
+  try {
+    const result = await executeScript(sessionId, script);
+
+    // executeScript 결과 검증
+    if (!result || typeof result !== 'string') {
+      return {
+        exists: false,
+        selector,
+        error: 'No valid result from script execution',
+      };
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(result);
+    } catch (parseError) {
+      return {
+        exists: false,
+        selector,
+        error: `Failed to parse script result: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+      };
+    }
+
+    // 파싱 결과가 null이거나 유효하지 않은 경우
+    if (!isValidElementState(parsed)) {
+      return {
+        exists: false,
+        selector,
+        error: 'Invalid script result structure - missing required properties',
+      };
+    }
+
+    return parsed;
+  } catch (error) {
+    return {
+      exists: false,
+      selector,
+      error: `Script execution failed: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
 }
 
 /**
@@ -128,13 +203,23 @@ export async function pollWithTimeout(
   maxAttempts = 30,
   interval = 100,
 ): Promise<string | null> {
+  // Input validation
+  if (!requestId || typeof requestId !== 'string') {
+    throw new Error('Invalid requestId: must be a non-empty string');
+  }
+
   let attempts = 0;
 
   while (attempts < maxAttempts) {
-    const result = await pollScriptResult(requestId);
+    try {
+      const result = await pollScriptResult(requestId);
 
-    if (result !== null) {
-      return result;
+      if (result !== null) {
+        return result;
+      }
+    } catch (error) {
+      // Log error but continue polling
+      console.warn(`Poll attempt ${attempts + 1} failed:`, error);
     }
 
     await new Promise((resolve) => setTimeout(resolve, interval));
@@ -152,9 +237,12 @@ export function formatBrowserResult(raw: unknown): string {
   if (typeof raw === 'string') {
     try {
       const parsed = JSON.parse(raw);
-      if ('ok' in parsed) {
+      if (parsed && typeof parsed === 'object' && 'ok' in parsed) {
         if (parsed.ok) {
-          let result = `✓ ${parsed.action.toUpperCase()} successful (selector: ${parsed.selector})`;
+          let result = `✓ ${String(parsed.action || 'ACTION').toUpperCase()} successful`;
+          if (parsed.selector) {
+            result += ` (selector: ${parsed.selector})`;
+          }
           if (parsed.diagnostics) {
             result += `\n\nDiagnostics:\n${JSON.stringify(parsed.diagnostics, null, 2)}`;
           }
@@ -166,7 +254,7 @@ export function formatBrowserResult(raw: unknown): string {
           }
           return result;
         } else {
-          let result = `✗ ${parsed.action.toUpperCase()} failed`;
+          let result = `✗ ${String(parsed.action || 'ACTION').toUpperCase()} failed`;
           if (parsed.reason) {
             result += ` - ${parsed.reason}`;
           }
@@ -182,9 +270,9 @@ export function formatBrowserResult(raw: unknown): string {
           return result;
         }
       }
-      return raw;
+      return String(raw);
     } catch {
-      return raw;
+      return String(raw);
     }
   }
   return String(raw);

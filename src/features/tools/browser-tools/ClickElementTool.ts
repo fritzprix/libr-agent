@@ -22,17 +22,55 @@ export const clickElementTool: BrowserLocalMCPTool = {
     required: ['sessionId', 'selector'],
   },
   execute: async (args: Record<string, unknown>, executeScript) => {
-    const { sessionId, selector } = args as {
-      sessionId: string;
-      selector: string;
-    };
+    // Input validation without type casting
+    const sessionId = args.sessionId;
+    const selector = args.selector;
+
+    if (typeof sessionId !== 'string' || !sessionId.trim()) {
+      const error = 'Invalid sessionId: must be a non-empty string';
+      logger.error(error, { args });
+      return formatBrowserResult(
+        JSON.stringify({
+          ok: false,
+          action: 'click',
+          reason: 'invalid_input',
+          error,
+        }),
+      );
+    }
+
+    if (typeof selector !== 'string' || !selector.trim()) {
+      const error = 'Invalid selector: must be a non-empty string';
+      logger.error(error, { args });
+      return formatBrowserResult(
+        JSON.stringify({
+          ok: false,
+          action: 'click',
+          reason: 'invalid_input',
+          error,
+          sessionId,
+        }),
+      );
+    }
+
     logger.debug('Executing browser_clickElement', {
       sessionId,
       selector,
     });
 
     if (!executeScript) {
-      throw new Error('executeScript function is required for clickElement');
+      const error = 'executeScript function is required for clickElement';
+      logger.error(error);
+      return formatBrowserResult(
+        JSON.stringify({
+          ok: false,
+          action: 'click',
+          reason: 'missing_dependency',
+          error,
+          sessionId,
+          selector,
+        }),
+      );
     }
 
     try {
@@ -44,24 +82,45 @@ export const clickElementTool: BrowserLocalMCPTool = {
         'click',
       );
 
+      // Additional safety check for null elementState
+      if (!elementState) {
+        const error = 'Element state check returned null';
+        logger.error(error, { sessionId, selector });
+        return formatBrowserResult(
+          JSON.stringify({
+            ok: false,
+            action: 'click',
+            reason: 'element_check_failed',
+            error,
+            sessionId,
+            selector,
+          }),
+        );
+      }
+
       if (!elementState.exists) {
+        logger.debug('Element not found', { elementState });
         return formatBrowserResult(
           JSON.stringify({
             ok: false,
             action: 'click',
             reason: 'element_not_found',
             selector,
+            sessionId,
+            diagnostics: elementState,
           }),
         );
       }
 
       if (!elementState.clickable) {
+        logger.debug('Element not clickable', { elementState });
         return formatBrowserResult(
           JSON.stringify({
             ok: false,
             action: 'click',
             reason: 'element_not_clickable',
             selector,
+            sessionId,
             diagnostics: elementState,
           }),
         );
@@ -79,14 +138,39 @@ export const clickElementTool: BrowserLocalMCPTool = {
         return formatBrowserResult(result);
       }
 
-      return 'Click operation timed out - no response received from browser';
+      // Timeout case - return consistent error format
+      const timeoutError =
+        'Click operation timed out - no response received from browser';
+      logger.warn(timeoutError, { sessionId, selector, requestId });
+      return formatBrowserResult(
+        JSON.stringify({
+          ok: false,
+          action: 'click',
+          reason: 'timeout',
+          error: timeoutError,
+          sessionId,
+          selector,
+        }),
+      );
     } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
       logger.error('Error in click_element execution', {
-        error,
+        error: errorMessage,
         sessionId,
         selector,
       });
-      return `Error executing click: ${error instanceof Error ? error.message : String(error)}`;
+
+      return formatBrowserResult(
+        JSON.stringify({
+          ok: false,
+          action: 'click',
+          reason: 'execution_error',
+          error: errorMessage,
+          sessionId,
+          selector,
+        }),
+      );
     }
   },
 };

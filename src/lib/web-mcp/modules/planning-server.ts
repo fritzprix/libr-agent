@@ -7,7 +7,7 @@ interface SimpleTodo {
   status: 'pending' | 'completed';
 }
 
-const MAX_OBSERVATIONS = 5;
+const MAX_OBSERVATIONS = 10;
 
 class EphemeralState {
   private goal: string | null = null;

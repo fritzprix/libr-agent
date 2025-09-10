@@ -45,7 +45,7 @@ function App() {
                     <BrowserToolProvider />
                     <RustMCPToolProvider />
                     <WebMCPToolProvider
-                      servers={['content-store', 'planning-server']}
+                      servers={['content-store', 'planning']}
                     />
                     <SessionHistoryProvider>
                       <ResourceAttachmentProvider>
