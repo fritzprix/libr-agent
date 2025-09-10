@@ -1,10 +1,11 @@
 import { getLogger } from '@/lib/logger';
+import { createMCPTextResponse } from '@/lib/mcp-response-utils';
 import { BROWSER_TOOL_SCHEMAS } from './helpers';
-import { BrowserLocalMCPTool } from './types';
+import { StrictBrowserMCPTool } from './types';
 
 const logger = getLogger('ScrollPageTool');
 
-export const scrollPageTool: BrowserLocalMCPTool = {
+export const scrollPageTool: StrictBrowserMCPTool = {
   name: 'scrollPage',
   description: 'Scrolls the page to specified coordinates.',
   inputSchema: {
@@ -35,6 +36,7 @@ export const scrollPageTool: BrowserLocalMCPTool = {
     }
 
     const script = `window.scrollTo(${x}, ${y}); 'Scrolled to (${x}, ${y})'`;
-    return executeScript(sessionId, script);
+    const result = await executeScript(sessionId, script);
+    return createMCPTextResponse(result);
   },
 };

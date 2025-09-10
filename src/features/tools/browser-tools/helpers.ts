@@ -1,5 +1,7 @@
 import { pollScriptResult } from '@/lib/rust-backend-client';
 import { getLogger } from '@/lib/logger';
+import { createMCPTextResponse } from '@/lib/mcp-response-utils';
+import type { MCPResponse } from '@/lib/mcp-types';
 
 const logger = getLogger('BrowserToolsHelpers');
 
@@ -293,4 +295,12 @@ export function formatBrowserResult(raw: unknown): string {
     }
   }
   return String(raw);
+}
+
+/**
+ * Format browser result and wrap in MCPResponse for strict tool compatibility
+ */
+export function formatBrowserResultAsMCP(raw: unknown): MCPResponse {
+  const textResult = formatBrowserResult(raw);
+  return createMCPTextResponse(textResult);
 }

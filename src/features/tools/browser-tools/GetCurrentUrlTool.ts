@@ -1,10 +1,11 @@
 import { getLogger } from '@/lib/logger';
+import { createMCPTextResponse } from '@/lib/mcp-response-utils';
 import { BROWSER_TOOL_SCHEMAS } from './helpers';
-import { BrowserLocalMCPTool } from './types';
+import { StrictBrowserMCPTool } from './types';
 
 const logger = getLogger('GetCurrentUrlTool');
 
-export const getCurrentUrlTool: BrowserLocalMCPTool = {
+export const getCurrentUrlTool: StrictBrowserMCPTool = {
   name: 'getCurrentUrl',
   description: 'Gets the current URL of the browser page.',
   inputSchema: {
@@ -22,6 +23,7 @@ export const getCurrentUrlTool: BrowserLocalMCPTool = {
       throw new Error('executeScript function is required for getCurrentUrl');
     }
 
-    return executeScript(sessionId, 'window.location.href');
+    const result = await executeScript(sessionId, 'window.location.href');
+    return createMCPTextResponse(result);
   },
 };

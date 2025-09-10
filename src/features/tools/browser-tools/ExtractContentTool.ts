@@ -1,6 +1,6 @@
 import { getLogger } from '@/lib/logger';
 import { BROWSER_TOOL_SCHEMAS } from './helpers';
-import { BrowserLocalMCPTool } from './types';
+import { StrictBrowserMCPTool } from './types';
 import {
   createMCPStructuredResponse,
   createMCPErrorResponse,
@@ -65,14 +65,14 @@ function validateExtractContentArgs(
   // saveRawHtml 명시적 타입 검증
   let saveRawHtml: boolean;
   if (args.saveRawHtml === undefined || args.saveRawHtml === null) {
-    saveRawHtml = true;
+    saveRawHtml = false;
   } else if (typeof args.saveRawHtml === 'boolean') {
     saveRawHtml = args.saveRawHtml;
   } else {
     logger.warn('Invalid saveRawHtml type, using default', {
       saveRawHtml: args.saveRawHtml,
     });
-    saveRawHtml = true;
+    saveRawHtml = false;
   }
 
   // includeLinks 명시적 타입 검증
@@ -253,18 +253,34 @@ function createMetadata(
 
 // 응답 텍스트 생성 함수
 function generateResponseText(result: ConversionResult): string {
+  let baseContent: string;
+
   if (typeof result.content === 'string') {
-    return result.content;
+    baseContent = result.content;
+  } else {
+    const contentToStringify = result.content || result.domMap;
+    baseContent = JSON.stringify(contentToStringify);
   }
 
-  const contentToStringify = result.content || result.domMap;
-  return JSON.stringify(contentToStringify);
+  // Raw HTML 저장 경로가 있는 경우 추가 정보 포함
+  if (result.raw_html_path) {
+    const additionalInfo = `\n\n--- File Save Information ---\nRaw HTML saved to: ${result.raw_html_path}`;
+    return baseContent + additionalInfo;
+  }
+
+  // 저장 실패한 경우 에러 정보 포함
+  if (result.save_html_error) {
+    const errorInfo = `\n\n--- File Save Error ---\n${result.save_html_error}`;
+    return baseContent + errorInfo;
+  }
+
+  return baseContent;
 }
 
-export const extractContentTool: BrowserLocalMCPTool = {
+export const extractContentTool: StrictBrowserMCPTool = {
   name: 'extractContent',
   description:
-    'Extracts page content as DOM Map (default) or structured JSON/Markdown. Saves raw HTML optionally.',
+    'Comprehensive content extraction tool for web pages. Extracts element text, attributes, structure, and state information in multiple formats (markdown, JSON, DOM-map). Can replace getElementText, getElementAttribute, and findElement functionality. Optionally saves raw HTML to file for detailed analysis.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -272,24 +288,28 @@ export const extractContentTool: BrowserLocalMCPTool = {
       selector: {
         type: 'string',
         description:
-          'CSS selector to focus extraction (optional, defaults to body)',
+          'CSS selector to target specific elements for extraction. Defaults to "body" for full page content. Examples: "h1", ".class-name", "#element-id", "div[data-test=value]"',
       },
       format: {
         type: 'string',
         enum: ['markdown', 'json', 'dom-map'],
-        description: 'Output format (default: markdown)',
+        description:
+          'Output format: "markdown" for readable text content, "json" for structured data with attributes and hierarchy, "dom-map" for detailed element state and interaction info. Default: "markdown"',
       },
       saveRawHtml: {
         type: 'boolean',
-        description: 'Save raw HTML to file (default: false)',
+        description:
+          'Save the extracted raw HTML content to a timestamped file in extracted-content/ directory. Useful for debugging or detailed analysis. Default: false',
       },
       includeLinks: {
         type: 'boolean',
-        description: 'Include href attributes from links (default: true)',
+        description:
+          'Include href attributes from anchor tags when using json format. Helps preserve navigation structure in extracted content. Default: true',
       },
       maxDepth: {
         type: 'number',
-        description: 'Maximum nesting depth for JSON extraction (default: 5)',
+        description:
+          'Maximum nesting depth for content extraction (1-20). Controls how deep into nested elements the tool will traverse. Lower values for performance, higher for completeness. Default: 5',
       },
     },
     required: ['sessionId'],

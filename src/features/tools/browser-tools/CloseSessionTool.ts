@@ -1,11 +1,12 @@
 import { closeBrowserSession } from '@/lib/rust-backend-client';
 import { getLogger } from '@/lib/logger';
+import { createMCPTextResponse } from '@/lib/mcp-response-utils';
 import { BROWSER_TOOL_SCHEMAS } from './helpers';
-import { LocalMCPTool } from './types';
+import { StrictLocalMCPTool } from './types';
 
 const logger = getLogger('CloseSessionTool');
 
-export const closeSessionTool: LocalMCPTool = {
+export const closeSessionTool: StrictLocalMCPTool = {
   name: 'closeSession',
   description: 'Closes an existing browser session and its window.',
   inputSchema: {
@@ -20,6 +21,6 @@ export const closeSessionTool: LocalMCPTool = {
     logger.debug('Executing browser_closeSession', { sessionId });
 
     await closeBrowserSession(sessionId);
-    return `Browser session closed: ${sessionId}`;
+    return createMCPTextResponse(`Browser session closed: ${sessionId}`);
   },
 };

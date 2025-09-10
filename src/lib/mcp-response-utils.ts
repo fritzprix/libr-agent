@@ -66,3 +66,31 @@ export function createMCPErrorResponse(
     },
   };
 }
+
+/**
+ * Create an empty MCP response with no content
+ */
+export function createMCPEmptyResponse(
+  id?: string | number | null,
+): MCPResponse {
+  return {
+    jsonrpc: '2.0',
+    id: id ?? createId(),
+    result: { content: [] },
+  };
+}
+
+/**
+ * Create a simple MCP error response with default error code
+ */
+export function createSimpleMCPErrorResponse(
+  message: string,
+  code: number = -32603,
+  id?: string | number | null,
+): MCPResponse {
+  return {
+    jsonrpc: '2.0',
+    id: id ?? createId(),
+    error: { code, message },
+  };
+}

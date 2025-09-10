@@ -1,6 +1,5 @@
 import { useRustBackend } from '@/hooks/use-rust-backend';
 import { getLogger } from '@/lib/logger';
-import { normalizeToolResult } from '@/lib/mcp-types';
 import type { MCPTool, MCPResponse } from '@/lib/mcp-types';
 import { useEffect } from 'react';
 import { useAsyncFn } from 'react-use';
@@ -81,7 +80,7 @@ export function RustMCPToolProvider() {
               toolName,
               args,
             );
-            return normalizeToolResult(rawResult, toolName);
+            return rawResult; // Rust backend already returns proper MCPResponse
           },
         });
       });

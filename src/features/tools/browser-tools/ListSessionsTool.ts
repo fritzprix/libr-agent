@@ -1,10 +1,11 @@
 import { listBrowserSessions } from '@/lib/rust-backend-client';
 import { getLogger } from '@/lib/logger';
-import { LocalMCPTool } from './types';
+import { createMCPTextResponse } from '@/lib/mcp-response-utils';
+import { StrictLocalMCPTool } from './types';
 
 const logger = getLogger('ListSessionsTool');
 
-export const listSessionsTool: LocalMCPTool = {
+export const listSessionsTool: StrictLocalMCPTool = {
   name: 'listSessions',
   description: 'Lists all active browser sessions.',
   inputSchema: {
@@ -15,6 +16,8 @@ export const listSessionsTool: LocalMCPTool = {
   execute: async () => {
     logger.debug('Executing browser_listSessions');
     const sessions = await listBrowserSessions();
-    return `Active browser sessions: ${JSON.stringify(sessions)}`;
+    return createMCPTextResponse(
+      `Active browser sessions: ${JSON.stringify(sessions)}`,
+    );
   },
 };

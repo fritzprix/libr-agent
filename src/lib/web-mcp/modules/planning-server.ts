@@ -1,5 +1,5 @@
 import type { MCPTool, WebMCPServer, MCPResponse } from '@/lib/mcp-types';
-import { normalizeToolResult } from '@/lib/mcp-types';
+import { createMCPTextResponse } from '@/lib/mcp-response-utils';
 
 // Simplified data structures for Gemini API compatibility
 interface SimpleTodo {
@@ -210,62 +210,53 @@ const planningServer: WebMCPServer = {
       // ... (other tool cases remain the same) ...
       case 'create_goal': {
         const result = state.createGoal(typedArgs.goal as string);
-        return normalizeToolResult(`Goal created: "${result}"`, 'create_goal');
+        return createMCPTextResponse(`Goal created: "${result}"`);
       }
       case 'clear_goal': {
         const result = state.clearGoal();
-        return normalizeToolResult(
+        return createMCPTextResponse(
           result.success ? 'Goal cleared successfully' : 'Failed to clear goal',
-          'clear_goal',
         );
       }
       case 'add_todo': {
         const result = state.addTodo(typedArgs.name as string);
-        return normalizeToolResult(
+        return createMCPTextResponse(
           result.success
             ? `Todo added: "${typedArgs.name}" (Total: ${result.todos.length})`
             : 'Failed to add todo',
-          'add_todo',
         );
       }
       case 'toggle_todo': {
         const index = typedArgs.index as number;
         if (!Number.isInteger(index) || index < 1) {
-          return normalizeToolResult(
+          return createMCPTextResponse(
             `Invalid index: ${index}. Index must be a positive integer (1-based).`,
-            'toggle_todo',
           );
         }
 
         const result = state.toggleTodo(index);
         if (result.todo) {
-          return normalizeToolResult(
+          return createMCPTextResponse(
             `Todo "${result.todo.name}" marked as ${result.todo.status}`,
-            'toggle_todo',
           );
         } else {
-          return normalizeToolResult(
+          return createMCPTextResponse(
             `Todo at index ${index} not found. Valid indices: 1 to ${result.todos.length}`,
-            'toggle_todo',
           );
         }
       }
       case 'clear_todos': {
         const result = state.clearTodos();
-        return normalizeToolResult(
+        return createMCPTextResponse(
           result.success ? 'All todos cleared' : 'Failed to clear todos',
-          'clear_todos',
         );
       }
       case 'clear_session':
         state.clear();
-        return normalizeToolResult('Session state cleared', 'clear_session');
+        return createMCPTextResponse('Session state cleared');
       case 'add_observation': {
         state.addObservation(typedArgs.observation as string);
-        return normalizeToolResult(
-          'Observation added to session',
-          'add_observation',
-        );
+        return createMCPTextResponse('Observation added to session');
       }
       default:
         throw new Error(`Unknown tool: ${name}`);

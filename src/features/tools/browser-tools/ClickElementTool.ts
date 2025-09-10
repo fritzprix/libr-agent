@@ -3,14 +3,14 @@ import { getLogger } from '@/lib/logger';
 import {
   checkElementState,
   pollWithTimeout,
-  formatBrowserResult,
+  formatBrowserResultAsMCP,
   BROWSER_TOOL_SCHEMAS,
 } from './helpers';
-import { BrowserLocalMCPTool } from './types';
+import { StrictBrowserMCPTool } from './types';
 
 const logger = getLogger('ClickElementTool');
 
-export const clickElementTool: BrowserLocalMCPTool = {
+export const clickElementTool: StrictBrowserMCPTool = {
   name: 'clickElement',
   description: 'Clicks on a DOM element using CSS selector.',
   inputSchema: {
@@ -29,7 +29,7 @@ export const clickElementTool: BrowserLocalMCPTool = {
     if (typeof sessionId !== 'string' || !sessionId.trim()) {
       const error = 'Invalid sessionId: must be a non-empty string';
       logger.error(error, { args });
-      return formatBrowserResult(
+      return formatBrowserResultAsMCP(
         JSON.stringify({
           ok: false,
           action: 'click',
@@ -42,7 +42,7 @@ export const clickElementTool: BrowserLocalMCPTool = {
     if (typeof selector !== 'string' || !selector.trim()) {
       const error = 'Invalid selector: must be a non-empty string';
       logger.error(error, { args });
-      return formatBrowserResult(
+      return formatBrowserResultAsMCP(
         JSON.stringify({
           ok: false,
           action: 'click',
@@ -61,7 +61,7 @@ export const clickElementTool: BrowserLocalMCPTool = {
     if (!executeScript) {
       const error = 'executeScript function is required for clickElement';
       logger.error(error);
-      return formatBrowserResult(
+      return formatBrowserResultAsMCP(
         JSON.stringify({
           ok: false,
           action: 'click',
@@ -86,7 +86,7 @@ export const clickElementTool: BrowserLocalMCPTool = {
       if (!elementState) {
         const error = 'Element state check returned null';
         logger.error(error, { sessionId, selector });
-        return formatBrowserResult(
+        return formatBrowserResultAsMCP(
           JSON.stringify({
             ok: false,
             action: 'click',
@@ -100,7 +100,7 @@ export const clickElementTool: BrowserLocalMCPTool = {
 
       if (!elementState.exists) {
         logger.debug('Element not found', { elementState });
-        return formatBrowserResult(
+        return formatBrowserResultAsMCP(
           JSON.stringify({
             ok: false,
             action: 'click',
@@ -114,7 +114,7 @@ export const clickElementTool: BrowserLocalMCPTool = {
 
       if (!elementState.clickable) {
         logger.debug('Element not clickable', { elementState });
-        return formatBrowserResult(
+        return formatBrowserResultAsMCP(
           JSON.stringify({
             ok: false,
             action: 'click',
@@ -135,14 +135,14 @@ export const clickElementTool: BrowserLocalMCPTool = {
 
       if (result) {
         logger.debug('Poll result received', { result });
-        return formatBrowserResult(result);
+        return formatBrowserResultAsMCP(result);
       }
 
       // Timeout case - return consistent error format
       const timeoutError =
         'Click operation timed out - no response received from browser';
       logger.warn(timeoutError, { sessionId, selector, requestId });
-      return formatBrowserResult(
+      return formatBrowserResultAsMCP(
         JSON.stringify({
           ok: false,
           action: 'click',
@@ -161,7 +161,7 @@ export const clickElementTool: BrowserLocalMCPTool = {
         selector,
       });
 
-      return formatBrowserResult(
+      return formatBrowserResultAsMCP(
         JSON.stringify({
           ok: false,
           action: 'click',
