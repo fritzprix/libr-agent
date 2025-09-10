@@ -39,6 +39,9 @@
     "src/components/ui/alert-dialog.tsx",
     "src/components/ui/collapsible.tsx",
     "src/components/ui/sonner.tsx",
-    "src/features/prompts/JailbreakSystemPrompt.tsx"
+    "src/features/prompts/JailbreakSystemPrompt.tsx",
+    "src/test/setup.ts",
+    "src/test/types/test-types.ts",
+    "src/test/utils/html-test-utils.ts"
   ]
 }
