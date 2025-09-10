@@ -40,7 +40,7 @@ const log = {
 // This eliminates Vite bundling warnings and provides better type safety
 const MODULE_REGISTRY = [
   { key: 'content-store', module: contentStoreServer },
-  { key: 'planning-server', module: planningServer },
+  { key: 'planning', module: planningServer },
   // Future modules can be added here with static imports
 ] as const;
 
@@ -199,7 +199,7 @@ async function handleMCPMessage(message: WebMCPMessage): Promise<MCPResponse> {
               content: [
                 {
                   type: 'text',
-                  text: JSON.stringify(allTools, null, 2),
+                  text: JSON.stringify(allTools),
                 },
               ],
             },
@@ -214,7 +214,7 @@ async function handleMCPMessage(message: WebMCPMessage): Promise<MCPResponse> {
               content: [
                 {
                   type: 'text',
-                  text: JSON.stringify(server.tools, null, 2),
+                  text: JSON.stringify(server.tools),
                 },
               ],
             },
@@ -310,7 +310,7 @@ async function handleMCPMessage(message: WebMCPMessage): Promise<MCPResponse> {
               content: [
                 {
                   type: 'text',
-                  text: JSON.stringify(result, null, 2),
+                  text: JSON.stringify(result),
                 },
               ],
             },

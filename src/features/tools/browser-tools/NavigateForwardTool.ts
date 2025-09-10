@@ -1,10 +1,11 @@
 import { getLogger } from '@/lib/logger';
+import { createMCPTextResponse } from '@/lib/mcp-response-utils';
 import { BROWSER_TOOL_SCHEMAS } from './helpers';
-import { BrowserLocalMCPTool } from './types';
+import { StrictBrowserMCPTool } from './types';
 
 const logger = getLogger('NavigateForwardTool');
 
-export const navigateForwardTool: BrowserLocalMCPTool = {
+export const navigateForwardTool: StrictBrowserMCPTool = {
   name: 'navigateForward',
   description: 'Navigate forward in browser history',
   inputSchema: {
@@ -22,6 +23,10 @@ export const navigateForwardTool: BrowserLocalMCPTool = {
       throw new Error('executeScript function is required for navigateForward');
     }
 
-    return executeScript(sessionId, 'history.forward(); "Navigated forward"');
+    const result = await executeScript(
+      sessionId,
+      'history.forward(); "Navigated forward"',
+    );
+    return createMCPTextResponse(result);
   },
 };

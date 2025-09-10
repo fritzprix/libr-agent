@@ -31,7 +31,7 @@ export interface Message {
   id: string;
   sessionId: string; // Added sessionId
   role: 'user' | 'assistant' | 'system' | 'tool';
-  content: string | MCPContent[];
+  content: MCPContent[];
   tool_calls?: ToolCall[];
   tool_call_id?: string;
   isStreaming?: boolean;

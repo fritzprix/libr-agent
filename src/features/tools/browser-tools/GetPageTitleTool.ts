@@ -1,10 +1,11 @@
 import { getLogger } from '@/lib/logger';
+import { createMCPTextResponse } from '@/lib/mcp-response-utils';
 import { BROWSER_TOOL_SCHEMAS } from './helpers';
-import { BrowserLocalMCPTool } from './types';
+import { StrictBrowserMCPTool } from './types';
 
 const logger = getLogger('GetPageTitleTool');
 
-export const getPageTitleTool: BrowserLocalMCPTool = {
+export const getPageTitleTool: StrictBrowserMCPTool = {
   name: 'getPageTitle',
   description: 'Gets the title of the current browser page.',
   inputSchema: {
@@ -22,6 +23,7 @@ export const getPageTitleTool: BrowserLocalMCPTool = {
       throw new Error('executeScript function is required for getPageTitle');
     }
 
-    return executeScript(sessionId, 'document.title');
+    const result = await executeScript(sessionId, 'document.title');
+    return createMCPTextResponse(result);
   },
 };

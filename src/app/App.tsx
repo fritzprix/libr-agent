@@ -28,6 +28,7 @@ import { RustMCPToolProvider } from '@/features/tools/RustMCPToolProvider';
 import { WebMCPProvider as WebMCPToolProvider } from '@/features/tools/WebMCPToolProvider';
 import { ToolsTestPage } from '@/features/tools/ToolsTestPage';
 import { SystemPromptProvider } from '@/context/SystemPromptContext';
+import { MCPUITest } from '@/components/mcp-ui-test/MCPUITest';
 
 function App() {
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
@@ -44,7 +45,7 @@ function App() {
                     <BrowserToolProvider />
                     <RustMCPToolProvider />
                     <WebMCPToolProvider
-                      servers={['content-store', 'planning-server']}
+                      servers={['content-store', 'planning']}
                     />
                     <SessionHistoryProvider>
                       <ResourceAttachmentProvider>
@@ -100,6 +101,10 @@ function App() {
                                     <Route
                                       path="/tools/test"
                                       element={<ToolsTestPage />}
+                                    />
+                                    <Route
+                                      path="/mcp-ui/test"
+                                      element={<MCPUITest />}
                                     />
                                   </Routes>
                                 </div>

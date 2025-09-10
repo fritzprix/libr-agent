@@ -1,5 +1,5 @@
 import type { WebMCPServer, MCPTool, MCPResponse } from '@/lib/mcp-types';
-import { normalizeToolResult } from '@/lib/mcp-types';
+import { createMCPStructuredResponse } from '@/lib/mcp-response-utils';
 import type { JSONSchemaObject } from '@/lib/mcp-types';
 import type { ServiceContextOptions } from '@/features/tools';
 import {
@@ -736,31 +736,43 @@ const fileStoreServer: WebMCPServer = {
     logger.debug('File store tool called', { name, args });
     if (!searchEngine.isReady()) await searchEngine.initialize();
     switch (name) {
-      case 'createStore':
-        return normalizeToolResult(
-          await createStore(args as CreateStoreInput),
-          'createStore',
+      case 'createStore': {
+        const result = await createStore(args as CreateStoreInput);
+        return createMCPStructuredResponse(
+          `Store created with ID: ${result.storeId}`,
+          result as unknown as Record<string, unknown>,
         );
-      case 'addContent':
-        return normalizeToolResult(
-          await addContent(args as AddContentInput),
-          'addContent',
+      }
+      case 'addContent': {
+        const result = await addContent(args as AddContentInput);
+        return createMCPStructuredResponse(
+          `Content added with ID: ${result.contentId}`,
+          result as unknown as Record<string, unknown>,
         );
-      case 'listContent':
-        return normalizeToolResult(
-          await listContent(args as ListContentInput),
-          'listContent',
+      }
+      case 'listContent': {
+        const result = await listContent(args as ListContentInput);
+        return createMCPStructuredResponse(
+          `Found ${result.contents?.length || 0} content items`,
+          result as unknown as Record<string, unknown>,
         );
-      case 'readContent':
-        return normalizeToolResult(
-          await readContent(args as ReadContentInput),
-          'readContent',
+      }
+      case 'readContent': {
+        const result = await readContent(args as ReadContentInput);
+        return createMCPStructuredResponse(
+          `Content retrieved: ${result.content?.length || 0} characters`,
+          result as unknown as Record<string, unknown>,
         );
-      case 'keywordSimilaritySearch':
-        return normalizeToolResult(
-          await keywordSimilaritySearch(args as KeywordSimilaritySearchInput),
-          'keywordSimilaritySearch',
+      }
+      case 'keywordSimilaritySearch': {
+        const result = await keywordSimilaritySearch(
+          args as KeywordSimilaritySearchInput,
         );
+        return createMCPStructuredResponse(
+          `Search completed: ${result.results?.length || 0} results found`,
+          result as unknown as Record<string, unknown>,
+        );
+      }
       default:
         throw new Error(`Unknown tool: ${name}`);
     }

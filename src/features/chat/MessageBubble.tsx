@@ -20,8 +20,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
     if (isUser) {
       return {
         container: 'justify-end',
-        bubble:
-          'text-primary-foreground bg-primary shadow-lg border border-primary/20',
+        bubble: 'shadow-lg border border-primary/20',
         avatar: '🧑‍💻',
         avatarBg: 'bg-primary',
       };

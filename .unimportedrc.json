@@ -1,0 +1,44 @@
+{
+  "entry": ["src/main.tsx", "src/app/App.tsx", "src/app/main.tsx"],
+  "extensions": [".ts", ".tsx", ".js", ".jsx"],
+  "ignorePatterns": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/target/**",
+    "**/*.test.*",
+    "**/*.stories.*",
+    "**/vite-env.d.ts",
+    "src-tauri/**",
+    "**/mcp-worker.ts",
+    "**/web-mcp/modules/**",
+    "src/test/setup.ts"
+  ],
+  "aliases": {
+    "@": "src"
+  },
+  "respectGitignore": true,
+  "ignoreUnresolved": [
+    "**/*.ts?worker",
+    "**/*?worker",
+    "../../lib/web-mcp/mcp-worker.ts?worker",
+    [
+      "../../lib/web-mcp/mcp-worker.ts?worker",
+      ["src/features/tools/WebMCPToolProvider.tsx"]
+    ],
+    "../lib/web-mcp/mcp-worker.ts?worker",
+    ["../lib/web-mcp/mcp-worker.ts?worker", ["src/hooks/use-web-mcp-server.ts"]]
+  ],
+  "ignoreUnused": [
+    "@mcp-ui/server",
+    "@remote-dom/core",
+    "postcss",
+    "remark-gfm",
+    "tailwindcss"
+  ],
+  "ignoreUnimported": [
+    "src/components/ui/alert-dialog.tsx",
+    "src/components/ui/collapsible.tsx",
+    "src/components/ui/sonner.tsx",
+    "src/features/prompts/JailbreakSystemPrompt.tsx"
+  ]
+}

@@ -6,28 +6,57 @@
 
 SynapticFlow is a next-generation desktop AI agent platform that combines the lightness of Tauri with the intuitiveness of React. Users can automate all daily tasks by giving AI agents their own unique personalities and abilities.
 
-## Key Features
+## Key Architecture Patterns
 
-- Role Management System: Create/edit/delete various AI agent roles.
-- System Prompt: Define custom AI personalities for each role.
-- Real-time MCP Connection: Run local MCP servers via stdio protocol.
-- Tool Calling System: Call tools from the MCP server in real-time.
-- IndexedDB Storage: Store roles/conversations in a browser local database.
-- Tauri Backend: High-performance native desktop app framework.
-- UI Components: Modern terminal-style interface.
-- Centralized Configuration Management: All settings, including API keys, models, and message window sizes, are managed and permanently stored within the app.
-- Agent and Multi-Agent Configuration Sharing/Extraction: Easily export and import agent and Multi-Agent configurations.
+**Dual MCP Backend System:**
+
+- **Rust Tauri Backend**: Native stdio MCP server communication via `MCPServerManager`
+- **Web Worker Backend**: Browser-based MCP servers for dependency-free execution (`src/lib/web-mcp/`)
+- **Unified API**: `rust-backend-client.ts` provides consistent interface using `safeInvoke()` wrapper
+
+**Feature-Based Organization:**
+
+- Each feature in `src/features/` contains components, hooks, and README documentation
+- Compound component patterns (e.g., `Chat.Header`, `Chat.Messages`, `Chat.Input`)
+- React Context providers for state sharing (`ChatProvider`, `EditorProvider`, `WebMCPProvider`)
+
+**Service Layer Pattern:**
+
+- `src/lib/` contains business logic and Tauri command wrappers
+- Centralized logging via `getLogger('ComponentName')` instead of console methods
+- All API communication through service classes with error handling
+
+**Key Features:**
+
+- **AI Agent Management**: Role-based system prompts and multi-agent collaboration
+- **LLM Provider Support**: 8 providers, 50+ models including reasoning models (o3, DeepSeek R1)
+- **Built-in Tool Ecosystem**: SecureFileManager, code execution, browser automation
+- **MCP Integration**: Real-time stdio protocol with security validation
 
 ## Technology Stack
 
-- PNPM
-- Tauri (Rust + WebView)
-- React 18
-- TypeScript
-- RMCP (Rust-based Model Context Protocol client)
-- Tailwind CSS
-- IndexedDB
-- Vite
+**Core Framework:**
+
+- PNPM (Package Manager)
+- Tauri 2.x (Latest cross-platform desktop framework)
+- React 18.3 (Modern UI with concurrent features)
+- TypeScript 5.6 (Advanced type safety)
+- RMCP 0.2.1 (Rust-based Model Context Protocol client)
+
+**Frontend Technologies:**
+
+- Tailwind CSS 4.x (Latest utility-first styling)
+- Radix UI (Accessible component primitives)
+- Dexie (TypeScript-friendly IndexedDB wrapper)
+- Zustand (Lightweight state management)
+- Vite (Fast development and build tool)
+
+**Backend Technologies:**
+
+- Rust (High-performance native operations)
+- Tokio (Async runtime for concurrent operations)
+- SecurityValidator (Built-in security validation)
+- Warp (HTTP server for browser automation)
 
 ## File Structure
 
@@ -65,8 +94,6 @@ synaptic-flow/
 4. Build for production: `pnpm tauri build`
 5. API keys are managed in-app via the settings modal (not in .env files).
 
-# SynapticFlow Project Guidelines
-
 ## Coding Style
 
 ### General
@@ -74,6 +101,7 @@ synaptic-flow/
 - Use 2 spaces for indentation across all files.
 - Use descriptive variable names in both Rust and TypeScript.
 - Follow consistent naming conventions for files and directories.
+- **All comments must be written in English.** Use clear, descriptive English comments for all code documentation, inline comments, and docstrings.
 
 ### Rust Backend (`src-tauri/`)
 
@@ -119,6 +147,11 @@ interface Config {
 ### CSS/Styling
 
 - Use `shadcn/ui` components for building accessible, consistent, and customizable UI elements. Prefer shadcn/ui for new UI components unless a custom solution is required.
+- **Tailwind CSS Class Usage Guidelines:**
+  - Avoid using arbitrary class names (e.g., `content-text`) that are not Tailwind utility classes, as they may be removed by PurgeCSS during build.
+  - Use Tailwind utility classes instead: `className="text-sm text-gray-700 leading-relaxed"`
+  - If custom classes are needed, define them in CSS files or add to Tailwind's safelist in `tailwind.config.js`
+  - For dynamic or conditional styling, use Tailwind's arbitrary value syntax: `className="[custom-value]"`
 
 ## Architecture
 
@@ -188,9 +221,9 @@ The project uses a centralized logging system located at `src/lib/logger.ts` tha
 
 ### Core Framework
 
-- `@tauri-apps/api`: Version 1.x - Frontend-backend communication
-- `@tauri-apps/cli`: Version 1.x - Development and build tools
-- `tauri`: Version 1.x - Rust backend framework
+- `@tauri-apps/api`: Version 2.x - Enhanced frontend-backend communication
+- `@tauri-apps/cli`: Version 2.x - Latest development and build tools
+- `tauri`: Version 2.x - Advanced Rust backend framework with improved security
 
 ### Frontend Dependencies
 
@@ -290,6 +323,33 @@ These steps must be completed successfully before considering any refactoring ta
 - No TypeScript compilation errors
 - Proper formatting standards are maintained
 - The application remains buildable after changes
+
+### Critical Development Patterns
+
+**MCP Communication:**
+
+- Always use `safeInvoke()` from `rust-backend-client.ts` for Tauri command calls
+- MCP servers are managed through global `MCPServerManager` in Rust backend
+- Web Worker MCP servers use `WebMCPProvider` context for browser-based tools
+
+**Component Architecture:**
+
+- Feature components follow compound patterns: `Chat.Header`, `Chat.Messages`, `Chat.Input`
+- Each feature directory contains `components/`, `hooks/`, and `README.md`
+- Use React Context for cross-component state sharing, not prop drilling
+
+**Error Handling:**
+
+- Backend commands return `Result<T, String>` in Rust
+- Frontend wraps all Tauri calls in try-catch with centralized error logging
+- Use structured error objects, never throw raw strings
+
+**Development Commands:**
+
+- `pnpm tauri dev` - Development with hot reload (port 1420)
+- `pnpm tauri build` - Production build for distribution
+- `pnpm dead-code` - Find unused code with unimported tool
+- `pnpm refactor:validate` - Complete validation pipeline
 
 ## Security Considerations
 

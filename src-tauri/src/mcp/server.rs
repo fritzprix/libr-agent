@@ -184,8 +184,47 @@ impl MCPServerManager {
 
             match connection.client.call_tool(call_param).await {
                 Ok(result) => {
-                    let result_value =
-                        serde_json::to_value(&result).unwrap_or(serde_json::Value::Null);
+                    // RMCP 원본 응답을 먼저 로깅 (직렬화 전)
+                    info!("Raw rmcp CallToolResult (before serialization): {result:?}");
+                    
+                    // rmcp CallToolResult를 보다 신중하게 처리
+                    let result_value = match serde_json::to_value(&result) {
+                        Ok(value) => value,
+                        Err(e) => {
+                            error!("Failed to serialize tool result: {e}");
+                            return MCPResponse {
+                                jsonrpc: "2.0".to_string(),
+                                id: Some(request_id),
+                                result: None,
+                                error: Some(MCPError {
+                                    code: -32603,
+                                    message: format!("Failed to serialize result: {e}"),
+                                    data: None,
+                                }),
+                            };
+                        }
+                    };
+
+                    // 디버그 로그로 원본 구조 확인
+                    info!("Original rmcp result: {result:?}");
+                    info!("Serialized result: {result_value}");
+                    
+                    // UI 리소스 감지 및 추가 로깅
+                    if let Some(content) = result_value.get("content") {
+                        if let Some(content_array) = content.as_array() {
+                            for (i, item) in content_array.iter().enumerate() {
+                                if item.get("type").and_then(|t| t.as_str()) == Some("resource") {
+                                    debug!("Found UI resource at index {i}: {item}");
+                                    if let Some(resource) = item.get("resource") {
+                                        debug!("Resource details: {resource}");
+                                        if resource.get("mimeType").is_none() {
+                                            warn!("UI resource missing mimeType: {resource}");
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                     // 결과에 에러가 포함되어 있는지 확인
                     let contains_error = result_value.to_string().to_lowercase().contains("error");
@@ -207,6 +246,7 @@ impl MCPServerManager {
 
                         MCPResponse::error(request_id, -32000, error_msg)
                     } else {
+                        // 정상 응답 - rmcp 구조를 최대한 보존
                         MCPResponse {
                             jsonrpc: "2.0".to_string(),
                             id: Some(request_id),

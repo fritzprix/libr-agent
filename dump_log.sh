@@ -17,7 +17,7 @@ get_tauri_log_path() {
 # Fallback to standard dirs crate paths (matching Tauri log plugin implementation)
 if [[ "$OSTYPE" == "darwin"* ]]; then
     # macOS - using Tauri log plugin path
-    DEFAULT_SRC="$HOME/Library/Application Support/com.fritzprix.synapticflow/logs/synaptic-flow.log"
+    DEFAULT_SRC="$HOME/Library/Logs/com.fritzprix.synapticflow/synaptic-flow.log"
 elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
     # Linux - using Tauri log plugin path  
     DEFAULT_SRC="$HOME/.local/share/com.fritzprix.synapticflow/logs/synaptic-flow.log"

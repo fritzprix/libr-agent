@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DOM Map 추출 테스트 페이지</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 20px;
+      }
+      .ad-banner {
+        background: red;
+        color: white;
+        padding: 10px;
+        margin: 10px 0;
+      }
+      .popup {
+        display: none;
+        position: fixed;
+        top: 50%;
+        left: 50%;
+      }
+      .sidebar {
+        background: #f0f0f0;
+        padding: 10px;
+      }
+      .hidden {
+        display: none;
+      }
+      .navigation {
+        background: #333;
+        color: white;
+        padding: 15px;
+      }
+      .navigation a {
+        color: white;
+        text-decoration: none;
+        margin: 0 10px;
+      }
+      .content {
+        max-width: 600px;
+        margin: 20px auto;
+        padding: 20px;
+      }
+      .auth-form {
+        border: 1px solid #ddd;
+        padding: 20px;
+        border-radius: 5px;
+      }
+      .auth-form input {
+        width: 100%;
+        padding: 10px;
+        margin: 10px 0;
+      }
+      .submit-btn {
+        background: #007bff;
+        color: white;
+        padding: 12px 20px;
+        border: none;
+        cursor: pointer;
+      }
+      .complex-section {
+        border: 1px solid #ccc;
+        margin: 20px 0;
+        padding: 15px;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- 광고 배너 (필터링되어야 함) -->
+    <div class="ad-banner">
+      이것은 광고 배너입니다. DOM Map에서 제외되어야 합니다.
+    </div>
+
+    <!-- 스크립트 (필터링되어야 함) -->
+    <script>
+      console.log('이 스크립트는 DOM Map에 포함되지 않아야 합니다.');
+      function trackingFunction() {
+        // 광고 추적 코드
+      }
+    </script>
+
+    <!-- 네비게이션 (포함되어야 함) -->
+    <nav id="main-nav" class="navigation">
+      <a href="/home" id="home-link">홈</a>
+      <a href="/about" class="nav-link">소개</a>
+      <a href="/services" class="nav-link">서비스</a>
+      <button id="menu-toggle" type="button" onclick="toggleMenu()">
+        메뉴 토글
+      </button>
+    </nav>
+
+    <!-- 메인 콘텐츠 -->
+    <main class="content">
+      <h1>DOM Map 추출 테스트</h1>
+      <p>
+        이 페이지는 DOM Map 추출 기능을 테스트하기 위한 복합적인 구조를 가지고
+        있습니다.
+      </p>
+
+      <!-- 로그인 폼 (포함되어야 함) -->
+      <section class="complex-section">
+        <h2>로그인 폼</h2>
+        <form id="login-form" class="auth-form" action="/login" method="post">
+          <label for="email">이메일:</label>
+          <input
+            type="email"
+            id="email"
+            name="email"
+            placeholder="이메일을 입력하세요"
+            required
+          />
+
+          <label for="password">비밀번호:</label>
+          <input
+            type="password"
+            id="password"
+            name="password"
+            placeholder="비밀번호"
+            required
+          />
+
+          <label for="remember">
+            <input type="checkbox" id="remember" name="remember" /> 로그인 상태
+            유지
+          </label>
+
+          <button type="submit" class="submit-btn">로그인</button>
+          <button type="button" id="forgot-password" onclick="resetPassword()">
+            비밀번호 찾기
+          </button>
+        </form>
+      </section>
+
+      <!-- 검색 섹션 -->
+      <section class="complex-section">
+        <h2>검색</h2>
+        <form id="search-form" role="search">
+          <input
+            type="search"
+            id="search-input"
+            name="q"
+            placeholder="검색어를 입력하세요"
+            aria-label="검색"
+          />
+          <select id="search-category" name="category">
+            <option value="all">전체</option>
+            <option value="posts">게시글</option>
+            <option value="users">사용자</option>
+          </select>
+          <button type="submit" id="search-btn">검색</button>
+        </form>
+      </section>
+
+      <!-- 인터랙티브 요소들 -->
+      <section class="complex-section">
+        <h2>다양한 인터랙티브 요소</h2>
+        <textarea
+          id="comment"
+          name="comment"
+          rows="4"
+          cols="50"
+          placeholder="댓글을 입력하세요"
+        ></textarea>
+        <br /><br />
+
+        <button id="like-btn" class="action-btn" data-action="like">
+          좋아요
+        </button>
+        <button id="share-btn" class="action-btn" data-action="share">
+          공유
+        </button>
+
+        <a href="/profile" id="profile-link" class="user-link">내 프로필</a>
+        <a href="/settings" class="settings-link">설정</a>
+      </section>
+
+      <!-- 복잡한 중첩 구조 (깊이 제한 테스트) -->
+      <section class="complex-section">
+        <h2>중첩 구조 테스트</h2>
+        <div class="level-1">
+          <div class="level-2">
+            <div class="level-3">
+              <div class="level-4">
+                <div class="level-5">
+                  <button id="deep-button">깊은 중첩 버튼</button>
+                  <p>
+                    이 버튼은 5단계 깊이에 있습니다. maxDepth 설정에 따라
+                    포함되거나 제외될 수 있습니다.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 긴 텍스트 (길이 제한 테스트) -->
+      <section class="complex-section">
+        <h2>긴 텍스트 테스트</h2>
+        <p id="long-text">
+          이것은 매우 긴 텍스트입니다. DOM Map에서 텍스트 길이가 50자로
+          제한되는지 확인하기 위한 테스트입니다. 이 문단은 50자를 훨씬 넘어가는
+          내용을 포함하고 있으며, 추출된 결과에서는 앞의 50자만 포함되어야
+          합니다. 추가적인 내용들이 여기에 계속 작성되어 있습니다.
+        </p>
+      </section>
+    </main>
+
+    <!-- 사이드바 (필터링되어야 함) -->
+    <aside class="sidebar">
+      <h3>사이드바</h3>
+      <p>이 사이드바는 'sidebar' 클래스를 가지고 있어 필터링되어야 합니다.</p>
+    </aside>
+
+    <!-- 팝업 (숨겨진 요소, 필터링되어야 함) -->
+    <div class="popup hidden" id="notification-popup">
+      <p>이 팝업은 숨겨져 있어 DOM Map에 포함되지 않아야 합니다.</p>
+      <button id="close-popup">닫기</button>
+    </div>
+
+    <!-- 푸터 -->
+    <footer>
+      <p>&copy; 2024 DOM Map 테스트. 모든 권리 보유.</p>
+      <nav>
+        <a href="/privacy">개인정보처리방침</a>
+        <a href="/terms">이용약관</a>
+        <a href="/contact" id="contact-link">연락처</a>
+      </nav>
+    </footer>
+
+    <script>
+      function toggleMenu() {
+        console.log('메뉴 토글');
+      }
+
+      function resetPassword() {
+        console.log('비밀번호 재설정');
+      }
+
+      // DOM Map 추출 테스트 함수
+      function testDOMMapExtraction() {
+        console.log('DOM Map 추출 테스트 시작...');
+
+        // 여기에 실제 DOM Map 추출 코드가 실행될 것입니다.
+        const script = document.createElement('script');
+        script.textContent = `
+              // DOM Map 추출 스크립트가 여기에 삽입됩니다
+              console.log('DOM Map 추출 스크립트 실행');
+          `;
+        document.head.appendChild(script);
+      }
+
+      // 페이지 로드 완료 후 테스트 실행
+      window.addEventListener('load', () => {
+        console.log('테스트 페이지 로드 완료');
+        console.log('DOM 요소 통계:');
+        console.log('- 전체 요소 수:', document.querySelectorAll('*').length);
+        console.log(
+          '- 스크립트 요소 수:',
+          document.querySelectorAll('script').length,
+        );
+        console.log(
+          '- 스타일 요소 수:',
+          document.querySelectorAll('style').length,
+        );
+        console.log(
+          '- ID가 있는 요소 수:',
+          document.querySelectorAll('[id]').length,
+        );
+        console.log(
+          '- 클래스가 있는 요소 수:',
+          document.querySelectorAll('[class]').length,
+        );
+        console.log(
+          '- 인터랙티브 요소 수:',
+          document.querySelectorAll('a, button, input, select, textarea, form')
+            .length,
+        );
+      });
+    </script>
+  </body>
+</html>

@@ -1,11 +1,12 @@
 import { navigateToUrl } from '@/lib/rust-backend-client';
 import { getLogger } from '@/lib/logger';
+import { createMCPTextResponse } from '@/lib/mcp-response-utils';
 import { BROWSER_TOOL_SCHEMAS } from './helpers';
-import { LocalMCPTool } from './types';
+import { StrictLocalMCPTool } from './types';
 
 const logger = getLogger('NavigateToUrlTool');
 
-export const navigateToUrlTool: LocalMCPTool = {
+export const navigateToUrlTool: StrictLocalMCPTool = {
   name: 'navigateToUrl',
   description: 'Navigates to a new URL in an existing browser session.',
   inputSchema: {
@@ -23,6 +24,7 @@ export const navigateToUrlTool: LocalMCPTool = {
     };
     logger.debug('Executing browser_navigateToUrl', { sessionId, url });
 
-    return await navigateToUrl(sessionId, url);
+    const result = await navigateToUrl(sessionId, url);
+    return createMCPTextResponse(result);
   },
 };

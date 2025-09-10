@@ -5,6 +5,7 @@ import {
   Settings,
   Users,
   Wrench,
+  TestTube,
 } from 'lucide-react';
 import React, { useEffect, useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
@@ -99,30 +100,6 @@ export default function AppSidebar({ onOpenSettings }: AppSidebarProps) {
                   </SidebarMenuButton>
                 </Link>
               </SidebarMenuItem>
-              <SidebarMenuItem>
-                <Link to="/chat/group">
-                  <SidebarMenuButton
-                    onClick={() => select()}
-                    isActive={location.pathname === '/chat/group'}
-                    tooltip="Assistant Group Chat"
-                  >
-                    <Users size={16} />
-                    <span>Assistant Group Chat</span>
-                  </SidebarMenuButton>
-                </Link>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <Link to="/chat/flow">
-                  <SidebarMenuButton
-                    onClick={() => select()}
-                    isActive={location.pathname === '/chat/flow'}
-                    tooltip="Flow Chat"
-                  >
-                    <BrainCircuit size={16} />
-                    <span>Flow Chat</span>
-                  </SidebarMenuButton>
-                </Link>
-              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -142,17 +119,6 @@ export default function AppSidebar({ onOpenSettings }: AppSidebarProps) {
                   >
                     <Users size={16} />
                     <span>Assistants</span>
-                  </SidebarMenuButton>
-                </Link>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <Link to="/assistants/groups">
-                  <SidebarMenuButton
-                    isActive={location.pathname === '/assistants/groups'}
-                    tooltip="Manage Assistant Groups"
-                  >
-                    <Users size={16} />
-                    <span>Assistant Groups</span>
                   </SidebarMenuButton>
                 </Link>
               </SidebarMenuItem>
@@ -182,10 +148,10 @@ export default function AppSidebar({ onOpenSettings }: AppSidebarProps) {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {/* Tools Section */}
+        {/* Test Section */}
         <SidebarGroup>
           <SidebarGroupLabel className="text-sm font-semibold uppercase tracking-wide mb-2">
-            Development
+            Testing
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
@@ -193,10 +159,21 @@ export default function AppSidebar({ onOpenSettings }: AppSidebarProps) {
                 <Link to="/tools/test">
                   <SidebarMenuButton
                     isActive={location.pathname === '/tools/test'}
-                    tooltip="Test Built-in Tools"
+                    tooltip="Test Tools"
                   >
                     <Wrench size={16} />
                     <span>Tools Test</span>
+                  </SidebarMenuButton>
+                </Link>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <Link to="/mcp-ui/test">
+                  <SidebarMenuButton
+                    isActive={location.pathname === '/mcp-ui/test'}
+                    tooltip="MCP UI Test"
+                  >
+                    <TestTube size={16} />
+                    <span>MCP UI Test</span>
                   </SidebarMenuButton>
                 </Link>
               </SidebarMenuItem>

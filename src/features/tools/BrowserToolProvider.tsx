@@ -3,6 +3,7 @@ import { useBuiltInTool, ServiceContextOptions } from '.';
 import { useBrowserInvoker } from '@/hooks/use-browser-invoker';
 import { useRustBackend } from '@/hooks/use-rust-backend';
 import { MCPResponse } from '@/lib/mcp-types';
+import { isMCPResponse, createMCPTextResponse } from '@/lib/mcp-response-utils';
 import { getLogger } from '@/lib/logger';
 import { listBrowserSessions, BrowserSession } from '@/lib/rust-backend-client';
 import { ToolCall } from '@/models/chat';
@@ -18,9 +19,6 @@ import {
   scrollPageTool,
   navigateBackTool,
   navigateForwardTool,
-  getElementTextTool,
-  getElementAttributeTool,
-  findElementTool,
   // Complex tools
   clickElementTool,
   inputTextTool,
@@ -64,9 +62,6 @@ export function BrowserToolProvider() {
       scrollPageTool,
       navigateBackTool,
       navigateForwardTool,
-      getElementTextTool,
-      getElementAttributeTool,
-      findElementTool,
       clickElementTool,
       inputTextTool,
       extractContentTool,
@@ -145,28 +140,23 @@ export function BrowserToolProvider() {
               parsed.saved_raw_html = relativePath;
               delete parsed.raw_html_content; // Remove the large content from response
               delete parsed.save_html_requested;
-              result = JSON.stringify(parsed, null, 2);
+              result = JSON.stringify(parsed);
             }
           } catch {
             // If parsing fails, keep original result
           }
         }
 
-        return {
-          jsonrpc: '2.0',
-          id: toolCall.id,
-          result: {
-            content: [
-              {
-                type: 'text',
-                text:
-                  typeof result === 'string'
-                    ? result
-                    : JSON.stringify(result, null, 2),
-              },
-            ],
-          },
-        };
+        // Check if result is already an MCPResponse, return it directly with correct ID
+        if (isMCPResponse(result)) {
+          return { ...result, id: toolCall.id };
+        }
+
+        // Fallback for legacy tools that don't return MCPResponse
+        return createMCPTextResponse(
+          typeof result === 'string' ? result : JSON.stringify(result),
+          toolCall.id,
+        );
       },
       getServiceContext: async (
         options?: ServiceContextOptions,

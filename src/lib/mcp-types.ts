@@ -7,6 +7,8 @@
  * 참조: https://modelcontextprotocol.io/
  */
 
+import { UIResource } from '@mcp-ui/server';
+
 // ========================================
 // 🔧 JSON Schema Types (MCP 사양 준수)
 // ========================================
@@ -92,6 +94,7 @@ export interface MCPTextContent {
   type: 'text';
   text: string;
   annotations?: Record<string, unknown>;
+  serviceInfo?: ServiceInfo;
 }
 
 export interface MCPImageContent {
@@ -99,6 +102,7 @@ export interface MCPImageContent {
   data: string; // base64
   mimeType: string;
   annotations?: Record<string, unknown>;
+  serviceInfo?: ServiceInfo;
 }
 
 export interface MCPAudioContent {
@@ -106,6 +110,7 @@ export interface MCPAudioContent {
   data: string; // base64
   mimeType: string;
   annotations?: Record<string, unknown>;
+  serviceInfo?: ServiceInfo;
 }
 
 export interface MCPResourceLinkContent {
@@ -115,24 +120,13 @@ export interface MCPResourceLinkContent {
   description?: string;
   mimeType?: string;
   annotations?: Record<string, unknown>;
-}
-
-// UIResource interface for MCP-UI integration (확장하여 MCP 표준과 호환)
-export interface UIResource {
-  uri?: string; // ui://... 형태 권장 (MCP 표준에서는 필수이지만 UI에서는 optional)
-  mimeType: string; // 'text/html' | 'text/uri-list' | 'application/vnd.mcp-ui.remote-dom'
-  text?: string; // inline HTML or remote-dom script
-  blob?: string; // base64-encoded content when used
-  // MCP 표준 추가 필드 (UI에서는 optional)
-  title?: string;
-  annotations?: Record<string, unknown>;
+  serviceInfo?: ServiceInfo;
 }
 
 // 통합된 Resource content type (기존 두 타입을 하나로 병합)
-export interface MCPResourceContent {
-  type: 'resource';
-  resource: UIResource; // UIResource로 통일하여 UI와 표준 MCP 모두 지원
-}
+type MCPResourceContent = UIResource & {
+  serviceInfo?: ServiceInfo;
+};
 
 export type MCPContent =
   | MCPTextContent
@@ -140,6 +134,38 @@ export type MCPContent =
   | MCPAudioContent
   | MCPResourceLinkContent
   | MCPResourceContent;
+
+// ========================================
+// 🔧 Service Context Types (for tool resolution)
+// ========================================
+
+export interface ServiceInfo {
+  serverName: string;
+  toolName: string;
+  backendType: 'ExternalMCP' | 'BuiltInWeb' | 'BuiltInRust';
+}
+
+export function hasServiceInfo(
+  content: MCPContent,
+): content is MCPContent & { serviceInfo: ServiceInfo } {
+  return (
+    content &&
+    typeof content === 'object' &&
+    'serviceInfo' in content &&
+    content.serviceInfo !== undefined
+  );
+}
+
+export function extractServiceInfoFromContent(
+  content: MCPContent[],
+): ServiceInfo | null {
+  for (const item of content) {
+    if (hasServiceInfo(item)) {
+      return item.serviceInfo;
+    }
+  }
+  return null;
+}
 
 // ========================================
 // 🔄 MCP Protocol Types (JSON-RPC 2.0 준수)
@@ -199,6 +225,27 @@ export interface MCPResponse {
   id: string | number | null;
   result?: MCPResult | SamplingResult;
   error?: MCPError;
+}
+
+/**
+ * Extended MCP Response with service context information
+ * Service context를 보존하여 UI에서 정확한 tool 재호출을 지원
+ */
+export interface ExtendedMCPResponse extends MCPResponse {
+  serviceInfo?: {
+    serverName: string;
+    toolName: string;
+    backendType: 'ExternalMCP' | 'BuiltInWeb' | 'BuiltInRust';
+  };
+}
+
+/**
+ * Check if response is ExtendedMCPResponse (type guard)
+ */
+export function isExtendedResponse(
+  response: MCPResponse,
+): response is ExtendedMCPResponse {
+  return response && typeof response === 'object' && 'serviceInfo' in response;
 }
 
 // ========================================
@@ -344,104 +391,6 @@ export function isValidMCPResult(result: MCPResult): boolean {
 }
 
 /**
- * 다양한 Tool 실행 결과를 일관된 MCPResponse 형식으로 변환
- * @param result Tool 실행 결과 (모든 타입 가능)
- * @param toolName Tool 이름
- * @returns MCPResponse 객체
- */
-export function normalizeToolResult(
-  result: unknown,
-  toolName: string,
-  deterministicId?: string,
-): MCPResponse {
-  // Use provided deterministic ID or fallback to tool name based ID
-  const id =
-    deterministicId ||
-    `normalize-${toolName}-${Math.random().toString(36).slice(2)}`;
-
-  // 1. 이미 MCPResponse 형식인 경우 그대로 반환
-  if (
-    typeof result === 'object' &&
-    result !== null &&
-    'jsonrpc' in result &&
-    (result as MCPResponse).jsonrpc === '2.0'
-  ) {
-    return result as MCPResponse;
-  }
-
-  // 2. 에러 패턴 감지 (핵심 개선사항)
-  // - 문자열에 'error' 포함
-  // - 객체에 'error' 프로퍼티 포함
-  // - 객체에 'success: false' 포함
-  // - JSON 문자열 내부에 에러 포함 (error.txt 케이스 대응)
-  const isError =
-    (typeof result === 'string' &&
-      (result.toLowerCase().includes('error') ||
-        result.toLowerCase().includes('failed') ||
-        result.includes('"error":') || // JSON 내부 에러 감지
-        result.includes('\\"error\\":'))) || // 이스케이프된 JSON 내부 에러 감지
-    (typeof result === 'object' &&
-      result !== null &&
-      ('error' in result ||
-        ('success' in result && !(result as { success: boolean }).success)));
-
-  if (isError) {
-    // 에러 메시지 추출 로직 개선
-    let errorMessage: string;
-
-    if (typeof result === 'string') {
-      // JSON 문자열인지 확인하고 파싱 시도
-      if (result.includes('"error":') || result.includes('\\"error\\":')) {
-        try {
-          const parsed = JSON.parse(result);
-          errorMessage = parsed.error || result;
-        } catch {
-          // JSON 파싱 실패 시 원본 문자열 사용
-          errorMessage = result;
-        }
-      } else {
-        errorMessage = result;
-      }
-    } else if (
-      typeof result === 'object' &&
-      result !== null &&
-      'error' in result
-    ) {
-      errorMessage = String((result as { error: unknown }).error);
-    } else {
-      errorMessage = `Unknown error in ${toolName}`;
-    }
-
-    return {
-      jsonrpc: '2.0',
-      id,
-      error: {
-        code: -32603, // Internal error
-        message: errorMessage,
-        data: result,
-      },
-    };
-  }
-
-  // 3. 성공 결과 변환
-  const textContent =
-    typeof result === 'string' ? result : JSON.stringify(result, null, 2);
-
-  return {
-    jsonrpc: '2.0',
-    id,
-    result: {
-      content: [
-        {
-          type: 'text',
-          text: textContent,
-        },
-      ],
-    },
-  };
-}
-
-/**
  * MCP 응답을 채팅 시스템용 문자열로 변환
  */
 export function mcpResponseToString(response: MCPResponse): string {
@@ -485,10 +434,10 @@ export function mcpResponseToString(response: MCPResponse): string {
       if (textContent) return textContent;
     }
     if (response.result.structuredContent) {
-      return JSON.stringify(response.result.structuredContent, null, 2);
+      return JSON.stringify(response.result.structuredContent);
     }
     // content 와 structuredContent 모두 없는 경우
-    return JSON.stringify(response.result, null, 2);
+    return JSON.stringify(response.result);
   }
 
   // 이론적으로 도달하면 안 되는 경로
@@ -596,35 +545,4 @@ export interface MCPToolExecutionContext {
   toolName: string;
   arguments: unknown;
   timeout?: number;
-}
-
-/**
- * 테스트용: error.txt와 같은 케이스를 검증하는 함수
- */
-export function testErrorDetection(): void {
-  // error.txt에서 발견된 케이스 테스트
-  const errorCase = {
-    success: true,
-    content:
-      '{\n  "error": "fieldSelector.replace is not a function",\n  "tool": "updateGame",\n  "timestamp": "2025-08-03T11:26:28.643Z"\n}',
-    metadata: {
-      toolName: 'rpg-server__updateGame',
-      isValidated: true,
-    },
-    toolName: 'rpg-server__updateGame',
-    executionTime: 97,
-    timestamp: '2025-08-03T11:26:28.728Z',
-  };
-
-  const normalizedResponse = normalizeToolResult(
-    errorCase.content,
-    errorCase.toolName,
-  );
-
-  console.log('Test Result:', {
-    original: errorCase,
-    normalized: normalizedResponse,
-    isError: isMCPError(normalizedResponse),
-    isSuccess: isMCPSuccess(normalizedResponse),
-  });
 }
