@@ -17,7 +17,12 @@ export { inputTextTool } from './InputTextTool';
 export { extractContentTool } from './ExtractContentTool';
 
 // Types and helpers
-export type { LocalMCPTool, BrowserLocalMCPTool } from './types';
+export type {
+  LocalMCPTool,
+  BrowserLocalMCPTool,
+  StrictLocalMCPTool,
+  StrictBrowserMCPTool,
+} from './types';
 export {
   BROWSER_TOOL_SCHEMAS,
   checkElementState,
