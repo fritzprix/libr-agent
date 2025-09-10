@@ -1,10 +1,11 @@
 import { getLogger } from '@/lib/logger';
+import { createMCPTextResponse } from '@/lib/mcp-response-utils';
 import { BROWSER_TOOL_SCHEMAS } from './helpers';
-import { BrowserLocalMCPTool } from './types';
+import { StrictBrowserMCPTool } from './types';
 
 const logger = getLogger('NavigateBackTool');
 
-export const navigateBackTool: BrowserLocalMCPTool = {
+export const navigateBackTool: StrictBrowserMCPTool = {
   name: 'navigateBack',
   description: 'Navigate back in browser history',
   inputSchema: {
@@ -22,6 +23,10 @@ export const navigateBackTool: BrowserLocalMCPTool = {
       throw new Error('executeScript function is required for navigateBack');
     }
 
-    return executeScript(sessionId, 'history.back(); "Navigated back"');
+    const result = await executeScript(
+      sessionId,
+      'history.back(); "Navigated back"',
+    );
+    return createMCPTextResponse(result);
   },
 };

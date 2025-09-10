@@ -78,11 +78,8 @@ export function ChatInput({ children }: ChatInputProps) {
         logger.info('Message queued during tool execution');
       } else {
         // 일반 전송
-        const userMessage = createUserMessage(
-          input.trim(),
-          currentSession.id,
-        );
-        
+        const userMessage = createUserMessage(input.trim(), currentSession.id);
+
         // 첨부파일이 있으면 추가
         if (attachedFiles.length > 0) {
           userMessage.attachments = attachedFiles;

@@ -21,11 +21,6 @@ export default function AssistantEditor() {
     JSON.stringify(draft.mcpConfig, null, 2),
   );
 
-  // draft.mcpConfig가 바뀔 때마다 mcpConfigText를 동기화
-  useEffect(() => {
-    setMcpConfigText(JSON.stringify(draft.mcpConfig, null, 2));
-  }, [draft.mcpConfig]);
-
   const handleMCPConfigUpdate = useCallback(
     (jsonString: string) => {
       setMcpConfigText(jsonString);

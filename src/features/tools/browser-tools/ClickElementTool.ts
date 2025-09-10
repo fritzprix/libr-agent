@@ -3,14 +3,14 @@ import { getLogger } from '@/lib/logger';
 import {
   checkElementState,
   pollWithTimeout,
-  formatBrowserResult,
+  formatBrowserResultAsMCP,
   BROWSER_TOOL_SCHEMAS,
 } from './helpers';
-import { BrowserLocalMCPTool } from './types';
+import { StrictBrowserMCPTool } from './types';
 
 const logger = getLogger('ClickElementTool');
 
-export const clickElementTool: BrowserLocalMCPTool = {
+export const clickElementTool: StrictBrowserMCPTool = {
   name: 'clickElement',
   description: 'Clicks on a DOM element using CSS selector.',
   inputSchema: {
@@ -22,17 +22,55 @@ export const clickElementTool: BrowserLocalMCPTool = {
     required: ['sessionId', 'selector'],
   },
   execute: async (args: Record<string, unknown>, executeScript) => {
-    const { sessionId, selector } = args as {
-      sessionId: string;
-      selector: string;
-    };
+    // Input validation without type casting
+    const sessionId = args.sessionId;
+    const selector = args.selector;
+
+    if (typeof sessionId !== 'string' || !sessionId.trim()) {
+      const error = 'Invalid sessionId: must be a non-empty string';
+      logger.error(error, { args });
+      return formatBrowserResultAsMCP(
+        JSON.stringify({
+          ok: false,
+          action: 'click',
+          reason: 'invalid_input',
+          error,
+        }),
+      );
+    }
+
+    if (typeof selector !== 'string' || !selector.trim()) {
+      const error = 'Invalid selector: must be a non-empty string';
+      logger.error(error, { args });
+      return formatBrowserResultAsMCP(
+        JSON.stringify({
+          ok: false,
+          action: 'click',
+          reason: 'invalid_input',
+          error,
+          sessionId,
+        }),
+      );
+    }
+
     logger.debug('Executing browser_clickElement', {
       sessionId,
       selector,
     });
 
     if (!executeScript) {
-      throw new Error('executeScript function is required for clickElement');
+      const error = 'executeScript function is required for clickElement';
+      logger.error(error);
+      return formatBrowserResultAsMCP(
+        JSON.stringify({
+          ok: false,
+          action: 'click',
+          reason: 'missing_dependency',
+          error,
+          sessionId,
+          selector,
+        }),
+      );
     }
 
     try {
@@ -44,24 +82,45 @@ export const clickElementTool: BrowserLocalMCPTool = {
         'click',
       );
 
-      if (!elementState.exists) {
-        return formatBrowserResult(
+      // Additional safety check for null elementState
+      if (!elementState) {
+        const error = 'Element state check returned null';
+        logger.error(error, { sessionId, selector });
+        return formatBrowserResultAsMCP(
           JSON.stringify({
             ok: false,
             action: 'click',
-            reason: 'element_not_found',
+            reason: 'element_check_failed',
+            error,
+            sessionId,
             selector,
           }),
         );
       }
 
+      if (!elementState.exists) {
+        logger.debug('Element not found', { elementState });
+        return formatBrowserResultAsMCP(
+          JSON.stringify({
+            ok: false,
+            action: 'click',
+            reason: 'element_not_found',
+            selector,
+            sessionId,
+            diagnostics: elementState,
+          }),
+        );
+      }
+
       if (!elementState.clickable) {
-        return formatBrowserResult(
+        logger.debug('Element not clickable', { elementState });
+        return formatBrowserResultAsMCP(
           JSON.stringify({
             ok: false,
             action: 'click',
             reason: 'element_not_clickable',
             selector,
+            sessionId,
             diagnostics: elementState,
           }),
         );
@@ -76,17 +135,42 @@ export const clickElementTool: BrowserLocalMCPTool = {
 
       if (result) {
         logger.debug('Poll result received', { result });
-        return formatBrowserResult(result);
+        return formatBrowserResultAsMCP(result);
       }
 
-      return 'Click operation timed out - no response received from browser';
+      // Timeout case - return consistent error format
+      const timeoutError =
+        'Click operation timed out - no response received from browser';
+      logger.warn(timeoutError, { sessionId, selector, requestId });
+      return formatBrowserResultAsMCP(
+        JSON.stringify({
+          ok: false,
+          action: 'click',
+          reason: 'timeout',
+          error: timeoutError,
+          sessionId,
+          selector,
+        }),
+      );
     } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
       logger.error('Error in click_element execution', {
-        error,
+        error: errorMessage,
         sessionId,
         selector,
       });
-      return `Error executing click: ${error instanceof Error ? error.message : String(error)}`;
+
+      return formatBrowserResultAsMCP(
+        JSON.stringify({
+          ok: false,
+          action: 'click',
+          reason: 'execution_error',
+          error: errorMessage,
+          sessionId,
+          selector,
+        }),
+      );
     }
   },
 };

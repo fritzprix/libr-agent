@@ -8,11 +8,48 @@ import { prepareMessagesForLLM } from '../lib/message-preprocessor';
 
 import { selectMessagesWithinContext } from '@/lib/token-utils';
 import { stringToMCPContentArray } from '@/lib/utils';
-import { createStreamingMessage } from '@/lib/chat-utils';
 
 const logger = getLogger('useAIService');
 
 const DEFAULT_SYSTEM_PROMPT = 'You are a helpful assistant.';
+
+// JSON 필드 안전성 검증 및 escape 처리
+const sanitizeJsonField = (value: string): string => {
+  try {
+    JSON.parse(value);
+    return value; // 유효한 JSON이면 그대로 반환
+  } catch {
+    return JSON.stringify(value); // malformed면 escape된 문자열로 변환
+  }
+};
+
+// ToolCall 안전성 처리
+const sanitizeToolCall = (toolCall: ToolCall): ToolCall => {
+  return {
+    ...toolCall,
+    function: {
+      ...toolCall.function,
+      arguments: sanitizeJsonField(toolCall.function.arguments),
+    },
+  };
+};
+
+// Message 전체 안전성 처리
+const sanitizeMessage = (message: Message): Message => {
+  const sanitized = { ...message };
+
+  // tool_calls 처리
+  if (sanitized.tool_calls) {
+    sanitized.tool_calls = sanitized.tool_calls.map(sanitizeToolCall);
+  }
+
+  // thinking 내용 처리
+  if (sanitized.thinking) {
+    sanitized.thinking = sanitizeJsonField(sanitized.thinking);
+  }
+
+  return sanitized;
+};
 
 export const useAIService = (config?: AIServiceConfig) => {
   const {
@@ -63,11 +100,14 @@ export const useAIService = (config?: AIServiceConfig) => {
         }
 
         // Context enforcement: Truncate messages to fit the context window
-        const safeMessages = selectMessagesWithinContext(
+        const contextMessages = selectMessagesWithinContext(
           processedMessages,
           provider,
           model,
         );
+
+        // Sanitize messages to prevent malformed JSON
+        const safeMessages = contextMessages.map(sanitizeMessage);
 
         logger.info('Submitting messages to AI service', {
           model,
@@ -86,13 +126,9 @@ export const useAIService = (config?: AIServiceConfig) => {
           let parsedChunk: Record<string, unknown>;
 
           try {
+            // Validate and potentially recover the chunk before parsing
             parsedChunk = JSON.parse(chunk);
           } catch {
-            // Handle non-JSON chunks (e.g., plain text tool responses)
-            logger.debug('Received non-JSON chunk, treating as text content', {
-              chunk: chunk.substring(0, 100) + '...',
-              chunkType: typeof chunk,
-            });
             parsedChunk = { content: chunk };
           }
 
@@ -130,18 +166,16 @@ export const useAIService = (config?: AIServiceConfig) => {
             fullContent += parsedChunk.content;
           }
 
-          finalMessage = createStreamingMessage(
-            currentResponseId,
-            stringToMCPContentArray(fullContent),
-            messages[0]?.sessionId || '',
-            undefined, // assistantId
-            {
-              thinking,
-              thinkingSignature,
-              tool_calls: toolCalls,
-              isStreaming: true,
-            },
-          );
+          finalMessage = {
+            id: currentResponseId,
+            content: stringToMCPContentArray(fullContent),
+            role: 'assistant',
+            isStreaming: true,
+            thinking,
+            thinkingSignature,
+            tool_calls: toolCalls,
+            sessionId: messages[0]?.sessionId || '', // Add sessionId
+          };
 
           setResponse(finalMessage);
         }
@@ -152,33 +186,29 @@ export const useAIService = (config?: AIServiceConfig) => {
 
         if (!hasContent && !hasToolCalls) {
           logger.debug('Empty response detected, creating placeholder message');
-          finalMessage = createStreamingMessage(
-            currentResponseId,
-            stringToMCPContentArray(
+          finalMessage = {
+            id: currentResponseId,
+            content: stringToMCPContentArray(
               'I apologize, but I encountered an issue and cannot provide a response at this time.',
             ),
-            messages[0]?.sessionId || '',
-            undefined, // assistantId
-            {
-              thinking,
-              thinkingSignature,
-              tool_calls: [],
-              isStreaming: false,
-            },
-          );
+            thinking,
+            thinkingSignature,
+            role: 'assistant',
+            isStreaming: false,
+            tool_calls: [],
+            sessionId: messages[0]?.sessionId || '',
+          };
         } else {
-          finalMessage = createStreamingMessage(
-            currentResponseId,
-            stringToMCPContentArray(fullContent),
-            messages[0]?.sessionId || '',
-            undefined, // assistantId
-            {
-              thinking,
-              thinkingSignature,
-              tool_calls: toolCalls,
-              isStreaming: false,
-            },
-          );
+          finalMessage = {
+            id: currentResponseId,
+            content: stringToMCPContentArray(fullContent),
+            thinking,
+            thinkingSignature,
+            role: 'assistant',
+            isStreaming: false,
+            tool_calls: toolCalls,
+            sessionId: messages[0]?.sessionId || '', // Add sessionId
+          };
         }
 
         logger.info('Final message:', {

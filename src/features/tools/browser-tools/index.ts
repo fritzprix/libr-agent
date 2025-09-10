@@ -10,9 +10,6 @@ export { getPageTitleTool } from './GetPageTitleTool';
 export { scrollPageTool } from './ScrollPageTool';
 export { navigateBackTool } from './NavigateBackTool';
 export { navigateForwardTool } from './NavigateForwardTool';
-export { getElementTextTool } from './GetElementTextTool';
-export { getElementAttributeTool } from './GetElementAttributeTool';
-export { findElementTool } from './FindElementTool';
 
 // Complex tools
 export { clickElementTool } from './ClickElementTool';

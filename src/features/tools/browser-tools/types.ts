@@ -26,6 +26,16 @@ export type BrowserLocalMCPTool = MCPTool & {
 };
 
 /**
+ * Strict browser tool that needs executeScript and returns MCPResponse
+ */
+export type StrictBrowserMCPTool = MCPTool & {
+  execute: (
+    args: Record<string, unknown>,
+    executeScript?: (sessionId: string, script: string) => Promise<string>,
+  ) => Promise<MCPResponse>;
+};
+
+/**
  * @deprecated Use StrictLocalMCPTool instead for better type safety
  * Legacy type kept for backwards compatibility during migration
  */

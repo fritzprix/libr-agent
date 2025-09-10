@@ -142,6 +142,7 @@ export class OllamaService extends BaseAIService {
       logger.info('Ollama API call:', {
         model,
         messagesCount: ollamaMessages.length,
+        ollamaMessages,
         host: this.host,
         toolsCount: ollamaTools.length,
       });
@@ -310,10 +311,6 @@ export class OllamaService extends BaseAIService {
   }
 
   private convertUserMessage(message: Message): SimpleOllamaMessage | null {
-    if (typeof message.content !== 'string') {
-      logger.warn('User message content must be string');
-      return null;
-    }
     return {
       role: 'user',
       content: this.processMessageContent(message.content),

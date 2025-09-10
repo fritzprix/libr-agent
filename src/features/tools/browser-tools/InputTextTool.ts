@@ -3,14 +3,15 @@ import { getLogger } from '@/lib/logger';
 import {
   checkElementState,
   pollWithTimeout,
-  formatBrowserResult,
+  formatBrowserResultAsMCP,
   BROWSER_TOOL_SCHEMAS,
 } from './helpers';
-import { BrowserLocalMCPTool } from './types';
+import { StrictBrowserMCPTool } from './types';
+import { createMCPTextResponse } from '@/lib/mcp-response-utils';
 
 const logger = getLogger('InputTextTool');
 
-export const inputTextTool: BrowserLocalMCPTool = {
+export const inputTextTool: StrictBrowserMCPTool = {
   name: 'inputText',
   description: 'Inputs text into a form field using CSS selector.',
   inputSchema: {
@@ -44,7 +45,7 @@ export const inputTextTool: BrowserLocalMCPTool = {
       );
 
       if (!elementState.exists) {
-        return formatBrowserResult(
+        return formatBrowserResultAsMCP(
           JSON.stringify({
             ok: false,
             action: 'input',
@@ -55,7 +56,7 @@ export const inputTextTool: BrowserLocalMCPTool = {
       }
 
       if (!elementState.inputable) {
-        return formatBrowserResult(
+        return formatBrowserResultAsMCP(
           JSON.stringify({
             ok: false,
             action: 'input',
@@ -75,17 +76,21 @@ export const inputTextTool: BrowserLocalMCPTool = {
 
       if (result) {
         logger.debug('Poll result received', { result });
-        return formatBrowserResult(result);
+        return formatBrowserResultAsMCP(result);
       }
 
-      return 'Input operation timed out - no response received from browser';
+      return createMCPTextResponse(
+        'Input operation timed out - no response received from browser',
+      );
     } catch (error) {
       logger.error('Error in input_text execution', {
         error,
         sessionId,
         selector,
       });
-      return `Error executing input: ${error instanceof Error ? error.message : String(error)}`;
+      return createMCPTextResponse(
+        `Error executing input: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   },
 };

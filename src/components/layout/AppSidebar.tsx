@@ -4,6 +4,8 @@ import {
   MessageSquare,
   Settings,
   Users,
+  Wrench,
+  TestTube,
 } from 'lucide-react';
 import React, { useEffect, useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
@@ -139,6 +141,39 @@ export default function AppSidebar({ onOpenSettings }: AppSidebarProps) {
                   >
                     <History size={16} />
                     <span>Search History</span>
+                  </SidebarMenuButton>
+                </Link>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        {/* Test Section */}
+        <SidebarGroup>
+          <SidebarGroupLabel className="text-sm font-semibold uppercase tracking-wide mb-2">
+            Testing
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <Link to="/tools/test">
+                  <SidebarMenuButton
+                    isActive={location.pathname === '/tools/test'}
+                    tooltip="Test Tools"
+                  >
+                    <Wrench size={16} />
+                    <span>Tools Test</span>
+                  </SidebarMenuButton>
+                </Link>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <Link to="/mcp-ui/test">
+                  <SidebarMenuButton
+                    isActive={location.pathname === '/mcp-ui/test'}
+                    tooltip="MCP UI Test"
+                  >
+                    <TestTube size={16} />
+                    <span>MCP UI Test</span>
                   </SidebarMenuButton>
                 </Link>
               </SidebarMenuItem>

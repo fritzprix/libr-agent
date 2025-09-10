@@ -1,11 +1,12 @@
 import { createBrowserSession } from '@/lib/rust-backend-client';
 import { getLogger } from '@/lib/logger';
+import { createMCPTextResponse } from '@/lib/mcp-response-utils';
 import { BROWSER_TOOL_SCHEMAS } from './helpers';
-import { LocalMCPTool } from './types';
+import { StrictLocalMCPTool } from './types';
 
 const logger = getLogger('CreateSessionTool');
 
-export const createSessionTool: LocalMCPTool = {
+export const createSessionTool: StrictLocalMCPTool = {
   name: 'createSession',
   description:
     'Creates a new interactive browser session in a separate window.',
@@ -26,6 +27,8 @@ export const createSessionTool: LocalMCPTool = {
       title: title || null,
     });
 
-    return `Browser session created successfully: ${sessionId}`;
+    return createMCPTextResponse(
+      `Browser session created successfully: ${sessionId}`,
+    );
   },
 };
