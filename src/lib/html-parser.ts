@@ -1,10 +1,12 @@
 import { getLogger } from '@/lib/logger';
+import { createCompactText } from '@/lib/text-utils';
 
 const logger = getLogger('HTMLParser');
 
 // Core interfaces for parsed HTML structures
 export interface ParsedElement {
   tag: string;
+  selector: string;
   text?: string;
   id?: string;
   class?: string;
@@ -168,6 +170,7 @@ interface ParseContext<T extends BaseParseResult, O extends BaseParseOptions> {
 
 // Parsing pipeline interface
 interface ParsePipeline<T extends BaseParseResult, O extends BaseParseOptions> {
+  document: Document;
   preValidate(element: Element, depth: number, options: O): boolean;
   createBaseResult(element: Element): T;
   extractAttributes(context: ParseContext<T, O>): void;
@@ -390,7 +393,7 @@ class ChildElementProcessor {
 
 // Text extraction utility
 function extractTextContent(element: Element, maxLength: number): string {
-  const allText = element.textContent?.trim() || '';
+  const allText = createCompactText(element.textContent || '');
 
   if (!allText) {
     return '';
@@ -410,7 +413,7 @@ function extractTextContent(element: Element, maxLength: number): string {
     }
   }
 
-  directText = directText.trim();
+  directText = createCompactText(directText);
 
   if (directText && directText.length > 2) {
     return directText.length > maxLength
@@ -455,8 +458,21 @@ function isValidDOMMapElement(
   return isInteractive || hasInteractiveChildren;
 }
 
-// Selector generation
-function generateSelector(element: Element): string {
+// Enhanced selector generation with uniqueness guarantee
+function generateSelector(element: Element, doc: Document): string {
+  // Try to generate a simple unique selector first
+  const simpleSelector = generateSimpleSelector(element);
+
+  // Check if the simple selector is unique
+  if (isSelectorUnique(simpleSelector, element, doc)) {
+    return simpleSelector;
+  }
+
+  // If not unique, generate a hierarchical selector
+  return generateHierarchicalSelector(element, doc);
+}
+
+function generateSimpleSelector(element: Element): string {
   const id = element.getAttribute('id');
   if (id && isValidCSSIdentifier(id)) {
     return '#' + id;
@@ -472,6 +488,77 @@ function generateSelector(element: Element): string {
   }
 
   return element.tagName.toLowerCase();
+}
+
+function generateHierarchicalSelector(element: Element, doc: Document): string {
+  const path: string[] = [];
+  let current: Element | null = element;
+
+  while (current && current !== doc.documentElement) {
+    const selector = generateElementSelectorWithIndex(current);
+    path.unshift(selector);
+    current = current.parentElement;
+  }
+
+  // Start with the full path and reduce until we find a unique selector
+  for (let i = 0; i < path.length; i++) {
+    const partialSelector = path.slice(i).join(' > ');
+    if (isSelectorUnique(partialSelector, element, doc)) {
+      return partialSelector;
+    }
+  }
+
+  // Fallback to full path
+  return path.join(' > ');
+}
+
+function generateElementSelectorWithIndex(element: Element): string {
+  const tag = element.tagName.toLowerCase();
+
+  // Try ID first
+  const id = element.getAttribute('id');
+  if (id && isValidCSSIdentifier(id)) {
+    return `${tag}#${id}`;
+  }
+
+  // Try class
+  const className = element.getAttribute('class');
+  if (className?.trim()) {
+    const classes = className.trim().split(/\s+/);
+    const validClass = classes.find((cls) => isValidCSSIdentifier(cls));
+    if (validClass) {
+      return `${tag}.${validClass}`;
+    }
+  }
+
+  // Add nth-child index for disambiguation
+  const parent = element.parentElement;
+  if (parent) {
+    const siblings = Array.from(parent.children).filter(
+      (child) => child.tagName === element.tagName,
+    );
+
+    if (siblings.length > 1) {
+      const index = siblings.indexOf(element) + 1;
+      return `${tag}:nth-child(${index})`;
+    }
+  }
+
+  return tag;
+}
+
+function isSelectorUnique(
+  selector: string,
+  targetElement: Element,
+  doc: Document,
+): boolean {
+  try {
+    const elements = doc.querySelectorAll(selector);
+    return elements.length === 1 && elements[0] === targetElement;
+  } catch {
+    // Invalid selector
+    return false;
+  }
 }
 
 // Common parsing pipeline
@@ -511,9 +598,11 @@ function parseElementWithPipeline<
 class StructuredParsePipeline
   implements ParsePipeline<ParsedElement, Required<ParseOptions>>
 {
+  document: Document;
   private attributeManager: AttributeExtractorManager<ParsedElement>;
 
-  constructor() {
+  constructor(document: Document) {
+    this.document = document;
     this.attributeManager =
       new AttributeExtractorManager<ParsedElement>().addExtractor(
         new BasicAttributeExtractor() as AttributeExtractor<
@@ -537,6 +626,7 @@ class StructuredParsePipeline
   createBaseResult(element: Element): ParsedElement {
     return {
       tag: element.tagName.toLowerCase(),
+      selector: generateSelector(element, this.document),
       children: [],
     };
   }
@@ -575,6 +665,7 @@ class StructuredParsePipeline
         child,
         context.depth + 1,
         context.options,
+        this.document,
       );
       if (childResult) {
         context.result.children.push(childResult);
@@ -593,9 +684,11 @@ class StructuredParsePipeline
 class DOMMapParsePipeline
   implements ParsePipeline<DOMMapNode, Required<DOMMapOptions>>
 {
+  document: Document;
   private attributeManager: AttributeExtractorManager<DOMMapNode>;
 
-  constructor() {
+  constructor(document: Document) {
+    this.document = document;
     this.attributeManager = new AttributeExtractorManager<DOMMapNode>()
       .addExtractor(
         new BasicAttributeExtractor() as AttributeExtractor<
@@ -623,7 +716,7 @@ class DOMMapParsePipeline
   createBaseResult(element: Element): DOMMapNode {
     return {
       tag: element.tagName.toLowerCase(),
-      selector: generateSelector(element),
+      selector: generateSelector(element, this.document),
       children: [],
     };
   }
@@ -674,6 +767,7 @@ class DOMMapParsePipeline
         child,
         context.depth + 1,
         context.options,
+        this.document,
       );
       if (childResult) {
         context.result.children.push(childResult);
@@ -693,25 +787,25 @@ class DOMMapParsePipeline
   }
 }
 
-// Pipeline instances
-const structuredPipeline = new StructuredParsePipeline();
-const domMapPipeline = new DOMMapParsePipeline();
-
 // Main parsing functions
 function parseElementToStructured(
   element: Element,
   depth: number,
   options: Required<ParseOptions>,
+  document: Document,
 ): ParsedElement | null {
-  return parseElementWithPipeline(element, depth, options, structuredPipeline);
+  const pipeline = new StructuredParsePipeline(document);
+  return parseElementWithPipeline(element, depth, options, pipeline);
 }
 
 function parseElementToDOMMap(
   element: Element,
   depth: number,
   options: Required<DOMMapOptions>,
+  document: Document,
 ): DOMMapNode | null {
-  return parseElementWithPipeline(element, depth, options, domMapPipeline);
+  const pipeline = new DOMMapParsePipeline(document);
+  return parseElementWithPipeline(element, depth, options, pipeline);
 }
 
 // Document parsing utilities
@@ -759,7 +853,7 @@ function createErrorResult(errorMessage: string): StructuredContent {
       title: '',
       timestamp: new Date().toISOString(),
     },
-    content: { tag: 'body', children: [] },
+    content: { tag: 'body', selector: 'body', children: [] },
     error: errorMessage,
   };
 }
@@ -833,11 +927,11 @@ export function parseHTMLToStructured(
       return createErrorResult('No body or document element found');
     }
 
-    const content = parseElementToStructured(bodyElement, 0, opts);
+    const content = parseElementToStructured(bodyElement, 0, opts, doc);
 
     return {
       metadata: createMetadata(doc),
-      content: content || { tag: 'body', children: [] },
+      content: content || { tag: 'body', selector: 'body', children: [] },
     };
   } catch (error) {
     return handleParsingError(error, 'Error parsing HTML to structured format');
@@ -868,7 +962,7 @@ export function parseHTMLToDOMMap(
       return createDOMMapErrorResult('No body or document element found');
     }
 
-    const domMap = parseElementToDOMMap(bodyElement, 0, opts);
+    const domMap = parseElementToDOMMap(bodyElement, 0, opts, doc);
 
     return {
       url: extractMetaURL(doc),

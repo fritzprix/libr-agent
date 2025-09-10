@@ -15,6 +15,6 @@ export const listSessionsTool: LocalMCPTool = {
   execute: async () => {
     logger.debug('Executing browser_listSessions');
     const sessions = await listBrowserSessions();
-    return `Active browser sessions: ${JSON.stringify(sessions, null, 2)}`;
+    return `Active browser sessions: ${JSON.stringify(sessions)}`;
   },
 };

@@ -11,6 +11,7 @@ const MAX_OBSERVATIONS = 10;
 
 class EphemeralState {
   private goal: string | null = null;
+  private lastClearedGoal: string | null = null;
   private todos: SimpleTodo[] = [];
   private observations: string[] = [];
 
@@ -20,6 +21,9 @@ class EphemeralState {
   }
 
   clearGoal(): { success: boolean } {
+    if (this.goal) {
+      this.lastClearedGoal = this.goal;
+    }
     this.goal = null;
     return { success: true };
   }
@@ -46,6 +50,12 @@ class EphemeralState {
     if (!todo) return { todo: null, todos: this.todos };
 
     todo.status = todo.status === 'completed' ? 'pending' : 'completed';
+
+    // History management: keep only 2 completed todos maximum
+    if (todo.status === 'completed') {
+      this.manageCompletedTodoHistory();
+    }
+
     return { todo, todos: this.todos };
   }
 
@@ -56,6 +66,7 @@ class EphemeralState {
 
   clear(): void {
     this.goal = null;
+    this.lastClearedGoal = null;
     this.todos = [];
     this.observations = [];
   }
@@ -77,6 +88,23 @@ class EphemeralState {
 
   getObservations(): string[] {
     return [...this.observations];
+  }
+
+  private manageCompletedTodoHistory(): void {
+    const completedTodos = this.todos.filter((t) => t.status === 'completed');
+    if (completedTodos.length > 2) {
+      // Find and remove the oldest completed todo
+      const firstCompletedIndex = this.todos.findIndex(
+        (t) => t.status === 'completed',
+      );
+      if (firstCompletedIndex !== -1) {
+        this.todos.splice(firstCompletedIndex, 1);
+      }
+    }
+  }
+
+  getLastClearedGoal(): string | null {
+    return this.lastClearedGoal;
   }
 }
 
@@ -249,15 +277,26 @@ const planningServer: WebMCPServer = {
     const observations = state.getObservations();
 
     const goalText = goal ? `Current Goal: ${goal}` : 'No active goal';
-    const todosText =
-      todos.length > 0
-        ? `Todos:\n${todos
-            .map(
-              (t, idx) =>
-                `  ${idx + 1}. [${t.status === 'completed' ? '✔' : ' '}] ${t.name}`,
-            )
+    const lastGoalText = state.getLastClearedGoal()
+      ? `Last Cleared Goal: ${state.getLastClearedGoal()}`
+      : '';
+
+    const activeTodos = todos.filter((t) => t.status === 'pending');
+    const completedTodos = todos.filter((t) => t.status === 'completed');
+
+    const activeTodosText =
+      activeTodos.length > 0
+        ? `Active Todos:\n${activeTodos
+            .map((t, idx) => `  ${idx + 1}. [ ] ${t.name}`)
             .join('\n')}`
-        : 'Todos: (none)';
+        : 'Active Todos: (none)';
+
+    const completedTodosText =
+      completedTodos.length > 0
+        ? `Recently Completed:\n${completedTodos
+            .map((t, idx) => `  ${idx + 1}. [✔] ${t.name}`)
+            .join('\n')}`
+        : '';
     const obsText =
       observations.length > 0
         ? `Recent Observations:\n${observations
@@ -278,7 +317,11 @@ Remember: Planning prevents poor performance. Always plan before you act.
 
 # Context Information
 ${goalText}
-${todosText}
+${lastGoalText ? `\n${lastGoalText}` : ''}
+
+${activeTodosText}
+${completedTodosText ? `\n${completedTodosText}` : ''}
+
 ${obsText}
 
 # Prompt

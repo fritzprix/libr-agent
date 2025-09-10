@@ -472,7 +472,7 @@ export function normalizeToolResult(
 
   // 3. 성공 결과 변환
   const textContent =
-    typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+    typeof result === 'string' ? result : JSON.stringify(result);
 
   return {
     jsonrpc: '2.0',
@@ -532,10 +532,10 @@ export function mcpResponseToString(response: MCPResponse): string {
       if (textContent) return textContent;
     }
     if (response.result.structuredContent) {
-      return JSON.stringify(response.result.structuredContent, null, 2);
+      return JSON.stringify(response.result.structuredContent);
     }
     // content 와 structuredContent 모두 없는 경우
-    return JSON.stringify(response.result, null, 2);
+    return JSON.stringify(response.result);
   }
 
   // 이론적으로 도달하면 안 되는 경로

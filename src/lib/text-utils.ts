@@ -9,9 +9,10 @@
  */
 export function cleanMarkdownText(text: string): string {
   return text
-    .replace(/\n{3,}/g, '\n\n') // Replace 3+ newlines with 2
+    .replace(/\n{2,}/g, '\n') // Replace 2+ newlines with 1
     .replace(/[ \t]+\n/g, '\n') // Remove trailing spaces before newline
     .replace(/\n[ \t]+/g, '\n') // Remove leading spaces after newline
+    .replace(/[ \t]{2,}/g, ' ') // Replace multiple spaces/tabs with single space
     .trim();
 }
 
@@ -55,4 +56,18 @@ export function sanitizeExtractedText(text: string): string {
     .replace(/\u00A0/g, ' ') // Replace non-breaking spaces with regular spaces
     .replace(/[\r\n\t]+/g, ' ') // Replace line breaks and tabs with spaces
     .trim();
+}
+
+/**
+ * Creates ultra-compact text by removing all unnecessary whitespace
+ * @param text The text to make compact
+ * @returns Most compact version of the text
+ */
+export function createCompactText(text: string): string {
+  return text
+    .replace(/[\r\n\t]+/g, ' ') // Replace all line breaks and tabs with spaces
+    .replace(/\s{2,}/g, ' ') // Replace multiple spaces with single space
+    .replace(/^\s+|\s+$/g, '') // Remove leading and trailing whitespace
+    .replace(/\s*([{}[\],:])\s*/g, '$1') // Remove spaces around JSON punctuation
+    .replace(/\s*([<>])\s*/g, '$1'); // Remove spaces around angle brackets
 }

@@ -9,6 +9,7 @@ import { createId } from '@paralleldrive/cuid2';
 import TurndownService from 'turndown';
 import { parseHTMLToStructured, parseHTMLToDOMMap } from '@/lib/html-parser';
 import { cleanMarkdownText } from '@/lib/text-utils';
+import { writeFile } from '@/lib/rust-backend-client';
 
 const logger = getLogger('ExtractContentTool');
 
@@ -214,7 +215,7 @@ async function extractHtmlFromPage(
 ): Promise<string> {
   const rawHtml = await executeScript(
     sessionId,
-    `document.querySelector('${selector.replace(/'/g, "\\'")}').outerHTML`,
+    `document.querySelector(${JSON.stringify(selector)}).outerHTML`,
   );
 
   if (!rawHtml || typeof rawHtml !== 'string') {
@@ -257,7 +258,7 @@ function generateResponseText(result: ConversionResult): string {
   }
 
   const contentToStringify = result.content || result.domMap;
-  return JSON.stringify(contentToStringify, null, 2);
+  return JSON.stringify(contentToStringify);
 }
 
 export const extractContentTool: BrowserLocalMCPTool = {
@@ -352,8 +353,27 @@ export const extractContentTool: BrowserLocalMCPTool = {
 
       // Raw HTML 저장 요청 처리
       if (saveRawHtml) {
-        result.raw_html_content = rawHtml;
-        result.save_html_requested = true;
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const fileName = `extracted-${sessionId}-${timestamp}.html`;
+        const relativePath = `extracted-content/${fileName}`;
+
+        try {
+          // 문자열을 바이트 배열로 변환
+          const encoder = new TextEncoder();
+          const contentBytes = Array.from(encoder.encode(rawHtml));
+
+          // 기존 writeFile 인터페이스 사용
+          await writeFile(relativePath, contentBytes);
+
+          result.raw_html_path = relativePath;
+          result.save_html_requested = true;
+        } catch (error) {
+          logger.error('Failed to save raw HTML file', {
+            error,
+            path: relativePath,
+          });
+          result.save_html_error = `Failed to save raw HTML: ${error instanceof Error ? error.message : String(error)}`;
+        }
       }
 
       // 메타데이터 추가

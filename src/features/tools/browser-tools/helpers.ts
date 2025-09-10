@@ -1,4 +1,7 @@
 import { pollScriptResult } from '@/lib/rust-backend-client';
+import { getLogger } from '@/lib/logger';
+
+const logger = getLogger('BrowserToolsHelpers');
 
 /**
  * Common schema definitions for browser tools to reduce duplication
@@ -154,7 +157,21 @@ export async function checkElementState(
 })()`;
 
   try {
+    logger.debug('Executing element state check script', {
+      sessionId,
+      selector,
+      action,
+      scriptPreview: script.substring(0, 200) + '...',
+    });
+
     const result = await executeScript(sessionId, script);
+
+    logger.debug('Element state check result', {
+      sessionId,
+      selector,
+      result:
+        typeof result === 'string' ? result.substring(0, 200) + '...' : result,
+    });
 
     // executeScript 결과 검증
     if (!result || typeof result !== 'string') {
@@ -244,7 +261,7 @@ export function formatBrowserResult(raw: unknown): string {
             result += ` (selector: ${parsed.selector})`;
           }
           if (parsed.diagnostics) {
-            result += `\n\nDiagnostics:\n${JSON.stringify(parsed.diagnostics, null, 2)}`;
+            result += `\nDiagnostics: ${JSON.stringify(parsed.diagnostics)}`;
           }
           if (parsed.value_preview) {
             result += `\nValue preview: "${parsed.value_preview}"`;
@@ -265,7 +282,7 @@ export function formatBrowserResult(raw: unknown): string {
             result += ` (selector: ${parsed.selector})`;
           }
           if (parsed.diagnostics) {
-            result += `\n\nDiagnostics:\n${JSON.stringify(parsed.diagnostics, null, 2)}`;
+            result += `\nDiagnostics: ${JSON.stringify(parsed.diagnostics)}`;
           }
           return result;
         }

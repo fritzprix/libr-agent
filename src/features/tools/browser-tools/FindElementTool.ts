@@ -32,7 +32,7 @@ export const findElementTool: BrowserLocalMCPTool = {
 
     const script = `
 (function() {
-  const selector = '${selector.replace(/'/g, "\\'")}';
+  const selector = ${JSON.stringify(selector)};
   try {
     const el = document.querySelector(selector);
     if (!el) return JSON.stringify({ exists: false, selector });

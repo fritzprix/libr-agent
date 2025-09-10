@@ -146,7 +146,7 @@ export function BrowserToolProvider() {
               parsed.saved_raw_html = relativePath;
               delete parsed.raw_html_content; // Remove the large content from response
               delete parsed.save_html_requested;
-              result = JSON.stringify(parsed, null, 2);
+              result = JSON.stringify(parsed);
             }
           } catch {
             // If parsing fails, keep original result
@@ -160,7 +160,7 @@ export function BrowserToolProvider() {
 
         // Fallback for legacy tools that don't return MCPResponse
         return createMCPTextResponse(
-          typeof result === 'string' ? result : JSON.stringify(result, null, 2),
+          typeof result === 'string' ? result : JSON.stringify(result),
           toolCall.id,
         );
       },
