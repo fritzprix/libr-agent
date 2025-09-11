@@ -34,7 +34,12 @@
     "diagnose": "echo 'System diagnostic...' && ldd --version && echo 'WebKit packages:' && dpkg -l | grep webkit",
     "dead-code": "unimported",
     "dead-code:init": "unimported --init",
-    "refactor:validate": "pnpm lint && pnpm format && pnpm build && pnpm dead-code",
+    "rust:fmt": "cd src-tauri && cargo fmt --check",
+    "rust:fmt:fix": "cd src-tauri && cargo fmt",
+    "rust:clippy": "cd src-tauri && cargo clippy -- -D warnings",
+    "rust:check": "cd src-tauri && cargo check",
+    "rust:validate": "pnpm rust:fmt && pnpm rust:clippy && pnpm rust:check",
+    "refactor:validate": "pnpm lint && pnpm format && pnpm rust:validate && pnpm build && pnpm dead-code",
     "verify-planning": "node scripts/extract-planning-logs.js",
     "verify-planning:file": "node scripts/extract-planning-logs.js"
   },
