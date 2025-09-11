@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useBuiltInTool, ServiceContextOptions } from '.';
 import { useBrowserInvoker } from '@/hooks/use-browser-invoker';
-import { useRustBackend } from '@/hooks/use-rust-backend';
 import { MCPResponse } from '@/lib/mcp-types';
 import { isMCPResponse, createMCPTextResponse } from '@/lib/mcp-response-utils';
 import { getLogger } from '@/lib/logger';
@@ -24,7 +23,7 @@ import {
   inputTextTool,
   extractContentTool,
   // Types
-  LocalMCPTool,
+  StrictLocalMCPTool,
 } from './browser-tools';
 
 const logger = getLogger('BrowserToolProvider');
@@ -36,7 +35,6 @@ const logger = getLogger('BrowserToolProvider');
 export function BrowserToolProvider() {
   const { register, unregister } = useBuiltInTool();
   const { executeScript } = useBrowserInvoker();
-  const { writeFile } = useRustBackend();
   const hasRegistered = useRef(false);
 
   useEffect(() => {
@@ -68,14 +66,16 @@ export function BrowserToolProvider() {
     ];
 
     // Inject executeScript function for tools that need it
-    const enhancedScriptTools = scriptDependentTools.map((tool) => ({
-      ...tool,
-      execute: async (args: Record<string, unknown>) => {
-        return await tool.execute(args, executeScript);
-      },
-    }));
+    const enhancedScriptTools: StrictLocalMCPTool[] = scriptDependentTools.map(
+      (tool) => ({
+        ...tool,
+        execute: async (args: Record<string, unknown>) => {
+          return await tool.execute(args, executeScript);
+        },
+      }),
+    );
 
-    const browserTools: LocalMCPTool[] = [
+    const browserTools: StrictLocalMCPTool[] = [
       ...simpleBrowserTools,
       ...enhancedScriptTools,
     ];
@@ -122,37 +122,18 @@ export function BrowserToolProvider() {
         }
 
         // Execute the tool
-        let result = await tool.execute(args);
+        const result = await tool.execute(args);
 
-        // Special handling for extractContent tool's HTML saving
-        if (toolName === 'extractContent' && typeof result === 'string') {
-          try {
-            const parsed = JSON.parse(result);
-            if (parsed.save_html_requested && parsed.raw_html_content) {
-              const tempDir = 'temp_html';
-              const uniqueId = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
-              const relativePath = `${tempDir}/${uniqueId}.html`;
-              const encoder = new TextEncoder();
-              const htmlBytes = Array.from(
-                encoder.encode(parsed.raw_html_content),
-              );
-              await writeFile(relativePath, htmlBytes);
-              parsed.saved_raw_html = relativePath;
-              delete parsed.raw_html_content; // Remove the large content from response
-              delete parsed.save_html_requested;
-              result = JSON.stringify(parsed);
-            }
-          } catch {
-            // If parsing fails, keep original result
-          }
-        }
-
-        // Check if result is already an MCPResponse, return it directly with correct ID
+        // All tools now return MCPResponse, ensure correct ID is set
         if (isMCPResponse(result)) {
           return { ...result, id: toolCall.id };
         }
 
-        // Fallback for legacy tools that don't return MCPResponse
+        // This should not happen with unified MCP types, but keep as safety fallback
+        logger.warn('Tool returned non-MCPResponse, this should not happen', {
+          toolName,
+          resultType: typeof result,
+        });
         return createMCPTextResponse(
           typeof result === 'string' ? result : JSON.stringify(result),
           toolCall.id,
@@ -200,7 +181,7 @@ export function BrowserToolProvider() {
         logger.debug('Browser tools unregistered');
       }
     };
-  }, [register, unregister, executeScript, writeFile]);
+  }, [register, unregister, executeScript]);
 
   // This is a provider component, it doesn't render anything
   return null;
