@@ -7,7 +7,11 @@ import {
 } from '@/lib/mcp-response-utils';
 import { createId } from '@paralleldrive/cuid2';
 import { parseHtmlToInteractables } from '@/lib/html-parser';
-import type { InteractableOptions } from '@/lib/html-parser';
+import type {
+  InteractableOptions,
+  InteractableResult,
+  InteractableElement,
+} from '@/lib/html-parser';
 
 const logger = getLogger('ExtractInteractableTool');
 
@@ -16,6 +20,134 @@ interface ValidatedArgs {
   selector: string;
   includeHidden: boolean;
   maxElements: number;
+}
+
+// Element purpose estimation for better user experience
+function estimateElementPurpose(el: InteractableElement): string {
+  const text = el.text?.toLowerCase() || '';
+
+  // Input field purpose estimation
+  if (el.type === 'input') {
+    if (el.inputType === 'email') return 'Email input field';
+    if (el.inputType === 'password') return 'Password input field';
+    if (el.inputType === 'search') return 'Search input field';
+    if (el.inputType === 'tel') return 'Phone number input field';
+    if (el.inputType === 'url') return 'URL input field';
+    if (el.inputType === 'number') return 'Number input field';
+    if (el.inputType === 'date') return 'Date input field';
+    if (el.inputType === 'file') return 'File upload field';
+    if (el.inputType === 'checkbox') return 'Checkbox';
+    if (el.inputType === 'radio') return 'Radio button';
+    if (el.placeholder) return `Input field (${el.placeholder})`;
+    return 'Text input field';
+  }
+
+  // Button purpose estimation
+  if (el.type === 'button') {
+    if (text.includes('submit') || text.includes('send'))
+      return 'Submit button';
+    if (text.includes('login') || text.includes('sign in'))
+      return 'Login button';
+    if (text.includes('search')) return 'Search button';
+    if (text.includes('cancel') || text.includes('close'))
+      return 'Cancel/Close button';
+    if (text.includes('save')) return 'Save button';
+    if (text.includes('delete') || text.includes('remove'))
+      return 'Delete button';
+    if (text.includes('edit')) return 'Edit button';
+    if (text.includes('next')) return 'Next button';
+    if (
+      text.includes('previous') ||
+      text.includes('prev') ||
+      text.includes('back')
+    )
+      return 'Previous/Back button';
+    if (el.text) return `Button: "${el.text}"`;
+    return 'Button (no text)';
+  }
+
+  // Link purpose estimation
+  if (el.type === 'link') {
+    if (text.includes('home')) return 'Home link';
+    if (text.includes('about')) return 'About link';
+    if (text.includes('contact')) return 'Contact link';
+    if (text.includes('login') || text.includes('sign in')) return 'Login link';
+    if (text.includes('register') || text.includes('sign up'))
+      return 'Register link';
+    if (text.includes('forgot') || text.includes('reset'))
+      return 'Password reset link';
+    if (el.text) return `Link: "${el.text}"`;
+    return 'Link (no text)';
+  }
+
+  // Select dropdown
+  if (el.type === 'select') {
+    if (el.text) return `Dropdown: ${el.text}`;
+    return 'Dropdown menu';
+  }
+
+  // Textarea
+  if (el.type === 'textarea') {
+    if (el.placeholder) return `Text area (${el.placeholder})`;
+    return 'Text area';
+  }
+
+  // Fallback
+  if (el.text) return `${el.type}: "${el.text}"`;
+  return `${el.type} element`;
+}
+
+// Generate user-friendly text response
+function generateInteractableText(result: InteractableResult): string {
+  if (result.metadata.total_count === 0) {
+    return 'No interactive elements found on this page.';
+  }
+
+  let text = `Found ${result.metadata.total_count} interactive elements:\n\n`;
+
+  // Show first 20 elements to avoid overwhelming output
+  const displayElements = result.elements.slice(0, 20);
+
+  displayElements.forEach((el, index) => {
+    const purpose = estimateElementPurpose(el);
+
+    text += `${index + 1}. [${el.type.toUpperCase()}] ${purpose}\n`;
+    text += `   Selector: ${el.selector}\n`;
+
+    if (el.text && el.text.length <= 100) {
+      text += `   Text: "${el.text}"\n`;
+    } else if (el.text && el.text.length > 100) {
+      text += `   Text: "${el.text.substring(0, 100)}..."\n`;
+    }
+
+    if (el.type === 'input' && el.placeholder && el.placeholder !== el.text) {
+      text += `   Placeholder: "${el.placeholder}"\n`;
+    }
+
+    if (el.type === 'input' && el.value) {
+      const displayValue =
+        el.value.length <= 50 ? el.value : `${el.value.substring(0, 50)}...`;
+      text += `   Current value: "${displayValue}"\n`;
+    }
+
+    const statusInfo: string[] = [];
+    if (!el.enabled) statusInfo.push('DISABLED');
+    if (!el.visible) statusInfo.push('HIDDEN');
+
+    if (statusInfo.length > 0) {
+      text += `   Status: ${statusInfo.join(', ')}\n`;
+    }
+
+    text += '\n';
+  });
+
+  // Show summary if there are more elements
+  if (result.metadata.total_count > 20) {
+    text += `... and ${result.metadata.total_count - 20} more elements (use maxElements parameter to see more)\n\n`;
+  }
+
+  text += `Performance: ${result.metadata.performance.execution_time_ms}ms`;
+  return text;
 }
 
 // Simple HTML extraction function (following extractContent pattern)
@@ -164,7 +296,8 @@ export const extractInteractableTool: StrictBrowserMCPTool = {
         throw new Error(result.error);
       }
 
-      const textContent = `Found ${result.metadata.total_count} interactive elements in ${result.metadata.performance.execution_time_ms}ms (${result.metadata.performance.data_size_bytes} bytes)`;
+      // Generate user-friendly text response
+      const textContent = generateInteractableText(result);
 
       logger.debug('extractInteractable completed successfully', {
         sessionId,
