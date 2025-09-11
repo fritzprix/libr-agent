@@ -177,6 +177,17 @@ export default function AppSidebar({ onOpenSettings }: AppSidebarProps) {
                   </SidebarMenuButton>
                 </Link>
               </SidebarMenuItem>
+              <SidebarMenuItem>
+                <Link to="/webmcp/test">
+                  <SidebarMenuButton
+                    isActive={location.pathname === '/webmcp/test'}
+                    tooltip="WebMCP Server Test"
+                  >
+                    <BrainCircuit size={16} />
+                    <span>WebMCP Test</span>
+                  </SidebarMenuButton>
+                </Link>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

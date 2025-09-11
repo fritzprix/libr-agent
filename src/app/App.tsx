@@ -29,6 +29,7 @@ import { WebMCPProvider as WebMCPToolProvider } from '@/features/tools/WebMCPToo
 import { ToolsTestPage } from '@/features/tools/ToolsTestPage';
 import { SystemPromptProvider } from '@/context/SystemPromptContext';
 import { MCPUITest } from '@/components/mcp-ui-test/MCPUITest';
+import WebMCPTest from '@/test/WebMCPTest';
 
 function App() {
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
@@ -105,6 +106,10 @@ function App() {
                                     <Route
                                       path="/mcp-ui/test"
                                       element={<MCPUITest />}
+                                    />
+                                    <Route
+                                      path="/webmcp/test"
+                                      element={<WebMCPTest />}
                                     />
                                   </Routes>
                                 </div>

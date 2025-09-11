@@ -34,7 +34,9 @@
     "diagnose": "echo 'System diagnostic...' && ldd --version && echo 'WebKit packages:' && dpkg -l | grep webkit",
     "dead-code": "unimported",
     "dead-code:init": "unimported --init",
-    "refactor:validate": "pnpm lint && pnpm format && pnpm build && pnpm dead-code"
+    "refactor:validate": "pnpm lint && pnpm format && pnpm build && pnpm dead-code",
+    "verify-planning": "node scripts/extract-planning-logs.js",
+    "verify-planning:file": "node scripts/extract-planning-logs.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.56.0",

@@ -196,15 +196,36 @@ const tools: MCPTool[] = [
       required: ['observation'],
     },
   },
+  {
+    name: 'get_current_state',
+    description:
+      'Get current planning state as structured JSON data for UI visualization',
+    inputSchema: { type: 'object', properties: {} },
+  },
 ];
 
-const planningServer: WebMCPServer = {
+// Planning server interface for better type safety
+interface PlanningServerMethods {
+  create_goal: (args: { goal: string }) => Promise<MCPResponse>;
+  clear_goal: () => Promise<MCPResponse>;
+  add_todo: (args: { name: string }) => Promise<MCPResponse>;
+  toggle_todo: (args: { index: number }) => Promise<MCPResponse>;
+  clear_todos: () => Promise<MCPResponse>;
+  clear_session: () => Promise<MCPResponse>;
+  add_observation: (args: { observation: string }) => Promise<MCPResponse>;
+  get_current_state: () => Promise<MCPResponse>;
+}
+
+const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
   name: 'planning',
   version: '2.1.0',
   description:
     'Ephemeral planning and goal management for AI agents with bounded observation queue',
   tools,
   async callTool(name: string, args: unknown): Promise<MCPResponse> {
+    // Debug logging for tool calls
+    console.log(`[PlanningServer] callTool invoked: ${name}`, args);
+
     const typedArgs = args as Record<string, unknown>;
     switch (name) {
       // ... (other tool cases remain the same) ...
@@ -258,8 +279,33 @@ const planningServer: WebMCPServer = {
         state.addObservation(typedArgs.observation as string);
         return createMCPTextResponse('Observation added to session');
       }
-      default:
-        throw new Error(`Unknown tool: ${name}`);
+      case 'get_current_state': {
+        const currentState = {
+          goal: state.getGoal(),
+          lastClearedGoal: state.getLastClearedGoal(),
+          todos: state.getTodos(),
+          observations: state.getObservations(),
+        };
+
+        return {
+          jsonrpc: '2.0',
+          id: null,
+          result: {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(currentState),
+              },
+            ],
+          },
+        };
+      }
+      default: {
+        const availableTools = tools.map((t) => t.name).join(', ');
+        const errorMessage = `Unknown tool: ${name}. Available tools: ${availableTools}`;
+        console.error(`[PlanningServer] ${errorMessage}`);
+        throw new Error(errorMessage);
+      }
     }
   },
   async getServiceContext(): Promise<string> {
