@@ -61,24 +61,20 @@ impl BuiltinServerRegistry {
                 }
 
                 // Handle code execution parameters
-                if let Some(code_value) = obj.get("code").cloned() {
-                    if let Value::String(code_str) = code_value {
-                        let normalized_code = Self::normalize_code_parameter(&code_str);
-                        if normalized_code != code_str {
-                            info!("Normalized 'code' parameter for execution");
-                            obj.insert("code".to_string(), Value::String(normalized_code));
-                        }
+                if let Some(Value::String(code_str)) = obj.get("code").cloned() {
+                    let normalized_code = Self::normalize_code_parameter(&code_str);
+                    if normalized_code != code_str {
+                        info!("Normalized 'code' parameter for execution");
+                        obj.insert("code".to_string(), Value::String(normalized_code));
                     }
                 }
 
                 // Handle shell command parameters
-                if let Some(command_value) = obj.get("command").cloned() {
-                    if let Value::String(command_str) = command_value {
-                        let normalized_command = Self::normalize_command_parameter(&command_str);
-                        if normalized_command != command_str {
-                            info!("Normalized 'command' parameter for execution");
-                            obj.insert("command".to_string(), Value::String(normalized_command));
-                        }
+                if let Some(Value::String(command_str)) = obj.get("command").cloned() {
+                    let normalized_command = Self::normalize_command_parameter(&command_str);
+                    if normalized_command != command_str {
+                        info!("Normalized 'command' parameter for execution");
+                        obj.insert("command".to_string(), Value::String(normalized_command));
                     }
                 }
 
