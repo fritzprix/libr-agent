@@ -21,7 +21,8 @@ import {
   // Complex tools
   clickElementTool,
   inputTextTool,
-  extractContentTool,
+  extractPageContentTool,
+  extractInteractableTool,
   // Types
   StrictLocalMCPTool,
 } from './browser-tools';
@@ -62,7 +63,8 @@ export function BrowserToolProvider() {
       navigateForwardTool,
       clickElementTool,
       inputTextTool,
-      extractContentTool,
+      extractPageContentTool,
+      extractInteractableTool,
     ];
 
     // Inject executeScript function for tools that need it
