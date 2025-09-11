@@ -25,6 +25,7 @@ export function selectMessagesWithinContext(
   messages: Message[],
   providerId: string,
   modelId: string,
+  maxTokens?: number,
 ): Message[] {
   const modelInfo = llmConfigManager.getModel(providerId, modelId);
   if (!modelInfo) {
@@ -34,7 +35,7 @@ export function selectMessagesWithinContext(
     return messages;
   }
 
-  const safeWindow = Math.floor(modelInfo.contextWindow * 0.9);
+  const tokenLimit = maxTokens ?? Math.floor(modelInfo.contextWindow * 0.9);
   let totalTokens = 0;
   const selected: Message[] = [];
 
@@ -42,7 +43,7 @@ export function selectMessagesWithinContext(
     const msg = messages[i];
     const tokens = estimateTokensBPE(msg);
 
-    if (totalTokens + tokens > safeWindow) {
+    if (totalTokens + tokens > tokenLimit) {
       // Anthropic providers require tool chain boundary checking
       if (providerId === AIServiceProvider.Anthropic) {
         const hasIncompleteToolChain = checkIncompleteToolChain(selected, msg);
@@ -51,7 +52,7 @@ export function selectMessagesWithinContext(
             'Adjusting context window to preserve tool chain integrity',
             {
               originalSelected: selected.length,
-              contextWindow: safeWindow,
+              contextWindow: tokenLimit,
               totalTokens,
             },
           );
@@ -62,7 +63,7 @@ export function selectMessagesWithinContext(
       }
 
       logger.info(
-        `Context window limit reached. Total tokens: ${totalTokens}, Safe window: ${safeWindow}`,
+        `Context window limit reached. Total tokens: ${totalTokens}, Token limit: ${tokenLimit}`,
       );
       break;
     }

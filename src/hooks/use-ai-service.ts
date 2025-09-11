@@ -51,6 +51,63 @@ const sanitizeMessage = (message: Message): Message => {
   return sanitized;
 };
 
+/**
+ * Validates that all tool_calls have a corresponding tool response.
+ * A valid pair is an assistant message with tool_calls followed immediately by a tool message.
+ */
+function allToolUsePairsAreValid(messages: Message[]): boolean {
+  for (let i = 0; i < messages.length; i++) {
+    const message = messages[i];
+    if (
+      message.role === 'assistant' &&
+      message.tool_calls &&
+      message.tool_calls.length > 0
+    ) {
+      const nextMessage = messages[i + 1];
+      if (!nextMessage || nextMessage.role !== 'tool') {
+        return false; // Found an assistant tool call without a following tool response
+      }
+    }
+  }
+  return true;
+}
+
+/**
+ * Removes incomplete tool_calls/tool response pairs from the message history.
+ * It iterates through the messages and removes any assistant messages with tool_calls
+ * that are not immediately followed by a tool response message.
+ */
+function removeInvalidToolUseAndToolResponse(messages: Message[]): Message[] {
+  const validMessages: Message[] = [];
+  let i = 0;
+  while (i < messages.length) {
+    const currentMessage = messages[i];
+    if (
+      currentMessage.role === 'assistant' &&
+      currentMessage.tool_calls &&
+      currentMessage.tool_calls.length > 0
+    ) {
+      const nextMessage = messages[i + 1];
+      if (nextMessage && nextMessage.role === 'tool') {
+        // This is a valid pair, keep both
+        validMessages.push(currentMessage);
+        validMessages.push(nextMessage);
+        i += 2; // Skip the next message as it's part of the pair
+      } else {
+        // This is a dangling tool call, skip the current message
+        logger.debug('Removing dangling tool call message', {
+          messageId: currentMessage.id,
+        });
+        i++;
+      }
+    } else {
+      validMessages.push(currentMessage);
+      i++;
+    }
+  }
+  return validMessages;
+}
+
 export const useAIService = (config?: AIServiceConfig) => {
   const {
     value: {
@@ -99,11 +156,22 @@ export const useAIService = (config?: AIServiceConfig) => {
           resolvedSystemPrompt = systemPrompt || DEFAULT_SYSTEM_PROMPT;
         }
 
+        // Validate and clean up tool use pairs
+        let validMessages = processedMessages;
+        if (!allToolUsePairsAreValid(validMessages)) {
+          logger.warn(
+            'Incomplete tool use pairs detected. Cleaning up messages.',
+          );
+          validMessages = removeInvalidToolUseAndToolResponse(validMessages);
+        }
+
         // Context enforcement: Truncate messages to fit the context window
+        const maxTokens = config?.maxTokens ?? 4096;
         const contextMessages = selectMessagesWithinContext(
-          processedMessages,
+          validMessages,
           provider,
           model,
+          maxTokens,
         );
 
         // Sanitize messages to prevent malformed JSON
