@@ -3,6 +3,7 @@ import { createMCPTextResponse } from '@/lib/mcp-response-utils';
 
 // Simplified data structures for Gemini API compatibility
 interface SimpleTodo {
+  id: number;
   name: string;
   status: 'pending' | 'completed';
 }
@@ -14,6 +15,7 @@ class EphemeralState {
   private lastClearedGoal: string | null = null;
   private todos: SimpleTodo[] = [];
   private observations: string[] = [];
+  private nextId = 1;
 
   createGoal(goal: string): string {
     this.goal = goal;
@@ -30,6 +32,7 @@ class EphemeralState {
 
   addTodo(name: string): { success: boolean; todos: SimpleTodo[] } {
     const todo: SimpleTodo = {
+      id: this.nextId++,
       name,
       status: 'pending',
     };
@@ -37,17 +40,11 @@ class EphemeralState {
     return { success: true, todos: this.todos };
   }
 
-  toggleTodo(index: number): { todo: SimpleTodo | null; todos: SimpleTodo[] } {
-    // Adjust for 1-based user input (subtract 1 for 0-based array access)
-    const adjustedIndex = index - 1;
-
-    // Validate the adjusted index
-    if (adjustedIndex < 0 || adjustedIndex >= this.todos.length) {
+  toggleTodo(id: number): { todo: SimpleTodo | null; todos: SimpleTodo[] } {
+    const todo = this.todos.find((t) => t.id === id);
+    if (!todo) {
       return { todo: null, todos: this.todos };
     }
-
-    const todo = this.todos[adjustedIndex];
-    if (!todo) return { todo: null, todos: this.todos };
 
     todo.status = todo.status === 'completed' ? 'pending' : 'completed';
 
@@ -69,6 +66,7 @@ class EphemeralState {
     this.lastClearedGoal = null;
     this.todos = [];
     this.observations = [];
+    this.nextId = 1;
   }
 
   getGoal(): string | null {
@@ -112,7 +110,6 @@ const state = new EphemeralState();
 
 // Simplified tool definitions - flat schemas for Gemini API compatibility
 const tools: MCPTool[] = [
-  // ... (other tools remain the same) ...
   {
     name: 'create_goal',
     description:
@@ -154,18 +151,18 @@ const tools: MCPTool[] = [
   {
     name: 'toggle_todo',
     description:
-      'Toggle a todo between pending and completed status using its 1-based index (e.g., 1 for the first todo, 2 for the second).',
+      'Toggle a todo between pending and completed status using its unique ID.',
     inputSchema: {
       type: 'object',
       properties: {
-        index: {
+        id: {
           type: 'number',
           minimum: 1,
           description:
-            'The 1-based index of the todo to toggle (must be a positive integer)',
+            'The unique ID of the todo to toggle (use the ID shown in the todos list)',
         },
       },
-      required: ['index'],
+      required: ['id'],
     },
   },
   {
@@ -209,7 +206,7 @@ interface PlanningServerMethods {
   create_goal: (args: { goal: string }) => Promise<MCPResponse>;
   clear_goal: () => Promise<MCPResponse>;
   add_todo: (args: { name: string }) => Promise<MCPResponse>;
-  toggle_todo: (args: { index: number }) => Promise<MCPResponse>;
+  toggle_todo: (args: { id: number }) => Promise<MCPResponse>;
   clear_todos: () => Promise<MCPResponse>;
   clear_session: () => Promise<MCPResponse>;
   add_observation: (args: { observation: string }) => Promise<MCPResponse>;
@@ -228,7 +225,6 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
 
     const typedArgs = args as Record<string, unknown>;
     switch (name) {
-      // ... (other tool cases remain the same) ...
       case 'create_goal': {
         const result = state.createGoal(typedArgs.goal as string);
         return createMCPTextResponse(`Goal created: "${result}"`);
@@ -248,21 +244,22 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
         );
       }
       case 'toggle_todo': {
-        const index = typedArgs.index as number;
-        if (!Number.isInteger(index) || index < 1) {
+        const id = typedArgs.id as number;
+        if (!Number.isInteger(id) || id < 1) {
           return createMCPTextResponse(
-            `Invalid index: ${index}. Index must be a positive integer (1-based).`,
+            `Invalid ID: ${id}. ID must be a positive integer.`,
           );
         }
 
-        const result = state.toggleTodo(index);
+        const result = state.toggleTodo(id);
         if (result.todo) {
           return createMCPTextResponse(
             `Todo "${result.todo.name}" marked as ${result.todo.status}`,
           );
         } else {
+          const availableIds = state.getTodos().map((t) => t.id);
           return createMCPTextResponse(
-            `Todo at index ${index} not found. Valid indices: 1 to ${result.todos.length}`,
+            `Todo with ID ${id} not found. Available IDs: ${availableIds.length > 0 ? availableIds.join(', ') : 'none'}`,
           );
         }
       }
@@ -318,22 +315,17 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
       ? `Last Cleared Goal: ${state.getLastClearedGoal()}`
       : '';
 
-    const activeTodos = todos.filter((t) => t.status === 'pending');
-    const completedTodos = todos.filter((t) => t.status === 'completed');
-
-    const activeTodosText =
-      activeTodos.length > 0
-        ? `Active Todos:\n${activeTodos
-            .map((t, idx) => `  ${idx + 1}. [ ] ${t.name}`)
+    // 전체 todos를 순서대로 표시하되 상태를 정확히 표현
+    const todosText =
+      todos.length > 0
+        ? `Todos:\n${todos
+            .map((t) => {
+              const checkbox = t.status === 'completed' ? '[✓]' : '[ ]';
+              return `  ID:${t.id} ${checkbox} ${t.name}`;
+            })
             .join('\n')}`
-        : 'Active Todos: (none)';
+        : 'Todos: (none)';
 
-    const completedTodosText =
-      completedTodos.length > 0
-        ? `Recently Completed:\n${completedTodos
-            .map((t, idx) => `  ${idx + 1}. [✔] ${t.name}`)
-            .join('\n')}`
-        : '';
     const obsText =
       observations.length > 0
         ? `Recent Observations:\n${observations
@@ -346,7 +338,7 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
 ALWAYS START BY CREATING A PLAN before beginning any task:
 1. First, create a clear goal using 'create_goal' for any new or complex task
 2. Break down the goal into specific, actionable todos using 'add_todo'
-3. Execute todos step by step, marking them complete with 'toggle_todo'
+3. Execute todos step by step, marking them complete with 'toggle_todo' using ID
 4. Record important observations, user feedback, or results with 'add_observation'
 5. Use memory limitations as an opportunity to organize and structure your work
 
@@ -356,13 +348,13 @@ Remember: Planning prevents poor performance. Always plan before you act.
 ${goalText}
 ${lastGoalText ? `\n${lastGoalText}` : ''}
 
-${activeTodosText}
-${completedTodosText ? `\n${completedTodosText}` : ''}
+${todosText}
 
 ${obsText}
 
 # Prompt
 Based on the current situation, determine and suggest the next appropriate action to progress toward your objectives. If no goal exists, start by creating one.
+Use 'toggle_todo' with the ID number (not index) to mark todos as complete/incomplete.
   `.trim();
   },
 };

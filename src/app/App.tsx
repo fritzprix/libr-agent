@@ -25,7 +25,8 @@ import { ResourceAttachmentProvider } from '@/context/ResourceAttachmentContext'
 import { BuiltInToolProvider } from '@/features/tools';
 import { BrowserToolProvider } from '@/features/tools/BrowserToolProvider';
 import { RustMCPToolProvider } from '@/features/tools/RustMCPToolProvider';
-import { WebMCPProvider as WebMCPToolProvider } from '@/features/tools/WebMCPToolProvider';
+import { WebMCPServiceRegistry } from '@/features/tools/WebMCPServiceRegistry';
+import { WebMCPProvider } from '@/context/WebMCPContext';
 import { ToolsTestPage } from '@/features/tools/ToolsTestPage';
 import { SystemPromptProvider } from '@/context/SystemPromptContext';
 import { MCPUITest } from '@/components/mcp-ui-test/MCPUITest';
@@ -43,87 +44,89 @@ function App() {
               <AssistantContextProvider>
                 <SessionContextProvider>
                   <BuiltInToolProvider>
-                    <BrowserToolProvider />
-                    <RustMCPToolProvider />
-                    <WebMCPToolProvider
-                      servers={['content-store', 'planning']}
-                    />
-                    <SessionHistoryProvider>
-                      <ResourceAttachmentProvider>
-                        <ModelOptionsProvider>
-                          <SidebarProvider>
-                            <div className="flex h-screen w-full">
-                              {/* Sidebar */}
-                              <AppSidebar
-                                onOpenSettings={() =>
-                                  setIsSettingsModalOpen(true)
-                                }
-                              />
+                    <WebMCPProvider>
+                      <WebMCPServiceRegistry
+                        servers={['content-store', 'planning']}
+                      />
+                      <BrowserToolProvider />
+                      <RustMCPToolProvider />
+                      <SessionHistoryProvider>
+                        <ResourceAttachmentProvider>
+                          <ModelOptionsProvider>
+                            <SidebarProvider>
+                              <div className="flex h-screen w-full">
+                                {/* Sidebar */}
+                                <AppSidebar
+                                  onOpenSettings={() =>
+                                    setIsSettingsModalOpen(true)
+                                  }
+                                />
 
-                              {/* Main Content Area */}
-                              <div className="flex flex-1 flex-col min-w-0">
-                                <AppHeader>
-                                  <ThemeToggle />
-                                </AppHeader>
-                                <div className="flex-1 overflow-auto w-full">
-                                  <Routes>
-                                    <Route
-                                      path="/"
-                                      element={<SingleChatContainer />}
-                                    />
-                                    <Route
-                                      path="/chat/single"
-                                      element={<SingleChatContainer />}
-                                    />
-                                    <Route
-                                      path="/chat/group"
-                                      element={<GroupChatContainer />}
-                                    />
-                                    <Route
-                                      path="/chat/flow"
-                                      element={<SingleChatContainer />}
-                                    />
-                                    <Route
-                                      path="/assistants"
-                                      element={<AssistantList />}
-                                    />
-                                    <Route
-                                      path="/assistants/groups"
-                                      element={<AssistantGroupDetailList />}
-                                    />
-                                    <Route
-                                      path="/history"
-                                      element={<History />}
-                                    />
-                                    <Route
-                                      path="/history/search"
-                                      element={<History />}
-                                    />
-                                    <Route
-                                      path="/tools/test"
-                                      element={<ToolsTestPage />}
-                                    />
-                                    <Route
-                                      path="/mcp-ui/test"
-                                      element={<MCPUITest />}
-                                    />
-                                    <Route
-                                      path="/webmcp/test"
-                                      element={<WebMCPTest />}
-                                    />
-                                  </Routes>
+                                {/* Main Content Area */}
+                                <div className="flex flex-1 flex-col min-w-0">
+                                  <AppHeader>
+                                    <ThemeToggle />
+                                  </AppHeader>
+                                  <div className="flex-1 overflow-auto w-full">
+                                    <Routes>
+                                      <Route
+                                        path="/"
+                                        element={<SingleChatContainer />}
+                                      />
+                                      <Route
+                                        path="/chat/single"
+                                        element={<SingleChatContainer />}
+                                      />
+                                      <Route
+                                        path="/chat/group"
+                                        element={<GroupChatContainer />}
+                                      />
+                                      <Route
+                                        path="/chat/flow"
+                                        element={<SingleChatContainer />}
+                                      />
+                                      <Route
+                                        path="/assistants"
+                                        element={<AssistantList />}
+                                      />
+                                      <Route
+                                        path="/assistants/groups"
+                                        element={<AssistantGroupDetailList />}
+                                      />
+                                      <Route
+                                        path="/history"
+                                        element={<History />}
+                                      />
+                                      <Route
+                                        path="/history/search"
+                                        element={<History />}
+                                      />
+                                      <Route
+                                        path="/tools/test"
+                                        element={<ToolsTestPage />}
+                                      />
+                                      <Route
+                                        path="/mcp-ui/test"
+                                        element={<MCPUITest />}
+                                      />
+                                      <Route
+                                        path="/webmcp/test"
+                                        element={<WebMCPTest />}
+                                      />
+                                    </Routes>
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          </SidebarProvider>
-                          <SettingsModal
-                            isOpen={isSettingsModalOpen}
-                            onClose={() => setIsSettingsModalOpen(false)}
-                          />
-                          <Toaster />
-                        </ModelOptionsProvider>
-                      </ResourceAttachmentProvider>
-                    </SessionHistoryProvider>
+                            </SidebarProvider>
+                            <SettingsModal
+                              isOpen={isSettingsModalOpen}
+                              onClose={() => setIsSettingsModalOpen(false)}
+                            />
+                            <Toaster />
+                          </ModelOptionsProvider>
+                        </ResourceAttachmentProvider>
+                      </SessionHistoryProvider>
+                    </WebMCPProvider>
                   </BuiltInToolProvider>
                 </SessionContextProvider>
               </AssistantContextProvider>

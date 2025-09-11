@@ -41,7 +41,7 @@ export function ChatPlanningPanel() {
 
   const refreshState = useCallback(async () => {
     if (!server?.get_current_state) {
-      logger.debug(
+      logger.warn(
         'PLANNING_PANEL: No server or get_current_state method available',
       );
       return;
@@ -77,7 +77,7 @@ export function ChatPlanningPanel() {
   // Message-based state updates (instead of 30s polling)
   useEffect(() => {
     if (!server?.get_current_state || messages.length === 0) {
-      logger.debug('PLANNING_PANEL: Skipping message-based update', {
+      logger.info('PLANNING_PANEL: Skipping message-based update', {
         hasServer: !!server,
         hasGetState: !!server?.get_current_state,
         messageCount: messages.length,
@@ -86,7 +86,7 @@ export function ChatPlanningPanel() {
     }
 
     const lastMessage = messages[messages.length - 1];
-    logger.debug('PLANNING_PANEL: Checking message for state update', {
+    logger.info('PLANNING_PANEL: Checking message for state update', {
       messageId: lastMessage.id,
       messageRole: lastMessage.role,
       lastHandledId: lastHandledMessageRef.current.id,
@@ -94,7 +94,7 @@ export function ChatPlanningPanel() {
     });
 
     if (lastHandledMessageRef.current.id === lastMessage.id) {
-      logger.debug('PLANNING_PANEL: Message already handled, skipping update');
+      logger.info('PLANNING_PANEL: Message already handled, skipping update');
       return;
     }
 
