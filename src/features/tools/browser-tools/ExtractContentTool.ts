@@ -7,20 +7,15 @@ import {
 } from '@/lib/mcp-response-utils';
 import { createId } from '@paralleldrive/cuid2';
 import TurndownService from 'turndown';
-import { parseHTMLToStructured, parseHTMLToDOMMap } from '@/lib/html-parser';
 import { cleanMarkdownText } from '@/lib/text-utils';
 import { writeFile } from '@/lib/rust-backend-client';
 
-const logger = getLogger('ExtractContentTool');
+const logger = getLogger('ExtractPageContentTool');
 
 // 타입 정의
 interface ValidatedArgs {
   sessionId: string;
-  selector: string;
-  format: 'markdown' | 'json' | 'dom-map';
   saveRawHtml: boolean;
-  includeLinks: boolean;
-  maxDepth: number;
 }
 
 interface ConversionResult {
@@ -33,11 +28,11 @@ interface ConversionResult {
   [key: string]: unknown;
 }
 
-// 타입 검증 함수 (타입캐스팅 제거)
-function validateExtractContentArgs(
+// 타입 검증 함수
+function validateExtractPageContentArgs(
   args: Record<string, unknown>,
 ): ValidatedArgs | null {
-  logger.debug('Validating extractContent args:', args);
+  logger.debug('Validating extractPageContent args:', args);
 
   if (typeof args.sessionId !== 'string') {
     logger.warn('Invalid sessionId type', {
@@ -47,78 +42,23 @@ function validateExtractContentArgs(
     return null;
   }
 
-  const selector = args.selector ?? 'body';
-  if (typeof selector !== 'string') {
-    logger.warn('Invalid selector type', { selector, type: typeof selector });
-    return null;
-  }
-
-  const format = args.format ?? 'markdown';
-  if (
-    typeof format !== 'string' ||
-    !['markdown', 'json', 'dom-map'].includes(format)
-  ) {
-    logger.warn('Invalid format', { format, type: typeof format });
-    return null;
-  }
-
-  // saveRawHtml 명시적 타입 검증
-  let saveRawHtml: boolean;
-  if (args.saveRawHtml === undefined || args.saveRawHtml === null) {
-    saveRawHtml = false;
-  } else if (typeof args.saveRawHtml === 'boolean') {
-    saveRawHtml = args.saveRawHtml;
-  } else {
-    logger.warn('Invalid saveRawHtml type, using default', {
+  const saveRawHtml = args.saveRawHtml ?? false;
+  if (typeof saveRawHtml !== 'boolean') {
+    logger.warn('Invalid saveRawHtml type', {
       saveRawHtml: args.saveRawHtml,
+      type: typeof args.saveRawHtml,
     });
-    saveRawHtml = false;
-  }
-
-  // includeLinks 명시적 타입 검증
-  let includeLinks: boolean;
-  if (args.includeLinks === undefined || args.includeLinks === null) {
-    includeLinks = true;
-  } else if (typeof args.includeLinks === 'boolean') {
-    includeLinks = args.includeLinks;
-  } else {
-    logger.warn('Invalid includeLinks type, using default', {
-      includeLinks: args.includeLinks,
-    });
-    includeLinks = true;
-  }
-
-  // maxDepth 명시적 타입 검증
-  let maxDepth: number;
-  if (args.maxDepth === undefined || args.maxDepth === null) {
-    maxDepth = 5;
-  } else if (
-    typeof args.maxDepth === 'number' &&
-    args.maxDepth >= 1 &&
-    args.maxDepth <= 20
-  ) {
-    maxDepth = args.maxDepth;
-  } else {
-    logger.warn('Invalid maxDepth, using default', { maxDepth: args.maxDepth });
-    maxDepth = 5;
+    return null;
   }
 
   logger.debug('Validation successful', {
     sessionId: args.sessionId,
-    selector,
-    format,
     saveRawHtml,
-    includeLinks,
-    maxDepth,
   });
 
   return {
     sessionId: args.sessionId,
-    selector,
-    format: format as 'markdown' | 'json' | 'dom-map',
     saveRawHtml,
-    includeLinks,
-    maxDepth,
   };
 }
 
@@ -149,73 +89,19 @@ function convertToMarkdown(rawHtml: string): ConversionResult {
   };
 }
 
-// JSON 변환 함수
-function convertToJson(
-  rawHtml: string,
-  options: { maxDepth: number; includeLinks: boolean },
-): ConversionResult {
-  const structuredResult = parseHTMLToStructured(rawHtml, {
-    maxDepth: options.maxDepth,
-    includeLinks: options.includeLinks,
-    maxTextLength: 1000,
-  });
-
-  if (structuredResult.error) {
-    throw new Error(`Failed to parse HTML: ${structuredResult.error}`);
-  }
-
-  return {
-    title: structuredResult.metadata.title,
-    url: structuredResult.metadata.url,
-    timestamp: structuredResult.metadata.timestamp,
-    content: structuredResult.content,
-    format: 'json',
-  };
+// 변환 실행 (markdown only)
+function executeConversion(rawHtml: string): ConversionResult {
+  return convertToMarkdown(rawHtml);
 }
 
-// DOM Map 변환 함수
-function convertToDomMap(rawHtml: string, maxDepth: number): ConversionResult {
-  const domMapResult = parseHTMLToDOMMap(rawHtml, {
-    maxDepth: Math.min(maxDepth, 10),
-    maxChildren: 20,
-    maxTextLength: 100,
-    includeInteractiveOnly: false,
-  });
-
-  if (domMapResult.error) {
-    throw new Error(`Failed to create DOM map: ${domMapResult.error}`);
-  }
-
-  return domMapResult as ConversionResult;
-}
-
-// 포맷별 변환 실행
-function executeConversion(
-  format: 'markdown' | 'json' | 'dom-map',
-  rawHtml: string,
-  options: { maxDepth: number; includeLinks: boolean },
-): ConversionResult {
-  switch (format) {
-    case 'markdown':
-      return convertToMarkdown(rawHtml);
-    case 'json':
-      return convertToJson(rawHtml, options);
-    case 'dom-map':
-      return convertToDomMap(rawHtml, options.maxDepth);
-    default:
-      throw new Error(`Unsupported format: ${format}`);
-  }
-}
-
-// HTML 추출 함수
+// HTML 추출 함수 (항상 body 기준)
 async function extractHtmlFromPage(
   executeScript: (sessionId: string, script: string) => Promise<unknown>,
   sessionId: string,
-  selector: string,
 ): Promise<string> {
   const rawHtml = await executeScript(
     sessionId,
-    `document.querySelector(${JSON.stringify(selector)}).outerHTML`,
+    `document.querySelector("body").outerHTML`,
   );
 
   if (!rawHtml || typeof rawHtml !== 'string') {
@@ -231,8 +117,6 @@ async function extractHtmlFromPage(
 function createMetadata(
   result: ConversionResult,
   rawHtml: string,
-  selector: string,
-  format: string,
 ): Record<string, unknown> {
   if (result.metadata) {
     return result;
@@ -245,8 +129,8 @@ function createMetadata(
       content_length:
         typeof result.content === 'string' ? result.content.length : 0,
       raw_html_size: rawHtml.length,
-      selector,
-      format,
+      selector: 'body',
+      format: 'markdown',
     },
   };
 }
@@ -277,90 +161,61 @@ function generateResponseText(result: ConversionResult): string {
   return baseContent;
 }
 
-export const extractContentTool: StrictBrowserMCPTool = {
-  name: 'extractContent',
+export const extractPageContentTool: StrictBrowserMCPTool = {
+  name: 'extractPageContent',
   description:
-    'Comprehensive content extraction tool for web pages. Extracts element text, attributes, structure, and state information in multiple formats (markdown, JSON, DOM-map). Can replace getElementText, getElementAttribute, and findElement functionality. Optionally saves raw HTML to file for detailed analysis.',
+    'Convert the entire webpage into clean, readable markdown format. Extracts the main textual content while removing navigation, ads, scripts, and formatting noise. Ideal for content analysis, summarization, and reading.',
   inputSchema: {
     type: 'object',
     properties: {
       sessionId: BROWSER_TOOL_SCHEMAS.sessionId,
-      selector: {
-        type: 'string',
-        description:
-          'CSS selector to target specific elements for extraction. Defaults to "body" for full page content. Examples: "h1", ".class-name", "#element-id", "div[data-test=value]"',
-      },
-      format: {
-        type: 'string',
-        enum: ['markdown', 'json', 'dom-map'],
-        description:
-          'Output format: "markdown" for readable text content, "json" for structured data with attributes and hierarchy, "dom-map" for detailed element state and interaction info. Default: "markdown"',
-      },
       saveRawHtml: {
         type: 'boolean',
         description:
-          'Save the extracted raw HTML content to a timestamped file in extracted-content/ directory. Useful for debugging or detailed analysis. Default: false',
-      },
-      includeLinks: {
-        type: 'boolean',
-        description:
-          'Include href attributes from anchor tags when using json format. Helps preserve navigation structure in extracted content. Default: true',
-      },
-      maxDepth: {
-        type: 'number',
-        description:
-          'Maximum nesting depth for content extraction (1-20). Controls how deep into nested elements the tool will traverse. Lower values for performance, higher for completeness. Default: 5',
+          'Save the raw HTML to a file for debugging purposes. Default: false',
       },
     },
     required: ['sessionId'],
   },
   execute: async (args: Record<string, unknown>, executeScript) => {
     // 인자 검증
-    const validatedArgs = validateExtractContentArgs(args);
+    const validatedArgs = validateExtractPageContentArgs(args);
     if (!validatedArgs) {
       return createMCPErrorResponse(
         -32602,
         'Invalid arguments provided - check sessionId type and other parameter types',
-        { toolName: 'extractContent', args },
+        { toolName: 'extractPageContent', args },
         createId(),
       );
     }
 
-    const { sessionId, selector, format, saveRawHtml, includeLinks, maxDepth } =
-      validatedArgs;
+    const { sessionId, saveRawHtml } = validatedArgs;
 
-    logger.debug('Executing browser_extractContent', {
+    logger.debug('Executing browser_extractPageContent', {
       sessionId,
-      selector,
-      format,
     });
 
     // executeScript 함수 존재 검증
     if (!executeScript) {
       return createMCPErrorResponse(
         -32603,
-        'executeScript function is required for extractContent',
-        { toolName: 'extractContent', args },
+        'executeScript function is required for extractPageContent',
+        { toolName: 'extractPageContent', args },
         createId(),
       );
     }
 
     try {
-      // HTML 추출
-      const rawHtml = await extractHtmlFromPage(
-        executeScript,
-        sessionId,
-        selector,
-      );
+      // HTML 추출 (body 기준)
+      const rawHtml = await extractHtmlFromPage(executeScript, sessionId);
 
-      // 포맷별 변환
+      // 마크다운 변환
       let result: ConversionResult;
       try {
-        result = executeConversion(format, rawHtml, { maxDepth, includeLinks });
+        result = executeConversion(rawHtml);
       } catch (conversionError) {
         logger.error('Content conversion failed', {
           error: conversionError,
-          format,
           htmlSize: rawHtml.length,
         });
         return createMCPErrorResponse(
@@ -397,12 +252,7 @@ export const extractContentTool: StrictBrowserMCPTool = {
       }
 
       // 메타데이터 추가
-      const resultWithMetadata = createMetadata(
-        result,
-        rawHtml,
-        selector,
-        format,
-      );
+      const resultWithMetadata = createMetadata(result, rawHtml);
 
       // 응답 생성
       const textContent = generateResponseText(result);
@@ -413,16 +263,14 @@ export const extractContentTool: StrictBrowserMCPTool = {
         createId(),
       );
     } catch (error) {
-      logger.error('Error in browser_extractContent:', {
+      logger.error('Error in browser_extractPageContent:', {
         error,
         sessionId,
-        selector,
-        format,
       });
       return createMCPErrorResponse(
         -32603,
-        `Failed to extract content: ${error instanceof Error ? error.message : String(error)}`,
-        { toolName: 'extractContent', args },
+        `Failed to extract page content: ${error instanceof Error ? error.message : String(error)}`,
+        { toolName: 'extractPageContent', args },
         createId(),
       );
     }

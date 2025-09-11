@@ -14,7 +14,8 @@ export { navigateForwardTool } from './NavigateForwardTool';
 // Complex tools
 export { clickElementTool } from './ClickElementTool';
 export { inputTextTool } from './InputTextTool';
-export { extractContentTool } from './ExtractContentTool';
+export { extractPageContentTool } from './ExtractContentTool';
+export { extractInteractableTool } from './ExtractInteractableTool';
 
 // Types and helpers
 export type {
