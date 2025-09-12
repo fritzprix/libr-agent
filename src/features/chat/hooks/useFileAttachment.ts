@@ -64,12 +64,13 @@ export function useFileAttachment() {
         paths: filePaths,
       });
 
-      const filesToUpload: {
+      const filesToUpload: Array<{
         url: string;
         mimeType: string;
         filename: string;
+        file: File;
         cleanup: () => void;
-      }[] = [];
+      }> = [];
 
       for (const filePath of filePaths) {
         try {
@@ -98,14 +99,16 @@ export function useFileAttachment() {
           });
 
           const uint8Array = new Uint8Array(fileData);
-          const blob = new Blob([uint8Array]);
-          const blobUrl = URL.createObjectURL(blob);
           const mimeType = getMimeType(filename);
+          // Create a File object so commit step can handle both text and binary types reliably
+          const fileObj = new File([uint8Array], filename, { type: mimeType });
+          const blobUrl = URL.createObjectURL(fileObj);
 
           filesToUpload.push({
             url: blobUrl,
             mimeType,
             filename,
+            file: fileObj,
             cleanup: () => URL.revokeObjectURL(blobUrl),
           });
 
@@ -145,6 +148,7 @@ export function useFileAttachment() {
             url: file.url,
             mimeType: file.mimeType,
             filename: file.filename,
+            file: file.file,
             blobCleanup: file.cleanup,
           }));
 
@@ -156,6 +160,7 @@ export function useFileAttachment() {
             })),
           });
 
+          // Include File object when available so upload can avoid blob: URL issues in worker
           addPendingFiles(batchFiles);
 
           logger.info('Files added to pending state successfully', {

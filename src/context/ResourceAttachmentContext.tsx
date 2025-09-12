@@ -384,6 +384,7 @@ export const ResourceAttachmentProvider: React.FC<
 
       // If we have a File object, use it directly
       if (file) {
+        // Use a blob URL for the File object (original working behavior)
         blobUrl = URL.createObjectURL(file);
         blobCleanup = () => URL.revokeObjectURL(blobUrl);
         actualMimeType = file.type || mimeType || 'application/octet-stream';

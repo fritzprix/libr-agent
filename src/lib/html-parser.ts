@@ -1099,19 +1099,48 @@ export function generateStructuralPath(element: Element): string {
 }
 
 function isElementVisible(element: Element): boolean {
-  if (element instanceof HTMLElement) {
-    const style = getComputedStyle(element);
-    const rect = element.getBoundingClientRect();
+  // DOMParser environment doesn't support getComputedStyle() or getBoundingClientRect()
+  // Check visibility based on HTML attributes and inline styles instead
 
-    return (
-      rect.width > 0 &&
-      rect.height > 0 &&
-      style.visibility !== 'hidden' &&
-      style.display !== 'none' &&
-      style.opacity !== '0'
-    );
+  if (element instanceof HTMLElement) {
+    // Check explicit hidden attribute
+    if (element.hasAttribute('hidden')) {
+      return false;
+    }
+
+    // Check aria-hidden
+    if (element.getAttribute('aria-hidden') === 'true') {
+      return false;
+    }
+
+    // Check inline style for common hiding patterns
+    const style = element.getAttribute('style') || '';
+    const styleHidden =
+      style.includes('display:none') ||
+      style.includes('display: none') ||
+      style.includes('visibility:hidden') ||
+      style.includes('visibility: hidden') ||
+      style.includes('opacity:0') ||
+      style.includes('opacity: 0');
+
+    if (styleHidden) {
+      return false;
+    }
+
+    // Check class names that commonly indicate hidden elements
+    const className = element.getAttribute('class') || '';
+    const hiddenByClass =
+      className.includes('hidden') ||
+      className.includes('invisible') ||
+      className.includes('sr-only'); // screen reader only
+
+    if (hiddenByClass) {
+      return false;
+    }
   }
-  return true; // Assume visible if we can't determine
+
+  // Default to visible in DOMParser environment
+  return true;
 }
 
 function getElementText(element: Element): string {
@@ -1224,6 +1253,12 @@ export function parseHtmlToInteractables(
       INTERACTABLE_SELECTORS,
     );
 
+    logger.debug('Interactable elements found', {
+      total: interactableElements.length,
+      selector: INTERACTABLE_SELECTORS,
+      includeHidden: opts.includeHidden,
+    });
+
     for (const element of Array.from(interactableElements)) {
       if (elements.length >= opts.maxElements) {
         logger.warn(
@@ -1231,6 +1266,15 @@ export function parseHtmlToInteractables(
         );
         break;
       }
+
+      const visible = isElementVisible(element);
+      logger.debug('Processing element', {
+        tag: element.tagName,
+        id: element.getAttribute('id'),
+        class: element.getAttribute('class'),
+        visible,
+        willInclude: opts.includeHidden || visible,
+      });
 
       const interactableElement = parseElementToInteractable(
         element,

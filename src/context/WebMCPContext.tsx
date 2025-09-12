@@ -14,7 +14,22 @@ import MCPWorker from '@/lib/web-mcp/mcp-worker.ts?worker';
 
 const logger = getLogger('WebMCPContext');
 
-// Server proxy interface
+/**
+ * Server proxy interface exposed to the UI layer.
+ *
+ * Dynamic tool methods are attached at runtime based on the server's tool list.
+ * Tool names are normalized by stripping the `${serverName}__` prefix if present.
+ *
+ * Response contract (client-side):
+ * - When a tool is called through this proxy, the return value is derived from the MCPResponse as follows:
+ *   1) If `result.structuredContent` exists, it is returned as-is (preferred for typed data)
+ *   2) Else if `result.content[0].type === 'text'`, attempts JSON.parse on `text`, falling back to the raw string
+ *   3) Else returns the raw `result` object
+ *
+ * This ensures compatibility with both servers that return structured data
+ * (e.g., content-store via `createMCPStructuredResponse`) and servers that
+ * return text (e.g., planning-server via `createMCPTextResponse`).
+ */
 export interface WebMCPServerProxy {
   name: string;
   isLoaded: boolean;
@@ -22,7 +37,15 @@ export interface WebMCPServerProxy {
   [methodName: string]: unknown;
 }
 
-// Context interface
+/**
+ * WebMCP context value shared via React Context.
+ *
+ * - `proxy`: Low-level worker proxy (message transport, lifecycle)
+ * - `isLoading`: Initialization state of the worker proxy
+ * - `initialized`: True once the worker proxy has successfully initialized
+ * - `getServerProxy(serverName)`: Lazily loads a server in the worker and returns a cached
+ *   dynamic proxy with typed tool methods.
+ */
 interface WebMCPContextValue {
   proxy: WebMCPProxy | null;
   isLoading: boolean;
@@ -34,6 +57,13 @@ interface WebMCPContextValue {
 
 const WebMCPContext = createContext<WebMCPContextValue | null>(null);
 
+/**
+ * Props for WebMCPProvider.
+ *
+ * Wrap your app with this provider to enable Web Worker-based MCP servers.
+ * The provider initializes a single worker-backed `WebMCPProxy` and exposes
+ * a cached `getServerProxy` that attaches dynamic tool methods per server.
+ */
 interface WebMCPProviderProps {
   children: React.ReactNode;
 }
@@ -66,6 +96,20 @@ export function WebMCPProvider({ children }: WebMCPProviderProps) {
   }, []);
 
   // Get server proxy with caching
+  /**
+   * Loads an MCP server into the worker (if not already loaded) and returns a dynamic proxy.
+   *
+   * Tool method mapping:
+   * - For each tool listed by the server, a method is attached to the proxy using the tool's
+   *   name with `${serverName}__` prefix removed when present. Example:
+   *   - Tool name `content-store__addContent` becomes `serverProxy.addContent(...)`
+   *   - Tool name `planning__create_goal` becomes `serverProxy.create_goal(...)`
+   *
+   * Response handling precedence:
+   * 1) Return `result.structuredContent` if available
+   * 2) Else attempt to parse `result.content[0].text` as JSON; fallback to plain string
+   * 3) Else return the raw `result` object
+   */
   const getServerProxy = useCallback(
     async <T extends WebMCPServerProxy>(serverName: string): Promise<T> => {
       // Return cached proxy if available
@@ -128,7 +172,7 @@ export function WebMCPProvider({ children }: WebMCPProviderProps) {
               safeArgs,
             );
 
-            // Handle MCP response processing (same logic as original)
+            // Handle MCP response processing per the response contract
             if (
               mcpResponse &&
               typeof mcpResponse === 'object' &&
@@ -146,9 +190,23 @@ export function WebMCPProvider({ children }: WebMCPProviderProps) {
             ) {
               const result = (
                 mcpResponse as {
-                  result?: { content?: Array<{ type: string; text?: string }> };
+                  result?: {
+                    content?: Array<{ type: string; text?: string }>;
+                    structuredContent?: unknown;
+                  };
                 }
               ).result;
+
+              // Prefer structuredContent when available (typed data from server)
+              if (
+                result &&
+                'structuredContent' in result &&
+                result.structuredContent !== undefined
+              ) {
+                return result.structuredContent;
+              }
+
+              // Otherwise, fall back to content[0].text (optionally JSON)
               if (
                 result?.content?.[0]?.type === 'text' &&
                 result.content[0].text
@@ -159,6 +217,8 @@ export function WebMCPProvider({ children }: WebMCPProviderProps) {
                   return result.content[0].text;
                 }
               }
+
+              // As a final fallback, return the raw result object
               return result;
             }
 

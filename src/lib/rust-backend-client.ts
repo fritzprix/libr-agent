@@ -11,6 +11,18 @@ import {
 const logger = getLogger('RustBackendClient');
 
 // ========================================
+// Workspace types / interfaces
+// ========================================
+
+export interface WorkspaceFileItem {
+  name: string;
+  isDirectory: boolean;
+  path: string;
+  size?: number | null;
+  modified?: string | null;
+}
+
+// ========================================
 // Browser types / interfaces
 // ========================================
 
@@ -46,6 +58,19 @@ async function safeInvoke<T>(
     logger.error('invoke failed', { cmd, err });
     throw err;
   }
+}
+
+// ========================================
+// Workspace Management
+// ========================================
+
+export async function listWorkspaceFiles(
+  path?: string,
+): Promise<WorkspaceFileItem[]> {
+  return safeInvoke<WorkspaceFileItem[]>(
+    'list_workspace_files',
+    path ? { path } : {},
+  );
 }
 
 // ========================================
@@ -325,6 +350,7 @@ export default {
   writeFile,
   getAppLogsDir,
   backupCurrentLog,
+  listWorkspaceFiles,
   clearCurrentLog,
   listLogFiles,
   openExternalUrl,

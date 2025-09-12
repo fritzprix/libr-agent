@@ -7,6 +7,9 @@ export interface MCPServerConfig {
   [key: string]: unknown;
 }
 
+// Workspace types
+export type { WorkspaceFileItem } from '@/lib/rust-backend-client';
+
 // File system related types
 export interface FileReadParams {
   filePath: string;
@@ -23,6 +26,9 @@ export interface LogFileBackupResult {
  */
 export const useRustBackend = () => {
   return {
+    // Workspace Management
+    listWorkspaceFiles: client.listWorkspaceFiles,
+
     // MCP Server Management
     startMCPServer: client.startServer,
     stopMCPServer: client.stopServer,
