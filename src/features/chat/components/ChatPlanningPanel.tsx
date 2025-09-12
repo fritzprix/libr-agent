@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useWebMCPServer } from '@/hooks/use-web-mcp-server';
-import { useChatContext } from '@/context/ChatContext';
+import { useMessageTrigger } from '@/hooks/use-message-trigger';
 import type { PlanningServerProxy, PlanningState } from '@/models/planning';
 import { getLogger } from '@/lib/logger';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,12 +13,10 @@ const logger = getLogger('ChatPlanningPanel');
 export function ChatPlanningPanel() {
   const { server, loading, error } =
     useWebMCPServer<PlanningServerProxy>('planning');
-  const { messages } = useChatContext();
   const [planningState, setPlanningState] = useState<PlanningState | null>(
     null,
   );
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const lastHandledMessageRef = useRef<{ id?: string }>({});
 
   // Component lifecycle logging
   useEffect(() => {
@@ -74,46 +72,14 @@ export function ChatPlanningPanel() {
     }
   }, [server]);
 
-  // Message-based state updates (instead of 30s polling)
-  useEffect(() => {
-    if (!server?.get_current_state || messages.length === 0) {
-      logger.info('PLANNING_PANEL: Skipping message-based update', {
-        hasServer: !!server,
-        hasGetState: !!server?.get_current_state,
-        messageCount: messages.length,
-      });
-      return;
-    }
-
-    const lastMessage = messages[messages.length - 1];
-    logger.info('PLANNING_PANEL: Checking message for state update', {
-      messageId: lastMessage.id,
-      messageRole: lastMessage.role,
-      lastHandledId: lastHandledMessageRef.current.id,
-      messageCount: messages.length,
-    });
-
-    if (lastHandledMessageRef.current.id === lastMessage.id) {
-      logger.info('PLANNING_PANEL: Message already handled, skipping update');
-      return;
-    }
-
-    lastHandledMessageRef.current.id = lastMessage.id;
-    logger.info(
-      'PLANNING_PANEL: New message detected, triggering state update',
-      {
-        messageId: lastMessage.id,
-        messageRole: lastMessage.role,
-      },
-    );
-
-    // Update Planning state only when new messages arrive
-    refreshState();
-  }, [messages, refreshState]);
+  // Message-based state updates using custom hook
+  useMessageTrigger(refreshState, {
+    enabled: !!server?.get_current_state,
+  });
 
   if (loading) {
     return (
-      <Card className="w-80 m-4">
+      <Card className="w-80 h-full flex flex-col bg-background/95 backdrop-blur border-border/50">
         <CardContent className="p-6">
           <div className="animate-pulse text-muted-foreground">
             Loading planning state...
@@ -125,7 +91,7 @@ export function ChatPlanningPanel() {
 
   if (error) {
     return (
-      <Card className="w-80 m-4">
+      <Card className="w-80 h-full flex flex-col bg-background/95 backdrop-blur border-border/50">
         <CardContent className="p-6">
           <div className="text-destructive text-sm mb-3">
             Error loading planning server
@@ -139,7 +105,7 @@ export function ChatPlanningPanel() {
   }
 
   return (
-    <Card className="w-80 m-4">
+    <Card className="w-80 h-full flex flex-col bg-background/95 backdrop-blur border-border/50">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <CardTitle className="text-lg">AI Planning</CardTitle>

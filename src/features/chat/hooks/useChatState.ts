@@ -6,12 +6,14 @@ const logger = getLogger('useChatState');
 export function useChatState() {
   const [showToolsDetail, setShowToolsDetail] = useState(false);
   const [showPlanningPanel, setShowPlanningPanel] = useState(false);
+  const [showWorkspacePanel, setShowWorkspacePanel] = useState(false);
 
   // Component initialization logging
   useEffect(() => {
     logger.info('CHAT_STATE: Hook initialized', {
       showToolsDetail,
       showPlanningPanel,
+      showWorkspacePanel,
     });
   }, []);
 
@@ -39,18 +41,33 @@ export function useChatState() {
     [showPlanningPanel],
   );
 
+  const setShowWorkspacePanelWithLogging = useCallback(
+    (value: boolean) => {
+      logger.info('CHAT_STATE: Workspace panel visibility changed', {
+        from: showWorkspacePanel,
+        to: value,
+        action: value ? 'show' : 'hide',
+      });
+      setShowWorkspacePanel(value);
+    },
+    [showWorkspacePanel],
+  );
+
   // State change logging
   useEffect(() => {
     logger.debug('CHAT_STATE: State updated', {
       showToolsDetail,
       showPlanningPanel,
+      showWorkspacePanel,
     });
-  }, [showToolsDetail, showPlanningPanel]);
+  }, [showToolsDetail, showPlanningPanel, showWorkspacePanel]);
 
   return {
     showToolsDetail,
     setShowToolsDetail: setShowToolsDetailWithLogging,
     showPlanningPanel,
     setShowPlanningPanel: setShowPlanningPanelWithLogging,
+    showWorkspacePanel,
+    setShowWorkspacePanel: setShowWorkspacePanelWithLogging,
   };
 }

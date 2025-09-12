@@ -13,6 +13,11 @@ import { ChatAttachedFiles } from './components/ChatAttachedFiles';
 import { ChatInput } from './components/ChatInput';
 import { ChatBottom } from './components/ChatBottom';
 import { ChatPlanningPanel } from './components/ChatPlanningPanel';
+import { WorkspaceFilesPanel } from './components/WorkspaceFilesPanel';
+import {
+  ChatWorkspaceProvider,
+  useChatWorkspace,
+} from './context/ChatWorkspaceContext';
 import ToolsModal from '../tools/ToolsModal';
 import { TimeLocationSystemPrompt } from '../prompts/TimeLocationSystemPrompt';
 import { getLogger } from '@/lib/logger';
@@ -28,14 +33,19 @@ interface ChatProps {
 function ChatInner({ children }: ChatProps) {
   const { showToolsDetail, setShowToolsDetail } = useChatState();
   const { showPlanningPanel } = useChatPlanning();
+  const { showWorkspacePanel } = useChatWorkspace();
 
-  logger.info('CHAT_INNER: Render with planning panel state', {
+  logger.info('CHAT_INNER: Render with panel states', {
     showPlanningPanel,
+    showWorkspacePanel,
     showToolsDetail,
   });
 
   return (
     <div className="h-full w-full font-mono flex rounded-lg overflow-hidden shadow-2xl">
+      {/* Workspace side panel */}
+      {showWorkspacePanel && <WorkspaceFilesPanel />}
+
       {/* Main chat area */}
       <div className="flex-1 flex flex-col">
         {children}
@@ -89,8 +99,10 @@ function Chat({ children }: ChatProps) {
   return (
     <ChatProvider>
       <ChatPlanningProvider>
-        <TimeLocationSystemPrompt />
-        <ChatInner>{children}</ChatInner>
+        <ChatWorkspaceProvider>
+          <TimeLocationSystemPrompt />
+          <ChatInner>{children}</ChatInner>
+        </ChatWorkspaceProvider>
       </ChatPlanningProvider>
     </ChatProvider>
   );
@@ -103,5 +115,6 @@ Chat.AttachedFiles = ChatAttachedFiles;
 Chat.Input = ChatInput;
 Chat.Bottom = ChatBottom;
 Chat.PlanningPanel = ChatPlanningPanel;
+Chat.WorkspacePanel = WorkspaceFilesPanel;
 
 export default Chat;

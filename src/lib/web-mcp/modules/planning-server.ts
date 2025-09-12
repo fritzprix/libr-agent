@@ -1,5 +1,8 @@
 import type { MCPTool, WebMCPServer, MCPResponse } from '@/lib/mcp-types';
-import { createMCPTextResponse } from '@/lib/mcp-response-utils';
+import {
+  createMCPTextResponse,
+  createMCPStructuredResponse,
+} from '@/lib/mcp-response-utils';
 
 // Simplified data structures for Gemini API compatibility
 interface SimpleTodo {
@@ -48,10 +51,10 @@ class EphemeralState {
 
     todo.status = todo.status === 'completed' ? 'pending' : 'completed';
 
-    // History management: keep only 2 completed todos maximum
-    if (todo.status === 'completed') {
-      this.manageCompletedTodoHistory();
-    }
+    // // History management: keep only 2 completed todos maximum
+    // if (todo.status === 'completed') {
+    //   this.manageCompletedTodoHistory();
+    // }
 
     return { todo, todos: this.todos };
   }
@@ -86,19 +89,6 @@ class EphemeralState {
 
   getObservations(): string[] {
     return [...this.observations];
-  }
-
-  private manageCompletedTodoHistory(): void {
-    const completedTodos = this.todos.filter((t) => t.status === 'completed');
-    if (completedTodos.length > 2) {
-      // Find and remove the oldest completed todo
-      const firstCompletedIndex = this.todos.findIndex(
-        (t) => t.status === 'completed',
-      );
-      if (firstCompletedIndex !== -1) {
-        this.todos.splice(firstCompletedIndex, 1);
-      }
-    }
   }
 
   getLastClearedGoal(): string | null {
@@ -227,7 +217,11 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
     switch (name) {
       case 'create_goal': {
         const result = state.createGoal(typedArgs.goal as string);
-        return createMCPTextResponse(`Goal created: "${result}"`);
+        return createMCPStructuredResponse(`Goal created: "${result}"`, {
+          goal: result,
+          action: 'create_goal',
+          success: true,
+        });
       }
       case 'clear_goal': {
         const result = state.clearGoal();
@@ -237,10 +231,17 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
       }
       case 'add_todo': {
         const result = state.addTodo(typedArgs.name as string);
-        return createMCPTextResponse(
+        return createMCPStructuredResponse(
           result.success
             ? `Todo added: "${typedArgs.name}" (Total: ${result.todos.length})`
             : 'Failed to add todo',
+          {
+            action: 'add_todo',
+            success: result.success,
+            todoName: typedArgs.name as string,
+            totalTodos: result.todos.length,
+            newTodo: result.todos[result.todos.length - 1],
+          },
         );
       }
       case 'toggle_todo': {
@@ -253,13 +254,26 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
 
         const result = state.toggleTodo(id);
         if (result.todo) {
-          return createMCPTextResponse(
+          return createMCPStructuredResponse(
             `Todo "${result.todo.name}" marked as ${result.todo.status}`,
+            {
+              action: 'toggle_todo',
+              success: true,
+              todo: result.todo,
+              allTodos: result.todos,
+            },
           );
         } else {
           const availableIds = state.getTodos().map((t) => t.id);
-          return createMCPTextResponse(
+          return createMCPStructuredResponse(
             `Todo with ID ${id} not found. Available IDs: ${availableIds.length > 0 ? availableIds.join(', ') : 'none'}`,
+            {
+              action: 'toggle_todo',
+              success: false,
+              requestedId: id,
+              availableIds,
+              error: 'TODO_NOT_FOUND',
+            },
           );
         }
       }

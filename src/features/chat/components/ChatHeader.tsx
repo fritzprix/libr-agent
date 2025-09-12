@@ -2,12 +2,10 @@ import React from 'react';
 import TerminalHeader from '@/components/TerminalHeader';
 import { useSessionContext } from '@/context/SessionContext';
 import { useChatPlanning } from '../context/ChatPlanningContext';
+import { useChatWorkspace } from '../context/ChatWorkspaceContext';
 import { SessionFilesPopover } from './SessionFilesPopover';
 import { Button } from '@/components/ui/button';
-import { PanelRight } from 'lucide-react';
-import { getLogger } from '@/lib/logger';
-
-const logger = getLogger('ChatHeader');
+import { PanelRight, FolderOpen } from 'lucide-react';
 
 interface ChatHeaderProps {
   children?: React.ReactNode;
@@ -17,16 +15,26 @@ interface ChatHeaderProps {
 export function ChatHeader({ children, assistantName }: ChatHeaderProps) {
   const { current: currentSession } = useSessionContext();
   const { showPlanningPanel, togglePlanningPanel } = useChatPlanning();
+  const { showWorkspacePanel, toggleWorkspacePanel } = useChatWorkspace();
 
-  const handleTogglePlanningPanel = () => {
-    logger.info('CHAT_HEADER: Planning panel toggle clicked', {
-      currentState: showPlanningPanel,
-      newState: !showPlanningPanel,
-      sessionId: currentSession?.id,
-      assistantName,
-    });
+  // Planning toggle comes from ChatPlanningContext to keep state in sync
+  const handleTogglePlanning = () => {
+    if (!showPlanningPanel) {
+      // About to open planning; ensure workspace is closed
+      if (showWorkspacePanel) toggleWorkspacePanel();
+    }
     togglePlanningPanel();
   };
+
+  const handleToggleWorkspace = () => {
+    if (!showWorkspacePanel) {
+      // About to open workspace; ensure planning is closed
+      if (showPlanningPanel) togglePlanningPanel();
+    }
+    toggleWorkspacePanel();
+  };
+
+  // Workspace toggle comes from context to ensure correct provider instance
 
   return (
     <TerminalHeader>
@@ -44,7 +52,19 @@ export function ChatHeader({ children, assistantName }: ChatHeaderProps) {
           <Button
             variant="ghost"
             size="sm"
-            onClick={handleTogglePlanningPanel}
+            onClick={handleToggleWorkspace}
+            title="Toggle Workspace Files Panel"
+            className="h-6 px-2"
+          >
+            <FolderOpen
+              className={`h-4 w-4 ${showWorkspacePanel ? 'text-blue-400' : ''}`}
+            />
+          </Button>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleTogglePlanning}
             title="Toggle AI Planning Panel"
             className="h-6 px-2"
           >

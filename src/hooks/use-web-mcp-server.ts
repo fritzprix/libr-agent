@@ -4,10 +4,62 @@ import { useWebMCP, WebMCPServerProxy } from '@/context/WebMCPContext';
 
 const logger = getLogger('WebMCPServer');
 
-// Export the interface from context
+/**
+ * Re-exports the dynamic server proxy interface used by WebMCP.
+ * See WebMCPContext for the full response contract and tool mapping rules.
+ */
 export type { WebMCPServerProxy } from '@/context/WebMCPContext';
 
-// Simplified useWebMCPServer hook using context
+/**
+ * Hook: useWebMCPServer
+ *
+ * Purpose:
+ * - Lazily obtain a dynamic proxy for a WebMCP server running in a Web Worker.
+ * - The returned proxy exposes methods for each tool the server provides.
+ *
+ * Parameters:
+ * - serverName: string — The MCP server module name (e.g., "content-store", "planning").
+ *
+ * Returns:
+ * - { server, loading, error, reload }
+ *   - server: T | null — Dynamic proxy with tool methods; null while loading/failed
+ *   - loading: boolean — True while either context or proxy is loading
+ *   - error: string | null — Last error message, if any
+ *   - reload: () => Promise<void> — Force reload of the server proxy
+ *
+ * Response Contract:
+ * When calling tool methods on the returned server proxy, the response follows this precedence:
+ * 1. `result.structuredContent` (preferred) → returned as-is for typed data
+ * 2. `result.content[0].text` → JSON.parse() attempted, falls back to raw string
+ * 3. Raw `result` object → returned as fallback
+ *
+ * This enables both structured servers (content-store) and text-only servers (planning)
+ * to work seamlessly with the same client interface.
+ *
+ * @example
+ * ```typescript
+ * // Structured response server (content-store)
+ * const { server } = useWebMCPServer<ContentStoreServer>('content-store');
+ * const result = await server.createStore({ metadata: { sessionId } });
+ * // result => { storeId: string, createdAt: string } (typed)
+ *
+ * // Text-only server (planning)
+ * const { server: planServer } = useWebMCPServer('planning');
+ * const todo = await planServer.add_todo({ name: 'Write docs' });
+ * // todo => string or parsed JSON
+ *
+ * // For both text and data, use toToolResult helper:
+ * import { toToolResult } from '@/lib/web-mcp/tool-result';
+ * const response = await proxy.callTool('server', 'tool', args);
+ * const both = toToolResult<MyType>(response);
+ * console.log(both.text, both.data);
+ * ```
+ *
+ * Behavior:
+ * - Automatically loads the server proxy on first render once context is initialized.
+ * - Tool methods are dynamically created with normalized names (server prefix removed).
+ * - All responses follow the consistent parsing contract for predictable behavior.
+ */
 export function useWebMCPServer<T extends WebMCPServerProxy>(
   serverName: string,
 ) {
