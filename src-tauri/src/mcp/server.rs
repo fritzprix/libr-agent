@@ -186,7 +186,7 @@ impl MCPServerManager {
                 Ok(result) => {
                     // RMCP 원본 응답을 먼저 로깅 (직렬화 전)
                     info!("Raw rmcp CallToolResult (before serialization): {result:?}");
-                    
+
                     // rmcp CallToolResult를 보다 신중하게 처리
                     let result_value = match serde_json::to_value(&result) {
                         Ok(value) => value,
@@ -208,7 +208,7 @@ impl MCPServerManager {
                     // 디버그 로그로 원본 구조 확인
                     info!("Original rmcp result: {result:?}");
                     info!("Serialized result: {result_value}");
-                    
+
                     // UI 리소스 감지 및 추가 로깅
                     if let Some(content) = result_value.get("content") {
                         if let Some(content_array) = content.as_array() {

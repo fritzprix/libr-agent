@@ -113,30 +113,60 @@ export class GeminiService extends BaseAIService {
       for await (const chunk of result) {
         logger.info('chunk : ', { chunk });
         if (chunk.functionCalls && chunk.functionCalls.length > 0) {
-          yield JSON.stringify({
-            tool_calls: chunk.functionCalls.map((fc: FunctionCall) => {
-              const toolCallId = this.generateToolCallId();
+          const validFunctionCalls = chunk.functionCalls.filter(
+            (fc) => fc.name && typeof fc.name === 'string' && fc.args,
+          );
 
-              logger.debug('Generated tool call ID', {
-                functionName: fc.name,
-                toolCallId,
-              });
+          if (validFunctionCalls.length > 0) {
+            yield JSON.stringify({
+              tool_calls: validFunctionCalls.map((fc: FunctionCall) => {
+                let argumentsStr: string;
+                try {
+                  argumentsStr = JSON.stringify(fc.args || {});
+                } catch (error) {
+                  logger.warn('Failed to serialize function arguments', {
+                    functionName: fc.name,
+                    args: fc.args,
+                    error,
+                  });
+                  argumentsStr = "'";
+                }
 
-              return {
-                id: toolCallId,
-                type: 'function',
-                function: {
-                  name: fc.name,
-                  arguments: JSON.stringify(fc.args),
-                },
-              };
-            }),
-          });
+                const toolCallId = this.generateToolCallId();
+                logger.debug('Generated tool call ID', {
+                  functionName: fc.name,
+                  toolCallId,
+                });
+
+                return {
+                  id: toolCallId,
+                  type: 'function',
+                  function: { name: fc.name, arguments: argumentsStr },
+                };
+              }),
+            });
+          }
         } else if (chunk.text) {
           yield JSON.stringify({ content: chunk.text });
         }
       }
     } catch (error) {
+      if (
+        error instanceof Error &&
+        (error.message.includes('malformed_function_call') ||
+          error.message.includes('MALFORMED_FUNCTION_CALL'))
+      ) {
+        logger.warn(
+          'MALFORMED_FUNCTION_CALL detected. Retrying request without tools.',
+          { originalError: error },
+        );
+        if (options.availableTools && options.availableTools.length > 0) {
+          const retryOptions = { ...options, availableTools: [] };
+          yield* this.streamChat(messages, retryOptions);
+          return;
+        }
+      }
+
       this.handleStreamingError(error, {
         messages: validatedMessages,
         options,

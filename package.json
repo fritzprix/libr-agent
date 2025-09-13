@@ -34,7 +34,14 @@
     "diagnose": "echo 'System diagnostic...' && ldd --version && echo 'WebKit packages:' && dpkg -l | grep webkit",
     "dead-code": "unimported",
     "dead-code:init": "unimported --init",
-    "refactor:validate": "pnpm lint && pnpm format && pnpm build && pnpm dead-code"
+    "rust:fmt": "cd src-tauri && cargo fmt --check",
+    "rust:fmt:fix": "cd src-tauri && cargo fmt",
+    "rust:clippy": "cd src-tauri && cargo clippy -- -D warnings",
+    "rust:check": "cd src-tauri && cargo check",
+    "rust:validate": "pnpm rust:fmt && pnpm rust:clippy && pnpm rust:check",
+    "refactor:validate": "pnpm lint && pnpm format && pnpm rust:validate && pnpm build && pnpm dead-code",
+    "verify-planning": "node scripts/extract-planning-logs.js",
+    "verify-planning:file": "node scripts/extract-planning-logs.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.56.0",
@@ -44,6 +51,8 @@
     "@mcp-ui/client": "^5.6.2",
     "@mcp-ui/server": "^5.2.0",
     "@paralleldrive/cuid2": "^2.2.2",
+    "@radix-ui/react-alert-dialog": "^1.1.15",
+    "@radix-ui/react-collapsible": "^1.1.12",
     "@radix-ui/react-dialog": "^1.1.14",
     "@radix-ui/react-dropdown-menu": "^2.1.15",
     "@radix-ui/react-select": "^2.2.5",

@@ -201,6 +201,94 @@ Examples:
 
 This ensures tool names are unique across different MCP systems.
 
+## MCP Response Contract (Important)
+
+When a tool is called via the dynamic server proxy (see `WebMCPContext.tsx`),
+the return value is derived from the MCP response using this precedence:
+
+1. If `result.structuredContent` exists, return it as-is (preferred for typed data)
+2. Else if `result.content[0].type === 'text'`, try `JSON.parse(text)`, fall back to raw string
+3. Else return the raw `result` object
+
+This contract enables two common styles of server implementations to work seamlessly:
+
+- Structured responses (e.g., content-store): servers use `createMCPStructuredResponse(text, structuredContent)`
+  and callers receive `structuredContent` directly (e.g., `{ storeId: 'store_...' }`).
+- Text-only responses (e.g., planning-server): servers use `createMCPTextResponse(text)` and callers receive
+  either parsed JSON (if the text is valid JSON) or the plain string.
+
+### Example: content-store
+
+```ts
+// Server side: returns structuredContent with typed fields
+return createMCPStructuredResponse(
+  `Content added with ID: ${result.contentId}`,
+  result as Record<string, unknown>,
+);
+
+// Client side: using dynamic proxy
+const { server } = useWebMCPServer<ContentStoreServer>('content-store');
+const created = await server.createStore({ metadata: { sessionId } });
+// created => { storeId: string, createdAt: string | Date }
+
+const added = await server.addContent({
+  storeId,
+  fileUrl,
+  metadata: { filename },
+});
+// added => { storeId, contentId, filename, mimeType, size, lineCount, preview, uploadedAt, chunkCount }
+```
+
+### Example: planning-server
+
+```ts
+// Server side: returns text only
+return createMCPTextResponse(`Todo added: "${name}"`);
+
+// Client side: using dynamic proxy
+const { server } = useWebMCPServer('planning');
+const textOrJson = await server.add_todo({ name: 'Write docs' });
+// textOrJson => either parsed JSON if valid, or plain string
+```
+
+### Why structuredContent first?
+
+Structured content provides a stable contract for typed data, avoiding brittle text parsing
+and enabling safer client code. Servers that can return structured data should prefer it.
+
+### Accessing Both Text and Data
+
+When you need access to both the human-readable text and structured data from a response,
+use the `ToolResult` helper utility:
+
+```ts
+import { toToolResult, ToolResult } from '@/lib/web-mcp/tool-result';
+
+// Get both text and structured data
+const response = await proxy.callTool('content-store', 'addContent', args);
+const both = toToolResult<AddContentOutput>(response);
+
+// Access structured data (if available)
+if (both.data) {
+  console.log('Store ID:', both.data.storeId);
+  console.log('Content ID:', both.data.contentId);
+}
+
+// Access human-readable text (if available)
+if (both.text) {
+  console.log('Summary:', both.text);
+}
+
+// Access raw MCP response envelope for custom processing
+console.log('Raw response:', both.raw);
+```
+
+This is particularly useful for:
+
+- Displaying user-friendly messages while processing structured data
+- Debugging responses by comparing text and data formats
+- Building UIs that need both presentation and data layers
+
 ## Error Handling
 
 The system provides comprehensive error handling:

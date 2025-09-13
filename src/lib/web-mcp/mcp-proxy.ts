@@ -11,8 +11,8 @@ import {
   WebMCPProxyConfig,
   MCPTool,
   MCPResponse,
-  MCPTextContent,
 } from '../mcp-types';
+import { toToolResult } from './tool-result';
 import { getLogger } from '../logger';
 
 const logger = getLogger('WebMCPProxy');
@@ -222,13 +222,46 @@ export class WebMCPProxy {
     this.pendingRequests.clear();
   }
 
+  /**
+   * Helper method to parse MCP response using ToolResult utility.
+   * Provides consistent response handling across all proxy methods.
+   *
+   * @param response - Raw MCP response from worker
+   * @param expectJson - Whether to expect/parse JSON from text content
+   * @returns Parsed response using ToolResult precedence rules
+   */
+  private parseResponse<T = unknown>(
+    response: MCPResponse,
+    expectJson = false,
+  ): T {
+    const result = toToolResult<T>(response);
+
+    // Prefer structured data when available
+    if (result.data !== undefined) {
+      return result.data;
+    }
+
+    // Handle text content
+    if (result.text) {
+      if (expectJson) {
+        try {
+          return JSON.parse(result.text) as T;
+        } catch {
+          // If JSON parsing fails, fall back to text
+          return result.text as unknown as T;
+        }
+      }
+      return result.text as unknown as T;
+    }
+
+    // Fallback to raw result
+    return result.raw as unknown as T;
+  }
+
   async ping(): Promise<string> {
     const response = await this.sendMessage<MCPResponse>({ type: 'ping' });
-    // Extract text content from MCPResponse
-    if (response.result?.content?.[0]?.type === 'text') {
-      return (response.result.content[0] as MCPTextContent).text;
-    }
-    return 'pong';
+    const result = this.parseResponse<string>(response);
+    return result || 'pong';
   }
 
   async loadServer(serverName: string): Promise<{
@@ -241,20 +274,18 @@ export class WebMCPProxy {
       type: 'loadServer',
       serverName,
     });
-    // Extract JSON content from MCPResponse
-    if (response.result?.content?.[0]?.type === 'text') {
-      return JSON.parse((response.result.content[0] as MCPTextContent).text);
-    }
-    throw new Error('Invalid loadServer response format');
+    return this.parseResponse<{
+      name: string;
+      description?: string;
+      version?: string;
+      toolCount: number;
+    }>(response, true);
   }
 
   async listAllTools(): Promise<MCPTool[]> {
     const response = await this.sendMessage<MCPResponse>({ type: 'listTools' });
-    // Extract JSON content from MCPResponse
-    if (response.result?.content?.[0]?.type === 'text') {
-      return JSON.parse((response.result.content[0] as MCPTextContent).text);
-    }
-    return [];
+    const result = this.parseResponse<MCPTool[]>(response, true);
+    return Array.isArray(result) ? result : [];
   }
 
   async listTools(serverName: string): Promise<MCPTool[]> {
@@ -262,11 +293,8 @@ export class WebMCPProxy {
       type: 'listTools',
       serverName,
     });
-    // Extract JSON content from MCPResponse
-    if (response.result?.content?.[0]?.type === 'text') {
-      return JSON.parse((response.result.content[0] as MCPTextContent).text);
-    }
-    return [];
+    const result = this.parseResponse<MCPTool[]>(response, true);
+    return Array.isArray(result) ? result : [];
   }
 
   async callTool(
@@ -287,10 +315,7 @@ export class WebMCPProxy {
       type: 'getServiceContext',
       serverName,
     });
-    // Extract text content from MCPResponse
-    if (response.result?.content?.[0]?.type === 'text') {
-      return (response.result.content[0] as MCPTextContent).text;
-    }
-    return '';
+    const result = this.parseResponse<string>(response);
+    return typeof result === 'string' ? result : '';
   }
 }

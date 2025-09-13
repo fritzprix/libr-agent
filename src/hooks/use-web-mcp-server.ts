@@ -1,183 +1,78 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { getLogger } from '../lib/logger';
-import { WebMCPProxy } from '../lib/web-mcp/mcp-proxy';
-import {
-  MCPTool,
-  MCPResponse,
-  MCPTextContent,
-  isMCPSuccess,
-  isMCPError,
-} from '../lib/mcp-types';
-
-// Vite Worker import
-import MCPWorker from '../lib/web-mcp/mcp-worker.ts?worker';
+import { useWebMCP, WebMCPServerProxy } from '@/context/WebMCPContext';
 
 const logger = getLogger('WebMCPServer');
 
-// 서버 프록시 인터페이스
-export interface WebMCPServerProxy {
-  name: string;
-  isLoaded: boolean;
-  tools: MCPTool[];
-  [methodName: string]: unknown;
-}
+/**
+ * Re-exports the dynamic server proxy interface used by WebMCP.
+ * See WebMCPContext for the full response contract and tool mapping rules.
+ */
+export type { WebMCPServerProxy } from '@/context/WebMCPContext';
 
-// 전역 프록시 인스턴스 관리
-class WebMCPProxyManager {
-  private static instance: WebMCPProxyManager | null = null;
-  private proxy: WebMCPProxy | null = null;
-  private initialized = false;
-  private serverProxies = new Map<string, WebMCPServerProxy>();
-
-  static getInstance(): WebMCPProxyManager {
-    if (!this.instance) {
-      this.instance = new WebMCPProxyManager();
-    }
-    return this.instance;
-  }
-
-  async ensureInitialized(): Promise<WebMCPProxy> {
-    if (this.proxy && this.initialized) {
-      return this.proxy;
-    }
-
-    if (this.proxy) {
-      return this.proxy;
-    }
-
-    logger.debug('Initializing WebMCP proxy');
-    const workerInstance = new MCPWorker();
-    this.proxy = new WebMCPProxy({ workerInstance });
-    await this.proxy.initialize();
-    this.initialized = true;
-    logger.info('WebMCP proxy initialized');
-
-    return this.proxy;
-  }
-
-  async getServerProxy<T extends WebMCPServerProxy>(
-    serverName: string,
-  ): Promise<T> {
-    const cachedProxy = this.serverProxies.get(serverName);
-    if (cachedProxy) {
-      return cachedProxy as T;
-    }
-
-    const proxy = await this.ensureInitialized();
-
-    // 서버 로드
-    await proxy.loadServer(serverName);
-    const tools = await proxy.listTools(serverName);
-
-    // 서버 프록시 생성
-    const serverProxy: WebMCPServerProxy = {
-      name: serverName,
-      isLoaded: true,
-      tools,
-    };
-
-    // 각 툴을 메서드로 동적 생성
-    tools.forEach((tool) => {
-      const methodName = tool.name.startsWith(`${serverName}__`)
-        ? tool.name.replace(`${serverName}__`, '')
-        : tool.name;
-
-      serverProxy[methodName] = async (args?: unknown) => {
-        let safeArgs: Record<string, unknown> | undefined;
-        if (typeof args === 'undefined') {
-          safeArgs = undefined;
-        } else if (
-          typeof args === 'object' &&
-          args !== null &&
-          !Array.isArray(args)
-        ) {
-          safeArgs = args as Record<string, unknown>;
-        } else if (typeof args === 'string') {
-          try {
-            safeArgs = args.length
-              ? (JSON.parse(args) as Record<string, unknown>)
-              : {};
-          } catch {
-            safeArgs = { raw: args };
-          }
-        } else {
-          safeArgs = { value: args };
-        }
-        const mcpResponse: MCPResponse = await proxy.callTool(
-          serverName,
-          methodName,
-          safeArgs,
-        );
-
-        // Handle MCP errors
-        if (isMCPError(mcpResponse)) {
-          throw new Error(mcpResponse.error.message);
-        }
-
-        // Extract result from MCPResponse
-        if (isMCPSuccess(mcpResponse) && mcpResponse.result) {
-          // For content-store responses, try to parse JSON from text content
-          if (mcpResponse.result.content?.[0]?.type === 'text') {
-            const textContent = (
-              mcpResponse.result.content[0] as MCPTextContent
-            ).text;
-            try {
-              // Try to parse as JSON (most MCP responses are JSON)
-              return JSON.parse(textContent);
-            } catch {
-              // If JSON parsing fails, return as plain text
-              return textContent;
-            }
-          }
-
-          // Fallback: return structured content if available
-          if (mcpResponse.result.structuredContent) {
-            return mcpResponse.result.structuredContent;
-          }
-
-          // Final fallback: return the entire result object
-          return mcpResponse.result;
-        }
-
-        // If no valid result, throw an error
-        throw new Error('Invalid MCP response: no result data');
-      };
-    });
-
-    this.serverProxies.set(serverName, serverProxy);
-    logger.info('Created server proxy', {
-      serverName,
-      toolCount: tools.length,
-    });
-
-    return serverProxy as T;
-  }
-
-  cleanup() {
-    if (this.proxy) {
-      this.proxy.cleanup();
-      this.proxy = null;
-    }
-    this.initialized = false;
-    this.serverProxies.clear();
-  }
-}
-
-// 간소화된 useWebMCPServer hook
+/**
+ * Hook: useWebMCPServer
+ *
+ * Purpose:
+ * - Lazily obtain a dynamic proxy for a WebMCP server running in a Web Worker.
+ * - The returned proxy exposes methods for each tool the server provides.
+ *
+ * Parameters:
+ * - serverName: string — The MCP server module name (e.g., "content-store", "planning").
+ *
+ * Returns:
+ * - { server, loading, error, reload }
+ *   - server: T | null — Dynamic proxy with tool methods; null while loading/failed
+ *   - loading: boolean — True while either context or proxy is loading
+ *   - error: string | null — Last error message, if any
+ *   - reload: () => Promise<void> — Force reload of the server proxy
+ *
+ * Response Contract:
+ * When calling tool methods on the returned server proxy, the response follows this precedence:
+ * 1. `result.structuredContent` (preferred) → returned as-is for typed data
+ * 2. `result.content[0].text` → JSON.parse() attempted, falls back to raw string
+ * 3. Raw `result` object → returned as fallback
+ *
+ * This enables both structured servers (content-store) and text-only servers (planning)
+ * to work seamlessly with the same client interface.
+ *
+ * @example
+ * ```typescript
+ * // Structured response server (content-store)
+ * const { server } = useWebMCPServer<ContentStoreServer>('content-store');
+ * const result = await server.createStore({ metadata: { sessionId } });
+ * // result => { storeId: string, createdAt: string } (typed)
+ *
+ * // Text-only server (planning)
+ * const { server: planServer } = useWebMCPServer('planning');
+ * const todo = await planServer.add_todo({ name: 'Write docs' });
+ * // todo => string or parsed JSON
+ *
+ * // For both text and data, use toToolResult helper:
+ * import { toToolResult } from '@/lib/web-mcp/tool-result';
+ * const response = await proxy.callTool('server', 'tool', args);
+ * const both = toToolResult<MyType>(response);
+ * console.log(both.text, both.data);
+ * ```
+ *
+ * Behavior:
+ * - Automatically loads the server proxy on first render once context is initialized.
+ * - Tool methods are dynamically created with normalized names (server prefix removed).
+ * - All responses follow the consistent parsing contract for predictable behavior.
+ */
 export function useWebMCPServer<T extends WebMCPServerProxy>(
   serverName: string,
 ) {
   const [server, setServer] = useState<T | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const proxyManagerRef = useRef(WebMCPProxyManager.getInstance());
+  const { getServerProxy, isLoading: contextLoading } = useWebMCP();
 
   const loadServerProxy = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      const serverProxy =
-        await proxyManagerRef.current.getServerProxy<T>(serverName);
+      const serverProxy = await getServerProxy<T>(serverName);
       setServer(serverProxy);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
@@ -186,25 +81,18 @@ export function useWebMCPServer<T extends WebMCPServerProxy>(
     } finally {
       setLoading(false);
     }
-  }, [serverName]);
+  }, [serverName, getServerProxy]);
 
-  // 자동 로드
+  // Auto-load server proxy
   useEffect(() => {
-    if (!server) {
+    if (!contextLoading && !server) {
       loadServerProxy();
     }
-  }, [server, loadServerProxy]);
-
-  // 정리
-  useEffect(() => {
-    return () => {
-      // 컴포넌트 언마운트시 정리는 하지 않음 (전역 인스턴스 유지)
-    };
-  }, []);
+  }, [server, loadServerProxy, contextLoading]);
 
   return {
     server,
-    loading,
+    loading: loading || contextLoading,
     error,
     reload: loadServerProxy,
   } as const;

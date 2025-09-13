@@ -26,10 +26,16 @@
       ["src/features/tools/WebMCPToolProvider.tsx"]
     ],
     "../lib/web-mcp/mcp-worker.ts?worker",
-    ["../lib/web-mcp/mcp-worker.ts?worker", ["src/hooks/use-web-mcp-server.ts"]]
+    [
+      "../lib/web-mcp/mcp-worker.ts?worker",
+      ["src/hooks/use-web-mcp-server.ts"]
+    ],
+    ["@/lib/web-mcp/mcp-worker.ts?worker", ["src/context/WebMCPContext.tsx"]]
   ],
   "ignoreUnused": [
     "@mcp-ui/server",
+    "@radix-ui/react-alert-dialog",
+    "@radix-ui/react-collapsible",
     "@remote-dom/core",
     "postcss",
     "remark-gfm",
@@ -42,6 +48,7 @@
     "src/features/prompts/JailbreakSystemPrompt.tsx",
     "src/test/setup.ts",
     "src/test/types/test-types.ts",
-    "src/test/utils/html-test-utils.ts"
+    "src/test/utils/html-test-utils.ts",
+    "src/lib/web-mcp/examples/tool-result-usage.ts"
   ]
 }

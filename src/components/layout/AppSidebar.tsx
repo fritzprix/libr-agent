@@ -177,6 +177,28 @@ export default function AppSidebar({ onOpenSettings }: AppSidebarProps) {
                   </SidebarMenuButton>
                 </Link>
               </SidebarMenuItem>
+              <SidebarMenuItem>
+                <Link to="/webmcp/test">
+                  <SidebarMenuButton
+                    isActive={location.pathname === '/webmcp/test'}
+                    tooltip="WebMCP Server Test"
+                  >
+                    <BrainCircuit size={16} />
+                    <span>WebMCP Test</span>
+                  </SidebarMenuButton>
+                </Link>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <Link to="/dnd/test">
+                  <SidebarMenuButton
+                    isActive={location.pathname === '/dnd/test'}
+                    tooltip="DnD Test Page"
+                  >
+                    <TestTube size={16} />
+                    <span>DnD Test</span>
+                  </SidebarMenuButton>
+                </Link>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
