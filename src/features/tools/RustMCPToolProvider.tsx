@@ -75,7 +75,7 @@ export function RustMCPToolProvider() {
               >;
             }
 
-            const rawResult: MCPResponse = await callBuiltinTool(
+            const rawResult: MCPResponse<unknown> = await callBuiltinTool(
               serviceId,
               toolName,
               args,

@@ -2,7 +2,7 @@ import { useMCPServer } from './use-mcp-server';
 // import { useWebMCPTools } from './use-web-mcp';
 import { useBuiltInTool } from '@/features/tools';
 import { useCallback, useMemo, useRef, useEffect } from 'react';
-import { MCPResponse, MCPTool, ServiceInfo } from '@/lib/mcp-types';
+import { MCPContent, MCPResponse, MCPTool, ServiceInfo } from '@/lib/mcp-types';
 import { ToolCall } from '@/models/chat';
 import { getLogger } from '@/lib/logger';
 
@@ -191,7 +191,7 @@ export const useUnifiedMCP = () => {
 
   // Unified tool execution with stable references
   const executeToolCall = useCallback(
-    async (toolCall: ToolCall): Promise<MCPResponse> => {
+    async (toolCall: ToolCall): Promise<MCPResponse<unknown>> => {
       const calledToolName = toolCall.function.name;
 
       // Resolve the tool name to handle LLM calling base names instead of prefixed names
@@ -252,7 +252,7 @@ export const useUnifiedMCP = () => {
       };
 
       try {
-        let response: MCPResponse;
+        let response: MCPResponse<unknown>;
 
         if (toolType === 'BuiltInWeb') {
           throw new Error('Web MCP tools are currently disabled');
@@ -267,10 +267,12 @@ export const useUnifiedMCP = () => {
 
         // MCPResponse의 content에 serviceInfo 추가
         if (response.result?.content) {
-          response.result.content = response.result.content.map((content) => ({
-            ...content,
-            serviceInfo,
-          }));
+          response.result.content = response.result.content.map(
+            (content: MCPContent) => ({
+              ...content,
+              serviceInfo,
+            }),
+          );
         }
 
         return response;

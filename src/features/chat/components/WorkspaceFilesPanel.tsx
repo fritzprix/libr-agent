@@ -20,6 +20,12 @@ import {
   type DragAndDropEvent,
   type DragAndDropPayload,
 } from '@/context/DnDContext';
+import { useSessionContext } from '@/context/SessionContext';
+import { useChatContext } from '@/context/ChatContext';
+import { createId } from '@paralleldrive/cuid2';
+
+import { createToolMessagePair } from '@/lib/chat-utils';
+import { stringToMCPContentArray } from '@/lib/utils';
 
 const logger = getLogger('WorkspaceFilesPanel');
 
@@ -35,7 +41,10 @@ interface FileNode {
 }
 
 export function WorkspaceFilesPanel() {
-  const { listWorkspaceFiles, downloadWorkspaceFile } = useRustBackend();
+  const { listWorkspaceFiles, downloadWorkspaceFile, callBuiltinTool } =
+    useRustBackend();
+  const { current: session } = useSessionContext();
+  const { submit } = useChatContext();
   const [rootPath, setRootPath] = useState<string>('./');
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
   const [loading, setLoading] = useState(false);
@@ -176,19 +185,53 @@ export function WorkspaceFilesPanel() {
   // Handle external file drops from DnDContext
   const handleWorkspaceFileDrop = useCallback(
     async (paths: string[]) => {
+      if (!session?.id) return;
+
       logger.info('External files dropped on workspace', {
         fileCount: paths.length,
         targetPath: rootPath,
       });
 
-      // For now, just show a notification about the drop
-      // In a real implementation, you might want to move/copy these files
-      alert(`Files dropped on workspace: ${paths.join(', ')}`);
+      try {
+        for (const srcPath of paths) {
+          const fileName = srcPath.split('/').pop() || 'unknown';
+          const destPath = `${rootPath}/${fileName}`.replace(/\/+/g, '/');
+          const destRelPath = destPath.startsWith('./')
+            ? destPath.slice(2)
+            : destPath;
 
-      // Refresh the directory
-      await loadDirectory(rootPath);
+          // Call builtin workspace tool
+          const response = await callBuiltinTool('workspace', 'import_file', {
+            src_abs_path: srcPath,
+            dest_rel_path: destRelPath,
+          });
+
+          // Create tool messages for chat history
+          const toolCallId = createId();
+          const resultText =
+            typeof response.result === 'string'
+              ? response.result
+              : JSON.stringify(response.result);
+
+          const [toolCallMessage, toolResultMessage] = createToolMessagePair(
+            'import_file',
+            { src_abs_path: srcPath, dest_rel_path: destRelPath },
+            stringToMCPContentArray(resultText),
+            toolCallId,
+            session.id,
+          );
+
+          await submit([toolCallMessage, toolResultMessage]);
+        }
+
+        // Refresh directory after import
+        await loadDirectory(rootPath);
+      } catch (error) {
+        logger.error('File import failed', error);
+        // TODO: Show user-friendly error message
+      }
     },
-    [loadDirectory, rootPath],
+    [callBuiltinTool, submit, session, rootPath, loadDirectory],
   );
 
   // Subscribe to DnD events

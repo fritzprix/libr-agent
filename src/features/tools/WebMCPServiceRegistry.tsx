@@ -75,7 +75,10 @@ export function WebMCPServiceRegistry({
 
   // Call a tool on a specific server
   const executeTool = useCallback(
-    async (serviceId: string, call: ToolCall): Promise<MCPResponse> => {
+    async (
+      serviceId: string,
+      call: ToolCall,
+    ): Promise<MCPResponse<unknown>> => {
       if (!proxy) {
         throw new Error('WebMCP proxy not initialized');
       }

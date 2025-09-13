@@ -76,6 +76,7 @@ impl BuiltinMCPServer for WorkspaceServer {
             "search_files" => self.handle_search_files(args).await,
             "replace_lines_in_file" => self.handle_replace_lines_in_file(args).await,
             "grep" => self.handle_grep(args).await,
+            "import_file" => self.handle_import_file(args).await,
             // Code execution tools
             "execute_python" => self.handle_execute_python(args).await,
             "execute_typescript" => self.handle_execute_typescript(args).await,

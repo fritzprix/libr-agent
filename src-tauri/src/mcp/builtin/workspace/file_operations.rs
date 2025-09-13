@@ -604,4 +604,92 @@ impl WorkspaceServer {
             ),
         )
     }
+
+    pub async fn handle_import_file(&self, args: Value) -> MCPResponse {
+        let request_id = Self::generate_request_id();
+
+        let src_path_str = match args.get("src_abs_path").and_then(|v| v.as_str()) {
+            Some(path) => path,
+            None => {
+                return Self::error_response(
+                    request_id,
+                    -32602,
+                    "Missing required parameter: src_abs_path",
+                );
+            }
+        };
+
+        let dest_rel_path = match args.get("dest_rel_path").and_then(|v| v.as_str()) {
+            Some(path) => path,
+            None => {
+                return Self::error_response(
+                    request_id,
+                    -32602,
+                    "Missing required parameter: dest_rel_path",
+                );
+            }
+        };
+
+        // Validate source path exists and is readable
+        let src_path = match std::path::Path::new(src_path_str).canonicalize() {
+            Ok(path) => path,
+            Err(e) => {
+                error!("Invalid source path {}: {}", src_path_str, e);
+                return Self::error_response(
+                    request_id,
+                    -32603,
+                    &format!("Invalid source path: {e}"),
+                );
+            }
+        };
+
+        // Ensure source is a file, not a directory
+        if !src_path.is_file() {
+            return Self::error_response(
+                request_id,
+                -32602,
+                "Source path must be a file, not a directory",
+            );
+        }
+
+        // Use file manager to handle destination path validation and copying
+        let file_manager = self.get_file_manager();
+        match file_manager
+            .copy_file_from_external(&src_path, dest_rel_path)
+            .await
+        {
+            Ok(dest_path) => {
+                info!(
+                    "Successfully imported file from {} to {}",
+                    src_path.display(),
+                    dest_path.display()
+                );
+
+                // Get file size for reporting
+                let file_size = match fs::metadata(&dest_path).await {
+                    Ok(metadata) => metadata.len(),
+                    Err(_) => 0,
+                };
+
+                Self::success_response(
+                    request_id,
+                    &format!(
+                        "Successfully imported {} ({} bytes) to {}",
+                        src_path.display(),
+                        file_size,
+                        dest_rel_path
+                    ),
+                )
+            }
+            Err(e) => {
+                error!(
+                    "Failed to import file from {} to {}: {}",
+                    src_path.display(),
+                    dest_rel_path,
+                    e
+                );
+                Self::error_response(request_id, -32603, &format!("Failed to import file: {e}"))
+            }
+        }
+    }
 }

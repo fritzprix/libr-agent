@@ -1,12 +1,15 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useWebMCPServer } from '@/hooks/use-web-mcp-server';
 import { useMessageTrigger } from '@/hooks/use-message-trigger';
-import type { PlanningServerProxy, PlanningState } from '@/models/planning';
 import { getLogger } from '@/lib/logger';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { RefreshCw } from 'lucide-react';
+import {
+  PlanningServerProxy,
+  PlanningState,
+} from '@/lib/web-mcp/modules/planning-server';
 
 const logger = getLogger('ChatPlanningPanel');
 
@@ -137,7 +140,7 @@ export function ChatPlanningPanel() {
           <h4 className="font-medium text-sm text-muted-foreground mb-2">
             Tasks
           </h4>
-          <div className="space-y-2">
+          <div className="max-h-48 overflow-y-auto space-y-2">
             {planningState?.todos.length ? (
               planningState.todos.map((todo, index) => (
                 <div key={index} className="flex items-start gap-2 text-sm">

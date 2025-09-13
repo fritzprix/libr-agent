@@ -98,7 +98,9 @@ export function BrowserToolProvider() {
             inputSchema: tool.inputSchema,
           };
         }),
-      executeTool: async (toolCall: ToolCall): Promise<MCPResponse> => {
+      executeTool: async (
+        toolCall: ToolCall,
+      ): Promise<MCPResponse<unknown>> => {
         const toolName = toolCall.function.name;
         const tool = browserTools.find((t) => t.name === toolName);
 

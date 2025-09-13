@@ -128,6 +128,38 @@ pub fn create_search_files_tool() -> MCPTool {
     }
 }
 
+pub fn create_import_file_tool() -> MCPTool {
+    let mut props = HashMap::new();
+    props.insert(
+        "src_abs_path".to_string(),
+        string_prop(
+            Some(1),
+            Some(1000),
+            Some("Absolute path of source file to import"),
+        ),
+    );
+    props.insert(
+        "dest_rel_path".to_string(),
+        string_prop(
+            Some(1),
+            Some(1000),
+            Some("Relative path in workspace where file will be imported"),
+        ),
+    );
+
+    MCPTool {
+        name: "import_file".to_string(),
+        title: Some("Import File".to_string()),
+        description: "Import an external file into the workspace".to_string(),
+        input_schema: object_schema(
+            props,
+            vec!["src_abs_path".to_string(), "dest_rel_path".to_string()],
+        ),
+        output_schema: None,
+        annotations: None,
+    }
+}
+
 pub fn create_replace_lines_in_file_tool() -> MCPTool {
     let mut item_props = HashMap::new();
     item_props.insert(
