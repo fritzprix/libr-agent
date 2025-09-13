@@ -1,4 +1,5 @@
 import type { WebMCPServer, MCPTool, MCPResponse } from '@/lib/mcp-types';
+import { extractStructuredContent } from '@/lib/mcp-types';
 import { createMCPStructuredResponse } from '@/lib/mcp-response-utils';
 import type { JSONSchemaObject } from '@/lib/mcp-types';
 import type { ServiceContextOptions } from '@/features/tools';
@@ -22,6 +23,63 @@ import { parseRichFile } from './parser';
 // File size limits (in bytes)
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 const MAX_CONTENT_LENGTH = 10 * 1024 * 1024; // 10MB text content
+
+// Utility functions for better formatting
+function formatFileSize(bytes: number): string {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
+}
+
+function getFileExtension(filename: string): string {
+  const lastDotIndex = filename.lastIndexOf('.');
+  return lastDotIndex !== -1
+    ? filename.substring(lastDotIndex + 1).toLowerCase()
+    : 'unknown';
+}
+
+function getRelativeTime(date: Date): string {
+  const now = new Date();
+  const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+  if (diffInSeconds < 60) return 'just now';
+  if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+  if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
+  if (diffInSeconds < 604800)
+    return `${Math.floor(diffInSeconds / 60400)}d ago`;
+  if (diffInSeconds < 2592000)
+    return `${Math.floor(diffInSeconds / 604800)}w ago`;
+  return `${Math.floor(diffInSeconds / 2592000)}mo ago`;
+}
+
+function getMimeTypeDescription(mimeType: string): string {
+  const descriptions: Record<string, string> = {
+    'text/plain': 'Plain Text',
+    'text/html': 'HTML Document',
+    'text/css': 'CSS Stylesheet',
+    'text/javascript': 'JavaScript',
+    'text/markdown': 'Markdown',
+    'application/pdf': 'PDF Document',
+    'application/msword': 'Word Document',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+      'Word Document',
+    'application/vnd.ms-excel': 'Excel Spreadsheet',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+      'Excel Spreadsheet',
+    'application/vnd.ms-powerpoint': 'PowerPoint Presentation',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+      'PowerPoint Presentation',
+    'image/jpeg': 'JPEG Image',
+    'image/png': 'PNG Image',
+    'image/gif': 'GIF Image',
+    'image/webp': 'WebP Image',
+    'application/json': 'JSON File',
+    'application/xml': 'XML File',
+  };
+  return descriptions[mimeType] || mimeType;
+}
 
 // Custom error classes for better error handling
 class FileStoreError extends Error {
@@ -106,6 +164,18 @@ export interface KeywordSimilaritySearchInput {
   storeId: string;
   query: string;
   options?: { topN?: number; threshold?: number };
+}
+export interface ListContentOutput {
+  contents: ContentSummary[];
+  total: number;
+  hasMore: boolean;
+}
+export interface ReadContentOutput {
+  content: string;
+  lineRange: [number, number];
+}
+export interface KeywordSimilaritySearchOutput {
+  results: SearchResult[];
 }
 export type ContentSummary = AttachmentReference;
 
@@ -455,7 +525,7 @@ const textChunker = new TextChunker();
 // Tool implementation functions
 async function createStore(
   input: CreateStoreInput,
-): Promise<CreateStoreOutput> {
+): Promise<MCPResponse<CreateStoreOutput>> {
   const now = new Date();
   const store: FileStore = {
     id: `store_${Date.now()}`,
@@ -466,10 +536,18 @@ async function createStore(
     updatedAt: now,
   };
   await dbService.fileStores.upsert(store);
-  return { storeId: store.id, createdAt: now };
+  return createMCPStructuredResponse<CreateStoreOutput>(
+    `Store created with ID: ${store.id}`,
+    {
+      storeId: store.id,
+      createdAt: now,
+    },
+  );
 }
 
-async function addContent(input: AddContentInput): Promise<AddContentOutput> {
+async function addContent(
+  input: AddContentInput,
+): Promise<MCPResponse<AddContentOutput>> {
   try {
     logger.info('Starting addContent', {
       storeId: input.storeId,
@@ -560,17 +638,20 @@ async function addContent(input: AddContentInput): Promise<AddContentOutput> {
       const existingChunks = await dbUtils.getFileChunksByContent(
         existingContent.id,
       );
-      return {
-        storeId: input.storeId,
-        contentId: existingContent.id,
-        filename: existingContent.filename,
-        mimeType: existingContent.mimeType,
-        size: existingContent.size,
-        lineCount: existingContent.lineCount,
-        preview: existingContent.summary,
-        chunkCount: existingChunks.length,
-        uploadedAt: existingContent.uploadedAt,
-      };
+      return createMCPStructuredResponse<AddContentOutput>(
+        `Content already exists with ID: ${existingContent.id}`,
+        {
+          storeId: input.storeId,
+          contentId: existingContent.id,
+          filename: existingContent.filename,
+          mimeType: existingContent.mimeType,
+          size: existingContent.size,
+          lineCount: existingContent.lineCount,
+          preview: existingContent.summary,
+          chunkCount: existingChunks.length,
+          uploadedAt: existingContent.uploadedAt,
+        },
+      );
     }
 
     const contentId = `content_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
@@ -613,7 +694,7 @@ async function addContent(input: AddContentInput): Promise<AddContentOutput> {
       chunks: chunks.length,
     });
 
-    return {
+    return createMCPStructuredResponse(`Content added with ID: ${contentId}`, {
       storeId: input.storeId,
       contentId,
       filename: content.filename,
@@ -623,7 +704,7 @@ async function addContent(input: AddContentInput): Promise<AddContentOutput> {
       preview: content.summary,
       chunkCount: chunks.length,
       uploadedAt: fileMetadata.uploadedAt,
-    };
+    });
   } catch (error) {
     logger.error('Failed to add content', {
       storeId: input.storeId,
@@ -635,7 +716,7 @@ async function addContent(input: AddContentInput): Promise<AddContentOutput> {
 
 async function listContent(
   input: ListContentInput,
-): Promise<{ contents: ContentSummary[]; total: number; hasMore: boolean }> {
+): Promise<MCPResponse<ListContentOutput>> {
   const { storeId, pagination } = input;
   const limit = Math.min(pagination?.limit || 50, 100);
   const offset = Math.max(pagination?.offset || 0, 0);
@@ -663,7 +744,37 @@ async function listContent(
     );
 
     const hasMore = offset + limit < total;
-    return { contents: summaries, total, hasMore };
+    const pageInfo =
+      offset > 0
+        ? ` (showing ${offset + 1}-${offset + summaries.length} of ${total})`
+        : ` (total: ${total})`;
+
+    const formattedSummaries = await Promise.all(
+      summaries.map(async (s) => {
+        const extension = getFileExtension(s.filename);
+        const sizeFormatted = formatFileSize(s.size);
+        const timeAgo = getRelativeTime(new Date(s.uploadedAt));
+        const typeDescription = getMimeTypeDescription(s.mimeType);
+
+        // Get chunk count for this content
+        const chunks = await dbUtils.getFileChunksByContent(s.contentId);
+        const chunkCount = chunks.length;
+
+        return `📄 ${s.filename}
+   • Extension: .${extension}
+   • Size: ${sizeFormatted} (${s.size} bytes)
+   • Lines: ${s.lineCount}
+   • Type: ${typeDescription}
+   • Chunks: ${chunkCount}
+   • Uploaded: ${timeAgo}
+   • Preview: ${s.preview?.substring(0, 100)}${s.preview && s.preview.length > 100 ? '...' : ''}`;
+      }),
+    );
+
+    return createMCPStructuredResponse<ListContentOutput>(
+      `Found ${summaries.length} content items${pageInfo}${hasMore ? ' - more available' : ''}\n\n${formattedSummaries.join('\n\n')}`,
+      { contents: summaries, total, hasMore },
+    );
   } catch (error) {
     logger.error('Failed to list content', error);
     throw new FileStoreError(
@@ -676,7 +787,7 @@ async function listContent(
 
 async function readContent(
   input: ReadContentInput,
-): Promise<{ content: string; lineRange: [number, number] }> {
+): Promise<MCPResponse<ReadContentOutput>> {
   logger.info('Reading content', { input });
   try {
     const content = await dbService.fileContents.read(input.contentId);
@@ -702,10 +813,27 @@ async function readContent(
     }
 
     const selectedLines = lines.slice(fromLine - 1, toLine);
-    return {
-      content: selectedLines.join('\n'),
-      lineRange: [fromLine, toLine],
-    };
+
+    // Format content with line numbers and range information
+    const formattedContent = selectedLines
+      .map((line, index) => {
+        const lineNumber = fromLine + index;
+        const paddedLineNumber = lineNumber.toString().padStart(4, ' ');
+        return `${paddedLineNumber}| ${line}`;
+      })
+      .join('\n');
+
+    const totalLines = lines.length;
+    const selectedLineCount = toLine - fromLine + 1;
+    const rangeInfo = `Lines ${fromLine}-${toLine} of ${totalLines} (${selectedLineCount} lines)`;
+
+    return createMCPStructuredResponse(
+      `Content retrieved: ${rangeInfo}\n\n${formattedContent}`,
+      {
+        content: selectedLines.join('\n'),
+        lineRange: [fromLine, toLine],
+      },
+    );
   } catch (error) {
     logger.error('Failed to read content', error);
     throw error;
@@ -714,17 +842,56 @@ async function readContent(
 
 async function keywordSimilaritySearch(
   input: KeywordSimilaritySearchInput,
-): Promise<{ results: SearchResult[] }> {
+): Promise<MCPResponse<KeywordSimilaritySearchOutput>> {
   const options = {
     topN: input.options?.topN || 5,
-    threshold: input.options?.threshold || 0.0, // 임시로 0으로 변경하여 테스트
+    threshold: input.options?.threshold || 0.0,
   };
+
   const results = await searchEngine.search(
     input.storeId,
     input.query,
     options,
   );
-  return { results };
+
+  // Format search results with detailed information
+  const formattedResults = results.map((result, index) => {
+    const scorePercent = (result.score * 100).toFixed(1);
+    const lineInfo = `Lines ${result.lineRange[0]}-${result.lineRange[1]}`;
+    const relevanceIcon =
+      result.relevanceType === 'keyword'
+        ? '🔍'
+        : result.relevanceType === 'semantic'
+          ? '🧠'
+          : '🔗';
+
+    return `📄 **Result ${index + 1}** (${relevanceIcon} ${result.relevanceType})
+   • **File**: ${result.filename || 'Unknown'}
+   • **Score**: ${scorePercent}% relevance
+   • **Location**: ${lineInfo}
+   • **Chunk ID**: ${result.chunkId}
+   • **Content ID**: ${result.contentId}
+   • **Context**:
+${result.context
+  .split('\n')
+  .map((line) => `     ${line}`)
+  .join('\n')}`;
+  });
+
+  const searchSummary = `🔍 **Search Summary**
+   • **Query**: "${input.query}"
+   • **Store ID**: ${input.storeId}
+   • **Options**: Top ${options.topN} results, threshold ${options.threshold}
+   • **Results Found**: ${results.length} matches
+
+📋 **Search Results**`;
+
+  const fullMessage =
+    results.length > 0
+      ? `${searchSummary}\n\n${formattedResults.join('\n\n---\n\n')}`
+      : `${searchSummary}\n\n❌ No results found matching your query.`;
+
+  return createMCPStructuredResponse(fullMessage, { results });
 }
 
 const fileStoreServer: WebMCPServer = {
@@ -732,46 +899,31 @@ const fileStoreServer: WebMCPServer = {
   version: '1.1.0',
   description: 'File attachment and semantic search system using MCP protocol',
   tools,
-  async callTool(name: string, args: unknown): Promise<MCPResponse> {
+  async callTool(name: string, args: unknown): Promise<MCPResponse<unknown>> {
     logger.debug('File store tool called', { name, args });
     if (!searchEngine.isReady()) await searchEngine.initialize();
     switch (name) {
       case 'createStore': {
         const result = await createStore(args as CreateStoreInput);
-        return createMCPStructuredResponse(
-          `Store created with ID: ${result.storeId}`,
-          result as unknown as Record<string, unknown>,
-        );
+        return result;
       }
       case 'addContent': {
         const result = await addContent(args as AddContentInput);
-        return createMCPStructuredResponse(
-          `Content added with ID: ${result.contentId}`,
-          result as unknown as Record<string, unknown>,
-        );
+        return result;
       }
       case 'listContent': {
         const result = await listContent(args as ListContentInput);
-        return createMCPStructuredResponse(
-          `Found ${result.contents?.length || 0} content items`,
-          result as unknown as Record<string, unknown>,
-        );
+        return result;
       }
       case 'readContent': {
         const result = await readContent(args as ReadContentInput);
-        return createMCPStructuredResponse(
-          `Content retrieved: ${result.content?.length || 0} characters`,
-          result as unknown as Record<string, unknown>,
-        );
+        return result;
       }
       case 'keywordSimilaritySearch': {
         const result = await keywordSimilaritySearch(
           args as KeywordSimilaritySearchInput,
         );
-        return createMCPStructuredResponse(
-          `Search completed: ${result.results?.length || 0} results found`,
-          result as unknown as Record<string, unknown>,
-        );
+        return result;
       }
       default:
         throw new Error(`Unknown tool: ${name}`);
@@ -798,14 +950,21 @@ const fileStoreServer: WebMCPServer = {
       }
 
       // Get contents for this specific session's store
-      const result = await listContent({ storeId: sessionStore.storeId });
+      const result: MCPResponse<ListContentOutput> = await listContent({
+        storeId: sessionStore.storeId,
+      });
 
-      if (!result.contents || result.contents.length === 0) {
+      // Extract structured content using type-safe helper
+      const structuredContent = extractStructuredContent(result);
+      if (
+        !structuredContent?.contents ||
+        structuredContent.contents.length === 0
+      ) {
         return '# Attached Files\nNo files currently attached to this session.';
       }
 
-      const attachedResources = result.contents
-        .map((c) =>
+      const attachedResources = structuredContent.contents
+        .map((c: ContentSummary) =>
           JSON.stringify({
             storeId: c.storeId,
             contentId: c.contentId,
@@ -831,15 +990,11 @@ const fileStoreServer: WebMCPServer = {
 export interface ContentStoreServer extends WebMCPServerProxy {
   createStore(input: CreateStoreInput): Promise<CreateStoreOutput>;
   addContent(input: AddContentInput): Promise<AddContentOutput>;
-  listContent(
-    input: ListContentInput,
-  ): Promise<{ contents: ContentSummary[]; total: number; hasMore: boolean }>;
-  readContent(
-    input: ReadContentInput,
-  ): Promise<{ content: string; lineRange: [number, number] }>;
+  listContent(input: ListContentInput): Promise<ListContentOutput>;
+  readContent(input: ReadContentInput): Promise<ReadContentOutput>;
   keywordSimilaritySearch(
     input: KeywordSimilaritySearchInput,
-  ): Promise<{ results: SearchResult[] }>;
+  ): Promise<KeywordSimilaritySearchOutput>;
 }
 
 export default fileStoreServer;

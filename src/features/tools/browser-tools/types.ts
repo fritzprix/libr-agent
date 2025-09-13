@@ -5,7 +5,7 @@ import { MCPTool, MCPResponse } from '@/lib/mcp-types';
  * Used locally within browser tools to define executable tool objects
  */
 export type StrictLocalMCPTool = MCPTool & {
-  execute: (args: Record<string, unknown>) => Promise<MCPResponse>;
+  execute: (args: Record<string, unknown>) => Promise<MCPResponse<unknown>>;
 };
 
 /**
@@ -32,5 +32,5 @@ export type StrictBrowserMCPTool = MCPTool & {
   execute: (
     args: Record<string, unknown>,
     executeScript?: (sessionId: string, script: string) => Promise<string>,
-  ) => Promise<MCPResponse>;
+  ) => Promise<MCPResponse<unknown>>;
 };

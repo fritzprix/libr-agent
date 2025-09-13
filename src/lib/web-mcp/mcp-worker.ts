@@ -12,7 +12,6 @@ import type {
   WebMCPMessage,
   MCPResponse,
   MCPTool,
-  SamplingOptions,
 } from '../mcp-types';
 
 // Static imports for MCP server modules to avoid Vite dynamic import warnings
@@ -133,7 +132,9 @@ async function loadMCPServer(serverName: string): Promise<WebMCPServer> {
 /**
  * Handle MCP message and return appropriate response
  */
-async function handleMCPMessage(message: WebMCPMessage): Promise<MCPResponse> {
+async function handleMCPMessage(
+  message: WebMCPMessage,
+): Promise<MCPResponse<unknown>> {
   const { id, type, serverName, toolName, args } = message;
 
   log.debug('Handling MCP message', {
@@ -153,6 +154,7 @@ async function handleMCPMessage(message: WebMCPMessage): Promise<MCPResponse> {
           id,
           result: {
             content: [{ type: 'text', text: 'pong' }],
+            structuredContent: 'pong',
           },
         };
 
@@ -162,6 +164,12 @@ async function handleMCPMessage(message: WebMCPMessage): Promise<MCPResponse> {
         }
 
         const loadedServer = await loadMCPServer(serverName);
+        const serverInfo = {
+          name: loadedServer.name,
+          description: loadedServer.description,
+          version: loadedServer.version,
+          toolCount: loadedServer.tools.length,
+        };
         return {
           jsonrpc: '2.0',
           id,
@@ -169,18 +177,10 @@ async function handleMCPMessage(message: WebMCPMessage): Promise<MCPResponse> {
             content: [
               {
                 type: 'text',
-                text: JSON.stringify(
-                  {
-                    name: loadedServer.name,
-                    description: loadedServer.description,
-                    version: loadedServer.version,
-                    toolCount: loadedServer.tools.length,
-                  },
-                  null,
-                  2,
-                ),
+                text: JSON.stringify(serverInfo, null, 2),
               },
             ],
+            structuredContent: serverInfo,
           },
         };
       }
@@ -202,6 +202,7 @@ async function handleMCPMessage(message: WebMCPMessage): Promise<MCPResponse> {
                   text: JSON.stringify(allTools),
                 },
               ],
+              structuredContent: allTools,
             },
           };
         } else {
@@ -217,6 +218,7 @@ async function handleMCPMessage(message: WebMCPMessage): Promise<MCPResponse> {
                   text: JSON.stringify(server.tools),
                 },
               ],
+              structuredContent: server.tools,
             },
           };
         }
@@ -234,13 +236,6 @@ async function handleMCPMessage(message: WebMCPMessage): Promise<MCPResponse> {
         try {
           const result = await server.callTool(toolName, args);
 
-          log.debug('Tool call completed', {
-            id,
-            serverName,
-            toolName,
-            result,
-          });
-
           // Log the detailed tool result for debugging/UI inspection
           log.info('callTool result', { id, serverName, toolName, result });
 
@@ -250,15 +245,6 @@ async function handleMCPMessage(message: WebMCPMessage): Promise<MCPResponse> {
             ...result,
             id,
           };
-
-          log.debug('Returning response from worker', {
-            id,
-            serverName,
-            toolName,
-            responseKeys: Object.keys(response),
-            hasError: 'error' in response,
-            hasResult: 'result' in response,
-          });
 
           return response;
         } catch (toolError) {
@@ -285,43 +271,6 @@ async function handleMCPMessage(message: WebMCPMessage): Promise<MCPResponse> {
         }
       }
 
-      case 'sampleText': {
-        if (!serverName) {
-          throw new Error('Server name is required for sampleText');
-        }
-        const { prompt, options } = args as {
-          prompt: string;
-          options?: SamplingOptions;
-        };
-        const server = await loadMCPServer(serverName);
-
-        // Web MCP 서버에 sampling 메서드가 있는지 확인
-        if ('sampleText' in server && typeof server.sampleText === 'function') {
-          const result = await server.sampleText(prompt, options);
-          log.debug('Text sampling completed', {
-            id,
-            serverName,
-            prompt: prompt.substring(0, 100) + '...',
-          });
-          return {
-            jsonrpc: '2.0',
-            id,
-            result: {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify(result),
-                },
-              ],
-            },
-          };
-        } else {
-          throw new Error(
-            `Server ${serverName} does not support text sampling`,
-          );
-        }
-      }
-
       case 'getServiceContext': {
         if (!serverName) {
           throw new Error('Server name is required for getServiceContext');
@@ -339,6 +288,7 @@ async function handleMCPMessage(message: WebMCPMessage): Promise<MCPResponse> {
                   text: context,
                 },
               ],
+              structuredContent: context,
             },
           };
         }
@@ -354,6 +304,7 @@ async function handleMCPMessage(message: WebMCPMessage): Promise<MCPResponse> {
                 text: context,
               },
             ],
+            structuredContent: context,
           },
         };
       }
@@ -401,7 +352,7 @@ self.onmessage = async (event: MessageEvent<WebMCPMessage>) => {
       error: errorMessage,
     });
 
-    const errorResponse: MCPResponse = {
+    const errorResponse: MCPResponse<unknown> = {
       jsonrpc: '2.0',
       id: messageId,
       error: {

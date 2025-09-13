@@ -28,8 +28,11 @@ const fixInvalidToolCall = (toolCall: ToolCall): ToolCall => {
   return toolCall;
 };
 
-const hasUIResource = (message: MCPResponse): boolean => {
-  return message.result?.content?.some((m) => m.type === 'resource') || false;
+const hasUIResource = (message: MCPResponse<unknown>): boolean => {
+  return (
+    message.result?.content?.some((m: MCPContent) => m.type === 'resource') ||
+    false
+  );
 };
 
 export const useToolProcessor = ({ submit }: UseToolProcessorConfig) => {

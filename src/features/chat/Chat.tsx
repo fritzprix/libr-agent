@@ -22,7 +22,7 @@ import ToolsModal from '../tools/ToolsModal';
 import { TimeLocationSystemPrompt } from '../prompts/TimeLocationSystemPrompt';
 import { getLogger } from '@/lib/logger';
 import { useWebMCPServer } from '@/hooks/use-web-mcp-server';
-import { PlanningServerProxy } from '@/models/planning';
+import { PlanningServerProxy } from '@/lib/web-mcp/modules/planning-server';
 
 const logger = getLogger('Chat');
 
@@ -82,7 +82,7 @@ function Chat({ children }: ChatProps) {
         to: currentSessionId,
       });
 
-      planningServer.clear_session().catch((error) => {
+      planningServer.clear_session().catch((error: Error) => {
         logger.error('Failed to clear planning session', { error });
       });
     }

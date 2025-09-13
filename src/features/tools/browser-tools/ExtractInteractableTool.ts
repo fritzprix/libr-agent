@@ -251,8 +251,8 @@ export const extractInteractableTool: StrictBrowserMCPTool = {
     const validatedArgs = validateExtractInteractableArgs(args);
     if (!validatedArgs) {
       return createMCPErrorResponse(
-        -32602,
         'Invalid arguments provided - check sessionId, selector, includeHidden, and maxElements parameter types',
+        -32602,
         { toolName: 'extractInteractable', args },
         createId(),
       );
@@ -269,8 +269,8 @@ export const extractInteractableTool: StrictBrowserMCPTool = {
 
     if (!executeScript) {
       return createMCPErrorResponse(
-        -32603,
         'executeScript function is required for extractInteractable',
+        -32603,
         { toolName: 'extractInteractable', args },
         createId(),
       );
@@ -321,8 +321,8 @@ export const extractInteractableTool: StrictBrowserMCPTool = {
       });
 
       return createMCPErrorResponse(
+        `Failed to extract interactable elements: ${error instanceof Error ? error.message : String(error)}`,
         -32603,
-        `Failed to extract interactive elements: ${error instanceof Error ? error.message : String(error)}`,
         { toolName: 'extractInteractable', args },
         createId(),
       );
