@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useWebMCPServer } from '@/hooks/use-web-mcp-server';
-import type { PlanningServerProxy } from '@/models/planning';
+import type { PlanningServerProxy } from '@/lib/web-mcp/modules/planning-server';
 
 interface TestResult {
   id: string;

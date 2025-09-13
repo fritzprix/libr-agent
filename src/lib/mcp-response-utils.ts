@@ -7,7 +7,7 @@ import { createId } from '@paralleldrive/cuid2';
 export function createMCPTextResponse(
   text: string,
   id?: string | number | null,
-): MCPResponse {
+): MCPResponse<unknown> {
   return {
     jsonrpc: '2.0',
     id: id ?? createId(),
@@ -20,11 +20,11 @@ export function createMCPTextResponse(
 /**
  * Create a structured MCP response with both text and structured content
  */
-export function createMCPStructuredResponse(
+export function createMCPStructuredResponse<T>(
   text: string,
-  structuredContent: Record<string, unknown>,
+  structuredContent: T,
   id?: string | number | null,
-): MCPResponse {
+): MCPResponse<T> {
   return {
     jsonrpc: '2.0',
     id: id ?? createId(),
@@ -38,12 +38,12 @@ export function createMCPStructuredResponse(
 /**
  * Type guard to check if an object is an MCPResponse
  */
-export function isMCPResponse(obj: unknown): obj is MCPResponse {
+export function isMCPResponse(obj: unknown): obj is MCPResponse<unknown> {
   return (
     typeof obj === 'object' &&
     obj !== null &&
     'jsonrpc' in obj &&
-    (obj as MCPResponse).jsonrpc === '2.0'
+    (obj as MCPResponse<unknown>).jsonrpc === '2.0'
   );
 }
 
@@ -51,11 +51,11 @@ export function isMCPResponse(obj: unknown): obj is MCPResponse {
  * Create an MCP error response
  */
 export function createMCPErrorResponse(
-  code: number,
   message: string,
+  code: number = -32603,
   data?: unknown,
   id?: string | number | null,
-): MCPResponse {
+): MCPResponse<unknown> {
   return {
     jsonrpc: '2.0',
     id: id ?? createId(),
@@ -72,25 +72,10 @@ export function createMCPErrorResponse(
  */
 export function createMCPEmptyResponse(
   id?: string | number | null,
-): MCPResponse {
+): MCPResponse<unknown> {
   return {
     jsonrpc: '2.0',
     id: id ?? createId(),
     result: { content: [] },
-  };
-}
-
-/**
- * Create a simple MCP error response with default error code
- */
-export function createSimpleMCPErrorResponse(
-  message: string,
-  code: number = -32603,
-  id?: string | number | null,
-): MCPResponse {
-  return {
-    jsonrpc: '2.0',
-    id: id ?? createId(),
-    error: { code, message },
   };
 }

@@ -135,6 +135,56 @@ impl SecureFileManager {
         Ok(())
     }
 
+    pub async fn copy_file_from_external(
+        &self,
+        src_path: &std::path::Path,
+        dest_rel_path: &str,
+    ) -> Result<std::path::PathBuf, String> {
+        // Validate destination path using security validator
+        let dest_path = self
+            .security
+            .validate_path(dest_rel_path)
+            .map_err(|e| format!("Security error for destination: {e}"))?;
+
+        // Check source file exists and is a file
+        if !src_path.exists() {
+            return Err(format!(
+                "Source file does not exist: {}",
+                src_path.display()
+            ));
+        }
+
+        if !src_path.is_file() {
+            return Err(format!("Source path is not a file: {}", src_path.display()));
+        }
+
+        // Check source file size
+        if let Err(e) = self.security.validate_file_size(src_path, MAX_FILE_SIZE) {
+            return Err(format!("Source file size error: {e}"));
+        }
+
+        // Create parent directory if it doesn't exist
+        if let Some(parent) = dest_path.parent() {
+            if let Err(e) = fs::create_dir_all(parent).await {
+                error!("Failed to create parent directory {:?}: {}", parent, e);
+                return Err(format!("Failed to create parent directory: {e}"));
+            }
+        }
+
+        // Copy file
+        fs::copy(src_path, &dest_path)
+            .await
+            .map_err(|e| format!("Failed to copy file: {e}"))?;
+
+        info!(
+            "Successfully copied file from {} to {}",
+            src_path.display(),
+            dest_path.display()
+        );
+
+        Ok(dest_path)
+    }
+
     pub fn get_security_validator(&self) -> &SecurityValidator {
         &self.security
     }

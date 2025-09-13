@@ -173,56 +173,22 @@ export function WebMCPProvider({ children }: WebMCPProviderProps) {
             );
 
             // Handle MCP response processing per the response contract
-            if (
-              mcpResponse &&
-              typeof mcpResponse === 'object' &&
-              'error' in mcpResponse
-            ) {
+            if (mcpResponse.result && mcpResponse.result.structuredContent) {
+              const { structuredContent } = mcpResponse.result;
+              return structuredContent;
+            }
+
+            // Check if there's an error in the response
+            if (mcpResponse.error) {
               throw new Error(
-                (mcpResponse as { error: { message: string } }).error.message,
+                `MCP tool execution failed: ${methodName} - ${mcpResponse.error.message} (code: ${mcpResponse.error.code})`,
               );
             }
 
-            if (
-              mcpResponse &&
-              typeof mcpResponse === 'object' &&
-              'result' in mcpResponse
-            ) {
-              const result = (
-                mcpResponse as {
-                  result?: {
-                    content?: Array<{ type: string; text?: string }>;
-                    structuredContent?: unknown;
-                  };
-                }
-              ).result;
-
-              // Prefer structuredContent when available (typed data from server)
-              if (
-                result &&
-                'structuredContent' in result &&
-                result.structuredContent !== undefined
-              ) {
-                return result.structuredContent;
-              }
-
-              // Otherwise, fall back to content[0].text (optionally JSON)
-              if (
-                result?.content?.[0]?.type === 'text' &&
-                result.content[0].text
-              ) {
-                try {
-                  return JSON.parse(result.content[0].text);
-                } catch {
-                  return result.content[0].text;
-                }
-              }
-
-              // As a final fallback, return the raw result object
-              return result;
-            }
-
-            return mcpResponse;
+            // If we get here, the response doesn't have structuredContent
+            throw new Error(
+              `MCP tool execution failed: ${methodName} - Server did not return structured content in the expected format`,
+            );
           };
         });
 

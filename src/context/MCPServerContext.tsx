@@ -28,7 +28,7 @@ export interface MCPServerContextType {
   error?: string;
   status: Record<string, boolean>;
   connectServers: (mcpConfigs: MCPConfig) => Promise<void>;
-  executeToolCall: (toolCall: ToolCall) => Promise<MCPResponse>;
+  executeToolCall: (toolCall: ToolCall) => Promise<MCPResponse<unknown>>;
   sampleFromModel: (
     serverName: string,
     prompt: string,
@@ -123,7 +123,7 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
   );
 
   const executeToolCall = useCallback(
-    async (toolCall: ToolCall): Promise<MCPResponse> => {
+    async (toolCall: ToolCall): Promise<MCPResponse<unknown>> => {
       logger.debug(`Executing tool call:`, { toolCall });
       const aiProvidedToolName = toolCall.function.name;
 

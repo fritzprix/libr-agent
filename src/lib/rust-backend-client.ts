@@ -89,8 +89,8 @@ export async function callTool(
   serverName: string,
   toolName: string,
   args: Record<string, unknown>,
-): Promise<MCPResponse> {
-  return safeInvoke<MCPResponse>('call_mcp_tool', {
+): Promise<MCPResponse<unknown>> {
+  return safeInvoke<MCPResponse<unknown>>('call_mcp_tool', {
     serverName,
     toolName,
     arguments: args,
@@ -159,8 +159,8 @@ export async function callBuiltinTool(
   serverName: string,
   toolName: string,
   args: Record<string, unknown>,
-): Promise<MCPResponse> {
-  return safeInvoke<MCPResponse>('call_builtin_tool', {
+): Promise<MCPResponse<unknown>> {
+  return safeInvoke<MCPResponse<unknown>>('call_builtin_tool', {
     serverName,
     toolName,
     arguments: args,
@@ -179,8 +179,8 @@ export async function callToolUnified(
   serverName: string,
   toolName: string,
   args: Record<string, unknown>,
-): Promise<MCPResponse> {
-  return safeInvoke<MCPResponse>('call_tool_unified', {
+): Promise<MCPResponse<unknown>> {
+  return safeInvoke<MCPResponse<unknown>>('call_tool_unified', {
     serverName,
     toolName,
     arguments: args,

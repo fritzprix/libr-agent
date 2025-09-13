@@ -29,7 +29,7 @@ export interface ServiceContextOptions {
 
 export interface BuiltInService {
   listTools: () => MCPTool[];
-  executeTool: (toolCall: ToolCall) => Promise<MCPResponse>;
+  executeTool: (toolCall: ToolCall) => Promise<MCPResponse<unknown>>;
   loadService?: () => Promise<void>;
   unloadService?: () => Promise<void>;
   getServiceContext?: (options?: ServiceContextOptions) => Promise<string>;
@@ -48,7 +48,7 @@ interface BuiltInToolContextType {
   register: (serviceId: string, service: BuiltInService) => void;
   unregister: (serviceId: string) => void;
   availableTools: MCPTool[];
-  executeTool: (toolCall: ToolCall) => Promise<MCPResponse>;
+  executeTool: (toolCall: ToolCall) => Promise<MCPResponse<unknown>>;
   buildToolPrompt: () => Promise<string>; // 이름 변경 고려
   status: Record<string, ServiceStatus>;
 }

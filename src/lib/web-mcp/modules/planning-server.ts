@@ -1,14 +1,40 @@
-import type { MCPTool, WebMCPServer, MCPResponse } from '@/lib/mcp-types';
+import { WebMCPServerProxy } from '@/context/WebMCPContext';
 import {
-  createMCPTextResponse,
   createMCPStructuredResponse,
+  createMCPTextResponse,
 } from '@/lib/mcp-response-utils';
+import type { MCPResponse, MCPTool, WebMCPServer } from '@/lib/mcp-types';
 
-// Simplified data structures for Gemini API compatibility
 interface SimpleTodo {
   id: number;
   name: string;
   status: 'pending' | 'completed';
+}
+
+export interface PlanningState {
+  goal: string | null;
+  lastClearedGoal: string | null;
+  todos: SimpleTodo[];
+  observations: string[];
+}
+
+interface BaseOutput {
+  success: boolean;
+}
+
+interface CreateGoalOutput extends BaseOutput {
+  goal: string;
+}
+
+type ClearGoalOutput = BaseOutput;
+
+interface AddToDoOutput extends BaseOutput {
+  todos: SimpleTodo[];
+}
+
+interface ToggleTodoOutput extends BaseOutput {
+  todo: SimpleTodo | null;
+  todos: SimpleTodo[];
 }
 
 const MAX_OBSERVATIONS = 10;
@@ -20,33 +46,56 @@ class EphemeralState {
   private observations: string[] = [];
   private nextId = 1;
 
-  createGoal(goal: string): string {
+  createGoal(goal: string): MCPResponse<CreateGoalOutput> {
     this.goal = goal;
-    return this.goal;
+    return createMCPStructuredResponse<CreateGoalOutput>(
+      `Goal created: "${goal}"`,
+      {
+        goal,
+        success: true,
+      },
+    );
   }
 
-  clearGoal(): { success: boolean } {
+  clearGoal(): MCPResponse<ClearGoalOutput> {
     if (this.goal) {
       this.lastClearedGoal = this.goal;
+      return createMCPStructuredResponse<ClearGoalOutput>(
+        'Goal cleared successfully',
+        {
+          success: true,
+        },
+      );
     }
     this.goal = null;
-    return { success: true };
+    return createMCPStructuredResponse('No Goal to clear', { success: false });
   }
 
-  addTodo(name: string): { success: boolean; todos: SimpleTodo[] } {
+  addTodo(name: string): MCPResponse<AddToDoOutput> {
     const todo: SimpleTodo = {
       id: this.nextId++,
       name,
       status: 'pending',
     };
     this.todos.push(todo);
-    return { success: true, todos: this.todos };
+    return createMCPStructuredResponse<AddToDoOutput>(`Todo added: "${name}"`, {
+      success: true,
+      todos: this.todos,
+    });
   }
 
-  toggleTodo(id: number): { todo: SimpleTodo | null; todos: SimpleTodo[] } {
+  toggleTodo(id: number): MCPResponse<ToggleTodoOutput> {
     const todo = this.todos.find((t) => t.id === id);
     if (!todo) {
-      return { todo: null, todos: this.todos };
+      const availableIds = this.todos.map((t) => t.id);
+      return createMCPStructuredResponse<ToggleTodoOutput>(
+        `Todo with ID ${id} not found. Available IDs: ${availableIds.length > 0 ? availableIds.join(', ') : 'none'}`,
+        {
+          success: false,
+          todo: null,
+          todos: this.todos,
+        },
+      );
     }
 
     todo.status = todo.status === 'completed' ? 'pending' : 'completed';
@@ -56,20 +105,32 @@ class EphemeralState {
     //   this.manageCompletedTodoHistory();
     // }
 
-    return { todo, todos: this.todos };
+    return createMCPStructuredResponse(
+      `Todo "${todo.name}" marked as ${todo.status}`,
+      {
+        success: true,
+        todo,
+        todos: this.todos,
+      },
+    );
   }
 
-  clearTodos(): { success: boolean } {
+  clearTodos(): MCPResponse<BaseOutput> {
     this.todos = [];
-    return { success: true };
+    return createMCPStructuredResponse<BaseOutput>('All todos cleared', {
+      success: true,
+    });
   }
 
-  clear(): void {
+  clear(): MCPResponse<BaseOutput> {
     this.goal = null;
     this.lastClearedGoal = null;
     this.todos = [];
     this.observations = [];
     this.nextId = 1;
+    return createMCPStructuredResponse('Session state cleared', {
+      success: true,
+    });
   }
 
   getGoal(): string | null {
@@ -80,11 +141,15 @@ class EphemeralState {
     return this.todos;
   }
 
-  addObservation(observation: string): void {
+  addObservation(observation: string): MCPResponse<BaseOutput> {
     this.observations.push(observation);
     if (this.observations.length > MAX_OBSERVATIONS) {
       this.observations.shift();
     }
+    return createMCPStructuredResponse<BaseOutput>(
+      'Observation added to session',
+      { success: true },
+    );
   }
 
   getObservations(): string[] {
@@ -193,14 +258,18 @@ const tools: MCPTool[] = [
 
 // Planning server interface for better type safety
 interface PlanningServerMethods {
-  create_goal: (args: { goal: string }) => Promise<MCPResponse>;
-  clear_goal: () => Promise<MCPResponse>;
-  add_todo: (args: { name: string }) => Promise<MCPResponse>;
-  toggle_todo: (args: { id: number }) => Promise<MCPResponse>;
-  clear_todos: () => Promise<MCPResponse>;
-  clear_session: () => Promise<MCPResponse>;
-  add_observation: (args: { observation: string }) => Promise<MCPResponse>;
-  get_current_state: () => Promise<MCPResponse>;
+  create_goal: (args: {
+    goal: string;
+  }) => Promise<MCPResponse<CreateGoalOutput>>;
+  clear_goal: () => Promise<MCPResponse<ClearGoalOutput>>;
+  add_todo: (args: { name: string }) => Promise<MCPResponse<AddToDoOutput>>;
+  toggle_todo: (args: { id: number }) => Promise<MCPResponse<ToggleTodoOutput>>;
+  clear_todos: () => Promise<MCPResponse<BaseOutput>>;
+  clear_session: () => Promise<MCPResponse<BaseOutput>>;
+  add_observation: (args: {
+    observation: string;
+  }) => Promise<MCPResponse<BaseOutput>>;
+  get_current_state: () => Promise<MCPResponse<PlanningState>>;
 }
 
 const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
@@ -209,40 +278,20 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
   description:
     'Ephemeral planning and goal management for AI agents with bounded observation queue',
   tools,
-  async callTool(name: string, args: unknown): Promise<MCPResponse> {
+  async callTool(name: string, args: unknown): Promise<MCPResponse<unknown>> {
     // Debug logging for tool calls
     console.log(`[PlanningServer] callTool invoked: ${name}`, args);
 
     const typedArgs = args as Record<string, unknown>;
     switch (name) {
       case 'create_goal': {
-        const result = state.createGoal(typedArgs.goal as string);
-        return createMCPStructuredResponse(`Goal created: "${result}"`, {
-          goal: result,
-          action: 'create_goal',
-          success: true,
-        });
+        return state.createGoal(typedArgs.goal as string);
       }
       case 'clear_goal': {
-        const result = state.clearGoal();
-        return createMCPTextResponse(
-          result.success ? 'Goal cleared successfully' : 'Failed to clear goal',
-        );
+        return state.clearGoal();
       }
       case 'add_todo': {
-        const result = state.addTodo(typedArgs.name as string);
-        return createMCPStructuredResponse(
-          result.success
-            ? `Todo added: "${typedArgs.name}" (Total: ${result.todos.length})`
-            : 'Failed to add todo',
-          {
-            action: 'add_todo',
-            success: result.success,
-            todoName: typedArgs.name as string,
-            totalTodos: result.todos.length,
-            newTodo: result.todos[result.todos.length - 1],
-          },
-        );
+        return state.addTodo(typedArgs.name as string);
       }
       case 'toggle_todo': {
         const id = typedArgs.id as number;
@@ -252,43 +301,15 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
           );
         }
 
-        const result = state.toggleTodo(id);
-        if (result.todo) {
-          return createMCPStructuredResponse(
-            `Todo "${result.todo.name}" marked as ${result.todo.status}`,
-            {
-              action: 'toggle_todo',
-              success: true,
-              todo: result.todo,
-              allTodos: result.todos,
-            },
-          );
-        } else {
-          const availableIds = state.getTodos().map((t) => t.id);
-          return createMCPStructuredResponse(
-            `Todo with ID ${id} not found. Available IDs: ${availableIds.length > 0 ? availableIds.join(', ') : 'none'}`,
-            {
-              action: 'toggle_todo',
-              success: false,
-              requestedId: id,
-              availableIds,
-              error: 'TODO_NOT_FOUND',
-            },
-          );
-        }
+        return state.toggleTodo(id);
       }
       case 'clear_todos': {
-        const result = state.clearTodos();
-        return createMCPTextResponse(
-          result.success ? 'All todos cleared' : 'Failed to clear todos',
-        );
+        return state.clearTodos();
       }
       case 'clear_session':
-        state.clear();
-        return createMCPTextResponse('Session state cleared');
+        return state.clear();
       case 'add_observation': {
-        state.addObservation(typedArgs.observation as string);
-        return createMCPTextResponse('Observation added to session');
+        return state.addObservation(typedArgs.observation as string);
       }
       case 'get_current_state': {
         const currentState = {
@@ -298,18 +319,10 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
           observations: state.getObservations(),
         };
 
-        return {
-          jsonrpc: '2.0',
-          id: null,
-          result: {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(currentState),
-              },
-            ],
-          },
-        };
+        return createMCPStructuredResponse<PlanningState>(
+          `Current planning state: ${currentState.todos.length} todos, ${currentState.observations.length} observations`,
+          currentState,
+        );
       }
       default: {
         const availableTools = tools.map((t) => t.name).join(', ');
@@ -372,5 +385,16 @@ Use 'toggle_todo' with the ID number (not index) to mark todos as complete/incom
   `.trim();
   },
 };
+
+export interface PlanningServerProxy extends WebMCPServerProxy {
+  create_goal: (args: { goal: string }) => Promise<CreateGoalOutput>;
+  clear_goal: () => Promise<ClearGoalOutput>;
+  add_todo: (args: { name: string }) => Promise<AddToDoOutput>;
+  toggle_todo: (args: { index: number }) => Promise<ToggleTodoOutput>;
+  clear_todos: () => Promise<BaseOutput>;
+  clear_session: () => Promise<BaseOutput>;
+  add_observation: (args: { observation: string }) => Promise<BaseOutput>;
+  get_current_state: () => Promise<PlanningState>;
+}
 
 export default planningServer;

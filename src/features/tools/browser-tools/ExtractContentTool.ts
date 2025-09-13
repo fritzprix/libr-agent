@@ -182,8 +182,8 @@ export const extractPageContentTool: StrictBrowserMCPTool = {
     const validatedArgs = validateExtractPageContentArgs(args);
     if (!validatedArgs) {
       return createMCPErrorResponse(
-        -32602,
         'Invalid arguments provided - check sessionId type and other parameter types',
+        -32602,
         { toolName: 'extractPageContent', args },
         createId(),
       );
@@ -198,8 +198,8 @@ export const extractPageContentTool: StrictBrowserMCPTool = {
     // executeScript 함수 존재 검증
     if (!executeScript) {
       return createMCPErrorResponse(
-        -32603,
         'executeScript function is required for extractPageContent',
+        -32603,
         { toolName: 'extractPageContent', args },
         createId(),
       );
@@ -219,8 +219,8 @@ export const extractPageContentTool: StrictBrowserMCPTool = {
           htmlSize: rawHtml.length,
         });
         return createMCPErrorResponse(
-          -32603,
           `Content conversion failed: ${conversionError instanceof Error ? conversionError.message : String(conversionError)}`,
+          -32603,
           { toolName: 'extractContent', args },
           createId(),
         );
@@ -268,9 +268,9 @@ export const extractPageContentTool: StrictBrowserMCPTool = {
         sessionId,
       });
       return createMCPErrorResponse(
-        -32603,
         `Failed to extract page content: ${error instanceof Error ? error.message : String(error)}`,
-        { toolName: 'extractPageContent', args },
+        -32603,
+        { toolName: 'extractPageContent', args, error },
         createId(),
       );
     }

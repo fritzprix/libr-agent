@@ -107,7 +107,7 @@ export async function checkElementState(
 (function() {
   const selector = ${JSON.stringify(selector)};
   const action = ${JSON.stringify(action)};
-  
+
   try {
     const el = document.querySelector(selector);
     if (!el) return JSON.stringify({ exists: false, selector });
@@ -115,11 +115,11 @@ export async function checkElementState(
     const rect = el.getBoundingClientRect();
     const style = window.getComputedStyle(el);
     const visible = !!(rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden');
-    
+
     if (action === 'input') {
       const disabled = el.disabled || el.hasAttribute('disabled') || el.readOnly || el.hasAttribute('readonly');
       const inputable = visible && !disabled && style.pointerEvents !== 'none';
-      
+
       return JSON.stringify({
         exists: true,
         visible,
@@ -138,7 +138,7 @@ export async function checkElementState(
       });
     } else {
       const clickable = visible && style.pointerEvents !== 'none' && !el.disabled;
-      
+
       return JSON.stringify({
         exists: true,
         visible,
@@ -300,7 +300,7 @@ export function formatBrowserResult(raw: unknown): string {
 /**
  * Format browser result and wrap in MCPResponse for strict tool compatibility
  */
-export function formatBrowserResultAsMCP(raw: unknown): MCPResponse {
+export function formatBrowserResultAsMCP(raw: unknown): MCPResponse<unknown> {
   const textResult = formatBrowserResult(raw);
   return createMCPTextResponse(textResult);
 }

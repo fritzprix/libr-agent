@@ -12,7 +12,6 @@ import {
   MCPTool,
   MCPResponse,
 } from '../mcp-types';
-import { toToolResult } from './tool-result';
 import { getLogger } from '../logger';
 
 const logger = getLogger('WebMCPProxy');
@@ -152,7 +151,7 @@ export class WebMCPProxy {
     });
   }
 
-  private handleWorkerMessage(event: MessageEvent<MCPResponse>): void {
+  private handleWorkerMessage(event: MessageEvent<MCPResponse<unknown>>): void {
     const response = event.data;
 
     logger.debug('Received worker message', {
@@ -230,36 +229,19 @@ export class WebMCPProxy {
    * @param expectJson - Whether to expect/parse JSON from text content
    * @returns Parsed response using ToolResult precedence rules
    */
-  private parseResponse<T = unknown>(
-    response: MCPResponse,
-    expectJson = false,
-  ): T {
-    const result = toToolResult<T>(response);
-
+  private parseResponse<T = unknown>(response: MCPResponse<T>): T {
     // Prefer structured data when available
-    if (result.data !== undefined) {
-      return result.data;
-    }
 
-    // Handle text content
-    if (result.text) {
-      if (expectJson) {
-        try {
-          return JSON.parse(result.text) as T;
-        } catch {
-          // If JSON parsing fails, fall back to text
-          return result.text as unknown as T;
-        }
-      }
-      return result.text as unknown as T;
+    if (response.result && response.result.structuredContent) {
+      return response.result?.structuredContent as T;
     }
-
-    // Fallback to raw result
-    return result.raw as unknown as T;
+    throw new Error('No structured content available in MCP response');
   }
 
   async ping(): Promise<string> {
-    const response = await this.sendMessage<MCPResponse>({ type: 'ping' });
+    const response = await this.sendMessage<MCPResponse<unknown>>({
+      type: 'ping',
+    });
     const result = this.parseResponse<string>(response);
     return result || 'pong';
   }
@@ -270,7 +252,7 @@ export class WebMCPProxy {
     version?: string;
     toolCount: number;
   }> {
-    const response = await this.sendMessage<MCPResponse>({
+    const response = await this.sendMessage<MCPResponse<unknown>>({
       type: 'loadServer',
       serverName,
     });
@@ -279,21 +261,23 @@ export class WebMCPProxy {
       description?: string;
       version?: string;
       toolCount: number;
-    }>(response, true);
+    }>(response);
   }
 
   async listAllTools(): Promise<MCPTool[]> {
-    const response = await this.sendMessage<MCPResponse>({ type: 'listTools' });
-    const result = this.parseResponse<MCPTool[]>(response, true);
+    const response = await this.sendMessage<MCPResponse<unknown>>({
+      type: 'listTools',
+    });
+    const result = this.parseResponse<MCPTool[]>(response);
     return Array.isArray(result) ? result : [];
   }
 
   async listTools(serverName: string): Promise<MCPTool[]> {
-    const response = await this.sendMessage<MCPResponse>({
+    const response = await this.sendMessage<MCPResponse<unknown>>({
       type: 'listTools',
       serverName,
     });
-    const result = this.parseResponse<MCPTool[]>(response, true);
+    const result = this.parseResponse<MCPTool[]>(response);
     return Array.isArray(result) ? result : [];
   }
 
@@ -301,8 +285,8 @@ export class WebMCPProxy {
     serverName: string,
     toolName: string,
     args: Record<string, unknown> = {},
-  ): Promise<MCPResponse> {
-    return this.sendMessage<MCPResponse>({
+  ): Promise<MCPResponse<unknown>> {
+    return this.sendMessage<MCPResponse<unknown>>({
       type: 'callTool',
       serverName,
       toolName,
@@ -311,7 +295,7 @@ export class WebMCPProxy {
   }
 
   async getServiceContext(serverName: string): Promise<string> {
-    const response = await this.sendMessage<MCPResponse>({
+    const response = await this.sendMessage<MCPResponse<unknown>>({
       type: 'getServiceContext',
       serverName,
     });

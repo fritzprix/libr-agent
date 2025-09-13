@@ -188,9 +188,9 @@ export interface SamplingRequest {
   options?: SamplingOptions;
 }
 
-export interface MCPResult {
+export interface MCPResult<T = unknown> {
   content?: MCPContent[];
-  structuredContent?: Record<string, unknown>;
+  structuredContent?: T;
   isError?: boolean; // MCP 표준: 도구 실행 에러 플래그
 }
 
@@ -212,7 +212,7 @@ export interface MCPError {
   data?: unknown;
 }
 
-export interface SamplingResponse extends MCPResponse {
+export interface SamplingResponse extends MCPResponse<unknown> {
   result?: SamplingResult;
 }
 
@@ -220,10 +220,10 @@ export interface SamplingResponse extends MCPResponse {
  * 표준 MCP 응답 (JSON-RPC 2.0 사양 준수)
  * 모든 MCP 응답은 이 형식을 따라야 합니다.
  */
-export interface MCPResponse {
+export interface MCPResponse<T> {
   jsonrpc: '2.0';
   id: string | number | null;
-  result?: MCPResult | SamplingResult;
+  result?: MCPResult<T> | SamplingResult;
   error?: MCPError;
 }
 
@@ -231,7 +231,7 @@ export interface MCPResponse {
  * Extended MCP Response with service context information
  * Service context를 보존하여 UI에서 정확한 tool 재호출을 지원
  */
-export interface ExtendedMCPResponse extends MCPResponse {
+export interface ExtendedMCPResponse extends MCPResponse<unknown> {
   serviceInfo?: {
     serverName: string;
     toolName: string;
@@ -243,7 +243,7 @@ export interface ExtendedMCPResponse extends MCPResponse {
  * Check if response is ExtendedMCPResponse (type guard)
  */
 export function isExtendedResponse(
-  response: MCPResponse,
+  response: MCPResponse<unknown>,
 ): response is ExtendedMCPResponse {
   return response && typeof response === 'object' && 'serviceInfo' in response;
 }
@@ -369,8 +369,8 @@ export function createObjectSchema(options?: {
  * MCP 응답이 성공인지 확인 (타입 가드)
  */
 export function isMCPSuccess(
-  response: MCPResponse,
-): response is MCPResponse & { result: MCPResult } {
+  response: MCPResponse<unknown>,
+): response is MCPResponse<unknown> & { result: MCPResult } {
   return response.error === undefined && response.result !== undefined;
 }
 
@@ -378,8 +378,8 @@ export function isMCPSuccess(
  * MCP 응답이 에러인지 확인 (타입 가드)
  */
 export function isMCPError(
-  response: MCPResponse,
-): response is MCPResponse & { error: MCPError } {
+  response: MCPResponse<unknown>,
+): response is MCPResponse<unknown> & { error: MCPError } {
   return response.error !== undefined;
 }
 
@@ -391,60 +391,33 @@ export function isValidMCPResult(result: MCPResult): boolean {
 }
 
 /**
- * MCP 응답을 채팅 시스템용 문자열로 변환
+ * MCPResponse에서 structuredContent를 안전하게 추출하는 타입 가드
  */
-export function mcpResponseToString(response: MCPResponse): string {
-  if (isMCPError(response)) {
-    return JSON.stringify({
-      error: response.error.message,
-      success: false,
-    });
+export function extractStructuredContent<T>(
+  response: MCPResponse<T>,
+): T | null {
+  if (!response.result || response.error) {
+    return null;
   }
 
-  if (isMCPSuccess(response) && response.result) {
-    if (response.result.content) {
-      const textContent = response.result.content
-        .filter((c) => c.type === 'text')
-        .map((c) => (c as MCPTextContent).text)
-        .join('\n');
-
-      // content에 에러가 포함되어 있는지 확인
-      if (
-        textContent &&
-        (textContent.includes('"error":') ||
-          textContent.includes('\\"error\\":'))
-      ) {
-        try {
-          const parsed = JSON.parse(textContent);
-          if (parsed.error) {
-            return JSON.stringify({
-              error: parsed.error,
-              success: false,
-            });
-          }
-        } catch {
-          // JSON 파싱 실패 시 원본 반환하지만 에러로 표시
-          return JSON.stringify({
-            error: textContent,
-            success: false,
-          });
-        }
-      }
-
-      if (textContent) return textContent;
-    }
-    if (response.result.structuredContent) {
-      return JSON.stringify(response.result.structuredContent);
-    }
-    // content 와 structuredContent 모두 없는 경우
-    return JSON.stringify(response.result);
+  // SamplingResult가 아닌 일반 MCPResult인지 확인
+  if ('sampling' in response.result) {
+    return null;
   }
 
-  // 이론적으로 도달하면 안 되는 경로
-  return JSON.stringify({
-    error: 'Invalid MCP Response structure',
-    success: false,
-  });
+  return (response.result as MCPResult<T>).structuredContent || null;
+}
+
+/**
+ * MCPResponse가 성공적이고 structuredContent를 가지는지 타입 가드
+ */
+export function hasStructuredContent<T>(
+  response: MCPResponse<T>,
+): response is MCPResponse<T> & {
+  result: MCPResult<T> & { structuredContent: T };
+} {
+  const structured = extractStructuredContent(response);
+  return structured !== null && structured !== undefined;
 }
 
 // ========================================
@@ -459,7 +432,7 @@ export interface WebMCPServer {
   description?: string;
   version?: string;
   tools: MCPTool[];
-  callTool: (name: string, args: unknown) => Promise<MCPResponse>;
+  callTool: (name: string, args: unknown) => Promise<MCPResponse<unknown>>;
   sampleText?: (
     prompt: string,
     options?: SamplingOptions,
