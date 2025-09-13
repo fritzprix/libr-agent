@@ -1,5 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { getCurrentWebview } from '@tauri-apps/api/webview';
+import React, { useCallback } from 'react';
 import { useSessionContext } from '@/context/SessionContext';
 import { useResourceAttachment } from '@/context/ResourceAttachmentContext';
 import { useRustBackend } from '@/hooks/use-rust-backend';
@@ -8,11 +7,6 @@ import { getLogger } from '@/lib/logger';
 const logger = getLogger('FileAttachment');
 
 export function useFileAttachment() {
-  const [dragState, setDragState] = useState<'none' | 'valid' | 'invalid'>(
-    'none',
-  );
-  const dropTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
-
   const { current: currentSession } = useSessionContext();
   const {
     pendingFiles,
@@ -80,7 +74,15 @@ export function useFileAttachment() {
             'unknown';
 
           const supportedExtensions = /\.(txt|md|json|pdf|docx|xlsx)$/i;
+
+          logger.info('Processing dropped file', {
+            filePath,
+            filename,
+            supportedExtensions: supportedExtensions.source,
+          });
+
           if (!supportedExtensions.test(filename)) {
+            logger.info('Unsupported file format', { filename });
             alert(`File "${filename}" format is not supported.`);
             continue;
           }
@@ -257,63 +259,15 @@ export function useFileAttachment() {
     const supportedExtensions = /\.(txt|md|json|pdf|docx|xlsx)$/i;
     return paths.every((path: string) => {
       const filename = path.split('/').pop() || path.split('\\').pop() || '';
-      return supportedExtensions.test(filename);
+      const isValid = supportedExtensions.test(filename);
+      logger.info('Validating file extension', {
+        path,
+        filename,
+        isValid,
+        supportedExtensions: supportedExtensions.source,
+      });
+      return isValid;
     });
-  }, []);
-
-  const handleFileDrop = useCallback(
-    (paths: string[]) => {
-      // Clear existing timeout
-      if (dropTimeoutRef.current) {
-        clearTimeout(dropTimeoutRef.current);
-      }
-
-      // Short delay to prevent duplicate events
-      dropTimeoutRef.current = setTimeout(() => {
-        logger.info('Files dropped, processing:', paths);
-        processFileDrop(paths);
-      }, 10);
-    },
-    [processFileDrop],
-  );
-
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-
-    const setupDragDrop = async () => {
-      try {
-        logger.debug('Setting up drag and drop listener...');
-        const webview = getCurrentWebview();
-        unlisten = await webview.onDragDropEvent((event) => {
-          logger.debug('Drag drop event received:', event);
-
-          if (event.payload.type === 'enter') {
-            const isValid = validateFiles(event.payload.paths);
-            setDragState(isValid ? 'valid' : 'invalid');
-          } else if (event.payload.type === 'drop') {
-            setDragState('none');
-            handleFileDrop(event.payload.paths);
-          } else if (event.payload.type === 'leave') {
-            setDragState('none');
-          }
-        });
-        logger.debug('Drag and drop listener setup complete');
-      } catch (error) {
-        logger.error('Failed to setup drag and drop listener:', error);
-      }
-    };
-
-    setupDragDrop();
-
-    return () => {
-      logger.debug('Cleaning up drag and drop listener...');
-      if (unlisten) {
-        unlisten();
-      }
-      if (dropTimeoutRef.current) {
-        clearTimeout(dropTimeoutRef.current);
-      }
-    };
   }, []);
 
   return {
@@ -323,8 +277,9 @@ export function useFileAttachment() {
     removeFile,
     clearPendingFiles,
     isAttachmentLoading,
-    dragState,
     handleFileAttachment,
     getMimeType,
+    processFileDrop,
+    validateFiles,
   };
 }

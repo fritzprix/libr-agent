@@ -188,6 +188,17 @@ export default function AppSidebar({ onOpenSettings }: AppSidebarProps) {
                   </SidebarMenuButton>
                 </Link>
               </SidebarMenuItem>
+              <SidebarMenuItem>
+                <Link to="/dnd/test">
+                  <SidebarMenuButton
+                    isActive={location.pathname === '/dnd/test'}
+                    tooltip="DnD Test Page"
+                  >
+                    <TestTube size={16} />
+                    <span>DnD Test</span>
+                  </SidebarMenuButton>
+                </Link>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
