@@ -110,7 +110,7 @@ class EphemeralState {
       {
         success: true,
         todo,
-        allTodos: this.todos,
+        todos: this.todos,
       },
     );
   }
