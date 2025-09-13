@@ -235,7 +235,7 @@ export class WebMCPProxy {
     if (response.result && response.result.structuredContent) {
       return response.result?.structuredContent as T;
     }
-    throw new Error('');
+    throw new Error('No structured content available in MCP response');
   }
 
   async ping(): Promise<string> {
