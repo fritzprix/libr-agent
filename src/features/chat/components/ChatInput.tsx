@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useRef, useEffect } from 'react';
 import { Button, FileAttachment, Input } from '@/components/ui';
 import { Send, Square, Loader2 } from 'lucide-react';
 import { useAssistantContext } from '@/context/AssistantContext';
@@ -9,6 +9,11 @@ import { getLogger } from '@/lib/logger';
 import { AttachmentReference } from '@/models/chat';
 import { stringToMCPContentArray } from '@/lib/utils';
 import { createUserMessage } from '@/lib/chat-utils';
+import {
+  useDnDContext,
+  type DragAndDropEvent,
+  type DragAndDropPayload,
+} from '@/context/DnDContext';
 
 const logger = getLogger('ChatInput');
 
@@ -18,6 +23,11 @@ interface ChatInputProps {
 
 export function ChatInput({ children }: ChatInputProps) {
   const [input, setInput] = useState<string>('');
+  const [dragState, setDragState] = useState<'none' | 'valid' | 'invalid'>(
+    'none',
+  );
+  const chatInputRef = useRef<HTMLFormElement>(null);
+  const { subscribe } = useDnDContext();
 
   const { current: currentSession } = useSessionContext();
   const { currentAssistant } = useAssistantContext();
@@ -34,9 +44,10 @@ export function ChatInput({ children }: ChatInputProps) {
     commitPendingFiles,
     clearPendingFiles,
     isAttachmentLoading,
-    dragState,
     handleFileAttachment,
     removeFile,
+    processFileDrop,
+    validateFiles,
   } = useFileAttachment();
 
   const attachedFiles = pendingFiles;
@@ -112,6 +123,26 @@ export function ChatInput({ children }: ChatInputProps) {
     cancel();
   }, [cancel]);
 
+  useEffect(() => {
+    const handler = (event: DragAndDropEvent, payload: DragAndDropPayload) => {
+      if (event === 'drag-over') {
+        logger.info('Drag Over ', { event, payload });
+        const isValid = payload.paths ? validateFiles(payload.paths) : false;
+        setDragState(isValid ? 'valid' : 'invalid');
+      } else if (event === 'drop') {
+        setDragState('none');
+        if (payload.paths) {
+          processFileDrop(payload.paths);
+        }
+      } else if (event === 'leave') {
+        setDragState('none');
+      }
+    };
+
+    const unsub = subscribe(chatInputRef, handler, { priority: 10 });
+    return () => unsub();
+  }, [subscribe, processFileDrop, validateFiles]);
+
   const removeAttachedFile = React.useCallback(
     (filename: string) => {
       const fileToRemove = attachedFiles.find(
@@ -126,6 +157,7 @@ export function ChatInput({ children }: ChatInputProps) {
 
   return (
     <form
+      ref={chatInputRef}
       onSubmit={handleSubmit}
       className={`px-4 py-4 border-t flex items-center gap-2 transition-colors ${
         dragState === 'valid'
