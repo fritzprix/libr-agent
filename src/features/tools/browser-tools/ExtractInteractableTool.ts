@@ -321,7 +321,7 @@ export const extractInteractableTool: StrictBrowserMCPTool = {
       });
 
       return createMCPErrorResponse(
-        `Failed to extract interactable elements: ${error instanceof Error ? error.message : String(error)}`,
+        `Failed to extract interactive elements: ${error instanceof Error ? error.message : String(error)}`,
         -32603,
         { toolName: 'extractInteractable', args },
         createId(),
