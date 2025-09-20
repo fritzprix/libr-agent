@@ -529,13 +529,10 @@ async fn write_file(
 
 /// Session-aware workspace file write command
 #[tauri::command]
-async fn workspace_write_file(
-    file_path: String,
-    content: Vec<u8>,
-) -> Result<(), String> {
-    let session_manager = get_session_manager()
-        .map_err(|e| format!("Session manager error: {e}"))?;
-    
+async fn workspace_write_file(file_path: String, content: Vec<u8>) -> Result<(), String> {
+    let session_manager =
+        get_session_manager().map_err(|e| format!("Session manager error: {e}"))?;
+
     let session_file_manager = session_manager.get_file_manager();
     session_file_manager.write_file(&file_path, &content).await
 }
