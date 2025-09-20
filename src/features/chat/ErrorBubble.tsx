@@ -100,9 +100,7 @@ export const ErrorBubble: React.FC<ErrorBubbleProps> = ({
       className={getErrorColor(message.error?.type || 'UNKNOWN_ERROR')}
     >
       <div className="space-y-3">
-        <p className="text-muted-foreground">
-          {message.error?.displayMessage}
-        </p>
+        <p className="text-muted-foreground">{message.error?.displayMessage}</p>
         {message.error?.recoverable && (
           <Button
             onClick={handleRetry}

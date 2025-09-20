@@ -58,8 +58,8 @@ export const classifyAIServiceError = (
   if (
     error instanceof Error &&
     (error.message.includes('network') ||
-     error.message.includes('fetch') ||
-     error.message.includes('Failed to fetch'))
+      error.message.includes('fetch') ||
+      error.message.includes('Failed to fetch'))
   ) {
     return {
       displayMessage:
@@ -79,9 +79,9 @@ export const classifyAIServiceError = (
   if (
     error instanceof Error &&
     (error.message.includes('API key') ||
-     error.message.includes('authentication') ||
-     error.message.includes('401') ||
-     error.message.includes('403'))
+      error.message.includes('authentication') ||
+      error.message.includes('401') ||
+      error.message.includes('403'))
   ) {
     return {
       displayMessage:
@@ -101,8 +101,8 @@ export const classifyAIServiceError = (
   if (
     error instanceof Error &&
     (error.message.includes('rate limit') ||
-     error.message.includes('429') ||
-     error.message.includes('quota'))
+      error.message.includes('429') ||
+      error.message.includes('quota'))
   ) {
     return {
       displayMessage:

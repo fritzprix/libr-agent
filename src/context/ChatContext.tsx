@@ -47,7 +47,12 @@ interface ChatProviderProps {
 const DEFAULT_SYSTEM_PROMPT = 'You are a helpful assistant.';
 
 export function ChatProvider({ children }: ChatProviderProps) {
-  const { messages: history, addMessage, addMessages, updateMessage } = useSessionHistory();
+  const {
+    messages: history,
+    addMessage,
+    addMessages,
+    updateMessage,
+  } = useSessionHistory();
   const { current: currentSession } = useSessionContext();
   const { value: settingValue } = useSettings();
   const { getCurrent: getCurrentAssistant, availableTools } =
@@ -367,7 +372,13 @@ export function ChatProvider({ children }: ChatProviderProps) {
         });
       }
     },
-    [messages, triggerAIService, buildSystemPrompt, updateMessage, aiServiceConfig],
+    [
+      messages,
+      triggerAIService,
+      buildSystemPrompt,
+      updateMessage,
+      aiServiceConfig,
+    ],
   );
 
   // UIResource event handler

@@ -47,6 +47,52 @@ impl WorkspaceServer {
     pub fn error_response(request_id: Value, code: i32, message: &str) -> MCPResponse {
         utils::create_error_response(request_id, code, message)
     }
+
+    fn get_workspace_tree(&self, path: &str, max_depth: usize) -> String {
+        use std::fs;
+
+        fn build_tree(
+            dir: &std::path::Path,
+            prefix: &str,
+            depth: usize,
+            max_depth: usize,
+        ) -> String {
+            if depth >= max_depth {
+                return String::new();
+            }
+
+            let mut result = String::new();
+            if let Ok(entries) = fs::read_dir(dir) {
+                let mut entries: Vec<_> = entries.filter_map(|e| e.ok()).collect();
+                entries.sort_by_key(|e| e.file_name());
+
+                let mut limited_entries = entries.iter().take(10).peekable();
+
+                while let Some(entry) = limited_entries.next() {
+                    let is_last = limited_entries.peek().is_none();
+                    let connector = if is_last { "└── " } else { "├── " };
+                    let name = entry.file_name().to_string_lossy().to_string();
+
+                    result.push_str(&format!("{}{}{}\n", prefix, connector, name));
+
+                    if entry.path().is_dir() {
+                        let new_prefix = format!("{}{}", prefix, if is_last { "    " } else { "│   " });
+                        if depth < max_depth - 1 {
+                            result.push_str(&build_tree(
+                                &entry.path(),
+                                &new_prefix,
+                                depth + 1,
+                                max_depth,
+                            ));
+                        }
+                    }
+                }
+            }
+            result
+        }
+
+        build_tree(std::path::Path::new(path), "", 0, max_depth)
+    }
 }
 
 #[async_trait]
@@ -65,6 +111,31 @@ impl BuiltinMCPServer for WorkspaceServer {
         tools.extend(tools::code_tools());
         tools.extend(tools::export_tools());
         tools
+    }
+
+    fn get_service_context(&self, _options: Option<&Value>) -> String {
+        // Get session-specific workspace directory
+        let workspace_dir_path = self.get_workspace_dir();
+        let workspace_dir = workspace_dir_path.to_string_lossy().to_string();
+
+        // Generate directory tree (2 levels deep)
+        let tree_output = self.get_workspace_tree(&workspace_dir, 2);
+
+        format!(
+            "# Workspace Server Status\n\
+            **Server**: workspace\n\
+            **Status**: Active\n\
+            **Working Directory**: {}\n\
+            **Available Tools**: {} tools\n\
+            \n\
+            ## Current Directory Structure\n\
+            ```\n\
+            {}\n\
+            ```",
+            workspace_dir,
+            self.tools().len(),
+            tree_output
+        )
     }
 
     async fn call_tool(&self, tool_name: &str, args: Value) -> MCPResponse {

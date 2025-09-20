@@ -29,12 +29,14 @@ pub trait BuiltinMCPServer: Send + Sync {
     /// Call a tool on this server
     async fn call_tool(&self, tool_name: &str, args: Value) -> MCPResponse;
 
-    /// Get service context as text prompt (like content-store pattern)
+    /// Returns current server status and environment context as markdown text
     fn get_service_context(&self, _options: Option<&Value>) -> String {
         format!(
-            "# {} Server\n\
+            "# {} Server Status\n\
+            **Server**: {}\n\
             **Status**: Active\n\
-            **Tool Count**: {}",
+            **Tools Available**: {}",
+            self.name(),
             self.name(),
             self.tools().len()
         )
@@ -317,6 +319,25 @@ impl BuiltinServerRegistry {
             server.tools()
         } else {
             Vec::new()
+        }
+    }
+
+    pub fn get_server_context(
+        &self,
+        server_name: &str,
+        options: Option<Value>,
+    ) -> Result<String, String> {
+        // Remove "builtin." prefix if present (기존 로직 재사용)
+        let normalized_server_name = if let Some(stripped) = server_name.strip_prefix("builtin.") {
+            stripped
+        } else {
+            server_name
+        };
+
+        if let Some(server) = self.get_server(normalized_server_name) {
+            Ok(server.get_service_context(options.as_ref()))
+        } else {
+            Err(format!("Built-in server '{}' not found", server_name))
         }
     }
 

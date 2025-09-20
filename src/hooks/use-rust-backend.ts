@@ -69,6 +69,9 @@ export const useRustBackend = () => {
     downloadWorkspaceFile: client.downloadWorkspaceFile,
     exportAndDownloadZip: client.exportAndDownloadZip,
 
+    // Service Context
+    getServiceContext: client.getServiceContext,
+
     // Utility
     greet: client.greet,
 

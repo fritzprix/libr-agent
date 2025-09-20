@@ -331,6 +331,10 @@ export async function exportAndDownloadZip(
 // Utility
 // ========================================
 
+export async function getServiceContext(serverId: string): Promise<string> {
+  return safeInvoke<string>('get_service_context', { serverId });
+}
+
 export async function greet(name: string): Promise<string> {
   return safeInvoke<string>('greet', { name });
 }
@@ -366,5 +370,6 @@ export default {
   openExternalUrl,
   downloadWorkspaceFile,
   exportAndDownloadZip,
+  getServiceContext,
   greet,
 };

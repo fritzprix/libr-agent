@@ -540,9 +540,26 @@ impl MCPServerManager {
     ) -> MCPResponse {
         // Check if it's a builtin server (starts with "builtin.")
         if server_name.starts_with("builtin.") {
-            self.call_builtin_tool(server_name, tool_name, args).await
+            let normalized_server_name = server_name.strip_prefix("builtin.").unwrap_or(server_name);
+            self.call_builtin_tool(normalized_server_name, tool_name, args)
+                .await
         } else {
             self.call_tool(server_name, tool_name, args).await
         }
+    }
+
+    pub async fn get_service_context(&self, server_name: &str) -> Result<String, String> {
+        // Check built-in servers first
+        let servers = self.builtin_servers.lock().await;
+        if let Some(registry) = servers.as_ref() {
+            if let Ok(context) = registry.get_server_context(server_name, None) {
+                return Ok(context);
+            }
+        }
+
+        // Fallback for external MCP servers (future implementation)
+        Ok(format!(
+            "# MCP Server Context\nServer ID: {server_name}\nStatus: Active"
+        ))
     }
 }
