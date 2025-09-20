@@ -527,6 +527,19 @@ async fn write_file(
     manager.write_file(&file_path, &content).await
 }
 
+/// Session-aware workspace file write command
+#[tauri::command]
+async fn workspace_write_file(
+    file_path: String,
+    content: Vec<u8>,
+) -> Result<(), String> {
+    let session_manager = get_session_manager()
+        .map_err(|e| format!("Session manager error: {e}"))?;
+    
+    let session_file_manager = session_manager.get_file_manager();
+    session_file_manager.write_file(&file_path, &content).await
+}
+
 #[tauri::command]
 async fn open_external_url(url: String) -> Result<(), String> {
     // URL validation
@@ -815,6 +828,7 @@ pub fn run() {
                 read_file,
                 read_dropped_file,
                 write_file,
+                workspace_write_file,
                 open_external_url,
                 // Interactive Browser commands
                 create_browser_session,
