@@ -96,12 +96,6 @@ export class GeminiService extends BaseAIService {
         geminiConfig.temperature = config.temperature;
       }
 
-      logger.info('gemini final request: ', {
-        model: model,
-        config: geminiConfig,
-        contents: geminiMessages,
-      });
-
       const result = await this.withRetry(async () => {
         return this.genAI.models.generateContentStream({
           model: model,

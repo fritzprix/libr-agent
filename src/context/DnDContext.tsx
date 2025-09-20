@@ -49,8 +49,9 @@ export interface DnDContextReturnType {
 
 const DnDContext = createContext<DnDContextReturnType | null>(null);
 
+const logger = getLogger('DnDContext');
+
 function DnDContextProvider({ children }: DnDContextProps) {
-  const logger = useMemo(() => getLogger('DnDContext'), []);
   const unlistenRef = useRef<(() => void) | undefined>(undefined);
   const registries = useRef<Map<string, DnDRegistry>>(new Map());
   const currentTarget = useRef<DnDRegistry | null>(null);
@@ -97,7 +98,6 @@ function DnDContextProvider({ children }: DnDContextProps) {
           // Track paths from enter event
           if (type === 'enter' && paths) {
             pathsRef.current = paths;
-            logger.info('Paths tracked from enter event', { paths });
           }
 
           // Special-case: 'leave' may not include a position when exiting the window.
@@ -140,7 +140,6 @@ function DnDContextProvider({ children }: DnDContextProps) {
             if (currentTarget.current && currentTarget.current !== target) {
               currentTarget.current.handler('leave', data);
             }
-            logger.info('enter ', { evt });
 
             // Update current target and send 'drag-over' if we have a target
             if (target) {
@@ -160,7 +159,6 @@ function DnDContextProvider({ children }: DnDContextProps) {
           }
         });
         if (mounted) unlistenRef.current = unlisten;
-        logger.debug('Tauri drag & drop listener attached');
       } catch (e) {
         logger.error('Failed to attach Tauri drag & drop listener', e);
       }
@@ -178,7 +176,7 @@ function DnDContextProvider({ children }: DnDContextProps) {
       }
       unlistenRef.current = undefined;
     };
-  }, [logger]);
+  }, []);
 
   const subscribe = useCallback(
     (
@@ -189,7 +187,6 @@ function DnDContextProvider({ children }: DnDContextProps) {
       const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
       const priority = options?.priority ?? 0;
       registries.current.set(id, { id, ref, handler, priority });
-      logger.debug('Registered DnD zone', { id, priority });
 
       return () => {
         const registry = registries.current.get(id);
@@ -198,10 +195,9 @@ function DnDContextProvider({ children }: DnDContextProps) {
           currentTarget.current = null;
         }
         registries.current.delete(id);
-        logger.debug('Unregistered DnD zone', { id });
       };
     },
-    [logger],
+    [],
   );
 
   const value = useMemo<DnDContextReturnType>(

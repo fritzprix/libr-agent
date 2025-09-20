@@ -3,6 +3,10 @@ import { useSessionContext } from '@/context/SessionContext';
 import { useResourceAttachment } from '@/context/ResourceAttachmentContext';
 import { useRustBackend } from '@/hooks/use-rust-backend';
 import { getLogger } from '@/lib/logger';
+import {
+  validateFileSize,
+  createFileSizeErrorMessage,
+} from '@/lib/workspace-sync-service';
 
 const logger = getLogger('FileAttachment');
 
@@ -104,6 +108,17 @@ export function useFileAttachment() {
           const mimeType = getMimeType(filename);
           // Create a File object so commit step can handle both text and binary types reliably
           const fileObj = new File([uint8Array], filename, { type: mimeType });
+
+          // Validate file size using unified limits
+          if (!validateFileSize(fileObj)) {
+            logger.warn('Dropped file exceeds size limit', {
+              filename,
+              fileSize: fileObj.size,
+            });
+            alert(createFileSizeErrorMessage(filename, fileObj.size));
+            continue;
+          }
+
           const blobUrl = URL.createObjectURL(fileObj);
 
           filesToUpload.push({
@@ -195,8 +210,8 @@ export function useFileAttachment() {
           continue;
         }
 
-        if (file.size > 50 * 1024 * 1024) {
-          alert(`File "${file.name}" is too large. Maximum size is 50MB.`);
+        if (!validateFileSize(file)) {
+          alert(createFileSizeErrorMessage(file.name, file.size));
           continue;
         }
 

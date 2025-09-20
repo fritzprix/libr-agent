@@ -131,6 +131,51 @@ SynapticFlow is a desktop AI agent platform designed to solve two critical probl
 - **Memory Management**: Optimized for long-running sessions and large datasets
 - **Ultra-Fast Models**: Cerebras integration delivering 1,800+ tokens/second
 
+## 🖥️ Supported Platforms
+
+SynapticFlow is a **cross-platform desktop application** that runs natively on:
+
+### Windows
+
+- **Version**: Windows 10 and later
+- **Architecture**: x64
+- **Installation**: MSI installer (`SynapticFlow_x64_en-US.msi`)
+- **Features**: Full feature parity with native Windows integration
+
+### macOS
+
+- **Version**: macOS 10.15 (Catalina) and later
+- **Architecture**: Intel and Apple Silicon (universal binary)
+- **Installation**: Application bundle (`.app.tar.gz`)
+- **Features**: Native macOS integration with system tray support
+
+### Linux
+
+- **Distributions**: Ubuntu, Debian, Fedora, Arch Linux, and others
+- **Architecture**: x64
+- **Installation**:
+  - **Ubuntu/Debian**: `.deb` package
+  - **Universal**: AppImage (no installation required)
+- **Features**: Native Linux integration with system tray
+
+**System Requirements:**
+
+- 4GB RAM minimum, 8GB recommended
+- Modern 64-bit operating system
+- Internet connection for AI provider APIs
+
+## 📁 Application Data and Caching
+
+SynapticFlow stores all its data, including session information, agent configurations, and the workspace cache, in a dedicated directory on your local system. This ensures that your data is private and not stored in the cloud.
+
+The storage location varies by operating system:
+
+- **Windows**: `%APPDATA%\com.synaptic.flow`
+- **macOS**: `~/Library/Application Support/com.synaptic.flow`
+- **Linux**: `~/.local/share/com.synaptic.flow`
+
+Within this directory, each session's workspace is stored in a separate subfolder under `sessions/[SESSION_ID]/workspace`. All file and code execution tools operate exclusively within this sandboxed workspace directory for security.
+
 ## 📁 Project Structure
 
 ```bash

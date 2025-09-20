@@ -19,10 +19,9 @@ import { BM25SearchEngine } from '../bm25/bm25-search-engine';
 // Import from submodules
 import { logger } from './logger';
 import { parseRichFile } from './parser';
+import { MAX_CONTENT_LENGTH, MAX_FILE_SIZE } from '../parsers';
 
 // File size limits (in bytes)
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
-const MAX_CONTENT_LENGTH = 10 * 1024 * 1024; // 10MB text content
 
 // Utility functions for better formatting
 function formatFileSize(bytes: number): string {
