@@ -164,6 +164,18 @@ SynapticFlow is a **cross-platform desktop application** that runs natively on:
 - Modern 64-bit operating system
 - Internet connection for AI provider APIs
 
+## 📁 Application Data and Caching
+
+SynapticFlow stores all its data, including session information, agent configurations, and the workspace cache, in a dedicated directory on your local system. This ensures that your data is private and not stored in the cloud.
+
+The storage location varies by operating system:
+
+- **Windows**: `%APPDATA%\com.synaptic.flow`
+- **macOS**: `~/Library/Application Support/com.synaptic.flow`
+- **Linux**: `~/.local/share/com.synaptic.flow`
+
+Within this directory, each session's workspace is stored in a separate subfolder under `sessions/[SESSION_ID]/workspace`. All file and code execution tools operate exclusively within this sandboxed workspace directory for security.
+
 ## 📁 Project Structure
 
 ```bash
