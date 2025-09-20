@@ -136,7 +136,12 @@ export function SessionFilesPopover({ storeId }: SessionFilesPopoverProps) {
                           </span>
                         )}
                         {file.uploadedAt && (
-                          <span>{formatDate(file.uploadedAt)}</span>
+                          <span className="mr-2">
+                            {formatDate(file.uploadedAt)}
+                          </span>
+                        )}
+                        {file.workspacePath && (
+                          <span className="text-green-400">📁 Workspace</span>
                         )}
                       </div>
                     </div>
@@ -173,7 +178,14 @@ export function SessionFilesPopover({ storeId }: SessionFilesPopoverProps) {
                 </span>
               )}
               {selectedFile?.uploadedAt && (
-                <span>생성: {formatDate(selectedFile.uploadedAt)}</span>
+                <span className="mr-4">
+                  생성: {formatDate(selectedFile.uploadedAt)}
+                </span>
+              )}
+              {selectedFile?.workspacePath && (
+                <span className="text-green-400">
+                  워크스페이스: {selectedFile.workspacePath}
+                </span>
               )}
             </div>
           </DialogHeader>

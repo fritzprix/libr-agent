@@ -147,8 +147,8 @@ export interface FileParser {
   parse(file: File): Promise<string>;
 }
 
-// File size limits (in bytes)
-export const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+// File size limits (in bytes) - unified with workspace limits
+export const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB (unified limit)
 export const MAX_CONTENT_LENGTH = 10 * 1024 * 1024; // 10MB text content
 
 // Utility function to validate file size

@@ -224,6 +224,16 @@ export async function writeFile(
   return safeInvoke<void>('write_file', { filePath, content });
 }
 
+export async function workspaceWriteFile(
+  filePath: string,
+  content: number[],
+): Promise<void> {
+  return safeInvoke<void>('workspace_write_file', {
+    filePath,
+    content,
+  });
+}
+
 // ========================================
 // Browser session / script helpers
 // Centralized wrappers for browser-related Tauri commands used by

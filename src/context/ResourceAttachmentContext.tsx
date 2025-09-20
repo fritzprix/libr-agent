@@ -14,6 +14,7 @@ import { getLogger } from '@/lib/logger';
 import { useWebMCPServer } from '@/hooks/use-web-mcp-server';
 import { ContentStoreServer } from '@/lib/web-mcp/modules/content-store';
 import { useSessionContext } from './SessionContext';
+import { syncFileToWorkspace } from '@/lib/workspace-sync-service';
 
 const logger = getLogger('ResourceAttachmentContext');
 
@@ -423,11 +424,37 @@ export const ResourceAttachmentProvider: React.FC<
           },
         });
 
-        logger.info('File uploaded successfully', {
+        logger.info('File uploaded to Content-Store successfully', {
           filename: result.filename,
           contentId: result.contentId,
           chunkCount: result.chunkCount,
         });
+
+        // Attempt to sync file to workspace
+        let workspacePath: string | undefined;
+        if (file) {
+          try {
+            workspacePath = await syncFileToWorkspace(file);
+            logger.info('File synced to workspace successfully', {
+              filename: result.filename,
+              workspacePath,
+            });
+          } catch (error) {
+            logger.warn(
+              'Workspace sync failed, continuing with content-store only',
+              {
+                filename: result.filename,
+                error: error instanceof Error ? error.message : String(error),
+              },
+            );
+            // Continue without workspace sync - Content-Store upload was successful
+          }
+        } else {
+          logger.warn('Skipping workspace sync - no File object or session', {
+            hasFile: !!file,
+            filename: result.filename,
+          });
+        }
 
         // Convert AddContentOutput to AttachmentReference
         return {
@@ -444,6 +471,7 @@ export const ResourceAttachmentProvider: React.FC<
               : result.uploadedAt,
           chunkCount: result.chunkCount,
           lastAccessedAt: new Date().toISOString(),
+          workspacePath, // Add the workspace path to the result
         };
       } finally {
         // Clean up blob URL if we created it
@@ -452,13 +480,7 @@ export const ResourceAttachmentProvider: React.FC<
         }
       }
     },
-    [
-      server,
-      currentSession?.id,
-      extractFilenameFromUrl,
-      convertToBlobUrl,
-      ensureStoreExists,
-    ],
+    [server, extractFilenameFromUrl, convertToBlobUrl, ensureStoreExists],
   );
 
   // Commit pending files to server and move to sessionFiles

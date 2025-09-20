@@ -6,8 +6,7 @@
 
 import type { SearchResult } from '@/models/search-engine';
 
-// File size limits (in bytes)
-export const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+export const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB (unified limit)
 export const MAX_CONTENT_LENGTH = 10 * 1024 * 1024; // 10MB text content
 
 // Custom error classes for better error handling
