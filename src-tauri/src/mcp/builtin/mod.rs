@@ -28,6 +28,17 @@ pub trait BuiltinMCPServer: Send + Sync {
 
     /// Call a tool on this server
     async fn call_tool(&self, tool_name: &str, args: Value) -> MCPResponse;
+
+    /// Get service context as text prompt (like content-store pattern)
+    fn get_service_context(&self, _options: Option<&Value>) -> String {
+        format!(
+            "# {} Server\n\
+            **Status**: Active\n\
+            **Tool Count**: {}",
+            self.name(),
+            self.tools().len()
+        )
+    }
 }
 
 /// Built-in server registry

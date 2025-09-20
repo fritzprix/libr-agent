@@ -35,6 +35,7 @@ interface ChatContextValue {
     type: string;
     payload: { prompt: string };
   }) => Promise<void>;
+  retryMessage: (messageId: string) => Promise<void>;
 }
 
 const ChatContext = createContext<ChatContextValue | undefined>(undefined);
@@ -46,7 +47,7 @@ interface ChatProviderProps {
 const DEFAULT_SYSTEM_PROMPT = 'You are a helpful assistant.';
 
 export function ChatProvider({ children }: ChatProviderProps) {
-  const { messages: history, addMessage, addMessages } = useSessionHistory();
+  const { messages: history, addMessage, addMessages, updateMessage } = useSessionHistory();
   const { current: currentSession } = useSessionContext();
   const { value: settingValue } = useSettings();
   const { getCurrent: getCurrentAssistant, availableTools } =
@@ -321,6 +322,54 @@ export function ChatProvider({ children }: ChatProviderProps) {
     ],
   );
 
+  const retryMessage = useCallback(
+    async (messageId: string): Promise<void> => {
+      const messageToRetry = messages.find((m) => m.id === messageId);
+      if (!messageToRetry?.error) return;
+
+      logger.info('Retrying failed message', { messageId });
+
+      try {
+        // Find the message index to get previous messages
+        const messageIndex = messages.findIndex((m) => m.id === messageId);
+        const previousMessages = messages.slice(0, messageIndex);
+
+        // Submit retry request
+        const response = await triggerAIService(
+          previousMessages,
+          buildSystemPrompt,
+        );
+
+        if (response) {
+          // Success: update the error message to normal message
+          await updateMessage(messageId, {
+            error: undefined,
+            content: response.content,
+            tool_calls: response.tool_calls,
+            thinking: response.thinking,
+            isStreaming: false,
+          });
+        }
+      } catch (error) {
+        logger.error('Retry failed', { messageId, error });
+        // Update with retry failed error
+        await updateMessage(messageId, {
+          error: {
+            displayMessage: 'Retry attempt failed. Please try again.',
+            type: 'RETRY_FAILED',
+            recoverable: true,
+            details: {
+              originalError: error,
+              errorCode: 'RETRY_FAILED',
+              timestamp: new Date().toISOString(),
+            },
+          },
+        });
+      }
+    },
+    [messages, triggerAIService, buildSystemPrompt, updateMessage, aiServiceConfig],
+  );
+
   // UIResource event handler
   const handleUIAction = useCallback(
     async (action: { type: string; payload: { prompt: string } }) => {
@@ -396,6 +445,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       addToMessageQueue,
       pendingCancel,
       handleUIAction,
+      retryMessage,
     }),
     [
       messages,
@@ -406,6 +456,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       addToMessageQueue,
       pendingCancel,
       handleUIAction,
+      retryMessage,
     ],
   );
 
