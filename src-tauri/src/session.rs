@@ -6,7 +6,7 @@ use std::sync::{Arc, OnceLock, RwLock};
 
 static SESSION_MANAGER: OnceLock<SessionManager> = OnceLock::new();
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SessionManager {
     current_session: Arc<RwLock<Option<String>>>,
     base_data_dir: PathBuf,

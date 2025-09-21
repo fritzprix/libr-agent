@@ -26,6 +26,50 @@ pub struct WorkspaceFileItem {
 // 전역 MCP 서버 매니저
 static MCP_MANAGER: OnceLock<MCPServerManager> = OnceLock::new();
 
+// SQLite 지원을 위한 전역 데이터베이스 URL
+static SQLITE_DB_URL: OnceLock<String> = OnceLock::new();
+
+/// SQLite 데이터베이스 URL을 설정합니다
+pub fn set_sqlite_db_url(url: String) {
+    SQLITE_DB_URL.set(url).expect("SQLite DB URL already set");
+}
+
+/// SQLite 데이터베이스 URL을 가져옵니다
+pub fn get_sqlite_db_url() -> Option<&'static String> {
+    SQLITE_DB_URL.get()
+}
+
+/// SQLite 지원을 위한 애플리케이션 실행 함수 (동기 래퍼)
+pub fn run_with_sqlite_sync(db_url: String) {
+    // SQLite URL 설정
+    set_sqlite_db_url(db_url.clone());
+    println!("🔄 Initializing SynapticFlow with SQLite support: {db_url}");
+
+    // 비동기 초기화를 위한 런타임 생성
+    let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
+
+    rt.block_on(async {
+        let session_manager = get_session_manager().expect("SessionManager not initialized");
+        let session_manager_arc = std::sync::Arc::new(session_manager.clone());
+
+        // MCP 매니저를 비동기로 초기화
+        let mcp_manager =
+            MCPServerManager::new_with_session_manager_and_sqlite(session_manager_arc, db_url)
+                .await;
+
+        // 전역 MCP 매니저에 설정
+        MCP_MANAGER
+            .set(mcp_manager)
+            .expect("MCP Manager already initialized");
+
+        println!("✅ SQLite-backed MCP Manager initialized");
+    });
+
+    // 기본 run 함수 호출
+    run();
+}
+
+// 기본 MCP 매니저 초기화 함수
 fn get_mcp_manager() -> &'static MCPServerManager {
     MCP_MANAGER.get_or_init(|| {
         let session_manager = get_session_manager().expect("SessionManager not initialized");

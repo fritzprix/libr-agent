@@ -63,14 +63,24 @@ export function ChatInput({ children }: ChatInputProps) {
     async (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault();
 
-      if (!input.trim() && pendingFiles.length === 0) return;
+      if (!input.trim() && pendingFiles.length === 0) {
+        logger.info('Submit ignored: no input and no pending files');
+        return;
+      }
       if (!currentAssistant || !currentSession) return;
 
       let attachedFiles: AttachmentReference[] = [];
 
       if (pendingFiles.length > 0) {
         try {
+          logger.info('About to commit pending files', {
+            pendingCount: pendingFiles.length,
+            filenames: pendingFiles.map((f) => f.filename),
+          });
           attachedFiles = await commitPendingFiles();
+          logger.info('Pending files committed', {
+            attachedCount: attachedFiles.length,
+          });
         } catch (err) {
           logger.error('Error uploading pending files:', err);
           alert('파일 업로드 중 오류가 발생했습니다.');
@@ -100,7 +110,12 @@ export function ChatInput({ children }: ChatInputProps) {
         clearPendingFiles();
 
         try {
+          logger.info('Submitting user message', {
+            hasAttachments: attachedFiles.length > 0,
+            attachmentCount: attachedFiles.length,
+          });
           await submit([userMessage]);
+          logger.info('User message submitted successfully');
         } catch (err) {
           logger.error('Error submitting message:', err);
         }

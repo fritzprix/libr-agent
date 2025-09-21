@@ -103,6 +103,7 @@ impl MCPResponse {
     }
 }
 
+#[derive(Debug)]
 pub struct MCPConnection {
     pub client: rmcp::service::RunningService<rmcp::service::RoleClient, ()>,
 }

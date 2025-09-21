@@ -17,6 +17,7 @@ use crate::mcp::types::{
 };
 use crate::session::SessionManager;
 
+#[derive(Debug)]
 pub struct MCPServerManager {
     connections: Arc<Mutex<HashMap<String, MCPConnection>>>,
     builtin_servers: Arc<Mutex<Option<crate::mcp::builtin::BuiltinServerRegistry>>>,
@@ -37,6 +38,32 @@ impl MCPServerManager {
             .try_lock()
             .expect("Failed to initialize builtin servers") = Some(builtin_registry);
         info!("Initialized MCPServerManager with SessionManager-based builtin servers");
+
+        server_manager
+    }
+
+    /// SQLite 지원을 위한 MCP 서버 매니저 생성
+    pub async fn new_with_session_manager_and_sqlite(
+        session_manager: Arc<SessionManager>,
+        sqlite_db_url: String,
+    ) -> Self {
+        let server_manager = Self {
+            connections: Arc::new(Mutex::new(HashMap::new())),
+            builtin_servers: Arc::new(Mutex::new(None)),
+        };
+
+        // Initialize builtin servers with SessionManager and SQLite support
+        let builtin_registry =
+            crate::mcp::builtin::BuiltinServerRegistry::new_with_session_manager_and_sqlite(
+                session_manager,
+                sqlite_db_url,
+            )
+            .await;
+        *server_manager
+            .builtin_servers
+            .try_lock()
+            .expect("Failed to initialize builtin servers") = Some(builtin_registry);
+        info!("Initialized MCPServerManager with SessionManager and SQLite support");
 
         server_manager
     }
@@ -333,12 +360,12 @@ impl MCPServerManager {
                 }
                 Err(e) => {
                     error!("Error listing tools: {e}");
-                    Err(anyhow::anyhow!("Failed to list tools: {}", e))
+                    Err(anyhow::anyhow!("Failed to list tools: {e}"))
                 }
             }
         } else {
             warn!("Server '{server_name}' not found in connections");
-            Err(anyhow::anyhow!("Server '{}' not found", server_name))
+            Err(anyhow::anyhow!("Server '{server_name}' not found"))
         }
     }
 
@@ -540,9 +567,27 @@ impl MCPServerManager {
     ) -> MCPResponse {
         // Check if it's a builtin server (starts with "builtin.")
         if server_name.starts_with("builtin.") {
-            self.call_builtin_tool(server_name, tool_name, args).await
+            let normalized_server_name =
+                server_name.strip_prefix("builtin.").unwrap_or(server_name);
+            self.call_builtin_tool(normalized_server_name, tool_name, args)
+                .await
         } else {
             self.call_tool(server_name, tool_name, args).await
         }
+    }
+
+    pub async fn get_service_context(&self, server_name: &str) -> Result<String, String> {
+        // Check built-in servers first
+        let servers = self.builtin_servers.lock().await;
+        if let Some(registry) = servers.as_ref() {
+            if let Ok(context) = registry.get_server_context(server_name, None) {
+                return Ok(context);
+            }
+        }
+
+        // Fallback for external MCP servers (future implementation)
+        Ok(format!(
+            "# MCP Server Context\nServer ID: {server_name}\nStatus: Active"
+        ))
     }
 }

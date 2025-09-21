@@ -4,12 +4,13 @@ use async_trait::async_trait;
 use serde_json::Value;
 use tracing::info;
 
+pub mod content_store;
 pub mod utils;
 pub mod workspace;
 
 /// Trait for built-in MCP servers
 #[async_trait]
-pub trait BuiltinMCPServer: Send + Sync {
+pub trait BuiltinMCPServer: Send + Sync + std::fmt::Debug {
     /// Server name (e.g., "builtin.filesystem")
     fn name(&self) -> &str;
 
@@ -28,9 +29,23 @@ pub trait BuiltinMCPServer: Send + Sync {
 
     /// Call a tool on this server
     async fn call_tool(&self, tool_name: &str, args: Value) -> MCPResponse;
+
+    /// Returns current server status and environment context as markdown text
+    fn get_service_context(&self, _options: Option<&Value>) -> String {
+        format!(
+            "# {} Server Status\n\
+            **Server**: {}\n\
+            **Status**: Active\n\
+            **Tools Available**: {}",
+            self.name(),
+            self.name(),
+            self.tools().len()
+        )
+    }
 }
 
 /// Built-in server registry
+#[derive(Debug)]
 pub struct BuiltinServerRegistry {
     servers: std::collections::HashMap<String, Box<dyn BuiltinMCPServer>>,
 }
@@ -261,7 +276,45 @@ impl BuiltinServerRegistry {
         };
 
         // Register built-in workspace server with SessionManager
-        registry.register_server(Box::new(workspace::WorkspaceServer::new(session_manager)));
+        registry.register_server(Box::new(workspace::WorkspaceServer::new(
+            session_manager.clone(),
+        )));
+
+        // Register content-store server (native backend)
+        registry.register_server(Box::new(
+            crate::mcp::builtin::content_store::ContentStoreServer::new(session_manager.clone()),
+        ));
+
+        // Browser Agent server removed to prevent duplicate tools.
+        // Browser functionality now provided by frontend BrowserToolProvider.
+
+        registry
+    }
+
+    /// SQLite 지원을 위한 BuiltinServerRegistry 생성
+    pub async fn new_with_session_manager_and_sqlite(
+        session_manager: std::sync::Arc<SessionManager>,
+        sqlite_db_url: String,
+    ) -> Self {
+        let mut registry = Self {
+            servers: std::collections::HashMap::new(),
+        };
+
+        // Register built-in workspace server with SessionManager
+        registry.register_server(Box::new(workspace::WorkspaceServer::new(
+            session_manager.clone(),
+        )));
+
+        // Register content-store server with SQLite support
+        let content_store_server =
+            crate::mcp::builtin::content_store::ContentStoreServer::new_with_sqlite(
+                session_manager.clone(),
+                sqlite_db_url,
+            )
+            .await
+            .expect("Failed to initialize content store with SQLite");
+
+        registry.register_server(Box::new(content_store_server));
 
         // Browser Agent server removed to prevent duplicate tools.
         // Browser functionality now provided by frontend BrowserToolProvider.
@@ -306,6 +359,25 @@ impl BuiltinServerRegistry {
             server.tools()
         } else {
             Vec::new()
+        }
+    }
+
+    pub fn get_server_context(
+        &self,
+        server_name: &str,
+        options: Option<Value>,
+    ) -> Result<String, String> {
+        // Remove "builtin." prefix if present (기존 로직 재사용)
+        let normalized_server_name = if let Some(stripped) = server_name.strip_prefix("builtin.") {
+            stripped
+        } else {
+            server_name
+        };
+
+        if let Some(server) = self.get_server(normalized_server_name) {
+            Ok(server.get_service_context(options.as_ref()))
+        } else {
+            Err(format!("Built-in server '{server_name}' not found"))
         }
     }
 

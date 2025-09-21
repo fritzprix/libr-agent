@@ -45,6 +45,22 @@ export interface Message {
   tool_use?: { id: string; name: string; input: Record<string, unknown> };
   createdAt?: Date; // Added
   updatedAt?: Date; // Added
+  // Error handling for failed AI service calls
+  error?: {
+    // User-friendly message to display
+    displayMessage: string;
+    // Error type classification for UI handling
+    type: string;
+    // Whether the error can be retried
+    recoverable: boolean;
+    // Detailed logging information (not shown to user)
+    details?: {
+      originalError: unknown;
+      errorCode?: string;
+      timestamp: string;
+      context?: Record<string, unknown>;
+    };
+  };
 }
 
 export interface ToolCall {
