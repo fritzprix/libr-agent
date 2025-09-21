@@ -13,6 +13,10 @@ import { createId } from '@paralleldrive/cuid2';
 
 const logger = getLogger('GeminiService');
 
+/**
+ * Defines the configuration specific to the Gemini service.
+ * @internal
+ */
 interface GeminiServiceConfig {
   responseMimeType: string;
   tools?: Array<{ functionDeclarations: FunctionDeclaration[] }>;
@@ -21,6 +25,12 @@ interface GeminiServiceConfig {
   temperature?: number;
 }
 
+/**
+ * A utility function to safely parse a JSON string.
+ * @param input The JSON string to parse.
+ * @returns The parsed object, or undefined if parsing fails.
+ * @internal
+ */
 function tryParse<T = unknown>(input?: string): T | undefined {
   if (!input) return undefined;
   try {
@@ -30,9 +40,17 @@ function tryParse<T = unknown>(input?: string): T | undefined {
   }
 }
 
+/**
+ * An AI service implementation for interacting with Google's Gemini models.
+ */
 export class GeminiService extends BaseAIService {
   private genAI: GoogleGenAI;
 
+  /**
+   * Initializes a new instance of the `GeminiService`.
+   * @param apiKey The Google AI API key.
+   * @param config Optional configuration for the service.
+   */
   constructor(apiKey: string, config?: AIServiceConfig) {
     super(apiKey, config);
     this.genAI = new GoogleGenAI({
@@ -40,14 +58,29 @@ export class GeminiService extends BaseAIService {
     });
   }
 
+  /**
+   * Generates a unique ID for a tool call.
+   * @returns A unique tool call ID string.
+   * @private
+   */
   private generateToolCallId(): string {
     return `tool_${createId()}`;
   }
 
+  /**
+   * @inheritdoc
+   * @returns `AIServiceProvider.Gemini`.
+   */
   getProvider(): AIServiceProvider {
     return AIServiceProvider.Gemini;
   }
 
+  /**
+   * Initiates a streaming chat session with the Gemini API.
+   * @param messages The array of messages for the conversation.
+   * @param options Optional parameters for the chat.
+   * @yields A JSON string for each chunk of the response, containing content and/or tool calls.
+   */
   async *streamChat(
     messages: Message[],
     options: {
@@ -169,6 +202,15 @@ export class GeminiService extends BaseAIService {
     }
   }
 
+  /**
+   * Validates and sanitizes the message stack for Gemini.
+   * Gemini requires that the conversation starts with a 'user' role. This function
+   * converts any 'tool' messages to 'user' messages and ensures the stack
+   * begins with the first 'user' message.
+   * @param messages The array of messages to validate.
+   * @returns A new array of validated and sanitized messages.
+   * @private
+   */
   private validateGeminiMessageStack(messages: Message[]): Message[] {
     if (messages.length === 0) {
       return messages;
@@ -202,6 +244,13 @@ export class GeminiService extends BaseAIService {
     return validMessages;
   }
 
+  /**
+   * Converts an array of standard `Message` objects into the `Content` format
+   * required by the Gemini API.
+   * @param messages The array of messages to convert.
+   * @returns An array of `Content` objects.
+   * @private
+   */
   private convertToGeminiMessages(messages: Message[]): Content[] {
     const geminiMessages: Content[] = [];
 
@@ -247,6 +296,12 @@ export class GeminiService extends BaseAIService {
     return geminiMessages;
   }
 
+  /**
+   * Logs statistics about the types of tool responses in a message stack.
+   * This is used for debugging and monitoring tool performance.
+   * @param messages The array of messages to analyze.
+   * @private
+   */
   private logToolResponseStats(messages: Message[]): void {
     const toolMessages = messages.filter((m) => m.role === 'tool');
     if (toolMessages.length === 0) return;
@@ -283,13 +338,23 @@ export class GeminiService extends BaseAIService {
     logger.info('Tool response processing statistics', stats);
   }
 
-  // Implementation of abstract methods from BaseAIService
+  /**
+   * @inheritdoc
+   * @description For Gemini, system instructions are handled as a separate parameter,
+   * so this method returns null.
+   * @protected
+   */
   protected createSystemMessage(systemPrompt: string): unknown {
     // Gemini handles system instructions separately, not as messages
     void systemPrompt;
     return null;
   }
 
+  /**
+   * @inheritdoc
+   * @description Converts a single `Message` into the format expected by the Gemini API.
+   * @protected
+   */
   protected convertSingleMessage(message: Message): unknown {
     if (message.role === 'system') {
       // System messages are handled separately in the API call
@@ -332,6 +397,10 @@ export class GeminiService extends BaseAIService {
     return null;
   }
 
+  /**
+   * @inheritdoc
+   * @description The Gemini SDK does not require explicit resource cleanup.
+   */
   dispose(): void {
     // Gemini SDK doesn't require explicit cleanup
   }

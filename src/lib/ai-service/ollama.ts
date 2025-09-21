@@ -19,14 +19,15 @@ const logger = getLogger('OllamaService');
 const DEFAULT_MODEL = 'llama3.1';
 const DEFAULT_HOST = 'http://127.0.0.1:11434';
 
-// Interfaces
+// Internal Interfaces
+/** @internal */
 interface StreamChatOptions {
   modelName?: string;
   systemPrompt?: string;
   availableTools?: MCPTool[];
   config?: AIServiceConfig;
 }
-
+/** @internal */
 interface SimpleOllamaMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
@@ -41,7 +42,12 @@ interface SimpleOllamaMessage {
   tool_call_id?: string;
 }
 
-// MCPTool을 Ollama Tool로 변환하는 함수
+/**
+ * Converts an array of `MCPTool` objects to the format required by the Ollama API.
+ * @param mcpTools The array of `MCPTool` objects to convert.
+ * @returns An array of Ollama-compatible `Tool` objects.
+ * @internal
+ */
 function convertMCPToolsToOllamaTools(mcpTools?: MCPTool[]): Tool[] {
   if (!mcpTools || mcpTools.length === 0) {
     return [];
@@ -60,16 +66,23 @@ function convertMCPToolsToOllamaTools(mcpTools?: MCPTool[]): Tool[] {
   }));
 }
 
+/**
+ * An AI service implementation for interacting with a local Ollama server.
+ */
 export class OllamaService extends BaseAIService {
   private host: string;
-  // Ollama client instance
   private ollamaClient: Ollama;
 
+  /**
+   * Initializes a new instance of the `OllamaService`.
+   * @param apiKey A dummy API key (not used by Ollama, but required by the base class).
+   * @param config Optional configuration, including the Ollama server host.
+   */
   constructor(apiKey: string, config?: AIServiceConfig & { host?: string }) {
     super(apiKey, config);
     this.host = config?.host || DEFAULT_HOST;
 
-    // Ollama 클라이언트 인스턴스 생성
+    // Create an Ollama client instance
     this.ollamaClient = new Ollama({
       host: this.host,
       headers: {
@@ -80,13 +93,19 @@ export class OllamaService extends BaseAIService {
     logger.info(`Ollama service initialized with host: ${this.host}`);
   }
 
+  /**
+   * @inheritdoc
+   * @returns `AIServiceProvider.Ollama`.
+   */
   getProvider(): AIServiceProvider {
     return AIServiceProvider.Ollama;
   }
 
   /**
-   * Ollama 서버에서 실시간으로 모델 목록을 조회합니다.
-   * ollama.list() API를 사용하여 서버에 설치된 모델들을 가져옵니다.
+   * Fetches the list of available models directly from the Ollama server.
+   * It uses the `ollama.list()` API to get the installed models.
+   * @returns A promise that resolves to an array of `ModelInfo` objects.
+   *          Returns an empty array if the server is unavailable.
    */
   async listModels(): Promise<ModelInfo[]> {
     try {
@@ -96,7 +115,7 @@ export class OllamaService extends BaseAIService {
         return await this.ollamaClient.list();
       });
 
-      // ollama.list() 응답 구조에 맞춰 모델 정보 변환
+      // Convert the ollama.list() response to our standard ModelInfo format
       const models: ModelInfo[] = response.models.map(
         (model: ModelResponse) => ({
           id: model.name,
@@ -115,7 +134,7 @@ export class OllamaService extends BaseAIService {
     } catch (error) {
       logger.error('Failed to fetch models from Ollama server:', error);
 
-      // 에러 발생시 빈 배열 반환 (서버가 꺼져있거나 연결 실패시)
+      // Return an empty array on error (e.g., server is off or connection fails)
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
       logger.warn(
@@ -125,6 +144,12 @@ export class OllamaService extends BaseAIService {
     }
   }
 
+  /**
+   * Initiates a streaming chat session with the Ollama API.
+   * @param messages The array of messages for the conversation.
+   * @param options Optional parameters for the chat.
+   * @yields A JSON string for each chunk of the response.
+   */
   async *streamChat(
     messages: Message[],
     options: StreamChatOptions = {},
@@ -175,6 +200,12 @@ export class OllamaService extends BaseAIService {
     }
   }
 
+  /**
+   * Processes a single chunk from the Ollama streaming response.
+   * @param chunk The raw chunk from the stream.
+   * @returns A JSON string representing the processed chunk, or null if empty.
+   * @private
+   */
   private processChunk(chunk: unknown): string | null {
     try {
       // Type guard to check if chunk has the expected structure
@@ -246,6 +277,13 @@ export class OllamaService extends BaseAIService {
     }
   }
 
+  /**
+   * Converts an array of standard `Message` objects into the format required by the Ollama API.
+   * @param messages The array of messages to convert.
+   * @param systemPrompt An optional system prompt to prepend.
+   * @returns An array of `SimpleOllamaMessage` objects.
+   * @private
+   */
   private convertToOllamaMessages(
     messages: Message[],
     systemPrompt?: string,
@@ -275,6 +313,12 @@ export class OllamaService extends BaseAIService {
     return ollamaMessages;
   }
 
+  /**
+   * Converts a single `Message` object to the corresponding `SimpleOllamaMessage` format.
+   * @param message The message to convert.
+   * @returns A `SimpleOllamaMessage` object, or null if the message is invalid.
+   * @private
+   */
   private convertMessage(message: Message): SimpleOllamaMessage | null {
     if (!message?.role) {
       logger.warn('Invalid message structure', { message });
@@ -310,6 +354,12 @@ export class OllamaService extends BaseAIService {
     }
   }
 
+  /**
+   * Converts a user message to the Ollama format.
+   * @param message The user message.
+   * @returns A `SimpleOllamaMessage` object.
+   * @private
+   */
   private convertUserMessage(message: Message): SimpleOllamaMessage | null {
     return {
       role: 'user',
@@ -317,6 +367,12 @@ export class OllamaService extends BaseAIService {
     };
   }
 
+  /**
+   * Converts an assistant message to the Ollama format, including tool calls.
+   * @param message The assistant message.
+   * @returns A `SimpleOllamaMessage` object.
+   * @private
+   */
   private convertAssistantMessage(
     message: Message,
   ): SimpleOllamaMessage | null {
@@ -344,10 +400,21 @@ export class OllamaService extends BaseAIService {
     return result;
   }
 
+  /**
+   * Generates a random ID for a tool call.
+   * @returns A unique tool call ID string.
+   * @private
+   */
   private generateToolCallId(): string {
     return `call_${Math.random().toString(36).substring(2, 15)}`;
   }
 
+  /**
+   * Safely parses a string of tool call arguments into a record.
+   * @param args The stringified arguments.
+   * @returns A record of the arguments, or an empty object on failure.
+   * @private
+   */
   private parseArguments(args: string): Record<string, unknown> {
     try {
       if (typeof args === 'string') {
@@ -363,6 +430,12 @@ export class OllamaService extends BaseAIService {
     }
   }
 
+  /**
+   * Gets a default context window size for a given Ollama model name.
+   * @param modelName The name of the model.
+   * @returns The estimated context window size.
+   * @private
+   */
   private getModelContextWindow(modelName: string): number {
     // Context window for common Ollama models
     if (modelName.includes('llama3.1')) return 128000;
@@ -374,6 +447,12 @@ export class OllamaService extends BaseAIService {
     return 4096; // default value
   }
 
+  /**
+   * Checks if a given Ollama model likely supports tool use based on its name.
+   * @param modelName The name of the model.
+   * @returns True if the model is known to support tools, false otherwise.
+   * @private
+   */
   private getModelToolSupport(modelName: string): boolean {
     // Models that support tool calling (actual support may vary by model)
     const toolSupportModels = [
@@ -386,7 +465,11 @@ export class OllamaService extends BaseAIService {
     return toolSupportModels.some((model) => modelName.includes(model));
   }
 
-  // Implementation of abstract methods from BaseAIService
+  /**
+   * @inheritdoc
+   * @description Creates an Ollama-compatible system message object.
+   * @protected
+   */
   protected createSystemMessage(systemPrompt: string): unknown {
     return {
       role: 'system',
@@ -394,10 +477,19 @@ export class OllamaService extends BaseAIService {
     };
   }
 
+  /**
+   * @inheritdoc
+   * @description Converts a single `Message` into the format expected by the Ollama API.
+   * @protected
+   */
   protected convertSingleMessage(message: Message): unknown {
     return this.convertMessage(message);
   }
 
+  /**
+   * @inheritdoc
+   * @description The Ollama client does not require explicit resource cleanup.
+   */
   dispose(): void {
     // Ollama client doesn't require explicit cleanup
     logger.info('Ollama service disposed');

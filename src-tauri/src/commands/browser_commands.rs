@@ -3,6 +3,15 @@ use log::{debug, error, info};
 use serde::Deserialize;
 use tauri::State;
 
+/// Creates a new interactive browser session.
+///
+/// # Arguments
+/// * `server` - The `InteractiveBrowserServer` state, managed by Tauri.
+/// * `url` - The initial URL to open in the new browser session.
+/// * `title` - An optional title for the session.
+///
+/// # Returns
+/// A `Result` containing the unique session ID on success, or an error string on failure.
 #[tauri::command]
 pub async fn create_browser_session(
     server: State<'_, InteractiveBrowserServer>,
@@ -23,6 +32,14 @@ pub async fn create_browser_session(
     }
 }
 
+/// Closes an active browser session.
+///
+/// # Arguments
+/// * `server` - The `InteractiveBrowserServer` state.
+/// * `session_id` - The ID of the session to close.
+///
+/// # Returns
+/// A `Result` containing a success message, or an error string on failure.
 #[tauri::command]
 pub async fn close_browser_session(
     server: State<'_, InteractiveBrowserServer>,
@@ -42,6 +59,15 @@ pub async fn close_browser_session(
     }
 }
 
+/// Clicks an element in a browser session identified by a CSS selector.
+///
+/// # Arguments
+/// * `server` - The `InteractiveBrowserServer` state.
+/// * `session_id` - The ID of the browser session.
+/// * `selector` - The CSS selector of the element to click.
+///
+/// # Returns
+/// A `Result` containing a success message or the script result, or an error string on failure.
 #[tauri::command]
 pub async fn click_element(
     server: State<'_, InteractiveBrowserServer>,
@@ -62,6 +88,16 @@ pub async fn click_element(
     }
 }
 
+/// Inputs text into an element in a browser session.
+///
+/// # Arguments
+/// * `server` - The `InteractiveBrowserServer` state.
+/// * `session_id` - The ID of the browser session.
+/// * `selector` - The CSS selector of the input element.
+/// * `text` - The text to input into the element.
+///
+/// # Returns
+/// A `Result` containing a success message or the script result, or an error string on failure.
 #[tauri::command]
 pub async fn input_text(
     server: State<'_, InteractiveBrowserServer>,
@@ -85,6 +121,16 @@ pub async fn input_text(
     }
 }
 
+/// Scrolls the page in a browser session by a given amount.
+///
+/// # Arguments
+/// * `server` - The `InteractiveBrowserServer` state.
+/// * `session_id` - The ID of the browser session.
+/// * `x` - The horizontal scroll amount.
+/// * `y` - The vertical scroll amount.
+///
+/// # Returns
+/// A `Result` containing a success message, or an error string on failure.
 #[tauri::command]
 pub async fn scroll_page(
     server: State<'_, InteractiveBrowserServer>,
@@ -106,6 +152,14 @@ pub async fn scroll_page(
     }
 }
 
+/// Gets the current URL of a browser session.
+///
+/// # Arguments
+/// * `server` - The `InteractiveBrowserServer` state.
+/// * `session_id` - The ID of the browser session.
+///
+/// # Returns
+/// A `Result` containing the current URL, or an error string on failure.
 #[tauri::command]
 pub async fn get_current_url(
     server: State<'_, InteractiveBrowserServer>,
@@ -125,6 +179,14 @@ pub async fn get_current_url(
     }
 }
 
+/// Gets the title of the current page in a browser session.
+///
+/// # Arguments
+/// * `server` - The `InteractiveBrowserServer` state.
+/// * `session_id` - The ID of the browser session.
+///
+/// # Returns
+/// A `Result` containing the page title, or an error string on failure.
 #[tauri::command]
 pub async fn get_page_title(
     server: State<'_, InteractiveBrowserServer>,
@@ -144,6 +206,15 @@ pub async fn get_page_title(
     }
 }
 
+/// Checks if an element exists in a browser session.
+///
+/// # Arguments
+/// * `server` - The `InteractiveBrowserServer` state.
+/// * `session_id` - The ID of the browser session.
+/// * `selector` - The CSS selector of the element to check.
+///
+/// # Returns
+/// A `Result` containing `true` if the element exists, `false` otherwise, or an error string on failure.
 #[tauri::command]
 pub async fn element_exists(
     server: State<'_, InteractiveBrowserServer>,
@@ -164,6 +235,13 @@ pub async fn element_exists(
     }
 }
 
+/// Lists all active browser sessions.
+///
+/// # Arguments
+/// * `server` - The `InteractiveBrowserServer` state.
+///
+/// # Returns
+/// A `Result` containing a vector of `BrowserSession` objects, or an error string on failure.
 #[tauri::command]
 pub async fn list_browser_sessions(
     server: State<'_, InteractiveBrowserServer>,
@@ -175,6 +253,15 @@ pub async fn list_browser_sessions(
     Ok(sessions)
 }
 
+/// Navigates a browser session to a new URL.
+///
+/// # Arguments
+/// * `server` - The `InteractiveBrowserServer` state.
+/// * `session_id` - The ID of the browser session.
+/// * `url` - The URL to navigate to.
+///
+/// # Returns
+/// A `Result` containing a success message, or an error string on failure.
 #[tauri::command]
 pub async fn navigate_to_url(
     server: State<'_, InteractiveBrowserServer>,
@@ -195,6 +282,14 @@ pub async fn navigate_to_url(
     }
 }
 
+/// Gets the full HTML content of the current page in a browser session.
+///
+/// # Arguments
+/// * `server` - The `InteractiveBrowserServer` state.
+/// * `session_id` - The ID of the browser session.
+///
+/// # Returns
+/// A `Result` containing the page's HTML content as a string, or an error string on failure.
 #[tauri::command]
 pub async fn get_page_content(
     server: State<'_, InteractiveBrowserServer>,
@@ -218,6 +313,14 @@ pub async fn get_page_content(
     }
 }
 
+/// Takes a screenshot of the current page in a browser session.
+///
+/// # Arguments
+/// * `server` - The `InteractiveBrowserServer` state.
+/// * `session_id` - The ID of the browser session.
+///
+/// # Returns
+/// A `Result` containing the path to the saved screenshot, or an error string on failure.
 #[tauri::command]
 pub async fn take_screenshot(
     server: State<'_, InteractiveBrowserServer>,
@@ -237,6 +340,7 @@ pub async fn take_screenshot(
     }
 }
 
+/// Represents the payload received from the frontend when a browser script finishes executing.
 #[derive(Deserialize)]
 pub struct BrowserScriptPayload {
     #[serde(rename = "sessionId")]
@@ -246,8 +350,15 @@ pub struct BrowserScriptPayload {
     result: String,
 }
 
+/// Receives the result of a JavaScript execution from the webview and stores it for polling.
+///
+/// # Arguments
+/// * `payload` - The `BrowserScriptPayload` containing the session ID, request ID, and result.
+/// * `server` - The `InteractiveBrowserServer` state.
+///
+/// # Returns
+/// An empty `Result` on success, or an error string on failure.
 #[tauri::command]
-/// Receives the JS execution result from the webview and stores it for polling.
 pub async fn browser_script_result(
     payload: BrowserScriptPayload,
     server: State<'_, InteractiveBrowserServer>,
@@ -260,8 +371,16 @@ pub async fn browser_script_result(
     server.handle_script_result(&payload.session_id, payload.request_id, payload.result)
 }
 
+/// Executes JavaScript in a browser session and returns a request ID for polling the result.
+///
+/// # Arguments
+/// * `server` - The `InteractiveBrowserServer` state.
+/// * `session_id` - The ID of the browser session.
+/// * `script` - The JavaScript code to execute.
+///
+/// # Returns
+/// A `Result` containing a unique request ID for polling, or an error string on failure.
 #[tauri::command]
-/// Execute JavaScript in a browser session and return request_id for polling
 pub async fn execute_script(
     server: State<'_, InteractiveBrowserServer>,
     session_id: String,
@@ -285,8 +404,16 @@ pub async fn execute_script(
     }
 }
 
+/// Polls for the result of an asynchronous script execution using its request ID.
+///
+/// # Arguments
+/// * `server` - The `InteractiveBrowserServer` state.
+/// * `request_id` - The ID of the script execution request to poll.
+///
+/// # Returns
+/// A `Result` containing an `Option<String>`. `Some(result)` if the script has completed,
+/// `None` if it's still pending, or an error string on failure.
 #[tauri::command]
-/// Poll for a script result using request_id
 pub async fn poll_script_result(
     server: State<'_, InteractiveBrowserServer>,
     request_id: String,
@@ -296,6 +423,14 @@ pub async fn poll_script_result(
     server.poll_script_result(&request_id).await
 }
 
+/// Navigates the browser back to the previous page in the history.
+///
+/// # Arguments
+/// * `server` - The `InteractiveBrowserServer` state.
+/// * `session_id` - The ID of the browser session.
+///
+/// # Returns
+/// A `Result` containing the script request ID, or an error string on failure.
 #[tauri::command]
 pub async fn navigate_back(
     server: State<'_, InteractiveBrowserServer>,
@@ -315,6 +450,14 @@ pub async fn navigate_back(
     }
 }
 
+/// Navigates the browser forward to the next page in the history.
+///
+/// # Arguments
+/// * `server` - The `InteractiveBrowserServer` state.
+/// * `session_id` - The ID of the browser session.
+///
+/// # Returns
+/// A `Result` containing the script request ID, or an error string on failure.
 #[tauri::command]
 pub async fn navigate_forward(
     server: State<'_, InteractiveBrowserServer>,
@@ -334,6 +477,15 @@ pub async fn navigate_forward(
     }
 }
 
+/// Gets the text content of an element in a browser session.
+///
+/// # Arguments
+/// * `server` - The `InteractiveBrowserServer` state.
+/// * `session_id` - The ID of the browser session.
+/// * `selector` - The CSS selector of the element.
+///
+/// # Returns
+/// A `Result` containing the script request ID, or an error string on failure.
 #[tauri::command]
 pub async fn get_element_text(
     server: State<'_, InteractiveBrowserServer>,
@@ -356,6 +508,16 @@ pub async fn get_element_text(
     }
 }
 
+/// Gets the value of a specific attribute from an element in a browser session.
+///
+/// # Arguments
+/// * `server` - The `InteractiveBrowserServer` state.
+/// * `session_id` - The ID of the browser session.
+/// * `selector` - The CSS selector of the element.
+/// * `attribute` - The name of the attribute to get.
+///
+/// # Returns
+/// A `Result` containing the script request ID, or an error string on failure.
 #[tauri::command]
 pub async fn get_element_attribute(
     server: State<'_, InteractiveBrowserServer>,
@@ -384,6 +546,16 @@ pub async fn get_element_attribute(
     }
 }
 
+/// Finds an element in a browser session and returns detailed information about it.
+///
+/// # Arguments
+/// * `server` - The `InteractiveBrowserServer` state.
+/// * `session_id` - The ID of the browser session.
+/// * `selector` - The CSS selector of the element to find.
+///
+/// # Returns
+/// A `Result` containing the script request ID. The script result will be a JSON string
+/// with details about the element (e.g., visibility, position, attributes).
 #[tauri::command]
 pub async fn find_element(
     server: State<'_, InteractiveBrowserServer>,

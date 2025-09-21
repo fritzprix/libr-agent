@@ -11,18 +11,35 @@ import { EmptyAIService } from './empty';
 
 const logger = getLogger('AIService');
 
-// --- Enhanced Service Factory ---
-
+/**
+ * An internal interface to store a cached AI service instance along with its metadata.
+ * @internal
+ */
 interface ServiceInstance {
   service: IAIService;
   apiKey: string;
   created: number;
 }
 
+/**
+ * A factory class for creating and managing AI service instances.
+ * It provides a centralized way to get service instances, caches them to avoid
+ * re-instantiation, and handles their lifecycle (e.g., disposal of expired instances).
+ */
 export class AIServiceFactory {
   private static instances: Map<string, ServiceInstance> = new Map();
   private static readonly INSTANCE_TTL = 1000 * 60 * 60; // 1 hour
 
+  /**
+   * Gets an instance of an AI service for a given provider.
+   * It uses a cached instance if a valid one exists, otherwise it creates a new one.
+   *
+   * @param provider The AI service provider to get an instance for.
+   * @param apiKey The API key for the service.
+   * @param config Optional configuration for the service.
+   * @returns An instance of a class that implements the `IAIService` interface.
+   *          Returns an `EmptyAIService` instance if the provider is unknown or creation fails.
+   */
   static getService(
     provider: AIServiceProvider,
     apiKey: string,
@@ -92,6 +109,9 @@ export class AIServiceFactory {
     return service;
   }
 
+  /**
+   * Disposes of all cached service instances and clears the cache.
+   */
   static disposeAll(): void {
     for (const instance of this.instances.values()) {
       instance.service.dispose();
@@ -99,6 +119,11 @@ export class AIServiceFactory {
     this.instances.clear();
   }
 
+  /**
+   * Cleans up any cached service instances that have exceeded their time-to-live (TTL).
+   * @param now The current timestamp (e.g., from `Date.now()`).
+   * @private
+   */
   private static cleanupExpiredInstances(now: number): void {
     for (const instanceKey of this.instances.keys()) {
       const instance = this.instances.get(instanceKey);

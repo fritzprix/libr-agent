@@ -10,6 +10,11 @@ import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';
 const logger = getLogger('AnthropicService');
 
+/**
+ * An internal helper interface to accumulate partial JSON data for a tool call
+ * during a streaming response.
+ * @internal
+ */
 interface ToolCallAccumulator {
   id: string;
   name: string;
@@ -18,9 +23,19 @@ interface ToolCallAccumulator {
   yielded: boolean; // Track if already yielded to prevent duplicates
 }
 
+/**
+ * An AI service implementation for interacting with Anthropic's language models (e.g., Claude).
+ * It handles the specifics of the Anthropic API, including message formatting,
+ * tool use, and streaming.
+ */
 export class AnthropicService extends BaseAIService {
   private anthropic: Anthropic;
 
+  /**
+   * Initializes a new instance of the `AnthropicService`.
+   * @param apiKey The Anthropic API key.
+   * @param config Optional configuration for the service.
+   */
   constructor(apiKey: string, config?: AIServiceConfig) {
     super(apiKey, config);
     this.anthropic = new Anthropic({
@@ -29,10 +44,22 @@ export class AnthropicService extends BaseAIService {
     });
   }
 
+  /**
+   * Gets the provider identifier.
+   * @returns `AIServiceProvider.Anthropic`.
+   */
   getProvider(): AIServiceProvider {
     return AIServiceProvider.Anthropic;
   }
 
+  /**
+   * Determines whether to enable the 'thinking' feature based on the model name.
+   * Extended thinking is available for Claude 3.5 Sonnet and later models.
+   * @param modelName The name of the model.
+   * @param config The service configuration.
+   * @returns True if the thinking feature should be enabled, false otherwise.
+   * @private
+   */
   private shouldEnableThinking(
     modelName?: string,
     config?: AIServiceConfig,
@@ -44,6 +71,16 @@ export class AnthropicService extends BaseAIService {
     return model.includes('claude-3-5') || model.includes('claude-3-opus');
   }
 
+  /**
+   * Initiates a streaming chat session with the Anthropic API.
+   * It handles message conversion, tool use, and processes the streaming response,
+   * including partial JSON accumulation for tool calls and 'thinking' state updates.
+   *
+   * @param messages The array of messages for the conversation.
+   * @param options Optional parameters for the chat, including model name, system prompt, and tools.
+   * @yields A JSON string for each chunk of the response. The format can be `{ content: string }`
+   *         for text, `{ thinking: object }` for thinking state, or `{ tool_calls: [...] }` for tool calls.
+   */
   async *streamChat(
     messages: Message[],
     options: {
@@ -217,6 +254,17 @@ export class AnthropicService extends BaseAIService {
     }
   }
 
+  /**
+   * Converts an array of standard `Message` objects into the format required
+   * by the Anthropic API. It also performs a strict integrity check to ensure
+   * that all tool calls have a corresponding tool result, throwing an error
+   * if any inconsistencies are found.
+   *
+   * @param messages The array of messages to convert.
+   * @returns An array of `AnthropicMessageParam` objects.
+   * @throws An error if an incomplete tool chain is detected.
+   * @private
+   */
   private convertToAnthropicMessages(
     messages: Message[],
   ): AnthropicMessageParam[] {
@@ -224,7 +272,7 @@ export class AnthropicService extends BaseAIService {
     const toolUseIds = new Set<string>();
     const toolResultIds = new Set<string>();
 
-    // 디버깅을 위한 tool 체인 추적
+    // Track tool chains for debugging and integrity checks
     for (const m of messages) {
       if (m.role === 'assistant' && m.tool_use) {
         toolUseIds.add(m.tool_use.id);
@@ -235,7 +283,7 @@ export class AnthropicService extends BaseAIService {
       }
     }
 
-    // 체인 완전성 검증
+    // Verify tool chain integrity
     const unmatchedToolUses = Array.from(toolUseIds).filter(
       (id) => !toolResultIds.has(id),
     );
@@ -254,7 +302,7 @@ export class AnthropicService extends BaseAIService {
           toolResultIds: Array.from(toolResultIds),
         },
       );
-      // 이 시점에서 에러를 발생시켜 API 호출 전에 문제를 감지
+      // Throw an error at this point to detect the problem before the API call
       throw new Error(
         `Incomplete tool chain: ${unmatchedToolUses.length} unmatched tool_use, ${unmatchedToolResults.length} unmatched tool_result`,
       );
@@ -353,13 +401,23 @@ export class AnthropicService extends BaseAIService {
     return anthropicMessages;
   }
 
-  // Implementation of abstract methods from BaseAIService
+  /**
+   * @inheritdoc
+   * @description For Anthropic, system messages are handled as a separate parameter
+   * in the API call, so this method returns null.
+   * @protected
+   */
   protected createSystemMessage(systemPrompt: string): unknown {
     // Anthropic handles system messages separately as a parameter, not as a message
     void systemPrompt;
     return null;
   }
 
+  /**
+   * @inheritdoc
+   * @description Converts a single `Message` into the format expected by the Anthropic API.
+   * @protected
+   */
   protected convertSingleMessage(message: Message): unknown {
     if (message.role === 'system') {
       // System messages are handled separately in the API call
@@ -433,6 +491,10 @@ export class AnthropicService extends BaseAIService {
     }
   }
 
+  /**
+   * @inheritdoc
+   * @description The Anthropic SDK does not require explicit resource cleanup.
+   */
   dispose(): void {
     // Anthropic SDK doesn't require explicit cleanup
   }

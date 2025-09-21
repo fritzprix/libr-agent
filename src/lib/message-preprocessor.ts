@@ -5,14 +5,18 @@ import { stringToMCPContentArray } from './utils';
 const logger = getLogger('message-preprocessor');
 
 /**
- * Type guard to check if an MCPContent item has text property
- */
-
-/**
- * Prepares a message for LLM by including attachment metadata and content-store tool usage guides
+ * Prepares a single message for consumption by an LLM.
+ * If the message has attachments, it enriches the message content with metadata
+ * about each attachment and provides a guide on how to use tools to access the
+ * full content of the attachments. This helps the LLM understand what files are
+ * available and how to interact with them.
+ *
+ * @param message The message to preprocess.
+ * @returns A promise that resolves to the processed message, ready for the LLM.
+ *          If an error occurs, it returns the original message as a fallback.
  */
 export async function prepareMessageForLLM(message: Message): Promise<Message> {
-  // If no attachments, just normalize content
+  // If there are no attachments, no preprocessing is needed.
   if (!message.attachments || message.attachments.length === 0) {
     return message;
   }
@@ -58,7 +62,11 @@ To read the full content of this file, use:
 }
 
 /**
- * Processes multiple messages for LLM consumption
+ * Preprocesses an array of messages for consumption by an LLM.
+ * It iterates through the messages and applies the `prepareMessageForLLM` function to each one.
+ *
+ * @param messages The array of messages to preprocess.
+ * @returns A promise that resolves to an array of processed messages.
  */
 export async function prepareMessagesForLLM(
   messages: Message[],

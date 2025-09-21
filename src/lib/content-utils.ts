@@ -1,7 +1,9 @@
 import type { MCPContent } from './mcp-types';
 
 /**
- * UI content types that should be rendered visually
+ * A constant array of MCPContent types that are considered to be UI content.
+ * These content types are typically rendered as visual elements rather than plain text.
+ * It includes types like resources, images, audio, and resource links.
  */
 export const UI_CONTENT_TYPES = [
   'resource',
@@ -11,9 +13,13 @@ export const UI_CONTENT_TYPES = [
 ] as const;
 
 /**
- * Separates content into UI content and text content
- * @param content - Array of MCPContent items
- * @returns Object with uiContent and textContent arrays
+ * Separates an array of MCPContent objects into two distinct arrays:
+ * one for UI-related content and one for text-based content.
+ * This is useful for rendering different types of content in different ways.
+ *
+ * @param content The array of MCPContent items to be separated.
+ * @returns An object containing two arrays: `uiContent` for UI-related items
+ *          and `textContent` for all other items.
  */
 export function separateContent(content: MCPContent[]) {
   const uiContent = content.filter((item) =>

@@ -11,6 +11,26 @@ const logger = getLogger('AIService');
 
 // --- Tool Conversion with Enhanced Type Safety ---
 
+/** A union type representing any possible provider-specific tool format. @internal */
+type ProviderToolType =
+  | GroqChatCompletionTool
+  | OpenAIChatCompletionTool
+  | AnthropicTool
+  | FunctionDeclaration
+  | Cerebras.Chat.Completions.ChatCompletionCreateParams.Tool
+  | OllamaTool;
+import { ChatCompletionTool as GroqChatCompletionTool } from 'groq-sdk/resources/chat/completions.mjs';
+import { ChatCompletionTool as OpenAIChatCompletionTool } from 'openai/resources/chat/completions.mjs';
+import { Tool as AnthropicTool } from '@anthropic-ai/sdk/resources/messages.mjs';
+import { MCPTool, JSONSchema } from '../mcp-types';
+import { getLogger } from '../logger';
+import { AIServiceProvider, AIServiceError } from './types';
+
+const logger = getLogger('AIService');
+
+// --- Tool Conversion with Enhanced Type Safety ---
+
+/** A union type representing any possible provider-specific tool format. @internal */
 type ProviderToolType =
   | GroqChatCompletionTool
   | OpenAIChatCompletionTool
@@ -19,6 +39,7 @@ type ProviderToolType =
   | Cerebras.Chat.Completions.ChatCompletionCreateParams.Tool
   | OllamaTool;
 
+/** Represents the structure of a tool for the Ollama provider. @internal */
 interface OllamaTool {
   type: 'function';
   function: {
@@ -27,15 +48,24 @@ interface OllamaTool {
     parameters: Record<string, unknown>;
   };
 }
+
+/** Represents an array of provider-specific tools. @internal */
 type ProviderToolsType = ProviderToolType[];
 
-// Helper function to convert JSON schema types to Gemini types
+/** A simplified representation of a JSON schema property for internal conversion. @internal */
 interface JsonSchemaProperty {
   type: string;
   description?: string;
   items?: JsonSchemaProperty;
 }
 
+/**
+ * Converts a structured `JSONSchema` object into a simplified `JsonSchemaProperty` object.
+ * This is a helper for the Gemini tool conversion process.
+ * @param schema The `JSONSchema` to convert.
+ * @returns A `JsonSchemaProperty` object.
+ * @internal
+ */
 function convertJSONSchemaToJsonSchemaProperty(
   schema: JSONSchema,
 ): JsonSchemaProperty {
@@ -72,7 +102,12 @@ function convertJSONSchemaToJsonSchemaProperty(
   return result;
 }
 
-// Helper function to convert JSON schema types to Gemini types
+/**
+ * Converts a record of `JsonSchemaProperty` objects to the format required by the Google GenAI SDK.
+ * @param properties The properties to convert.
+ * @returns A record of properties formatted for Gemini.
+ * @internal
+ */
 function convertPropertiesToGeminiTypes(
   properties: Record<string, JsonSchemaProperty>,
 ): Record<
@@ -126,7 +161,13 @@ function convertPropertiesToGeminiTypes(
   return convertedProperties;
 }
 
-// Helper function to ensure schema has required type field
+/**
+ * Ensures that a JSON schema and its nested properties have a `type` field,
+ * which is required by some providers. It infers the type if it's missing.
+ * @param schema The schema to process.
+ * @returns A new schema object with the `type` field ensured.
+ * @internal
+ */
 function ensureSchemaTypeField(
   schema: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -188,7 +229,12 @@ function ensureSchemaTypeField(
   return result;
 }
 
-// Helper function to sanitize JSON schema for Cerebras (remove unsupported fields)
+/**
+ * Sanitizes a JSON schema for Cerebras compatibility by removing unsupported fields.
+ * @param schema The schema to sanitize.
+ * @returns A new, sanitized schema object.
+ * @internal
+ */
 function sanitizeSchemaForCerebras(
   schema: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -269,7 +315,12 @@ function sanitizeSchemaForCerebras(
   return sanitized;
 }
 
-// Helper function to convert a single property type
+/**
+ * Converts a single `JsonSchemaProperty` to the format required by the Google GenAI SDK.
+ * @param prop The property to convert.
+ * @returns An object with the correct `Type` enum.
+ * @internal
+ */
 function convertSinglePropertyToGeminiType(prop: JsonSchemaProperty): {
   type: Type;
   items?: { type: Type };
@@ -291,6 +342,12 @@ function convertSinglePropertyToGeminiType(prop: JsonSchemaProperty): {
   }
 }
 
+/**
+ * Validates the basic structure of an `MCPTool`.
+ * @param tool The tool to validate.
+ * @throws An error if the tool is missing required fields.
+ * @internal
+ */
 function validateTool(tool: MCPTool): void {
   if (!tool.name || typeof tool.name !== 'string') {
     throw new Error('Tool must have a valid name');
@@ -306,7 +363,14 @@ function validateTool(tool: MCPTool): void {
   }
 }
 
-// Updated tool conversion for Gemini - use parameters with Type enums
+/**
+ * Converts a single `MCPTool` object into the format required by a specific AI service provider.
+ * @param mcpTool The `MCPTool` to convert.
+ * @param provider The target `AIServiceProvider`.
+ * @returns The tool in the provider-specific format.
+ * @throws An `AIServiceError` if tool conversion is not supported for the provider.
+ * @internal
+ */
 function convertMCPToolToProviderFormat(
   mcpTool: MCPTool,
   provider: AIServiceProvider,
@@ -404,6 +468,12 @@ function convertMCPToolToProviderFormat(
   }
 }
 
+/**
+ * Converts an array of `MCPTool` objects into the format required by a specific AI service provider.
+ * @param mcpTools The array of `MCPTool` objects to convert.
+ * @param provider The target `AIServiceProvider`.
+ * @returns An array of tools in the provider-specific format.
+ */
 export function convertMCPToolsToProviderTools(
   mcpTools: MCPTool[],
   provider: AIServiceProvider,
@@ -417,7 +487,11 @@ export function convertMCPToolsToProviderTools(
   return mcpTools.map((tool) => convertMCPToolToProviderFormat(tool, provider));
 }
 
-// Cerebras-specific tool conversion for type safety
+/**
+ * A type-safe function specifically for converting MCP tools to the Cerebras format.
+ * @param mcpTools The array of `MCPTool` objects to convert.
+ * @returns An array of tools in the Cerebras-specific format.
+ */
 export function convertMCPToolsToCerebrasTools(
   mcpTools: MCPTool[],
 ): Cerebras.Chat.Completions.ChatCompletionCreateParams.Tool[] {

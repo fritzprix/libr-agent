@@ -14,60 +14,76 @@ use dashmap::DashMap;
 
 use uuid::Uuid;
 
+/// Represents an interactive browser session, corresponding to a Tauri window.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-
 pub struct BrowserSession {
+    /// A unique identifier for the session.
     pub id: String,
+    /// The label used by Tauri to identify the window.
     pub window_label: String,
+    /// The current URL of the browser session.
     pub url: String,
+    /// The timestamp of when the session was created.
     pub created_at: DateTime<Utc>,
-
+    /// The current status of the session.
     pub status: SessionStatus,
 }
 
+/// Represents the status of a `BrowserSession`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-
 pub enum SessionStatus {
+    /// The session is in the process of being created.
     Creating,
-
+    /// The session is active and ready for interaction.
     Active,
-
+    /// The session is currently paused.
     Paused,
-
+    /// The session has been closed.
     Closed,
-
+    /// The session has encountered an error.
     Error(String),
 }
 
+/// Manages multiple interactive browser sessions.
+/// This struct is managed as Tauri state and shared across commands.
 #[derive(Debug, Clone)]
-
 pub struct InteractiveBrowserServer {
+    /// A handle to the Tauri application instance, used to create and manage windows.
     app_handle: AppHandle,
-
+    /// A thread-safe map of active browser sessions, keyed by session ID.
     sessions: Arc<RwLock<HashMap<String, BrowserSession>>>,
-
+    /// A thread-safe map to store the results of asynchronous script executions, keyed by request ID.
     script_results: Arc<DashMap<String, String>>,
 }
 
 impl InteractiveBrowserServer {
+    /// Creates a new instance of the `InteractiveBrowserServer`.
+    ///
+    /// # Arguments
+    /// * `app_handle` - A handle to the Tauri application instance.
     pub fn new(app_handle: AppHandle) -> Self {
         info!("Initializing Interactive Browser Server");
 
         Self {
             app_handle,
-
             sessions: Arc::new(RwLock::new(HashMap::new())),
-
             script_results: Arc::new(DashMap::new()),
         }
     }
 
-    /// Create a new browser session using Tauri's multiwindow pattern
+    /// Creates a new browser session by opening a new Tauri window.
+    ///
+    /// Each session is tracked in the `sessions` map and is associated with a unique window.
+    ///
+    /// # Arguments
+    /// * `url` - The initial URL to load in the new window.
+    /// * `title` - An optional title for the new window.
+    ///
+    /// # Returns
+    /// A `Result` containing the unique session ID on success, or an error string on failure.
     pub async fn create_browser_session(
         &self,
-
         url: &str,
-
         title: Option<&str>,
     ) -> Result<String, String> {
         let session_id = Uuid::new_v4().to_string();
@@ -144,7 +160,19 @@ impl InteractiveBrowserServer {
         Ok(session_id)
     }
 
-    /// Execute JavaScript in a browser session and return request_id for polling
+    /// Executes a given JavaScript snippet in a specific browser session's window.
+    ///
+    /// This method wraps the user-provided script in an async IIFE to handle promises
+    /// and errors gracefully. It then sends the result (or error) back to the backend
+    /// using the `browser_script_result` command, which can be polled by the frontend.
+    ///
+    /// # Arguments
+    /// * `session_id` - The ID of the session in which to execute the script.
+    /// * `script` - The JavaScript code to execute.
+    ///
+    /// # Returns
+    /// A `Result` containing a unique `request_id` which can be used to poll for the
+    /// script's result, or an error string on failure.
     pub async fn execute_script(&self, session_id: &str, script: &str) -> Result<String, String> {
         debug!("Executing script in session {session_id}: {script}");
 
@@ -209,7 +237,17 @@ impl InteractiveBrowserServer {
         }
     }
 
-    /// Click on a DOM element
+    /// Simulates a click on a DOM element in a browser session.
+    ///
+    /// This method constructs a JavaScript snippet that finds the element, gathers diagnostic
+    /// information (visibility, disabled state, etc.), and attempts to click it.
+    ///
+    /// # Arguments
+    /// * `session_id` - The ID of the session.
+    /// * `selector` - The CSS selector for the element to click.
+    ///
+    /// # Returns
+    /// A `Result` containing the script request ID.
     pub async fn click_element(&self, session_id: &str, selector: &str) -> Result<String, String> {
         debug!("Clicking element '{selector}' in session {session_id}");
 
@@ -283,14 +321,22 @@ impl InteractiveBrowserServer {
         self.execute_script(session_id, &script).await
     }
 
-    /// Input text into a form field
+    /// Inputs text into a form field in a browser session.
+    ///
+    /// This method constructs a JavaScript snippet that finds the element, checks if it's
+    /// enabled, and then sets its value, dispatching appropriate events.
+    ///
+    /// # Arguments
+    /// * `session_id` - The ID of the session.
+    /// * `selector` - The CSS selector for the input element.
+    /// * `text` - The text to input.
+    ///
+    /// # Returns
+    /// A `Result` containing the script request ID.
     pub async fn input_text(
         &self,
-
         session_id: &str,
-
         selector: &str,
-
         text: &str,
     ) -> Result<String, String> {
         debug!("Inputting text '{text}' into element '{selector}' in session {session_id}");
@@ -401,7 +447,15 @@ impl InteractiveBrowserServer {
         self.execute_script(session_id, &script).await
     }
 
-    /// Scroll the page to specified coordinates
+    /// Scrolls the page to the specified coordinates.
+    ///
+    /// # Arguments
+    /// * `session_id` - The ID of the session.
+    /// * `x` - The horizontal coordinate to scroll to.
+    /// * `y` - The vertical coordinate to scroll to.
+    ///
+    /// # Returns
+    /// A `Result` containing the script request ID.
     pub async fn scroll_page(&self, session_id: &str, x: i32, y: i32) -> Result<String, String> {
         debug!("Scrolling page to ({x}, {y}) in session {session_id}");
 
@@ -410,7 +464,13 @@ impl InteractiveBrowserServer {
         self.execute_script(session_id, &script).await
     }
 
-    /// Get current page URL
+    /// Gets the current URL of the page in the specified session.
+    ///
+    /// # Arguments
+    /// * `session_id` - The ID of the session.
+    ///
+    /// # Returns
+    /// A `Result` containing the script request ID for polling the URL.
     pub async fn get_current_url(&self, session_id: &str) -> Result<String, String> {
         debug!("Getting current URL for session {session_id}");
 
@@ -419,7 +479,13 @@ impl InteractiveBrowserServer {
         self.execute_script(session_id, script).await
     }
 
-    /// Get page title
+    /// Gets the title of the current page in the specified session.
+    ///
+    /// # Arguments
+    /// * `session_id` - The ID of the session.
+    ///
+    /// # Returns
+    /// A `Result` containing the script request ID for polling the title.
     pub async fn get_page_title(&self, session_id: &str) -> Result<String, String> {
         debug!("Getting page title for session {session_id}");
 
@@ -428,7 +494,14 @@ impl InteractiveBrowserServer {
         self.execute_script(session_id, script).await
     }
 
-    /// Check if a DOM element exists
+    /// Checks if a DOM element exists for the given selector.
+    ///
+    /// # Arguments
+    /// * `session_id` - The ID of the session.
+    /// * `selector` - The CSS selector to check for.
+    ///
+    /// # Returns
+    /// A `Result` containing `true` if the element exists, `false` otherwise.
     pub async fn element_exists(&self, session_id: &str, selector: &str) -> Result<bool, String> {
         debug!("Checking if element '{selector}' exists in session {session_id}");
 
@@ -475,7 +548,10 @@ return false;
         }
     }
 
-    /// Get all active sessions
+    /// Lists all currently active (not closed) browser sessions.
+    ///
+    /// # Returns
+    /// A vector of `BrowserSession` structs.
     pub fn list_sessions(&self) -> Vec<BrowserSession> {
         match self.sessions.read() {
             Ok(sessions) => {
@@ -498,7 +574,14 @@ return false;
         }
     }
 
-    /// Close a browser session
+    /// Closes a browser session, which includes closing the associated Tauri window
+    /// and removing the session from the active sessions map.
+    ///
+    /// # Arguments
+    /// * `session_id` - The ID of the session to close.
+    ///
+    /// # Returns
+    /// A `Result` containing a success message, or an error string on failure.
     pub async fn close_session(&self, session_id: &str) -> Result<String, String> {
         info!("Closing browser session: {session_id}");
 
@@ -538,7 +621,14 @@ return false;
         Ok("Session closed successfully".to_string())
     }
 
-    /// Navigate to a new URL in an existing session
+    /// Navigates an existing browser session to a new URL.
+    ///
+    /// # Arguments
+    /// * `session_id` - The ID of the session to navigate.
+    /// * `url` - The new URL to load.
+    ///
+    /// # Returns
+    /// A `Result` containing a success message, or an error string on failure.
     pub async fn navigate_to_url(&self, session_id: &str, url: &str) -> Result<String, String> {
         info!("Navigating session {session_id} to URL: {url}");
 
@@ -582,7 +672,13 @@ return false;
         }
     }
 
-    /// Get page content (HTML)
+    /// Gets the full HTML content of the page in the specified session.
+    ///
+    /// # Arguments
+    /// * `session_id` - The ID of the session.
+    ///
+    /// # Returns
+    /// A `Result` containing the script request ID for polling the HTML content.
     pub async fn get_page_content(&self, session_id: &str) -> Result<String, String> {
         debug!("Getting page content for session {session_id}");
 
@@ -607,7 +703,13 @@ return false;
         }
     }
 
-    /// Take a screenshot of the page (placeholder for future implementation)
+    /// Takes a screenshot of the page. (Placeholder for future implementation)
+    ///
+    /// # Arguments
+    /// * `session_id` - The ID of the session.
+    ///
+    /// # Returns
+    /// An `Err` as this feature is not yet implemented.
     pub async fn take_screenshot(&self, session_id: &str) -> Result<String, String> {
         debug!("Taking screenshot for session {session_id}");
 
@@ -616,7 +718,17 @@ return false;
         Err("Screenshot functionality not yet implemented".to_string())
     }
 
-    /// Poll for script result using request_id
+    /// Polls for the result of a script execution using its request ID.
+    ///
+    /// This method checks the `script_results` map for a result associated with the
+    /// given `request_id`. If found, it returns the result and removes it from the map.
+    ///
+    /// # Arguments
+    /// * `request_id` - The ID of the script execution request.
+    ///
+    /// # Returns
+    /// A `Result` containing an `Option<String>`. `Some(result)` if the result is available,
+    /// `None` if it is not yet available.
     pub async fn poll_script_result(&self, request_id: &str) -> Result<Option<String>, String> {
         if let Some((_key, result)) = self.script_results.remove(request_id) {
             debug!("Retrieved script result for request_id: {request_id}");
@@ -626,7 +738,18 @@ return false;
         }
     }
 
-    /// Handle script result from the browser (internal method for browser_script_result command)
+    /// Handles the script result received from the `browser_script_result` command.
+    ///
+    /// This method is called internally when the frontend sends back the result of a
+    /// script execution. It stores the result in the `script_results` map.
+    ///
+    /// # Arguments
+    /// * `session_id` - The ID of the session where the script was executed.
+    /// * `request_id` - The unique ID of the script execution request.
+    /// * `result` - The string result of the script execution.
+    ///
+    /// # Returns
+    /// An empty `Result` on success.
     pub fn handle_script_result(
         &self,
         session_id: &str,

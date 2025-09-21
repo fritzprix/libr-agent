@@ -1,22 +1,41 @@
+/**
+ * Defines a standardized structure for classified AI service errors.
+ */
 export interface ErrorClassification {
+  /** A user-friendly message to display in the UI. */
   displayMessage: string;
+  /** The type of the error (e.g., 'NETWORK_ERROR', 'AUTHENTICATION_ERROR'). */
   type: string;
+  /** Indicates whether the operation can be retried. */
   recoverable: boolean;
+  /** Contains detailed information about the error for debugging. */
   details: {
+    /** The original error object that was thrown. */
     originalError: unknown;
+    /** A specific error code, if available. */
     errorCode?: string;
+    /** The ISO timestamp of when the error occurred. */
     timestamp: string;
+    /** Any additional context provided when the error was classified. */
     context?: Record<string, unknown>;
   };
 }
 
+/**
+ * Classifies a given error from an AI service into a standardized format.
+ * It inspects the error message to determine the type of error (e.g., network, authentication).
+ *
+ * @param error The error object to classify.
+ * @param context Optional additional context about the error.
+ * @returns An `ErrorClassification` object with details about the error.
+ */
 export const classifyAIServiceError = (
   error: unknown,
   context?: Record<string, unknown>,
 ): ErrorClassification => {
   const timestamp = new Date().toISOString();
 
-  // MALFORMED_FUNCTION_CALL 에러
+  // MALFORMED_FUNCTION_CALL error
   if (
     error instanceof Error &&
     error.message.includes('MALFORMED_FUNCTION_CALL')
@@ -35,7 +54,7 @@ export const classifyAIServiceError = (
     };
   }
 
-  // JSON 파싱 에러
+  // JSON parsing error
   if (
     error instanceof Error &&
     error.message.includes('Incomplete JSON segment')
@@ -54,7 +73,7 @@ export const classifyAIServiceError = (
     };
   }
 
-  // 네트워크 에러
+  // Network error
   if (
     error instanceof Error &&
     (error.message.includes('network') ||
@@ -75,7 +94,7 @@ export const classifyAIServiceError = (
     };
   }
 
-  // API 키 관련 에러
+  // API key related error
   if (
     error instanceof Error &&
     (error.message.includes('API key') ||
@@ -97,7 +116,7 @@ export const classifyAIServiceError = (
     };
   }
 
-  // Rate limit 에러
+  // Rate limit error
   if (
     error instanceof Error &&
     (error.message.includes('rate limit') ||
@@ -118,7 +137,7 @@ export const classifyAIServiceError = (
     };
   }
 
-  // 기타 알 수 없는 에러
+  // Other unknown errors
   return {
     displayMessage: 'Something went wrong. Please try again.',
     type: 'UNKNOWN_ERROR',
@@ -132,6 +151,16 @@ export const classifyAIServiceError = (
   };
 };
 
+/**
+ * Creates a standardized error message object to be used in the chat context.
+ * It classifies the given error and wraps it in a message structure.
+ *
+ * @param messageId The ID for the new error message.
+ * @param sessionId The ID of the session where the error occurred.
+ * @param error The error object to classify and include in the message.
+ * @param context Optional additional context about the error.
+ * @returns A message object formatted as an error.
+ */
 export const createErrorMessage = (
   messageId: string,
   sessionId: string,
