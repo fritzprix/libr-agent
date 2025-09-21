@@ -12,14 +12,15 @@ const logger = getLogger('CerebrasService');
 const DEFAULT_MODEL = 'llama3.1-8b';
 const TOOL_CALL_TYPE = 'function' as const;
 
-// Interfaces
+// Internal Interfaces
+/** @internal */
 interface StreamChatOptions {
   modelName?: string;
   systemPrompt?: string;
   availableTools?: MCPTool[];
   config?: AIServiceConfig;
 }
-
+/** @internal */
 interface ChunkChoice {
   delta?: {
     content?: string;
@@ -27,26 +28,34 @@ interface ChunkChoice {
   };
   finish_reason?: string;
 }
-
+/** @internal */
 interface StreamingChunk {
   choices?: ChunkChoice[];
 }
-
+/** @internal */
 interface StreamChunk {
   content?: string;
   tool_calls?: ToolCall[];
   error?: string;
 }
-
+/** @internal */
 type CerebrasMessage =
   | Cerebras.Chat.Completions.ChatCompletionCreateParams.SystemMessageRequest
   | Cerebras.Chat.Completions.ChatCompletionCreateParams.UserMessageRequest
   | Cerebras.Chat.Completions.ChatCompletionCreateParams.AssistantMessageRequest
   | Cerebras.Chat.Completions.ChatCompletionCreateParams.ToolMessageRequest;
 
+/**
+ * An AI service implementation for interacting with Cerebras language models.
+ */
 export class CerebrasService extends BaseAIService {
   private cerebras: Cerebras | null;
 
+  /**
+   * Initializes a new instance of the `CerebrasService`.
+   * @param apiKey The Cerebras API key.
+   * @param config Optional configuration for the service.
+   */
   constructor(apiKey: string, config?: AIServiceConfig) {
     super(apiKey, config);
     this.cerebras = new Cerebras({
@@ -56,10 +65,20 @@ export class CerebrasService extends BaseAIService {
     });
   }
 
+  /**
+   * Gets the provider identifier.
+   * @returns `AIServiceProvider.Cerebras`.
+   */
   getProvider(): AIServiceProvider {
     return AIServiceProvider.Cerebras;
   }
 
+  /**
+   * Initiates a streaming chat session with the Cerebras API.
+   * @param messages The array of messages for the conversation.
+   * @param options Optional parameters for the chat, including model name, system prompt, and tools.
+   * @yields A JSON string for each chunk of the response, containing content and/or tool calls.
+   */
   async *streamChat(
     messages: Message[],
     options: StreamChatOptions = {},
@@ -107,6 +126,12 @@ export class CerebrasService extends BaseAIService {
     }
   }
 
+  /**
+   * Processes a single chunk from the streaming response.
+   * @param chunk The raw chunk from the stream.
+   * @returns A JSON string representing the processed chunk, or null if the chunk is empty.
+   * @private
+   */
   private processChunk(chunk: unknown): string | null {
     try {
       // Type guard for chunk structure
@@ -148,6 +173,12 @@ export class CerebrasService extends BaseAIService {
     }
   }
 
+  /**
+   * A type guard to validate the structure of a streaming chunk.
+   * @param chunk The chunk to validate.
+   * @returns True if the chunk is a valid `StreamingChunk`, false otherwise.
+   * @private
+   */
   private isValidStreamingChunk(chunk: unknown): chunk is StreamingChunk {
     return (
       chunk != null &&
@@ -157,6 +188,12 @@ export class CerebrasService extends BaseAIService {
     );
   }
 
+  /**
+   * Converts an array of `MCPTool` objects to the format required by the Cerebras API.
+   * @param availableTools The array of `MCPTool` objects.
+   * @returns An array of Cerebras-compatible tool objects, or undefined if no tools are provided.
+   * @private
+   */
   private prepareTools(
     availableTools?: MCPTool[],
   ): Cerebras.Chat.Completions.ChatCompletionCreateParams.Tool[] | undefined {
@@ -172,6 +209,13 @@ export class CerebrasService extends BaseAIService {
     }
   }
 
+  /**
+   * Converts an array of standard `Message` objects into the format required by the Cerebras API.
+   * @param messages The array of messages to convert.
+   * @param systemPrompt An optional system prompt to prepend.
+   * @returns An array of `CerebrasMessage` objects.
+   * @private
+   */
   private convertToCerebrasMessages(
     messages: Message[],
     systemPrompt?: string,
@@ -201,6 +245,12 @@ export class CerebrasService extends BaseAIService {
     return cerebrasMessages;
   }
 
+  /**
+   * Converts a single `Message` object to the corresponding `CerebrasMessage` format.
+   * @param message The message to convert.
+   * @returns A `CerebrasMessage` object, or null if the message is invalid.
+   * @private
+   */
   private convertMessage(message: Message): CerebrasMessage | null {
     if (!message?.role) {
       logger.warn('Invalid message structure', { message });
@@ -223,6 +273,12 @@ export class CerebrasService extends BaseAIService {
     }
   }
 
+  /**
+   * Converts a user message.
+   * @param message The user message to convert.
+   * @returns A `CerebrasMessage` object, or null if invalid.
+   * @private
+   */
   private convertUserMessage(message: Message): CerebrasMessage | null {
     if (typeof message.content !== 'string') {
       logger.warn('User message content must be string');
@@ -234,6 +290,12 @@ export class CerebrasService extends BaseAIService {
     };
   }
 
+  /**
+   * Converts an assistant message, handling both text content and tool calls.
+   * @param message The assistant message to convert.
+   * @returns A `CerebrasMessage` object, or null if invalid.
+   * @private
+   */
   private convertAssistantMessage(message: Message): CerebrasMessage | null {
     // Handle assistant message with tool calls
     if (
@@ -288,6 +350,12 @@ export class CerebrasService extends BaseAIService {
     };
   }
 
+  /**
+   * Converts a tool message.
+   * @param message The tool message to convert.
+   * @returns A `CerebrasMessage` object, or null if invalid.
+   * @private
+   */
   private convertToolMessage(message: Message): CerebrasMessage | null {
     if (!message.tool_call_id) {
       logger.warn('Tool message missing tool_call_id');
@@ -301,7 +369,11 @@ export class CerebrasService extends BaseAIService {
     };
   }
 
-  // Implementation of abstract methods from BaseAIService
+  /**
+   * @inheritdoc
+   * @description Creates a Cerebras-compatible system message object.
+   * @protected
+   */
   protected createSystemMessage(systemPrompt: string): unknown {
     return {
       role: 'system',
@@ -309,10 +381,19 @@ export class CerebrasService extends BaseAIService {
     };
   }
 
+  /**
+   * @inheritdoc
+   * @description Converts a single `Message` into the format expected by the Cerebras API.
+   * @protected
+   */
   protected convertSingleMessage(message: Message): unknown {
     return this.convertMessage(message);
   }
 
+  /**
+   * @inheritdoc
+   * @description Clears the reference to the Cerebras client to allow for garbage collection.
+   */
   dispose(): void {
     // Clear reference to allow garbage collection
     this.cerebras = null;

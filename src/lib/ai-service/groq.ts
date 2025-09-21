@@ -8,9 +8,17 @@ import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';
 const logger = getLogger('GroqService');
 
+/**
+ * An AI service implementation for the Groq API, known for its high-speed inference.
+ */
 export class GroqService extends BaseAIService {
   private groq: Groq;
 
+  /**
+   * Initializes a new instance of the `GroqService`.
+   * @param apiKey The Groq API key.
+   * @param config Optional configuration for the service.
+   */
   constructor(apiKey: string, config?: AIServiceConfig) {
     super(apiKey, config);
     this.groq = new Groq({
@@ -19,10 +27,20 @@ export class GroqService extends BaseAIService {
     });
   }
 
+  /**
+   * @inheritdoc
+   * @returns `AIServiceProvider.Groq`.
+   */
   getProvider(): AIServiceProvider {
     return AIServiceProvider.Groq;
   }
 
+  /**
+   * Initiates a streaming chat session with the Groq API.
+   * @param messages The array of messages for the conversation.
+   * @param options Optional parameters for the chat.
+   * @yields A JSON string for each chunk of the response.
+   */
   async *streamChat(
     messages: Message[],
     options: {
@@ -78,6 +96,13 @@ export class GroqService extends BaseAIService {
     }
   }
 
+  /**
+   * Converts an array of standard `Message` objects into the format required by the Groq API.
+   * @param messages The array of messages to convert.
+   * @param systemPrompt An optional system prompt to prepend.
+   * @returns An array of `Groq.Chat.Completions.ChatCompletionMessageParam` objects.
+   * @private
+   */
   private convertToGroqMessages(
     messages: Message[],
     systemPrompt?: string,
@@ -129,11 +154,20 @@ export class GroqService extends BaseAIService {
     return groqMessages;
   }
 
-  // Implementation of abstract methods from BaseAIService
+  /**
+   * @inheritdoc
+   * @description Creates a Groq-compatible system message object.
+   * @protected
+   */
   protected createSystemMessage(systemPrompt: string): unknown {
     return { role: 'system', content: systemPrompt };
   }
 
+  /**
+   * @inheritdoc
+   * @description Converts a single `Message` into the format expected by the Groq API.
+   * @protected
+   */
   protected convertSingleMessage(message: Message): unknown {
     if (message.role === 'user') {
       return {
@@ -180,6 +214,10 @@ export class GroqService extends BaseAIService {
     return null;
   }
 
+  /**
+   * @inheritdoc
+   * @description The Groq SDK does not require explicit resource cleanup.
+   */
   dispose(): void {
     // Groq SDK doesn't require explicit cleanup
   }

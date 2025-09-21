@@ -5,33 +5,61 @@ import {
 } from '@/lib/mcp-response-utils';
 import type { MCPResponse, MCPTool, WebMCPServer } from '@/lib/mcp-types';
 
+/** Represents a single to-do item in the planning state. @internal */
 interface SimpleTodo {
   id: number;
   name: string;
   status: 'pending' | 'completed';
 }
 
+/**
+ * Represents the entire state of the planning server.
+ */
 export interface PlanningState {
+  /** The current main goal. */
   goal: string | null;
+  /** The most recently cleared goal, for context. */
   lastClearedGoal: string | null;
+  /** The list of to-do items. */
   todos: SimpleTodo[];
+  /** A list of recent observations or events. */
   observations: string[];
 }
 
+/**
+ * The base output structure for tool calls, indicating success.
+ * @internal
+ */
 interface BaseOutput {
   success: boolean;
 }
 
+/**
+ * The output for the `create_goal` tool call.
+ * @internal
+ */
 interface CreateGoalOutput extends BaseOutput {
   goal: string;
 }
 
+/**
+ * The output for the `clear_goal` tool call.
+ * @internal
+ */
 type ClearGoalOutput = BaseOutput;
 
+/**
+ * The output for the `add_todo` tool call.
+ * @internal
+ */
 interface AddToDoOutput extends BaseOutput {
   todos: SimpleTodo[];
 }
 
+/**
+ * The output for the `toggle_todo` tool call.
+ * @internal
+ */
 interface ToggleTodoOutput extends BaseOutput {
   todo: SimpleTodo | null;
   todos: SimpleTodo[];
@@ -39,6 +67,12 @@ interface ToggleTodoOutput extends BaseOutput {
 
 const MAX_OBSERVATIONS = 10;
 
+/**
+ * Manages the in-memory state for the planning server, including goals,
+ * to-dos, and observations. This state is not persisted and will be lost
+ * when the worker is terminated.
+ * @internal
+ */
 class EphemeralState {
   private goal: string | null = null;
   private lastClearedGoal: string | null = null;
@@ -272,6 +306,10 @@ interface PlanningServerMethods {
   get_current_state: () => Promise<MCPResponse<PlanningState>>;
 }
 
+/**
+ * The implementation of the `WebMCPServer` interface for the planning service.
+ * It defines the server's metadata and its `callTool` and `getServiceContext` methods.
+ */
 const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
   name: 'planning',
   version: '2.1.0',
@@ -342,7 +380,7 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
       ? `Last Cleared Goal: ${state.getLastClearedGoal()}`
       : '';
 
-    // 전체 todos를 순서대로 표시하되 상태를 정확히 표현
+    // Display all todos in order, accurately representing their status
     const todosText =
       todos.length > 0
         ? `Todos:\n${todos
@@ -386,6 +424,10 @@ Use 'toggle_todo' with the ID number (not index) to mark todos as complete/incom
   },
 };
 
+/**
+ * Extends the `WebMCPServerProxy` with typed methods for the planning server's tools.
+ * This provides a strongly-typed client for interacting with the planning server.
+ */
 export interface PlanningServerProxy extends WebMCPServerProxy {
   create_goal: (args: { goal: string }) => Promise<CreateGoalOutput>;
   clear_goal: () => Promise<ClearGoalOutput>;

@@ -4,9 +4,19 @@ import { getLogger } from '../logger';
 
 const logger = getLogger('MessageNormalizer');
 
+/**
+ * A utility class for normalizing and sanitizing message objects to ensure
+ * compatibility with various AI service providers.
+ */
 export class MessageNormalizer {
   /**
-   * Sanitize messages for specific vendor to ensure API compatibility
+   * Sanitizes an array of messages for a specific AI service provider.
+   * This is the main entry point for message normalization. It applies provider-specific
+   * transformations, such as fixing tool call chains for Anthropic.
+   *
+   * @param messages The array of messages to sanitize.
+   * @param targetProvider The target AI service provider.
+   * @returns A new array of sanitized messages.
    */
   static sanitizeMessagesForProvider(
     messages: Message[],
@@ -25,22 +35,27 @@ export class MessageNormalizer {
   }
 
   /**
-   * Fix Anthropic tool call chain to ensure proper order and relationships
-   * Enhanced to handle tool chain tail management for complete integrity
+   * Fixes the tool call chain for Anthropic models by ensuring that every `tool_calls`
+   * message from the assistant is followed by a corresponding `tool` result message.
+   * It removes any incomplete tool call chains to maintain API compatibility.
+   *
+   * @param messages The array of messages to process.
+   * @returns A new array of messages with a valid tool call chain for Anthropic.
+   * @private
    */
   private static fixAnthropicToolCallChain(messages: Message[]): Message[] {
     const result: Message[] = [];
     const pendingToolUseIds = new Set<string>();
     const completedToolUseIds = new Set<string>();
 
-    // 1단계: 모든 tool_use ID 수집
+    // Step 1: Collect all tool_use IDs from assistant messages
     for (const msg of messages) {
       if (msg.role === 'assistant' && msg.tool_calls) {
         msg.tool_calls.forEach((tc) => pendingToolUseIds.add(tc.id));
       }
     }
 
-    // 2단계: tool_result로 완료된 tool_use 식별
+    // Step 2: Identify completed tool_uses by finding matching tool_results
     for (const msg of messages) {
       if (
         msg.role === 'tool' &&
@@ -51,12 +66,12 @@ export class MessageNormalizer {
       }
     }
 
-    // 3단계: 완전한 체인만 포함하여 메시지 재구성
+    // Step 3: Reconstruct the message list, including only complete chains
     for (const msg of messages) {
       const processedMsg = { ...msg };
 
       if (msg.role === 'assistant' && msg.tool_calls) {
-        // 완료되지 않은 tool_calls 제거
+        // Remove any tool_calls that were not completed
         const completedToolCalls = msg.tool_calls.filter((tc) =>
           completedToolUseIds.has(tc.id),
         );
@@ -76,7 +91,7 @@ export class MessageNormalizer {
 
         if (completedToolCalls.length > 0) {
           processedMsg.tool_calls = completedToolCalls;
-          // Anthropic용 tool_use 설정 (첫 번째 tool만)
+          // Set the legacy tool_use field for Anthropic (uses the first tool call)
           const firstToolCall = completedToolCalls[0];
           try {
             processedMsg.tool_use = {
@@ -97,7 +112,7 @@ export class MessageNormalizer {
           delete processedMsg.tool_use;
         }
       } else if (msg.role === 'tool' && msg.tool_call_id) {
-        // 완료된 tool_use에 대응하는 tool_result만 포함
+        // Only include tool_results that correspond to a completed tool_use
         if (!completedToolUseIds.has(msg.tool_call_id)) {
           logger.debug('Skipping tool_result for incomplete tool_use', {
             messageId: msg.id,
@@ -110,7 +125,7 @@ export class MessageNormalizer {
       result.push(processedMsg);
     }
 
-    // 대화 시작 부분의 tool 메시지 제거
+    // Remove any tool messages from the beginning of the conversation
     while (result.length > 0 && result[0].role === 'tool') {
       logger.warn('Removing tool message from beginning of conversation', {
         messageId: result[0].id,
@@ -128,6 +143,14 @@ export class MessageNormalizer {
     return result;
   }
 
+  /**
+   * Sanitizes a single message based on the target provider.
+   * This acts as a dispatcher to the provider-specific sanitization methods.
+   * @param message The message to sanitize.
+   * @param targetProvider The target AI service provider.
+   * @returns The sanitized message, or null if the message should be filtered out.
+   * @private
+   */
   private static sanitizeSingleMessage(
     message: Message,
     targetProvider: AIServiceProvider,
@@ -154,6 +177,14 @@ export class MessageNormalizer {
     }
   }
 
+  /**
+   * Sanitizes a message for the Anthropic provider.
+   * It converts `tool_calls` to the legacy `tool_use` format and filters out
+   * tool messages that are missing a `tool_call_id`.
+   * @param message The message to sanitize.
+   * @returns The sanitized message, or null if it should be filtered.
+   * @private
+   */
   private static sanitizeForAnthropic(message: Message): Message | null {
     // Convert tool_calls to tool_use for Anthropic
     if (message.tool_calls && !message.tool_use) {
@@ -191,6 +222,13 @@ export class MessageNormalizer {
     return message;
   }
 
+  /**
+   * Sanitizes a message for OpenAI-compatible providers (OpenAI, Groq, etc.).
+   * It removes thinking-related fields and converts `tool_use` to the standard `tool_calls` format.
+   * @param message The message to sanitize.
+   * @returns The sanitized message.
+   * @private
+   */
   private static sanitizeForOpenAIFamily(message: Message): Message {
     // Remove thinking-related fields that OpenAI family doesn't support
     if (message.thinking) {
@@ -225,6 +263,13 @@ export class MessageNormalizer {
     return message;
   }
 
+  /**
+   * Sanitizes a message for the Gemini provider.
+   * It removes unsupported fields like `thinking` and `tool_use`.
+   * @param message The message to sanitize.
+   * @returns The sanitized message.
+   * @private
+   */
   private static sanitizeForGemini(message: Message): Message {
     // Remove thinking fields that Gemini doesn't support
     if (message.thinking) {
@@ -249,6 +294,13 @@ export class MessageNormalizer {
     return message;
   }
 
+  /**
+   * Sanitizes a message for the Ollama provider.
+   * It removes thinking-related fields and ensures tool calls are in the standard format.
+   * @param message The message to sanitize.
+   * @returns The sanitized message.
+   * @private
+   */
   private static sanitizeForOllama(message: Message): Message {
     // Remove thinking fields that Ollama doesn't support
     if (message.thinking) {

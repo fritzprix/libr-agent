@@ -7,9 +7,18 @@ import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';
 const logger = getLogger('OpenAIService');
 
+/**
+ * An AI service implementation for OpenAI's language models.
+ * This class also serves as a base for other OpenAI-compatible services like Fireworks.
+ */
 export class OpenAIService extends BaseAIService {
   protected openai: OpenAI;
 
+  /**
+   * Initializes a new instance of the `OpenAIService`.
+   * @param apiKey The OpenAI API key.
+   * @param config Optional configuration for the service.
+   */
   constructor(apiKey: string, config?: AIServiceConfig) {
     super(apiKey, config);
     this.openai = new OpenAI({
@@ -18,10 +27,20 @@ export class OpenAIService extends BaseAIService {
     });
   }
 
+  /**
+   * @inheritdoc
+   * @returns `AIServiceProvider.OpenAI`.
+   */
   getProvider(): AIServiceProvider {
     return AIServiceProvider.OpenAI;
   }
 
+  /**
+   * Initiates a streaming chat session with the OpenAI API.
+   * @param messages The array of messages for the conversation.
+   * @param options Optional parameters for the chat.
+   * @yields A JSON string for each chunk of the response.
+   */
   async *streamChat(
     messages: Message[],
     options: {
@@ -87,6 +106,13 @@ export class OpenAIService extends BaseAIService {
     }
   }
 
+  /**
+   * Converts an array of standard `Message` objects into the format required by the OpenAI API.
+   * @param messages The array of messages to convert.
+   * @param systemPrompt An optional system prompt to prepend.
+   * @returns An array of `OpenAI.Chat.Completions.ChatCompletionMessageParam` objects.
+   * @private
+   */
   private convertToOpenAIMessages(
     messages: Message[],
     systemPrompt?: string,
@@ -134,11 +160,20 @@ export class OpenAIService extends BaseAIService {
     return openaiMessages;
   }
 
-  // Implementation of abstract methods from BaseAIService
+  /**
+   * @inheritdoc
+   * @description Creates an OpenAI-compatible system message object.
+   * @protected
+   */
   protected createSystemMessage(systemPrompt: string): unknown {
     return { role: 'system', content: systemPrompt };
   }
 
+  /**
+   * @inheritdoc
+   * @description Converts a single `Message` into the format expected by the OpenAI API.
+   * @protected
+   */
   protected convertSingleMessage(message: Message): unknown {
     if (message.role === 'user') {
       return {
@@ -180,6 +215,10 @@ export class OpenAIService extends BaseAIService {
     return null;
   }
 
+  /**
+   * @inheritdoc
+   * @description The OpenAI SDK does not require explicit resource cleanup.
+   */
   dispose(): void {
     // OpenAI SDK doesn't require explicit cleanup
   }

@@ -3,22 +3,27 @@ import { getLogger } from '@/lib/logger';
 
 const logger = getLogger('WorkspaceSync');
 
+/** The maximum file size for the content store (50MB). */
+export const MAX_CONTENT_STORE_SIZE = 50 * 1024 * 1024;
+/** The maximum file size for the workspace (10MB). */
+export const MAX_WORKSPACE_SIZE = 10 * 1024 * 1024;
 /**
- * File size limits (in bytes)
- * Using the more restrictive limit to ensure compatibility with both systems
+ * The effective maximum file size, which is the more restrictive of the
+ * content store and workspace limits.
  */
-export const MAX_CONTENT_STORE_SIZE = 50 * 1024 * 1024; // 50MB
-export const MAX_WORKSPACE_SIZE = 10 * 1024 * 1024; // 10MB
 export const EFFECTIVE_MAX_SIZE = Math.min(
   MAX_CONTENT_STORE_SIZE,
   MAX_WORKSPACE_SIZE,
-); // 10MB
+);
 
 /**
- * Synchronizes a file to the workspace storage system
- * @param file - File object to synchronize
- * @param sessionId - Current session ID for workspace context (sets Rust backend session)
- * @returns Promise resolving to the relative workspace file path
+ * Synchronizes a file to the workspace storage system.
+ * This involves validating the file size, converting the file to a byte array,
+ * generating a safe workspace path, and invoking the Rust backend to write the file.
+ *
+ * @param file The `File` object to synchronize.
+ * @returns A promise that resolves to the relative path of the file in the workspace.
+ * @throws An error if the file size exceeds the limit or if the backend operation fails.
  */
 export async function syncFileToWorkspace(file: File): Promise<string> {
   logger.info('Starting workspace sync', {
@@ -69,9 +74,11 @@ export async function syncFileToWorkspace(file: File): Promise<string> {
 }
 
 /**
- * Generates a unique workspace path for file storage
- * @param filename - Original filename
- * @returns Workspace path string (relative path for Tauri SecureFileManager)
+ * Generates a unique and safe relative path for a file in the workspace.
+ * It prepends a timestamp to the sanitized filename to avoid collisions.
+ *
+ * @param filename The original filename.
+ * @returns A relative path string suitable for use with the backend's file manager.
  */
 export function generateWorkspacePath(filename: string): string {
   const timestamp = Date.now();
@@ -80,9 +87,12 @@ export function generateWorkspacePath(filename: string): string {
 }
 
 /**
- * Sanitizes filename for safe filesystem usage
- * @param filename - Original filename
- * @returns Sanitized filename
+ * Sanitizes a filename to make it safe for use in a filesystem path.
+ * It replaces unsafe characters and whitespace with underscores and truncates the length.
+ *
+ * @param filename The original filename.
+ * @returns The sanitized filename.
+ * @internal
  */
 function sanitizeFilename(filename: string): string {
   // Remove or replace unsafe characters
@@ -95,27 +105,30 @@ function sanitizeFilename(filename: string): string {
 }
 
 /**
- * Validates file size against unified limits
- * @param file - File to validate
- * @returns boolean indicating if file size is acceptable
+ * Validates if a file's size is within the effective maximum limit.
+ *
+ * @param file The `File` object to validate.
+ * @returns True if the file size is acceptable, false otherwise.
  */
 export function validateFileSize(file: File): boolean {
   return file.size <= EFFECTIVE_MAX_SIZE;
 }
 
 /**
- * Gets the effective maximum file size in MB for display purposes
- * @returns Maximum file size in MB
+ * Gets the effective maximum file size in megabytes (MB) for display purposes.
+ *
+ * @returns The maximum file size in MB.
  */
 export function getMaxFileSizeMB(): number {
   return EFFECTIVE_MAX_SIZE / (1024 * 1024);
 }
 
 /**
- * Creates a human-readable file size error message
- * @param filename - Name of the file that exceeded limits
- * @param actualSize - Actual file size in bytes
- * @returns Error message string
+ * Creates a human-readable error message for a file that exceeds the size limit.
+ *
+ * @param filename The name of the file that is too large.
+ * @param actualSize The actual size of the file in bytes.
+ * @returns A formatted error message string.
  */
 export function createFileSizeErrorMessage(
   filename: string,

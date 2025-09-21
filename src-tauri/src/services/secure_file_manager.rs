@@ -3,23 +3,39 @@ use tracing::{error, info};
 
 use crate::mcp::builtin::utils::{constants::MAX_FILE_SIZE, SecurityValidator};
 
+/// Provides secure file system operations by ensuring that all paths are
+/// validated and constrained within a specific base directory.
 pub struct SecureFileManager {
     security: SecurityValidator,
 }
 
 impl SecureFileManager {
+    /// Creates a new `SecureFileManager` with the default security settings.
     pub fn new() -> Self {
         Self {
             security: SecurityValidator::new(),
         }
     }
 
+    /// Creates a new `SecureFileManager` with a specified base directory.
+    ///
+    /// # Arguments
+    /// * `base_dir` - The base directory to which all file operations will be restricted.
     pub fn new_with_base_dir(base_dir: std::path::PathBuf) -> Self {
         Self {
             security: SecurityValidator::new_with_base_dir(base_dir),
         }
     }
 
+    /// Securely reads the contents of a file as a byte vector.
+    ///
+    /// It performs security checks to validate the path and file size before reading.
+    ///
+    /// # Arguments
+    /// * `path` - The relative path to the file.
+    ///
+    /// # Returns
+    /// A `Result` containing the file's byte content, or an error string on failure.
     pub async fn read_file(&self, path: &str) -> Result<Vec<u8>, String> {
         let safe_path = self
             .security
@@ -46,6 +62,17 @@ impl SecureFileManager {
             .map_err(|e| format!("Failed to read file: {e}"))
     }
 
+    /// Securely writes a byte slice to a file.
+    ///
+    /// It performs security checks to validate the path and content size before writing.
+    /// It will also create any necessary parent directories.
+    ///
+    /// # Arguments
+    /// * `path` - The relative path to the file.
+    /// * `content` - The byte slice to write to the file.
+    ///
+    /// # Returns
+    /// An empty `Result` on success, or an error string on failure.
     pub async fn write_file(&self, path: &str, content: &[u8]) -> Result<(), String> {
         let safe_path = self
             .security
@@ -78,6 +105,13 @@ impl SecureFileManager {
         Ok(())
     }
 
+    /// Securely reads the contents of a file as a `String`.
+    ///
+    /// # Arguments
+    /// * `path` - The relative path to the file.
+    ///
+    /// # Returns
+    /// A `Result` containing the file's content as a string, or an error string on failure.
     pub async fn read_file_as_string(&self, path: &str) -> Result<String, String> {
         let safe_path = self
             .security
@@ -104,17 +138,37 @@ impl SecureFileManager {
             .map_err(|e| format!("Failed to read file: {e}"))
     }
 
+    /// Securely writes a string to a file.
+    ///
+    /// This is a convenience wrapper around `write_file`.
+    ///
+    /// # Arguments
+    /// * `path` - The relative path to the file.
+    /// * `content` - The string content to write.
+    ///
+    /// # Returns
+    /// An empty `Result` on success, or an error string on failure.
     pub async fn write_file_string(&self, path: &str, content: &str) -> Result<(), String> {
         self.write_file(path, content.as_bytes()).await
     }
 
+    /// Securely appends a string to a file.
+    ///
+    /// If the file does not exist, it will be created.
+    ///
+    /// # Arguments
+    /// * `path` - The relative path to the file.
+    /// * `content` - The string content to append.
+    ///
+    /// # Returns
+    /// An empty `Result` on success, or an error string on failure.
     pub async fn append_file_string(&self, path: &str, content: &str) -> Result<(), String> {
         let safe_path = self
             .security
             .validate_path(path)
             .map_err(|e| format!("Security error: {e}"))?;
 
-        // 파일이 존재하지 않으면 생성
+        // If the file does not exist, create it by writing the content.
         if !safe_path.exists() {
             return self.write_file_string(path, content).await;
         }
@@ -135,6 +189,14 @@ impl SecureFileManager {
         Ok(())
     }
 
+    /// Securely copies a file from an external path to a relative path within the base directory.
+    ///
+    /// # Arguments
+    /// * `src_path` - The absolute path of the source file.
+    /// * `dest_rel_path` - The destination path relative to the secure base directory.
+    ///
+    /// # Returns
+    /// A `Result` containing the absolute path of the newly created file, or an error string on failure.
     pub async fn copy_file_from_external(
         &self,
         src_path: &std::path::Path,
@@ -185,6 +247,7 @@ impl SecureFileManager {
         Ok(dest_path)
     }
 
+    /// Returns a reference to the internal `SecurityValidator`.
     pub fn get_security_validator(&self) -> &SecurityValidator {
         &self.security
     }

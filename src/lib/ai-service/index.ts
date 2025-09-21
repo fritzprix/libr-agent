@@ -1,3 +1,9 @@
+/**
+ * @file This file serves as the main entry point for the AI services module.
+ * It re-exports all the necessary classes, types, and utilities to provide
+ * a clean and consistent public API for other parts of the application to consume.
+ */
+
 // Re-export all types and interfaces
 export type { AIServiceConfig, IAIService } from './types';
 
