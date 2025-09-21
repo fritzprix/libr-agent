@@ -16,6 +16,7 @@ pub mod tools;
 pub mod ui_resources;
 pub mod utils;
 
+#[derive(Debug)]
 pub struct WorkspaceServer {
     session_manager: Arc<SessionManager>,
 }
@@ -73,10 +74,11 @@ impl WorkspaceServer {
                     let connector = if is_last { "└── " } else { "├── " };
                     let name = entry.file_name().to_string_lossy().to_string();
 
-                    result.push_str(&format!("{}{}{}\n", prefix, connector, name));
+                    result.push_str(&format!("{prefix}{connector}{name}\n"));
 
                     if entry.path().is_dir() {
-                        let new_prefix = format!("{}{}", prefix, if is_last { "    " } else { "│   " });
+                        let new_prefix =
+                            format!("{}{}", prefix, if is_last { "    " } else { "│   " });
                         if depth < max_depth - 1 {
                             result.push_str(&build_tree(
                                 &entry.path(),

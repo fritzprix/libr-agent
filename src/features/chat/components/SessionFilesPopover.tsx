@@ -10,8 +10,10 @@ import {
   DialogTitle,
 } from '@/components/ui';
 import { useResourceAttachment } from '@/context/ResourceAttachmentContext';
-import { useWebMCPServer } from '@/hooks/use-web-mcp-server';
-import { ContentStoreServer } from '@/lib/web-mcp/modules/content-store';
+import {
+  useRustMCPServer,
+  RustMCPServerProxy,
+} from '@/hooks/use-rust-mcp-server';
 import { getLogger } from '@/lib/logger';
 import { AttachmentReference } from '@/models/chat';
 
@@ -29,7 +31,16 @@ export function SessionFilesPopover({ storeId }: SessionFilesPopoverProps) {
   );
   const [fileContent, setFileContent] = useState<string>('');
   const [isLoadingContent, setIsLoadingContent] = useState(false);
-  const { server } = useWebMCPServer<ContentStoreServer>('content-store');
+  // Define ContentStoreServer type extending RustMCPServerProxy
+  type ContentStoreServer = RustMCPServerProxy & {
+    readContent: (args: {
+      storeId: string;
+      contentId: string;
+      lineRange: { fromLine: number; toLine?: number };
+    }) => Promise<{ content: string; lineRange: [number, number] }>;
+  };
+
+  const { server } = useRustMCPServer<ContentStoreServer>('contentstore');
 
   const handleFileClick = useCallback(
     async (file: AttachmentReference) => {

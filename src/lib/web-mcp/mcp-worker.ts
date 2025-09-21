@@ -16,7 +16,6 @@ import type {
 
 // Static imports for MCP server modules to avoid Vite dynamic import warnings
 // This approach provides better bundling compatibility and type safety
-import contentStoreServer from './modules/content-store';
 import planningServer from './modules/planning-server';
 
 // Add console logging for debugging since we can't use our logger in worker context
@@ -38,7 +37,6 @@ const log = {
 // Static module registry - using direct imports instead of dynamic imports
 // This eliminates Vite bundling warnings and provides better type safety
 const MODULE_REGISTRY = [
-  { key: 'content-store', module: contentStoreServer },
   { key: 'planning', module: planningServer },
   // Future modules can be added here with static imports
 ] as const;
