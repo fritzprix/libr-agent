@@ -1,4 +1,10 @@
-import React, { useCallback, useState, useRef, useEffect, useMemo } from 'react';
+import React, {
+  useCallback,
+  useState,
+  useRef,
+  useEffect,
+  useMemo,
+} from 'react';
 import { Button, FileAttachment, Input } from '@/components/ui';
 import { Send, Square, Loader2 } from 'lucide-react';
 import { useAssistantContext } from '@/context/AssistantContext';
@@ -202,11 +208,7 @@ export function ChatInput({ children }: ChatInputProps) {
   );
 
   return (
-    <form
-      ref={chatInputRef}
-      onSubmit={handleSubmit}
-      className={formClassName}
-    >
+    <form ref={chatInputRef} onSubmit={handleSubmit} className={formClassName}>
       <span className="font-bold flex-shrink-0">$</span>
       <div className="flex-1 flex items-center gap-2 min-w-0">
         <Input
