@@ -86,7 +86,11 @@ export function WorkspaceFilesPanel() {
         logger.info('BACKEND RESPONSE', {
           path,
           fileCount: files.length,
-          files: files.map(f => ({ name: f.name, isDirectory: f.isDirectory, path: f.path }))
+          files: files.map((f) => ({
+            name: f.name,
+            isDirectory: f.isDirectory,
+            path: f.path,
+          })),
         });
 
         const nodes: FileNode[] = files.map((file: WorkspaceFileItem) => {

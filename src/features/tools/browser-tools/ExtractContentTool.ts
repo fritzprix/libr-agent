@@ -8,7 +8,7 @@ import {
 import { createId } from '@paralleldrive/cuid2';
 import TurndownService from 'turndown';
 import { cleanMarkdownText } from '@/lib/text-utils';
-import {  workspaceWriteFile } from '@/lib/rust-backend-client';
+import { workspaceWriteFile } from '@/lib/rust-backend-client';
 
 const logger = getLogger('ExtractPageContentTool');
 
