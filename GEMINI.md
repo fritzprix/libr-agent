@@ -18,19 +18,19 @@ SynapticFlow is a next-generation desktop AI agent platform that combines the li
 ## 3. Technology Stack
 
 - **Core Frameworks:**
-    - **Tauri:** 2.x (Rust + WebView)
-    - **React:** 18.3.1
-    - **TypeScript:** 5.6.2
+  - **Tauri:** 2.x (Rust + WebView)
+  - **React:** 18.3.1
+  - **TypeScript:** 5.6.2
 - **Backend & Tooling:**
-    - **RMCP (Rust Model Context Protocol):** 0.6.4
-    - **Tokio:** 1.0 (Async Rust runtime)
-    - **Serde:** 1.0 (Rust serialization/deserialization)
+  - **RMCP (Rust Model Context Protocol):** 0.6.4
+  - **Tokio:** 1.0 (Async Rust runtime)
+  - **Serde:** 1.0 (Rust serialization/deserialization)
 - **Frontend & UI:**
-    - **Vite:** 6.0.3
-    - **Tailwind CSS:** 4.1.11
-    - **shadcn/ui:** Component library
+  - **Vite:** 6.0.3
+  - **Tailwind CSS:** 4.1.11
+  - **shadcn/ui:** Component library
 - **Database:**
-    - **IndexedDB:** For local storage of roles and conversations.
+  - **IndexedDB:** For local storage of roles and conversations.
 
 ## 4. Architecture
 
@@ -56,10 +56,10 @@ The core of SynapticFlow's extensibility lies in its dual MCP backend, which all
 
 The chat feature is built using a modern, composable architecture that ensures a high degree of maintainability and flexibility.
 
--   **Compound Components:** The UI is structured using a compound component pattern (e.g., `Chat.Header`, `Chat.Messages`, `Chat.Input`), which are assembled from individual components in `src/features/chat/components/`. This provides a clean and declarative API for building the chat interface.
--   **State Management (`ChatProvider`):** All chat-related state is managed within `ChatProvider` (`src/context/ChatContext.tsx`). This includes message history, loading states, and tool execution status, providing a single source of truth for the entire chat feature.
--   **Service Layer (`useAIService` & `AIServiceFactory`):** AI model interactions are abstracted into a dedicated service layer. The `useAIService` hook (`src/hooks/use-ai-service.ts`) provides a simple interface for submitting prompts and receiving streaming responses. The `AIServiceFactory` (`src/lib/ai-service/factory.ts`) dynamically selects the appropriate AI provider (e.g., OpenAI, Anthropic) based on user settings.
--   **Tool Call Flow:** When the AI model requests a tool call, the `useToolProcessor` hook (`src/hooks/use-tool-processor.ts`) intercepts the request, uses the unified MCP client to execute the tool, and submits the result back to the AI.
+- **Compound Components:** The UI is structured using a compound component pattern (e.g., `Chat.Header`, `Chat.Messages`, `Chat.Input`), which are assembled from individual components in `src/features/chat/components/`. This provides a clean and declarative API for building the chat interface.
+- **State Management (`ChatProvider`):** All chat-related state is managed within `ChatProvider` (`src/context/ChatContext.tsx`). This includes message history, loading states, and tool execution status, providing a single source of truth for the entire chat feature.
+- **Service Layer (`useAIService` & `AIServiceFactory`):** AI model interactions are abstracted into a dedicated service layer. The `useAIService` hook (`src/hooks/use-ai-service.ts`) provides a simple interface for submitting prompts and receiving streaming responses. The `AIServiceFactory` (`src/lib/ai-service/factory.ts`) dynamically selects the appropriate AI provider (e.g., OpenAI, Anthropic) based on user settings.
+- **Tool Call Flow:** When the AI model requests a tool call, the `useToolProcessor` hook (`src/hooks/use-tool-processor.ts`) intercepts the request, uses the unified MCP client to execute the tool, and submits the result back to the AI.
 
 For a more detailed breakdown, see the [Chat Feature Architecture Document](docs/architecture/chat-feature-architecture.md).
 
@@ -67,21 +67,21 @@ For a more detailed breakdown, see the [Chat Feature Architecture Document](docs
 
 SynapticFlow's power comes from its extensible tool ecosystem and agent management system.
 
--   **Built-in Tools:** The platform includes a set of powerful built-in tools, such as:
-    - **Secure File Manager:** For reading, writing, and listing files within a sandboxed workspace.
-    - **Code Execution:** For running scripts and commands in a secure environment.
-    - **Browser Automation:** For controlling a headless browser to perform web-based tasks.
-    - Tool logic can be found in `src/features/tools/` and `src-tauri/src/mcp/builtin/`.
--   **Agent Management:** The agent/role management system (`src/features/agents/`) allows users to create and customize agents with specific system prompts and toolsets. These agents are then seamlessly integrated into the chat feature, allowing the user to switch between different AI personalities and capabilities on the fly.
+- **Built-in Tools:** The platform includes a set of powerful built-in tools, such as:
+  - **Secure File Manager:** For reading, writing, and listing files within a sandboxed workspace.
+  - **Code Execution:** For running scripts and commands in a secure environment.
+  - **Browser Automation:** For controlling a headless browser to perform web-based tasks.
+  - Tool logic can be found in `src/features/tools/` and `src-tauri/src/mcp/builtin/`.
+- **Agent Management:** The agent/role management system (`src/features/agents/`) allows users to create and customize agents with specific system prompts and toolsets. These agents are then seamlessly integrated into the chat feature, allowing the user to switch between different AI personalities and capabilities on the fly.
 
 ## 5. Coding Rules & Style
 
 To maintain code quality and consistency, all contributors must adhere to the following rules:
 
--   **Centralized Logging:** Always use the centralized logger (`getLogger` from `@/lib/logger`) instead of `console.log`. This provides structured, context-aware logging that integrates with Tauri's native logging capabilities.
--   **Strict TypeScript:** The use of `any` is strictly prohibited. Always use specific types or, if necessary, `unknown` with proper type guards. Do not disable linting rules.
--   **No Inline `import()` Types:** Use standard `import type` statements at the top of the file for better readability and maintainability.
--   **Follow Linter and Formatter:** All code must pass the ESLint and Prettier checks defined in the project. Run `pnpm refactor:validate` before submitting changes.
+- **Centralized Logging:** Always use the centralized logger (`getLogger` from `@/lib/logger`) instead of `console.log`. This provides structured, context-aware logging that integrates with Tauri's native logging capabilities.
+- **Strict TypeScript:** The use of `any` is strictly prohibited. Always use specific types or, if necessary, `unknown` with proper type guards. Do not disable linting rules.
+- **No Inline `import()` Types:** Use standard `import type` statements at the top of the file for better readability and maintainability.
+- **Follow Linter and Formatter:** All code must pass the ESLint and Prettier checks defined in the project. Run `pnpm refactor:validate` before submitting changes.
 
 For more details, refer to the [Copilot Instructions](.github/copilot-instructions.md).
 
@@ -94,16 +94,16 @@ For more details, refer to the [Copilot Instructions](.github/copilot-instructio
 
 ## 7. References & Documentation
 
--   **Architecture:**
-    -   [Chat Feature Architecture](docs/architecture/chat-feature-architecture.md)
--   **Implementation Files:**
-    -   **MCP:**
-        -   [MCPServerManager (Rust)](src-tauri/src/mcp/server.rs)
-        -   [WebMCPProvider (TypeScript)](src/lib/web-mcp/)
-        -   [Unified MCP Client](src/lib/rust-backend-client.ts)
-    -   **Chat:**
-        -   [ChatProvider](src/context/ChatContext.tsx)
-        -   [useAIService Hook](src/hooks/use-ai-service.ts)
-        -   [Tool Processor Hook](src/hooks/use-tool-processor.ts)
--   **Project Guidelines:**
-    -   [Copilot Instructions](.github/copilot-instructions.md)
+- **Architecture:**
+  - [Chat Feature Architecture](docs/architecture/chat-feature-architecture.md)
+- **Implementation Files:**
+  - **MCP:**
+    - [MCPServerManager (Rust)](src-tauri/src/mcp/server.rs)
+    - [WebMCPProvider (TypeScript)](src/lib/web-mcp/)
+    - [Unified MCP Client](src/lib/rust-backend-client.ts)
+  - **Chat:**
+    - [ChatProvider](src/context/ChatContext.tsx)
+    - [useAIService Hook](src/hooks/use-ai-service.ts)
+    - [Tool Processor Hook](src/hooks/use-tool-processor.ts)
+- **Project Guidelines:**
+  - [Copilot Instructions](.github/copilot-instructions.md)

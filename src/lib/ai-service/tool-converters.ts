@@ -1,30 +1,11 @@
-import Cerebras from '@cerebras/cerebras_cloud_sdk';
+import { ChatCompletionTool as GroqChatCompletionTool } from 'groq-sdk/resources/chat/completions.mjs';
+import { ChatCompletionTool as OpenAIChatCompletionTool } from 'openai/resources/chat/completions.mjs';
+import { Tool as AnthropicTool } from '@anthropic-ai/sdk/resources/messages.mjs';
+import { MCPTool, JSONSchema } from '../mcp-types';
+import { getLogger } from '../logger';
+import { AIServiceProvider, AIServiceError } from './types';
 import { FunctionDeclaration, Type } from '@google/genai';
-import { ChatCompletionTool as GroqChatCompletionTool } from 'groq-sdk/resources/chat/completions.mjs';
-import { ChatCompletionTool as OpenAIChatCompletionTool } from 'openai/resources/chat/completions.mjs';
-import { Tool as AnthropicTool } from '@anthropic-ai/sdk/resources/messages.mjs';
-import { MCPTool, JSONSchema } from '../mcp-types';
-import { getLogger } from '../logger';
-import { AIServiceProvider, AIServiceError } from './types';
-
-const logger = getLogger('AIService');
-
-// --- Tool Conversion with Enhanced Type Safety ---
-
-/** A union type representing any possible provider-specific tool format. @internal */
-type ProviderToolType =
-  | GroqChatCompletionTool
-  | OpenAIChatCompletionTool
-  | AnthropicTool
-  | FunctionDeclaration
-  | Cerebras.Chat.Completions.ChatCompletionCreateParams.Tool
-  | OllamaTool;
-import { ChatCompletionTool as GroqChatCompletionTool } from 'groq-sdk/resources/chat/completions.mjs';
-import { ChatCompletionTool as OpenAIChatCompletionTool } from 'openai/resources/chat/completions.mjs';
-import { Tool as AnthropicTool } from '@anthropic-ai/sdk/resources/messages.mjs';
-import { MCPTool, JSONSchema } from '../mcp-types';
-import { getLogger } from '../logger';
-import { AIServiceProvider, AIServiceError } from './types';
+import Cerebras from '@cerebras/cerebras_cloud_sdk';
 
 const logger = getLogger('AIService');
 

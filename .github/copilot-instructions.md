@@ -82,6 +82,7 @@ pnpm refactor:validate
 ```
 
 This ensures:
+
 - Code consistency and formatting
 - No TypeScript or Rust compilation errors
 - No unused code
