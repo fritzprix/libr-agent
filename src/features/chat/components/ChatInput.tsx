@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useRef, useEffect } from 'react';
+import React, { useCallback, useState, useRef, useEffect, useMemo } from 'react';
 import { Button, FileAttachment, Input } from '@/components/ui';
 import { Send, Square, Loader2 } from 'lucide-react';
 import { useAssistantContext } from '@/context/AssistantContext';
@@ -52,11 +52,41 @@ export function ChatInput({ children }: ChatInputProps) {
 
   const attachedFiles = pendingFiles;
 
+  const inputPlaceholder = useMemo(() => {
+    if (dragState !== 'none') {
+      return dragState === 'valid'
+        ? 'Drop supported files here...'
+        : 'Unsupported file type!';
+    }
+    if (isLoading || isAttachmentLoading) return 'Agent busy...';
+    return 'Query agent or drop files...';
+  }, [dragState, isLoading, isAttachmentLoading]);
+
+  const inputClassName = useMemo(() => {
+    return `flex-1 min-w-0 transition-colors ${
+      dragState === 'valid'
+        ? 'border-green-500 bg-green-500/10'
+        : dragState === 'invalid'
+          ? 'border-destructive bg-destructive/10'
+          : ''
+    }`;
+  }, [dragState]);
+
+  const formClassName = useMemo(() => {
+    return `px-4 py-4 border-t flex items-center gap-2 transition-colors ${
+      dragState === 'valid'
+        ? 'bg-green-500/10 border-green-500'
+        : dragState === 'invalid'
+          ? 'bg-destructive/10 border-destructive'
+          : ''
+    }`;
+  }, [dragState]);
+
   const handleAgentInputChange = React.useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       setInput(e.target.value);
     },
-    [setInput],
+    [],
   );
 
   const handleSubmit = useCallback(
@@ -83,7 +113,7 @@ export function ChatInput({ children }: ChatInputProps) {
           });
         } catch (err) {
           logger.error('Error uploading pending files:', err);
-          alert('파일 업로드 중 오류가 발생했습니다.');
+          // TODO: Show user-friendly error message instead of alert
           return;
         }
       }
@@ -106,9 +136,6 @@ export function ChatInput({ children }: ChatInputProps) {
           userMessage.attachments = attachedFiles;
         }
 
-        setInput('');
-        clearPendingFiles();
-
         try {
           logger.info('Submitting user message', {
             hasAttachments: attachedFiles.length > 0,
@@ -116,8 +143,12 @@ export function ChatInput({ children }: ChatInputProps) {
           });
           await submit([userMessage]);
           logger.info('User message submitted successfully');
+          // 성공 시에만 입력값과 파일 클리어
+          setInput('');
+          clearPendingFiles();
         } catch (err) {
           logger.error('Error submitting message:', err);
+          // 실패 시 입력값 유지
         }
       }
     },
@@ -174,36 +205,16 @@ export function ChatInput({ children }: ChatInputProps) {
     <form
       ref={chatInputRef}
       onSubmit={handleSubmit}
-      className={`px-4 py-4 border-t flex items-center gap-2 transition-colors ${
-        dragState === 'valid'
-          ? 'bg-green-500/10 border-green-500'
-          : dragState === 'invalid'
-            ? 'bg-destructive/10 border-destructive'
-            : ''
-      }`}
+      className={formClassName}
     >
       <span className="font-bold flex-shrink-0">$</span>
       <div className="flex-1 flex items-center gap-2 min-w-0">
         <Input
           value={input}
           onChange={handleAgentInputChange}
-          placeholder={
-            dragState !== 'none'
-              ? dragState === 'valid'
-                ? 'Drop supported files here...'
-                : 'Unsupported file type!'
-              : isLoading || isAttachmentLoading
-                ? 'Agent busy...'
-                : 'Query agent or drop files...'
-          }
+          placeholder={inputPlaceholder}
           disabled={isLoading || isAttachmentLoading}
-          className={`flex-1 min-w-0 transition-colors ${
-            dragState === 'valid'
-              ? 'border-green-500 bg-green-500/10'
-              : dragState === 'invalid'
-                ? 'border-destructive bg-destructive/10'
-                : ''
-          }`}
+          className={inputClassName}
           autoComplete="off"
           spellCheck="false"
         />

@@ -40,12 +40,12 @@ SynapticFlow's architecture is designed for modularity, performance, and extensi
 
 The core of SynapticFlow's extensibility lies in its dual MCP backend, which allows for two types of tool servers to run concurrently:
 
-1.  **Rust Tauri Backend (High-Performance Native Tools):**
+1. **Rust Tauri Backend (High-Performance Native Tools):**
     - Managed by `MCPServerManager` in the Rust backend (`src-tauri/src/mcp/server.rs`).
     - Ideal for performance-intensive or security-sensitive tasks that require native system access (e.g., file system operations, code execution).
     - Servers are spawned as `stdio`-based child processes and communicate with the Rust backend via the RMCP protocol.
 
-2.  **Web Worker Backend (Lightweight & Dependency-Free Tools):**
+2. **Web Worker Backend (Lightweight & Dependency-Free Tools):**
     - Runs entirely within the browser via a Web Worker (`src/lib/web-mcp/mcp-worker.ts`).
     - Perfect for tools written in TypeScript that do not require native system access (e.g., calculators, data transformers, API clients).
     - Managed by `WebMCPProvider` and communicates with the main thread via `mcp-proxy.ts`.
@@ -87,10 +87,10 @@ For more details, refer to the [Copilot Instructions](.github/copilot-instructio
 
 ## 6. Development Workflow
 
-1.  **Install Dependencies:** `pnpm install`
-2.  **Run Development Server:** `pnpm tauri dev`
-3.  **Validate Changes:** `pnpm refactor:validate` (run this before committing)
-4.  **Build for Production:** `pnpm tauri build`
+1. **Install Dependencies:** `pnpm install`
+2. **Run Development Server:** `pnpm tauri dev`
+3. **Validate Changes:** `pnpm refactor:validate` (run this before committing)
+4. **Build for Production:** `pnpm tauri build`
 
 ## 7. References & Documentation
 
@@ -105,5 +105,3 @@ For more details, refer to the [Copilot Instructions](.github/copilot-instructio
     - [ChatProvider](src/context/ChatContext.tsx)
     - [useAIService Hook](src/hooks/use-ai-service.ts)
     - [Tool Processor Hook](src/hooks/use-tool-processor.ts)
-- **Project Guidelines:**
-  - [Copilot Instructions](.github/copilot-instructions.md)
