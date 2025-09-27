@@ -1,13 +1,29 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
-// Converts a string to MCPContent[] with type 'text'
+/**
+ * Converts a string to an array of MCPContent objects with type 'text'.
+ * This is a utility function to easily wrap plain text in the expected
+ * format for certain components or functions that handle MCPContent.
+ *
+ * @param text The input string to convert.
+ * @returns An array containing a single MCPContent object of type 'text'.
+ */
 export function stringToMCPContentArray(
   text: string,
 ): { type: 'text'; text: string }[] {
   return [{ type: 'text', text }];
 }
 
+/**
+ * A utility function to merge Tailwind CSS classes.
+ * It combines the functionalities of `clsx` and `tailwind-merge`.
+ * `clsx` allows for conditional class names, and `tailwind-merge`
+ * intelligently merges Tailwind CSS classes without conflicts.
+ *
+ * @param inputs The class values to merge. These can be strings, arrays, or objects.
+ * @returns A string of merged class names.
+ */
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
@@ -60,6 +76,15 @@ export function throttlePromise<Args extends readonly unknown[], Return>(
   };
 }
 
+/**
+ * Converts a string into a valid JavaScript identifier.
+ * This function replaces invalid characters with underscores,
+ * ensures the name doesn't start with a digit, and appends
+ * an underscore if the name is a reserved JavaScript keyword.
+ *
+ * @param name The input string to convert.
+ * @returns A string that is a valid JavaScript identifier.
+ */
 export function toValidJsName(name: string): string {
   // Replace invalid characters with underscores
   let validName = name.replace(/[^a-zA-Z0-9_$]/g, '_');

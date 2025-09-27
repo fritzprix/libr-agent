@@ -7,7 +7,11 @@ import { AIServiceProvider } from './ai-service/types';
 const logger = getLogger('token-utils');
 
 /**
- * Estimates token count for a message using BPE (cl100k_base) encoding.
+ * Estimates the token count for a given message using the `cl100k_base`
+ * Byte-Pair Encoding (BPE), which is a common encoding for many modern LLMs.
+ *
+ * @param message The message to estimate the token count for.
+ * @returns The estimated number of tokens.
  */
 export function estimateTokensBPE(message: Message): number {
   const text = `${message.role}: ${message.content ?? ''}`;
@@ -18,8 +22,17 @@ export function estimateTokensBPE(message: Message): number {
 }
 
 /**
- * Returns a message array that fits within the model's context window with 10% margin.
- * For Anthropic providers, considers tool chain boundaries to include only complete chains.
+ * Selects a subset of messages from the end of an array that fits within a model's context window.
+ * It calculates a token limit (either from `maxTokens` or 90% of the model's context window)
+ * and includes messages from the most recent until the limit is reached.
+ * For certain providers like Anthropic, it performs additional checks to ensure that
+ * tool call chains are not broken.
+ *
+ * @param messages The array of messages to select from.
+ * @param providerId The ID of the LLM provider.
+ * @param modelId The ID of the model.
+ * @param maxTokens An optional maximum number of tokens to include.
+ * @returns A new array of messages that fits within the context window.
  */
 export function selectMessagesWithinContext(
   messages: Message[],
@@ -76,8 +89,14 @@ export function selectMessagesWithinContext(
 }
 
 /**
- * Tool chain completeness check helper function
- * Checks if selected messages have tool_use without corresponding tool_result
+ * Checks if a set of selected messages, plus a candidate message, would result
+ * in an incomplete tool chain (i.e., a `tool_calls` message without a corresponding
+ * `tool` result message).
+ *
+ * @param selected The array of messages already selected for the context.
+ * @param candidateMsg The next message being considered for inclusion.
+ * @returns True if an incomplete tool chain is detected, false otherwise.
+ * @private
  */
 function checkIncompleteToolChain(
   selected: Message[],
@@ -135,20 +154,26 @@ function checkIncompleteToolChain(
 }
 
 /**
- * Removes incomplete tool chains to keep only complete chains
+ * Filters an array of messages to remove any incomplete tool chains.
+ * An incomplete chain is a `tool_calls` message without its corresponding `tool` result message.
+ * This function ensures that only complete request/response pairs for tools are kept.
+ *
+ * @param messages The array of messages to process.
+ * @returns A new array of messages with incomplete tool chains removed or cleaned.
+ * @private
  */
 function removeIncompleteToolChains(messages: Message[]): Message[] {
   const toolUseIds = new Set<string>();
   const completedToolUseIds = new Set<string>();
 
-  // Collect all tool_use IDs
+  // First pass: collect all tool call IDs
   for (const msg of messages) {
     if (msg.role === 'assistant' && msg.tool_calls) {
       msg.tool_calls.forEach((tc) => toolUseIds.add(tc.id));
     }
   }
 
-  // Collect completed tool_use IDs
+  // Second pass: collect the IDs of tool calls that have a corresponding result
   for (const msg of messages) {
     if (
       msg.role === 'tool' &&
@@ -159,31 +184,33 @@ function removeIncompleteToolChains(messages: Message[]): Message[] {
     }
   }
 
-  // 불완전한 tool 체인 제거
+  // Third pass: build the result array, filtering out incomplete chains
   const result: Message[] = [];
   for (const msg of messages) {
     if (msg.role === 'assistant' && msg.tool_calls) {
-      // 완료된 tool_calls만 유지
+      // Keep only the tool calls that have been completed
       const completedToolCalls = msg.tool_calls.filter((tc) =>
         completedToolUseIds.has(tc.id),
       );
 
       if (completedToolCalls.length > 0) {
+        // If there are any completed calls, include the message with only those calls
         const processedMsg = { ...msg, tool_calls: completedToolCalls };
         result.push(processedMsg);
       } else {
-        // tool_calls가 모두 불완전한 경우 메시지에서 tool_calls 제거
+        // If all tool calls in this message are incomplete, remove the tool_calls property entirely
         const processedMsg = { ...msg };
         delete processedMsg.tool_calls;
-        delete processedMsg.tool_use;
+        delete processedMsg.tool_use; // Also remove legacy tool_use if present
         result.push(processedMsg);
       }
     } else if (msg.role === 'tool' && msg.tool_call_id) {
-      // 완료된 tool_use에 대응하는 tool_result만 포함
+      // Only include tool result messages that correspond to a completed tool call
       if (completedToolUseIds.has(msg.tool_call_id)) {
         result.push(msg);
       }
     } else {
+      // Keep all other messages
       result.push(msg);
     }
   }

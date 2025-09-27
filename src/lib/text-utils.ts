@@ -1,11 +1,13 @@
 /**
- * Text processing utilities for content extraction and formatting
+ * @file Text processing utilities for content extraction and formatting.
  */
 
 /**
- * Cleans up markdown text by removing excessive whitespace and normalizing line breaks
- * @param text The markdown text to clean
- * @returns Cleaned markdown text
+ * Cleans up markdown text by removing excessive whitespace and normalizing line breaks,
+ * while preserving the core markdown structure.
+ *
+ * @param text The markdown text to clean.
+ * @returns The cleaned markdown text.
  */
 export function cleanMarkdownText(text: string): string {
   return text
@@ -17,9 +19,11 @@ export function cleanMarkdownText(text: string): string {
 }
 
 /**
- * Normalizes whitespace in regular text content
- * @param text The text to normalize
- * @returns Text with normalized whitespace
+ * Normalizes all whitespace characters (spaces, tabs, newlines) in a string
+ * into a single space, and trims leading/trailing whitespace.
+ *
+ * @param text The text to normalize.
+ * @returns The text with normalized whitespace.
  */
 export function normalizeWhitespace(text: string): string {
   return text
@@ -28,11 +32,12 @@ export function normalizeWhitespace(text: string): string {
 }
 
 /**
- * Truncates text to a specified length with ellipsis
- * @param text The text to truncate
- * @param maxLength Maximum length before truncation
- * @param suffix Suffix to append when truncated (default: '...')
- * @returns Truncated text
+ * Truncates a string to a specified maximum length, appending a suffix if truncated.
+ *
+ * @param text The text to truncate.
+ * @param maxLength The maximum length of the output string (including the suffix).
+ * @param suffix The suffix to append if the text is truncated. Defaults to '...'.
+ * @returns The truncated text, or the original text if it's within the length limit.
  */
 export function truncateText(
   text: string,
@@ -46,9 +51,11 @@ export function truncateText(
 }
 
 /**
- * Removes common unwanted characters and patterns from extracted text
- * @param text The text to sanitize
- * @returns Sanitized text
+ * Sanitizes text extracted from an external source (like a web page) by removing
+ * common unwanted characters and normalizing whitespace.
+ *
+ * @param text The text to sanitize.
+ * @returns The sanitized text.
  */
 export function sanitizeExtractedText(text: string): string {
   return text
@@ -59,9 +66,11 @@ export function sanitizeExtractedText(text: string): string {
 }
 
 /**
- * Creates ultra-compact text by removing all unnecessary whitespace
- * @param text The text to make compact
- * @returns Most compact version of the text
+ * Creates an ultra-compact version of a string by removing all unnecessary whitespace,
+ * including around common punctuation, for efficient storage or transmission.
+ *
+ * @param text The text to make compact.
+ * @returns The most compact version of the text.
  */
 export function createCompactText(text: string): string {
   return text

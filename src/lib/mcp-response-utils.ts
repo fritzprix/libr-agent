@@ -2,7 +2,11 @@ import { MCPResponse } from './mcp-types';
 import { createId } from '@paralleldrive/cuid2';
 
 /**
- * Create a standard MCP text response
+ * Creates a standard MCP response containing only a text message.
+ *
+ * @param text The text content for the response.
+ * @param id Optional JSON-RPC request ID. If not provided, a new one is generated.
+ * @returns An `MCPResponse` object with the specified text content.
  */
 export function createMCPTextResponse(
   text: string,
@@ -18,7 +22,13 @@ export function createMCPTextResponse(
 }
 
 /**
- * Create a structured MCP response with both text and structured content
+ * Creates an MCP response that includes both a text message and a structured content payload.
+ *
+ * @template T The type of the structured content.
+ * @param text The text content for the response.
+ * @param structuredContent The structured data payload.
+ * @param id Optional JSON-RPC request ID. If not provided, a new one is generated.
+ * @returns An `MCPResponse` object with both text and structured content.
  */
 export function createMCPStructuredResponse<T>(
   text: string,
@@ -36,7 +46,11 @@ export function createMCPStructuredResponse<T>(
 }
 
 /**
- * Type guard to check if an object is an MCPResponse
+ * A type guard to check if a given object is a valid MCPResponse.
+ * It verifies the object's structure and the `jsonrpc` version.
+ *
+ * @param obj The object to check.
+ * @returns True if the object is a valid `MCPResponse`, false otherwise.
  */
 export function isMCPResponse(obj: unknown): obj is MCPResponse<unknown> {
   return (
@@ -48,7 +62,13 @@ export function isMCPResponse(obj: unknown): obj is MCPResponse<unknown> {
 }
 
 /**
- * Create an MCP error response
+ * Creates a standard MCP error response.
+ *
+ * @param message A string providing a short description of the error.
+ * @param code A number that indicates the error type that occurred. Defaults to -32603 (Internal error).
+ * @param data Optional additional information about the error.
+ * @param id Optional JSON-RPC request ID. Can be null if the request ID is not available.
+ * @returns An `MCPResponse` object formatted as an error.
  */
 export function createMCPErrorResponse(
   message: string,
@@ -68,7 +88,11 @@ export function createMCPErrorResponse(
 }
 
 /**
- * Create an empty MCP response with no content
+ * Creates an empty MCP success response with no content.
+ * This can be used to acknowledge a request without sending back any specific data.
+ *
+ * @param id Optional JSON-RPC request ID. If not provided, a new one is generated.
+ * @returns An empty but valid `MCPResponse` object.
  */
 export function createMCPEmptyResponse(
   id?: string | number | null,

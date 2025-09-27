@@ -10,7 +10,19 @@ import type {
 } from './types';
 import { LocalDatabase } from './service';
 
-const createPage = <T>(
+/**
+ * Creates a pagination object.
+ * This helper function constructs a `Page` object which is used
+ * throughout the application for paginated data responses.
+ *
+ * @template T The type of items in the page.
+ * @param items The array of items for the current page.
+ * @param page The current page number.
+ * @param pageSize The number of items per page. If -1, all items are returned on a single page.
+ * @param totalItems The total number of items across all pages.
+ * @returns A `Page` object containing the items and pagination metadata.
+ */
+export const createPage = <T>(
   items: T[],
   page: number,
   pageSize: number,
@@ -37,6 +49,11 @@ const createPage = <T>(
   };
 };
 
+/**
+ * CRUD operations for managing `Assistant` objects in the local database.
+ * This object provides a standardized interface for creating, reading,
+ * updating, deleting, and paginating assistants.
+ */
 export const assistantsCRUD: CRUD<Assistant> = {
   upsert: async (assistant: Assistant) => {
     const now = new Date();
@@ -82,6 +99,12 @@ export const assistantsCRUD: CRUD<Assistant> = {
   },
 };
 
+/**
+ * Generic CRUD operations for managing `DatabaseObject` instances in the local database.
+ * This can be used to store any type of object that conforms to the `DatabaseObject` interface.
+ *
+ * @template T The type of the data stored within the `DatabaseObject`.
+ */
 export const objectsCRUD: CRUD<
   DatabaseObject<unknown>,
   DatabaseObject<unknown>
@@ -141,6 +164,10 @@ export const objectsCRUD: CRUD<
   },
 };
 
+/**
+ * CRUD operations for managing `Session` objects in the local database.
+ * Provides methods for standard database interactions with sessions.
+ */
 export const sessionsCRUD: CRUD<Session> = {
   upsert: async (session: Session) => {
     const now = new Date();
@@ -160,13 +187,23 @@ export const sessionsCRUD: CRUD<Session> = {
   read: async (id: string) => {
     return LocalDatabase.getInstance().sessions.get(id);
   },
+  /**
+   * Deletes a session and all its related data in a single transaction.
+   * This includes all messages, file stores, file contents, and file chunks
+   * associated with the specified session ID.
+   *
+   * @param id The ID of the session to delete.
+   */
   delete: async (id: string) => {
     const db = LocalDatabase.getInstance();
     await db.transaction(
       'rw',
       [db.sessions, db.messages, db.fileStores, db.fileContents, db.fileChunks],
       async () => {
+        // Delete all messages associated with the session
         await db.messages.where('sessionId').equals(id).delete();
+
+        // Find all file stores for the session to cascade delete their contents
         const stores = await db.fileStores
           .where('sessionId')
           .equals(id)
@@ -177,11 +214,17 @@ export const sessionsCRUD: CRUD<Session> = {
             .equals(store.id)
             .toArray();
           for (const content of contents) {
+            // Delete chunks for each file content
             await db.fileChunks.where('contentId').equals(content.id).delete();
           }
+          // Delete file contents for the store
           await db.fileContents.where('storeId').equals(store.id).delete();
         }
+
+        // Delete the file stores themselves
         await db.fileStores.where('sessionId').equals(id).delete();
+
+        // Finally, delete the session
         await db.sessions.delete(id);
       },
     );
@@ -210,6 +253,10 @@ export const sessionsCRUD: CRUD<Session> = {
   },
 };
 
+/**
+ * CRUD operations for managing `Message` objects in the local database.
+ * This provides a standard interface for interacting with chat messages.
+ */
 export const messagesCRUD: CRUD<Message> = {
   upsert: async (message: Message) => {
     const now = new Date();
@@ -255,6 +302,10 @@ export const messagesCRUD: CRUD<Message> = {
   },
 };
 
+/**
+ * CRUD operations for managing `Group` objects in the local database.
+ * This provides a standard interface for interacting with groups.
+ */
 export const groupsCRUD: CRUD<Group> = {
   upsert: async (group: Group) => {
     const now = new Date();
@@ -300,6 +351,10 @@ export const groupsCRUD: CRUD<Group> = {
   },
 };
 
+/**
+ * CRUD operations for managing `FileStore` objects in the local database.
+ * A FileStore represents a collection of files, typically associated with a session.
+ */
 export const fileStoresCRUD: CRUD<FileStore> = {
   upsert: async (store: FileStore) => {
     const now = new Date();
@@ -319,6 +374,12 @@ export const fileStoresCRUD: CRUD<FileStore> = {
   read: async (id: string) => {
     return LocalDatabase.getInstance().fileStores.get(id);
   },
+  /**
+   * Deletes a file store and all its associated file contents and chunks.
+   * This performs a cascade delete within a single transaction to ensure data integrity.
+   *
+   * @param id The ID of the file store to delete.
+   */
   delete: async (id: string) => {
     const db = LocalDatabase.getInstance();
     await db.transaction(
@@ -362,6 +423,10 @@ export const fileStoresCRUD: CRUD<FileStore> = {
   },
 };
 
+/**
+ * CRUD operations for managing `FileContent` objects in the local database.
+ * A FileContent represents a single file's metadata within a FileStore.
+ */
 export const fileContentsCRUD: FileContentCRUD = {
   upsert: async (content: FileContent) => {
     await LocalDatabase.getInstance().fileContents.put(content);
@@ -372,6 +437,11 @@ export const fileContentsCRUD: FileContentCRUD = {
   read: async (id: string) => {
     return LocalDatabase.getInstance().fileContents.get(id);
   },
+  /**
+   * Deletes a file content and all its associated chunks in a transaction.
+   *
+   * @param id The ID of the file content to delete.
+   */
   delete: async (id: string) => {
     const db = LocalDatabase.getInstance();
     await db.transaction('rw', db.fileContents, db.fileChunks, async () => {
@@ -419,6 +489,10 @@ export const fileContentsCRUD: FileContentCRUD = {
   },
 };
 
+/**
+ * CRUD operations for managing `FileChunk` objects in the local database.
+ * FileChunks store the actual binary data of files in smaller pieces.
+ */
 export const fileChunksCRUD: CRUD<FileChunk> = {
   upsert: async (chunk: FileChunk) => {
     await LocalDatabase.getInstance().fileChunks.put(chunk);

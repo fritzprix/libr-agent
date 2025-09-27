@@ -1,10 +1,12 @@
 /**
- * 🌐 Web Worker MCP Server Implementation
+ * @file Web Worker implementation for running MCP (Model Context Protocol) servers.
  *
- * This worker runs MCP servers in a web worker environment,
- * providing MCP-compatible functionality without Node.js/Python dependencies.
+ * This script runs in a separate thread as a Web Worker, providing an isolated
+ * environment for executing MCP-compatible servers and tools without blocking the
+ * main UI thread. It communicates with the main application using `postMessage`.
  *
- * Designed for Vite's ?worker import system
+ * It uses static imports for server modules to ensure compatibility with bundlers
+ * like Vite and to provide better type safety.
  */
 
 import type {
@@ -18,7 +20,10 @@ import type {
 // This approach provides better bundling compatibility and type safety
 import planningServer from './modules/planning-server';
 
-// Add console logging for debugging since we can't use our logger in worker context
+/**
+ * A simple logger for the worker context, as the main logger is not available here.
+ * @internal
+ */
 const log = {
   debug: (message: string, data?: unknown) => {
     console.log(`[WebMCP Worker][DEBUG] ${message}`, data || '');
@@ -47,8 +52,10 @@ const serverInstances = new Map<string, WebMCPServer | null>(
 );
 
 /**
- * Load MCP servers - simplified with static imports
- * Since we're using static imports, servers are already loaded at initialization
+ * Logs the status of statically imported servers. Since modules are imported
+ * statically at the top of the file, this function primarily serves to confirm
+ * that the modules have been loaded into the registry correctly.
+ * @internal
  */
 async function loadServers(): Promise<void> {
   try {
@@ -69,6 +76,11 @@ async function loadServers(): Promise<void> {
   }
 }
 
+/**
+ * Gets the registry of server instances.
+ * @returns A map of server names to server instances.
+ * @internal
+ */
 const getServerRegistry = (): Map<string, WebMCPServer | null> => {
   return serverInstances;
 };
@@ -77,7 +89,11 @@ const getServerRegistry = (): Map<string, WebMCPServer | null> => {
 const mcpServers = new Map<string, WebMCPServer>();
 
 /**
- * Load an MCP server from the registry
+ * Retrieves a loaded MCP server instance from the cache or loads it from the registry.
+ * @param serverName The name of the server to load.
+ * @returns A promise that resolves to the `WebMCPServer` instance.
+ * @throws An error if the server is not found or is invalid.
+ * @internal
  */
 async function loadMCPServer(serverName: string): Promise<WebMCPServer> {
   if (mcpServers.has(serverName)) {
@@ -128,7 +144,11 @@ async function loadMCPServer(serverName: string): Promise<WebMCPServer> {
 }
 
 /**
- * Handle MCP message and return appropriate response
+ * Handles an incoming `WebMCPMessage` from the main thread, routes it to the
+ * appropriate action (e.g., ping, loadServer, callTool), and returns a response.
+ * @param message The message from the main thread.
+ * @returns A promise that resolves to an `MCPResponse` to be sent back to the main thread.
+ * @internal
  */
 async function handleMCPMessage(
   message: WebMCPMessage,
@@ -334,7 +354,8 @@ async function handleMCPMessage(
 }
 
 /**
- * Worker message handler
+ * The main message handler for the worker. It listens for messages from the main
+ * thread, passes them to `handleMCPMessage`, and posts the response back.
  */
 self.onmessage = async (event: MessageEvent<WebMCPMessage>) => {
   const messageId = event.data?.id || 'unknown';
@@ -364,14 +385,14 @@ self.onmessage = async (event: MessageEvent<WebMCPMessage>) => {
 };
 
 /**
- * Worker error handler
+ * The global error handler for the worker.
  */
 self.onerror = (error) => {
   log.error('Worker error', { error: String(error) });
 };
 
 /**
- * Worker unhandled rejection handler
+ * The handler for unhandled promise rejections in the worker.
  */
 self.onunhandledrejection = (event) => {
   log.error('Unhandled rejection', { reason: String(event.reason) });
