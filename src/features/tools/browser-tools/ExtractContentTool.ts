@@ -172,7 +172,7 @@ export const extractPageContentTool: StrictBrowserMCPTool = {
       saveRawHtml: {
         type: 'boolean',
         description:
-          'Save the raw HTML to a file for debugging purposes. Default: false',
+          'Save the raw HTML to a file for DOM structure analysis. Default: false',
       },
     },
     required: ['sessionId'],
