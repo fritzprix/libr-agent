@@ -1,10 +1,17 @@
-import React, { useCallback, useState, useRef, useEffect, useMemo } from 'react';
+import React, {
+  useCallback,
+  useState,
+  useRef,
+  useEffect,
+  useMemo,
+} from 'react';
 import { Button, FileAttachment, Input } from '@/components/ui';
 import { Send, Square, Loader2 } from 'lucide-react';
 import { useAssistantContext } from '@/context/AssistantContext';
 import { useSessionContext } from '@/context/SessionContext';
 import { useChatContext } from '@/context/ChatContext';
 import { useFileAttachment } from '../hooks/useFileAttachment';
+import { toast } from 'sonner';
 import { getLogger } from '@/lib/logger';
 import { AttachmentReference } from '@/models/chat';
 import { stringToMCPContentArray } from '@/lib/utils';
@@ -113,7 +120,7 @@ export function ChatInput({ children }: ChatInputProps) {
           });
         } catch (err) {
           logger.error('Error uploading pending files:', err);
-          // TODO: Show user-friendly error message instead of alert
+          toast.error('파일 업로드에 실패했습니다');
           return;
         }
       }
@@ -148,6 +155,7 @@ export function ChatInput({ children }: ChatInputProps) {
           clearPendingFiles();
         } catch (err) {
           logger.error('Error submitting message:', err);
+          toast.error('메시지 전송에 실패했습니다');
           // 실패 시 입력값 유지
         }
       }
@@ -202,11 +210,7 @@ export function ChatInput({ children }: ChatInputProps) {
   );
 
   return (
-    <form
-      ref={chatInputRef}
-      onSubmit={handleSubmit}
-      className={formClassName}
-    >
+    <form ref={chatInputRef} onSubmit={handleSubmit} className={formClassName}>
       <span className="font-bold flex-shrink-0">$</span>
       <div className="flex-1 flex items-center gap-2 min-w-0">
         <Input

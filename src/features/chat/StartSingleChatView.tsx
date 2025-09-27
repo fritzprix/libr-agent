@@ -5,6 +5,7 @@ import { useMCPServer } from '@/hooks/use-mcp-server';
 import { Assistant } from '@/models/chat';
 import { getLogger } from '@/lib/logger';
 import { useCallback, useState } from 'react';
+import { toast } from 'sonner';
 import { Link } from 'react-router';
 
 const logger = getLogger('StartSingleChatView');
@@ -52,7 +53,7 @@ export default function StartSingleChatView() {
           assistantId: assistant.id,
           error: error instanceof Error ? error.message : String(error),
         });
-        // TODO: 에러 토스트나 모달 표시
+        toast.error('챗 세션 시작에 실패했습니다');
       } finally {
         setIsStarting(false);
         setStartingAssistantId(null);

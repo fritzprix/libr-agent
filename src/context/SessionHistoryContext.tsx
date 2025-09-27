@@ -131,14 +131,17 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
           return newData;
         },
         { revalidate: false },
-      ).then(() => {
-        return dbService.messages.upsertMany(messagesWithSessionId);
-      }).then(() => {
-        return messagesWithSessionId;
-      }).catch((e) => {
-        mutate(previousData, { revalidate: false });
-        throw e;
-      });
+      )
+        .then(() => {
+          return dbService.messages.upsertMany(messagesWithSessionId);
+        })
+        .then(() => {
+          return messagesWithSessionId;
+        })
+        .catch((e) => {
+          mutate(previousData, { revalidate: false });
+          throw e;
+        });
     },
     [currentSession, mutate, data, validateMessage],
   );
@@ -169,16 +172,18 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
           }));
         },
         { revalidate: false },
-      ).then(() => {
-        const existing = messages.find((m) => m.id === messageId);
-        if (!existing) throw new Error(`Message ${messageId} not found.`);
-        return dbService.messages.upsert({ ...existing, ...updates });
-      }).catch((e) => {
-        logger.error('Failed to update message, rolling back', e);
-        // 실제 롤백: 이전 데이터로 복원
-        mutate(previousData, { revalidate: false });
-        throw e;
-      });
+      )
+        .then(() => {
+          const existing = messages.find((m) => m.id === messageId);
+          if (!existing) throw new Error(`Message ${messageId} not found.`);
+          return dbService.messages.upsert({ ...existing, ...updates });
+        })
+        .catch((e) => {
+          logger.error('Failed to update message, rolling back', e);
+          // 실제 롤백: 이전 데이터로 복원
+          mutate(previousData, { revalidate: false });
+          throw e;
+        });
     },
     [currentSession, mutate, messages, data],
   );
@@ -199,14 +204,16 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
           }));
         },
         { revalidate: false },
-      ).then(() => {
-        return dbService.messages.delete(messageId);
-      }).catch((e) => {
-        logger.error('Failed to delete message, rolling back', e);
-        // 실제 롤백: 이전 데이터로 복원
-        mutate(previousData, { revalidate: false });
-        throw e;
-      });
+      )
+        .then(() => {
+          return dbService.messages.delete(messageId);
+        })
+        .catch((e) => {
+          logger.error('Failed to delete message, rolling back', e);
+          // 실제 롤백: 이전 데이터로 복원
+          mutate(previousData, { revalidate: false });
+          throw e;
+        });
     },
     [currentSession, mutate, data],
   );
@@ -218,16 +225,21 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
     const previousData = data;
 
     return new Promise<void>((resolve, reject) => {
-      mutate(() => [], { revalidate: false }).then(() => {
-        dbUtils.deleteAllMessagesForSession(currentSession.id).then(() => {
-          resolve();
-        }).catch((e: unknown) => {
-          logger.error('Failed to clear history, rolling back', e);
-          // 실제 롤백: 이전 데이터로 복원
-          mutate(previousData, { revalidate: false });
-          reject(e);
-        });
-      }).catch(reject);
+      mutate(() => [], { revalidate: false })
+        .then(() => {
+          dbUtils
+            .deleteAllMessagesForSession(currentSession.id)
+            .then(() => {
+              resolve();
+            })
+            .catch((e: unknown) => {
+              logger.error('Failed to clear history, rolling back', e);
+              // 실제 롤백: 이전 데이터로 복원
+              mutate(previousData, { revalidate: false });
+              reject(e);
+            });
+        })
+        .catch(reject);
     });
   }, [currentSession, mutate, data]);
 
