@@ -85,7 +85,7 @@ export function throttlePromise<Args extends readonly unknown[], Return>(
  * @param name The input string to convert.
  * @returns A string that is a valid JavaScript identifier.
  */
-export function toValidJsName(name:string): string {
+export function toValidJsName(name: string): string {
   // Replace invalid characters with underscores
   let validName = name.replace(/[^a-zA-Z0-9_$]/g, '_');
 

@@ -104,7 +104,11 @@ This document reviews the current implementation of browser automation tools in 
     // Get diagnostics
     const rect = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
     const visible = !!(rect && rect.width > 0 && rect.height > 0);
-    const disabled = el.disabled || el.hasAttribute('disabled') || el.readOnly || el.hasAttribute('readonly');
+    const disabled =
+      el.disabled ||
+      el.hasAttribute('disabled') ||
+      el.readOnly ||
+      el.hasAttribute('readonly');
     const computedStyle = window.getComputedStyle
       ? window.getComputedStyle(el)
       : null;
@@ -140,9 +144,7 @@ This document reviews the current implementation of browser automation tools in 
       el.value = '';
       el.value = inputText;
       // Dispatch events
-      el.dispatchEvent(
-        new Event('input', { bubbles: true, cancelable: true }),
-      );
+      el.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
       el.dispatchEvent(
         new Event('change', { bubbles: true, cancelable: true }),
       );
@@ -161,7 +163,8 @@ This document reviews the current implementation of browser automation tools in 
       });
     }
     const finalValue = el.value || '';
-    const valuePreview = finalValue.length > 50 ? finalValue.substring(0, 50) + '...' : finalValue;
+    const valuePreview =
+      finalValue.length > 50 ? finalValue.substring(0, 50) + '...' : finalValue;
     return JSON.stringify({
       ok: true,
       action: 'input',
