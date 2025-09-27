@@ -429,3 +429,7 @@ These steps must be completed successfully before considering any refactoring ta
 - Maintain API documentation for Tauri commands
 - Document MCP integration patterns
 - Keep deployment guides current
+
+## References
+
+- [Chat Feature Architecture & Implementation Manual](docs/architecture/chat-feature-architecture.md)
