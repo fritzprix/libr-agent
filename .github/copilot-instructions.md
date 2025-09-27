@@ -58,6 +58,37 @@ SynapticFlow is a next-generation desktop AI agent platform that combines the li
 - SecurityValidator (Built-in security validation)
 - Warp (HTTP server for browser automation)
 
+## Development Scripts & Workflow
+
+SynapticFlow provides several useful scripts for development and code quality:
+
+- `pnpm dev` – Start the Vite development server
+- `pnpm tauri dev` – Start the Tauri desktop app with hot reload
+- `pnpm build` – Build the frontend for production
+- `pnpm lint` – Run ESLint checks for code quality
+- `pnpm format` – Format code using Prettier
+- `pnpm rust:fmt` – Check Rust code formatting
+- `pnpm rust:clippy` – Run Rust linter
+- `pnpm dead-code` – Find unused code with unimported
+- `pnpm refactor:validate` – **Complete validation pipeline:**  
+  Runs lint, format, Rust validation, build, and dead-code checks.  
+  **Always run this after any development or refactoring work to ensure code quality and build integrity.**
+
+**Workflow Recommendation:**  
+After making any code changes, always run:
+
+```sh
+pnpm refactor:validate
+```
+
+This ensures:
+- Code consistency and formatting
+- No TypeScript or Rust compilation errors
+- No unused code
+- The application remains buildable
+
+> **Note:** All contributors must follow this workflow before submitting PRs or merging changes.
+
 ## File Structure
 
 ```bash
