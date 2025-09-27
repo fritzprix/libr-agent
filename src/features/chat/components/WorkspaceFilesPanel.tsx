@@ -160,18 +160,10 @@ export function WorkspaceFilesPanel() {
   // Toggle directory expansion
   const toggleDirectory = useCallback(
     async (node: FileNode) => {
-      // Multi-condition directory check with logging (same as onClick)
-      const isDir =
-        node.isDirectory ||
-        node.children !== undefined ||
-        node.path.endsWith('/') ||
-        // Additional heuristic: if it's a known directory name pattern
-        (node.name && !node.name.includes('.') && node.name.length > 0);
-      if (!isDir) {
+      if (!node.isDirectory) {
         logger.warn('Attempted to toggle non-directory', {
           path: node.path,
           isDirectory: node.isDirectory,
-          hasChildren: node.children !== undefined,
         });
         return;
       }
@@ -313,18 +305,10 @@ export function WorkspaceFilesPanel() {
   // Download file
   const handleDownloadFile = useCallback(
     async (node: FileNode) => {
-      // Multi-condition directory protection (same as onClick)
-      if (
-        node.isDirectory ||
-        node.children !== undefined ||
-        node.path.endsWith('/') ||
-        // Additional heuristic: if it's a known directory name pattern
-        (node.name && !node.name.includes('.') && node.name.length > 0)
-      ) {
+      if (node.isDirectory) {
         logger.warn('Attempted to download a directory, ignoring', {
           path: node.path,
           isDirectory: node.isDirectory,
-          hasChildren: node.children !== undefined,
         });
         return;
       }
@@ -354,31 +338,17 @@ export function WorkspaceFilesPanel() {
           className="flex items-center gap-1 px-2 py-1 hover:bg-muted/50 cursor-pointer group"
           style={{ paddingLeft: `${8 + depth * 16}px` }}
           onClick={() => {
-            // Multi-condition directory detection with fallbacks
-            const isDir =
-              node.isDirectory ||
-              node.children !== undefined ||
-              node.path.endsWith('/') ||
-              // Additional heuristic: if it's a known directory name pattern
-              (node.name && !node.name.includes('.') && node.name.length > 0);
-
             logger.info('DIRECTORY CLICK ANALYSIS', {
               path: node.path,
               name: node.name,
               isDirectory: node.isDirectory,
-              hasChildren: node.children !== undefined,
-              endsWithSlash: node.path.endsWith('/'),
-              finalIsDir: isDir,
             });
 
-            if (isDir) {
+            if (node.isDirectory) {
               logger.info('CALLING toggleDirectory', { path: node.path });
               toggleDirectory(node);
             } else {
-              logger.error('CALLING handleDownloadFile - THIS IS THE BUG!', {
-                path: node.path,
-                reason: 'All directory checks failed'
-              });
+              logger.info('CALLING handleDownloadFile', { path: node.path });
               handleDownloadFile(node);
             }
           }}

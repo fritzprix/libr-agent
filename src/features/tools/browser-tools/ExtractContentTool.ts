@@ -8,7 +8,7 @@ import {
 import { createId } from '@paralleldrive/cuid2';
 import TurndownService from 'turndown';
 import { cleanMarkdownText } from '@/lib/text-utils';
-import { writeFile } from '@/lib/rust-backend-client';
+import {  workspaceWriteFile } from '@/lib/rust-backend-client';
 
 const logger = getLogger('ExtractPageContentTool');
 
@@ -238,7 +238,7 @@ export const extractPageContentTool: StrictBrowserMCPTool = {
           const contentBytes = Array.from(encoder.encode(rawHtml));
 
           // 기존 writeFile 인터페이스 사용
-          await writeFile(relativePath, contentBytes);
+          await workspaceWriteFile(relativePath, contentBytes);
 
           result.raw_html_path = relativePath;
           result.save_html_requested = true;

@@ -15,6 +15,7 @@ use session::get_session_manager;
 
 /// Represents a file or directory item in the workspace for display in the frontend.
 #[derive(serde::Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct WorkspaceFileItem {
     /// The name of the file or directory.
     pub name: String,
