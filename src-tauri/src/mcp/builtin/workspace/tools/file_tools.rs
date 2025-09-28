@@ -179,7 +179,7 @@ pub fn create_replace_lines_in_file_tool() -> MCPTool {
         string_prop(None, None, Some("The new content for the line range")),
     );
 
-    // 기존 line_number 지원을 위한 backward compatibility
+    // Backward compatibility for existing line_number support
     item_props.insert(
         "line_number".to_string(),
         integer_prop(
