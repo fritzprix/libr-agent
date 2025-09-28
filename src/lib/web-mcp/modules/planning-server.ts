@@ -12,6 +12,19 @@ interface SimpleTodo {
   status: 'pending' | 'completed';
 }
 
+/** Represents a single thought in the sequential-thinking tool. @internal */
+interface ThoughtData {
+  thought: string;
+  thoughtNumber: number;
+  totalThoughts: number;
+  isRevision?: boolean;
+  revisesThought?: number;
+  branchFromThought?: number;
+  branchId?: string;
+  needsMoreThoughts?: boolean;
+  nextThoughtNeeded: boolean;
+}
+
 /**
  * Represents the entire state of the planning server.
  */
@@ -79,6 +92,10 @@ class EphemeralState {
   private todos: SimpleTodo[] = [];
   private observations: string[] = [];
   private nextId = 1;
+  // Sequential thinking state
+  private thoughtHistory: ThoughtData[] = [];
+  private branches: Record<string, ThoughtData[]> = {};
+  private disableThoughtLogging = false;
 
   createGoal(goal: string): MCPResponse<CreateGoalOutput> {
     this.goal = goal;
@@ -193,6 +210,78 @@ class EphemeralState {
   getLastClearedGoal(): string | null {
     return this.lastClearedGoal;
   }
+
+  processThought(input: unknown): MCPResponse<Record<string, unknown>> {
+    try {
+      const data = input as Record<string, unknown>;
+
+      if (!data.thought || typeof data.thought !== 'string') {
+        throw new Error('Invalid thought: must be a string');
+      }
+      if (
+        data.thoughtNumber === undefined ||
+        typeof data.thoughtNumber !== 'number'
+      ) {
+        throw new Error('Invalid thoughtNumber: must be a number');
+      }
+      if (
+        data.totalThoughts === undefined ||
+        typeof data.totalThoughts !== 'number'
+      ) {
+        throw new Error('Invalid totalThoughts: must be a number');
+      }
+      if (typeof data.nextThoughtNeeded !== 'boolean') {
+        throw new Error('Invalid nextThoughtNeeded: must be a boolean');
+      }
+
+      const thought: ThoughtData = {
+        thought: data.thought as string,
+        thoughtNumber: data.thoughtNumber as number,
+        totalThoughts: data.totalThoughts as number,
+        nextThoughtNeeded: data.nextThoughtNeeded as boolean,
+        isRevision: data.isRevision as boolean | undefined,
+        revisesThought: data.revisesThought as number | undefined,
+        branchFromThought: data.branchFromThought as number | undefined,
+        branchId: data.branchId as string | undefined,
+        needsMoreThoughts: data.needsMoreThoughts as boolean | undefined,
+      };
+
+      if (thought.thoughtNumber > thought.totalThoughts) {
+        thought.totalThoughts = thought.thoughtNumber;
+      }
+
+      this.thoughtHistory.push(thought);
+
+      if (thought.branchFromThought && thought.branchId) {
+        if (!this.branches[thought.branchId]) {
+          this.branches[thought.branchId] = [];
+        }
+        this.branches[thought.branchId].push(thought);
+      }
+
+      if (!this.disableThoughtLogging) {
+        // lightweight console output for server logs
+        console.error(
+          `SEQUENTIAL THOUGHT ${thought.thoughtNumber}/${thought.totalThoughts}: ${thought.thought}`,
+        );
+      }
+
+      const summary = {
+        thoughtNumber: thought.thoughtNumber,
+        totalThoughts: thought.totalThoughts,
+        nextThoughtNeeded: thought.nextThoughtNeeded,
+        branches: Object.keys(this.branches),
+        thoughtHistoryLength: this.thoughtHistory.length,
+      } as Record<string, unknown>;
+
+      return createMCPStructuredResponse('Thought processed', summary);
+    } catch (error) {
+      return createMCPStructuredResponse('Failed to process thought', {
+        error: error instanceof Error ? error.message : String(error),
+        status: 'failed',
+      });
+    }
+  }
 }
 
 /**
@@ -270,6 +359,10 @@ class SessionStateManager {
 
   getLastClearedGoal(): string | null {
     return this.getCurrentState().getLastClearedGoal();
+  }
+
+  processThought(input: unknown): MCPResponse<Record<string, unknown>> {
+    return this.getCurrentState().processThought(input);
   }
 
   /**
@@ -374,6 +467,35 @@ const tools: MCPTool[] = [
       'Get current planning state as structured JSON data for UI visualization',
     inputSchema: { type: 'object', properties: {} },
   },
+  // Sequential thinking tool - adapted from thinking_seq.ts
+  {
+    name: 'sequentialthinking',
+    description:
+      'Sequential thinking tool for multi-step reflective problem solving. Accepts a thought payload and maintains per-session thought history and branches.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        thought: { type: 'string', description: 'Your current thinking step' },
+        nextThoughtNeeded: {
+          type: 'boolean',
+          description: 'Whether another thought step is needed',
+        },
+        thoughtNumber: { type: 'integer', minimum: 1 },
+        totalThoughts: { type: 'integer', minimum: 1 },
+        isRevision: { type: 'boolean' },
+        revisesThought: { type: 'integer', minimum: 1 },
+        branchFromThought: { type: 'integer', minimum: 1 },
+        branchId: { type: 'string' },
+        needsMoreThoughts: { type: 'boolean' },
+      },
+      required: [
+        'thought',
+        'nextThoughtNeeded',
+        'thoughtNumber',
+        'totalThoughts',
+      ],
+    },
+  },
 ];
 
 // Planning server interface for better type safety
@@ -434,6 +556,9 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
         return stateManager.clear();
       case 'add_observation': {
         return stateManager.addObservation(typedArgs.observation as string);
+      }
+      case 'sequentialthinking': {
+        return stateManager.processThought(typedArgs);
       }
       case 'get_current_state': {
         const currentState = {
@@ -529,6 +654,17 @@ export interface PlanningServerProxy extends WebMCPServerProxy {
   clear_session: () => Promise<BaseOutput>;
   add_observation: (args: { observation: string }) => Promise<BaseOutput>;
   get_current_state: () => Promise<PlanningState>;
+  sequentialthinking: (args: {
+    thought: string;
+    nextThoughtNeeded: boolean;
+    thoughtNumber: number;
+    totalThoughts: number;
+    isRevision?: boolean;
+    revisesThought?: number;
+    branchFromThought?: number;
+    branchId?: string;
+    needsMoreThoughts?: boolean;
+  }) => Promise<Record<string, unknown>>;
 }
 
 export default planningServer;
