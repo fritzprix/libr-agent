@@ -83,7 +83,6 @@ const tools: MCPTool[] = [
               },
             },
             required: [
-              'stepId',
               'description',
               'action',
               'requiredData',
@@ -168,7 +167,6 @@ const tools: MCPTool[] = [
               items: {
                 type: 'object',
                 properties: {
-                  stepId: { type: 'string' },
                   description: { type: 'string' },
                   action: {
                     type: 'object',
@@ -182,7 +180,6 @@ const tools: MCPTool[] = [
                   outputVariable: { type: 'string' },
                 },
                 required: [
-                  'stepId',
                   'description',
                   'action',
                   'requiredData',
@@ -231,7 +228,15 @@ const playbookStore: WebMCPServer = {
             agentId: currentAssistantId,
             goal: String(a.goal || ''),
             initialCommand: String(a.initialCommand || ''),
-            workflow: (a.workflow as Playbook['workflow']) || [],
+            workflow: ((a.workflow as Playbook['workflow']) || []).map(
+              (s, i) => ({
+                stepId: s?.stepId ?? `${id}-step-${i + 1}`,
+                description: s?.description ?? '',
+                action: s?.action ?? { toolName: '', purpose: '' },
+                requiredData: s?.requiredData ?? [],
+                outputVariable: s?.outputVariable ?? '',
+              }),
+            ),
             successCriteria:
               (a.successCriteria as Playbook['successCriteria']) || {
                 description: '',
@@ -366,14 +371,16 @@ const playbookStore: WebMCPServer = {
             if (Array.isArray(rec.workflow) && rec.workflow.length > 0) {
               lines.push('--- workflow details ---');
               rec.workflow.forEach((s, idx) => {
-                lines.push(`${idx + 1}. stepId: ${s.stepId}`);
-                lines.push(`   description: ${s.description}`);
-                lines.push(`   action.toolName: ${s.action.toolName}`);
-                lines.push(`   action.purpose: ${s.action.purpose}`);
+                lines.push(`${idx + 1}. stepId: ${s?.stepId ?? '<no stepId>'}`);
+                lines.push(`   description: ${s?.description ?? ''}`);
+                const toolName = s?.action?.toolName ?? '<no action>';
+                const purpose = s?.action?.purpose ?? '<no purpose>';
+                lines.push(`   action.toolName: ${toolName}`);
+                lines.push(`   action.purpose: ${purpose}`);
                 lines.push(
-                  `   requiredData: ${(s.requiredData || []).join(', ')}`,
+                  `   requiredData: ${(s?.requiredData || []).join(', ')}`,
                 );
-                lines.push(`   outputVariable: ${s.outputVariable}`);
+                lines.push(`   outputVariable: ${s?.outputVariable ?? ''}`);
               });
             }
             if (existing.successCriteria) {
@@ -412,14 +419,16 @@ const playbookStore: WebMCPServer = {
           ) {
             lines.push('--- workflow details ---');
             existing.workflow.forEach((s, idx) => {
-              lines.push(`${idx + 1}. stepId: ${s.stepId}`);
-              lines.push(`   description: ${s.description}`);
-              lines.push(`   action.toolName: ${s.action.toolName}`);
-              lines.push(`   action.purpose: ${s.action.purpose}`);
+              lines.push(`${idx + 1}. stepId: ${s?.stepId ?? '<no stepId>'}`);
+              lines.push(`   description: ${s?.description ?? ''}`);
+              const toolName = s?.action?.toolName ?? '<no action>';
+              const purpose = s?.action?.purpose ?? '<no purpose>';
+              lines.push(`   action.toolName: ${toolName}`);
+              lines.push(`   action.purpose: ${purpose}`);
               lines.push(
-                `   requiredData: ${(s.requiredData || []).join(', ')}`,
+                `   requiredData: ${(s?.requiredData || []).join(', ')}`,
               );
-              lines.push(`   outputVariable: ${s.outputVariable}`);
+              lines.push(`   outputVariable: ${s?.outputVariable ?? ''}`);
             });
           }
           if (existing.successCriteria) {
@@ -441,9 +450,20 @@ const playbookStore: WebMCPServer = {
             const existing = await dbService.playbooks.read(id as string);
             if (!existing)
               return createMCPTextResponse(`Playbook ${id} not found`);
+            const updatedWorkflow = (patch.workflow as Playbook['workflow'])
+              ? (patch.workflow as Playbook['workflow']).map((s, i) => ({
+                  stepId: s?.stepId ?? `${id}-step-${i + 1}`,
+                  description: s?.description ?? '',
+                  action: s?.action ?? { toolName: '', purpose: '' },
+                  requiredData: s?.requiredData ?? [],
+                  outputVariable: s?.outputVariable ?? '',
+                }))
+              : existing.workflow;
+
             const updated: PlaybookRecord = {
               ...existing,
               ...patch,
+              workflow: updatedWorkflow,
               updatedAt: new Date(),
             } as PlaybookRecord;
             await dbService.playbooks.upsert(updated);
@@ -460,6 +480,17 @@ const playbookStore: WebMCPServer = {
           const existing = inMemory.find((p) => p.id === id);
           if (!existing)
             return createMCPTextResponse(`Playbook ${id} not found`);
+          if (patch.workflow) {
+            existing.workflow = (patch.workflow as Playbook['workflow']).map(
+              (s, i) => ({
+                stepId: s?.stepId ?? `${id}-step-${i + 1}`,
+                description: s?.description ?? '',
+                action: s?.action ?? { toolName: '', purpose: '' },
+                requiredData: s?.requiredData ?? [],
+                outputVariable: s?.outputVariable ?? '',
+              }),
+            );
+          }
           Object.assign(existing, patch);
           existing.updatedAt = new Date().toISOString();
           const formattedExisting = formatPlaybook(existing);

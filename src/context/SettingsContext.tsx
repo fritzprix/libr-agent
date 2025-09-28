@@ -11,7 +11,6 @@ import { AIServiceProvider } from '../lib/ai-service';
 import { dbService } from '../lib/db';
 import { llmConfigManager } from '../lib/llm-config-manager';
 import { getLogger } from '../lib/logger';
-import SettingsModal from '@/features/settings/SettingsModal';
 
 const logger = getLogger('SettingsContext');
 
@@ -193,10 +192,6 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     <SettingModalViewContext.Provider value={modalViewContextValue}>
       <SettingsContext.Provider value={contextValue}>
         {children}
-        <SettingsModal
-          isOpen={openSettingModal}
-          onClose={() => setOpenSettingModal((prev) => !prev)}
-        />
       </SettingsContext.Provider>
     </SettingModalViewContext.Provider>
   );

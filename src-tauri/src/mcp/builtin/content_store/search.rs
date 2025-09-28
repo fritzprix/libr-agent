@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Search result for keyword queries
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchResult {
     pub content_id: String,
@@ -21,6 +22,7 @@ pub struct TextChunk {
 }
 
 /// Index statistics
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IndexStats {
     pub num_docs: usize,

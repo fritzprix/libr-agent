@@ -21,6 +21,7 @@ import {
   sessionsCRUD,
   playbooksCRUD,
 } from './crud';
+import { removeSession as backendRemoveSession } from '@/lib/rust-backend-client';
 
 /**
  * A singleton class that extends Dexie to provide a local database service.
@@ -219,6 +220,62 @@ export const dbUtils = {
   clearAllSessions: async (): Promise<void> => {
     await LocalDatabase.getInstance().sessions.clear();
     await LocalDatabase.getInstance().messages.clear();
+  },
+
+  /**
+   * Deletes all DB artifacts related to a specific session (messages, file stores,
+   * file contents, chunks, and the session row), and attempts to remove the
+   * native workspace directory by calling the backend `remove_session` command.
+   * This function is best-effort: DB deletions are done in a transaction, and
+   * workspace removal is attempted afterward; failures to remove the workspace
+   * will be surfaced as errors from the backend call.
+   * @param sessionId The ID of the session to delete
+   */
+  clearSessionAndWorkspace: async (sessionId: string): Promise<void> => {
+    const db = LocalDatabase.getInstance();
+
+    // Delete file stores, their contents, and chunks for this session inside a transaction
+    await db.transaction(
+      'rw',
+      db.fileStores,
+      db.fileContents,
+      db.fileChunks,
+      async () => {
+        const stores: FileStore[] = await db.fileStores
+          .where('sessionId')
+          .equals(sessionId)
+          .toArray();
+        const storeIds = stores.map((s) => s.id);
+
+        if (storeIds.length > 0) {
+          // Delete chunks linked to contents in these stores
+          const contents = await db.fileContents
+            .where('storeId')
+            .anyOf(storeIds)
+            .toArray();
+          const contentIds = contents.map((c) => c.id);
+
+          if (contentIds.length > 0) {
+            await db.fileChunks.where('contentId').anyOf(contentIds).delete();
+          }
+
+          // Delete fileContents for these stores
+          await db.fileContents.where('storeId').anyOf(storeIds).delete();
+
+          // Finally delete the stores
+          await db.fileStores.where('id').anyOf(storeIds).delete();
+        }
+      },
+    );
+
+    // Delete messages and session row
+    await db.transaction('rw', db.messages, db.sessions, async () => {
+      await db.messages.where('sessionId').equals(sessionId).delete();
+      await db.sessions.where('id').equals(sessionId).delete();
+    });
+
+    // Attempt to remove native workspace directory via backend command (best-effort)
+    await backendRemoveSession(sessionId);
   },
   /**
    * Inserts or updates multiple sessions in the database.

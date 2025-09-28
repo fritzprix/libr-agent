@@ -24,15 +24,15 @@ import {
 } from '../ui/sidebar';
 import { useSessionContext } from '@/context/SessionContext';
 import SessionList from '@/features/session/SessionList';
+import { useNavigate } from 'react-router-dom';
+// Remove modal import; we'll navigate to a dedicated settings route
 
-interface AppSidebarProps {
-  onOpenSettings: () => void;
-}
-
-export default function AppSidebar({ onOpenSettings }: AppSidebarProps) {
+export default function AppSidebar() {
   const { state, toggleSidebar } = useSidebar();
+  const navigate = useNavigate();
   const { select, sessions: sessionPages } = useSessionContext();
   const location = useLocation();
+  // modal state removed; settings is now a routed page
 
   const sessions = useMemo(
     () => (sessionPages ? sessionPages.flatMap((p) => p.items) : []),
@@ -225,7 +225,7 @@ export default function AppSidebar({ onOpenSettings }: AppSidebarProps) {
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
-              onClick={onOpenSettings}
+              onClick={() => navigate('/settings')}
               tooltip="Settings"
               className={`transition-all duration-200`}
             >
