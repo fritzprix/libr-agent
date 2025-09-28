@@ -62,7 +62,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       size="xl"
     >
       <div className="p-6 text-gray-300">
-        {/* 고정 높이로 탭 이동 시 크기 변화 방지 */}
+        {/* Fixed height to prevent size changes when switching tabs */}
         <div className="min-h-[500px] max-h-[600px] overflow-y-auto flex flex-col">
           <Tabs
             value={activeTab}

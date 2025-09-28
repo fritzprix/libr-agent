@@ -252,11 +252,6 @@ function isHTMLInputElement(element: Element): element is HTMLInputElement {
   return element.tagName.toUpperCase() === 'INPUT' && 'value' in element;
 }
 
-// moved to selector utils
-// function isValidCSSIdentifier(str: string): boolean {
-//   return /^[a-zA-Z_-][a-zA-Z0-9_-]*$/.test(str);
-// }
-
 // Centralized HTML input validation
 function validateHtmlInput(html: string): string | null {
   if (!html || typeof html !== 'string') {
@@ -274,10 +269,6 @@ function validateHtmlInput(html: string): string | null {
 
   return null;
 }
-
-// Enhanced CSS escaping with fallback
-// moved to selector utils
-// function safeCssEscape(value: string): string { /* ... */ }
 
 // Unified selector builder - replaces multiple selector generation functions
 // Removed local buildUniqueSelector implementation; using shared utility from '@/lib/dom/selector'
@@ -613,125 +604,6 @@ function isValidDOMMapElement(
 function generateSelector(element: Element, doc: Document): string {
   // use shared utility for consistency
   return buildUniqueSelector(element, doc);
-}
-
-/**
- * @deprecated Use `buildUniqueSelector` instead. This function will be removed in a future version.
- * Generates a simple, non-unique selector for an element using its ID, a valid class, or tag name.
- * @param element The element to generate a selector for.
- * @returns A simple CSS selector string.
- */
-export function generateSimpleSelector(element: Element): string {
-  // Deprecated: use buildUniqueSelector instead
-  // Keeping for backward compatibility during transition
-  const id = element.getAttribute('id');
-  if (id && isValidCSSIdentifier(id)) {
-    return '#' + id;
-  }
-
-  const className = element.getAttribute('class');
-  if (className?.trim()) {
-    const classes = className.trim().split(/\s+/);
-    const validClass = classes.find((cls) => isValidCSSIdentifier(cls));
-    if (validClass) {
-      return '.' + validClass;
-    }
-  }
-
-  return element.tagName.toLowerCase();
-}
-
-/**
- * @deprecated Use `buildUniqueSelector` instead. This function will be removed in a future version.
- * Generates a hierarchical CSS selector by walking up the DOM tree from the element.
- * Tries to find the shortest unique selector path.
- * @param element The element to generate a selector for.
- * @param doc The document context.
- * @returns A hierarchical CSS selector string.
- */
-export function generateHierarchicalSelector(
-  element: Element,
-  doc: Document,
-): string {
-  // Deprecated: use buildUniqueSelector instead
-  // Keeping for backward compatibility during transition
-  const path: string[] = [];
-  let current: Element | null = element;
-
-  while (current && current !== doc.documentElement) {
-    const selector = generateElementSelectorWithIndex(current);
-    path.unshift(selector);
-    current = current.parentElement;
-  }
-
-  // Start with the full path and reduce until we find a unique selector
-  for (let i = 0; i < path.length; i++) {
-    const partialSelector = path.slice(i).join(' > ');
-    if (isSelectorUnique(partialSelector, element, doc)) {
-      return partialSelector;
-    }
-  }
-
-  // Fallback to full path
-  return path.join(' > ');
-}
-
-/**
- * @deprecated Use `buildUniqueSelector` instead. This function will be removed in a future version.
- * Generates a selector for a single element, trying ID, class, or tag name with an index.
- * @param element The element to generate a selector for.
- * @returns A CSS selector string for the element.
- */
-export function generateElementSelectorWithIndex(element: Element): string {
-  // Deprecated: use buildUniqueSelector instead
-  // Keeping for backward compatibility during transition
-  const tag = element.tagName.toLowerCase();
-
-  // Try ID first
-  const id = element.getAttribute('id');
-  if (id && isValidCSSIdentifier(id)) {
-    return `${tag}#${id}`;
-  }
-
-  // Try class
-  const className = element.getAttribute('class');
-  if (className?.trim()) {
-    const classes = className.trim().split(/\s+/);
-    const validClass = classes.find((cls) => isValidCSSIdentifier(cls));
-    if (validClass) {
-      return `${tag}.${validClass}`;
-    }
-  }
-
-  // Add nth-child index for disambiguation
-  const parent = element.parentElement;
-  if (parent) {
-    const siblings = Array.from(parent.children).filter(
-      (child) => child.tagName === element.tagName,
-    );
-
-    if (siblings.length > 1) {
-      const index = siblings.indexOf(element) + 1;
-      return `${tag}:nth-child(${index})`;
-    }
-  }
-
-  return tag;
-}
-
-function isSelectorUnique(
-  selector: string,
-  targetElement: Element,
-  doc: Document,
-): boolean {
-  try {
-    const elements = doc.querySelectorAll(selector);
-    return elements.length === 1 && elements[0] === targetElement;
-  } catch (error) {
-    // Invalid selector - log for debugging but don't throw
-    logger.debug('Selector validation failed', { selector, error });
-    return false;
-  }
 }
 
 // Common parsing pipeline
@@ -1195,46 +1067,6 @@ const INTERACTABLE_SELECTORS = [
   '[data-action]',
 ].join(',');
 
-function generateUniqueSelector(element: Element, document: Document): string {
-  // Use the unified selector builder for consistency
-  return buildUniqueSelector(element, document);
-}
-
-/**
- * @deprecated Use `buildUniqueSelector` instead. This function will be removed in a future version.
- * Generates a structural path selector for an element.
- * @param element The element to generate a path for.
- * @returns A CSS selector path string.
- */
-export function generateStructuralPath(element: Element): string {
-  const path: string[] = [];
-  let current: Element | null = element;
-
-  while (current && current.tagName && current !== document.body) {
-    const tagName = current.tagName.toLowerCase();
-    const parent: Element | null = current.parentElement;
-
-    if (parent) {
-      const siblings = Array.from(parent.children).filter(
-        (el: Element) => el.tagName === current?.tagName,
-      );
-      if (siblings.length > 1 && current) {
-        const index = siblings.indexOf(current) + 1;
-        path.unshift(`${tagName}:nth-child(${index})`);
-      } else {
-        path.unshift(tagName);
-      }
-    } else {
-      path.unshift(tagName);
-    }
-
-    current = parent;
-    if (path.length > 6) break; // Limit path length for performance
-  }
-
-  return path.join(' > ');
-}
-
 function isElementVisible(element: Element): boolean {
   // DOMParser environment doesn't support getComputedStyle() or getBoundingClientRect()
   // Check visibility based on HTML attributes and inline styles instead
@@ -1320,7 +1152,7 @@ function parseElementToInteractable(
   }
 
   const interactableElement: InteractableElement = {
-    selector: generateUniqueSelector(element, document),
+    selector: buildUniqueSelector(element, document),
     type: getElementType(element),
     text: getElementText(element),
     enabled:

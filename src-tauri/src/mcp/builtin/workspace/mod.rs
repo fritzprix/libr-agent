@@ -19,12 +19,16 @@ pub mod utils;
 #[derive(Debug)]
 pub struct WorkspaceServer {
     session_manager: Arc<SessionManager>,
+    isolation_manager: crate::session_isolation::SessionIsolationManager,
 }
 
 impl WorkspaceServer {
     pub fn new(session_manager: Arc<SessionManager>) -> Self {
         info!("WorkspaceServer using session-based workspace management");
-        Self { session_manager }
+        Self {
+            session_manager,
+            isolation_manager: crate::session_isolation::SessionIsolationManager::new(),
+        }
     }
 
     // Common utility methods

@@ -6,9 +6,6 @@ import { JSDOM } from 'jsdom';
 import {
   parseHTMLToDOMMap,
   parseHtmlToInteractables,
-  generateSimpleSelector,
-  generateHierarchicalSelector,
-  generateElementSelectorWithIndex,
 } from '../../lib/html-parser';
 
 // Test data types
@@ -319,26 +316,7 @@ describe('Unified Selector Builder Tests', () => {
     });
   });
 
-  describe('Backward Compatibility', () => {
-    it('should maintain compatibility with deprecated selector functions', () => {
-      const testElement = document.querySelector('#unique-id') as Element;
-      expect(testElement).toBeTruthy();
 
-      if (testElement) {
-        // Test deprecated functions still work
-        const simpleSelector = generateSimpleSelector(testElement);
-        expect(simpleSelector).toBe('#unique-id');
-
-        const hierarchicalSelector = generateHierarchicalSelector(testElement, document);
-        expect(hierarchicalSelector).toBeTruthy();
-        expect(typeof hierarchicalSelector).toBe('string');
-
-        const indexedSelector = generateElementSelectorWithIndex(testElement);
-        expect(indexedSelector).toBeTruthy();
-        expect(typeof indexedSelector).toBe('string');
-      }
-    });
-  });
 
   describe('Input Validation', () => {
     it('should handle invalid HTML inputs gracefully', () => {

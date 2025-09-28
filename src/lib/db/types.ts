@@ -1,4 +1,5 @@
 import type { Assistant, Group, Message, Session } from '@/models/chat';
+import type { Playbook } from '@/types/playbook';
 
 /**
  * Represents a generic key-value object in the database.
@@ -185,4 +186,6 @@ export interface DatabaseService {
   fileContents: FileContentCRUD;
   /** CRUD operations for `FileChunk` objects. */
   fileChunks: CRUD<FileChunk>;
+  /** CRUD operations for persisted Playbook objects. */
+  playbooks?: CRUD<Playbook & { id: string }>;
 }

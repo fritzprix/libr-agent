@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useRustBackend, WorkspaceFileItem } from '@/hooks/use-rust-backend';
 import { useMessageTrigger } from '@/hooks/use-message-trigger';
+import { toast } from 'sonner';
 import { getLogger } from '@/lib/logger';
 import {
   useDnDContext,
@@ -134,6 +135,7 @@ export function WorkspaceFilesPanel() {
           err instanceof Error ? err.message : 'Failed to load directory';
         logger.error('Failed to load directory', { path, error: errorMessage });
         setError(errorMessage);
+        toast.error('디렉토리 로드에 실패했습니다');
       } finally {
         setLoading(false);
       }

@@ -9,7 +9,8 @@ interface LocationInfo {
   country?: string;
   region?: string;
   timezone: string;
-  coordinates: {
+  // coordinates may be omitted when unavailable or intentionally not shared
+  coordinates?: {
     lat: number;
     lon: number;
   };
@@ -55,6 +56,7 @@ export function TimeLocationSystemPrompt() {
       const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       return {
         timezone,
+        // keep coordinates but allow callers to treat them as absent if needed
         coordinates: { lat, lon },
       };
     }
@@ -81,9 +83,10 @@ export function TimeLocationSystemPrompt() {
         (error) => {
           logger.warn('Failed to get geolocation', error);
           const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+          // Do not set 0,0 as a real coordinate - omit coordinates so UI/LLM
+          // consumers don't accidentally treat (0,0) as a valid location.
           setLocationInfo({
             timezone,
-            coordinates: { lat: 0, lon: 0 },
           });
           setIsLocationLoading(false);
         },
@@ -96,9 +99,9 @@ export function TimeLocationSystemPrompt() {
     } else {
       logger.warn('Geolocation not supported');
       const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      // Omit coordinates when geolocation isn't available
       setLocationInfo({
         timezone,
-        coordinates: { lat: 0, lon: 0 },
       });
       setIsLocationLoading(false);
     }
@@ -128,7 +131,16 @@ export function TimeLocationSystemPrompt() {
     // 위치 정보 구성
     let locationText = 'Location information not available';
 
-    if (!isLocationLoading && locationInfo) {
+    const isValidCoordinates = (c?: { lat: number; lon: number }) => {
+      if (!c) return false;
+      // Treat near-(0,0) as invalid/fallback. Use a tiny epsilon to avoid FP issues.
+      const eps = 1e-6;
+      return Math.abs(c.lat) > eps || Math.abs(c.lon) > eps;
+    };
+
+    if (isLocationLoading) {
+      locationText = 'Loading location information...';
+    } else if (locationInfo) {
       if (locationInfo.city && locationInfo.country) {
         locationText = `${locationInfo.city}, ${locationInfo.country}`;
         if (locationInfo.region && locationInfo.region !== locationInfo.city) {
@@ -136,13 +148,15 @@ export function TimeLocationSystemPrompt() {
         }
       } else if (locationInfo.country) {
         locationText = locationInfo.country;
+      } else if (isValidCoordinates(locationInfo.coordinates)) {
+        const coords = locationInfo.coordinates!;
+        locationText = `Coordinates: ${coords.lat.toFixed(4)}, ${coords.lon.toFixed(4)}`;
       } else {
-        locationText = `Coordinates: ${locationInfo.coordinates.lat.toFixed(4)}, ${locationInfo.coordinates.lon.toFixed(4)}`;
+        // Keep the fallback text - coordinates are not reliable
+        locationText = 'Location information not available';
       }
 
       locationText += ` (${locationInfo.timezone})`;
-    } else if (isLocationLoading) {
-      locationText = 'Loading location information...';
     }
 
     return `# Current Context Information

@@ -2,13 +2,13 @@
 
 ## 📋 Project Overview
 
-**SynapticFlow: Making MCP Tool Integration Accessible to All Users**
+### SynapticFlow: Making MCP Tool Integration Accessible to All Users
 
 SynapticFlow is a desktop AI agent platform designed to solve two critical problems in the AI ecosystem:
 
-1.  **Accessibility Gap**: MCP (Model Context Protocol) tools are powerful but primarily accessible to developers. We make these tools available to general users through an intuitive interface.
+1. **Accessibility Gap**: MCP (Model Context Protocol) tools are powerful but primarily accessible to developers. We make these tools available to general users through an intuitive interface.
 
-2.  **LLM Provider Lock-in**: Users shouldn't be restricted to a few major LLM providers. SynapticFlow provides freedom to choose from multiple providers, including increasingly powerful local LLMs.
+2. **LLM Provider Lock-in**: Users shouldn't be restricted to a few major LLM providers. SynapticFlow provides freedom to choose from multiple providers, including increasingly powerful local LLMs.
 
 ## 🎯 What Problems We Solve
 
@@ -34,33 +34,113 @@ SynapticFlow is a desktop AI agent platform designed to solve two critical probl
 
 ### ✅ **Comprehensive Built-in Tool Ecosystem**
 
-**🛡️ Secure File Management:**
+SynapticFlow provides a powerful suite of built-in tools that enable AI agents to interact with web browsers, manage files, execute code, and perform advanced automation tasks. These tools are organized into three main categories:
 
-- **SecureFileManager**: Advanced path validation and sandboxed operations
-- **Content Store**: Upload, index, and full-text search across PDF, DOCX, XLSX files
-- **File Attachments**: Smart MIME type handling with preview capabilities
-- **Document Processing**: Extract and analyze content from multiple formats
+#### 🌐 **Browser Automation Tools**
 
-**⚡ Code Execution & Development:**
+**Session Management:**
 
-- **Python Sandbox**: Secure code execution with real-time result capture
-- **TypeScript Runtime**: JavaScript/TypeScript evaluation environment
-- **Output Management**: Comprehensive execution logging and error handling
-- **Development Tools**: Built-in debugging and testing utilities
+- **Create Interactive Sessions**: Launch browser windows with full control
+- **Session Persistence**: Maintain state across operations
+- **Multi-Session Support**: Run multiple browser instances simultaneously
 
-**🌐 Browser Automation:**
+**Navigation & Interaction:**
 
-- **Interactive Browser Server**: Automated web interactions and scraping
-- **Session Management**: Persistent browser sessions with state management
-- **Content Extraction**: Clean markdown conversion from web pages
-- **Web Integration**: Seamless web data processing pipeline
+- **Smart Navigation**: Navigate to URLs, back/forward through history
+- **Element Interaction**: Click buttons, input text, scroll pages
+- **Content Extraction**: Convert web pages to markdown, extract structured data
+- **Interactive Element Discovery**: Automatically identify clickable elements
 
-**🔗 Advanced MCP Integration:**
+**Advanced Features:**
 
-- **Dual Backend Support**: Both Rust Tauri and Web Worker implementations
-- **Security Validation**: Built-in SecurityValidator with comprehensive protection
-- **Tool Execution Context**: Unified calling interface across all backends
-- **Error Normalization**: Robust error handling and reporting system
+- **Error Recovery**: Comprehensive failure analysis and retry mechanisms
+- **Content Processing**: Clean markdown conversion from complex web pages
+- **Session Monitoring**: Real-time status tracking and management
+
+#### 🛡️ **Secure File & Content Management**
+
+**SecureFileManager:**
+
+- **Path Validation**: Advanced security checks prevent unauthorized access
+- **Sandboxed Operations**: Isolated file system interactions
+- **MIME Type Handling**: Smart processing of PDFs, DOCX, XLSX, and more
+
+**Content Store with BM25 Search:**
+
+- **Document Indexing**: Upload and index files with semantic search
+- **Full-Text Search**: BM25 algorithm for fast, accurate keyword matching
+- **Content Chunking**: Intelligent processing of large documents
+- **Multi-Format Support**: Handle various document types seamlessly
+
+**File Operations:**
+
+- **Read/Write Files**: Full file system access with permission controls
+- **Directory Management**: Browse, search, and organize file structures
+- **Import/Export**: Transfer files between systems and formats
+
+#### ⚡ **Code Execution & Development Tools**
+
+**Python Sandbox:**
+
+- **Secure Execution**: Isolated Python runtime environment
+- **Real-time Capture**: Live output streaming and error handling
+- **Package Management**: Controlled dependency access
+
+**TypeScript/JavaScript Runtime:**
+
+- **Modern JS Support**: ES6+ features with TypeScript compilation
+- **Module System**: Full npm ecosystem integration
+- **Debugging Tools**: Comprehensive error reporting and stack traces
+
+**Shell Command Execution:**
+
+- **System Integration**: Execute terminal commands safely
+- **Output Processing**: Structured result parsing and formatting
+- **Environment Control**: Managed execution contexts
+
+#### 🔗 **Advanced MCP Integration**
+
+**Dual Backend Architecture:**
+
+- **Rust Backend**: Native performance for system-level operations
+- **Web Worker Backend**: Browser-based tools for client-side functionality
+
+**Planning & Task Management:**
+
+- **Goal Setting**: Define and track complex objectives
+- **Todo System**: Structured task breakdown and progress tracking
+- **Observation Logging**: Context-aware decision making
+- **State Persistence**: Maintain planning state across sessions
+
+**Security & Validation:**
+
+- **SecurityValidator**: Built-in path traversal protection
+- **Input Sanitization**: Automatic cleaning of all user inputs
+- **Process Isolation**: MCP servers run in secure child processes
+
+#### 🌍 **External MCP Server Integration**
+
+**Unlimited Tool Expansion:**
+
+- **Connect Any MCP Server**: Integrate third-party MCP servers via stdio protocol
+- **Community Ecosystem**: Access tools from the growing MCP server community
+- **Custom Tool Development**: Build and connect your own specialized MCP servers
+- **Real-time Communication**: Secure stdio-based communication with external servers
+
+**Easy Server Management:**
+
+- **GUI Configuration**: Add and manage external MCP servers through the interface
+- **Server Discovery**: Automatic tool enumeration and capability detection
+- **Connection Monitoring**: Real-time status tracking and error reporting
+- **Security Validation**: Built-in validation for all external server connections
+
+**Supported Server Types:**
+
+- **File System Servers**: Enhanced file operations and management
+- **Database Servers**: SQL and NoSQL database interactions
+- **API Integration Servers**: REST, GraphQL, and webhook integrations
+- **Specialized Tools**: Domain-specific tools for various industries
+- **Custom Servers**: Your own MCP server implementations
 
 ### ✅ **Advanced Multi-LLM Ecosystem**
 
@@ -73,7 +153,6 @@ SynapticFlow is a desktop AI agent platform designed to solve two critical probl
 - **🔥 Fireworks**: DeepSeek R1, Qwen3 235B MoE, Llama 4 Maverick/Scout
 - **🧠 Cerebras**: Ultra-fast inference with industry-leading speed
 - **🏠 Ollama**: Local models with zero cost (Llama, Mistral, Qwen, CodeLlama)
-- **🎯 Empty**: Custom provider configurations
 
 **Advanced Features:**
 
@@ -162,24 +241,31 @@ Additionally, you can configure the database path:
   This command starts both the Rust backend and the React frontend in a single, hot-reloading development environment.
 
 - **Frontend-Only Mode**:
+
   ```bash
   pnpm dev
   ```
+
   This command runs only the React frontend. Note that all backend functionality (Tauri commands) will be unavailable.
 
 #### 5. Code Quality & Testing
 
 - **Linting**:
+
   ```bash
   pnpm lint      # Check for code quality issues
   pnpm lint:fix  # Automatically fix lint issues
   ```
+
 - **Formatting**:
+
   ```bash
   pnpm format         # Format all files with Prettier
   pnpm format:check   # Check for formatting compliance
   ```
+
 - **Testing**:
+
   ```bash
   pnpm test      # Run the test suite
   ```
@@ -264,6 +350,13 @@ SynapticFlow is a **cross-platform desktop application** that runs natively on:
 - **Distributions**: Ubuntu, Debian, Fedora, Arch Linux, and others
 - **Architecture**: x64
 - **Installation**: `.deb` package or a universal AppImage.
+
+## 📚 Documentation
+
+- **[Built-in Tools Documentation](docs/builtin-tools.md)**: Comprehensive guide to all available tools including browser automation, file management, code execution, and MCP integration
+- **[External MCP Integration](docs/external-mcp-integration.md)**: Detailed guide on connecting and managing external MCP servers
+- **[Architecture Documentation](docs/architecture/)**: Technical details about system design and implementation
+- **[Contributing Guide](CONTRIBUTING.md)**: Guidelines for contributors and development setup
 
 ## 🤝 Contributing
 

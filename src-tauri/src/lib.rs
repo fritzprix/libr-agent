@@ -7,8 +7,10 @@ mod commands;
 mod mcp;
 mod services;
 mod session;
+mod session_isolation;
 
 use commands::browser_commands::*;
+use commands::session_commands;
 use mcp::{MCPResponse, MCPServerConfig, MCPServerManager};
 use services::{InteractiveBrowserServer, SecureFileManager};
 use session::get_session_manager;
@@ -461,7 +463,7 @@ async fn set_current_session(session_id: String) -> Result<(), String> {
 
 /// Gets the ID of the currently active session.
 #[tauri::command]
-async fn get_current_session() -> Result<Option<String>, String> {
+async fn get_current_session_legacy() -> Result<Option<String>, String> {
     Ok(get_session_manager()?.get_current_session())
 }
 
@@ -474,7 +476,7 @@ async fn get_session_workspace_dir() -> Result<String, String> {
 
 /// Lists the IDs of all available sessions.
 #[tauri::command]
-async fn list_sessions() -> Result<Vec<String>, String> {
+async fn list_sessions_legacy() -> Result<Vec<String>, String> {
     get_session_manager()?.list_sessions()
 }
 
@@ -975,11 +977,22 @@ pub fn run() {
                 // Download commands
                 download_workspace_file,
                 export_and_download_zip,
-                // Session management commands
+                // Session management commands (legacy)
                 set_current_session,
-                get_current_session,
+                get_current_session_legacy,
                 get_session_workspace_dir,
-                list_sessions,
+                list_sessions_legacy,
+                // Enhanced session management commands
+                session_commands::switch_session,
+                session_commands::create_session,
+                session_commands::get_current_session_info,
+                session_commands::list_all_sessions,
+                session_commands::get_session_stats,
+                session_commands::pre_allocate_sessions,
+                session_commands::cleanup_sessions,
+                session_commands::remove_session,
+                session_commands::get_isolation_capabilities,
+                session_commands::fast_session_switch,
                 get_app_data_dir,
                 get_app_logs_dir,
                 backup_current_log,

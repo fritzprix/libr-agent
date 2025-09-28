@@ -29,6 +29,7 @@ export class WebMCPProxy {
       resolve: (value: unknown) => void;
       reject: (error: Error) => void;
       timeout: ReturnType<typeof setTimeout>;
+      createdAt: number;
     }
   >();
   private config: WebMCPProxyConfig & {
@@ -133,6 +134,24 @@ export class WebMCPProxy {
   }
 
   /**
+   * Cleans up old pending requests to prevent memory leaks.
+   * @private
+   */
+  private cleanupOldRequests(): void {
+    const now = Date.now();
+    const maxAge = 5 * 60 * 1000; // 5 minutes
+
+    for (const [id, request] of this.pendingRequests.entries()) {
+      // If request is too old, clean it up
+      if (now - request.createdAt > maxAge) {
+        clearTimeout(request.timeout);
+        request.reject(new Error('Request cleaned up due to age'));
+        this.pendingRequests.delete(id);
+      }
+    }
+  }
+
+  /**
    * The core communication method. Sends a message to the worker and awaits a response.
    * @template T The expected type of the response.
    * @param message The message to send, without the `id` property.
@@ -147,6 +166,11 @@ export class WebMCPProxy {
     // For the special ping inside `_doInitialize`, skip the full initialization check.
     if (!isInitPing) {
       await this.ensureInitialization();
+    }
+
+    // Clean up old requests periodically to prevent memory leaks
+    if (this.pendingRequests.size > 100) {
+      this.cleanupOldRequests();
     }
 
     // At this point, the worker object must exist.
@@ -164,6 +188,7 @@ export class WebMCPProxy {
         resolve: resolve as (value: unknown) => void,
         reject,
         timeout,
+        createdAt: Date.now(),
       });
 
       worker.postMessage(fullMessage);
@@ -179,17 +204,10 @@ export class WebMCPProxy {
   private handleWorkerMessage(event: MessageEvent<MCPResponse<unknown>>): void {
     const response = event.data;
 
-    logger.debug('Received worker message', {
-      hasResponse: !!response,
-      responseId: response?.id,
-      responseKeys: response ? Object.keys(response) : [],
-      hasError: response && 'error' in response,
-      hasResult: response && 'result' in response,
-      errorStructure: response?.error ? Object.keys(response.error) : undefined,
-    });
-
     if (!response || response.id === undefined || response.id === null) {
-      logger.warn('Invalid worker response - missing id', { response });
+      logger.warn('Invalid worker response - missing id', {
+        responseId: response?.id,
+      });
       return;
     }
 

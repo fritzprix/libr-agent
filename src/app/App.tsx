@@ -47,7 +47,9 @@ function App() {
                 <SessionContextProvider>
                   <BuiltInToolProvider>
                     <WebMCPProvider>
-                      <WebMCPServiceRegistry servers={['planning']} />
+                      <WebMCPServiceRegistry
+                        servers={['planning', 'playbook']}
+                      />
                       <BrowserToolProvider />
                       <RustMCPToolProvider />
                       <SessionHistoryProvider>

@@ -1,10 +1,17 @@
-import React, { useCallback, useState, useRef, useEffect } from 'react';
-import { Button, FileAttachment, Input } from '@/components/ui';
+import React, {
+  useCallback,
+  useState,
+  useRef,
+  useEffect,
+  useMemo,
+} from 'react';
+import { Button, FileAttachment } from '@/components/ui';
 import { Send, Square, Loader2 } from 'lucide-react';
 import { useAssistantContext } from '@/context/AssistantContext';
 import { useSessionContext } from '@/context/SessionContext';
 import { useChatContext } from '@/context/ChatContext';
 import { useFileAttachment } from '../hooks/useFileAttachment';
+import { toast } from 'sonner';
 import { getLogger } from '@/lib/logger';
 import { AttachmentReference } from '@/models/chat';
 import { stringToMCPContentArray } from '@/lib/utils';
@@ -52,11 +59,60 @@ export function ChatInput({ children }: ChatInputProps) {
 
   const attachedFiles = pendingFiles;
 
+  const inputPlaceholder = useMemo(() => {
+    if (dragState !== 'none') {
+      return dragState === 'valid'
+        ? 'Drop supported files here...'
+        : 'Unsupported file type!';
+    }
+    if (isLoading || isAttachmentLoading) return 'Agent busy...';
+    return 'Query agent or drop files...';
+  }, [dragState, isLoading, isAttachmentLoading]);
+
+  const inputClassName = useMemo(() => {
+    return `flex-1 min-w-0 transition-colors ${
+      dragState === 'valid'
+        ? 'border-green-500 bg-green-500/10'
+        : dragState === 'invalid'
+          ? 'border-destructive bg-destructive/10'
+          : ''
+    }`;
+  }, [dragState]);
+
+  const formClassName = useMemo(() => {
+    return `px-4 py-4 border-t flex items-center gap-2 transition-colors ${
+      dragState === 'valid'
+        ? 'bg-green-500/10 border-green-500'
+        : dragState === 'invalid'
+          ? 'bg-destructive/10 border-destructive'
+          : ''
+    }`;
+  }, [dragState]);
+
   const handleAgentInputChange = React.useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       setInput(e.target.value);
     },
-    [setInput],
+    [],
+  );
+
+  // Handle Enter/Shift+Enter for line breaks and submission
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        if (
+          !isLoading &&
+          !isAttachmentLoading &&
+          (input.trim() || attachedFiles.length > 0)
+        ) {
+          chatInputRef.current?.dispatchEvent(
+            new Event('submit', { bubbles: true, cancelable: true }),
+          );
+        }
+      }
+    },
+    [isLoading, isAttachmentLoading, input, attachedFiles.length],
   );
 
   const handleSubmit = useCallback(
@@ -83,13 +139,13 @@ export function ChatInput({ children }: ChatInputProps) {
           });
         } catch (err) {
           logger.error('Error uploading pending files:', err);
-          alert('파일 업로드 중 오류가 발생했습니다.');
+          toast.error('파일 업로드에 실패했습니다');
           return;
         }
       }
 
       if (isToolExecuting) {
-        // Tool 실행 중이면 메시지를 큐에 추가
+        // If a tool is running, add the message to the queue
         addToMessageQueue({
           content: stringToMCPContentArray(input.trim()),
           attachments: attachedFiles,
@@ -98,16 +154,13 @@ export function ChatInput({ children }: ChatInputProps) {
         clearPendingFiles();
         logger.info('Message queued during tool execution');
       } else {
-        // 일반 전송
+        // Normal submission
         const userMessage = createUserMessage(input.trim(), currentSession.id);
 
-        // 첨부파일이 있으면 추가
+        // Add attachments if they exist
         if (attachedFiles.length > 0) {
           userMessage.attachments = attachedFiles;
         }
-
-        setInput('');
-        clearPendingFiles();
 
         try {
           logger.info('Submitting user message', {
@@ -116,8 +169,12 @@ export function ChatInput({ children }: ChatInputProps) {
           });
           await submit([userMessage]);
           logger.info('User message submitted successfully');
+          // Clear input and files only on success
+          setInput('');
+          clearPendingFiles();
         } catch (err) {
           logger.error('Error submitting message:', err);
+          // Keep input value on failure
         }
       }
     },
@@ -171,41 +228,23 @@ export function ChatInput({ children }: ChatInputProps) {
   );
 
   return (
-    <form
-      ref={chatInputRef}
-      onSubmit={handleSubmit}
-      className={`px-4 py-4 border-t flex items-center gap-2 transition-colors ${
-        dragState === 'valid'
-          ? 'bg-green-500/10 border-green-500'
-          : dragState === 'invalid'
-            ? 'bg-destructive/10 border-destructive'
-            : ''
-      }`}
-    >
+    <form ref={chatInputRef} onSubmit={handleSubmit} className={formClassName}>
       <span className="font-bold flex-shrink-0">$</span>
       <div className="flex-1 flex items-center gap-2 min-w-0">
-        <Input
+        <textarea
           value={input}
           onChange={handleAgentInputChange}
-          placeholder={
-            dragState !== 'none'
-              ? dragState === 'valid'
-                ? 'Drop supported files here...'
-                : 'Unsupported file type!'
-              : isLoading || isAttachmentLoading
-                ? 'Agent busy...'
-                : 'Query agent or drop files...'
-          }
+          onKeyDown={handleKeyDown}
+          placeholder={inputPlaceholder}
           disabled={isLoading || isAttachmentLoading}
-          className={`flex-1 min-w-0 transition-colors ${
-            dragState === 'valid'
-              ? 'border-green-500 bg-green-500/10'
-              : dragState === 'invalid'
-                ? 'border-destructive bg-destructive/10'
-                : ''
-          }`}
+          className={`flex-1 min-w-0 resize-none transition-colors bg-transparent outline-none border-none py-2 px-3 text-base leading-relaxed max-h-24 overflow-y-auto ${inputClassName}`}
+          style={{
+            msOverflowStyle: 'none',
+            scrollbarWidth: 'none',
+          }}
           autoComplete="off"
           spellCheck="false"
+          rows={1}
         />
 
         <FileAttachment

@@ -40,15 +40,15 @@ SynapticFlow's architecture is designed for modularity, performance, and extensi
 
 The core of SynapticFlow's extensibility lies in its dual MCP backend, which allows for two types of tool servers to run concurrently:
 
-1.  **Rust Tauri Backend (High-Performance Native Tools):**
-    - Managed by `MCPServerManager` in the Rust backend (`src-tauri/src/mcp/server.rs`).
-    - Ideal for performance-intensive or security-sensitive tasks that require native system access (e.g., file system operations, code execution).
-    - Servers are spawned as `stdio`-based child processes and communicate with the Rust backend via the RMCP protocol.
+1. **Rust Tauri Backend (High-Performance Native Tools):**
+   - Managed by `MCPServerManager` in the Rust backend (`src-tauri/src/mcp/server.rs`).
+   - Ideal for performance-intensive or security-sensitive tasks that require native system access (e.g., file system operations, code execution).
+   - Servers are spawned as `stdio`-based child processes and communicate with the Rust backend via the RMCP protocol.
 
-2.  **Web Worker Backend (Lightweight & Dependency-Free Tools):**
-    - Runs entirely within the browser via a Web Worker (`src/lib/web-mcp/mcp-worker.ts`).
-    - Perfect for tools written in TypeScript that do not require native system access (e.g., calculators, data transformers, API clients).
-    - Managed by `WebMCPProvider` and communicates with the main thread via `mcp-proxy.ts`.
+2. **Web Worker Backend (Lightweight & Dependency-Free Tools):**
+   - Runs entirely within the browser via a Web Worker (`src/lib/web-mcp/mcp-worker.ts`).
+   - Perfect for tools written in TypeScript that do not require native system access (e.g., calculators, data transformers, API clients).
+   - Managed by `WebMCPProvider` and communicates with the main thread via `mcp-proxy.ts`.
 
 **Unified Access:** The frontend interacts with both backends through a unified client, `rust-backend-client.ts`, which uses Tauri commands to communicate with the Rust `MCPServerManager`. The `MCPServerManager` is responsible for routing tool calls to the appropriate backend (native or Web Worker), making the distinction transparent to the AI agent.
 
@@ -83,19 +83,88 @@ To maintain code quality and consistency, all contributors must adhere to the fo
 - **No Inline `import()` Types:** Use standard `import type` statements at the top of the file for better readability and maintainability.
 - **Follow Linter and Formatter:** All code must pass the ESLint and Prettier checks defined in the project. Run `pnpm refactor:validate` before submitting changes.
 
+### Rust Method/Function Declaration and Calling Guide
+
+#### Method vs. Associated Function
+
+- **Method**: Takes `self` (or `&self`, `&mut self`) as the first parameter in an `impl` block.  
+  → Called through instance: `self.method_name(...)`
+- **Associated Function**: No `self` parameter.  
+  → Called through type name: `TypeName::function_name(...)`
+
+#### Example
+
+```rust
+impl MyStruct {
+    // Method: requires self
+    fn do_something(&self, arg: i32) { ... }
+
+    // Associated function: no self
+    fn helper(arg: i32) { ... }
+}
+
+// Calling methods
+let obj = MyStruct::new();
+obj.do_something(42);           // ✅ Method call
+MyStruct::helper(42);           // ✅ Associated function call
+```
+
+#### Error Prevention Checklist
+
+- If using `self` in a function, declare `self` as the first parameter.
+- Associated functions cannot use `self`.
+- Call methods through instances, associated functions through type names.
+
+#### Common Mistakes and Fixes
+
+##### ❌ Wrong Example
+
+```rust
+fn copy_dir_contents(src: &Path, dst: &Path) -> Result<(), String> {
+    self.copy_dir_contents(&src_path, &dst_path)?; // Error!
+}
+```
+
+##### ✅ Correct Examples
+
+- **If declared as associated function, call through type name:**
+
+```rust
+fn copy_dir_contents(src: &Path, dst: &Path) -> Result<(), String> {
+    SessionManager::copy_dir_contents(&src_path, &dst_path)?;
+}
+```
+
+- **If using as method, add self parameter:**
+
+```rust
+fn copy_dir_contents(&self, src: &Path, dst: &Path) -> Result<(), String> {
+    self.copy_dir_contents(&src_path, &dst_path)?;
+}
+```
+
+#### IDE/Compiler Usage
+
+- Rust compiler clearly indicates these mistakes, so read error messages carefully and check function declarations/calls.
+- Use "Go to Definition" in IDEs like VS Code or IntelliJ Rust to easily check if a function is a method or associated function.
+
+**Summary:** Always remember that the presence/absence of `self` parameter determines calling method. When compilation errors occur, recheck function declaration and calling patterns.
+
 For more details, refer to the [Copilot Instructions](.github/copilot-instructions.md).
 
 ## 6. Development Workflow
 
-1.  **Install Dependencies:** `pnpm install`
-2.  **Run Development Server:** `pnpm tauri dev`
-3.  **Validate Changes:** `pnpm refactor:validate` (run this before committing)
-4.  **Build for Production:** `pnpm tauri build`
+1. **Install Dependencies:** `pnpm install`
+2. **Run Development Server:** `pnpm tauri dev`
+3. **Validate Changes:** `pnpm refactor:validate` (run this before committing)
+4. **Build for Production:** `pnpm tauri build`
 
 ## 7. References & Documentation
 
 - **Architecture:**
   - [Chat Feature Architecture](docs/architecture/chat-feature-architecture.md)
+  - [Built-in Tools Documentation](docs/builtin-tools.md)
+  - [External MCP Server Integration](docs/external-mcp-integration.md)
 - **Implementation Files:**
   - **MCP:**
     - [MCPServerManager (Rust)](src-tauri/src/mcp/server.rs)
@@ -105,5 +174,3 @@ For more details, refer to the [Copilot Instructions](.github/copilot-instructio
     - [ChatProvider](src/context/ChatContext.tsx)
     - [useAIService Hook](src/hooks/use-ai-service.ts)
     - [Tool Processor Hook](src/hooks/use-tool-processor.ts)
-- **Project Guidelines:**
-  - [Copilot Instructions](.github/copilot-instructions.md)
