@@ -615,6 +615,13 @@ export interface WebMCPServer {
   ) => Promise<SamplingResponse>;
   /** An optional function to get the service context. */
   getServiceContext?: () => Promise<string>;
+  /**
+   * An optional function to set the context for the server.
+   * This allows servers to maintain state based on external context like session IDs or assistant IDs.
+   * @param context The context object containing session/assistant identifiers and other state.
+   * @returns A promise that resolves when the context is set.
+   */
+  setContext?: (context: Record<string, unknown>) => Promise<void>;
 }
 
 /**
@@ -630,7 +637,8 @@ export interface WebMCPMessage {
     | 'ping'
     | 'loadServer'
     | 'sampleText'
-    | 'getServiceContext';
+    | 'getServiceContext'
+    | 'setContext';
   /** The name of the server, for loading specific servers. */
   serverName?: string;
   /** The name of the tool to call. */

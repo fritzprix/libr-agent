@@ -66,13 +66,25 @@ export function useWebMCPServer<T extends WebMCPServerProxy>(
   const [server, setServer] = useState<T | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { getServerProxy, isLoading: contextLoading } = useWebMCP();
+  const {
+    getServerProxy,
+    setServerContext,
+    isLoading: contextLoading,
+  } = useWebMCP();
 
   const loadServerProxy = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
       const serverProxy = await getServerProxy<T>(serverName);
+
+      // Add setContext method to the server proxy
+      if (serverProxy && setServerContext) {
+        serverProxy.setContext = async (context: Record<string, unknown>) => {
+          return await setServerContext(serverName, context);
+        };
+      }
+
       setServer(serverProxy);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
@@ -81,7 +93,7 @@ export function useWebMCPServer<T extends WebMCPServerProxy>(
     } finally {
       setLoading(false);
     }
-  }, [serverName, getServerProxy]);
+  }, [serverName, getServerProxy, setServerContext]);
 
   // Auto-load server proxy
   useEffect(() => {

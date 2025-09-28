@@ -34,6 +34,9 @@ export interface WebMCPServerProxy {
   name: string;
   isLoaded: boolean;
   tools: MCPTool[];
+  setContext?: (
+    context: Record<string, unknown>,
+  ) => Promise<{ success: boolean }>;
   [methodName: string]: unknown;
 }
 
@@ -53,6 +56,10 @@ interface WebMCPContextValue {
   getServerProxy: <T extends WebMCPServerProxy>(
     serverName: string,
   ) => Promise<T>;
+  setServerContext: (
+    serverName: string,
+    context: Record<string, unknown>,
+  ) => Promise<{ success: boolean }>;
 }
 
 const WebMCPContext = createContext<WebMCPContextValue | null>(null);
@@ -209,6 +216,28 @@ export function WebMCPProvider({ children }: WebMCPProviderProps) {
     [],
   );
 
+  // Set context for a server
+  const setServerContext = useCallback(
+    async (
+      serverName: string,
+      context: Record<string, unknown>,
+    ): Promise<{ success: boolean }> => {
+      if (!proxyRef.current) {
+        throw new Error('WebMCP proxy not initialized');
+      }
+
+      try {
+        const result = await proxyRef.current.setContext(serverName, context);
+        logger.debug('Set server context', { serverName, context });
+        return result;
+      } catch (error) {
+        logger.error('Failed to set server context', { serverName, error });
+        throw error;
+      }
+    },
+    [],
+  );
+
   // Initialize proxy on mount
   useEffect(() => {
     initializeProxy();
@@ -219,6 +248,7 @@ export function WebMCPProvider({ children }: WebMCPProviderProps) {
     isLoading,
     initialized,
     getServerProxy,
+    setServerContext,
   };
 
   return (
