@@ -176,7 +176,11 @@ pub fn create_replace_lines_in_file_tool() -> MCPTool {
     );
     item_props.insert(
         "new_content".to_string(),
-        string_prop(None, None, Some("The new content for the line range. Use empty string to delete lines.")),
+        string_prop(
+            None,
+            None,
+            Some("The new content for the line range. Use empty string to delete lines."),
+        ),
     );
 
     // Backward compatibility for existing line_number support

@@ -154,7 +154,7 @@ impl WorkspaceServer {
 
                 let result_text = if success {
                     if stdout.trim().is_empty() && stderr.trim().is_empty() {
-                        format!("{} code executed successfully (no output)", language)
+                        format!("{language} code executed successfully (no output)")
                     } else if stderr.trim().is_empty() {
                         format!("Output:\n{}", stdout.trim())
                     } else {
@@ -422,7 +422,6 @@ impl WorkspaceServer {
 
         normalized
     }
-
 
     pub async fn handle_execute_python(&self, args: Value) -> MCPResponse {
         let request_id = Self::generate_request_id();

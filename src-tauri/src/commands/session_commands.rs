@@ -88,7 +88,7 @@ pub async fn create_session(request: SessionCreateRequest) -> Result<SessionResp
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_nanos();
-        let new_id = format!("session-{}", timestamp);
+        let new_id = format!("session-{timestamp}");
         session_manager
             .set_session_async(new_id.clone())
             .await
@@ -96,11 +96,11 @@ pub async fn create_session(request: SessionCreateRequest) -> Result<SessionResp
         new_id
     };
 
-    info!("Created session: {}", session_id);
+    info!("Created session: {session_id}");
 
     Ok(SessionResponse {
         success: true,
-        message: format!("Created session: {}", session_id),
+        message: format!("Created session: {session_id}"),
         session_id: Some(session_id),
         data: None,
     })
@@ -209,11 +209,11 @@ pub async fn cleanup_sessions(request: SessionCleanupRequest) -> Result<SessionR
         .await
         .map_err(|e| format!("Failed to cleanup sessions: {e}"))?;
 
-    info!("Cleaned up {} old sessions", removed_count);
+    info!("Cleaned up {removed_count} old sessions");
 
     Ok(SessionResponse {
         success: true,
-        message: format!("Cleaned up {} old sessions", removed_count),
+        message: format!("Cleaned up {removed_count} old sessions"),
         session_id: None,
         data: Some(serde_json::json!({
             "removed_count": removed_count,
@@ -234,11 +234,11 @@ pub async fn remove_session(session_id: String) -> Result<SessionResponse, Strin
         .await
         .map_err(|e| format!("Failed to remove session: {e}"))?;
 
-    info!("Removed session: {}", session_id);
+    info!("Removed session: {session_id}");
 
     Ok(SessionResponse {
         success: true,
-        message: format!("Removed session: {}", session_id),
+        message: format!("Removed session: {session_id}"),
         session_id: Some(session_id),
         data: None,
     })
@@ -313,11 +313,11 @@ pub async fn fast_session_switch(
         })
     };
 
-    info!("Fast switched to session: {}", session_id);
+    info!("Fast switched to session: {session_id}");
 
     Ok(SessionResponse {
         success: true,
-        message: format!("Fast switched to session: {}", session_id),
+        message: format!("Fast switched to session: {session_id}"),
         session_id: Some(session_id.clone()),
         data: Some(serde_json::json!({
             "switched_to": session_id,

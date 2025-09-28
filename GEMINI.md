@@ -83,6 +83,73 @@ To maintain code quality and consistency, all contributors must adhere to the fo
 - **No Inline `import()` Types:** Use standard `import type` statements at the top of the file for better readability and maintainability.
 - **Follow Linter and Formatter:** All code must pass the ESLint and Prettier checks defined in the project. Run `pnpm refactor:validate` before submitting changes.
 
+### Rust Method/Function Declaration and Calling Guide
+
+#### Method vs. Associated Function
+
+- **Method**: Takes `self` (or `&self`, `&mut self`) as the first parameter in an `impl` block.  
+  → Called through instance: `self.method_name(...)`
+- **Associated Function**: No `self` parameter.  
+  → Called through type name: `TypeName::function_name(...)`
+
+#### Example
+
+```rust
+impl MyStruct {
+    // Method: requires self
+    fn do_something(&self, arg: i32) { ... }
+
+    // Associated function: no self
+    fn helper(arg: i32) { ... }
+}
+
+// Calling methods
+let obj = MyStruct::new();
+obj.do_something(42);           // ✅ Method call
+MyStruct::helper(42);           // ✅ Associated function call
+```
+
+#### Error Prevention Checklist
+
+- If using `self` in a function, declare `self` as the first parameter.
+- Associated functions cannot use `self`.
+- Call methods through instances, associated functions through type names.
+
+#### Common Mistakes and Fixes
+
+##### ❌ Wrong Example
+
+```rust
+fn copy_dir_contents(src: &Path, dst: &Path) -> Result<(), String> {
+    self.copy_dir_contents(&src_path, &dst_path)?; // Error!
+}
+```
+
+##### ✅ Correct Examples
+
+- **If declared as associated function, call through type name:**
+
+```rust
+fn copy_dir_contents(src: &Path, dst: &Path) -> Result<(), String> {
+    SessionManager::copy_dir_contents(&src_path, &dst_path)?;
+}
+```
+
+- **If using as method, add self parameter:**
+
+```rust
+fn copy_dir_contents(&self, src: &Path, dst: &Path) -> Result<(), String> {
+    self.copy_dir_contents(&src_path, &dst_path)?;
+}
+```
+
+#### IDE/Compiler Usage
+
+- Rust compiler clearly indicates these mistakes, so read error messages carefully and check function declarations/calls.
+- Use "Go to Definition" in IDEs like VS Code or IntelliJ Rust to easily check if a function is a method or associated function.
+
+**Summary:** Always remember that the presence/absence of `self` parameter determines calling method. When compilation errors occur, recheck function declaration and calling patterns.
+
 For more details, refer to the [Copilot Instructions](.github/copilot-instructions.md).
 
 ## 6. Development Workflow

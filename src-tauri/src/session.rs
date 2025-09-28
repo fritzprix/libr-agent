@@ -2,7 +2,7 @@ use crate::services::SecureFileManager;
 use log::{error, info, warn};
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock, RwLock};
 use tokio::fs as async_fs;
 use tokio::time::{Duration, Instant};
@@ -21,7 +21,7 @@ pub struct SessionWorkspaceInfo {
     pub is_template: bool,
 }
 
-fn serialize_pathbuf<S>(path: &PathBuf, serializer: S) -> Result<S::Ok, S::Error>
+fn serialize_pathbuf<S>(path: &Path, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: serde::Serializer,
 {
@@ -90,7 +90,7 @@ impl SessionManager {
     }
 
     /// Setup basic template workspace structure
-    fn setup_template_workspace(template_path: &PathBuf) -> Result<(), String> {
+    fn setup_template_workspace(template_path: &Path) -> Result<(), String> {
         // Create common directories that sessions might need
         let dirs_to_create = vec!["tmp", "projects", "downloads", "scripts"];
 
@@ -150,8 +150,7 @@ echo "Available tools: python3, typescript/deno, shell commands"
             info.workspace_path
         } else {
             // Create new session workspace quickly
-            let session_dir = self.create_session_workspace_fast(&session_id)?;
-            session_dir
+            self.create_session_workspace_fast(&session_id)?
         };
 
         // Update current session
@@ -213,8 +212,8 @@ echo "Available tools: python3, typescript/deno, shell commands"
     /// Efficiently copy template to new session workspace
     fn copy_template_to_session(
         &self,
-        template_path: &PathBuf,
-        session_dir: &PathBuf,
+        template_path: &Path,
+        session_dir: &Path,
     ) -> Result<(), String> {
         use std::fs;
 
@@ -244,7 +243,8 @@ echo "Available tools: python3, typescript/deno, shell commands"
     }
 
     /// Efficiently copy directory contents
-    fn copy_dir_contents(&self, src: &PathBuf, dst: &PathBuf) -> Result<(), String> {
+    #[allow(clippy::only_used_in_recursion)]
+    fn copy_dir_contents(&self, src: &Path, dst: &Path) -> Result<(), String> {
         use std::fs;
 
         for entry in fs::read_dir(src).map_err(|e| format!("Failed to read directory: {e}"))? {
@@ -354,8 +354,8 @@ echo "Available tools: python3, typescript/deno, shell commands"
     /// Async template copying
     async fn copy_template_to_session_async(
         &self,
-        template_path: &PathBuf,
-        session_dir: &PathBuf,
+        template_path: &Path,
+        session_dir: &Path,
     ) -> Result<(), String> {
         // Copy essential files asynchronously
         let items_to_copy = vec!["welcome.sh"];
@@ -469,7 +469,7 @@ echo "Available tools: python3, typescript/deno, shell commands"
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs();
-            let session_id = format!("pool-{}-{}", timestamp, i);
+            let session_id = format!("pool-{timestamp}-{i}");
             self.create_session_workspace_async(&session_id).await?;
             allocated_sessions.push(session_id);
         }
@@ -502,7 +502,7 @@ echo "Available tools: python3, typescript/deno, shell commands"
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_nanos();
-            let new_session_id = format!("session-{}", timestamp_nanos);
+            let new_session_id = format!("session-{timestamp_nanos}");
             self.rename_session(&session_id, &new_session_id).await?;
             Ok(new_session_id)
         } else {
@@ -511,7 +511,7 @@ echo "Available tools: python3, typescript/deno, shell commands"
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_nanos();
-            let new_session_id = format!("session-{}", timestamp_nanos);
+            let new_session_id = format!("session-{timestamp_nanos}");
             self.create_session_workspace_async(&new_session_id).await?;
             Ok(new_session_id)
         }
@@ -561,10 +561,7 @@ echo "Available tools: python3, typescript/deno, shell commands"
             pool.insert(new_session_id.to_string(), session_info);
         }
 
-        info!(
-            "Renamed session '{}' to '{}'",
-            old_session_id, new_session_id
-        );
+        info!("Renamed session '{old_session_id}' to '{new_session_id}'");
 
         Ok(())
     }
@@ -604,7 +601,7 @@ echo "Available tools: python3, typescript/deno, shell commands"
             }
         }
 
-        info!("Cleaned up {} old sessions", removed_count);
+        info!("Cleaned up {removed_count} old sessions");
         Ok(removed_count)
     }
 
@@ -619,7 +616,7 @@ echo "Available tools: python3, typescript/deno, shell commands"
             if let Some(session_info) = pool.remove(session_id) {
                 session_info.workspace_path
             } else {
-                return Err(format!("Session '{}' not found in pool", session_id));
+                return Err(format!("Session '{session_id}' not found in pool"));
             }
         };
 
@@ -630,7 +627,7 @@ echo "Available tools: python3, typescript/deno, shell commands"
                 .map_err(|e| format!("Failed to remove workspace directory: {e}"))?;
         }
 
-        info!("Removed session '{}' and its workspace", session_id);
+        info!("Removed session '{session_id}' and its workspace");
         Ok(())
     }
 

@@ -491,7 +491,11 @@ impl WorkspaceServer {
                 Some(Value::String(s)) => s.to_string(), // Handle string values including empty strings
                 Some(Value::Null) => String::new(), // Handle explicit null as empty string for deletion
                 Some(_) => {
-                    return Self::error_response(request_id, -32602, "new_content must be a string");
+                    return Self::error_response(
+                        request_id,
+                        -32602,
+                        "new_content must be a string",
+                    );
                 }
                 None => String::new(), // Missing new_content means delete lines
             };
@@ -513,14 +517,12 @@ impl WorkspaceServer {
                     // Replace single line
                     new_lines[start_line - 1] = content;
                 }
+            } else if content.is_empty() {
+                // Delete line range
+                new_lines.splice((start_line - 1)..end_line, vec![]);
             } else {
-                if content.is_empty() {
-                    // Delete line range
-                    new_lines.splice((start_line - 1)..end_line, vec![]);
-                } else {
-                    // Replace line range with single line
-                    new_lines.splice((start_line - 1)..end_line, vec![content]);
-                }
+                // Replace line range with single line
+                new_lines.splice((start_line - 1)..end_line, vec![content]);
             }
         }
 

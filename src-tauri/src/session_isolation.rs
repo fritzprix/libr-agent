@@ -61,7 +61,6 @@ impl SessionIsolationManager {
         }
     }
 
-
     /// Create an isolated command based on the current platform
     pub async fn create_isolated_command(
         &self,
@@ -453,7 +452,7 @@ impl SessionIsolationManager {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, Default)]
 pub struct IsolationCapabilities {
     pub supports_user_namespaces: bool,
     pub supports_pid_namespaces: bool,
@@ -464,22 +463,6 @@ pub struct IsolationCapabilities {
     pub supports_memory_limits: bool,
     pub supports_cpu_limits: bool,
     pub supports_time_limits: bool,
-}
-
-impl Default for IsolationCapabilities {
-    fn default() -> Self {
-        Self {
-            supports_user_namespaces: false,
-            supports_pid_namespaces: false,
-            supports_mount_namespaces: false,
-            supports_macos_sandbox: false,
-            supports_job_objects: false,
-            supports_restricted_tokens: false,
-            supports_memory_limits: false,
-            supports_cpu_limits: false,
-            supports_time_limits: false,
-        }
-    }
 }
 
 // Note: AsyncCommand argument manipulation is complex and platform-specific
