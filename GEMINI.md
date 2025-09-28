@@ -164,6 +164,7 @@ For more details, refer to the [Copilot Instructions](.github/copilot-instructio
 - **Architecture:**
   - [Chat Feature Architecture](docs/architecture/chat-feature-architecture.md)
   - [Built-in Tools Documentation](docs/builtin-tools.md)
+  - [External MCP Server Integration](docs/external-mcp-integration.md)
 - **Implementation Files:**
   - **MCP:**
     - [MCPServerManager (Rust)](src-tauri/src/mcp/server.rs)

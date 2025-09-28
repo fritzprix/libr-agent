@@ -502,3 +502,4 @@ These steps must be completed successfully before considering any refactoring ta
 
 - [Chat Feature Architecture & Implementation Manual](docs/architecture/chat-feature-architecture.md)
 - [Built-in Tools Documentation](docs/builtin-tools.md)
+- [External MCP Server Integration](docs/external-mcp-integration.md)
