@@ -25,22 +25,34 @@ interface ProviderCardProps {
   providerName: string;
   apiKey: string;
   baseUrl?: string;
-  onPendingChange: (provider: AIServiceProvider, patch: Partial<ServiceConfig>) => void;
+  onPendingChange: (
+    provider: AIServiceProvider,
+    patch: Partial<ServiceConfig>,
+  ) => void;
 }
 
-function ProviderCardBase({ provider, providerName, apiKey, baseUrl, onPendingChange }: ProviderCardProps) {
+function ProviderCardBase({
+  provider,
+  providerName,
+  apiKey,
+  baseUrl,
+  onPendingChange,
+}: ProviderCardProps) {
   const [localApiKey, setLocalApiKey] = useState(apiKey || '');
   const [localBaseUrl, setLocalBaseUrl] = useState(baseUrl || '');
 
   // Debounce local edits into pending changes to avoid frequent context updates
   const debounceRef = useRef<number | null>(null);
-  const schedulePending = useCallback((patch: Partial<ServiceConfig>) => {
-    if (debounceRef.current) window.clearTimeout(debounceRef.current);
-    // small debounce to group typing
-    debounceRef.current = window.setTimeout(() => {
-      onPendingChange(provider, patch);
-    }, 350) as unknown as number;
-  }, [onPendingChange, provider]);
+  const schedulePending = useCallback(
+    (patch: Partial<ServiceConfig>) => {
+      if (debounceRef.current) window.clearTimeout(debounceRef.current);
+      // small debounce to group typing
+      debounceRef.current = window.setTimeout(() => {
+        onPendingChange(provider, patch);
+      }, 350) as unknown as number;
+    },
+    [onPendingChange, provider],
+  );
 
   return (
     <Card className="bg-background border shadow-sm min-w-0 w-full">
@@ -51,7 +63,9 @@ function ProviderCardBase({ provider, providerName, apiKey, baseUrl, onPendingCh
       </CardHeader>
       <CardContent className="space-y-3 min-w-0">
         <div className="min-w-0">
-          <label className="block text-muted-foreground mb-2 text-sm font-medium">API Key</label>
+          <label className="block text-muted-foreground mb-2 text-sm font-medium">
+            API Key
+          </label>
           <Input
             type="password"
             placeholder={`Enter your ${providerName} API key`}
@@ -68,7 +82,9 @@ function ProviderCardBase({ provider, providerName, apiKey, baseUrl, onPendingCh
 
         {provider === AIServiceProvider.Ollama && (
           <div className="min-w-0">
-            <label className="block text-muted-foreground mb-2 text-sm font-medium">Base URL</label>
+            <label className="block text-muted-foreground mb-2 text-sm font-medium">
+              Base URL
+            </label>
             <Input
               type="url"
               placeholder="http://localhost:11434"
@@ -78,7 +94,9 @@ function ProviderCardBase({ provider, providerName, apiKey, baseUrl, onPendingCh
                 setLocalBaseUrl(v);
                 schedulePending({ baseUrl: v });
               }}
-              onBlur={() => onPendingChange(provider, { baseUrl: localBaseUrl })}
+              onBlur={() =>
+                onPendingChange(provider, { baseUrl: localBaseUrl })
+              }
               className="bg-background border text-foreground w-full"
             />
           </div>
@@ -89,7 +107,9 @@ function ProviderCardBase({ provider, providerName, apiKey, baseUrl, onPendingCh
 }
 
 const ProviderCard = React.memo(ProviderCardBase, (prev, next) => {
-  return prev.apiKey === next.apiKey && (prev.baseUrl || '') === (next.baseUrl || '');
+  return (
+    prev.apiKey === next.apiKey && (prev.baseUrl || '') === (next.baseUrl || '')
+  );
 });
 
 export default function SettingsPage() {
@@ -100,19 +120,24 @@ export default function SettingsPage() {
   } = useSettings();
 
   // pending updates are collected here without causing re-renders
-  const pendingRef = useRef<Partial<Record<AIServiceProvider, ServiceConfig>>>({});
+  const pendingRef = useRef<Partial<Record<AIServiceProvider, ServiceConfig>>>(
+    {},
+  );
   const [pendingCount, setPendingCount] = useState(0);
 
-  const handlePendingChange = useCallback((provider: AIServiceProvider, patch: Partial<ServiceConfig>) => {
-    pendingRef.current = {
-      ...(pendingRef.current || {}),
-      [provider]: {
-        ...(pendingRef.current[provider] || serviceConfigs[provider] || {}),
-        ...patch,
-      },
-    } as Partial<Record<AIServiceProvider, ServiceConfig>>;
-    setPendingCount(Object.keys(pendingRef.current).length);
-  }, [serviceConfigs]);
+  const handlePendingChange = useCallback(
+    (provider: AIServiceProvider, patch: Partial<ServiceConfig>) => {
+      pendingRef.current = {
+        ...(pendingRef.current || {}),
+        [provider]: {
+          ...(pendingRef.current[provider] || serviceConfigs[provider] || {}),
+          ...patch,
+        },
+      } as Partial<Record<AIServiceProvider, ServiceConfig>>;
+      setPendingCount(Object.keys(pendingRef.current).length);
+    },
+    [serviceConfigs],
+  );
 
   const flushPending = useCallback(async () => {
     const pending = pendingRef.current;
@@ -140,7 +165,9 @@ export default function SettingsPage() {
   }, [serviceConfigs, update]);
 
   const providerEntries = useMemo(() => {
-    return Object.values(AIServiceProvider).filter((p) => p !== AIServiceProvider.Empty) as AIServiceProvider[];
+    return Object.values(AIServiceProvider).filter(
+      (p) => p !== AIServiceProvider.Empty,
+    ) as AIServiceProvider[];
   }, []);
 
   return (
@@ -148,9 +175,17 @@ export default function SettingsPage() {
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl text-foreground font-semibold">Settings</h1>
         <div className="flex items-center gap-3">
-          {pendingCount > 0 && <span className="text-sm text-yellow-400">Unsaved ({pendingCount})</span>}
-          <Button onClick={() => navigate(-1)} variant="ghost">Close</Button>
-          <Button onClick={flushPending} disabled={pendingCount === 0}>Apply Changes</Button>
+          {pendingCount > 0 && (
+            <span className="text-sm text-yellow-400">
+              Unsaved ({pendingCount})
+            </span>
+          )}
+          <Button onClick={() => navigate(-1)} variant="ghost">
+            Close
+          </Button>
+          <Button onClick={flushPending} disabled={pendingCount === 0}>
+            Apply Changes
+          </Button>
         </div>
       </div>
 
@@ -158,7 +193,9 @@ export default function SettingsPage() {
         <Tabs defaultValue="api-key" className="flex flex-col">
           <TabsList className="flex gap-2 overflow-x-auto mb-4">
             <TabsTrigger value="api-key">API Key Settings</TabsTrigger>
-            <TabsTrigger value="conversation-model">Conversation & Model Preferences</TabsTrigger>
+            <TabsTrigger value="conversation-model">
+              Conversation & Model Preferences
+            </TabsTrigger>
             <TabsTrigger value="data-reset">Data & Reset</TabsTrigger>
           </TabsList>
 
@@ -166,7 +203,8 @@ export default function SettingsPage() {
             <div className="flex flex-col gap-4">
               {providerEntries.map((provider) => {
                 const cfg = serviceConfigs[provider] || {};
-                const providerName = provider.charAt(0).toUpperCase() + provider.slice(1);
+                const providerName =
+                  provider.charAt(0).toUpperCase() + provider.slice(1);
                 return (
                   <ProviderCard
                     key={provider}
@@ -184,18 +222,24 @@ export default function SettingsPage() {
           <TabsContent value="conversation-model">
             <div className="space-y-6">
               <div className="min-w-0">
-                <label className="block text-muted-foreground mb-2 font-medium">Message Window Size</label>
+                <label className="block text-muted-foreground mb-2 font-medium">
+                  Message Window Size
+                </label>
                 <Input
                   type="number"
                   placeholder="e.g., 50"
                   value={windowSize}
-                  onChange={(e) => update({ windowSize: parseInt(e.target.value, 10) || 0 })}
+                  onChange={(e) =>
+                    update({ windowSize: parseInt(e.target.value, 10) || 0 })
+                  }
                   className="bg-background border text-foreground w-full max-w-xs"
                 />
               </div>
 
               <div className="min-w-0">
-                <label className="block text-muted-foreground mb-2 font-medium">LLM Preference</label>
+                <label className="block text-muted-foreground mb-2 font-medium">
+                  LLM Preference
+                </label>
                 <TerminalModelPicker />
               </div>
             </div>
@@ -205,15 +249,24 @@ export default function SettingsPage() {
             <div className="space-y-6">
               <Card className="bg-background border shadow-sm">
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-foreground text-base font-medium">Data & Reset</CardTitle>
+                  <CardTitle className="text-foreground text-base font-medium">
+                    Data & Reset
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-sm text-muted-foreground">This will permanently delete all local sessions, their messages, and workspace file stores from the local database and native workspace directories. This action is destructive and cannot be undone.</p>
+                  <p className="text-sm text-muted-foreground">
+                    This will permanently delete all local sessions, their
+                    messages, and workspace file stores from the local database
+                    and native workspace directories. This action is destructive
+                    and cannot be undone.
+                  </p>
                   <div className="pt-4">
                     <Button
                       variant="destructive"
                       onClick={() => {
-                        const ok = window.confirm('Delete ALL local sessions, messages and workspace files? This cannot be undone.');
+                        const ok = window.confirm(
+                          'Delete ALL local sessions, messages and workspace files? This cannot be undone.',
+                        );
                         if (!ok) return;
                         // Keep this simple: delegate full-clear logic to the existing SettingsModal ClearAllButton flow or db utilities if needed.
                         // For now navigate back after user confirms.

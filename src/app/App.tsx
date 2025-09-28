@@ -108,14 +108,14 @@ function App() {
                                         path="/webmcp/test"
                                         element={<WebMCPTest />}
                                       />
-                                        <Route
-                                          path="/dnd/test"
-                                          element={<DnDTestPage />}
-                                        />
-                                        <Route
-                                          path="/settings"
-                                          element={<SettingsPage />}
-                                        />
+                                      <Route
+                                        path="/dnd/test"
+                                        element={<DnDTestPage />}
+                                      />
+                                      <Route
+                                        path="/settings"
+                                        element={<SettingsPage />}
+                                      />
                                     </Routes>
                                   </div>
                                 </div>

@@ -223,16 +223,16 @@ export default function AppSidebar() {
       </SidebarContent>
       <SidebarFooter className="border-t">
         <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                onClick={() => navigate('/settings')}
-                tooltip="Settings"
-                className={`transition-all duration-200`}
-              >
-                <Settings size={16} />
-                {!isCollapsed && <span>Settings</span>}
-              </SidebarMenuButton>
-            </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              onClick={() => navigate('/settings')}
+              tooltip="Settings"
+              className={`transition-all duration-200`}
+            >
+              <Settings size={16} />
+              {!isCollapsed && <span>Settings</span>}
+            </SidebarMenuButton>
+          </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
     </Sidebar>
