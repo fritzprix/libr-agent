@@ -39,15 +39,6 @@ pub struct ContentChunk {
     pub line_range: (usize, usize), // (start_line, end_line)
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SearchResult {
-    pub content_id: String,
-    pub chunk_id: String,
-    pub score: f64,
-    pub matched_text: String,
-    pub line_range: (usize, usize),
-}
-
 /// Content store storage implementation
 #[derive(Debug)]
 pub struct ContentStoreStorage {
