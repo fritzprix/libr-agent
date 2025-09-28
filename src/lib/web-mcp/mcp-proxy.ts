@@ -380,4 +380,23 @@ export class WebMCPProxy {
     const result = this.parseResponse<string>(response);
     return typeof result === 'string' ? result : '';
   }
+
+  /**
+   * Sets the context for a specific server within the worker.
+   * @param serverName The name of the server.
+   * @param context The context object to set.
+   * @returns A promise that resolves when the context is set.
+   */
+  async setContext(
+    serverName: string,
+    context: Record<string, unknown>,
+  ): Promise<{ success: boolean }> {
+    const response = await this.sendMessage<MCPResponse<unknown>>({
+      type: 'setContext',
+      serverName,
+      args: context,
+    });
+    const result = this.parseResponse<{ success: boolean }>(response);
+    return result || { success: false };
+  }
 }

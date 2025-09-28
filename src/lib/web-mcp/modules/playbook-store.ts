@@ -18,6 +18,9 @@ interface PlaybookRecord extends Playbook {
 let nextId = 1;
 const inMemory: PlaybookRecord[] = [];
 
+// Context state for assistant ID
+let currentAssistantId: string | null = null;
+
 function formatPlaybook(p: PlaybookRecord): string {
   const created = p.createdAt ? String(p.createdAt) : 'unknown';
   const steps = Array.isArray(p.workflow) ? p.workflow.length : 0;
@@ -31,11 +34,6 @@ const tools: MCPTool[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        agentId: {
-          type: 'string',
-          description:
-            'ID of the agent that can execute this playbook (e.g. agent name or identifier)',
-        },
         goal: {
           type: 'string',
           description:
@@ -111,7 +109,7 @@ const tools: MCPTool[] = [
           required: ['description'],
         },
       },
-      required: ['agentId', 'goal', 'workflow'],
+      required: ['goal', 'workflow'],
     },
   },
   {
@@ -128,12 +126,7 @@ const tools: MCPTool[] = [
           type: 'number',
           description: 'Number of items per page; -1 for all',
         },
-        agentId: {
-          type: 'string',
-          description: 'Agent id to filter playbooks by',
-        },
       },
-      required: ['agentId'],
     },
   },
   {
@@ -226,10 +219,16 @@ const playbookStore: WebMCPServer = {
     try {
       switch (name) {
         case 'create_playbook': {
+          if (!currentAssistantId) {
+            return createMCPTextResponse(
+              'Assistant ID not set. Please set context first.',
+            );
+          }
+
           const id = String(Date.now()) + '-' + String(nextId++);
           const playbook: PlaybookRecord = {
             id,
-            agentId: String(a.agentId || ''),
+            agentId: currentAssistantId,
             goal: String(a.goal || ''),
             initialCommand: String(a.initialCommand || ''),
             workflow: (a.workflow as Playbook['workflow']) || [],
@@ -262,16 +261,14 @@ const playbookStore: WebMCPServer = {
         }
 
         case 'list_playbooks': {
-          const page = Number(a.page || 1);
-          const pageSize = Number(a.pageSize || -1);
-          const agentId =
-            typeof a.agentId === 'string' ? (a.agentId as string) : undefined;
-
-          if (!agentId) {
+          if (!currentAssistantId) {
             return createMCPTextResponse(
-              'agentId is required for list_playbooks',
+              'Assistant ID not set. Please set context first.',
             );
           }
+
+          const page = Number(a.page || 1);
+          const pageSize = Number(a.pageSize || -1);
 
           if (hasDB && dbService.playbooks) {
             const pageResult = await dbService.playbooks.getPage(
@@ -279,7 +276,7 @@ const playbookStore: WebMCPServer = {
               pageSize,
             );
             let items = pageResult.items as PlaybookRecord[];
-            if (agentId) items = items.filter((p) => p.agentId === agentId);
+            items = items.filter((p) => p.agentId === currentAssistantId);
 
             if (!items || items.length === 0) {
               return createMCPStructuredResponse('No playbooks found', {
@@ -302,7 +299,7 @@ const playbookStore: WebMCPServer = {
           }
 
           let items = [...inMemory];
-          if (agentId) items = items.filter((p) => p.agentId === agentId);
+          items = items.filter((p) => p.agentId === currentAssistantId);
 
           if (!items || items.length === 0) {
             return createMCPStructuredResponse(
@@ -477,6 +474,12 @@ const playbookStore: WebMCPServer = {
       }
     } catch (err) {
       return createMCPTextResponse(String(err));
+    }
+  },
+  async setContext(context: Record<string, unknown>): Promise<void> {
+    const assistantId = context.assistantId as string;
+    if (assistantId) {
+      currentAssistantId = assistantId;
     }
   },
 };

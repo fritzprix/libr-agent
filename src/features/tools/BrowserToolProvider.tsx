@@ -18,11 +18,11 @@ import {
   scrollPageTool,
   navigateBackTool,
   navigateForwardTool,
-  // Complex tools
   clickElementTool,
   inputTextTool,
   extractPageContentTool,
   extractInteractableTool,
+  injectJavascriptTool, // <-- Add import
   // Types
   StrictLocalMCPTool,
 } from './browser-tools';
@@ -65,6 +65,7 @@ export function BrowserToolProvider() {
       inputTextTool,
       extractPageContentTool,
       extractInteractableTool,
+      injectJavascriptTool, // <-- Add to array
     ];
 
     // Inject executeScript function for tools that need it

@@ -256,6 +256,43 @@ async function handleMCPMessage(
         };
       }
 
+      case 'setContext': {
+        if (!serverName) {
+          throw new Error('Server name is required for setContext');
+        }
+        const server = getMCPServer(serverName);
+        if (server.setContext) {
+          await server.setContext((args as Record<string, unknown>) || {});
+          return {
+            jsonrpc: '2.0',
+            id,
+            result: {
+              content: [
+                {
+                  type: 'text',
+                  text: 'Context set successfully',
+                },
+              ],
+              structuredContent: { success: true },
+            },
+          };
+        }
+        // Fallback for servers without setContext
+        return {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            content: [
+              {
+                type: 'text',
+                text: 'Server does not support context setting',
+              },
+            ],
+            structuredContent: { success: false },
+          },
+        };
+      }
+
       default: {
         throw new Error(`Unknown MCP message type: ${type}`);
       }

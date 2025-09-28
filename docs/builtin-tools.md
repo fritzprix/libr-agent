@@ -8,6 +8,109 @@ SynapticFlow provides a comprehensive set of built-in tools that enable AI agent
 2. **Rust MCP Tools** - Native system-level operations via Rust backend
 3. **Web MCP Tools** - Browser-based MCP server tools
 
+## Built-in Tool Architecture and Context Coupling
+
+### Tight Coupling with Client Context
+
+The built-in tool system implements a **tight coupling** between tool execution and client application context, ensuring that Web MCP servers automatically receive relevant session and assistant information without explicit parameter passing.
+
+#### Context Management Components
+
+##### WebMCPContextSetter Component
+
+- **Location**: `src/lib/web-mcp/WebMCPContextSetter.tsx`
+- **Purpose**: Headless component that automatically sets context for Web MCP servers
+- **Integration**: Mounted within `BuiltInToolProvider` for automatic context propagation
+
+##### BuiltInToolProvider Integration
+
+- **Location**: `src/features/tools/index.tsx`
+- **Architecture**: Wraps `WebMCPContextSetter` to ensure context is set before any tool operations
+- **Lifecycle**: Context is established on provider mount and updated when session/assistant changes
+
+#### Automatic Context Propagation
+
+##### Planning Server Context
+
+- **Session ID**: Automatically receives current session ID via `setContext({ sessionId })`
+- **State Isolation**: Each session maintains separate planning state (goals, todos, observations)
+- **Persistence**: Session-specific state persists across tool calls within the same session
+
+##### Playbook Server Context
+
+- **Assistant ID**: Automatically receives current assistant ID via `setContext({ assistantId })`
+- **Data Filtering**: All operations (create, list, update) are filtered by assistant context
+- **Security**: Ensures assistants only access their own playbooks and workflows
+
+#### Context Setting Flow
+
+```mermaid
+graph TD
+    A[BuiltInToolProvider Mount] --> B[WebMCPContextSetter Mount]
+    B --> C[Get Current Session ID]
+    B --> D[Get Current Assistant ID]
+    C --> E[Set Planning Server Context]
+    D --> F[Set Playbook Server Context]
+    E --> G[Planning Server Ready]
+    F --> H[Playbook Server Ready]
+    G --> I[Tool Calls Use Session Context]
+    H --> J[Tool Calls Use Assistant Context]
+```
+
+#### Benefits of Tight Coupling
+
+##### 1. Simplified Tool Interface
+
+- No need to pass `sessionId` or `assistantId` parameters explicitly
+- Tools automatically operate within the correct context
+- Reduced parameter complexity for AI agents
+
+##### 2. Automatic State Management
+
+- Session-based planning state isolation
+- Assistant-specific playbook management
+- Context-aware tool behavior without manual intervention
+
+##### 3. Enhanced Security
+
+- Automatic context filtering prevents cross-session/assistant data access
+- Built-in isolation between different users/assistants
+- Context validation at the infrastructure level
+
+##### 4. Developer Experience
+
+- Context management is handled automatically
+- No need to manually track and pass context identifiers
+- Consistent behavior across all Web MCP tool operations
+
+#### Context Update Triggers
+
+##### Session Changes
+
+- User switches to different chat session
+- New session is created
+- Planning server context automatically updates to new session ID
+
+##### Assistant Changes
+
+- User selects different AI assistant
+- Assistant configuration changes
+- Playbook server context automatically updates to new assistant ID
+
+#### Error Handling
+
+##### Context Not Set
+
+- Tools return appropriate error messages when context is missing
+- Graceful fallback behavior for context-dependent operations
+- Logging for debugging context-related issues
+
+##### Context Update Failures
+
+- Automatic retry logic for transient failures
+- Error logging with context information
+- Non-blocking context updates (tools continue to work with previous context)
+
 ## Browser Tools
 
 Browser tools provide comprehensive web automation capabilities, allowing AI agents to control browser sessions, navigate pages, interact with elements, and extract content.
@@ -269,7 +372,7 @@ Rust MCP tools can provide service-specific context information for enhanced ope
 
 **Content Store Context:**
 
-```
+```text
 # Content Store Server Status
 **Server**: content_store
 **Status**: Active
@@ -279,7 +382,7 @@ Rust MCP tools can provide service-specific context information for enhanced ope
 
 **Workspace Context:**
 
-```
+```text
 # Workspace Server Status
 **Server**: workspace
 **Status**: Active
@@ -287,12 +390,7 @@ Rust MCP tools can provide service-specific context information for enhanced ope
 **Available Tools**: 12 tools
 
 ## Current Directory Structure
-```
-
 directory_tree_here
-
-```
-
 ```
 
 ## Web MCP Tools
@@ -405,7 +503,7 @@ interface WebMCPServerState {
 
 **Execution Flow:**
 
-```
+```text
 WebMCPServiceRegistry Props → Server Loading → BuiltInService Creation → BuiltInToolProvider Registration → Tool Execution via Proxy
 ```
 
@@ -444,7 +542,7 @@ type StrictBrowserMCPTool = MCPTool & {
 3. **Tool Execution**: Tools are executed with validated parameters
 4. **Result Processing**: Responses are formatted and returned to agents
 
-### Error Handling
+### Context Coupling Error Handling
 
 All tools implement comprehensive error handling:
 
