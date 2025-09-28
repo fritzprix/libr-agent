@@ -484,3 +484,4 @@ These steps must be completed successfully before considering any refactoring ta
 ## References
 
 - [Chat Feature Architecture & Implementation Manual](docs/architecture/chat-feature-architecture.md)
+- [Built-in Tools Documentation](docs/builtin-tools.md)
