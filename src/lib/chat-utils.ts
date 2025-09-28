@@ -121,7 +121,10 @@ export const createToolMessagePair = (
   toolCallId: string,
   sessionId: string,
   assistantId?: string,
+  delayMs?: number,
 ): [Message, Message] => {
+  const delayMsValue = delayMs ?? 300;
+  const callTime = new Date();
   const toolCallMessage: Message = {
     id: createId(),
     content: [], // Tool calls can have empty content
@@ -138,6 +141,7 @@ export const createToolMessagePair = (
     ],
     sessionId,
     assistantId,
+    createdAt: callTime,
   };
 
   const toolResultMessage: Message = {
@@ -147,6 +151,7 @@ export const createToolMessagePair = (
     tool_call_id: toolCallId,
     sessionId,
     assistantId,
+    createdAt: new Date(callTime.getTime() + delayMsValue),
   };
 
   return [toolCallMessage, toolResultMessage];

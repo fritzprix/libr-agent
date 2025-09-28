@@ -44,7 +44,8 @@ function ChatInner({ children }: ChatProps) {
   });
 
   return (
-    <div className="h-full w-full font-mono flex rounded-lg overflow-hidden shadow-2xl">
+    // Limit chat container height to viewport so sticky headers and panels behave predictably
+    <div className="h-full w-full max-h-[100vh] font-mono flex rounded-lg overflow-hidden shadow-2xl">
       {/* Workspace side panel */}
       {showWorkspacePanel && <WorkspaceFilesPanel />}
 
