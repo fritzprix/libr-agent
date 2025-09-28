@@ -1067,11 +1067,6 @@ const INTERACTABLE_SELECTORS = [
   '[data-action]',
 ].join(',');
 
-function generateUniqueSelector(element: Element, document: Document): string {
-  // Use the unified selector builder for consistency
-  return buildUniqueSelector(element, document);
-}
-
 function isElementVisible(element: Element): boolean {
   // DOMParser environment doesn't support getComputedStyle() or getBoundingClientRect()
   // Check visibility based on HTML attributes and inline styles instead
@@ -1157,7 +1152,7 @@ function parseElementToInteractable(
   }
 
   const interactableElement: InteractableElement = {
-    selector: generateUniqueSelector(element, document),
+    selector: buildUniqueSelector(element, document),
     type: getElementType(element),
     text: getElementText(element),
     enabled:
