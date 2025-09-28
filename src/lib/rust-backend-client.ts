@@ -571,6 +571,15 @@ export async function greet(name: string): Promise<string> {
 }
 
 /**
+ * Remove a session including its workspace directory on the native side.
+ * This calls the Tauri command `remove_session` implemented in the backend.
+ * @param sessionId The ID of the session to remove
+ */
+export async function removeSession(sessionId: string): Promise<void> {
+  return safeInvoke<void>('remove_session', { sessionId });
+}
+
+/**
  * A default export containing all the client functions, for compatibility with older code.
  * @deprecated It is recommended to use named imports instead.
  */

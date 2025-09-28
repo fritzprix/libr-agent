@@ -7,7 +7,7 @@ import {
   Wrench,
   TestTube,
 } from 'lucide-react';
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   Sidebar,
@@ -24,15 +24,13 @@ import {
 } from '../ui/sidebar';
 import { useSessionContext } from '@/context/SessionContext';
 import SessionList from '@/features/session/SessionList';
+import SettingsModal from '@/features/settings/SettingsModal';
 
-interface AppSidebarProps {
-  onOpenSettings: () => void;
-}
-
-export default function AppSidebar({ onOpenSettings }: AppSidebarProps) {
+export default function AppSidebar() {
   const { state, toggleSidebar } = useSidebar();
   const { select, sessions: sessionPages } = useSessionContext();
   const location = useLocation();
+  const [modalOpen, setModalOpen] = useState(false);
 
   const sessions = useMemo(
     () => (sessionPages ? sessionPages.flatMap((p) => p.items) : []),
@@ -225,13 +223,17 @@ export default function AppSidebar({ onOpenSettings }: AppSidebarProps) {
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
-              onClick={onOpenSettings}
+              onClick={() => setModalOpen(true)}
               tooltip="Settings"
               className={`transition-all duration-200`}
             >
               <Settings size={16} />
               {!isCollapsed && <span>Settings</span>}
             </SidebarMenuButton>
+            <SettingsModal
+              isOpen={modalOpen}
+              onClose={() => setModalOpen(false)}
+            />
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
