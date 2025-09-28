@@ -76,6 +76,8 @@ jobs:
         if: github.event_name == 'pull_request'
         run: cd src-tauri && cargo clippy -- -D warnings
 
+      - name: 🦀 Install rustfmt
+        run: rustup component add rustfmt
       - name: 🎨 Rust Format Check (PR)
         if: github.event_name == 'pull_request'
         run: cd src-tauri && cargo fmt --check
