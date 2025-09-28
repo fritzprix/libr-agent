@@ -24,6 +24,7 @@ import { getLogger } from '@/lib/logger';
 import { toast } from 'sonner';
 import { useWebMCPServer } from '@/hooks/use-web-mcp-server';
 import { PlanningServerProxy } from '@/lib/web-mcp/modules/planning-server';
+import AgentIdSystemPrompt from '../prompts/AgentIdSystemPrompt';
 
 const logger = getLogger('Chat');
 
@@ -103,6 +104,7 @@ function Chat({ children }: ChatProps) {
       <ChatPlanningProvider>
         <ChatWorkspaceProvider>
           <TimeLocationSystemPrompt />
+          <AgentIdSystemPrompt />
           <ChatInner>{children}</ChatInner>
         </ChatWorkspaceProvider>
       </ChatPlanningProvider>

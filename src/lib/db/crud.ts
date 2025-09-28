@@ -9,6 +9,12 @@ import type {
   Page,
 } from './types';
 import { LocalDatabase } from './service';
+import type { Playbook } from '@/types/playbook';
+type PlaybookRecord = Playbook & {
+  id: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+};
 
 /**
  * Creates a pagination object.
@@ -420,6 +426,66 @@ export const fileStoresCRUD: CRUD<FileStore> = {
   },
   count: async (): Promise<number> => {
     return LocalDatabase.getInstance().fileStores.count();
+  },
+};
+
+/** CRUD for persisted Task records stored in the LocalDatabase.tasks table. */
+export const playbooksCRUD: CRUD<PlaybookRecord> = {
+  upsert: async (playbook) => {
+    const now = new Date();
+    const maybeId = playbook as unknown as { id?: unknown };
+    const maybeCreated = playbook as unknown as { createdAt?: unknown };
+    const record: PlaybookRecord = {
+      ...playbook,
+      id: typeof maybeId.id === 'string' ? maybeId.id : String(Date.now()),
+      createdAt:
+        maybeCreated.createdAt instanceof Date ? maybeCreated.createdAt : now,
+      updatedAt: now,
+    } as PlaybookRecord;
+    await LocalDatabase.getInstance().table('playbooks').put(record);
+  },
+  upsertMany: async (playbooksArr) => {
+    const now = new Date();
+    const updated = playbooksArr.map((t) => {
+      const mid = t as unknown as { id?: unknown };
+      const mcreated = t as unknown as { createdAt?: unknown };
+      return {
+        ...t,
+        id:
+          typeof mid.id === 'string'
+            ? mid.id
+            : String(Date.now() + Math.random()),
+        createdAt:
+          mcreated.createdAt instanceof Date
+            ? (mcreated.createdAt as Date)
+            : now,
+        updatedAt: now,
+      } as PlaybookRecord;
+    });
+    await LocalDatabase.getInstance().table('playbooks').bulkPut(updated);
+  },
+  read: async (id) => {
+    return LocalDatabase.getInstance().table('playbooks').get(id) as Promise<
+      PlaybookRecord | undefined
+    >;
+  },
+  delete: async (id) => {
+    await LocalDatabase.getInstance().table('playbooks').delete(id);
+  },
+  getPage: async (page, pageSize) => {
+    const db = LocalDatabase.getInstance();
+    const table = db.table('playbooks');
+    const totalItems = await table.count();
+    if (pageSize === -1) {
+      const items = await table.toArray();
+      return createPage(items as PlaybookRecord[], page, pageSize, totalItems);
+    }
+    const offset = (page - 1) * pageSize;
+    const items = await table.offset(offset).limit(pageSize).toArray();
+    return createPage(items as PlaybookRecord[], page, pageSize, totalItems);
+  },
+  count: async () => {
+    return LocalDatabase.getInstance().table('playbooks').count();
   },
 };
 

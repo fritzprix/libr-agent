@@ -19,6 +19,7 @@ import type {
 // Static imports for MCP server modules to avoid Vite dynamic import warnings
 // This approach provides better bundling compatibility and type safety
 import planningServer from './modules/planning-server';
+import playbookStore from './modules/playbook-store';
 
 /**
  * A simple logger for the worker context, as the main logger is not available here.
@@ -43,6 +44,7 @@ const log = {
 // This eliminates Vite bundling warnings and provides better type safety
 const MODULE_REGISTRY = [
   { key: 'planning', module: planningServer },
+  { key: 'playbook', module: playbookStore },
   // Future modules can be added here with static imports
 ] as const;
 

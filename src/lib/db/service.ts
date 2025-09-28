@@ -8,6 +8,7 @@ import type {
   FileStore,
   Page,
 } from './types';
+import type { Playbook } from '@/types/playbook';
 import {
   assistantsCRUD,
   createPage,
@@ -18,6 +19,7 @@ import {
   messagesCRUD,
   objectsCRUD,
   sessionsCRUD,
+  playbooksCRUD,
 } from './crud';
 
 /**
@@ -44,6 +46,10 @@ export class LocalDatabase extends Dexie {
   sessions!: Table<Session, string>;
   messages!: Table<Message, string>;
   groups!: Table<Group, string>;
+  playbooks!: Table<
+    Playbook & { id: string; createdAt?: Date; updatedAt?: Date },
+    string
+  >;
   fileStores!: Table<FileStore, string>;
   fileContents!: Table<FileContent, string>;
   fileChunks!: Table<FileChunk, string>;
@@ -101,6 +107,7 @@ export class LocalDatabase extends Dexie {
       fileContents:
         '&id, storeId, filename, uploadedAt, mimeType, contentHash, [storeId+contentHash]',
       fileChunks: '&id, contentId, chunkIndex',
+      playbooks: '&id, createdAt, updatedAt, goal',
     });
   }
 }
@@ -119,6 +126,7 @@ export const dbService: DatabaseService = {
   fileStores: fileStoresCRUD,
   fileContents: fileContentsCRUD,
   fileChunks: fileChunksCRUD,
+  playbooks: playbooksCRUD,
 };
 
 /**

@@ -5,7 +5,7 @@ import React, {
   useEffect,
   useMemo,
 } from 'react';
-import { Button, FileAttachment, Input } from '@/components/ui';
+import { Button, FileAttachment } from '@/components/ui';
 import { Send, Square, Loader2 } from 'lucide-react';
 import { useAssistantContext } from '@/context/AssistantContext';
 import { useSessionContext } from '@/context/SessionContext';
@@ -90,10 +90,29 @@ export function ChatInput({ children }: ChatInputProps) {
   }, [dragState]);
 
   const handleAgentInputChange = React.useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       setInput(e.target.value);
     },
     [],
+  );
+
+  // Handle Enter/Shift+Enter for line breaks and submission
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        if (
+          !isLoading &&
+          !isAttachmentLoading &&
+          (input.trim() || attachedFiles.length > 0)
+        ) {
+          chatInputRef.current?.dispatchEvent(
+            new Event('submit', { bubbles: true, cancelable: true }),
+          );
+        }
+      }
+    },
+    [isLoading, isAttachmentLoading, input, attachedFiles.length],
   );
 
   const handleSubmit = useCallback(
@@ -212,14 +231,20 @@ export function ChatInput({ children }: ChatInputProps) {
     <form ref={chatInputRef} onSubmit={handleSubmit} className={formClassName}>
       <span className="font-bold flex-shrink-0">$</span>
       <div className="flex-1 flex items-center gap-2 min-w-0">
-        <Input
+        <textarea
           value={input}
           onChange={handleAgentInputChange}
+          onKeyDown={handleKeyDown}
           placeholder={inputPlaceholder}
           disabled={isLoading || isAttachmentLoading}
-          className={inputClassName}
+          className={`flex-1 min-w-0 resize-none transition-colors bg-transparent outline-none border-none py-2 px-3 text-base leading-relaxed max-h-24 overflow-y-auto ${inputClassName}`}
+          style={{
+            msOverflowStyle: 'none',
+            scrollbarWidth: 'none',
+          }}
           autoComplete="off"
           spellCheck="false"
+          rows={1}
         />
 
         <FileAttachment
