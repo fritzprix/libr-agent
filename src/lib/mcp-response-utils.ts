@@ -1,4 +1,4 @@
-import { MCPResponse } from './mcp-types';
+import { MCPResponse, MCPContent } from './mcp-types';
 import { createId } from '@paralleldrive/cuid2';
 
 /**
@@ -101,5 +101,31 @@ export function createMCPEmptyResponse(
     jsonrpc: '2.0',
     id: id ?? createId(),
     result: { content: [] },
+  };
+}
+
+/**
+ * Creates an MCP response that includes an arbitrary content array (multiple parts)
+ * and a structured content payload. Use this when the response should include
+ * UI resources or other non-text content alongside structured data.
+ *
+ * @template T The type of the structured content.
+ * @param contents Array of MCPContent items to include in the response result.content
+ * @param structuredContent The structured data payload to include under structuredContent
+ * @param id Optional JSON-RPC request ID. If not provided, a new one is generated.
+ * @returns An `MCPResponse` object with both content and structuredContent.
+ */
+export function createMCPStructuredMultipartResponse<T>(
+  contents: MCPContent[],
+  structuredContent: T,
+  id?: string | number | null,
+): MCPResponse<T> {
+  return {
+    jsonrpc: '2.0',
+    id: id ?? createId(),
+    result: {
+      content: contents,
+      structuredContent,
+    },
   };
 }

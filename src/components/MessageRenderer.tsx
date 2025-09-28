@@ -227,11 +227,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
                   !toolName.includes('__') && !toolName.startsWith('builtin.');
 
                 if (isBaseName) {
-                  finalToolName =
-                    serviceInfo.backendType === 'ExternalMCP'
-                      ? `${serviceInfo.serverName}__${toolName}`
-                      : `builtin.${serviceInfo.serverName}__${toolName}`;
-
+                  finalToolName = `${serviceInfo.serverName}__${toolName}`;
                   logger.info('Tool name resolved using service context', {
                     originalName: toolName,
                     resolvedName: finalToolName,
