@@ -79,17 +79,17 @@ export function ChatProvider({ children }: ChatProviderProps) {
     };
   }, []);
 
-  // 세션 변경 시 streamingMessage 초기화 루틴 (타이밍 문제 해결)
+  // Routine to initialize streamingMessage on session change (to resolve timing issues)
   useEffect(() => {
     if (currentSession?.id) {
       logger.debug('Session changed, ensuring streamingMessage is cleared', {
         newSessionId: currentSession.id,
       });
-      setStreamingMessage(null); // 세션 변경 시 무조건 초기화
-      setPendingCancel(false); // Cancel 상태 초기화
-      setMessageQueue([]); // 메시지 큐 초기화
+      setStreamingMessage(null); // Always initialize on session change
+      setPendingCancel(false); // Reset cancel state
+      setMessageQueue([]); // Reset message queue
     }
-  }, [currentSession?.id]); // currentSession?.id 변경 시 실행
+  }, [currentSession?.id]); // Run when currentSession?.id changes
 
   const buildSystemPrompt = useCallback(async (): Promise<string> => {
     const basePrompt =
@@ -151,7 +151,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       return history;
     }
 
-    // 세션 불일치 시 streamingMessage 무시 (Race Condition 방지)
+    // Ignore streamingMessage on session mismatch (to prevent race conditions)
     if (streamingMessage.sessionId !== currentSession?.id) {
       logger.warn(
         'Streaming message session mismatch in messages calculation',
@@ -181,7 +181,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   useEffect(() => {
     if (!response) return;
 
-    // 세션 불일치 시 response 무시 (Session 검증 강화)
+    // Ignore response for different session (strengthen session validation)
     if (response.sessionId && response.sessionId !== currentSession?.id) {
       logger.warn('Ignoring response for different session', {
         responseSessionId: response.sessionId,
@@ -237,7 +237,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
         let messagesToSend = messages;
 
-        // Process and validate new messages if provided (tool 결과 유실 방지)
+        // Process and validate new messages if provided (to prevent loss of tool results)
         if (messageToAdd?.length) {
           const messagesWithSession = messageToAdd.map((m) => ({
             ...m,
@@ -247,7 +247,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
             await addMessages(messagesWithSession);
             messagesToSend = [...messages, ...messagesWithSession];
           } else {
-            // 안전한 폴백: 순차 저장
+            // Safe fallback: sequential saving
             const persisted: Message[] = [];
             for (const msg of messagesWithSession) {
               const added = await addMessage(msg);
@@ -257,7 +257,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
           }
         }
 
-        // Cancel 체크를 메시지 추가 후로 이동 (tool 결과는 보존)
+        // Move cancel check to after message addition (to preserve tool results)
         if (cancelRequestRef.current) {
           cancelRequestRef.current = false;
           logger.info('Request cancelled after message persistence');

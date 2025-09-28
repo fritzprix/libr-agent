@@ -126,7 +126,7 @@ export function ChatInput({ children }: ChatInputProps) {
       }
 
       if (isToolExecuting) {
-        // Tool 실행 중이면 메시지를 큐에 추가
+        // If a tool is running, add the message to the queue
         addToMessageQueue({
           content: stringToMCPContentArray(input.trim()),
           attachments: attachedFiles,
@@ -135,10 +135,10 @@ export function ChatInput({ children }: ChatInputProps) {
         clearPendingFiles();
         logger.info('Message queued during tool execution');
       } else {
-        // 일반 전송
+        // Normal submission
         const userMessage = createUserMessage(input.trim(), currentSession.id);
 
-        // 첨부파일이 있으면 추가
+        // Add attachments if they exist
         if (attachedFiles.length > 0) {
           userMessage.attachments = attachedFiles;
         }
@@ -150,13 +150,12 @@ export function ChatInput({ children }: ChatInputProps) {
           });
           await submit([userMessage]);
           logger.info('User message submitted successfully');
-          // 성공 시에만 입력값과 파일 클리어
+          // Clear input and files only on success
           setInput('');
           clearPendingFiles();
         } catch (err) {
           logger.error('Error submitting message:', err);
-          toast.error('메시지 전송에 실패했습니다');
-          // 실패 시 입력값 유지
+          // Keep input value on failure
         }
       }
     },
