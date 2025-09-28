@@ -7,7 +7,7 @@ import {
   Wrench,
   TestTube,
 } from 'lucide-react';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   Sidebar,
@@ -24,13 +24,15 @@ import {
 } from '../ui/sidebar';
 import { useSessionContext } from '@/context/SessionContext';
 import SessionList from '@/features/session/SessionList';
-import SettingsModal from '@/features/settings/SettingsModal';
+import { useNavigate } from 'react-router-dom';
+// Remove modal import; we'll navigate to a dedicated settings route
 
 export default function AppSidebar() {
   const { state, toggleSidebar } = useSidebar();
+  const navigate = useNavigate();
   const { select, sessions: sessionPages } = useSessionContext();
   const location = useLocation();
-  const [modalOpen, setModalOpen] = useState(false);
+  // modal state removed; settings is now a routed page
 
   const sessions = useMemo(
     () => (sessionPages ? sessionPages.flatMap((p) => p.items) : []),
@@ -221,20 +223,16 @@ export default function AppSidebar() {
       </SidebarContent>
       <SidebarFooter className="border-t">
         <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              onClick={() => setModalOpen(true)}
-              tooltip="Settings"
-              className={`transition-all duration-200`}
-            >
-              <Settings size={16} />
-              {!isCollapsed && <span>Settings</span>}
-            </SidebarMenuButton>
-            <SettingsModal
-              isOpen={modalOpen}
-              onClose={() => setModalOpen(false)}
-            />
-          </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                onClick={() => navigate('/settings')}
+                tooltip="Settings"
+                className={`transition-all duration-200`}
+              >
+                <Settings size={16} />
+                {!isCollapsed && <span>Settings</span>}
+              </SidebarMenuButton>
+            </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
     </Sidebar>

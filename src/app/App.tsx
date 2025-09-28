@@ -32,6 +32,7 @@ import WebMCPTest from '@/test/WebMCPTest';
 import { DnDContextProvider } from '@/context/DnDContext';
 import DnDTestPage from '@/features/dnd/DnDTestPage';
 import { WebMCPContextSetter } from '@/lib/web-mcp/WebMCPContextSetter';
+import SettingsPage from '@/features/settings/SettingsPage';
 
 function App() {
   return (
@@ -107,10 +108,14 @@ function App() {
                                         path="/webmcp/test"
                                         element={<WebMCPTest />}
                                       />
-                                      <Route
-                                        path="/dnd/test"
-                                        element={<DnDTestPage />}
-                                      />
+                                        <Route
+                                          path="/dnd/test"
+                                          element={<DnDTestPage />}
+                                        />
+                                        <Route
+                                          path="/settings"
+                                          element={<SettingsPage />}
+                                        />
                                     </Routes>
                                   </div>
                                 </div>
