@@ -5,33 +5,61 @@ import {
 } from '@/lib/mcp-response-utils';
 import type { MCPResponse, MCPTool, WebMCPServer } from '@/lib/mcp-types';
 
+/** Represents a single to-do item in the planning state. @internal */
 interface SimpleTodo {
   id: number;
   name: string;
   status: 'pending' | 'completed';
 }
 
+/**
+ * Represents the entire state of the planning server.
+ */
 export interface PlanningState {
+  /** The current main goal. */
   goal: string | null;
+  /** The most recently cleared goal, for context. */
   lastClearedGoal: string | null;
+  /** The list of to-do items. */
   todos: SimpleTodo[];
+  /** A list of recent observations or events. */
   observations: string[];
 }
 
+/**
+ * The base output structure for tool calls, indicating success.
+ * @internal
+ */
 interface BaseOutput {
   success: boolean;
 }
 
+/**
+ * The output for the `create_goal` tool call.
+ * @internal
+ */
 interface CreateGoalOutput extends BaseOutput {
   goal: string;
 }
 
+/**
+ * The output for the `clear_goal` tool call.
+ * @internal
+ */
 type ClearGoalOutput = BaseOutput;
 
+/**
+ * The output for the `add_todo` tool call.
+ * @internal
+ */
 interface AddToDoOutput extends BaseOutput {
   todos: SimpleTodo[];
 }
 
+/**
+ * The output for the `toggle_todo` tool call.
+ * @internal
+ */
 interface ToggleTodoOutput extends BaseOutput {
   todo: SimpleTodo | null;
   todos: SimpleTodo[];
@@ -39,6 +67,12 @@ interface ToggleTodoOutput extends BaseOutput {
 
 const MAX_OBSERVATIONS = 10;
 
+/**
+ * Manages the in-memory state for the planning server, including goals,
+ * to-dos, and observations. This state is not persisted and will be lost
+ * when the worker is terminated.
+ * @internal
+ */
 class EphemeralState {
   private goal: string | null = null;
   private lastClearedGoal: string | null = null;
@@ -161,7 +195,93 @@ class EphemeralState {
   }
 }
 
-const state = new EphemeralState();
+/**
+ * Session-based state manager that maintains separate EphemeralState instances
+ * for each session ID.
+ * @internal
+ */
+class SessionStateManager {
+  private sessions = new Map<string, EphemeralState>();
+  private currentSessionId: string | null = null;
+
+  /**
+   * Sets the current session context.
+   * @param sessionId The session ID to set as current context.
+   */
+  setSession(sessionId: string): void {
+    this.currentSessionId = sessionId;
+    // Initialize session state if it doesn't exist
+    if (!this.sessions.has(sessionId)) {
+      this.sessions.set(sessionId, new EphemeralState());
+    }
+  }
+
+  /**
+   * Gets the current session's state, or creates a default session if none is set.
+   * @returns The EphemeralState for the current session.
+   */
+  private getCurrentState(): EphemeralState {
+    if (!this.currentSessionId) {
+      // Fallback to default session
+      this.setSession('default');
+    }
+    return this.sessions.get(this.currentSessionId!)!;
+  }
+
+  createGoal(goal: string): MCPResponse<CreateGoalOutput> {
+    return this.getCurrentState().createGoal(goal);
+  }
+
+  clearGoal(): MCPResponse<ClearGoalOutput> {
+    return this.getCurrentState().clearGoal();
+  }
+
+  addTodo(name: string): MCPResponse<AddToDoOutput> {
+    return this.getCurrentState().addTodo(name);
+  }
+
+  toggleTodo(id: number): MCPResponse<ToggleTodoOutput> {
+    return this.getCurrentState().toggleTodo(id);
+  }
+
+  clearTodos(): MCPResponse<BaseOutput> {
+    return this.getCurrentState().clearTodos();
+  }
+
+  clear(): MCPResponse<BaseOutput> {
+    return this.getCurrentState().clear();
+  }
+
+  getGoal(): string | null {
+    return this.getCurrentState().getGoal();
+  }
+
+  getTodos(): SimpleTodo[] {
+    return this.getCurrentState().getTodos();
+  }
+
+  addObservation(observation: string): MCPResponse<BaseOutput> {
+    return this.getCurrentState().addObservation(observation);
+  }
+
+  getObservations(): string[] {
+    return this.getCurrentState().getObservations();
+  }
+
+  getLastClearedGoal(): string | null {
+    return this.getCurrentState().getLastClearedGoal();
+  }
+
+  /**
+   * Clears all session states. Useful for testing or complete reset.
+   */
+  clearAllSessions(): void {
+    this.sessions.clear();
+    this.currentSessionId = null;
+  }
+}
+
+const stateManager = new SessionStateManager();
 
 // Simplified tool definitions - flat schemas for Gemini API compatibility
 const tools: MCPTool[] = [
@@ -272,6 +392,10 @@ interface PlanningServerMethods {
   get_current_state: () => Promise<MCPResponse<PlanningState>>;
 }
 
+/**
+ * The implementation of the `WebMCPServer` interface for the planning service.
+ * It defines the server's metadata and its `callTool` and `getServiceContext` methods.
+ */
 const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
   name: 'planning',
   version: '2.1.0',
@@ -285,13 +409,13 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
     const typedArgs = args as Record<string, unknown>;
     switch (name) {
       case 'create_goal': {
-        return state.createGoal(typedArgs.goal as string);
+        return stateManager.createGoal(typedArgs.goal as string);
       }
       case 'clear_goal': {
-        return state.clearGoal();
+        return stateManager.clearGoal();
       }
       case 'add_todo': {
-        return state.addTodo(typedArgs.name as string);
+        return stateManager.addTodo(typedArgs.name as string);
       }
       case 'toggle_todo': {
         const id = typedArgs.id as number;
@@ -301,22 +425,22 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
           );
         }
 
-        return state.toggleTodo(id);
+        return stateManager.toggleTodo(id);
       }
       case 'clear_todos': {
-        return state.clearTodos();
+        return stateManager.clearTodos();
       }
       case 'clear_session':
-        return state.clear();
+        return stateManager.clear();
       case 'add_observation': {
-        return state.addObservation(typedArgs.observation as string);
+        return stateManager.addObservation(typedArgs.observation as string);
       }
       case 'get_current_state': {
         const currentState = {
-          goal: state.getGoal(),
-          lastClearedGoal: state.getLastClearedGoal(),
-          todos: state.getTodos(),
-          observations: state.getObservations(),
+          goal: stateManager.getGoal(),
+          lastClearedGoal: stateManager.getLastClearedGoal(),
+          todos: stateManager.getTodos(),
+          observations: stateManager.getObservations(),
         };
 
         return createMCPStructuredResponse<PlanningState>(
@@ -333,16 +457,16 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
     }
   },
   async getServiceContext(): Promise<string> {
-    const goal = state.getGoal();
-    const todos = state.getTodos();
-    const observations = state.getObservations();
+    const goal = stateManager.getGoal();
+    const todos = stateManager.getTodos();
+    const observations = stateManager.getObservations();
 
     const goalText = goal ? `Current Goal: ${goal}` : 'No active goal';
-    const lastGoalText = state.getLastClearedGoal()
-      ? `Last Cleared Goal: ${state.getLastClearedGoal()}`
+    const lastGoalText = stateManager.getLastClearedGoal()
+      ? `Last Cleared Goal: ${stateManager.getLastClearedGoal()}`
       : '';
 
-    // 전체 todos를 순서대로 표시하되 상태를 정확히 표현
+    // Display all todos in order, accurately representing their status
     const todosText =
       todos.length > 0
         ? `Todos:\n${todos
@@ -384,8 +508,18 @@ Based on the current situation, determine and suggest the next appropriate actio
 Use 'toggle_todo' with the ID number (not index) to mark todos as complete/incomplete.
   `.trim();
   },
+  async setContext(context: Record<string, unknown>): Promise<void> {
+    const sessionId = context.sessionId as string;
+    if (sessionId) {
+      stateManager.setSession(sessionId);
+    }
+  },
 };
 
+/**
+ * Extends the `WebMCPServerProxy` with typed methods for the planning server's tools.
+ * This provides a strongly-typed client for interacting with the planning server.
+ */
 export interface PlanningServerProxy extends WebMCPServerProxy {
   create_goal: (args: { goal: string }) => Promise<CreateGoalOutput>;
   clear_goal: () => Promise<ClearGoalOutput>;

@@ -4,39 +4,61 @@ use async_trait::async_trait;
 use serde_json::Value;
 use tracing::info;
 
+pub mod content_store;
 pub mod utils;
 pub mod workspace;
 
-/// Trait for built-in MCP servers
+/// A trait that defines the common interface for all built-in MCP servers.
 #[async_trait]
-pub trait BuiltinMCPServer: Send + Sync {
-    /// Server name (e.g., "builtin.filesystem")
+pub trait BuiltinMCPServer: Send + Sync + std::fmt::Debug {
+    /// Returns the unique name of the server (e.g., "workspace").
     fn name(&self) -> &str;
 
-    /// Server description
+    /// Returns a brief description of the server's purpose.
     #[allow(dead_code)]
     fn description(&self) -> &str;
 
-    /// Server version
+    /// Returns the version of the server.
     #[allow(dead_code)]
     fn version(&self) -> &str {
         "1.0.0"
     }
 
-    /// List available tools for this server
+    /// Returns a list of all tools provided by this server.
     fn tools(&self) -> Vec<MCPTool>;
 
-    /// Call a tool on this server
+    /// Calls a tool on this server with the given arguments.
     async fn call_tool(&self, tool_name: &str, args: Value) -> MCPResponse;
+
+    /// Returns a markdown-formatted string describing the server's current status and context.
+    fn get_service_context(&self, _options: Option<&Value>) -> String {
+        format!(
+            "# {} Server Status\n\
+            **Server**: {}\n\
+            **Status**: Active\n\
+            **Tools Available**: {}",
+            self.name(),
+            self.name(),
+            self.tools().len()
+        )
+    }
 }
 
-/// Built-in server registry
+/// A registry for all built-in MCP servers.
+#[derive(Debug)]
 pub struct BuiltinServerRegistry {
     servers: std::collections::HashMap<String, Box<dyn BuiltinMCPServer>>,
 }
 
 impl BuiltinServerRegistry {
-    /// Normalize LLM-generated JSON arguments to fix common escaping issues
+    /// Normalizes LLM-generated JSON arguments to fix common escaping and formatting issues.
+    /// This acts as a robust pre-processing step before tool execution.
+    ///
+    /// # Arguments
+    /// * `args` - The `serde_json::Value` representing the arguments.
+    ///
+    /// # Returns
+    /// The normalized `serde_json::Value`.
     fn normalize_json_args(args: Value) -> Value {
         match args {
             Value::Object(mut obj) => {
@@ -84,12 +106,13 @@ impl BuiltinServerRegistry {
         }
     }
 
-    /// Normalize raw JSON string from frontend
+    /// Normalizes a raw JSON string, attempting to fix common escaping issues.
+    /// @internal
     fn normalize_raw_json_string(raw_json: &str) -> String {
         let mut normalized = raw_json.to_string();
 
         // Fix common JSON escaping issues
-        // Pattern: "code":"print("hello")" -> "code":"print(\"hello\")"
+        // e.g., "code":"print("hello")" -> "code":"print(\"hello\")"
         if normalized.contains("\":\"") && !normalized.ends_with("\"}") {
             // Try to balance quotes in JSON values
             normalized = Self::fix_json_string_values(&normalized);
@@ -98,7 +121,8 @@ impl BuiltinServerRegistry {
         normalized
     }
 
-    /// Fix JSON string values with unescaped quotes
+    /// A helper to fix unescaped quotes within JSON string values.
+    /// @internal
     fn fix_json_string_values(json_str: &str) -> String {
         let mut result = String::new();
         let chars: Vec<char> = json_str.chars().collect();
@@ -135,7 +159,8 @@ impl BuiltinServerRegistry {
         result
     }
 
-    /// Extract parameters from malformed JSON as fallback
+    /// A fallback method to extract parameters from a malformed JSON string using pattern matching.
+    /// @internal
     fn extract_from_malformed_json(malformed: &str) -> Value {
         let mut result = serde_json::Map::new();
 
@@ -153,7 +178,8 @@ impl BuiltinServerRegistry {
         Value::Object(result)
     }
 
-    /// Extract a parameter value from malformed JSON using regex-like pattern matching
+    /// Extracts a parameter value from a string using regex-like pattern matching.
+    /// @internal
     fn extract_parameter_value(json_str: &str, param_name: &str) -> Option<String> {
         let pattern = format!("\"{param_name}\":\"");
         if let Some(start_idx) = json_str.find(&pattern) {
@@ -187,7 +213,8 @@ impl BuiltinServerRegistry {
         None
     }
 
-    /// Normalize code parameters (Python/TypeScript)
+    /// Normalizes code parameters by fixing unmatched quotes.
+    /// @internal
     fn normalize_code_parameter(code: &str) -> String {
         let mut normalized = code.to_string();
 
@@ -208,7 +235,8 @@ impl BuiltinServerRegistry {
         normalized
     }
 
-    /// Normalize shell command parameters
+    /// Normalizes shell command parameters by fixing unmatched or consecutive quotes.
+    /// @internal
     fn normalize_command_parameter(command: &str) -> String {
         let mut normalized = command.to_string();
 
@@ -234,7 +262,8 @@ impl BuiltinServerRegistry {
         normalized
     }
 
-    /// Fix consecutive quotes in shell commands
+    /// A helper to fix consecutive quotes in shell commands.
+    /// @internal
     fn fix_consecutive_quotes_in_command(input: &str) -> String {
         let mut result = String::new();
         let chars: Vec<char> = input.chars().collect();
@@ -255,13 +284,22 @@ impl BuiltinServerRegistry {
         result
     }
 
+    /// Creates a new `BuiltinServerRegistry` and registers the default servers
+    /// using the provided `SessionManager`.
     pub fn new_with_session_manager(session_manager: std::sync::Arc<SessionManager>) -> Self {
         let mut registry = Self {
             servers: std::collections::HashMap::new(),
         };
 
         // Register built-in workspace server with SessionManager
-        registry.register_server(Box::new(workspace::WorkspaceServer::new(session_manager)));
+        registry.register_server(Box::new(workspace::WorkspaceServer::new(
+            session_manager.clone(),
+        )));
+
+        // Register content-store server (native backend)
+        registry.register_server(Box::new(
+            crate::mcp::builtin::content_store::ContentStoreServer::new(session_manager.clone()),
+        ));
 
         // Browser Agent server removed to prevent duplicate tools.
         // Browser functionality now provided by frontend BrowserToolProvider.
@@ -269,19 +307,64 @@ impl BuiltinServerRegistry {
         registry
     }
 
+    /// Creates a new `BuiltinServerRegistry` with SQLite support.
+    ///
+    /// # Arguments
+    /// * `session_manager` - A shared reference to the `SessionManager`.
+    /// * `sqlite_db_url` - The connection URL for the SQLite database.
+    pub async fn new_with_session_manager_and_sqlite(
+        session_manager: std::sync::Arc<SessionManager>,
+        sqlite_db_url: String,
+    ) -> Self {
+        let mut registry = Self {
+            servers: std::collections::HashMap::new(),
+        };
+
+        // Register built-in workspace server with SessionManager
+        registry.register_server(Box::new(workspace::WorkspaceServer::new(
+            session_manager.clone(),
+        )));
+
+        // Register content-store server with SQLite support
+        let content_store_server =
+            crate::mcp::builtin::content_store::ContentStoreServer::new_with_sqlite(
+                session_manager.clone(),
+                sqlite_db_url,
+            )
+            .await
+            .expect("Failed to initialize content store with SQLite");
+
+        registry.register_server(Box::new(content_store_server));
+
+        // Browser Agent server removed to prevent duplicate tools.
+        // Browser functionality now provided by frontend BrowserToolProvider.
+
+        registry
+    }
+
+    /// Registers a new built-in server with the registry.
+    ///
+    /// # Arguments
+    /// * `server` - A `Box` containing a type that implements the `BuiltinMCPServer` trait.
     pub fn register_server(&mut self, server: Box<dyn BuiltinMCPServer>) {
         let name = server.name().to_string();
         self.servers.insert(name, server);
     }
 
+    /// Gets a reference to a server in the registry by name.
+    ///
+    /// # Arguments
+    /// * `name` - The name of the server to retrieve.
     pub fn get_server(&self, name: &str) -> Option<&dyn BuiltinMCPServer> {
         self.servers.get(name).map(|s| s.as_ref())
     }
 
+    /// Lists the names of all registered built-in servers.
     pub fn list_servers(&self) -> Vec<String> {
         self.servers.keys().cloned().collect()
     }
 
+    /// Lists all tools from all registered built-in servers.
     pub fn list_all_tools(&self) -> Vec<MCPTool> {
         let mut all_tools = Vec::new();
 
@@ -294,6 +377,10 @@ impl BuiltinServerRegistry {
         all_tools
     }
 
+    /// Lists the tools for a specific registered built-in server.
+    ///
+    /// # Arguments
+    /// * `server_name` - The name of the server. It can optionally have a "builtin." prefix.
     pub fn list_tools_for_server(&self, server_name: &str) -> Vec<MCPTool> {
         // Remove "builtin." prefix if present
         let normalized_server_name = if let Some(stripped) = server_name.strip_prefix("builtin.") {
@@ -309,6 +396,42 @@ impl BuiltinServerRegistry {
         }
     }
 
+    /// Gets the service context for a specific built-in server.
+    ///
+    /// # Arguments
+    /// * `server_name` - The name of the server.
+    /// * `options` - Optional `Value` to pass to the context function.
+    ///
+    /// # Returns
+    /// A `Result` containing the service context string, or an error if the server is not found.
+    pub fn get_server_context(
+        &self,
+        server_name: &str,
+        options: Option<Value>,
+    ) -> Result<String, String> {
+        // Remove "builtin." prefix if present
+        let normalized_server_name = if let Some(stripped) = server_name.strip_prefix("builtin.") {
+            stripped
+        } else {
+            server_name
+        };
+
+        if let Some(server) = self.get_server(normalized_server_name) {
+            Ok(server.get_service_context(options.as_ref()))
+        } else {
+            Err(format!("Built-in server '{server_name}' not found"))
+        }
+    }
+
+    /// Calls a tool on a specific built-in server.
+    ///
+    /// # Arguments
+    /// * `server_name` - The name of the server.
+    /// * `tool_name` - The name of the tool to call.
+    /// * `args` - The arguments for the tool.
+    ///
+    /// # Returns
+    /// An `MCPResponse` containing the result of the tool call.
     pub async fn call_tool(&self, server_name: &str, tool_name: &str, args: Value) -> MCPResponse {
         if let Some(server) = self.get_server(server_name) {
             // Apply JSON normalization before calling the tool

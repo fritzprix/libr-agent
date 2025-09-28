@@ -1,9 +1,23 @@
-// Selector utilities extracted from html-parser.ts for reuse
-
+/**
+ * Checks if a string is a valid CSS identifier.
+ * A valid CSS identifier must start with a letter, underscore, or hyphen,
+ * and can be followed by letters, digits, underscores, or hyphens.
+ *
+ * @param str The string to validate.
+ * @returns True if the string is a valid CSS identifier, false otherwise.
+ */
 export function isValidCSSIdentifier(str: string): boolean {
   return /^[a-zA-Z_-][a-zA-Z0-9_-]*$/.test(str);
 }
 
+/**
+ * Escapes a string for use in a CSS selector.
+ * It uses the `CSS.escape` method if available, otherwise it falls back
+ * to a regular expression-based replacement.
+ *
+ * @param value The string to escape.
+ * @returns The escaped string, safe to use in a CSS selector.
+ */
 export function safeCssEscape(value: string): string {
   const cssObj =
     typeof CSS !== 'undefined'
@@ -19,6 +33,14 @@ export function safeCssEscape(value: string): string {
   return value.replace(/([!"#$%&'()*+,\-./:;<=>?@[\\\]^`{|}~])/g, '\\$1');
 }
 
+/**
+ * Checks if a given CSS selector uniquely identifies the target element within the document.
+ *
+ * @param selector The CSS selector to test.
+ * @param targetElement The element that the selector should uniquely identify.
+ * @param doc The document to search within.
+ * @returns True if the selector is unique to the target element, false otherwise.
+ */
 function isSelectorUnique(
   selector: string,
   targetElement: Element,
@@ -32,6 +54,21 @@ function isSelectorUnique(
   }
 }
 
+/**
+ * Builds a unique CSS selector for a given DOM element.
+ *
+ * The function tries several strategies in order to find a unique selector:
+ * 1.  Use the element's `id` if it's unique.
+ * 2.  Use the `data-testid` attribute if it's unique.
+ * 3.  For `<input>` elements, use a combination of `name` and `type` attributes if unique.
+ * 4.  Use a valid class name if it's unique for that tag.
+ * 5.  Construct a selector path from the element up to the document root, trying to find
+ *     a unique selector by combining tag names, classes, and `:nth-of-type` pseudo-classes.
+ *
+ * @param element The DOM element for which to build a unique selector.
+ * @param doc The document context of the element.
+ * @returns A string representing the unique CSS selector.
+ */
 export function buildUniqueSelector(element: Element, doc: Document): string {
   const id = element.getAttribute('id');
   if (id && id.trim()) {

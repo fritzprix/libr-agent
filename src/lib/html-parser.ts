@@ -4,98 +4,192 @@ import { buildUniqueSelector, isValidCSSIdentifier } from '@/lib/dom/selector';
 
 const logger = getLogger('HTMLParser');
 
-// Core interfaces for parsed HTML structures
+/**
+ * Represents a parsed HTML element with its core attributes and content.
+ * This interface is used for creating a structured, simplified representation of a DOM tree.
+ */
 export interface ParsedElement {
+  /** The tag name of the element (e.g., 'div', 'p'). */
   tag: string;
+  /** A unique CSS selector for the element. */
   selector: string;
+  /** The direct text content of the element, if any. */
   text?: string;
+  /** The ID of the element, if it has one. */
   id?: string;
+  /** The class attribute of the element. */
   class?: string;
+  /** The href attribute, typically for anchor tags. */
   href?: string;
+  /** The src attribute, for images, scripts, etc. */
   src?: string;
+  /** The alt attribute, for images. */
   alt?: string;
+  /** The title attribute of the element. */
   title?: string;
+  /** An array of child elements, recursively structured. */
   children: ParsedElement[];
 }
 
+/**
+ * Represents a node in the DOM map, which is a detailed, interactive-focused
+ * representation of the DOM.
+ */
 export interface DOMMapNode {
+  /** The tag name of the element. */
   tag: string;
+  /** A unique CSS selector for the element. */
   selector: string;
+  /** The ID of the element. */
   id?: string;
+  /** The class attribute of the element. */
   class?: string;
+  /** The text content of the element. */
   text?: string;
+  /** The `type` attribute, mainly for input elements. */
   type?: string;
+  /** The `href` attribute for links. */
   href?: string;
+  /** The `placeholder` attribute for input fields. */
   placeholder?: string;
+  /** The `value` of an input element. */
   value?: string;
+  /** The `name` attribute of a form element. */
   name?: string;
+  /** The ARIA role of the element. */
   role?: string;
+  /** The `aria-label` attribute. */
   ariaLabel?: string;
+  /** An array of child nodes in the DOM map. */
   children: DOMMapNode[];
 }
 
+/**
+ * Contains metadata about a parsed HTML page, such as its title and URL.
+ */
 export interface PageMetadata {
+  /** The title of the HTML page. */
   title: string;
+  /** The canonical or Open Graph URL of the page. */
   url?: string;
+  /** The timestamp of when the metadata was extracted. */
   timestamp: string;
 }
 
+/**
+ * Defines the options available for the structured parsing process.
+ */
 export interface ParseOptions {
+  /** The maximum depth to traverse the DOM tree. */
   maxDepth?: number;
+  /** Whether to include link (`href`) and source (`src`) attributes in the output. */
   includeLinks?: boolean;
+  /** The maximum length for extracted text content. */
   maxTextLength?: number;
 }
 
+/**
+ * Defines the options available for creating a DOM map.
+ */
 export interface DOMMapOptions {
+  /** The maximum depth to traverse the DOM tree. */
   maxDepth?: number;
+  /** The maximum number of child elements to process for each node. */
   maxChildren?: number;
+  /** The maximum length for extracted text content. */
   maxTextLength?: number;
+  /** If true, only elements deemed "interactive" (e.g., buttons, links, inputs) will be included. */
   includeInteractiveOnly?: boolean;
 }
 
+/**
+ * Represents an interactable element on the page, such as a button or input field.
+ */
 export interface InteractableElement {
+  /** A unique CSS selector for the element. */
   selector: string;
+  /** The type of interactable element. */
   type: 'button' | 'input' | 'select' | 'link' | 'textarea';
+  /** The text content or label associated with the element. */
   text?: string;
+  /** A boolean indicating if the element is enabled. */
   enabled: boolean;
+  /** A boolean indicating if the element is visible. */
   visible: boolean;
+  /** The `type` attribute for input elements (e.g., 'text', 'checkbox'). */
   inputType?: string;
+  /** The current value of the element, for inputs. */
   value?: string;
+  /** The placeholder text for input fields. */
   placeholder?: string;
 }
 
+/**
+ * Defines the options for extracting interactable elements.
+ */
 export interface InteractableOptions {
+  /** If true, hidden elements will be included in the result. */
   includeHidden?: boolean;
+  /** The maximum number of interactable elements to return. */
   maxElements?: number;
 }
 
+/**
+ * The result of an interactable element extraction process.
+ */
 export interface InteractableResult {
+  /** An array of the interactable elements found. */
   elements: InteractableElement[];
+  /** Metadata about the extraction process. */
   metadata: {
+    /** The timestamp of when the extraction occurred. */
     extraction_timestamp: string;
+    /** The total number of elements found. */
     total_count: number;
+    /** The CSS selector that defined the scope of the search. */
     scope_selector: string;
+    /** Performance metrics for the extraction. */
     performance: {
+      /** The time taken for the extraction in milliseconds. */
       execution_time_ms: number;
+      /** The size of the resulting data in bytes. */
       data_size_bytes: number;
     };
   };
+  /** An error message, if an error occurred during extraction. */
   error?: string;
 }
 
+/**
+ * The result of a structured parsing process, containing the parsed content
+ * and metadata about the page.
+ */
 export interface StructuredContent {
+  /** The metadata of the parsed page. */
   metadata: PageMetadata;
+  /** The root element of the parsed content. */
   content: ParsedElement;
+  /** An error message, if an error occurred during parsing. */
   error?: string;
 }
 
+/**
+ * The result of a DOM map creation process.
+ */
 export interface DOMMapResult {
+  /** The URL of the page. */
   url?: string;
+  /** The title of the page. */
   title?: string;
+  /** The timestamp of when the DOM map was created. */
   timestamp: string;
+  /** The selector of the root element of the map. */
   selector?: string;
+  /** The root node of the DOM map. */
   domMap: DOMMapNode;
+  /** The format identifier, always 'dom-map'. */
   format: 'dom-map';
+  /** An error message, if an error occurred. */
   error?: string;
 }
 
@@ -158,11 +252,6 @@ function isHTMLInputElement(element: Element): element is HTMLInputElement {
   return element.tagName.toUpperCase() === 'INPUT' && 'value' in element;
 }
 
-// moved to selector utils
-// function isValidCSSIdentifier(str: string): boolean {
-//   return /^[a-zA-Z_-][a-zA-Z0-9_-]*$/.test(str);
-// }
-
 // Centralized HTML input validation
 function validateHtmlInput(html: string): string | null {
   if (!html || typeof html !== 'string') {
@@ -180,10 +269,6 @@ function validateHtmlInput(html: string): string | null {
 
   return null;
 }
-
-// Enhanced CSS escaping with fallback
-// moved to selector utils
-// function safeCssEscape(value: string): string { /* ... */ }
 
 // Unified selector builder - replaces multiple selector generation functions
 // Removed local buildUniqueSelector implementation; using shared utility from '@/lib/dom/selector'
@@ -519,108 +604,6 @@ function isValidDOMMapElement(
 function generateSelector(element: Element, doc: Document): string {
   // use shared utility for consistency
   return buildUniqueSelector(element, doc);
-}
-
-// @deprecated Use buildUniqueSelector instead - this function will be removed in a future version
-export function generateSimpleSelector(element: Element): string {
-  // Deprecated: use buildUniqueSelector instead
-  // Keeping for backward compatibility during transition
-  const id = element.getAttribute('id');
-  if (id && isValidCSSIdentifier(id)) {
-    return '#' + id;
-  }
-
-  const className = element.getAttribute('class');
-  if (className?.trim()) {
-    const classes = className.trim().split(/\s+/);
-    const validClass = classes.find((cls) => isValidCSSIdentifier(cls));
-    if (validClass) {
-      return '.' + validClass;
-    }
-  }
-
-  return element.tagName.toLowerCase();
-}
-
-// @deprecated Use buildUniqueSelector instead - this function will be removed in a future version
-export function generateHierarchicalSelector(
-  element: Element,
-  doc: Document,
-): string {
-  // Deprecated: use buildUniqueSelector instead
-  // Keeping for backward compatibility during transition
-  const path: string[] = [];
-  let current: Element | null = element;
-
-  while (current && current !== doc.documentElement) {
-    const selector = generateElementSelectorWithIndex(current);
-    path.unshift(selector);
-    current = current.parentElement;
-  }
-
-  // Start with the full path and reduce until we find a unique selector
-  for (let i = 0; i < path.length; i++) {
-    const partialSelector = path.slice(i).join(' > ');
-    if (isSelectorUnique(partialSelector, element, doc)) {
-      return partialSelector;
-    }
-  }
-
-  // Fallback to full path
-  return path.join(' > ');
-}
-
-// @deprecated Use buildUniqueSelector instead - this function will be removed in a future version
-export function generateElementSelectorWithIndex(element: Element): string {
-  // Deprecated: use buildUniqueSelector instead
-  // Keeping for backward compatibility during transition
-  const tag = element.tagName.toLowerCase();
-
-  // Try ID first
-  const id = element.getAttribute('id');
-  if (id && isValidCSSIdentifier(id)) {
-    return `${tag}#${id}`;
-  }
-
-  // Try class
-  const className = element.getAttribute('class');
-  if (className?.trim()) {
-    const classes = className.trim().split(/\s+/);
-    const validClass = classes.find((cls) => isValidCSSIdentifier(cls));
-    if (validClass) {
-      return `${tag}.${validClass}`;
-    }
-  }
-
-  // Add nth-child index for disambiguation
-  const parent = element.parentElement;
-  if (parent) {
-    const siblings = Array.from(parent.children).filter(
-      (child) => child.tagName === element.tagName,
-    );
-
-    if (siblings.length > 1) {
-      const index = siblings.indexOf(element) + 1;
-      return `${tag}:nth-child(${index})`;
-    }
-  }
-
-  return tag;
-}
-
-function isSelectorUnique(
-  selector: string,
-  targetElement: Element,
-  doc: Document,
-): boolean {
-  try {
-    const elements = doc.querySelectorAll(selector);
-    return elements.length === 1 && elements[0] === targetElement;
-  } catch (error) {
-    // Invalid selector - log for debugging but don't throw
-    logger.debug('Selector validation failed', { selector, error });
-    return false;
-  }
 }
 
 // Common parsing pipeline
@@ -964,7 +947,14 @@ function handleDOMMapError(error: unknown, context: string): DOMMapResult {
   }
 }
 
-// Public API functions
+/**
+ * Parses an HTML string into a structured, simplified tree of `ParsedElement` objects.
+ * This function is designed to create a clean, content-focused representation of the HTML.
+ *
+ * @param htmlString The HTML string to parse.
+ * @param options Optional parsing options to control the output.
+ * @returns A `StructuredContent` object containing the parsed content and metadata.
+ */
 export function parseHTMLToStructured(
   htmlString: string,
   options: ParseOptions = {},
@@ -995,6 +985,14 @@ export function parseHTMLToStructured(
   }
 }
 
+/**
+ * Parses an HTML string into a detailed DOM map, focusing on interactable elements.
+ * The DOM map provides a rich, structured view of the page's interactive components.
+ *
+ * @param htmlString The HTML string to parse.
+ * @param options Optional options to control the DOM map creation.
+ * @returns A `DOMMapResult` object containing the DOM map and metadata.
+ */
 export function parseHTMLToDOMMap(
   htmlString: string,
   options: DOMMapOptions = {},
@@ -1028,6 +1026,12 @@ export function parseHTMLToDOMMap(
   }
 }
 
+/**
+ * Extracts metadata (title, URL, timestamp) from an HTML string.
+ *
+ * @param htmlString The HTML string to extract metadata from.
+ * @returns A `PageMetadata` object. Returns an empty object on failure.
+ */
 export function extractHTMLMetadata(htmlString: string): PageMetadata {
   try {
     const validationError = validateHtmlInput(htmlString);
@@ -1062,41 +1066,6 @@ const INTERACTABLE_SELECTORS = [
   '[onclick]',
   '[data-action]',
 ].join(',');
-
-function generateUniqueSelector(element: Element, document: Document): string {
-  // Use the unified selector builder for consistency
-  return buildUniqueSelector(element, document);
-}
-
-// @deprecated Use buildUniqueSelector instead - this function will be removed in a future version
-export function generateStructuralPath(element: Element): string {
-  const path: string[] = [];
-  let current: Element | null = element;
-
-  while (current && current.tagName && current !== document.body) {
-    const tagName = current.tagName.toLowerCase();
-    const parent: Element | null = current.parentElement;
-
-    if (parent) {
-      const siblings = Array.from(parent.children).filter(
-        (el: Element) => el.tagName === current?.tagName,
-      );
-      if (siblings.length > 1 && current) {
-        const index = siblings.indexOf(current) + 1;
-        path.unshift(`${tagName}:nth-child(${index})`);
-      } else {
-        path.unshift(tagName);
-      }
-    } else {
-      path.unshift(tagName);
-    }
-
-    current = parent;
-    if (path.length > 6) break; // Limit path length for performance
-  }
-
-  return path.join(' > ');
-}
 
 function isElementVisible(element: Element): boolean {
   // DOMParser environment doesn't support getComputedStyle() or getBoundingClientRect()
@@ -1183,7 +1152,7 @@ function parseElementToInteractable(
   }
 
   const interactableElement: InteractableElement = {
-    selector: generateUniqueSelector(element, document),
+    selector: buildUniqueSelector(element, document),
     type: getElementType(element),
     text: getElementText(element),
     enabled:
@@ -1202,6 +1171,14 @@ function parseElementToInteractable(
   return interactableElement;
 }
 
+/**
+ * Parses an HTML string to extract a list of all interactable elements.
+ *
+ * @param htmlString The HTML string to parse.
+ * @param scopeSelector An optional CSS selector to define the scope of the search. Defaults to 'body'.
+ * @param options Optional options to control the extraction process.
+ * @returns An `InteractableResult` object containing the list of elements and metadata.
+ */
 export function parseHtmlToInteractables(
   htmlString: string,
   scopeSelector: string = 'body',

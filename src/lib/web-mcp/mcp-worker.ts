@@ -1,10 +1,12 @@
 /**
- * 🌐 Web Worker MCP Server Implementation
+ * @file Web Worker implementation for running MCP (Model Context Protocol) servers.
  *
- * This worker runs MCP servers in a web worker environment,
- * providing MCP-compatible functionality without Node.js/Python dependencies.
+ * This script runs in a separate thread as a Web Worker, providing an isolated
+ * environment for executing MCP-compatible servers and tools without blocking the
+ * main UI thread. It communicates with the main application using `postMessage`.
  *
- * Designed for Vite's ?worker import system
+ * It uses static imports for server modules to ensure compatibility with bundlers
+ * like Vite and to provide better type safety.
  */
 
 import type {
@@ -16,10 +18,13 @@ import type {
 
 // Static imports for MCP server modules to avoid Vite dynamic import warnings
 // This approach provides better bundling compatibility and type safety
-import contentStoreServer from './modules/content-store';
 import planningServer from './modules/planning-server';
+import playbookStore from './modules/playbook-store';
 
-// Add console logging for debugging since we can't use our logger in worker context
+/**
+ * A simple logger for the worker context, as the main logger is not available here.
+ * @internal
+ */
 const log = {
   debug: (message: string, data?: unknown) => {
     console.log(`[WebMCP Worker][DEBUG] ${message}`, data || '');
@@ -38,99 +43,41 @@ const log = {
 // Static module registry - using direct imports instead of dynamic imports
 // This eliminates Vite bundling warnings and provides better type safety
 const MODULE_REGISTRY = [
-  { key: 'content-store', module: contentStoreServer },
   { key: 'planning', module: planningServer },
+  { key: 'playbook', module: playbookStore },
   // Future modules can be added here with static imports
 ] as const;
 
 // Initialize server instances directly with static modules
-const serverInstances = new Map<string, WebMCPServer | null>(
+const serverInstances = new Map<string, WebMCPServer>(
   MODULE_REGISTRY.map(({ key, module }) => [key, module]),
 );
 
 /**
- * Load MCP servers - simplified with static imports
- * Since we're using static imports, servers are already loaded at initialization
+ * Retrieves an MCP server instance from the static registry.
+ * Since servers are loaded via static imports, this is a simple lookup.
+ * @param serverName The name of the server to retrieve.
+ * @returns The WebMCPServer instance.
+ * @throws An error if the server is not found.
+ * @internal
  */
-async function loadServers(): Promise<void> {
-  try {
-    log.debug('MCP servers already loaded via static imports');
-
-    // Log loaded servers for debugging
-    MODULE_REGISTRY.forEach(({ key, module }) => {
-      if (module) {
-        log.debug(`${key} server loaded statically`);
-      } else {
-        log.warn(`${key} server module is null`);
-      }
-    });
-
-    log.info('Static server loading completed');
-  } catch (error) {
-    log.error('Critical error during static server loading', error);
-  }
-}
-
-const getServerRegistry = (): Map<string, WebMCPServer | null> => {
-  return serverInstances;
-};
-
-// Cache for loaded MCP servers
-const mcpServers = new Map<string, WebMCPServer>();
-
-/**
- * Load an MCP server from the registry
- */
-async function loadMCPServer(serverName: string): Promise<WebMCPServer> {
-  if (mcpServers.has(serverName)) {
-    return mcpServers.get(serverName)!;
-  }
-
-  try {
-    // Servers are already loaded via static imports, no need to load dynamically
-    // This check is kept for safety but should always pass with static imports
-    const allServersLoaded = Array.from(serverInstances.values()).every(
-      (s) => s !== null,
-    );
-    if (!allServersLoaded) {
-      log.warn('Some servers are not loaded, attempting to reload');
-      await loadServers();
-    }
-
-    // Get server from registry
-    const serverRegistry = getServerRegistry();
-    const server = serverRegistry.get(serverName);
-
-    if (!server) {
-      const availableServers = Array.from(serverRegistry.keys());
-      throw new Error(
-        `Unknown MCP server: ${serverName}. Available: ${availableServers.join(', ')}`,
-      );
-    }
-
-    // Validate server structure
-    if (
-      !server.name ||
-      !server.tools ||
-      typeof server.callTool !== 'function'
-    ) {
-      throw new Error(`Invalid MCP server module: ${serverName}`);
-    }
-
-    mcpServers.set(serverName, server);
-    log.info('Server loaded', { serverName, toolCount: server.tools.length });
-    return server;
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    log.error('Failed to load server', { serverName, error: errorMessage });
+function getMCPServer(serverName: string): WebMCPServer {
+  const server = serverInstances.get(serverName);
+  if (!server) {
+    const availableServers = Array.from(serverInstances.keys());
     throw new Error(
-      `Failed to load MCP server: ${serverName} - ${errorMessage}`,
+      `Unknown MCP server: ${serverName}. Available: ${availableServers.join(', ')}`,
     );
   }
+  return server;
 }
 
 /**
- * Handle MCP message and return appropriate response
+ * Handles an incoming `WebMCPMessage` from the main thread, routes it to the
+ * appropriate action (e.g., ping, loadServer, callTool), and returns a response.
+ * @param message The message from the main thread.
+ * @returns A promise that resolves to an `MCPResponse` to be sent back to the main thread.
+ * @internal
  */
 async function handleMCPMessage(
   message: WebMCPMessage,
@@ -163,7 +110,7 @@ async function handleMCPMessage(
           throw new Error('Server name is required for loadServer');
         }
 
-        const loadedServer = await loadMCPServer(serverName);
+        const loadedServer = getMCPServer(serverName);
         const serverInfo = {
           name: loadedServer.name,
           description: loadedServer.description,
@@ -189,7 +136,7 @@ async function handleMCPMessage(
         if (!serverName) {
           // Return tools from all loaded servers
           const allTools: MCPTool[] = [];
-          for (const server of mcpServers.values()) {
+          for (const server of serverInstances.values()) {
             allTools.push(...server.tools);
           }
           return {
@@ -207,7 +154,7 @@ async function handleMCPMessage(
           };
         } else {
           // Return tools from specific server
-          const server = await loadMCPServer(serverName);
+          const server = getMCPServer(serverName);
           return {
             jsonrpc: '2.0',
             id,
@@ -231,13 +178,13 @@ async function handleMCPMessage(
           );
         }
 
-        const server = await loadMCPServer(serverName);
+        const server = getMCPServer(serverName);
 
         try {
           const result = await server.callTool(toolName, args);
 
-          // Log the detailed tool result for debugging/UI inspection
-          log.info('callTool result', { id, serverName, toolName, result });
+          // Log tool call completion (without full result for performance)
+          log.debug('Tool call completed', { id, serverName, toolName });
 
           // Return MCPResponse directly since callTool now returns MCPResponse
           // but update the id to match the request
@@ -275,7 +222,7 @@ async function handleMCPMessage(
         if (!serverName) {
           throw new Error('Server name is required for getServiceContext');
         }
-        const server = await loadMCPServer(serverName);
+        const server = getMCPServer(serverName);
         if (server.getServiceContext) {
           const context = await server.getServiceContext();
           return {
@@ -309,6 +256,43 @@ async function handleMCPMessage(
         };
       }
 
+      case 'setContext': {
+        if (!serverName) {
+          throw new Error('Server name is required for setContext');
+        }
+        const server = getMCPServer(serverName);
+        if (server.setContext) {
+          await server.setContext((args as Record<string, unknown>) || {});
+          return {
+            jsonrpc: '2.0',
+            id,
+            result: {
+              content: [
+                {
+                  type: 'text',
+                  text: 'Context set successfully',
+                },
+              ],
+              structuredContent: { success: true },
+            },
+          };
+        }
+        // Fallback for servers without setContext
+        return {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            content: [
+              {
+                type: 'text',
+                text: 'Server does not support context setting',
+              },
+            ],
+            structuredContent: { success: false },
+          },
+        };
+      }
+
       default: {
         throw new Error(`Unknown MCP message type: ${type}`);
       }
@@ -336,7 +320,8 @@ async function handleMCPMessage(
 }
 
 /**
- * Worker message handler
+ * The main message handler for the worker. It listens for messages from the main
+ * thread, passes them to `handleMCPMessage`, and posts the response back.
  */
 self.onmessage = async (event: MessageEvent<WebMCPMessage>) => {
   const messageId = event.data?.id || 'unknown';
@@ -366,26 +351,20 @@ self.onmessage = async (event: MessageEvent<WebMCPMessage>) => {
 };
 
 /**
- * Worker error handler
+ * The global error handler for the worker.
  */
 self.onerror = (error) => {
   log.error('Worker error', { error: String(error) });
 };
 
 /**
- * Worker unhandled rejection handler
+ * The handler for unhandled promise rejections in the worker.
  */
 self.onunhandledrejection = (event) => {
   log.error('Unhandled rejection', { reason: String(event.reason) });
   event.preventDefault();
 };
 
-// Initialize worker and load servers
+// Initialize worker
 log.info('Initializing WebMCP worker');
-loadServers()
-  .then(() => {
-    log.info('WebMCP worker ready');
-  })
-  .catch((error) => {
-    log.error('Worker initialization failed', { error: String(error) });
-  });
+log.info('WebMCP worker ready - servers loaded via static imports');

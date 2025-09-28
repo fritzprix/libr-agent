@@ -262,10 +262,10 @@ export const useUnifiedMCP = () => {
           response = await executeExternalRef.current(actualToolCall);
         }
 
-        // Service info 추출
+        // Extract service info
         const serviceInfo = extractServiceInfo(resolvedToolName, toolType);
 
-        // MCPResponse의 content에 serviceInfo 추가
+        // Add serviceInfo to MCPResponse content
         if (response.result?.content) {
           response.result.content = response.result.content.map(
             (content: MCPContent) => ({

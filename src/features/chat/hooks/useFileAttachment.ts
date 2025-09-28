@@ -119,21 +119,20 @@ export function useFileAttachment() {
             continue;
           }
 
-          const blobUrl = URL.createObjectURL(fileObj);
-
+          // Remove blob URL creation - use actual file path
           filesToUpload.push({
-            url: blobUrl,
+            url: `file://${filePath}`, // Use actual file path
             mimeType,
             filename,
             file: fileObj,
-            cleanup: () => URL.revokeObjectURL(blobUrl),
+            cleanup: () => {}, // No cleanup needed for file paths
           });
 
           logger.info(`File prepared for batch upload`, {
             filename,
             filePath,
             mimeType,
-            blobUrl,
+            fileUrl: `file://${filePath}`,
           });
         } catch (error) {
           logger.error(`Error preparing dropped file ${filePath}:`, {
@@ -215,7 +214,6 @@ export function useFileAttachment() {
           continue;
         }
 
-        let fileUrl = '';
         try {
           logger.debug(`Starting file processing`, {
             filename: file.name,
@@ -224,15 +222,14 @@ export function useFileAttachment() {
             sessionId: currentSession?.id,
           });
 
-          fileUrl = URL.createObjectURL(file);
-
+          // Remove blob URL creation - let ResourceAttachmentContext handle file URL
           addPendingFiles([
             {
-              url: fileUrl,
+              url: '', // Empty URL - ResourceAttachmentContext will handle file:// URL
               mimeType: file.type,
               filename: file.name,
               file: file,
-              blobCleanup: () => URL.revokeObjectURL(fileUrl),
+              blobCleanup: () => {}, // No cleanup needed since we're not creating blob URLs
             },
           ]);
 
@@ -259,9 +256,7 @@ export function useFileAttachment() {
           alert(
             `Error processing file "${file.name}": ${error instanceof Error ? error.message : String(error)}`,
           );
-          if (fileUrl) {
-            URL.revokeObjectURL(fileUrl);
-          }
+          // No blob URL cleanup needed since we're not creating blob URLs
         }
       }
 

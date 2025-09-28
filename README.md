@@ -2,7 +2,7 @@
 
 ## 📋 Project Overview
 
-**SynapticFlow: Making MCP Tool Integration Accessible to All Users**
+### SynapticFlow: Making MCP Tool Integration Accessible to All Users
 
 SynapticFlow is a desktop AI agent platform designed to solve two critical problems in the AI ecosystem:
 
@@ -34,33 +34,113 @@ SynapticFlow is a desktop AI agent platform designed to solve two critical probl
 
 ### ✅ **Comprehensive Built-in Tool Ecosystem**
 
-**🛡️ Secure File Management:**
+SynapticFlow provides a powerful suite of built-in tools that enable AI agents to interact with web browsers, manage files, execute code, and perform advanced automation tasks. These tools are organized into three main categories:
 
-- **SecureFileManager**: Advanced path validation and sandboxed operations
-- **Content Store**: Upload, index, and full-text search across PDF, DOCX, XLSX files
-- **File Attachments**: Smart MIME type handling with preview capabilities
-- **Document Processing**: Extract and analyze content from multiple formats
+#### 🌐 **Browser Automation Tools**
 
-**⚡ Code Execution & Development:**
+**Session Management:**
 
-- **Python Sandbox**: Secure code execution with real-time result capture
-- **TypeScript Runtime**: JavaScript/TypeScript evaluation environment
-- **Output Management**: Comprehensive execution logging and error handling
-- **Development Tools**: Built-in debugging and testing utilities
+- **Create Interactive Sessions**: Launch browser windows with full control
+- **Session Persistence**: Maintain state across operations
+- **Multi-Session Support**: Run multiple browser instances simultaneously
 
-**🌐 Browser Automation:**
+**Navigation & Interaction:**
 
-- **Interactive Browser Server**: Automated web interactions and scraping
-- **Session Management**: Persistent browser sessions with state management
-- **Content Extraction**: Clean markdown conversion from web pages
-- **Web Integration**: Seamless web data processing pipeline
+- **Smart Navigation**: Navigate to URLs, back/forward through history
+- **Element Interaction**: Click buttons, input text, scroll pages
+- **Content Extraction**: Convert web pages to markdown, extract structured data
+- **Interactive Element Discovery**: Automatically identify clickable elements
 
-**🔗 Advanced MCP Integration:**
+**Advanced Features:**
 
-- **Dual Backend Support**: Both Rust Tauri and Web Worker implementations
-- **Security Validation**: Built-in SecurityValidator with comprehensive protection
-- **Tool Execution Context**: Unified calling interface across all backends
-- **Error Normalization**: Robust error handling and reporting system
+- **Error Recovery**: Comprehensive failure analysis and retry mechanisms
+- **Content Processing**: Clean markdown conversion from complex web pages
+- **Session Monitoring**: Real-time status tracking and management
+
+#### 🛡️ **Secure File & Content Management**
+
+**SecureFileManager:**
+
+- **Path Validation**: Advanced security checks prevent unauthorized access
+- **Sandboxed Operations**: Isolated file system interactions
+- **MIME Type Handling**: Smart processing of PDFs, DOCX, XLSX, and more
+
+**Content Store with BM25 Search:**
+
+- **Document Indexing**: Upload and index files with semantic search
+- **Full-Text Search**: BM25 algorithm for fast, accurate keyword matching
+- **Content Chunking**: Intelligent processing of large documents
+- **Multi-Format Support**: Handle various document types seamlessly
+
+**File Operations:**
+
+- **Read/Write Files**: Full file system access with permission controls
+- **Directory Management**: Browse, search, and organize file structures
+- **Import/Export**: Transfer files between systems and formats
+
+#### ⚡ **Code Execution & Development Tools**
+
+**Python Sandbox:**
+
+- **Secure Execution**: Isolated Python runtime environment
+- **Real-time Capture**: Live output streaming and error handling
+- **Package Management**: Controlled dependency access
+
+**TypeScript/JavaScript Runtime:**
+
+- **Modern JS Support**: ES6+ features with TypeScript compilation
+- **Module System**: Full npm ecosystem integration
+- **Debugging Tools**: Comprehensive error reporting and stack traces
+
+**Shell Command Execution:**
+
+- **System Integration**: Execute terminal commands safely
+- **Output Processing**: Structured result parsing and formatting
+- **Environment Control**: Managed execution contexts
+
+#### 🔗 **Advanced MCP Integration**
+
+**Dual Backend Architecture:**
+
+- **Rust Backend**: Native performance for system-level operations
+- **Web Worker Backend**: Browser-based tools for client-side functionality
+
+**Planning & Task Management:**
+
+- **Goal Setting**: Define and track complex objectives
+- **Todo System**: Structured task breakdown and progress tracking
+- **Observation Logging**: Context-aware decision making
+- **State Persistence**: Maintain planning state across sessions
+
+**Security & Validation:**
+
+- **SecurityValidator**: Built-in path traversal protection
+- **Input Sanitization**: Automatic cleaning of all user inputs
+- **Process Isolation**: MCP servers run in secure child processes
+
+#### 🌍 **External MCP Server Integration**
+
+**Unlimited Tool Expansion:**
+
+- **Connect Any MCP Server**: Integrate third-party MCP servers via stdio protocol
+- **Community Ecosystem**: Access tools from the growing MCP server community
+- **Custom Tool Development**: Build and connect your own specialized MCP servers
+- **Real-time Communication**: Secure stdio-based communication with external servers
+
+**Easy Server Management:**
+
+- **GUI Configuration**: Add and manage external MCP servers through the interface
+- **Server Discovery**: Automatic tool enumeration and capability detection
+- **Connection Monitoring**: Real-time status tracking and error reporting
+- **Security Validation**: Built-in validation for all external server connections
+
+**Supported Server Types:**
+
+- **File System Servers**: Enhanced file operations and management
+- **Database Servers**: SQL and NoSQL database interactions
+- **API Integration Servers**: REST, GraphQL, and webhook integrations
+- **Specialized Tools**: Domain-specific tools for various industries
+- **Custom Servers**: Your own MCP server implementations
 
 ### ✅ **Advanced Multi-LLM Ecosystem**
 
@@ -73,7 +153,6 @@ SynapticFlow is a desktop AI agent platform designed to solve two critical probl
 - **🔥 Fireworks**: DeepSeek R1, Qwen3 235B MoE, Llama 4 Maverick/Scout
 - **🧠 Cerebras**: Ultra-fast inference with industry-leading speed
 - **🏠 Ollama**: Local models with zero cost (Llama, Mistral, Qwen, CodeLlama)
-- **🎯 Empty**: Custom provider configurations
 
 **Advanced Features:**
 
@@ -113,6 +192,125 @@ SynapticFlow is a desktop AI agent platform designed to solve two critical probl
 - **Dexie**: TypeScript-friendly IndexedDB wrapper for local data
 - **Zustand**: Lightweight, scalable state management solution
 
+## 🚀 Getting Started & Development
+
+This guide covers how to get the SynapticFlow application running for both regular use and local development.
+
+### Option 1: Download Release (Recommended for Users)
+
+Visit our [Releases page](https://github.com/SynapticFlow/SynapticFlow/releases) to download the latest version for your operating system.
+
+### Option 2: Build and Run from Source (for Developers)
+
+Follow these steps to set up your local development environment.
+
+#### 1. Prerequisites
+
+Ensure you have the following software installed:
+
+- [Rust](https://rustup.rs/) and Cargo
+- [Node.js](https://nodejs.org/) (v18 or later)
+- [pnpm](https://pnpm.io/) package manager
+
+#### 2. Installation
+
+Clone the repository and install the required dependencies:
+
+```bash
+git clone https://github.com/SynapticFlow/SynapticFlow.git
+cd SynapticFlow
+pnpm install
+```
+
+#### 3. Environment Variables
+
+For some features, particularly those involving cloud-based LLM providers, you will need to configure API keys. Create a `.env` file in the root of the project to store your keys.
+
+Additionally, you can configure the database path:
+
+- `SYNAPTICFLOW_DB_PATH`: Overrides the default location for the application's SQLite database.
+
+#### 4. Running the Application
+
+- **Full Development Mode (Recommended)**:
+
+  ```bash
+  pnpm tauri dev
+  ```
+
+  This command starts both the Rust backend and the React frontend in a single, hot-reloading development environment.
+
+- **Frontend-Only Mode**:
+
+  ```bash
+  pnpm dev
+  ```
+
+  This command runs only the React frontend. Note that all backend functionality (Tauri commands) will be unavailable.
+
+#### 5. Code Quality & Testing
+
+- **Linting**:
+
+  ```bash
+  pnpm lint      # Check for code quality issues
+  pnpm lint:fix  # Automatically fix lint issues
+  ```
+
+- **Formatting**:
+
+  ```bash
+  pnpm format         # Format all files with Prettier
+  pnpm format:check   # Check for formatting compliance
+  ```
+
+- **Testing**:
+
+  ```bash
+  pnpm test      # Run the test suite
+  ```
+
+#### 6. Building for Production
+
+To create an optimized, production-ready desktop application:
+
+```bash
+pnpm tauri build
+```
+
+## 📁 Project Structure
+
+The codebase is organized into a Rust backend and a React frontend, with a focus on modularity and clear separation of concerns. The source code is now **fully documented** with Rustdoc and JSDoc comments, so feel free to explore it for more in-depth understanding.
+
+```bash
+synaptic-flow/
+├── src/                        # React Frontend (Feature-Driven Architecture)
+│   ├── app/                    # App entry, root layout, global providers
+│   ├── assets/                 # Static assets (images, svgs)
+│   ├── components/             # Shared UI components (shadcn/ui, layout, etc.)
+│   ├── features/               # Feature modules (chat, assistant, settings, etc.)
+│   ├── context/                # React context providers
+│   ├── hooks/                  # Custom React hooks for business logic
+│   ├── lib/                    # Core business logic, services, and utilities
+│   │   ├── ai-service/         # LLM provider integration services
+│   │   ├── db/                 # IndexedDB (Dexie) service
+│   │   └── ...                 # Other core utilities
+│   └── types/                  # TypeScript type definitions
+├── src-tauri/                  # Rust Backend (High-Performance Core)
+│   ├── src/
+│   │   ├── lib.rs              # Main Tauri application library
+│   │   ├── main.rs             # Application entry point
+│   │   ├── mcp/                # MCP server integration modules
+│   │   ├── services/           # Core backend services (browser, file manager)
+│   │   ├── session/            # Session management logic
+│   │   └── commands/           # Tauri command definitions
+│   ├── Cargo.toml              # Rust dependencies
+│   └── tauri.conf.json         # Tauri 2.x configuration
+├── docs/                       # Documentation and guides
+├── package.json                # Node.js dependencies and scripts
+└── ...                         # Configuration files (vite, tailwind, etc.)
+```
+
 ## 🛡️ Security & Performance
 
 **Built-in Security:**
@@ -140,165 +338,25 @@ SynapticFlow is a **cross-platform desktop application** that runs natively on:
 - **Version**: Windows 10 and later
 - **Architecture**: x64
 - **Installation**: MSI installer (`SynapticFlow_x64_en-US.msi`)
-- **Features**: Full feature parity with native Windows integration
 
 ### macOS
 
 - **Version**: macOS 10.15 (Catalina) and later
 - **Architecture**: Intel and Apple Silicon (universal binary)
 - **Installation**: Application bundle (`.app.tar.gz`)
-- **Features**: Native macOS integration with system tray support
 
 ### Linux
 
 - **Distributions**: Ubuntu, Debian, Fedora, Arch Linux, and others
 - **Architecture**: x64
-- **Installation**:
-  - **Ubuntu/Debian**: `.deb` package
-  - **Universal**: AppImage (no installation required)
-- **Features**: Native Linux integration with system tray
-
-**System Requirements:**
-
-- 4GB RAM minimum, 8GB recommended
-- Modern 64-bit operating system
-- Internet connection for AI provider APIs
-
-## 📁 Application Data and Caching
-
-SynapticFlow stores all its data, including session information, agent configurations, and the workspace cache, in a dedicated directory on your local system. This ensures that your data is private and not stored in the cloud.
-
-The storage location varies by operating system:
-
-- **Windows**: `%APPDATA%\com.synaptic.flow`
-- **macOS**: `~/Library/Application Support/com.synaptic.flow`
-- **Linux**: `~/.local/share/com.synaptic.flow`
-
-Within this directory, each session's workspace is stored in a separate subfolder under `sessions/[SESSION_ID]/workspace`. All file and code execution tools operate exclusively within this sandboxed workspace directory for security.
-
-## 📁 Project Structure
-
-```bash
-synaptic-flow/
-├── src/                        # React Frontend (Feature-Driven Architecture)
-│   ├── app/                    # App entry, root layout, global providers
-│   │   ├── App.tsx             # Main application component
-│   │   ├── main.tsx            # React entry point
-│   │   └── globals.css         # Global styles
-│   ├── assets/                 # Static assets (images, svgs)
-│   ├── components/             # Shared UI components (20+ shadcn/ui components)
-│   │   ├── ui/                 # shadcn/ui component library
-│   │   ├── layout/             # App layout components
-│   │   └── common/             # Reusable common components
-│   ├── features/               # Feature modules (7 major features)
-│   │   ├── assistant/          # AI agent management and configuration
-│   │   ├── chat/               # Real-time chat interface with tool calling
-│   │   ├── group/              # Multi-agent collaboration system
-│   │   ├── history/            # Conversation history and search
-│   │   ├── prompts/            # Prompt management and templates
-│   │   ├── session/            # Session management with file attachments
-│   │   ├── settings/           # Configuration and API key management
-│   │   └── tools/              # Built-in tool ecosystem and MCP integration
-│   ├── context/                # React context system (8 specialized contexts)
-│   │   ├── AssistantContext.tsx   # Agent state management
-│   │   ├── BuiltInToolContext.tsx # Tool execution context
-│   │   ├── MCPServerContext.tsx   # MCP server management
-│   │   └── ...                   # Additional contexts
-│   ├── hooks/                  # Custom React hooks
-│   │   ├── use-rust-backend.ts    # Tauri backend integration
-│   │   ├── use-mcp-server.ts      # MCP server management
-│   │   └── ...                   # Feature-specific hooks
-│   ├── lib/                    # Service layer and business logic
-│   │   ├── ai-service.ts          # LLM provider integration
-│   │   ├── logger.ts              # Centralized logging system
-│   │   ├── secure-file-manager.ts # Advanced file operations
-│   │   ├── rust-backend-client.ts # Backend communication layer
-│   │   └── ...                   # Additional services
-│   ├── models/                 # TypeScript type definitions
-│   │   ├── chat.ts               # Chat and message types
-│   │   ├── mcp-types.ts          # MCP protocol types (680+ lines)
-│   │   └── llm-config.ts         # LLM configuration types
-│   └── config/                 # Configuration files
-│       └── llm-providers.json    # LLM provider definitions
-├── src-tauri/                 # Rust Backend (Advanced Architecture)
-│   ├── src/
-│   │   ├── lib.rs                 # Main Tauri application
-│   │   ├── mcp/                   # MCP server integration modules
-│   │   ├── security/              # Security validation and sandboxing
-│   │   ├── tools/                 # Built-in tool implementations
-│   │   └── commands/              # Tauri command definitions
-│   ├── Cargo.toml             # Rust dependencies
-│   └── tauri.conf.json        # Tauri 2.x configuration
-├── docs/                      # Documentation and guides
-│   └── history/               # Refactoring and change history
-├── package.json               # Node.js dependencies and scripts
-├── tailwind.config.js         # Tailwind CSS 4.x configuration
-└── vite.config.ts             # Vite build configuration
-```
-
-## 🚀 Getting Started
-
-Ready to use SynapticFlow? Here's how to get up and running:
-
-### Option 1: Download Release (Recommended)
-
-Visit our [Releases](https://github.com/SynapticFlow/SynapticFlow/releases) page to download the latest version for your operating system.
-
-### Option 2: Build from Source
-
-1. **Prerequisites**: Ensure you have [Rust](https://rustup.rs/), [Node.js](https://nodejs.org/) (v18+), and [pnpm](https://pnpm.io/) installed.
-
-2. **Install Dependencies**:
-
-   ```bash
-   pnpm install
-   ```
-
-3. **Development Commands**:
-
-   ```bash
-   # Development
-   pnpm tauri dev              # Start development server with hot reload
-   pnpm dev                    # Frontend-only development mode
-
-   # Code Quality
-   pnpm lint                   # ESLint checking with strict rules
-   pnpm lint:fix              # Auto-fix lint issues
-   pnpm format                # Prettier formatting
-   pnpm format:check          # Check formatting compliance
-
-   # Testing & Building
-   pnpm test                  # Run comprehensive test suite
-   pnpm build                 # Production build optimization
-   pnpm tauri build          # Create optimized desktop app bundle
-
-   # Diagnostics
-   pnpm diagnose             # System diagnostic for troubleshooting
-   ```
-
-### Next Steps
-
-1. **Configure Your First LLM**: Open Settings and add your preferred AI provider's API key
-2. **Create an Agent**: Set up your first AI assistant with specific tools and personality
-3. **Connect MCP Tools**: Add external MCP servers or use our built-in tools
-4. **Start Collaborating**: Begin conversations with your AI agents
-
-## 🔥 Performance Highlights
-
-**Speed & Efficiency:**
-
-- **⚡ Ultra-Fast Models**: Cerebras delivering 1,800+ tokens/second
-- **💰 Cost Optimization**: 60-80% cost reduction with smart model selection
-- **🚀 Concurrent Operations**: Parallel tool execution for faster results
-- **🤯 Massive Context**: Handle up to 2M tokens in single conversations
+- **Installation**: `.deb` package or a universal AppImage.
 
 ## 📚 Documentation
 
-- **📖 [User Guide](docs/guides/getting-started.md)**: Complete setup and usage instructions
-- **🏗️ [Architecture](docs/app-architecture.md)**: Technical details for developers
-- **🔧 [MCP Integration](docs/mcp.md)**: How to connect and use MCP servers
-- **❓ [Troubleshooting](docs/guides/troubleshooting.md)**: Common issues and solutions
-- **📈 [Refactoring History](docs/history/)**: Detailed change logs and improvements
+- **[Built-in Tools Documentation](docs/builtin-tools.md)**: Comprehensive guide to all available tools including browser automation, file management, code execution, and MCP integration
+- **[External MCP Integration](docs/external-mcp-integration.md)**: Detailed guide on connecting and managing external MCP servers
+- **[Architecture Documentation](docs/architecture/)**: Technical details about system design and implementation
+- **[Contributing Guide](CONTRIBUTING.md)**: Guidelines for contributors and development setup
 
 ## 🤝 Contributing
 
@@ -312,15 +370,6 @@ We welcome contributions! Here's how you can help:
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🌟 Support
-
-If SynapticFlow helps you work more efficiently with AI tools, consider:
-
-- ⭐ **Star this repository** to show your support
-- 🗣️ **Share** with others who might find it useful
-- 🐛 **Report issues** to help us improve
-- 💬 **Join discussions** to shape the future of the project
 
 ---
 

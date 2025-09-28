@@ -100,7 +100,7 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const addMessages = useCallback(
-    async (messagesToAdd: Message[]) => {
+    (messagesToAdd: Message[]): Promise<Message[]> => {
       if (!currentSession) throw new Error('No active session.');
       messagesToAdd.forEach(validateMessage);
       const messagesWithSessionId = messagesToAdd.map((m) => ({
@@ -110,7 +110,7 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
 
       const previousData = data;
 
-      await mutate(
+      return mutate(
         (currentData) => {
           if (!currentData || currentData.length === 0) {
             return [
@@ -131,37 +131,37 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
           return newData;
         },
         { revalidate: false },
-      );
-
-      try {
-        await dbService.messages.upsertMany(messagesWithSessionId);
-      } catch (e) {
-        await mutate(previousData, { revalidate: false });
-        throw e;
-      }
-
-      return messagesWithSessionId;
+      )
+        .then(() => {
+          return dbService.messages.upsertMany(messagesWithSessionId);
+        })
+        .then(() => {
+          return messagesWithSessionId;
+        })
+        .catch((e) => {
+          mutate(previousData, { revalidate: false });
+          throw e;
+        });
     },
     [currentSession, mutate, data, validateMessage],
   );
 
   // 기존 addMessage는 내부적으로 addMessages([message]) 호출
   const addMessage = useCallback(
-    async (message: Message) => {
-      const [added] = await addMessages([message]);
-      return added;
+    (message: Message): Promise<Message> => {
+      return addMessages([message]).then(([added]) => added);
     },
     [addMessages],
   );
 
   const updateMessage = useCallback(
-    async (messageId: string, updates: Partial<Message>) => {
+    (messageId: string, updates: Partial<Message>): Promise<void> => {
       if (!currentSession) throw new Error('No active session.');
 
       // 낙관적 업데이트 전 현재 데이터 백업
       const previousData = data;
 
-      await mutate(
+      return mutate(
         (currentData) => {
           if (!currentData) return [];
           return currentData.map((page) => ({
@@ -172,30 +172,30 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
           }));
         },
         { revalidate: false },
-      );
-
-      try {
-        const existing = messages.find((m) => m.id === messageId);
-        if (!existing) throw new Error(`Message ${messageId} not found.`);
-        await dbService.messages.upsert({ ...existing, ...updates });
-      } catch (e) {
-        logger.error('Failed to update message, rolling back', e);
-        // 실제 롤백: 이전 데이터로 복원
-        await mutate(previousData, { revalidate: false });
-        throw e;
-      }
+      )
+        .then(() => {
+          const existing = messages.find((m) => m.id === messageId);
+          if (!existing) throw new Error(`Message ${messageId} not found.`);
+          return dbService.messages.upsert({ ...existing, ...updates });
+        })
+        .catch((e) => {
+          logger.error('Failed to update message, rolling back', e);
+          // 실제 롤백: 이전 데이터로 복원
+          mutate(previousData, { revalidate: false });
+          throw e;
+        });
     },
     [currentSession, mutate, messages, data],
   );
 
   const deleteMessage = useCallback(
-    async (messageId: string) => {
+    (messageId: string): Promise<void> => {
       if (!currentSession) throw new Error('No active session.');
 
       // 낙관적 업데이트 전 현재 데이터 백업
       const previousData = data;
 
-      await mutate(
+      return mutate(
         (currentData) => {
           if (!currentData) return [];
           return currentData.map((page) => ({
@@ -204,36 +204,43 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
           }));
         },
         { revalidate: false },
-      );
-
-      try {
-        await dbService.messages.delete(messageId);
-      } catch (e) {
-        logger.error('Failed to delete message, rolling back', e);
-        // 실제 롤백: 이전 데이터로 복원
-        await mutate(previousData, { revalidate: false });
-        throw e;
-      }
+      )
+        .then(() => {
+          return dbService.messages.delete(messageId);
+        })
+        .catch((e) => {
+          logger.error('Failed to delete message, rolling back', e);
+          // 실제 롤백: 이전 데이터로 복원
+          mutate(previousData, { revalidate: false });
+          throw e;
+        });
     },
     [currentSession, mutate, data],
   );
 
-  const clearHistory = useCallback(async () => {
+  const clearHistory = useCallback((): Promise<void> => {
     if (!currentSession) throw new Error('No active session.');
 
     // 낙관적 업데이트 전 현재 데이터 백업
     const previousData = data;
 
-    await mutate([], { revalidate: false });
-
-    try {
-      await dbUtils.deleteAllMessagesForSession(currentSession.id);
-    } catch (e) {
-      logger.error('Failed to clear history, rolling back', e);
-      // 실제 롤백: 이전 데이터로 복원
-      await mutate(previousData, { revalidate: false });
-      throw e;
-    }
+    return new Promise<void>((resolve, reject) => {
+      mutate(() => [], { revalidate: false })
+        .then(() => {
+          dbUtils
+            .deleteAllMessagesForSession(currentSession.id)
+            .then(() => {
+              resolve();
+            })
+            .catch((e: unknown) => {
+              logger.error('Failed to clear history, rolling back', e);
+              // 실제 롤백: 이전 데이터로 복원
+              mutate(previousData, { revalidate: false });
+              reject(e);
+            });
+        })
+        .catch(reject);
+    });
   }, [currentSession, mutate, data]);
 
   const contextValue = useMemo(

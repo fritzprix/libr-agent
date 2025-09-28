@@ -175,11 +175,15 @@ pub fn create_replace_lines_in_file_tool() -> MCPTool {
         ),
     );
     item_props.insert(
-        "content".to_string(),
-        string_prop(None, None, Some("The new content for the line range")),
+        "new_content".to_string(),
+        string_prop(
+            None,
+            None,
+            Some("The new content for the line range. Use empty string to delete lines."),
+        ),
     );
 
-    // 기존 line_number 지원을 위한 backward compatibility
+    // Backward compatibility for existing line_number support
     item_props.insert(
         "line_number".to_string(),
         integer_prop(
@@ -191,7 +195,7 @@ pub fn create_replace_lines_in_file_tool() -> MCPTool {
 
     let replacement_item_schema = object_schema(
         item_props,
-        vec!["start_line".to_string(), "content".to_string()],
+        vec!["start_line".to_string()], // new_content is now optional for line deletion
     );
 
     let mut props = HashMap::new();
@@ -210,7 +214,7 @@ pub fn create_replace_lines_in_file_tool() -> MCPTool {
     MCPTool {
         name: "replace_lines_in_file".to_string(),
         title: Some("Replace Lines in File".to_string()),
-        description: "Replace specific lines or line ranges in a file with new content".to_string(),
+        description: "Replace specific lines or line ranges in a file with new content. Use empty content string to delete lines.".to_string(),
         input_schema: object_schema(props, vec!["path".to_string(), "replacements".to_string()]),
         output_schema: None,
         annotations: None,

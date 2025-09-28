@@ -3,7 +3,17 @@ use serde_json::Value;
 
 use crate::mcp::schema::JSONSchema;
 
-/// Convert JSON schema to structured JSONSchema with defensive parsing
+/// Converts a `serde_json::Value` representing a JSON Schema into the structured `JSONSchema` enum.
+///
+/// This function is defensive and attempts to handle malformed schemas by first trying direct
+/// deserialization, and if that fails, applying a set of common fixes before retrying.
+/// If all attempts fail, it returns a `JSONSchema::null()` as a fallback.
+///
+/// # Arguments
+/// * `schema` - The `serde_json::Value` to convert.
+///
+/// # Returns
+/// The converted `JSONSchema`.
 pub fn convert_input_schema(schema: Value) -> JSONSchema {
     // First try direct deserialization
     match serde_json::from_value::<JSONSchema>(schema.clone()) {
@@ -36,7 +46,17 @@ pub fn convert_input_schema(schema: Value) -> JSONSchema {
     }
 }
 
-/// Attempt to fix common schema parsing issues
+/// Attempts to fix common issues in a JSON schema represented as a `serde_json::Value`.
+///
+/// This function recursively traverses the schema and applies fixes such as:
+/// - Inferring and adding a `type` field if it's missing.
+/// - Converting an array of types into a single type string.
+///
+/// # Arguments
+/// * `schema` - The `serde_json::Value` representing the schema to fix.
+///
+/// # Returns
+/// A `Result` containing the potentially fixed `serde_json::Value`.
 pub fn fix_schema_issues(mut schema: Value) -> Result<Value, serde_json::Error> {
     if let Some(obj) = schema.as_object_mut() {
         // Fix missing type field

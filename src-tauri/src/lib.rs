@@ -7,25 +7,86 @@ mod commands;
 mod mcp;
 mod services;
 mod session;
+mod session_isolation;
 
 use commands::browser_commands::*;
+use commands::session_commands;
 use mcp::{MCPResponse, MCPServerConfig, MCPServerManager};
 use services::{InteractiveBrowserServer, SecureFileManager};
 use session::get_session_manager;
 
-// Workspace file management types
+/// Represents a file or directory item in the workspace for display in the frontend.
 #[derive(serde::Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct WorkspaceFileItem {
+    /// The name of the file or directory.
     pub name: String,
+    /// True if the item is a directory.
     pub is_directory: bool,
+    /// The relative path of the item within the workspace.
     pub path: String,
+    /// The size of the file in bytes, or `None` for a directory.
     pub size: Option<u64>,
+    /// The last modified timestamp as a formatted string, or `None`.
     pub modified: Option<String>,
 }
 
-// 전역 MCP 서버 매니저
+/// A global, thread-safe, once-initialized instance of the `MCPServerManager`.
 static MCP_MANAGER: OnceLock<MCPServerManager> = OnceLock::new();
 
+/// A global, thread-safe, once-initialized string for the SQLite database URL.
+static SQLITE_DB_URL: OnceLock<String> = OnceLock::new();
+
+/// Sets the global SQLite database URL. This function will panic if the URL is already set.
+pub fn set_sqlite_db_url(url: String) {
+    SQLITE_DB_URL.set(url).expect("SQLite DB URL already set");
+}
+
+/// Gets a reference to the global SQLite database URL, if it has been set.
+pub fn get_sqlite_db_url() -> Option<&'static String> {
+    SQLITE_DB_URL.get()
+}
+
+/// A synchronous wrapper to initialize and run the application with SQLite support.
+///
+/// This function sets up a Tokio runtime to perform async initialization of the
+/// `MCPServerManager` with a SQLite database, then calls the main `run` function.
+///
+/// # Arguments
+/// * `db_url` - The connection URL for the SQLite database.
+pub fn run_with_sqlite_sync(db_url: String) {
+    // Set the SQLite URL
+    set_sqlite_db_url(db_url.clone());
+    println!("🔄 Initializing SynapticFlow with SQLite support: {db_url}");
+
+    // Create a Tokio runtime for async initialization
+    let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
+
+    rt.block_on(async {
+        let session_manager = get_session_manager().expect("SessionManager not initialized");
+        let session_manager_arc = std::sync::Arc::new(session_manager.clone());
+
+        // Initialize the MCP manager asynchronously
+        let mcp_manager =
+            MCPServerManager::new_with_session_manager_and_sqlite(session_manager_arc, db_url)
+                .await;
+
+        // Set the global MCP manager
+        MCP_MANAGER
+            .set(mcp_manager)
+            .expect("MCP Manager already initialized");
+
+        println!("✅ SQLite-backed MCP Manager initialized");
+    });
+
+    // Call the main run function
+    run();
+}
+
+/// Gets a static reference to the global `MCPServerManager`.
+///
+/// If the manager has not been initialized, it initializes it with the default
+/// `SessionManager`. This function will panic if the `SessionManager` itself is not initialized.
 fn get_mcp_manager() -> &'static MCPServerManager {
     MCP_MANAGER.get_or_init(|| {
         let session_manager = get_session_manager().expect("SessionManager not initialized");
@@ -34,13 +95,22 @@ fn get_mcp_manager() -> &'static MCPServerManager {
     })
 }
 
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+/// A simple command to test the frontend-backend connection.
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {name}! You've been greeted from Rust!")
 }
 
-/// List files and directories in the workspace, returning structured JSON
+/// Lists files and directories in the current session's workspace.
+///
+/// This command reads the contents of a specified path within the session's workspace,
+/// performs security validation, and returns a structured list of items.
+///
+/// # Arguments
+/// * `path` - An optional relative path within the workspace. Defaults to the root.
+///
+/// # Returns
+/// A `Result` containing a vector of `WorkspaceFileItem` objects, or an error string on failure.
 #[tauri::command]
 async fn list_workspace_files(path: Option<String>) -> Result<Vec<WorkspaceFileItem>, String> {
     use chrono::{DateTime, Utc};
@@ -129,6 +199,7 @@ async fn list_workspace_files(path: Option<String>) -> Result<Vec<WorkspaceFileI
     Ok(items)
 }
 
+/// Starts an external MCP server process.
 #[tauri::command]
 async fn start_mcp_server(config: MCPServerConfig) -> Result<String, String> {
     get_mcp_manager()
@@ -137,6 +208,7 @@ async fn start_mcp_server(config: MCPServerConfig) -> Result<String, String> {
         .map_err(|e| e.to_string())
 }
 
+/// Stops a running external MCP server.
 #[tauri::command]
 async fn stop_mcp_server(server_name: String) -> Result<(), String> {
     get_mcp_manager()
@@ -145,6 +217,7 @@ async fn stop_mcp_server(server_name: String) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// Calls a tool on an external MCP server.
 #[tauri::command]
 async fn call_mcp_tool(
     server_name: String,
@@ -156,6 +229,7 @@ async fn call_mcp_tool(
         .await
 }
 
+/// Performs text generation on an external MCP server.
 #[tauri::command]
 async fn sample_from_mcp_server(
     server_name: String,
@@ -181,6 +255,7 @@ async fn sample_from_mcp_server(
         .await)
 }
 
+/// Lists the tools available on a specific external MCP server.
 #[tauri::command]
 async fn list_mcp_tools(server_name: String) -> Result<Vec<mcp::MCPTool>, String> {
     get_mcp_manager()
@@ -189,6 +264,18 @@ async fn list_mcp_tools(server_name: String) -> Result<Vec<mcp::MCPTool>, String
         .map_err(|e| e.to_string())
 }
 
+/// Starts servers from a dynamic configuration object and lists their available tools.
+///
+/// This command supports two configuration formats: a "Claude format" with an `mcpServers`
+/// object and a legacy format with a `servers` array. It will start any servers from
+/// the config that are not already running, then queries each one for its list of tools.
+///
+/// # Arguments
+/// * `config` - A `serde_json::Value` containing the server configurations.
+///
+/// # Returns
+/// A `Result` containing a `HashMap` where keys are server names and values are vectors
+/// of `MCPTool` objects. Returns an error string if the configuration is invalid.
 #[tauri::command]
 async fn list_tools_from_config(
     config: serde_json::Value,
@@ -199,16 +286,16 @@ async fn list_tools_from_config(
         serde_json::to_string_pretty(&config).unwrap_or_default()
     );
 
-    // Claude format을 지원: mcpServers 또는 servers 배열을 처리
+    // Support for Claude format: handle mcpServers object or servers array
     let servers_config =
         if let Some(mcp_servers) = config.get("mcpServers").and_then(|v| v.as_object()) {
-            // Claude format: mcpServers 객체를 MCPServerConfig 배열로 변환
+            // Claude format: Convert mcpServers object to an array of MCPServerConfig
             println!("🚀 [TAURI] Processing Claude format (mcpServers)");
             let mut server_list = Vec::new();
 
             for (name, server_config) in mcp_servers.iter() {
                 let mut server_value = server_config.clone();
-                // name 필드 추가
+                // Add the name field
                 if let serde_json::Value::Object(ref mut obj) = server_value {
                     obj.insert("name".to_string(), serde_json::Value::String(name.clone()));
                     obj.insert(
@@ -222,7 +309,7 @@ async fn list_tools_from_config(
             }
             server_list
         } else if let Some(servers_array) = config.get("servers").and_then(|v| v.as_array()) {
-            // 기존 format: servers 배열
+            // Legacy format: servers array
             println!("🚀 [TAURI] Processing legacy format (servers array)");
             let mut server_list = Vec::new();
             for server_value in servers_array {
@@ -288,21 +375,29 @@ async fn list_tools_from_config(
     Ok(tools_by_server)
 }
 
+/// Returns a list of names for all currently connected external MCP servers.
 #[tauri::command]
 async fn get_connected_servers() -> Vec<String> {
     get_mcp_manager().get_connected_servers().await
 }
 
+/// Checks if a specific external MCP server is currently alive and responsive.
 #[tauri::command]
 async fn check_server_status(server_name: String) -> bool {
     get_mcp_manager().is_server_alive(&server_name).await
 }
 
+/// Checks the status of all managed external MCP servers.
+///
+/// # Returns
+/// A `HashMap` where keys are server names and values are booleans indicating if the
+/// server is alive.
 #[tauri::command]
 async fn check_all_servers_status() -> std::collections::HashMap<String, bool> {
     get_mcp_manager().check_all_servers().await
 }
 
+/// Lists all available tools from all connected external MCP servers.
 #[tauri::command]
 async fn list_all_tools() -> Result<Vec<mcp::MCPTool>, String> {
     get_mcp_manager()
@@ -311,6 +406,7 @@ async fn list_all_tools() -> Result<Vec<mcp::MCPTool>, String> {
         .map_err(|e| e.to_string())
 }
 
+/// Retrieves the list of validated tools for a specific external server.
 #[tauri::command]
 async fn get_validated_tools(server_name: String) -> Result<Vec<mcp::MCPTool>, String> {
     get_mcp_manager()
@@ -319,6 +415,7 @@ async fn get_validated_tools(server_name: String) -> Result<Vec<mcp::MCPTool>, S
         .map_err(|e| e.to_string())
 }
 
+/// Validates the JSON schema of a single MCP tool.
 #[tauri::command]
 fn validate_tool_schema(tool: mcp::MCPTool) -> Result<(), String> {
     mcp::MCPServerManager::validate_tool_schema(&tool).map_err(|e| e.to_string())
@@ -326,11 +423,17 @@ fn validate_tool_schema(tool: mcp::MCPTool) -> Result<(), String> {
 
 // Built-in MCP server commands
 
+/// Lists the names of all available built-in MCP servers.
 #[tauri::command]
 async fn list_builtin_servers() -> Vec<String> {
     get_mcp_manager().list_builtin_servers().await
 }
 
+/// Lists all tools available from the built-in MCP servers.
+///
+/// # Arguments
+/// * `server_name` - An optional string. If provided, lists tools only for that
+///   specific built-in server. Otherwise, lists tools from all built-in servers.
 #[tauri::command]
 async fn list_builtin_tools(server_name: Option<String>) -> Vec<mcp::MCPTool> {
     match server_name {
@@ -339,6 +442,7 @@ async fn list_builtin_tools(server_name: Option<String>) -> Vec<mcp::MCPTool> {
     }
 }
 
+/// Calls a tool on one of the built-in MCP servers.
 #[tauri::command]
 async fn call_builtin_tool(
     server_name: String,
@@ -351,40 +455,50 @@ async fn call_builtin_tool(
 }
 
 // Session management commands
+/// Sets the currently active session.
 #[tauri::command]
 async fn set_current_session(session_id: String) -> Result<(), String> {
     get_session_manager()?.set_session(session_id)
 }
 
+/// Gets the ID of the currently active session.
 #[tauri::command]
-async fn get_current_session() -> Result<Option<String>, String> {
+async fn get_current_session_legacy() -> Result<Option<String>, String> {
     Ok(get_session_manager()?.get_current_session())
 }
 
+/// Gets the absolute path to the workspace directory for the current session.
 #[tauri::command]
 async fn get_session_workspace_dir() -> Result<String, String> {
     let path = get_session_manager()?.get_session_workspace_dir();
     Ok(path.to_string_lossy().to_string())
 }
 
+/// Lists the IDs of all available sessions.
 #[tauri::command]
-async fn list_sessions() -> Result<Vec<String>, String> {
+async fn list_sessions_legacy() -> Result<Vec<String>, String> {
     get_session_manager()?.list_sessions()
 }
 
+/// Gets the application's base data directory.
 #[tauri::command]
 async fn get_app_data_dir() -> Result<String, String> {
     let path = get_session_manager()?.get_base_data_dir();
     Ok(path.to_string_lossy().to_string())
 }
 
-// 로그 파일 관리 명령들
+// Log file management commands
+/// Gets the application's log directory path.
 #[tauri::command]
 async fn get_app_logs_dir() -> Result<String, String> {
     let path = get_session_manager()?.get_logs_dir();
     Ok(path.to_string_lossy().to_string())
 }
 
+/// Creates a timestamped backup of the current main log file.
+///
+/// # Returns
+/// A `Result` containing the path of the created backup file, or an error string.
 #[tauri::command]
 async fn backup_current_log() -> Result<String, String> {
     use chrono::Utc;
@@ -393,23 +507,24 @@ async fn backup_current_log() -> Result<String, String> {
     let log_dir_str = get_app_logs_dir().await?;
     let log_dir = std::path::PathBuf::from(log_dir_str);
 
-    // 현재 로그 파일 찾기 (명시된 파일명 사용)
+    // Find the current log file (using the specified filename)
     let log_file = log_dir.join("synaptic-flow.log");
 
     if !log_file.exists() {
         return Err("No current log file found".to_string());
     }
 
-    // 백업 파일명 생성 (타임스탬프 포함)
+    // Create backup filename (including timestamp)
     let timestamp = Utc::now().format("%Y%m%d_%H%M%S").to_string();
     let backup_file = log_dir.join(format!("synaptic-flow_{timestamp}.log.bak"));
 
-    // 파일 복사
+    // Copy the file
     fs::copy(&log_file, &backup_file).map_err(|e| format!("Failed to backup log file: {e}"))?;
 
     Ok(backup_file.to_string_lossy().to_string())
 }
 
+/// Clears the content of the current main log file.
 #[tauri::command]
 async fn clear_current_log() -> Result<(), String> {
     use std::fs;
@@ -425,6 +540,7 @@ async fn clear_current_log() -> Result<(), String> {
     Ok(())
 }
 
+/// Lists all log files (`.log`) and log backups (`.log.bak`) in the log directory.
 #[tauri::command]
 async fn list_log_files() -> Result<Vec<String>, String> {
     use std::fs;
@@ -457,6 +573,7 @@ async fn list_log_files() -> Result<Vec<String>, String> {
     Ok(log_files)
 }
 
+/// Reads a file from the workspace using the `SecureFileManager`.
 #[tauri::command]
 async fn read_file(
     file_path: String,
@@ -465,6 +582,18 @@ async fn read_file(
     manager.read_file(&file_path).await
 }
 
+/// Reads a file that was dropped onto the application window.
+///
+/// This function performs several security checks:
+/// - Verifies the file exists and is a file.
+/// - Enforces a maximum file size (10MB).
+/// - Restricts allowed file extensions to a predefined list.
+///
+/// # Arguments
+/// * `file_path` - The absolute path of the dropped file.
+///
+/// # Returns
+/// A `Result` containing the file's raw byte content, or an error string if a check fails.
 #[tauri::command]
 async fn read_dropped_file(file_path: String) -> Result<Vec<u8>, String> {
     use std::path::Path;
@@ -518,6 +647,7 @@ async fn read_dropped_file(file_path: String) -> Result<Vec<u8>, String> {
         .map_err(|e| format!("Failed to read file: {e}"))
 }
 
+/// Writes content to a file in the workspace using the `SecureFileManager`.
 #[tauri::command]
 async fn write_file(
     file_path: String,
@@ -527,7 +657,10 @@ async fn write_file(
     manager.write_file(&file_path, &content).await
 }
 
-/// Session-aware workspace file write command
+/// A session-aware command to write a file to the current session's workspace.
+///
+/// This ensures that file operations are contained within the active session's
+/// designated workspace directory, preventing writes to unintended locations.
 #[tauri::command]
 async fn workspace_write_file(file_path: String, content: Vec<u8>) -> Result<(), String> {
     let session_manager =
@@ -537,6 +670,9 @@ async fn workspace_write_file(file_path: String, content: Vec<u8>) -> Result<(),
     session_file_manager.write_file(&file_path, &content).await
 }
 
+/// Opens a URL in the user's default external web browser.
+///
+/// This command includes a security check to ensure only `http` or `https` URLs are opened.
 #[tauri::command]
 async fn open_external_url(url: String) -> Result<(), String> {
     // URL validation
@@ -551,6 +687,7 @@ async fn open_external_url(url: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Lists all tools from both built-in and external MCP servers in a unified list.
 #[tauri::command]
 async fn list_all_tools_unified() -> Result<Vec<mcp::MCPTool>, String> {
     get_mcp_manager()
@@ -559,6 +696,7 @@ async fn list_all_tools_unified() -> Result<Vec<mcp::MCPTool>, String> {
         .map_err(|e| e.to_string())
 }
 
+/// Calls a tool on either a built-in or external MCP server, determined by the server name.
 #[tauri::command]
 async fn call_tool_unified(
     server_name: String,
@@ -570,6 +708,14 @@ async fn call_tool_unified(
         .await
 }
 
+/// Downloads a single file from the current session's workspace.
+///
+/// This command reads a specified file from the workspace, then opens a native
+/// "Save File" dialog for the user to choose a download location.
+///
+/// # Arguments
+/// * `app_handle` - The Tauri application handle.
+/// * `file_path` - The relative path of the file within the workspace to download.
 #[tauri::command]
 async fn download_workspace_file(
     app_handle: tauri::AppHandle,
@@ -577,14 +723,14 @@ async fn download_workspace_file(
 ) -> Result<String, String> {
     use tauri_plugin_dialog::DialogExt;
 
-    // SecureFileManager를 통해 workspace 디렉토리 가져오기
+    // Get workspace directory via SessionManager
     let session_manager = get_session_manager().map_err(|e| e.to_string())?;
     let workspace_dir = session_manager.get_session_workspace_dir();
 
-    // 요청된 파일의 전체 경로 구성
+    // Construct the full path of the requested file
     let full_path = workspace_dir.join(&file_path);
 
-    // 파일 존재 및 보안 검증
+    // Verify file existence and security
     if !full_path.exists() {
         return Err(format!("File not found: {file_path}"));
     }
@@ -593,19 +739,19 @@ async fn download_workspace_file(
         return Err("Access denied: Path outside workspace".to_string());
     }
 
-    // 파일명 추출
+    // Extract filename
     let file_name = full_path
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or("download");
 
-    // 파일 내용 읽기
+    // Read file content
     let file_content = match tokio::fs::read(&full_path).await {
         Ok(content) => content,
         Err(e) => return Err(format!("Failed to read file: {e}")),
     };
 
-    // 파일 저장 다이얼로그 표시 및 저장 (콜백 방식)
+    // Show save file dialog and save (using a callback)
     let (tx, rx) = tokio::sync::oneshot::channel::<Result<String, String>>();
 
     app_handle
@@ -639,6 +785,16 @@ async fn download_workspace_file(
     }
 }
 
+/// Exports a selection of workspace files as a single ZIP archive and prompts for download.
+///
+/// This command creates a temporary ZIP file, adds the specified workspace files to it
+/// while preserving their directory structure, and then uses a "Save File" dialog to
+/// allow the user to download the archive.
+///
+/// # Arguments
+/// * `app_handle` - The Tauri application handle.
+/// * `files` - A vector of relative file paths within the workspace to include in the ZIP.
+/// * `package_name` - A base name to use for the generated ZIP file.
 #[tauri::command]
 async fn export_and_download_zip(
     app_handle: tauri::AppHandle,
@@ -656,29 +812,29 @@ async fn export_and_download_zip(
         return Err("Files array cannot be empty".to_string());
     }
 
-    // 임시 ZIP 파일 생성
+    // Create a temporary ZIP file
     let temp_dir = tempfile::tempdir().map_err(|e| format!("Failed to create temp dir: {e}"))?;
     let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
     let zip_filename = format!("{package_name}_{timestamp}.zip");
     let temp_zip_path = temp_dir.path().join(&zip_filename);
 
-    // ZIP 파일 생성
+    // Create the ZIP archive
     let zip_file = std::fs::File::create(&temp_zip_path)
         .map_err(|e| format!("Failed to create ZIP file: {e}"))?;
 
     let mut zip = ZipWriter::new(zip_file);
     let options = FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
-    // 파일들을 ZIP에 추가
+    // Add files to the ZIP
     let mut processed_files = Vec::new();
     for file_path in &files {
         let source_path = workspace_dir.join(file_path);
 
         if !source_path.exists() || !source_path.is_file() {
-            continue; // 존재하지 않는 파일은 건너뛰기
+            continue; // Skip non-existent files
         }
 
-        // ZIP 내부 경로 설정 (디렉토리 구조 유지)
+        // Set the path inside the ZIP (preserving directory structure)
         let archive_path = file_path.replace("\\", "/");
 
         match zip.start_file(&archive_path, options) {
@@ -704,7 +860,7 @@ async fn export_and_download_zip(
         }
     }
 
-    // ZIP 파일 완료
+    // Finalize the ZIP file
     zip.finish()
         .map_err(|e| format!("Failed to finalize ZIP: {e}"))?;
 
@@ -712,12 +868,12 @@ async fn export_and_download_zip(
         return Err("No files were successfully added to ZIP".to_string());
     }
 
-    // ZIP 파일 내용 읽기 (콜백에서 사용하기 위해)
+    // Read ZIP content to be used in the callback
     let zip_content = tokio::fs::read(&temp_zip_path)
         .await
         .map_err(|e| format!("Failed to read ZIP file: {e}"))?;
 
-    // 파일 저장 다이얼로그 표시 및 저장 (콜백 방식)
+    // Show save file dialog and save (using a callback)
     let (tx, rx) = tokio::sync::oneshot::channel::<Result<String, String>>();
     let processed_files_count = processed_files.len();
 
@@ -754,6 +910,15 @@ async fn export_and_download_zip(
     }
 }
 
+/// Configures and runs the main Tauri application.
+///
+/// This function is the entry point for the application GUI. It sets up:
+/// - A custom panic handler for robust error logging.
+/// - The Tauri application builder with all necessary plugins (dialog, logging, opener).
+/// - The full list of invoke handlers (Tauri commands) available to the frontend.
+/// - A setup hook to initialize managed state like `SecureFileManager` and `InteractiveBrowserServer`.
+/// - Linux-specific environment variables and checks for WebKit compatibility.
+/// - Graceful error handling for panics that may occur during application startup.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Set up custom panic handler for better error reporting
@@ -812,11 +977,22 @@ pub fn run() {
                 // Download commands
                 download_workspace_file,
                 export_and_download_zip,
-                // Session management commands
+                // Session management commands (legacy)
                 set_current_session,
-                get_current_session,
+                get_current_session_legacy,
                 get_session_workspace_dir,
-                list_sessions,
+                list_sessions_legacy,
+                // Enhanced session management commands
+                session_commands::switch_session,
+                session_commands::create_session,
+                session_commands::get_current_session_info,
+                session_commands::list_all_sessions,
+                session_commands::get_session_stats,
+                session_commands::pre_allocate_sessions,
+                session_commands::cleanup_sessions,
+                session_commands::remove_session,
+                session_commands::get_isolation_capabilities,
+                session_commands::fast_session_switch,
                 get_app_data_dir,
                 get_app_logs_dir,
                 backup_current_log,
@@ -853,29 +1029,30 @@ pub fn run() {
             .setup(|app| {
                 println!("🚀 SynapticFlow initializing...");
 
-                // Initialize SecureFileManager
+                // Initialize SecureFileManager and add to managed state
                 let file_manager = SecureFileManager::new();
                 app.manage(file_manager);
                 println!("✅ SecureFileManager initialized");
 
-                // Initialize Interactive Browser Server
+                // Initialize Interactive Browser Server and add to managed state
                 let browser_server = InteractiveBrowserServer::new(app.handle().clone());
                 app.manage(browser_server);
                 println!("✅ Interactive Browser Server initialized");
 
-                // Builtin servers are now automatically initialized with SessionManager in get_mcp_manager()
+                // Built-in servers are now automatically initialized with SessionManager support
+                // via the get_mcp_manager() function when first called.
                 println!("✅ Builtin servers initialized with SessionManager support");
 
-                // Verify WebView can be created safely
+                // Perform safety checks for WebView creation on Linux
                 #[cfg(target_os = "linux")]
                 {
                     println!("🐧 Linux detected - checking WebKit compatibility...");
 
-                    // Set environment variables for better WebKit compatibility
+                    // Set environment variables for better WebKit compatibility on some systems
                     std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
                     std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
 
-                    // Check if running in a container or limited environment
+                    // Check if running in a container or other limited graphics environment
                     if std::env::var("container").is_ok() || std::env::var("DISPLAY").is_err() {
                         eprintln!("⚠️  Warning: Running in limited graphics environment");
                     }
@@ -887,6 +1064,7 @@ pub fn run() {
             .run(tauri::generate_context!())
     });
 
+    // Handle the result of the application run, exiting with an error code on panic
     match result {
         Ok(app_result) => {
             if let Err(e) = app_result {

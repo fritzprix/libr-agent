@@ -58,6 +58,38 @@ SynapticFlow is a next-generation desktop AI agent platform that combines the li
 - SecurityValidator (Built-in security validation)
 - Warp (HTTP server for browser automation)
 
+## Development Scripts & Workflow
+
+SynapticFlow provides several useful scripts for development and code quality:
+
+- `pnpm dev` – Start the Vite development server
+- `pnpm tauri dev` – Start the Tauri desktop app with hot reload
+- `pnpm build` – Build the frontend for production
+- `pnpm lint` – Run ESLint checks for code quality
+- `pnpm format` – Format code using Prettier
+- `pnpm rust:fmt` – Check Rust code formatting
+- `pnpm rust:clippy` – Run Rust linter
+- `pnpm dead-code` – Find unused code with unimported
+- `pnpm refactor:validate` – **Complete validation pipeline:**  
+  Runs lint, format, Rust validation, build, and dead-code checks.  
+  **Always run this after any development or refactoring work to ensure code quality and build integrity.**
+
+**Workflow Recommendation:**  
+After making any code changes, always run:
+
+```sh
+pnpm refactor:validate
+```
+
+This ensures:
+
+- Code consistency and formatting
+- No TypeScript or Rust compilation errors
+- No unused code
+- The application remains buildable
+
+> **Note:** All contributors must follow this workflow before submitting PRs or merging changes.
+
 ## File Structure
 
 ```bash
@@ -110,6 +142,73 @@ synaptic-flow/
 - Use PascalCase for types, structs, and enums.
 - Add comprehensive documentation comments (`///`) for public APIs.
 - Handle errors explicitly using `Result<T, E>` types.
+
+#### Rust Method/Function Declaration and Calling Guide
+
+##### Method vs. Associated Function
+
+- **Method**: Takes `self` (or `&self`, `&mut self`) as the first parameter in an `impl` block.  
+  → Called through instance: `self.method_name(...)`
+- **Associated Function**: No `self` parameter.  
+  → Called through type name: `TypeName::function_name(...)`
+
+##### Example
+
+```rust
+impl MyStruct {
+    // Method: requires self
+    fn do_something(&self, arg: i32) { ... }
+
+    // Associated function: no self
+    fn helper(arg: i32) { ... }
+}
+
+// Calling methods
+let obj = MyStruct::new();
+obj.do_something(42);           // ✅ Method call
+MyStruct::helper(42);           // ✅ Associated function call
+```
+
+##### Error Prevention Checklist
+
+- If using `self` in a function, declare `self` as the first parameter.
+- Associated functions cannot use `self`.
+- Call methods through instances, associated functions through type names.
+
+##### Common Mistakes and Fixes
+
+###### ❌ Wrong Example
+
+```rust
+fn copy_dir_contents(src: &Path, dst: &Path) -> Result<(), String> {
+    self.copy_dir_contents(&src_path, &dst_path)?; // Error!
+}
+```
+
+###### ✅ Correct Examples
+
+- **If declared as associated function, call through type name:**
+
+```rust
+fn copy_dir_contents(src: &Path, dst: &Path) -> Result<(), String> {
+    SessionManager::copy_dir_contents(&src_path, &dst_path)?;
+}
+```
+
+- **If using as method, add self parameter:**
+
+```rust
+fn copy_dir_contents(&self, src: &Path, dst: &Path) -> Result<(), String> {
+    self.copy_dir_contents(&src_path, &dst_path)?;
+}
+```
+
+##### IDE/Compiler Usage
+
+- Rust compiler clearly indicates these mistakes, so read error messages carefully and check function declarations/calls.
+- Use "Go to Definition" in IDEs like VS Code or IntelliJ Rust to easily check if a function is a method or associated function.
+
+**Summary:** Always remember that the presence/absence of `self` parameter determines calling method. When compilation errors occur, recheck function declaration and calling patterns.
 
 ### Frontend (`src/`)
 
@@ -398,3 +497,9 @@ These steps must be completed successfully before considering any refactoring ta
 - Maintain API documentation for Tauri commands
 - Document MCP integration patterns
 - Keep deployment guides current
+
+## References
+
+- [Chat Feature Architecture & Implementation Manual](docs/architecture/chat-feature-architecture.md)
+- [Built-in Tools Documentation](docs/builtin-tools.md)
+- [External MCP Server Integration](docs/external-mcp-integration.md)

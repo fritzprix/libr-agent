@@ -487,11 +487,17 @@ impl WorkspaceServer {
                 );
             }
 
-            let content = match rep.get("content").and_then(|v| v.as_str()) {
-                Some(s) => s.to_string(),
-                None => {
-                    return Self::error_response(request_id, -32602, "Invalid content format");
+            let content = match rep.get("new_content") {
+                Some(Value::String(s)) => s.to_string(), // Handle string values including empty strings
+                Some(Value::Null) => String::new(), // Handle explicit null as empty string for deletion
+                Some(_) => {
+                    return Self::error_response(
+                        request_id,
+                        -32602,
+                        "new_content must be a string",
+                    );
                 }
+                None => String::new(), // Missing new_content means delete lines
             };
 
             let range_key = format!("{start_line}-{end_line}");
@@ -504,8 +510,18 @@ impl WorkspaceServer {
             let end_line: usize = parts[1].parse().unwrap();
 
             if start_line == end_line {
-                new_lines[start_line - 1] = content;
+                if content.is_empty() {
+                    // Delete single line
+                    new_lines.remove(start_line - 1);
+                } else {
+                    // Replace single line
+                    new_lines[start_line - 1] = content;
+                }
+            } else if content.is_empty() {
+                // Delete line range
+                new_lines.splice((start_line - 1)..end_line, vec![]);
             } else {
+                // Replace line range with single line
                 new_lines.splice((start_line - 1)..end_line, vec![content]);
             }
         }

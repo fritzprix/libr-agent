@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useRustBackend, WorkspaceFileItem } from '@/hooks/use-rust-backend';
 import { useMessageTrigger } from '@/hooks/use-message-trigger';
+import { toast } from 'sonner';
 import { getLogger } from '@/lib/logger';
 import {
   useDnDContext,
@@ -83,16 +84,38 @@ export function WorkspaceFilesPanel() {
       try {
         logger.debug('Loading directory', { path, parentNodeId });
         const files = await listWorkspaceFiles(path);
+        logger.info('BACKEND RESPONSE', {
+          path,
+          fileCount: files.length,
+          files: files.map((f) => ({
+            name: f.name,
+            isDirectory: f.isDirectory,
+            path: f.path,
+          })),
+        });
 
-        const nodes: FileNode[] = files.map((file: WorkspaceFileItem) => ({
-          id: `${path}/${file.name}`,
-          name: file.name,
-          path: `${path}/${file.name}`.replace('//', '/'),
-          isDirectory: file.isDirectory,
-          isExpanded: false,
-          children: file.isDirectory ? [] : undefined,
-          parent: parentNodeId,
-        }));
+        const nodes: FileNode[] = files.map((file: WorkspaceFileItem) => {
+          const nodePath = `${path}/${file.name}`.replace('//', '/');
+          const node = {
+            id: `${path}/${file.name}`,
+            name: file.name,
+            path: nodePath,
+            isDirectory: file.isDirectory,
+            isExpanded: false,
+            children: file.isDirectory ? [] : undefined,
+            parent: parentNodeId,
+          };
+
+          logger.info('CREATING FILENODE', {
+            name: file.name,
+            path: nodePath,
+            isDirectory: file.isDirectory,
+            backendIsDirectory: file.isDirectory,
+            hasChildren: node.children !== undefined,
+          });
+
+          return node;
+        });
 
         if (parentNodeId) {
           // Update specific node's children
@@ -112,6 +135,7 @@ export function WorkspaceFilesPanel() {
           err instanceof Error ? err.message : 'Failed to load directory';
         logger.error('Failed to load directory', { path, error: errorMessage });
         setError(errorMessage);
+        toast.error('디렉토리 로드에 실패했습니다');
       } finally {
         setLoading(false);
       }
@@ -142,7 +166,18 @@ export function WorkspaceFilesPanel() {
   // Toggle directory expansion
   const toggleDirectory = useCallback(
     async (node: FileNode) => {
-      if (!node.isDirectory) return;
+      if (!node.isDirectory) {
+        logger.warn('Attempted to toggle non-directory', {
+          path: node.path,
+          isDirectory: node.isDirectory,
+        });
+        return;
+      }
+
+      logger.debug('Toggling directory', {
+        path: node.path,
+        isExpanded: node.isExpanded,
+      });
 
       if (node.isExpanded) {
         // Collapse
@@ -276,9 +311,16 @@ export function WorkspaceFilesPanel() {
   // Download file
   const handleDownloadFile = useCallback(
     async (node: FileNode) => {
-      if (node.isDirectory) return;
+      if (node.isDirectory) {
+        logger.warn('Attempted to download a directory, ignoring', {
+          path: node.path,
+          isDirectory: node.isDirectory,
+        });
+        return;
+      }
 
       try {
+        logger.debug('Downloading file', { path: node.path });
         await downloadWorkspaceFile(node.path);
         logger.info('File download initiated', { path: node.path });
       } catch (error) {
@@ -302,9 +344,17 @@ export function WorkspaceFilesPanel() {
           className="flex items-center gap-1 px-2 py-1 hover:bg-muted/50 cursor-pointer group"
           style={{ paddingLeft: `${8 + depth * 16}px` }}
           onClick={() => {
+            logger.info('DIRECTORY CLICK ANALYSIS', {
+              path: node.path,
+              name: node.name,
+              isDirectory: node.isDirectory,
+            });
+
             if (node.isDirectory) {
+              logger.info('CALLING toggleDirectory', { path: node.path });
               toggleDirectory(node);
             } else {
+              logger.info('CALLING handleDownloadFile', { path: node.path });
               handleDownloadFile(node);
             }
           }}

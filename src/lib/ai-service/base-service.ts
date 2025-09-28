@@ -17,9 +17,16 @@ import { convertMCPToolsToProviderTools } from './tool-converters';
 import { MessageNormalizer } from './message-normalizer';
 import { getLogger } from '../logger';
 
-// --- Base Service Class with Common Functionality ---
-
+/**
+ * An abstract base class that provides common functionality for all AI services.
+ * It implements the `IAIService` interface and handles API key validation,
+ * message validation, retry logic, and configuration merging.
+ */
 export abstract class BaseAIService implements IAIService {
+  /**
+   * The default configuration for the service.
+   * @protected
+   */
   protected defaultConfig: AIServiceConfig = {
     timeout: 30000,
     maxRetries: 3,
@@ -28,8 +35,17 @@ export abstract class BaseAIService implements IAIService {
     temperature: 0.7,
   };
 
+  /**
+   * A logger instance for the base service.
+   * @protected
+   */
   protected logger = getLogger('BaseAIService');
 
+  /**
+   * Initializes a new instance of the `BaseAIService`.
+   * @param apiKey The API key for the service.
+   * @param config Optional configuration to override the defaults.
+   */
   constructor(
     protected apiKey: string,
     protected config?: AIServiceConfig,
@@ -38,12 +54,24 @@ export abstract class BaseAIService implements IAIService {
     this.defaultConfig = { ...this.defaultConfig, ...config };
   }
 
+  /**
+   * Validates the provided API key.
+   * @param apiKey The API key to validate.
+   * @throws `AIServiceError` if the API key is invalid.
+   * @protected
+   */
   protected validateApiKey(apiKey: string): void {
     if (!apiKey || typeof apiKey !== 'string' || apiKey.trim().length === 0) {
       throw new AIServiceError('Invalid API key provided', this.getProvider());
     }
   }
 
+  /**
+   * Validates an array of messages to ensure they conform to the required structure.
+   * @param messages The array of messages to validate.
+   * @throws `AIServiceError` or `Error` if the messages are invalid.
+   * @protected
+   */
   protected validateMessages(messages: Message[]): void {
     if (!Array.isArray(messages) || messages.length === 0) {
       throw new AIServiceError(
@@ -68,6 +96,15 @@ export abstract class BaseAIService implements IAIService {
     });
   }
 
+  /**
+   * A wrapper around the `withRetry` utility that automatically uses the service's
+   * default retry configuration and wraps errors in `AIServiceError`.
+   * @template T The type of the result of the operation.
+   * @param operation The asynchronous operation to execute.
+   * @param maxRetries The maximum number of retries, overriding the default.
+   * @returns A promise that resolves with the result of the successful operation.
+   * @protected
+   */
   protected async withRetry<T>(
     operation: () => Promise<T>,
     maxRetries: number = this.defaultConfig.maxRetries!,
@@ -89,6 +126,14 @@ export abstract class BaseAIService implements IAIService {
     }
   }
 
+  /**
+   * A simple wrapper around the `withTimeout` utility.
+   * @template T The type of the result of the promise.
+   * @param promise The promise to execute with a timeout.
+   * @param timeoutMs The timeout in milliseconds.
+   * @returns A promise that resolves with the result or rejects on timeout.
+   * @protected
+   */
   protected async withTimeout<T>(
     promise: Promise<T>,
     timeoutMs: number,
@@ -97,10 +142,14 @@ export abstract class BaseAIService implements IAIService {
   }
 
   /**
-   * MCPContent 배열을 LLM용 텍스트로 변환
+   * Processes an array of `MCPContent` parts into a single string,
+   * extracting only the text content.
+   * @param content The array of `MCPContent` to process.
+   * @returns A single string concatenating all text parts.
+   * @protected
    */
   protected processMessageContent(content: MCPContent[]): string {
-    // MCPContent 배열에서 텍스트만 추출
+    // Extracts only the text from the MCPContent array
     return content
       .filter((item) => item.type === 'text')
       .map((item) => (item as { text: string }).text)
@@ -108,7 +157,12 @@ export abstract class BaseAIService implements IAIService {
   }
 
   /**
-   * MLM용 - 이미지 content도 처리
+   * Processes an array of `MCPContent` parts for a multimodal LLM,
+   * handling both text and image content.
+   * @param content The array of `MCPContent` to process.
+   * @returns An array of objects suitable for a multimodal API,
+   *          containing either text or image data.
+   * @protected
    */
   protected processMultiModalContent(
     content: MCPContent[],
@@ -139,7 +193,12 @@ export abstract class BaseAIService implements IAIService {
   }
 
   /**
-   * Common error handling helper for streaming operations
+   * A common error handling helper for streaming operations. It logs the error
+   * and throws a standardized `AIServiceError`.
+   * @param error The error that occurred.
+   * @param context The context of the operation, including messages and options.
+   * @throws `AIServiceError`
+   * @protected
    */
   protected handleStreamingError(
     error: unknown,
@@ -179,7 +238,10 @@ export abstract class BaseAIService implements IAIService {
   }
 
   /**
-   * Configuration merge helper
+   * Merges the provided options with the default service configuration.
+   * @param options The options to merge.
+   * @returns The merged `AIServiceConfig`.
+   * @protected
    */
   protected mergeConfig(options?: {
     config?: AIServiceConfig;
@@ -188,7 +250,12 @@ export abstract class BaseAIService implements IAIService {
   }
 
   /**
-   * streamChat preprocessing common logic
+   * A common preprocessing step for the `streamChat` method. It validates messages,
+   * merges configuration, converts tools, and sanitizes messages.
+   * @param messages The input messages.
+   * @param options The options for the chat stream.
+   * @returns An object containing the final configuration, converted tools, and sanitized messages.
+   * @protected
    */
   protected prepareStreamChat(
     messages: Message[],
@@ -220,8 +287,12 @@ export abstract class BaseAIService implements IAIService {
   }
 
   /**
-   * Sanitize messages for vendor-specific compatibility
-   * Base implementation uses MessageNormalizer, but services can override
+   * Sanitizes messages for provider-specific compatibility.
+   * The base implementation uses the `MessageNormalizer`, but services can override this
+   * for custom sanitization logic.
+   * @param messages The messages to sanitize.
+   * @returns An array of sanitized messages.
+   * @protected
    */
   protected sanitizeMessages(messages: Message[]): Message[] {
     return MessageNormalizer.sanitizeMessagesForProvider(
@@ -231,7 +302,13 @@ export abstract class BaseAIService implements IAIService {
   }
 
   /**
-   * Basic message conversion template method
+   * A template method for converting an array of `Message` objects into a format
+   * suitable for a specific provider's API. It handles the system prompt and
+   * iterates through messages, calling the abstract `convertSingleMessage` for each.
+   * @param messages The array of messages to convert.
+   * @param systemPrompt An optional system prompt to prepend.
+   * @returns An array of provider-specific message objects.
+   * @protected
    */
   protected convertMessagesTemplate(
     messages: Message[],
@@ -257,8 +334,10 @@ export abstract class BaseAIService implements IAIService {
   }
 
   /**
-   * Default implementation returns models from llmConfigManager for the provider.
-   * Override this method for services that need dynamic model discovery (e.g., Ollama).
+   * Lists the models available for the service.
+   * The default implementation returns models from the static `llmConfigManager`.
+   * Services that support dynamic model discovery (e.g., Ollama) should override this method.
+   * @returns A promise that resolves to an array of `ModelInfo` objects.
    */
   async listModels(): Promise<ModelInfo[]> {
     const provider = this.getProvider();
@@ -268,14 +347,37 @@ export abstract class BaseAIService implements IAIService {
       return [];
     }
 
-    // Record<string, ModelInfo>를 ModelInfo[]로 변환
+    // Convert the record of models to an array.
     return Object.values(models);
   }
 
-  // Provider-specific abstract methods that must be implemented by subclasses
+  // --- Abstract Methods for Subclasses ---
+
+  /**
+   * Creates a provider-specific system message object.
+   * @param systemPrompt The text of the system prompt.
+   * @returns A provider-specific representation of a system message.
+   * @protected
+   * @abstract
+   */
   protected abstract createSystemMessage(systemPrompt: string): unknown;
+
+  /**
+   * Converts a single `Message` object into a provider-specific format.
+   * @param message The message to convert.
+   * @returns A provider-specific representation of the message.
+   * @protected
+   * @abstract
+   */
   protected abstract convertSingleMessage(message: Message): unknown;
 
+  /**
+   * Initiates a streaming chat session with the AI service.
+   * @param messages An array of messages representing the conversation history.
+   * @param options Optional parameters for the chat session, including model name, tools, etc.
+   * @returns An async generator that yields chunks of the response as strings.
+   * @abstract
+   */
   abstract streamChat(
     messages: Message[],
     options?: {
@@ -287,7 +389,12 @@ export abstract class BaseAIService implements IAIService {
   ): AsyncGenerator<string, void, void>;
 
   /**
-   * Default implementation of sampleText - can be overridden by specific services
+   * Performs a non-streaming text generation (sampling) request.
+   * The default implementation throws an error, as not all services may support this.
+   * Subclasses should override this method if they support non-streaming sampling.
+   * @param prompt The prompt to send to the model.
+   * @param options Optional parameters for the sampling request.
+   * @returns A promise that resolves to a `SamplingResponse`.
    */
   async sampleText(
     prompt: string,
@@ -305,6 +412,16 @@ export abstract class BaseAIService implements IAIService {
     );
   }
 
+  /**
+   * Gets the provider identifier for the service.
+   * @returns The `AIServiceProvider` enum value for the current service.
+   * @abstract
+   */
   abstract getProvider(): AIServiceProvider;
+
+  /**
+   * Cleans up any resources used by the service instance.
+   * @abstract
+   */
   abstract dispose(): void;
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useChatContext } from '@/context/ChatContext';
 import { useSessionContext } from '@/context/SessionContext';
 import { useAssistantContext } from '@/context/AssistantContext';
@@ -11,10 +11,31 @@ export function ChatMessages() {
   const { getById } = useAssistantContext();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
 
+  // Only auto-scroll if enabled
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, messagesEndRef]);
+    if (autoScrollEnabled) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, autoScrollEnabled]);
+
+  // Detect user scroll position
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      // If user is at the bottom, enable auto-scroll
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      const atBottom = scrollHeight - scrollTop - clientHeight < 10;
+      setAutoScrollEnabled(atBottom);
+    };
+
+    container.addEventListener('scroll', handleScroll);
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, []);
 
   const getAssistantNameForMessage = useCallback(
     (m: Message) => {
@@ -33,7 +54,10 @@ export function ChatMessages() {
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
-      <div className="flex-1 p-4 overflow-y-auto flex flex-col gap-6 terminal-scrollbar">
+      <div
+        ref={scrollContainerRef}
+        className="flex-1 p-4 overflow-y-auto flex flex-col gap-6 terminal-scrollbar"
+      >
         {messages.map((m) => (
           <MessageBubble
             key={m.id}

@@ -70,6 +70,8 @@ jobs:
         run: cd src-tauri && cargo check
 
       # Code Quality Checks (PR only)
+      - name: 🦀 Install Clippy
+        run: rustup component add clippy
       - name: 🔍 Rust Clippy (PR)
         if: github.event_name == 'pull_request'
         run: cd src-tauri && cargo clippy -- -D warnings

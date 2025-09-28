@@ -21,8 +21,10 @@ import {
 import ToolsModal from '../tools/ToolsModal';
 import { TimeLocationSystemPrompt } from '../prompts/TimeLocationSystemPrompt';
 import { getLogger } from '@/lib/logger';
+import { toast } from 'sonner';
 import { useWebMCPServer } from '@/hooks/use-web-mcp-server';
 import { PlanningServerProxy } from '@/lib/web-mcp/modules/planning-server';
+import AgentIdSystemPrompt from '../prompts/AgentIdSystemPrompt';
 
 const logger = getLogger('Chat');
 
@@ -84,6 +86,7 @@ function Chat({ children }: ChatProps) {
 
       planningServer.clear_session().catch((error: Error) => {
         logger.error('Failed to clear planning session', { error });
+        toast.error('플래닝 세션 클리어에 실패했습니다');
       });
     }
 
@@ -101,6 +104,7 @@ function Chat({ children }: ChatProps) {
       <ChatPlanningProvider>
         <ChatWorkspaceProvider>
           <TimeLocationSystemPrompt />
+          <AgentIdSystemPrompt />
           <ChatInner>{children}</ChatInner>
         </ChatWorkspaceProvider>
       </ChatPlanningProvider>

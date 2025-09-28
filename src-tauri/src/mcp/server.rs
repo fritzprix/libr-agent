@@ -17,12 +17,21 @@ use crate::mcp::types::{
 };
 use crate::session::SessionManager;
 
+/// Manages the lifecycle and communication with both external and built-in MCP servers.
+#[derive(Debug)]
 pub struct MCPServerManager {
+    /// A map of active connections to external MCP servers, keyed by server name.
     connections: Arc<Mutex<HashMap<String, MCPConnection>>>,
+    /// A registry for the built-in MCP servers.
     builtin_servers: Arc<Mutex<Option<crate::mcp::builtin::BuiltinServerRegistry>>>,
 }
 
 impl MCPServerManager {
+    /// Creates a new `MCPServerManager` and initializes the built-in servers
+    /// with a reference to the `SessionManager`.
+    ///
+    /// # Arguments
+    /// * `session_manager` - A shared reference to the `SessionManager`.
     pub fn new_with_session_manager(session_manager: Arc<SessionManager>) -> Self {
         let server_manager = Self {
             connections: Arc::new(Mutex::new(HashMap::new())),
@@ -41,16 +50,55 @@ impl MCPServerManager {
         server_manager
     }
 
-    /// MCP 서버를 시작하고 연결합니다
+    /// Creates a new `MCPServerManager` with support for both `SessionManager` and SQLite.
+    ///
+    /// # Arguments
+    /// * `session_manager` - A shared reference to the `SessionManager`.
+    /// * `sqlite_db_url` - The connection URL for the SQLite database.
+    pub async fn new_with_session_manager_and_sqlite(
+        session_manager: Arc<SessionManager>,
+        sqlite_db_url: String,
+    ) -> Self {
+        let server_manager = Self {
+            connections: Arc::new(Mutex::new(HashMap::new())),
+            builtin_servers: Arc::new(Mutex::new(None)),
+        };
+
+        // Initialize builtin servers with SessionManager and SQLite support
+        let builtin_registry =
+            crate::mcp::builtin::BuiltinServerRegistry::new_with_session_manager_and_sqlite(
+                session_manager,
+                sqlite_db_url,
+            )
+            .await;
+        *server_manager
+            .builtin_servers
+            .try_lock()
+            .expect("Failed to initialize builtin servers") = Some(builtin_registry);
+        info!("Initialized MCPServerManager with SessionManager and SQLite support");
+
+        server_manager
+    }
+
+    /// Starts and connects to an MCP server based on the provided configuration.
+    ///
+    /// Currently, only `stdio` transport is supported for starting servers.
+    /// `http` and `websocket` are assumed to be externally managed.
+    ///
+    /// # Arguments
+    /// * `config` - The configuration for the server to start.
+    ///
+    /// # Returns
+    /// A `Result` containing a success message, or an error if the transport is unsupported.
     pub async fn start_server(&self, config: MCPServerConfig) -> Result<String> {
         match config.transport.as_str() {
             "stdio" => self.start_stdio_server(config).await,
             "http" => {
-                // HTTP 서버는 외부에서 이미 실행 중이라고 가정
+                // Assume HTTP server is already running externally
                 Ok(format!("HTTP server configured: {}", config.name))
             }
             "websocket" => {
-                // WebSocket 서버는 외부에서 이미 실행 중이라고 가정
+                // Assume WebSocket server is already running externally
                 Ok(format!("WebSocket server configured: {}", config.name))
             }
             _ => Err(anyhow::anyhow!(
@@ -60,6 +108,13 @@ impl MCPServerManager {
         }
     }
 
+    /// Starts a new MCP server that communicates over stdio.
+    ///
+    /// # Arguments
+    /// * `config` - The server configuration, must specify a command.
+    ///
+    /// # Returns
+    /// A `Result` containing a success message, or an error on failure.
     async fn start_stdio_server(&self, config: MCPServerConfig) -> Result<String> {
         let command = config
             .command
@@ -105,7 +160,10 @@ impl MCPServerManager {
         ))
     }
 
-    /// MCP 서버를 중지합니다
+    /// Stops a running MCP server by name.
+    ///
+    /// # Arguments
+    /// * `server_name` - The name of the server to stop.
     pub async fn stop_server(&self, server_name: &str) -> Result<()> {
         let mut connections = self.connections.lock().await;
 
@@ -118,7 +176,16 @@ impl MCPServerManager {
         Ok(())
     }
 
-    /// MCP 서버에서 sampling을 수행합니다
+    /// Performs text generation (sampling) on a specified MCP server.
+    ///
+    /// **Note:** This is currently a placeholder and not fully implemented.
+    ///
+    /// # Arguments
+    /// * `server_name` - The name of the server to use for sampling.
+    /// * `request` - The `SamplingRequest` containing the prompt and options.
+    ///
+    /// # Returns
+    /// An `MCPResponse` indicating that the method is not yet implemented.
     pub async fn sample_from_model(
         &self,
         server_name: &str,
@@ -128,8 +195,8 @@ impl MCPServerManager {
         let request_id = serde_json::Value::String(Uuid::new_v4().to_string());
 
         if let Some(_connection) = connections.get(server_name) {
-            // RMCP에서 sampling 지원 여부 확인 후 구현
-            // 현재는 임시로 에러 반환
+            // This needs to be implemented once RMCP supports sampling.
+            // For now, return a temporary error.
             MCPResponse {
                 jsonrpc: "2.0".to_string(),
                 id: Some(request_id),
@@ -157,7 +224,15 @@ impl MCPServerManager {
         }
     }
 
-    /// 도구를 호출합니다
+    /// Calls a tool on a specified MCP server with the given arguments.
+    ///
+    /// # Arguments
+    /// * `server_name` - The name of the server that provides the tool.
+    /// * `tool_name` - The name of the tool to call.
+    /// * `arguments` - The arguments for the tool, as a `serde_json::Value`.
+    ///
+    /// # Returns
+    /// An `MCPResponse` containing the result or error of the tool call.
     pub async fn call_tool(
         &self,
         server_name: &str,
@@ -170,7 +245,7 @@ impl MCPServerManager {
         let request_id = serde_json::Value::String(Uuid::new_v4().to_string());
 
         if let Some(connection) = connections.get(server_name) {
-            // RMCP API 사용 - CallToolRequestParam 구조체 사용
+            // Use the rmcp API - CallToolRequestParam struct
             let args_map = if let serde_json::Value::Object(obj) = arguments {
                 obj
             } else {
@@ -184,10 +259,10 @@ impl MCPServerManager {
 
             match connection.client.call_tool(call_param).await {
                 Ok(result) => {
-                    // RMCP 원본 응답을 먼저 로깅 (직렬화 전)
+                    // Log the raw rmcp response first (before serialization)
                     info!("Raw rmcp CallToolResult (before serialization): {result:?}");
 
-                    // rmcp CallToolResult를 보다 신중하게 처리
+                    // Handle the rmcp CallToolResult more carefully
                     let result_value = match serde_json::to_value(&result) {
                         Ok(value) => value,
                         Err(e) => {
@@ -205,11 +280,11 @@ impl MCPServerManager {
                         }
                     };
 
-                    // 디버그 로그로 원본 구조 확인
+                    // Debug log to check the original structure
                     info!("Original rmcp result: {result:?}");
                     info!("Serialized result: {result_value}");
 
-                    // UI 리소스 감지 및 추가 로깅
+                    // Detect and add logging for UI resources
                     if let Some(content) = result_value.get("content") {
                         if let Some(content_array) = content.as_array() {
                             for (i, item) in content_array.iter().enumerate() {
@@ -226,7 +301,7 @@ impl MCPServerManager {
                         }
                     }
 
-                    // 결과에 에러가 포함되어 있는지 확인
+                    // Check if the result contains an error
                     let contains_error = result_value.to_string().to_lowercase().contains("error");
 
                     if contains_error
@@ -235,7 +310,7 @@ impl MCPServerManager {
                             .and_then(|v| v.as_bool())
                             .unwrap_or(false)
                     {
-                        // isError가 true인 경우 에러로 처리
+                        // If isError is true, treat it as an error
                         let error_msg = result_value
                             .get("content")
                             .and_then(|c| c.as_array())
@@ -246,7 +321,7 @@ impl MCPServerManager {
 
                         MCPResponse::error(request_id, -32000, error_msg)
                     } else {
-                        // 정상 응답 - rmcp 구조를 최대한 보존
+                        // Normal response - preserve the rmcp structure as much as possible
                         MCPResponse {
                             jsonrpc: "2.0".to_string(),
                             id: Some(request_id),
@@ -284,7 +359,13 @@ impl MCPServerManager {
         }
     }
 
-    /// 사용 가능한 도구 목록을 가져옵니다
+    /// Lists all tools available on a specific MCP server.
+    ///
+    /// # Arguments
+    /// * `server_name` - The name of the server.
+    ///
+    /// # Returns
+    /// A `Result` containing a vector of `MCPTool` objects, or an error on failure.
     pub async fn list_tools(&self, server_name: &str) -> Result<Vec<MCPTool>> {
         let connections = self.connections.lock().await;
 
@@ -333,16 +414,22 @@ impl MCPServerManager {
                 }
                 Err(e) => {
                     error!("Error listing tools: {e}");
-                    Err(anyhow::anyhow!("Failed to list tools: {}", e))
+                    Err(anyhow::anyhow!("Failed to list tools: {e}"))
                 }
             }
         } else {
             warn!("Server '{server_name}' not found in connections");
-            Err(anyhow::anyhow!("Server '{}' not found", server_name))
+            Err(anyhow::anyhow!("Server '{server_name}' not found"))
         }
     }
 
-    /// Get tools from all connected servers
+    /// Lists all tools from all connected MCP servers.
+    ///
+    /// This method iterates through all active connections, fetches their tools,
+    /// and prefixes each tool's name with the server name to avoid conflicts.
+    ///
+    /// # Returns
+    /// A `Result` containing a vector of all `MCPTool` objects from all servers.
     pub async fn list_all_tools(&self) -> Result<Vec<MCPTool>> {
         let mut all_tools = Vec::new();
         let server_names: Vec<String> = {
@@ -369,19 +456,28 @@ impl MCPServerManager {
         Ok(all_tools)
     }
 
-    /// 연결된 서버 목록을 반환합니다
+    /// Returns a list of names of all currently connected external MCP servers.
     pub async fn get_connected_servers(&self) -> Vec<String> {
         let connections = self.connections.lock().await;
         connections.keys().cloned().collect()
     }
 
-    /// 특정 서버가 연결되어 있는지 확인합니다
+    /// Checks if a specific external server is currently connected.
+    ///
+    /// # Arguments
+    /// * `server_name` - The name of the server to check.
+    ///
+    /// # Returns
+    /// `true` if the server is connected, `false` otherwise.
     pub async fn is_server_alive(&self, server_name: &str) -> bool {
         let connections = self.connections.lock().await;
         connections.contains_key(server_name)
     }
 
-    /// 모든 서버의 상태를 확인합니다
+    /// Checks the status of all connected external servers.
+    ///
+    /// # Returns
+    /// A `HashMap` mapping server names to their connection status (always `true` for connected servers).
     pub async fn check_all_servers(&self) -> HashMap<String, bool> {
         let connections = self.connections.lock().await;
         let mut status_map = HashMap::new();
@@ -393,7 +489,16 @@ impl MCPServerManager {
         status_map
     }
 
-    /// Validate if a tool schema is compatible with AI service expectations
+    /// Validates that a tool's input schema is compatible with AI service expectations.
+    ///
+    /// This function checks that the schema is of type `object` and that all `required`
+    /// fields are defined in the `properties`.
+    ///
+    /// # Arguments
+    /// * `tool` - A reference to the `MCPTool` to validate.
+    ///
+    /// # Returns
+    /// An empty `Result` on success, or an error if validation fails.
     pub fn validate_tool_schema(tool: &MCPTool) -> Result<()> {
         // Ensure the schema type is 'object'
         match &tool.input_schema.schema_type {
@@ -428,7 +533,13 @@ impl MCPServerManager {
         }
     }
 
-    /// Get validated tools that are compatible with the AI service
+    /// Gets a list of tools from a server that pass schema validation.
+    ///
+    /// # Arguments
+    /// * `server_name` - The name of the server to get validated tools from.
+    ///
+    /// # Returns
+    /// A `Result` containing a vector of validated `MCPTool` objects.
     pub async fn get_validated_tools(&self, server_name: &str) -> Result<Vec<MCPTool>> {
         let tools = self.list_tools(server_name).await?;
         let mut validated_tools = Vec::new();
@@ -449,8 +560,7 @@ impl MCPServerManager {
         Ok(validated_tools)
     }
 
-    /// Built-in server methods
-    /// List all available builtin servers
+    /// Lists the names of all available built-in servers.
     pub async fn list_builtin_servers(&self) -> Vec<String> {
         let servers = self.builtin_servers.lock().await;
         match servers.as_ref() {
@@ -459,7 +569,7 @@ impl MCPServerManager {
         }
     }
 
-    /// List all tools from builtin servers
+    /// Lists all tools from all available built-in servers.
     pub async fn list_builtin_tools(&self) -> Vec<MCPTool> {
         let servers = self.builtin_servers.lock().await;
         match servers.as_ref() {
@@ -468,7 +578,10 @@ impl MCPServerManager {
         }
     }
 
-    /// List tools from a specific builtin server
+    /// Lists the tools for a specific built-in server.
+    ///
+    /// # Arguments
+    /// * `server_name` - The name of the built-in server.
     pub async fn list_builtin_tools_for(&self, server_name: &str) -> Vec<MCPTool> {
         let servers = self.builtin_servers.lock().await;
         match servers.as_ref() {
@@ -477,7 +590,15 @@ impl MCPServerManager {
         }
     }
 
-    /// Call a tool on a builtin server
+    /// Calls a tool on a built-in server.
+    ///
+    /// # Arguments
+    /// * `server_name` - The name of the built-in server.
+    /// * `tool_name` - The name of the tool to call.
+    /// * `args` - The arguments for the tool, as a `serde_json::Value`.
+    ///
+    /// # Returns
+    /// An `MCPResponse` containing the result of the tool call.
     pub async fn call_builtin_tool(
         &self,
         server_name: &str,
@@ -514,7 +635,7 @@ impl MCPServerManager {
         result
     }
 
-    /// Get unified list of tools from both external and builtin servers
+    /// Gets a unified list of all tools from both external and built-in servers.
     pub async fn list_all_tools_unified(&self) -> Result<Vec<MCPTool>> {
         let mut all_tools = Vec::new();
 
@@ -531,7 +652,17 @@ impl MCPServerManager {
         Ok(all_tools)
     }
 
-    /// Call a tool on either external or builtin server based on server name
+    /// Calls a tool, automatically routing the request to either a built-in or an
+    /// external server based on the server name prefix.
+    ///
+    /// # Arguments
+    /// * `server_name` - The name of the server. If it starts with "builtin.", it's
+    ///   routed to the built-in server registry.
+    /// * `tool_name` - The name of the tool to call.
+    /// * `args` - The arguments for the tool.
+    ///
+    /// # Returns
+    /// An `MCPResponse` from the appropriate server.
     pub async fn call_tool_unified(
         &self,
         server_name: &str,
@@ -540,9 +671,34 @@ impl MCPServerManager {
     ) -> MCPResponse {
         // Check if it's a builtin server (starts with "builtin.")
         if server_name.starts_with("builtin.") {
-            self.call_builtin_tool(server_name, tool_name, args).await
+            let normalized_server_name =
+                server_name.strip_prefix("builtin.").unwrap_or(server_name);
+            self.call_builtin_tool(normalized_server_name, tool_name, args)
+                .await
         } else {
             self.call_tool(server_name, tool_name, args).await
         }
+    }
+
+    /// Gets the service context for a given server, checking built-in servers first.
+    ///
+    /// # Arguments
+    /// * `server_name` - The name of the server.
+    ///
+    /// # Returns
+    /// A `Result` containing the service context string, or an error.
+    pub async fn get_service_context(&self, server_name: &str) -> Result<String, String> {
+        // Check built-in servers first
+        let servers = self.builtin_servers.lock().await;
+        if let Some(registry) = servers.as_ref() {
+            if let Ok(context) = registry.get_server_context(server_name, None) {
+                return Ok(context);
+            }
+        }
+
+        // Fallback for external MCP servers (future implementation)
+        Ok(format!(
+            "# MCP Server Context\nServer ID: {server_name}\nStatus: Active"
+        ))
     }
 }

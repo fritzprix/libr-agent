@@ -1,29 +1,33 @@
 /**
- * SynapticFlow 글로벌 로거 시스템
+ * @file SynapticFlow Global Logger System
  *
- * 특징:
- * - 파일 로깅 자동 지원 (플랫폼별 표준 경로)
- * - 시작 시 자동 백업
- * - 로그 레벨 필터링
- * - 설정 영구 저장
- * - 컨텍스트별 로깅
+ * @description
+ * This module provides a comprehensive logging solution for the application,
+ * built on top of the `@tauri-apps/plugin-log` package.
+ *
+ * @features
+ * - **File Logging**: Automatic file logging to standard platform-specific paths.
+ * - **Log Backup**: Automatic backup of the log file on application startup.
+ * - **Log Level Filtering**: Supports 'trace', 'debug', 'info', 'warn', and 'error' levels.
+ * - **Persistent Configuration**: Saves logger settings (e.g., log level) to local storage.
+ * - **Contextual Logging**: Allows creating logger instances with specific contexts (e.g., component names).
  *
  * @example
  * ```typescript
  * import { getLogger, logUtils } from '@/lib/logger';
  *
- * // 앱 시작 시 (main.tsx에서 자동 호출됨)
+ * // In your app's entry point (e.g., main.tsx), this is called automatically.
  * await logUtils.initialize();
  *
- * // 컨텍스트별 로거 사용
+ * // Using a context-specific logger in a component.
  * const logger = getLogger('MyComponent');
  * logger.info('Component initialized');
  *
- * // 설정 변경
+ * // Changing logger settings.
  * await logUtils.setLogLevel('debug');
  * await logUtils.enableFileLogging(true);
  *
- * // 로그 파일 관리
+ * // Managing log files.
  * const logDir = await logUtils.getLogDirectory();
  * const files = await logUtils.listAllLogFiles();
  * await logUtils.backupNow();
@@ -39,15 +43,21 @@ import {
 } from '@tauri-apps/plugin-log';
 import { invoke } from '@tauri-apps/api/core';
 
-// 글로벌 로거 설정 인터페이스
+/**
+ * Defines the configuration options for the global logger.
+ */
 export interface LoggerConfig {
+  /** If true, logs will be written to a file in the app's log directory. */
   enableFileLogging: boolean;
+  /** If true, the current log file will be backed up when the app starts. */
   autoBackupOnStartup: boolean;
+  /** The maximum number of backup log files to keep. */
   maxBackupFiles: number;
+  /** The minimum level of logs to record. */
   logLevel: 'trace' | 'debug' | 'info' | 'warn' | 'error';
 }
 
-// 기본 설정
+// Default configuration
 const DEFAULT_CONFIG: LoggerConfig = {
   enableFileLogging: true,
   autoBackupOnStartup: true,
@@ -55,18 +65,40 @@ const DEFAULT_CONFIG: LoggerConfig = {
   logLevel: 'info',
 };
 
-// 글로벌 설정 저장소
+// Global configuration store
 let globalLoggerConfig: LoggerConfig = { ...DEFAULT_CONFIG };
 
-// 로그 파일 관리 인터페이스
+/**
+ * Defines the interface for managing log files.
+ */
 export interface LogFileManager {
+  /**
+   * Gets the path to the directory where log files are stored.
+   * @returns A promise that resolves to the log directory path.
+   */
   getLogDirectory(): Promise<string>;
+  /**
+   * Creates a backup of the current log file.
+   * @returns A promise that resolves to the path of the new backup file.
+   */
   backupCurrentLog(): Promise<string>;
+  /**
+   * Clears the content of the current log file.
+   * @returns A promise that resolves when the log has been cleared.
+   */
   clearCurrentLog(): Promise<void>;
+  /**
+   * Lists all log files in the log directory.
+   * @returns A promise that resolves to an array of log file names.
+   */
   listLogFiles(): Promise<string[]>;
 }
 
-// 로그 파일 관리 클래스 구현
+/**
+ * An implementation of the `LogFileManager` interface that uses Tauri's `invoke`
+ * to call Rust backend functions for file management.
+ * @internal
+ */
 class TauriLogFileManager implements LogFileManager {
   async getLogDirectory(): Promise<string> {
     return await invoke<string>('get_app_logs_dir');
@@ -85,31 +117,50 @@ class TauriLogFileManager implements LogFileManager {
   }
 }
 
-// 전역 로그 파일 매니저 인스턴스
+/**
+ * A singleton instance of the `TauriLogFileManager` for global use.
+ */
 export const logFileManager = new TauriLogFileManager();
 
+/**
+ * A static class that provides core logging functionalities.
+ * It manages the logger's configuration and provides static methods for logging
+ * at different levels.
+ */
 export class Logger {
   private static defaultContext = 'TauriAgent';
   private static hasBackedUpOnStartup = false;
 
-  // 글로벌 로거 설정 업데이트
+  /**
+   * Updates the global logger configuration.
+   * @param config A partial `LoggerConfig` object with the settings to update.
+   */
   static updateConfig(config: Partial<LoggerConfig>): void {
     globalLoggerConfig = { ...globalLoggerConfig, ...config };
     console.log('Logger config updated:', globalLoggerConfig);
   }
 
-  // 현재 설정 반환
+  /**
+   * Gets the current global logger configuration.
+   * @returns A copy of the current `LoggerConfig`.
+   */
   static getConfig(): LoggerConfig {
     return { ...globalLoggerConfig };
   }
 
-  // 설정을 기본값으로 리셋
+  /**
+   * Resets the logger configuration to its default values.
+   */
   static resetConfig(): void {
     globalLoggerConfig = { ...DEFAULT_CONFIG };
     Logger.hasBackedUpOnStartup = false;
   }
 
-  // 로거 초기화 (앱 시작 시 호출)
+  /**
+   * Initializes the logger. This should be called once when the application starts.
+   * It applies any initial configuration and performs a startup backup if enabled.
+   * @param config Optional initial configuration to apply.
+   */
   static async initialize(config?: Partial<LoggerConfig>): Promise<void> {
     if (config) {
       Logger.updateConfig(config);
@@ -123,7 +174,10 @@ export class Logger {
     console.log('🚀 Logger initialized with config:', globalLoggerConfig);
   }
 
-  // 시작 시 한 번만 백업 수행
+  /**
+   * Performs the log file backup on startup, if enabled and not already done.
+   * @private
+   */
   private static async performStartupBackup(): Promise<void> {
     if (
       !globalLoggerConfig.autoBackupOnStartup ||
@@ -137,12 +191,18 @@ export class Logger {
       console.log(`📄 Log backup created at startup: ${backupPath}`);
       Logger.hasBackedUpOnStartup = true;
     } catch (error) {
-      // 백업 실패는 로깅을 방해하지 않음
+      // A failure to backup should not prevent the logger from initializing.
       console.warn('⚠️ Failed to create startup backup:', error);
     }
   }
 
-  // 로그 레벨 체크
+  /**
+   * Checks if a log message at a given level should be recorded,
+   * based on the current global log level.
+   * @param level The level of the message to check.
+   * @returns True if the message should be logged, false otherwise.
+   * @private
+   */
   private static shouldLog(level: string): boolean {
     const levels = ['trace', 'debug', 'info', 'warn', 'error'];
     const currentLevelIndex = levels.indexOf(globalLoggerConfig.logLevel);
@@ -150,6 +210,16 @@ export class Logger {
     return messageLevelIndex >= currentLevelIndex;
   }
 
+  /**
+   * Formats a log message and its arguments, and extracts a context.
+   * If the last argument is a string, it is treated as the context.
+   * Other arguments are stringified and appended to the message.
+   * @param message The main log message.
+   * @param args The array of arguments to log.
+   * @param defaultContext The default context to use if none is provided in the arguments.
+   * @returns An object containing the formatted message and the context.
+   * @private
+   */
   private static formatLogMessage(
     message: string,
     args: unknown[],
@@ -159,9 +229,9 @@ export class Logger {
     let logMessage = message;
     let logArgs = [...args];
 
-    // Check if the last argument is a context string
+    // Check if the last argument is a context string, and if so, use it as the context.
     if (logArgs.length > 0 && typeof logArgs[logArgs.length - 1] === 'string') {
-      actualContext = logArgs.pop() as string; // Remove and use as context
+      actualContext = logArgs.pop() as string;
     }
 
     // Format the message and remaining arguments
@@ -177,6 +247,11 @@ export class Logger {
     return { formattedMessage: logMessage, context: actualContext };
   }
 
+  /**
+   * Logs a debug message.
+   * @param message The message to log.
+   * @param args Additional arguments to log. If the last argument is a string, it will be used as the context.
+   */
   static async debug(message: string, ...args: unknown[]): Promise<void> {
     if (!Logger.shouldLog('debug')) return;
 
@@ -192,6 +267,11 @@ export class Logger {
     await debug(`[${context}] ${formattedMessage}`);
   }
 
+  /**
+   * Logs an info message.
+   * @param message The message to log.
+   * @param args Additional arguments to log. If the last argument is a string, it will be used as the context.
+   */
   static async info(message: string, ...args: unknown[]): Promise<void> {
     if (!Logger.shouldLog('info')) return;
 
@@ -207,6 +287,11 @@ export class Logger {
     await info(`[${context}] ${formattedMessage}`);
   }
 
+  /**
+   * Logs a warning message.
+   * @param message The message to log.
+   * @param args Additional arguments to log. If the last argument is a string, it will be used as the context.
+   */
   static async warn(message: string, ...args: unknown[]): Promise<void> {
     if (!Logger.shouldLog('warn')) return;
 
@@ -222,6 +307,11 @@ export class Logger {
     await warn(`[${context}] ${formattedMessage}`);
   }
 
+  /**
+   * Logs an error message. If the last argument is an `Error` object, its message will be appended.
+   * @param message The message to log.
+   * @param args Additional arguments to log. If the last argument is a string, it will be used as the context.
+   */
   static async error(message: string, ...args: unknown[]): Promise<void> {
     if (!Logger.shouldLog('error')) return;
 
@@ -254,6 +344,11 @@ export class Logger {
     await logError(`[${context}] ${errorMsg}`);
   }
 
+  /**
+   * Logs a trace message.
+   * @param message The message to log.
+   * @param args Additional arguments to log. If the last argument is a string, it will be used as the context.
+   */
   static async trace(message: string, ...args: unknown[]): Promise<void> {
     if (!Logger.shouldLog('trace')) return;
 
@@ -270,7 +365,10 @@ export class Logger {
   }
 }
 
-// Convenience functions for common logging patterns (global logger)
+/**
+ * A convenience object that provides global access to the static `Logger` methods.
+ * This allows for simple, context-less logging from anywhere in the application.
+ */
 export const log = {
   debug: (message: string, ...args: unknown[]) =>
     Logger.debug(message, ...args),
@@ -282,7 +380,12 @@ export const log = {
     Logger.trace(message, ...args),
 };
 
-// Function to get a context-specific logger instance
+/**
+ * Creates a logger instance with a specific context.
+ * This is the recommended way to log from within specific components or modules.
+ * @param contextName The name of the context to use for this logger instance.
+ * @returns An object with logging methods (`debug`, `info`, `warn`, `error`, `trace`) that will automatically include the context.
+ */
 export function getLogger(contextName: string) {
   return {
     debug: (message: string, ...args: unknown[]) =>
@@ -298,11 +401,17 @@ export function getLogger(contextName: string) {
   };
 }
 
-// 로그 파일 관리를 위한 유틸리티 함수들
+/**
+ * A collection of utility functions for managing the logger's configuration and log files.
+ */
 export const logUtils = {
-  // 로거 초기화 (앱 시작 시 호출)
+  /**
+   * Initializes the logger, loading any saved configuration from local storage
+   * and applying any provided initial configuration. This should be called once on app startup.
+   * @param config Optional initial configuration to apply.
+   */
   initialize: async (config?: Partial<LoggerConfig>): Promise<void> => {
-    // 먼저 저장된 설정을 로드 시도
+    // First, try to load any saved configuration.
     try {
       const savedConfig = await logUtils.loadConfig();
       if (savedConfig) {
@@ -312,34 +421,44 @@ export const logUtils = {
       console.warn('Failed to load saved logger config:', error);
     }
 
-    // 전달된 설정이 있으면 덮어쓰기
+    // If an initial config is provided, overwrite the loaded config with it.
     if (config) {
       Logger.updateConfig(config);
-      // 새 설정 저장
+      // Save the new configuration.
       await logUtils.saveConfig();
     }
 
     await Logger.initialize();
   },
 
-  // 설정 업데이트 및 저장
+  /**
+   * Updates the logger configuration and saves it to persistent storage.
+   * @param config A partial `LoggerConfig` object with the settings to update.
+   */
   updateConfig: async (config: Partial<LoggerConfig>): Promise<void> => {
     Logger.updateConfig(config);
     await logUtils.saveConfig();
   },
 
-  // 현재 설정 가져오기
+  /**
+   * Gets the current logger configuration.
+   * @returns The current `LoggerConfig`.
+   */
   getConfig: (): LoggerConfig => {
     return Logger.getConfig();
   },
 
-  // 설정 리셋
+  /**
+   * Resets the logger configuration to its default values and saves the change.
+   */
   resetConfig: async (): Promise<void> => {
     Logger.resetConfig();
     await logUtils.saveConfig();
   },
 
-  // 설정을 로컬 스토리지에 저장
+  /**
+   * Saves the current logger configuration to local storage.
+   */
   saveConfig: async (): Promise<void> => {
     try {
       const config = Logger.getConfig();
@@ -352,7 +471,10 @@ export const logUtils = {
     }
   },
 
-  // 로컬 스토리지에서 설정 로드
+  /**
+   * Loads the logger configuration from local storage.
+   * @returns A promise that resolves to the loaded `LoggerConfig`, or null if not found or on error.
+   */
   loadConfig: async (): Promise<LoggerConfig | null> => {
     try {
       const configStr = localStorage.getItem('synaptic-flow-logger-config');
@@ -365,35 +487,57 @@ export const logUtils = {
     return null;
   },
 
-  // 수동으로 현재 로그 백업
+  /**
+   * Manually triggers a backup of the current log file.
+   * @returns A promise that resolves to the path of the new backup file.
+   */
   backupNow: async (): Promise<string> => {
     return await logFileManager.backupCurrentLog();
   },
 
-  // 현재 로그 파일 초기화
+  /**
+   * Clears the content of the current log file.
+   */
   clearLogs: async (): Promise<void> => {
     await logFileManager.clearCurrentLog();
   },
 
-  // 로그 디렉토리 경로 가져오기
+  /**
+   * Gets the path to the log directory.
+   * @returns A promise that resolves to the log directory path.
+   */
   getLogDirectory: async (): Promise<string> => {
     return await logFileManager.getLogDirectory();
   },
 
-  // 모든 로그 파일 목록 가져오기
+  /**
+   * Lists all log files in the log directory.
+   * @returns A promise that resolves to an array of log file names.
+   */
   listAllLogFiles: async (): Promise<string[]> => {
     return await logFileManager.listLogFiles();
   },
 
-  // 로그 레벨별 편의 함수들
+  /**
+   * A convenience function to set the log level.
+   * @param level The log level to set.
+   */
   setLogLevel: async (level: LoggerConfig['logLevel']): Promise<void> => {
     await logUtils.updateConfig({ logLevel: level });
   },
 
+  /**
+   * A convenience function to enable or disable file logging.
+   * @param enabled If true, file logging is enabled. Defaults to true.
+   */
   enableFileLogging: async (enabled: boolean = true): Promise<void> => {
     await logUtils.updateConfig({ enableFileLogging: enabled });
   },
 
+  /**
+   * A convenience function to enable or disable automatic log backup on startup.
+   * @param enabled If true, auto backup is enabled. Defaults to true.
+   */
   enableAutoBackup: async (enabled: boolean = true): Promise<void> => {
     await logUtils.updateConfig({ autoBackupOnStartup: enabled });
   },

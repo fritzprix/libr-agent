@@ -5,6 +5,7 @@ import { AIServiceConfig, AIServiceFactory } from '../lib/ai-service';
 import { getLogger } from '../lib/logger';
 import { useSettings } from './use-settings';
 import { prepareMessagesForLLM } from '../lib/message-preprocessor';
+import { createErrorMessage } from '../lib/ai-service/error-handler';
 
 import { selectMessagesWithinContext } from '@/lib/token-utils';
 import { stringToMCPContentArray } from '@/lib/utils';
@@ -291,13 +292,21 @@ export const useAIService = (config?: AIServiceConfig) => {
       } catch (err) {
         logger.error('Error in useAIService stream:', err);
         setError(err as Error);
-        setResponse((prev) => {
-          if (prev) {
-            return { ...prev, isStreaming: false, thinking: undefined };
-          }
-          return null;
-        });
-        throw err;
+
+        // Create error message instead of malformed content
+        const errorMessage = createErrorMessage(
+          currentResponseId,
+          messages[0]?.sessionId || '',
+          err,
+          {
+            model,
+            provider,
+            messageCount: messages.length,
+          },
+        );
+
+        setResponse(errorMessage);
+        return errorMessage;
       } finally {
         setIsLoading(false);
       }

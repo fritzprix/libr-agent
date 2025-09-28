@@ -35,6 +35,7 @@ interface ChatContextValue {
     type: string;
     payload: { prompt: string };
   }) => Promise<void>;
+  retryMessage: (messageId: string) => Promise<void>;
 }
 
 const ChatContext = createContext<ChatContextValue | undefined>(undefined);
@@ -46,7 +47,12 @@ interface ChatProviderProps {
 const DEFAULT_SYSTEM_PROMPT = 'You are a helpful assistant.';
 
 export function ChatProvider({ children }: ChatProviderProps) {
-  const { messages: history, addMessage, addMessages } = useSessionHistory();
+  const {
+    messages: history,
+    addMessage,
+    addMessages,
+    updateMessage,
+  } = useSessionHistory();
   const { current: currentSession } = useSessionContext();
   const { value: settingValue } = useSettings();
   const { getCurrent: getCurrentAssistant, availableTools } =
@@ -73,17 +79,17 @@ export function ChatProvider({ children }: ChatProviderProps) {
     };
   }, []);
 
-  // 세션 변경 시 streamingMessage 초기화 루틴 (타이밍 문제 해결)
+  // Routine to initialize streamingMessage on session change (to resolve timing issues)
   useEffect(() => {
     if (currentSession?.id) {
       logger.debug('Session changed, ensuring streamingMessage is cleared', {
         newSessionId: currentSession.id,
       });
-      setStreamingMessage(null); // 세션 변경 시 무조건 초기화
-      setPendingCancel(false); // Cancel 상태 초기화
-      setMessageQueue([]); // 메시지 큐 초기화
+      setStreamingMessage(null); // Always initialize on session change
+      setPendingCancel(false); // Reset cancel state
+      setMessageQueue([]); // Reset message queue
     }
-  }, [currentSession?.id]); // currentSession?.id 변경 시 실행
+  }, [currentSession?.id]); // Run when currentSession?.id changes
 
   const buildSystemPrompt = useCallback(async (): Promise<string> => {
     const basePrompt =
@@ -145,7 +151,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       return history;
     }
 
-    // 세션 불일치 시 streamingMessage 무시 (Race Condition 방지)
+    // Ignore streamingMessage on session mismatch (to prevent race conditions)
     if (streamingMessage.sessionId !== currentSession?.id) {
       logger.warn(
         'Streaming message session mismatch in messages calculation',
@@ -175,7 +181,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   useEffect(() => {
     if (!response) return;
 
-    // 세션 불일치 시 response 무시 (Session 검증 강화)
+    // Ignore response for different session (strengthen session validation)
     if (response.sessionId && response.sessionId !== currentSession?.id) {
       logger.warn('Ignoring response for different session', {
         responseSessionId: response.sessionId,
@@ -231,7 +237,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
         let messagesToSend = messages;
 
-        // Process and validate new messages if provided (tool 결과 유실 방지)
+        // Process and validate new messages if provided (to prevent loss of tool results)
         if (messageToAdd?.length) {
           const messagesWithSession = messageToAdd.map((m) => ({
             ...m,
@@ -241,7 +247,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
             await addMessages(messagesWithSession);
             messagesToSend = [...messages, ...messagesWithSession];
           } else {
-            // 안전한 폴백: 순차 저장
+            // Safe fallback: sequential saving
             const persisted: Message[] = [];
             for (const msg of messagesWithSession) {
               const added = await addMessage(msg);
@@ -251,7 +257,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
           }
         }
 
-        // Cancel 체크를 메시지 추가 후로 이동 (tool 결과는 보존)
+        // Move cancel check to after message addition (to preserve tool results)
         if (cancelRequestRef.current) {
           cancelRequestRef.current = false;
           logger.info('Request cancelled after message persistence');
@@ -318,6 +324,60 @@ export function ChatProvider({ children }: ChatProviderProps) {
       addMessage,
       addMessages,
       buildSystemPrompt,
+    ],
+  );
+
+  const retryMessage = useCallback(
+    async (messageId: string): Promise<void> => {
+      const messageToRetry = messages.find((m) => m.id === messageId);
+      if (!messageToRetry?.error) return;
+
+      logger.info('Retrying failed message', { messageId });
+
+      try {
+        // Find the message index to get previous messages
+        const messageIndex = messages.findIndex((m) => m.id === messageId);
+        const previousMessages = messages.slice(0, messageIndex);
+
+        // Submit retry request
+        const response = await triggerAIService(
+          previousMessages,
+          buildSystemPrompt,
+        );
+
+        if (response) {
+          // Success: update the error message to normal message
+          await updateMessage(messageId, {
+            error: undefined,
+            content: response.content,
+            tool_calls: response.tool_calls,
+            thinking: response.thinking,
+            isStreaming: false,
+          });
+        }
+      } catch (error) {
+        logger.error('Retry failed', { messageId, error });
+        // Update with retry failed error
+        await updateMessage(messageId, {
+          error: {
+            displayMessage: 'Retry attempt failed. Please try again.',
+            type: 'RETRY_FAILED',
+            recoverable: true,
+            details: {
+              originalError: error,
+              errorCode: 'RETRY_FAILED',
+              timestamp: new Date().toISOString(),
+            },
+          },
+        });
+      }
+    },
+    [
+      messages,
+      triggerAIService,
+      buildSystemPrompt,
+      updateMessage,
+      aiServiceConfig,
     ],
   );
 
@@ -396,6 +456,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       addToMessageQueue,
       pendingCancel,
       handleUIAction,
+      retryMessage,
     }),
     [
       messages,
@@ -406,6 +467,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       addToMessageQueue,
       pendingCancel,
       handleUIAction,
+      retryMessage,
     ],
   );
 

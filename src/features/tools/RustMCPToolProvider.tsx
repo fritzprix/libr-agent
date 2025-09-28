@@ -15,8 +15,12 @@ const logger = getLogger('RustMCPToolProvider');
  */
 export function RustMCPToolProvider() {
   const { register, unregister } = useBuiltInTool();
-  const { listBuiltinServers, listBuiltinTools, callBuiltinTool } =
-    useRustBackend();
+  const {
+    listBuiltinServers,
+    listBuiltinTools,
+    callBuiltinTool,
+    getServiceContext,
+  } = useRustBackend();
 
   const [{ loading, value, error }, loadBuiltInServers] =
     useAsyncFn(async () => {
@@ -81,6 +85,9 @@ export function RustMCPToolProvider() {
               args,
             );
             return rawResult; // Rust backend already returns proper MCPResponse
+          },
+          getServiceContext: async () => {
+            return await getServiceContext(serviceId);
           },
         });
       });
