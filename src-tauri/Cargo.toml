@@ -52,7 +52,7 @@ zip = "0.6"
 docx-rs = "0.4"           # DOCX parsing
 calamine = { version = "0.24", features = ["dates"] }  # XLSX parsing
 lopdf = "0.31"            # PDF parsing
-pdf-extract = "0.7"       # Better PDF text extraction
+pdf-extract = "0.9"       # Better PDF text extraction
 # tantivy = "0.21"       # BM25 text search - temporarily disabled due to zstd conflicts
 sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "sqlite"] }
 base64 = "0.22.1"
