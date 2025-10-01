@@ -1,13 +1,7 @@
-import { inputText } from '@/lib/rust-backend-client';
 import { getLogger } from '@/lib/logger';
-import {
-  checkElementState,
-  pollWithTimeout,
-  formatBrowserResultAsMCP,
-  BROWSER_TOOL_SCHEMAS,
-} from './helpers';
-import { StrictBrowserMCPTool } from './types';
+import { BROWSER_TOOL_SCHEMAS } from './helpers';
 import { createMCPTextResponse } from '@/lib/mcp-response-utils';
+import { StrictBrowserMCPTool } from './types';
 
 const logger = getLogger('InputTextTool');
 
@@ -24,72 +18,59 @@ export const inputTextTool: StrictBrowserMCPTool = {
     required: ['sessionId', 'selector', 'text'],
   },
   execute: async (args: Record<string, unknown>, executeScript) => {
-    const { sessionId, selector, text } = args as {
-      sessionId: string;
-      selector: string;
-      text: string;
-    };
-    logger.debug('Executing browser_inputText', { sessionId, selector });
+    const sessionId = args.sessionId;
+    const selector = args.selector;
+    const text = args.text;
 
-    if (!executeScript) {
-      throw new Error('executeScript function is required for inputText');
+    // Input validation
+    if (typeof sessionId !== 'string' || !sessionId.trim()) {
+      return createMCPTextResponse(
+        '✗ Input failed: Invalid sessionId parameter - must be non-empty string',
+      );
     }
 
-    try {
-      // Check element state using common helper with input-specific validation
-      const elementState = await checkElementState(
-        executeScript,
-        sessionId,
-        selector,
-        'input',
-      );
-
-      if (!elementState.exists) {
-        return formatBrowserResultAsMCP(
-          JSON.stringify({
-            ok: false,
-            action: 'input',
-            reason: 'element_not_found',
-            selector,
-          }),
-        );
-      }
-
-      if (!elementState.inputable) {
-        return formatBrowserResultAsMCP(
-          JSON.stringify({
-            ok: false,
-            action: 'input',
-            reason: 'element_not_inputable',
-            selector,
-            diagnostics: elementState,
-          }),
-        );
-      }
-
-      // Element is valid, proceed with input
-      const requestId = await inputText(sessionId, selector, text);
-      logger.debug('Input text request ID received', { requestId });
-
-      // Poll for result with timeout using common helper
-      const result = await pollWithTimeout(requestId);
-
-      if (result) {
-        logger.debug('Poll result received', { result });
-        return formatBrowserResultAsMCP(result);
-      }
-
+    if (typeof selector !== 'string' || !selector.trim()) {
       return createMCPTextResponse(
-        'Input operation timed out - no response received from browser',
+        `✗ Input failed: Invalid selector parameter - must be non-empty string (session: ${sessionId})`,
+      );
+    }
+
+    if (typeof text !== 'string') {
+      return createMCPTextResponse(
+        `✗ Input failed: Invalid text parameter - must be string (session: ${sessionId}, selector: ${selector})`,
+      );
+    }
+
+    if (!executeScript) {
+      return createMCPTextResponse(
+        '✗ Input failed: executeScript function is required',
+      );
+    }
+
+    logger.debug('Executing inputText', { sessionId, selector, text });
+
+    try {
+      // Simple script like inject_javascript - just set the value
+      const script = `(function() { const el = document.querySelector(${JSON.stringify(selector)}); if (el) { el.value = ${JSON.stringify(text)}; el.dispatchEvent(new Event('input', {bubbles: true})); el.dispatchEvent(new Event('change', {bubbles: true})); } return el ? 'Input successful: ' + el.value : 'Element not found'; })()`;
+
+      // Execute script using the provided executeScript function
+      const result = await executeScript(sessionId, script);
+
+      logger.debug('Input completed', { selector, result });
+      return createMCPTextResponse(
+        `✓ Input ${result.startsWith('Input successful') ? 'successful' : 'failed'} (selector: ${selector})\nResult: ${result}`,
       );
     } catch (error) {
-      logger.error('Error in input_text execution', {
-        error,
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error('Input execution error', {
+        error: errorMessage,
         sessionId,
         selector,
       });
+
       return createMCPTextResponse(
-        `Error executing input: ${error instanceof Error ? error.message : String(error)}`,
+        `✗ Input failed: ${errorMessage} (selector: ${selector}, session: ${sessionId})`,
       );
     }
   },

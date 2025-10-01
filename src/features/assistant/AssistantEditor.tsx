@@ -14,6 +14,7 @@ import {
 } from '../../components/ui';
 import LocalServicesEditor from './LocalServicesEditor';
 import MCPConfigEditor from './MCPConfigEditor';
+import BuiltInToolsEditor from './BuiltInToolsEditor';
 
 export default function AssistantEditor() {
   const { draft, update } = useEditor<Assistant>();
@@ -36,8 +37,8 @@ export default function AssistantEditor() {
   );
 
   return (
-    <div className="flex-1 flex flex-col h-full">
-      <div className="flex-1 overflow-y-auto p-4">
+    <div className="w-full">
+      <div className="p-4">
         <div className="space-y-4">
           <InputWithLabel
             label="어시스턴트 이름 *"
@@ -61,6 +62,9 @@ export default function AssistantEditor() {
             placeholder="AI가 수행할 역할과 행동 방식을 설명하세요..."
             className="h-32"
           />
+
+          <BuiltInToolsEditor />
+
           <LocalServicesEditor />
           <MCPConfigEditor
             mcpConfigText={mcpConfigText}
@@ -93,16 +97,16 @@ function AssistantDialog(props: DialogProps) {
 
   return (
     <Dialog {...props} open={open} onOpenChange={setOpen}>
-      <DialogContent className="max-w-2xl h-fit p-0 flex flex-col">
-        <DialogHeader>
-          <DialogTitle className="p-2">
+      <DialogContent className="max-w-2xl max-h-[85vh] p-0 flex flex-col overflow-hidden">
+        <DialogHeader className="flex-shrink-0 p-4 border-b">
+          <DialogTitle>
             {draft.id ? '어시스턴트 편집' : '새 어시스턴트 만들기'}
           </DialogTitle>
-          <DialogDescription>
-            <AssistantEditor />
-          </DialogDescription>
         </DialogHeader>
-        <div className="flex justify-end gap-2 p-4 border-t">
+        <DialogDescription className="flex-1 overflow-y-auto min-h-0">
+          <AssistantEditor />
+        </DialogDescription>
+        <div className="flex-shrink-0 flex justify-end gap-2 p-4 border-t">
           <Button variant="outline" onClick={handleCancel}>
             취소
           </Button>

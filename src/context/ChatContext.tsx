@@ -19,7 +19,11 @@ import { Message } from '@/models/chat';
 import { useSettings } from '../hooks/use-settings';
 import { AIServiceConfig } from '@/lib/ai-service';
 import { useSystemPrompt } from './SystemPromptContext';
-import { stringToMCPContentArray } from '@/lib/utils';
+import {
+  stringToMCPContentArray,
+  extractBuiltInServiceAlias,
+} from '@/lib/utils';
+import { MCPTool } from '@/lib/mcp-types';
 
 const logger = getLogger('ChatContext');
 
@@ -55,8 +59,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   } = useSessionHistory();
   const { current: currentSession } = useSessionContext();
   const { value: settingValue } = useSettings();
-  const { getCurrent: getCurrentAssistant, availableTools } =
-    useAssistantContext();
+  const { currentAssistant, availableTools } = useAssistantContext();
   const { getSystemPrompt } = useSystemPrompt();
   const { availableTools: builtInTools } = useBuiltInTool();
   const cancelRequestRef = useRef(false);
@@ -92,8 +95,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   }, [currentSession?.id]); // Run when currentSession?.id changes
 
   const buildSystemPrompt = useCallback(async (): Promise<string> => {
-    const basePrompt =
-      getCurrentAssistant()?.systemPrompt || DEFAULT_SYSTEM_PROMPT;
+    const basePrompt = currentAssistant?.systemPrompt || DEFAULT_SYSTEM_PROMPT;
     const extensionPrompt = await getSystemPrompt();
     const combined = [basePrompt, extensionPrompt].filter(Boolean).join('\n\n');
     logger.info('Built combined system prompt', {
@@ -102,7 +104,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       totalLength: combined.length,
     });
     return combined;
-  }, [getCurrentAssistant, getSystemPrompt]);
+  }, [currentAssistant, getSystemPrompt]);
 
   // Message queue management function
   const addToMessageQueue = useCallback(
@@ -129,14 +131,73 @@ export function ChatProvider({ children }: ChatProviderProps) {
     [currentSession, messageQueue.length],
   );
 
+  // Pre-compute tool-to-alias mapping for performance
+  const toolAliasMap = useMemo(() => {
+    const map = new Map<string, string>();
+    builtInTools.forEach((tool) => {
+      const alias = extractBuiltInServiceAlias(tool.name);
+      if (alias) {
+        map.set(tool.name, alias);
+      }
+    });
+    return map;
+  }, [builtInTools]);
+
+  // Filter built-in tools based on assistant's allowed aliases
+  const filterBuiltInTools = useCallback(
+    (tools: MCPTool[]): MCPTool[] => {
+      try {
+        const allowedAliases = currentAssistant?.allowedBuiltInServiceAliases;
+
+        if (allowedAliases === undefined) {
+          logger.debug('No built-in tool restrictions for assistant', {
+            assistant: currentAssistant?.name,
+          });
+          return tools;
+        }
+
+        if (allowedAliases.length === 0) {
+          logger.debug('All built-in tools disabled for assistant', {
+            assistant: currentAssistant?.name,
+          });
+          return [];
+        }
+
+        // Filter tools based on allowed aliases
+        const filteredTools = tools.filter((tool) => {
+          const toolAlias = toolAliasMap.get(tool.name);
+          if (!toolAlias) {
+            return false;
+          }
+          return allowedAliases.includes(toolAlias);
+        });
+
+        logger.debug('Filtered built-in tools', {
+          assistant: currentAssistant?.name,
+          allowedAliases,
+          totalTools: tools.length,
+          filteredTools: filteredTools.length,
+        });
+
+        return filteredTools;
+      } catch (error) {
+        logger.error('Built-in tool filtering failed, allowing all tools', {
+          error,
+        });
+        return tools; // Fallback: allow all tools on error
+      }
+    },
+    [currentAssistant, toolAliasMap],
+  );
+
   // AI Service configuration with tools only
   const aiServiceConfig = useMemo(
     (): AIServiceConfig => ({
-      tools: [...availableTools, ...builtInTools],
+      tools: [...availableTools, ...filterBuiltInTools(builtInTools)],
       maxRetries: 3,
       maxTokens: 4096,
     }),
-    [availableTools, builtInTools],
+    [availableTools, builtInTools, filterBuiltInTools],
   );
 
   const {

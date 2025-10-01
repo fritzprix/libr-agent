@@ -21,25 +21,28 @@ export function WebMCPContextSetter() {
   const { server: playbookServer, loading: playbookLoading } =
     useWebMCPServer('playbook');
 
+  // Get current session once so we can depend on its id in the effect deps.
+  const currentSession = getCurrentSession();
+  const currentSessionId = currentSession?.id;
+
   // Set context for planning server when session changes
   useEffect(() => {
-    const currentSession = getCurrentSession();
-    if (!planningLoading && planningServer?.setContext && currentSession?.id) {
+    if (!planningLoading && planningServer?.setContext && currentSessionId) {
       planningServer
-        .setContext({ sessionId: currentSession.id })
+        .setContext({ sessionId: currentSessionId })
         .then(() => {
           logger.debug('Planning server context set', {
-            sessionId: currentSession.id,
+            sessionId: currentSessionId,
           });
         })
         .catch((error) => {
           logger.error('Failed to set planning server context', {
-            sessionId: currentSession.id,
+            sessionId: currentSessionId,
             error,
           });
         });
     }
-  }, [planningServer, planningLoading, getCurrentSession]);
+  }, [planningServer, planningLoading, currentSessionId, getCurrentSession]);
 
   // Set context for playbook server when assistant changes
   useEffect(() => {
