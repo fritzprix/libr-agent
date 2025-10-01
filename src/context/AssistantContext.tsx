@@ -160,11 +160,16 @@ export const AssistantContextProvider = ({
           name: editingAssistant.name,
           systemPrompt,
           mcpConfig: editingAssistant.mcpConfig,
-          isDefault: editingAssistant.isDefault || false,
-          localServices: editingAssistant.localServices || [],
+          isDefault: editingAssistant.isDefault ?? false,
+          localServices: editingAssistant.localServices ?? [],
           createdAt: assistantCreatedAt || new Date(),
           updatedAt: new Date(),
         };
+
+        if (editingAssistant.allowedBuiltInServiceAliases !== undefined) {
+          assistantToSave.allowedBuiltInServiceAliases =
+            editingAssistant.allowedBuiltInServiceAliases;
+        }
 
         logger.info(`Saving assistant`, { assistantToSave });
 

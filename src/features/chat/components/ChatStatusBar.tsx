@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { CompactModelPicker } from '@/components/ui';
 import { useMCPServer } from '@/hooks/use-mcp-server';
 import { useBuiltInTool } from '@/features/tools';
+import { useAssistantContext } from '@/context/AssistantContext';
+import { extractBuiltInServiceAlias } from '@/lib/utils';
 
 interface ChatStatusBarProps {
   children?: React.ReactNode;
@@ -11,6 +13,42 @@ interface ChatStatusBarProps {
 export function ChatStatusBar({ children, onShowTools }: ChatStatusBarProps) {
   const { availableTools, isLoading, error } = useMCPServer();
   const { availableTools: builtinAvailable } = useBuiltInTool();
+  const { currentAssistant } = useAssistantContext();
+
+  const { filteredBuiltin, disabledCount, totalBuiltin } = useMemo(() => {
+    const builtinList = builtinAvailable ?? [];
+    const allowed = currentAssistant?.allowedBuiltInServiceAliases;
+
+    if (allowed === undefined) {
+      return {
+        filteredBuiltin: builtinList,
+        disabledCount: 0,
+        totalBuiltin: builtinList.length,
+      };
+    }
+
+    if (allowed.length === 0) {
+      return {
+        filteredBuiltin: [],
+        disabledCount: builtinList.length,
+        totalBuiltin: builtinList.length,
+      };
+    }
+
+    const filtered = builtinList.filter((tool) => {
+      const alias = extractBuiltInServiceAlias(tool.name);
+      if (!alias) {
+        return true;
+      }
+      return allowed.includes(alias);
+    });
+
+    return {
+      filteredBuiltin: filtered,
+      disabledCount: builtinList.length - filtered.length,
+      totalBuiltin: builtinList.length,
+    };
+  }, [builtinAvailable, currentAssistant]);
 
   const LoadingSpinner = () => (
     <svg
@@ -39,14 +77,17 @@ export function ChatStatusBar({ children, onShowTools }: ChatStatusBarProps) {
     if (isLoading) return 'Loading tools...';
     if (error) return 'Tools error';
     const mcpCount = availableTools.length;
-    const totalCount = mcpCount + (builtinAvailable?.length || 0);
-    return `${totalCount}(${mcpCount}) available`;
+    const totalCount = mcpCount + filteredBuiltin.length;
+    const builtinSummary = totalBuiltin
+      ? ` • builtin ${filteredBuiltin.length}/${totalBuiltin}`
+      : '';
+    return `${totalCount}(${mcpCount}) available${builtinSummary}`;
   };
 
   const getToolsColor = () => {
     if (isLoading) return 'text-yellow-400';
     if (error) return 'text-red-400';
-    const totalCount = availableTools.length + (builtinAvailable?.length || 0);
+    const totalCount = availableTools.length + filteredBuiltin.length;
     return totalCount > 0 ? 'text-green-400' : 'text-gray-500';
   };
 
@@ -68,7 +109,13 @@ export function ChatStatusBar({ children, onShowTools }: ChatStatusBarProps) {
           onClick={onShowTools}
           className={`text-xs transition-colors flex items-center gap-1 ${getToolsColor()}`}
           disabled={isLoading}
-          title={error || undefined}
+          title={
+            error
+              ? error
+              : disabledCount
+                ? `${disabledCount} builtin tool${disabledCount > 1 ? 's' : ''} disabled for ${currentAssistant?.name ?? 'this assistant'}`
+                : undefined
+          }
         >
           {getToolsIcon()} {getToolsDisplayText()}
         </button>
