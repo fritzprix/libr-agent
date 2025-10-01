@@ -152,3 +152,15 @@ export function toValidJsName(name: string): string {
 
   return validName;
 }
+
+/**
+ * Extracts the service alias from a built-in tool name.
+ * Built-in tools follow the format: `builtin_<alias>__<toolname>`
+ *
+ * @param toolName The tool name to extract the alias from (e.g., "builtin_browser__clickElement")
+ * @returns The service alias (e.g., "browser") or null if the tool name doesn't match the pattern
+ */
+export function extractBuiltInServiceAlias(toolName: string): string | null {
+  const match = toolName.match(/^builtin_([^_]+)__/);
+  return match ? match[1] : null;
+}

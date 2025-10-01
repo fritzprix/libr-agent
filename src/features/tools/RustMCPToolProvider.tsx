@@ -46,6 +46,11 @@ export function RustMCPToolProvider() {
         const cachedTools = tools;
 
         register(serviceId, {
+          metadata: {
+            displayName: serviceId,
+            description: `Rust MCP server: ${serviceId}`,
+            category: 'automation',
+          },
           listTools: () => cachedTools,
           loadService: async () => {
             // no-op: preloaded

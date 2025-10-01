@@ -8,6 +8,7 @@ import { getLogger } from '../lib/logger';
 import { Message, ToolCall } from '@/models/chat';
 import { isMCPError, MCPContent, MCPResponse } from '@/lib/mcp-types';
 import { useSessionHistory } from '@/context/SessionHistoryContext';
+import { extractBuiltInServiceAlias } from '@/lib/utils';
 
 const logger = getLogger('useToolProcessor');
 
@@ -74,6 +75,29 @@ export const useToolProcessor = ({ submit }: UseToolProcessorConfig) => {
             const executionStartTime = Date.now();
 
             try {
+              // Runtime security validation for built-in tools
+              if (toolName.startsWith('builtin_')) {
+                const alias = extractBuiltInServiceAlias(toolName);
+                const allowedAliases =
+                  currentAssistant?.allowedBuiltInServiceAliases;
+
+                // If allowedAliases is defined, enforce the restrictions
+                if (allowedAliases !== undefined) {
+                  const isAllowed = !!alias && allowedAliases.includes(alias);
+
+                  if (!isAllowed) {
+                    const errorMsg = `Tool ${toolName} is not allowed for assistant "${currentAssistant?.name}"`;
+                    logger.warn('Tool execution blocked', {
+                      toolName,
+                      alias,
+                      allowedAliases,
+                      assistant: currentAssistant?.name,
+                    });
+                    throw new Error(errorMsg);
+                  }
+                }
+              }
+
               logger.debug('Executing tool', {
                 toolName,
                 toolCallId: toolCall.id,
