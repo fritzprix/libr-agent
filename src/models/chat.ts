@@ -94,9 +94,9 @@ export interface Assistant {
   /**
    * List of allowed built-in service aliases for this assistant.
    * - Built-in tools follow the format: `builtin_<alias>__<toolname>`
-  * - Only tools with aliases in this array will be available to the assistant
-  * - `undefined` = all built-in services allowed (default behaviour)
-  * - `[]` = no built-in services enabled
+   * - Only tools with aliases in this array will be available to the assistant
+   * - `undefined` = all built-in services allowed (default behaviour)
+   * - `[]` = no built-in services enabled
    * - Example: ['browser', 'content_store', 'workspace', 'planning', 'playbook']
    */
   allowedBuiltInServiceAliases?: string[];

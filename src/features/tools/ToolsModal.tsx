@@ -52,7 +52,9 @@ const ToolsModal: React.FC<ToolsModalProps> = ({ isOpen, onClose }) => {
     return combined.sort((a, b) => a.name.localeCompare(b.name));
   }, [builtinWithState, mcpWithState]);
 
-  const enabledBuiltinCount = builtinWithState.filter((t) => !t.disabled).length;
+  const enabledBuiltinCount = builtinWithState.filter(
+    (t) => !t.disabled,
+  ).length;
   const totalBuiltinCount = builtinWithState.length;
   const mcpCount = mcpWithState.length;
   const accessibleCount = enabledBuiltinCount + mcpCount;

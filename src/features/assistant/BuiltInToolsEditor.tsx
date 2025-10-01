@@ -131,8 +131,8 @@ export default function BuiltInToolsEditor() {
       <Label className="text-base font-semibold">Built-in Tools</Label>
 
       <div className="text-sm text-muted-foreground">
-  Assistants can use all built-in tools by default. Disable any services
-  you want to restrict for this assistant.
+        Assistants can use all built-in tools by default. Disable any services
+        you want to restrict for this assistant.
       </div>
 
       <div className="space-y-3 border rounded-lg p-4">

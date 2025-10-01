@@ -83,8 +83,7 @@ export const useToolProcessor = ({ submit }: UseToolProcessorConfig) => {
 
                 // If allowedAliases is defined, enforce the restrictions
                 if (allowedAliases !== undefined) {
-                  const isAllowed =
-                    !!alias && allowedAliases.includes(alias);
+                  const isAllowed = !!alias && allowedAliases.includes(alias);
 
                   if (!isAllowed) {
                     const errorMsg = `Tool ${toolName} is not allowed for assistant "${currentAssistant?.name}"`;
