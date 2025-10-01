@@ -44,7 +44,7 @@
     "verify-planning:file": "node scripts/extract-planning-logs.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.56.0",
+    "@anthropic-ai/sdk": "^0.64.0",
     "@cerebras/cerebras_cloud_sdk": "^1.35.0",
     "@dqbd/tiktoken": "^1.0.22",
     "@google/genai": "^1.10.0",
