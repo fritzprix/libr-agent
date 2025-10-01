@@ -18,8 +18,8 @@ import {
   scrollPageTool,
   navigateBackTool,
   navigateForwardTool,
-  clickElementTool,
-  inputTextTool,
+  //clickElementTool,
+  //inputTextTool,
   extractPageContentTool,
   extractInteractableTool,
   injectJavascriptTool, // <-- Add import
@@ -61,8 +61,8 @@ export function BrowserToolProvider() {
       scrollPageTool,
       navigateBackTool,
       navigateForwardTool,
-      clickElementTool,
-      inputTextTool,
+      // clickElementTool,
+      // inputTextTool,
       extractPageContentTool,
       extractInteractableTool,
       injectJavascriptTool, // <-- Add to array
@@ -90,6 +90,11 @@ export function BrowserToolProvider() {
 
     const serviceId = 'browser';
     const service = {
+      metadata: {
+        displayName: 'Browser Automation',
+        description: 'Web page navigation, clicks, content extraction',
+        category: 'automation' as const,
+      },
       listTools: () =>
         browserTools.map((tool) => {
           // Extract meta data without execute function

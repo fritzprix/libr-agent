@@ -110,6 +110,22 @@ export class LocalDatabase extends Dexie {
       fileChunks: '&id, contentId, chunkIndex',
       playbooks: '&id, createdAt, updatedAt, goal',
     });
+
+    this.version(7)
+      .stores({})
+      .upgrade(async (tx) => {
+        await tx
+          .table('assistants')
+          .toCollection()
+          .modify((assistant) => {
+            if (
+              Array.isArray(assistant.allowedBuiltInServiceAliases) &&
+              assistant.allowedBuiltInServiceAliases.length === 0
+            ) {
+              delete assistant.allowedBuiltInServiceAliases;
+            }
+          });
+      });
   }
 }
 

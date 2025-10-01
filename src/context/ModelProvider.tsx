@@ -57,10 +57,10 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
     isLoading,
   } = useSettings();
 
-  // 동적 모델 목록 상태 (주로 Ollama용)
-  const [dynamicModels, setDynamicModels] = useState<Record<string, ModelInfo>>(
-    {},
-  );
+  // 동적 모델 목록 상태 (provider별로 저장)
+  const [dynamicModels, setDynamicModels] = useState<
+    Record<string, Record<string, ModelInfo>>
+  >({});
   const [isRefreshingModels, setIsRefreshingModels] = useState(false);
 
   // Compute API keys from service configs for backward compatibility
@@ -78,12 +78,10 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
   const models = useMemo(() => {
     const staticModels = llmConfigManager.getModelsForProvider(provider) || {};
 
-    // Ollama의 경우 동적 모델 목록 우선 사용
-    if (
-      provider === AIServiceProvider.Ollama &&
-      Object.keys(dynamicModels).length > 0
-    ) {
-      return dynamicModels;
+    // 동적 목록이 provider별로 있으면 우선 사용
+    const dynForProvider = dynamicModels[provider] || {};
+    if (Object.keys(dynForProvider).length > 0) {
+      return dynForProvider;
     }
 
     return staticModels;
@@ -91,15 +89,27 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
 
   // 수동 모델 새로고침 함수 (새로고침 버튼용)
   const refreshModels = useCallback(async () => {
-    // Ollama가 아니면 새로고침 불필요
-    if (provider !== AIServiceProvider.Ollama) {
-      return;
-    }
+    // Only attempt dynamic listing for providers that support it
+    const supportsDynamic =
+      provider === AIServiceProvider.Ollama ||
+      provider === AIServiceProvider.OpenAI;
 
-    const apiKey = apiKeys[provider];
+    if (!supportsDynamic) return;
+
+    // For Ollama we can instantiate even without a real API key; for others require a key
+    let apiKey = apiKeys[provider];
     if (!apiKey) {
-      logger.warn('No API key available for Ollama');
-      return;
+      if (provider === AIServiceProvider.Ollama) {
+        logger.info(
+          'No API key configured for Ollama — using dummy key to instantiate service',
+        );
+        apiKey = 'ollama-dummy';
+      } else {
+        logger.warn(
+          `No API key available for ${provider}, skipping model refresh`,
+        );
+        return;
+      }
     }
 
     setIsRefreshingModels(true);
@@ -107,7 +117,7 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
       const service = AIServiceFactory.getService(provider, apiKey);
       const modelList = await service.listModels();
 
-      // ModelInfo[] 배열을 Record<string, ModelInfo>로 변환
+      // Convert ModelInfo[] into Record<string, ModelInfo>
       const modelsRecord = modelList.reduce(
         (acc, modelInfo) => {
           const key = modelInfo.id || modelInfo.name;
@@ -117,14 +127,14 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
         {} as Record<string, ModelInfo>,
       );
 
-      setDynamicModels(modelsRecord);
+      setDynamicModels((prev) => ({ ...prev, [provider]: modelsRecord }));
       logger.info(
-        `Manually refreshed ${modelList.length} models from Ollama server`,
+        `Manually refreshed ${modelList.length} models from ${provider}`,
       );
     } catch (error) {
       logger.error('Failed to manually refresh models:', error);
-      // 에러 시 빈 객체로 설정하여 정적 모델로 fallback
-      setDynamicModels({});
+      // 에러 시 provider별 동적 목록을 비워서 정적 JSON으로 fallback
+      setDynamicModels((prev) => ({ ...prev, [provider]: {} }));
     } finally {
       setIsRefreshingModels(false);
     }
@@ -133,16 +143,33 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
   // 프로바이더가 Ollama로 변경될 때 자동으로 모델 목록 새로고침
   useEffect(() => {
     const fetchOllamaModels = async () => {
-      if (provider !== AIServiceProvider.Ollama) {
-        // Ollama가 아니면 동적 모델 목록 초기화
-        setDynamicModels({});
+      // For providers that support dynamic listing (Ollama, OpenAI), attempt to fetch models.
+      const supportsDynamic =
+        provider === AIServiceProvider.Ollama ||
+        provider === AIServiceProvider.OpenAI;
+
+      if (!supportsDynamic) {
+        // Ensure we clear any previously stored dynamic models for this provider
+        setDynamicModels((prev) => ({ ...prev, [provider]: {} }));
         return;
       }
 
-      const apiKey = apiKeys[provider];
+      // Decide API key availability. Ollama can use dummy key; OpenAI requires real key.
+      let apiKey = apiKeys[provider];
       if (!apiKey) {
-        logger.warn('No API key available for Ollama');
-        return;
+        if (provider === AIServiceProvider.Ollama) {
+          logger.info(
+            'No API key configured for Ollama in settings — using dummy key to instantiate service',
+          );
+          apiKey = 'ollama-dummy';
+        } else {
+          logger.warn(
+            `No API key configured for ${provider}, skipping automatic model fetch`,
+          );
+          // Clear any dynamic models for this provider so static JSON is used
+          setDynamicModels((prev) => ({ ...prev, [provider]: {} }));
+          return;
+        }
       }
 
       setIsRefreshingModels(true);
@@ -150,7 +177,6 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
         const service = AIServiceFactory.getService(provider, apiKey);
         const modelList = await service.listModels();
 
-        // ModelInfo[] 배열을 Record<string, ModelInfo>로 변환
         const modelsRecord = modelList.reduce(
           (acc, modelInfo) => {
             const key = modelInfo.id || modelInfo.name;
@@ -160,14 +186,13 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
           {} as Record<string, ModelInfo>,
         );
 
-        setDynamicModels(modelsRecord);
+        setDynamicModels((prev) => ({ ...prev, [provider]: modelsRecord }));
         logger.info(
-          `Auto-refreshed ${modelList.length} models from Ollama server`,
+          `Auto-refreshed ${modelList.length} models from ${provider}`,
         );
       } catch (error) {
         logger.error('Failed to auto-refresh models:', error);
-        // 에러 시 빈 객체로 설정하여 정적 모델로 fallback
-        setDynamicModels({});
+        setDynamicModels((prev) => ({ ...prev, [provider]: {} }));
       } finally {
         setIsRefreshingModels(false);
       }
@@ -206,11 +231,10 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
     (newProvider: AIServiceProvider) => {
       let availableModels: Record<string, ModelInfo> = {};
 
-      if (
-        newProvider === AIServiceProvider.Ollama &&
-        Object.keys(dynamicModels).length > 0
-      ) {
-        availableModels = dynamicModels;
+      const dynForProvider = dynamicModels[newProvider] || {};
+
+      if (Object.keys(dynForProvider).length > 0) {
+        availableModels = dynForProvider;
       } else {
         availableModels =
           llmConfigManager.getModelsForProvider(newProvider) || {};

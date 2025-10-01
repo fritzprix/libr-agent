@@ -36,6 +36,87 @@ export class OpenAIService extends BaseAIService {
   }
 
   /**
+   * Fetches the list of available models from the OpenAI service.
+   * Maps provider-specific model metadata into the project's `ModelInfo` shape.
+   * On error, returns an empty array and logs the failure.
+   */
+  async listModels(): Promise<import('../llm-config-manager').ModelInfo[]> {
+    try {
+      logger.info('Fetching models from OpenAI...');
+
+      const response = await this.withRetry(async () => {
+        // The OpenAI JS SDK exposes `models.list()` which returns a paginated result
+        // with a `data` array of model metadata. Use that if available.
+        // Use `any` locally to avoid depending on SDK-specific types here.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const res: any = await (this.openai as any).models.list();
+        return res;
+      });
+
+      // Normalize response shape — treat as unknown and narrow below
+      const modelsRaw: Array<unknown> = Array.isArray(response?.data)
+        ? (response.data as Array<unknown>)
+        : [];
+
+      const models = modelsRaw
+        .map((entry) => {
+          if (entry == null || typeof entry !== 'object') return null;
+          const e = entry as Record<string, unknown>;
+
+          const id =
+            (typeof e.id === 'string' && e.id) ||
+            (typeof e.model === 'string' && e.model) ||
+            (typeof e.name === 'string' && e.name) ||
+            String(e);
+
+          const name = id;
+
+          // Heuristic for context window
+          let contextWindow = 4096;
+          const lc = name.toLowerCase();
+          if (lc.includes('gpt-4o') || lc.includes('gpt-4o-mini'))
+            contextWindow = 65536;
+          else if (lc.includes('gpt-4')) contextWindow = 32768;
+          else if (lc.includes('gpt-3.5')) contextWindow = 4096;
+
+          const supportStreaming = true;
+          const supportReasoning =
+            lc.includes('gpt-4') || lc.includes('gpt-3.5');
+          const supportTools = false;
+
+          const description =
+            (typeof e.description === 'string' && e.description) ||
+            (Array.isArray(e.permission)
+              ? e.permission.join(',')
+              : undefined) ||
+            name;
+
+          const modelInfo: import('../llm-config-manager').ModelInfo = {
+            id,
+            name,
+            contextWindow,
+            supportReasoning,
+            supportTools,
+            supportStreaming,
+            cost: { input: 0, output: 0 },
+            description,
+          };
+
+          return modelInfo;
+        })
+        .filter(
+          (v): v is import('../llm-config-manager').ModelInfo => v !== null,
+        );
+
+      logger.info(`Found ${models.length} OpenAI models`);
+      return models;
+    } catch (error) {
+      logger.error('Failed to fetch models from OpenAI:', error);
+      return [];
+    }
+  }
+
+  /**
    * Initiates a streaming chat session with the OpenAI API.
    * @param messages The array of messages for the conversation.
    * @param options Optional parameters for the chat.

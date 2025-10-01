@@ -108,7 +108,46 @@ export function WebMCPServiceRegistry({
       return {};
     }
     return servers.reduce<Record<string, BuiltInService>>((acc, s) => {
+      // Determine metadata based on server name
+      let metadata: {
+        displayName: string;
+        description: string;
+        category: 'automation' | 'storage' | 'planning' | 'execution';
+      } = {
+        displayName: s,
+        description: `Web MCP server: ${s}`,
+        category: 'automation',
+      };
+
+      // Override metadata for known servers
+      if (s === 'content_store') {
+        metadata = {
+          displayName: 'Content Store',
+          description: 'File storage, search, BM25 indexing',
+          category: 'storage',
+        };
+      } else if (s === 'workspace') {
+        metadata = {
+          displayName: 'Workspace',
+          description: 'File read/write, code execution, search',
+          category: 'storage',
+        };
+      } else if (s === 'planning') {
+        metadata = {
+          displayName: 'Task Planning',
+          description: 'Goal setting, task planning',
+          category: 'planning',
+        };
+      } else if (s === 'playbook') {
+        metadata = {
+          displayName: 'Playbook',
+          description: 'Workflow creation and execution',
+          category: 'execution',
+        };
+      }
+
       acc[s] = {
+        metadata,
         executeTool: (tc) => executeTool(s, tc),
         listTools: () => serverStatesRef.current[s]?.tools || [],
         unloadService: async () => {},

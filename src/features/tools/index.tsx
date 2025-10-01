@@ -27,7 +27,15 @@ export interface ServiceContextOptions {
   // scope?: 'session' | 'global' | 'user';
 }
 
+export interface ServiceMetadata {
+  displayName: string;
+  description: string;
+  category?: 'automation' | 'storage' | 'planning' | 'execution';
+  icon?: string;
+}
+
 export interface BuiltInService {
+  metadata: ServiceMetadata;
   listTools: () => MCPTool[];
   executeTool: (toolCall: ToolCall) => Promise<MCPResponse<unknown>>;
   loadService?: () => Promise<void>;
@@ -51,6 +59,7 @@ interface BuiltInToolContextType {
   executeTool: (toolCall: ToolCall) => Promise<MCPResponse<unknown>>;
   buildToolPrompt: () => Promise<string>; // 이름 변경 고려
   status: Record<string, ServiceStatus>;
+  getServiceMetadata: (alias: string) => ServiceMetadata | null;
 }
 
 interface BuiltInToolProviderProps {
@@ -282,6 +291,20 @@ Tool details and usage instructions are provided separately.
     };
   }, [buildToolPrompt, registerPrompt, unregisterPrompt]);
 
+  // Get service metadata by alias
+  const getServiceMetadata = useCallback(
+    (alias: string): ServiceMetadata | null => {
+      const serviceId = aliasToIdTableRef.current.get(alias);
+      if (!serviceId) return null;
+
+      const entry = serviceEntriesRef.current.get(serviceId);
+      if (!entry) return null;
+
+      return entry.service.metadata;
+    },
+    [],
+  );
+
   // Memoize the context value to prevent unnecessary re-renders of consumers.
   const contextValue: BuiltInToolContextType = useMemo(
     () => ({
@@ -290,6 +313,7 @@ Tool details and usage instructions are provided separately.
       register,
       executeTool,
       buildToolPrompt,
+      getServiceMetadata,
       // Derive the public status object from the serviceEntries state.
       status: Object.fromEntries(
         Array.from(serviceEntries.entries()).map(([id, entry]) => [
@@ -304,6 +328,7 @@ Tool details and usage instructions are provided separately.
       register,
       executeTool,
       buildToolPrompt,
+      getServiceMetadata,
       serviceEntries,
     ],
   );
