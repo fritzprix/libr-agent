@@ -274,6 +274,9 @@ Tool details and usage instructions are provided separately.
       assistantId: currentAssistant?.id,
     };
 
+    // Collect MCP server status information
+    const mcpServerStatuses: string[] = [];
+
     // Skip service contexts if no valid session is available
     if (currentSession?.id) {
       for (const [serviceId, entry] of serviceEntries.entries()) {
@@ -282,13 +285,19 @@ Tool details and usage instructions are provided separately.
             const result =
               await entry.service.getServiceContext(contextOptions);
 
-            if (result.contextPrompt) {
-              prompts.push(result.contextPrompt);
-              logger.debug('buildToolPrompt: added context prompt', {
-                serviceId,
-                promptLength: result.contextPrompt.length,
-              });
+            // Check if this is an MCP server (Rust-based) by serviceId pattern
+            if (serviceId !== 'browser' && serviceId !== 'planning' && serviceId !== 'playbook') {
+              // Collect MCP server status for unified section
+              if (result.contextPrompt) {
+                mcpServerStatuses.push(result.contextPrompt);
+              }
+            } else {
+              // Non-MCP services (browser, planning, playbook) keep individual sections
+              if (result.contextPrompt) {
+                prompts.push(result.contextPrompt);
+              }
             }
+
             if (result.structuredState !== undefined) {
               newServiceContexts[serviceId] = result.structuredState;
             }
@@ -300,6 +309,11 @@ Tool details and usage instructions are provided separately.
             });
           }
         }
+      }
+
+      // Add unified MCP servers status section
+      if (mcpServerStatuses.length > 0) {
+        prompts.push(`# MCP Servers Status\n${mcpServerStatuses.join('\n')}`);
       }
     } else {
       logger.debug('Skipping service contexts - no valid session available', {

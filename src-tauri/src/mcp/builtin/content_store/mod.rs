@@ -238,72 +238,57 @@ impl BuiltinMCPServer for ContentStoreServer {
         // Get basic server information
         let tools_count = self.tools().len();
 
-        // Try to get storage statistics (non-blocking attempt)
-        let storage_stats = if let Ok(_storage) = self.storage.try_lock() {
-            // For now, we can't easily get total stores/contents without async
-            // This is a limitation of the synchronous trait method
-            "Available (detailed stats require async access)".to_string()
-        } else {
-            "Busy (storage locked)".to_string()
-        };
-
-        // Get search engine status
-        let search_status = if let Ok(_search_engine) = self.search_engine.try_lock() {
-            "Active and ready".to_string()
-        } else {
-            "Busy (search engine locked)".to_string()
-        };
-
-        // Format the context information following WorkspaceServer pattern
+        // Format minimal context with content summary
         let mut context = format!(
-            "# Content Store Server Status\n\
-            **Server**: contentstore\n\
-            **Status**: Active\n\
-            **Description**: File attachment and semantic search system\n\
-            **Available Tools**: {tools_count} tools\n\
-            **Storage**: {storage_stats}\n\
-            **Search Engine**: {search_status}\n\
-            "
+            "contentstore: Active, {} tools",
+            tools_count
         );
 
-        // Add session-specific information if session ID is available
+        // Add session-specific content summary if session ID is available
         if let Some(session_id) = session_id {
-            context.push_str(&format!(
-                "\n## Current Session\n\
-                **Session ID**: {session_id}\n\
-                **Store Mapping**: Using session ID as store ID (simplified)\n\
-                "
-            ));
-
-            // Add note about attached files (but can't fetch them synchronously)
-            context.push_str(
-                "\n## Attached Files\n\
-                *Note: File details require async access - use listContent tool for current session files*\n"
-            );
+            // Try to get content information for this session (non-blocking)
+            if let Ok(storage) = self.storage.try_lock() {
+                let count = storage.get_content_count(&session_id);
+                let summaries = storage.get_content_summary(&session_id, 3);
+                
+                if count > 0 {
+                    context.push_str(&format!(", {} files", count));
+                    
+                    if !summaries.is_empty() {
+                        let files_info: Vec<String> = summaries.iter().map(|(filename, size, preview)| {
+                            // Format size in human-readable form
+                            let size_str = if *size < 1024 {
+                                format!("{}B", size)
+                            } else if *size < 1024 * 1024 {
+                                format!("{}KB", size / 1024)
+                            } else {
+                                format!("{}MB", size / (1024 * 1024))
+                            };
+                            
+                            format!("{} ({}): {}", filename, size_str, preview)
+                        }).collect();
+                        
+                        context.push_str(&format!("\n  Files: {}", files_info.join("\n  ")));
+                        
+                        if summaries.len() < count {
+                            context.push_str(&format!("\n  ...and {} more", count - summaries.len()));
+                        }
+                    }
+                } else {
+                    context.push_str(", no files");
+                }
+            } else {
+                context.push_str(", content info unavailable");
+            }
         } else {
-            context.push_str(
-                "\n## Session Context\n\
-                *No session ID provided in options - session-specific features unavailable*\n",
-            );
+            context.push_str(", no session");
         }
 
-        // Add available tools information
-        context.push_str(
-            "\n## Available Tools\n\
-            - **addContent**: Add and parse files with BM25 indexing\n\
-            - **listContent**: List stored content with pagination\n\
-            - **readContent**: Read content with line range filtering\n\
-            - **keywordSimilaritySearch**: BM25-based keyword search\n",
-        );
-
-        info!(
-            "ContentStore service context - context_prompt length: {}",
-            context.len()
-        );
+        info!("ContentStore service context - detailed format with file summary");
 
         ServiceContext {
             context_prompt: context,
-            structured_state: None,
+            structured_state: session_id.map(|s| Value::String(s.to_string())),
         }
     }
 

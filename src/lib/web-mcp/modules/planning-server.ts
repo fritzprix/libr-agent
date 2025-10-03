@@ -653,52 +653,11 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
     const todos = stateManager.getTodos();
     const observations = stateManager.getObservations();
 
-    const goalText = goal ? `Current Goal: ${goal}` : 'No active goal';
-    const lastGoalText = stateManager.getLastClearedGoal()
-      ? `Last Cleared Goal: ${stateManager.getLastClearedGoal()}`
-      : '';
-
-    // Display all todos in order, accurately representing their status
-    const todosText =
-      todos.length > 0
-        ? `Todos:\n${todos
-            .map((t) => {
-              const checkbox = t.status === 'completed' ? '[✓]' : '[ ]';
-              return `  ID:${t.id} ${checkbox} ${t.name}`;
-            })
-            .join('\n')}`
-        : 'Todos: (none)';
-
-    const obsText =
-      observations.length > 0
-        ? `Recent Observations:\n${observations
-            .map((obs, idx) => `  ${idx + 1}. ${obs}`)
-            .join('\n')}`
-        : 'Recent Observations: (none)';
-
-    const contextPrompt = `
-# Instruction
-ALWAYS START BY CREATING A PLAN before beginning any task:
-1. First, create a clear goal using 'create_goal' for any new or complex task
-2. Break down the goal into specific, actionable todos using 'add_todo'
-3. Manage todos using 'remove_todo' or 'clear_todos' as appropriate
-4. Record important observations, user feedback, or results with 'add_observation'
-5. Use memory limitations as an opportunity to organize and structure your work
-
-Remember: Planning prevents poor performance. Always plan before you act.
-
-# Context Information
-${goalText}
-${lastGoalText ? `\n${lastGoalText}` : ''}
-
-${todosText}
-
-${obsText}
-
-# Prompt
-Based on the current situation, determine and suggest the next appropriate action to progress toward your objectives. If no goal exists, start by creating one.
-Use todo management tools (add_todo, remove_todo, clear_todos) to manage tasks.
-  `.trim();
+    const contextPrompt = goal
+      ? `# Current Goal: ${goal}
+Todos: ${todos.length > 0 ? todos.map(t => `ID:${t.id} ${t.status === 'completed' ? '[✓]' : '[ ]'} ${t.name}`).join(', ') : '(none)'}
+Recent Observations: ${observations.length > 0 ? observations.slice(-2).join('; ') : '(none)'}`
+      : '# No active goal';
 
     return {
       contextPrompt,

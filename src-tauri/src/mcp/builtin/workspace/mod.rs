@@ -135,29 +135,14 @@ impl BuiltinMCPServer for WorkspaceServer {
         );
 
         let context_prompt = format!(
-            "# Workspace Server Status\n\
-            **Server**: workspace\n\
-            **Status**: Active\n\
-            **Working Directory**: {}\n\
-            **Available Tools**: {} tools\n\
-            \n\
-            ## Current Directory Structure\n\
-            ```\n\
-            {}\n\
-            ```",
-            workspace_dir,
+            "workspace: Active, {} tools, dir: {}",
             self.tools().len(),
-            tree_output
-        );
-
-        info!(
-            "Workspace service context - context_prompt length: {}",
-            context_prompt.len()
+            workspace_dir
         );
 
         ServiceContext {
             context_prompt,
-            structured_state: None,
+            structured_state: Some(Value::String(workspace_dir)),
         }
     }
 

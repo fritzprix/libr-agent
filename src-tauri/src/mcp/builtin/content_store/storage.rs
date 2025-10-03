@@ -208,6 +208,30 @@ impl ContentStoreStorage {
             .collect()
     }
 
+    /// Get content count for a specific session
+    pub fn get_content_count(&self, session_id: &str) -> usize {
+        self.contents.values()
+            .filter(|content| content.session_id == session_id)
+            .count()
+    }
+
+    /// Get detailed content summary for a specific session
+    pub fn get_content_summary(&self, session_id: &str, limit: usize) -> Vec<(String, usize, String)> {
+        self.contents.values()
+            .filter(|content| content.session_id == session_id)
+            .take(limit)
+            .map(|content| {
+                // Get first 200 characters of content as preview
+                let preview = if content.content.len() > 200 {
+                    format!("{}...", &content.content[..200])
+                } else {
+                    content.content.clone()
+                };
+                (content.filename.clone(), content.size, preview)
+            })
+            .collect()
+    }
+
     /// Get or create a content store for the given session ID
     pub async fn get_or_create_store(
         &mut self,
