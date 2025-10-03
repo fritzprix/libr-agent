@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { getLogger } from '../lib/logger';
 import { useWebMCP, WebMCPServerProxy } from '@/context/WebMCPContext';
+import { ServiceContextOptions } from '@/features/tools';
 
 const logger = getLogger('WebMCPServer');
 
@@ -68,7 +69,7 @@ export function useWebMCPServer<T extends WebMCPServerProxy>(
   const [error, setError] = useState<string | null>(null);
   const {
     getServerProxy,
-    setServerContext,
+    switchServerContext,
     isLoading: contextLoading,
   } = useWebMCP();
 
@@ -78,10 +79,10 @@ export function useWebMCPServer<T extends WebMCPServerProxy>(
       setError(null);
       const serverProxy = await getServerProxy<T>(serverName);
 
-      // Add setContext method to the server proxy
-      if (serverProxy && setServerContext) {
-        serverProxy.setContext = async (context: Record<string, unknown>) => {
-          return await setServerContext(serverName, context);
+      // Add switchContext method to the server proxy
+      if (serverProxy && switchServerContext) {
+        serverProxy.switchContext = async (context: ServiceContextOptions) => {
+          return await switchServerContext(serverName, context);
         };
       }
 
@@ -93,7 +94,7 @@ export function useWebMCPServer<T extends WebMCPServerProxy>(
     } finally {
       setLoading(false);
     }
-  }, [serverName, getServerProxy, setServerContext]);
+  }, [serverName, getServerProxy, switchServerContext]);
 
   // Auto-load server proxy
   useEffect(() => {

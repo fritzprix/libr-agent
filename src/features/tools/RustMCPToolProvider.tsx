@@ -3,7 +3,7 @@ import { getLogger } from '@/lib/logger';
 import type { MCPTool, MCPResponse } from '@/lib/mcp-types';
 import { useEffect } from 'react';
 import { useAsyncFn } from 'react-use';
-import { useBuiltInTool } from '.';
+import { useBuiltInTool, ServiceContextOptions, ServiceContext } from '.';
 
 const logger = getLogger('RustMCPToolProvider');
 
@@ -20,6 +20,7 @@ export function RustMCPToolProvider() {
     listBuiltinTools,
     callBuiltinTool,
     getServiceContext,
+    switchContext,
   } = useRustBackend();
 
   const [{ loading, value, error }, loadBuiltInServers] =
@@ -91,8 +92,18 @@ export function RustMCPToolProvider() {
             );
             return rawResult; // Rust backend already returns proper MCPResponse
           },
-          getServiceContext: async () => {
-            return await getServiceContext(serviceId);
+          getServiceContext: async (
+            options?: ServiceContextOptions,
+          ): Promise<ServiceContext<unknown>> => {
+            // 현재는 options를 사용하지 않지만 인터페이스 준수를 위해 유지
+            void options;
+            const context = await getServiceContext(serviceId);
+            return context;
+          },
+          switchContext: async (options?: ServiceContextOptions) => {
+            if (options) {
+              await switchContext(serviceId, options);
+            }
           },
         });
       });

@@ -4,6 +4,7 @@ import {
   createMCPTextResponse,
 } from '@/lib/mcp-response-utils';
 import type { MCPResponse, MCPTool, WebMCPServer } from '@/lib/mcp-types';
+import type { ServiceContext, ServiceContextOptions } from '@/features/tools';
 
 /** Represents a single to-do item in the planning state. @internal */
 interface SimpleTodo {
@@ -647,7 +648,7 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
       }
     }
   },
-  async getServiceContext(): Promise<string> {
+  async getServiceContext(): Promise<ServiceContext<PlanningState>> {
     const goal = stateManager.getGoal();
     const todos = stateManager.getTodos();
     const observations = stateManager.getObservations();
@@ -675,7 +676,7 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
             .join('\n')}`
         : 'Recent Observations: (none)';
 
-    return `
+    const contextPrompt = `
 # Instruction
 ALWAYS START BY CREATING A PLAN before beginning any task:
 1. First, create a clear goal using 'create_goal' for any new or complex task
@@ -698,12 +699,24 @@ ${obsText}
 Based on the current situation, determine and suggest the next appropriate action to progress toward your objectives. If no goal exists, start by creating one.
 Use todo management tools (add_todo, remove_todo, clear_todos) to manage tasks.
   `.trim();
+
+    return {
+      contextPrompt,
+      structuredState: {
+        goal,
+        lastClearedGoal: stateManager.getLastClearedGoal(),
+        todos,
+        observations,
+      },
+    };
   },
-  async setContext(context: Record<string, unknown>): Promise<void> {
-    const sessionId = context.sessionId as string;
+  async switchContext(context: ServiceContextOptions): Promise<void> {
+    const sessionId = context.sessionId;
     if (sessionId) {
       stateManager.setSession(sessionId);
-      console.info(`[PlanningServer] setContext -> session set: ${sessionId}`);
+      console.info(
+        `[PlanningServer] switchContext -> session set: ${sessionId}`,
+      );
     }
   },
 };

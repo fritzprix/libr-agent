@@ -18,7 +18,6 @@ interface BaseRustMCPServerProxy {
  * Metadata for creating a content store
  */
 export interface CreateStoreMetadata {
-  sessionId?: string;
   name?: string;
   description?: string;
 }
@@ -27,15 +26,16 @@ export interface CreateStoreMetadata {
  * Arguments for creating a content store
  */
 export interface CreateStoreArgs {
+  sessionId: string;
   metadata?: CreateStoreMetadata;
 }
 
 /**
  * Response from creating a content store
+ * Note: storeId is deprecated - use sessionId instead (1:1 relationship)
  */
 export interface CreateStoreResponse {
-  storeId?: string;
-  id?: string;
+  sessionId: string;
   createdAt?: string;
   name?: string;
   description?: string;
@@ -55,7 +55,7 @@ export interface AddContentMetadata {
  * Arguments for adding content to a store
  */
 export interface AddContentArgs {
-  storeId: string;
+  sessionId: string;
   fileUrl?: string;
   content?: string;
   metadata?: AddContentMetadata;
@@ -63,9 +63,10 @@ export interface AddContentArgs {
 
 /**
  * Response from adding content
+ * Note: Content is stored per session, not per store
  */
 export interface AddContentResponse {
-  storeId: string;
+  sessionId: string;
   contentId: string;
   filename: string;
   mimeType: string;
@@ -88,15 +89,16 @@ export interface PaginationOptions {
  * Arguments for listing content
  */
 export interface ListContentArgs {
-  storeId: string;
+  sessionId: string;
   pagination?: PaginationOptions;
 }
 
 /**
  * Content item in list response
+ * Note: Content is associated with session, not a separate store
  */
 export interface ContentItemSummary {
-  storeId: string;
+  sessionId: string;
   contentId: string;
   filename: string;
   mimeType: string;
@@ -112,7 +114,7 @@ export interface ContentItemSummary {
  * Response from listing content
  */
 export interface ListContentResponse {
-  storeId: string;
+  sessionId: string;
   contents: ContentItemSummary[];
   total: number;
   hasMore: boolean;
@@ -128,11 +130,12 @@ export interface LineRange {
 
 /**
  * Arguments for reading content
+ * Note: contentId is unique, sessionId is used for validation
  */
 export interface ReadContentArgs {
-  storeId: string;
   contentId: string;
-  lineRange: LineRange;
+  fromLine?: number;
+  toLine?: number;
 }
 
 /**
@@ -155,7 +158,7 @@ export interface SearchOptions {
  * Arguments for keyword similarity search
  */
 export interface KeywordSimilaritySearchArgs {
-  storeId: string;
+  sessionId: string;
   query: string;
   options?: SearchOptions;
 }

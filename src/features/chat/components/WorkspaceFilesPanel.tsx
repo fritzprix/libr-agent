@@ -66,7 +66,7 @@ export function WorkspaceFilesPanel() {
   useMessageTrigger(
     () => {
       if (rootPath) {
-        logger.debug('Message-triggered file refresh', { rootPath });
+        logger.info('Message-triggered file refresh', { rootPath });
         loadDirectory(rootPath);
       }
     },

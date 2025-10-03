@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tracing::info;
 
 use super::BuiltinMCPServer;
+use crate::mcp::types::{ServiceContext, ServiceContextOptions};
 use crate::mcp::{MCPResponse, MCPTool};
 use crate::services::SecureFileManager;
 use crate::session::SessionManager;
@@ -119,7 +120,7 @@ impl BuiltinMCPServer for WorkspaceServer {
         tools
     }
 
-    fn get_service_context(&self, _options: Option<&Value>) -> String {
+    fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
         // Get session-specific workspace directory
         let workspace_dir_path = self.get_workspace_dir();
         let workspace_dir = workspace_dir_path.to_string_lossy().to_string();
@@ -127,7 +128,7 @@ impl BuiltinMCPServer for WorkspaceServer {
         // Generate directory tree (2 levels deep)
         let tree_output = self.get_workspace_tree(&workspace_dir, 2);
 
-        format!(
+        let context_prompt = format!(
             "# Workspace Server Status\n\
             **Server**: workspace\n\
             **Status**: Active\n\
@@ -141,7 +142,35 @@ impl BuiltinMCPServer for WorkspaceServer {
             workspace_dir,
             self.tools().len(),
             tree_output
-        )
+        );
+
+        ServiceContext {
+            context_prompt,
+            structured_state: None,
+        }
+    }
+
+    async fn switch_context(&self, options: ServiceContextOptions) -> Result<(), String> {
+        // Update session context if session_id is provided
+        if let Some(session_id) = options.session_id {
+            info!("Switching workspace context to session: {}", session_id);
+
+            // Switch session in session_manager
+            if let Err(e) = self.session_manager.set_session(session_id.clone()) {
+                return Err(format!("Failed to switch session in session_manager: {e}"));
+            }
+
+            // The session manager handles session-specific workspace directories
+            // No additional action needed as get_workspace_dir() uses session context
+        }
+
+        // Update assistant context if assistant_id is provided
+        if let Some(assistant_id) = options.assistant_id {
+            info!("Switching workspace context to assistant: {}", assistant_id);
+            // Workspace server doesn't filter by assistant, but logs for awareness
+        }
+
+        Ok(())
     }
 
     async fn call_tool(&self, tool_name: &str, args: Value) -> MCPResponse {

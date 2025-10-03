@@ -31,7 +31,6 @@ import { MCPUITest } from '@/components/mcp-ui-test/MCPUITest';
 import WebMCPTest from '@/test/WebMCPTest';
 import { DnDContextProvider } from '@/context/DnDContext';
 import DnDTestPage from '@/features/dnd/DnDTestPage';
-import { WebMCPContextSetter } from '@/lib/web-mcp/WebMCPContextSetter';
 import SettingsPage from '@/features/settings/SettingsPage';
 
 function App() {
@@ -52,7 +51,6 @@ function App() {
                       <RustMCPToolProvider />
                       <SessionHistoryProvider>
                         <ResourceAttachmentProvider>
-                          <WebMCPContextSetter />
                           <ModelOptionsProvider>
                             <SidebarProvider>
                               <DnDContextProvider>

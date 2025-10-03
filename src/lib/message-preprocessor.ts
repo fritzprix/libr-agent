@@ -33,9 +33,9 @@ export async function prepareMessageForLLM(message: Message): Promise<Message> {
 ${JSON.stringify(attachment, null, 2)}
 <!-- 
 To read the full content of this file, use:
-- readContent(storeId: "${attachment.storeId}", contentId: "${attachment.contentId}", lineRange: {fromLine: 1, toLine: 200})
-- For keyword-based similarity search: keywordSimilaritySearch(storeId: "${attachment.storeId}", query: "your search query")
-- For file list: listContent(storeId: "${attachment.storeId}")
+- readContent(sessionId: "${attachment.sessionId}", contentId: "${attachment.contentId}", lineRange: {fromLine: 1, toLine: 200})
+- For keyword-based similarity search: keywordSimilaritySearch(sessionId: "${attachment.sessionId}", query: "your search query")
+- For file list: listContent(sessionId: "${attachment.sessionId}")
 -->
 </attachment_${i}>`;
     });

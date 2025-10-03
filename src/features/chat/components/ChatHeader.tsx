@@ -73,8 +73,8 @@ export function ChatHeader({ children, assistantName }: ChatHeaderProps) {
             />
           </Button>
 
-          {currentSession?.storeId && (
-            <SessionFilesPopover storeId={currentSession.storeId} />
+          {currentSession?.id && (
+            <SessionFilesPopover sessionId={currentSession.id} />
           )}
         </div>
       </div>

@@ -7,6 +7,7 @@ import {
   SamplingOptions,
   SamplingResponse,
 } from './mcp-types';
+import type { ServiceContext, ServiceContextOptions } from '@/features/tools';
 
 const logger = getLogger('RustBackendClient');
 
@@ -555,10 +556,27 @@ export async function exportAndDownloadZip(
 /**
  * Gets the service context for a given server.
  * @param serverId The ID of the server.
- * @returns A promise that resolves to the service context string.
+ * @returns A promise that resolves to the service context.
  */
-export async function getServiceContext(serverId: string): Promise<string> {
-  return safeInvoke<string>('get_service_context', { serverId });
+export async function getServiceContext(
+  serverId: string,
+): Promise<ServiceContext<unknown>> {
+  return safeInvoke<ServiceContext<unknown>>('get_service_context', {
+    serverId,
+  });
+}
+
+/**
+ * Switches the context for a given server.
+ * @param serverId The ID of the server.
+ * @param options The context options to switch to.
+ * @returns A promise that resolves when the context is switched.
+ */
+export async function switchContext(
+  serverId: string,
+  options: ServiceContextOptions,
+): Promise<void> {
+  return safeInvoke<void>('switch_context', { serverId, options });
 }
 
 /**
@@ -577,6 +595,31 @@ export async function greet(name: string): Promise<string> {
  */
 export async function removeSession(sessionId: string): Promise<void> {
   return safeInvoke<void>('remove_session', { sessionId });
+}
+
+/**
+ * Switches to a specific session with optional async behavior.
+ * @param sessionId The ID of the session to switch to
+ * @param useAsync Whether to use async switching (default: true)
+ * @returns A promise that resolves with session information
+ */
+export async function switchSession(
+  sessionId: string,
+  useAsync?: boolean,
+): Promise<{
+  success: boolean;
+  message: string;
+  session_id?: string;
+  data?: unknown;
+}> {
+  return safeInvoke<{
+    success: boolean;
+    message: string;
+    session_id?: string;
+    data?: unknown;
+  }>('switch_session', {
+    request: { session_id: sessionId, use_async: useAsync },
+  });
 }
 
 /**

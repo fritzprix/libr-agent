@@ -1,25 +1,15 @@
-import { useEffect, useState, useCallback } from 'react';
-import { useWebMCPServer } from '@/hooks/use-web-mcp-server';
+import { useEffect } from 'react';
 import { useMessageTrigger } from '@/hooks/use-message-trigger';
 import { getLogger } from '@/lib/logger';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { RefreshCw } from 'lucide-react';
-import {
-  PlanningServerProxy,
-  PlanningState,
-} from '@/lib/web-mcp/modules/planning-server';
+import { useServiceContext } from '@/features/tools/useServiceContext';
+import { PlanningState } from '@/lib/web-mcp/modules/planning-server';
 
 const logger = getLogger('ChatPlanningPanel');
 
 export function ChatPlanningPanel() {
-  const { server, loading, error } =
-    useWebMCPServer<PlanningServerProxy>('planning');
-  const [planningState, setPlanningState] = useState<PlanningState | null>(
-    null,
-  );
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  const planningState = useServiceContext<PlanningState>('planning');
 
   // Component lifecycle logging
   useEffect(() => {
@@ -29,99 +19,17 @@ export function ChatPlanningPanel() {
     };
   }, []);
 
-  // Server status logging
-  useEffect(() => {
-    logger.info('PLANNING_PANEL: Server status changed', {
-      loading,
-      hasServer: !!server,
-      serverId: server?.name,
-      hasError: !!error,
-      errorMessage: error || null,
-    });
-  }, [server, loading, error]);
-
-  const refreshState = useCallback(async () => {
-    if (!server?.get_current_state) {
-      logger.warn(
-        'PLANNING_PANEL: No server or get_current_state method available',
-      );
-      return;
-    }
-
-    logger.info('PLANNING_PANEL: Starting state refresh', {
-      serverId: server.name,
-      isLoaded: server.isLoaded,
-      toolCount: server.tools?.length || 0,
-    });
-
-    try {
-      setIsRefreshing(true);
-      const state = await server.get_current_state();
-      setPlanningState(state);
-      logger.info('PLANNING_PANEL: State refresh successful', {
-        hasGoal: !!state.goal,
-        todoCount: state.todos?.length || 0,
-        observationCount: state.observations?.length || 0,
-        goalText: state.goal ? `"${state.goal.substring(0, 50)}..."` : null,
-      });
-    } catch (err) {
-      logger.error('PLANNING_PANEL: Failed to refresh planning state', {
-        error: err instanceof Error ? err.message : String(err),
-        serverId: server.name,
-      });
-    } finally {
-      setIsRefreshing(false);
-      logger.debug('PLANNING_PANEL: Refresh operation completed');
-    }
-  }, [server]);
-
   // Message-based state updates using custom hook
-  useMessageTrigger(refreshState, {
-    enabled: !!server?.get_current_state,
+  useMessageTrigger(() => {
+    // State is now automatically updated via useServiceContext
+    logger.debug('PLANNING_PANEL: State updated via service context');
   });
-
-  if (loading) {
-    return (
-      <Card className="w-80 h-full flex flex-col bg-background/95 backdrop-blur border-border/50">
-        <CardContent className="p-6">
-          <div className="animate-pulse text-muted-foreground">
-            Loading planning state...
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (error) {
-    return (
-      <Card className="w-80 h-full flex flex-col bg-background/95 backdrop-blur border-border/50">
-        <CardContent className="p-6">
-          <div className="text-destructive text-sm mb-3">
-            Error loading planning server
-          </div>
-          <Button onClick={refreshState} variant="outline" size="sm">
-            Retry
-          </Button>
-        </CardContent>
-      </Card>
-    );
-  }
 
   return (
     <Card className="w-80 h-full flex flex-col bg-background/95 backdrop-blur border-border/50">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <CardTitle className="text-lg">AI Planning</CardTitle>
-          <Button
-            onClick={refreshState}
-            disabled={isRefreshing}
-            variant="outline"
-            size="sm"
-          >
-            <RefreshCw
-              className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`}
-            />
-          </Button>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">

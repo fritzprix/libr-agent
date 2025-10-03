@@ -1,5 +1,4 @@
 import { createId } from '@paralleldrive/cuid2';
-import { invoke } from '@tauri-apps/api/core';
 import {
   createContext,
   ReactNode,
@@ -207,12 +206,7 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
     (id?: string) => {
       if (id === undefined) {
         setCurrent(null);
-        // Clear session in backend when no session is selected
-        invoke('set_current_session', { sessionId: 'default' }).catch(
-          (error) => {
-            logger.warn('Failed to set backend session to default', error);
-          },
-        );
+        // Session backend management is now handled by BuiltInToolProvider
         return;
       }
 
@@ -225,13 +219,7 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
         }
         clearError(); // Clear any errors when successfully selecting
 
-        // Notify backend of session change
-        invoke('set_current_session', { sessionId: id }).catch((error) => {
-          logger.warn('Failed to set backend session', {
-            sessionId: id,
-            error,
-          });
-        });
+        // Session backend management is now handled by BuiltInToolProvider
       }
     },
     [clearError, setCurrentAssistant],
@@ -273,15 +261,7 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
         // Optimistic update
         setCurrent(session);
 
-        // Notify backend of new session
-        invoke('set_current_session', { sessionId: session.id }).catch(
-          (error) => {
-            logger.warn('Failed to set backend session for new session', {
-              sessionId: session.id,
-              error,
-            });
-          },
-        );
+        // Session backend management is now handled by BuiltInToolProvider
 
         // Add to sessions list optimistically
         mutate(

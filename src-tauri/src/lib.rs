@@ -1024,7 +1024,8 @@ pub fn run() {
                 get_element_text,
                 get_element_attribute,
                 find_element,
-                commands::mcp_commands::get_service_context
+                commands::mcp_commands::get_service_context,
+                commands::mcp_commands::switch_context
             ])
             .setup(|app| {
                 println!("🚀 SynapticFlow initializing...");

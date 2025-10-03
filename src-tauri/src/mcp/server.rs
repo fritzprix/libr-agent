@@ -14,6 +14,7 @@ use uuid::Uuid;
 use crate::mcp::schema::JSONSchemaType;
 use crate::mcp::types::{
     MCPConnection, MCPError, MCPResponse, MCPServerConfig, MCPTool, SamplingRequest,
+    ServiceContext, ServiceContextOptions,
 };
 use crate::session::SessionManager;
 
@@ -686,8 +687,8 @@ impl MCPServerManager {
     /// * `server_name` - The name of the server.
     ///
     /// # Returns
-    /// A `Result` containing the service context string, or an error.
-    pub async fn get_service_context(&self, server_name: &str) -> Result<String, String> {
+    /// A `Result` containing the service context, or an error.
+    pub async fn get_service_context(&self, server_name: &str) -> Result<ServiceContext, String> {
         // Check built-in servers first
         let servers = self.builtin_servers.lock().await;
         if let Some(registry) = servers.as_ref() {
@@ -697,8 +698,36 @@ impl MCPServerManager {
         }
 
         // Fallback for external MCP servers (future implementation)
-        Ok(format!(
-            "# MCP Server Context\nServer ID: {server_name}\nStatus: Active"
-        ))
+        Ok(ServiceContext {
+            context_prompt: format!(
+                "# MCP Server Context\nServer ID: {server_name}\nStatus: Active"
+            ),
+            structured_state: None,
+        })
+    }
+
+    /// Switches the context for a given server.
+    ///
+    /// # Arguments
+    /// * `server_name` - The name of the server.
+    /// * `options` - The context options to switch to.
+    ///
+    /// # Returns
+    /// A `Result` indicating success or an error.
+    #[allow(dead_code)]
+    pub async fn switch_context(
+        &self,
+        server_name: &str,
+        options: ServiceContextOptions,
+    ) -> Result<(), String> {
+        // Check built-in servers first
+        let servers = self.builtin_servers.lock().await;
+        if let Some(registry) = servers.as_ref() {
+            return registry.switch_server_context(server_name, options).await;
+        }
+
+        // Fallback for external MCP servers (future implementation)
+        info!("Switching context for external server: {server_name} (not implemented)");
+        Ok(())
     }
 }

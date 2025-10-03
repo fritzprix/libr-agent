@@ -10,7 +10,7 @@ export interface UIResource {
 
 // MCP file attachment reference type
 export interface AttachmentReference {
-  storeId: string; // MCP file store ID
+  sessionId: string; // MCP file store ID (same as session ID)
   contentId: string; // MCP content ID
   filename: string; // Original filename
   mimeType: string; // MIME type (e.g., 'text/plain', 'text/markdown')
@@ -115,7 +115,6 @@ export interface Session {
   assistants: Assistant[];
   name?: string; // Group name in case of a group session
   description?: string; // Description in case of a group session
-  storeId?: string; // MCP content-store ID for file attachments
   createdAt: Date;
   updatedAt: Date;
 }

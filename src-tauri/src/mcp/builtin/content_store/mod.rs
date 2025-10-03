@@ -1,11 +1,12 @@
 use async_trait::async_trait;
+use log::error;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::info;
 
 use crate::mcp::schema::JSONSchema;
+use crate::mcp::types::{ServiceContext, ServiceContextOptions};
 use crate::mcp::utils::schema_builder::integer_prop;
 use crate::mcp::{MCPResponse, MCPTool};
 use crate::session::SessionManager;
@@ -30,6 +31,8 @@ fn extract_file_path_from_url(file_url: &str) -> Result<String, String> {
 /// Tool argument types
 #[derive(Debug, serde::Deserialize)]
 struct CreateStoreArgs {
+    #[serde(rename = "sessionId", alias = "session_id")]
+    session_id: String,
     metadata: Option<CreateStoreMetadata>,
 }
 
@@ -37,14 +40,12 @@ struct CreateStoreArgs {
 struct CreateStoreMetadata {
     name: Option<String>,
     description: Option<String>,
-    #[serde(rename = "sessionId", alias = "session_id")]
-    session_id: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize)]
 struct AddContentArgs {
-    #[serde(rename = "storeId", alias = "store_id")]
-    store_id: String,
+    #[serde(rename = "sessionId", alias = "session_id")]
+    session_id: String,
     #[serde(rename = "fileUrl", alias = "file_url")]
     file_url: Option<String>,
     content: Option<String>,
@@ -63,8 +64,8 @@ struct AddContentMetadata {
 
 #[derive(Debug, serde::Deserialize)]
 struct ListContentArgs {
-    #[serde(rename = "storeId", alias = "store_id")]
-    store_id: String,
+    #[serde(rename = "sessionId", alias = "session_id")]
+    session_id: String,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -76,8 +77,8 @@ struct ReadContentArgs {
 
 #[derive(Debug, serde::Deserialize)]
 struct KeywordSearchArgs {
-    #[serde(rename = "storeId", alias = "store_id")]
-    store_id: String,
+    #[serde(rename = "sessionId", alias = "session_id")]
+    session_id: String,
     query: String,
 }
 
@@ -201,7 +202,7 @@ impl BuiltinMCPServer for ContentStoreServer {
         ]
     }
 
-    fn get_service_context(&self, options: Option<&Value>) -> String {
+    fn get_service_context(&self, options: Option<&Value>) -> ServiceContext {
         // Extract session ID from options if provided
         let session_id = options
             .and_then(|opts| opts.get("sessionId"))
@@ -270,7 +271,45 @@ impl BuiltinMCPServer for ContentStoreServer {
             - **keywordSimilaritySearch**: BM25-based keyword search\n",
         );
 
-        context
+        ServiceContext {
+            context_prompt: context,
+            structured_state: None,
+        }
+    }
+
+    async fn switch_context(&self, options: ServiceContextOptions) -> Result<(), String> {
+        // Update session context if session_id is provided
+        if let Some(session_id) = &options.session_id {
+            // Switch session in session_manager
+            if let Err(e) = self.session_manager.set_session(session_id.clone()) {
+                error!("Failed to switch session in session_manager: {e}");
+                return Err(format!("Failed to switch session in session_manager: {e}"));
+            }
+
+            // Ensure content store exists for this session (get or create)
+            let mut storage = self.storage.lock().await;
+
+            match storage
+                .get_or_create_store(
+                    session_id.clone(),
+                    Some(format!("Session Store: {session_id}")),
+                    Some(format!("Content store for session {session_id}")),
+                )
+                .await
+            {
+                Ok(_) => {
+                    // Content store ready for session
+                }
+                Err(e) => {
+                    error!("Failed to get or create content store for session {session_id}: {e}");
+                    return Err(format!(
+                        "Failed to get or create content store for session {session_id}: {e}"
+                    ));
+                }
+            }
+        }
+
+        Ok(())
     }
 
     async fn call_tool(&self, tool_name: &str, args: Value) -> MCPResponse {
@@ -416,9 +455,9 @@ impl ContentStoreServer {
         let mut storage = self.storage.lock().await;
         let store = match storage
             .create_store(
+                args.session_id.clone(),
                 args.metadata.as_ref().and_then(|m| m.name.clone()),
                 args.metadata.as_ref().and_then(|m| m.description.clone()),
-                args.metadata.as_ref().and_then(|m| m.session_id.clone()),
             )
             .await
         {
@@ -431,12 +470,11 @@ impl ContentStoreServer {
         Self::dual_response(
             id,
             &format!(
-                "Store created successfully!\nStore ID: {}\nCreated At: {}\nStatus: Ready for content",
-                store.id, store.created_at
+                "Store created successfully!\nSession ID: {}\nCreated At: {}\nStatus: Ready for content",
+                store.session_id, store.created_at
             ),
             serde_json::json!({
-                "storeId": store.id,
-                "id": store.id,
+                "sessionId": store.session_id,
                 "createdAt": store.created_at,
                 "name": store.name,
                 "description": store.description
@@ -447,29 +485,9 @@ impl ContentStoreServer {
     async fn handle_add_content(&self, params: Value) -> MCPResponse {
         let id = Self::generate_request_id();
 
-        // Debug: Log the incoming parameters
-        info!(
-            "DEBUG: handle_add_content params: {}",
-            serde_json::to_string(&params).unwrap_or_else(|_| "Failed to serialize".to_string())
-        );
-        info!("DEBUG: params type: {}", params);
-
-        // Try to extract fields manually for debugging
-        if let Some(obj) = params.as_object() {
-            info!("DEBUG: params keys: {:?}", obj.keys().collect::<Vec<_>>());
-            for (key, value) in obj {
-                info!("DEBUG: {} = {:?}", key, value);
-            }
-        }
-
         let args: AddContentArgs = match serde_json::from_value(params) {
-            Ok(args) => {
-                info!("DEBUG: Parsed AddContentArgs: {:?}", args);
-                args
-            }
+            Ok(args) => args,
             Err(e) => {
-                info!("DEBUG: Failed to parse AddContentArgs: {}", e);
-                info!("DEBUG: Error details: {:?}", e);
                 return Self::error_response(
                     id,
                     -32602,
@@ -484,9 +502,6 @@ impl ContentStoreServer {
         let mime_type_from_metadata = metadata.and_then(|m| m.mime_type.clone());
         let size_from_metadata = metadata.and_then(|m| m.size);
         let uploaded_at = metadata.and_then(|m| m.uploaded_at.clone());
-
-        info!("DEBUG: Extracted metadata - filename: {:?}, mime_type: {:?}, size: {:?}, uploaded_at: {:?}",
-              filename, mime_type_from_metadata, size_from_metadata, uploaded_at);
 
         // Validate that either content or fileUrl is provided, but not both
         let content_text = match (&args.content, &args.file_url) {
@@ -606,7 +621,7 @@ impl ContentStoreServer {
         let mut storage = self.storage.lock().await;
         let content_item = match storage
             .add_content(
-                &args.store_id,
+                &args.session_id,
                 &final_filename,
                 &mime_type,
                 final_size as usize,
@@ -649,10 +664,10 @@ impl ContentStoreServer {
         Self::dual_response(
             id,
             &format!(
-                "Content added successfully!\n\nFile: {}\nContent ID: {}\nStore ID: {}\nMIME Type: {}\nSize: {} bytes\nLine Count: {}\nChunks Created: {}\nUploaded: {}\n\nPreview:\n{}",
+                "Content added successfully!\n\nFile: {}\nContent ID: {}\nSession ID: {}\nMIME Type: {}\nSize: {} bytes\nLine Count: {}\nChunks Created: {}\nUploaded: {}\n\nPreview:\n{}",
                 content_item.filename,
                 content_item.id,
-                content_item.store_id,
+                content_item.session_id,
                 content_item.mime_type,
                 content_item.size,
                 content_item.line_count,
@@ -661,7 +676,7 @@ impl ContentStoreServer {
                 content_item.preview
             ),
             serde_json::json!({
-                "storeId": content_item.store_id,
+                "sessionId": content_item.session_id,
                 "contentId": content_item.id,
                 "filename": content_item.filename,
                 "mimeType": content_item.mime_type,
@@ -688,7 +703,7 @@ impl ContentStoreServer {
         };
 
         let storage = self.storage.lock().await;
-        let (contents, total) = match storage.list_content(&args.store_id, 0, 100).await {
+        let (contents, total) = match storage.list_content(&args.session_id, 0, 100).await {
             Ok((contents, total)) => (contents, total),
             Err(e) => {
                 return Self::error_response(id, -32603, &format!("Failed to list content: {e}"));
@@ -700,7 +715,7 @@ impl ContentStoreServer {
             .map(|item| {
                 serde_json::json!({
                     "contentId": item.id,
-                    "storeId": item.store_id,
+                    "sessionId": item.session_id,
                     "filename": item.filename,
                     "mimeType": item.mime_type,
                     "size": item.size,
@@ -735,7 +750,7 @@ impl ContentStoreServer {
                     .join("\n")
             ),
             serde_json::json!({
-                "storeId": args.store_id,
+                "sessionId": args.session_id,
                 "contents": content_list,
                 "total": total,
                 "hasMore": false
@@ -800,15 +815,25 @@ impl ContentStoreServer {
         };
 
         let search_engine = self.search_engine.lock().await;
-        let results = match search_engine.search_bm25(&args.query, 10).await {
+        let all_results = match search_engine.search_bm25(&args.query, 50).await {
             Ok(results) => results,
             Err(e) => {
                 return Self::error_response(id, -32603, &format!("Failed to search content: {e}"));
             }
         };
 
-        let search_results: Vec<serde_json::Value> = results
+        // Filter results by session_id
+        let storage = self.storage.lock().await;
+        let search_results: Vec<serde_json::Value> = all_results
             .into_iter()
+            .filter(|result| {
+                // Check if the content belongs to the session
+                storage
+                    .get_content_session_id(&result.content_id)
+                    .map(|session_id| session_id == args.session_id)
+                    .unwrap_or(false)
+            })
+            .take(10) // Limit to top 10 results
             .map(|result| {
                 serde_json::json!({
                     "contentId": result.content_id,
@@ -823,9 +848,9 @@ impl ContentStoreServer {
         Self::dual_response(
             id,
             &format!(
-                "Search completed!\n\nQuery: \"{}\"\nStore ID: {}\nResults found: {}\n\n{}",
+                "Search completed!\n\nQuery: \"{}\"\nSession ID: {}\nResults found: {}\n\n{}",
                 args.query,
-                args.store_id,
+                args.session_id,
                 search_results.len(),
                 if search_results.is_empty() {
                     "No results found for your search query.".to_string()
