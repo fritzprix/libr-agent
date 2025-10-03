@@ -279,10 +279,16 @@ Tool details and usage instructions are provided separately.
       for (const [serviceId, entry] of serviceEntries.entries()) {
         if (entry.status === 'ready') {
           try {
-            // BREAKING: getServiceContext is guaranteed to return ServiceContext
             const result =
               await entry.service.getServiceContext(contextOptions);
-            if (result.contextPrompt) prompts.push(result.contextPrompt);
+
+            if (result.contextPrompt) {
+              prompts.push(result.contextPrompt);
+              logger.debug('buildToolPrompt: added context prompt', {
+                serviceId,
+                promptLength: result.contextPrompt.length,
+              });
+            }
             if (result.structuredState !== undefined) {
               newServiceContexts[serviceId] = result.structuredState;
             }
@@ -303,7 +309,10 @@ Tool details and usage instructions are provided separately.
     }
 
     setServiceContexts((prev) => ({ ...prev, ...newServiceContexts }));
-    logger.info('service prompts : ', { prompts });
+    logger.info('Built tool prompt with service contexts', {
+      promptsCount: prompts.length,
+      totalLength: prompts.join('\n\n').length,
+    });
     return prompts.join('\n\n');
   }, [
     serviceEntries,

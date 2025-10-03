@@ -169,6 +169,7 @@ pub struct ServiceContextOptions {
 
 /// Represents the service context with structured state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ServiceContext<T = serde_json::Value> {
     /// The context prompt describing the current state.
     pub context_prompt: String,

@@ -1,6 +1,6 @@
 use crate::session::get_session_manager;
 use path_clean::PathClean;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -99,7 +99,12 @@ impl SecurityValidator {
         }
 
         // 상위 디렉터리 탐색 금지
-        if user_path.contains("..") {
+        let traversal_check_path = user_path.replace('\\', "/");
+
+        if Path::new(&traversal_check_path)
+            .components()
+            .any(|component| matches!(component, Component::ParentDir))
+        {
             return Err(SecurityError::PathTraversal(format!(
                 "Parent directory traversal not allowed: '{user_path}'"
             )));
@@ -145,6 +150,21 @@ impl SecurityValidator {
         Ok(absolute_path)
     }
 
+    /// Validate a path for read-only operations. Absolute paths outside the base directory are
+    /// permitted, while relative paths continue to be constrained to the base directory.
+    pub fn validate_path_for_read(&self, user_path: &str) -> Result<PathBuf, SecurityError> {
+        let normalized = user_path.replace('\\', "/");
+
+        let is_windows_absolute = normalized.len() >= 2 && normalized.as_bytes()[1] == b':';
+
+        if Path::new(&normalized).is_absolute() || is_windows_absolute {
+            let cleaned = PathBuf::from(&normalized).clean();
+            return Ok(cleaned);
+        }
+
+        self.validate_path(&normalized)
+    }
+
     /// Check if file size is within limits
     pub fn validate_file_size(&self, path: &Path, max_size: usize) -> Result<(), SecurityError> {
         if let Ok(metadata) = std::fs::metadata(path) {
@@ -181,6 +201,14 @@ mod tests {
         assert!(validator.validate_path("test.txt").is_ok());
         assert!(validator.validate_path("./test.txt").is_ok());
         assert!(validator.validate_path("subdir/test.txt").is_ok());
+        assert!(validator
+            .validate_path("attachments/docker_조사....md")
+            .is_ok());
+
+        // Absolute paths for read operations should be allowed
+        assert!(validator
+            .validate_path_for_read("/tmp/some-file.txt")
+            .is_ok());
 
         // Invalid paths (directory traversal)
         assert!(validator.validate_path("../test.txt").is_err());

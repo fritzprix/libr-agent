@@ -95,13 +95,44 @@ export function generateWorkspacePath(filename: string): string {
  * @internal
  */
 function sanitizeFilename(filename: string): string {
-  // Remove or replace unsafe characters
-  return filename
-    .replace(/[<>:"/\\|?*]/g, '_') // Replace unsafe characters with underscore
-    .replace(/\s+/g, '_') // Replace spaces with underscore
-    .replace(/_{2,}/g, '_') // Replace multiple underscores with single
-    .trim()
-    .slice(0, 200); // Limit length to prevent path issues
+  const normalized = filename
+    .normalize('NFKC')
+    .replace(/[<>:"/\\|?*]/g, '_')
+    .replace(/\s+/g, '_');
+
+  const trimmed = normalized.replace(/_{2,}/g, '_').trim();
+  const limited = trimmed.slice(0, 200);
+
+  const dotIndex = limited.lastIndexOf('.');
+  let base = dotIndex > 0 ? limited.slice(0, dotIndex) : limited;
+  let extension = dotIndex > 0 ? limited.slice(dotIndex + 1) : '';
+
+  base = base.replace(/\.+/g, '_').replace(/^_+|_+$/g, '');
+  if (!base) {
+    base = 'file';
+  }
+
+  extension = extension
+    .replace(/\.+/g, '')
+    .replace(/[^A-Za-z0-9]/g, '')
+    .toLowerCase();
+
+  let safe = base;
+  if (extension.length > 0) {
+    safe = `${base}.${extension}`;
+  }
+
+  safe = safe
+    .replace(/\.+/g, '.')
+    .replace(/\.\./g, '_')
+    .replace(/_{2,}/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+  if (!safe) {
+    safe = 'file';
+  }
+
+  return safe.slice(0, 200);
 }
 
 /**

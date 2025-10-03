@@ -128,6 +128,12 @@ impl BuiltinMCPServer for WorkspaceServer {
         // Generate directory tree (2 levels deep)
         let tree_output = self.get_workspace_tree(&workspace_dir, 2);
 
+        info!(
+            "Workspace service context - workspace_dir: {}, tree_output length: {}",
+            workspace_dir,
+            tree_output.len()
+        );
+
         let context_prompt = format!(
             "# Workspace Server Status\n\
             **Server**: workspace\n\
@@ -142,6 +148,11 @@ impl BuiltinMCPServer for WorkspaceServer {
             workspace_dir,
             self.tools().len(),
             tree_output
+        );
+
+        info!(
+            "Workspace service context - context_prompt length: {}",
+            context_prompt.len()
         );
 
         ServiceContext {

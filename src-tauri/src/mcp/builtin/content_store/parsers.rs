@@ -86,17 +86,101 @@ impl DocumentParser {
 
     /// Extract text from DOCX tables and convert to markdown format
     fn extract_text_from_table(table: &Table, content: &mut String) {
-        // Try to access table rows - the structure might be different than expected
-        // For now, just indicate that a table is present with basic info
-        content.push_str(&format!(
-            "\n[Table with {} rows detected]\n",
-            table.rows.len()
-        ));
+        // Build a 2D vector of cell texts
+        let mut rows_text: Vec<Vec<String>> = Vec::new();
 
-        // TODO: Implement proper table parsing once docx-rs API structure is better understood
-        // The current API seems to have a different structure than expected
-        // Need to investigate the actual TableRow and TableCell types
+        for row_child in &table.rows {
+            let TableChild::TableRow(row) = row_child;
+            let mut row_cells: Vec<String> = Vec::new();
+            for cell_child in &row.cells {
+                let TableRowChild::TableCell(cell) = cell_child;
+                let mut cell_text = String::new();
+                for cell_content in &cell.children {
+                    match cell_content {
+                        TableCellContent::Paragraph(p) => {
+                            let mut p_text = String::new();
+                            for ch in &p.children {
+                                Self::extract_text_from_paragraph_child(ch, &mut p_text);
+                            }
+                            let p_text = p_text.trim();
+                            if !p_text.is_empty() {
+                                if !cell_text.is_empty() {
+                                    cell_text.push('\n');
+                                }
+                                cell_text.push_str(p_text);
+                            }
+                        }
+                        TableCellContent::Table(inner) => {
+                            // Represent nested tables succinctly to avoid overly long output
+                            let r = inner.rows.len();
+                            if !cell_text.is_empty() {
+                                cell_text.push('\n');
+                            }
+                            cell_text.push_str(&format!("[Nested table: {r} rows]"));
+                        }
+                        TableCellContent::StructuredDataTag(_sdt) => {
+                            // Skip SDT content for now
+                        }
+                        TableCellContent::TableOfContents(_toc) => {
+                            // Skip TOC entries in cells
+                        }
+                    }
+                }
+                row_cells.push(cell_text.trim().to_string());
+            }
 
+            if !row_cells.is_empty() {
+                rows_text.push(row_cells);
+            }
+        }
+
+        if rows_text.is_empty() {
+            content.push_str("\n[Empty table]\n\n");
+            return;
+        }
+
+        // Determine column count for formatting
+        let cols = rows_text.iter().map(|r| r.len()).max().unwrap_or(0);
+        if cols == 0 {
+            content.push('\n');
+            content.push_str("[Empty table]\n\n");
+            return;
+        }
+
+        // Emit Markdown table with the first row as header
+        content.push('\n');
+
+        // Header row
+        content.push('|');
+        for i in 0..cols {
+            let cell = rows_text[0].get(i).map(String::as_str).unwrap_or("");
+            content.push(' ');
+            content.push_str(cell);
+            content.push(' ');
+            content.push('|');
+        }
+        content.push('\n');
+
+        // Separator row
+        content.push('|');
+        for _ in 0..cols {
+            content.push_str(" --- |");
+        }
+        content.push('\n');
+
+        // Body rows
+        for row in rows_text.iter().skip(1) {
+            content.push('|');
+            for i in 0..cols {
+                let cell = row.get(i).map(String::as_str).unwrap_or("");
+                content.push(' ');
+                content.push_str(cell);
+                content.push(' ');
+                content.push('|');
+            }
+            content.push('\n');
+        }
+        content.push('\n');
         content.push('\n');
     }
 

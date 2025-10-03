@@ -47,6 +47,29 @@ pub fn integer_prop(
     }
 }
 
+/// Creates a number property schema with common options
+pub fn number_prop(
+    minimum: Option<f64>,
+    maximum: Option<f64>,
+    description: Option<&str>,
+) -> JSONSchema {
+    JSONSchema {
+        schema_type: JSONSchemaType::Number {
+            minimum,
+            maximum,
+            exclusive_minimum: None,
+            exclusive_maximum: None,
+            multiple_of: None,
+        },
+        title: None,
+        description: description.map(|s| s.to_string()),
+        default: None,
+        examples: None,
+        enum_values: None,
+        const_value: None,
+    }
+}
+
 /// Creates an integer property schema with a default value
 pub fn integer_prop_with_default(
     minimum: Option<i64>,

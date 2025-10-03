@@ -103,6 +103,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
       extensionLength: extensionPrompt.length,
       totalLength: combined.length,
     });
+    logger.info('Built combined system prompt', {
+      basePrompt: basePrompt,
+      extensionPrompt: extensionPrompt,
+    });
     return combined;
   }, [currentAssistant, getSystemPrompt]);
 

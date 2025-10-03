@@ -39,7 +39,7 @@ impl SecureFileManager {
     pub async fn read_file(&self, path: &str) -> Result<Vec<u8>, String> {
         let safe_path = self
             .security
-            .validate_path(path)
+            .validate_path_for_read(path)
             .map_err(|e| format!("Security error: {e}"))?;
 
         // Check if file exists and is a file
@@ -115,7 +115,7 @@ impl SecureFileManager {
     pub async fn read_file_as_string(&self, path: &str) -> Result<String, String> {
         let safe_path = self
             .security
-            .validate_path(path)
+            .validate_path_for_read(path)
             .map_err(|e| format!("Security error: {e}"))?;
 
         // Check if file exists and is a file

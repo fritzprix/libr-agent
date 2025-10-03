@@ -263,7 +263,12 @@ export function WorkspaceFilesPanel() {
         await loadDirectory(rootPath);
       } catch (error) {
         logger.error('File import failed', error);
-        // TODO: Show user-friendly error message
+        // Show a friendly toast for the user
+        const message =
+          error instanceof Error ? error.message : 'Unknown error occurred';
+        toast.error('Failed to import file', {
+          description: message,
+        });
       }
     },
     [callBuiltinTool, submit, session, rootPath, loadDirectory],

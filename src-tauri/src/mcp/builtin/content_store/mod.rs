@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use log::error;
+use log::{error, info};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -32,8 +32,6 @@ fn extract_file_path_from_url(file_url: &str) -> Result<String, String> {
 
 #[derive(Debug, serde::Deserialize)]
 struct AddContentArgs {
-    #[serde(rename = "sessionId", alias = "session_id")]
-    session_id: String,
     #[serde(rename = "fileUrl", alias = "file_url")]
     file_url: Option<String>,
     content: Option<String>,
@@ -51,9 +49,17 @@ struct AddContentMetadata {
 }
 
 #[derive(Debug, serde::Deserialize)]
+struct PaginationArgs {
+    #[serde(default)]
+    offset: Option<usize>,
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
+#[derive(Debug, serde::Deserialize)]
 struct ListContentArgs {
-    #[serde(rename = "sessionId", alias = "session_id")]
-    session_id: String,
+    #[serde(default)]
+    pagination: Option<PaginationArgs>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -64,10 +70,19 @@ struct ReadContentArgs {
 }
 
 #[derive(Debug, serde::Deserialize)]
+struct SearchOptions {
+    #[serde(rename = "topN", alias = "top_n")]
+    #[serde(default)]
+    top_n: Option<usize>,
+    #[serde(default)]
+    threshold: Option<f64>,
+}
+
+#[derive(Debug, serde::Deserialize)]
 struct KeywordSearchArgs {
-    #[serde(rename = "sessionId", alias = "session_id")]
-    session_id: String,
     query: String,
+    #[serde(default)]
+    options: Option<SearchOptions>,
 }
 
 /// Content-Store built-in MCP server (native backend)
@@ -132,6 +147,35 @@ impl ContentStoreServer {
     pub fn error_response(request_id: Value, code: i32, message: &str) -> MCPResponse {
         utils::create_error_response(request_id, code, message)
     }
+
+    fn require_active_session(&self, request_id: &Value) -> Result<String, Box<MCPResponse>> {
+        if let Some(session_id) = self.session_manager.get_current_session() {
+            Ok(session_id)
+        } else {
+            Err(Box::new(Self::error_response(
+                request_id.clone(),
+                -32002,
+                "No active session context. Call switch_context with a sessionId before invoking this tool.",
+            )))
+        }
+    }
+
+    async fn ensure_session_store(&self, session_id: &str) -> Result<(), String> {
+        let mut storage = self.storage.lock().await;
+
+        if storage.store_exists(session_id) {
+            return Ok(());
+        }
+
+        storage
+            .get_or_create_store(
+                session_id.to_string(),
+                Some(format!("Session Store: {session_id}")),
+                Some(format!("Content store for session {session_id}")),
+            )
+            .await
+            .map(|_| ())
+    }
 }
 
 #[async_trait]
@@ -183,6 +227,8 @@ impl BuiltinMCPServer for ContentStoreServer {
     }
 
     fn get_service_context(&self, options: Option<&Value>) -> ServiceContext {
+        info!("ContentStore get_service_context called with options: {options:?}");
+
         // Extract session ID from options if provided
         let session_id = options
             .and_then(|opts| opts.get("sessionId"))
@@ -250,6 +296,11 @@ impl BuiltinMCPServer for ContentStoreServer {
             - **keywordSimilaritySearch**: BM25-based keyword search\n",
         );
 
+        info!(
+            "ContentStore service context - context_prompt length: {}",
+            context.len()
+        );
+
         ServiceContext {
             context_prompt: context,
             structured_state: None,
@@ -313,10 +364,6 @@ impl ContentStoreServer {
     fn tool_add_content_schema() -> JSONSchema {
         let mut props: HashMap<String, JSONSchema> = HashMap::new();
         props.insert(
-            "store_id".to_string(),
-            string_prop(Some("Store ID to add content to")),
-        );
-        props.insert(
             "file_url".to_string(),
             string_prop(Some("File URL (file://) to add")),
         );
@@ -347,15 +394,11 @@ impl ContentStoreServer {
                 vec![],
             ),
         );
-        object_schema(props, vec!["store_id".to_string()])
+        object_schema(props, vec![])
     }
 
     fn tool_list_content_schema() -> JSONSchema {
         let mut props: HashMap<String, JSONSchema> = HashMap::new();
-        props.insert(
-            "store_id".to_string(),
-            string_prop(Some("Store ID to list content from")),
-        );
         props.insert(
             "pagination".to_string(),
             object_schema(
@@ -374,7 +417,7 @@ impl ContentStoreServer {
                 vec![],
             ),
         );
-        object_schema(props, vec!["store_id".to_string()])
+        object_schema(props, vec![])
     }
 
     fn tool_read_content_schema() -> JSONSchema {
@@ -397,14 +440,36 @@ impl ContentStoreServer {
     fn tool_keyword_search_schema() -> JSONSchema {
         let mut props: HashMap<String, JSONSchema> = HashMap::new();
         props.insert(
-            "store_id".to_string(),
-            string_prop(Some("Store ID to search in")),
-        );
-        props.insert(
             "query".to_string(),
             string_prop(Some("Search query string")),
         );
-        object_schema(props, vec!["store_id".to_string(), "query".to_string()])
+        props.insert(
+            "options".to_string(),
+            object_schema(
+                {
+                    let mut option_props: HashMap<String, JSONSchema> = HashMap::new();
+                    option_props.insert(
+                        "top_n".to_string(),
+                        integer_prop(
+                            Some(1),
+                            Some(100),
+                            Some("Maximum number of results to return"),
+                        ),
+                    );
+                    option_props.insert(
+                        "threshold".to_string(),
+                        number_prop(
+                            Some(0.0),
+                            Some(1.0),
+                            Some("Minimum relevance score (0-1 float)"),
+                        ),
+                    );
+                    option_props
+                },
+                vec![],
+            ),
+        );
+        object_schema(props, vec!["query".to_string()])
     }
 
     // createStore handler removed: store creation is handled implicitly by switch_context
@@ -488,6 +553,21 @@ impl ContentStoreServer {
             }
         };
 
+        // Resolve current session context
+        let session_id = match self.require_active_session(&id) {
+            Ok(session_id) => session_id,
+            Err(error_response) => return *error_response,
+        };
+
+        if let Err(e) = self.ensure_session_store(&session_id).await {
+            error!("Failed to ensure content store for session {session_id}: {e}");
+            return Self::error_response(
+                id,
+                -32603,
+                &format!("Failed to prepare content store for session {session_id}: {e}"),
+            );
+        }
+
         // Create chunks from content (simple line-based chunking)
         let lines: Vec<&str> = content_text.lines().collect();
         let chunks: Vec<String> = lines
@@ -548,7 +628,7 @@ impl ContentStoreServer {
         let mut storage = self.storage.lock().await;
         let content_item = match storage
             .add_content(
-                &args.session_id,
+                &session_id,
                 &final_filename,
                 &mime_type,
                 final_size as usize,
@@ -618,19 +698,45 @@ impl ContentStoreServer {
 
     async fn handle_list_content(&self, params: Value) -> MCPResponse {
         let id = Self::generate_request_id();
-        let args: ListContentArgs = match serde_json::from_value(params) {
-            Ok(args) => args,
-            Err(e) => {
-                return Self::error_response(
-                    id,
-                    -32602,
-                    &format!("Invalid list_content parameters: {e}"),
-                );
+        let args: ListContentArgs = if params.is_null() {
+            ListContentArgs { pagination: None }
+        } else {
+            match serde_json::from_value(params) {
+                Ok(args) => args,
+                Err(e) => {
+                    return Self::error_response(
+                        id,
+                        -32602,
+                        &format!("Invalid list_content parameters: {e}"),
+                    );
+                }
             }
         };
 
+        let session_id = match self.require_active_session(&id) {
+            Ok(session_id) => session_id,
+            Err(error_response) => return *error_response,
+        };
+
+        if let Err(e) = self.ensure_session_store(&session_id).await {
+            error!(
+                "Failed to ensure content store for session {session_id} while listing content: {e}"
+            );
+            return Self::error_response(
+                id,
+                -32603,
+                &format!("Failed to prepare content store for session {session_id}: {e}"),
+            );
+        }
+
+        let (offset, limit) = args.pagination.as_ref().map_or((0usize, 100usize), |p| {
+            let offset = p.offset.unwrap_or(0);
+            let limit = p.limit.unwrap_or(100).clamp(1, 1000);
+            (offset, limit)
+        });
+
         let storage = self.storage.lock().await;
-        let (contents, total) = match storage.list_content(&args.session_id, 0, 100).await {
+        let (contents, total) = match storage.list_content(&session_id, offset, limit).await {
             Ok((contents, total)) => (contents, total),
             Err(e) => {
                 return Self::error_response(id, -32603, &format!("Failed to list content: {e}"));
@@ -677,7 +783,7 @@ impl ContentStoreServer {
                     .join("\n")
             ),
             serde_json::json!({
-                "sessionId": args.session_id,
+                "sessionId": session_id,
                 "contents": content_list,
                 "total": total,
                 "hasMore": false
@@ -741,8 +847,34 @@ impl ContentStoreServer {
             }
         };
 
+        let session_id = match self.require_active_session(&id) {
+            Ok(session_id) => session_id,
+            Err(error_response) => return *error_response,
+        };
+
+        if let Err(e) = self.ensure_session_store(&session_id).await {
+            error!(
+                "Failed to ensure content store for session {session_id} during keyword search: {e}"
+            );
+            return Self::error_response(
+                id,
+                -32603,
+                &format!("Failed to prepare content store for session {session_id}: {e}"),
+            );
+        }
+
+        let top_n = args
+            .options
+            .as_ref()
+            .and_then(|opts| opts.top_n)
+            .unwrap_or(10)
+            .clamp(1, 100);
+
+        let ranking_limit = std::cmp::max(top_n, 50);
+        let score_threshold = args.options.as_ref().and_then(|opts| opts.threshold);
+
         let search_engine = self.search_engine.lock().await;
-        let all_results = match search_engine.search_bm25(&args.query, 50).await {
+        let all_results = match search_engine.search_bm25(&args.query, ranking_limit).await {
             Ok(results) => results,
             Err(e) => {
                 return Self::error_response(id, -32603, &format!("Failed to search content: {e}"));
@@ -751,16 +883,32 @@ impl ContentStoreServer {
 
         // Filter results by session_id
         let storage = self.storage.lock().await;
-        let search_results: Vec<serde_json::Value> = all_results
+        let mut filtered_results = Vec::new();
+        for result in all_results {
+            let belongs_to_session = storage
+                .get_content_session_id(&result.content_id)
+                .map(|sid| sid == session_id)
+                .unwrap_or(false);
+
+            if !belongs_to_session {
+                continue;
+            }
+
+            if let Some(threshold) = score_threshold {
+                if result.score < threshold {
+                    continue;
+                }
+            }
+
+            filtered_results.push(result);
+
+            if filtered_results.len() >= top_n {
+                break;
+            }
+        }
+
+        let search_results: Vec<serde_json::Value> = filtered_results
             .into_iter()
-            .filter(|result| {
-                // Check if the content belongs to the session
-                storage
-                    .get_content_session_id(&result.content_id)
-                    .map(|session_id| session_id == args.session_id)
-                    .unwrap_or(false)
-            })
-            .take(10) // Limit to top 10 results
             .map(|result| {
                 serde_json::json!({
                     "contentId": result.content_id,
@@ -777,7 +925,7 @@ impl ContentStoreServer {
             &format!(
                 "Search completed!\n\nQuery: \"{}\"\nSession ID: {}\nResults found: {}\n\n{}",
                 args.query,
-                args.session_id,
+                session_id,
                 search_results.len(),
                 if search_results.is_empty() {
                     "No results found for your search query.".to_string()
@@ -816,6 +964,7 @@ impl ContentStoreServer {
                 }
             ),
             serde_json::json!({
+                    "sessionId": session_id,
                 "results": search_results
             }),
         )
@@ -830,4 +979,9 @@ fn object_schema(props: HashMap<String, JSONSchema>, required: Vec<String>) -> J
 /// Helper: string property
 fn string_prop(desc: Option<&str>) -> JSONSchema {
     crate::mcp::utils::schema_builder::string_prop(None, None, desc)
+}
+
+/// Helper: number property
+fn number_prop(min: Option<f64>, max: Option<f64>, desc: Option<&str>) -> JSONSchema {
+    crate::mcp::utils::schema_builder::number_prop(min, max, desc)
 }
