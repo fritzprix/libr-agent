@@ -29,18 +29,6 @@ fn extract_file_path_from_url(file_url: &str) -> Result<String, String> {
 }
 
 /// Tool argument types
-#[derive(Debug, serde::Deserialize)]
-struct CreateStoreArgs {
-    #[serde(rename = "sessionId", alias = "session_id")]
-    session_id: String,
-    metadata: Option<CreateStoreMetadata>,
-}
-
-#[derive(Debug, serde::Deserialize)]
-struct CreateStoreMetadata {
-    name: Option<String>,
-    description: Option<String>,
-}
 
 #[derive(Debug, serde::Deserialize)]
 struct AddContentArgs {
@@ -159,14 +147,6 @@ impl BuiltinMCPServer for ContentStoreServer {
     fn tools(&self) -> Vec<MCPTool> {
         vec![
             MCPTool {
-                name: "createStore".to_string(),
-                title: None,
-                description: "Create a new content store for file management".to_string(),
-                input_schema: Self::tool_create_store_schema(),
-                output_schema: None,
-                annotations: None,
-            },
-            MCPTool {
                 name: "addContent".to_string(),
                 title: None,
                 description: "Add and parse file content with chunking and BM25 indexing"
@@ -264,7 +244,6 @@ impl BuiltinMCPServer for ContentStoreServer {
         // Add available tools information
         context.push_str(
             "\n## Available Tools\n\
-            - **createStore**: Create a new content store\n\
             - **addContent**: Add and parse files with BM25 indexing\n\
             - **listContent**: List stored content with pagination\n\
             - **readContent**: Read content with line range filtering\n\
@@ -314,7 +293,7 @@ impl BuiltinMCPServer for ContentStoreServer {
 
     async fn call_tool(&self, tool_name: &str, args: Value) -> MCPResponse {
         match tool_name {
-            "createStore" => self.handle_create_store(args).await,
+            // createStore removed: creation of stores is managed internally via switch_context
             "addContent" => self.handle_add_content(args).await,
             "listContent" => self.handle_list_content(args).await,
             "readContent" => self.handle_read_content(args).await,
@@ -328,19 +307,8 @@ impl BuiltinMCPServer for ContentStoreServer {
 }
 
 impl ContentStoreServer {
-    fn tool_create_store_schema() -> JSONSchema {
-        let mut meta_props: HashMap<String, JSONSchema> = HashMap::new();
-        meta_props.insert("name".to_string(), string_prop(Some("Store display name")));
-        meta_props.insert(
-            "description".to_string(),
-            string_prop(Some("Store description")),
-        );
-        meta_props.insert(
-            "session_id".to_string(),
-            string_prop(Some("Session ID for the store")),
-        );
-        object_schema(meta_props, vec![])
-    }
+    // note: store creation is not exposed as a user-invokable tool; stores are created
+    // automatically when switching context to a session (see switch_context).
 
     fn tool_add_content_schema() -> JSONSchema {
         let mut props: HashMap<String, JSONSchema> = HashMap::new();
@@ -439,48 +407,7 @@ impl ContentStoreServer {
         object_schema(props, vec!["store_id".to_string(), "query".to_string()])
     }
 
-    async fn handle_create_store(&self, params: Value) -> MCPResponse {
-        let id = Self::generate_request_id();
-        let args: CreateStoreArgs = match serde_json::from_value(params) {
-            Ok(args) => args,
-            Err(e) => {
-                return Self::error_response(
-                    id,
-                    -32602,
-                    &format!("Invalid create_store parameters: {e}"),
-                );
-            }
-        };
-
-        let mut storage = self.storage.lock().await;
-        let store = match storage
-            .create_store(
-                args.session_id.clone(),
-                args.metadata.as_ref().and_then(|m| m.name.clone()),
-                args.metadata.as_ref().and_then(|m| m.description.clone()),
-            )
-            .await
-        {
-            Ok(store) => store,
-            Err(e) => {
-                return Self::error_response(id, -32603, &format!("Failed to create store: {e}"));
-            }
-        };
-
-        Self::dual_response(
-            id,
-            &format!(
-                "Store created successfully!\nSession ID: {}\nCreated At: {}\nStatus: Ready for content",
-                store.session_id, store.created_at
-            ),
-            serde_json::json!({
-                "sessionId": store.session_id,
-                "createdAt": store.created_at,
-                "name": store.name,
-                "description": store.description
-            }),
-        )
-    }
+    // createStore handler removed: store creation is handled implicitly by switch_context
 
     async fn handle_add_content(&self, params: Value) -> MCPResponse {
         let id = Self::generate_request_id();

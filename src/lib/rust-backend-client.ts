@@ -598,6 +598,14 @@ export async function removeSession(sessionId: string): Promise<void> {
 }
 
 /**
+ * Delete content store artifacts for a session (backend command).
+ * This removes SQLite rows and search index directories for the given session.
+ */
+export async function deleteContentStore(sessionId: string): Promise<void> {
+  return safeInvoke<void>('delete_content_store', { sessionId });
+}
+
+/**
  * Switches to a specific session with optional async behavior.
  * @param sessionId The ID of the session to switch to
  * @param useAsync Whether to use async switching (default: true)

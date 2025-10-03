@@ -17,6 +17,8 @@ import {
   TerminalModelPicker,
 } from '@/components/ui';
 import { getLogger } from '@/lib/logger';
+import { deleteContentStore } from '@/lib/rust-backend-client';
+import { dbUtils } from '@/lib/db/service';
 
 const logger = getLogger('SettingsPage');
 
@@ -263,14 +265,42 @@ export default function SettingsPage() {
                   <div className="pt-4">
                     <Button
                       variant="destructive"
-                      onClick={() => {
+                      onClick={async () => {
                         const ok = window.confirm(
-                          'Delete ALL local sessions, messages and workspace files? This cannot be undone.',
+                          'Delete ALL local sessions, messages, content stores and workspace files? This cannot be undone.',
                         );
                         if (!ok) return;
-                        // Keep this simple: delegate full-clear logic to the existing SettingsModal ClearAllButton flow or db utilities if needed.
-                        // For now navigate back after user confirms.
-                        navigate(-1);
+
+                        try {
+                          // Get all sessions from frontend DB
+                          const sessions = await dbUtils.getAllSessions();
+
+                          for (const s of sessions) {
+                            const sid = s.id;
+                            try {
+                              // Remove content-store artifacts (SQLite + search index)
+                              await deleteContentStore(sid);
+                            } catch (e) {
+                              logger.warn('deleteContentStore failed', e);
+                            }
+
+                            try {
+                              // Remove DB rows and native workspace directory
+                              await dbUtils.clearSessionAndWorkspace(sid);
+                            } catch (e) {
+                              logger.warn('clearSessionAndWorkspace failed', e);
+                            }
+                          }
+
+                          // Navigate back after full clear
+                          navigate(-1);
+                        } catch (e) {
+                          logger.error('Failed to clear sessions', e);
+                          // Let user know
+                          window.alert(
+                            'Failed to clear sessions. See logs for details.',
+                          );
+                        }
                       }}
                     >
                       Clear All Sessions, Messages & Workspace

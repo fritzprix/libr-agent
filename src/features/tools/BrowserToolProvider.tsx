@@ -22,9 +22,11 @@ import {
   //inputTextTool,
   extractPageContentTool,
   extractInteractableTool,
-  injectJavascriptTool, // <-- Add import
+  // injectJavascriptTool, // <-- Add import
   // Types
   StrictLocalMCPTool,
+  clickElementTool,
+  inputTextTool,
 } from './browser-tools';
 
 const logger = getLogger('BrowserToolProvider');
@@ -66,11 +68,11 @@ export function BrowserToolProvider() {
       scrollPageTool,
       navigateBackTool,
       navigateForwardTool,
-      // clickElementTool,
-      // inputTextTool,
+      clickElementTool,
+      inputTextTool,
       extractPageContentTool,
       extractInteractableTool,
-      injectJavascriptTool, // <-- Add to array
+      // injectJavascriptTool, // <-- Add to array
     ];
 
     // Inject executeScript function for tools that need it
