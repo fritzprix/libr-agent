@@ -655,7 +655,7 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
 
     const contextPrompt = goal
       ? `# Current Goal: ${goal}
-Todos: ${todos.length > 0 ? todos.map(t => `ID:${t.id} ${t.status === 'completed' ? '[✓]' : '[ ]'} ${t.name}`).join(', ') : '(none)'}
+Todos: ${todos.length > 0 ? todos.map((t) => `ID:${t.id} ${t.status === 'completed' ? '[✓]' : '[ ]'} ${t.name}`).join(', ') : '(none)'}
 Recent Observations: ${observations.length > 0 ? observations.slice(-2).join('; ') : '(none)'}`
       : '# No active goal';
 

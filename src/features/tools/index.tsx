@@ -286,7 +286,11 @@ Tool details and usage instructions are provided separately.
               await entry.service.getServiceContext(contextOptions);
 
             // Check if this is an MCP server (Rust-based) by serviceId pattern
-            if (serviceId !== 'browser' && serviceId !== 'planning' && serviceId !== 'playbook') {
+            if (
+              serviceId !== 'browser' &&
+              serviceId !== 'planning' &&
+              serviceId !== 'playbook'
+            ) {
               // Collect MCP server status for unified section
               if (result.contextPrompt) {
                 mcpServerStatuses.push(result.contextPrompt);

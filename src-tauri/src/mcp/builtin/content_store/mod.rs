@@ -239,39 +239,40 @@ impl BuiltinMCPServer for ContentStoreServer {
         let tools_count = self.tools().len();
 
         // Format minimal context with content summary
-        let mut context = format!(
-            "contentstore: Active, {} tools",
-            tools_count
-        );
+        let mut context = format!("contentstore: Active, {tools_count} tools");
 
         // Add session-specific content summary if session ID is available
         if let Some(session_id) = session_id {
             // Try to get content information for this session (non-blocking)
             if let Ok(storage) = self.storage.try_lock() {
-                let count = storage.get_content_count(&session_id);
-                let summaries = storage.get_content_summary(&session_id, 3);
-                
+                let count = storage.get_content_count(session_id);
+                let summaries = storage.get_content_summary(session_id, 3);
+
                 if count > 0 {
-                    context.push_str(&format!(", {} files", count));
-                    
+                    context.push_str(&format!(", {count} files"));
+
                     if !summaries.is_empty() {
-                        let files_info: Vec<String> = summaries.iter().map(|(filename, size, preview)| {
-                            // Format size in human-readable form
-                            let size_str = if *size < 1024 {
-                                format!("{}B", size)
-                            } else if *size < 1024 * 1024 {
-                                format!("{}KB", size / 1024)
-                            } else {
-                                format!("{}MB", size / (1024 * 1024))
-                            };
-                            
-                            format!("{} ({}): {}", filename, size_str, preview)
-                        }).collect();
-                        
+                        let files_info: Vec<String> = summaries
+                            .iter()
+                            .map(|(filename, size, preview)| {
+                                // Format size in human-readable form
+                                let size_str = if *size < 1024 {
+                                    format!("{size}B")
+                                } else if *size < 1024 * 1024 {
+                                    format!("{}KB", size / 1024)
+                                } else {
+                                    format!("{}MB", size / (1024 * 1024))
+                                };
+
+                                format!("{filename} ({size_str}): {preview}")
+                            })
+                            .collect();
+
                         context.push_str(&format!("\n  Files: {}", files_info.join("\n  ")));
-                        
+
                         if summaries.len() < count {
-                            context.push_str(&format!("\n  ...and {} more", count - summaries.len()));
+                            context
+                                .push_str(&format!("\n  ...and {} more", count - summaries.len()));
                         }
                     }
                 } else {
