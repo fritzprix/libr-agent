@@ -45,6 +45,8 @@ export interface Message {
   tool_use?: { id: string; name: string; input: Record<string, unknown> };
   createdAt?: Date; // Added
   updatedAt?: Date; // Added
+  /** Source of the message - 'assistant' for AI-generated, 'ui' for user interface interactions */
+  source?: 'assistant' | 'ui';
   // Error handling for failed AI service calls
   error?: {
     // User-friendly message to display

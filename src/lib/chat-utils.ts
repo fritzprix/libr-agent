@@ -10,18 +10,21 @@ import { MCPContent } from '@/lib/mcp-types';
  * @param text The content of the system message.
  * @param sessionId The ID of the session this message belongs to.
  * @param assistantId Optional ID of the assistant associated with this message.
+ * @param source Optional source indicator - 'assistant' for AI-generated, 'ui' for user interface interactions.
  * @returns A message object with the role 'system'.
  */
 export const createSystemMessage = (
   text: string,
   sessionId: string,
   assistantId?: string,
+  source?: 'assistant' | 'ui',
 ): Message => ({
   id: createId(),
   content: stringToMCPContentArray(text),
   role: 'system',
   sessionId,
   assistantId,
+  source,
 });
 
 /**
@@ -31,18 +34,21 @@ export const createSystemMessage = (
  * @param text The content of the user's message.
  * @param sessionId The ID of the session this message belongs to.
  * @param assistantId Optional ID of the assistant associated with this message.
+ * @param source Optional source indicator - 'assistant' for AI-generated, 'ui' for user interface interactions.
  * @returns A message object with the role 'user'.
  */
 export const createUserMessage = (
   text: string,
   sessionId: string,
   assistantId?: string,
+  source?: 'assistant' | 'ui',
 ): Message => ({
   id: createId(),
   content: stringToMCPContentArray(text),
   role: 'user',
   sessionId,
   assistantId,
+  source,
 });
 
 /**
@@ -112,6 +118,8 @@ export const createToolSuccessMessage = (
  * @param toolCallId The unique ID for this tool call.
  * @param sessionId The ID of the session this message pair belongs to.
  * @param assistantId Optional ID of the assistant associated with this message pair.
+ * @param source Optional source indicator - 'assistant' for AI-generated, 'ui' for user interface interactions.
+ * @param delayMs Optional delay in milliseconds between call and result message timestamps.
  * @returns A tuple containing two message objects: the assistant's tool call message and the tool result message.
  */
 export const createToolMessagePair = (
@@ -121,6 +129,7 @@ export const createToolMessagePair = (
   toolCallId: string,
   sessionId: string,
   assistantId?: string,
+  source?: 'assistant' | 'ui',
   delayMs?: number,
 ): [Message, Message] => {
   const delayMsValue = delayMs ?? 300;
@@ -141,6 +150,7 @@ export const createToolMessagePair = (
     ],
     sessionId,
     assistantId,
+    source,
     createdAt: callTime,
   };
 
@@ -151,6 +161,7 @@ export const createToolMessagePair = (
     tool_call_id: toolCallId,
     sessionId,
     assistantId,
+    source,
     createdAt: new Date(callTime.getTime() + delayMsValue),
   };
 

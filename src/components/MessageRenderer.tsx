@@ -185,6 +185,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
                       toolCallId,
                       sessionId,
                       assistantId,
+                      'ui',
                     );
 
                   // 메시지 쌍을 함께 추가
@@ -205,6 +206,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
                     toolCallId,
                     sessionId,
                     assistantId,
+                    'ui',
                   );
 
                   // 에러 메시지 쌍을 함께 추가
@@ -266,6 +268,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
                     toolCallId,
                     sessionId,
                     assistantId,
+                    'ui',
                   );
                 // 메시지 쌍을 함께 추가
                 await submit([toolCallMessage, toolResultMessage]);
@@ -280,6 +283,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
                     toolCallId,
                     sessionId,
                     assistantId,
+                    'ui',
                   );
                 // 에러 시에도 메시지 쌍을 함께 추가
                 await submit([toolCallMessage, errorResultMessage]);
@@ -304,6 +308,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
               intentText + paramsText,
               sessionId,
               assistantId,
+              'ui',
             );
 
             await submit([intentMessage]);
@@ -322,6 +327,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
               result.payload.prompt,
               sessionId,
               assistantId,
+              'ui',
             );
 
             await submit([promptMessage]);
@@ -347,6 +353,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
               `🔔 ${result.payload.message}`,
               sessionId,
               assistantId,
+              'ui',
             );
 
             await submit([notificationMessage]);
