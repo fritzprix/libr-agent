@@ -92,8 +92,6 @@ export class GeminiService extends BaseAIService {
   ): AsyncGenerator<string, void, void> {
     const { config, tools } = this.prepareStreamChat(messages, options);
 
-    this.logToolResponseStats(messages);
-
     const validatedMessages = this.validateGeminiMessageStack(messages);
 
     try {
@@ -295,49 +293,6 @@ export class GeminiService extends BaseAIService {
 
     return geminiMessages;
   }
-
-  /**
-   * Logs statistics about the types of tool responses in a message stack.
-   * This is used for debugging and monitoring tool performance.
-   * @param messages The array of messages to analyze.
-   * @private
-   */
-  private logToolResponseStats(messages: Message[]): void {
-    const toolMessages = messages.filter((m) => m.role === 'tool');
-    if (toolMessages.length === 0) return;
-
-    const stats = {
-      totalToolMessages: toolMessages.length,
-      jsonResponses: 0,
-      textResponses: 0,
-      errorResponses: 0,
-      emptyResponses: 0,
-    };
-
-    toolMessages.forEach((msg) => {
-      if (!msg.content) {
-        stats.emptyResponses++;
-        return;
-      }
-
-      try {
-        JSON.parse(this.processMessageContent(msg.content));
-        stats.jsonResponses++;
-      } catch {
-        if (
-          this.processMessageContent(msg.content).includes('error:') ||
-          this.processMessageContent(msg.content).includes('Error:')
-        ) {
-          stats.errorResponses++;
-        } else {
-          stats.textResponses++;
-        }
-      }
-    });
-
-    logger.info('Tool response processing statistics', stats);
-  }
-
   /**
    * @inheritdoc
    * @description For Gemini, system instructions are handled as a separate parameter,
