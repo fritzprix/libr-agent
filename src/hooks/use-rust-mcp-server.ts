@@ -65,11 +65,6 @@ export function useRustMCPServer<T extends RustMCPServerProxy>(
         serverName: resolvedServerName,
         toolCount: tools.length,
         toolNames: tools.map((t) => t.name),
-        toolDetails: tools.map((t) => ({
-          name: t.name,
-          description: t.description,
-          inputSchema: t.inputSchema,
-        })),
       });
 
       // Build dynamic proxy with tool methods
@@ -101,12 +96,11 @@ export function useRustMCPServer<T extends RustMCPServerProxy>(
           args?: Record<string, unknown> | undefined,
         ) => {
           const safeArgs = args ?? {};
-          logger.info('Proxy: Calling builtin tool', {
+          logger.debug('Proxy: Calling builtin tool', {
             serverName: resolvedServerName,
             methodName,
             toolName: tool.name,
             hasArgs: Object.keys(safeArgs).length > 0,
-            argKeys: Object.keys(safeArgs),
           });
 
           const response: MCPResponse<unknown> = await callBuiltinTool(
