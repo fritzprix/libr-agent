@@ -16,9 +16,20 @@ import {
   TabsTrigger,
   TerminalModelPicker,
 } from '@/components/ui';
+import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogFooter,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from '@/components/ui/alert-dialog';
+import { toast } from 'sonner';
 import { getLogger } from '@/lib/logger';
-import { deleteContentStore } from '@/lib/rust-backend-client';
-import { dbUtils } from '@/lib/db/service';
+import { useSessionContext } from '@/context/SessionContext';
 
 const logger = getLogger('SettingsPage');
 
@@ -127,6 +138,8 @@ export default function SettingsPage() {
   );
   const [pendingCount, setPendingCount] = useState(0);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const sessionCtx = useSessionContext();
 
   const handlePendingChange = useCallback(
     (provider: AIServiceProvider, patch: Partial<ServiceConfig>) => {
@@ -263,62 +276,71 @@ export default function SettingsPage() {
                     and native workspace directories. This action is destructive
                     and cannot be undone.
                   </p>
-                  <div className="pt-4">
-                    <Button
-                      variant="destructive"
-                      disabled={isDeleting}
-                      onClick={async (e) => {
-                        e.preventDefault(); // Prevent any default behavior
+                  <div className="flex items-center justify-left pt-4 gap-x-2">
+                    <>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        disabled={isDeleting}
+                        onClick={async (e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
 
-                        const ok = window.confirm(
-                          'Delete ALL local sessions, messages, content stores and workspace files? This cannot be undone.',
-                        );
-                        if (!ok) return;
-
-                        setIsDeleting(true);
-                        try {
-                          // Get all sessions from frontend DB
-                          const sessions = await dbUtils.getAllSessions();
-
-                          for (const s of sessions) {
-                            const sid = s.id;
-                            try {
-                              // Remove content-store artifacts (SQLite + search index)
-                              await deleteContentStore(sid);
-                            } catch (e) {
-                              logger.warn('deleteContentStore failed', e);
-                            }
-
-                            try {
-                              // Remove DB rows and native workspace directory
-                              await dbUtils.clearSessionAndWorkspace(sid);
-                            } catch (e) {
-                              logger.warn('clearSessionAndWorkspace failed', e);
-                            }
-                          }
-
-                          // Show success message before navigation
-                          window.alert(
-                            'All sessions, messages and workspace files have been successfully deleted.',
-                          );
-
-                          // Navigate back after showing success message
-                          navigate(-1);
-                        } catch (e) {
-                          logger.error('Failed to clear sessions', e);
-                          // Let user know
-                          window.alert(
-                            'Failed to clear sessions. See logs for details.',
-                          );
-                        } finally {
-                          setIsDeleting(false);
-                        }
-                      }}
-                    >
-                      {isDeleting
-                        ? 'Deleting...'
-                        : 'Clear All Sessions, Messages & Workspace'}
-                    </Button>
+                          // Open confirmation dialog
+                          setConfirmOpen(true);
+                        }}
+                      >
+                        <span>Clear All Sessions, Messages & Workspace</span>
+                      </Button>
+                      {isDeleting && (
+                        <>
+                          <LoadingSpinner size="sm" className="inline-block" />
+                        </>
+                      )}
+                      <AlertDialog
+                        open={confirmOpen}
+                        onOpenChange={setConfirmOpen}
+                      >
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>
+                              Delete All Sessions, Messages & Workspace
+                            </AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This will permanently delete all local sessions,
+                              their messages, and workspace file stores from the
+                              local database and native workspace directories.
+                              This action cannot be undone. Are you sure you
+                              want to continue?
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={async () => {
+                                setConfirmOpen(false);
+                                setIsDeleting(true);
+                                try {
+                                  await sessionCtx.clearAllSessions();
+                                  toast.success(
+                                    'All sessions, messages and workspace files have been successfully deleted.',
+                                  );
+                                } catch (e) {
+                                  logger.error('Failed to clear sessions', e);
+                                  toast.error(
+                                    'Failed to clear sessions. See logs for details.',
+                                  );
+                                } finally {
+                                  setIsDeleting(false);
+                                }
+                              }}
+                            >
+                              Delete
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </>
                   </div>
                 </CardContent>
               </Card>

@@ -11,6 +11,8 @@ import {
 } from 'react';
 import useSWRInfinite from 'swr/infinite';
 import { dbService, Page } from '../lib/db';
+import { dbUtils } from '@/lib/db/service';
+import { deleteContentStore } from '@/lib/rust-backend-client';
 import { getLogger } from '../lib/logger';
 import { Assistant, Session } from '../models/chat';
 import { useAssistantContext } from './AssistantContext';
@@ -42,6 +44,7 @@ interface SessionContextType {
   clearError: () => void;
   retryLastOperation: () => Promise<void>;
   hasNextPage: boolean;
+  clearAllSessions: () => Promise<void>;
 }
 
 /**
@@ -321,10 +324,6 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
   const handleDelete = useCallback(
     async (id: string) => {
       const operation = async () => {
-        // Store original state for rollback
-        const originalCurrent = currentRef.current;
-        const originalData = data;
-
         // Optimistic updates
         if (id === currentRef.current?.id) {
           setCurrent(null);
@@ -342,13 +341,24 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
         );
 
         try {
-          await dbService.sessions.delete(id);
+          // Remove backend content-store artifacts first (best-effort)
+          try {
+            await deleteContentStore(id);
+          } catch (e) {
+            logger.warn('deleteContentStore failed for session ' + id, e);
+          }
+
+          // Clear DB artifacts and native workspace (best-effort)
+          try {
+            await dbUtils.clearSessionAndWorkspace(id);
+          } catch (e) {
+            logger.warn('clearSessionAndWorkspace failed for session ' + id, e);
+          }
+
           // No need to revalidate - optimistic update is accurate
         } catch (error) {
-          // Rollback optimistic updates
-          setCurrent(originalCurrent);
-          mutate(originalData, false);
-          throw error;
+          // Unexpected error: log but do not rollback (best-effort mode)
+          logger.error(`Unexpected error while deleting session ${id}`, error);
         }
       };
 
@@ -432,6 +442,58 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
     [mutate, data],
   );
 
+  /**
+   * Clears all sessions, messages and workspace stores.
+   * Performs optimistic UI update and rolls back on failure.
+   */
+  const handleClearAllSessions = useCallback(async () => {
+    const operation = async () => {
+      // Save original data for rollback
+      const originalData = data;
+      const originalCurrent = currentRef.current;
+
+      // Optimistic: clear current and sessions in UI
+      setCurrent(null);
+      await mutate([], false);
+
+      try {
+        const sessions = await dbUtils.getAllSessions();
+        for (const s of sessions) {
+          try {
+            await deleteContentStore(s.id);
+          } catch (e) {
+            logger.warn('deleteContentStore failed for session ' + s.id, e);
+          }
+          try {
+            await dbUtils.clearSessionAndWorkspace(s.id);
+          } catch (e) {
+            logger.warn(
+              'clearSessionAndWorkspace failed for session ' + s.id,
+              e,
+            );
+          }
+        }
+      } catch (e) {
+        // Rollback optimistic updates
+        setCurrent(originalCurrent);
+        await mutate(originalData, false);
+        throw e;
+      }
+    };
+
+    try {
+      await operation();
+      setOperationError(null);
+      setLastFailedOperation(null);
+    } catch (error) {
+      const errorObj = toError(error);
+      logger.error('Failed to clear all sessions', errorObj);
+      setOperationError(errorObj);
+      setLastFailedOperation(() => operation);
+      throw errorObj;
+    }
+  }, [data, mutate]);
+
   const contextValue: SessionContextType = useMemo(
     () => ({
       sessions,
@@ -445,6 +507,7 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
       start: handleStartNew,
       delete: handleDelete,
       updateSession: handleUpdateSession,
+      clearAllSessions: handleClearAllSessions,
       isLoading,
       isValidating,
       error,
@@ -464,6 +527,7 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
       handleStartNew,
       handleDelete,
       handleUpdateSession,
+      handleClearAllSessions,
       isLoading,
       isValidating,
       error,
