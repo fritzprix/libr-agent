@@ -621,11 +621,11 @@ const playbookStore: WebMCPServer = {
 
           const formattedText = lines.join('\n');
 
-          const agentPrompt = `The user has requested playbook ${existing.id}.
+          const agentPrompt = `Playbook ${existing.id} is selected.
 ---
 ${formattedText}
 ---
-Based on the playbook content, establish goals and plans, and perform the tasks.`;
+Based on the playbook's goal and steps, establish goals and todos, and start performing the tasks.`;
 
           return createMCPStructuredResponse(agentPrompt, {
             playbook: existing,

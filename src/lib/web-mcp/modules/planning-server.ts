@@ -73,10 +73,10 @@ interface AddToDoOutput extends BaseOutput {
 // `toggle_todo` has been removed: toggle functionality is deprecated.
 
 /**
- * The output for removing/clearing a single todo by id.
+ * The output for the `check_todo` tool call.
  * @internal
  */
-interface RemoveTodoOutput extends BaseOutput {
+interface CheckTodoOutput extends BaseOutput {
   todo: SimpleTodo | null;
   todos: SimpleTodo[];
 }
@@ -141,11 +141,11 @@ class EphemeralState {
   // toggle functionality removed; use remove_todo / clear_todos / add_todo
   // to manage todo lifecycle programmatically.
 
-  removeTodo(id: number): MCPResponse<RemoveTodoOutput> {
-    const idx = this.todos.findIndex((t) => t.id === id);
-    if (idx === -1) {
+  checkTodo(id: number, check: boolean = true): MCPResponse<CheckTodoOutput> {
+    const todo = this.todos.find((t) => t.id === id);
+    if (!todo) {
       const availableIds = this.todos.map((t) => t.id);
-      return createMCPStructuredResponse<RemoveTodoOutput>(
+      return createMCPStructuredResponse<CheckTodoOutput>(
         `Todo with ID ${id} not found. Available IDs: ${availableIds.length > 0 ? availableIds.join(', ') : 'none'}`,
         {
           success: false,
@@ -155,22 +155,42 @@ class EphemeralState {
       );
     }
 
-    const [removed] = this.todos.splice(idx, 1);
-    return createMCPStructuredResponse<RemoveTodoOutput>(
-      `Todo removed: "${removed.name}"`,
+    todo.status = check ? 'completed' : 'pending';
+    return createMCPStructuredResponse<CheckTodoOutput>(
+      `Todo ${check ? 'checked' : 'unchecked'}: "${todo.name}"`,
       {
         success: true,
-        todo: removed,
+        todo,
         todos: this.todos,
       },
     );
   }
 
-  clearTodos(): MCPResponse<BaseOutput> {
-    this.todos = [];
-    return createMCPStructuredResponse<BaseOutput>('All todos cleared', {
-      success: true,
-    });
+  clearTodos(ids?: number[]): MCPResponse<BaseOutput> {
+    if (!ids || ids.length === 0) {
+      // Clear all todos if no IDs specified
+      this.todos = [];
+      return createMCPStructuredResponse<BaseOutput>('All todos cleared', {
+        success: true,
+      });
+    }
+
+    // Clear specific todos by IDs
+    const initialCount = this.todos.length;
+    this.todos = this.todos.filter((todo) => !ids.includes(todo.id));
+    const removedCount = initialCount - this.todos.length;
+
+    if (removedCount === 0) {
+      return createMCPStructuredResponse<BaseOutput>(
+        `No todos found with the specified IDs: ${ids.join(', ')}`,
+        { success: false },
+      );
+    }
+
+    return createMCPStructuredResponse<BaseOutput>(
+      `Cleared ${removedCount} todo${removedCount === 1 ? '' : 's'}`,
+      { success: true },
+    );
   }
 
   clear(): MCPResponse<BaseOutput> {
@@ -338,8 +358,8 @@ class SessionStateManager {
 
   // toggleTodo removed; use remove_todo / clear_todos / add_todo instead
 
-  clearTodos(): MCPResponse<BaseOutput> {
-    return this.getCurrentState().clearTodos();
+  clearTodos(ids?: number[]): MCPResponse<BaseOutput> {
+    return this.getCurrentState().clearTodos(ids);
   }
 
   clear(): MCPResponse<BaseOutput> {
@@ -370,8 +390,8 @@ class SessionStateManager {
     return this.getCurrentState().processThought(input);
   }
 
-  removeTodo(id: number): MCPResponse<RemoveTodoOutput> {
-    return this.getCurrentState().removeTodo(id);
+  checkTodo(id: number, check: boolean = true): MCPResponse<CheckTodoOutput> {
+    return this.getCurrentState().checkTodo(id, check);
   }
 
   /**
@@ -425,18 +445,22 @@ const tools: MCPTool[] = [
       required: ['name'],
     },
   },
-  // toggle_todo removed
   {
-    name: 'clear_todo',
+    name: 'mark_todo',
     description:
-      'Remove a single todo by its unique ID. Use when a todo is obsolete or created by mistake.',
+      'Mark a todo item as completed or pending by its ID. Use to update task completion status.',
     inputSchema: {
       type: 'object',
       properties: {
         id: {
           type: 'number',
           minimum: 1,
-          description: 'The ID of the todo to remove',
+          description: 'The ID of the todo to update',
+        },
+        completed: {
+          type: 'boolean',
+          description:
+            'Whether to mark the todo as completed (true) or pending (false). Defaults to true.',
         },
       },
       required: ['id'],
@@ -445,8 +469,18 @@ const tools: MCPTool[] = [
   {
     name: 'clear_todos',
     description:
-      'Clear all todo items. Use when resetting or finishing all tasks.',
-    inputSchema: { type: 'object', properties: {} },
+      'Clear specific todos by their IDs, or all todos if no IDs are provided. Use to remove completed tasks or reset the todo list.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ids: {
+          type: 'array',
+          items: { type: 'number', minimum: 1 },
+          description:
+            'Array of todo IDs to clear. If not provided or empty, all todos will be cleared.',
+        },
+      },
+    },
   },
   {
     name: 'clear_session',
@@ -514,13 +548,16 @@ interface PlanningServerMethods {
   }) => Promise<MCPResponse<CreateGoalOutput>>;
   clear_goal: () => Promise<MCPResponse<ClearGoalOutput>>;
   add_todo: (args: { name: string }) => Promise<MCPResponse<AddToDoOutput>>;
-  clear_todos: () => Promise<MCPResponse<BaseOutput>>;
+  mark_todo: (args: {
+    id: number;
+    completed?: boolean;
+  }) => Promise<MCPResponse<CheckTodoOutput>>;
+  clear_todos: (args?: { ids?: number[] }) => Promise<MCPResponse<BaseOutput>>;
   clear_session: () => Promise<MCPResponse<BaseOutput>>;
   add_observation: (args: {
     observation: string;
   }) => Promise<MCPResponse<BaseOutput>>;
   get_current_state: () => Promise<MCPResponse<PlanningState>>;
-  remove_todo: (args: { id: number }) => Promise<MCPResponse<RemoveTodoOutput>>;
 }
 
 /**
@@ -565,20 +602,22 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
       case 'add_todo': {
         return stateManager.addTodo(typedArgs.name as string);
       }
-      // toggle_todo removed
-      case 'clear_todo':
-      case 'remove_todo': {
+      case 'mark_todo': {
         const id = typedArgs.id as number;
+        const completed =
+          typedArgs.completed !== undefined
+            ? (typedArgs.completed as boolean)
+            : true;
         if (!Number.isInteger(id) || id < 1) {
           return createMCPTextResponse(
             `Invalid ID: ${id}. ID must be a positive integer.`,
           );
         }
-
-        return stateManager.removeTodo(id);
+        return stateManager.checkTodo(id, completed);
       }
       case 'clear_todos': {
-        return stateManager.clearTodos();
+        const ids = typedArgs.ids as number[] | undefined;
+        return stateManager.clearTodos(ids);
       }
       case 'clear_session':
         return stateManager.clear();
@@ -691,7 +730,11 @@ export interface PlanningServerProxy extends WebMCPServerProxy {
   create_goal: (args: { goal: string }) => Promise<CreateGoalOutput>;
   clear_goal: () => Promise<ClearGoalOutput>;
   add_todo: (args: { name: string }) => Promise<AddToDoOutput>;
-  clear_todos: () => Promise<BaseOutput>;
+  mark_todo: (args: {
+    id: number;
+    completed?: boolean;
+  }) => Promise<CheckTodoOutput>;
+  clear_todos: (args?: { ids?: number[] }) => Promise<BaseOutput>;
   clear_session: () => Promise<BaseOutput>;
   add_observation: (args: { observation: string }) => Promise<BaseOutput>;
   get_current_state: () => Promise<PlanningState>;
@@ -706,7 +749,6 @@ export interface PlanningServerProxy extends WebMCPServerProxy {
     branchId?: string;
     needsMoreThoughts?: boolean;
   }) => Promise<Record<string, unknown>>;
-  remove_todo: (args: { id: number }) => Promise<RemoveTodoOutput>;
 }
 
 export default planningServer;
