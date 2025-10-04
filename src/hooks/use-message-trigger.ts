@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { useChatContext } from '@/context/ChatContext';
+import { useChatState } from '@/context/ChatContext';
 import type { Message } from '@/models/chat';
 
 interface UseMessageTriggerOptions {
@@ -12,7 +12,7 @@ export function useMessageTrigger(
   callback: () => void | Promise<void>,
   options: UseMessageTriggerOptions = {},
 ) {
-  const { messages } = useChatContext();
+  const { messages } = useChatState();
   const lastHandledRef = useRef<{ id?: string }>({});
   const timeoutRef = useRef<ReturnType<typeof setTimeout>>();
 

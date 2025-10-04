@@ -27,14 +27,23 @@ import { MCPTool } from '@/lib/mcp-types';
 
 const logger = getLogger('ChatContext');
 
-interface ChatContextValue {
-  submit: (messageToAdd?: Message[], agentKey?: string) => Promise<Message>;
+// --- STATE CONTEXT ---
+interface ChatStateContextValue {
   isLoading: boolean;
   isToolExecuting: boolean;
   messages: Message[];
+  pendingCancel: boolean;
+}
+
+const ChatStateContext = createContext<ChatStateContextValue | undefined>(
+  undefined,
+);
+
+// --- ACTIONS CONTEXT ---
+interface ChatActionsContextValue {
+  submit: (messageToAdd?: Message[], agentKey?: string) => Promise<Message>;
   cancel: () => void;
   addToMessageQueue: (message: Partial<Message>) => void;
-  pendingCancel: boolean;
   handleUIAction: (action: {
     type: string;
     payload: { prompt: string };
@@ -42,7 +51,9 @@ interface ChatContextValue {
   retryMessage: (messageId: string) => Promise<void>;
 }
 
-const ChatContext = createContext<ChatContextValue | undefined>(undefined);
+const ChatActionsContext = createContext<ChatActionsContextValue | undefined>(
+  undefined,
+);
 
 interface ChatProviderProps {
   children: React.ReactNode;
@@ -511,38 +522,48 @@ export function ChatProvider({ children }: ChatProviderProps) {
   // Combined loading state: AI service loading OR tool execution
   const isLoading = aiServiceLoading || isProcessing;
 
-  const value: ChatContextValue = useMemo(
+  const stateValue: ChatStateContextValue = useMemo(
     () => ({
-      submit,
       isLoading,
       isToolExecuting: isProcessing,
       messages,
+      pendingCancel,
+    }),
+    [isLoading, isProcessing, messages, pendingCancel],
+  );
+
+  const actionsValue: ChatActionsContextValue = useMemo(
+    () => ({
+      submit,
       cancel: handleCancel,
       addToMessageQueue,
-      pendingCancel,
       handleUIAction,
       retryMessage,
     }),
-    [
-      messages,
-      submit,
-      isLoading,
-      isProcessing,
-      handleCancel,
-      addToMessageQueue,
-      pendingCancel,
-      handleUIAction,
-      retryMessage,
-    ],
+    [submit, handleCancel, addToMessageQueue, handleUIAction, retryMessage],
   );
 
-  return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
+  return (
+    <ChatStateContext.Provider value={stateValue}>
+      <ChatActionsContext.Provider value={actionsValue}>
+        {children}
+      </ChatActionsContext.Provider>
+    </ChatStateContext.Provider>
+  );
 }
 
-export function useChatContext(): ChatContextValue {
-  const context = useContext(ChatContext);
+export function useChatState(): ChatStateContextValue {
+  const context = useContext(ChatStateContext);
   if (context === undefined) {
-    throw new Error('useChatContext must be used within a ChatProvider');
+    throw new Error('useChatState must be used within a ChatProvider');
+  }
+  return context;
+}
+
+export function useChatActions(): ChatActionsContextValue {
+  const context = useContext(ChatActionsContext);
+  if (context === undefined) {
+    throw new Error('useChatActions must be used within a ChatProvider');
   }
   return context;
 }

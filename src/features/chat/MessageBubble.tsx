@@ -123,4 +123,4 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
   );
 };
 
-export default MessageBubble;
+export default React.memo(MessageBubble);

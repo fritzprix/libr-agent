@@ -19,7 +19,7 @@ import {
 } from '@mcp-ui/client';
 import { useUnifiedMCP } from '@/hooks/use-unified-mcp';
 import { createId } from '@paralleldrive/cuid2';
-import { useChatContext } from '@/context/ChatContext';
+import { useChatActions } from '@/context/ChatContext';
 import { useSessionContext } from '@/context/SessionContext';
 import { stringToMCPContentArray } from '@/lib/utils';
 import { useAssistantContext } from '@/context/AssistantContext';
@@ -45,7 +45,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
   const { copied, copyToClipboard } = useClipboard();
   const { openExternalUrl } = useRustBackend();
   const { executeToolCall } = useUnifiedMCP();
-  const { submit } = useChatContext();
+  const { submit } = useChatActions();
   const { getCurrentSession } = useSessionContext();
   const { getCurrent } = useAssistantContext();
   const tauriCommands = useRustBackend();

@@ -22,7 +22,7 @@ import {
   type DragAndDropPayload,
 } from '@/context/DnDContext';
 import { useSessionContext } from '@/context/SessionContext';
-import { useChatContext } from '@/context/ChatContext';
+import { useChatActions } from '@/context/ChatContext';
 import { createId } from '@paralleldrive/cuid2';
 
 import { createToolMessagePair } from '@/lib/chat-utils';
@@ -45,7 +45,7 @@ export function WorkspaceFilesPanel() {
   const { listWorkspaceFiles, downloadWorkspaceFile, callBuiltinTool } =
     useRustBackend();
   const { current: session } = useSessionContext();
-  const { submit } = useChatContext();
+  const { submit } = useChatActions();
   const [rootPath, setRootPath] = useState<string>('./');
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
   const [loading, setLoading] = useState(false);

@@ -4,7 +4,7 @@ import ContentBubble from './ContentBubble';
 import ToolCallBubble from './ToolCallBubble';
 import ToolOutputBubble from './ToolOutputBubble';
 import { ErrorBubble } from './ErrorBubble';
-import { useChatContext } from '@/context/ChatContext';
+import { useChatActions } from '@/context/ChatContext';
 
 interface MessageBubbleRouterProps {
   message: Message;
@@ -13,7 +13,7 @@ interface MessageBubbleRouterProps {
 const MessageBubbleRouter: React.FC<MessageBubbleRouterProps> = ({
   message,
 }) => {
-  const { retryMessage } = useChatContext();
+  const { retryMessage } = useChatActions();
 
   // Error message routing - highest priority
   if (message.error) {
