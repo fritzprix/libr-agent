@@ -210,14 +210,20 @@ impl ContentStoreStorage {
 
     /// Get content count for a specific session
     pub fn get_content_count(&self, session_id: &str) -> usize {
-        self.contents.values()
+        self.contents
+            .values()
             .filter(|content| content.session_id == session_id)
             .count()
     }
 
     /// Get detailed content summary for a specific session
-    pub fn get_content_summary(&self, session_id: &str, limit: usize) -> Vec<(String, usize, String)> {
-        self.contents.values()
+    pub fn get_content_summary(
+        &self,
+        session_id: &str,
+        limit: usize,
+    ) -> Vec<(String, usize, String)> {
+        self.contents
+            .values()
             .filter(|content| content.session_id == session_id)
             .take(limit)
             .map(|content| {

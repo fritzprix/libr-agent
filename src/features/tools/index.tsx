@@ -286,7 +286,11 @@ Tool details and usage instructions are provided separately.
               await entry.service.getServiceContext(contextOptions);
 
             // Check if this is an MCP server (Rust-based) by serviceId pattern
-            if (serviceId !== 'browser' && serviceId !== 'planning' && serviceId !== 'playbook') {
+            if (
+              serviceId !== 'browser' &&
+              serviceId !== 'planning' &&
+              serviceId !== 'playbook'
+            ) {
               // Collect MCP server status for unified section
               if (result.contextPrompt) {
                 mcpServerStatuses.push(result.contextPrompt);
@@ -322,7 +326,7 @@ Tool details and usage instructions are provided separately.
       });
     }
 
-    setServiceContexts((prev) => ({ ...prev, ...newServiceContexts }));
+    setServiceContexts(newServiceContexts);
     logger.info('Built tool prompt with service contexts', {
       promptsCount: prompts.length,
       totalLength: prompts.join('\n\n').length,

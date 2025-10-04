@@ -126,6 +126,7 @@ export default function SettingsPage() {
     {},
   );
   const [pendingCount, setPendingCount] = useState(0);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const handlePendingChange = useCallback(
     (provider: AIServiceProvider, patch: Partial<ServiceConfig>) => {
@@ -265,12 +266,16 @@ export default function SettingsPage() {
                   <div className="pt-4">
                     <Button
                       variant="destructive"
-                      onClick={async () => {
+                      disabled={isDeleting}
+                      onClick={async (e) => {
+                        e.preventDefault(); // Prevent any default behavior
+
                         const ok = window.confirm(
                           'Delete ALL local sessions, messages, content stores and workspace files? This cannot be undone.',
                         );
                         if (!ok) return;
 
+                        setIsDeleting(true);
                         try {
                           // Get all sessions from frontend DB
                           const sessions = await dbUtils.getAllSessions();
@@ -292,7 +297,12 @@ export default function SettingsPage() {
                             }
                           }
 
-                          // Navigate back after full clear
+                          // Show success message before navigation
+                          window.alert(
+                            'All sessions, messages and workspace files have been successfully deleted.',
+                          );
+
+                          // Navigate back after showing success message
                           navigate(-1);
                         } catch (e) {
                           logger.error('Failed to clear sessions', e);
@@ -300,10 +310,14 @@ export default function SettingsPage() {
                           window.alert(
                             'Failed to clear sessions. See logs for details.',
                           );
+                        } finally {
+                          setIsDeleting(false);
                         }
                       }}
                     >
-                      Clear All Sessions, Messages & Workspace
+                      {isDeleting
+                        ? 'Deleting...'
+                        : 'Clear All Sessions, Messages & Workspace'}
                     </Button>
                   </div>
                 </CardContent>

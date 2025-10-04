@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useEffect, useMemo } from 'react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -32,6 +32,20 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
   );
   const [fileContent, setFileContent] = useState<string>('');
   const [isLoadingContent, setIsLoadingContent] = useState(false);
+
+  // Filter files for current session and reset state when session changes
+  const currentSessionFiles = useMemo(() => {
+    return sessionFiles.filter((file) => file.sessionId === sessionId);
+  }, [sessionFiles, sessionId]);
+
+  // Reset state when session changes
+  useEffect(() => {
+    logger.debug('Session changed, resetting popover state', { sessionId });
+    setIsOpen(false);
+    setSelectedFile(null);
+    setFileContent('');
+    setIsLoadingContent(false);
+  }, [sessionId]);
 
   const handleFileClick = useCallback(
     async (file: AttachmentReference) => {
@@ -122,7 +136,7 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
             className="text-xs hover:text-blue-400 transition-colors flex items-center gap-1"
             title="세션 파일 보기"
           >
-            📁 {sessionFiles.length}
+            📁 {currentSessionFiles.length}
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent className="w-80 p-0" side="bottom" align="end">
@@ -131,13 +145,13 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
             <p className="text-xs text-gray-400">Session ID: {sessionId}</p>
           </div>
 
-          {sessionFiles.length === 0 ? (
+          {currentSessionFiles.length === 0 ? (
             <div className="p-4 text-center text-xs text-gray-400">
               저장된 파일이 없습니다.
             </div>
           ) : (
             <div className="max-h-64 overflow-y-auto">
-              {sessionFiles.map((file, index) => (
+              {currentSessionFiles.map((file, index) => (
                 <DropdownMenuItem
                   key={index}
                   className="px-3 py-2 cursor-pointer border-b last:border-b-0 block"
