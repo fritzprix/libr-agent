@@ -1,155 +1,130 @@
-## SynapticFlow — App Architecture & Runtime Flow
+# SynapticFlow — App Architecture & Runtime Flow
 
-This document summarizes the frontend (`src/`) and backend (`src-tauri/`) structure and explains how the application initializes and routes requests at runtime based on `src/app/App.tsx`.
+This document summarizes the frontend (`src/`) and backend (`src-tauri/`) structure and explains how the application initializes and routes requests at runtime. It focuses on the service-oriented architecture for tool integration.
 
-It is meant as a concise guide for contributors and maintainers to quickly understand the main responsibilities, feature wiring, and where to look for implementation details.
-
----
-
-## 1. High-level overview
-
-- Frontend: `src/` — React + TypeScript (Vite), UI components, feature modules, contexts/providers, hooks, and examples.
-- Backend: `src-tauri/` — Rust (Tauri) code that manages native MCP servers, builtin MCP servers (filesystem, sandbox), and exposes Tauri commands.
-
-The app is a desktop client that integrates multiple MCP (Model Context Protocol) tool sources:
-
-- External MCP servers launched/managed via Tauri (stdio-based MCPs).
-- Built-in MCP servers implemented in Rust (filesystem, sandbox/code-execution, etc.).
-- Web-based MCP tools running in WebWorkers (web-mcp).
-
-The frontend composes providers that expose these tool sources and utility services to UI components (chat, tools, session/files). The chat UI can call tools and include their results in assistant conversations.
+It is meant as a guide for contributors and maintainers to understand the main responsibilities, feature wiring, and where to look for implementation details.
 
 ---
 
-## 2. Project layout (important folders)
+## 1. High-level Overview
+
+- **Frontend**: `src/` — React + TypeScript (Vite), UI components, feature modules, and a central service registry for tool integration.
+- **Backend**: `src-tauri/` — Rust (Tauri) code that provides native services (e.g., filesystem, sandbox), manages external MCP processes, and exposes Tauri commands.
+
+The app's architecture is centered around a **service-oriented model** for integrating tools. The frontend's `BuiltInToolProvider` acts as a central registry where different "services" can register their tools. This makes the system highly modular and extensible.
+
+There are three main types of services:
+
+1.  **Native Rust Services**: Implemented in the Tauri backend for high performance and access to native capabilities (e.g., `filesystem`, `sandbox`).
+2.  **Web Worker Services**: Run in a separate browser thread, ideal for browser-based tools or intensive tasks that shouldn't block the UI (e.g., `planning`).
+3.  **External MCP Servers**: Standalone processes that communicate via stdio, managed by the Rust backend.
+
+---
+
+## 2. Project Layout (Important Folders)
 
 - `src/`
-  - `app/` — App entry and layout (`App.tsx`, `main.tsx`, global styles).
-  - `components/` — Reusable UI components and `shadcn/ui` wrappers.
-  - `config/` — Static config files (e.g., `builtin-mcp-servers.json`, `llm-config.json`).
-  - `context/` — React contexts providing global services (MCPServerContext, WebMCPContext, BuiltInToolContext, SessionContext, Settings, etc.).
-  - `features/` — Feature folders (chat, assistant, prompts, session, settings).
-  - `hooks/` — Reusable hooks (use-mcp-server, use-web-mcp, use-unified-mcp, use-ai-service, etc.).
-  - `lib/` — Service layer, utilities, Tauri client (`tauri-mcp-client.ts`), MCP types, ai-service implementations.
-  - `models/` — TypeScript models (chat messages, attachments, llm-config).
-  - `examples/` — Example components (e.g., `BuiltInToolsExample.tsx`).
+  - `app/` — App entry and layout (`App.tsx`, `main.tsx`).
+  - `components/` — Reusable UI components.
+  - `context/` — Core React contexts (Session, Assistant, Settings, etc.).
+  - `features/` — Feature folders, including the core **`tools`** feature which contains the service architecture.
+    - `features/tools/` — Contains the `BuiltInToolProvider` (`index.tsx`), specialized providers (`RustMCPToolProvider.tsx`, `BrowserToolProvider.tsx`), and the `useServiceContext` hook.
+  - `hooks/` — Reusable hooks (e.g., `use-rust-backend`).
+  - `lib/` — Service layer, utilities, `rust-backend-client.ts`, MCP types.
+  - `models/` — TypeScript models (chat messages, attachments).
 
 - `src-tauri/`
   - `src/` — Tauri Rust source (commands, MCP manager).
-  - `src-tauri/src/mcp/builtin/` — Built-in MCP servers implemented in Rust:
-    - `filesystem.rs` — read/write/list with path validation and file-size limits.
-    - `sandbox.rs` — executes Python/TypeScript in a temporary workspace with timeouts.
-    - `utils.rs` — security helper (path cleaning, constants, tests).
-    - `mod.rs` — registry and trait for builtin servers.
+  - `src/mcp/builtin/` — Implementations of the native Rust services (e.g., `filesystem.rs`, `sandbox.rs`).
   - `Cargo.toml`, `tauri.conf.json` — Tauri/Rust config and dependencies.
 
 ---
 
-## 3. App initialization & provider wiring (`src/app/App.tsx`)
+## 3. App Initialization & Provider Wiring (`src/app/App.tsx`)
 
-The top-level `App` component composes the application providers and routes. Order matters because some contexts rely on others. Key providers and their roles are:
+The top-level `App` component composes the application providers. The order is critical. The key change from the previous architecture is that `BuiltInToolProvider` now wraps the specialized tool providers.
 
-- `SettingsProvider` — persisted app settings, API keys, feature flags.
-- `SchedulerProvider` — scheduled jobs or background tasks.
-- `WebMCPProvider` — web MCP tool manager (used for `content-store`), can auto-load specified servers and web tools.
-- `MCPServerProvider` — manages external MCP servers (Tauri-launched stdio MCP processes) and provides execute/connection APIs.
-- `BuiltInToolProvider` — new provider that lists and exposes builtin Tauri MCP tools (filesystem, sandbox) via `tauriMCPClient` and merges them into the available tool list.
-- `AssistantGroupProvider` / `AssistantContextProvider` — assistant/agent storage and selection.
-- `SessionContextProvider` + `SessionHistoryProvider` — session lifecycle and conversation history.
-- `ResourceAttachmentProvider` — attachment management (upload/download content-store integration). Provides `addFile`, `removeFile`, and session file listings.
-- `ModelOptionsProvider` — model selection and LLM providers configuration (local vs external).
+Key providers related to the service architecture:
 
-UI-level wrappers:
+- **`BuiltInToolProvider`**: The central service registry. It does not provide tools itself but collects them from other providers.
+- **`WebMCPProvider`**: Manages Web Worker-based services.
+  - **`WebMCPServiceRegistry`**: Registers specific Web Worker services like `planning` and `playbook`.
+- **`BrowserToolProvider`**: Registers services that interact with the browser environment.
+- **`RustMCPToolProvider`**: Registers the native services provided by the Rust backend.
 
-- `SidebarProvider` — UI sidebar state.
-
-Routing: `Routes` maps paths to containers:
-
-- `/`, `/chat/single` → `SingleChatContainer` (single-assistant chat)
-- `/chat/group` → `GroupChatContainer` (multi-assistant/group chat)
-- `/assistants`, `/assistants/groups` → assistant management UIs
-- `/history` → conversation history
-
-The `AppHeader` and `AppSidebar` hosts controls that interact with these contexts (open settings, switch assistant, create session, start/stop MCP servers, etc.).
-
-Key point: the providers connect the UI to multiple MCP tool sources so the chat UI and tools can dispatch tool calls seamlessly.
+These providers are nested within `BuiltInToolProvider` and use its `register` function to make their tools available to the rest of the application.
 
 ---
 
-## 4. Core features and where to find them
+## 4. Core Concept: The Service Architecture
 
-- Tool Integration (Unified):
-  - Frontend hook: `src/hooks/use-unified-mcp.ts` — resolves a tool name to its backend (tauri MCP server, web worker, or builtin) and routes execution.
-  - Tauri client: `src/lib/tauri-mcp-client.ts` — exposes `listBuiltinTools`, `callBuiltinTool`, `listAllToolsUnified`, `callToolUnified` (invokes Tauri commands).
-  - Builtin providers: `src/context/BuiltInToolContext.tsx` — loads builtin tools and exposes them via context.
+The tool system was refactored from a monolithic `use-unified-mcp` hook to a modular, service-based architecture. The core of this system is in `src/features/tools/`.
 
-- Content Store (session file attachments):
-  - Web MCP module (frontend): `src/lib/web-mcp/modules/content-store.ts` (used via `WebMCPProvider`).
-  - ResourceAttachmentContext: `src/context/ResourceAttachmentContext.tsx` — upload, remove, list session files and refresh session files.
-  - UI: `SessionFilesPopover` (added in `Chat.tsx`) shows session file list and file preview with a dialog to view contents.
+### The `BuiltInToolProvider`
 
-- Built-in Servers (Rust):
-  - Filesystem (`builtin.filesystem`): safe file reads/writes and directory listing with `SecurityValidator` and max file size limits.
-  - Sandbox (`builtin.sandbox`): executes Python/TypeScript code in a temp dir with timeouts and environment isolation.
-  - Registry: `src-tauri/src/mcp/builtin/mod.rs` provides `list_all_tools` and `call_tool` for unified listing and calls.
+Found in `src/features/tools/index.tsx`, this provider is the heart of the tool system. It maintains a registry of all available "services" and their tools. It exposes functions to `register`, `unregister`, and `executeTool`. It is also responsible for dynamically generating the part of the system prompt that lists available tools and service contexts.
 
-- Chat & System Prompt:
-  - Chat components use `ChatContext`, `SessionContext`, and `AssistantContext` to manage messages and tool calls.
-  - `BuiltInToolsSystemPrompt.tsx` builds a dynamic system prompt that lists available tools and attached files so the assistant can use them.
+### The `BuiltInService` Interface
 
-- LLM Providers & AI Services:
-  - Multiple AI service integrations exist under `src/lib/ai-service/` (Groq, OpenAI, Anthropic, local/placeholder implementations).
-  - `ModelOptionsProvider` / `llm-config.json` let users select providers and models. The design avoids locking users into a single LLM provider and supports adding local LLMs.
+This TypeScript interface (`src/features/tools/index.tsx`) defines the contract that every service must adhere to. This ensures all tool providers behave consistently.
 
----
+```typescript
+export interface BuiltInService {
+  metadata: ServiceMetadata;
+  listTools: () => MCPTool[];
+  executeTool: (toolCall: ToolCall) => Promise<MCPResponse<unknown>>;
+  getServiceContext: (options) => Promise<ServiceContext<unknown>>;
+  switchContext: (options) => Promise<void>;
+  // ... and optional load/unload methods
+}
+```
 
-## 5. Typical runtime flows
+- `getServiceContext` is particularly important, as it allows each service to contribute dynamic information to the AI's system prompt (e.g., the current file open in the editor, the current web page content).
 
-1. App start
-   - `main.tsx` renders `App` → providers initialize. `WebMCPProvider` may auto-load `content-store` web MCP server.
-   - `BuiltInToolProvider` calls `tauriMCPClient.listBuiltinTools()` via Tauri to retrieve builtin tools and merges them into `availableTools`.
+### Service Registration
 
-2. User opens a chat and triggers a tool call
-   - UI (Tool Caller) constructs an MCP tool call object `{ id, type:'function', function: { name, arguments } }`.
-   - `use-unified-mcp` or `BuiltInToolContext.executeToolCall` determines the backend:
-     - If tool name starts with `builtin.` → route to `tauriMCPClient.callBuiltinTool` (Tauri backend builtin server).
-     - If tool belongs to web worker tools → `WebMCP` executeCall.
-     - Otherwise → execute via external MCP server managed by `MCPServerProvider`.
-   - Result (standard MCPResponse) returns to UI and is optionally stored as a tool result message in chat history.
+Specialized providers like `RustMCPToolProvider` and `BrowserToolProvider` are simple React components. On mount, they:
 
-3. Uploading / using session files
-   - `ResourceAttachmentProvider.addFile` uploads to the content-store (web MCP), records reference, and triggers `refreshSessionFiles()`.
-   - `BuiltInToolsSystemPrompt` reads session files to include metadata/previews in the assistant system prompt.
+1. Call the `useBuiltInTool()` hook to get the `register` function.
+2. Fetch their own tools (e.g., by calling a Tauri command to list native services).
+3. For each service they manage, they call `register(serviceId, serviceImplementation)`, where `serviceImplementation` is an object that conforms to the `BuiltInService` interface.
 
-4. Executing sandboxed code
-   - Frontend calls a tool like `builtin.sandbox__execute_python` with code and timeout.
-   - Tauri receives `call_builtin.tool`, the builtin sandbox writes code in a temp dir, runs `python3` (or ts-node), enforces timeout, returns output as MCPResponse.
+This pattern makes it easy to add new sources of tools by simply creating a new provider component and mounting it within `BuiltInToolProvider`.
 
 ---
 
-## 6. Security notes & suggestions
+## 5. Typical Runtime Flows
 
-- The Rust `SecurityValidator` and sandbox timeouts are good first steps. Additional hardening is recommended before exposing sandbox to untrusted inputs:
-  - Canonicalize paths and validate symlink escapes.
-  - Consider seccomp (Linux), rlimits, or a WASM-based execution environment for stronger isolation.
-  - Limit file sizes and execution memory/CPU in sandbox.
-  - Ensure logging and error propagation don't leak secrets.
+### 1. App Start
+
+- `App.tsx` mounts the providers.
+- `BuiltInToolProvider` initializes its empty service registry.
+- `RustMCPToolProvider` mounts, calls the `listBuiltinServers` Tauri command, and then `register`s the `filesystem` and `sandbox` services.
+- `BrowserToolProvider` and `WebMCPServiceRegistry` mount and register their respective services.
+- The UI is now aware of all tools from all services.
+
+### 2. User Triggers a Tool Call
+
+- The chat UI gets a tool call request from the AI, e.g., `builtin_filesystem__read_file`.
+- The UI calls `executeTool` from the `useBuiltInTool` hook.
+- `BuiltInToolProvider` parses the tool name. It extracts the service ID (`filesystem`) and the tool name (`read_file`).
+- It looks up the `filesystem` service in its registry and calls the `executeTool` method on that service object.
+- The `filesystem` service's implementation (defined in `RustMCPToolProvider`) then calls the actual Tauri command `callBuiltinTool` to execute the logic in the Rust backend.
+- The result is returned up the chain.
+
+### 3. Session Changes
+
+- The user switches to a different chat session.
+- The `useEffect` in `BuiltInToolProvider` detects the change in `currentSession`.
+- It iterates through all registered services and calls the `switchContext({ sessionId })` method on each one.
+- This allows services to perform cleanup or load session-specific data (e.g., the `workspace` service can load the files associated with the new session).
 
 ---
 
-## 7. Where to look for implementation details
+## 6. Where to look for implementation details
 
-- Frontend contexts and wiring: `src/context/*.tsx` (especially `BuiltInToolContext.tsx`, `MCPServerContext.tsx`, `WebMCPContext.tsx`, `ResourceAttachmentContext.tsx`).
-- Unified tool routing: `src/hooks/use-unified-mcp.ts` and `src/lib/tauri-mcp-client.ts`.
-- Chat UI and system prompt: `src/features/chat/Chat.tsx`, `src/features/prompts/BuiltInToolsSystemPrompt.tsx`.
-- Builtin server code (Rust): `src-tauri/src/mcp/builtin/*` (filesystem, sandbox, utils, mod).
-
----
-
-## 8. Next steps I can perform (pick one)
-
-- Update `README.md` to reflect implemented builtin tools (content-store, filesystem, sandbox) and the project's goals (user-friendly tool integration, multi-LLM support).
-- Run a TypeScript typecheck (`pnpm build` / `tsc`) and `cargo check` to surface compile-time issues in Rust (I can do this and fix low-risk problems like Path→OsStr conversions).
-- Add small unit tests for `SecurityValidator` symlink/canonicalization checks.
-
-If you want, I can update `README.md` next using this analysis as a basis. Tell me which of the next steps to run now.
+- **Core Service Architecture**: `src/features/tools/index.tsx` (see `BuiltInToolProvider` and the `BuiltInService` interface).
+- **Native Rust Service Integration**: `src/features/tools/RustMCPToolProvider.tsx` and the `useRustBackend` hook.
+- **Browser Service Integration**: `src/features/tools/BrowserToolProvider.tsx`.
+- **Web Worker Service Integration**: `src/context/WebMCPContext.tsx` and `src/features/tools/WebMCPServiceRegistry.tsx`.
+- **Rust Native Service Implementations**: `src-tauri/src/mcp/builtin/`.
