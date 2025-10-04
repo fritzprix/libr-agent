@@ -101,57 +101,62 @@ export function generateWorkspacePath(filename: string): string {
  * @returns The sanitized filename.
  * @internal
  */
+// Sanitize helpers exported for readability and testing
+export function normalizeUnicode(name: string): string {
+  return name.normalize('NFKC');
+}
+
+export function replaceUnsafeChars(name: string): string {
+  return name.replace(/[<>:"/\\|?*]/g, '_');
+}
+
+export function collapseWhitespace(name: string): string {
+  return name.replace(/\s+/g, '_');
+}
+
+export function collapseUnderscores(name: string): string {
+  return name.replace(/_{2,}/g, '_');
+}
+
+export function limitLength(name: string, max = 200): string {
+  return name.slice(0, max);
+}
+
+export function splitBaseAndExt(name: string): { base: string; ext: string } {
+  const idx = name.lastIndexOf('.');
+  if (idx > 0) {
+    return { base: name.slice(0, idx), ext: name.slice(idx + 1) };
+  }
+  return { base: name, ext: '' };
+}
+
+export function sanitizeBase(base: string): string {
+  const cleaned = base.replace(/\.+/g, '_').replace(/^_+|_+$/g, '');
+  return cleaned || 'file';
+}
+
+export function sanitizeExtension(ext: string): string {
+  return ext
+    .replace(/\.+/g, '')
+    .replace(/[^A-Za-z0-9]/g, '')
+    .toLowerCase();
+}
+
+export function recombineFilename(base: string, ext: string): string {
+  return ext.length > 0 ? `${base}.${ext}` : base;
+}
+
+export function finalCleanup(name: string): string {
+  let safe = name
+    .replace(/\.+/g, '.')
+    .replace(/\.{2}/g, '_')
+    .replace(/_{2,}/g, '_')
+    .replace(/^_+|_+$/g, '');
+  if (!safe) safe = 'file';
+  return limitLength(safe);
+}
+
 export function sanitizeFilename(filename: string): string {
-  // 1) Unicode normalization (NFKC) for canonical representation
-  const normalizeUnicode = (name: string) => name.normalize('NFKC');
-
-  // 2) Replace filesystem-unsafe characters and whitespace with underscores
-  const replaceUnsafeChars = (name: string) =>
-    name.replace(/[<>:"/\\|?*]/g, '_');
-
-  const collapseWhitespace = (name: string) => name.replace(/\s+/g, '_');
-
-  // 3) Collapse multiple underscores and trim spaces (spaces are already converted)
-  const collapseUnderscores = (name: string) => name.replace(/_{2,}/g, '_');
-
-  // 4) Enforce global length cap early to bound subsequent operations
-  const limitLength = (name: string, max = 200) => name.slice(0, max);
-
-  // 5) Split into base and extension by last dot (dot at index 0 means no ext)
-  const splitBaseAndExt = (name: string): { base: string; ext: string } => {
-    const idx = name.lastIndexOf('.');
-    if (idx > 0) {
-      return { base: name.slice(0, idx), ext: name.slice(idx + 1) };
-    }
-    return { base: name, ext: '' };
-  };
-
-  // 6a) Sanitize base: collapse dots to underscores, trim leading/trailing underscores
-  const sanitizeBase = (base: string): string => {
-    const cleaned = base.replace(/\.+/g, '_').replace(/^_+|_+$/g, '');
-    return cleaned || 'file';
-  };
-
-  // 6b) Sanitize extension: remove dots, non-alnum, lowercase
-  const sanitizeExtension = (ext: string): string =>
-    ext.replace(/\.+/g, '').replace(/[^A-Za-z0-9]/g, '').toLowerCase();
-
-  // 7) Recombine
-  const recombine = (base: string, ext: string): string =>
-    ext.length > 0 ? `${base}.${ext}` : base;
-
-  // 8) Final cleanup: collapse repeated dots, remove pathologically repeated sequences
-  const finalCleanup = (name: string): string => {
-    let safe = name
-      .replace(/\.+/g, '.')
-      .replace(/\.{2}/g, '_')
-      .replace(/_{2,}/g, '_')
-      .replace(/^_+|_+$/g, '');
-    if (!safe) safe = 'file';
-    return limitLength(safe);
-  };
-
-  // Pipeline
   const step1 = normalizeUnicode(filename);
   const step2 = replaceUnsafeChars(step1);
   const step3 = collapseWhitespace(step2);
@@ -160,7 +165,7 @@ export function sanitizeFilename(filename: string): string {
   const { base, ext } = splitBaseAndExt(step5);
   const cleanBase = sanitizeBase(base);
   const cleanExt = sanitizeExtension(ext);
-  const combined = recombine(cleanBase, cleanExt);
+  const combined = recombineFilename(cleanBase, cleanExt);
   return finalCleanup(combined);
 }
 

@@ -274,8 +274,7 @@ Tool details and usage instructions are provided separately.
       assistantId: currentAssistant?.id,
     };
 
-    // Collect MCP server status information
-    const mcpServerStatuses: string[] = [];
+    // Collect service context prompts from all ready services
 
     // Skip service contexts if no valid session is available
     if (currentSession?.id) {
@@ -285,21 +284,11 @@ Tool details and usage instructions are provided separately.
             const result =
               await entry.service.getServiceContext(contextOptions);
 
-            // Check if this is an MCP server (Rust-based) by serviceId pattern
-            if (
-              serviceId !== 'browser' &&
-              serviceId !== 'planning' &&
-              serviceId !== 'playbook'
-            ) {
-              // Collect MCP server status for unified section
-              if (result.contextPrompt) {
-                mcpServerStatuses.push(result.contextPrompt);
-              }
-            } else {
-              // Non-MCP services (browser, planning, playbook) keep individual sections
-              if (result.contextPrompt) {
-                prompts.push(result.contextPrompt);
-              }
+            // Append every service's context prompt uniformly. No special-case
+            // grouping is necessary because planning and other services already
+            // format their own context for readability.
+            if (result.contextPrompt) {
+              prompts.push(result.contextPrompt);
             }
 
             if (result.structuredState !== undefined) {
@@ -315,10 +304,7 @@ Tool details and usage instructions are provided separately.
         }
       }
 
-      // Add unified MCP servers status section
-      if (mcpServerStatuses.length > 0) {
-        prompts.push(`# MCP Servers Status\n${mcpServerStatuses.join('\n')}`);
-      }
+      // All service contexts were appended above; no special grouping required.
     } else {
       logger.debug('Skipping service contexts - no valid session available', {
         sessionExists: !!currentSession,

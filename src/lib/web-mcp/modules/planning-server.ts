@@ -542,14 +542,17 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
 
     const typedArgs = (args as Record<string, unknown>) || {};
 
-    // If caller included a sessionId in the tool args, honor it immediately
-    // to avoid race conditions where setContext wasn't applied before a
-    // tool call. This is defensive: contexts are normally set via
-    // setContext(), but some clients may include sessionId in the call.
+    // If caller included a sessionId in the tool args, do NOT implicitly
+    // switch the server session. Accepting session changes via tool args is
+    // an implicit API contract and can lead to race conditions, inconsistent
+    // state, and security surprises. Clients should call the explicit
+    // `switchContext`/`setContext` API to change sessions before invoking
+    // tools. Here we log a warning if a sessionId is present and ignore it.
     if (typeof typedArgs.sessionId === 'string' && typedArgs.sessionId) {
-      stateManager.setSession(typedArgs.sessionId as string);
-      console.info(
-        `[PlanningServer] callTool: sessionId provided in args, switching to ${typedArgs.sessionId}`,
+      console.warn(
+        `[PlanningServer] callTool: sessionId provided in args ("${String(
+          typedArgs.sessionId,
+        )}") - ignored. Use switchContext/setContext to change sessions.`,
       );
     }
     switch (name) {
