@@ -197,6 +197,8 @@ export class OpenAIService extends BaseAIService {
 
   /**
    * Converts an array of standard `Message` objects into the format required by the OpenAI API.
+   * UI-generated messages (source: 'ui') are treated as user messages to ensure
+   * the AI model interprets UI interactions as user intent rather than system responses.
    * @param messages The array of messages to convert.
    * @param systemPrompt An optional system prompt to prepend.
    * @returns An array of `OpenAI.Chat.Completions.ChatCompletionMessageParam` objects.
@@ -214,7 +216,9 @@ export class OpenAIService extends BaseAIService {
     }
 
     for (const m of messages) {
-      // UI에서 생성된 메시지는 사용자 입력으로 취급
+      // UI-generated messages are treated as user messages
+      // This ensures that messages created by UI interactions (button clicks, tool executions, etc.)
+      // are interpreted by the AI model as user intent
       const effectiveRole = m.source === 'ui' ? 'user' : m.role;
 
       if (effectiveRole === 'user') {
@@ -264,10 +268,14 @@ export class OpenAIService extends BaseAIService {
   /**
    * @inheritdoc
    * @description Converts a single `Message` into the format expected by the OpenAI API.
+   * UI-generated messages (source: 'ui') are treated as user messages to ensure
+   * the AI model interprets UI interactions as user intent.
    * @protected
    */
   protected convertSingleMessage(message: Message): unknown {
-    // UI에서 생성된 메시지는 사용자 입력으로 취급
+    // UI-generated messages are treated as user messages
+    // This ensures that messages created by UI interactions (button clicks, tool executions, etc.)
+    // are interpreted by the AI model as user intent
     const effectiveRole = message.source === 'ui' ? 'user' : message.role;
 
     if (effectiveRole === 'user') {
