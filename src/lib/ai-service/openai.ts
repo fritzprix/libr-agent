@@ -131,18 +131,26 @@ export class OpenAIService extends BaseAIService {
       config?: AIServiceConfig;
     } = {},
   ): AsyncGenerator<string, void, void> {
-    const { config, tools } = this.prepareStreamChat(messages, options);
+    const { config, tools, sanitizedMessages } = this.prepareStreamChat(
+      messages,
+      options,
+    );
+
+    logger.info('openai stream chat 0 : ', { messages });
+
     const provider = this.getProvider();
 
-    if (options.availableTools) {
-      logger.info('tool calls: ', { tools });
-    }
+    logger.info('openai stream chat 1 : ', { messages: sanitizedMessages });
 
     try {
+      // Use the sanitized messages prepared for the provider to ensure
+      // provider-specific fixes (tool call conversions, thinking-field removals, etc.)
       const openaiMessages = this.convertToOpenAIMessages(
-        messages,
+        sanitizedMessages,
         options.systemPrompt,
       );
+
+      logger.info('openai stream chat 2 : ', { messages: openaiMessages });
 
       let modelName = options.modelName || config.defaultModel || 'gpt-4-turbo';
 
@@ -189,6 +197,8 @@ export class OpenAIService extends BaseAIService {
 
   /**
    * Converts an array of standard `Message` objects into the format required by the OpenAI API.
+   * UI-generated messages (source: 'ui') are treated as user messages to ensure
+   * the AI model interprets UI interactions as user intent rather than system responses.
    * @param messages The array of messages to convert.
    * @param systemPrompt An optional system prompt to prepend.
    * @returns An array of `OpenAI.Chat.Completions.ChatCompletionMessageParam` objects.
@@ -206,12 +216,17 @@ export class OpenAIService extends BaseAIService {
     }
 
     for (const m of messages) {
-      if (m.role === 'user') {
+      // UI-generated messages are treated as user messages
+      // This ensures that messages created by UI interactions (button clicks, tool executions, etc.)
+      // are interpreted by the AI model as user intent
+      const effectiveRole = m.source === 'ui' ? 'user' : m.role;
+
+      if (effectiveRole === 'user') {
         openaiMessages.push({
           role: 'user',
           content: this.processMessageContent(m.content),
         });
-      } else if (m.role === 'assistant') {
+      } else if (effectiveRole === 'assistant') {
         if (m.tool_calls && m.tool_calls.length > 0) {
           openaiMessages.push({
             role: 'assistant',
@@ -224,7 +239,7 @@ export class OpenAIService extends BaseAIService {
             content: this.processMessageContent(m.content),
           });
         }
-      } else if (m.role === 'tool') {
+      } else if (effectiveRole === 'tool') {
         if (m.tool_call_id) {
           openaiMessages.push({
             role: 'tool',
@@ -253,15 +268,22 @@ export class OpenAIService extends BaseAIService {
   /**
    * @inheritdoc
    * @description Converts a single `Message` into the format expected by the OpenAI API.
+   * UI-generated messages (source: 'ui') are treated as user messages to ensure
+   * the AI model interprets UI interactions as user intent.
    * @protected
    */
   protected convertSingleMessage(message: Message): unknown {
-    if (message.role === 'user') {
+    // UI-generated messages are treated as user messages
+    // This ensures that messages created by UI interactions (button clicks, tool executions, etc.)
+    // are interpreted by the AI model as user intent
+    const effectiveRole = message.source === 'ui' ? 'user' : message.role;
+
+    if (effectiveRole === 'user') {
       return {
         role: 'user',
         content: this.processMessageContent(message.content),
       };
-    } else if (message.role === 'assistant') {
+    } else if (effectiveRole === 'assistant') {
       if (message.tool_calls && message.tool_calls.length > 0) {
         return {
           role: 'assistant',
@@ -274,7 +296,7 @@ export class OpenAIService extends BaseAIService {
           content: this.processMessageContent(message.content),
         };
       }
-    } else if (message.role === 'tool') {
+    } else if (effectiveRole === 'tool') {
       if (message.tool_call_id) {
         return {
           role: 'tool',
@@ -287,7 +309,7 @@ export class OpenAIService extends BaseAIService {
         );
         return null;
       }
-    } else if (message.role === 'system') {
+    } else if (effectiveRole === 'system') {
       return {
         role: 'system',
         content: this.processMessageContent(message.content),

@@ -5,9 +5,8 @@ import {
   useContext,
   FC,
   PropsWithChildren,
-  useEffect,
-  useState,
 } from 'react';
+import useSWR from 'swr';
 import { AIServiceProvider, AIServiceFactory } from '../lib/ai-service';
 import {
   llmConfigManager,
@@ -58,10 +57,7 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
   } = useSettings();
 
   // 동적 모델 목록 상태 (provider별로 저장)
-  const [dynamicModels, setDynamicModels] = useState<
-    Record<string, Record<string, ModelInfo>>
-  >({});
-  const [isRefreshingModels, setIsRefreshingModels] = useState(false);
+  // const [isRefreshingModels, setIsRefreshingModels] = useState(false); // Removed, using SWR isValidating
 
   // Compute API keys from service configs for backward compatibility
   const apiKeys = useMemo(() => {
@@ -74,14 +70,75 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
     );
   }, [serviceConfigs]);
 
+  // Fetcher for dynamic models
+  const fetchDynamicModels = useCallback(
+    async ([, provider, apiKey]: [string, string, string]) => {
+      const supportsDynamic =
+        provider === AIServiceProvider.Ollama ||
+        provider === AIServiceProvider.OpenAI;
+
+      if (!supportsDynamic) return {};
+
+      let effectiveApiKey = apiKey;
+      if (!effectiveApiKey) {
+        if (provider === AIServiceProvider.Ollama) {
+          logger.info(
+            'No API key configured for Ollama — using dummy key to instantiate service',
+          );
+          effectiveApiKey = 'ollama-dummy';
+        } else {
+          logger.warn(
+            `No API key available for ${provider}, skipping model fetch`,
+          );
+          return {};
+        }
+      }
+
+      try {
+        const service = AIServiceFactory.getService(
+          provider as AIServiceProvider,
+          effectiveApiKey,
+        );
+        const modelList = await service.listModels();
+
+        // Convert ModelInfo[] into Record<string, ModelInfo>
+        const modelsRecord = modelList.reduce(
+          (acc, modelInfo) => {
+            const key = modelInfo.id || modelInfo.name;
+            acc[key] = modelInfo;
+            return acc;
+          },
+          {} as Record<string, ModelInfo>,
+        );
+
+        logger.info(`Fetched ${modelList.length} models from ${provider}`);
+        return modelsRecord;
+      } catch (error) {
+        logger.error('Failed to fetch models:', error);
+        return {};
+      }
+    },
+    [],
+  );
+
+  // SWR for dynamic models
+  const {
+    data: dynamicModels = {},
+    mutate: mutateModels,
+    isValidating: isRefreshingModels,
+  } = useSWR(['models', provider, apiKeys[provider]], fetchDynamicModels, {
+    revalidateOnFocus: false,
+    staleWhileRevalidate: true,
+    dedupingInterval: 30000, // 30 seconds
+  });
+
   // 현재 프로바이더의 모델 목록 계산
   const models = useMemo(() => {
     const staticModels = llmConfigManager.getModelsForProvider(provider) || {};
 
     // 동적 목록이 provider별로 있으면 우선 사용
-    const dynForProvider = dynamicModels[provider] || {};
-    if (Object.keys(dynForProvider).length > 0) {
-      return dynForProvider;
+    if (Object.keys(dynamicModels).length > 0) {
+      return dynamicModels;
     }
 
     return staticModels;
@@ -96,110 +153,9 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
 
     if (!supportsDynamic) return;
 
-    // For Ollama we can instantiate even without a real API key; for others require a key
-    let apiKey = apiKeys[provider];
-    if (!apiKey) {
-      if (provider === AIServiceProvider.Ollama) {
-        logger.info(
-          'No API key configured for Ollama — using dummy key to instantiate service',
-        );
-        apiKey = 'ollama-dummy';
-      } else {
-        logger.warn(
-          `No API key available for ${provider}, skipping model refresh`,
-        );
-        return;
-      }
-    }
-
-    setIsRefreshingModels(true);
-    try {
-      const service = AIServiceFactory.getService(provider, apiKey);
-      const modelList = await service.listModels();
-
-      // Convert ModelInfo[] into Record<string, ModelInfo>
-      const modelsRecord = modelList.reduce(
-        (acc, modelInfo) => {
-          const key = modelInfo.id || modelInfo.name;
-          acc[key] = modelInfo;
-          return acc;
-        },
-        {} as Record<string, ModelInfo>,
-      );
-
-      setDynamicModels((prev) => ({ ...prev, [provider]: modelsRecord }));
-      logger.info(
-        `Manually refreshed ${modelList.length} models from ${provider}`,
-      );
-    } catch (error) {
-      logger.error('Failed to manually refresh models:', error);
-      // 에러 시 provider별 동적 목록을 비워서 정적 JSON으로 fallback
-      setDynamicModels((prev) => ({ ...prev, [provider]: {} }));
-    } finally {
-      setIsRefreshingModels(false);
-    }
-  }, [provider, apiKeys]);
-
-  // 프로바이더가 Ollama로 변경될 때 자동으로 모델 목록 새로고침
-  useEffect(() => {
-    const fetchOllamaModels = async () => {
-      // For providers that support dynamic listing (Ollama, OpenAI), attempt to fetch models.
-      const supportsDynamic =
-        provider === AIServiceProvider.Ollama ||
-        provider === AIServiceProvider.OpenAI;
-
-      if (!supportsDynamic) {
-        // Ensure we clear any previously stored dynamic models for this provider
-        setDynamicModels((prev) => ({ ...prev, [provider]: {} }));
-        return;
-      }
-
-      // Decide API key availability. Ollama can use dummy key; OpenAI requires real key.
-      let apiKey = apiKeys[provider];
-      if (!apiKey) {
-        if (provider === AIServiceProvider.Ollama) {
-          logger.info(
-            'No API key configured for Ollama in settings — using dummy key to instantiate service',
-          );
-          apiKey = 'ollama-dummy';
-        } else {
-          logger.warn(
-            `No API key configured for ${provider}, skipping automatic model fetch`,
-          );
-          // Clear any dynamic models for this provider so static JSON is used
-          setDynamicModels((prev) => ({ ...prev, [provider]: {} }));
-          return;
-        }
-      }
-
-      setIsRefreshingModels(true);
-      try {
-        const service = AIServiceFactory.getService(provider, apiKey);
-        const modelList = await service.listModels();
-
-        const modelsRecord = modelList.reduce(
-          (acc, modelInfo) => {
-            const key = modelInfo.id || modelInfo.name;
-            acc[key] = modelInfo;
-            return acc;
-          },
-          {} as Record<string, ModelInfo>,
-        );
-
-        setDynamicModels((prev) => ({ ...prev, [provider]: modelsRecord }));
-        logger.info(
-          `Auto-refreshed ${modelList.length} models from ${provider}`,
-        );
-      } catch (error) {
-        logger.error('Failed to auto-refresh models:', error);
-        setDynamicModels((prev) => ({ ...prev, [provider]: {} }));
-      } finally {
-        setIsRefreshingModels(false);
-      }
-    };
-
-    fetchOllamaModels();
-  }, [provider, apiKeys]); // 정확한 의존성만 포함
+    // Trigger revalidation via SWR mutate
+    await mutateModels();
+  }, [provider, mutateModels]);
 
   const providerOptions = useMemo(() => {
     const providers = llmConfigManager.getProviders();
@@ -229,16 +185,8 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
 
   const setProvider = useCallback(
     (newProvider: AIServiceProvider) => {
-      let availableModels: Record<string, ModelInfo> = {};
-
-      const dynForProvider = dynamicModels[newProvider] || {};
-
-      if (Object.keys(dynForProvider).length > 0) {
-        availableModels = dynForProvider;
-      } else {
-        availableModels =
-          llmConfigManager.getModelsForProvider(newProvider) || {};
-      }
+      const availableModels =
+        llmConfigManager.getModelsForProvider(newProvider) || {};
 
       if (Object.keys(availableModels).length === 0) {
         logger.warn(`No available models for ${newProvider}`);
@@ -252,7 +200,7 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
 
       update({ preferredModel: { provider: newProvider, model: newModel } });
     },
-    [update, dynamicModels],
+    [update],
   );
 
   const setModel = useCallback(

@@ -2,7 +2,12 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { getLogger } from '@/lib/logger';
 import { MCPResponse, WebMCPServerState } from '@/lib/mcp-types';
 import { ToolCall } from '@/models/chat';
-import { BuiltInService, useBuiltInTool } from '.';
+import {
+  BuiltInService,
+  useBuiltInTool,
+  ServiceContextOptions,
+  ServiceContext,
+} from '.';
 import { useWebMCP } from '@/context/WebMCPContext';
 
 const logger = getLogger('WebMCPServiceRegistry');
@@ -152,8 +157,25 @@ export function WebMCPServiceRegistry({
         listTools: () => serverStatesRef.current[s]?.tools || [],
         unloadService: async () => {},
         loadService: async () => loadServer(s),
-        getServiceContext: () =>
-          proxy ? proxy.getServiceContext(s) : Promise.resolve(''),
+        getServiceContext: async (
+          options?: ServiceContextOptions,
+        ): Promise<ServiceContext<unknown>> => {
+          // 현재는 options를 사용하지 않지만 인터페이스 준수를 위해 유지
+          void options;
+          if (!proxy) {
+            return { contextPrompt: '', structuredState: undefined };
+          }
+          return await proxy.getServiceContext(s);
+        },
+        switchContext: async (options?: ServiceContextOptions) => {
+          if (proxy && proxy.switchContext) {
+            // switchContext로 통합
+            await proxy.switchContext(
+              s,
+              (options || {}) as ServiceContextOptions,
+            );
+          }
+        },
       };
       return acc;
     }, {});

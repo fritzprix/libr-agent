@@ -55,6 +55,8 @@ export interface LoggerConfig {
   maxBackupFiles: number;
   /** The minimum level of logs to record. */
   logLevel: 'trace' | 'debug' | 'info' | 'warn' | 'error';
+  /** The maximum length of a log message in characters. Messages longer than this will be truncated. */
+  maxMessageLength: number;
 }
 
 // Default configuration
@@ -63,6 +65,7 @@ const DEFAULT_CONFIG: LoggerConfig = {
   autoBackupOnStartup: true,
   maxBackupFiles: 10,
   logLevel: 'info',
+  maxMessageLength: 2000,
 };
 
 // Global configuration store
@@ -244,6 +247,14 @@ export class Logger {
       });
       logMessage = `${logMessage} ${formattedArgs.join(' ')}`;
     }
+
+    // Truncate message if it exceeds the maximum length
+    if (logMessage.length > globalLoggerConfig.maxMessageLength) {
+      logMessage =
+        logMessage.substring(0, globalLoggerConfig.maxMessageLength - 3) +
+        '...';
+    }
+
     return { formattedMessage: logMessage, context: actualContext };
   }
 
@@ -540,5 +551,14 @@ export const logUtils = {
    */
   enableAutoBackup: async (enabled: boolean = true): Promise<void> => {
     await logUtils.updateConfig({ autoBackupOnStartup: enabled });
+  },
+
+  /**
+   * A convenience function to set the maximum message length for log messages.
+   * Messages longer than this limit will be truncated with "...".
+   * @param length The maximum number of characters allowed in a log message.
+   */
+  setMaxMessageLength: async (length: number): Promise<void> => {
+    await logUtils.updateConfig({ maxMessageLength: length });
   },
 };

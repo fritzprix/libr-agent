@@ -1,3 +1,4 @@
+use crate::mcp::types::{ServiceContext, ServiceContextOptions};
 use crate::mcp::{MCPResponse, MCPTool};
 use crate::session::SessionManager;
 use async_trait::async_trait;
@@ -31,16 +32,26 @@ pub trait BuiltinMCPServer: Send + Sync + std::fmt::Debug {
     async fn call_tool(&self, tool_name: &str, args: Value) -> MCPResponse;
 
     /// Returns a markdown-formatted string describing the server's current status and context.
-    fn get_service_context(&self, _options: Option<&Value>) -> String {
-        format!(
-            "# {} Server Status\n\
-            **Server**: {}\n\
-            **Status**: Active\n\
-            **Tools Available**: {}",
-            self.name(),
-            self.name(),
-            self.tools().len()
-        )
+    fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
+        ServiceContext {
+            context_prompt: format!(
+                "# {} Server Status\n\
+                **Server**: {}\n\
+                **Status**: Active\n\
+                **Tools Available**: {}",
+                self.name(),
+                self.name(),
+                self.tools().len()
+            ),
+            structured_state: None,
+        }
+    }
+
+    /// Switches the context for this server based on the provided options.
+    #[allow(dead_code)]
+    async fn switch_context(&self, _options: ServiceContextOptions) -> Result<(), String> {
+        // Default implementation: no-op, servers can override for context switching
+        Ok(())
     }
 }
 
@@ -403,12 +414,12 @@ impl BuiltinServerRegistry {
     /// * `options` - Optional `Value` to pass to the context function.
     ///
     /// # Returns
-    /// A `Result` containing the service context string, or an error if the server is not found.
+    /// A `Result` containing the service context, or an error if the server is not found.
     pub fn get_server_context(
         &self,
         server_name: &str,
         options: Option<Value>,
-    ) -> Result<String, String> {
+    ) -> Result<ServiceContext, String> {
         // Remove "builtin." prefix if present
         let normalized_server_name = if let Some(stripped) = server_name.strip_prefix("builtin.") {
             stripped
@@ -418,6 +429,33 @@ impl BuiltinServerRegistry {
 
         if let Some(server) = self.get_server(normalized_server_name) {
             Ok(server.get_service_context(options.as_ref()))
+        } else {
+            Err(format!("Built-in server '{server_name}' not found"))
+        }
+    }
+
+    /// Switches the context for a specific built-in server.
+    ///
+    /// # Arguments
+    /// * `server_name` - The name of the server.
+    /// * `options` - The context options to switch to.
+    ///
+    /// # Returns
+    /// A `Result` indicating success or an error.
+    pub async fn switch_server_context(
+        &self,
+        server_name: &str,
+        options: ServiceContextOptions,
+    ) -> Result<(), String> {
+        // Remove "builtin." prefix if present
+        let normalized_server_name = if let Some(stripped) = server_name.strip_prefix("builtin.") {
+            stripped
+        } else {
+            server_name
+        };
+
+        if let Some(server) = self.get_server(normalized_server_name) {
+            server.switch_context(options).await
         } else {
             Err(format!("Built-in server '{server_name}' not found"))
         }

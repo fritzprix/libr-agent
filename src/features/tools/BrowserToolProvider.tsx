@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { useBuiltInTool, ServiceContextOptions } from '.';
+import { useBuiltInTool, ServiceContextOptions, ServiceContext } from '.';
 import { useBrowserInvoker } from '@/hooks/use-browser-invoker';
 import { MCPResponse } from '@/lib/mcp-types';
 import { isMCPResponse, createMCPTextResponse } from '@/lib/mcp-response-utils';
@@ -22,12 +22,19 @@ import {
   //inputTextTool,
   extractPageContentTool,
   extractInteractableTool,
-  injectJavascriptTool, // <-- Add import
+  // injectJavascriptTool, // <-- Add import
   // Types
   StrictLocalMCPTool,
+  clickElementTool,
+  inputTextTool,
 } from './browser-tools';
 
 const logger = getLogger('BrowserToolProvider');
+
+interface BrowserState {
+  sessions: BrowserSession[];
+  count: number;
+}
 
 /**
  * Provider component that registers browser-specific tools with the BuiltInToolProvider.
@@ -61,11 +68,11 @@ export function BrowserToolProvider() {
       scrollPageTool,
       navigateBackTool,
       navigateForwardTool,
-      // clickElementTool,
-      // inputTextTool,
+      clickElementTool,
+      inputTextTool,
       extractPageContentTool,
       extractInteractableTool,
-      injectJavascriptTool, // <-- Add to array
+      // injectJavascriptTool, // <-- Add to array
     ];
 
     // Inject executeScript function for tools that need it
@@ -151,30 +158,36 @@ export function BrowserToolProvider() {
       },
       getServiceContext: async (
         options?: ServiceContextOptions,
-      ): Promise<string> => {
+      ): Promise<ServiceContext<BrowserState>> => {
         try {
           const sessions = await listBrowserSessions();
-          if (sessions.length === 0) {
-            return '# Browser Sessions\nNo active browser sessions.';
-          }
-
-          const sessionInfo = sessions
-            .map(
-              (s: BrowserSession) =>
-                `Session ${s.id}: ${s.url || 'No URL'} (${s.title || 'Untitled'})`,
-            )
-            .join('\n');
-
-          // Note: 브라우저 세션은 현재 전역적으로 관리되므로 sessionId를 직접 사용하지 않지만,
-          // 향후 세션별 브라우저 관리를 위해 인터페이스는 동일하게 맞춰둠
-          return `# Browser Sessions\n${sessionInfo}`;
+          const contextPrompt =
+            sessions.length === 0
+              ? '# Browser Sessions\nNo active browser sessions.'
+              : `# Browser Sessions\n${sessions.map((s) => `Session ${s.id}: ${s.url || 'No URL'} (${s.title || 'Untitled'})`).join('\n')}`;
+          return {
+            contextPrompt,
+            structuredState: { sessions, count: sessions.length },
+          };
         } catch (error) {
           logger.error('Failed to get browser sessions', {
             sessionId: options?.sessionId,
             error,
           });
-          return '# Browser Sessions\nError loading browser sessions.';
+          return {
+            contextPrompt:
+              '# Browser Sessions\nError loading browser sessions.',
+            structuredState: { sessions: [], count: 0 },
+          };
         }
+      },
+      switchContext: async (options?: ServiceContextOptions) => {
+        // 브라우저 세션은 현재 전역적으로 관리되므로 특별한 정리 작업이 필요하지 않음
+        // 향후 세션별 브라우저 관리가 필요할 경우 여기서 구현
+        logger.debug('Browser service context switched', {
+          sessionId: options?.sessionId,
+          assistantId: options?.assistantId,
+        });
       },
     };
 

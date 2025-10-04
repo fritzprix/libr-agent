@@ -4,6 +4,7 @@ import {
   createMCPTextResponse,
 } from '@/lib/mcp-response-utils';
 import type { MCPResponse, MCPTool, WebMCPServer } from '@/lib/mcp-types';
+import type { ServiceContext, ServiceContextOptions } from '@/features/tools';
 
 /** Represents a single to-do item in the planning state. @internal */
 interface SimpleTodo {
@@ -69,11 +70,13 @@ interface AddToDoOutput extends BaseOutput {
   todos: SimpleTodo[];
 }
 
+// `toggle_todo` has been removed: toggle functionality is deprecated.
+
 /**
- * The output for the `toggle_todo` tool call.
+ * The output for the `check_todo` tool call.
  * @internal
  */
-interface ToggleTodoOutput extends BaseOutput {
+interface CheckTodoOutput extends BaseOutput {
   todo: SimpleTodo | null;
   todos: SimpleTodo[];
 }
@@ -135,11 +138,14 @@ class EphemeralState {
     });
   }
 
-  toggleTodo(id: number): MCPResponse<ToggleTodoOutput> {
+  // toggle functionality removed; use remove_todo / clear_todos / add_todo
+  // to manage todo lifecycle programmatically.
+
+  checkTodo(id: number, check: boolean = true): MCPResponse<CheckTodoOutput> {
     const todo = this.todos.find((t) => t.id === id);
     if (!todo) {
       const availableIds = this.todos.map((t) => t.id);
-      return createMCPStructuredResponse<ToggleTodoOutput>(
+      return createMCPStructuredResponse<CheckTodoOutput>(
         `Todo with ID ${id} not found. Available IDs: ${availableIds.length > 0 ? availableIds.join(', ') : 'none'}`,
         {
           success: false,
@@ -149,15 +155,9 @@ class EphemeralState {
       );
     }
 
-    todo.status = todo.status === 'completed' ? 'pending' : 'completed';
-
-    // // History management: keep only 2 completed todos maximum
-    // if (todo.status === 'completed') {
-    //   this.manageCompletedTodoHistory();
-    // }
-
-    return createMCPStructuredResponse(
-      `Todo "${todo.name}" marked as ${todo.status}`,
+    todo.status = check ? 'completed' : 'pending';
+    return createMCPStructuredResponse<CheckTodoOutput>(
+      `Todo ${check ? 'checked' : 'unchecked'}: "${todo.name}"`,
       {
         success: true,
         todo,
@@ -166,11 +166,31 @@ class EphemeralState {
     );
   }
 
-  clearTodos(): MCPResponse<BaseOutput> {
-    this.todos = [];
-    return createMCPStructuredResponse<BaseOutput>('All todos cleared', {
-      success: true,
-    });
+  clearTodos(ids?: number[]): MCPResponse<BaseOutput> {
+    if (!ids || ids.length === 0) {
+      // Clear all todos if no IDs specified
+      this.todos = [];
+      return createMCPStructuredResponse<BaseOutput>('All todos cleared', {
+        success: true,
+      });
+    }
+
+    // Clear specific todos by IDs
+    const initialCount = this.todos.length;
+    this.todos = this.todos.filter((todo) => !ids.includes(todo.id));
+    const removedCount = initialCount - this.todos.length;
+
+    if (removedCount === 0) {
+      return createMCPStructuredResponse<BaseOutput>(
+        `No todos found with the specified IDs: ${ids.join(', ')}`,
+        { success: false },
+      );
+    }
+
+    return createMCPStructuredResponse<BaseOutput>(
+      `Cleared ${removedCount} todo${removedCount === 1 ? '' : 's'}`,
+      { success: true },
+    );
   }
 
   clear(): MCPResponse<BaseOutput> {
@@ -306,6 +326,13 @@ class SessionStateManager {
   }
 
   /**
+   * Returns the currently active session id for diagnostics.
+   */
+  getCurrentSessionId(): string | null {
+    return this.currentSessionId;
+  }
+
+  /**
    * Gets the current session's state, or creates a default session if none is set.
    * @returns The EphemeralState for the current session.
    */
@@ -329,12 +356,10 @@ class SessionStateManager {
     return this.getCurrentState().addTodo(name);
   }
 
-  toggleTodo(id: number): MCPResponse<ToggleTodoOutput> {
-    return this.getCurrentState().toggleTodo(id);
-  }
+  // toggleTodo removed; use remove_todo / clear_todos / add_todo instead
 
-  clearTodos(): MCPResponse<BaseOutput> {
-    return this.getCurrentState().clearTodos();
+  clearTodos(ids?: number[]): MCPResponse<BaseOutput> {
+    return this.getCurrentState().clearTodos(ids);
   }
 
   clear(): MCPResponse<BaseOutput> {
@@ -363,6 +388,10 @@ class SessionStateManager {
 
   processThought(input: unknown): MCPResponse<Record<string, unknown>> {
     return this.getCurrentState().processThought(input);
+  }
+
+  checkTodo(id: number, check: boolean = true): MCPResponse<CheckTodoOutput> {
+    return this.getCurrentState().checkTodo(id, check);
   }
 
   /**
@@ -417,17 +446,21 @@ const tools: MCPTool[] = [
     },
   },
   {
-    name: 'toggle_todo',
+    name: 'mark_todo',
     description:
-      'Toggle a todo between pending and completed status using its unique ID.',
+      'Mark a todo item as completed or pending by its ID. Use to update task completion status.',
     inputSchema: {
       type: 'object',
       properties: {
         id: {
           type: 'number',
           minimum: 1,
+          description: 'The ID of the todo to update',
+        },
+        completed: {
+          type: 'boolean',
           description:
-            'The unique ID of the todo to toggle (use the ID shown in the todos list)',
+            'Whether to mark the todo as completed (true) or pending (false). Defaults to true.',
         },
       },
       required: ['id'],
@@ -436,8 +469,18 @@ const tools: MCPTool[] = [
   {
     name: 'clear_todos',
     description:
-      'Clear all todo items. Use when resetting or finishing all tasks.',
-    inputSchema: { type: 'object', properties: {} },
+      'Clear specific todos by their IDs, or all todos if no IDs are provided. Use to remove completed tasks or reset the todo list.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ids: {
+          type: 'array',
+          items: { type: 'number', minimum: 1 },
+          description:
+            'Array of todo IDs to clear. If not provided or empty, all todos will be cleared.',
+        },
+      },
+    },
   },
   {
     name: 'clear_session',
@@ -505,8 +548,11 @@ interface PlanningServerMethods {
   }) => Promise<MCPResponse<CreateGoalOutput>>;
   clear_goal: () => Promise<MCPResponse<ClearGoalOutput>>;
   add_todo: (args: { name: string }) => Promise<MCPResponse<AddToDoOutput>>;
-  toggle_todo: (args: { id: number }) => Promise<MCPResponse<ToggleTodoOutput>>;
-  clear_todos: () => Promise<MCPResponse<BaseOutput>>;
+  mark_todo: (args: {
+    id: number;
+    completed?: boolean;
+  }) => Promise<MCPResponse<CheckTodoOutput>>;
+  clear_todos: (args?: { ids?: number[] }) => Promise<MCPResponse<BaseOutput>>;
   clear_session: () => Promise<MCPResponse<BaseOutput>>;
   add_observation: (args: {
     observation: string;
@@ -526,9 +572,26 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
   tools,
   async callTool(name: string, args: unknown): Promise<MCPResponse<unknown>> {
     // Debug logging for tool calls
-    console.log(`[PlanningServer] callTool invoked: ${name}`, args);
+    console.log(`[PlanningServer] callTool invoked: ${name}`, {
+      args,
+      currentSessionId: stateManager.getCurrentSessionId(),
+    });
 
-    const typedArgs = args as Record<string, unknown>;
+    const typedArgs = (args as Record<string, unknown>) || {};
+
+    // If caller included a sessionId in the tool args, do NOT implicitly
+    // switch the server session. Accepting session changes via tool args is
+    // an implicit API contract and can lead to race conditions, inconsistent
+    // state, and security surprises. Clients should call the explicit
+    // `switchContext`/`setContext` API to change sessions before invoking
+    // tools. Here we log a warning if a sessionId is present and ignore it.
+    if (typeof typedArgs.sessionId === 'string' && typedArgs.sessionId) {
+      console.warn(
+        `[PlanningServer] callTool: sessionId provided in args ("${String(
+          typedArgs.sessionId,
+        )}") - ignored. Use switchContext/setContext to change sessions.`,
+      );
+    }
     switch (name) {
       case 'create_goal': {
         return stateManager.createGoal(typedArgs.goal as string);
@@ -539,18 +602,22 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
       case 'add_todo': {
         return stateManager.addTodo(typedArgs.name as string);
       }
-      case 'toggle_todo': {
+      case 'mark_todo': {
         const id = typedArgs.id as number;
+        const completed =
+          typedArgs.completed !== undefined
+            ? (typedArgs.completed as boolean)
+            : true;
         if (!Number.isInteger(id) || id < 1) {
           return createMCPTextResponse(
             `Invalid ID: ${id}. ID must be a positive integer.`,
           );
         }
-
-        return stateManager.toggleTodo(id);
+        return stateManager.checkTodo(id, completed);
       }
       case 'clear_todos': {
-        return stateManager.clearTodos();
+        const ids = typedArgs.ids as number[] | undefined;
+        return stateManager.clearTodos(ids);
       }
       case 'clear_session':
         return stateManager.clear();
@@ -568,8 +635,50 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
           observations: stateManager.getObservations(),
         };
 
+        // Provide a human-readable Markdown summary that includes the
+        // important fields. This is friendlier than raw JSON for text-only
+        // consumers (LLMs or UI previews) while the structuredContent still
+        // contains the typed object.
+        const todosText = currentState.todos.length
+          ? currentState.todos
+              .map((t) => {
+                const checkbox = t.status === 'completed' ? '✓' : ' ';
+                return `- ID:${t.id} [${checkbox}] ${t.name}`;
+              })
+              .join('\n')
+          : '- (none)';
+
+        const observationsText = currentState.observations.length
+          ? currentState.observations.map((o) => `- ${o}`).join('\n')
+          : '- (none)';
+
+        const lines: string[] = [];
+        lines.push('# Planning State', '');
+        lines.push('**Summary**');
+        lines.push(`- Todos: ${currentState.todos.length}`);
+        lines.push(`- Observations: ${currentState.observations.length}`, '');
+        lines.push('**Goal**');
+        lines.push(currentState.goal ? `- ${currentState.goal}` : '- (none)');
+        if (currentState.lastClearedGoal) {
+          lines.push(
+            '',
+            '**Last Cleared Goal**',
+            `- ${currentState.lastClearedGoal}`,
+          );
+        }
+        lines.push(
+          '',
+          '**Todos**',
+          todosText,
+          '',
+          '**Recent Observations**',
+          observationsText,
+        );
+
+        const detailedText = lines.join('\n');
+
         return createMCPStructuredResponse<PlanningState>(
-          `Current planning state: ${currentState.todos.length} todos, ${currentState.observations.length} observations`,
+          detailedText,
           currentState,
         );
       }
@@ -581,62 +690,34 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
       }
     }
   },
-  async getServiceContext(): Promise<string> {
+  async getServiceContext(): Promise<ServiceContext<PlanningState>> {
     const goal = stateManager.getGoal();
     const todos = stateManager.getTodos();
     const observations = stateManager.getObservations();
 
-    const goalText = goal ? `Current Goal: ${goal}` : 'No active goal';
-    const lastGoalText = stateManager.getLastClearedGoal()
-      ? `Last Cleared Goal: ${stateManager.getLastClearedGoal()}`
-      : '';
+    const contextPrompt = goal
+      ? `# Current Goal: ${goal}
+Todos: ${todos.length > 0 ? todos.map((t) => `ID:${t.id} ${t.status === 'completed' ? '[✓]' : '[ ]'} ${t.name}`).join(', ') : '(none)'}
+Recent Observations: ${observations.length > 0 ? observations.slice(-2).join('; ') : '(none)'}`
+      : '# No active goal';
 
-    // Display all todos in order, accurately representing their status
-    const todosText =
-      todos.length > 0
-        ? `Todos:\n${todos
-            .map((t) => {
-              const checkbox = t.status === 'completed' ? '[✓]' : '[ ]';
-              return `  ID:${t.id} ${checkbox} ${t.name}`;
-            })
-            .join('\n')}`
-        : 'Todos: (none)';
-
-    const obsText =
-      observations.length > 0
-        ? `Recent Observations:\n${observations
-            .map((obs, idx) => `  ${idx + 1}. ${obs}`)
-            .join('\n')}`
-        : 'Recent Observations: (none)';
-
-    return `
-# Instruction
-ALWAYS START BY CREATING A PLAN before beginning any task:
-1. First, create a clear goal using 'create_goal' for any new or complex task
-2. Break down the goal into specific, actionable todos using 'add_todo'
-3. Execute todos step by step, marking them complete with 'toggle_todo' using ID
-4. Record important observations, user feedback, or results with 'add_observation'
-5. Use memory limitations as an opportunity to organize and structure your work
-
-Remember: Planning prevents poor performance. Always plan before you act.
-
-# Context Information
-${goalText}
-${lastGoalText ? `\n${lastGoalText}` : ''}
-
-${todosText}
-
-${obsText}
-
-# Prompt
-Based on the current situation, determine and suggest the next appropriate action to progress toward your objectives. If no goal exists, start by creating one.
-Use 'toggle_todo' with the ID number (not index) to mark todos as complete/incomplete.
-  `.trim();
+    return {
+      contextPrompt,
+      structuredState: {
+        goal,
+        lastClearedGoal: stateManager.getLastClearedGoal(),
+        todos,
+        observations,
+      },
+    };
   },
-  async setContext(context: Record<string, unknown>): Promise<void> {
-    const sessionId = context.sessionId as string;
+  async switchContext(context: ServiceContextOptions): Promise<void> {
+    const sessionId = context.sessionId;
     if (sessionId) {
       stateManager.setSession(sessionId);
+      console.info(
+        `[PlanningServer] switchContext -> session set: ${sessionId}`,
+      );
     }
   },
 };
@@ -649,8 +730,11 @@ export interface PlanningServerProxy extends WebMCPServerProxy {
   create_goal: (args: { goal: string }) => Promise<CreateGoalOutput>;
   clear_goal: () => Promise<ClearGoalOutput>;
   add_todo: (args: { name: string }) => Promise<AddToDoOutput>;
-  toggle_todo: (args: { index: number }) => Promise<ToggleTodoOutput>;
-  clear_todos: () => Promise<BaseOutput>;
+  mark_todo: (args: {
+    id: number;
+    completed?: boolean;
+  }) => Promise<CheckTodoOutput>;
+  clear_todos: (args?: { ids?: number[] }) => Promise<BaseOutput>;
   clear_session: () => Promise<BaseOutput>;
   add_observation: (args: { observation: string }) => Promise<BaseOutput>;
   get_current_state: () => Promise<PlanningState>;

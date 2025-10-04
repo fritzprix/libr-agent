@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useEffect, useMemo } from 'react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,37 +10,42 @@ import {
   DialogTitle,
 } from '@/components/ui';
 import { useResourceAttachment } from '@/context/ResourceAttachmentContext';
-import {
-  useRustMCPServer,
-  RustMCPServerProxy,
-} from '@/hooks/use-rust-mcp-server';
 import { getLogger } from '@/lib/logger';
 import { AttachmentReference } from '@/models/chat';
+import { useServiceContext } from '@/features/tools/useServiceContext';
+import { useBuiltInTool } from '@/features/tools';
 
 const logger = getLogger('SessionFilesPopover');
 
 interface SessionFilesPopoverProps {
-  storeId: string;
+  sessionId: string;
 }
 
-export function SessionFilesPopover({ storeId }: SessionFilesPopoverProps) {
+export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
   const { sessionFiles } = useResourceAttachment();
+  // Ensure contentstore service context is loaded (for future structured state)
+  useServiceContext('contentstore');
+  const { executeTool } = useBuiltInTool();
   const [isOpen, setIsOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<AttachmentReference | null>(
     null,
   );
   const [fileContent, setFileContent] = useState<string>('');
   const [isLoadingContent, setIsLoadingContent] = useState(false);
-  // Define ContentStoreServer type extending RustMCPServerProxy
-  type ContentStoreServer = RustMCPServerProxy & {
-    readContent: (args: {
-      storeId: string;
-      contentId: string;
-      lineRange: { fromLine: number; toLine?: number };
-    }) => Promise<{ content: string; lineRange: [number, number] }>;
-  };
 
-  const { server } = useRustMCPServer<ContentStoreServer>('contentstore');
+  // Filter files for current session and reset state when session changes
+  const currentSessionFiles = useMemo(() => {
+    return sessionFiles.filter((file) => file.sessionId === sessionId);
+  }, [sessionFiles, sessionId]);
+
+  // Reset state when session changes
+  useEffect(() => {
+    logger.debug('Session changed, resetting popover state', { sessionId });
+    setIsOpen(false);
+    setSelectedFile(null);
+    setFileContent('');
+    setIsLoadingContent(false);
+  }, [sessionId]);
 
   const handleFileClick = useCallback(
     async (file: AttachmentReference) => {
@@ -51,22 +56,42 @@ export function SessionFilesPopover({ storeId }: SessionFilesPopoverProps) {
         let content = file.preview || '';
 
         if (!content || content.length < 100) {
-          if (server) {
-            logger.debug('Loading full file content', {
-              storeId: file.storeId,
-              contentId: file.contentId,
-              filename: file.filename,
-            });
+          logger.debug('Loading full file content via builtin tool', {
+            sessionId: file.sessionId,
+            contentId: file.contentId,
+            filename: file.filename,
+          });
 
-            const result = await server.readContent({
-              storeId: file.storeId,
-              contentId: file.contentId,
-              lineRange: { fromLine: 1 },
-            });
+          const result = await executeTool({
+            id: `read_content_${Date.now()}`,
+            type: 'function',
+            function: {
+              name: 'builtin_contentstore__readContent',
+              arguments: JSON.stringify({
+                sessionId: file.sessionId,
+                contentId: file.contentId,
+                lineRange: { fromLine: 1 },
+              }),
+            },
+          });
 
-            content = result?.content || 'File content not available';
+          // Parse the result
+          if (result.result?.structuredContent) {
+            // If it's structured content, extract the content field
+            const contentData = result.result.structuredContent as {
+              content: string;
+              lineRange: [number, number];
+            };
+            content = contentData.content || 'File content not available';
+          } else if (
+            result.result?.content &&
+            result.result.content[0] &&
+            'text' in result.result.content[0]
+          ) {
+            // Fallback to text content
+            content = (result.result.content[0] as { text: string }).text;
           } else {
-            content = 'Content store server not available';
+            content = 'File content not available';
           }
         }
 
@@ -85,7 +110,7 @@ export function SessionFilesPopover({ storeId }: SessionFilesPopoverProps) {
         setIsLoadingContent(false);
       }
     },
-    [server],
+    [executeTool],
   );
 
   const formatFileSize = (bytes: number) => {
@@ -111,22 +136,22 @@ export function SessionFilesPopover({ storeId }: SessionFilesPopoverProps) {
             className="text-xs hover:text-blue-400 transition-colors flex items-center gap-1"
             title="세션 파일 보기"
           >
-            📁 {sessionFiles.length}
+            📁 {currentSessionFiles.length}
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent className="w-80 p-0" side="bottom" align="end">
           <div className="border-b px-3 py-2">
             <h4 className="text-sm font-medium">세션 파일 목록</h4>
-            <p className="text-xs text-gray-400">Store ID: {storeId}</p>
+            <p className="text-xs text-gray-400">Session ID: {sessionId}</p>
           </div>
 
-          {sessionFiles.length === 0 ? (
+          {currentSessionFiles.length === 0 ? (
             <div className="p-4 text-center text-xs text-gray-400">
               저장된 파일이 없습니다.
             </div>
           ) : (
             <div className="max-h-64 overflow-y-auto">
-              {sessionFiles.map((file, index) => (
+              {currentSessionFiles.map((file, index) => (
                 <DropdownMenuItem
                   key={index}
                   className="px-3 py-2 cursor-pointer border-b last:border-b-0 block"

@@ -274,37 +274,47 @@ export class WebMCPProxy {
 
 #### 책임과 역할
 
-- MCP 도구 구현 (`createStore`, `addContent`, `listContent`, `readContent`, `keywordSimilaritySearch`)
+- MCP 도구 구현 (`addContent`, `listContent`, `readContent`, `keywordSimilaritySearch`) — note: `createStore`는 더 이상 공개 툴로 노출되지 않음; 세션 전환 시 자동 생성됩니다.
 - 파일 파싱과 텍스트 추출
 - 콘텐츠 청킹과 검색 인덱싱
 - 중복 검사와 데이터 무결성 보장
 
 #### 주요 도구 구현
 
-##### createStore
+##### createStore (note)
 
-```typescript
-async function createStore(
-  input: CreateStoreInput,
-): Promise<MCPResponse<CreateStoreOutput>> {
-  const now = new Date();
-  const store: FileStore = {
-    id: `store_${Date.now()}`,
-    name: input.metadata?.name || 'Unnamed Store',
-    description: input.metadata?.description,
-    sessionId: input.metadata?.sessionId,
-    createdAt: now,
-    updatedAt: now,
-  };
+이전 설계에서는 `createStore`가 MCP 도구로 노출되어 있었습니다. 현재 구현에서는 `createStore`를 별도 사용자용 툴로 노출하지 않습니다. 대신 세션 전환(`switch_context`) 시점에 스토어가 자동으로 생성되도록 변경되어, 스토어 수명 주기는 세션 수명 주기와 정렬됩니다.
 
-  await dbService.fileStores.upsert(store);
+이전 설계에서는 `createStore`가 MCP 도구로 노출되어 있었습니다. 현재 구현에서는 `createStore`를 별도 사용자용 툴로 노출하지 않습니다. 대신 세션 전환(`switch_context`) 시점에 스토어가 자동으로 생성되도록 변경되어, 스토어 수명 주기는 세션 수명 주기와 정렬됩니다.
 
-  return createMCPStructuredResponse<CreateStoreOutput>(
-    `Store created with ID: ${store.id}`,
-    { storeId: store.id, createdAt: now },
-  );
-}
-```
+## 삭제 및 정리 (Deletion and housekeeping)
+
+### delete_content_store (native command)
+
+새로운 네이티브 백엔드 커맨드 `delete_content_store(session_id)`가 추가되었습니다. 이 명령은 주어진 세션의 content-store 관련 아티팩트를 완전히 제거하는 데 사용됩니다.
+
+주요 동작:
+
+- 애플리케이션이 SQLite 백엔드를 사용하도록 구성된 경우, 명령은 DB에 연결하여 세션 관련 행을 삭제합니다:
+  - `chunks` (세션의 contents에 속한 청크)
+  - `contents` (세션의 콘텐츠 항목)
+  - `stores` (세션의 스토어)
+- 세션 워크스페이스 내 `content_store_search` 인덱스 디렉터리를 삭제합니다.
+
+사용 가이드:
+
+- 이 명령은 직접(native) 방식으로 동작하며 MCP 서버 인스턴스를 경유하지 않습니다. 관리용 또는 설정 UI의 정리 흐름에서 사용됩니다.
+- 파괴적이므로 호출 전에 사용자에게 명확한 확인을 받아야 합니다.
+- 프런트엔드에서의 편의 래퍼 함수는 `src/lib/rust-backend-client.ts`의 `deleteContentStore(sessionId)` 입니다.
+
+### 권장 삭제 흐름(클라이언트)
+
+세션을 완전히 삭제하려면 다음 순서를 권장합니다:
+
+1. `deleteContentStore(sessionId)` 호출 (content-store sqlite + 인덱스 삭제)
+2. `dbUtils.clearSessionAndWorkspace(sessionId)` 호출 (IndexedDB 항목 삭제 및 `remove_session` 호출로 네이티브 워크스페이스 삭제)
+
+앱의 Settings 페이지는 위 절차를 사용하여 "Clear All Sessions, Messages & Workspace" 동작을 구현합니다.
 
 ##### addContent
 

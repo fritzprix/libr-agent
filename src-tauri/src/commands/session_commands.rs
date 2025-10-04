@@ -326,3 +326,32 @@ pub async fn fast_session_switch(
         })),
     })
 }
+
+// ============================================================================
+// Legacy Session Commands (for backward compatibility)
+// ============================================================================
+
+/// Sets the currently active session.
+#[tauri::command]
+pub async fn set_current_session(session_id: String) -> Result<(), String> {
+    get_session_manager()?.set_session(session_id)
+}
+
+/// Gets the ID of the currently active session.
+#[tauri::command]
+pub async fn get_current_session_legacy() -> Result<Option<String>, String> {
+    Ok(get_session_manager()?.get_current_session())
+}
+
+/// Gets the absolute path to the workspace directory for the current session.
+#[tauri::command]
+pub async fn get_session_workspace_dir() -> Result<String, String> {
+    let path = get_session_manager()?.get_session_workspace_dir();
+    Ok(path.to_string_lossy().to_string())
+}
+
+/// Lists the IDs of all available sessions.
+#[tauri::command]
+pub async fn list_sessions_legacy() -> Result<Vec<String>, String> {
+    get_session_manager()?.list_sessions()
+}

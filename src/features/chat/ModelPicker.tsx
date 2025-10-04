@@ -47,9 +47,10 @@ const CompactModelPicker: FC<ModelPickerProps> = ({ className = '' }) => {
   if (isLoading) {
     return (
       <div
-        className={`font-mono text-sm text-muted-foreground animate-pulse ${className}`}
+        className={`flex items-center space-x-2 bg-muted border border-primary/30 rounded-lg px-3 py-1 font-mono text-primary w-full max-w-lg mx-auto ${className}`}
       >
-        [loading...]
+        <div className="animate-spin w-4 h-4 border-2 border-primary border-t-transparent rounded-full"></div>
+        <span className="text-sm text-muted-foreground">Loading models...</span>
       </div>
     );
   }

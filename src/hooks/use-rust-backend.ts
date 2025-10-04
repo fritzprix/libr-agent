@@ -71,6 +71,7 @@ export const useRustBackend = () => {
 
     // Service Context
     getServiceContext: client.getServiceContext,
+    switchContext: client.switchContext,
 
     // Utility
     greet: client.greet,

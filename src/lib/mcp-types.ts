@@ -9,6 +9,7 @@
  * @see {@link https://modelcontextprotocol.io/|MCP Specification}
  */
 import { UIResource } from '@mcp-ui/server';
+import type { ServiceContext, ServiceContextOptions } from '@/features/tools';
 
 // ========================================
 // JSON Schema Types (Adhering to MCP Specification)
@@ -614,14 +615,14 @@ export interface WebMCPServer {
     options?: SamplingOptions,
   ) => Promise<SamplingResponse>;
   /** An optional function to get the service context. */
-  getServiceContext?: () => Promise<string>;
+  getServiceContext?: () => Promise<ServiceContext<unknown>>;
   /**
-   * An optional function to set the context for the server.
+   * An optional function to switch the context for the server.
    * This allows servers to maintain state based on external context like session IDs or assistant IDs.
    * @param context The context object containing session/assistant identifiers and other state.
-   * @returns A promise that resolves when the context is set.
+   * @returns A promise that resolves when the context is switched.
    */
-  setContext?: (context: Record<string, unknown>) => Promise<void>;
+  switchContext?: (context: ServiceContextOptions) => Promise<void>;
 }
 
 /**
@@ -638,7 +639,8 @@ export interface WebMCPMessage {
     | 'loadServer'
     | 'sampleText'
     | 'getServiceContext'
-    | 'setContext';
+    | 'setContext'
+    | 'switchContext';
   /** The name of the server, for loading specific servers. */
   serverName?: string;
   /** The name of the tool to call. */

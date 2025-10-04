@@ -13,6 +13,7 @@ import type { Playbook } from '@/types/playbook';
 import { dbService } from '@/lib/db';
 import { createUIResource, type UIResource } from '@mcp-ui/server';
 import type { ServiceInfo } from '@/lib/mcp-types';
+import type { ServiceContextOptions } from '@/features/tools';
 
 function escapeHtml(s: string): string {
   if (!s) return '';
@@ -620,11 +621,11 @@ const playbookStore: WebMCPServer = {
 
           const formattedText = lines.join('\n');
 
-          const agentPrompt = `The user has requested playbook ${existing.id}.
+          const agentPrompt = `Playbook ${existing.id} is selected.
 ---
 ${formattedText}
 ---
-Based on the playbook content, establish goals and plans, and perform the tasks.`;
+Based on the playbook's goal and steps, establish goals and todos, and start performing the tasks.`;
 
           return createMCPStructuredResponse(agentPrompt, {
             playbook: existing,
@@ -638,8 +639,8 @@ Based on the playbook content, establish goals and plans, and perform the tasks.
       return createMCPTextResponse(String(err));
     }
   },
-  async setContext(context: Record<string, unknown>): Promise<void> {
-    const assistantId = context.assistantId as string;
+  async switchContext(context: ServiceContextOptions): Promise<void> {
+    const assistantId = context.assistantId;
     if (assistantId) {
       currentAssistantId = assistantId;
     }

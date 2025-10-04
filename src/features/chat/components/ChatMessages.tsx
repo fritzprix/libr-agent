@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useChatContext } from '@/context/ChatContext';
+import { useChatState } from '@/context/ChatContext';
 import { useSessionContext } from '@/context/SessionContext';
 import { useAssistantContext } from '@/context/AssistantContext';
 import MessageBubble from '../MessageBubble';
 import { Message } from '@/models/chat';
 
 export function ChatMessages() {
-  const { messages, isLoading } = useChatContext();
+  const { messages, isLoading } = useChatState();
   const { getCurrentSession, current: currentSession } = useSessionContext();
   const { getById } = useAssistantContext();
 

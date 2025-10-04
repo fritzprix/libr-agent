@@ -153,3 +153,27 @@ pub struct MCPConnection {
     /// The `rmcp` client instance for communicating with the server.
     pub client: rmcp::service::RunningService<rmcp::service::RoleClient, ()>,
 }
+
+/// Options for service context operations.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServiceContextOptions {
+    /// The session ID for context isolation.
+    #[serde(rename = "sessionId", alias = "session_id")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    /// The assistant ID for context filtering.
+    #[serde(rename = "assistantId", alias = "assistant_id")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assistant_id: Option<String>,
+}
+
+/// Represents the service context with structured state.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServiceContext<T = serde_json::Value> {
+    /// The context prompt describing the current state.
+    pub context_prompt: String,
+    /// Optional structured state data.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub structured_state: Option<T>,
+}

@@ -12,6 +12,7 @@ import {
   MCPTool,
   MCPResponse,
 } from '../mcp-types';
+import { ServiceContext, ServiceContextOptions } from '../../features/tools';
 import { getLogger } from '../logger';
 
 const logger = getLogger('WebMCPProxy');
@@ -370,29 +371,31 @@ export class WebMCPProxy {
   /**
    * Gets the service context from a specific server within the worker.
    * @param serverName The name of the server.
-   * @returns A promise that resolves to the service context string.
+   * @returns A promise that resolves to the service context.
    */
-  async getServiceContext(serverName: string): Promise<string> {
+  async getServiceContext(
+    serverName: string,
+  ): Promise<ServiceContext<unknown>> {
     const response = await this.sendMessage<MCPResponse<unknown>>({
       type: 'getServiceContext',
       serverName,
     });
-    const result = this.parseResponse<string>(response);
-    return typeof result === 'string' ? result : '';
+    const result = this.parseResponse<ServiceContext<unknown>>(response);
+    return result || { contextPrompt: '', structuredState: undefined };
   }
 
   /**
-   * Sets the context for a specific server within the worker.
+   * Switches the context for a specific server within the worker.
    * @param serverName The name of the server.
-   * @param context The context object to set.
-   * @returns A promise that resolves when the context is set.
+   * @param context The context object to switch to.
+   * @returns A promise that resolves when the context is switched.
    */
-  async setContext(
+  async switchContext(
     serverName: string,
-    context: Record<string, unknown>,
+    context: ServiceContextOptions,
   ): Promise<{ success: boolean }> {
     const response = await this.sendMessage<MCPResponse<unknown>>({
-      type: 'setContext',
+      type: 'switchContext',
       serverName,
       args: context,
     });

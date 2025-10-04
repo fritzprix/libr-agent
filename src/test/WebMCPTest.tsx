@@ -67,7 +67,15 @@ export default function WebMCPTest() {
 
   const testToggleTodo = () => {
     if (!server) return;
-    runTest('toggle_todo', () => server.toggle_todo({ index: toggleIndex }));
+    // mark_todo was renamed from check_todo for better clarity
+    runTest('mark_todo', () =>
+      server.mark_todo({ id: toggleIndex, completed: true }),
+    );
+  };
+
+  const testClearTodos = () => {
+    if (!server) return;
+    runTest('clear_todos', () => server.clear_todos({}));
   };
 
   const testGetCurrentState = () => {
@@ -80,11 +88,6 @@ export default function WebMCPTest() {
     runTest('add_observation', () =>
       server.add_observation({ observation: observationInput }),
     );
-  };
-
-  const testClearTodos = () => {
-    if (!server) return;
-    runTest('clear_todos', () => server.clear_todos());
   };
 
   const testClearSession = () => {
@@ -182,7 +185,7 @@ export default function WebMCPTest() {
           </div>
 
           <div className="space-y-2">
-            <label className="block text-sm font-medium">Toggle Index:</label>
+            <label className="block text-sm font-medium">Todo ID:</label>
             <input
               type="number"
               value={toggleIndex}
@@ -195,16 +198,15 @@ export default function WebMCPTest() {
               onClick={testToggleTodo}
               className="w-full px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600"
             >
-              Toggle Todo
+              Mark Todo Completed
+            </button>
+            <button
+              onClick={testClearTodos}
+              className="w-full px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+            >
+              Clear All Todos
             </button>
           </div>
-
-          <button
-            onClick={testClearTodos}
-            className="w-full px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
-          >
-            Clear All Todos
-          </button>
         </div>
       </div>
 

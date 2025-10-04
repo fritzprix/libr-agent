@@ -1,9 +1,11 @@
 import { getLogger } from '@/lib/logger';
+import { switchSession } from '@/lib/rust-backend-client';
 import { MCPResponse, MCPTool } from '@/lib/mcp-types';
 import { toValidJsName } from '@/lib/utils';
 import { ToolCall } from '@/models/chat';
 import { useSystemPrompt } from '@/context/SystemPromptContext';
 import { useSessionContext } from '@/context/SessionContext';
+import { useAssistantContext } from '@/context/AssistantContext';
 import {
   createContext,
   ReactNode,
@@ -21,10 +23,13 @@ const logger = getLogger('BuiltInToolProvider');
 
 export interface ServiceContextOptions {
   sessionId?: string;
-  // 향후 확장 가능한 다른 옵션들
-  // storeId?: string;
-  // userId?: string;
-  // scope?: 'session' | 'global' | 'user';
+  assistantId?: string;
+  // 확장 가능: userId?: string; env?: Record<string,string>
+}
+
+export interface ServiceContext<T = unknown> {
+  contextPrompt: string;
+  structuredState?: T;
 }
 
 export interface ServiceMetadata {
@@ -40,7 +45,14 @@ export interface BuiltInService {
   executeTool: (toolCall: ToolCall) => Promise<MCPResponse<unknown>>;
   loadService?: () => Promise<void>;
   unloadService?: () => Promise<void>;
-  getServiceContext?: (options?: ServiceContextOptions) => Promise<string>;
+
+  // BREAKING CHANGE: 모든 서비스는 반드시 구조화된 ServiceContext를 반환해야 함
+  getServiceContext: (
+    options?: ServiceContextOptions,
+  ) => Promise<ServiceContext<unknown>>;
+
+  // BREAKING CHANGE: 세션/어시스턴트 전환 시 서비스가 내부 정리/프리로드를 수행하도록 구현을 요구
+  switchContext: (options?: ServiceContextOptions) => Promise<void>;
 }
 
 const BUILTIN_PREFIX = 'builtin_';
@@ -60,6 +72,7 @@ interface BuiltInToolContextType {
   buildToolPrompt: () => Promise<string>; // 이름 변경 고려
   status: Record<string, ServiceStatus>;
   getServiceMetadata: (alias: string) => ServiceMetadata | null;
+  serviceContexts: Record<string, unknown>;
 }
 
 interface BuiltInToolProviderProps {
@@ -75,11 +88,16 @@ const BuiltInToolContext = createContext<BuiltInToolContextType | null>(null);
 export function BuiltInToolProvider({ children }: BuiltInToolProviderProps) {
   const { register: registerPrompt, unregister: unregisterPrompt } =
     useSystemPrompt();
-  const { getCurrentSession } = useSessionContext();
+  const { getCurrentSession, current: currentSession } = useSessionContext();
+  const { currentAssistant } = useAssistantContext();
   // Simplified state: A single map holds the service and its status.
   const [serviceEntries, setServiceEntries] = useState<
     Map<string, ServiceEntry>
   >(new Map());
+
+  const [serviceContexts, setServiceContexts] = useState<
+    Record<string, unknown>
+  >({});
 
   // Refs are used for stable callbacks that don't need to change on re-renders.
   const serviceEntriesRef = useRef(serviceEntries);
@@ -233,6 +251,7 @@ export function BuiltInToolProvider({ children }: BuiltInToolProviderProps) {
 
   const buildToolPrompt = useCallback(async (): Promise<string> => {
     const prompts: string[] = [];
+    const newServiceContexts: Record<string, unknown> = {};
 
     // 1. Built-in Tools Section
     const availableToolsCount = availableTools.length;
@@ -252,20 +271,31 @@ Tool details and usage instructions are provided separately.
     const currentSession = getCurrentSession();
     const contextOptions: ServiceContextOptions = {
       sessionId: currentSession?.id,
+      assistantId: currentAssistant?.id,
     };
+
+    // Collect service context prompts from all ready services
 
     // Skip service contexts if no valid session is available
     if (currentSession?.id) {
       for (const [serviceId, entry] of serviceEntries.entries()) {
-        if (entry.status === 'ready' && entry.service.getServiceContext) {
+        if (entry.status === 'ready') {
           try {
-            const prompt =
+            const result =
               await entry.service.getServiceContext(contextOptions);
-            if (prompt) {
-              prompts.push(prompt);
+
+            // Append every service's context prompt uniformly. No special-case
+            // grouping is necessary because planning and other services already
+            // format their own context for readability.
+            if (result.contextPrompt) {
+              prompts.push(result.contextPrompt);
+            }
+
+            if (result.structuredState !== undefined) {
+              newServiceContexts[serviceId] = result.structuredState;
             }
           } catch (err) {
-            logger.error('Failed to get service context from service', {
+            logger.error('Failed to get service context', {
               serviceId,
               sessionId: contextOptions.sessionId,
               err,
@@ -273,23 +303,82 @@ Tool details and usage instructions are provided separately.
           }
         }
       }
+
+      // All service contexts were appended above; no special grouping required.
     } else {
       logger.debug('Skipping service contexts - no valid session available', {
         sessionExists: !!currentSession,
         sessionId: currentSession?.id,
       });
     }
-    logger.info('service prompts : ', { prompts });
-    return prompts.join('\n\n');
-  }, [serviceEntries, availableTools.length, getCurrentSession]);
 
-  // Register system prompt when component mounts
+    setServiceContexts(newServiceContexts);
+    logger.info('Built tool prompt with service contexts', {
+      promptsCount: prompts.length,
+      totalLength: prompts.join('\n\n').length,
+    });
+    return prompts.join('\n\n');
+  }, [
+    serviceEntries,
+    availableTools.length,
+    getCurrentSession,
+    currentAssistant,
+  ]);
+
+  // 세션/어시스턴트 변경 시 switchContext를 호출하여 서비스가 내부 정리/프리로드를 수행하도록 함
   useEffect(() => {
-    const promptId = registerPrompt('builtin-tools', buildToolPrompt, 1);
-    return () => {
-      unregisterPrompt(promptId);
-    };
-  }, [buildToolPrompt, registerPrompt, unregisterPrompt]);
+    const sessionId = currentSession?.id;
+    const assistantId = currentAssistant?.id;
+
+    // Session backend management: switch to the new session
+    if (sessionId) {
+      switchSession(sessionId, true).catch((error) => {
+        logger.error('Failed to switch session in backend', {
+          sessionId,
+          error,
+        });
+      });
+    }
+
+    const readyServices = Array.from(serviceEntriesRef.current.values()).filter(
+      (e) => e.status === 'ready',
+    );
+
+    if (!readyServices.length) {
+      return;
+    }
+
+    Promise.allSettled(
+      readyServices.map((entry) =>
+        entry.service.switchContext({ sessionId, assistantId }),
+      ),
+    ).then((results) => {
+      const failureCount = results.filter(
+        (r) => r.status === 'rejected',
+      ).length;
+
+      if (failureCount > 0) {
+        logger.warn('switchContext completed with failures', {
+          total: results.length,
+          failed: failureCount,
+        });
+
+        results.forEach((r, i) => {
+          if (r.status === 'rejected') {
+            const svc = readyServices[i].service;
+            logger.error('switchContext failed for service', {
+              serviceId: svc.metadata.displayName,
+              error: (r as PromiseRejectedResult).reason,
+            });
+          }
+        });
+      }
+    });
+  }, [
+    currentSession?.id,
+    currentAssistant?.id,
+    Array.from(serviceEntries.keys()),
+  ]);
 
   // Get service metadata by alias
   const getServiceMetadata = useCallback(
@@ -305,6 +394,14 @@ Tool details and usage instructions are provided separately.
     [],
   );
 
+  // Register system prompt when component mounts
+  useEffect(() => {
+    const promptId = registerPrompt('builtin-tools', buildToolPrompt, 1);
+    return () => {
+      unregisterPrompt(promptId);
+    };
+  }, [buildToolPrompt, registerPrompt, unregisterPrompt]);
+
   // Memoize the context value to prevent unnecessary re-renders of consumers.
   const contextValue: BuiltInToolContextType = useMemo(
     () => ({
@@ -314,6 +411,7 @@ Tool details and usage instructions are provided separately.
       executeTool,
       buildToolPrompt,
       getServiceMetadata,
+      serviceContexts,
       // Derive the public status object from the serviceEntries state.
       status: Object.fromEntries(
         Array.from(serviceEntries.entries()).map(([id, entry]) => [
@@ -329,6 +427,7 @@ Tool details and usage instructions are provided separately.
       executeTool,
       buildToolPrompt,
       getServiceMetadata,
+      serviceContexts,
       serviceEntries,
     ],
   );

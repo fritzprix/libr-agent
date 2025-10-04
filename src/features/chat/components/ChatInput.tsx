@@ -9,7 +9,7 @@ import { Button, FileAttachment } from '@/components/ui';
 import { Send, Square, Loader2 } from 'lucide-react';
 import { useAssistantContext } from '@/context/AssistantContext';
 import { useSessionContext } from '@/context/SessionContext';
-import { useChatContext } from '@/context/ChatContext';
+import { useChatState, useChatActions } from '@/context/ChatContext';
 import { useFileAttachment } from '../hooks/useFileAttachment';
 import { toast } from 'sonner';
 import { getLogger } from '@/lib/logger';
@@ -23,6 +23,11 @@ import {
 } from '@/context/DnDContext';
 
 const logger = getLogger('ChatInput');
+
+const textareaStyle = {
+  msOverflowStyle: 'none',
+  scrollbarWidth: 'none',
+} as const;
 
 interface ChatInputProps {
   children?: React.ReactNode;
@@ -38,14 +43,8 @@ export function ChatInput({ children }: ChatInputProps) {
 
   const { current: currentSession } = useSessionContext();
   const { currentAssistant } = useAssistantContext();
-  const {
-    submit,
-    isLoading,
-    isToolExecuting,
-    cancel,
-    addToMessageQueue,
-    pendingCancel,
-  } = useChatContext();
+  const { isLoading, isToolExecuting, pendingCancel } = useChatState();
+  const { submit, cancel, addToMessageQueue } = useChatActions();
   const {
     pendingFiles,
     commitPendingFiles,
@@ -227,6 +226,25 @@ export function ChatInput({ children }: ChatInputProps) {
     [attachedFiles, removeFile],
   );
 
+  const fileAttachmentFiles = useMemo(
+    () =>
+      attachedFiles.map((file: AttachmentReference) => ({
+        name: file.filename,
+        content: file.preview || '',
+      })),
+    [attachedFiles],
+  );
+
+  const handleRemoveFile = useCallback(
+    (index: number) => {
+      const file = attachedFiles[index];
+      if (file) {
+        removeAttachedFile(file.filename);
+      }
+    },
+    [attachedFiles, removeAttachedFile],
+  );
+
   return (
     <form ref={chatInputRef} onSubmit={handleSubmit} className={formClassName}>
       <span className="font-bold flex-shrink-0">$</span>
@@ -238,26 +256,15 @@ export function ChatInput({ children }: ChatInputProps) {
           placeholder={inputPlaceholder}
           disabled={isLoading || isAttachmentLoading}
           className={`flex-1 min-w-0 resize-none transition-colors bg-transparent outline-none border-none py-2 px-3 text-base leading-relaxed max-h-24 overflow-y-auto ${inputClassName}`}
-          style={{
-            msOverflowStyle: 'none',
-            scrollbarWidth: 'none',
-          }}
+          style={textareaStyle}
           autoComplete="off"
           spellCheck="false"
           rows={1}
         />
 
         <FileAttachment
-          files={attachedFiles.map((file: AttachmentReference) => ({
-            name: file.filename,
-            content: file.preview || '',
-          }))}
-          onRemove={(index: number) => {
-            const file = attachedFiles[index];
-            if (file) {
-              removeAttachedFile(file.filename);
-            }
-          }}
+          files={fileAttachmentFiles}
+          onRemove={handleRemoveFile}
           onAdd={handleFileAttachment}
           compact={true}
         />

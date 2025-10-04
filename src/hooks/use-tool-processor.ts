@@ -110,7 +110,12 @@ export const useToolProcessor = ({ submit }: UseToolProcessorConfig) => {
               logger.info('Raw mcpResponse for tool', {
                 toolCallId: toolCall.id,
                 toolName,
-                mcpResponse,
+                hasResult: !!mcpResponse.result,
+                hasError: !!mcpResponse.error,
+                contentCount: mcpResponse.result?.content?.length || 0,
+                contentTypes:
+                  mcpResponse.result?.content?.map((c: MCPContent) => c.type) ||
+                  [],
               });
 
               const toolResultMessage: Message = {

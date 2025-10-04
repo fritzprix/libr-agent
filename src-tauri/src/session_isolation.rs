@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::process::Command;
 use tokio::process::Command as AsyncCommand;
 use tracing::{info, warn};
 
@@ -386,15 +385,21 @@ impl SessionIsolationManager {
 
     /// Check if a command is available on the system
     async fn is_command_available(&self, command: &str) -> bool {
-        let check_cmd = if cfg!(target_os = "windows") {
-            Command::new("where").arg(command).output()
+        // Use the async Tokio Command to avoid blocking the async runtime
+        let mut cmd = if cfg!(target_os = "windows") {
+            AsyncCommand::new("where")
         } else {
-            Command::new("which").arg(command).output()
+            AsyncCommand::new("which")
         };
 
-        match check_cmd {
+        cmd.arg(command);
+
+        match cmd.output().await {
             Ok(output) => output.status.success(),
-            Err(_) => false,
+            Err(err) => {
+                warn!("Failed to check command availability: {err}");
+                false
+            }
         }
     }
 

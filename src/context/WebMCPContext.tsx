@@ -10,6 +10,7 @@ import { useAsyncFn } from 'react-use';
 import { getLogger } from '@/lib/logger';
 import { WebMCPProxy } from '@/lib/web-mcp/mcp-proxy';
 import { MCPTool } from '@/lib/mcp-types';
+import { ServiceContextOptions } from '@/features/tools';
 import MCPWorker from '@/lib/web-mcp/mcp-worker.ts?worker';
 
 const logger = getLogger('WebMCPContext');
@@ -34,8 +35,8 @@ export interface WebMCPServerProxy {
   name: string;
   isLoaded: boolean;
   tools: MCPTool[];
-  setContext?: (
-    context: Record<string, unknown>,
+  switchContext?: (
+    context: ServiceContextOptions,
   ) => Promise<{ success: boolean }>;
   [methodName: string]: unknown;
 }
@@ -56,9 +57,9 @@ interface WebMCPContextValue {
   getServerProxy: <T extends WebMCPServerProxy>(
     serverName: string,
   ) => Promise<T>;
-  setServerContext: (
+  switchServerContext: (
     serverName: string,
-    context: Record<string, unknown>,
+    context: ServiceContextOptions,
   ) => Promise<{ success: boolean }>;
 }
 
@@ -217,21 +218,24 @@ export function WebMCPProvider({ children }: WebMCPProviderProps) {
   );
 
   // Set context for a server
-  const setServerContext = useCallback(
+  const switchServerContext = useCallback(
     async (
       serverName: string,
-      context: Record<string, unknown>,
+      context: ServiceContextOptions,
     ): Promise<{ success: boolean }> => {
       if (!proxyRef.current) {
         throw new Error('WebMCP proxy not initialized');
       }
 
       try {
-        const result = await proxyRef.current.setContext(serverName, context);
-        logger.debug('Set server context', { serverName, context });
+        const result = await proxyRef.current.switchContext(
+          serverName,
+          context,
+        );
+        logger.debug('Switched server context', { serverName, context });
         return result;
       } catch (error) {
-        logger.error('Failed to set server context', { serverName, error });
+        logger.error('Failed to switch server context', { serverName, error });
         throw error;
       }
     },
@@ -248,7 +252,7 @@ export function WebMCPProvider({ children }: WebMCPProviderProps) {
     isLoading,
     initialized,
     getServerProxy,
-    setServerContext,
+    switchServerContext,
   };
 
   return (

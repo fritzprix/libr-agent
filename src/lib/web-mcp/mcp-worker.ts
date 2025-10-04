@@ -15,6 +15,7 @@ import type {
   MCPResponse,
   MCPTool,
 } from '../mcp-types';
+import { ServiceContext, ServiceContextOptions } from '../../features/tools';
 
 // Static imports for MCP server modules to avoid Vite dynamic import warnings
 // This approach provides better bundling compatibility and type safety
@@ -225,6 +226,30 @@ async function handleMCPMessage(
         const server = getMCPServer(serverName);
         if (server.getServiceContext) {
           const context = await server.getServiceContext();
+          // context가 ServiceContext인 경우 그대로 반환
+          if (
+            typeof context === 'object' &&
+            context !== null &&
+            'contextPrompt' in context &&
+            'structuredState' in context
+          ) {
+            const serviceContext = context as ServiceContext<unknown>;
+            return {
+              jsonrpc: '2.0',
+              id,
+              result: {
+                content: [
+                  {
+                    type: 'text',
+                    text: serviceContext.contextPrompt,
+                  },
+                ],
+                structuredContent: serviceContext,
+              },
+            };
+          }
+          // 레거시 string 반환의 경우 ServiceContext로 변환
+          const contextString = typeof context === 'string' ? context : '';
           return {
             jsonrpc: '2.0',
             id,
@@ -232,10 +257,13 @@ async function handleMCPMessage(
               content: [
                 {
                   type: 'text',
-                  text: context,
+                  text: contextString,
                 },
               ],
-              structuredContent: context,
+              structuredContent: {
+                contextPrompt: contextString,
+                structuredState: undefined,
+              },
             },
           };
         }
@@ -251,18 +279,20 @@ async function handleMCPMessage(
                 text: context,
               },
             ],
-            structuredContent: context,
+            structuredContent: {
+              contextPrompt: context,
+              structuredState: undefined,
+            },
           },
         };
       }
-
-      case 'setContext': {
+      case 'switchContext': {
         if (!serverName) {
-          throw new Error('Server name is required for setContext');
+          throw new Error('Server name is required for switchContext');
         }
         const server = getMCPServer(serverName);
-        if (server.setContext) {
-          await server.setContext((args as Record<string, unknown>) || {});
+        if (server.switchContext) {
+          await server.switchContext((args as ServiceContextOptions) || {});
           return {
             jsonrpc: '2.0',
             id,
@@ -270,7 +300,7 @@ async function handleMCPMessage(
               content: [
                 {
                   type: 'text',
-                  text: 'Context set successfully',
+                  text: 'Context switched successfully',
                 },
               ],
               structuredContent: { success: true },
@@ -285,7 +315,7 @@ async function handleMCPMessage(
             content: [
               {
                 type: 'text',
-                text: 'Server does not support context setting',
+                text: 'Server does not support context switching',
               },
             ],
             structuredContent: { success: false },

@@ -88,24 +88,24 @@ export const ResourceAttachmentProvider: React.FC<
 
   // Use SWR for session files management
   const { data: sessionFiles = [], mutate } = useSWR(
-    currentSession?.storeId ? `session-files-${currentSession.storeId}` : null,
+    currentSession?.id ? `session-files-${currentSession.id}` : null,
     async (key: string) => {
-      const storeId = key.replace('session-files-', '');
-      if (storeId && server) {
+      const sessionId = key.replace('session-files-', '');
+      if (sessionId && server) {
         logger.info('Proxy: Calling server.listContent for session files', {
-          storeId,
+          sessionId,
         });
         const listContentArgs: ListContentArgs = {
-          storeId,
+          sessionId,
         };
         const result = await server.listContent(listContentArgs);
         logger.info('Proxy: server.listContent completed successfully', {
-          storeId,
+          sessionId,
           contentCount: result?.contents?.length || 0,
         });
         const files =
           result?.contents?.map((content) => ({
-            storeId: content.storeId,
+            sessionId: content.sessionId,
             contentId: content.contentId,
             filename: content.filename,
             mimeType: content.mimeType,
@@ -117,10 +117,6 @@ export const ResourceAttachmentProvider: React.FC<
             lastAccessedAt: content.lastAccessedAt,
           })) || [];
 
-        logger.debug('Session files loaded via SWR', {
-          storeId,
-          fileCount: files.length,
-        });
         return files;
       }
       return [];
@@ -132,10 +128,10 @@ export const ResourceAttachmentProvider: React.FC<
     },
   );
 
-  // Track uploaded filenames per storeId to prevent duplicate uploads within the same store
+  // Track uploaded filenames per session to prevent duplicate uploads within the same session
   const uploadedFilenamesRef = useRef<Map<string, Set<string>>>(new Map());
 
-  // Cache the current session's storeId to avoid race conditions during batch uploads
+  // Cache the current session ID to avoid race conditions during batch uploads
   const sessionStoreIdRef = useRef<string | undefined>();
 
   // Reset files when session changes
@@ -148,14 +144,9 @@ export const ResourceAttachmentProvider: React.FC<
 
   useEffect(() => {
     if (currentSession?.id !== prevSessionIdRef.current) {
-      logger.info('Session changed in ResourceAttachmentContext', {
+      logger.debug('Session changed, clearing cached data', {
         previousSessionId: prevSessionIdRef.current,
         currentSessionId: currentSession?.id,
-        sessionName: currentSession?.name,
-        storeId: currentSession?.storeId,
-        reason: !prevSessionIdRef.current
-          ? 'initial_session'
-          : 'session_change',
       });
       // Clear uploaded filenames when session changes
       uploadedFilenamesRef.current.clear();
@@ -163,16 +154,16 @@ export const ResourceAttachmentProvider: React.FC<
       // Clear pending files on session change (SWR will handle sessionFiles)
       setPendingFiles([]);
 
-      // Update storeId cache
-      sessionStoreIdRef.current = currentSession?.storeId;
+      // Update sessionId cache
+      sessionStoreIdRef.current = currentSession?.id;
       prevSessionIdRef.current = currentSession?.id;
     }
   }, [currentSession?.id]);
 
-  // Update storeId cache when currentSession storeId changes
+  // Update sessionId cache when currentSession id changes
   useEffect(() => {
-    sessionStoreIdRef.current = currentSession?.storeId;
-  }, [currentSession?.storeId]);
+    sessionStoreIdRef.current = currentSession?.id;
+  }, [currentSession?.id]);
 
   // Ensure store exists for current session
   const ensureStoreExists = useCallback(
@@ -182,28 +173,15 @@ export const ResourceAttachmentProvider: React.FC<
       }
 
       try {
-        // First check cached storeId to avoid race conditions
+        // First check cached session store ID to avoid race conditions
         if (sessionStoreIdRef.current) {
-          logger.debug('Using cached store ID', {
-            sessionId,
-            storeId: sessionStoreIdRef.current,
-          });
           return sessionStoreIdRef.current;
         }
 
-        // Check if session already has a storeId
-        if (currentSession?.storeId) {
-          logger.debug('Using existing store ID from session', {
-            sessionId,
-            storeId: currentSession.storeId,
-          });
-          sessionStoreIdRef.current = currentSession.storeId;
-          return currentSession.storeId;
-        }
+        // Since sessionId = storeId (1:1 relationship), use sessionId directly
+        sessionStoreIdRef.current = sessionId;
 
-        // Create a new store
-        logger.debug('Creating new content store', { sessionId });
-
+        // Always try to create the content store (it should be idempotent)
         // Check if server is available
         if (!server) {
           if (serverLoading) {
@@ -218,48 +196,20 @@ export const ResourceAttachmentProvider: React.FC<
         }
 
         const createStoreArgs: CreateStoreArgs = {
+          sessionId,
           metadata: {
-            sessionId,
+            // Optional metadata can be added here
           },
         };
-        logger.info('Proxy: Calling server.createStore', { sessionId });
         const createResult = await server.createStore(createStoreArgs);
-        logger.info('Proxy: server.createStore completed successfully', {
-          sessionId,
-          createResult,
-          createResultType: typeof createResult,
-          createResultKeys: createResult ? Object.keys(createResult) : [],
-          storeId: createResult?.storeId,
-          id: createResult?.id,
-        });
 
-        logger.debug('createStore result received', {
-          sessionId,
-          createResult,
-          createResultType: typeof createResult,
-          createResultKeys: createResult ? Object.keys(createResult) : null,
-          hasIdField: createResult && 'id' in createResult,
-          hasStoreIdField: createResult && 'storeId' in createResult,
-          extractedStoreId:
-            typeof createResult === 'object' && createResult !== null
-              ? 'id' in createResult
-                ? (createResult as { id: string }).id
-                : 'storeId' in createResult
-                  ? (createResult as { storeId: string }).storeId
-                  : 'none'
-              : 'invalid',
-        });
-
-        // Handle both direct storeId and nested store.id formats
+        // Content store now uses sessionId directly (1:1 relationship)
         let storeId: string;
         if (typeof createResult === 'object' && createResult !== null) {
-          // Check if result is the store object itself (Rust backend format)
-          if ('id' in createResult) {
-            storeId = (createResult as { id: string }).id;
-            logger.info('Extracted storeId from id field', { storeId });
-          } else if ('storeId' in createResult) {
-            storeId = (createResult as { storeId: string }).storeId;
-            logger.info('Extracted storeId from storeId field', { storeId });
+          // Check if result has sessionId field (new format)
+          if ('sessionId' in createResult) {
+            storeId = (createResult as { sessionId: string }).sessionId;
+            logger.info('Extracted storeId from sessionId field', { storeId });
           } else {
             logger.error(
               'Invalid createStore response: missing both id and storeId fields',
@@ -280,40 +230,8 @@ export const ResourceAttachmentProvider: React.FC<
           throw new Error('Invalid createStore response: expected object');
         }
 
-        logger.info(
-          'StoreId extracted successfully, caching and updating session',
-          {
-            sessionId,
-            storeId,
-            currentCacheValue: sessionStoreIdRef.current,
-          },
-        );
-
         // Cache the storeId immediately to prevent race conditions
         sessionStoreIdRef.current = storeId;
-        logger.info('Cached storeId in sessionStoreIdRef', {
-          sessionId,
-          storeId,
-          cacheUpdated: true,
-        });
-
-        // Update the session with the new storeId
-        logger.info('Updating session with new storeId', {
-          sessionId,
-          storeId,
-          currentSessionStoreId: currentSession?.storeId,
-        });
-        await updateSession(sessionId, { storeId });
-        logger.info('Session updated successfully with storeId', {
-          sessionId,
-          storeId,
-          updatedSessionStoreId: currentSession?.storeId,
-        });
-
-        logger.info('Content store created and session updated', {
-          sessionId,
-          storeId,
-        });
 
         return storeId;
       } catch (error) {
@@ -371,7 +289,6 @@ export const ResourceAttachmentProvider: React.FC<
         }
 
         // For external URLs, fetch and convert to blob
-        logger.debug('Converting external URL to blob', { url });
         const response = await fetch(url);
 
         if (!response.ok) {
@@ -382,13 +299,6 @@ export const ResourceAttachmentProvider: React.FC<
 
         const blob = await response.blob();
         const blobUrl = URL.createObjectURL(blob);
-
-        logger.debug('Successfully converted to blob URL', {
-          originalUrl: url,
-          blobUrl,
-          size: blob.size,
-          type: blob.type,
-        });
 
         return {
           blobUrl,
@@ -421,7 +331,7 @@ export const ResourceAttachmentProvider: React.FC<
   const addPendingFiles = useCallback(
     (files: PendingFileInput[]) => {
       const newPending = files.map((file) => ({
-        storeId: currentSession?.storeId || '',
+        sessionId: currentSession?.id || '',
         contentId: `pending_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
         filename: file.filename || extractFilenameFromUrl(file.url),
         mimeType: file.mimeType,
@@ -438,14 +348,9 @@ export const ResourceAttachmentProvider: React.FC<
         blobCleanup: file.blobCleanup,
       }));
 
-      logger.debug('Adding files to pending state', {
-        fileCount: files.length,
-        filenames: newPending.map((f) => f.filename),
-      });
-
       setPendingFiles((prev) => [...prev, ...newPending]);
     },
-    [currentSession?.storeId, extractFilenameFromUrl],
+    [currentSession?.id, extractFilenameFromUrl],
   );
 
   // Internal helper function to upload a single file to server
@@ -464,13 +369,6 @@ export const ResourceAttachmentProvider: React.FC<
       }
 
       const storeId = await ensureStoreExists(currentSession.id);
-      logger.info('ensureStoreExists returned storeId', {
-        sessionId: currentSession.id,
-        storeId,
-        storeIdType: typeof storeId,
-        storeIdLength: storeId?.length,
-        cachedStoreId: sessionStoreIdRef.current,
-      });
 
       let fileUrl: string;
       let actualMimeType: string;
@@ -484,14 +382,6 @@ export const ResourceAttachmentProvider: React.FC<
           fileUrl = url;
           actualMimeType = file.type || mimeType || 'application/octet-stream';
           fileSize = file.size;
-
-          logger.debug('Using File object synced to workspace', {
-            filename: actualFilename,
-            workspacePath,
-            fileUrl,
-            size: fileSize,
-            type: actualMimeType,
-          });
         } catch (syncError) {
           logger.warn('Workspace sync failed, falling back to blob URL', {
             filename: actualFilename,
@@ -508,7 +398,6 @@ export const ResourceAttachmentProvider: React.FC<
       } else {
         // For URLs, try to download and sync to workspace
         try {
-          logger.debug('Downloading URL to workspace', { url });
           const response = await fetch(url);
 
           if (!response.ok) {
@@ -526,14 +415,6 @@ export const ResourceAttachmentProvider: React.FC<
           fileUrl = `file://${workspacePath}`;
           actualMimeType = blob.type || mimeType || 'application/octet-stream';
           fileSize = blob.size;
-
-          logger.debug('URL downloaded and synced to workspace', {
-            originalUrl: url,
-            workspacePath,
-            fileUrl,
-            size: fileSize,
-            type: actualMimeType,
-          });
         } catch (downloadError) {
           logger.warn('URL download failed, falling back to blob URL', {
             url,
@@ -555,7 +436,7 @@ export const ResourceAttachmentProvider: React.FC<
       try {
         // Call the content-store server to add content using file URL
         const addContentArgs: AddContentArgs = {
-          storeId: storeId,
+          sessionId: storeId,
           fileUrl: fileUrl,
           metadata: {
             filename: actualFilename,
@@ -565,42 +446,12 @@ export const ResourceAttachmentProvider: React.FC<
           },
         };
 
-        logger.info('DEBUG: addContentArgs before call', {
-          storeId,
-          storeIdType: typeof storeId,
-          storeIdLength: storeId?.length,
-          fileUrl,
-          hasMetadata: !!addContentArgs.metadata,
-          addContentArgsKeys: Object.keys(addContentArgs),
-          addContentArgs: JSON.stringify(addContentArgs),
-          addContentArgsParsed: JSON.parse(JSON.stringify(addContentArgs)), // Deep clone to check serialization
-        });
-        logger.info('Proxy: Calling server.addContent', {
-          filename: actualFilename,
-          storeId,
-          fileSize,
-        });
         const result = await server.addContent(addContentArgs);
-        logger.info('Proxy: server.addContent completed successfully', {
-          filename: result.filename,
-          contentId: result.contentId,
-          chunkCount: result.chunkCount,
-        });
-
-        logger.info('File uploaded to Content-Store successfully', {
-          filename: result.filename,
-          contentId: result.contentId,
-          chunkCount: result.chunkCount,
-        });
 
         // If workspace sync wasn't done earlier, try it now
         if (!workspacePath && file) {
           try {
             workspacePath = await syncFileToWorkspace(file);
-            logger.info('File synced to workspace successfully', {
-              filename: result.filename,
-              workspacePath,
-            });
           } catch (error) {
             logger.warn(
               'Workspace sync failed, continuing with content-store only',
@@ -615,7 +466,7 @@ export const ResourceAttachmentProvider: React.FC<
 
         // Convert AddContentOutput to AttachmentReference
         return {
-          storeId: result.storeId,
+          sessionId: result.sessionId,
           contentId: result.contentId,
           filename: result.filename,
           mimeType: result.mimeType,
@@ -646,10 +497,6 @@ export const ResourceAttachmentProvider: React.FC<
   const commitPendingFiles = useCallback(async (): Promise<
     AttachmentReference[]
   > => {
-    logger.info('commitPendingFiles invoked', {
-      pendingCount: pendingFiles.length,
-      filenames: pendingFiles.map((f) => f.filename),
-    });
     if (pendingFiles.length === 0) return [];
 
     // Check if server is available
@@ -665,22 +512,12 @@ export const ResourceAttachmentProvider: React.FC<
       }
     }
 
-    logger.info('Committing pending files to server', {
-      fileCount: pendingFiles.length,
-    });
-
     setIsLoading(true);
     const results: AttachmentReference[] = [];
 
     try {
       for (const file of pendingFiles) {
         try {
-          logger.info('commitPendingFiles: uploading file', {
-            filename: file.filename,
-            mimeType: file.mimeType,
-            hasFileObject: !!(file as { file?: File }).file,
-            size: file.size,
-          });
           // Use the stored original URL and File object for proper upload
           const result = await addFileInternal(
             file.originalUrl || file.preview,
@@ -689,11 +526,6 @@ export const ResourceAttachmentProvider: React.FC<
             file.originalPath,
             file.file,
           );
-          logger.info('commitPendingFiles: upload success', {
-            filename: result.filename,
-            contentId: result.contentId,
-            storeId: result.storeId,
-          });
           results.push(result);
         } catch (error) {
           logger.error('Failed to commit pending file', {
@@ -705,7 +537,6 @@ export const ResourceAttachmentProvider: React.FC<
       }
 
       // Refresh SWR cache to get updated session files
-      logger.info('commitPendingFiles: calling mutateSessionFiles');
       await mutateSessionFiles();
 
       // Clean up any blob URLs created for pending files
@@ -713,9 +544,6 @@ export const ResourceAttachmentProvider: React.FC<
         if (file.blobCleanup) {
           try {
             file.blobCleanup();
-            logger.debug('Cleaned up blob URL for committed file', {
-              filename: file.filename,
-            });
           } catch (error) {
             logger.warn('Failed to cleanup blob URL', {
               filename: file.filename,
@@ -728,11 +556,6 @@ export const ResourceAttachmentProvider: React.FC<
       // Clear pending files after successful commit
       setPendingFiles([]);
 
-      logger.info('Pending files committed successfully', {
-        successCount: results.length,
-        totalCount: pendingFiles.length,
-      });
-
       return results;
     } finally {
       setIsLoading(false);
@@ -741,12 +564,6 @@ export const ResourceAttachmentProvider: React.FC<
 
   const removeFile = useCallback(
     async (ref: AttachmentReference): Promise<void> => {
-      logger.debug('Removing file attachment', {
-        contentId: ref.contentId,
-        filename: ref.filename,
-        isPending: ref.contentId.startsWith('pending_'),
-      });
-
       // Check if this is a pending file (not yet saved to server)
       if (ref.contentId.startsWith('pending_')) {
         // Handle pending file removal - remove from local state
@@ -759,9 +576,6 @@ export const ResourceAttachmentProvider: React.FC<
           if (fileToRemove.blobCleanup) {
             try {
               fileToRemove.blobCleanup();
-              logger.debug('Cleaned up blob URL for pending file', {
-                filename: fileToRemove.filename,
-              });
             } catch (error) {
               logger.warn('Failed to cleanup blob URL for pending file', {
                 filename: fileToRemove.filename,
@@ -774,11 +588,6 @@ export const ResourceAttachmentProvider: React.FC<
           setPendingFiles((prev) =>
             prev.filter((file) => file.contentId !== ref.contentId),
           );
-
-          logger.info('Pending file removed successfully from UI', {
-            filename: ref.filename,
-            contentId: ref.contentId,
-          });
         } else {
           logger.warn('Pending file not found in pendingFiles array', {
             contentId: ref.contentId,
@@ -794,11 +603,6 @@ export const ResourceAttachmentProvider: React.FC<
         // TODO: Call server.removeContent when available
         // For now, we'll just refresh to reflect server state
 
-        logger.info('Session file attachment removed successfully', {
-          filename: ref.filename,
-          contentId: ref.contentId,
-        });
-
         // Refresh session files after removal to reflect the change
         await mutateSessionFiles();
       } catch (error) {
@@ -806,7 +610,7 @@ export const ResourceAttachmentProvider: React.FC<
           ref: {
             contentId: ref.contentId,
             filename: ref.filename,
-            storeId: ref.storeId,
+            sessionId: ref.sessionId,
           },
           error: error instanceof Error ? error.message : String(error),
         });
@@ -821,11 +625,7 @@ export const ResourceAttachmentProvider: React.FC<
   );
 
   const clearPendingFiles = useCallback(() => {
-    logger.debug('Clearing pending file attachments', {
-      count: pendingFiles.length,
-    });
     setPendingFiles([]);
-    logger.info('Pending file attachments cleared');
   }, [pendingFiles.length]);
 
   const contextValue: ResourceAttachmentContextType = useMemo(
