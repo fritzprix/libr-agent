@@ -8,6 +8,7 @@ import { Message } from '@/models/chat';
 import { MCPTool } from '../mcp-types';
 import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';
+import { formatToolCall } from './utils';
 const logger = getLogger('AnthropicService');
 
 const MAX_PARTIAL_TOOL_INPUT_LENGTH = 200_000;
@@ -141,7 +142,9 @@ export class AnthropicService extends BaseAIService {
               delta: chunk.delta,
             });
           } catch (e) {
-            logger.debug('Failed to log content_block_delta safely', { error: e });
+            logger.debug('Failed to log content_block_delta safely', {
+              error: e,
+            });
           }
         }
 
@@ -201,7 +204,9 @@ export class AnthropicService extends BaseAIService {
               currentLength: accumulator.partialJson.length,
             });
             accumulator.partialJson += chunk.delta.partial_json;
-            if (accumulator.partialJson.length > MAX_PARTIAL_TOOL_INPUT_LENGTH) {
+            if (
+              accumulator.partialJson.length > MAX_PARTIAL_TOOL_INPUT_LENGTH
+            ) {
               logger.error('Tool call input exceeded maximum buffered length', {
                 index: chunk.index,
                 toolId: accumulator.id,
@@ -227,17 +232,18 @@ export class AnthropicService extends BaseAIService {
                 continue;
               }
               try {
-                const parsedInput = JSON.parse(trimmedPartial) as Record<string, unknown>;
+                const parsedInput = JSON.parse(trimmedPartial) as Record<
+                  string,
+                  unknown
+                >;
                 // If parsing succeeds, yield the tool call and mark as yielded
                 yield JSON.stringify({
                   tool_calls: [
-                    {
-                      id: accumulator.id,
-                      function: {
-                        name: accumulator.name,
-                        arguments: JSON.stringify(parsedInput),
-                      },
-                    },
+                    formatToolCall(
+                      accumulator.id,
+                      accumulator.name,
+                      parsedInput,
+                    ),
                   ],
                 });
                 accumulator.yielded = true; // Prevent duplicate yields
@@ -262,7 +268,10 @@ export class AnthropicService extends BaseAIService {
           if (accumulator && accumulator.partialJson && !accumulator.yielded) {
             const trimmedPartial = accumulator.partialJson.trim();
             try {
-              const parsedInput = JSON.parse(trimmedPartial) as Record<string, unknown>;
+              const parsedInput = JSON.parse(trimmedPartial) as Record<
+                string,
+                unknown
+              >;
               logger.info('Tool call completed on content_block_stop', {
                 id: accumulator.id,
                 name: accumulator.name,
@@ -271,31 +280,26 @@ export class AnthropicService extends BaseAIService {
               // Final tool call yield if not already done
               yield JSON.stringify({
                 tool_calls: [
-                  {
-                    id: accumulator.id,
-                    function: {
-                      name: accumulator.name,
-                      arguments: JSON.stringify(parsedInput),
-                    },
-                  },
+                  formatToolCall(accumulator.id, accumulator.name, parsedInput),
                 ],
               });
               accumulator.yielded = true;
             } catch (parseError) {
               if (accumulator.initialInput) {
-                logger.info('Using initial tool input from content_block_start', {
-                  id: accumulator.id,
-                  name: accumulator.name,
-                });
+                logger.info(
+                  'Using initial tool input from content_block_start',
+                  {
+                    id: accumulator.id,
+                    name: accumulator.name,
+                  },
+                );
                 yield JSON.stringify({
                   tool_calls: [
-                    {
-                      id: accumulator.id,
-                      function: {
-                        name: accumulator.name,
-                        arguments: JSON.stringify(accumulator.initialInput),
-                      },
-                    },
+                    formatToolCall(
+                      accumulator.id,
+                      accumulator.name,
+                      accumulator.initialInput,
+                    ),
                   ],
                 });
                 accumulator.yielded = true;
@@ -308,20 +312,25 @@ export class AnthropicService extends BaseAIService {
                 });
               }
             }
-          } else if (accumulator && !accumulator.yielded && accumulator.initialInput) {
-            logger.info('Tool call completed using initial input without deltas', {
-              id: accumulator.id,
-              name: accumulator.name,
-            });
+          } else if (
+            accumulator &&
+            !accumulator.yielded &&
+            accumulator.initialInput
+          ) {
+            logger.info(
+              'Tool call completed using initial input without deltas',
+              {
+                id: accumulator.id,
+                name: accumulator.name,
+              },
+            );
             yield JSON.stringify({
               tool_calls: [
-                {
-                  id: accumulator.id,
-                  function: {
-                    name: accumulator.name,
-                    arguments: JSON.stringify(accumulator.initialInput),
-                  },
-                },
+                formatToolCall(
+                  accumulator.id,
+                  accumulator.name,
+                  accumulator.initialInput,
+                ),
               ],
             });
             accumulator.yielded = true;
@@ -397,17 +406,20 @@ export class AnthropicService extends BaseAIService {
     });
 
     for (const m of messages) {
-      if (m.role === 'system') {
+      // Convert UI-originated messages to user role for provider calls
+      const effectiveRole = m.source === 'ui' ? 'user' : m.role;
+
+      if (effectiveRole === 'system') {
         // System messages are handled separately in the API call
         continue;
       }
 
-      if (m.role === 'user') {
+      if (effectiveRole === 'user') {
         anthropicMessages.push({
           role: 'user',
           content: this.processMessageContent(m.content),
         });
-      } else if (m.role === 'assistant') {
+      } else if (effectiveRole === 'assistant') {
         // Filter out empty assistant messages that would cause API errors
         const hasContent = m.content && m.content.length > 0;
         const hasToolCalls = m.tool_calls && m.tool_calls.length > 0;
@@ -467,7 +479,7 @@ export class AnthropicService extends BaseAIService {
             content,
           });
         }
-      } else if (m.role === 'tool') {
+      } else if (effectiveRole === 'tool') {
         if (!m.tool_call_id) {
           logger.warn('Tool message missing tool_call_id, skipping', {
             messageId: m.id,
@@ -602,7 +614,10 @@ export class AnthropicService extends BaseAIService {
     context: { messageId?: string; toolId?: string; toolName?: string },
   ): Record<string, unknown> {
     if (raw == null) {
-      logger.warn('Tool call input missing; defaulting to empty object', context);
+      logger.warn(
+        'Tool call input missing; defaulting to empty object',
+        context,
+      );
       return {};
     }
 
@@ -614,9 +629,7 @@ export class AnthropicService extends BaseAIService {
           ...context,
           error,
         });
-        throw error instanceof Error
-          ? error
-          : new Error(String(error));
+        throw error instanceof Error ? error : new Error(String(error));
       }
     }
 

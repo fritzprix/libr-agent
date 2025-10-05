@@ -9,7 +9,7 @@ import { Message } from '@/models/chat';
 import { MCPTool } from '../mcp-types';
 import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';
-import { createId } from '@paralleldrive/cuid2';
+import { tryParse, formatToolCall, generateToolCallId } from './utils';
 
 const logger = getLogger('GeminiService');
 
@@ -23,21 +23,6 @@ interface GeminiServiceConfig {
   systemInstruction?: Array<{ text: string }>;
   maxOutputTokens?: number;
   temperature?: number;
-}
-
-/**
- * A utility function to safely parse a JSON string.
- * @param input The JSON string to parse.
- * @returns The parsed object, or undefined if parsing fails.
- * @internal
- */
-function tryParse<T = unknown>(input?: string): T | undefined {
-  if (!input) return undefined;
-  try {
-    return JSON.parse(input) as T;
-  } catch {
-    return undefined;
-  }
 }
 
 /**
@@ -64,7 +49,8 @@ export class GeminiService extends BaseAIService {
    * @private
    */
   private generateToolCallId(): string {
-    return `tool_${createId()}`;
+    // keep for backward compatibility with subclasses expecting this method
+    return generateToolCallId();
   }
 
   /**
@@ -139,36 +125,18 @@ export class GeminiService extends BaseAIService {
         logger.info('chunk : ', { chunk });
         if (chunk.functionCalls && chunk.functionCalls.length > 0) {
           const validFunctionCalls = chunk.functionCalls.filter(
-            (fc) => fc.name && typeof fc.name === 'string' && fc.args,
+            (fc) => fc.name && typeof fc.name === 'string',
           );
 
           if (validFunctionCalls.length > 0) {
             yield JSON.stringify({
-              tool_calls: validFunctionCalls.map((fc: FunctionCall) => {
-                let argumentsStr: string;
-                try {
-                  argumentsStr = JSON.stringify(fc.args || {});
-                } catch (error) {
-                  logger.warn('Failed to serialize function arguments', {
-                    functionName: fc.name,
-                    args: fc.args,
-                    error,
-                  });
-                  argumentsStr = "'";
-                }
-
-                const toolCallId = this.generateToolCallId();
-                logger.debug('Generated tool call ID', {
-                  functionName: fc.name,
-                  toolCallId,
-                });
-
-                return {
-                  id: toolCallId,
-                  type: 'function',
-                  function: { name: fc.name, arguments: argumentsStr },
-                };
-              }),
+              tool_calls: validFunctionCalls.map((fc: FunctionCall) =>
+                formatToolCall(
+                  this.generateToolCallId(),
+                  fc.name!,
+                  fc.args ?? {},
+                ),
+              ),
             });
           }
         } else if (chunk.text) {

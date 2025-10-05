@@ -136,11 +136,10 @@ export class OpenAIService extends BaseAIService {
       options,
     );
 
-    logger.info('openai stream chat 0 : ', { messages });
-
     const provider = this.getProvider();
-
-    logger.info('openai stream chat 1 : ', { messages: sanitizedMessages });
+    logger.debug('Preparing OpenAI streaming chat', {
+      messages: sanitizedMessages,
+    });
 
     try {
       // Use the sanitized messages prepared for the provider to ensure
@@ -150,7 +149,9 @@ export class OpenAIService extends BaseAIService {
         options.systemPrompt,
       );
 
-      logger.info('openai stream chat 2 : ', { messages: openaiMessages });
+      logger.debug('OpenAI request payload prepared', {
+        messages: openaiMessages,
+      });
 
       let modelName = options.modelName || config.defaultModel || 'gpt-4-turbo';
 
