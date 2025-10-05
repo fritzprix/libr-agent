@@ -20,13 +20,26 @@ const MessageBubbleRouter: React.FC<MessageBubbleRouterProps> = ({
     return <ErrorBubble message={message} onRetry={retryMessage} />;
   }
 
-  if (
+  const hasToolCalls =
     message.tool_calls &&
     Array.isArray(message.tool_calls) &&
     message.tool_calls.length > 0 &&
-    message.tool_calls.every((tc) => tc && tc.function && tc.function.name)
-  ) {
-    return <ToolCallBubble tool_calls={message.tool_calls} />;
+    message.tool_calls.every((tc) => tc && tc.function && tc.function.name);
+
+  const hasText = !!(message.content && message.content.length > 0);
+
+  // If the message contains both text and tool_calls, render both.
+  if (hasToolCalls && hasText) {
+    return (
+      <>
+        <ContentBubble message={message} />
+        <ToolCallBubble tool_calls={message.tool_calls!} />
+      </>
+    );
+  }
+
+  if (hasToolCalls) {
+    return <ToolCallBubble tool_calls={message.tool_calls!} />;
   }
 
   if (message.role === 'tool') {
