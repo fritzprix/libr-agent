@@ -41,6 +41,9 @@ export abstract class BaseAIService implements IAIService {
    */
   protected logger = getLogger('BaseAIService');
 
+  // NEW: Instance-level AbortController for stream cancellation
+  protected abortController: AbortController = new AbortController();
+
   /**
    * Initializes a new instance of the `BaseAIService`.
    * @param apiKey The API key for the service.
@@ -52,6 +55,21 @@ export abstract class BaseAIService implements IAIService {
   ) {
     this.validateApiKey(apiKey);
     this.defaultConfig = { ...this.defaultConfig, ...config };
+  }
+
+  // NEW: Get current abort signal
+  protected getAbortSignal(): AbortSignal {
+    return this.abortController.signal;
+  }
+
+  // NEW: Cancel current stream
+  public cancel(): void {
+    if (!this.abortController.signal.aborted) {
+      this.logger.info('Cancelling active stream');
+      this.abortController.abort();
+    } else {
+      this.logger.debug('cancel() called but no active stream');
+    }
   }
 
   /**
@@ -218,6 +236,26 @@ export abstract class BaseAIService implements IAIService {
       error instanceof Error ? error.message : 'Unknown error';
     const errorStack = error instanceof Error ? error.stack : undefined;
 
+    // NEW: Check if error is due to cancellation
+    const isCancellation =
+      this.abortController.signal.aborted ||
+      (error instanceof Error &&
+        (error.name === 'AbortError' ||
+          error.message.includes('abort') ||
+          error.message.includes('cancel')));
+
+    if (isCancellation) {
+      this.logger.info(`${serviceProvider} stream cancelled by user`);
+      // We throw an error to stop the generator, but this is an expected "success" case
+      // from the user's perspective. The calling code should catch this and handle it.
+      throw new AIServiceError(
+        `${serviceProvider} stream cancelled`,
+        serviceProvider,
+        undefined,
+        error instanceof Error ? error : undefined,
+      );
+    }
+
     this.logger.error(`${serviceProvider} streaming failed`, {
       error: errorMessage,
       stack: errorStack,
@@ -272,6 +310,12 @@ export abstract class BaseAIService implements IAIService {
   } {
     this.validateMessages(messages);
     const config = this.mergeConfig(options);
+
+    // NEW: Reset abort controller for new stream
+    if (this.abortController.signal.aborted) {
+      this.logger.debug('Creating new AbortController for fresh stream');
+    }
+    this.abortController = new AbortController();
 
     const tools = options.availableTools
       ? convertMCPToolsToProviderTools(

@@ -27,6 +27,10 @@ export class EmptyAIService extends BaseAIService {
    * does not support chat streaming.
    */
   async *streamChat(): AsyncGenerator<string, void, void> {
+    if (this.getAbortSignal().aborted) {
+      this.logger.info('EmptyAIService stream cancelled before starting.');
+      return;
+    }
     yield '';
     throw new AIServiceError(
       `EmptyAIService does not support streaming chat`,

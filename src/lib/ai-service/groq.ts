@@ -78,7 +78,17 @@ export class GroqService extends BaseAIService {
         }),
       );
 
+      if (this.getAbortSignal().aborted) {
+        this.logger.info('Stream aborted before iteration');
+        return;
+      }
+
       for await (const chunk of chatCompletion) {
+        if (this.getAbortSignal().aborted) {
+          this.logger.info('Stream aborted during iteration');
+          break;
+        }
+
         if (chunk.choices[0]?.delta?.reasoning) {
           yield JSON.stringify({ thinking: chunk.choices[0].delta.reasoning });
         } else if (chunk.choices[0]?.delta?.tool_calls) {

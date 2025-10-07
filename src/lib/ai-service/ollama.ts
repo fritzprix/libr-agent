@@ -102,6 +102,16 @@ export class OllamaService extends BaseAIService {
   }
 
   /**
+   * Cancels any ongoing streams by calling the Ollama client's abort method.
+   * This will abort all running requests on the client instance.
+   */
+  public cancel(): void {
+    super.cancel(); // Call base implementation to set the abort signal
+    this.logger.info('Calling Ollama client abort()');
+    this.ollamaClient.abort();
+  }
+
+  /**
    * Fetches the list of available models directly from the Ollama server.
    * It uses the `ollama.list()` API to get the installed models.
    * @returns A promise that resolves to an array of `ModelInfo` objects.
@@ -189,13 +199,27 @@ export class OllamaService extends BaseAIService {
         return await this.ollamaClient.chat(requestOptions);
       });
 
+      if (this.getAbortSignal().aborted) {
+        this.logger.info('Stream aborted before iteration');
+        return;
+      }
+
       for await (const chunk of stream) {
+        if (this.getAbortSignal().aborted) {
+          this.logger.info('Stream aborted during iteration');
+          break;
+        }
         const processedChunk = this.processChunk(chunk);
         if (processedChunk) {
           yield processedChunk;
         }
       }
     } catch (error: unknown) {
+      // AbortError is expected on cancellation, handle it gracefully
+      if (error instanceof Error && error.name === 'AbortError') {
+        this.logger.info('Ollama stream was aborted successfully.');
+        return;
+      }
       this.handleStreamingError(error, { messages, options, config });
     }
   }
