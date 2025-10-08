@@ -1,4 +1,4 @@
-// 기존 create_*_tool 함수들을 기능별로 분리
+// Separate existing create_*_tool functions by feature
 pub mod code_tools;
 pub mod export_tools;
 pub mod file_tools;
@@ -22,6 +22,11 @@ pub fn code_tools() -> Vec<MCPTool> {
         code_tools::create_execute_python_tool(),
         code_tools::create_execute_typescript_tool(),
         code_tools::create_execute_shell_tool(),
+        // Terminal tools
+        code_tools::create_open_new_terminal_tool(),
+        code_tools::create_read_terminal_output_tool(),
+        code_tools::create_close_terminal_tool(),
+        code_tools::create_list_terminals_tool(),
     ]
 }
 

@@ -107,13 +107,48 @@ pub fn boolean_prop(description: Option<&str>) -> JSONSchema {
     }
 }
 
+/// Creates a boolean property schema with a default value
+pub fn boolean_prop_with_default(default: bool, description: Option<&str>) -> JSONSchema {
+    JSONSchema {
+        schema_type: JSONSchemaType::Boolean,
+        title: None,
+        description: description.map(|s| s.to_string()),
+        default: Some(Value::Bool(default)),
+        examples: None,
+        enum_values: None,
+        const_value: None,
+    }
+}
+
+/// Creates an object property schema
+pub fn object_prop(
+    description: Option<&str>,
+    _properties: HashMap<String, JSONSchema>,
+) -> JSONSchema {
+    JSONSchema {
+        schema_type: JSONSchemaType::Object {
+            properties: None,
+            required: None,
+            additional_properties: Some(true),
+            min_properties: None,
+            max_properties: None,
+        },
+        title: None,
+        description: description.map(|s| s.to_string()),
+        default: None,
+        examples: None,
+        enum_values: None,
+        const_value: None,
+    }
+}
+
 /// Creates an object schema with properties and required fields
 pub fn object_schema(properties: HashMap<String, JSONSchema>, required: Vec<String>) -> JSONSchema {
     JSONSchema {
         schema_type: JSONSchemaType::Object {
             properties: Some(properties),
             required: Some(required),
-            additional_properties: Some(false),
+            additional_properties: Some(true),
             min_properties: None,
             max_properties: None,
         },

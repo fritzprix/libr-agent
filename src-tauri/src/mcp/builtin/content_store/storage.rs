@@ -48,6 +48,12 @@ pub struct ContentStoreStorage {
     sqlite_pool: Option<SqlitePool>,
 }
 
+impl Default for ContentStoreStorage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ContentStoreStorage {
     /// Create in-memory storage (default)
     pub fn new() -> Self {

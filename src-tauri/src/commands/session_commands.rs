@@ -244,24 +244,6 @@ pub async fn remove_session(session_id: String) -> Result<SessionResponse, Strin
     })
 }
 
-/// Get session isolation capabilities
-#[command]
-pub async fn get_isolation_capabilities() -> Result<SessionResponse, String> {
-    // This would require access to WorkspaceServer, but for now we'll create a new isolation manager
-    let isolation_manager = crate::session_isolation::SessionIsolationManager::new();
-    let capabilities = isolation_manager.validate_isolation_capabilities().await;
-
-    Ok(SessionResponse {
-        success: true,
-        message: "Retrieved isolation capabilities".to_string(),
-        session_id: None,
-        data: Some(
-            serde_json::to_value(capabilities)
-                .map_err(|e| format!("Failed to serialize capabilities: {e}"))?,
-        ),
-    })
-}
-
 /// Fast session switch - combines cleanup, pool allocation, and switching
 #[command]
 pub async fn fast_session_switch(

@@ -3,11 +3,13 @@ use tauri::Manager;
 use tauri_plugin_log::{Target, TargetKind};
 
 mod commands;
-mod mcp;
+pub mod mcp;
 mod services;
-mod session;
-mod session_isolation;
+pub mod session;
 mod state;
+
+// Public modules
+pub mod terminal_manager;
 
 use commands::browser_commands::*;
 use commands::content_store_commands::delete_content_store;
@@ -23,9 +25,9 @@ use commands::mcp_commands::{
 };
 use commands::session_commands::{
     cleanup_sessions, create_session, fast_session_switch, get_current_session_info,
-    get_current_session_legacy, get_isolation_capabilities, get_session_stats,
-    get_session_workspace_dir, list_all_sessions, list_sessions_legacy, pre_allocate_sessions,
-    remove_session, set_current_session, switch_session,
+    get_current_session_legacy, get_session_stats, get_session_workspace_dir, list_all_sessions,
+    list_sessions_legacy, pre_allocate_sessions, remove_session, set_current_session,
+    switch_session,
 };
 use commands::url_commands::open_external_url;
 use commands::workspace_commands::{
@@ -154,7 +156,6 @@ pub fn run() {
                 cleanup_sessions,
                 remove_session,
                 delete_content_store,
-                get_isolation_capabilities,
                 fast_session_switch,
                 get_app_data_dir,
                 get_app_logs_dir,

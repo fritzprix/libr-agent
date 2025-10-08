@@ -1,5 +1,6 @@
 use async_trait::async_trait;
-use serde_json::Value;
+use serde_json::{from_value, Value};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::info;
 
@@ -8,11 +9,13 @@ use crate::mcp::types::{ServiceContext, ServiceContextOptions};
 use crate::mcp::{MCPResponse, MCPTool};
 use crate::services::SecureFileManager;
 use crate::session::SessionManager;
+use crate::terminal_manager::TerminalManager;
 
 // Module imports
 pub mod code_execution;
 pub mod export_operations;
 pub mod file_operations;
+pub mod terminal_manager;
 pub mod tools;
 pub mod ui_resources;
 pub mod utils;
@@ -20,7 +23,7 @@ pub mod utils;
 #[derive(Debug)]
 pub struct WorkspaceServer {
     session_manager: Arc<SessionManager>,
-    isolation_manager: crate::session_isolation::SessionIsolationManager,
+    terminal_manager: Arc<TerminalManager>,
 }
 
 impl WorkspaceServer {
@@ -28,7 +31,7 @@ impl WorkspaceServer {
         info!("WorkspaceServer using session-based workspace management");
         Self {
             session_manager,
-            isolation_manager: crate::session_isolation::SessionIsolationManager::new(),
+            terminal_manager: Arc::new(TerminalManager::new()),
         }
     }
 
@@ -99,6 +102,80 @@ impl WorkspaceServer {
         }
 
         build_tree(std::path::Path::new(path), "", 0, max_depth)
+    }
+
+    // Terminal handlers
+    pub async fn handle_open_new_terminal(&self, args: Value) -> MCPResponse {
+        let request_id = Self::generate_request_id();
+        let session_id = self.session_manager.get_current_session();
+        let shell: Option<String> = args.get("shell").and_then(|v| v.as_str()).map(String::from);
+        let env: Option<HashMap<String, String>> =
+            from_value(args.get("env").cloned().unwrap_or(Value::Null)).unwrap_or_default();
+
+        match self
+            .terminal_manager
+            .open_new_terminal(session_id, shell, env)
+            .await
+        {
+            Ok(terminal_id) => {
+                let result_val = serde_json::json!({ "terminal_id": terminal_id });
+                MCPResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id: Some(request_id),
+                    result: Some(result_val),
+                    error: None,
+                }
+            }
+            Err(e) => Self::error_response(request_id, -32603, &e),
+        }
+    }
+
+    pub async fn handle_read_terminal_output(&self, args: Value) -> MCPResponse {
+        let request_id = Self::generate_request_id();
+        let terminal_id = match args.get("terminal_id").and_then(|v| v.as_str()) {
+            Some(id) => id,
+            None => return Self::error_response(request_id, -32602, "Missing 'terminal_id'"),
+        };
+        let since_index: Option<usize> = args
+            .get("since_index")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as usize);
+
+        match self
+            .terminal_manager
+            .read_terminal_output(terminal_id, since_index)
+            .await
+        {
+            Ok(result) => {
+                let result_json = serde_json::to_string(&result).unwrap_or_default();
+                Self::success_response(request_id, &result_json)
+            }
+            Err(e) => Self::error_response(request_id, -32603, &e),
+        }
+    }
+
+    pub async fn handle_close_terminal(&self, args: Value) -> MCPResponse {
+        let request_id = Self::generate_request_id();
+        let terminal_id = match args.get("terminal_id").and_then(|v| v.as_str()) {
+            Some(id) => id,
+            None => return Self::error_response(request_id, -32602, "Missing 'terminal_id'"),
+        };
+
+        match self.terminal_manager.close_terminal(terminal_id).await {
+            Ok(_) => {
+                Self::success_response(request_id, &format!("Terminal '{terminal_id}' closed."))
+            }
+            Err(e) => Self::error_response(request_id, -32603, &e),
+        }
+    }
+
+    pub async fn handle_list_terminals(&self, args: Value) -> MCPResponse {
+        let request_id = Self::generate_request_id();
+        let session_id: Option<&str> = args.get("session_id").and_then(|v| v.as_str());
+
+        let summaries = self.terminal_manager.list_terminals(session_id).await;
+        let result_json = serde_json::to_string(&summaries).unwrap_or_default();
+        Self::success_response(request_id, &result_json)
     }
 }
 
@@ -183,6 +260,11 @@ impl BuiltinMCPServer for WorkspaceServer {
             "execute_python" => self.handle_execute_python(args).await,
             "execute_typescript" => self.handle_execute_typescript(args).await,
             "execute_shell" => self.handle_execute_shell(args).await,
+            // Terminal tools
+            "open_new_terminal" => self.handle_open_new_terminal(args).await,
+            "read_terminal_output" => self.handle_read_terminal_output(args).await,
+            "close_terminal" => self.handle_close_terminal(args).await,
+            "list_terminals" => self.handle_list_terminals(args).await,
             // Export tools
             "export_file" => self.handle_export_file(args).await,
             "export_zip" => self.handle_export_zip(args).await,
