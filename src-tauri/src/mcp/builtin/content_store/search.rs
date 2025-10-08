@@ -81,6 +81,48 @@ impl ContentSearchEngine {
         Ok(())
     }
 
+    /// Remove chunks for a specific content ID from the search index
+    pub async fn remove_chunks(&mut self, content_id: &str) -> Result<(), String> {
+        // Find all chunks for this content_id
+        let chunks_to_remove: Vec<String> = self
+            .chunks
+            .iter()
+            .filter(|(_, chunk)| chunk.content_id == content_id)
+            .map(|(id, _)| id.clone())
+            .collect();
+
+        // Remove chunks and update term frequencies
+        for chunk_id in &chunks_to_remove {
+            if let Some(chunk) = self.chunks.remove(chunk_id) {
+                // Update document frequency for each term in this chunk
+                let terms = self.tokenize(&chunk.text);
+                for term in terms {
+                    if let Some(freq) = self.term_doc_freq.get_mut(&term) {
+                        *freq = freq.saturating_sub(1);
+                        // Remove term from frequency map if it reaches 0
+                        if *freq == 0 {
+                            self.term_doc_freq.remove(&term);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Update total document count and average document length
+        self.total_docs = self.chunks.len();
+        self.avg_doc_len = if self.total_docs > 0 {
+            self.chunks
+                .values()
+                .map(|c| c.text.len() as f64)
+                .sum::<f64>()
+                / self.total_docs as f64
+        } else {
+            0.0
+        };
+
+        Ok(())
+    }
+
     /// BM25 search implementation
     pub async fn search_bm25(
         &self,

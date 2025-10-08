@@ -142,7 +142,10 @@ export class GeminiService extends BaseAIService {
           if (validFunctionCalls.length > 0) {
             yield JSON.stringify({
               tool_calls: validFunctionCalls.map((fc: FunctionCall) => {
-                const callId = fc.id && typeof fc.id === 'string' && fc.id.length ? fc.id : this.generateToolCallId();
+                const callId =
+                  fc.id && typeof fc.id === 'string' && fc.id.length
+                    ? fc.id
+                    : this.generateToolCallId();
                 return formatToolCall(callId, fc.name!, fc.args ?? {});
               }),
             });
@@ -242,7 +245,10 @@ export class GeminiService extends BaseAIService {
           const parts = m.tool_calls.map((tc) => {
             const parsed =
               tryParse<Record<string, unknown>>(tc.function.arguments) ?? {};
-            const id = tc.id && typeof tc.id === 'string' ? tc.id : this.generateToolCallId();
+            const id =
+              tc.id && typeof tc.id === 'string'
+                ? tc.id
+                : this.generateToolCallId();
             return createPartFromFunctionResponse(id, tc.function.name, parsed);
           });
           geminiMessages.push({ role: 'user', parts });
@@ -280,7 +286,10 @@ export class GeminiService extends BaseAIService {
           const parts = m.tool_calls.map((tc) => {
             const parsed =
               tryParse<Record<string, unknown>>(tc.function.arguments) ?? {};
-            const id = tc.id && typeof tc.id === 'string' ? tc.id : this.generateToolCallId();
+            const id =
+              tc.id && typeof tc.id === 'string'
+                ? tc.id
+                : this.generateToolCallId();
             return createPartFromFunctionResponse(id, tc.function.name, parsed);
           });
           geminiMessages.push({ role: 'user', parts });
@@ -349,8 +358,12 @@ export class GeminiService extends BaseAIService {
       // Convert tool message into a FunctionResponse part if possible.
       if (message.tool_calls && message.tool_calls.length > 0) {
         const parts = message.tool_calls.map((tc) => {
-          const parsed = tryParse<Record<string, unknown>>(tc.function.arguments) ?? {};
-          const id = tc.id && typeof tc.id === 'string' ? tc.id : this.generateToolCallId();
+          const parsed =
+            tryParse<Record<string, unknown>>(tc.function.arguments) ?? {};
+          const id =
+            tc.id && typeof tc.id === 'string'
+              ? tc.id
+              : this.generateToolCallId();
           return createPartFromFunctionResponse(id, tc.function.name, parsed);
         });
         return {

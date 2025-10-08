@@ -473,6 +473,73 @@ impl ContentStoreServer {
             }),
         )
     }
+
+    pub(crate) async fn handle_delete_content(&self, params: Value) -> MCPResponse {
+        let id = Self::generate_request_id();
+
+        let args: DeleteContentArgs = match serde_json::from_value(params) {
+            Ok(args) => args,
+            Err(e) => {
+                return Self::error_response(
+                    id,
+                    -32602,
+                    &format!("Invalid delete_content parameters: {e}"),
+                );
+            }
+        };
+
+        // Get current session ID from context
+        let session_id = match self.require_active_session(&id) {
+            Ok(session_id) => session_id,
+            Err(error_response) => return *error_response,
+        };
+
+        // Verify the content belongs to the current session
+        let storage = self.storage.lock().await;
+        let content_session_id = match storage.get_content_session_id(&args.content_id) {
+            Some(sid) => sid,
+            None => {
+                return Self::error_response(
+                    id,
+                    -32603,
+                    &format!("Content '{}' not found", args.content_id),
+                );
+            }
+        };
+
+        if content_session_id != session_id {
+            return Self::error_response(
+                id,
+                -32603,
+                &format!(
+                    "Content '{}' does not belong to current session",
+                    args.content_id
+                ),
+            );
+        }
+
+        // Delete from storage
+        let mut storage = self.storage.lock().await;
+        if let Err(e) = storage.delete_content(&args.content_id).await {
+            return Self::error_response(id, -32603, &format!("Failed to delete content: {e}"));
+        }
+
+        // Remove from search index
+        let mut search_engine = self.search_engine.lock().await;
+        if let Err(e) = search_engine.remove_chunks(&args.content_id).await {
+            // Log error but don't fail the operation since content is already deleted
+            error!("Failed to remove content from search index: {e}");
+        }
+
+        Self::dual_response(
+            id,
+            &format!("Content '{}' deleted successfully", args.content_id),
+            serde_json::json!({
+                "contentId": args.content_id,
+                "sessionId": session_id
+            }),
+        )
+    }
 }
 
 #[cfg(test)]

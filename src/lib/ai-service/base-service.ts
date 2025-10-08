@@ -311,10 +311,6 @@ export abstract class BaseAIService implements IAIService {
     this.validateMessages(messages);
     const config = this.mergeConfig(options);
 
-    // NEW: Reset abort controller for new stream
-    if (this.abortController.signal.aborted) {
-      this.logger.debug('Creating new AbortController for fresh stream');
-    }
     this.abortController = new AbortController();
 
     const tools = options.availableTools

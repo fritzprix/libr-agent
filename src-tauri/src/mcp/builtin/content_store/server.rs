@@ -84,6 +84,14 @@ impl ContentStoreServer {
                 output_schema: None,
                 annotations: None,
             },
+            MCPTool {
+                name: "deleteContent".to_string(),
+                title: None,
+                description: "Remove content from a store".to_string(),
+                input_schema: schemas::tool_delete_content_schema(),
+                output_schema: None,
+                annotations: None,
+            },
         ]
     }
 

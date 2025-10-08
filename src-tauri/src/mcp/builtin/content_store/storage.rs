@@ -440,4 +440,34 @@ impl ContentStoreStorage {
 
         Ok(result.trim().to_string())
     }
+
+    pub async fn delete_content(&mut self, content_id: &str) -> Result<(), String> {
+        // Check if content exists
+        if !self.contents.contains_key(content_id) {
+            return Err(format!("Content '{content_id}' not found"));
+        }
+
+        // Remove from in-memory storage
+        self.contents.remove(content_id);
+        self.chunks.remove(content_id);
+
+        // SQLite backend
+        if let Some(pool) = &self.sqlite_pool {
+            // Delete chunks first (due to foreign key constraint)
+            sqlx::query("DELETE FROM chunks WHERE content_id = ?")
+                .bind(content_id)
+                .execute(pool)
+                .await
+                .map_err(|e| format!("Failed to delete chunks from SQLite: {e}"))?;
+
+            // Delete content
+            sqlx::query("DELETE FROM contents WHERE id = ?")
+                .bind(content_id)
+                .execute(pool)
+                .await
+                .map_err(|e| format!("Failed to delete content from SQLite: {e}"))?;
+        }
+
+        Ok(())
+    }
 }

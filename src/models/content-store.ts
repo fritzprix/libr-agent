@@ -155,15 +155,6 @@ export interface SearchOptions {
 }
 
 /**
- * Arguments for keyword similarity search
- */
-export interface KeywordSimilaritySearchArgs {
-  sessionId: string;
-  query: string;
-  options?: SearchOptions;
-}
-
-/**
  * Search result item
  */
 export interface SearchResult {
@@ -175,10 +166,34 @@ export interface SearchResult {
 }
 
 /**
+ * Arguments for keyword similarity search
+ */
+export interface KeywordSimilaritySearchArgs {
+  sessionId: string;
+  query: string;
+  options?: SearchOptions;
+}
+
+/**
  * Response from keyword similarity search
  */
 export interface KeywordSimilaritySearchResponse {
   results: SearchResult[];
+}
+
+/**
+ * Arguments for deleting content
+ */
+export interface DeleteContentArgs {
+  contentId: string;
+}
+
+/**
+ * Response from deleting content
+ */
+export interface DeleteContentResponse {
+  contentId: string;
+  sessionId: string;
 }
 
 /**
@@ -193,6 +208,7 @@ export interface ContentStoreServerProxy extends BaseRustMCPServerProxy {
   keywordSimilaritySearch: (
     args: KeywordSimilaritySearchArgs,
   ) => Promise<KeywordSimilaritySearchResponse>;
+  deleteContent: (args: DeleteContentArgs) => Promise<DeleteContentResponse>;
 }
 
 /**
