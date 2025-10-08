@@ -93,18 +93,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
     };
   }, []);
 
-  // Routine to initialize streamingMessage on session change (to resolve timing issues)
-  useEffect(() => {
-    if (currentSession?.id) {
-      logger.debug('Session changed, ensuring streamingMessage is cleared', {
-        newSessionId: currentSession.id,
-      });
-      setStreamingMessage(null); // Always initialize on session change
-      setPendingCancel(false); // Reset cancel state
-      setMessageQueue([]); // Reset message queue
-    }
-  }, [currentSession?.id]); // Run when currentSession?.id changes
-
   const buildSystemPrompt = useCallback(async (): Promise<string> => {
     const basePrompt = currentAssistant?.systemPrompt || DEFAULT_SYSTEM_PROMPT;
     const extensionPrompt = await getSystemPrompt();
@@ -219,7 +207,32 @@ export function ChatProvider({ children }: ChatProviderProps) {
     submit: triggerAIService,
     isLoading: aiServiceLoading,
     response,
+    cancel: cancelAIService,
   } = useAIService(aiServiceConfig);
+
+  // Routine to initialize streamingMessage on session change (to resolve timing issues)
+  useEffect(() => {
+    // Always cancel any in-flight AI stream when session changes (including null)
+    logger.info('Session changed, cancelling active AI streams', {
+      newSessionId: currentSession?.id ?? null,
+    });
+
+    try {
+      cancelAIService?.();
+    } catch (err) {
+      logger.warn('AI service cancel() threw error during session switch', {
+        err,
+      });
+    }
+
+    // reset internal cancel flag used to block submits
+    cancelRequestRef.current = false;
+
+    // Clear streaming and queue state to avoid stray UI
+    setStreamingMessage(null);
+    setPendingCancel(false);
+    setMessageQueue([]);
+  }, [currentSession?.id, cancelAIService]); // Run when currentSession?.id changes
 
   // Combine history with streaming message, avoiding duplicates
   const messages = useMemo(() => {
@@ -317,7 +330,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         if (messageToAdd?.length) {
           const messagesWithSession = messageToAdd.map((m) => ({
             ...m,
-            sessionId: currentSession.id,
+            sessionId: m.sessionId ?? currentSession.id,
           }));
           if (typeof addMessages === 'function') {
             await addMessages(messagesWithSession);
@@ -487,11 +500,18 @@ export function ChatProvider({ children }: ChatProviderProps) {
     setPendingCancel(true);
     cancelRequestRef.current = true;
 
+    // Call the AI service cancel if available to abort in-flight streams
+    try {
+      cancelAIService?.();
+    } catch (err) {
+      logger.warn('AI service cancel threw an error', { err });
+    }
+
     // Reset pendingCancel after a delay to show visual feedback
     setTimeout(() => {
       setPendingCancel(false);
     }, 1000);
-  }, []);
+  }, [cancelAIService]);
 
   // Tool processor will be initialized after submit is defined
   const { processToolCalls, isProcessing } = useToolProcessor({

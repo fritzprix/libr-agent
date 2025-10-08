@@ -314,5 +314,12 @@ export const useAIService = (config?: AIServiceConfig) => {
     [model, provider, config, serviceInstance],
   );
 
-  return { response, isLoading, error, submit };
+  const cancel = useCallback(() => {
+    logger.info('Cancelling AI service request');
+    serviceInstance.cancel();
+    setIsLoading(false);
+    setError(null);
+  }, [serviceInstance]);
+
+  return { response, isLoading, error, submit, cancel };
 };

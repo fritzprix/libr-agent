@@ -103,10 +103,10 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
     (messagesToAdd: Message[]): Promise<Message[]> => {
       if (!currentSession) throw new Error('No active session.');
       messagesToAdd.forEach(validateMessage);
-      const messagesWithSessionId = messagesToAdd.map((m) => ({
-        ...m,
-        sessionId: currentSession.id,
-      }));
+      const messagesWithSessionId = messagesToAdd.map((m) => {
+        if (!m.sessionId) return { ...m, sessionId: currentSession.id };
+        return m; // Preserve existing sessionId from origin
+      });
 
       const previousData = data;
 
