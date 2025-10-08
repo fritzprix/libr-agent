@@ -104,7 +104,7 @@ pub fn create_execute_shell_tool() -> MCPTool {
             Some(1),
             Some(1000),
             Some("Shell command to execute"),
-            vec![json!("ls -la"), json!("grep -r 'pattern' .")],
+            vec![json!("ls -la"), json!("echo 'Hello from workspace'")],
         ),
     );
     props.insert(

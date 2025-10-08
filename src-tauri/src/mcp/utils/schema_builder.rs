@@ -95,6 +95,9 @@ pub fn integer_prop_with_default(
 }
 
 /// Creates a boolean property schema
+// This helper may be unused in some toolsets but is kept for completeness.
+// Allow dead_code to avoid warnings in builds where it's not referenced.
+#[allow(dead_code)]
 pub fn boolean_prop(description: Option<&str>) -> JSONSchema {
     JSONSchema {
         schema_type: JSONSchemaType::Boolean,

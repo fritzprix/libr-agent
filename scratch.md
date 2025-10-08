@@ -1,56 +1,14 @@
-# Built-In Tools의 관리 구조 개선
+# Workspace의 Terminal 및 Code Interpreter 도구 개선
 
-- session에 따라 도구의 상태를 관리해야 되는 경우가 많음
-- 이를 공통으로 제공하기 위해 #BuiltInService에 아래와 같이 type 추가
+- 현재
+  - execute_* tool은 모두 synchronous operation만을 지원하고 있음, timeout을 지원하고 있으나 기다리는 동안 AI Agent는 아무것도 하지 못함
+  - workspace를 제공하고 있으나 terminal의 환경 변수 등 설정이 유지되지 않음, 이로 인해 점진적 terminal 환경을 셋업하기 어려움
 
-  ```ts
-  interface SwitchSessionOptions {
-    sessionId: string;
-  }
-  export interface BuiltInService {
-    metadata: ServiceMetadata;
-    listTools: () => MCPTool[];
-    executeTool: (toolCall: ToolCall) => Promise<MCPResponse<unknown>>;
-    loadService?: () => Promise<void>;
-    unloadService?: () => Promise<void>;
-    getServiceContext?: (options?: ServiceContextOptions) => Promise<string>;
-    switchSession: ({ sessionId }) => Promise<void>;
-  }
-  ```
+- ToBe
+  - Terminal session을 관리하는 기능을 추가
+  - open_new_terminal() => terminal_id
+  - execute_*에서 반드시 이 terminal_id를 사용하도록
+  - execute_*는 async 옵션을 통해 sync 동작 및 async 동작 모두를 지원
+  - terminal 의 출력을 읽어 올 수 있는 read_terminal_output을 제공, 비동기적 처리 결과를 ai agent가 확인할 수 있음
+  - close_terminal, list_terminal 등 session 관리 도구 추가
 
-- 모든 built-in 도구들은 새롭게 session에 따라 상태를 관리할 수 있는 interface를 추가 (혹은 기존에 유사한 기능이 있었으면 이를 switchSession으로 migration)
-
-## Session의 전환과 switchSession의 처리
-
-- useSession hook을 BuiltInToolProvider에서 구독
-- session의 변화 시 useEffect에서 switchSession을 일괄적으로 호출
-
-## Legacy의 제거
-
-- 기존 setContext / setServerContext 등의 별도 interface가 있었으나 새로운 switchSession으로 migration을 통해 하나의 일관된 interface로 통합
-
-## getServiceContext의 개선
-
-- `getServiceContext -> Promise<string>`은 각 도구의 state를 가져오는데 제한적
-- string과 함께 structured state를 가져올 수 있도록 getServiceContext의 return type을 변경한다
-
-  ```ts
-  interface ServiceContext<T> {
-    contextPrompt: string;
-    structuredState: T;
-  }
-  ```
-
-- `getServiceContext -> Promise<ServiceContext<T>>`로 변경하고 각 built-in tools의 getServiceContext 구현을 수정한다.
-- 이 structuredState와 관련하여 현재 UI에서 상태 시각화를 담당하는 아래 코드들을 검토할 것
-  - #file:ChatPlanningPanel.tsx
-  - #file:WorkspaceFilesPanel.tsx
-  - #file:SessionFilesPopover.tsx
-- 각 도구의 상태를 UI에 시각화 하기 위해 BuiltInToolContextType에는 serviceContext: Record<string, unknown>을 추가
-  - 이 상태는 아래 UI 요소에서 시각화 하기 위한 도구 상태를 가져가기 위해 사용됨
-    - #file:ChatPlanningPanel.tsx
-    - #file:WorkspaceFilesPanel.tsx
-    - #file:SessionFilesPopover.tsx
-
-- BuiltInToolProvider에서는 buildToolPrompt가 호출될 때 getServiceContext를 호출하게 되며 이때 반환된 값 중 structuredState를 이용하여 언급한 serviceContext를 갱신함.
-- serviceContext를 쉽게 구독할 수 있도록 useServiceContext<T>(serviceName)를 추가
