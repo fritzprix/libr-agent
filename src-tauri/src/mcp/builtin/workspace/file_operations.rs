@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use tokio::fs;
 use tracing::{error, info};
 
+#[allow(dead_code)]
 impl WorkspaceServer {
     fn validate_path_with_error(
         &self,

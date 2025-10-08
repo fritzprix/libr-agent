@@ -47,6 +47,7 @@ regex = "1"
 cuid2 = "0.1.4"
 dirs = "5.0"
 zip = "0.6"
+boa_engine = "0.20"
 
 # File parsing dependencies
 docx-rs = "0.4"           # DOCX parsing
