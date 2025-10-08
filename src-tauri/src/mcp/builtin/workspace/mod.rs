@@ -13,14 +13,18 @@ use crate::session::SessionManager;
 pub mod code_execution;
 pub mod export_operations;
 pub mod file_operations;
+pub mod terminal_manager;
+pub mod terminal_operations;
 pub mod tools;
 pub mod ui_resources;
 pub mod utils;
+use terminal_manager::TerminalManager;
 
 #[derive(Debug)]
 pub struct WorkspaceServer {
     session_manager: Arc<SessionManager>,
     isolation_manager: crate::session_isolation::SessionIsolationManager,
+    terminal_manager: Arc<TerminalManager>,
 }
 
 impl WorkspaceServer {
@@ -29,6 +33,7 @@ impl WorkspaceServer {
         Self {
             session_manager,
             isolation_manager: crate::session_isolation::SessionIsolationManager::new(),
+            terminal_manager: Arc::new(TerminalManager::new()),
         }
     }
 
@@ -117,32 +122,36 @@ impl BuiltinMCPServer for WorkspaceServer {
         tools.extend(tools::file_tools());
         tools.extend(tools::code_tools());
         tools.extend(tools::export_tools());
+        tools.extend(tools::terminal_tools());
         tools
     }
 
     fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
-        // Get session-specific workspace directory
         let workspace_dir_path = self.get_workspace_dir();
         let workspace_dir = workspace_dir_path.to_string_lossy().to_string();
-
-        // Generate directory tree (2 levels deep)
         let tree_output = self.get_workspace_tree(&workspace_dir, 2);
 
-        info!(
-            "Workspace service context - workspace_dir: {}, tree_output length: {}",
-            workspace_dir,
-            tree_output.len()
-        );
+        // Get active terminals summary
+        let terminals =
+            tokio::runtime::Handle::current().block_on(self.terminal_manager.list_terminals(None));
 
         let context_prompt = format!(
-            "workspace: Active, {} tools, dir: {}",
+            "workspace: Active, {} tools, dir: {}, terminals: {}\n{}",
             self.tools().len(),
-            workspace_dir
+            workspace_dir,
+            terminals.len(),
+            tree_output
         );
+
+        let structured_state = serde_json::json!({
+            "workspace_dir": workspace_dir,
+            "directory_listing": tree_output,
+            "active_terminals": terminals,
+        });
 
         ServiceContext {
             context_prompt,
-            structured_state: Some(Value::String(workspace_dir)),
+            structured_state: Some(structured_state),
         }
     }
 
@@ -183,6 +192,11 @@ impl BuiltinMCPServer for WorkspaceServer {
             "execute_python" => self.handle_execute_python(args).await,
             "execute_typescript" => self.handle_execute_typescript(args).await,
             "execute_shell" => self.handle_execute_shell(args).await,
+            // Terminal tools
+            "open_terminal" => self.handle_open_terminal(args).await,
+            "close_terminal" => self.handle_close_terminal(args).await,
+            "read_terminal" => self.handle_read_terminal(args).await,
+            "list_terminals" => self.handle_list_terminals(args).await,
             // Export tools
             "export_file" => self.handle_export_file(args).await,
             "export_zip" => self.handle_export_zip(args).await,

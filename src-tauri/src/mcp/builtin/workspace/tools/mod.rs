@@ -2,6 +2,7 @@
 pub mod code_tools;
 pub mod export_tools;
 pub mod file_tools;
+pub mod terminal_tools;
 
 use crate::mcp::MCPTool;
 
@@ -29,5 +30,14 @@ pub fn export_tools() -> Vec<MCPTool> {
     vec![
         export_tools::create_export_file_tool(),
         export_tools::create_export_zip_tool(),
+    ]
+}
+
+pub fn terminal_tools() -> Vec<MCPTool> {
+    vec![
+        terminal_tools::create_open_terminal_tool(),
+        terminal_tools::create_close_terminal_tool(),
+        terminal_tools::create_read_terminal_tool(),
+        terminal_tools::create_list_terminals_tool(),
     ]
 }

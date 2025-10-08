@@ -23,8 +23,22 @@ pub fn create_execute_python_tool() -> MCPTool {
             Some(1),
             Some(MAX_EXECUTION_TIMEOUT as i64),
             DEFAULT_EXECUTION_TIMEOUT as i64,
-            Some("Timeout in seconds (default: 30)"),
+            Some("Timeout in seconds for synchronous execution (default: 30)"),
         ),
+    );
+    props.insert(
+        "terminal_id".to_string(),
+        string_prop(
+            Some(1),
+            Some(100),
+            Some("If provided, runs the code in an existing terminal, enabling asynchronous execution."),
+        ),
+    );
+    props.insert(
+        "async".to_string(),
+        boolean_prop(Some(
+            "If true, runs the code in a new asynchronous terminal.",
+        )),
     );
 
     MCPTool {
@@ -54,8 +68,22 @@ pub fn create_execute_typescript_tool() -> MCPTool {
             Some(1),
             Some(MAX_EXECUTION_TIMEOUT as i64),
             DEFAULT_EXECUTION_TIMEOUT as i64,
-            Some("Timeout in seconds (default: 30)"),
+            Some("Timeout in seconds for synchronous execution (default: 30)"),
         ),
+    );
+    props.insert(
+        "terminal_id".to_string(),
+        string_prop(
+            Some(1),
+            Some(100),
+            Some("If provided, runs the code in an existing terminal, enabling asynchronous execution."),
+        ),
+    );
+    props.insert(
+        "async".to_string(),
+        boolean_prop(Some(
+            "If true, runs the code in a new asynchronous terminal.",
+        )),
     );
 
     MCPTool {
@@ -85,8 +113,22 @@ pub fn create_execute_shell_tool() -> MCPTool {
             Some(1),
             Some(MAX_EXECUTION_TIMEOUT as i64),
             DEFAULT_EXECUTION_TIMEOUT as i64,
-            Some("Timeout in seconds (default: 30)"),
+            Some("Timeout in seconds for synchronous execution (default: 30)"),
         ),
+    );
+    props.insert(
+        "terminal_id".to_string(),
+        string_prop(
+            Some(1),
+            Some(100),
+            Some("If provided, runs the command in an existing terminal, enabling asynchronous execution."),
+        ),
+    );
+    props.insert(
+        "async".to_string(),
+        boolean_prop(Some(
+            "If true, runs the command in a new asynchronous terminal.",
+        )),
     );
     props.insert(
         "working_dir".to_string(),

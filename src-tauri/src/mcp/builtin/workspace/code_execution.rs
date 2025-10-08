@@ -142,46 +142,9 @@ impl WorkspaceServer {
 
         // Execute command with timeout
         let timeout_duration = Duration::from_secs(timeout_secs.min(MAX_EXECUTION_TIMEOUT));
-        let execution_result = timeout(timeout_duration, cmd.output()).await;
-
-        // Process execution result
-        match execution_result {
+        match timeout(timeout_duration, cmd.output()).await {
             Ok(Ok(output)) => {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                let success = output.status.success();
-                let exit_code = output.status.code().unwrap_or(-1);
-
-                let result_text = if success {
-                    if stdout.trim().is_empty() && stderr.trim().is_empty() {
-                        format!("{language} code executed successfully (no output)")
-                    } else if stderr.trim().is_empty() {
-                        format!("Output:\n{}", stdout.trim())
-                    } else {
-                        format!(
-                            "Output:\n{}\n\nWarnings/Errors:\n{}",
-                            stdout.trim(),
-                            stderr.trim()
-                        )
-                    }
-                } else {
-                    format!(
-                        "Execution failed (exit code: {}):\nSTDOUT:\n{}\n\nSTDERR:\n{}",
-                        exit_code,
-                        stdout.trim(),
-                        stderr.trim()
-                    )
-                };
-
-                info!(
-                    "Isolated {} code execution completed. Session: {}, Success: {}, Output length: {}",
-                    language,
-                    session_id,
-                    success,
-                    result_text.len()
-                );
-
-                Self::success_response(request_id, &result_text)
+                utils::format_sync_execution_output(request_id, &output, language, &session_id)
             }
             Ok(Err(e)) => Self::error_response(
                 request_id,
@@ -242,42 +205,9 @@ impl WorkspaceServer {
 
         // Execute command with timeout
         let timeout_duration = Duration::from_secs(timeout_secs);
-        let execution_result = timeout(timeout_duration, cmd.output()).await;
-
-        match execution_result {
+        match timeout(timeout_duration, cmd.output()).await {
             Ok(Ok(output)) => {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                let success = output.status.success();
-                let exit_code = output.status.code().unwrap_or(-1);
-
-                let result_text = if success {
-                    if stdout.trim().is_empty() && stderr.trim().is_empty() {
-                        "Command executed successfully (no output)".to_string()
-                    } else if stderr.trim().is_empty() {
-                        format!("Command executed successfully:\n{}", stdout.trim())
-                    } else {
-                        format!(
-                            "Command executed successfully:\nSTDOUT:\n{}\n\nSTDERR:\n{}",
-                            stdout.trim(),
-                            stderr.trim()
-                        )
-                    }
-                } else {
-                    format!(
-                        "Command failed with exit code {}:\nSTDOUT:\n{}\n\nSTDERR:\n{}",
-                        exit_code,
-                        stdout.trim(),
-                        stderr.trim()
-                    )
-                };
-
-                info!(
-                    "Isolated shell command executed: {} (session: {}, exit: {})",
-                    command, session_id, exit_code
-                );
-
-                Self::success_response(request_id, &result_text)
+                utils::format_sync_execution_output(request_id, &output, "shell", &session_id)
             }
             Ok(Err(e)) => {
                 error!(
@@ -423,6 +353,190 @@ impl WorkspaceServer {
         normalized
     }
 
+    /// ASYNC: Execute code in a new terminal.
+    async fn execute_code_async(
+        &self,
+        code: &str,
+        language: &str,
+        isolation_level: IsolationLevel,
+    ) -> MCPResponse {
+        let request_id = Self::generate_request_id();
+        let session_id = self
+            .session_manager
+            .get_current_session()
+            .unwrap_or_else(|| "default".to_string());
+        let workspace_path = self.get_workspace_dir();
+
+        let temp_dir = match TempDir::new() {
+            Ok(dir) => dir,
+            Err(e) => {
+                return Self::error_response(
+                    request_id,
+                    -32603,
+                    &format!("Failed to create temp dir: {e}"),
+                )
+            }
+        };
+
+        let (command, args, file_extension) = match language {
+            "python" => ("python3", vec![], ".py"),
+            "typescript" => {
+                if !self.is_deno_available().await {
+                    return Self::error_response(request_id, -32603, "Deno not available");
+                }
+                (
+                    "deno",
+                    vec![
+                        "run",
+                        "--allow-read",
+                        "--allow-write",
+                        "--allow-net",
+                        "--quiet",
+                    ],
+                    ".ts",
+                )
+            }
+            _ => {
+                return Self::error_response(
+                    request_id,
+                    -32602,
+                    &format!("Unsupported language: {language}"),
+                )
+            }
+        };
+
+        let script_path = temp_dir.path().join(format!("script{file_extension}"));
+        if let Err(e) = tokio::fs::write(&script_path, code).await {
+            return Self::error_response(
+                request_id,
+                -32603,
+                &format!("Failed to write script: {e}"),
+            );
+        }
+
+        let mut process_args = args.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        process_args.push(script_path.to_string_lossy().to_string());
+
+        match self
+            .terminal_manager
+            .open_terminal(
+                command.to_string(),
+                process_args,
+                Some(workspace_path),
+                HashMap::new(),
+                isolation_level,
+                session_id,
+                &self.isolation_manager,
+            )
+            .await
+        {
+            Ok(terminal_id) => {
+                let result = serde_json::json!({
+                    "status": "started",
+                    "terminal_id": terminal_id,
+                });
+                Self::success_response(request_id, &result.to_string())
+            }
+            Err(e) => {
+                Self::error_response(request_id, -32603, &format!("Failed to open terminal: {e}"))
+            }
+        }
+    }
+
+    /// ASYNC: Execute code in an existing terminal.
+    async fn execute_code_in_terminal(
+        &self,
+        terminal_id: &str,
+        code: &str,
+        language: &str,
+        isolation_level: IsolationLevel,
+    ) -> MCPResponse {
+        let request_id = Self::generate_request_id();
+        let session_id = self
+            .session_manager
+            .get_current_session()
+            .unwrap_or_else(|| "default".to_string());
+        let workspace_path = self.get_workspace_dir();
+
+        let temp_dir = match TempDir::new() {
+            Ok(dir) => dir,
+            Err(e) => {
+                return Self::error_response(
+                    request_id,
+                    -32603,
+                    &format!("Failed to create temp dir: {e}"),
+                )
+            }
+        };
+
+        let (command, args, file_extension) = match language {
+            "python" => ("python3", vec![], ".py"),
+            "typescript" => {
+                if !self.is_deno_available().await {
+                    return Self::error_response(request_id, -32603, "Deno not available");
+                }
+                (
+                    "deno",
+                    vec![
+                        "run",
+                        "--allow-read",
+                        "--allow-write",
+                        "--allow-net",
+                        "--quiet",
+                    ],
+                    ".ts",
+                )
+            }
+            _ => {
+                return Self::error_response(
+                    request_id,
+                    -32602,
+                    &format!("Unsupported language: {language}"),
+                )
+            }
+        };
+
+        let script_path = temp_dir.path().join(format!("script{file_extension}"));
+        if let Err(e) = tokio::fs::write(&script_path, code).await {
+            return Self::error_response(
+                request_id,
+                -32603,
+                &format!("Failed to write script: {e}"),
+            );
+        }
+
+        let mut process_args = args.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        process_args.push(script_path.to_string_lossy().to_string());
+
+        match self
+            .terminal_manager
+            .attach_process_to_terminal(
+                terminal_id,
+                command.to_string(),
+                process_args,
+                Some(workspace_path),
+                HashMap::new(),
+                isolation_level,
+                session_id,
+                &self.isolation_manager,
+            )
+            .await
+        {
+            Ok(_) => {
+                let result = serde_json::json!({
+                    "status": "restarted",
+                    "terminal_id": terminal_id,
+                });
+                Self::success_response(request_id, &result.to_string())
+            }
+            Err(e) => Self::error_response(
+                request_id,
+                -32603,
+                &format!("Failed to attach to terminal: {e}"),
+            ),
+        }
+    }
+
     pub async fn handle_execute_python(&self, args: Value) -> MCPResponse {
         let request_id = Self::generate_request_id();
 
@@ -446,19 +560,22 @@ impl WorkspaceServer {
         }
 
         let timeout_secs = utils::validate_timeout(args.get("timeout").and_then(|v| v.as_u64()));
+        let isolation_level = utils::parse_isolation_level(args.get("isolation"));
+        let is_async = args.get("async").and_then(|v| v.as_bool()).unwrap_or(false);
 
-        // Determine isolation level based on arguments or default to Medium
-        let isolation_level = args
-            .get("isolation")
-            .and_then(|v| v.as_str())
-            .map(|level| match level {
-                "basic" => IsolationLevel::Basic,
-                "high" => IsolationLevel::High,
-                _ => IsolationLevel::Medium,
-            })
-            .unwrap_or(IsolationLevel::Medium);
+        if let Some(terminal_id) = args.get("terminal_id").and_then(|v| v.as_str()) {
+            return self
+                .execute_code_in_terminal(terminal_id, &normalized_code, "python", isolation_level)
+                .await;
+        }
 
-        // Use new isolation-aware execution
+        if is_async {
+            return self
+                .execute_code_async(&normalized_code, "python", isolation_level)
+                .await;
+        }
+
+        // Default to original synchronous execution
         self.execute_code_with_isolation(&normalized_code, "python", isolation_level, timeout_secs)
             .await
     }
@@ -486,19 +603,27 @@ impl WorkspaceServer {
         }
 
         let timeout_secs = utils::validate_timeout(args.get("timeout").and_then(|v| v.as_u64()));
+        let isolation_level = utils::parse_isolation_level(args.get("isolation"));
+        let is_async = args.get("async").and_then(|v| v.as_bool()).unwrap_or(false);
 
-        // Determine isolation level based on arguments or default to Medium
-        let isolation_level = args
-            .get("isolation")
-            .and_then(|v| v.as_str())
-            .map(|level| match level {
-                "basic" => IsolationLevel::Basic,
-                "high" => IsolationLevel::High,
-                _ => IsolationLevel::Medium,
-            })
-            .unwrap_or(IsolationLevel::Medium);
+        if let Some(terminal_id) = args.get("terminal_id").and_then(|v| v.as_str()) {
+            return self
+                .execute_code_in_terminal(
+                    terminal_id,
+                    &normalized_code,
+                    "typescript",
+                    isolation_level,
+                )
+                .await;
+        }
 
-        // Use new isolation-aware execution
+        if is_async {
+            return self
+                .execute_code_async(&normalized_code, "typescript", isolation_level)
+                .await;
+        }
+
+        // Default to original synchronous execution
         self.execute_code_with_isolation(
             &normalized_code,
             "typescript",
@@ -506,6 +631,114 @@ impl WorkspaceServer {
             timeout_secs,
         )
         .await
+    }
+
+    /// ASYNC: Execute a shell command in a new terminal.
+    async fn execute_shell_async(
+        &self,
+        command: &str,
+        isolation_level: IsolationLevel,
+    ) -> MCPResponse {
+        let request_id = Self::generate_request_id();
+        let session_id = self
+            .session_manager
+            .get_current_session()
+            .unwrap_or_else(|| "default".to_string());
+        let workspace_path = self.get_workspace_dir();
+
+        let parts = match shell_words::split(command) {
+            Ok(p) => p,
+            Err(e) => {
+                return Self::error_response(request_id, -32602, &format!("Invalid command: {e}"))
+            }
+        };
+
+        if parts.is_empty() {
+            return Self::error_response(request_id, -32602, "Empty command provided");
+        }
+
+        let (cmd, args) = parts.split_first().unwrap();
+
+        match self
+            .terminal_manager
+            .open_terminal(
+                cmd.to_string(),
+                args.to_vec(),
+                Some(workspace_path),
+                HashMap::new(),
+                isolation_level,
+                session_id,
+                &self.isolation_manager,
+            )
+            .await
+        {
+            Ok(terminal_id) => {
+                let result = serde_json::json!({
+                    "status": "started",
+                    "terminal_id": terminal_id,
+                });
+                Self::success_response(request_id, &result.to_string())
+            }
+            Err(e) => {
+                Self::error_response(request_id, -32603, &format!("Failed to open terminal: {e}"))
+            }
+        }
+    }
+
+    /// ASYNC: Execute a shell command in an existing terminal.
+    async fn execute_shell_in_terminal(
+        &self,
+        terminal_id: &str,
+        command: &str,
+        isolation_level: IsolationLevel,
+    ) -> MCPResponse {
+        let request_id = Self::generate_request_id();
+        let session_id = self
+            .session_manager
+            .get_current_session()
+            .unwrap_or_else(|| "default".to_string());
+        let workspace_path = self.get_workspace_dir();
+
+        let parts = match shell_words::split(command) {
+            Ok(p) => p,
+            Err(e) => {
+                return Self::error_response(request_id, -32602, &format!("Invalid command: {e}"))
+            }
+        };
+
+        if parts.is_empty() {
+            return Self::error_response(request_id, -32602, "Empty command provided");
+        }
+
+        let (cmd, args) = parts.split_first().unwrap();
+
+        match self
+            .terminal_manager
+            .attach_process_to_terminal(
+                terminal_id,
+                cmd.to_string(),
+                args.to_vec(),
+                Some(workspace_path),
+                HashMap::new(),
+                isolation_level,
+                session_id,
+                &self.isolation_manager,
+            )
+            .await
+        {
+            Ok(_) => {
+                let result = serde_json::json!({
+                    "status": "restarted",
+                    "terminal_id": terminal_id,
+                });
+                Self::success_response(request_id, &result.to_string())
+            }
+            Err(e) => Self::error_response(
+                request_id,
+                -32603,
+                &format!("Failed to attach to terminal: {e}"),
+            ),
+        }
     }
 
     pub async fn handle_execute_shell(&self, args: Value) -> MCPResponse {
@@ -523,19 +756,19 @@ impl WorkspaceServer {
         };
 
         let timeout_secs = utils::validate_timeout(args.get("timeout").and_then(|v| v.as_u64()));
+        let isolation_level = utils::parse_isolation_level(args.get("isolation"));
+        let is_async = args.get("async").and_then(|v| v.as_bool()).unwrap_or(false);
 
-        // Determine isolation level based on arguments or default to Medium
-        let isolation_level = args
-            .get("isolation")
-            .and_then(|v| v.as_str())
-            .map(|level| match level {
-                "basic" => IsolationLevel::Basic,
-                "high" => IsolationLevel::High,
-                _ => IsolationLevel::Medium,
-            })
-            .unwrap_or(IsolationLevel::Medium);
+        if let Some(terminal_id) = args.get("terminal_id").and_then(|v| v.as_str()) {
+            return self
+                .execute_shell_in_terminal(terminal_id, raw_command, isolation_level)
+                .await;
+        }
 
-        // Use new isolation-aware shell execution
+        if is_async {
+            return self.execute_shell_async(raw_command, isolation_level).await;
+        }
+
         self.execute_shell_with_isolation(raw_command, isolation_level, timeout_secs)
             .await
     }
