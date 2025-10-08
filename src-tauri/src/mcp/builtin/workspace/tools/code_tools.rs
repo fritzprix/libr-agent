@@ -19,8 +19,12 @@ pub fn create_execute_shell_tool() -> MCPTool {
         string_prop_with_examples(
             Some(1),
             Some(1000),
-            Some("Shell command to execute"),
-            vec![json!("ls -la"), json!("grep -r 'pattern' .")],
+            Some("Shell command to execute (POSIX sh compatible)"),
+            vec![
+                json!("ls -la"),
+                json!("grep -r 'pattern' ."),
+                json!(". script.sh"),
+            ],
         ),
     );
     props.insert(
@@ -39,7 +43,7 @@ pub fn create_execute_shell_tool() -> MCPTool {
     MCPTool {
         name: "execute_shell".to_string(),
         title: Some("Execute Shell Command".to_string()),
-        description: "Execute a shell command in a sandboxed environment".to_string(),
+        description: "Execute a shell command in a sandboxed environment using POSIX sh shell. Note: bash-specific commands like 'source' are not available - use '.' instead for sourcing files. Only basic POSIX shell features are supported.".to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),
         output_schema: None,
         annotations: None,
@@ -70,7 +74,7 @@ pub fn create_eval_javascript_tool() -> MCPTool {
     MCPTool {
         name: "eval_javascript".to_string(),
         title: Some("Evaluate JavaScript Code".to_string()),
-        description: "Evaluate JavaScript code using the Boa JavaScript engine".to_string(),
+        description: "Evaluate pure JavaScript code using the Boa JavaScript engine. Only standard JavaScript features are available - no access to file system, network, or MCP tools.".to_string(),
         input_schema: object_schema(props, vec!["code".to_string()]),
         output_schema: None,
         annotations: None,

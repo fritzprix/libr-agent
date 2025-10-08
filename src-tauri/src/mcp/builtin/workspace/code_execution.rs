@@ -247,6 +247,9 @@ impl WorkspaceServer {
                 // Create a new Boa context for JavaScript execution in blocking task
                 let mut context = Context::default();
 
+                // Initialize console object for better JavaScript experience
+                let _ = context.eval(Source::from_bytes(b"globalThis.console = { log: function(...args) { /* logs are captured by Boa */ } };"));
+
                 match context.eval(Source::from_bytes(&raw_code)) {
                     Ok(result) => {
                         // Try to convert the result to a string representation

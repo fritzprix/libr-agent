@@ -4,8 +4,6 @@ import {
   MessageSquare,
   Settings,
   Users,
-  Wrench,
-  TestTube,
 } from 'lucide-react';
 import React, { useEffect, useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
@@ -141,61 +139,6 @@ export default function AppSidebar() {
                   >
                     <History size={16} />
                     <span>Search History</span>
-                  </SidebarMenuButton>
-                </Link>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        {/* Test Section */}
-        <SidebarGroup>
-          <SidebarGroupLabel className="text-sm font-semibold uppercase tracking-wide mb-2">
-            Testing
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <Link to="/tools/test">
-                  <SidebarMenuButton
-                    isActive={location.pathname === '/tools/test'}
-                    tooltip="Test Tools"
-                  >
-                    <Wrench size={16} />
-                    <span>Tools Test</span>
-                  </SidebarMenuButton>
-                </Link>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <Link to="/mcp-ui/test">
-                  <SidebarMenuButton
-                    isActive={location.pathname === '/mcp-ui/test'}
-                    tooltip="MCP UI Test"
-                  >
-                    <TestTube size={16} />
-                    <span>MCP UI Test</span>
-                  </SidebarMenuButton>
-                </Link>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <Link to="/webmcp/test">
-                  <SidebarMenuButton
-                    isActive={location.pathname === '/webmcp/test'}
-                    tooltip="WebMCP Server Test"
-                  >
-                    <BrainCircuit size={16} />
-                    <span>WebMCP Test</span>
-                  </SidebarMenuButton>
-                </Link>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <Link to="/dnd/test">
-                  <SidebarMenuButton
-                    isActive={location.pathname === '/dnd/test'}
-                    tooltip="DnD Test Page"
-                  >
-                    <TestTube size={16} />
-                    <span>DnD Test</span>
                   </SidebarMenuButton>
                 </Link>
               </SidebarMenuItem>

@@ -21,7 +21,7 @@ import {
   //clickElementTool,
   //inputTextTool,
   extractPageContentTool,
-  extractInteractableTool,
+  listInteractableTool,
   // injectJavascriptTool, // <-- Add import
   // Types
   StrictLocalMCPTool,
@@ -71,7 +71,7 @@ export function BrowserToolProvider() {
       clickElementTool,
       inputTextTool,
       extractPageContentTool,
-      extractInteractableTool,
+      listInteractableTool,
       // injectJavascriptTool, // <-- Add to array
     ];
 
