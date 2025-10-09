@@ -659,6 +659,15 @@ export async function getMessagesPageForSession(
  * @returns A promise that resolves when the operation completes
  */
 export async function upsertMessages(messages: Message[]): Promise<void> {
+  // Validate all messages have sessionId
+  for (const message of messages) {
+    if (!message.sessionId || message.sessionId.trim() === '') {
+      throw new Error(
+        `Cannot upsert message: missing or empty sessionId for message ${message.id}`,
+      );
+    }
+  }
+
   // Convert Message objects to match Rust expectations
   const rustMessages = messages.map((msg) => ({
     id: msg.id,
@@ -688,6 +697,13 @@ export async function upsertMessages(messages: Message[]): Promise<void> {
  * @returns A promise that resolves when the operation completes
  */
 export async function upsertMessage(message: Message): Promise<void> {
+  // Validate message has sessionId
+  if (!message.sessionId || message.sessionId.trim() === '') {
+    throw new Error(
+      `Cannot upsert message: missing or empty sessionId for message ${message.id}`,
+    );
+  }
+
   const rustMessage = {
     id: message.id,
     sessionId: message.sessionId,
@@ -755,14 +771,14 @@ export interface MessageSearchResult {
 /**
  * Searches messages using BM25 full-text search.
  * @param query Search query string
- * @param sessionId Session ID to search within (required)
+ * @param sessionId Session ID to search within (optional - omit for global search)
  * @param page Page number (1-indexed, default: 1)
  * @param pageSize Number of results per page (default: 25)
  * @returns A promise that resolves to a Page of search results
  */
 export async function searchMessages(
   query: string,
-  sessionId: string,
+  sessionId?: string,
   page = 1,
   pageSize = 25,
 ): Promise<Page<MessageSearchResult>> {
@@ -770,26 +786,28 @@ export async function searchMessages(
     'messages_search',
     {
       query,
-      sessionId,
+      sessionId: sessionId || null,
       page,
       pageSize,
     },
   );
 
-  // Deserialize search results from Rust format
+  // Deserialize search results from Rust format (serde rename_all = "camelCase")
   return {
     ...result,
     items: result.items.map((r) => {
-      const timestamp = r.created_at as number;
+      const timestamp = r.createdAt as number | undefined;
       // Validate timestamp before creating Date object
       const date =
-        timestamp && !isNaN(timestamp) && isFinite(timestamp)
+        typeof timestamp === 'number' &&
+        !isNaN(timestamp) &&
+        isFinite(timestamp)
           ? new Date(timestamp)
           : new Date(0);
 
       return {
-        messageId: r.message_id as string,
-        sessionId: r.session_id as string,
+        messageId: r.messageId as string,
+        sessionId: r.sessionId as string,
         score: r.score as number,
         snippet: r.snippet as string | undefined,
         createdAt: date,

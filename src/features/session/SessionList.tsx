@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
 import SessionItem from './SessionItem';
 import { useSidebar } from '../../components/ui/sidebar';
-import { Input } from '@/components/ui';
-import { Session } from '@/models/chat';
+import { Input, Badge } from '@/components/ui';
+import type { SessionWithHits } from '@/models/search';
 
 interface SessionListProps {
-  sessions: Session[];
+  sessions: SessionWithHits[];
   showSearch?: boolean;
   className?: string;
   emptyMessage?: string;
@@ -64,7 +64,18 @@ export default function SessionList({
               </div>
             )
           : filteredSessions.map((session) => (
-              <SessionItem key={session.id} session={session} />
+              <div key={session.id} className="relative">
+                <SessionItem session={session} />
+                {/* Display search hit count badge if available */}
+                {session.searchHits !== undefined && session.searchHits > 0 && (
+                  <div className="absolute top-2 right-2">
+                    <Badge variant="secondary" className="text-xs">
+                      {session.searchHits}{' '}
+                      {session.searchHits === 1 ? 'hit' : 'hits'}
+                    </Badge>
+                  </div>
+                )}
+              </div>
             ))}
       </div>
     </div>

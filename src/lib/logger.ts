@@ -65,7 +65,7 @@ const DEFAULT_CONFIG: LoggerConfig = {
   autoBackupOnStartup: true,
   maxBackupFiles: 10,
   logLevel: 'info',
-  maxMessageLength: 2000,
+  maxMessageLength: 50000,
 };
 
 // Global configuration store

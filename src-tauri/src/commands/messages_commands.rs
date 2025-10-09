@@ -60,7 +60,7 @@ pub mod db {
             r#"
             CREATE TABLE IF NOT EXISTS messages (
                 id TEXT PRIMARY KEY,
-                session_id TEXT NOT NULL,
+                session_id TEXT NOT NULL CHECK(session_id <> ''),
                 role TEXT NOT NULL,
                 content TEXT NOT NULL,
                 tool_calls TEXT,
@@ -542,14 +542,47 @@ pub async fn messages_search(
         });
     }
 
-    // For now, only support single-session search (as per spec)
-    let target_session = session_id.ok_or_else(|| "session_id is required".to_string())?;
+    // If a session_id was provided, use the per-session cached index.
+    // Otherwise perform a global search by building a temporary index over all messages.
+    let all_results = if let Some(target_session) = session_id {
+        // Per-session behavior (cached index)
+        let engine = get_or_build_index(&target_session).await?;
+        engine.search(&query, page * page_size * 2)?
+    } else {
+        // Global search: build a temporary index from messages across all sessions.
+        let pool = get_sqlite_pool();
+        let max_docs = MessageSearchEngine::max_docs_from_env();
 
-    // Get or build index
-    let engine = get_or_build_index(&target_session).await?;
+        // Fetch recent messages across all sessions up to max_docs
+        let messages = sqlx::query(
+            r#"
+            SELECT id, session_id, content, created_at
+            FROM messages
+            ORDER BY created_at DESC
+            LIMIT ?
+            "#,
+        )
+        .bind(max_docs as i64)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("Failed to fetch messages for global indexing: {e}"))?;
 
-    // Perform search (get more results than needed for pagination)
-    let all_results = engine.search(&query, page * page_size * 2)?;
+        let documents: Vec<MessageDocument> = messages
+            .into_iter()
+            .map(|row| MessageDocument {
+                id: row.get("id"),
+                session_id: row.get("session_id"),
+                content: row.get("content"),
+                created_at: row.get("created_at"),
+            })
+            .collect();
+
+        let mut engine = MessageSearchEngine::new("global".to_string(), max_docs);
+        engine.add_documents(documents)?;
+
+        // Perform search on the temporary engine
+        engine.search(&query, page * page_size * 2)?
+    };
 
     // Paginate results
     let total_items = all_results.len();

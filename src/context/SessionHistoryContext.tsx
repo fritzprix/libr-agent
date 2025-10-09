@@ -78,6 +78,15 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
     },
   );
 
+  useEffect(() => {
+    if (currentSession && data && data[0].items && data[0].items.length > 0) {
+      logger.info('HISHIS : ', {
+        sessionId: currentSession?.id,
+        messageSessionId: data?.[0].items?.[0].sessionId || '',
+      });
+    }
+  }, [data, currentSession]);
+
   const messages = useMemo(() => {
     return data ? data.flatMap((page) => page.items) : [];
   }, [data]);

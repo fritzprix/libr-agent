@@ -138,6 +138,13 @@ export const useAIService = (config?: AIServiceConfig) => {
       setError(null);
       setResponse(null);
 
+      // Validate that messages exist and have sessionId
+      if (!messages.length || !messages[0]?.sessionId) {
+        throw new Error(
+          'Cannot submit AI request: messages array is empty or missing sessionId',
+        );
+      }
+
       let currentResponseId = createId();
       let fullContent = '';
       let thinking = '';
@@ -243,7 +250,7 @@ export const useAIService = (config?: AIServiceConfig) => {
             thinking,
             thinkingSignature,
             tool_calls: toolCalls,
-            sessionId: messages[0]?.sessionId || '', // Add sessionId
+            sessionId: messages[0]?.sessionId,
           };
 
           setResponse(finalMessage);
@@ -265,7 +272,7 @@ export const useAIService = (config?: AIServiceConfig) => {
             role: 'assistant',
             isStreaming: false,
             tool_calls: [],
-            sessionId: messages[0]?.sessionId || '',
+            sessionId: messages[0]?.sessionId,
           };
         } else {
           finalMessage = {
@@ -276,7 +283,7 @@ export const useAIService = (config?: AIServiceConfig) => {
             role: 'assistant',
             isStreaming: false,
             tool_calls: toolCalls,
-            sessionId: messages[0]?.sessionId || '', // Add sessionId
+            sessionId: messages[0]?.sessionId,
           };
         }
 
@@ -294,9 +301,15 @@ export const useAIService = (config?: AIServiceConfig) => {
         setError(err as Error);
 
         // Create error message instead of malformed content
+        const sessionId = messages[0]?.sessionId;
+        if (!sessionId) {
+          throw new Error(
+            'Cannot create error message: missing sessionId in messages',
+          );
+        }
         const errorMessage = createErrorMessage(
           currentResponseId,
-          messages[0]?.sessionId || '',
+          sessionId,
           err,
           {
             model,

@@ -65,10 +65,39 @@ pub fn run_with_sqlite_sync(db_url: String) {
         let session_manager = get_session_manager().expect("SessionManager not initialized");
         let session_manager_arc = std::sync::Arc::new(session_manager.clone());
 
-        // Initialize the SQLite connection pool
-        let pool = sqlx::sqlite::SqlitePool::connect(&db_url)
-            .await
-            .expect("Failed to connect to SQLite database");
+        // Initialize the SQLite connection pool. If the database file was
+        // removed (for example during testing), try to create the file and
+        // retry the connection once before failing the startup.
+        let pool = match sqlx::sqlite::SqlitePool::connect(&db_url).await {
+            Ok(p) => p,
+            Err(e) => {
+                // If this looks like a file-backed sqlite URL, try to create the file
+                if let Some(path) = db_url.strip_prefix("sqlite://") {
+                    println!("⚙️ SQLite connect failed, attempting to create DB file: {path}");
+                    if let Some(parent) = std::path::Path::new(path).parent() {
+                        if let Err(err) = std::fs::create_dir_all(parent) {
+                            eprintln!("Failed to create parent directory for DB: {err}");
+                        }
+                    }
+
+                    match std::fs::File::create(path) {
+                        Ok(_) => println!("✅ Created new SQLite DB file: {path}"),
+                        Err(err) => eprintln!("Failed to create SQLite DB file: {err}"),
+                    }
+
+                    // Retry connection once
+                    sqlx::sqlite::SqlitePool::connect(&db_url)
+                        .await
+                        .unwrap_or_else(|err| {
+                            panic!(
+                                "Failed to connect to SQLite database after creating file: {err}"
+                            )
+                        })
+                } else {
+                    panic!("Failed to connect to SQLite database: {e}");
+                }
+            }
+        };
 
         // Initialize messages table
         commands::messages_commands::db::create_messages_table(&pool)

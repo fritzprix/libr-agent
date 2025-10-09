@@ -321,13 +321,19 @@ export function ChatProvider({ children }: ChatProviderProps) {
         return { ...previous, ...response };
       }
 
+      // Only create streaming message if we have a valid session
+      if (!currentSession?.id) {
+        logger.warn('Cannot create streaming message: no active session');
+        return null;
+      }
+
       // Create new streaming message with proper defaults
       return {
         ...response,
         id: response.id ?? createId(),
         content: response.content ?? '',
         role: 'assistant' as const,
-        sessionId: currentSession?.id ?? '',
+        sessionId: currentSession.id,
         isStreaming: response.isStreaming !== false,
       };
     });
@@ -383,10 +389,12 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
         // Process and validate new messages if provided (to prevent loss of tool results)
         if (messageToAdd?.length) {
-          const messagesWithSession = messageToAdd.map((m) => ({
-            ...m,
-            sessionId: m.sessionId ?? currentSession.id,
-          }));
+          const messagesWithSession = messageToAdd.map((m) => {
+            if (!m.sessionId) {
+              throw new Error('Cannot add message: missing sessionId');
+            }
+            return { ...m, sessionId: m.sessionId };
+          });
           if (typeof addMessages === 'function') {
             await addMessages(messagesWithSession);
             messagesToSend = [...messages, ...messagesWithSession];
