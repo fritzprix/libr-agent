@@ -126,39 +126,7 @@ pub fn delete_index(session_id: &str) -> Result<(), String> {
 ///
 /// # Returns
 /// Result indicating success or error message, with count of deleted files
-#[allow(dead_code)]
-pub fn delete_all_indices() -> Result<usize, String> {
-    let data_dir = dirs::data_dir()
-        .ok_or_else(|| "Failed to get data directory".to_string())?
-        .join("com.fritzprix.synapticflow")
-        .join("message_indices");
 
-    if !data_dir.exists() {
-        log::debug!("No message indices directory found");
-        return Ok(0);
-    }
-
-    let mut deleted_count = 0;
-
-    let entries = std::fs::read_dir(&data_dir)
-        .map_err(|e| format!("Failed to read indices directory: {e}"))?;
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|s| s.to_str()) == Some("idx") {
-            if let Err(e) = std::fs::remove_file(&path) {
-                log::warn!("Failed to delete index file {path:?}: {e}");
-            } else {
-                deleted_count += 1;
-            }
-        }
-    }
-
-    log::info!("🗑️  Deleted {deleted_count} search index files");
-    Ok(deleted_count)
-}
-
-#[cfg(test)]
 mod tests {
     use super::*;
 

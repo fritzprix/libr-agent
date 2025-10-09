@@ -24,17 +24,14 @@ import { createUIResource, type UIResource } from '@mcp-ui/server';
 // HTML escaping for XSS prevention
 function escapeHtml(s: string): string {
   if (!s) return '';
-  return String(s)
-    .split('&')
-    .join('&amp;')
-    .split('<')
-    .join('&lt;')
-    .split('>')
-    .join('&gt;')
-    .split('"')
-    .join('&quot;')
-    .split("'")
-    .join('&#39;');
+  const map: { [char: string]: string } = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  };
+  return String(s).replace(/[&<>"']/g, (c) => map[c]);
 }
 
 let nextMessageId = 1;
