@@ -100,6 +100,64 @@ pub fn get_index_path(session_id: &str) -> Result<PathBuf, String> {
     Ok(data_dir.join(format!("{session_id}.idx")))
 }
 
+/// Deletes the index file for a given session if it exists.
+///
+/// # Arguments
+/// * `session_id` - The session ID whose index should be deleted
+///
+/// # Returns
+/// Result indicating success or error message
+pub fn delete_index(session_id: &str) -> Result<(), String> {
+    let index_path = get_index_path(session_id)?;
+
+    if index_path.exists() {
+        std::fs::remove_file(&index_path)
+            .map_err(|e| format!("Failed to delete index file: {e}"))?;
+        log::info!("🗑️  Deleted search index for session: {session_id}");
+    } else {
+        log::debug!("No search index file found for session: {session_id}");
+    }
+
+    Ok(())
+}
+
+/// Deletes all index files in the message indices directory.
+/// This is useful when clearing all sessions and their associated data.
+///
+/// # Returns
+/// Result indicating success or error message, with count of deleted files
+#[allow(dead_code)]
+pub fn delete_all_indices() -> Result<usize, String> {
+    let data_dir = dirs::data_dir()
+        .ok_or_else(|| "Failed to get data directory".to_string())?
+        .join("com.fritzprix.synapticflow")
+        .join("message_indices");
+
+    if !data_dir.exists() {
+        log::debug!("No message indices directory found");
+        return Ok(0);
+    }
+
+    let mut deleted_count = 0;
+
+    let entries = std::fs::read_dir(&data_dir)
+        .map_err(|e| format!("Failed to read indices directory: {e}"))?;
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) == Some("idx") {
+            if let Err(e) = std::fs::remove_file(&path) {
+                log::warn!("Failed to delete index file {path:?}: {e}");
+            } else {
+                deleted_count += 1;
+            }
+        }
+    }
+
+    log::info!("🗑️  Deleted {deleted_count} search index files");
+    Ok(deleted_count)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

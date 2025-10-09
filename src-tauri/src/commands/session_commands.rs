@@ -226,6 +226,31 @@ pub async fn cleanup_sessions(request: SessionCleanupRequest) -> Result<SessionR
 /// Remove a specific session
 #[command]
 pub async fn remove_session(session_id: String) -> Result<SessionResponse, String> {
+    use crate::search::index_storage::delete_index;
+    use crate::state::get_sqlite_pool;
+
+    info!("🗑️  Removing session: {session_id}");
+
+    // Step 1: Delete BM25 search index file and metadata
+    if let Err(e) = delete_index(&session_id) {
+        error!("Failed to delete search index for session {session_id}: {e}");
+        // Continue with removal even if index deletion fails (best-effort)
+    }
+
+    // Step 2: Delete index metadata from database
+    let pool = get_sqlite_pool();
+    if let Err(e) = sqlx::query("DELETE FROM message_index_meta WHERE session_id = ?")
+        .bind(&session_id)
+        .execute(pool)
+        .await
+    {
+        error!("Failed to delete index metadata for session {session_id}: {e}");
+        // Continue with removal even if metadata deletion fails (best-effort)
+    } else {
+        info!("✅ Deleted index metadata for session: {session_id}");
+    }
+
+    // Step 3: Remove session workspace directory and other resources
     let session_manager =
         get_session_manager().map_err(|e| format!("Failed to get session manager: {e}"))?;
 
@@ -234,7 +259,7 @@ pub async fn remove_session(session_id: String) -> Result<SessionResponse, Strin
         .await
         .map_err(|e| format!("Failed to remove session: {e}"))?;
 
-    info!("Removed session: {session_id}");
+    info!("✅ Removed session: {session_id}");
 
     Ok(SessionResponse {
         success: true,

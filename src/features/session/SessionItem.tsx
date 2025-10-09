@@ -1,7 +1,6 @@
 import React, { useCallback, useMemo } from 'react';
 import { useSessionContext } from '../../context/SessionContext';
 import { Session } from '@/models/chat';
-import { useSidebar } from '@/components/ui/sidebar';
 import {
   Button,
   DropdownMenu,
@@ -23,6 +22,7 @@ const logger = getLogger('SessionItem');
 interface SessionItemProps {
   session: Session;
   className?: string;
+  isCollapsed?: boolean;
 }
 
 function formatRelativeTime(target: Date, reference: Date): string | null {
@@ -90,9 +90,11 @@ function formatSessionTimestamp(dateInput: Date | string | undefined) {
   };
 }
 
-export default function SessionItem({ session, className }: SessionItemProps) {
-  const { state } = useSidebar();
-  const isCollapsed = state === 'collapsed';
+export default function SessionItem({
+  session,
+  className,
+  isCollapsed = false,
+}: SessionItemProps) {
   const { current, select, delete: onDelete } = useSessionContext();
   const handleSelect = useCallback(() => {
     select(session.id);

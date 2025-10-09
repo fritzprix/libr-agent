@@ -2,8 +2,8 @@
 
 ## TO-DOs
 
-- [ ] Message에 대한 bm25 search 지원 구현
-- [ ] Chat History에 검색 기능 고도화, bm25 기반 메시지 검색을 통해 메시지 건수를 기준으로 session 연관성을 점수화 정렬
+- [x] Message에 대한 bm25 search 지원 구현
+- [x] Chat History에 검색 기능 고도화, bm25 기반 메시지 검색을 통해 메시지 건수를 기준으로 session 연관성을 점수화 정렬
 - [ ] 사용자와 interaction을 위한 UI Builtin 도구 구현
   - [ ] visualizeData: 기본적인 시각화, bar / chart (MCPResponse w/ ui-resource)
     - type: 'hor-bar' | 'ver-bar' | 'chart'
