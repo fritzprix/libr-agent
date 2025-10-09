@@ -31,7 +31,9 @@ export default function InputWithLabel({
   return (
     <div className={containerClassName}>
       {label && (
-        <label className="block text-gray-400 mb-2 font-medium">{label}</label>
+        <label className="block text-muted-foreground mb-2 font-medium">
+          {label}
+        </label>
       )}
       <Input
         className={`${error ? 'border-red-400' : ''} ${className}`}

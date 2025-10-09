@@ -4,6 +4,7 @@ pub mod download_commands;
 pub mod file_commands;
 pub mod log_commands;
 pub mod mcp_commands;
+pub mod messages_commands;
 pub mod session_commands;
 pub mod url_commands;
 pub mod workspace_commands;

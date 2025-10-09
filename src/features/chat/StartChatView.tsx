@@ -8,9 +8,9 @@ import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
 import { Link } from 'react-router';
 
-const logger = getLogger('StartSingleChatView');
+const logger = getLogger('StartChatView');
 
-export default function StartSingleChatView() {
+export default function StartChatView() {
   const { assistants, setCurrentAssistant } = useAssistantContext();
   const { start } = useSessionContext();
   const { connectServers } = useMCPServer();

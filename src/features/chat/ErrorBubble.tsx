@@ -12,24 +12,25 @@ import {
   Key,
   Clock,
 } from 'lucide-react';
+import { getLogger } from '@/lib/logger';
+
+const logger = getLogger('ErrorBubble');
 
 interface ErrorBubbleProps {
-  message: Message;
-  onRetry?: (messageId: string) => Promise<void>;
+  // New: allow passing only the error object (transient UI error state).
+  error?: Message['error'] | null;
+  onRetry?: () => Promise<void>;
 }
 
-export const ErrorBubble: React.FC<ErrorBubbleProps> = ({
-  message,
-  onRetry,
-}) => {
+export const ErrorBubble: React.FC<ErrorBubbleProps> = ({ error, onRetry }) => {
   const [retrying, setRetrying] = useState(false);
 
   const handleRetry = async () => {
-    if (!onRetry || !message.error?.recoverable) return;
+    if (!onRetry || !error?.recoverable) return;
 
     setRetrying(true);
     try {
-      await onRetry(message.id);
+      await onRetry();
     } finally {
       setRetrying(false);
     }
@@ -86,22 +87,27 @@ export const ErrorBubble: React.FC<ErrorBubbleProps> = ({
     }
   };
 
+  logger.info('error : ', { error });
   return (
     <BaseBubble
       title="Error"
-      icon={getErrorIcon(message.error?.type || 'UNKNOWN_ERROR')}
+      defaultExpanded={true}
+      icon={getErrorIcon(error?.type || 'UNKNOWN_ERROR')}
       badge={
         <span
-          className={`px-2 py-1 text-xs rounded-full ${getErrorBadgeColor(message.error?.type || 'UNKNOWN_ERROR')}`}
+          className={`px-2 py-1 text-xs rounded-full ${getErrorBadgeColor(error?.type || 'UNKNOWN_ERROR')}`}
         >
-          {message.error?.type}
+          {error?.type}
         </span>
       }
-      className={getErrorColor(message.error?.type || 'UNKNOWN_ERROR')}
+      className={getErrorColor(error?.type || 'UNKNOWN_ERROR')}
     >
       <div className="space-y-3">
-        <p className="text-muted-foreground">{message.error?.displayMessage}</p>
-        {message.error?.recoverable && (
+        <p className="text-muted-foreground">
+          {error?.displayMessage || 'An unknown error occurred.'}
+        </p>
+
+        {error?.recoverable && (
           <Button
             onClick={handleRetry}
             disabled={retrying}

@@ -1,3 +1,4 @@
+use bm25::{Embedder, EmbedderBuilder, Language, Scorer};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -29,140 +30,144 @@ pub struct IndexStats {
     pub num_segments: usize,
 }
 
-/// BM25 Search Engine Implementation
-#[derive(Debug)]
+/// BM25 Search Engine Implementation using bm25 crate
 pub struct ContentSearchEngine {
+    // Store original chunks for metadata retrieval
     chunks: HashMap<String, TextChunk>,
-    // BM25 parameters
-    k1: f64,                               // Term frequency saturation (typically 1.2-2.0)
-    b: f64,                                // Length normalization (typically 0.75)
-    avg_doc_len: f64,                      // Average document length
-    total_docs: usize,                     // Total number of documents
-    term_doc_freq: HashMap<String, usize>, // Document frequency for each term
+    // BM25 embedder for query and document embedding
+    embedder: Embedder,
+    // BM25 scorer for relevance scoring
+    scorer: Scorer<String>,
+}
+
+// Manual Debug implementation since Scorer doesn't implement Debug
+impl std::fmt::Debug for ContentSearchEngine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ContentSearchEngine")
+            .field("chunks_count", &self.chunks.len())
+            .field("embedder", &"<Embedder>")
+            .field("scorer", &"<Scorer>")
+            .finish()
+    }
 }
 
 impl ContentSearchEngine {
     /// Create a new BM25 search engine
     pub fn new(_index_dir: std::path::PathBuf) -> Result<Self, String> {
+        // Initialize embedder with English language and standard BM25 parameters
+        // Start with avgdl=100 as initial estimate, will be updated on first add_chunks
+        let embedder = EmbedderBuilder::with_avgdl(100.0)
+            .language_mode(Language::English)
+            .k1(1.2) // Standard BM25 k1 parameter
+            .b(0.75) // Standard BM25 b parameter
+            .build();
+
         Ok(Self {
             chunks: HashMap::new(),
-            k1: 1.5, // Standard BM25 k1 parameter
-            b: 0.75, // Standard BM25 b parameter
-            avg_doc_len: 0.0,
-            total_docs: 0,
-            term_doc_freq: HashMap::new(),
+            embedder,
+            scorer: Scorer::new(),
         })
     }
 
     /// Add text chunks to the index and update BM25 statistics
     pub async fn add_chunks(&mut self, chunks: Vec<TextChunk>) -> Result<(), String> {
-        for chunk in chunks {
-            // Update document frequency for each term in this chunk
-            let terms = self.tokenize(&chunk.text);
-            for term in terms {
-                *self.term_doc_freq.entry(term).or_insert(0) += 1;
-            }
-
-            self.chunks.insert(chunk.id.clone(), chunk);
+        if chunks.is_empty() {
+            return Ok(());
         }
 
-        // Update total document count and average document length
-        self.total_docs = self.chunks.len();
-        self.avg_doc_len = if self.total_docs > 0 {
-            self.chunks
-                .values()
-                .map(|c| c.text.len() as f64)
-                .sum::<f64>()
-                / self.total_docs as f64
-        } else {
-            0.0
-        };
+        // Refit embedder with updated corpus for accurate avgdl
+        let all_texts: Vec<&str> = self
+            .chunks
+            .values()
+            .map(|c| c.text.as_str())
+            .chain(chunks.iter().map(|c| c.text.as_str()))
+            .collect();
+
+        self.embedder = EmbedderBuilder::with_fit_to_corpus(Language::English, &all_texts)
+            .k1(1.2)
+            .b(0.75)
+            .build();
+
+        // Add new chunks to index
+        for chunk in chunks {
+            let chunk_id = chunk.id.clone();
+            let embedding = self.embedder.embed(&chunk.text);
+            self.scorer.upsert(&chunk_id, embedding);
+            self.chunks.insert(chunk_id, chunk);
+        }
 
         Ok(())
     }
 
-    /// BM25 search implementation
+    /// Remove chunks for a specific content ID from the search index
+    pub async fn remove_chunks(&mut self, content_id: &str) -> Result<(), String> {
+        // Find all chunks for this content_id
+        let chunks_to_remove: Vec<String> = self
+            .chunks
+            .iter()
+            .filter(|(_, chunk)| chunk.content_id == content_id)
+            .map(|(id, _)| id.clone())
+            .collect();
+
+        // Remove chunks from scorer and storage
+        for chunk_id in &chunks_to_remove {
+            self.scorer.remove(chunk_id);
+            self.chunks.remove(chunk_id);
+        }
+
+        // Refit embedder with remaining corpus
+        if !self.chunks.is_empty() {
+            let all_texts: Vec<&str> = self.chunks.values().map(|c| c.text.as_str()).collect();
+            self.embedder = EmbedderBuilder::with_fit_to_corpus(Language::English, &all_texts)
+                .k1(1.2)
+                .b(0.75)
+                .build();
+        } else {
+            // Reset to default if no documents remain
+            self.embedder = EmbedderBuilder::with_avgdl(100.0)
+                .language_mode(Language::English)
+                .k1(1.2)
+                .b(0.75)
+                .build();
+        }
+
+        Ok(())
+    }
+
+    /// BM25 search implementation using bm25 crate
     pub async fn search_bm25(
         &self,
         query: &str,
         limit: usize,
     ) -> Result<Vec<SearchResult>, String> {
-        let query_terms = self.tokenize(query);
-        let mut results = Vec::new();
-
-        for chunk in self.chunks.values() {
-            let score = self.bm25_score(&query_terms, chunk);
-            if score > 0.0 {
-                let matched_text = Self::extract_snippet(&chunk.text, query, 200);
-                results.push(SearchResult {
-                    content_id: chunk.content_id.clone(),
-                    chunk_id: chunk.id.clone(),
-                    score,
-                    matched_text,
-                    line_range: chunk.line_range,
-                });
-            }
+        if self.chunks.is_empty() {
+            return Ok(Vec::new());
         }
 
-        // Sort by score descending and take top N
-        results.sort_by(|a, b| {
-            b.score
-                .partial_cmp(&a.score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        // Embed the query
+        let query_embedding = self.embedder.embed(query);
+
+        // Get scored matches from the scorer
+        let scored_docs = self.scorer.matches(&query_embedding);
+
+        // Convert to SearchResult with metadata
+        let mut results: Vec<SearchResult> = scored_docs
+            .into_iter()
+            .filter_map(|scored_doc| {
+                self.chunks.get(&scored_doc.id).map(|chunk| SearchResult {
+                    content_id: chunk.content_id.clone(),
+                    chunk_id: chunk.id.clone(),
+                    score: scored_doc.score as f64,
+                    matched_text: Self::extract_snippet(&chunk.text, query, 200),
+                    line_range: chunk.line_range,
+                })
+            })
+            .collect();
+
+        // Take top N results (scorer already returns sorted by score descending)
         results.truncate(limit);
 
         Ok(results)
-    }
-
-    /// Calculate BM25 score for a document given query terms
-    fn bm25_score(&self, query_terms: &[String], chunk: &TextChunk) -> f64 {
-        let mut score = 0.0;
-        let doc_len = chunk.text.len() as f64;
-
-        for term in query_terms {
-            let tf = self.term_frequency(term, chunk) as f64;
-            let idf = self.inverse_document_frequency(term);
-
-            if tf > 0.0 && idf > 0.0 {
-                let numerator = tf * (self.k1 + 1.0);
-                let denominator =
-                    tf + self.k1 * (1.0 - self.b + self.b * (doc_len / self.avg_doc_len));
-                score += idf * (numerator / denominator);
-            }
-        }
-
-        score
-    }
-
-    /// Calculate term frequency in a document
-    fn term_frequency(&self, term: &str, chunk: &TextChunk) -> usize {
-        let term_lower = term.to_lowercase();
-        let text_lower = chunk.text.to_lowercase();
-        text_lower.matches(&term_lower).count()
-    }
-
-    /// Calculate inverse document frequency
-    fn inverse_document_frequency(&self, term: &str) -> f64 {
-        let df = self.term_doc_freq.get(term).copied().unwrap_or(0) as f64;
-        if df == 0.0 {
-            return 0.0;
-        }
-
-        let n = self.total_docs as f64;
-        ((n - df + 0.5) / (df + 0.5)).ln()
-    }
-
-    /// Tokenize text into terms (simple whitespace splitting)
-    fn tokenize(&self, text: &str) -> Vec<String> {
-        text.split_whitespace()
-            .map(|s| {
-                s.to_lowercase()
-                    .trim_matches(|c: char| !c.is_alphanumeric())
-                    .to_string()
-            })
-            .filter(|s| !s.is_empty())
-            .collect()
     }
 
     /// Extract text snippet around query matches

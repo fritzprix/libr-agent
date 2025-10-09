@@ -10,17 +10,16 @@ pub fn file_tools() -> Vec<MCPTool> {
         file_tools::create_read_file_tool(),
         file_tools::create_write_file_tool(),
         file_tools::create_list_directory_tool(),
-        file_tools::create_search_files_tool(),
         file_tools::create_replace_lines_in_file_tool(),
-        file_tools::create_grep_tool(),
         file_tools::create_import_file_tool(),
     ]
 }
 
 pub fn code_tools() -> Vec<MCPTool> {
     vec![
-        code_tools::create_execute_python_tool(),
-        code_tools::create_execute_typescript_tool(),
+        // Python/TypeScript execution tools removed from public interface to avoid
+        // pulling external runtime dependencies and to prevent agents from
+        // setting isolation levels. Only shell execution remains exposed.
         code_tools::create_execute_shell_tool(),
     ]
 }

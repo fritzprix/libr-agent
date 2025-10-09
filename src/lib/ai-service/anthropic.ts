@@ -107,15 +107,14 @@ export class AnthropicService extends BaseAIService {
         options.modelName,
         config,
       );
-      const completion = await this.withRetry(() =>
-        this.anthropic.messages.create({
+      const stream = this.anthropic.messages.stream(
+        {
           model:
             options.modelName ||
             config.defaultModel ||
             'claude-3-sonnet-20240229',
           max_tokens: config.maxTokens!,
           messages: anthropicMessages,
-          stream: true,
           ...(shouldEnableThinking && {
             thinking: {
               budget_tokens: 1024,
@@ -124,13 +123,23 @@ export class AnthropicService extends BaseAIService {
           }),
           system: options.systemPrompt,
           tools: tools as AnthropicTool[],
-        }),
+        },
+        { signal: this.getAbortSignal() },
       );
 
       // Tool call accumulator for partial JSON streaming
       const toolCallAccumulators = new Map<number, ToolCallAccumulator>();
 
-      for await (const chunk of completion) {
+      if (this.getAbortSignal().aborted) {
+        this.logger.info('Stream aborted before iteration');
+        return;
+      }
+
+      for await (const chunk of stream) {
+        if (this.getAbortSignal().aborted) {
+          this.logger.info('Stream aborted during iteration');
+          break;
+        }
         logger.debug('Received chunk from Anthropic', { chunk });
 
         // Extra logging for delta inspection: helpful to see exact shapes

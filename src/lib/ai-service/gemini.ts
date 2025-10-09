@@ -3,6 +3,7 @@ import {
   GoogleGenAI,
   Content,
   FunctionCall,
+  createPartFromFunctionResponse,
 } from '@google/genai';
 import { getLogger } from '../logger';
 import { Message } from '@/models/chat';
@@ -121,7 +122,17 @@ export class GeminiService extends BaseAIService {
         });
       });
 
+      if (this.getAbortSignal().aborted) {
+        this.logger.info('Stream aborted before iteration');
+        return;
+      }
+
       for await (const chunk of result) {
+        if (this.getAbortSignal().aborted) {
+          this.logger.info('Stream aborted during iteration');
+          break;
+        }
+
         logger.info('chunk : ', { chunk });
         if (chunk.functionCalls && chunk.functionCalls.length > 0) {
           const validFunctionCalls = chunk.functionCalls.filter(
@@ -130,13 +141,13 @@ export class GeminiService extends BaseAIService {
 
           if (validFunctionCalls.length > 0) {
             yield JSON.stringify({
-              tool_calls: validFunctionCalls.map((fc: FunctionCall) =>
-                formatToolCall(
-                  this.generateToolCallId(),
-                  fc.name!,
-                  fc.args ?? {},
-                ),
-              ),
+              tool_calls: validFunctionCalls.map((fc: FunctionCall) => {
+                const callId =
+                  fc.id && typeof fc.id === 'string' && fc.id.length
+                    ? fc.id
+                    : this.generateToolCallId();
+                return formatToolCall(callId, fc.name!, fc.args ?? {});
+              }),
             });
           }
         } else if (chunk.text) {
@@ -225,11 +236,28 @@ export class GeminiService extends BaseAIService {
         continue;
       }
 
-      if (m.role === 'user' && m.content) {
-        geminiMessages.push({
-          role: 'user',
-          parts: [{ text: this.processMessageContent(m.content) }],
-        });
+      if (m.role === 'user') {
+        // If this user message actually represents a tool response (the
+        // code earlier converts tool -> user), prefer to convert any
+        // structured tool_calls into FunctionResponse parts so Gemini
+        // receives the structured data rather than raw text.
+        if (m.tool_calls && m.tool_calls.length > 0) {
+          const parts = m.tool_calls.map((tc) => {
+            const parsed =
+              tryParse<Record<string, unknown>>(tc.function.arguments) ?? {};
+            const id =
+              tc.id && typeof tc.id === 'string'
+                ? tc.id
+                : this.generateToolCallId();
+            return createPartFromFunctionResponse(id, tc.function.name, parsed);
+          });
+          geminiMessages.push({ role: 'user', parts });
+        } else if (m.content) {
+          geminiMessages.push({
+            role: 'user',
+            parts: [{ text: this.processMessageContent(m.content) }],
+          });
+        }
       } else if (m.role === 'assistant') {
         if (m.tool_calls && m.tool_calls.length > 0) {
           geminiMessages.push({
@@ -252,9 +280,25 @@ export class GeminiService extends BaseAIService {
           });
         }
       } else if (m.role === 'tool') {
-        logger.warn(
-          'Unexpected tool message in convertToGeminiMessages - should have been converted to user',
-        );
+        // If for some reason a tool role remains, handle similarly by
+        // converting tool_calls to FunctionResponse parts.
+        if (m.tool_calls && m.tool_calls.length > 0) {
+          const parts = m.tool_calls.map((tc) => {
+            const parsed =
+              tryParse<Record<string, unknown>>(tc.function.arguments) ?? {};
+            const id =
+              tc.id && typeof tc.id === 'string'
+                ? tc.id
+                : this.generateToolCallId();
+            return createPartFromFunctionResponse(id, tc.function.name, parsed);
+          });
+          geminiMessages.push({ role: 'user', parts });
+        } else if (m.content) {
+          geminiMessages.push({
+            role: 'user',
+            parts: [{ text: this.processMessageContent(m.content) }],
+          });
+        }
         continue;
       }
     }
@@ -311,10 +355,28 @@ export class GeminiService extends BaseAIService {
         };
       }
     } else if (message.role === 'tool') {
-      // Tool messages should be converted to user messages for Gemini
-      logger.warn(
-        'Tool message in convertSingleMessage - should have been converted to user',
-      );
+      // Convert tool message into a FunctionResponse part if possible.
+      if (message.tool_calls && message.tool_calls.length > 0) {
+        const parts = message.tool_calls.map((tc) => {
+          const parsed =
+            tryParse<Record<string, unknown>>(tc.function.arguments) ?? {};
+          const id =
+            tc.id && typeof tc.id === 'string'
+              ? tc.id
+              : this.generateToolCallId();
+          return createPartFromFunctionResponse(id, tc.function.name, parsed);
+        });
+        return {
+          role: 'user',
+          parts,
+        };
+      }
+      if (message.content) {
+        return {
+          role: 'user',
+          parts: [{ text: this.processMessageContent(message.content) }],
+        };
+      }
       return null;
     }
     return null;

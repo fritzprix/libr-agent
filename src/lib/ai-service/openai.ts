@@ -170,17 +170,30 @@ export class OpenAIService extends BaseAIService {
       });
 
       const completion = await this.withRetry(() =>
-        this.openai.chat.completions.create({
-          model: modelName,
-          messages: openaiMessages,
-          max_completion_tokens: config.maxTokens,
-          stream: true,
-          tools: tools as OpenAIChatCompletionTool[],
-          tool_choice: options.availableTools ? 'auto' : undefined,
-        }),
+        this.openai.chat.completions.create(
+          {
+            model: modelName,
+            messages: openaiMessages,
+            max_completion_tokens: config.maxTokens,
+            stream: true,
+            tools: tools as OpenAIChatCompletionTool[],
+            tool_choice: options.availableTools ? 'auto' : undefined,
+          },
+          { signal: this.getAbortSignal() },
+        ),
       );
 
+      if (this.getAbortSignal().aborted) {
+        this.logger.info('Stream aborted before iteration');
+        return;
+      }
+
       for await (const chunk of completion) {
+        if (this.getAbortSignal().aborted) {
+          this.logger.info('Stream aborted during iteration');
+          break;
+        }
+
         if (chunk.choices[0]?.delta?.tool_calls) {
           yield JSON.stringify({
             tool_calls: chunk.choices[0].delta.tool_calls,

@@ -117,6 +117,15 @@ pub(crate) fn tool_keyword_search_schema() -> JSONSchema {
     object_schema(props, vec!["query".to_string()])
 }
 
+pub(crate) fn tool_delete_content_schema() -> JSONSchema {
+    let mut props: HashMap<String, JSONSchema> = HashMap::new();
+    props.insert(
+        "content_id".to_string(),
+        string_prop(None, None, Some("ID of the content to delete")),
+    );
+    object_schema(props, vec!["content_id".to_string()])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useChatState } from '@/context/ChatContext';
+import { useChatState, useChatActions } from '@/context/ChatContext';
 import { useSessionContext } from '@/context/SessionContext';
 import { useAssistantContext } from '@/context/AssistantContext';
 import MessageBubble from '../MessageBubble';
 import { Message } from '@/models/chat';
+import { ErrorBubble } from '../ErrorBubble';
+import { getLogger } from '@/lib/logger';
+
+const logger = getLogger('ChatMessages');
 
 export function ChatMessages() {
-  const { messages, isLoading } = useChatState();
+  const { messages, isLoading, error } = useChatState();
   const { getCurrentSession, current: currentSession } = useSessionContext();
   const { getById } = useAssistantContext();
 
@@ -52,6 +56,14 @@ export function ChatMessages() {
     [getById, getCurrentSession],
   );
 
+  const { retryMessage } = useChatActions();
+  // Adapter to satisfy ErrorBubble's onRetry signature which may pass undefined
+  const handleRetry = async () => {
+    return retryMessage();
+  };
+
+  logger.info('error : ', { error });
+
   return (
     <div className="flex-1 flex flex-col min-h-0">
       <div
@@ -65,6 +77,12 @@ export function ChatMessages() {
             currentAssistantName={getAssistantNameForMessage(m)}
           />
         ))}
+        {/* Global (top-level) assistant error: render aligned with assistant bubbles */}
+        {error && (
+          <div className="self-start mt-2">
+            <ErrorBubble error={error} onRetry={handleRetry} />
+          </div>
+        )}
         {isLoading && (
           <div className="flex justify-start">
             <div className="rounded px-3 py-2">

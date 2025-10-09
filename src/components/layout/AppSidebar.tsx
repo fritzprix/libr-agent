@@ -2,10 +2,9 @@ import {
   BrainCircuit,
   History,
   MessageSquare,
+  Search,
   Settings,
   Users,
-  Wrench,
-  TestTube,
 } from 'lucide-react';
 import React, { useEffect, useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
@@ -93,10 +92,10 @@ export default function AppSidebar() {
                   <SidebarMenuButton
                     onClick={() => select()}
                     isActive={location.pathname === '/chat/single'}
-                    tooltip="Single Assistant Chat"
+                    tooltip="Start Chat"
                   >
                     <MessageSquare size={16} />
-                    <span>Single Assistant Chat</span>
+                    <span>Start Chat</span>
                   </SidebarMenuButton>
                 </Link>
               </SidebarMenuItem>
@@ -144,58 +143,14 @@ export default function AppSidebar() {
                   </SidebarMenuButton>
                 </Link>
               </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        {/* Test Section */}
-        <SidebarGroup>
-          <SidebarGroupLabel className="text-sm font-semibold uppercase tracking-wide mb-2">
-            Testing
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
               <SidebarMenuItem>
-                <Link to="/tools/test">
+                <Link to="/search">
                   <SidebarMenuButton
-                    isActive={location.pathname === '/tools/test'}
-                    tooltip="Test Tools"
+                    isActive={location.pathname === '/search'}
+                    tooltip="Message Search (BM25)"
                   >
-                    <Wrench size={16} />
-                    <span>Tools Test</span>
-                  </SidebarMenuButton>
-                </Link>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <Link to="/mcp-ui/test">
-                  <SidebarMenuButton
-                    isActive={location.pathname === '/mcp-ui/test'}
-                    tooltip="MCP UI Test"
-                  >
-                    <TestTube size={16} />
-                    <span>MCP UI Test</span>
-                  </SidebarMenuButton>
-                </Link>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <Link to="/webmcp/test">
-                  <SidebarMenuButton
-                    isActive={location.pathname === '/webmcp/test'}
-                    tooltip="WebMCP Server Test"
-                  >
-                    <BrainCircuit size={16} />
-                    <span>WebMCP Test</span>
-                  </SidebarMenuButton>
-                </Link>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <Link to="/dnd/test">
-                  <SidebarMenuButton
-                    isActive={location.pathname === '/dnd/test'}
-                    tooltip="DnD Test Page"
-                  >
-                    <TestTube size={16} />
-                    <span>DnD Test</span>
+                    <Search size={16} />
+                    <span>Message Search</span>
                   </SidebarMenuButton>
                 </Link>
               </SidebarMenuItem>

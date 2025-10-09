@@ -21,6 +21,7 @@ import {
   CreateStoreArgs,
   AddContentArgs,
   ListContentArgs,
+  DeleteContentArgs,
 } from '@/models/content-store';
 
 const logger = getLogger('ResourceAttachmentContext');
@@ -600,8 +601,31 @@ export const ResourceAttachmentProvider: React.FC<
       // Handle session file removal from server
       setIsLoading(true);
       try {
-        // TODO: Call server.removeContent when available
-        // For now, we'll just refresh to reflect server state
+        // Check if server is available
+        if (!server) {
+          if (serverLoading) {
+            throw new Error(
+              'Content store server is still loading. Please wait a moment.',
+            );
+          } else {
+            throw new Error(
+              'Content store server is not available. Please wait for server initialization.',
+            );
+          }
+        }
+
+        // Call server.deleteContent to actually remove the file
+        const deleteArgs: DeleteContentArgs = {
+          contentId: ref.contentId,
+        };
+
+        await server.deleteContent(deleteArgs);
+
+        logger.info('Successfully deleted content from server', {
+          contentId: ref.contentId,
+          filename: ref.filename,
+          sessionId: ref.sessionId,
+        });
 
         // Refresh session files after removal to reflect the change
         await mutateSessionFiles();
@@ -668,5 +692,3 @@ export const useResourceAttachment = () => {
   }
   return context;
 };
-
-export { ResourceAttachmentContext };

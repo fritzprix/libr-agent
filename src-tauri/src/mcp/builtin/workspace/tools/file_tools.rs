@@ -87,47 +87,6 @@ pub fn create_list_directory_tool() -> MCPTool {
     }
 }
 
-pub fn create_search_files_tool() -> MCPTool {
-    let mut props = HashMap::new();
-    props.insert(
-        "pattern".to_string(),
-        string_prop(
-            Some(1),
-            Some(500),
-            Some("Glob pattern to match files (e.g., '*.rs', '**/*.tsx')"),
-        ),
-    );
-    props.insert(
-        "path".to_string(),
-        string_prop(Some(1), Some(1000), Some("Root path to search from")),
-    );
-    props.insert(
-        "max_depth".to_string(),
-        integer_prop(
-            Some(1),
-            Some(50),
-            Some("Maximum depth to search (optional)"),
-        ),
-    );
-    props.insert(
-        "file_type".to_string(),
-        string_prop(
-            None,
-            None,
-            Some("Filter by file type: 'file', 'dir', or 'both'"),
-        ),
-    );
-
-    MCPTool {
-        name: "search_files".to_string(),
-        title: Some("Search Files".to_string()),
-        description: "Search for files matching patterns with various filters".to_string(),
-        input_schema: object_schema(props, vec!["pattern".to_string()]),
-        output_schema: None,
-        annotations: None,
-    }
-}
-
 pub fn create_import_file_tool() -> MCPTool {
     let mut props = HashMap::new();
     props.insert(
@@ -216,47 +175,6 @@ pub fn create_replace_lines_in_file_tool() -> MCPTool {
         title: Some("Replace Lines in File".to_string()),
         description: "Replace specific lines or line ranges in a file with new content. Use empty content string to delete lines.".to_string(),
         input_schema: object_schema(props, vec!["path".to_string(), "replacements".to_string()]),
-        output_schema: None,
-        annotations: None,
-    }
-}
-
-pub fn create_grep_tool() -> MCPTool {
-    let mut props = HashMap::new();
-    props.insert(
-        "pattern".to_string(),
-        string_prop(Some(1), None, Some("Regex pattern to search for")),
-    );
-    props.insert(
-        "path".to_string(),
-        string_prop(
-            Some(1),
-            Some(1000),
-            Some("Path to the file to search (exclusive with 'input')"),
-        ),
-    );
-    props.insert(
-        "input".to_string(),
-        string_prop(
-            Some(1),
-            None,
-            Some("Input string to search (exclusive with 'path')"),
-        ),
-    );
-    props.insert(
-        "ignore_case".to_string(),
-        boolean_prop(Some("Perform case-insensitive matching")),
-    );
-    props.insert(
-        "line_numbers".to_string(),
-        boolean_prop(Some("Include line numbers in the output")),
-    );
-
-    MCPTool {
-        name: "grep".to_string(),
-        title: Some("Grep".to_string()),
-        description: "Search for a pattern in a file or input string.".to_string(),
-        input_schema: object_schema(props, vec!["pattern".to_string()]),
         output_schema: None,
         annotations: None,
     }

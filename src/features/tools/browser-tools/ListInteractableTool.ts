@@ -17,7 +17,6 @@ const logger = getLogger('ExtractInteractableTool');
 
 interface ValidatedArgs {
   sessionId: string;
-  selector: string;
   includeHidden: boolean;
   maxElements: number;
 }
@@ -154,11 +153,10 @@ function generateInteractableText(result: InteractableResult): string {
 async function extractHtmlFromPage(
   executeScript: (sessionId: string, script: string) => Promise<unknown>,
   sessionId: string,
-  selector: string,
 ): Promise<string> {
   const rawHtml = await executeScript(
     sessionId,
-    `document.querySelector(${JSON.stringify(selector)}).outerHTML`,
+    `document.documentElement.outerHTML`,
   );
 
   if (!rawHtml || typeof rawHtml !== 'string') {
@@ -170,22 +168,16 @@ async function extractHtmlFromPage(
   return rawHtml;
 }
 
-function validateExtractInteractableArgs(
+function validateListInteractableArgs(
   args: Record<string, unknown>,
 ): ValidatedArgs | null {
-  logger.debug('Validating extractInteractable args:', args);
+  logger.debug('Validating listInteractable args:', args);
 
   if (typeof args.sessionId !== 'string') {
     logger.warn('Invalid sessionId type', {
       sessionId: args.sessionId,
       type: typeof args.sessionId,
     });
-    return null;
-  }
-
-  const selector = args.selector ?? 'body';
-  if (typeof selector !== 'string') {
-    logger.warn('Invalid selector type', { selector, type: typeof selector });
     return null;
   }
 
@@ -208,32 +200,25 @@ function validateExtractInteractableArgs(
 
   logger.debug('Validation successful', {
     sessionId: args.sessionId,
-    selector,
     includeHidden,
     maxElements,
   });
 
   return {
     sessionId: args.sessionId,
-    selector,
     includeHidden,
     maxElements,
   };
 }
 
-export const extractInteractableTool: StrictBrowserMCPTool = {
-  name: 'extractInteractable',
+export const listInteractableTool: StrictBrowserMCPTool = {
+  name: 'listInteractable',
   description:
-    'Extract interactive elements from web pages with precise CSS selectors for automation. Identifies buttons, inputs, links, and other interactive elements with accurate selectors, current state, and metadata. Uses TypeScript parsing for better reliability and debugging.',
+    'List all interactive elements from the entire web page for automation. Identifies buttons, inputs, links, and other interactive elements with accurate selectors, current state, and metadata. Uses TypeScript parsing for better reliability and debugging.',
   inputSchema: {
     type: 'object',
     properties: {
       sessionId: BROWSER_TOOL_SCHEMAS.sessionId,
-      selector: {
-        type: 'string',
-        description:
-          'CSS selector to limit the search scope. Defaults to "body" for full page scan. Examples: ".main-content", "#form-container", "[data-component=navigation]"',
-      },
       includeHidden: {
         type: 'boolean',
         description:
@@ -248,41 +233,36 @@ export const extractInteractableTool: StrictBrowserMCPTool = {
     required: ['sessionId'],
   },
   execute: async (args: Record<string, unknown>, executeScript) => {
-    const validatedArgs = validateExtractInteractableArgs(args);
+    const validatedArgs = validateListInteractableArgs(args);
     if (!validatedArgs) {
       return createMCPErrorResponse(
-        'Invalid arguments provided - check sessionId, selector, includeHidden, and maxElements parameter types',
+        'Invalid arguments provided - check sessionId, includeHidden, and maxElements parameter types',
         -32602,
-        { toolName: 'extractInteractable', args },
+        { toolName: 'listInteractable', args },
         createId(),
       );
     }
 
-    const { sessionId, selector, includeHidden, maxElements } = validatedArgs;
+    const { sessionId, includeHidden, maxElements } = validatedArgs;
 
-    logger.debug('Executing extractInteractable', {
+    logger.debug('Executing listInteractable', {
       sessionId,
-      selector,
       includeHidden,
       maxElements,
     });
 
     if (!executeScript) {
       return createMCPErrorResponse(
-        'executeScript function is required for extractInteractable',
+        'executeScript function is required for listInteractable',
         -32603,
-        { toolName: 'extractInteractable', args },
+        { toolName: 'listInteractable', args },
         createId(),
       );
     }
 
     try {
       // Extract HTML from page (simple approach like extractContent)
-      const rawHtml = await extractHtmlFromPage(
-        executeScript,
-        sessionId,
-        selector,
-      );
+      const rawHtml = await extractHtmlFromPage(executeScript, sessionId);
 
       // Parse HTML to find interactive elements (in TypeScript, not browser)
       const options: InteractableOptions = {
@@ -290,7 +270,7 @@ export const extractInteractableTool: StrictBrowserMCPTool = {
         maxElements,
       };
 
-      const result = parseHtmlToInteractables(rawHtml, selector, options);
+      const result = parseHtmlToInteractables(rawHtml, 'body', options);
 
       if (result.error) {
         throw new Error(result.error);
@@ -299,9 +279,8 @@ export const extractInteractableTool: StrictBrowserMCPTool = {
       // Generate user-friendly text response
       const textContent = generateInteractableText(result);
 
-      logger.debug('extractInteractable completed successfully', {
+      logger.debug('listInteractable completed successfully', {
         sessionId,
-        selector,
         elementCount: result.metadata.total_count,
         executionTime: result.metadata.performance.execution_time_ms,
       });
@@ -312,10 +291,9 @@ export const extractInteractableTool: StrictBrowserMCPTool = {
         createId(),
       );
     } catch (error) {
-      logger.error('Error in extractInteractable:', {
+      logger.error('Error in listInteractable:', {
         error,
         sessionId,
-        selector,
         includeHidden,
         maxElements,
       });
@@ -323,7 +301,7 @@ export const extractInteractableTool: StrictBrowserMCPTool = {
       return createMCPErrorResponse(
         `Failed to extract interactive elements: ${error instanceof Error ? error.message : String(error)}`,
         -32603,
-        { toolName: 'extractInteractable', args },
+        { toolName: 'listInteractable', args },
         createId(),
       );
     }

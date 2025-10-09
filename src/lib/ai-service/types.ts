@@ -103,6 +103,16 @@ export interface IAIService {
   listModels(): Promise<ModelInfo[]>;
 
   /**
+   * Cancels any in-progress streaming requests initiated by `streamChat`.
+   * Implementations should abort network requests and stop yielding further
+   * values from `streamChat` as soon as possible.
+   *
+   * This method is idempotent - calling it multiple times or calling it
+   * when no stream is active should be safe and have no effect.
+   */
+  cancel(): void;
+
+  /**
    * Cleans up any resources used by the service instance.
    */
   dispose(): void;

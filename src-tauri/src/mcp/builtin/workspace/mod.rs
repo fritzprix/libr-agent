@@ -175,13 +175,13 @@ impl BuiltinMCPServer for WorkspaceServer {
             "read_file" => self.handle_read_file(args).await,
             "write_file" => self.handle_write_file(args).await,
             "list_directory" => self.handle_list_directory(args).await,
-            "search_files" => self.handle_search_files(args).await,
             "replace_lines_in_file" => self.handle_replace_lines_in_file(args).await,
-            "grep" => self.handle_grep(args).await,
             "import_file" => self.handle_import_file(args).await,
             // Code execution tools
-            "execute_python" => self.handle_execute_python(args).await,
-            "execute_typescript" => self.handle_execute_typescript(args).await,
+            // Note: Python/TypeScript execution were removed from the public tool
+            // interface to avoid external runtime dependencies and to prevent
+            // agents from controlling isolation/permissions. Only shell
+            // execution remains exposed below.
             "execute_shell" => self.handle_execute_shell(args).await,
             // Export tools
             "export_file" => self.handle_export_file(args).await,

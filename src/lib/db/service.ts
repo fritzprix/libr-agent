@@ -1,21 +1,10 @@
-import type { Assistant, Group, Message, Session } from '@/models/chat';
+import type { Assistant, Message, Session } from '@/models/chat';
 import Dexie, { Table } from 'dexie';
-import type {
-  DatabaseObject,
-  DatabaseService,
-  FileChunk,
-  FileContent,
-  FileStore,
-  Page,
-} from './types';
+import type { DatabaseObject, DatabaseService, Page } from './types';
 import type { Playbook } from '@/types/playbook';
 import {
   assistantsCRUD,
   createPage,
-  fileChunksCRUD,
-  fileContentsCRUD,
-  fileStoresCRUD,
-  groupsCRUD,
   messagesCRUD,
   objectsCRUD,
   sessionsCRUD,
@@ -46,14 +35,13 @@ export class LocalDatabase extends Dexie {
   objects!: Table<DatabaseObject<unknown>, string>;
   sessions!: Table<Session, string>;
   messages!: Table<Message, string>;
-  groups!: Table<Group, string>;
+  // Groups are now handled in-memory (no persistent IndexedDB table)
   playbooks!: Table<
     Playbook & { id: string; createdAt?: Date; updatedAt?: Date },
     string
   >;
-  fileStores!: Table<FileStore, string>;
-  fileContents!: Table<FileContent, string>;
-  fileChunks!: Table<FileChunk, string>;
+  // File content is persisted by the Rust backend; frontend no longer
+  // maintains fileStores/fileContents/fileChunks in IndexedDB.
 
   constructor() {
     super('MCPAgentDB');
@@ -93,21 +81,13 @@ export class LocalDatabase extends Dexie {
       messages: '&id, sessionId, createdAt',
     });
 
-    this.version(4).stores({
-      groups: '&id, createdAt, updatedAt, name',
-    });
+    // Removed persistent groups store; groups are kept in-memory.
 
-    this.version(5).stores({
-      fileStores: '&id, sessionId, createdAt, updatedAt, name',
-      fileContents: '&id, storeId, filename, uploadedAt, mimeType',
-      fileChunks: '&id, contentId, chunkIndex',
-    });
+    // Removed frontend fileStores/fileContents/fileChunks stores. Backend
+    // (Rust) is now authoritative for file content storage and indexing.
+    this.version(5).stores({});
 
     this.version(6).stores({
-      fileStores: '&id, sessionId, createdAt, updatedAt, name',
-      fileContents:
-        '&id, storeId, filename, uploadedAt, mimeType, contentHash, [storeId+contentHash]',
-      fileChunks: '&id, contentId, chunkIndex',
       playbooks: '&id, createdAt, updatedAt, goal',
     });
 
@@ -139,10 +119,6 @@ export const dbService: DatabaseService = {
   objects: objectsCRUD,
   sessions: sessionsCRUD,
   messages: messagesCRUD,
-  groups: groupsCRUD,
-  fileStores: fileStoresCRUD,
-  fileContents: fileContentsCRUD,
-  fileChunks: fileChunksCRUD,
   playbooks: playbooksCRUD,
 };
 
@@ -250,39 +226,8 @@ export const dbUtils = {
   clearSessionAndWorkspace: async (sessionId: string): Promise<void> => {
     const db = LocalDatabase.getInstance();
 
-    // Delete file stores, their contents, and chunks for this session inside a transaction
-    await db.transaction(
-      'rw',
-      db.fileStores,
-      db.fileContents,
-      db.fileChunks,
-      async () => {
-        const stores: FileStore[] = await db.fileStores
-          .where('sessionId')
-          .equals(sessionId)
-          .toArray();
-        const storeIds = stores.map((s) => s.id);
-
-        if (storeIds.length > 0) {
-          // Delete chunks linked to contents in these stores
-          const contents = await db.fileContents
-            .where('storeId')
-            .anyOf(storeIds)
-            .toArray();
-          const contentIds = contents.map((c) => c.id);
-
-          if (contentIds.length > 0) {
-            await db.fileChunks.where('contentId').anyOf(contentIds).delete();
-          }
-
-          // Delete fileContents for these stores
-          await db.fileContents.where('storeId').anyOf(storeIds).delete();
-
-          // Finally delete the stores
-          await db.fileStores.where('id').anyOf(storeIds).delete();
-        }
-      },
-    );
+    // File contents/stores are persisted by the Rust backend; frontend only
+    // needs to remove message rows for the session here.
 
     // Delete messages and session row
     await db.transaction('rw', db.messages, db.sessions, async () => {
@@ -377,121 +322,5 @@ export const dbUtils = {
     await dbService.messages.upsertMany(messages);
   },
 
-  // --- File Stores ---
-  /**
-   * Retrieves all file stores from the database, ordered by creation date.
-   * @returns A promise that resolves to an array of all file stores.
-   */
-  getAllFileStores: async (): Promise<FileStore[]> => {
-    return LocalDatabase.getInstance()
-      .fileStores.orderBy('createdAt')
-      .toArray();
-  },
-  /**
-   * Retrieves all file stores for a specific session, ordered by creation date.
-   * @param sessionId The ID of the session.
-   * @returns A promise that resolves to an array of file stores for the session.
-   */
-  getFileStoresBySession: async (sessionId: string): Promise<FileStore[]> => {
-    return LocalDatabase.getInstance()
-      .fileStores.where('sessionId')
-      .equals(sessionId)
-      .sortBy('createdAt');
-  },
-  /**
-   * Deletes all file stores and their associated contents and chunks from the database.
-   * @returns A promise that resolves when the operation is complete.
-   */
-  clearAllFileStores: async (): Promise<void> => {
-    const db = LocalDatabase.getInstance();
-    await db.transaction(
-      'rw',
-      db.fileStores,
-      db.fileContents,
-      db.fileChunks,
-      async () => {
-        await db.fileChunks.clear();
-        await db.fileContents.clear();
-        await db.fileStores.clear();
-      },
-    );
-  },
-
-  // --- File Contents ---
-  /**
-   * Retrieves all file contents for a specific store, ordered by upload date.
-   * @param storeId The ID of the file store.
-   * @returns A promise that resolves to an array of file contents.
-   */
-  getFileContentsByStore: async (storeId: string): Promise<FileContent[]> => {
-    return LocalDatabase.getInstance()
-      .fileContents.where('storeId')
-      .equals(storeId)
-      .sortBy('uploadedAt');
-  },
-  /**
-   * Searches for file contents by filename (case-insensitive prefix search).
-   * @param filename The filename prefix to search for.
-   * @returns A promise that resolves to an array of matching file contents.
-   */
-  searchFileContentsByFilename: async (
-    filename: string,
-  ): Promise<FileContent[]> => {
-    return LocalDatabase.getInstance()
-      .fileContents.where('filename')
-      .startsWithIgnoreCase(filename)
-      .toArray();
-  },
-
-  // --- File Chunks ---
-  /**
-   * Retrieves all file chunks for a specific file content, ordered by chunk index.
-   * @param contentId The ID of the file content.
-   * @returns A promise that resolves to an array of file chunks.
-   */
-  getFileChunksByContent: async (contentId: string): Promise<FileChunk[]> => {
-    return LocalDatabase.getInstance()
-      .fileChunks.where('contentId')
-      .equals(contentId)
-      .sortBy('chunkIndex');
-  },
-  /**
-   * Retrieves all file chunks for all files within a specific store.
-   * @param storeId The ID of the file store.
-   * @returns A promise that resolves to a flattened array of all file chunks in the store.
-   */
-  getFileChunksByStore: async (storeId: string): Promise<FileChunk[]> => {
-    const contents = await LocalDatabase.getInstance()
-      .fileContents.where('storeId')
-      .equals(storeId)
-      .toArray();
-
-    const contentIds = contents.map((content) => content.id);
-    const allChunks: FileChunk[] = [];
-
-    for (const contentId of contentIds) {
-      const chunks = await LocalDatabase.getInstance()
-        .fileChunks.where('contentId')
-        .equals(contentId)
-        .sortBy('chunkIndex');
-      allChunks.push(...chunks);
-    }
-
-    return allChunks;
-  },
-  /**
-   * Updates the embedding vector for a specific file chunk.
-   * @param chunkId The ID of the chunk to update.
-   * @param embedding The new embedding vector.
-   * @returns A promise that resolves when the chunk has been modified.
-   */
-  updateChunkEmbedding: async (
-    chunkId: string,
-    embedding: number[],
-  ): Promise<void> => {
-    await LocalDatabase.getInstance()
-      .fileChunks.where('id')
-      .equals(chunkId)
-      .modify({ embedding });
-  },
+  // File content helpers removed; handled by Rust backend.
 };

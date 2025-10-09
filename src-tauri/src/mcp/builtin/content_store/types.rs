@@ -55,3 +55,8 @@ pub(crate) struct KeywordSearchArgs {
     #[serde(default)]
     pub options: Option<SearchOptions>,
 }
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct DeleteContentArgs {
+    pub content_id: String,
+}

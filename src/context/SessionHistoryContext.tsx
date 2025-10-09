@@ -7,10 +7,11 @@ import {
   useMemo,
 } from 'react';
 import useSWRInfinite from 'swr/infinite';
-import { dbService, dbUtils, Page } from '../lib/db';
+import { Page } from '../lib/db/types';
 import { getLogger } from '../lib/logger';
 import { useSessionContext } from './SessionContext';
 import { Message } from '@/models/chat';
+import * as backend from '@/lib/rust-backend-client';
 
 const logger = getLogger('SessionHistoryContext');
 const PAGE_SIZE = 50;
@@ -68,7 +69,7 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
       return [currentSession.id, 'messages', pageIndex + 1];
     },
     async ([sessionId, , page]: [string, string, number]) => {
-      return dbUtils.getMessagesPageForSession(sessionId, page, PAGE_SIZE);
+      return backend.getMessagesPageForSession(sessionId, page, PAGE_SIZE);
     },
     {
       revalidateOnFocus: false, // Prevent automatic refetch on focus to avoid race conditions
@@ -76,6 +77,15 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
       revalidateIfStale: false, // Manual refresh only to prevent message loss
     },
   );
+
+  useEffect(() => {
+    if (currentSession && data && data[0].items && data[0].items.length > 0) {
+      logger.info('HISHIS : ', {
+        sessionId: currentSession?.id,
+        messageSessionId: data?.[0].items?.[0].sessionId || '',
+      });
+    }
+  }, [data, currentSession]);
 
   const messages = useMemo(() => {
     return data ? data.flatMap((page) => page.items) : [];
@@ -103,10 +113,10 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
     (messagesToAdd: Message[]): Promise<Message[]> => {
       if (!currentSession) throw new Error('No active session.');
       messagesToAdd.forEach(validateMessage);
-      const messagesWithSessionId = messagesToAdd.map((m) => ({
-        ...m,
-        sessionId: currentSession.id,
-      }));
+      const messagesWithSessionId = messagesToAdd.map((m) => {
+        if (!m.sessionId) return { ...m, sessionId: currentSession.id };
+        return m; // Preserve existing sessionId from origin
+      });
 
       const previousData = data;
 
@@ -133,7 +143,7 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
         { revalidate: false },
       )
         .then(() => {
-          return dbService.messages.upsertMany(messagesWithSessionId);
+          return backend.upsertMessages(messagesWithSessionId);
         })
         .then(() => {
           return messagesWithSessionId;
@@ -158,7 +168,7 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
     (messageId: string, updates: Partial<Message>): Promise<void> => {
       if (!currentSession) throw new Error('No active session.');
 
-      // 낙관적 업데이트 전 현재 데이터 백업
+      // Backup current data before optimistic update
       const previousData = data;
 
       return mutate(
@@ -176,11 +186,11 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
         .then(() => {
           const existing = messages.find((m) => m.id === messageId);
           if (!existing) throw new Error(`Message ${messageId} not found.`);
-          return dbService.messages.upsert({ ...existing, ...updates });
+          return backend.upsertMessage({ ...existing, ...updates });
         })
         .catch((e) => {
           logger.error('Failed to update message, rolling back', e);
-          // 실제 롤백: 이전 데이터로 복원
+          // Rollback to previous data
           mutate(previousData, { revalidate: false });
           throw e;
         });
@@ -192,7 +202,7 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
     (messageId: string): Promise<void> => {
       if (!currentSession) throw new Error('No active session.');
 
-      // 낙관적 업데이트 전 현재 데이터 백업
+      // Backup current data before optimistic update
       const previousData = data;
 
       return mutate(
@@ -206,11 +216,11 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
         { revalidate: false },
       )
         .then(() => {
-          return dbService.messages.delete(messageId);
+          return backend.deleteMessage(messageId);
         })
         .catch((e) => {
           logger.error('Failed to delete message, rolling back', e);
-          // 실제 롤백: 이전 데이터로 복원
+          // Rollback to previous data
           mutate(previousData, { revalidate: false });
           throw e;
         });
@@ -221,20 +231,20 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
   const clearHistory = useCallback((): Promise<void> => {
     if (!currentSession) throw new Error('No active session.');
 
-    // 낙관적 업데이트 전 현재 데이터 백업
+    // Backup current data before optimistic update
     const previousData = data;
 
     return new Promise<void>((resolve, reject) => {
       mutate(() => [], { revalidate: false })
         .then(() => {
-          dbUtils
+          backend
             .deleteAllMessagesForSession(currentSession.id)
             .then(() => {
               resolve();
             })
             .catch((e: unknown) => {
               logger.error('Failed to clear history, rolling back', e);
-              // 실제 롤백: 이전 데이터로 복원
+              // Rollback to previous data
               mutate(previousData, { revalidate: false });
               reject(e);
             });

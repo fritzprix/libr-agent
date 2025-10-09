@@ -51,6 +51,7 @@ impl BuiltinMCPServer for ContentStoreServer {
             "listContent" => self.handle_list_content(args).await,
             "readContent" => self.handle_read_content(args).await,
             "keywordSimilaritySearch" => self.handle_keyword_search(args).await,
+            "deleteContent" => self.handle_delete_content(args).await,
             _ => {
                 let id = ContentStoreServer::generate_request_id();
                 ContentStoreServer::error_response(

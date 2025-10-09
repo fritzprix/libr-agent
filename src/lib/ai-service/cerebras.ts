@@ -105,17 +105,29 @@ export class CerebrasService extends BaseAIService {
             throw new Error('Cerebras client not initialized');
           }
 
-          return await this.cerebras.chat.completions.create({
-            messages: cerebrasMessages,
-            model,
-            stream: true,
-            tools,
-            tool_choice: tools ? 'auto' : undefined,
-          });
+          return await this.cerebras.chat.completions.create(
+            {
+              messages: cerebrasMessages,
+              model,
+              stream: true,
+              tools,
+              tool_choice: tools ? 'auto' : undefined,
+            },
+            { signal: this.getAbortSignal() },
+          );
         },
       );
 
+      if (this.getAbortSignal().aborted) {
+        this.logger.info('Stream aborted before iteration');
+        return;
+      }
+
       for await (const chunk of stream) {
+        if (this.getAbortSignal().aborted) {
+          this.logger.info('Stream aborted during iteration');
+          break;
+        }
         const processedChunk = this.processChunk(chunk);
         if (processedChunk) {
           yield processedChunk;
