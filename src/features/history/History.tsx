@@ -29,7 +29,7 @@ export default function History() {
   }, [loadMore]);
 
   return (
-    <div className="flex-1 flex flex-col p-6 bg-muted text-foreground">
+    <div className="flex-1 flex flex-col p-6 text-foreground">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-primary mb-2">
           Session History
@@ -39,7 +39,7 @@ export default function History() {
         </p>
       </div>
 
-      <Card className="flex-1 bg-muted border-muted">
+      <Card className="flex-1 border-muted">
         <CardHeader>
           <CardTitle className="text-lg text-primary">
             All Sessions ({sessions.length})
@@ -65,7 +65,8 @@ export default function History() {
                   <Button
                     onClick={handleLoadMore}
                     disabled={isLoading}
-                    className="px-4 py-2 bg-primary/10 border border-primary text-primary rounded hover:bg-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                    variant="outline"
+                    className="text-primary border-primary hover:bg-primary/10 px-4 py-2 rounded disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isLoading ? 'Loading...' : 'Load More'}
                   </Button>

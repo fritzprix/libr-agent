@@ -81,16 +81,10 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
 
   const handleLinkClick = async (e: React.MouseEvent, url: string) => {
     e.preventDefault();
-    logger.info('Opening external URL', { url });
 
     try {
       await openExternalUrl(url);
-      logger.info('External URL opened successfully', { url });
-    } catch (error) {
-      logger.error(
-        'Failed to open external URL via Tauri, falling back to window.open',
-        { url, error },
-      );
+    } catch {
       // Fallback for browser environment
       if (typeof window !== 'undefined') {
         window.open(url, '_blank', 'noopener,noreferrer');
@@ -100,26 +94,16 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
 
   const handleUIAction = useCallback(
     async (result: UIActionResult) => {
-      logger.info('UI action received', {
-        type: result.type,
-        payload: result.payload,
-      });
-
       const sessionId = getCurrentSession()?.id;
       const assistantId = getCurrent()?.id;
 
       if (!sessionId) {
-        logger.warn('No active session available for UI action');
         return;
       }
 
       try {
         switch (result.type) {
           case 'tool': {
-            logger.info('Tool call requested from UI', {
-              toolName: result.payload.toolName,
-              params: result.payload.params,
-            });
             const { toolName, params = {} } = result.payload;
 
             // prefix 기반 라우팅: tauri: 접두사가 있으면 내부 Tauri 명령어로 처리
@@ -133,11 +117,6 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
                   strippedCommand as keyof typeof tauriCommands
                 ] === 'function'
               ) {
-                logger.info('Executing Tauri command', {
-                  strippedCommand,
-                  params,
-                });
-
                 // Tauri 명령어도 완전한 tool chain으로 처리
                 const toolCallId = createId();
 
@@ -170,11 +149,6 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
                       );
                     }
                   }
-
-                  logger.info('Tauri command completed successfully', {
-                    strippedCommand,
-                    result,
-                  });
 
                   // 실행 완료 후 tool call + tool result 메시지 쌍을 함께 추가
                   const [toolCallMessage, successMessage] =
@@ -230,11 +204,6 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
 
                 if (isBaseName) {
                   finalToolName = `${serviceInfo.serverName}__${toolName}`;
-                  logger.info('Tool name resolved using service context', {
-                    originalName: toolName,
-                    resolvedName: finalToolName,
-                    serviceInfo,
-                  });
                 }
               } else {
                 logger.warn(
@@ -293,11 +262,6 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
           }
 
           case 'intent': {
-            logger.info('Intent requested from UI', {
-              intent: result.payload.intent,
-              params: result.payload.params,
-            });
-
             // Intent를 자연어 프롬프트로 변환
             const intentText = `User intent: ${result.payload.intent}`;
             const paramsText = result.payload.params
@@ -319,10 +283,6 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
           }
 
           case 'prompt': {
-            logger.info('User prompt requested from UI', {
-              prompt: result.payload.prompt,
-            });
-
             const promptMessage = createUserMessage(
               result.payload.prompt,
               sessionId,
@@ -335,19 +295,11 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
           }
 
           case 'link': {
-            logger.info('External link requested from UI', {
-              url: result.payload.url,
-            });
-
             await openExternalUrl(result.payload.url);
             return { status: 'link-opened' };
           }
 
           case 'notify': {
-            logger.info('Notification requested from UI', {
-              message: result.payload.message,
-            });
-
             // 알림을 시스템 메시지로 채팅에 추가
             const notificationMessage = createSystemMessage(
               `🔔 ${result.payload.message}`,
@@ -433,7 +385,6 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
             );
           }
           case 'resource':
-            logger.info('resource : ', { resource: item.resource });
             // Prefer a stable, unique key to ensure proper mount/unmount semantics
             // Use message.id + resource.uri to avoid index-based reordering issues
             // Also, pass stable props to avoid unnecessary teardown in the renderer
@@ -480,16 +431,16 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
               description?: string;
             };
             return (
-              <div key={key} className="p-2 border rounded-lg bg-gray-50">
+              <div key={key} className="p-2 border rounded-lg bg-muted">
                 <a
                   href={linkItem.uri}
                   onClick={(e) => handleLinkClick(e, linkItem.uri)}
-                  className="text-blue-600 hover:text-blue-800 underline"
+                  className="text-primary hover:text-primary/90 underline"
                 >
                   {linkItem.name}
                 </a>
                 {linkItem.description && (
-                  <div className="text-sm text-gray-600 mt-1">
+                  <div className="text-sm text-muted-foreground mt-1">
                     {linkItem.description}
                   </div>
                 )}
@@ -498,7 +449,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
           }
           default:
             return (
-              <div key={key} className="text-gray-500 italic">
+              <div key={key} className="text-muted-foreground italic">
                 [{'type' in item ? (item as { type: string }).type : 'unknown'}]
               </div>
             );

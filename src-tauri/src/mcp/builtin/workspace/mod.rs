@@ -183,7 +183,6 @@ impl BuiltinMCPServer for WorkspaceServer {
             // agents from controlling isolation/permissions. Only shell
             // execution remains exposed below.
             "execute_shell" => self.handle_execute_shell(args).await,
-            "eval_javascript" => self.handle_eval_javascript(args).await,
             // Export tools
             "export_file" => self.handle_export_file(args).await,
             "export_zip" => self.handle_export_zip(args).await,

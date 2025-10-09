@@ -2,15 +2,7 @@ use crate::mcp::{utils::schema_builder::*, MCPTool};
 use serde_json::json;
 use std::collections::HashMap;
 
-use super::super::utils::constants::{
-    DEFAULT_EXECUTION_TIMEOUT, MAX_CODE_SIZE, MAX_EXECUTION_TIMEOUT,
-};
-
-// Note: Python and TypeScript execution tools were intentionally removed from
-// the public MCP tool schema. They required external runtime dependencies
-// and allowed agents to influence isolation/permissions. The server still
-// contains internal handlers for execution in certain contexts, but these
-// are not exposed as MCP tools to prevent misuse.
+use super::super::utils::constants::{DEFAULT_EXECUTION_TIMEOUT, MAX_EXECUTION_TIMEOUT};
 
 pub fn create_execute_shell_tool() -> MCPTool {
     let mut props = HashMap::new();
@@ -45,37 +37,6 @@ pub fn create_execute_shell_tool() -> MCPTool {
         title: Some("Execute Shell Command".to_string()),
         description: "Execute a shell command in a sandboxed environment using POSIX sh shell. Note: bash-specific commands like 'source' are not available - use '.' instead for sourcing files. Only basic POSIX shell features are supported.".to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),
-        output_schema: None,
-        annotations: None,
-    }
-}
-
-pub fn create_eval_javascript_tool() -> MCPTool {
-    let mut props = HashMap::new();
-    props.insert(
-        "code".to_string(),
-        string_prop_with_examples(
-            Some(1),
-            Some(MAX_CODE_SIZE as u32),
-            Some("JavaScript code to evaluate"),
-            vec![json!("console.log('Hello, World!');"), json!("2 + 2")],
-        ),
-    );
-    props.insert(
-        "timeout".to_string(),
-        integer_prop_with_default(
-            Some(1),
-            Some(MAX_EXECUTION_TIMEOUT as i64),
-            DEFAULT_EXECUTION_TIMEOUT as i64,
-            Some("Timeout in seconds (default: 30)"),
-        ),
-    );
-
-    MCPTool {
-        name: "eval_javascript".to_string(),
-        title: Some("Evaluate JavaScript Code".to_string()),
-        description: "Evaluate pure JavaScript code using the Boa JavaScript engine. Only standard JavaScript features are available - no access to file system, network, or MCP tools.".to_string(),
-        input_schema: object_schema(props, vec!["code".to_string()]),
         output_schema: None,
         annotations: None,
     }

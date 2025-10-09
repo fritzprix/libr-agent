@@ -4,7 +4,6 @@ use serde_json::{json, Value};
 pub mod constants {
     pub const DEFAULT_EXECUTION_TIMEOUT: u64 = 30;
     pub const MAX_EXECUTION_TIMEOUT: u64 = 300;
-    pub const MAX_CODE_SIZE: usize = 1024 * 1024; // 1MB
     pub const MAX_FILE_SIZE: usize = 10 * 1024 * 1024; // 10MB
 }
 

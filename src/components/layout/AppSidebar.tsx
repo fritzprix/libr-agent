@@ -91,10 +91,10 @@ export default function AppSidebar() {
                   <SidebarMenuButton
                     onClick={() => select()}
                     isActive={location.pathname === '/chat/single'}
-                    tooltip="Single Assistant Chat"
+                    tooltip="Start Chat"
                   >
                     <MessageSquare size={16} />
-                    <span>Single Assistant Chat</span>
+                    <span>Start Chat</span>
                   </SidebarMenuButton>
                 </Link>
               </SidebarMenuItem>

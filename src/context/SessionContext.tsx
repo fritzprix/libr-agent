@@ -469,23 +469,23 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
 
       // Optimistic: clear current and sessions in UI
       setCurrent(null);
-      await mutate([], false);
-
       try {
+        // Collect existing session ids so we can attempt to remove native workspaces
         const sessions = await dbUtils.getAllSessions();
+
+        // Clear sessions/messages in DB in one operation first to ensure any
+        // concurrent SWR revalidation will see an empty DB.
+        await dbUtils.clearAllSessions();
+
+        // Update UI to reflect cleared DB
+        await mutate([], false);
+
+        // Attempt native workspace removal for each previously-known session id
         for (const s of sessions) {
           try {
             await deleteContentStore(s.id);
           } catch (e) {
             logger.warn('deleteContentStore failed for session ' + s.id, e);
-          }
-          try {
-            await dbUtils.clearSessionAndWorkspace(s.id);
-          } catch (e) {
-            logger.warn(
-              'clearSessionAndWorkspace failed for session ' + s.id,
-              e,
-            );
           }
         }
       } catch (e) {

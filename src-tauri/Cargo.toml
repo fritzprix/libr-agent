@@ -1,9 +1,12 @@
 [package]
-name = "tauri-mcp-agent"
+name = "synaptic-flow"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "Lightning Fast AI Companion - Tauri-based AI agent platform with MCP integration"
+authors = ["fritzprix"]
+license = "MIT"
+repository = "https://github.com/fritzprix/synaptic-flow.git"
 edition = "2021"
+keywords = ["ai", "agent", "multi-agent", "orchestration", "mcp", "model-context-protocol", "react", "desktop", "shareable-config"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -47,7 +50,6 @@ regex = "1"
 cuid2 = "0.1.4"
 dirs = "5.0"
 zip = "0.6"
-boa_engine = "0.20"
 
 # File parsing dependencies
 docx-rs = "0.4"           # DOCX parsing

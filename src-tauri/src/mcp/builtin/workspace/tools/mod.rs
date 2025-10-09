@@ -21,7 +21,6 @@ pub fn code_tools() -> Vec<MCPTool> {
         // pulling external runtime dependencies and to prevent agents from
         // setting isolation levels. Only shell execution remains exposed.
         code_tools::create_execute_shell_tool(),
-        code_tools::create_eval_javascript_tool(),
     ]
 }
 

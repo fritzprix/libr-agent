@@ -1,4 +1,4 @@
-import type { Assistant, Group, Message, Session } from '@/models/chat';
+import type { Assistant, Message, Session } from '@/models/chat';
 import type { Playbook } from '@/types/playbook';
 
 /**
@@ -178,14 +178,6 @@ export interface DatabaseService {
   sessions: CRUD<Session>;
   /** CRUD operations for `Message` objects. */
   messages: CRUD<Message>;
-  /** CRUD operations for `Group` objects. */
-  groups: CRUD<Group>;
-  /** CRUD operations for `FileStore` objects. */
-  fileStores: CRUD<FileStore>;
-  /** CRUD operations for `FileContent` objects. */
-  fileContents: FileContentCRUD;
-  /** CRUD operations for `FileChunk` objects. */
-  fileChunks: CRUD<FileChunk>;
   /** CRUD operations for persisted Playbook objects. */
   playbooks?: CRUD<Playbook & { id: string }>;
 }

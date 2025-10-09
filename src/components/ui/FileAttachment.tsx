@@ -62,7 +62,7 @@ export default function FileAttachment({
           size="icon"
           type="button"
           onClick={handleFileSelect}
-          className="h-8 w-8 text-gray-500 hover:text-green-400"
+          className="h-8 w-8 text-muted-foreground hover:text-green-400"
           title="Attach files"
         >
           <Paperclip className="h-4 w-4" />
@@ -94,7 +94,7 @@ export default function FileAttachment({
         size="sm"
         type="button"
         onClick={handleFileSelect}
-        className="text-gray-500 hover:text-green-400 border border-gray-600"
+        className="text-muted-foreground hover:text-green-400 border border-muted"
         title="Attach files"
       >
         <Paperclip className="h-4 w-4" />
@@ -103,12 +103,14 @@ export default function FileAttachment({
       {/* Attached Files Display */}
       {files.length > 0 && (
         <div className="mt-2">
-          <div className="text-xs text-gray-500 mb-2">📎 Attached Files:</div>
+          <div className="text-xs text-muted-foreground mb-2">
+            📎 Attached Files:
+          </div>
           <div className="space-y-1">
             {files.map((file, index) => (
               <div
                 key={index}
-                className="flex items-center justify-between bg-gray-900 px-2 py-1 rounded border border-gray-700"
+                className="flex items-center justify-between bg-muted px-2 py-1 rounded border border-border-muted"
               >
                 <span className="text-xs text-green-400 truncate flex-1">
                   {file.name}

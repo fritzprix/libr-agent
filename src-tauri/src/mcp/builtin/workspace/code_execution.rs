@@ -1,4 +1,3 @@
-use boa_engine::{Context, Source};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::time::Duration;
@@ -7,7 +6,6 @@ use tracing::{error, info};
 
 use crate::session_isolation::{IsolatedProcessConfig, IsolationLevel};
 
-use super::utils::constants::*;
 use super::{utils, WorkspaceServer};
 use crate::mcp::MCPResponse;
 
@@ -208,88 +206,5 @@ impl WorkspaceServer {
         // Use new isolation-aware shell execution
         self.execute_shell_with_isolation(raw_command, isolation_level, timeout_secs)
             .await
-    }
-
-    pub async fn handle_eval_javascript(&self, args: Value) -> MCPResponse {
-        let request_id = Self::generate_request_id();
-
-        let raw_code = match args.get("code").and_then(|v| v.as_str()) {
-            Some(code) => code.to_string(),
-            None => {
-                return Self::error_response(
-                    request_id,
-                    -32602,
-                    "Missing required parameter: code",
-                );
-            }
-        };
-
-        // Validate code size
-        if raw_code.len() > MAX_CODE_SIZE {
-            return Self::error_response(
-                request_id,
-                -32602,
-                &format!(
-                    "Code size {} exceeds maximum allowed size {}",
-                    raw_code.len(),
-                    MAX_CODE_SIZE
-                ),
-            );
-        }
-
-        let timeout_secs = utils::validate_timeout(args.get("timeout").and_then(|v| v.as_u64()));
-
-        // Execute JavaScript code with timeout using spawn_blocking for Boa Context
-        let timeout_duration = Duration::from_secs(timeout_secs.min(MAX_EXECUTION_TIMEOUT));
-
-        let execution_result = timeout(timeout_duration, async {
-            tokio::task::spawn_blocking(move || {
-                // Create a new Boa context for JavaScript execution in blocking task
-                let mut context = Context::default();
-
-                // Initialize console object for better JavaScript experience
-                let _ = context.eval(Source::from_bytes(b"globalThis.console = { log: function(...args) { /* logs are captured by Boa */ } };"));
-
-                match context.eval(Source::from_bytes(&raw_code)) {
-                    Ok(result) => {
-                        // Try to convert the result to a string representation
-                        let output = match result.as_string() {
-                            Some(js_string) => match js_string.to_std_string() {
-                                Ok(s) => s,
-                                Err(_) => result.display().to_string(),
-                            },
-                            None => result.display().to_string(),
-                        };
-                        Ok(output)
-                    }
-                    Err(e) => Err(format!("JavaScript execution error: {e}")),
-                }
-            })
-            .await
-            .map_err(|e| format!("Task join error: {e}"))?
-        })
-        .await;
-
-        match execution_result {
-            Ok(Ok(output)) => {
-                info!("JavaScript evaluation completed successfully");
-                Self::success_response(request_id, &format!("Result: {output}"))
-            }
-            Ok(Err(e)) => {
-                error!("JavaScript evaluation failed: {}", e);
-                Self::error_response(request_id, -32603, &format!("Evaluation error: {e}"))
-            }
-            Err(_) => {
-                error!(
-                    "JavaScript evaluation timed out after {} seconds",
-                    timeout_secs
-                );
-                Self::error_response(
-                    request_id,
-                    -32603,
-                    &format!("Evaluation timed out after {timeout_secs} seconds"),
-                )
-            }
-        }
     }
 }

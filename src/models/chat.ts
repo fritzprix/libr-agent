@@ -120,12 +120,3 @@ export interface Session {
   createdAt: Date;
   updatedAt: Date;
 }
-
-export interface Group {
-  id: string;
-  name: string;
-  description: string;
-  assistants: Assistant[];
-  createdAt: Date;
-  updatedAt: Date;
-}

@@ -1,12 +1,12 @@
 import { useSessionContext } from '@/context/SessionContext';
 import { ChatRouter } from '.';
-import StartSingleChatView from './StartSingleChatView';
+import StartChatView from './StartChatView';
 
-export default function SingleChatContainer() {
+export default function ChatContainer() {
   const { current: currentSession } = useSessionContext();
 
   if (!currentSession) {
-    return <StartSingleChatView />;
+    return <StartChatView />;
   }
 
   return <ChatRouter />;

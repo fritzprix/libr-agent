@@ -51,7 +51,7 @@ export default function SessionList({
             placeholder="Search sessions..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-gray-800 border-gray-600 text-gray-300 placeholder-gray-500"
+            className="w-full text-muted-foreground placeholder:text-muted-foreground"
           />
         </div>
       )}
@@ -59,7 +59,7 @@ export default function SessionList({
       <div className="space-y-1 flex-1">
         {filteredSessions.length === 0
           ? !isCollapsed && (
-              <div className="text-center text-gray-500 py-4 text-sm">
+              <div className="text-center text-muted-foreground py-4 text-sm">
                 {searchQuery ? 'No matching sessions' : emptyMessage}
               </div>
             )

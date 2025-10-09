@@ -27,12 +27,30 @@ import { MCPTool } from '@/lib/mcp-types';
 
 const logger = getLogger('ChatContext');
 
+// Local guard for error-shaped objects returned by useAIService
+function isErrorClassification(obj: unknown): obj is {
+  displayMessage: string;
+  type: string;
+  recoverable: boolean;
+  details?: Record<string, unknown>;
+} {
+  if (!obj || typeof obj !== 'object') return false;
+  const cast = obj as Record<string, unknown>;
+  return (
+    typeof cast.displayMessage === 'string' &&
+    typeof cast.type === 'string' &&
+    typeof cast.recoverable === 'boolean'
+  );
+}
+
 // --- STATE CONTEXT ---
 interface ChatStateContextValue {
   isLoading: boolean;
   isToolExecuting: boolean;
   messages: Message[];
   pendingCancel: boolean;
+  // Current top-level assistant error (if any) and the message id it came from
+  error: Message['error'] | null;
 }
 
 const ChatStateContext = createContext<ChatStateContextValue | undefined>(
@@ -44,11 +62,7 @@ interface ChatActionsContextValue {
   submit: (messageToAdd?: Message[], agentKey?: string) => Promise<Message>;
   cancel: () => void;
   addToMessageQueue: (message: Partial<Message>) => void;
-  handleUIAction: (action: {
-    type: string;
-    payload: { prompt: string };
-  }) => Promise<void>;
-  retryMessage: (messageId: string) => Promise<void>;
+  retryMessage: () => Promise<void>;
 }
 
 const ChatActionsContext = createContext<ChatActionsContextValue | undefined>(
@@ -62,12 +76,7 @@ interface ChatProviderProps {
 const DEFAULT_SYSTEM_PROMPT = 'You are a helpful assistant.';
 
 export function ChatProvider({ children }: ChatProviderProps) {
-  const {
-    messages: history,
-    addMessage,
-    addMessages,
-    updateMessage,
-  } = useSessionHistory();
+  const { messages: history, addMessage, addMessages } = useSessionHistory();
   const { current: currentSession } = useSessionContext();
   const { value: settingValue } = useSettings();
   const { currentAssistant, availableTools } = useAssistantContext();
@@ -78,6 +87,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const [streamingMessage, setStreamingMessage] = useState<Message | null>(
     null,
   );
+  const [error, setError] = useState<Message['error'] | null>(null);
   const [pendingCancel, setPendingCancel] = useState(false);
   const [messageQueue, setMessageQueue] = useState<Message[]>([]);
 
@@ -232,11 +242,31 @@ export function ChatProvider({ children }: ChatProviderProps) {
     setStreamingMessage(null);
     setPendingCancel(false);
     setMessageQueue([]);
+    // Clear current error when switching sessions
+    setError(null);
   }, [currentSession?.id, cancelAIService]); // Run when currentSession?.id changes
 
   // Combine history with streaming message, avoiding duplicates
   const messages = useMemo(() => {
     if (!streamingMessage) {
+      return history;
+    }
+
+    // If the streaming message is an in-progress assistant message with no
+    // content, no tool calls and no thinking text yet, don't expose it to the
+    // UI as it results in an empty assistant bubble. Wait until some content
+    // or tool output is available or the message finalizes.
+    const isEmptyStreamingAssistant =
+      streamingMessage.role === 'assistant' &&
+      streamingMessage.isStreaming &&
+      (!streamingMessage.content ||
+        (Array.isArray(streamingMessage.content) &&
+          streamingMessage.content.length === 0)) &&
+      (!streamingMessage.tool_calls ||
+        streamingMessage.tool_calls.length === 0) &&
+      !streamingMessage.thinking;
+
+    if (isEmptyStreamingAssistant) {
       return history;
     }
 
@@ -265,6 +295,12 @@ export function ChatProvider({ children }: ChatProviderProps) {
         )
       : [...history, streamingMessage];
   }, [streamingMessage, history, currentSession?.id]);
+
+  useEffect(() => {
+    if (error) {
+      setStreamingMessage(null);
+    }
+  }, [error]);
 
   // Handle AI service streaming responses
   useEffect(() => {
@@ -295,6 +331,25 @@ export function ChatProvider({ children }: ChatProviderProps) {
         isStreaming: response.isStreaming !== false,
       };
     });
+
+    // If the response contains an error object, expose it as currentError
+    // and clear any transient streaming message so we don't show an empty
+    // assistant bubble in the UI.
+    const maybeError = response as unknown as { error?: unknown };
+    if (
+      maybeError &&
+      maybeError.error &&
+      isErrorClassification(maybeError.error)
+    ) {
+      setError(maybeError.error as Message['error']);
+      // Clear any transient streaming message created from this response
+      // (error responses should not create a visible assistant bubble).
+      setStreamingMessage(null);
+    } else {
+      // If we received a non-error response that corresponds to the current
+      // error message id, clear the current error.
+      setError(null);
+    }
   }, [response, currentSession?.id]);
 
   // Clear streaming state when message is finalized in history
@@ -380,6 +435,28 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
         // Handle AI response persistence
         if (aiResponse) {
+          // If the AI service returned an error object, we should NOT persist
+          // that error as a new assistant message in the session history.
+          // Instead expose it via currentError and let the UI render a
+          // non-persistent ErrorBubble and allow retry against the last
+          // user message.
+          if (aiResponse.error) {
+            logger.info(
+              'AI response contained an error; exposing as currentError',
+              {
+                error: aiResponse.error,
+              },
+            );
+
+            setError(aiResponse.error);
+            return {
+              ...aiResponse,
+              isStreaming: false,
+              sessionId: currentSession.id,
+            } as Message;
+          }
+
+          // Normal successful response: persist as assistant message
           const finalizedMessage: Message = {
             ...aiResponse,
             isStreaming: false,
@@ -394,6 +471,12 @@ export function ChatProvider({ children }: ChatProviderProps) {
           // Update streaming state and persist to history
           setStreamingMessage(finalizedMessage);
           await addMessage(finalizedMessage);
+
+          // Clear any transient error state on successful response. Errors are
+          // treated as temporary UI-only state and should be removed when a
+          // real assistant response arrives.
+          setError(null);
+
           return finalizedMessage;
         }
 
@@ -401,7 +484,16 @@ export function ChatProvider({ children }: ChatProviderProps) {
         throw new Error('No response received from AI service');
       } catch (error) {
         logger.error('Message submission failed', { error, agentKey });
-        setStreamingMessage(null);
+        setError({
+          displayMessage: 'Message submission failed. Please try again.',
+          type: 'SUBMIT_FAILED',
+          recoverable: true,
+          details: {
+            originalError: error,
+            errorCode: 'SUBMIT_FAILED',
+            timestamp: new Date().toISOString(),
+          },
+        });
         throw error;
       }
     },
@@ -416,85 +508,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
     ],
   );
 
-  const retryMessage = useCallback(
-    async (messageId: string): Promise<void> => {
-      const messageToRetry = messages.find((m) => m.id === messageId);
-      if (!messageToRetry?.error) return;
-
-      logger.info('Retrying failed message', { messageId });
-
-      try {
-        // Find the message index to get previous messages
-        const messageIndex = messages.findIndex((m) => m.id === messageId);
-        const previousMessages = messages.slice(0, messageIndex);
-
-        // Submit retry request
-        const response = await triggerAIService(
-          previousMessages,
-          buildSystemPrompt,
-        );
-
-        if (response) {
-          // Success: update the error message to normal message
-          await updateMessage(messageId, {
-            error: undefined,
-            content: response.content,
-            tool_calls: response.tool_calls,
-            thinking: response.thinking,
-            isStreaming: false,
-          });
-        }
-      } catch (error) {
-        logger.error('Retry failed', { messageId, error });
-        // Update with retry failed error
-        await updateMessage(messageId, {
-          error: {
-            displayMessage: 'Retry attempt failed. Please try again.',
-            type: 'RETRY_FAILED',
-            recoverable: true,
-            details: {
-              originalError: error,
-              errorCode: 'RETRY_FAILED',
-              timestamp: new Date().toISOString(),
-            },
-          },
-        });
-      }
-    },
-    [
-      messages,
-      triggerAIService,
-      buildSystemPrompt,
-      updateMessage,
-      aiServiceConfig,
-    ],
-  );
-
-  // UIResource event handler
-  const handleUIAction = useCallback(
-    async (action: { type: string; payload: { prompt: string } }) => {
-      if (action.type === 'prompt') {
-        logger.info('Received prompt response from UIResource', {
-          response: action.payload.prompt,
-        });
-
-        if (!currentSession) {
-          logger.error('No current session available for UIResource prompt');
-          return;
-        }
-
-        const userMessage: Message = {
-          id: createId(),
-          role: 'user',
-          content: stringToMCPContentArray(action.payload.prompt),
-          sessionId: currentSession.id,
-        };
-
-        await submit([userMessage]);
-      }
-    },
-    [currentSession, submit],
-  );
+  const retryMessage = useCallback(async (): Promise<void> => {
+    await submit([]);
+  }, [submit]);
 
   const handleCancel = useCallback(() => {
     setPendingCancel(true);
@@ -548,8 +564,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
       isToolExecuting: isProcessing,
       messages,
       pendingCancel,
+      error,
     }),
-    [isLoading, isProcessing, messages, pendingCancel],
+    [isLoading, isProcessing, messages, pendingCancel, error],
   );
 
   const actionsValue: ChatActionsContextValue = useMemo(
@@ -557,10 +574,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
       submit,
       cancel: handleCancel,
       addToMessageQueue,
-      handleUIAction,
       retryMessage,
     }),
-    [submit, handleCancel, addToMessageQueue, handleUIAction, retryMessage],
+    [submit, handleCancel, addToMessageQueue, retryMessage],
   );
 
   return (
