@@ -100,7 +100,33 @@ pub fn get_index_path(session_id: &str) -> Result<PathBuf, String> {
     Ok(data_dir.join(format!("{session_id}.idx")))
 }
 
-#[cfg(test)]
+/// Deletes the index file for a given session if it exists.
+///
+/// # Arguments
+/// * `session_id` - The session ID whose index should be deleted
+///
+/// # Returns
+/// Result indicating success or error message
+pub fn delete_index(session_id: &str) -> Result<(), String> {
+    let index_path = get_index_path(session_id)?;
+
+    if index_path.exists() {
+        std::fs::remove_file(&index_path)
+            .map_err(|e| format!("Failed to delete index file: {e}"))?;
+        log::info!("🗑️  Deleted search index for session: {session_id}");
+    } else {
+        log::debug!("No search index file found for session: {session_id}");
+    }
+
+    Ok(())
+}
+
+/// Deletes all index files in the message indices directory.
+/// This is useful when clearing all sessions and their associated data.
+///
+/// # Returns
+/// Result indicating success or error message, with count of deleted files
+
 mod tests {
     use super::*;
 

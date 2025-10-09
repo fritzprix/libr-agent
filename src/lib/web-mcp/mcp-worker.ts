@@ -21,6 +21,7 @@ import { ServiceContext, ServiceContextOptions } from '../../features/tools';
 // This approach provides better bundling compatibility and type safety
 import planningServer from './modules/planning-server';
 import playbookStore from './modules/playbook-store';
+import uiTools from './modules/ui-tools';
 
 /**
  * A simple logger for the worker context, as the main logger is not available here.
@@ -46,6 +47,7 @@ const log = {
 const MODULE_REGISTRY = [
   { key: 'planning', module: planningServer },
   { key: 'playbook', module: playbookStore },
+  { key: 'ui', module: uiTools },
   // Future modules can be added here with static imports
 ] as const;
 

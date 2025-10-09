@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import SessionItem from './SessionItem';
-import { useSidebar } from '../../components/ui/sidebar';
 import { Input, Badge } from '@/components/ui';
 import type { SessionWithHits } from '@/models/search';
 
@@ -9,6 +8,7 @@ interface SessionListProps {
   showSearch?: boolean;
   className?: string;
   emptyMessage?: string;
+  isCollapsed?: boolean;
 }
 
 export default function SessionList({
@@ -16,10 +16,9 @@ export default function SessionList({
   showSearch = false,
   className = '',
   emptyMessage = 'No sessions found',
+  isCollapsed = false,
 }: SessionListProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const { state } = useSidebar();
-  const isCollapsed = state === 'collapsed';
 
   // Filter sessions based on search query
   const filteredSessions = useMemo(() => {
@@ -65,7 +64,7 @@ export default function SessionList({
             )
           : filteredSessions.map((session) => (
               <div key={session.id} className="relative">
-                <SessionItem session={session} />
+                <SessionItem session={session} isCollapsed={isCollapsed} />
                 {/* Display search hit count badge if available */}
                 {session.searchHits !== undefined && session.searchHits > 0 && (
                   <div className="absolute top-2 right-2">

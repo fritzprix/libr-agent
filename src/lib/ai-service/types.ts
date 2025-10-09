@@ -76,6 +76,7 @@ export interface IAIService {
       systemPrompt?: string;
       availableTools?: MCPTool[];
       config?: AIServiceConfig;
+      forceToolUse?: boolean;
     },
   ): AsyncGenerator<string, void, void>;
 

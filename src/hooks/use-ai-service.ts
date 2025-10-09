@@ -133,6 +133,7 @@ export const useAIService = (config?: AIServiceConfig) => {
     async (
       messages: Message[],
       systemPrompt?: string | (() => Promise<string>),
+      forceToolUse?: boolean,
     ): Promise<Message> => {
       setIsLoading(true);
       setError(null);
@@ -196,6 +197,7 @@ export const useAIService = (config?: AIServiceConfig) => {
           systemPrompt: resolvedSystemPrompt,
           availableTools: config?.tools || [],
           config: config,
+          forceToolUse: forceToolUse,
         });
 
         for await (const chunk of stream) {

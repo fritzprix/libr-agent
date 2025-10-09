@@ -1,0 +1,111 @@
+# Sprint Log
+
+## 2025-01-10
+
+- [x] **Agent Mode 구현, AI Service의 Tool Use를 강제하도록 설정** ✅ **완료 (2025-01-10)**
+  - [x] AI Service Layer 업데이트
+    - `IAIService` 인터페이스에 `forceToolUse?: boolean` 파라미터 추가
+    - `BaseAIService` abstract method signature 업데이트
+    - OpenAI: `tool_choice: "required"` 구현 (`src/lib/ai-service/openai.ts:181-185`)
+    - Anthropic: `tool_choice: { type: "any" }` 구현 (`src/lib/ai-service/anthropic.ts:127-128`)
+    - Gemini: `functionCallingConfig: { mode: "ANY" }` 구현 (`src/lib/ai-service/gemini.ts:105-107`)
+  - [x] Hook Layer 업데이트
+    - `use-ai-service.ts` hook에 `forceToolUse` 파라미터 추가 및 전달
+  - [x] Context Layer 업데이트
+    - ChatContext에 `agenticMode: boolean` state 추가
+    - ChatActionsContext에 `setAgenticMode` action 추가
+    - AI service 호출 시 `forceToolUse: agenticMode` 전달
+  - [x] UI Layer 구현
+    - ChatHeader에 Agent Mode 토글 버튼 추가 (Bot 아이콘)
+    - 활성화 시 녹색 표시, 도구 설명 추가
+  - [x] 전체 검증 통과: `pnpm refactor:validate` ✅
+
+## 2025-01-09
+
+- [x] **사용자와 interaction을 위한 UI Builtin 도구 구현** ✅ **완료 (2025-01-09)**
+  - [x] visualize_data: 데이터 시각화 (bar/line chart via SVG)
+    - type: 'bar' | 'line'
+    - data: Array<{ label: string; value: number }>
+    - 구현 위치: `src/lib/web-mcp/modules/ui-tools.ts`
+  - [x] prompt_user: 사용자 프롬프트 UI (text/select/multiselect)
+    - type: 'text' | 'select' | 'multiselect'
+    - prompt: string
+    - options?: string[]
+    - 구현 위치: `src/lib/web-mcp/modules/ui-tools.ts`
+  - [x] reply_prompt: 사용자 응답 수신
+    - messageId: string
+    - answer: string | string[] | null
+    - 구현 위치: `src/lib/web-mcp/modules/ui-tools.ts`
+  - [x] Worker 등록 완료: `src/lib/web-mcp/mcp-worker.ts`
+  - [x] UIAction 라우팅: 기존 `MessageRenderer.tsx`에 이미 구현되어 있음
+  - [x] 전체 검증 통과: `pnpm refactor:validate` ✅
+
+- [x] **Message에 대한 BM25 Search 지원 구현** ✅ **완료 (2025-01-09)**
+  - [x] BM25 기반 메시지 검색 엔진 구현 (`src-tauri/src/search/message_index.rs`)
+    - BM25 알고리즘을 활용한 전문 검색(Full-Text Search)
+    - 표준 BM25 파라미터 사용 (k1=1.2, b=0.75)
+    - 동적 avgdl(평균 문서 길이) 계산으로 corpus 특성 반영
+    - 최대 문서 수 제한 기능 (환경변수 `MESSAGE_INDEX_MAX_DOCS`, 기본값: 10,000)
+    - 최신 메시지 우선 인덱싱 (created_at 기준 내림차순)
+    - 검색 결과 스니펫 추출 (쿼리 주변 200자)
+    - 직렬화/역직렬화 지원 (bincode)
+  - [x] 세션별 인덱스 관리 시스템
+    - 세션별 독립적인 인덱스 유지
+    - 전역 검색 지원 (모든 세션 대상)
+    - 인덱스 메타데이터 관리 (`message_index_meta` 테이블)
+      - last_indexed_at: 마지막 인덱스 빌드 시각
+      - doc_count: 인덱싱된 문서 수
+      - index_version: 인덱스 버전
+      - last_rebuild_duration_ms: 리빌드 소요 시간
+  - [x] 백그라운드 자동 인덱싱 워커 (`src-tauri/src/search/background_worker.rs`)
+    - 주기적인 dirty 세션 체크 (메시지 변경 감지)
+    - 백그라운드에서 자동 인덱스 리빌드
+    - Graceful shutdown 지원
+    - 상세한 로깅 (🔄 시작, 🔨 빌드, ✅ 완료, ❌ 오류)
+  - [x] 인덱스 캐시 시스템
+    - 메모리 내 인덱스 캐시 (session_id → MessageSearchEngine)
+    - Dirty 체크로 캐시 무효화 자동 처리
+    - 원자적 파일 쓰기로 데이터 무결성 보장
+  - [x] Tauri 명령어 인터페이스 (`src-tauri/src/commands/messages_commands.rs`)
+    - `messages_search`: 페이지네이션 지원 검색 API
+    - 세션별 검색 및 전역 검색 모두 지원
+    - 실시간 relevance score 기반 정렬
+    - 결과에 스니펫, 생성 시각, 세션 ID 포함
+  - [x] 데이터베이스 통합
+    - SQLite 기반 메시지 저장
+    - 인덱스 메타데이터 테이블 자동 생성
+    - 메시지 변경 시 자동 dirty 마킹
+    - 트랜잭션 지원으로 데이터 일관성 보장
+
+- [x] **Chat History 검색 기능 고도화** ✅ **완료 (2025-01-09)**
+  - [x] BM25 기반 연관성 점수화
+    - 메시지 내용 기반 relevance score 계산
+    - 쿼리 용어 빈도(TF)와 역문서 빈도(IDF) 결합
+    - 문서 길이 정규화로 공정한 점수 산출
+  - [x] 세션 연관성 순위화
+    - 메시지 매치 건수 기준 세션 정렬
+    - 개별 메시지 relevance score 집계
+    - 최신성과 관련성 균형있는 노출
+  - [x] 성능 최적화
+    - 증분 인덱싱으로 리빌드 비용 최소화
+    - 백그라운드 워커로 UI 블로킹 없음
+    - 디스크 캐싱으로 재시작 후 빠른 검색
+  - [x] 검색 UX 향상
+    - 하이라이트된 스니펫 제공
+    - 페이지네이션으로 대량 결과 처리
+    - 검색 결과에 컨텍스트 정보 포함
+  - [x] History 페이지 검색 통합 (`src/features/history/History.tsx`)
+    - 전역 메시지 검색 인터페이스
+    - 실시간 검색 (300ms debounce)
+    - SWR 기반 캐싱 및 자동 재검증
+    - 검색 결과 기반 세션 필터링 및 정렬
+      - 히트 수 기준 내림차순 정렬
+      - 동일 히트 수일 경우 최신 세션 우선
+    - 검색 상태 표시 (로딩, 에러, 결과 없음)
+    - 일반 모드 정렬 기능
+      - 날짜 기준 오름차순/내림차순 토글
+      - 검색 모드와 독립적인 정렬 옵션
+    - 세션별 히트 카운트 표시
+    - Load More 기능 (일반 모드에서만)
+    - 검색 입력 필드 플레이스홀더: "Search messages across all sessions..."
+    - TypeScript 타입 안전성 (`SessionWithHits`, `SortMode`)

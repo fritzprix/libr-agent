@@ -171,6 +171,7 @@ export default function AppSidebar() {
                 sessions={sessions.slice(0, 5)}
                 showSearch={false}
                 emptyMessage=""
+                isCollapsed={isCollapsed}
               />
             </SidebarGroupContent>
           </SidebarGroup>

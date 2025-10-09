@@ -228,6 +228,7 @@ export default function History() {
                 showSearch={false}
                 className="flex-1"
                 emptyMessage="No sessions yet. Start a conversation to create your first session."
+                isCollapsed={false}
               />
 
               {/* Load more button if there are more pages and no search active */}
