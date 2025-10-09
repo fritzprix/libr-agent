@@ -18,8 +18,6 @@ import {
   scrollPageTool,
   navigateBackTool,
   navigateForwardTool,
-  //clickElementTool,
-  //inputTextTool,
   extractPageContentTool,
   listInteractableTool,
   // injectJavascriptTool, // <-- Add import
