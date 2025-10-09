@@ -1,5 +1,10 @@
+use crate::search::index_storage::{get_index_path, write_index_atomic, IndexData, IndexMetadata};
+use crate::search::message_index::{MessageDocument, MessageSearchEngine, SearchResult};
 use crate::state::get_sqlite_pool;
 use serde::{Deserialize, Serialize};
+use sqlx::Row;
+use std::collections::HashMap;
+use std::sync::Mutex;
 use tauri::command;
 
 /// Generic pagination wrapper for query results.
@@ -77,6 +82,15 @@ pub mod db {
 
             CREATE INDEX IF NOT EXISTS idx_messages_session_id
             ON messages(session_id);
+
+            CREATE TABLE IF NOT EXISTS message_index_meta (
+                session_id TEXT PRIMARY KEY,
+                index_path TEXT,
+                last_indexed_at INTEGER DEFAULT 0,
+                doc_count INTEGER DEFAULT 0,
+                index_version INTEGER DEFAULT 1,
+                last_rebuild_duration_ms INTEGER
+            );
             "#,
         )
         .execute(pool)
@@ -295,6 +309,67 @@ pub mod db {
 
         Ok(())
     }
+
+    /// Update index metadata for a session after rebuilding.
+    pub async fn update_index_meta(
+        pool: &SqlitePool,
+        session_id: &str,
+        index_path: &str,
+        doc_count: usize,
+        rebuild_duration_ms: i64,
+    ) -> Result<(), String> {
+        let now = chrono::Utc::now().timestamp_millis();
+
+        sqlx::query(
+            r#"
+            INSERT INTO message_index_meta (session_id, index_path, last_indexed_at, doc_count, last_rebuild_duration_ms)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(session_id) DO UPDATE SET
+                index_path = excluded.index_path,
+                last_indexed_at = excluded.last_indexed_at,
+                doc_count = excluded.doc_count,
+                last_rebuild_duration_ms = excluded.last_rebuild_duration_ms
+            "#,
+        )
+        .bind(session_id)
+        .bind(index_path)
+        .bind(now)
+        .bind(doc_count as i64)
+        .bind(rebuild_duration_ms)
+        .execute(pool)
+        .await
+        .map_err(|e| format!("Failed to update index meta: {e}"))?;
+
+        Ok(())
+    }
+
+    /// Get the last indexed timestamp for a session.
+    pub async fn get_last_indexed_at(pool: &SqlitePool, session_id: &str) -> Result<i64, String> {
+        let result =
+            sqlx::query("SELECT last_indexed_at FROM message_index_meta WHERE session_id = ?")
+                .bind(session_id)
+                .fetch_optional(pool)
+                .await
+                .map_err(|e| format!("Failed to get index meta: {e}"))?;
+
+        Ok(result.map(|row| row.get("last_indexed_at")).unwrap_or(0))
+    }
+
+    /// Check if a session has messages newer than the last index build.
+    pub async fn is_index_dirty(pool: &SqlitePool, session_id: &str) -> Result<bool, String> {
+        let last_indexed_at = get_last_indexed_at(pool, session_id).await?;
+
+        let row =
+            sqlx::query("SELECT MAX(created_at) as max_created FROM messages WHERE session_id = ?")
+                .bind(session_id)
+                .fetch_one(pool)
+                .await
+                .map_err(|e| format!("Failed to check index dirty status: {e}"))?;
+
+        let max_created: Option<i64> = row.get("max_created");
+
+        Ok(max_created.map(|t| t > last_indexed_at).unwrap_or(false))
+    }
 }
 
 // ========================================
@@ -338,4 +413,161 @@ pub async fn messages_delete(message_id: String) -> Result<(), String> {
 pub async fn messages_delete_all_for_session(session_id: String) -> Result<(), String> {
     let pool = get_sqlite_pool();
     db::delete_all_for_session(pool, &session_id).await
+}
+
+// ========================================
+// Search Functionality
+// ========================================
+
+/// Global cache for loaded search indices (session_id -> MessageSearchEngine)
+static INDEX_CACHE: once_cell::sync::Lazy<Mutex<HashMap<String, MessageSearchEngine>>> =
+    once_cell::sync::Lazy::new(|| Mutex::new(HashMap::new()));
+
+/// Load or rebuild the search index for a session.
+async fn get_or_build_index(session_id: &str) -> Result<MessageSearchEngine, String> {
+    let pool = get_sqlite_pool();
+    let index_path = get_index_path(session_id)?;
+    let max_docs = MessageSearchEngine::max_docs_from_env();
+
+    // Check if index exists and is up to date
+    let is_dirty = db::is_index_dirty(pool, session_id).await?;
+
+    // Try to load from cache first
+    {
+        let cache = INDEX_CACHE
+            .lock()
+            .map_err(|e| format!("Cache lock error: {e}"))?;
+        if let Some(engine) = cache.get(session_id) {
+            if !is_dirty {
+                return Ok(engine.clone());
+            }
+        }
+    }
+
+    // If dirty or not cached, rebuild
+    let start_time = std::time::Instant::now();
+
+    // Fetch messages from database (most recent max_docs)
+    let messages = sqlx::query(
+        r#"
+        SELECT id, session_id, content, created_at
+        FROM messages
+        WHERE session_id = ?
+        ORDER BY created_at DESC
+        LIMIT ?
+        "#,
+    )
+    .bind(session_id)
+    .bind(max_docs as i64)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| format!("Failed to fetch messages for indexing: {e}"))?;
+
+    // Convert to MessageDocument
+    let documents: Vec<MessageDocument> = messages
+        .into_iter()
+        .map(|row| MessageDocument {
+            id: row.get("id"),
+            session_id: row.get("session_id"),
+            content: row.get("content"),
+            created_at: row.get("created_at"),
+        })
+        .collect();
+
+    // Build index
+    let mut engine = MessageSearchEngine::new(session_id.to_string(), max_docs);
+    engine.add_documents(documents)?;
+
+    // Persist to disk
+    let serialized = engine.serialize()?;
+    let index_data = IndexData {
+        metadata: IndexMetadata {
+            version: 1,
+            session_id: session_id.to_string(),
+            doc_count: engine.doc_count(),
+            last_built_at: chrono::Utc::now().timestamp_millis(),
+        },
+        index_content: serialized,
+    };
+
+    write_index_atomic(&index_path, &index_data)?;
+
+    // Update metadata in database
+    let rebuild_duration = start_time.elapsed().as_millis() as i64;
+    db::update_index_meta(
+        pool,
+        session_id,
+        &index_path.to_string_lossy(),
+        engine.doc_count(),
+        rebuild_duration,
+    )
+    .await?;
+
+    // Cache the engine
+    {
+        let mut cache = INDEX_CACHE
+            .lock()
+            .map_err(|e| format!("Cache lock error: {e}"))?;
+        cache.insert(session_id.to_string(), engine.clone());
+    }
+
+    Ok(engine)
+}
+
+/// Search messages using BM25 full-text search.
+///
+/// # Arguments
+/// * `query` - Search query string
+/// * `session_id` - Optional session ID to search within (if None, searches all sessions)
+/// * `page` - Page number (1-indexed)
+/// * `page_size` - Number of results per page
+///
+/// # Returns
+/// Paginated search results with relevance scores
+#[command]
+pub async fn messages_search(
+    query: String,
+    session_id: Option<String>,
+    page: usize,
+    page_size: usize,
+) -> Result<Page<SearchResult>, String> {
+    if query.trim().is_empty() {
+        return Ok(Page {
+            items: Vec::new(),
+            page,
+            page_size,
+            total_items: 0,
+            has_next_page: false,
+            has_previous_page: false,
+        });
+    }
+
+    // For now, only support single-session search (as per spec)
+    let target_session = session_id.ok_or_else(|| "session_id is required".to_string())?;
+
+    // Get or build index
+    let engine = get_or_build_index(&target_session).await?;
+
+    // Perform search (get more results than needed for pagination)
+    let all_results = engine.search(&query, page * page_size * 2)?;
+
+    // Paginate results
+    let total_items = all_results.len();
+    let start_idx = (page.saturating_sub(1)) * page_size;
+    let end_idx = (start_idx + page_size).min(total_items);
+
+    let items: Vec<SearchResult> = if start_idx < total_items {
+        all_results[start_idx..end_idx].to_vec()
+    } else {
+        Vec::new()
+    };
+
+    Ok(Page {
+        items,
+        page,
+        page_size,
+        total_items,
+        has_next_page: end_idx < total_items,
+        has_previous_page: page > 1,
+    })
 }

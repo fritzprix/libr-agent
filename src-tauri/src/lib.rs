@@ -4,6 +4,7 @@ use tauri_plugin_log::{Target, TargetKind};
 
 mod commands;
 mod mcp;
+mod search;
 mod services;
 mod session;
 mod session_isolation;
@@ -22,8 +23,8 @@ use commands::mcp_commands::{
     stop_mcp_server, switch_context, validate_tool_schema,
 };
 use commands::messages_commands::{
-    messages_delete, messages_delete_all_for_session, messages_get_page, messages_upsert,
-    messages_upsert_many,
+    messages_delete, messages_delete_all_for_session, messages_get_page, messages_search,
+    messages_upsert, messages_upsert_many,
 };
 use commands::session_commands::{
     cleanup_sessions, create_session, fast_session_switch, get_current_session_info,
@@ -74,6 +75,10 @@ pub fn run_with_sqlite_sync(db_url: String) {
             .await
             .expect("Failed to create messages table");
         println!("✅ Messages table initialized");
+
+        // Start background indexing worker (checks every 5 minutes)
+        let _indexing_worker = search::IndexingWorker::new(std::time::Duration::from_secs(300));
+        println!("✅ Background message indexing worker started");
 
         // Set the global SQLite pool
         set_sqlite_pool(pool);
@@ -216,7 +221,8 @@ pub fn run() {
                 messages_upsert_many,
                 messages_upsert,
                 messages_delete,
-                messages_delete_all_for_session
+                messages_delete_all_for_session,
+                messages_search
             ])
             .setup(|app| {
                 println!("🚀 SynapticFlow initializing...");

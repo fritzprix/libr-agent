@@ -732,6 +732,72 @@ export async function deleteAllMessagesForSession(
   return safeInvoke<void>('messages_delete_all_for_session', { sessionId });
 }
 
+// ========================================
+// Message Search
+// ========================================
+
+/**
+ * Search result for message queries.
+ */
+export interface MessageSearchResult {
+  /** The unique ID of the message */
+  messageId: string;
+  /** The session ID this message belongs to */
+  sessionId: string;
+  /** BM25 relevance score */
+  score: number;
+  /** Optional text snippet containing the search query */
+  snippet?: string;
+  /** Message creation timestamp */
+  createdAt: Date;
+}
+
+/**
+ * Searches messages using BM25 full-text search.
+ * @param query Search query string
+ * @param sessionId Session ID to search within (required)
+ * @param page Page number (1-indexed, default: 1)
+ * @param pageSize Number of results per page (default: 25)
+ * @returns A promise that resolves to a Page of search results
+ */
+export async function searchMessages(
+  query: string,
+  sessionId: string,
+  page = 1,
+  pageSize = 25,
+): Promise<Page<MessageSearchResult>> {
+  const result = await safeInvoke<Page<Record<string, unknown>>>(
+    'messages_search',
+    {
+      query,
+      sessionId,
+      page,
+      pageSize,
+    },
+  );
+
+  // Deserialize search results from Rust format
+  return {
+    ...result,
+    items: result.items.map((r) => {
+      const timestamp = r.created_at as number;
+      // Validate timestamp before creating Date object
+      const date =
+        timestamp && !isNaN(timestamp) && isFinite(timestamp)
+          ? new Date(timestamp)
+          : new Date(0);
+
+      return {
+        messageId: r.message_id as string,
+        sessionId: r.session_id as string,
+        score: r.score as number,
+        snippet: r.snippet as string | undefined,
+        createdAt: date,
+      };
+    }),
+  };
+}
+
 /**
  * Remove a session including its workspace directory on the native side.
  * This calls the Tauri command `remove_session` implemented in the backend.

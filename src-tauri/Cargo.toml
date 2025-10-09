@@ -60,3 +60,5 @@ pdf-extract = "0.7"       # Better PDF text extraction
 bm25 = { version = "2.3.2", features = ["parallelism"] }  # BM25 search with parallel indexing
 sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "sqlite"] }
 base64 = "0.22.1"
+once_cell = "1.19"        # Lazy static initialization
+bincode = "1.3"           # Binary serialization for index persistence

@@ -25,6 +25,7 @@ import { WebMCPProvider } from '@/context/WebMCPContext';
 import { SystemPromptProvider } from '@/context/SystemPromptContext';
 import { DnDContextProvider } from '@/context/DnDContext';
 import SettingsPage from '@/features/settings/SettingsPage';
+import MessageSearch from '@/features/search/MessageSearch';
 
 function App() {
   return (
@@ -61,10 +62,6 @@ function App() {
                                       element={<ChatContainer />}
                                     />
                                     <Route
-                                      path="/chat/flow"
-                                      element={<ChatContainer />}
-                                    />
-                                    <Route
                                       path="/assistants"
                                       element={<AssistantList />}
                                     />
@@ -75,6 +72,10 @@ function App() {
                                     <Route
                                       path="/history/search"
                                       element={<History />}
+                                    />
+                                    <Route
+                                      path="/search"
+                                      element={<MessageSearch />}
                                     />
                                     <Route
                                       path="/settings"
