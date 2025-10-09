@@ -21,6 +21,10 @@ use commands::mcp_commands::{
     list_mcp_tools, list_tools_from_config, sample_from_mcp_server, start_mcp_server,
     stop_mcp_server, switch_context, validate_tool_schema,
 };
+use commands::messages_commands::{
+    messages_delete, messages_delete_all_for_session, messages_get_page, messages_upsert,
+    messages_upsert_many,
+};
 use commands::session_commands::{
     cleanup_sessions, create_session, fast_session_switch, get_current_session_info,
     get_current_session_legacy, get_isolation_capabilities, get_session_stats,
@@ -36,7 +40,10 @@ use services::{InteractiveBrowserServer, SecureFileManager};
 use session::get_session_manager;
 
 // Re-export state management functions
-pub use state::{get_mcp_manager, get_sqlite_db_url, set_mcp_manager, set_sqlite_db_url};
+pub use state::{
+    get_mcp_manager, get_sqlite_db_url, get_sqlite_pool, set_mcp_manager, set_sqlite_db_url,
+    set_sqlite_pool,
+};
 
 /// A synchronous wrapper to initialize and run the application with SQLite support.
 ///
@@ -56,6 +63,21 @@ pub fn run_with_sqlite_sync(db_url: String) {
     rt.block_on(async {
         let session_manager = get_session_manager().expect("SessionManager not initialized");
         let session_manager_arc = std::sync::Arc::new(session_manager.clone());
+
+        // Initialize the SQLite connection pool
+        let pool = sqlx::sqlite::SqlitePool::connect(&db_url)
+            .await
+            .expect("Failed to connect to SQLite database");
+
+        // Initialize messages table
+        commands::messages_commands::db::create_messages_table(&pool)
+            .await
+            .expect("Failed to create messages table");
+        println!("✅ Messages table initialized");
+
+        // Set the global SQLite pool
+        set_sqlite_pool(pool);
+        println!("✅ SQLite connection pool initialized");
 
         // Initialize the MCP manager asynchronously
         let mcp_manager =
@@ -188,7 +210,13 @@ pub fn run() {
                 get_element_attribute,
                 find_element,
                 get_service_context,
-                switch_context
+                switch_context,
+                // Message management commands
+                messages_get_page,
+                messages_upsert_many,
+                messages_upsert,
+                messages_delete,
+                messages_delete_all_for_session
             ])
             .setup(|app| {
                 println!("🚀 SynapticFlow initializing...");
