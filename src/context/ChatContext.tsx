@@ -51,6 +51,7 @@ interface ChatStateContextValue {
   pendingCancel: boolean;
   // Current top-level assistant error (if any) and the message id it came from
   error: Message['error'] | null;
+  agenticMode: boolean;
 }
 
 const ChatStateContext = createContext<ChatStateContextValue | undefined>(
@@ -63,6 +64,7 @@ interface ChatActionsContextValue {
   cancel: () => void;
   addToMessageQueue: (message: Partial<Message>) => void;
   retryMessage: () => Promise<void>;
+  setAgenticMode: (enabled: boolean) => void;
 }
 
 const ChatActionsContext = createContext<ChatActionsContextValue | undefined>(
@@ -90,6 +92,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const [error, setError] = useState<Message['error'] | null>(null);
   const [pendingCancel, setPendingCancel] = useState(false);
   const [messageQueue, setMessageQueue] = useState<Message[]>([]);
+  const [agenticMode, setAgenticMode] = useState(false);
 
   // Extract window size with default fallback
   const messageWindowSize = settingValue?.windowSize ?? 20;
@@ -439,6 +442,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         const aiResponse = await triggerAIService(
           finalMessages,
           buildSystemPrompt,
+          agenticMode,
         );
 
         // Handle AI response persistence
@@ -513,6 +517,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       addMessage,
       addMessages,
       buildSystemPrompt,
+      agenticMode,
     ],
   );
 
@@ -573,8 +578,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
       messages,
       pendingCancel,
       error,
+      agenticMode,
     }),
-    [isLoading, isProcessing, messages, pendingCancel, error],
+    [isLoading, isProcessing, messages, pendingCancel, error, agenticMode],
   );
 
   const actionsValue: ChatActionsContextValue = useMemo(
@@ -583,6 +589,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       cancel: handleCancel,
       addToMessageQueue,
       retryMessage,
+      setAgenticMode,
     }),
     [submit, handleCancel, addToMessageQueue, retryMessage],
   );

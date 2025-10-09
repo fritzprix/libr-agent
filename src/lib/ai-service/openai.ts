@@ -129,6 +129,7 @@ export class OpenAIService extends BaseAIService {
       systemPrompt?: string;
       availableTools?: MCPTool[];
       config?: AIServiceConfig;
+      forceToolUse?: boolean;
     } = {},
   ): AsyncGenerator<string, void, void> {
     const { config, tools, sanitizedMessages } = this.prepareStreamChat(
@@ -177,7 +178,11 @@ export class OpenAIService extends BaseAIService {
             max_completion_tokens: config.maxTokens,
             stream: true,
             tools: tools as OpenAIChatCompletionTool[],
-            tool_choice: options.availableTools ? 'auto' : undefined,
+            tool_choice: !options.availableTools?.length
+              ? undefined
+              : options.forceToolUse
+                ? 'required'
+                : 'auto',
           },
           { signal: this.getAbortSignal() },
         ),

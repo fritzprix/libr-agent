@@ -92,6 +92,7 @@ export class AnthropicService extends BaseAIService {
       systemPrompt?: string;
       availableTools?: MCPTool[];
       config?: AIServiceConfig;
+      forceToolUse?: boolean;
     } = {},
   ): AsyncGenerator<string, void, void> {
     const { config, tools, sanitizedMessages } = this.prepareStreamChat(
@@ -123,6 +124,8 @@ export class AnthropicService extends BaseAIService {
           }),
           system: options.systemPrompt,
           tools: tools as AnthropicTool[],
+          ...(options.forceToolUse &&
+            options.availableTools?.length && { tool_choice: { type: 'any' } }),
         },
         { signal: this.getAbortSignal() },
       );
