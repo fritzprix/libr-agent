@@ -4,7 +4,30 @@ use serde_json::{json, Value};
 pub mod constants {
     pub const DEFAULT_EXECUTION_TIMEOUT: u64 = 30;
     pub const MAX_EXECUTION_TIMEOUT: u64 = 300;
-    pub const MAX_FILE_SIZE: usize = 10 * 1024 * 1024; // 10MB
+
+    // Default max file size (10MB) used if environment variable is not set or invalid.
+    const DEFAULT_MAX_FILE_SIZE: usize = 10 * 1024 * 1024; // 10MB
+
+    /// Returns the configured maximum file size in bytes.
+    ///
+    /// Lookup order:
+    /// 1. Environment variable `SYNAPTICFLOW_MAX_FILE_SIZE` (interpreted as bytes, integer)
+    /// 2. Fallback to `DEFAULT_MAX_FILE_SIZE`.
+    pub fn max_file_size() -> usize {
+        use once_cell::sync::Lazy;
+
+        static MAX_SIZE: Lazy<usize> = Lazy::new(|| {
+            // Try to load from .env first (non-fatal)
+            let _ = dotenvy::dotenv();
+
+            std::env::var("SYNAPTICFLOW_MAX_FILE_SIZE")
+                .ok()
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(DEFAULT_MAX_FILE_SIZE)
+        });
+
+        *MAX_SIZE
+    }
 }
 
 /// Generate a new request ID for MCP responses

@@ -1,7 +1,7 @@
 use tokio::fs;
 use tracing::{error, info};
 
-use crate::mcp::builtin::utils::{constants::MAX_FILE_SIZE, SecurityValidator};
+use crate::mcp::builtin::utils::{constants, SecurityValidator};
 
 /// Provides secure file system operations by ensuring that all paths are
 /// validated and constrained within a specific base directory.
@@ -52,7 +52,7 @@ impl SecureFileManager {
         }
 
         // Check file size
-        if let Err(e) = self.security.validate_file_size(&safe_path, MAX_FILE_SIZE) {
+        if let Err(e) = self.security.validate_file_size(&safe_path, constants::max_file_size()) {
             return Err(format!("File size error: {e}"));
         }
 
@@ -80,11 +80,11 @@ impl SecureFileManager {
             .map_err(|e| format!("Security error: {e}"))?;
 
         // Check content size
-        if content.len() > MAX_FILE_SIZE {
+        if content.len() > constants::max_file_size() {
             return Err(format!(
                 "Content too large: {} bytes (max: {} bytes)",
                 content.len(),
-                MAX_FILE_SIZE
+                constants::max_file_size()
             ));
         }
 
@@ -128,7 +128,7 @@ impl SecureFileManager {
         }
 
         // Check file size
-        if let Err(e) = self.security.validate_file_size(&safe_path, MAX_FILE_SIZE) {
+        if let Err(e) = self.security.validate_file_size(&safe_path, constants::max_file_size()) {
             return Err(format!("File size error: {e}"));
         }
 
@@ -221,7 +221,7 @@ impl SecureFileManager {
         }
 
         // Check source file size
-        if let Err(e) = self.security.validate_file_size(src_path, MAX_FILE_SIZE) {
+        if let Err(e) = self.security.validate_file_size(src_path, constants::max_file_size()) {
             return Err(format!("Source file size error: {e}"));
         }
 

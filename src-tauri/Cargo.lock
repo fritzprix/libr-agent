@@ -5345,6 +5345,7 @@ dependencies = [
  "dashmap",
  "dirs 5.0.1",
  "docx-rs",
+ "dotenvy",
  "futures",
  "glob",
  "html-escape",

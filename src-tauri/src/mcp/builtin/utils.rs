@@ -185,8 +185,24 @@ impl Default for SecurityValidator {
 
 /// Common constants for built-in servers
 pub mod constants {
-    /// Maximum file size for reading (10MB)
-    pub const MAX_FILE_SIZE: usize = 10 * 1024 * 1024;
+    /// Default maximum file size for reading (10MB)
+    const DEFAULT_MAX_FILE_SIZE: usize = 10 * 1024 * 1024;
+
+    /// Returns the configured maximum file size in bytes.
+    /// Checks `SYNAPTICFLOW_MAX_FILE_SIZE` environment variable (bytes) and falls back to default.
+    pub fn max_file_size() -> usize {
+        use once_cell::sync::Lazy;
+
+        static MAX_SIZE: Lazy<usize> = Lazy::new(|| {
+            let _ = dotenvy::dotenv();
+            std::env::var("SYNAPTICFLOW_MAX_FILE_SIZE")
+                .ok()
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(DEFAULT_MAX_FILE_SIZE)
+        });
+
+        *MAX_SIZE
+    }
 }
 
 #[cfg(test)]

@@ -2,7 +2,8 @@ use crate::mcp::{utils::schema_builder::*, MCPTool};
 
 use std::collections::HashMap;
 
-use super::super::utils::constants::MAX_FILE_SIZE;
+// Note: maximum file size is enforced at runtime (SYNAPTICFLOW_MAX_FILE_SIZE).
+// The input schema cannot call runtime functions; therefore `content` has no hard cap here.
 
 pub fn create_read_file_tool() -> MCPTool {
     let mut props = HashMap::new();
@@ -47,8 +48,8 @@ pub fn create_write_file_tool() -> MCPTool {
         "content".to_string(),
         string_prop(
             None,
-            Some(MAX_FILE_SIZE as u32),
-            Some("Content to write to the file"),
+            None,
+            Some("Content to write to the file. Actual maximum is enforced server-side via SYNAPTICFLOW_MAX_FILE_SIZE"),
         ),
     );
     props.insert(

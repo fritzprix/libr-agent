@@ -72,7 +72,7 @@ impl WorkspaceServer {
         let content = if start_line.is_some() || end_line.is_some() {
             if let Err(e) = file_manager
                 .get_security_validator()
-                .validate_file_size(&safe_path, super::utils::constants::MAX_FILE_SIZE)
+                .validate_file_size(&safe_path, super::utils::constants::max_file_size())
             {
                 error!("File size validation failed: {}", e);
                 return Self::error_response(request_id, -32603, &format!("File size error: {e}"));
