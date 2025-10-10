@@ -10,9 +10,9 @@ The architecture is designed to be modular and extensible, separating concerns b
 
 SynapticFlow is composed of three primary layers:
 
-1.  **Frontend Layer (React)**: The user-facing application built with React and TypeScript.
-2.  **Backend Layer (Tauri/Rust)**: The native backend that manages system resources, provides native services, and communicates with external processes.
-3.  **Service Layer (Tools & Capabilities)**: A flexible layer of tool providers that can be native Rust services, in-browser Web Worker services, or external processes adhering to the Model Context Protocol (MCP).
+1. **Frontend Layer (React)**: The user-facing application built with React and TypeScript.
+2. **Backend Layer (Tauri/Rust)**: The native backend that manages system resources, provides native services, and communicates with external processes.
+3. **Service Layer (Tools & Capabilities)**: A flexible layer of tool providers that can be native Rust services, in-browser Web Worker services, or external processes adhering to the Model Context Protocol (MCP).
 
 ### 1. Frontend Layer (`src/`)
 

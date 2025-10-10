@@ -15,9 +15,9 @@ The app's architecture is centered around a **service-oriented model** for integ
 
 There are three main types of services:
 
-1.  **Native Rust Services**: Implemented in the Tauri backend for high performance and access to native capabilities (e.g., `filesystem`, `sandbox`).
-2.  **Web Worker Services**: Run in a separate browser thread, ideal for browser-based tools or intensive tasks that shouldn't block the UI (e.g., `planning`).
-3.  **External MCP Servers**: Standalone processes that communicate via stdio, managed by the Rust backend.
+1. **Native Rust Services**: Implemented in the Tauri backend for high performance and access to native capabilities (e.g., `filesystem`, `sandbox`).
+2. **Web Worker Services**: Run in a separate browser thread, ideal for browser-based tools or intensive tasks that shouldn't block the UI (e.g., `planning`).
+3. **External MCP Servers**: Standalone processes that communicate via stdio, managed by the Rust backend.
 
 ---
 
