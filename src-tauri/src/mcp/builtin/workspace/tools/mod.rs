@@ -1,7 +1,8 @@
-// 기존 create_*_tool 함수들을 기능별로 분리
+// Tool modules organized by functionality
 pub mod code_tools;
 pub mod export_tools;
 pub mod file_tools;
+pub mod terminal_tools;
 
 use crate::mcp::MCPTool;
 
@@ -28,5 +29,17 @@ pub fn export_tools() -> Vec<MCPTool> {
     vec![
         export_tools::create_export_file_tool(),
         export_tools::create_export_zip_tool(),
+    ]
+}
+
+pub fn terminal_tools() -> Vec<MCPTool> {
+    use terminal_tools::{
+        create_list_processes_tool, create_poll_process_tool, create_read_process_output_tool,
+    };
+
+    vec![
+        create_poll_process_tool(),
+        create_read_process_output_tool(),
+        create_list_processes_tool(),
     ]
 }

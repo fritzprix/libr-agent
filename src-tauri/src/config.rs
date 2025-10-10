@@ -2,6 +2,21 @@
 ///
 /// This module provides environment-driven configuration with fallback defaults.
 /// All configuration values can be overridden via environment variables.
+///
+/// # Development Mode
+/// In debug builds, environment variables are loaded from a `.env` file in the project root
+/// (if it exists). See `.env.example` for available configuration options.
+///
+/// # Production Mode
+/// In release builds, only system environment variables are used. Configure your
+/// deployment environment accordingly.
+///
+/// # Available Environment Variables
+/// - `SYNAPTICFLOW_MAX_FILE_SIZE`: Maximum file size in bytes (default: 10485760 = 10MB)
+/// - `SYNAPTICFLOW_DEFAULT_EXECUTION_TIMEOUT`: Default command timeout in seconds (default: 30)
+/// - `SYNAPTICFLOW_MAX_EXECUTION_TIMEOUT`: Maximum command timeout in seconds (default: 300)
+/// - `MESSAGE_INDEX_SNIPPET_LENGTH`: Message snippet length for search index (default: 200)
+/// - `SYNAPTICFLOW_DB_PATH`: SQLite database file path (default: user data directory)
 use std::env;
 
 /// Default maximum file size (10 MB)

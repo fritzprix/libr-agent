@@ -167,3 +167,79 @@ pub fn string_prop_with_examples(
         const_value: None,
     }
 }
+
+/// Creates a required string property schema
+pub fn string_prop_required(description: &str) -> JSONSchema {
+    string_prop(None, None, Some(description))
+}
+
+/// Creates an enum property schema with allowed values and default
+pub fn enum_prop(values: Vec<&str>, default: &str, description: Option<&str>) -> JSONSchema {
+    let enum_values: Vec<Value> = values
+        .iter()
+        .map(|v| Value::String(v.to_string()))
+        .collect();
+
+    JSONSchema {
+        schema_type: JSONSchemaType::String {
+            min_length: None,
+            max_length: None,
+            pattern: None,
+            format: None,
+        },
+        title: None,
+        description: description.map(|s| s.to_string()),
+        default: Some(Value::String(default.to_string())),
+        examples: None,
+        enum_values: Some(enum_values),
+        const_value: None,
+    }
+}
+
+/// Creates an enum property schema with allowed values and default (required version)
+pub fn enum_prop_required(values: Vec<&str>, description: &str) -> JSONSchema {
+    let enum_values: Vec<Value> = values
+        .iter()
+        .map(|v| Value::String(v.to_string()))
+        .collect();
+
+    JSONSchema {
+        schema_type: JSONSchemaType::String {
+            min_length: None,
+            max_length: None,
+            pattern: None,
+            format: None,
+        },
+        title: None,
+        description: Some(description.to_string()),
+        default: None,
+        examples: None,
+        enum_values: Some(enum_values),
+        const_value: None,
+    }
+}
+
+/// Creates an object property schema with nested properties
+pub fn object_prop(
+    properties: Vec<(String, JSONSchema)>,
+    required: Vec<String>,
+    description: Option<&str>,
+) -> JSONSchema {
+    let props: HashMap<String, JSONSchema> = properties.into_iter().collect();
+
+    JSONSchema {
+        schema_type: JSONSchemaType::Object {
+            properties: Some(props),
+            required: Some(required),
+            additional_properties: Some(false),
+            min_properties: None,
+            max_properties: None,
+        },
+        title: None,
+        description: description.map(|s| s.to_string()),
+        default: None,
+        examples: None,
+        enum_values: None,
+        const_value: None,
+    }
+}
