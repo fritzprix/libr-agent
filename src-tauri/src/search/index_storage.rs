@@ -126,17 +126,16 @@ pub fn delete_index(session_id: &str) -> Result<(), String> {
 ///
 /// # Returns
 /// Result indicating success or error message, with count of deleted files
-
 mod tests {
-    use super::*;
+    // ...existing code... (no use super::* needed because tests access module items directly)
 
     #[test]
     fn test_index_write_read_roundtrip() {
         let temp_dir = tempfile::tempdir().unwrap();
         let index_path = temp_dir.path().join("test.idx");
 
-        let original_data = IndexData {
-            metadata: IndexMetadata {
+        let original_data = super::IndexData {
+            metadata: super::IndexMetadata {
                 version: 1,
                 session_id: "test-session".to_string(),
                 doc_count: 100,
@@ -146,10 +145,10 @@ mod tests {
         };
 
         // Write
-        write_index_atomic(&index_path, &original_data).unwrap();
+        super::write_index_atomic(&index_path, &original_data).unwrap();
 
         // Read
-        let read_data = read_index(&index_path).unwrap();
+        let read_data = super::read_index(&index_path).unwrap();
 
         assert_eq!(read_data.metadata.version, 1);
         assert_eq!(read_data.metadata.session_id, "test-session");
@@ -159,7 +158,7 @@ mod tests {
 
     #[test]
     fn test_read_nonexistent_file() {
-        let result = read_index(Path::new("/nonexistent/path.idx"));
+        let result = super::read_index(std::path::Path::new("/nonexistent/path.idx"));
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not found"));
     }
