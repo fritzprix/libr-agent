@@ -4,9 +4,9 @@
 
 `gaol`은 다중 프로세스 환경에서 사용하도록 설계되었습니다. 통합 과정은 다음과 같은 단계로 이루어집니다 :[1]
 
-1.  **프로필 생성**: 상위 권한을 가진 부모 프로세스에서 `Profile` 객체를 생성합니다. 이 프로필에는 자식 프로세스에게 허용할 작업들(예: 특정 파일 시스템 경로 접근, 네트워크 연결 등)이 정의됩니다.
-2.  **프로세스 생성**: 생성된 프로필의 제약 조건 하에서 권한이 낮은 자식 프로세스를 생성합니다. `gaol`은 이 프로필을 적용하여 새로운 프로세스를 시작하는 기능을 제공합니다.
-3.  **샌드박스 내 코드 실행**: 자식 프로세스는 샌드박스 환경 내에서 제한된 권한으로 코드를 실행하게 됩니다.
+1. **프로필 생성**: 상위 권한을 가진 부모 프로세스에서 `Profile` 객체를 생성합니다. 이 프로필에는 자식 프로세스에게 허용할 작업들(예: 특정 파일 시스템 경로 접근, 네트워크 연결 등)이 정의됩니다.
+2. **프로세스 생성**: 생성된 프로필의 제약 조건 하에서 권한이 낮은 자식 프로세스를 생성합니다. `gaol`은 이 프로필을 적용하여 새로운 프로세스를 시작하는 기능을 제공합니다.
+3. **샌드박스 내 코드 실행**: 자식 프로세스는 샌드박스 환경 내에서 제한된 권한으로 코드를 실행하게 됩니다.
 
 ### 통합 예제 (개념 코드)
 
@@ -61,9 +61,9 @@ fn main() {
 
 이러한 경우, 권한이 있는 **브로커 프로세스**를 활용하는 아키텍처가 효과적입니다.
 
-1.  신뢰할 수 없는 샌드박스 프로세스는 모든 네트워크 연결이 차단되도록 설정합니다.
-2.  네트워크 연결이 필요할 때, 샌드박스 프로세스는 IPC(프로세스 간 통신)를 통해 브로커 프로세스에 작업을 요청합니다.
-3.  브로커 프로세스는 요청의 유효성(예: 허용된 포트인지)을 검증한 뒤, 샌드박스 프로세스를 대신하여 해당 작업을 수행합니다.[1]
+1. 신뢰할 수 없는 샌드박스 프로세스는 모든 네트워크 연결이 차단되도록 설정합니다.
+2. 네트워크 연결이 필요할 때, 샌드박스 프로세스는 IPC(프로세스 간 통신)를 통해 브로커 프로세스에 작업을 요청합니다.
+3. 브로커 프로세스는 요청의 유효성(예: 허용된 포트인지)을 검증한 뒤, 샌드박스 프로세스를 대신하여 해당 작업을 수행합니다.[1]
 
 `gaol` 자체는 이러한 브로커 기능을 직접 제공하지 않으므로, 애플리케이션의 필요에 따라 별도로 구현해야 합니다.[1]
 
@@ -78,30 +78,30 @@ fn main() {
 
 따라서 `gaol`은 유용한 샌드박싱 도구이지만, 개발하려는 애플리케이션의 구체적인 보안 요구사항과 아키텍처에 따라 `Bastille`과 같은 다른 라이브러리나 WASM 기반의 접근 방식을 함께 검토하는 것이 좋습니다.
 
-[1] https://github.com/servo/gaol
-[2] https://github.com/ebkalderon/bastille
-[3] https://crates.io/crates/rusty-sandbox
-[4] https://rust-lang.github.io/rust-project-goals/2024h2/sandboxed-build-script.html
-[5] https://internals.rust-lang.org/t/sandbox-build-rs-and-proc-macros/16345
-[6] https://internals.rust-lang.org/t/sandbox-build-rs-and-possibly-proc-macro-by-providing-a-runner-as-env-variable/18172
-[7] https://escholarship.org/uc/item/5kq7s1jj
-[8] https://docs.rs/gaol/latest/gaol/platform/linux/struct.Sandbox.html
-[9] https://docs.rs/gaol/latest/gaol/sandbox/index.html
-[10] https://stackoverflow.com/questions/59339269/is-there-a-way-to-count-and-limit-the-number-of-instructions-run-by-gaol
-[11] https://www.youtube.com/watch?v=oxx7MmN4Ib0
-[12] https://insanitybit.github.io/2016/06/11/better-sandboxing-in-rust
-[13] https://rust-lang.github.io/rust-project-goals/2024h2/Contracts-and-invariants.html
-[14] https://www.reddit.com/r/rust/comments/xavsau/sandboxing_dll_code/
-[15] https://insanitybit.github.io/2016/06/11/sandboxing-code-in-rust
-[16] https://docs.rs/grit-data-prison
-[17] https://developer.algorand.org/tutorials/send-an-algorand-transaction-using-rust/
-[18] https://healeycodes.com/sandboxing-javascript-code
-[19] https://github.com/rust-secure-code/wg/issues/29
-[20] https://www.reddit.com/r/rust/comments/ittnir/jssandbox_securely_embed_javascript_into_rust_code/
-[21] https://blog.rust-lang.org/2025/01/23/Project-Goals-Dec-Update.html
-[22] https://developers.redhat.com/articles/2022/09/06/build-trust-continuous-integration-your-rust-library
-[23] https://www.youtube.com/watch?v=DQ2XqNB-0Qg
-[24] https://www.linkedin.com/posts/omer-yusuf-yagci_github-omeryusufyagcirust-cpp-integration-activity-7229558606424100864-ueje
-[25] https://www.reddit.com/r/rust/comments/58l5fm/how_to_make_a_safe_sandbox_for_dynamic_loaded/
-[26] https://codesandbox.io/s/goal-sandbox-7xdyf
-[27] https://news.ycombinator.com/item?id=43601301
+[1] <https://github.com/servo/gaol>
+[2] <https://github.com/ebkalderon/bastille>
+[3] <https://crates.io/crates/rusty-sandbox>
+[4] <https://rust-lang.github.io/rust-project-goals/2024h2/sandboxed-build-script.html>
+[5] <https://internals.rust-lang.org/t/sandbox-build-rs-and-proc-macros/16345>
+[6] <https://internals.rust-lang.org/t/sandbox-build-rs-and-possibly-proc-macro-by-providing-a-runner-as-env-variable/18172>
+[7] <https://escholarship.org/uc/item/5kq7s1jj>
+[8] <https://docs.rs/gaol/latest/gaol/platform/linux/struct.Sandbox.html>
+[9] <https://docs.rs/gaol/latest/gaol/sandbox/index.html>
+[10] <https://stackoverflow.com/questions/59339269/is-there-a-way-to-count-and-limit-the-number-of-instructions-run-by-gaol>
+[11] <https://www.youtube.com/watch?v=oxx7MmN4Ib0>
+[12] <https://insanitybit.github.io/2016/06/11/better-sandboxing-in-rust>
+[13] <https://rust-lang.github.io/rust-project-goals/2024h2/Contracts-and-invariants.html>
+[14] <https://www.reddit.com/r/rust/comments/xavsau/sandboxing_dll_code/>
+[15] <https://insanitybit.github.io/2016/06/11/sandboxing-code-in-rust>
+[16] <https://docs.rs/grit-data-prison>
+[17] <https://developer.algorand.org/tutorials/send-an-algorand-transaction-using-rust/>
+[18] <https://healeycodes.com/sandboxing-javascript-code>
+[19] <https://github.com/rust-secure-code/wg/issues/29>
+[20] <https://www.reddit.com/r/rust/comments/ittnir/jssandbox_securely_embed_javascript_into_rust_code/>
+[21] <https://blog.rust-lang.org/2025/01/23/Project-Goals-Dec-Update.html>
+[22] <https://developers.redhat.com/articles/2022/09/06/build-trust-continuous-integration-your-rust-library>
+[23] <https://www.youtube.com/watch?v=DQ2XqNB-0Qg>
+[24] <https://www.linkedin.com/posts/omer-yusuf-yagci_github-omeryusufyagcirust-cpp-integration-activity-7229558606424100864-ueje>
+[25] <https://www.reddit.com/r/rust/comments/58l5fm/how_to_make_a_safe_sandbox_for_dynamic_loaded/>
+[26] <https://codesandbox.io/s/goal-sandbox-7xdyf>
+[27] <https://news.ycombinator.com/item?id=43601301>

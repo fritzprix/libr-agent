@@ -243,10 +243,73 @@ export function WorkspaceFilesPanel() {
 
           // Create tool messages for chat history
           const toolCallId = createId();
-          const resultText =
-            typeof response.result === 'string'
-              ? response.result
-              : JSON.stringify(response.result);
+
+          // Build a safe textual result for UI. The backend returns an MCPResponse
+          // which may have result.content (array) or an error. Protect against
+          // malformed responses so the UI doesn't insert `{ type: 'text' }` with
+          // missing `text` field.
+          let resultText = '';
+
+          try {
+            if (response.error) {
+              // Prefer explicit error message when backend indicates an error
+              resultText = `❌ ${response.error.message}`;
+            } else if (response.result) {
+              // If result.content is present and is an array of MCPContent,
+              // try to extract any text entries or stringify the result.
+              // Handle multiple shapes defensively.
+              // (Some older paths returned a plain string in `result`.)
+              // Use JSON.stringify fallback so message is never empty.
+
+              const resAsUnknown: unknown = response.result as unknown;
+              const content =
+                typeof resAsUnknown === 'object' && resAsUnknown !== null
+                  ? (resAsUnknown as Record<string, unknown>)['content']
+                  : undefined;
+              if (Array.isArray(content) && content.length > 0) {
+                const texts: string[] = [];
+                for (const item of content) {
+                  if (item && typeof item === 'object') {
+                    // runtime-safe check for text field
+                    if (
+                      'text' in (item as Record<string, unknown>) &&
+                      typeof (item as Record<string, unknown>)['text'] ===
+                        'string'
+                    ) {
+                      texts.push(
+                        (item as Record<string, unknown>)['text'] as string,
+                      );
+                    } else if (
+                      (item as Record<string, unknown>)['type'] === 'text' &&
+                      !('text' in (item as Record<string, unknown>))
+                    ) {
+                      // explicit text type but missing text field - skip
+                    } else {
+                      try {
+                        texts.push(JSON.stringify(item));
+                      } catch {
+                        // ignore
+                      }
+                    }
+                  }
+                }
+
+                if (texts.length > 0) resultText = texts.join('\n');
+                else resultText = JSON.stringify(response.result);
+              } else if (typeof resAsUnknown === 'string') {
+                resultText = resAsUnknown as string;
+              } else {
+                resultText = JSON.stringify(response.result);
+              }
+            } else {
+              // No result or error: fallback message
+              resultText = 'No result returned from import_file';
+            }
+          } catch (e) {
+            resultText = `Failed to parse tool response: ${
+              e instanceof Error ? e.message : String(e)
+            }`;
+          }
 
           const [toolCallMessage, toolResultMessage] = createToolMessagePair(
             'import_file',

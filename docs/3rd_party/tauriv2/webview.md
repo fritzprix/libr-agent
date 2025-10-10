@@ -162,14 +162,14 @@ winList.forEach((win) => console.log(win.label));
 
 Tauri v2 공식 문서 기준으로 다양한 Webview 옵션과 Multiwindow 기능이 제공되며, 실전 코드 예제와 함께 자유로운 창·웹뷰 관리가 가능합니다. 고급 이벤트, 창 제어, 권한 분리까지 전방위적인 데스크톱 애플리케이션 자동화와 Agent 인터페이스 개발에 활용할 수 있습니다.[2][1]
 
-[1] https://v2.tauri.app/reference/javascript/api/namespacewebview/
-[2] https://v2.tauri.app/reference/javascript/api/namespacewebviewwindow/
-[3] https://stackoverflow.com/questions/77775315/how-to-create-mulitwindows-in-tauri-rust-react-typescript-html-css
-[4] https://v2.tauri.app/reference/javascript/api/namespacewindow/
-[5] https://tauri.app/ko/v1/guides/features/multiwindow/
-[6] https://classic.yarnpkg.com/en/package/@tauri-apps/api
-[7] https://stackoverflow.com/questions/79602787/how-to-properly-embed-a-webview-inside-a-vue-component-in-a-tauri-2-vite-appli
-[8] https://v2.tauri.app/learn/security/capabilities-for-windows-and-platforms/
-[9] https://v2.tauri.app/reference/javascript/api/
-[10] https://v2.tauri.app/concept/architecture/
-[11] https://v2.tauri.app/blog/tauri-20/
+[1] <https://v2.tauri.app/reference/javascript/api/namespacewebview/>
+[2] <https://v2.tauri.app/reference/javascript/api/namespacewebviewwindow/>
+[3] <https://stackoverflow.com/questions/77775315/how-to-create-mulitwindows-in-tauri-rust-react-typescript-html-css>
+[4] <https://v2.tauri.app/reference/javascript/api/namespacewindow/>
+[5] <https://tauri.app/ko/v1/guides/features/multiwindow/>
+[6] <https://classic.yarnpkg.com/en/package/@tauri-apps/api>
+[7] <https://stackoverflow.com/questions/79602787/how-to-properly-embed-a-webview-inside-a-vue-component-in-a-tauri-2-vite-appli>
+[8] <https://v2.tauri.app/learn/security/capabilities-for-windows-and-platforms/>
+[9] <https://v2.tauri.app/reference/javascript/api/>
+[10] <https://v2.tauri.app/concept/architecture/>
+[11] <https://v2.tauri.app/blog/tauri-20/>

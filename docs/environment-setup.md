@@ -70,6 +70,7 @@ VITE_AI_MAX_TOKENS=4096
    ```
 
 3. **Run development:**
+
    ```bash
    pnpm tauri dev
    ```

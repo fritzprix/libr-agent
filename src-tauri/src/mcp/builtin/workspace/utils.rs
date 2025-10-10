@@ -1,12 +1,6 @@
 use crate::mcp::MCPResponse;
 use serde_json::{json, Value};
 
-pub mod constants {
-    pub const DEFAULT_EXECUTION_TIMEOUT: u64 = 30;
-    pub const MAX_EXECUTION_TIMEOUT: u64 = 300;
-    pub const MAX_FILE_SIZE: usize = 10 * 1024 * 1024; // 10MB
-}
-
 /// Generate a new request ID for MCP responses
 pub fn generate_request_id() -> Value {
     Value::String(cuid2::create_id())
@@ -32,7 +26,7 @@ pub fn create_error_response(request_id: Value, code: i32, message: &str) -> MCP
 
 /// Validate timeout value, applying default and max limits
 pub fn validate_timeout(timeout: Option<u64>) -> u64 {
-    timeout
-        .unwrap_or(constants::DEFAULT_EXECUTION_TIMEOUT)
-        .min(constants::MAX_EXECUTION_TIMEOUT)
+    let default = crate::config::default_execution_timeout();
+    let max = crate::config::max_execution_timeout();
+    timeout.unwrap_or(default).min(max)
 }

@@ -2,8 +2,6 @@ use crate::mcp::{utils::schema_builder::*, MCPTool};
 use serde_json::json;
 use std::collections::HashMap;
 
-use super::super::utils::constants::{DEFAULT_EXECUTION_TIMEOUT, MAX_EXECUTION_TIMEOUT};
-
 pub fn create_execute_shell_tool() -> MCPTool {
     let mut props = HashMap::new();
     props.insert(
@@ -23,8 +21,8 @@ pub fn create_execute_shell_tool() -> MCPTool {
         "timeout".to_string(),
         integer_prop_with_default(
             Some(1),
-            Some(MAX_EXECUTION_TIMEOUT as i64),
-            DEFAULT_EXECUTION_TIMEOUT as i64,
+            Some(crate::config::max_execution_timeout() as i64),
+            crate::config::default_execution_timeout() as i64,
             Some("Timeout in seconds (default: 30)"),
         ),
     );

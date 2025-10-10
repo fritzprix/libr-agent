@@ -5,7 +5,7 @@
 
 ---
 
-**Documentation:** https://googleapis.github.io/js-genai/
+**Documentation:** <https://googleapis.github.io/js-genai/>
 
 ---
 
@@ -30,7 +30,7 @@ The Google Gen AI SDK is designed to work with Gemini 2.0 features.
 1.  [Enable billing for your project](https://cloud.google.com/billing/docs/how-to/modify-project).
 1.  [Enable the Vertex AI API](https://console.cloud.google.com/flows/enableapi?apiid=aiplatform.googleapis.com).
 1.  [Configure authentication](https://cloud.google.com/docs/authentication) for your project.
-    _ [Install the gcloud CLI](https://cloud.google.com/sdk/docs/install).
+    _[Install the gcloud CLI](https://cloud.google.com/sdk/docs/install).
     _ [Initialize the gcloud CLI](https://cloud.google.com/sdk/docs/initializing). \* Create local authentication credentials for your user account:
 
         ```sh
@@ -113,7 +113,7 @@ const ai = new GoogleGenAI({
 });
 ```
 
-### (Optional) (NodeJS only) Using environment variables:
+### (Optional) (NodeJS only) Using environment variables
 
 For NodeJS environments, you can create a client by configuring the necessary
 environment variables. Configuration setup instructions depends on whether

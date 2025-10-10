@@ -207,9 +207,9 @@ impl MessageSearchEngine {
 
     /// Extracts a snippet from content containing the query terms.
     ///
-    /// Returns a ~200 character snippet centered around the first query match.
+    /// Returns a snippet (default ~200 characters) centered around the first query match.
     fn extract_snippet(content: &str, query: &str) -> Option<String> {
-        const SNIPPET_LENGTH: usize = 200;
+        let snippet_length = crate::config::message_index_snippet_length();
 
         let content_lower = content.to_lowercase();
         let query_lower = query.to_lowercase();
@@ -226,11 +226,11 @@ impl MessageSearchEngine {
         }
 
         let start_pos = match match_pos {
-            Some(pos) => pos.saturating_sub(SNIPPET_LENGTH / 2),
+            Some(pos) => pos.saturating_sub(snippet_length / 2),
             None => 0, // No match found, take beginning
         };
 
-        let end_pos = (start_pos + SNIPPET_LENGTH).min(content.len());
+        let end_pos = (start_pos + snippet_length).min(content.len());
         let mut snippet = content[start_pos..end_pos].to_string();
 
         // Add ellipsis if truncated

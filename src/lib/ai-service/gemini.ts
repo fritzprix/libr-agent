@@ -24,7 +24,7 @@ interface GeminiServiceConfig {
   systemInstruction?: Array<{ text: string }>;
   maxOutputTokens?: number;
   temperature?: number;
-  functionCallingConfig?: { mode: 'AUTO' | 'ANY' | 'NONE' };
+  functionCallingConfig?: { mode: 'auto' | 'any' | 'none' };
 }
 
 /**
@@ -103,7 +103,7 @@ export class GeminiService extends BaseAIService {
       if (geminiTools) {
         geminiConfig.tools = geminiTools;
         if (options.forceToolUse) {
-          geminiConfig.functionCallingConfig = { mode: 'ANY' };
+          geminiConfig.functionCallingConfig = { mode: 'any' };
         }
       }
 

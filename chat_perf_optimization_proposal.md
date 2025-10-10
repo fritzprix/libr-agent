@@ -26,8 +26,8 @@ The proposals are ranked by their potential impact on performance.
 
 - **Split the Context:**
   Create two separate contexts:
-  1.  `ChatStateContext`: Provides frequently changing state (`messages`, `isLoading`, `isToolExecuting`).
-  2.  `ChatActionsContext`: Provides stable functions (`submit`, `cancel`, `addToMessageQueue`).
+  1. `ChatStateContext`: Provides frequently changing state (`messages`, `isLoading`, `isToolExecuting`).
+  2. `ChatActionsContext`: Provides stable functions (`submit`, `cancel`, `addToMessageQueue`).
 
   Components can then subscribe only to the context they need, avoiding re-renders from irrelevant state updates.
 
@@ -96,41 +96,41 @@ export default React.memo(MessageBubble);
 
 **💡 Proposal: Stabilize Props and Styles**
 
-1.  **Memoize Props:** Use `useMemo` and `useCallback` for props passed to children.
-2.  **Extract Static Objects:** Define static objects like styles outside the component's render path.
+1. **Memoize Props:** Use `useMemo` and `useCallback` for props passed to children.
+2. **Extract Static Objects:** Define static objects like styles outside the component's render path.
 
-    ```tsx
-    // Define static styles outside the component
-    const textareaStyle = { msOverflowStyle: 'none', scrollbarWidth: 'none' };
+   ```tsx
+   // Define static styles outside the component
+   const textareaStyle = { msOverflowStyle: 'none', scrollbarWidth: 'none' };
 
-    export function ChatInput(...) {
-      // Memoize props for child components
-      const fileAttachmentFiles = useMemo(() =>
-        attachedFiles.map(file => ({ name: file.filename, ... })),
-        [attachedFiles]
-      );
+   export function ChatInput(...) {
+     // Memoize props for child components
+     const fileAttachmentFiles = useMemo(() =>
+       attachedFiles.map(file => ({ name: file.filename, ... })),
+       [attachedFiles]
+     );
 
-      const handleRemoveFile = useCallback((index) => { ... }, [attachedFiles, ...]);
+     const handleRemoveFile = useCallback((index) => { ... }, [attachedFiles, ...]);
 
-      return (
-        <>
-          <textarea style={textareaStyle} ... />
-          <FileAttachment files={fileAttachmentFiles} onRemove={handleRemoveFile} ... />
-        </>
-      );
-    }
-    ```
+     return (
+       <>
+         <textarea style={textareaStyle} ... />
+         <FileAttachment files={fileAttachmentFiles} onRemove={handleRemoveFile} ... />
+       </>
+     );
+   }
+   ```
 
 ## 4. Summary & Recommended Priority
 
 To significantly improve the chat feature's performance and user experience, the following optimizations should be prioritized:
 
-1.  **High Priority:**
-    - **Implement List Virtualization** in `ChatMessages` to handle long conversations efficiently.
-    - **Refactor `ChatContext`** using selectors by splitting it to prevent cascading re-renders.
+1. **High Priority:**
+   - **Implement List Virtualization** in `ChatMessages` to handle long conversations efficiently.
+   - **Refactor `ChatContext`** using selectors by splitting it to prevent cascading re-renders.
 
-2.  **Medium Priority:**
-    - **Memoize `MessageBubble`** with `React.memo` to avoid re-rendering visible messages unnecessarily.
+2. **Medium Priority:**
+   - **Memoize `MessageBubble`** with `React.memo` to avoid re-rendering visible messages unnecessarily.
 
-3.  **Low Priority:**
-    - **Stabilize props** in `ChatInput` to prevent needless re-renders of child components.
+3. **Low Priority:**
+   - **Stabilize props** in `ChatInput` to prevent needless re-renders of child components.

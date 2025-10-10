@@ -183,12 +183,6 @@ impl Default for SecurityValidator {
     }
 }
 
-/// Common constants for built-in servers
-pub mod constants {
-    /// Maximum file size for reading (10MB)
-    pub const MAX_FILE_SIZE: usize = 10 * 1024 * 1024;
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

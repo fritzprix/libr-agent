@@ -129,6 +129,7 @@ When running `execute_script`, watch for:
    ```
 
 4. **Waiters State**: Check what waiters exist when the handler runs
+
    ```
    [INFO] handle_script_result: Available waiters before removal: []
    ```

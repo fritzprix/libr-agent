@@ -8,13 +8,13 @@ SynapticFlow now includes built-in MCP servers that provide essential functional
 
 Provides secure file system operations within the current working directory.
 
-#### Available Tools:
+#### Available Tools
 
 - `read_file` - Read the contents of a file
 - `write_file` - Write content to a file
 - `list_directory` - List contents of a directory
 
-#### Security Features:
+#### Security Features
 
 - Path validation to prevent directory traversal attacks
 - Access restricted to current working directory and subdirectories
@@ -25,12 +25,12 @@ Provides secure file system operations within the current working directory.
 
 Executes code in isolated sandbox environments.
 
-#### Available Tools:
+#### Available Tools
 
 - `execute_python` - Execute Python code safely
 - `execute_typescript` - Execute TypeScript code using ts-node
 
-#### Security Features:
+#### Security Features
 
 - Isolated temporary directory execution
 - Environment variable isolation

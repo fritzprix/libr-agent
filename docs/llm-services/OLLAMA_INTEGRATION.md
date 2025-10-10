@@ -194,6 +194,7 @@ To connect to a remote Ollama instance:
    ```
 
 2. Configure SynapticFlow with the remote host:
+
    ```typescript
    const service = AIServiceFactory.getService(AIServiceProvider.Ollama, '', {
      host: 'http://remote-server:11434',
