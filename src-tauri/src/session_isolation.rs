@@ -408,7 +408,7 @@ impl SessionIsolationManager {
         if cfg!(target_os = "windows") {
             "cmd"
         } else {
-            "sh"
+            "bash"
         }
     }
 
