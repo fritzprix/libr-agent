@@ -41,10 +41,10 @@ pub async fn read_dropped_file(file_path: String) -> Result<Vec<u8>, String> {
         return Err(format!("Path is not a file: {file_path}"));
     }
 
-    // Check file size (10MB limit)
+    // Check file size
     if let Ok(metadata) = fs::metadata(path).await {
         // Use runtime-configured max file size (bytes)
-        let max_size = crate::mcp::builtin::utils::constants::max_file_size() as u64;
+        let max_size = crate::config::max_file_size() as u64;
         if metadata.len() > max_size {
             return Err(format!(
                 "File too large: {} bytes (max: {} bytes)",

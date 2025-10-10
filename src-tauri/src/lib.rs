@@ -3,6 +3,7 @@ use tauri::Manager;
 use tauri_plugin_log::{Target, TargetKind};
 
 mod commands;
+mod config;
 mod mcp;
 mod search;
 mod services;

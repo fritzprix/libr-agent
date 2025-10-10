@@ -261,7 +261,7 @@ export function WorkspaceFilesPanel() {
               // (Some older paths returned a plain string in `result`.)
               // Use JSON.stringify fallback so message is never empty.
 
-              const resAsUnknown: unknown = (response.result as unknown);
+              const resAsUnknown: unknown = response.result as unknown;
               const content =
                 typeof resAsUnknown === 'object' && resAsUnknown !== null
                   ? (resAsUnknown as Record<string, unknown>)['content']
@@ -273,9 +273,12 @@ export function WorkspaceFilesPanel() {
                     // runtime-safe check for text field
                     if (
                       'text' in (item as Record<string, unknown>) &&
-                      typeof (item as Record<string, unknown>)['text'] === 'string'
+                      typeof (item as Record<string, unknown>)['text'] ===
+                        'string'
                     ) {
-                      texts.push((item as Record<string, unknown>)['text'] as string);
+                      texts.push(
+                        (item as Record<string, unknown>)['text'] as string,
+                      );
                     } else if (
                       (item as Record<string, unknown>)['type'] === 'text' &&
                       !('text' in (item as Record<string, unknown>))
@@ -293,7 +296,7 @@ export function WorkspaceFilesPanel() {
 
                 if (texts.length > 0) resultText = texts.join('\n');
                 else resultText = JSON.stringify(response.result);
-                } else if (typeof resAsUnknown === 'string') {
+              } else if (typeof resAsUnknown === 'string') {
                 resultText = resAsUnknown as string;
               } else {
                 resultText = JSON.stringify(response.result);
