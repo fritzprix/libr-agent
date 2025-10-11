@@ -21,11 +21,12 @@
         "decorations": true,
         "alwaysOnTop": false,
         "skipTaskbar": false,
-        "theme": "Light"
+        "theme": "Light",
+        "devtools": true
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src ipc://localhost",
+      "csp": "default-src 'self' tauri: asset: https://asset.localhost; connect-src ipc: http://ipc.localhost tauri: asset: https://asset.localhost https: wss:; img-src 'self' tauri: asset: https://asset.localhost data: https:; style-src 'self' tauri: 'unsafe-inline'; font-src 'self' tauri: asset: https://asset.localhost data:; script-src 'self' tauri: 'unsafe-inline' 'unsafe-eval'",
       "assetProtocol": {
         "enable": true,
         "scope": ["$RESOURCE/**", "workspace/**"]

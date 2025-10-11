@@ -7,9 +7,25 @@ import topLevelAwait from 'vite-plugin-top-level-await';
 
 const host = process.env.TAURI_DEV_HOST;
 
+// Plugin to remove crossorigin attributes for Tauri compatibility
+function removeCrossoriginPlugin() {
+  return {
+    name: 'remove-crossorigin',
+    transformIndexHtml(html: string) {
+      return html.replace(/ crossorigin/g, '');
+    },
+  };
+}
+
 // https://vitejs.dev/config/
 export default defineConfig(() => ({
-  plugins: [react(), tailwindcss(), wasm(), topLevelAwait()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    wasm(),
+    topLevelAwait(),
+    removeCrossoriginPlugin(),
+  ],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

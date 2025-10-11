@@ -93,32 +93,40 @@ export const ResourceAttachmentProvider: React.FC<
     async (key: string) => {
       const sessionId = key.replace('session-files-', '');
       if (sessionId && server) {
-        logger.info('Proxy: Calling server.listContent for session files', {
-          sessionId,
-        });
-        const listContentArgs: ListContentArgs = {
-          sessionId,
-        };
-        const result = await server.listContent(listContentArgs);
-        logger.info('Proxy: server.listContent completed successfully', {
-          sessionId,
-          contentCount: result?.contents?.length || 0,
-        });
-        const files =
-          result?.contents?.map((content) => ({
-            sessionId: content.sessionId,
-            contentId: content.contentId,
-            filename: content.filename,
-            mimeType: content.mimeType,
-            size: Number((content as { size?: number | null }).size ?? 0),
-            lineCount: content.lineCount || 0,
-            preview: content.preview ?? content.filename ?? '',
-            uploadedAt: content.uploadedAt || new Date().toISOString(),
-            chunkCount: content.chunkCount,
-            lastAccessedAt: content.lastAccessedAt,
-          })) || [];
+        try {
+          logger.info('Proxy: Calling server.listContent for session files', {
+            sessionId,
+          });
+          const listContentArgs: ListContentArgs = {
+            sessionId,
+          };
+          const result = await server.listContent(listContentArgs);
+          logger.info('Proxy: server.listContent completed successfully', {
+            sessionId,
+            contentCount: result?.contents?.length || 0,
+          });
+          const files =
+            result?.contents?.map((content) => ({
+              sessionId: content.sessionId,
+              contentId: content.contentId,
+              filename: content.filename,
+              mimeType: content.mimeType,
+              size: Number((content as { size?: number | null }).size ?? 0),
+              lineCount: content.lineCount || 0,
+              preview: content.preview ?? content.filename ?? '',
+              uploadedAt: content.uploadedAt || new Date().toISOString(),
+              chunkCount: content.chunkCount,
+              lastAccessedAt: content.lastAccessedAt,
+            })) || [];
 
-        return files;
+          return files;
+        } catch (error) {
+          logger.warn(
+            'Session context not ready yet, will retry on next revalidation',
+            { sessionId, error },
+          );
+          return [];
+        }
       }
       return [];
     },
@@ -126,6 +134,9 @@ export const ResourceAttachmentProvider: React.FC<
       revalidateOnFocus: false,
       revalidateOnReconnect: true,
       dedupingInterval: 5000, // Dedupe requests within 5 seconds
+      shouldRetryOnError: true,
+      errorRetryCount: 3,
+      errorRetryInterval: 1000,
     },
   );
 
