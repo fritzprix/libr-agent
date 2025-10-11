@@ -1,7 +1,7 @@
 {
   "name": "synaptic-flow",
   "private": false,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Lightning Fast AI Companion - Tauri-based AI agent platform with MCP integration",
   "author": "fritzprix",
   "license": "MIT",

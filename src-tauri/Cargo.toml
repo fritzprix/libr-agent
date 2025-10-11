@@ -1,6 +1,6 @@
 [package]
 name = "synaptic-flow"
-version = "0.1.0"
+version = "0.1.1"
 description = "Lightning Fast AI Companion - Tauri-based AI agent platform with MCP integration"
 authors = ["fritzprix"]
 license = "MIT"
