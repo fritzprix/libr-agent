@@ -129,6 +129,7 @@ export function SessionHistoryProvider({ children }: { children: ReactNode }) {
                 page: 1,
                 pageSize: PAGE_SIZE,
                 totalItems: messagesWithSessionId.length,
+                totalPages: 1,
                 hasNextPage: false,
                 hasPreviousPage: false,
               },
