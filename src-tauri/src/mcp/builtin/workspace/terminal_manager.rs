@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tokio_util::sync::CancellationToken;
 
 /// Process status enumeration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -32,12 +33,21 @@ pub struct ProcessEntry {
     pub stderr_size: u64,
 }
 
-/// Thread-safe process registry
-pub type ProcessRegistry = Arc<RwLock<HashMap<String, ProcessEntry>>>;
+/// Thread-safe process registry with cancellation tokens
+#[derive(Debug)]
+pub struct ProcessRegistryData {
+    pub entries: HashMap<String, ProcessEntry>,
+    pub cancellation_tokens: HashMap<String, CancellationToken>,
+}
+
+pub type ProcessRegistry = Arc<RwLock<ProcessRegistryData>>;
 
 /// Create a new process registry
 pub fn create_process_registry() -> ProcessRegistry {
-    Arc::new(RwLock::new(HashMap::new()))
+    Arc::new(RwLock::new(ProcessRegistryData {
+        entries: HashMap::new(),
+        cancellation_tokens: HashMap::new(),
+    }))
 }
 
 /// Read last N lines from file (max 100, text only)
@@ -167,7 +177,7 @@ mod tests {
     #[tokio::test]
     async fn test_create_process_registry() {
         let registry = create_process_registry();
-        assert!(registry.read().await.is_empty());
+        assert!(registry.read().await.entries.is_empty());
     }
 
     #[tokio::test]

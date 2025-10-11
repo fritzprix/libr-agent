@@ -213,7 +213,13 @@ impl ContentStoreServer {
 
     pub async fn switch_context(&self, options: ServiceContextOptions) -> Result<(), String> {
         if let Some(session_id) = &options.session_id {
-            if let Err(e) = self.session_manager.set_session(session_id.clone()) {
+            // Use the async session setter to avoid blocking and to allow the caller
+            // to cancel the operation by dropping the awaiting future.
+            if let Err(e) = self
+                .session_manager
+                .set_session_async(session_id.clone())
+                .await
+            {
                 error!("Failed to switch session in session_manager: {e}");
                 return Err(format!("Failed to switch session in session_manager: {e}"));
             }

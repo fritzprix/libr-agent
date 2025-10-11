@@ -96,6 +96,8 @@ export interface Page<T> {
   pageSize: number;
   /** The total number of items across all pages. */
   totalItems: number;
+  /** The total number of pages. */
+  totalPages: number;
   /** A boolean indicating if there is a next page. */
   hasNextPage: boolean;
   /** A boolean indicating if there is a previous page. */
@@ -165,6 +167,26 @@ export interface FileContentCRUD extends CRUD<FileContent> {
 }
 
 /**
+ * Extends the basic CRUD interface with additional methods specific to `Playbook`.
+ */
+export interface PlaybookCRUD extends CRUD<Playbook & { id: string }> {
+  /**
+   * Retrieves a paginated list of playbooks filtered by agent ID.
+   * This method uses an indexed query for optimal performance.
+   *
+   * @param agentId The ID of the agent/assistant to filter by.
+   * @param page The page number to retrieve (1-based).
+   * @param pageSize The number of items per page. Use -1 to retrieve all items.
+   * @returns A promise that resolves to a `Page` of playbooks for the specified agent.
+   */
+  getPageForAgent: (
+    agentId: string,
+    page: number,
+    pageSize: number,
+  ) => Promise<Page<Playbook & { id: string }>>;
+}
+
+/**
  * Defines the structure of the main database service.
  * It aggregates all the individual CRUD interfaces for each data model
  * into a single, cohesive service interface.
@@ -178,6 +200,6 @@ export interface DatabaseService {
   sessions: CRUD<Session>;
   /** CRUD operations for `Message` objects. */
   messages: CRUD<Message>;
-  /** CRUD operations for persisted Playbook objects. */
-  playbooks?: CRUD<Playbook & { id: string }>;
+  /** Extended CRUD operations for persisted Playbook objects. */
+  playbooks?: PlaybookCRUD;
 }
