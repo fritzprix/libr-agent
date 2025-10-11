@@ -4,6 +4,11 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v0.1.1). If omitted when manually dispatching, the pushed tag (if any) will be used.'
+        required: false
+        default: ''
 
 jobs:
   release:
@@ -57,8 +62,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: v0.1.1
-          releaseName: 'SynapticFlow v__VERSION__'
+          # Prefer workflow_dispatch input 'tag' when provided, otherwise fall back to the pushed tag name
+          tagName: ${{ github.event.inputs.tag != '' && github.event.inputs.tag || github.ref_name }}
+          releaseName: 'SynapticFlow ${{ github.event.inputs.tag != '' && github.event.inputs.tag || github.ref_name }}'
           releaseBody: |
             🚀 **SynapticFlow v__VERSION__** 
 
@@ -87,5 +93,6 @@ jobs:
             - 4GB RAM minimum, 8GB recommended
 
             See the assets below to download for your platform.
-          releaseDraft: true
+          # Publish immediately (not a draft) so all platform jobs upload into the same release
+          releaseDraft: false
           prerelease: false
