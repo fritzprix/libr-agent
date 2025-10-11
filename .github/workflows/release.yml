@@ -21,58 +21,52 @@ jobs:
     runs-on: ${{ matrix.platform }}
 
     steps:
-      - name: � Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: 🦀 Setup Rust
+      - name: Install dependencies (ubuntu only)
+        if: matrix.platform == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Rust setup
         uses: dtolnay/rust-toolchain@stable
 
-      - name: 🦀 Rust cache
+      - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
           workspaces: './src-tauri -> target'
 
-      - name: 📦 Install pnpm
+      - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 9
 
-      - name: 📦 Setup Node.js
+      - name: Sync node version and setup cache
         uses: actions/setup-node@v4
         with:
           node-version: 'lts/*'
           cache: 'pnpm'
 
-      - name: 📦 Install dependencies
+      - name: Install frontend dependencies
         run: pnpm install
-
-      - name: 🔧 Install Tauri dependencies (Ubuntu)
-        if: ${{ matrix.platform == 'ubuntu-latest' }}
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-
-      - name: 🔧 Install Tauri dependencies (macOS)
-        if: ${{ matrix.platform == 'macos-latest' }}
-        run: |
-          brew install gnu-tar
 
       - name: Build the app
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          # Prefer workflow_dispatch input 'tag' when provided, otherwise fall back to the pushed tag name
           tagName: ${{ github.event.inputs.tag != '' && github.event.inputs.tag || github.ref_name }}
           releaseName: 'SynapticFlow ${{ github.event.inputs.tag != '' && github.event.inputs.tag || github.ref_name }}'
           releaseBody: |
-            🚀 **SynapticFlow v__VERSION__** 
+            🚀 **SynapticFlow ${{ github.event.inputs.tag != '' && github.event.inputs.tag || github.ref_name }}**
 
             A High-Freedom AI Agent Platform - Infinitely Expandable with MCP!
 
             ## 🎯 What's New
             - Enhanced AI agent role management
-            - Improved MCP server integration  
+            - Improved MCP server integration
             - Better file attachment handling
             - Performance optimizations
 
@@ -93,6 +87,5 @@ jobs:
             - 4GB RAM minimum, 8GB recommended
 
             See the assets below to download for your platform.
-          # Publish immediately (not a draft) so all platform jobs upload into the same release
           releaseDraft: false
           prerelease: false
