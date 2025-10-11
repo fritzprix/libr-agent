@@ -58,10 +58,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.event.inputs.tag != '' && github.event.inputs.tag || github.ref_name }}
-          releaseName: 'SynapticFlow ${{ github.event.inputs.tag != '' && github.event.inputs.tag || github.ref_name }}'
+          releaseName: SynapticFlow ${{ github.event.inputs.tag != '' && github.event.inputs.tag || github.ref_name }}
           releaseBody: |
-            🚀 **SynapticFlow ${{ github.event.inputs.tag != '' && github.event.inputs.tag || github.ref_name }}**
-
             A High-Freedom AI Agent Platform - Infinitely Expandable with MCP!
 
             ## 🎯 What's New
