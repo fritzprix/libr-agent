@@ -110,11 +110,24 @@ export function useRustMCPServer<T extends RustMCPServerProxy>(
           );
 
           if (response.error) {
-            logger.error('Proxy: Tool execution failed', {
-              serverName: resolvedServerName,
-              methodName,
-              error: response.error,
-            });
+            // Session context errors are recoverable during initialization
+            const isSessionContextError = response.error.code === -32002;
+            
+            if (isSessionContextError) {
+              logger.warn('Proxy: Tool execution failed (recoverable session context error)', {
+                serverName: resolvedServerName,
+                methodName,
+                error: response.error,
+                note: 'This error is expected during initialization and will be retried',
+              });
+            } else {
+              logger.error('Proxy: Tool execution failed', {
+                serverName: resolvedServerName,
+                methodName,
+                error: response.error,
+              });
+            }
+            
             throw new Error(
               `MCP tool execution failed: ${methodName} - ${response.error.message} (code: ${response.error.code})`,
             );
