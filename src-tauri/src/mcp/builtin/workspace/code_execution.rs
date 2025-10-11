@@ -261,6 +261,11 @@ impl WorkspaceServer {
             stderr_path: stderr_path.to_string_lossy().to_string(),
             stdout_size: 0,
             stderr_size: 0,
+            // Initialize poll tracking fields
+            last_poll_at: None,
+            poll_count: 0,
+            consecutive_running_polls: 0,
+            first_running_poll_at: None,
         };
 
         {
@@ -619,6 +624,11 @@ impl WorkspaceServer {
             stderr_path: stderr_path.to_string_lossy().to_string(),
             stdout_size: 0,
             stderr_size: 0,
+            // Initialize poll tracking fields
+            last_poll_at: None,
+            poll_count: 0,
+            consecutive_running_polls: 0,
+            first_running_poll_at: None,
         };
 
         {

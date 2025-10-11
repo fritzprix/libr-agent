@@ -47,14 +47,6 @@ interface PromptState {
 
 const activePrompts = new Map<string, PromptState>();
 
-// Wait context type (structured information)
-interface WaitContext {
-  startedAt: string; // ISO 8601 timestamp (server auto-generated)
-  reason: string; // Wait reason
-  command: string; // Command/task being executed
-  nextAction: string; // Action to perform after resume
-}
-
 /**
  * Format duration in human-readable format
  */
@@ -71,10 +63,14 @@ function formatDuration(ms: number): string {
 /**
  * Generate HTML for wait UI
  */
-function buildWaitHtml(message: string, context: WaitContext): string {
+function buildWaitHtml(
+  message: string,
+  resumeInstruction: string,
+  startedAt: string,
+): string {
   const escapedMessage = escapeHtml(message);
-  // Serialize context for safe embedding in JS. Do NOT HTML-escape JSON (that breaks JS).
-  // Escape closing </script> to avoid breaking out of the script block.
+  // Serialize simplified context for safe embedding in JS
+  const context = { resumeInstruction, startedAt };
   const serializedContext = JSON.stringify(context).replace(
     /<\/(script)>/gi,
     '\\u003C/$1',
@@ -586,6 +582,9 @@ function buildVisualizationHtml(
 }
 
 const tools: MCPTool[] = [
+  // Migration note: Previously used context object with {reason, command, nextAction}.
+  // Now simplified to direct resumeInstruction parameter for both tools.
+  // Callers should pass resumeInstruction directly instead of wrapping in context object.
   {
     name: 'prompt_user',
     description:
@@ -680,26 +679,12 @@ const tools: MCPTool[] = [
           type: 'string',
           description: 'Message to display to user',
         },
-        context: {
-          type: 'object',
-          properties: {
-            reason: {
-              type: 'string',
-              description: 'Why waiting (for agent context)',
-            },
-            command: {
-              type: 'string',
-              description: 'Command or task being executed',
-            },
-            nextAction: {
-              type: 'string',
-              description: 'What to do after resume',
-            },
-          },
-          required: ['reason', 'command', 'nextAction'],
+        resumeInstruction: {
+          type: 'string',
+          description: 'What to do after the user resumes (for agent context)',
         },
       },
-      required: ['message', 'context'],
+      required: ['message', 'resumeInstruction'],
     },
   },
   {
@@ -708,22 +693,20 @@ const tools: MCPTool[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        context: {
-          type: 'object',
-          properties: {
-            startedAt: { type: 'string' },
-            reason: { type: 'string' },
-            command: { type: 'string' },
-            nextAction: { type: 'string' },
-          },
-          required: ['startedAt', 'reason', 'command', 'nextAction'],
+        resumeInstruction: {
+          type: 'string',
+          description: 'Resume instruction that was set when waiting started',
+        },
+        startedAt: {
+          type: 'string',
+          description: 'ISO 8601 timestamp when waiting started',
         },
         sessionId: {
           type: 'string',
           description: 'Optional session ID for validation',
         },
       },
-      required: ['context'],
+      required: ['resumeInstruction', 'startedAt'],
     },
   },
 ];
@@ -916,77 +899,70 @@ const uiTools: WebMCPServer = {
 
         case 'wait_for_user_resume': {
           const message = String(a.message || '');
-          const contextInput = a.context as Omit<WaitContext, 'startedAt'>;
+          const resumeInstruction = String(a.resumeInstruction || '');
 
           if (!message) {
             return createMCPTextResponse('Message is required');
           }
 
-          if (
-            !contextInput ||
-            !contextInput.reason ||
-            !contextInput.command ||
-            !contextInput.nextAction
-          ) {
-            return createMCPTextResponse(
-              'Context with reason, command, nextAction required',
-            );
+          if (!resumeInstruction) {
+            return createMCPTextResponse('Resume instruction is required');
           }
 
-          // Add startedAt timestamp
-          const context: WaitContext = {
-            ...contextInput,
-            startedAt: new Date().toISOString(),
-          };
+          // Generate startedAt timestamp
+          const startedAt = new Date().toISOString();
 
           // Generate HTML
-          const html = buildWaitHtml(message, context);
+          const html = buildWaitHtml(message, resumeInstruction, startedAt);
           const uri = `ui://wait/${Date.now()}` as `ui://${string}`;
           const uiResource = createUiResourceFromHtml(html, uri);
 
           // Text content
           const textContent: MCPContent = {
             type: 'text',
-            text: `⏳ Waiting: ${message}\nReason: ${context.reason}`,
+            text: `⏳ Waiting: ${message}\nResume instruction: ${resumeInstruction}`,
           } as MCPContent;
 
           // Return multipart
           return createMCPStructuredMultipartResponse(
             [textContent, uiResource],
-            { waiting: true, context },
+            { waiting: true, resumeInstruction, startedAt },
           );
         }
 
         case 'resume_from_wait': {
-          const context = a.context as WaitContext;
+          const resumeInstruction = String(a.resumeInstruction || '');
+          const startedAt = String(a.startedAt || '');
 
-          if (!context || !context.startedAt) {
-            return createMCPTextResponse('Valid context required');
+          if (!resumeInstruction) {
+            return createMCPTextResponse('Resume instruction is required');
+          }
+
+          if (!startedAt) {
+            return createMCPTextResponse('Started at timestamp is required');
           }
 
           // Calculate duration
-          const startedAt = new Date(context.startedAt);
+          const startedAtDate = new Date(startedAt);
           const resumedAt = new Date();
           const duration = formatDuration(
-            resumedAt.getTime() - startedAt.getTime(),
+            resumedAt.getTime() - startedAtDate.getTime(),
           );
 
           // Build agent-friendly text response
           const text = [
             `✅ User resumed after waiting ${duration}`,
             '',
-            `What was waiting: ${context.reason}`,
-            `Command/Task: ${context.command}`,
-            `Started: ${context.startedAt}`,
+            `Resume instruction: ${resumeInstruction}`,
+            `Started: ${startedAt}`,
             `Ended: ${resumedAt.toISOString()}`,
-            '',
-            `Next action: ${context.nextAction}`,
           ].join('\n');
 
           return createMCPStructuredResponse(text, {
             resumed: true,
             duration,
-            ...context,
+            resumeInstruction,
+            startedAt,
             resumedAt: resumedAt.toISOString(),
           });
         }

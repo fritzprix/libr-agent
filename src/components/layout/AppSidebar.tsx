@@ -2,7 +2,6 @@ import {
   BrainCircuit,
   History,
   MessageSquare,
-  Search,
   Settings,
   Users,
 } from 'lucide-react';
@@ -133,24 +132,13 @@ export default function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
-                <Link to="/history/search">
+                <Link to="/history">
                   <SidebarMenuButton
-                    isActive={location.pathname === '/history/search'}
+                    isActive={location.pathname === '/history'}
                     tooltip="Search History"
                   >
                     <History size={16} />
                     <span>Search History</span>
-                  </SidebarMenuButton>
-                </Link>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <Link to="/search">
-                  <SidebarMenuButton
-                    isActive={location.pathname === '/search'}
-                    tooltip="Message Search (BM25)"
-                  >
-                    <Search size={16} />
-                    <span>Message Search</span>
                   </SidebarMenuButton>
                 </Link>
               </SidebarMenuItem>
