@@ -291,6 +291,7 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
                   page: 0,
                   pageSize: 10,
                   totalItems: 1,
+                  totalPages: 1,
                   hasNextPage: false,
                   hasPreviousPage: false,
                 },

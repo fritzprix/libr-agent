@@ -32,16 +32,20 @@ export const createPage = <T>(
       page: 1,
       pageSize: totalItems,
       totalItems,
+      totalPages: 1,
       hasNextPage: false,
       hasPreviousPage: false,
     };
   }
+
+  const totalPages = Math.ceil(totalItems / pageSize);
 
   return {
     items,
     page,
     pageSize,
     totalItems,
+    totalPages,
     hasNextPage: page * pageSize < totalItems,
     hasPreviousPage: page > 1,
   };
@@ -281,7 +285,13 @@ export const messagesCRUD: CRUD<Message> = {
 // FileStore / FileContent / FileChunk CRUD removed: backend (Rust) is authoritative
 
 /** CRUD for persisted Task records stored in the LocalDatabase.tasks table. */
-export const playbooksCRUD: CRUD<PlaybookRecord> = {
+export const playbooksCRUD: CRUD<PlaybookRecord> & {
+  getPageForAgent: (
+    agentId: string,
+    page: number,
+    pageSize: number,
+  ) => Promise<Page<PlaybookRecord>>;
+} = {
   upsert: async (playbook) => {
     const now = new Date();
     const maybeId = playbook as unknown as { id?: unknown };
@@ -337,6 +347,32 @@ export const playbooksCRUD: CRUD<PlaybookRecord> = {
   },
   count: async () => {
     return LocalDatabase.getInstance().table('playbooks').count();
+  },
+
+  // New method: agentId-filtered pagination
+  getPageForAgent: async (agentId, page, pageSize) => {
+    const db = LocalDatabase.getInstance();
+    const table = db.table('playbooks');
+
+    // Count total items for this agent using indexed query
+    const totalItems = await table.where('agentId').equals(agentId).count();
+
+    if (pageSize === -1) {
+      // Return all items for this agent
+      const items = await table.where('agentId').equals(agentId).toArray();
+      return createPage(items as PlaybookRecord[], page, pageSize, totalItems);
+    }
+
+    // Paginate with offset and limit
+    const offset = (page - 1) * pageSize;
+    const items = await table
+      .where('agentId')
+      .equals(agentId)
+      .offset(offset)
+      .limit(pageSize)
+      .toArray();
+
+    return createPage(items as PlaybookRecord[], page, pageSize, totalItems);
   },
 };
 

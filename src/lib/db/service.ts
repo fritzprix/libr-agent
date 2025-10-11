@@ -106,6 +106,11 @@ export class LocalDatabase extends Dexie {
             }
           });
       });
+
+    // Version 8: Add agentId index to playbooks table for optimized filtering
+    this.version(8).stores({
+      playbooks: '&id, agentId, createdAt, updatedAt, goal',
+    });
   }
 }
 
