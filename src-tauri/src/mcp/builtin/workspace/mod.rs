@@ -59,6 +59,7 @@ impl WorkspaceServer {
         let mut reg = registry.write().await;
 
         let to_remove: Vec<String> = reg
+            .entries
             .values()
             .filter(|e| {
                 matches!(
@@ -73,7 +74,9 @@ impl WorkspaceServer {
             .collect();
 
         for id in to_remove {
-            if let Some(entry) = reg.remove(&id) {
+            if let Some(entry) = reg.entries.remove(&id) {
+                // Remove cancellation token
+                reg.cancellation_tokens.remove(&id);
                 // Remove output directory
                 if let Some(parent) = std::path::PathBuf::from(&entry.stdout_path).parent() {
                     let _ = tokio::fs::remove_dir_all(parent).await;
@@ -91,6 +94,7 @@ impl WorkspaceServer {
 
         // Get all processes for this session
         let session_processes: Vec<String> = reg
+            .entries
             .values()
             .filter(|e| e.session_id == session_id)
             .map(|e| e.id.clone())
@@ -99,7 +103,15 @@ impl WorkspaceServer {
         let process_count = session_processes.len();
 
         for id in session_processes {
-            if let Some(entry) = reg.remove(&id) {
+            // Cancel process via token first
+            if let Some(token) = reg.cancellation_tokens.get(&id) {
+                token.cancel();
+            }
+
+            if let Some(entry) = reg.entries.remove(&id) {
+                // Remove cancellation token
+                reg.cancellation_tokens.remove(&id);
+
                 // Kill running processes
                 if let Some(pid) = entry.pid {
                     if matches!(entry.status, terminal_manager::ProcessStatus::Running) {
@@ -169,7 +181,7 @@ impl WorkspaceServer {
 
         // Get process entry
         let registry = self.process_registry.read().await;
-        let entry = match registry.get(process_id) {
+        let entry = match registry.entries.get(process_id) {
             Some(e) => e.clone(),
             None => {
                 return Self::error_response(
@@ -271,7 +283,7 @@ impl WorkspaceServer {
 
         // Get process entry
         let registry = self.process_registry.read().await;
-        let entry = match registry.get(process_id) {
+        let entry = match registry.entries.get(process_id) {
             Some(e) => e.clone(),
             None => {
                 return Self::error_response(
@@ -343,6 +355,7 @@ impl WorkspaceServer {
         // Filter processes by session
         let registry = self.process_registry.read().await;
         let mut processes: Vec<Value> = registry
+            .entries
             .values()
             .filter(|e| e.session_id == session_id)
             .filter(|e| match status_filter {
@@ -374,11 +387,13 @@ impl WorkspaceServer {
 
         let total = processes.len();
         let running = registry
+            .entries
             .values()
             .filter(|e| e.session_id == session_id)
             .filter(|e| matches!(e.status, terminal_manager::ProcessStatus::Running))
             .count();
         let finished = registry
+            .entries
             .values()
             .filter(|e| e.session_id == session_id)
             .filter(|e| {
@@ -513,6 +528,7 @@ impl BuiltinMCPServer for WorkspaceServer {
         let running_count = {
             match self.process_registry.try_read() {
                 Ok(reg) => reg
+                    .entries
                     .values()
                     .filter(|e| e.session_id == session_id)
                     .filter(|e| matches!(e.status, terminal_manager::ProcessStatus::Running))
@@ -563,11 +579,84 @@ impl BuiltinMCPServer for WorkspaceServer {
 
     async fn switch_context(&self, options: ServiceContextOptions) -> Result<(), String> {
         // Update session context if session_id is provided
-        if let Some(session_id) = options.session_id {
-            info!("Switching workspace context to session: {}", session_id);
+        if let Some(new_session_id) = options.session_id {
+            info!("Switching workspace context to session: {}", new_session_id);
+
+            // Get current session before switching
+            let old_session_id = self
+                .session_manager
+                .get_current_session()
+                .unwrap_or_else(|| "default".to_string());
+
+            // Cancel all processes for the old session
+            if old_session_id != new_session_id {
+                info!(
+                    "Cancelling all processes for old session: {}",
+                    old_session_id
+                );
+
+                let mut reg = self.process_registry.write().await;
+
+                // Get all process IDs for the old session
+                let old_session_processes: Vec<String> = reg
+                    .entries
+                    .values()
+                    .filter(|e| e.session_id == old_session_id)
+                    .filter(|e| {
+                        matches!(
+                            e.status,
+                            terminal_manager::ProcessStatus::Starting
+                                | terminal_manager::ProcessStatus::Running
+                        )
+                    })
+                    .map(|e| e.id.clone())
+                    .collect();
+
+                // Cancel all processes via their tokens
+                for process_id in &old_session_processes {
+                    if let Some(token) = reg.cancellation_tokens.get(process_id) {
+                        info!("Cancelling process: {}", process_id);
+                        token.cancel();
+                    }
+
+                    // Update status to Killed
+                    if let Some(entry) = reg.entries.get_mut(process_id) {
+                        entry.status = terminal_manager::ProcessStatus::Killed;
+                        entry.finished_at = Some(chrono::Utc::now());
+                    }
+                }
+
+                // Also kill by PID for safety (in case token didn't work)
+                for process_id in old_session_processes {
+                    if let Some(entry) = reg.entries.get(&process_id) {
+                        if let Some(pid) = entry.pid {
+                            info!("Force-killing process {} (PID {})", process_id, pid);
+
+                            #[cfg(unix)]
+                            {
+                                use std::process::Command;
+                                let _ = Command::new("kill")
+                                    .arg("-TERM")
+                                    .arg(pid.to_string())
+                                    .output();
+                            }
+
+                            #[cfg(windows)]
+                            {
+                                use std::process::Command;
+                                let _ = Command::new("taskkill")
+                                    .args(&["/PID", &pid.to_string(), "/F"])
+                                    .output();
+                            }
+                        }
+                    }
+                }
+
+                drop(reg);
+            }
 
             // Switch session in session_manager
-            if let Err(e) = self.session_manager.set_session(session_id.clone()) {
+            if let Err(e) = self.session_manager.set_session(new_session_id.clone()) {
                 return Err(format!("Failed to switch session in session_manager: {e}"));
             }
 
