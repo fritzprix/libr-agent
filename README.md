@@ -169,14 +169,14 @@ SynapticFlow provides a powerful suite of built-in tools that enable AI agents t
 - **📤 Export/Import**: Share agent configurations and setups with others
 - **🎨 Modern UI**: Clean, terminal-style interface that's both powerful and intuitive
 
-## 🛠 Advanced Technology Stack
+## 🛠 Technology Stack
 
 **Core Framework:**
 
 - **Tauri 2.x**: Latest cross-platform framework with enhanced security and performance
 - **React 18.3**: Modern UI with concurrent features and advanced hooks
 - **TypeScript 5.6**: Latest language features with strict type safety
-- **RMCP 0.2.1**: Rust-based Model Context Protocol with child process transport
+- **RMCP 0.6.4**: Rust-based Model Context Protocol with child process transport
 
 **Backend Technologies:**
 
@@ -187,8 +187,10 @@ SynapticFlow provides a powerful suite of built-in tools that enable AI agents t
 
 **Frontend Technologies:**
 
+- **Vite**: Modern, fast build tool and dev server
 - **Tailwind CSS 4.x**: Latest utility-first styling with performance optimizations
 - **Radix UI**: Accessible component primitives for robust UI
+- **shadcn/ui**: Component library for building accessible and customizable UI components
 - **Dexie**: TypeScript-friendly IndexedDB wrapper for local data
 - **Zustand**: Lightweight, scalable state management solution
 
@@ -198,7 +200,7 @@ This guide covers how to get the SynapticFlow application running for both regul
 
 ### Option 1: Download Release (Recommended for Users)
 
-Visit our [Releases page](https://github.com/SynapticFlow/SynapticFlow/releases) to download the latest version for your operating system.
+Visit our [Releases page](https://github.com/fritzprix/synaptic-flow/releases) to download the latest version for your operating system.
 
 ### Option 2: Build and Run from Source (for Developers)
 
@@ -217,16 +219,14 @@ Ensure you have the following software installed:
 Clone the repository and install the required dependencies:
 
 ```bash
-git clone https://github.com/SynapticFlow/SynapticFlow.git
-cd SynapticFlow
+git clone https://github.com/fritzprix/synaptic-flow.git
+cd synaptic-flow
 pnpm install
 ```
 
 #### 3. Environment Variables
 
-For some features, particularly those involving cloud-based LLM providers, you will need to configure API keys. Create a `.env` file in the root of the project to store your keys.
-
-Additionally, you can configure the database path:
+API keys are managed in-app via the settings modal, so no `.env` file is required for them. However, you can configure the database path:
 
 - `SYNAPTICFLOW_DB_PATH`: Overrides the default location for the application's SQLite database.
 
@@ -250,25 +250,27 @@ Additionally, you can configure the database path:
 
 #### 5. Code Quality & Testing
 
-- **Linting**:
+To ensure code quality, consistency, and stability, run the comprehensive validation pipeline:
 
-  ```bash
-  pnpm lint      # Check for code quality issues
-  pnpm lint:fix  # Automatically fix lint issues
-  ```
+```bash
+pnpm refactor:validate
+```
 
-- **Formatting**:
+This single command runs all necessary checks, including:
 
-  ```bash
-  pnpm format         # Format all files with Prettier
-  pnpm format:check   # Check for formatting compliance
-  ```
+- **Linting** (`pnpm lint`)
+- **Formatting** (`pnpm format`)
+- **Rust Validation** (`pnpm rust:validate`)
+- **Application Build** (`pnpm build`)
+- **Dead Code Analysis** (`pnpm dead-code`)
 
-- **Testing**:
+It is **mandatory** to run this command after making changes and before submitting contributions.
 
-  ```bash
-  pnpm test      # Run the test suite
-  ```
+Individual checks can also be run:
+
+- **Linting**: `pnpm lint` or `pnpm lint:fix`
+- **Formatting**: `pnpm format` or `pnpm format:check`
+- **Testing**: `pnpm test`
 
 #### 6. Building for Production
 
@@ -362,7 +364,7 @@ SynapticFlow is a **cross-platform desktop application** that runs natively on:
 
 We welcome contributions! Here's how you can help:
 
-- **🐛 Report Issues**: Found a bug? [Open an issue](https://github.com/SynapticFlow/SynapticFlow/issues)
+- **🐛 Report Issues**: Found a bug? [Open an issue](https://github.com/fritzprix/synaptic-flow/issues)
 - **💡 Suggest Features**: Have ideas? Share them in our discussions
 - **🔧 Submit Code**: Read our [Contributing Guide](CONTRIBUTING.md) to get started
 - **📚 Improve Docs**: Help make our documentation even better
@@ -375,4 +377,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **Ready to experience the most advanced AI agent platform? SynapticFlow combines enterprise-grade security, lightning-fast performance, and unlimited LLM freedom in one powerful desktop application!** 🚀
 
-[Download SynapticFlow](https://github.com/SynapticFlow/SynapticFlow/releases) | [View Source](https://github.com/SynapticFlow/SynapticFlow) | [Join Community](https://github.com/SynapticFlow/SynapticFlow/discussions)
+[Download SynapticFlow](https://github.com/fritzprix/synaptic-flow/releases) | [View Source](https://github.com/fritzprix/synaptic-flow) | [Join Community](https://github.com/fritzprix/synaptic-flow/discussions)
