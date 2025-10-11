@@ -31,6 +31,45 @@ const DEFAULT_MAX_EXECUTION_TIMEOUT: u64 = 300;
 /// Default snippet length for message index (200 characters)
 const DEFAULT_SNIPPET_LENGTH: usize = 200;
 
+/// Default maximum captured output size for spawned processes (100 MB)
+const DEFAULT_MAX_OUTPUT_SIZE: u64 = 100 * 1024 * 1024;
+
+/// Get maximum output size for process stdout/stderr capture from environment or use default
+///
+/// Environment variable: SYNAPTICFLOW_MAX_OUTPUT_SIZE
+/// Default: 104857600 (100 MB)
+pub fn max_output_size() -> u64 {
+    env::var("SYNAPTICFLOW_MAX_OUTPUT_SIZE")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or_else(|| {
+            tracing::debug!(
+                "Using default max output size: {} bytes",
+                DEFAULT_MAX_OUTPUT_SIZE
+            );
+            DEFAULT_MAX_OUTPUT_SIZE
+        })
+}
+
+/// Default graceful shutdown timeout in seconds
+const DEFAULT_GRACEFUL_SHUTDOWN_TIMEOUT: u64 = 3;
+
+/// Get graceful shutdown timeout (seconds) from environment or default
+///
+/// Environment variable: SYNAPTICFLOW_GRACEFUL_SHUTDOWN_TIMEOUT
+pub fn graceful_shutdown_timeout() -> u64 {
+    env::var("SYNAPTICFLOW_GRACEFUL_SHUTDOWN_TIMEOUT")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or_else(|| {
+            tracing::debug!(
+                "Using default graceful shutdown timeout: {} seconds",
+                DEFAULT_GRACEFUL_SHUTDOWN_TIMEOUT
+            );
+            DEFAULT_GRACEFUL_SHUTDOWN_TIMEOUT
+        })
+}
+
 /// Get maximum file size from environment or use default
 ///
 /// Environment variable: SYNAPTICFLOW_MAX_FILE_SIZE

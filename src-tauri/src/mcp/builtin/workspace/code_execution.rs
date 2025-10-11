@@ -33,8 +33,8 @@ impl WorkspaceServer {
 
         let pid = child.id();
         info!("Process {} started with PID {:?}", process_label, pid);
-
-        const MAX_OUTPUT_SIZE: u64 = 100 * 1024 * 1024; // 100MB
+        // Determine maximum output size from configuration (default 100MB)
+        let max_output_size = crate::config::max_output_size();
 
         // Stream stdout to file
         let stdout_handle = if let Some(mut stdout) = child.stdout.take() {
@@ -57,7 +57,7 @@ impl WorkspaceServer {
                                     Ok(0) => break,
                                     Ok(n) => {
                                         total_written += n as u64;
-                                        if total_written > MAX_OUTPUT_SIZE {
+                                        if total_written > max_output_size {
                                             warn!(
                                                 "Process {} stdout size limit exceeded, truncating",
                                                 label
@@ -103,7 +103,7 @@ impl WorkspaceServer {
                                     Ok(0) => break,
                                     Ok(n) => {
                                         total_written += n as u64;
-                                        if total_written > MAX_OUTPUT_SIZE {
+                                        if total_written > max_output_size {
                                             warn!(
                                                 "Process {} stderr size limit exceeded, truncating",
                                                 label
@@ -136,8 +136,9 @@ impl WorkspaceServer {
                 // Try graceful kill first
                 let _ = child.kill().await;
 
-                // Wait a bit for process to die
-                match tokio::time::timeout(Duration::from_secs(3), child.wait()).await {
+                // Wait a bit for process to die (configurable graceful shutdown timeout)
+                let graceful_secs = crate::config::graceful_shutdown_timeout();
+                match tokio::time::timeout(Duration::from_secs(graceful_secs), child.wait()).await {
                     Ok(Ok(status)) => status.code(),
                     _ => {
                         warn!("Process {} did not terminate gracefully", process_label);

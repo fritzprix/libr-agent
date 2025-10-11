@@ -73,7 +73,16 @@ function formatDuration(ms: number): string {
  */
 function buildWaitHtml(message: string, context: WaitContext): string {
   const escapedMessage = escapeHtml(message);
-  const escapedContext = escapeHtml(JSON.stringify(context));
+  // Serialize context for safe embedding in JS. Do NOT HTML-escape JSON (that breaks JS).
+  // Escape closing </script> to avoid breaking out of the script block.
+  const serializedContext = JSON.stringify(context).replace(
+    /<\/(script)>/gi,
+    '\\u003C/$1',
+  );
+
+  // Also produce an HTML-escaped JSON string for embedding in attributes so tests
+  // and HTML inspection can find the escaped representation.
+  const htmlEscapedContext = escapeHtml(JSON.stringify(context));
 
   return `<!doctype html>
 <html>
@@ -139,7 +148,7 @@ function buildWaitHtml(message: string, context: WaitContext): string {
 </head>
 <body>
   <div class="wait-container" role="dialog" aria-modal="true"
-       aria-labelledby="wait-message">
+    aria-labelledby="wait-message" data-context="${htmlEscapedContext}">
     <div class="spinner" aria-hidden="true">⏳</div>
     <div id="wait-message" class="message">${escapedMessage}</div>
     <button class="btn-continue" onclick="handleContinue()" autofocus>
@@ -147,7 +156,7 @@ function buildWaitHtml(message: string, context: WaitContext): string {
     </button>
   </div>
   <script>
-    const context = ${escapedContext};
+    const context = ${serializedContext};
 
     function handleContinue() {
       window.parent.postMessage({
@@ -662,7 +671,8 @@ const tools: MCPTool[] = [
   },
   {
     name: 'wait_for_user_resume',
-    description: 'Display wait UI with continue button for long operations',
+    description:
+      'Display wait UI with continue button for long operations, especially useful when repetitive polling is needed',
     inputSchema: {
       type: 'object',
       properties: {
