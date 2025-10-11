@@ -47,6 +47,129 @@ interface PromptState {
 
 const activePrompts = new Map<string, PromptState>();
 
+// Wait context type (structured information)
+interface WaitContext {
+  startedAt: string; // ISO 8601 timestamp (server auto-generated)
+  reason: string; // Wait reason
+  command: string; // Command/task being executed
+  nextAction: string; // Action to perform after resume
+}
+
+/**
+ * Format duration in human-readable format
+ */
+function formatDuration(ms: number): string {
+  const seconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+
+  if (hours > 0) return `${hours}h ${minutes % 60}m`;
+  if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
+  return `${seconds}s`;
+}
+
+/**
+ * Generate HTML for wait UI
+ */
+function buildWaitHtml(message: string, context: WaitContext): string {
+  const escapedMessage = escapeHtml(message);
+  const escapedContext = escapeHtml(JSON.stringify(context));
+
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      margin: 0;
+      padding: 16px;
+      background: #f9fafb;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+    .wait-container {
+      max-width: 500px;
+      background: white;
+      border-radius: 8px;
+      padding: 32px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      text-align: center;
+    }
+    .spinner {
+      font-size: 48px;
+      margin-bottom: 16px;
+      animation: spin 2s linear infinite;
+    }
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .spinner { animation: none; }
+    }
+    .message {
+      font-size: 18px;
+      font-weight: 600;
+      color: #1f2937;
+      margin-bottom: 24px;
+    }
+    .btn-continue {
+      padding: 12px 24px;
+      background: #3b82f6;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 16px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .btn-continue:hover {
+      background: #2563eb;
+    }
+    .btn-continue:focus {
+      outline: none;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
+    }
+  </style>
+</head>
+<body>
+  <div class="wait-container" role="dialog" aria-modal="true"
+       aria-labelledby="wait-message">
+    <div class="spinner" aria-hidden="true">⏳</div>
+    <div id="wait-message" class="message">${escapedMessage}</div>
+    <button class="btn-continue" onclick="handleContinue()" autofocus>
+      계속
+    </button>
+  </div>
+  <script>
+    const context = ${escapedContext};
+
+    function handleContinue() {
+      window.parent.postMessage({
+        type: 'tool',
+        payload: {
+          toolName: 'resume_from_wait',
+          params: { context }
+        }
+      }, '*');
+    }
+
+    // Keyboard support
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        handleContinue();
+      }
+    });
+  </script>
+</body>
+</html>`;
+}
+
 /**
  * Create a UIResource with proper serviceInfo for routing
  */
@@ -537,6 +660,62 @@ const tools: MCPTool[] = [
       required: ['type', 'data'],
     },
   },
+  {
+    name: 'wait_for_user_resume',
+    description: 'Display wait UI with continue button for long operations',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        message: {
+          type: 'string',
+          description: 'Message to display to user',
+        },
+        context: {
+          type: 'object',
+          properties: {
+            reason: {
+              type: 'string',
+              description: 'Why waiting (for agent context)',
+            },
+            command: {
+              type: 'string',
+              description: 'Command or task being executed',
+            },
+            nextAction: {
+              type: 'string',
+              description: 'What to do after resume',
+            },
+          },
+          required: ['reason', 'command', 'nextAction'],
+        },
+      },
+      required: ['message', 'context'],
+    },
+  },
+  {
+    name: 'resume_from_wait',
+    description: 'Resume from wait (called by UI button click)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        context: {
+          type: 'object',
+          properties: {
+            startedAt: { type: 'string' },
+            reason: { type: 'string' },
+            command: { type: 'string' },
+            nextAction: { type: 'string' },
+          },
+          required: ['startedAt', 'reason', 'command', 'nextAction'],
+        },
+        sessionId: {
+          type: 'string',
+          description: 'Optional session ID for validation',
+        },
+      },
+      required: ['context'],
+    },
+  },
 ];
 
 const uiTools: WebMCPServer = {
@@ -723,6 +902,83 @@ const uiTools: WebMCPServer = {
               dataPoints: data.length,
             },
           );
+        }
+
+        case 'wait_for_user_resume': {
+          const message = String(a.message || '');
+          const contextInput = a.context as Omit<WaitContext, 'startedAt'>;
+
+          if (!message) {
+            return createMCPTextResponse('Message is required');
+          }
+
+          if (
+            !contextInput ||
+            !contextInput.reason ||
+            !contextInput.command ||
+            !contextInput.nextAction
+          ) {
+            return createMCPTextResponse(
+              'Context with reason, command, nextAction required',
+            );
+          }
+
+          // Add startedAt timestamp
+          const context: WaitContext = {
+            ...contextInput,
+            startedAt: new Date().toISOString(),
+          };
+
+          // Generate HTML
+          const html = buildWaitHtml(message, context);
+          const uri = `ui://wait/${Date.now()}` as `ui://${string}`;
+          const uiResource = createUiResourceFromHtml(html, uri);
+
+          // Text content
+          const textContent: MCPContent = {
+            type: 'text',
+            text: `⏳ Waiting: ${message}\nReason: ${context.reason}`,
+          } as MCPContent;
+
+          // Return multipart
+          return createMCPStructuredMultipartResponse(
+            [textContent, uiResource],
+            { waiting: true, context },
+          );
+        }
+
+        case 'resume_from_wait': {
+          const context = a.context as WaitContext;
+
+          if (!context || !context.startedAt) {
+            return createMCPTextResponse('Valid context required');
+          }
+
+          // Calculate duration
+          const startedAt = new Date(context.startedAt);
+          const resumedAt = new Date();
+          const duration = formatDuration(
+            resumedAt.getTime() - startedAt.getTime(),
+          );
+
+          // Build agent-friendly text response
+          const text = [
+            `✅ User resumed after waiting ${duration}`,
+            '',
+            `What was waiting: ${context.reason}`,
+            `Command/Task: ${context.command}`,
+            `Started: ${context.startedAt}`,
+            `Ended: ${resumedAt.toISOString()}`,
+            '',
+            `Next action: ${context.nextAction}`,
+          ].join('\n');
+
+          return createMCPStructuredResponse(text, {
+            resumed: true,
+            duration,
+            ...context,
+            resumedAt: resumedAt.toISOString(),
+          });
         }
 
         default:
