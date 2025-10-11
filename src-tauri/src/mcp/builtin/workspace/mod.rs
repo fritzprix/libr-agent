@@ -81,7 +81,13 @@ impl WorkspaceServer {
                 if let Some(parent) = std::path::PathBuf::from(&entry.stdout_path).parent() {
                     let _ = tokio::fs::remove_dir_all(parent).await;
                 }
-                tracing::info!("Cleaned up old process: {}", id);
+                // Log poll statistics for monitoring
+                tracing::info!(
+                    "Cleaned up old process: {} (polls: {}, consecutive_running_polls: {})",
+                    id,
+                    entry.poll_count,
+                    entry.consecutive_running_polls
+                );
             }
         }
     }
@@ -179,11 +185,50 @@ impl WorkspaceServer {
             .get_current_session()
             .unwrap_or_else(|| "default".to_string());
 
-        // Get process entry
-        let registry = self.process_registry.read().await;
-        let entry = match registry.entries.get(process_id) {
-            Some(e) => e.clone(),
-            None => {
+        // Verify session access BEFORE write lock (optimization)
+        {
+            let registry = self.process_registry.read().await;
+            match registry.entries.get(process_id) {
+                Some(entry) if entry.session_id == session_id => {
+                    // Access granted, continue
+                }
+                _ => {
+                    return Self::error_response(
+                        request_id,
+                        -32603,
+                        "Process not found or access denied",
+                    );
+                }
+            }
+        }
+
+        // Update poll tracking and get entry (write lock)
+        let threshold = crate::config::poll_threshold();
+        let (should_show_guidance, entry_for_response) = {
+            let mut registry = self.process_registry.write().await;
+            if let Some(entry) = registry.entries.get_mut(process_id) {
+                let now = chrono::Utc::now();
+
+                // Update poll metadata
+                entry.last_poll_at = Some(now);
+                entry.poll_count += 1;
+
+                // Track consecutive running polls
+                let is_running = matches!(entry.status, terminal_manager::ProcessStatus::Running);
+                if is_running {
+                    if entry.first_running_poll_at.is_none() {
+                        entry.first_running_poll_at = Some(now);
+                    }
+                    entry.consecutive_running_polls += 1;
+                } else {
+                    // Reset counters when status changes from running
+                    entry.consecutive_running_polls = 0;
+                    entry.first_running_poll_at = None;
+                }
+
+                let should_guide = is_running && entry.consecutive_running_polls >= threshold;
+                (should_guide, entry.clone())
+            } else {
                 return Self::error_response(
                     request_id,
                     -32603,
@@ -192,23 +237,17 @@ impl WorkspaceServer {
             }
         };
 
-        // Verify session access
-        if entry.session_id != session_id {
-            return Self::error_response(request_id, -32603, "Process not found or access denied");
-        }
-        drop(registry);
-
         // Build response
         let mut response = serde_json::json!({
-            "process_id": entry.id,
-            "status": format!("{:?}", entry.status).to_lowercase(),
-            "command": entry.command,
-            "pid": entry.pid,
-            "exit_code": entry.exit_code,
-            "started_at": entry.started_at.to_rfc3339(),
-            "finished_at": entry.finished_at.map(|t| t.to_rfc3339()),
-            "stdout_size": entry.stdout_size,
-            "stderr_size": entry.stderr_size,
+            "process_id": entry_for_response.id,
+            "status": format!("{:?}", entry_for_response.status).to_lowercase(),
+            "command": entry_for_response.command,
+            "pid": entry_for_response.pid,
+            "exit_code": entry_for_response.exit_code,
+            "started_at": entry_for_response.started_at.to_rfc3339(),
+            "finished_at": entry_for_response.finished_at.map(|t| t.to_rfc3339()),
+            "stdout_size": entry_for_response.stdout_size,
+            "stderr_size": entry_for_response.stderr_size,
         });
 
         // Optional tail
@@ -220,9 +259,9 @@ impl WorkspaceServer {
             let n = tail_obj.get("n").and_then(|v| v.as_u64()).unwrap_or(10) as usize;
 
             let file_path = if src == "stdout" {
-                std::path::PathBuf::from(&entry.stdout_path)
+                std::path::PathBuf::from(&entry_for_response.stdout_path)
             } else {
-                std::path::PathBuf::from(&entry.stderr_path)
+                std::path::PathBuf::from(&entry_for_response.stderr_path)
             };
 
             match terminal_manager::tail_lines(&file_path, n).await {
@@ -238,10 +277,33 @@ impl WorkspaceServer {
             }
         }
 
-        Self::success_response(
-            request_id,
-            &serde_json::to_string_pretty(&response).unwrap_or_default(),
-        )
+        // Add guidance message if threshold exceeded
+        let response_text = if should_show_guidance {
+            let guidance = format!(
+                "\n\n[POLLING GUIDANCE]\n\
+                Process status: RUNNING\n\
+                Polls detected: {} consecutive checks\n\
+                \n\
+                RECOMMENDED ACTION:\n\
+                - Wait at least 10 seconds before next poll\n\
+                - Process will continue running in background\n\
+                - Status will update automatically when complete\n\
+                \n\
+                ALTERNATIVE: Use async wait patterns instead of active polling.\n\
+                Frequent polling may impact system performance without providing additional value.",
+                entry_for_response.consecutive_running_polls
+            );
+
+            format!(
+                "{}\n{}",
+                serde_json::to_string_pretty(&response).unwrap_or_default(),
+                guidance
+            )
+        } else {
+            serde_json::to_string_pretty(&response).unwrap_or_default()
+        };
+
+        Self::success_response(request_id, &response_text)
     }
 
     /// Handle read_process_output tool call

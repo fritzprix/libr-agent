@@ -4,8 +4,8 @@
 /// All configuration values can be overridden via environment variables.
 ///
 /// # Development Mode
-/// In debug builds, environment variables are loaded from a `.env` file in the project root
-/// (if it exists). See `.env.example` for available configuration options.
+/// In debug builds, environment variables are loaded from a `.env` file in the `src-tauri/` directory
+/// (if it exists). Create a `.env` file in `src-tauri/` for local development configuration.
 ///
 /// # Production Mode
 /// In release builds, only system environment variables are used. Configure your
@@ -15,6 +15,9 @@
 /// - `SYNAPTICFLOW_MAX_FILE_SIZE`: Maximum file size in bytes (default: 10485760 = 10MB)
 /// - `SYNAPTICFLOW_DEFAULT_EXECUTION_TIMEOUT`: Default command timeout in seconds (default: 30)
 /// - `SYNAPTICFLOW_MAX_EXECUTION_TIMEOUT`: Maximum command timeout in seconds (default: 300)
+/// - `SYNAPTICFLOW_MAX_OUTPUT_SIZE`: Maximum process output size in bytes (default: 104857600 = 100MB)
+/// - `SYNAPTICFLOW_GRACEFUL_SHUTDOWN_TIMEOUT`: Graceful shutdown timeout in seconds (default: 3)
+/// - `SYNAPTICFLOW_POLL_THRESHOLD`: Excessive polling detection threshold (default: 5 consecutive polls)
 /// - `MESSAGE_INDEX_SNIPPET_LENGTH`: Message snippet length for search index (default: 200)
 /// - `SYNAPTICFLOW_DB_PATH`: SQLite database file path (default: user data directory)
 use std::env;
@@ -33,6 +36,9 @@ const DEFAULT_SNIPPET_LENGTH: usize = 200;
 
 /// Default maximum captured output size for spawned processes (100 MB)
 const DEFAULT_MAX_OUTPUT_SIZE: u64 = 100 * 1024 * 1024;
+
+/// Default polling threshold for excessive polling detection (5 consecutive polls)
+const DEFAULT_POLL_THRESHOLD: u32 = 5;
 
 /// Get maximum output size for process stdout/stderr capture from environment or use default
 ///
@@ -148,6 +154,23 @@ pub fn message_index_snippet_length() -> usize {
                 DEFAULT_SNIPPET_LENGTH
             );
             DEFAULT_SNIPPET_LENGTH
+        })
+}
+
+/// Get polling threshold for excessive polling detection from environment or use default
+///
+/// Environment variable: SYNAPTICFLOW_POLL_THRESHOLD
+/// Default: 5 consecutive polls while process is running
+pub fn poll_threshold() -> u32 {
+    env::var("SYNAPTICFLOW_POLL_THRESHOLD")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or_else(|| {
+            tracing::debug!(
+                "Using default poll threshold: {} consecutive polls",
+                DEFAULT_POLL_THRESHOLD
+            );
+            DEFAULT_POLL_THRESHOLD
         })
 }
 

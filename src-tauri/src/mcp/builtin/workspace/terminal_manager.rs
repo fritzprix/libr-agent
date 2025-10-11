@@ -31,6 +31,16 @@ pub struct ProcessEntry {
     pub stderr_path: String,
     pub stdout_size: u64,
     pub stderr_size: u64,
+
+    // Poll tracking fields for detecting excessive polling
+    #[serde(default)]
+    pub last_poll_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub poll_count: u32,
+    #[serde(default)]
+    pub consecutive_running_polls: u32,
+    #[serde(default)]
+    pub first_running_poll_at: Option<DateTime<Utc>>,
 }
 
 /// Thread-safe process registry with cancellation tokens
@@ -264,5 +274,95 @@ mod tests {
 
         let size = get_file_size(&test_file).await;
         assert_eq!(size, 0);
+    }
+
+    #[test]
+    fn test_process_entry_initialization_with_poll_tracking() {
+        let entry = ProcessEntry {
+            id: "test-123".to_string(),
+            session_id: "session-1".to_string(),
+            command: "test command".to_string(),
+            status: ProcessStatus::Starting,
+            pid: None,
+            exit_code: None,
+            started_at: Utc::now(),
+            finished_at: None,
+            stdout_path: "/tmp/stdout".to_string(),
+            stderr_path: "/tmp/stderr".to_string(),
+            stdout_size: 0,
+            stderr_size: 0,
+            last_poll_at: None,
+            poll_count: 0,
+            consecutive_running_polls: 0,
+            first_running_poll_at: None,
+        };
+
+        assert_eq!(entry.poll_count, 0);
+        assert_eq!(entry.consecutive_running_polls, 0);
+        assert!(entry.last_poll_at.is_none());
+        assert!(entry.first_running_poll_at.is_none());
+    }
+
+    #[test]
+    fn test_process_entry_serialization_with_poll_fields() {
+        let entry = ProcessEntry {
+            id: "test-456".to_string(),
+            session_id: "session-2".to_string(),
+            command: "echo hello".to_string(),
+            status: ProcessStatus::Running,
+            pid: Some(12345),
+            exit_code: None,
+            started_at: Utc::now(),
+            finished_at: None,
+            stdout_path: "/tmp/test/stdout".to_string(),
+            stderr_path: "/tmp/test/stderr".to_string(),
+            stdout_size: 100,
+            stderr_size: 50,
+            last_poll_at: Some(Utc::now()),
+            poll_count: 5,
+            consecutive_running_polls: 3,
+            first_running_poll_at: Some(Utc::now()),
+        };
+
+        // Test serialization
+        let json = serde_json::to_string(&entry).unwrap();
+        let deserialized: ProcessEntry = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(entry.id, deserialized.id);
+        assert_eq!(entry.poll_count, deserialized.poll_count);
+        assert_eq!(
+            entry.consecutive_running_polls,
+            deserialized.consecutive_running_polls
+        );
+        assert!(deserialized.last_poll_at.is_some());
+        assert!(deserialized.first_running_poll_at.is_some());
+    }
+
+    #[test]
+    fn test_process_entry_deserialization_backward_compatibility() {
+        // Old JSON without poll tracking fields
+        let old_json = r#"{
+            "id": "test-789",
+            "session_id": "session-3",
+            "command": "ls -la",
+            "status": "Running",
+            "pid": 99999,
+            "exit_code": null,
+            "started_at": "2025-01-01T00:00:00Z",
+            "finished_at": null,
+            "stdout_path": "/tmp/old/stdout",
+            "stderr_path": "/tmp/old/stderr",
+            "stdout_size": 200,
+            "stderr_size": 100
+        }"#;
+
+        // Should deserialize successfully with default values for new fields
+        let entry: ProcessEntry = serde_json::from_str(old_json).unwrap();
+
+        assert_eq!(entry.id, "test-789");
+        assert_eq!(entry.poll_count, 0); // Default value
+        assert_eq!(entry.consecutive_running_polls, 0); // Default value
+        assert!(entry.last_poll_at.is_none()); // Default value
+        assert!(entry.first_running_poll_at.is_none()); // Default value
     }
 }
