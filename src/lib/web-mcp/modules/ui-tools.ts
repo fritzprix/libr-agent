@@ -155,11 +155,13 @@ function buildWaitHtml(
     const context = ${serializedContext};
 
     function handleContinue() {
+      // Post flattened params so the parent can forward them directly to the tool
+      // i.e. params: { resumeInstruction, startedAt }
       window.parent.postMessage({
         type: 'tool',
         payload: {
           toolName: 'resume_from_wait',
-          params: { context }
+          params: { ...context }
         }
       }, '*');
     }

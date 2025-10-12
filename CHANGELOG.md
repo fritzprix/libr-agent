@@ -11,7 +11,6 @@ All notable changes to this project will be documented in this file.
 - Backend message persistence improvements: groundwork for SQLite-backed message storage and Tauri commands for message CRUD.
 - BM25 search integration planning and initial index metadata handling; session index cleanup implemented to remove orphaned index files.
 
-
 ### Added
 
 - WebMCP UI tools (built-in): `prompt_user`, `reply_prompt`, `visualize_data`.
@@ -24,7 +23,6 @@ All notable changes to this project will be documented in this file.
 - Sidebar & UI polish:
   - Removed legacy "Message Search (BM25)" sidebar item and unified History link to `/history`.
   - Added keyboard shortcut to toggle the sidebar (Ctrl+B).
-
 
 ### Changed / Improved
 
