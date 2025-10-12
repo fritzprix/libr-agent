@@ -665,10 +665,9 @@ impl WorkspaceServer {
                     request_id,
                     -32603,
                     &format!(
-                        "Invalid source path: '{}'. {}. \
+                        "Invalid source path: '{src_path_str}'. {e}. \
                          Please ensure the file exists and the path is correct. \
-                         On Windows, use absolute paths like 'C:\\Users\\...'",
-                        src_path_str, e
+                         On Windows, use absolute paths like 'C:\\Users\\...'"
                     ),
                 );
             }

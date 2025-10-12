@@ -748,7 +748,11 @@ impl BuiltinMCPServer for WorkspaceServer {
             // interface to avoid external runtime dependencies and to prevent
             // agents from controlling isolation/permissions. Only shell
             // execution remains exposed below.
+            // Platform-specific shell execution tools
+            #[cfg(unix)]
             "execute_shell" => self.handle_execute_shell(args).await,
+            #[cfg(windows)]
+            "execute_windows_cmd" => self.handle_execute_shell(args).await,
             // Export tools
             "export_file" => self.handle_export_file(args).await,
             "export_zip" => self.handle_export_zip(args).await,

@@ -30,7 +30,9 @@
       "../lib/web-mcp/mcp-worker.ts?worker",
       ["src/hooks/use-web-mcp-server.ts"]
     ],
-    ["@/lib/web-mcp/mcp-worker.ts?worker", ["src/context/WebMCPContext.tsx"]]
+    "@/lib/web-mcp/mcp-worker.ts?worker at src/context/WebMCPContext.tsx",
+    ["@/lib/web-mcp/mcp-worker.ts?worker", ["src/context/WebMCPContext.tsx"]],
+    ["@/lib/web-mcp/mcp-worker.ts?worker", ["src\\context\\WebMCPContext.tsx"]]
   ],
   "ignoreUnused": [
     "@mcp-ui/server",
@@ -45,11 +47,9 @@
     "src/components/ui/alert-dialog.tsx",
     "src/components/ui/collapsible.tsx",
     "src/components/ui/sonner.tsx",
-    "src/features/prompts/JailbreakSystemPrompt.tsx",
+    "src/hooks/__tests__/use-ai-service.completeText.spec.ts",
     "src/test/setup.ts",
     "src/test/types/test-types.ts",
-    "src/test/utils/html-test-utils.ts",
-    "src/lib/web-mcp/examples/tool-result-usage.ts",
-    "src/hooks/__tests__/use-ai-service.completeText.spec.ts"
+    "src/test/utils/html-test-utils.ts"
   ]
 }

@@ -78,6 +78,18 @@ pub async fn tail_lines(file_path: &PathBuf, n: usize) -> Result<Vec<String>, St
 
     // For small files (< 1MB), read entire file
     if file_size < 1_000_000 {
+        // Windows: Use lossy UTF-8 conversion to handle non-UTF-8 console output
+        // (cmd.exe outputs in system code page, not UTF-8)
+        #[cfg(target_os = "windows")]
+        let content = {
+            let bytes = tokio::fs::read(file_path)
+                .await
+                .map_err(|e| format!("Failed to read file: {e}"))?;
+            String::from_utf8_lossy(&bytes).to_string()
+        };
+
+        // Unix: Use strict UTF-8 (works fine on Unix systems)
+        #[cfg(not(target_os = "windows"))]
         let content = tokio::fs::read_to_string(file_path)
             .await
             .map_err(|e| format!("Failed to read file: {e}"))?;
@@ -124,7 +136,26 @@ pub async fn tail_lines(file_path: &PathBuf, n: usize) -> Result<Vec<String>, St
         buffer.splice(0..0, chunk);
 
         // Try to parse as UTF-8
-        if let Ok(text) = String::from_utf8(buffer.clone()) {
+        // Windows: Use lossy conversion for non-UTF-8 console output
+        // Unix: Use strict UTF-8 validation
+        #[cfg(target_os = "windows")]
+        let text = String::from_utf8_lossy(&buffer).to_string();
+
+        #[cfg(not(target_os = "windows"))]
+        let text_opt = String::from_utf8(buffer.clone()).ok();
+
+        #[cfg(target_os = "windows")]
+        {
+            let all_lines: Vec<String> = text.lines().map(|s| s.to_string()).collect();
+            if all_lines.len() >= n {
+                lines = all_lines.into_iter().rev().take(n).collect();
+                lines.reverse();
+                break;
+            }
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        if let Some(text) = text_opt {
             let all_lines: Vec<String> = text.lines().map(|s| s.to_string()).collect();
             if all_lines.len() >= n {
                 lines = all_lines.into_iter().rev().take(n).collect();
@@ -138,6 +169,21 @@ pub async fn tail_lines(file_path: &PathBuf, n: usize) -> Result<Vec<String>, St
 
     // If we couldn't get enough lines, use what we have
     if lines.is_empty() {
+        #[cfg(target_os = "windows")]
+        {
+            let text = String::from_utf8_lossy(&buffer).to_string();
+            lines = text
+                .lines()
+                .rev()
+                .take(n)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .map(|s| s.to_string())
+                .collect();
+        }
+
+        #[cfg(not(target_os = "windows"))]
         if let Ok(text) = String::from_utf8(buffer) {
             lines = text
                 .lines()
@@ -162,6 +208,18 @@ pub async fn head_lines(file_path: &PathBuf, n: usize) -> Result<Vec<String>, St
         return Ok(Vec::new());
     }
 
+    // Windows: Use lossy UTF-8 conversion to handle non-UTF-8 console output
+    // (cmd.exe outputs in system code page, not UTF-8)
+    #[cfg(target_os = "windows")]
+    let content = {
+        let bytes = tokio::fs::read(file_path)
+            .await
+            .map_err(|e| format!("Failed to read file: {e}"))?;
+        String::from_utf8_lossy(&bytes).to_string()
+    };
+
+    // Unix: Use strict UTF-8 (works fine on Unix systems)
+    #[cfg(not(target_os = "windows"))]
     let content = tokio::fs::read_to_string(file_path)
         .await
         .map_err(|e| format!("Failed to read file: {e}"))?;

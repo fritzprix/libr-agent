@@ -24,12 +24,32 @@ impl WorkspaceServer {
         use std::process::Stdio;
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+        // Configure stdio pipes - critical for capturing output
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
+        cmd.stdin(Stdio::null()); // Explicitly close stdin to prevent blocking
 
-        let mut child = cmd
-            .spawn()
-            .map_err(|e| format!("Failed to spawn process: {e}"))?;
+        // Windows-specific: Ensure handle inheritance is enabled for stdio pipes
+        #[cfg(target_os = "windows")]
+        {
+            info!(
+                "Spawning Windows process with stdio redirection: {}",
+                process_label
+            );
+            // Note: tokio::process::Command automatically handles handle inheritance
+            // on Windows when Stdio::piped() is used, but we log for diagnostics
+
+            // Log the full command for debugging Windows execution issues
+            info!("Windows process command debug: {:?}", cmd.as_std());
+        }
+
+        let mut child = cmd.spawn().map_err(|e| {
+            error!(
+                "Failed to spawn process {}: {}. Check command path and permissions.",
+                process_label, e
+            );
+            format!("Failed to spawn process: {e}")
+        })?;
 
         let pid = child.id();
         info!("Process {} started with PID {:?}", process_label, pid);
@@ -43,6 +63,10 @@ impl WorkspaceServer {
             let cancel_clone = cancel_token.clone();
             Some(tokio::spawn(async move {
                 if let Ok(mut file) = tokio::fs::File::create(&stdout_path_clone).await {
+                    info!(
+                        "Process {} stdout streaming started to {:?}",
+                        label, stdout_path_clone
+                    );
                     let mut total_written = 0u64;
                     let mut buffer = [0u8; 8192];
 
@@ -76,6 +100,15 @@ impl WorkspaceServer {
                             }
                         }
                     }
+                    info!(
+                        "Process {} stdout streaming completed, total bytes: {}",
+                        label, total_written
+                    );
+                } else {
+                    error!(
+                        "Process {} failed to create stdout file: {:?}",
+                        label, stdout_path_clone
+                    );
                 }
             }))
         } else {
@@ -89,6 +122,10 @@ impl WorkspaceServer {
             let cancel_clone = cancel_token.clone();
             Some(tokio::spawn(async move {
                 if let Ok(mut file) = tokio::fs::File::create(&stderr_path_clone).await {
+                    info!(
+                        "Process {} stderr streaming started to {:?}",
+                        label, stderr_path_clone
+                    );
                     let mut total_written = 0u64;
                     let mut buffer = [0u8; 8192];
 
@@ -122,6 +159,15 @@ impl WorkspaceServer {
                             }
                         }
                     }
+                    info!(
+                        "Process {} stderr streaming completed, total bytes: {}",
+                        label, total_written
+                    );
+                } else {
+                    error!(
+                        "Process {} failed to create stderr file: {:?}",
+                        label, stderr_path_clone
+                    );
                 }
             }))
         } else {
@@ -392,32 +438,57 @@ impl WorkspaceServer {
         }
     }
 
-    /// LLM이 생성한 Shell 명령어의 따옴표 문제를 자동으로 보정
-    /// Bash와 POSIX sh 모두에서 동작하는 따옴표 보정
+    /// Normalize shell command for proper execution
+    /// Handles platform-specific quoting and escaping rules
     fn normalize_shell_command(raw_command: &str) -> String {
-        let mut normalized = raw_command.to_string();
+        #[cfg(windows)]
+        {
+            // Windows cmd.exe has special quoting rules:
+            // 1. Use double quotes for arguments with spaces
+            // 2. Escape double quotes inside quoted strings with backslash
+            // 3. For cmd /S /C, the entire command should work as-is in most cases
+            //    because /S preserves quotes properly
 
-        // 1. 불완전한 따옴표 쌍 감지 및 보정
-        let double_quote_count = normalized.chars().filter(|&c| c == '"').count();
-        let single_quote_count = normalized.chars().filter(|&c| c == '\'').count();
+            // For now, return the command as-is since we're using /S /C
+            // which handles quotes more reliably than /C alone
+            // If we detect unbalanced quotes, try to fix them
+            let double_quote_count = raw_command.chars().filter(|&c| c == '"').count();
 
-        // 2. 홀수 개의 따옴표가 있으면 마지막에 추가
-        if double_quote_count % 2 != 0 {
-            normalized.push('"');
-            info!("Shell command: Added missing double quote");
+            if double_quote_count % 2 != 0 {
+                // Odd number of quotes - add closing quote at the end
+                info!("Windows command: Added missing double quote");
+                format!("{raw_command}\"")
+            } else {
+                raw_command.to_string()
+            }
         }
-        if single_quote_count % 2 != 0 {
-            normalized.push('\'');
-            info!("Shell command: Added missing single quote");
-        }
 
-        // 3. 연속된 따옴표 보정 패턴들
-        // "echo "hello"" -> "echo \"hello\""
-        if normalized.contains("\"\"") {
-            normalized = Self::fix_consecutive_quotes(&normalized);
-        }
+        #[cfg(not(windows))]
+        {
+            // Unix shell quoting normalization (existing logic)
+            let mut normalized = raw_command.to_string();
 
-        normalized
+            // 1. Detect incomplete quote pairs
+            let double_quote_count = normalized.chars().filter(|&c| c == '"').count();
+            let single_quote_count = normalized.chars().filter(|&c| c == '\'').count();
+
+            // 2. Add missing closing quotes
+            if double_quote_count % 2 != 0 {
+                normalized.push('"');
+                info!("Shell command: Added missing double quote");
+            }
+            if single_quote_count % 2 != 0 {
+                normalized.push('\'');
+                info!("Shell command: Added missing single quote");
+            }
+
+            // 3. Fix consecutive quote patterns
+            if normalized.contains("\"\"") {
+                normalized = Self::fix_consecutive_quotes(&normalized);
+            }
+
+            normalized
+        }
     }
 
     /// 연속된 따옴표를 문맥에 따라 보정
@@ -498,16 +569,9 @@ impl WorkspaceServer {
             );
         }
 
-        // Determine isolation level based on arguments or default to Medium
-        let isolation_level = args
-            .get("isolation")
-            .and_then(|v| v.as_str())
-            .map(|level| match level {
-                "basic" => IsolationLevel::Basic,
-                "high" => IsolationLevel::High,
-                _ => IsolationLevel::Medium,
-            })
-            .unwrap_or(IsolationLevel::Medium);
+        // Always use Medium isolation for security (isolation parameter removed from tool)
+        // Medium provides good balance between security and compatibility
+        let isolation_level = IsolationLevel::Medium;
 
         // Use existing isolation-aware shell execution
         self.execute_shell_with_isolation(raw_command, isolation_level, timeout_secs)
@@ -515,7 +579,7 @@ impl WorkspaceServer {
     }
 
     /// Execute shell command asynchronously in background
-    async fn execute_shell_async(&self, command: &str, args: &Value) -> MCPResponse {
+    async fn execute_shell_async(&self, command: &str, _args: &Value) -> MCPResponse {
         let request_id = Self::generate_request_id();
 
         // Get session info
@@ -571,16 +635,8 @@ impl WorkspaceServer {
         // Normalize command
         let normalized_command = Self::normalize_shell_command(command);
 
-        // Determine isolation level
-        let isolation_level = args
-            .get("isolation")
-            .and_then(|v| v.as_str())
-            .map(|level| match level {
-                "basic" => IsolationLevel::Basic,
-                "high" => IsolationLevel::High,
-                _ => IsolationLevel::Medium,
-            })
-            .unwrap_or(IsolationLevel::Medium);
+        // Always use Medium isolation (isolation parameter removed from tool)
+        let isolation_level = IsolationLevel::Medium;
 
         // Create isolation config
         let isolation_config = IsolatedProcessConfig {

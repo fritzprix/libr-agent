@@ -94,10 +94,9 @@ impl SecurityValidator {
         // Windows 드라이브 경로 금지 (C:, D: 등)
         if user_path.len() >= 2 && user_path.chars().nth(1) == Some(':') {
             return Err(SecurityError::PathTraversal(format!(
-                "Absolute paths with drive letters are not allowed for destination paths: '{}'. \
+                "Absolute paths with drive letters are not allowed for destination paths: '{user_path}'. \
                  Please use relative paths like 'folder/file.txt'. \
-                 The file will be placed inside the workspace directory.",
-                user_path
+                 The file will be placed inside the workspace directory."
             )));
         }
 
@@ -158,9 +157,13 @@ impl SecurityValidator {
     pub fn validate_path_for_read(&self, user_path: &str) -> Result<PathBuf, SecurityError> {
         let normalized = user_path.replace('\\', "/");
 
+        // Detect Windows drive-letter absolute paths like C:\foo
         let is_windows_absolute = normalized.len() >= 2 && normalized.as_bytes()[1] == b':';
 
-        if Path::new(&normalized).is_absolute() || is_windows_absolute {
+        // Also treat Unix-style absolute paths (starting with '/') as absolute
+        let is_unix_style_absolute = normalized.starts_with('/');
+
+        if Path::new(&normalized).is_absolute() || is_windows_absolute || is_unix_style_absolute {
             let cleaned = PathBuf::from(&normalized).clean();
             return Ok(cleaned);
         }

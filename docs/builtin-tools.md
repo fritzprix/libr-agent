@@ -351,7 +351,8 @@ Provides integrated workspace management with file operations, code execution, a
 
 - `execute_python`: Execute Python code with session isolation
 - `execute_typescript`: Execute TypeScript code
-- `execute_shell`: Execute shell commands
+- `execute_shell` (Unix only): Execute shell commands using bash/sh
+- `execute_windows_cmd` (Windows only): Execute commands using cmd.exe
 
 **Export Tools:**
 
