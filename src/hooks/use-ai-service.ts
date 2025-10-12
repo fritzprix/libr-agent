@@ -5,7 +5,10 @@ import { AIServiceConfig, AIServiceFactory } from '../lib/ai-service';
 import { getLogger } from '../lib/logger';
 import { useSettings } from './use-settings';
 import { prepareMessagesForLLM } from '../lib/message-preprocessor';
-import { createErrorMessage } from '../lib/ai-service/error-handler';
+import {
+  createErrorMessage,
+  classifyAIServiceError,
+} from '../lib/ai-service/error-handler';
 
 import { selectMessagesWithinContext } from '@/lib/token-utils';
 import { stringToMCPContentArray } from '@/lib/utils';
@@ -449,17 +452,26 @@ export const useAIService = (config?: AIServiceConfig) => {
         logger.error('Error in completeText:', err);
         setError(err as Error);
 
-        // Create error message (use ephemeral sessionId for compatibility)
-        const errorMessage = createErrorMessage(
-          responseId,
-          createId(), // ephemeral sessionId
-          err,
-          {
-            model: options?.model ?? model,
-            provider,
-            messageCount: 1,
-          },
-        );
+        // Create error message with text content for text completion
+        const errorClassification = classifyAIServiceError(err, {
+          model: options?.model ?? model,
+          provider,
+          messageCount: 1,
+        });
+
+        const errorMessage: Message = {
+          id: responseId,
+          content: stringToMCPContentArray(
+            'I apologize, but I encountered an error while processing your request.',
+          ),
+          role: 'assistant',
+          isStreaming: false,
+          thinking: '',
+          thinkingSignature: '',
+          tool_calls: [],
+          sessionId: ephemeralSessionId,
+          error: errorClassification,
+        };
 
         setResponse(errorMessage);
         return errorMessage;
