@@ -22,16 +22,140 @@ export class MessageNormalizer {
     messages: Message[],
     targetProvider: AIServiceProvider,
   ): Message[] {
-    // First pass: handle tool call relationships for Anthropic
+    // First pass: handle tool call relationships
     let processedMessages = messages;
+
+    // Anthropic: existing validation (unchanged)
     if (targetProvider === AIServiceProvider.Anthropic) {
       processedMessages = this.fixAnthropicToolCallChain(messages);
+    }
+
+    // OpenAI-family: apply tool-call/tool-response pairing validation
+    if (
+      [
+        AIServiceProvider.OpenAI,
+        AIServiceProvider.Groq,
+        AIServiceProvider.Cerebras,
+        AIServiceProvider.Fireworks,
+      ].includes(targetProvider)
+    ) {
+      processedMessages = this.ensureToolCallPairing(processedMessages);
     }
 
     // Second pass: sanitize individual messages
     return processedMessages
       .map((msg) => this.sanitizeSingleMessage(msg, targetProvider))
       .filter((msg) => msg !== null) as Message[];
+  }
+
+  /**
+   * Ensures tool-call/tool-response pairing for OpenAI-family providers.
+   * Similar to fixAnthropicToolCallChain but tailored for OpenAI API requirements.
+   *
+   * OpenAI API requires that every 'tool' role message must correspond to
+   * a tool_call in a preceding assistant message. This function:
+   * 1. Collects all tool_call ids from assistant messages
+   * 2. Maps tool responses by tool_call_id
+   * 3. Removes orphaned tool messages (no matching tool_call)
+   * 4. Removes unmatched tool_calls from assistant messages
+   * 5. Preserves message ordering and role semantics
+   *
+   * @param messages - Array of messages to validate
+   * @returns Sanitized array with valid tool-call pairings only
+   * @private
+   */
+  private static ensureToolCallPairing(messages: Message[]): Message[] {
+    const result: Message[] = [];
+    const validToolCallIds = new Set<string>();
+    const completedToolCallIds = new Set<string>();
+
+    // Step 1: Collect all tool_call ids from assistant messages
+    for (const msg of messages) {
+      if (msg.role === 'assistant' && msg.tool_calls?.length) {
+        msg.tool_calls.forEach((tc) => {
+          if (tc.id) {
+            validToolCallIds.add(tc.id);
+          }
+        });
+      }
+    }
+
+    // Step 2: Identify completed tool_calls by finding matching tool responses
+    for (const msg of messages) {
+      if (
+        msg.role === 'tool' &&
+        msg.tool_call_id &&
+        validToolCallIds.has(msg.tool_call_id)
+      ) {
+        completedToolCallIds.add(msg.tool_call_id);
+      }
+    }
+
+    // Step 3: Reconstruct message list with only valid pairings
+    for (const msg of messages) {
+      const processedMsg = { ...msg };
+
+      if (msg.role === 'assistant' && msg.tool_calls?.length) {
+        // Keep only tool_calls that have matching tool responses
+        const completedToolCalls = msg.tool_calls.filter((tc) =>
+          completedToolCallIds.has(tc.id),
+        );
+
+        if (completedToolCalls.length !== msg.tool_calls.length) {
+          const removedIds = msg.tool_calls
+            .filter((tc) => !completedToolCallIds.has(tc.id))
+            .map((tc) => tc.id);
+
+          logger.warn(
+            'Removing incomplete tool_calls from assistant message for OpenAI',
+            {
+              messageId: msg.id,
+              removedToolIds: removedIds,
+              completedCount: completedToolCalls.length,
+              totalCount: msg.tool_calls.length,
+            },
+          );
+        }
+
+        if (completedToolCalls.length > 0) {
+          processedMsg.tool_calls = completedToolCalls;
+        } else {
+          // No valid tool_calls, remove the field but keep message
+          delete processedMsg.tool_calls;
+        }
+      } else if (msg.role === 'tool') {
+        // Only include tool messages that have matching tool_calls
+        if (!msg.tool_call_id || !completedToolCallIds.has(msg.tool_call_id)) {
+          logger.debug('Skipping orphaned tool message for OpenAI', {
+            messageId: msg.id,
+            toolCallId: msg.tool_call_id,
+          });
+          continue;
+        }
+      }
+
+      result.push(processedMsg);
+    }
+
+    // Remove any tool messages from the beginning of conversation
+    while (result.length > 0 && result[0].role === 'tool') {
+      logger.warn(
+        'Removing tool message from beginning of conversation for OpenAI',
+        {
+          messageId: result[0].id,
+        },
+      );
+      result.shift();
+    }
+
+    logger.info('OpenAI tool call pairing validation completed', {
+      originalMessages: messages.length,
+      processedMessages: result.length,
+      validToolCalls: validToolCallIds.size,
+      completedToolCalls: completedToolCallIds.size,
+    });
+
+    return result;
   }
 
   /**

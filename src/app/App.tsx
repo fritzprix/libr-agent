@@ -52,7 +52,7 @@ function App() {
                                 <AppHeader>
                                   <ThemeToggle />
                                 </AppHeader>
-                                <div className="flex-1 overflow-auto w-full">
+                                <div className="flex-1 w-full min-h-0">
                                   <Routes>
                                     <Route
                                       path="/"

@@ -49,6 +49,7 @@
     "src/test/setup.ts",
     "src/test/types/test-types.ts",
     "src/test/utils/html-test-utils.ts",
-    "src/lib/web-mcp/examples/tool-result-usage.ts"
+    "src/lib/web-mcp/examples/tool-result-usage.ts",
+    "src/hooks/__tests__/use-ai-service.completeText.spec.ts"
   ]
 }
