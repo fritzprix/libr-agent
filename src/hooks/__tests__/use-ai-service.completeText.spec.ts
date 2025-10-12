@@ -32,6 +32,7 @@ async function* makeStream(chunks: string[], throwAt?: number) {
 
 // Helper: async generator that throws immediately
 async function* makeFailingStream() {
+  yield { content: 'starting' }; // Yield something first
   await new Promise((r) => setTimeout(r, 0)); // Allow async setup
   throw new Error('stream error');
 }

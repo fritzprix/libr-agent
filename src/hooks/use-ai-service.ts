@@ -5,7 +5,10 @@ import { AIServiceConfig, AIServiceFactory } from '../lib/ai-service';
 import { getLogger } from '../lib/logger';
 import { useSettings } from './use-settings';
 import { prepareMessagesForLLM } from '../lib/message-preprocessor';
-import { createErrorMessage, classifyAIServiceError } from '../lib/ai-service/error-handler';
+import {
+  createErrorMessage,
+  classifyAIServiceError,
+} from '../lib/ai-service/error-handler';
 
 import { selectMessagesWithinContext } from '@/lib/token-utils';
 import { stringToMCPContentArray } from '@/lib/utils';
