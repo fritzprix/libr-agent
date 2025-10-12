@@ -94,10 +94,9 @@ impl SecurityValidator {
         // Windows 드라이브 경로 금지 (C:, D: 등)
         if user_path.len() >= 2 && user_path.chars().nth(1) == Some(':') {
             return Err(SecurityError::PathTraversal(format!(
-                "Absolute paths with drive letters are not allowed for destination paths: '{}'. \
+                "Absolute paths with drive letters are not allowed for destination paths: '{user_path}'. \
                  Please use relative paths like 'folder/file.txt'. \
-                 The file will be placed inside the workspace directory.",
-                user_path
+                 The file will be placed inside the workspace directory."
             )));
         }
 

@@ -400,6 +400,15 @@ impl SessionIsolationManager {
         _cmd: &mut AsyncCommand,
         _config: &IsolatedProcessConfig,
     ) -> Result<(), String> {
+        // `limits` is used only on Unix-like builds (Linux/macOS) below.
+        // To avoid accidental removal by Windows-only edits, bind a
+        // platform-specific variable:
+        // - on Unix: `limits` (used in the Unix-only info block)
+        // - on non-unix: `_limits` (keeps the reference but avoids unused warnings)
+        #[cfg(unix)]
+        let limits = &self.isolation_config.resource_limits;
+
+        #[cfg(not(unix))]
         let _limits = &self.isolation_config.resource_limits;
 
         #[cfg(unix)]
