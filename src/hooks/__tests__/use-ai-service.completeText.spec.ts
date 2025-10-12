@@ -4,6 +4,16 @@ import { useAIService } from '../use-ai-service';
 import { AIServiceFactory } from '@/lib/ai-service';
 import type { Message } from '@/models/chat';
 
+// Mock useSettings
+vi.mock('../use-settings', () => ({
+  useSettings: () => ({
+    value: {
+      preferredModel: { model: 'gpt-4', provider: 'openai' },
+      serviceConfigs: { openai: { apiKey: 'test-key' } },
+    },
+  }),
+}));
+
 type MockAIService = {
   streamChat: ReturnType<typeof vi.fn>;
   cancel: ReturnType<typeof vi.fn>;
@@ -18,6 +28,12 @@ async function* makeStream(chunks: string[], throwAt?: number) {
     yield JSON.stringify({ content: chunks[i] });
     await new Promise((r) => setTimeout(r, 0));
   }
+}
+
+// Helper: async generator that throws immediately
+async function* makeFailingStream() {
+  await new Promise((r) => setTimeout(r, 0)); // Allow async setup
+  throw new Error('stream error');
 }
 
 describe('useAIService.completeText', () => {
@@ -109,7 +125,7 @@ describe('useAIService.completeText', () => {
 
   it('should return error message on stream failure', async () => {
     const fakeService: MockAIService = {
-      streamChat: vi.fn().mockImplementation(() => makeStream(['one'], 1)), // throw at index 1
+      streamChat: vi.fn().mockImplementation(() => makeFailingStream()), // Use failing stream
       cancel: vi.fn(),
     };
     vi.spyOn(AIServiceFactory, 'getService').mockReturnValue(
