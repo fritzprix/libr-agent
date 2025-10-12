@@ -77,25 +77,23 @@ export function ChatPlanningPanel() {
           </div>
         </div>
 
-        {/* Observations Section */}
+        {/* Notes Section */}
         <div>
           <h4 className="font-medium text-sm text-muted-foreground mb-2">
-            Recent Observations
+            Recent Notes
           </h4>
           <div className="max-h-32 overflow-y-auto space-y-1">
-            {planningState?.observations.length ? (
-              planningState.observations.map((obs, index) => (
+            {planningState?.notes.length ? (
+              planningState.notes.map((note: string, index: number) => (
                 <div
                   key={index}
                   className="text-xs p-2 bg-accent/50 rounded-sm border-l-2 border-accent"
                 >
-                  {obs}
+                  {note}
                 </div>
               ))
             ) : (
-              <div className="text-sm text-muted-foreground">
-                No observations
-              </div>
+              <div className="text-sm text-muted-foreground">No notes</div>
             )}
           </div>
         </div>

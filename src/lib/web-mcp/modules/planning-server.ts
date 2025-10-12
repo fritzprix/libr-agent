@@ -11,6 +11,7 @@ interface SimpleTodo {
   id: number;
   name: string;
   status: 'pending' | 'completed';
+  summary?: string;
 }
 
 /** Represents a single thought in the sequential-thinking tool. @internal */
@@ -36,8 +37,8 @@ export interface PlanningState {
   lastClearedGoal: string | null;
   /** The list of to-do items. */
   todos: SimpleTodo[];
-  /** A list of recent observations or events. */
-  observations: string[];
+  /** A list of recent notes or temporary records. */
+  notes: string[];
 }
 
 /**
@@ -81,11 +82,11 @@ interface CheckTodoOutput extends BaseOutput {
   todos: SimpleTodo[];
 }
 
-const MAX_OBSERVATIONS = 10;
+const MAX_NOTES = 10;
 
 /**
  * Manages the in-memory state for the planning server, including goals,
- * to-dos, and observations. This state is not persisted and will be lost
+ * to-dos, and notes. This state is not persisted and will be lost
  * when the worker is terminated.
  * @internal
  */
@@ -93,7 +94,7 @@ class EphemeralState {
   private goal: string | null = null;
   private lastClearedGoal: string | null = null;
   private todos: SimpleTodo[] = [];
-  private observations: string[] = [];
+  private notes: string[] = [];
   private nextId = 1;
   // Sequential thinking state
   private thoughtHistory: ThoughtData[] = [];
@@ -141,7 +142,11 @@ class EphemeralState {
   // toggle functionality removed; use remove_todo / clear_todos / add_todo
   // to manage todo lifecycle programmatically.
 
-  checkTodo(id: number, check: boolean = true): MCPResponse<CheckTodoOutput> {
+  checkTodo(
+    id: number,
+    check: boolean = true,
+    summary?: string,
+  ): MCPResponse<CheckTodoOutput> {
     const todo = this.todos.find((t) => t.id === id);
     if (!todo) {
       const availableIds = this.todos.map((t) => t.id);
@@ -156,8 +161,14 @@ class EphemeralState {
     }
 
     todo.status = check ? 'completed' : 'pending';
+    // Treat empty string as undefined
+    if (summary !== undefined) {
+      todo.summary = summary || undefined;
+    }
+
+    const summaryText = todo.summary ? ` (Summary: "${todo.summary}")` : '';
     return createMCPStructuredResponse<CheckTodoOutput>(
-      `Todo ${check ? 'checked' : 'unchecked'}: "${todo.name}"`,
+      `Todo ${check ? 'checked' : 'unchecked'}: "${todo.name}"${summaryText}`,
       {
         success: true,
         todo,
@@ -197,7 +208,7 @@ class EphemeralState {
     this.goal = null;
     this.lastClearedGoal = null;
     this.todos = [];
-    this.observations = [];
+    this.notes = [];
     this.nextId = 1;
     return createMCPStructuredResponse('Session state cleared', {
       success: true,
@@ -212,19 +223,33 @@ class EphemeralState {
     return this.todos;
   }
 
-  addObservation(observation: string): MCPResponse<BaseOutput> {
-    this.observations.push(observation);
-    if (this.observations.length > MAX_OBSERVATIONS) {
-      this.observations.shift();
+  addNote(note: string): MCPResponse<BaseOutput & { notes: string[] }> {
+    this.notes.push(note);
+    if (this.notes.length > MAX_NOTES) {
+      this.notes.shift();
     }
-    return createMCPStructuredResponse<BaseOutput>(
-      'Observation added to session',
-      { success: true },
+    return createMCPStructuredResponse<BaseOutput & { notes: string[] }>(
+      'Note added to session',
+      { success: true, notes: [...this.notes] },
     );
   }
 
-  getObservations(): string[] {
-    return [...this.observations];
+  removeNote(index: number): MCPResponse<BaseOutput & { notes: string[] }> {
+    if (index < 0 || index >= this.notes.length) {
+      return createMCPStructuredResponse<BaseOutput & { notes: string[] }>(
+        `Invalid note index: ${index}. Valid range: 0-${this.notes.length - 1}`,
+        { success: false, notes: [...this.notes] },
+      );
+    }
+    const removed = this.notes.splice(index, 1)[0];
+    return createMCPStructuredResponse<BaseOutput & { notes: string[] }>(
+      `Note removed: "${removed}"`,
+      { success: true, notes: [...this.notes] },
+    );
+  }
+
+  getNotes(): string[] {
+    return [...this.notes];
   }
 
   getLastClearedGoal(): string | null {
@@ -374,12 +399,16 @@ class SessionStateManager {
     return this.getCurrentState().getTodos();
   }
 
-  addObservation(observation: string): MCPResponse<BaseOutput> {
-    return this.getCurrentState().addObservation(observation);
+  addNote(note: string): MCPResponse<BaseOutput & { notes: string[] }> {
+    return this.getCurrentState().addNote(note);
   }
 
-  getObservations(): string[] {
-    return this.getCurrentState().getObservations();
+  removeNote(index: number): MCPResponse<BaseOutput & { notes: string[] }> {
+    return this.getCurrentState().removeNote(index);
+  }
+
+  getNotes(): string[] {
+    return this.getCurrentState().getNotes();
   }
 
   getLastClearedGoal(): string | null {
@@ -390,8 +419,12 @@ class SessionStateManager {
     return this.getCurrentState().processThought(input);
   }
 
-  checkTodo(id: number, check: boolean = true): MCPResponse<CheckTodoOutput> {
-    return this.getCurrentState().checkTodo(id, check);
+  checkTodo(
+    id: number,
+    check: boolean = true,
+    summary?: string,
+  ): MCPResponse<CheckTodoOutput> {
+    return this.getCurrentState().checkTodo(id, check, summary);
   }
 
   /**
@@ -448,7 +481,7 @@ const tools: MCPTool[] = [
   {
     name: 'mark_todo',
     description:
-      'Mark a todo item as completed or pending by its ID. Use to update task completion status.',
+      'Mark a todo item as completed or pending by its ID, optionally with a completion summary.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -461,6 +494,11 @@ const tools: MCPTool[] = [
           type: 'boolean',
           description:
             'Whether to mark the todo as completed (true) or pending (false). Defaults to true.',
+        },
+        summary: {
+          type: 'string',
+          description:
+            'Optional summary or completion note for the todo (e.g., "Completed with PR #42").',
         },
       },
       required: ['id'],
@@ -485,23 +523,38 @@ const tools: MCPTool[] = [
   {
     name: 'clear_session',
     description:
-      'Clear all session state (goal, todos, and observations). Use to reset everything and start fresh.',
+      'Clear all session state (goal, todos, and notes). Use to reset everything and start fresh.',
     inputSchema: { type: 'object', properties: {} },
   },
   {
-    name: 'add_observation',
+    name: 'add_note',
     description:
-      'Add a new observation to the session. Observations are recent events, user feedback, or system messages.',
+      'Add a note to the session. Notes are temporary records, observations, or context information.',
     inputSchema: {
       type: 'object',
       properties: {
-        observation: {
+        note: {
           type: 'string',
           description:
-            'The observation text to add (e.g., "User requested feature X").',
+            'The note text to add (e.g., "User requested feature X").',
         },
       },
-      required: ['observation'],
+      required: ['note'],
+    },
+  },
+  {
+    name: 'remove_note',
+    description: 'Remove a note from the session by its index (0-based).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        index: {
+          type: 'number',
+          minimum: 0,
+          description: 'The index of the note to remove (0-based).',
+        },
+      },
+      required: ['index'],
     },
   },
   {
@@ -551,12 +604,16 @@ interface PlanningServerMethods {
   mark_todo: (args: {
     id: number;
     completed?: boolean;
+    summary?: string;
   }) => Promise<MCPResponse<CheckTodoOutput>>;
   clear_todos: (args?: { ids?: number[] }) => Promise<MCPResponse<BaseOutput>>;
   clear_session: () => Promise<MCPResponse<BaseOutput>>;
-  add_observation: (args: {
-    observation: string;
-  }) => Promise<MCPResponse<BaseOutput>>;
+  add_note: (args: {
+    note: string;
+  }) => Promise<MCPResponse<BaseOutput & { notes: string[] }>>;
+  remove_note: (args: {
+    index: number;
+  }) => Promise<MCPResponse<BaseOutput & { notes: string[] }>>;
   get_current_state: () => Promise<MCPResponse<PlanningState>>;
 }
 
@@ -566,9 +623,9 @@ interface PlanningServerMethods {
  */
 const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
   name: 'planning',
-  version: '2.1.0',
+  version: '2.2.0',
   description:
-    'Ephemeral planning and goal management for AI agents with bounded observation queue',
+    'Ephemeral planning and goal management for AI agents with note-taking and completion summaries',
   tools,
   async callTool(name: string, args: unknown): Promise<MCPResponse<unknown>> {
     // Debug logging for tool calls
@@ -608,12 +665,14 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
           typedArgs.completed !== undefined
             ? (typedArgs.completed as boolean)
             : true;
+        const summary = typedArgs.summary as string | undefined;
+
         if (!Number.isInteger(id) || id < 1) {
           return createMCPTextResponse(
             `Invalid ID: ${id}. ID must be a positive integer.`,
           );
         }
-        return stateManager.checkTodo(id, completed);
+        return stateManager.checkTodo(id, completed, summary);
       }
       case 'clear_todos': {
         const ids = typedArgs.ids as number[] | undefined;
@@ -621,8 +680,17 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
       }
       case 'clear_session':
         return stateManager.clear();
-      case 'add_observation': {
-        return stateManager.addObservation(typedArgs.observation as string);
+      case 'add_note': {
+        return stateManager.addNote(typedArgs.note as string);
+      }
+      case 'remove_note': {
+        const index = typedArgs.index as number;
+        if (!Number.isInteger(index) || index < 0) {
+          return createMCPTextResponse(
+            `Invalid index: ${index}. Index must be a non-negative integer.`,
+          );
+        }
+        return stateManager.removeNote(index);
       }
       case 'sequentialthinking': {
         return stateManager.processThought(typedArgs);
@@ -632,7 +700,7 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
           goal: stateManager.getGoal(),
           lastClearedGoal: stateManager.getLastClearedGoal(),
           todos: stateManager.getTodos(),
-          observations: stateManager.getObservations(),
+          notes: stateManager.getNotes(),
         };
 
         // Provide a human-readable Markdown summary that includes the
@@ -643,20 +711,24 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
           ? currentState.todos
               .map((t) => {
                 const checkbox = t.status === 'completed' ? '✓' : ' ';
-                return `- ID:${t.id} [${checkbox}] ${t.name}`;
+                const summaryPart = t.summary ? ` - ${t.summary}` : '';
+                return `- ID:${t.id} [${checkbox}] ${t.name}${summaryPart}`;
               })
               .join('\n')
           : '- (none)';
 
-        const observationsText = currentState.observations.length
-          ? currentState.observations.map((o) => `- ${o}`).join('\n')
+        // Sanitize notes: replace newlines with spaces to maintain Markdown formatting
+        const notesText = currentState.notes.length
+          ? currentState.notes
+              .map((n, i) => `- [${i}] ${n.replace(/\n/g, ' ')}`)
+              .join('\n')
           : '- (none)';
 
         const lines: string[] = [];
         lines.push('# Planning State', '');
         lines.push('**Summary**');
         lines.push(`- Todos: ${currentState.todos.length}`);
-        lines.push(`- Observations: ${currentState.observations.length}`, '');
+        lines.push(`- Notes: ${currentState.notes.length}`, '');
         lines.push('**Goal**');
         lines.push(currentState.goal ? `- ${currentState.goal}` : '- (none)');
         if (currentState.lastClearedGoal) {
@@ -671,8 +743,8 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
           '**Todos**',
           todosText,
           '',
-          '**Recent Observations**',
-          observationsText,
+          '**Recent Notes**',
+          notesText,
         );
 
         const detailedText = lines.join('\n');
@@ -693,12 +765,23 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
   async getServiceContext(): Promise<ServiceContext<PlanningState>> {
     const goal = stateManager.getGoal();
     const todos = stateManager.getTodos();
-    const observations = stateManager.getObservations();
+    const notes = stateManager.getNotes();
+
+    const todosPrompt =
+      todos.length > 0
+        ? todos
+            .map((t) => {
+              const status = t.status === 'completed' ? '[✓]' : '[ ]';
+              const summaryPart = t.summary ? ` (${t.summary})` : '';
+              return `ID:${t.id} ${status} ${t.name}${summaryPart}`;
+            })
+            .join(', ')
+        : '(none)';
 
     const contextPrompt = goal
       ? `# Current Goal: ${goal}
-Todos: ${todos.length > 0 ? todos.map((t) => `ID:${t.id} ${t.status === 'completed' ? '[✓]' : '[ ]'} ${t.name}`).join(', ') : '(none)'}
-Recent Observations: ${observations.length > 0 ? observations.slice(-2).join('; ') : '(none)'}`
+Todos: ${todosPrompt}
+Recent Notes: ${notes.length > 0 ? notes.slice(-2).join('; ') : '(none)'}`
       : '# No active goal';
 
     return {
@@ -707,7 +790,7 @@ Recent Observations: ${observations.length > 0 ? observations.slice(-2).join('; 
         goal,
         lastClearedGoal: stateManager.getLastClearedGoal(),
         todos,
-        observations,
+        notes,
       },
     };
   },
@@ -733,10 +816,16 @@ export interface PlanningServerProxy extends WebMCPServerProxy {
   mark_todo: (args: {
     id: number;
     completed?: boolean;
+    summary?: string;
   }) => Promise<CheckTodoOutput>;
   clear_todos: (args?: { ids?: number[] }) => Promise<BaseOutput>;
   clear_session: () => Promise<BaseOutput>;
-  add_observation: (args: { observation: string }) => Promise<BaseOutput>;
+  add_note: (args: {
+    note: string;
+  }) => Promise<BaseOutput & { notes: string[] }>;
+  remove_note: (args: {
+    index: number;
+  }) => Promise<BaseOutput & { notes: string[] }>;
   get_current_state: () => Promise<PlanningState>;
   sequentialthinking: (args: {
     thought: string;

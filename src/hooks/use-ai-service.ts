@@ -14,6 +14,14 @@ const logger = getLogger('useAIService');
 
 const DEFAULT_SYSTEM_PROMPT = 'You are a helpful assistant.';
 
+// Types for completeText - simple one-shot text generation
+type CompleteTextOptions = {
+  model?: string;
+  systemPrompt?: string;
+  maxTokens?: number;
+  onProgress?: (partial: string, isFinal?: boolean) => void;
+};
+
 // JSON 필드 안전성 검증 및 escape 처리
 const sanitizeJsonField = (value: string): string => {
   try {
@@ -329,6 +337,139 @@ export const useAIService = (config?: AIServiceConfig) => {
     [model, provider, config, serviceInstance],
   );
 
+  /**
+   * Simple text completion without history or tools.
+   * Generates a single response for the given prompt with no context or tool usage.
+   * @param prompt - The text prompt to generate a response for
+   * @param options - Optional configuration (model, systemPrompt, maxTokens, onProgress)
+   * @returns Promise<Message> - The final assistant message with generated text
+   */
+  const completeText = useCallback(
+    async (prompt: string, options?: CompleteTextOptions): Promise<Message> => {
+      setIsLoading(true);
+      setError(null);
+      setResponse(null);
+
+      const responseId = createId();
+      const ephemeralSessionId = createId(); // No persistent session needed
+      let fullContent = '';
+      let thinking = '';
+      let thinkingSignature = '';
+
+      try {
+        // Default system prompt enforces plain text generation without tools
+        const systemPrompt =
+          options?.systemPrompt ??
+          'Only produce plain text. Do not call or reference any tools or external APIs. Provide the answer directly.';
+
+        // Build minimal message array: system + user prompt only (no history)
+        const messages: Message[] = [
+          {
+            id: createId(),
+            role: 'system',
+            content: stringToMCPContentArray(systemPrompt),
+            sessionId: ephemeralSessionId,
+          },
+          {
+            id: createId(),
+            role: 'user',
+            content: stringToMCPContentArray(prompt),
+            sessionId: ephemeralSessionId,
+          },
+        ];
+
+        // Sanitize messages (defensive, though these are newly created)
+        const safeMessages = messages.map(sanitizeMessage);
+
+        logger.info('completeText: submitting single-prompt completion', {
+          model: options?.model ?? model,
+          promptLength: prompt.length,
+        });
+
+        // Call streamChat with no tools
+        const stream = serviceInstance.streamChat(safeMessages, {
+          modelName: options?.model ?? model,
+          systemPrompt,
+          availableTools: [], // Never include tools for text completion
+          config: { ...(config || {}), maxTokens: options?.maxTokens },
+          forceToolUse: false,
+        });
+
+        // Process stream chunks
+        for await (const chunk of stream) {
+          let parsedChunk: Record<string, unknown>;
+          try {
+            parsedChunk = JSON.parse(chunk);
+          } catch {
+            parsedChunk = { content: String(chunk) };
+          }
+
+          if (parsedChunk.thinking) {
+            thinking += parsedChunk.thinking as string;
+          }
+          if (parsedChunk.thinkingSignature) {
+            thinkingSignature = parsedChunk.thinkingSignature as string;
+          }
+          // Defensive: ignore tool_calls in completeText mode
+          if (parsedChunk.content) {
+            fullContent += parsedChunk.content as string;
+          }
+
+          // Update progress callback
+          options?.onProgress?.(fullContent, false);
+
+          // Update streaming response state
+          setResponse({
+            id: responseId,
+            role: 'assistant',
+            content: stringToMCPContentArray(fullContent),
+            isStreaming: true,
+            thinking,
+            thinkingSignature,
+            sessionId: ephemeralSessionId,
+          });
+        }
+
+        // Finalize response
+        const finalContent = fullContent.trim() || 'No response generated.';
+        const finalMessage: Message = {
+          id: responseId,
+          role: 'assistant',
+          content: stringToMCPContentArray(finalContent),
+          isStreaming: false,
+          thinking,
+          thinkingSignature,
+          sessionId: ephemeralSessionId,
+        };
+
+        options?.onProgress?.(finalContent, true);
+        setResponse(finalMessage);
+        return finalMessage;
+      } catch (err) {
+        logger.error('Error in completeText:', err);
+        setError(err as Error);
+
+        // Create error message (use ephemeral sessionId for compatibility)
+        const errorMessage = createErrorMessage(
+          responseId,
+          createId(), // ephemeral sessionId
+          err,
+          {
+            model: options?.model ?? model,
+            provider,
+            messageCount: 1,
+          },
+        );
+
+        setResponse(errorMessage);
+        return errorMessage;
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [model, provider, config, serviceInstance],
+  );
+
   const cancel = useCallback(() => {
     logger.info('Cancelling AI service request');
     serviceInstance.cancel();
@@ -336,5 +477,5 @@ export const useAIService = (config?: AIServiceConfig) => {
     setError(null);
   }, [serviceInstance]);
 
-  return { response, isLoading, error, submit, cancel };
+  return { response, isLoading, error, submit, cancel, completeText };
 };
