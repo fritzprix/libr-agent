@@ -16,8 +16,11 @@ pub struct IsolationConfig {
 
 #[derive(Debug, Clone)]
 pub struct ResourceLimits {
+    #[allow(dead_code)] // Planned for future use
     pub max_memory_mb: Option<u64>,
+    #[allow(dead_code)] // Planned for future use
     pub max_execution_time_secs: Option<u64>,
+    #[allow(dead_code)] // Planned for future use
     pub max_open_files: Option<u64>,
 }
 
@@ -133,6 +136,7 @@ impl SessionIsolationManager {
 
         #[cfg(target_os = "windows")]
         {
+            #[allow(unused_imports)]
             use std::os::windows::process::CommandExt;
             // Create new process group and detach from job
             cmd.creation_flags(0x00000200 | 0x08000000); // CREATE_NEW_PROCESS_GROUP | CREATE_BREAKAWAY_FROM_JOB
@@ -287,6 +291,7 @@ impl SessionIsolationManager {
         let mut cmd = self.create_medium_isolated_command(config.clone()).await?;
 
         // Apply Windows-specific isolation
+        #[allow(unused_imports)]
         use std::os::windows::process::CommandExt;
 
         // Create suspended process with restricted token
@@ -309,7 +314,7 @@ impl SessionIsolationManager {
         _cmd: &mut AsyncCommand,
         _config: &IsolatedProcessConfig,
     ) -> Result<(), String> {
-        let limits = &self.isolation_config.resource_limits;
+        let _limits = &self.isolation_config.resource_limits;
 
         #[cfg(unix)]
         {
@@ -384,6 +389,7 @@ impl SessionIsolationManager {
     }
 
     /// Check if a command is available on the system
+    #[allow(dead_code)] // Used by platform-specific high isolation
     async fn is_command_available(&self, command: &str) -> bool {
         // Use the async Tokio Command to avoid blocking the async runtime
         let mut cmd = if cfg!(target_os = "windows") {

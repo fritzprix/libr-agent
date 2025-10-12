@@ -561,7 +561,7 @@ impl WorkspaceServer {
             let file_manager = self.get_file_manager();
             match file_manager
                 .get_security_validator()
-                .validate_path(path_str)
+                .validate_path_for_read(path_str)  // Use validate_path_for_read for read operations
             {
                 Ok(safe_path) => match tokio::fs::read_to_string(safe_path).await {
                     Ok(s) => s,
@@ -647,15 +647,29 @@ impl WorkspaceServer {
             }
         };
 
+        // Log import attempt for debugging
+        info!(
+            "import_file called: src='{}', dest='{}'",
+            src_path_str, dest_rel_path
+        );
+
         // Validate source path exists and is readable
         let src_path = match std::path::Path::new(src_path_str).canonicalize() {
             Ok(path) => path,
             Err(e) => {
-                error!("Invalid source path {}: {}", src_path_str, e);
+                error!(
+                    "Failed to canonicalize source path '{}': {}",
+                    src_path_str, e
+                );
                 return Self::error_response(
                     request_id,
                     -32603,
-                    &format!("Invalid source path: {e}"),
+                    &format!(
+                        "Invalid source path: '{}'. {}. \
+                         Please ensure the file exists and the path is correct. \
+                         On Windows, use absolute paths like 'C:\\Users\\...'",
+                        src_path_str, e
+                    ),
                 );
             }
         };

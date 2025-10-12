@@ -138,7 +138,7 @@ impl WorkspaceServer {
                             // Windows: use taskkill
                             use std::process::Command;
                             let _ = Command::new("taskkill")
-                                .args(&["/PID", &pid.to_string(), "/F"])
+                                .args(["/PID", &pid.to_string(), "/F"])
                                 .output();
                         }
                     }
@@ -707,7 +707,7 @@ impl BuiltinMCPServer for WorkspaceServer {
                             {
                                 use std::process::Command;
                                 let _ = Command::new("taskkill")
-                                    .args(&["/PID", &pid.to_string(), "/F"])
+                                    .args(["/PID", &pid.to_string(), "/F"])
                                     .output();
                             }
                         }

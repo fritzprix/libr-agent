@@ -229,7 +229,8 @@ export function WorkspaceFilesPanel() {
 
       try {
         for (const srcPath of paths) {
-          const fileName = srcPath.split('/').pop() || 'unknown';
+          // OS-agnostic path parsing: support both / and \\ separators
+          const fileName = srcPath.split(/[/\\]/).pop() || 'unknown';
           const destPath = `${rootPath}/${fileName}`.replace(/\/+/g, '/');
           const destRelPath = destPath.startsWith('./')
             ? destPath.slice(2)

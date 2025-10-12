@@ -94,7 +94,10 @@ impl SecurityValidator {
         // Windows 드라이브 경로 금지 (C:, D: 등)
         if user_path.len() >= 2 && user_path.chars().nth(1) == Some(':') {
             return Err(SecurityError::PathTraversal(format!(
-                "Windows drive paths not allowed: '{user_path}'"
+                "Absolute paths with drive letters are not allowed for destination paths: '{}'. \
+                 Please use relative paths like 'folder/file.txt'. \
+                 The file will be placed inside the workspace directory.",
+                user_path
             )));
         }
 
@@ -175,6 +178,19 @@ impl SecurityValidator {
         }
         Ok(())
     }
+
+    /// Normalize path separators to forward slashes for cross-platform compatibility.
+    /// This is useful for storing paths in databases or ZIP archives.
+    pub fn normalize_path_separators(path: &str) -> String {
+        path.replace('\\', "/")
+    }
+
+    /// Extract filename from a path, supporting both / and \\ separators.
+    /// Returns None if the path is empty or ends with a separator.
+    pub fn extract_filename(path: &str) -> Option<String> {
+        let normalized = Self::normalize_path_separators(path);
+        normalized.split('/').next_back().map(|s| s.to_string())
+    }
 }
 
 impl Default for SecurityValidator {
@@ -224,5 +240,51 @@ mod tests {
 
         // Windows 스타일 경로도 상대경로로 처리되지만, ".." 포함으로 차단됨
         assert!(validator.validate_path("subdir\\..\\..\\Windows").is_err());
+    }
+
+    #[test]
+    fn test_normalize_path_separators() {
+        let windows_path = "C:\\Users\\user\\file.txt";
+        let normalized = SecurityValidator::normalize_path_separators(windows_path);
+        assert_eq!(normalized, "C:/Users/user/file.txt");
+
+        let mixed_path = "C:/Users\\user/file.txt";
+        let normalized = SecurityValidator::normalize_path_separators(mixed_path);
+        assert_eq!(normalized, "C:/Users/user/file.txt");
+
+        let unix_path = "/home/user/file.txt";
+        let normalized = SecurityValidator::normalize_path_separators(unix_path);
+        assert_eq!(normalized, "/home/user/file.txt");
+    }
+
+    #[test]
+    fn test_extract_filename() {
+        // Windows paths
+        let path = "C:\\Users\\user\\Downloads\\test.pdf";
+        let filename = SecurityValidator::extract_filename(path);
+        assert_eq!(filename, Some("test.pdf".to_string()));
+
+        // Unix paths
+        let path = "/home/user/downloads/test.pdf";
+        let filename = SecurityValidator::extract_filename(path);
+        assert_eq!(filename, Some("test.pdf".to_string()));
+
+        // Mixed separators
+        let path = "C:/Users/user\\Downloads\\test.pdf";
+        let filename = SecurityValidator::extract_filename(path);
+        assert_eq!(filename, Some("test.pdf".to_string()));
+
+        // Edge cases
+        let path = "test.pdf";
+        let filename = SecurityValidator::extract_filename(path);
+        assert_eq!(filename, Some("test.pdf".to_string()));
+
+        let path = "";
+        let filename = SecurityValidator::extract_filename(path);
+        assert_eq!(filename, Some("".to_string()));
+
+        let path = "C:\\Users\\";
+        let filename = SecurityValidator::extract_filename(path);
+        assert_eq!(filename, Some("".to_string()));
     }
 }
