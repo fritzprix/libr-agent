@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Breaking Changes
+
+- **Platform-specific shell execution tool names**:
+  - Windows: `execute_shell` renamed to `execute_windows_cmd` to clarify cmd.exe usage
+  - Unix: `execute_shell` remains unchanged (bash/sh)
+  - This change improves tool naming clarity and prevents cross-platform confusion
+  - Tool descriptions and examples are now platform-specific
+  - **Migration**: Update any hardcoded tool name references from `execute_shell` to `execute_windows_cmd` on Windows
+
 ## [0.1.1] - 2025-10-11
 
 ### Highlights

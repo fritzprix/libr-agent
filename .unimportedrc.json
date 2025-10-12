@@ -30,7 +30,8 @@
       "../lib/web-mcp/mcp-worker.ts?worker",
       ["src/hooks/use-web-mcp-server.ts"]
     ],
-    ["@/lib/web-mcp/mcp-worker.ts?worker", ["src/context/WebMCPContext.tsx"]]
+    ["@/lib/web-mcp/mcp-worker.ts?worker", ["src/context/WebMCPContext.tsx"]],
+    "@/lib/web-mcp/mcp-worker.ts?worker at src/context/WebMCPContext.tsx"
   ],
   "ignoreUnused": [
     "@mcp-ui/server",

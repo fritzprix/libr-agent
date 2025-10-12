@@ -43,3 +43,22 @@ pub fn terminal_tools() -> Vec<MCPTool> {
         create_list_processes_tool(),
     ]
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_code_tools_returns_platform_tool() {
+        let tools = code_tools();
+        assert_eq!(tools.len(), 1);
+
+        let tool = &tools[0];
+
+        #[cfg(unix)]
+        assert_eq!(tool.name, "execute_shell");
+
+        #[cfg(windows)]
+        assert_eq!(tool.name, "execute_windows_cmd");
+    }
+}

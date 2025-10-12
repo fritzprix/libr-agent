@@ -4,7 +4,12 @@
       "Bash(pnpm refactor:validate:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git rm:*)"
+      "Bash(git rm:*)",
+      "Bash(rustc --version)",
+      "Bash(cargo --version)",
+      "Bash(dir C:WindowsSystem32cmd.exe)",
+      "Bash(where cmd)",
+      "Bash(cargo fmt:*)"
     ],
     "deny": [],
     "ask": []

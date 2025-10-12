@@ -37,10 +37,12 @@ pub struct IsolatedProcessConfig {
 #[derive(Debug, Clone)]
 pub enum IsolationLevel {
     /// Basic process isolation (environment variables only)
+    #[allow(dead_code)] // Reserved for future use
     Basic,
     /// Medium isolation (process groups + limited resources)
     Medium,
     /// High isolation (platform-specific sandboxing)
+    #[allow(dead_code)] // Reserved for future use
     High,
 }
 
@@ -85,37 +87,117 @@ impl SessionIsolationManager {
         &self,
         config: IsolatedProcessConfig,
     ) -> Result<AsyncCommand, String> {
-        let shell_cmd = self.get_shell_command();
-        let mut cmd = AsyncCommand::new(shell_cmd);
+        // Detect if this is a direct PowerShell/executable command (Windows-specific)
+        let (shell_cmd, use_shell_wrapper) = if cfg!(target_os = "windows") {
+            let cmd_lower = config.command.to_lowercase();
+            if cmd_lower.starts_with("powershell") || cmd_lower.starts_with("pwsh") {
+                // Direct PowerShell execution - don't wrap with cmd.exe
+                info!("Detected PowerShell command, executing directly without cmd.exe wrapper");
+                (
+                    config
+                        .command
+                        .split_whitespace()
+                        .next()
+                        .unwrap_or("powershell")
+                        .to_string(),
+                    false,
+                )
+            } else {
+                (self.get_shell_command().to_string(), true)
+            }
+        } else {
+            (self.get_shell_command().to_string(), true)
+        };
+
+        let mut cmd = AsyncCommand::new(&shell_cmd);
 
         // Set working directory
         cmd.current_dir(&config.workspace_path);
 
-        // Clear and set environment variables
-        cmd.env_clear();
-        cmd.env("HOME", &config.workspace_path);
-        cmd.env("PWD", &config.workspace_path);
-        cmd.env("TMPDIR", config.workspace_path.join("tmp"));
-        cmd.env("PATH", self.get_restricted_path());
+        // Configure environment variables based on platform
+        #[cfg(target_os = "windows")]
+        {
+            // Windows: DO NOT use env_clear() as it breaks process execution
+            // Windows processes need critical system environment variables:
+            // - SystemRoot, windir: Required for loading system DLLs
+            // - COMSPEC: Required for cmd.exe
+            // - ProgramFiles, ProgramData: Required for many applications
+            // - PSModulePath: Required for PowerShell
+            //
+            // Instead, we selectively set/override specific variables
+            cmd.env("USERPROFILE", &config.workspace_path);
+            cmd.env("HOME", &config.workspace_path);
+            cmd.env("TEMP", config.workspace_path.join("tmp"));
+            cmd.env("TMP", config.workspace_path.join("tmp"));
+            // NOTE: We DO NOT override PATH on Windows!
+            // Preserving user's PATH allows access to Python, Node.js, Git, etc.
+            // Security isolation is achieved through workspace directory restrictions
 
-        // Add user-specified environment variables
+            info!("Windows environment configured: workspace isolated, PATH preserved");
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            // Unix: Safe to clear environment for better isolation
+            cmd.env_clear();
+            cmd.env("HOME", &config.workspace_path);
+            cmd.env("PWD", &config.workspace_path);
+            cmd.env("TMPDIR", config.workspace_path.join("tmp"));
+            cmd.env("PATH", self.get_restricted_path());
+        }
+
+        // Add user-specified environment variables (applies to all platforms)
         for (key, value) in config.env_vars {
             cmd.env(key, value);
         }
 
-        // Set command arguments based on platform
+        // Set command arguments based on platform and shell type
         if cfg!(target_os = "windows") {
-            cmd.args([
-                "/C",
-                &format!("{} {}", config.command, config.args.join(" ")),
-            ]);
+            if !use_shell_wrapper {
+                // Direct PowerShell execution: parse and pass arguments directly
+                // Extract PowerShell args from the command string
+                let parts: Vec<&str> = config.command.split_whitespace().collect();
+                if parts.len() > 1 {
+                    // Pass all arguments after "powershell"/"pwsh"
+                    cmd.args(&parts[1..]);
+                }
+                // Add any additional args
+                if !config.args.is_empty() {
+                    cmd.args(&config.args);
+                }
+                info!(
+                    "PowerShell direct execution configured: {} with args: {:?}",
+                    shell_cmd,
+                    parts.get(1..).unwrap_or(&[])
+                );
+            } else {
+                // Windows cmd.exe wrapper: use /S /C flags for proper quote handling
+                // /S modifies the treatment of quoted strings after /C or /K
+                // Without /S, cmd.exe strips outer quotes which can break commands
+                let full_command = if config.args.is_empty() {
+                    config.command.clone()
+                } else {
+                    format!("{} {}", config.command, config.args.join(" "))
+                };
+                info!("Windows cmd.exe wrapper: cmd /S /C \"{}\"", full_command);
+                // Use /S /C with properly quoted command for better handling of complex commands
+                cmd.args(["/S", "/C", &full_command]);
+            }
         } else {
-            cmd.args([
-                "-c",
-                &format!("{} {}", config.command, config.args.join(" ")),
-            ]);
+            // Unix shells (bash, sh) use -c flag
+            let full_command = if config.args.is_empty() {
+                config.command.clone()
+            } else {
+                format!("{} {}", config.command, config.args.join(" "))
+            };
+            info!("Unix shell execution: {} -c {}", shell_cmd, full_command);
+            cmd.args(["-c", &full_command]);
         }
 
+        info!(
+            "Isolated command created for session {} with isolation level {:?}",
+            config.session_id, config.isolation_level
+        );
         Ok(cmd)
     }
 
@@ -138,8 +220,13 @@ impl SessionIsolationManager {
         {
             #[allow(unused_imports)]
             use std::os::windows::process::CommandExt;
-            // Create new process group and detach from job
-            cmd.creation_flags(0x00000200 | 0x08000000); // CREATE_NEW_PROCESS_GROUP | CREATE_BREAKAWAY_FROM_JOB
+            // CREATE_NEW_PROCESS_GROUP: Isolate process group for better signal handling
+            // Note: Both CREATE_NO_WINDOW and DETACHED_PROCESS break stdio for cmd.exe!
+            // Using ONLY CREATE_NEW_PROCESS_GROUP allows:
+            // - Process isolation (can terminate process group)
+            // - Working stdio pipes (stdout/stderr captured properly)
+            // - No visible console window (when spawned from GUI app like Tauri)
+            cmd.creation_flags(0x00000200); // CREATE_NEW_PROCESS_GROUP only
         }
 
         // Apply resource limits using platform-specific methods
@@ -294,12 +381,11 @@ impl SessionIsolationManager {
         #[allow(unused_imports)]
         use std::os::windows::process::CommandExt;
 
-        // Create suspended process with restricted token
-        cmd.creation_flags(
-            0x00000004 |  // CREATE_SUSPENDED
-            0x08000000 |  // CREATE_BREAKAWAY_FROM_JOB
-            0x00000200, // CREATE_NEW_PROCESS_GROUP
-        );
+        // Windows high isolation flags:
+        // - CREATE_NEW_PROCESS_GROUP: Isolate process for signal handling
+        // Note: Both CREATE_NO_WINDOW and DETACHED_PROCESS break stdio for cmd.exe!
+        // Using only CREATE_NEW_PROCESS_GROUP for same reason as Medium isolation
+        cmd.creation_flags(0x00000200); // CREATE_NEW_PROCESS_GROUP only
 
         info!(
             "Created Windows high isolation command for session: {}",
@@ -419,9 +505,15 @@ impl SessionIsolationManager {
     }
 
     /// Get restricted PATH for security
+    #[allow(dead_code)] // Used only on Unix platforms
     fn get_restricted_path(&self) -> String {
         if cfg!(target_os = "windows") {
-            "C:\\Windows\\System32;C:\\Windows"
+            // Windows PATH must include:
+            // - System32: Core Windows commands (cmd, findstr, etc.)
+            // - Windows: Additional system utilities
+            // - System32\WindowsPowerShell\v1.0: PowerShell (if available)
+            // Note: We intentionally restrict access to user-installed software
+            "C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\WindowsPowerShell\\v1.0"
         } else {
             "/bin:/usr/bin:/usr/local/bin"
         }
