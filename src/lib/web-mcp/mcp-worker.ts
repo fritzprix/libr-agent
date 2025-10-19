@@ -227,7 +227,7 @@ async function handleMCPMessage(
         }
         const server = getMCPServer(serverName);
         if (server.getServiceContext) {
-          const context = await server.getServiceContext();
+          const context = await server.getServiceContext(args as ServiceContextOptions | undefined);
           // context가 ServiceContext인 경우 그대로 반환
           if (
             typeof context === 'object' &&

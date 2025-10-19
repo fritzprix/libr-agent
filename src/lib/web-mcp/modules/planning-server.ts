@@ -5,6 +5,9 @@ import {
 } from '@/lib/mcp-response-utils';
 import type { MCPResponse, MCPTool, WebMCPServer } from '@/lib/mcp-types';
 import type { ServiceContext, ServiceContextOptions } from '@/features/tools';
+import { getLogger } from '@/lib/logger';
+
+const logger = getLogger('PlanningServer');
 
 /** Represents a single to-do item in the planning state. @internal */
 interface SimpleTodo {
@@ -478,6 +481,34 @@ class SessionStateManager {
     this.currentSessionId = null;
     this.currentThreadId = null;
   }
+
+  /**
+   * Gets the planning state for a specific session/thread without changing current context.
+   * This allows querying other sessions' states without side effects.
+   * @param sessionId The session ID to query
+   * @param threadId The thread ID to query (optional, defaults to sessionId)
+   * @returns The planning state for the requested session/thread
+   */
+  getStateForSession(
+    sessionId: string,
+    threadId?: string,
+  ): PlanningState | null {
+    const effectiveThreadId = threadId || sessionId;
+    const threadMap = this.sessions.get(sessionId);
+    if (!threadMap) {
+      return null; // Session does not exist
+    }
+    const state = threadMap.get(effectiveThreadId);
+    if (!state) {
+      return null; // Thread does not exist
+    }
+    return {
+      goal: state.getGoal(),
+      lastClearedGoal: state.getLastClearedGoal(),
+      todos: state.getTodos(),
+      notes: state.getNotes(),
+    };
+  }
 }
 
 const stateManager = new SessionStateManager();
@@ -815,10 +846,47 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
       }
     }
   },
-  async getServiceContext(): Promise<ServiceContext<PlanningState>> {
-    const goal = stateManager.getGoal();
-    const todos = stateManager.getTodos();
-    const notes = stateManager.getNotes();
+  async getServiceContext(options?: ServiceContextOptions): Promise<ServiceContext<PlanningState>> {
+    // If options are provided with sessionId, query that specific session's state
+    // without changing the current context or triggering cleanup
+    let planningState: PlanningState | null = null;
+
+    if (options?.sessionId) {
+      // Query a specific session's state without side effects
+      planningState = stateManager.getStateForSession(
+        options.sessionId,
+        options.threadId,
+      );
+      if (!planningState) {
+        logger.debug('getServiceContext: requested session/thread not found', {
+          sessionId: options.sessionId,
+          threadId: options.threadId,
+        });
+        // Return empty state if session doesn't exist
+        return {
+          contextPrompt: '# No active goal',
+          structuredState: {
+            goal: null,
+            lastClearedGoal: null,
+            todos: [],
+            notes: [],
+          },
+        };
+      }
+    } else {
+      // Use current context
+      const goal = stateManager.getGoal();
+      const todos = stateManager.getTodos();
+      const notes = stateManager.getNotes();
+      planningState = {
+        goal,
+        lastClearedGoal: stateManager.getLastClearedGoal(),
+        todos,
+        notes,
+      };
+    }
+
+    const { goal, todos, notes } = planningState;
 
     const todosPrompt =
       todos.length > 0
@@ -841,7 +909,7 @@ Recent Notes: ${notes.length > 0 ? notes.slice(-2).join('; ') : '(none)'}`
       contextPrompt,
       structuredState: {
         goal,
-        lastClearedGoal: stateManager.getLastClearedGoal(),
+        lastClearedGoal: planningState.lastClearedGoal,
         todos,
         notes,
       },

@@ -95,9 +95,7 @@ export function RustMCPToolProvider() {
           getServiceContext: async (
             options?: ServiceContextOptions,
           ): Promise<ServiceContext<unknown>> => {
-            // 현재는 options를 사용하지 않지만 인터페이스 준수를 위해 유지
-            void options;
-            const context = await getServiceContext(serviceId);
+            const context = await getServiceContext(serviceId, options);
             return context;
           },
           switchContext: async (options?: ServiceContextOptions) => {

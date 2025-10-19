@@ -5,6 +5,7 @@ use rmcp::{
     transport::{ConfigureCommandExt, TokioChildProcess},
     ServiceExt,
 };
+use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::process::Command;
@@ -685,14 +686,22 @@ impl MCPServerManager {
     ///
     /// # Arguments
     /// * `server_name` - The name of the server.
+    /// * `options` - Optional context options for the service.
     ///
     /// # Returns
     /// A `Result` containing the service context, or an error.
-    pub async fn get_service_context(&self, server_name: &str) -> Result<ServiceContext, String> {
+    pub async fn get_service_context(
+        &self,
+        server_name: &str,
+        options: Option<ServiceContextOptions>,
+    ) -> Result<ServiceContext, String> {
         // Check built-in servers first
         let servers = self.builtin_servers.lock().await;
         if let Some(registry) = servers.as_ref() {
-            if let Ok(context) = registry.get_server_context(server_name, None) {
+            if let Ok(context) = registry.get_server_context(
+                server_name,
+                options.map(|o| serde_json::to_value(o).unwrap_or(Value::Null)),
+            ) {
                 return Ok(context);
             }
         }

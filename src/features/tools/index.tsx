@@ -280,6 +280,7 @@ Tool details and usage instructions are provided separately.
     const contextOptions: ServiceContextOptions = {
       sessionId: currentSession?.id,
       assistantId: currentAssistant?.id,
+      threadId: currentSession?.sessionThread.id,
     };
 
     // Collect service context prompts from all ready services

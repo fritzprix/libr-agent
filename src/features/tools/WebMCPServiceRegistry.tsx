@@ -160,12 +160,10 @@ export function WebMCPServiceRegistry({
         getServiceContext: async (
           options?: ServiceContextOptions,
         ): Promise<ServiceContext<unknown>> => {
-          // 현재는 options를 사용하지 않지만 인터페이스 준수를 위해 유지
-          void options;
           if (!proxy) {
             return { contextPrompt: '', structuredState: undefined };
           }
-          return await proxy.getServiceContext(s);
+          return await proxy.getServiceContext(s, options);
         },
         switchContext: async (options?: ServiceContextOptions) => {
           if (proxy && proxy.switchContext) {

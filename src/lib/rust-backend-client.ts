@@ -556,15 +556,18 @@ export async function exportAndDownloadZip(
 // ========================================
 
 /**
- * Gets the service context for a given server.
+ * Retrieves the service context for a given server.
  * @param serverId The ID of the server.
+ * @param options Optional context options for the service.
  * @returns A promise that resolves to the service context.
  */
 export async function getServiceContext(
   serverId: string,
+  options?: ServiceContextOptions,
 ): Promise<ServiceContext<unknown>> {
   return safeInvoke<ServiceContext<unknown>>('get_service_context', {
     serverId,
+    options,
   });
 }
 
