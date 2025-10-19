@@ -8,4 +8,5 @@ AI Agent가 on-demand로 assistant를 탐색하고 지시를 내리고 상호간
 
 - 별도의 rust program으로 경량의 agent process를 구동
 - pipe를 생성하여 stdio를 통해 RPC를 통해 child process <-> parent process 간 통신
+
   - ## 주요 interface
