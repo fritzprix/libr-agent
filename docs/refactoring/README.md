@@ -347,7 +347,7 @@ A: `context.assistantId.is_none()` 체크. Permission optional.
 
 ## 🎓 Learning Path
 
-```
+```text
 Week 1: Understanding
   ├─ Read switch-context-removal-refactoring.md (전략)
   ├─ Read tool-implementation-guide.md (패턴)
