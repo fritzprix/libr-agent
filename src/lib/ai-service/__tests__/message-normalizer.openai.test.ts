@@ -9,6 +9,8 @@ describe('MessageNormalizer - OpenAI Tool Call Pairing', () => {
       {
         id: '1',
         sessionId: 'test-session',
+
+        threadId: 'test-session',
         role: 'assistant',
         content: [],
         tool_calls: [
@@ -22,6 +24,8 @@ describe('MessageNormalizer - OpenAI Tool Call Pairing', () => {
       {
         id: '2',
         sessionId: 'test-session',
+
+        threadId: 'test-session',
         role: 'tool',
         content: [{ type: 'text', text: 'result' }],
         tool_call_id: 'call_1',
@@ -43,12 +47,16 @@ describe('MessageNormalizer - OpenAI Tool Call Pairing', () => {
       {
         id: '1',
         sessionId: 'test-session',
+
+        threadId: 'test-session',
         role: 'assistant',
         content: [{ type: 'text', text: 'response' }],
       },
       {
         id: '2',
         sessionId: 'test-session',
+
+        threadId: 'test-session',
         role: 'tool',
         content: [{ type: 'text', text: 'result' }],
         tool_call_id: 'call_999', // No matching tool_call
@@ -69,6 +77,8 @@ describe('MessageNormalizer - OpenAI Tool Call Pairing', () => {
       {
         id: '1',
         sessionId: 'test-session',
+
+        threadId: 'test-session',
         role: 'assistant',
         content: [],
         tool_calls: [
@@ -87,6 +97,8 @@ describe('MessageNormalizer - OpenAI Tool Call Pairing', () => {
       {
         id: '2',
         sessionId: 'test-session',
+
+        threadId: 'test-session',
         role: 'tool',
         content: [{ type: 'text', text: 'result1' }],
         tool_call_id: 'call_1',
@@ -109,6 +121,8 @@ describe('MessageNormalizer - OpenAI Tool Call Pairing', () => {
       {
         id: '1',
         sessionId: 'test-session',
+
+        threadId: 'test-session',
         role: 'assistant',
         content: [{ type: 'text', text: 'I will call functions' }],
         tool_calls: [
@@ -139,18 +153,24 @@ describe('MessageNormalizer - OpenAI Tool Call Pairing', () => {
       {
         id: '1',
         sessionId: 'test-session',
+
+        threadId: 'test-session',
         role: 'user',
         content: [{ type: 'text', text: 'Hello' }],
       },
       {
         id: '2',
         sessionId: 'test-session',
+
+        threadId: 'test-session',
         role: 'assistant',
         content: [{ type: 'text', text: 'Hi' }],
       },
       {
         id: '3',
         sessionId: 'test-session',
+
+        threadId: 'test-session',
         role: 'system',
         content: [{ type: 'text', text: 'You are helpful' }],
       },
@@ -172,6 +192,8 @@ describe('MessageNormalizer - OpenAI Tool Call Pairing', () => {
       {
         id: '1',
         sessionId: 'test-session',
+
+        threadId: 'test-session',
         role: 'tool',
         content: [{ type: 'text', text: 'orphan' }],
         tool_call_id: 'call_orphan',
@@ -179,6 +201,8 @@ describe('MessageNormalizer - OpenAI Tool Call Pairing', () => {
       {
         id: '2',
         sessionId: 'test-session',
+
+        threadId: 'test-session',
         role: 'user',
         content: [{ type: 'text', text: 'Hello' }],
       },
@@ -198,6 +222,8 @@ describe('MessageNormalizer - OpenAI Tool Call Pairing', () => {
       {
         id: '1',
         sessionId: 'test-session',
+
+        threadId: 'test-session',
         role: 'assistant',
         content: [],
         tool_calls: [
@@ -226,6 +252,8 @@ describe('MessageNormalizer - OpenAI Tool Call Pairing', () => {
       {
         id: '1',
         sessionId: 'test-session',
+
+        threadId: 'test-session',
         role: 'tool',
         content: [{ type: 'text', text: 'orphan' }],
         tool_call_id: 'call_999',
@@ -245,6 +273,8 @@ describe('MessageNormalizer - OpenAI Tool Call Pairing', () => {
       {
         id: '1',
         sessionId: 'test-session',
+
+        threadId: 'test-session',
         role: 'assistant',
         content: [],
         tool_calls: [
@@ -258,6 +288,8 @@ describe('MessageNormalizer - OpenAI Tool Call Pairing', () => {
       {
         id: '2',
         sessionId: 'test-session',
+
+        threadId: 'test-session',
         role: 'tool',
         content: [{ type: 'text', text: 'result' }],
         tool_call_id: 'call_1',
@@ -278,6 +310,8 @@ describe('MessageNormalizer - OpenAI Tool Call Pairing', () => {
       {
         id: '1',
         sessionId: 'test-session',
+
+        threadId: 'test-session',
         role: 'assistant',
         content: [],
         tool_calls: [
@@ -291,6 +325,8 @@ describe('MessageNormalizer - OpenAI Tool Call Pairing', () => {
       {
         id: '2',
         sessionId: 'test-session',
+
+        threadId: 'test-session',
         role: 'tool',
         content: [{ type: 'text', text: 'result' }],
         tool_call_id: 'call_1',
@@ -322,12 +358,16 @@ describe('MessageNormalizer - OpenAI Tool Call Pairing', () => {
       {
         id: '1',
         sessionId: 'test-session',
+
+        threadId: 'test-session',
         role: 'user',
         content: [{ type: 'text', text: 'Hello' }],
       },
       {
         id: '2',
         sessionId: 'test-session',
+
+        threadId: 'test-session',
         role: 'assistant',
         content: [{ type: 'text', text: 'Hi there!' }],
       },
@@ -346,6 +386,8 @@ describe('MessageNormalizer - OpenAI Tool Call Pairing', () => {
       {
         id: '1',
         sessionId: 'test-session',
+
+        threadId: 'test-session',
         role: 'assistant',
         content: [],
         tool_calls: [
@@ -359,6 +401,8 @@ describe('MessageNormalizer - OpenAI Tool Call Pairing', () => {
       {
         id: '2',
         sessionId: 'test-session',
+
+        threadId: 'test-session',
         role: 'tool',
         content: [{ type: 'text', text: 'result1' }],
         tool_call_id: 'call_1',
@@ -366,6 +410,8 @@ describe('MessageNormalizer - OpenAI Tool Call Pairing', () => {
       {
         id: '3',
         sessionId: 'test-session',
+
+        threadId: 'test-session',
         role: 'assistant',
         content: [],
         tool_calls: [
@@ -379,6 +425,8 @@ describe('MessageNormalizer - OpenAI Tool Call Pairing', () => {
       {
         id: '4',
         sessionId: 'test-session',
+
+        threadId: 'test-session',
         role: 'tool',
         content: [{ type: 'text', text: 'result2' }],
         tool_call_id: 'call_2',
@@ -402,6 +450,8 @@ describe('MessageNormalizer - OpenAI Tool Call Pairing', () => {
       {
         id: '1',
         sessionId: 'test-session',
+
+        threadId: 'test-session',
         role: 'assistant',
         content: [],
         tool_calls: [
@@ -415,6 +465,8 @@ describe('MessageNormalizer - OpenAI Tool Call Pairing', () => {
       {
         id: '2',
         sessionId: 'test-session',
+
+        threadId: 'test-session',
         role: 'tool',
         content: [{ type: 'text', text: 'result without id' }],
         tool_call_id: undefined,

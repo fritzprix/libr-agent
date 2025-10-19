@@ -1,3 +1,0 @@
-1154 /home/fritzprix/my_works/tauri-agent/src-tauri/src/lib.rs
-36
-Commands in lib.rs: $(rg '#\[tauri::command\]' src-tauri/src/lib.rs | wc -l)

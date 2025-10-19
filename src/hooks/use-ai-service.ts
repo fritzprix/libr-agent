@@ -264,6 +264,7 @@ export const useAIService = (config?: AIServiceConfig) => {
             thinkingSignature,
             tool_calls: toolCalls,
             sessionId: messages[0]?.sessionId,
+            threadId: messages[0]?.threadId || messages[0]?.sessionId,
           };
 
           setResponse(finalMessage);
@@ -286,6 +287,7 @@ export const useAIService = (config?: AIServiceConfig) => {
             isStreaming: false,
             tool_calls: [],
             sessionId: messages[0]?.sessionId,
+            threadId: messages[0]?.threadId || messages[0]?.sessionId,
           };
         } else {
           finalMessage = {
@@ -297,6 +299,7 @@ export const useAIService = (config?: AIServiceConfig) => {
             isStreaming: false,
             tool_calls: toolCalls,
             sessionId: messages[0]?.sessionId,
+            threadId: messages[0]?.threadId || messages[0]?.sessionId,
           };
         }
 
@@ -320,9 +323,11 @@ export const useAIService = (config?: AIServiceConfig) => {
             'Cannot create error message: missing sessionId in messages',
           );
         }
+        const threadId = messages[0]?.threadId || sessionId;
         const errorMessage = createErrorMessage(
           currentResponseId,
           sessionId,
+          threadId,
           err,
           {
             model,
@@ -372,12 +377,14 @@ export const useAIService = (config?: AIServiceConfig) => {
             role: 'system',
             content: stringToMCPContentArray(systemPrompt),
             sessionId: ephemeralSessionId,
+            threadId: ephemeralSessionId, // Use ephemeral session as thread
           },
           {
             id: createId(),
             role: 'user',
             content: stringToMCPContentArray(prompt),
             sessionId: ephemeralSessionId,
+            threadId: ephemeralSessionId, // Use ephemeral session as thread
           },
         ];
 
@@ -430,6 +437,7 @@ export const useAIService = (config?: AIServiceConfig) => {
             thinking,
             thinkingSignature,
             sessionId: ephemeralSessionId,
+            threadId: ephemeralSessionId, // Use ephemeral session as thread
           });
         }
 
@@ -443,6 +451,7 @@ export const useAIService = (config?: AIServiceConfig) => {
           thinking,
           thinkingSignature,
           sessionId: ephemeralSessionId,
+          threadId: ephemeralSessionId, // Use ephemeral session as thread
         };
 
         options?.onProgress?.(finalContent, true);
@@ -470,6 +479,7 @@ export const useAIService = (config?: AIServiceConfig) => {
           thinkingSignature: '',
           tool_calls: [],
           sessionId: ephemeralSessionId,
+          threadId: ephemeralSessionId, // Use ephemeral session as thread
           error: errorClassification,
         };
 

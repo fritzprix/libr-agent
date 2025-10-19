@@ -111,6 +111,51 @@ export class LocalDatabase extends Dexie {
     this.version(8).stores({
       playbooks: '&id, agentId, createdAt, updatedAt, goal',
     });
+
+    // Version 9: Add threadId support with composite index for (sessionId, threadId)
+    this.version(9)
+      .stores({
+        messages: '&id, sessionId, [sessionId+threadId], createdAt',
+      })
+      .upgrade(async (tx) => {
+        // Add threadId to existing messages (default to sessionId for top thread)
+        const messages = await tx.table('messages').toArray();
+        for (const msg of messages) {
+          if (!msg.threadId) {
+            await tx.table('messages').update(msg.id, {
+              threadId: msg.sessionId, // Default to top thread
+            });
+          }
+        }
+
+        // Add sessionThread to existing sessions
+        const sessions = await tx.table('sessions').toArray();
+        for (const session of sessions) {
+          if (!session.sessionThread) {
+            await tx.table('sessions').update(session.id, {
+              sessionThread: {
+                id: session.id,
+                sessionId: session.id,
+                assistantId: session.assistants?.[0]?.id,
+                createdAt: session.createdAt,
+              },
+            });
+          }
+        }
+
+        // Dispatch event to trigger SWR cache invalidation
+        if (typeof window !== 'undefined') {
+          try {
+            window.dispatchEvent(
+              new CustomEvent('database-migrated', {
+                detail: { version: 9, feature: 'threadId' },
+              }),
+            );
+          } catch {
+            // Fail silently if CustomEvent is not supported
+          }
+        }
+      });
   }
 }
 

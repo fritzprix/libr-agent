@@ -9,6 +9,7 @@ import { MCPContent } from '@/lib/mcp-types';
  *
  * @param text The content of the system message.
  * @param sessionId The ID of the session this message belongs to.
+ * @param threadId The ID of the thread this message belongs to (defaults to sessionId for top thread).
  * @param assistantId Optional ID of the assistant associated with this message.
  * @param source Optional source indicator - 'assistant' for AI-generated, 'ui' for user interface interactions.
  * @returns A message object with the role 'system'.
@@ -16,6 +17,7 @@ import { MCPContent } from '@/lib/mcp-types';
 export const createSystemMessage = (
   text: string,
   sessionId: string,
+  threadId?: string,
   assistantId?: string,
   source?: 'assistant' | 'ui',
 ): Message => ({
@@ -23,6 +25,7 @@ export const createSystemMessage = (
   content: stringToMCPContentArray(text),
   role: 'system',
   sessionId,
+  threadId: threadId || sessionId, // Default to top thread
   assistantId,
   source,
 });
@@ -33,6 +36,7 @@ export const createSystemMessage = (
  *
  * @param text The content of the user's message.
  * @param sessionId The ID of the session this message belongs to.
+ * @param threadId The ID of the thread this message belongs to (defaults to sessionId for top thread).
  * @param assistantId Optional ID of the assistant associated with this message.
  * @param source Optional source indicator - 'assistant' for AI-generated, 'ui' for user interface interactions.
  * @returns A message object with the role 'user'.
@@ -40,6 +44,7 @@ export const createSystemMessage = (
 export const createUserMessage = (
   text: string,
   sessionId: string,
+  threadId?: string,
   assistantId?: string,
   source?: 'assistant' | 'ui',
 ): Message => ({
@@ -47,6 +52,7 @@ export const createUserMessage = (
   content: stringToMCPContentArray(text),
   role: 'user',
   sessionId,
+  threadId: threadId || sessionId, // Default to top thread
   assistantId,
   source,
 });
@@ -59,6 +65,7 @@ export const createUserMessage = (
  * @param content The content of the tool's result, as an array of MCPContent objects.
  * @param toolCallId The ID of the tool call that this message is a result of. This is mandatory.
  * @param sessionId The ID of the session this message belongs to.
+ * @param threadId The ID of the thread this message belongs to (defaults to sessionId for top thread).
  * @param assistantId Optional ID of the assistant associated with this message.
  * @param source Optional source indicator - 'assistant' for AI-generated, 'ui' for user interface interactions.
  * @returns A message object with the role 'tool'.
@@ -68,6 +75,7 @@ export const createToolMessage = (
   content: MCPContent[],
   toolCallId: string,
   sessionId: string,
+  threadId?: string,
   assistantId?: string,
   source?: 'assistant' | 'ui',
 ): Message => {
@@ -81,6 +89,7 @@ export const createToolMessage = (
     role: 'tool',
     tool_call_id: toolCallId,
     sessionId,
+    threadId: threadId || sessionId, // Default to top thread
     assistantId,
     source,
   };
@@ -124,6 +133,7 @@ export const createToolSuccessMessage = (
  * @param result The result of the tool execution, as an array of MCPContent objects.
  * @param toolCallId The unique ID for this tool call.
  * @param sessionId The ID of the session this message pair belongs to.
+ * @param threadId The ID of the thread this message pair belongs to (defaults to sessionId for top thread).
  * @param assistantId Optional ID of the assistant associated with this message pair.
  * @param source Optional source indicator ('assistant' | 'ui'). When provided, both the tool call message
  * and tool result message in the returned pair will have this source value. Use 'ui' for messages
@@ -137,12 +147,15 @@ export const createToolMessagePair = (
   result: MCPContent[],
   toolCallId: string,
   sessionId: string,
+  threadId?: string,
   assistantId?: string,
   source?: 'assistant' | 'ui',
   delayMs?: number,
 ): [Message, Message] => {
   const delayMsValue = delayMs ?? 300;
   const callTime = new Date();
+  const effectiveThreadId = threadId || sessionId; // Default to top thread
+
   const toolCallMessage: Message = {
     id: createId(),
     content: [], // Tool calls can have empty content
@@ -158,6 +171,7 @@ export const createToolMessagePair = (
       },
     ],
     sessionId,
+    threadId: effectiveThreadId,
     assistantId,
     source, // Source indicator applied to both messages in the pair
     createdAt: callTime,
@@ -169,6 +183,7 @@ export const createToolMessagePair = (
     role: 'tool',
     tool_call_id: toolCallId,
     sessionId,
+    threadId: effectiveThreadId,
     assistantId,
     source, // Source indicator applied to both messages in the pair
     createdAt: new Date(callTime.getTime() + delayMsValue),

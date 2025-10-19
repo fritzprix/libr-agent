@@ -14,7 +14,7 @@ import { dbService, Page } from '../lib/db';
 import { dbUtils } from '@/lib/db/service';
 import { deleteContentStore } from '@/lib/rust-backend-client';
 import { getLogger } from '../lib/logger';
-import { Assistant, Session } from '../models/chat';
+import { Assistant, Session, Thread } from '../models/chat';
 import { useAssistantContext } from './AssistantContext';
 
 const logger = getLogger('SessionContext');
@@ -45,6 +45,13 @@ interface SessionContextType {
   retryLastOperation: () => Promise<void>;
   hasNextPage: boolean;
   clearAllSessions: () => Promise<void>;
+
+  /**
+   * NEW: Session's top-level thread metadata (read-only).
+   * Derived from current.sessionThread.
+   * Returns null if no session is selected.
+   */
+  sessionThread: Thread | null;
 }
 
 /**
@@ -258,18 +265,30 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
           );
         }
 
+        const sessionId = createId();
+
+        // Create top thread with id === sessionId
+        const sessionThread = {
+          id: sessionId,
+          sessionId,
+          assistantId: assistants[0].id,
+          createdAt: new Date(),
+        };
+
         const session: Session = {
-          id: createId(),
+          id: sessionId,
           assistants: [...assistants],
           type: assistants.length > 1 ? 'group' : 'single',
           createdAt: new Date(),
           updatedAt: new Date(),
           description: generateSessionDescription(assistants, description),
           name: generateSessionName(assistants, name),
+          sessionThread, // Include top thread
         };
 
-        logger.info('Creating new session', {
+        logger.info('Creating new session with top thread', {
           sessionId: session.id,
+          topThreadId: sessionThread.id,
           assistants: assistants.map((a) => a.name),
           type: session.type,
           description: session.description,
@@ -510,10 +529,17 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
     }
   }, [data, mutate]);
 
+  // Derive sessionThread from current session
+  const sessionThread = useMemo(
+    () => current?.sessionThread ?? null,
+    [current],
+  );
+
   const contextValue: SessionContextType = useMemo(
     () => ({
       sessions,
       current,
+      sessionThread,
       isAgenticMode,
       toggleAgenticMode: handleToggleAgenticMode,
       getSessions: handleGetSessions,
@@ -534,6 +560,7 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
     [
       sessions,
       current,
+      sessionThread,
       isAgenticMode,
       handleToggleAgenticMode,
       handleGetSessions,
