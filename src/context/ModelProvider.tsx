@@ -75,7 +75,8 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
     async ([, provider, apiKey]: [string, string, string]) => {
       const supportsDynamic =
         provider === AIServiceProvider.Ollama ||
-        provider === AIServiceProvider.OpenAI;
+        provider === AIServiceProvider.OpenAI ||
+        provider === AIServiceProvider.Anthropic;
 
       if (!supportsDynamic) return {};
 
@@ -149,7 +150,8 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
     // Only attempt dynamic listing for providers that support it
     const supportsDynamic =
       provider === AIServiceProvider.Ollama ||
-      provider === AIServiceProvider.OpenAI;
+      provider === AIServiceProvider.OpenAI ||
+      provider === AIServiceProvider.Anthropic;
 
     if (!supportsDynamic) return;
 

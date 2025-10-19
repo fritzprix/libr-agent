@@ -9,6 +9,7 @@ import { MCPTool } from '../mcp-types';
 import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';
 import { formatToolCall } from './utils';
+import { ModelInfo, llmConfigManager } from '../llm-config-manager';
 const logger = getLogger('AnthropicService');
 
 const MAX_PARTIAL_TOOL_INPUT_LENGTH = 200_000;
@@ -34,6 +35,9 @@ interface ToolCallAccumulator {
  */
 export class AnthropicService extends BaseAIService {
   private anthropic: Anthropic;
+  private modelCache?: ModelInfo[];
+  private cacheTimestamp?: number;
+  private readonly CACHE_TTL = 3600000; // 1 hour in milliseconds
 
   /**
    * Initializes a new instance of the `AnthropicService`.
@@ -46,6 +50,8 @@ export class AnthropicService extends BaseAIService {
       apiKey: this.apiKey,
       dangerouslyAllowBrowser: true,
     });
+    // Validate that fallback model exists in config
+    this.validateFallbackModel();
   }
 
   /**
@@ -54,6 +60,84 @@ export class AnthropicService extends BaseAIService {
    */
   getProvider(): AIServiceProvider {
     return AIServiceProvider.Anthropic;
+  }
+
+  /**
+   * Fetches available Claude models from Anthropic API.
+   * Falls back to static config if SDK call fails.
+   * Results are cached for 1 hour to minimize API calls.
+   */
+  async listModels(): Promise<ModelInfo[]> {
+    const logger = getLogger('AnthropicService.listModels');
+
+    // Return cached models if still valid
+    if (this.modelCache && this.isCacheValid()) {
+      logger.debug('Returning cached models');
+      return this.modelCache;
+    }
+
+    try {
+      // Use official SDK models.list() API
+      const response = await this.anthropic.models.list();
+
+      if (!response?.data || !Array.isArray(response.data)) {
+        logger.warn('Invalid response structure from models API', { response });
+        return this.fallbackToStaticModels();
+      }
+
+      const models: ModelInfo[] = [];
+
+      for (const model of response.data) {
+        // Merge SDK data with static config metadata
+        const staticModel = llmConfigManager.getModel('anthropic', model.id);
+
+        models.push({
+          id: model.id,
+          name: model.display_name || staticModel?.name || model.id,
+          contextWindow: staticModel?.contextWindow || 200000,
+          // Use static config as source of truth for capabilities
+          supportReasoning: staticModel?.supportReasoning ?? false,
+          supportTools: staticModel?.supportTools ?? true,
+          supportStreaming: staticModel?.supportStreaming ?? true,
+          cost: staticModel?.cost || {
+            input: 0,
+            output: 0,
+          },
+          description: staticModel?.description || `Claude model: ${model.id}`,
+        });
+      }
+
+      // Cache the results
+      this.modelCache = models;
+      this.cacheTimestamp = Date.now();
+
+      logger.info(`Loaded ${models.length} models from Anthropic API`);
+      return models;
+    } catch (error) {
+      logger.warn(
+        'Failed to fetch models from Anthropic API, falling back to static config',
+        error,
+      );
+      return this.fallbackToStaticModels();
+    }
+  }
+
+  /**
+   * Fallback to static config models
+   */
+  private fallbackToStaticModels(): Promise<ModelInfo[]> {
+    const logger = getLogger('AnthropicService.fallbackToStaticModels');
+    logger.info('Using static config models');
+    return super.listModels();
+  }
+
+  /**
+   * Check if model cache is still valid (1 hour TTL)
+   */
+  private isCacheValid(): boolean {
+    if (!this.cacheTimestamp) return false;
+    const age = Date.now() - this.cacheTimestamp;
+    return age < this.CACHE_TTL;
   }
 
   /**
@@ -68,11 +152,71 @@ export class AnthropicService extends BaseAIService {
     modelName?: string,
     config?: AIServiceConfig,
   ): boolean {
-    // Only enable thinking for models that support it
-    // Extended thinking is available for Claude 3.5 Sonnet and later models
-    const model =
-      modelName || config?.defaultModel || 'claude-3-sonnet-20240229';
-    return model.includes('claude-3-5') || model.includes('claude-3-opus');
+    const logger = getLogger('AnthropicService.shouldEnableThinking');
+    const modelId = modelName || config?.defaultModel;
+
+    if (!modelId) {
+      logger.debug('No model specified, thinking disabled by default');
+      return false;
+    }
+
+    // Use metadata from config instead of string matching
+    const modelInfo = llmConfigManager.getModel('anthropic', modelId);
+
+    if (!modelInfo) {
+      logger.warn(`Model ${modelId} not found in config, thinking disabled`);
+      return false;
+    }
+
+    const enabled = modelInfo.supportReasoning;
+    logger.debug(
+      `Thinking ${enabled ? 'enabled' : 'disabled'} for model ${modelId}`,
+    );
+    return enabled;
+  }
+
+  /**
+   * Selects the best available model following priority order.
+   * Priority: explicit option > config default > first available config model > safe fallback
+   * @private
+   */
+  private getDefaultModel(): string {
+    const logger = getLogger('AnthropicService.getDefaultModel');
+
+    // Priority 1: Check config default
+    if (this.config?.defaultModel) {
+      logger.debug(`Using config default model: ${this.config.defaultModel}`);
+      return this.config.defaultModel;
+    }
+
+    // Priority 2: First model from config
+    const configModels = llmConfigManager.getModelsForProvider('anthropic');
+    if (configModels && Object.keys(configModels).length > 0) {
+      const firstModel = Object.keys(configModels)[0];
+      logger.debug(`Using first config model: ${firstModel}`);
+      return firstModel;
+    }
+
+    // Priority 3: Safe fallback (verified to exist in current config)
+    const fallback = 'claude-3-5-sonnet-20241022';
+    logger.warn(`No config models found, using fallback: ${fallback}`);
+    return fallback;
+  }
+
+  /**
+   * Validates that the fallback model exists in config
+   * @private
+   */
+  private validateFallbackModel(): void {
+    const fallback = 'claude-3-5-sonnet-20241022';
+    const model = llmConfigManager.getModel('anthropic', fallback);
+    if (!model) {
+      this.logger.error(
+        `Fallback model ${fallback} not found in config. Update getDefaultModel() to use a valid fallback.`,
+      );
+    } else {
+      this.logger.debug(`Fallback model ${fallback} validated successfully`);
+    }
   }
 
   /**
@@ -110,10 +254,7 @@ export class AnthropicService extends BaseAIService {
       );
       const stream = this.anthropic.messages.stream(
         {
-          model:
-            options.modelName ||
-            config.defaultModel ||
-            'claude-3-sonnet-20240229',
+          model: options.modelName || this.getDefaultModel(),
           max_tokens: config.maxTokens!,
           messages: anthropicMessages,
           ...(shouldEnableThinking && {
