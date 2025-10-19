@@ -296,16 +296,22 @@ pub async fn call_tool_unified(
 // Service Context Commands
 // ============================================================================
 
-/// Gets the service context for a given MCP server.
+/// Retrieves the service context for a given MCP server.
 ///
 /// # Arguments
 /// * `server_id` - The unique identifier for the MCP server.
+/// * `options` - Optional context options for the service.
 ///
 /// # Returns
 /// A `Result` containing the service context on success, or an error string on failure.
 #[tauri::command]
-pub async fn get_service_context(server_id: String) -> Result<ServiceContext, String> {
-    get_mcp_manager().get_service_context(&server_id).await
+pub async fn get_service_context(
+    server_id: String,
+    options: Option<ServiceContextOptions>,
+) -> Result<ServiceContext, String> {
+    get_mcp_manager()
+        .get_service_context(&server_id, options)
+        .await
 }
 
 /// Switches the context for a given MCP server.

@@ -371,14 +371,17 @@ export class WebMCPProxy {
   /**
    * Gets the service context from a specific server within the worker.
    * @param serverName The name of the server.
+   * @param options Optional service context options.
    * @returns A promise that resolves to the service context.
    */
   async getServiceContext(
     serverName: string,
+    options?: ServiceContextOptions
   ): Promise<ServiceContext<unknown>> {
     const response = await this.sendMessage<MCPResponse<unknown>>({
       type: 'getServiceContext',
       serverName,
+      args: options,
     });
     const result = this.parseResponse<ServiceContext<unknown>>(response);
     return result || { contextPrompt: '', structuredState: undefined };

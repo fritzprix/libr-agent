@@ -1,9 +1,8 @@
-import { Switch } from '@/components/ui/switch';
 import { useSessionContext } from '@/context/SessionContext';
 import Chat from './Chat';
 
 export function ChatRouter() {
-  const { current, isAgenticMode, toggleAgenticMode } = useSessionContext();
+  const { current } = useSessionContext();
 
   if (!current) {
     return null;
@@ -19,21 +18,7 @@ export function ChatRouter() {
   }
   return (
     <Chat>
-      <Chat.Header>
-        <div className="flex items-center gap-2">
-          <Switch
-            id="agentic-mode-toggle"
-            checked={isAgenticMode}
-            onCheckedChange={toggleAgenticMode}
-          />
-          <label
-            htmlFor="agentic-mode-toggle"
-            className="text-sm font-medium select-none"
-          >
-            Agentic Mode
-          </label>
-        </div>
-      </Chat.Header>
+      <Chat.Header />
       <Chat.Messages />
       <Chat.Bottom></Chat.Bottom>
     </Chat>
