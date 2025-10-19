@@ -28,9 +28,42 @@ export interface AttachmentReference {
   blobCleanup?: () => void; // Cleanup function for blob URLs
 }
 
+/**
+ * Thread represents a logical conversation thread within a session.
+ * - Top thread: id === sessionId (always exists)
+ * - Sub threads: id !== sessionId (optional, created by user)
+ *
+ * All threads exist in parallel (no switching concept).
+ * Backend manages state via (sessionId, threadId) tuples.
+ */
+export interface Thread {
+  /** Unique thread identifier */
+  id: string;
+
+  /** Parent session ID */
+  sessionId: string;
+
+  /** Assistant ID for this thread (optional) */
+  assistantId?: string;
+
+  /** Initial query or context for this thread (optional) */
+  initialQuery?: string;
+
+  /** Thread creation timestamp */
+  createdAt: Date;
+}
+
 export interface Message {
   id: string;
   sessionId: string; // Added sessionId
+
+  /**
+   * Thread ID this message belongs to.
+   * REQUIRED: Must always be specified.
+   * For top-level thread: threadId === sessionId
+   */
+  threadId: string;
+
   role: 'user' | 'assistant' | 'system' | 'tool';
   content: MCPContent[];
   tool_calls?: ToolCall[];
@@ -119,4 +152,13 @@ export interface Session {
   description?: string; // Description in case of a group session
   createdAt: Date;
   updatedAt: Date;
+
+  /**
+   * Session's top-level thread metadata.
+   * This is the only Thread object stored in Session.
+   * - id === sessionId (identifies this as the top thread)
+   *
+   * Other threads exist only in backend state.
+   */
+  sessionThread: Thread;
 }

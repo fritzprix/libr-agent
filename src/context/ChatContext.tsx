@@ -134,6 +134,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         id: createId(),
         role: 'user',
         sessionId: currentSession.id,
+        threadId: currentSession.id, // Default to top thread
         content: stringToMCPContentArray(''),
         ...message,
       };
@@ -421,6 +422,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
             content: stringToMCPContentArray('Request cancelled'),
             role: 'system',
             sessionId: currentSession.id,
+            threadId: currentSession.id, // Default to top thread
             isStreaming: false,
           };
         }

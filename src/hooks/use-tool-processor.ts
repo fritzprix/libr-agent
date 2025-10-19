@@ -129,6 +129,7 @@ export const useToolProcessor = ({ submit }: UseToolProcessorConfig) => {
                   : mcpResponse.result?.content || [],
                 tool_call_id: toolCall.id,
                 sessionId: currentSession?.id || '',
+                threadId: currentSession?.id || '', // Default to top thread
               };
 
               const hasUi = hasUIResource(mcpResponse);
@@ -151,6 +152,7 @@ export const useToolProcessor = ({ submit }: UseToolProcessorConfig) => {
                   `Error executing ${toolName}: ${error instanceof Error ? error.message : 'Unknown error'}`,
                 ),
                 sessionId: currentSession?.id || '',
+                threadId: currentSession?.id || '', // Default to top thread
                 tool_call_id: toolCall.id,
               };
 

@@ -602,6 +602,7 @@ function deserializeMessage(rustMsg: Record<string, unknown>): Message {
   return {
     id: rustMsg.id as string,
     sessionId: rustMsg.sessionId as string,
+    threadId: (rustMsg.threadId as string) || (rustMsg.sessionId as string), // Fallback to sessionId for backward compatibility
     role: rustMsg.role as 'user' | 'assistant' | 'system' | 'tool',
     content: JSON.parse(rustMsg.content as string),
     tool_calls: rustMsg.toolCalls
@@ -626,21 +627,28 @@ function deserializeMessage(rustMsg: Record<string, unknown>): Message {
 }
 
 /**
- * Retrieves a paginated list of messages for a specific session.
+ * Retrieves a paginated list of messages for a specific thread in a session.
  * @param sessionId The ID of the session
+ * @param threadId The ID of the thread (defaults to sessionId for top thread)
  * @param page The page number to retrieve (1-indexed)
  * @param pageSize The number of messages per page
  * @returns A promise that resolves to a Page of messages
  */
 export async function getMessagesPageForSession(
   sessionId: string,
+  threadId: string,
   page: number,
   pageSize: number,
 ): Promise<Page<Message>> {
+  if (!sessionId || !threadId) {
+    throw new Error('sessionId and threadId are required');
+  }
+
   const result = await safeInvoke<Page<Record<string, unknown>>>(
     'messages_get_page',
     {
       sessionId,
+      threadId,
       page,
       pageSize,
     },
@@ -659,11 +667,16 @@ export async function getMessagesPageForSession(
  * @returns A promise that resolves when the operation completes
  */
 export async function upsertMessages(messages: Message[]): Promise<void> {
-  // Validate all messages have sessionId
+  // Validate all messages have sessionId and threadId
   for (const message of messages) {
     if (!message.sessionId || message.sessionId.trim() === '') {
       throw new Error(
         `Cannot upsert message: missing or empty sessionId for message ${message.id}`,
+      );
+    }
+    if (!message.threadId || message.threadId.trim() === '') {
+      throw new Error(
+        `Cannot upsert message: missing or empty threadId for message ${message.id}`,
       );
     }
   }
@@ -672,6 +685,7 @@ export async function upsertMessages(messages: Message[]): Promise<void> {
   const rustMessages = messages.map((msg) => ({
     id: msg.id,
     sessionId: msg.sessionId,
+    threadId: msg.threadId,
     role: msg.role,
     content: JSON.stringify(msg.content),
     toolCalls: msg.tool_calls ? JSON.stringify(msg.tool_calls) : null,

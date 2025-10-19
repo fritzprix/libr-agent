@@ -152,11 +152,10 @@ export const classifyAIServiceError = (
 };
 
 /**
- * Creates a standardized error message object to be used in the chat context.
- * It classifies the given error and wraps it in a message structure.
- *
- * @param messageId The ID for the new error message.
- * @param sessionId The ID of the session where the error occurred.
+ * Creates an error message for AI service failures.
+ * @param messageId The ID for the error message.
+ * @param sessionId The session ID the error occurred in.
+ * @param threadId The thread ID the error occurred in (defaults to sessionId).
  * @param error The error object to classify and include in the message.
  * @param context Optional additional context about the error.
  * @returns A message object formatted as an error.
@@ -164,6 +163,7 @@ export const classifyAIServiceError = (
 export const createErrorMessage = (
   messageId: string,
   sessionId: string,
+  threadId: string,
   error: unknown,
   context?: Record<string, unknown>,
 ) => {
@@ -174,6 +174,7 @@ export const createErrorMessage = (
     content: [],
     role: 'assistant' as const,
     sessionId,
+    threadId: threadId || sessionId, // Default to top thread
     isStreaming: false,
     error: errorClassification,
   };

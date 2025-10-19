@@ -57,19 +57,42 @@ export function useSessionHistory(): SessionHistoryContextType {
 /**
  * Provider component for SessionHistoryContext.
  */
-export function SessionHistoryProvider({ children }: { children: ReactNode }) {
+/**
+ * SessionHistoryProvider component that provides session history management.
+ * @param children Child components
+ * @param threadId Thread ID to filter messages (optional, defaults to session's top thread)
+ */
+export function SessionHistoryProvider({
+  children,
+  threadId,
+}: {
+  children: ReactNode;
+  threadId?: string;
+}) {
   const { current: currentSession } = useSessionContext();
+
+  // Determine effective threadId (use provided threadId or default to sessionId for top thread)
+  const effectiveThreadId = useMemo(
+    () => threadId || currentSession?.id || '',
+    [threadId, currentSession?.id],
+  );
 
   const { data, error, isLoading, setSize, mutate } = useSWRInfinite<
     Page<Message>
   >(
     (pageIndex, previousPageData) => {
-      if (!currentSession?.id) return null;
+      if (!currentSession?.id || !effectiveThreadId) return null;
       if (previousPageData && !previousPageData.hasNextPage) return null;
-      return [currentSession.id, 'messages', pageIndex + 1];
+      // Include threadId in SWR key for proper caching
+      return [currentSession.id, effectiveThreadId, 'messages', pageIndex + 1];
     },
-    async ([sessionId, , page]: [string, string, number]) => {
-      return backend.getMessagesPageForSession(sessionId, page, PAGE_SIZE);
+    async ([sessionId, threadId, , page]: [string, string, string, number]) => {
+      return backend.getMessagesPageForSession(
+        sessionId,
+        threadId,
+        page,
+        PAGE_SIZE,
+      );
     },
     {
       revalidateOnFocus: false, // Prevent automatic refetch on focus to avoid race conditions

@@ -331,23 +331,39 @@ class EphemeralState {
 
 /**
  * Session-based state manager that maintains separate EphemeralState instances
- * for each session ID.
+ * for each (sessionId, threadId) pair.
  * @internal
  */
 class SessionStateManager {
-  private sessions = new Map<string, EphemeralState>();
+  private sessions = new Map<string, Map<string, EphemeralState>>();
   private currentSessionId: string | null = null;
+  private currentThreadId: string | null = null;
 
   /**
-   * Sets the current session context.
+   * Sets the current session context and cleans up the previous session's state.
    * @param sessionId The session ID to set as current context.
+   * @param threadId The thread ID to set as current context (optional, defaults to sessionId).
    */
-  setSession(sessionId: string): void {
-    this.currentSessionId = sessionId;
-    // Initialize session state if it doesn't exist
-    if (!this.sessions.has(sessionId)) {
-      this.sessions.set(sessionId, new EphemeralState());
+  setSession(sessionId: string, threadId?: string): void {
+    const effectiveThreadId = threadId || sessionId;
+
+    // ✅ CLEANUP: Remove previous session's all thread states
+    if (this.currentSessionId && this.currentSessionId !== sessionId) {
+      const oldThreadMap = this.sessions.get(this.currentSessionId);
+      if (oldThreadMap) {
+        // Clear all threads in old session
+        oldThreadMap.clear();
+      }
+      // Remove the session entry entirely
+      this.sessions.delete(this.currentSessionId);
+      console.info(
+        `[PlanningServer] Session cleanup: removed all threads from session "${this.currentSessionId}"`,
+      );
     }
+
+    // Set new session (lazy initialization)
+    this.currentSessionId = sessionId;
+    this.currentThreadId = effectiveThreadId;
   }
 
   /**
@@ -358,15 +374,38 @@ class SessionStateManager {
   }
 
   /**
+   * Returns the currently active thread id for diagnostics.
+   */
+  getCurrentThreadId(): string | null {
+    return this.currentThreadId;
+  }
+
+  /**
+   * Get or create state for (sessionId, threadId) pair.
+   * ✅ Lazy initialization: state is only created when a tool is called
+   */
+  private getState(sessionId: string, threadId: string): EphemeralState {
+    if (!this.sessions.has(sessionId)) {
+      this.sessions.set(sessionId, new Map());
+    }
+    const threadMap = this.sessions.get(sessionId)!;
+    if (!threadMap.has(threadId)) {
+      threadMap.set(threadId, new EphemeralState());
+    }
+    return threadMap.get(threadId)!;
+  }
+
+  /**
    * Gets the current session's state, or creates a default session if none is set.
-   * @returns The EphemeralState for the current session.
+   * @returns The EphemeralState for the current (sessionId, threadId).
    */
   private getCurrentState(): EphemeralState {
     if (!this.currentSessionId) {
       // Fallback to default session
       this.setSession('default');
     }
-    return this.sessions.get(this.currentSessionId!)!;
+    const effectiveThreadId = this.currentThreadId || this.currentSessionId!;
+    return this.getState(this.currentSessionId!, effectiveThreadId);
   }
 
   createGoal(goal: string): MCPResponse<CreateGoalOutput> {
@@ -431,8 +470,13 @@ class SessionStateManager {
    * Clears all session states. Useful for testing or complete reset.
    */
   clearAllSessions(): void {
-    this.sessions.clear();
+    // ✅ Cleanup all sessions and their threads
+    for (const [sessionId, threadMap] of this.sessions.entries()) {
+      threadMap.clear();
+      this.sessions.delete(sessionId);
+    }
     this.currentSessionId = null;
+    this.currentThreadId = null;
   }
 }
 
@@ -632,6 +676,7 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
     console.log(`[PlanningServer] callTool invoked: ${name}`, {
       args,
       currentSessionId: stateManager.getCurrentSessionId(),
+      currentThreadId: stateManager.getCurrentThreadId(),
     });
 
     const typedArgs = (args as Record<string, unknown>) || {};
@@ -647,6 +692,14 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
         `[PlanningServer] callTool: sessionId provided in args ("${String(
           typedArgs.sessionId,
         )}") - ignored. Use switchContext/setContext to change sessions.`,
+      );
+    }
+    // Similarly, ignore threadId if provided in args
+    if (typeof typedArgs.threadId === 'string' && typedArgs.threadId) {
+      console.warn(
+        `[PlanningServer] callTool: threadId provided in args ("${String(
+          typedArgs.threadId,
+        )}") - ignored. Use switchContext/setContext to change threads.`,
       );
     }
     switch (name) {
@@ -796,10 +849,12 @@ Recent Notes: ${notes.length > 0 ? notes.slice(-2).join('; ') : '(none)'}`
   },
   async switchContext(context: ServiceContextOptions): Promise<void> {
     const sessionId = context.sessionId;
+    const threadId = context.threadId;
     if (sessionId) {
-      stateManager.setSession(sessionId);
+      // ✅ This triggers cleanup of previous session's all threads
+      stateManager.setSession(sessionId, threadId);
       console.info(
-        `[PlanningServer] switchContext -> session set: ${sessionId}`,
+        `[PlanningServer] switchContext -> session: ${sessionId}, thread: ${threadId || sessionId} (previous session cleaned up)`,
       );
     }
   },

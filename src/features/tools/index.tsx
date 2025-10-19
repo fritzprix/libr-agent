@@ -24,7 +24,15 @@ const logger = getLogger('BuiltInToolProvider');
 export interface ServiceContextOptions {
   sessionId?: string;
   assistantId?: string;
-  // 확장 가능: userId?: string; env?: Record<string,string>
+
+  /**
+   * Thread ID for tool context isolation.
+   * Tools executed with the same threadId share context.
+   *
+   * OPTIONAL: If not provided, defaults to sessionId (top thread).
+   * This allows backward compatibility with existing services.
+   */
+  threadId?: string;
 }
 
 export interface ServiceContext<T = unknown> {
