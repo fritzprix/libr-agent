@@ -26,10 +26,10 @@ The Google Gen AI SDK is designed to work with Gemini 2.0 features.
 
 ### The following are required for Vertex AI users (excluding Vertex AI Studio)
 
-1.  [Select](https://console.cloud.google.com/project) or [create](https://cloud.google.com/resource-manager/docs/creating-managing-projects#creating_a_project) a Google Cloud project.
-1.  [Enable billing for your project](https://cloud.google.com/billing/docs/how-to/modify-project).
-1.  [Enable the Vertex AI API](https://console.cloud.google.com/flows/enableapi?apiid=aiplatform.googleapis.com).
-1.  [Configure authentication](https://cloud.google.com/docs/authentication) for your project.
+1. [Select](https://console.cloud.google.com/project) or [create](https://cloud.google.com/resource-manager/docs/creating-managing-projects#creating_a_project) a Google Cloud project.
+1. [Enable billing for your project](https://cloud.google.com/billing/docs/how-to/modify-project).
+1. [Enable the Vertex AI API](https://console.cloud.google.com/flows/enableapi?apiid=aiplatform.googleapis.com).
+1. [Configure authentication](https://cloud.google.com/docs/authentication) for your project.
     _[Install the gcloud CLI](https://cloud.google.com/sdk/docs/install).
     _ [Initialize the gcloud CLI](https://cloud.google.com/sdk/docs/initializing). \* Create local authentication credentials for your user account:
 

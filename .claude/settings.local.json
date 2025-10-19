@@ -15,7 +15,8 @@
       "Bash(cargo test builtin::common --lib)",
       "Bash(cargo check)",
       "Bash(cargo check --manifest-path src-tauri/Cargo.toml)",
-      "Bash(pnpm tauri dev --help)"
+      "Bash(pnpm tauri dev --help)",
+      "Bash(pnpm rust:fmt)"
     ],
     "deny": [],
     "ask": []
