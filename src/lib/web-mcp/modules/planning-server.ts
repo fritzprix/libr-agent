@@ -6,7 +6,6 @@ import {
 import type { MCPResponse, MCPTool, WebMCPServer } from '@/lib/mcp-types';
 import type { ServiceContext, ServiceContextOptions } from '@/features/tools';
 import { getLogger } from '@/lib/logger';
-import { memo } from 'react';
 
 const logger = getLogger('PlanningServer');
 
@@ -18,7 +17,7 @@ interface SimpleTodo {
   summary?: string;
 }
 
-interface Memo {
+export interface Memo {
   id: number;
   content: string;
 }
@@ -134,9 +133,10 @@ class EphemeralState {
       this.lastClearedGoal = this.goal;
       this.goal = null;
       const remainingTodos = this.todos.length;
-      const todoSummary = remainingTodos > 0 
-        ? `Remaining todos: ${remainingTodos}` 
-        : 'All todos have been completed or cleared.';
+      const todoSummary =
+        remainingTodos > 0
+          ? `Remaining todos: ${remainingTodos}`
+          : 'All todos have been completed or cleared.';
       return createMCPStructuredResponse<ClearGoalOutput>(
         `Goal cleared: "${clearedGoal}"\n${todoSummary}\nSession is now ready for a new goal.`,
         {
@@ -144,7 +144,9 @@ class EphemeralState {
         },
       );
     }
-    return createMCPStructuredResponse('No active goal to clear', { success: false });
+    return createMCPStructuredResponse('No active goal to clear', {
+      success: false,
+    });
   }
 
   addTodo(name: string): MCPResponse<AddToDoOutput> {
@@ -154,7 +156,9 @@ class EphemeralState {
       status: 'pending',
     };
     this.todos.push(todo);
-    const goalContext = this.goal ? `Goal: "${this.goal}"\n` : 'No active goal.\n';
+    const goalContext = this.goal
+      ? `Goal: "${this.goal}"\n`
+      : 'No active goal.\n';
     return createMCPStructuredResponse<AddToDoOutput>(
       `Todo added: ID:${todo.id} "${name}"\n${goalContext}Total todos: ${this.todos.length}`,
       {
@@ -207,9 +211,10 @@ class EphemeralState {
       // Clear all todos if no IDs specified
       const clearedCount = this.todos.length;
       this.todos = [];
-      const msg = clearedCount > 0
-        ? `All ${clearedCount} todo(s) cleared`
-        : 'No todos to clear.';
+      const msg =
+        clearedCount > 0
+          ? `All ${clearedCount} todo(s) cleared`
+          : 'No todos to clear.';
       return createMCPStructuredResponse<BaseOutput>(
         `${msg}\nSession todos reset. Current goal: ${this.goal || '(none)'}`,
         {
@@ -226,12 +231,12 @@ class EphemeralState {
 
     if (removedCount === 0) {
       return createMCPStructuredResponse<BaseOutput>(
-        `No todos found with the specified IDs: ${ids.join(', ')}\nAvailable IDs: ${initialCount > 0 ? this.todos.map(t => t.id).join(', ') : '(none)'}`,
+        `No todos found with the specified IDs: ${ids.join(', ')}\nAvailable IDs: ${initialCount > 0 ? this.todos.map((t) => t.id).join(', ') : '(none)'}`,
         { success: false },
       );
     }
 
-    const clearedNames = clearedTodos.map(t => t.name).join(', ');
+    const clearedNames = clearedTodos.map((t) => t.name).join(', ');
     return createMCPStructuredResponse<BaseOutput>(
       `Cleared ${removedCount} todo(s): ${clearedNames}\nRemaining todos: ${this.todos.length}`,
       { success: true },
@@ -242,13 +247,13 @@ class EphemeralState {
     const clearedGoal = this.goal;
     const clearedTodos = this.todos.length;
     const clearedMemos = this.memos.length;
-    
+
     this.goal = null;
     this.lastClearedGoal = null;
     this.todos = [];
     this.memos = [];
     this.nextId = 1;
-    
+
     const summaryText = `Session state cleared:\n- Goal: ${clearedGoal ? `"${clearedGoal}"` : '(none)'}\n- Todos cleared: ${clearedTodos}\n- Memos cleared: ${clearedMemos}\n\nSession is now completely reset.`;
     return createMCPStructuredResponse(summaryText, {
       success: true,
@@ -264,14 +269,18 @@ class EphemeralState {
   }
 
   addMemo(memo: string): MCPResponse<BaseOutput & { memos: Memo[] }> {
-    const nMeme = {id: this.memos.length > 0 ? this.memos[this.memos.length -1].id + 1 : 0, content: memo};
+    const nMeme = {
+      id: this.memos.length > 0 ? this.memos[this.memos.length - 1].id + 1 : 0,
+      content: memo,
+    };
     this.memos.push(nMeme);
     if (this.memos.length > MAX_NOTES) {
       this.memos.shift();
     }
-    const capacityWarning = this.memos.length === MAX_NOTES 
-      ? `⚠️ At capacity (${MAX_NOTES}/${MAX_NOTES}) - oldest memos will be removed` 
-      : `Memos: ${this.memos.length}/${MAX_NOTES}`;
+    const capacityWarning =
+      this.memos.length === MAX_NOTES
+        ? `⚠️ At capacity (${MAX_NOTES}/${MAX_NOTES}) - oldest memos will be removed`
+        : `Memos: ${this.memos.length}/${MAX_NOTES}`;
     return createMCPStructuredResponse<BaseOutput & { memos: Memo[] }>(
       `Memo ID:${nMeme.id} added\n${capacityWarning}`,
       { success: true, memos: [...this.memos] },
@@ -889,7 +898,9 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
       }
     }
   },
-  async getServiceContext(options?: ServiceContextOptions): Promise<ServiceContext<PlanningState>> {
+  async getServiceContext(
+    options?: ServiceContextOptions,
+  ): Promise<ServiceContext<PlanningState>> {
     // If options are provided with sessionId, query that specific session's state
     // without changing the current context or triggering cleanup
     let planningState: PlanningState | null = null;
@@ -945,7 +956,14 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
     const contextPrompt = goal
       ? `# Current Goal: ${goal}
 Todos: ${todosPrompt}
-Recent Notes: ${memos.length > 0 ? memos.slice(-2).map(m => `(ID: ${m.id}: ${m.content})`).join('; ') : '(none)'}`
+Recent Notes: ${
+          memos.length > 0
+            ? memos
+                .slice(-2)
+                .map((m) => `(ID: ${m.id}: ${m.content})`)
+                .join('; ')
+            : '(none)'
+        }`
       : '# No active goal';
 
     return {
@@ -986,12 +1004,8 @@ export interface PlanningServerProxy extends WebMCPServerProxy {
   }) => Promise<CheckTodoOutput>;
   clear_todos: (args?: { ids?: number[] }) => Promise<BaseOutput>;
   clear_session: () => Promise<BaseOutput>;
-  add_memo: (args: {
-    memo: string;
-  }) => Promise<BaseOutput & { memos: Memo[] }>;
-  clear_memo: (args: {
-    id: number;
-  }) => Promise<BaseOutput & { memos: Memo[] }>;
+  add_memo: (args: { memo: string }) => Promise<BaseOutput & { memos: Memo[] }>;
+  clear_memo: (args: { id: number }) => Promise<BaseOutput & { memos: Memo[] }>;
   get_current_state: () => Promise<PlanningState>;
   sequentialthinking: (args: {
     thought: string;

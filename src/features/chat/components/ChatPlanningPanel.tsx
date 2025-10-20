@@ -4,7 +4,7 @@ import { getLogger } from '@/lib/logger';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useServiceContext } from '@/features/tools/useServiceContext';
-import { PlanningState } from '@/lib/web-mcp/modules/planning-server';
+import { Memo, PlanningState } from '@/lib/web-mcp/modules/planning-server';
 
 const logger = getLogger('ChatPlanningPanel');
 
@@ -83,13 +83,13 @@ export function ChatPlanningPanel() {
             Recent Notes
           </h4>
           <div className="max-h-32 overflow-y-auto space-y-1">
-            {planningState?.notes.length ? (
-              planningState.notes.map((note: string, index: number) => (
+            {planningState?.memos.length ? (
+              planningState.memos.map((m: Memo) => (
                 <div
-                  key={index}
+                  key={m.id}
                   className="text-xs p-2 bg-accent/50 rounded-sm border-l-2 border-accent"
                 >
-                  {note}
+                  {m.content}
                 </div>
               ))
             ) : (

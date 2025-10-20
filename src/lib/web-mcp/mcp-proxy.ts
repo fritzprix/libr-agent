@@ -376,7 +376,7 @@ export class WebMCPProxy {
    */
   async getServiceContext(
     serverName: string,
-    options?: ServiceContextOptions
+    options?: ServiceContextOptions,
   ): Promise<ServiceContext<unknown>> {
     const response = await this.sendMessage<MCPResponse<unknown>>({
       type: 'getServiceContext',
