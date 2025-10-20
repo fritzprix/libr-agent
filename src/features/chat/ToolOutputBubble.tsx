@@ -24,7 +24,11 @@ export const ToolOutputBubble: React.FC<ToolOutputBubbleProps> = ({
       <div className="space-y-4">
         {/* UI Resource is always displayed */}
         {uiContent.length > 0 && (
-          <MessageRenderer content={uiContent} className="text-sm" />
+          <MessageRenderer
+            content={uiContent}
+            className="text-sm"
+            expandResources
+          />
         )}
 
         {/* Text is collapsible */}
