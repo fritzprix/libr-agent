@@ -46,116 +46,21 @@ export class LocalDatabase extends Dexie {
   constructor() {
     super('MCPAgentDB');
 
+    // Consolidated schema (originally versions 1-9)
+    // - Version 1-2: Basic assistants/objects with timestamps and indices
+    // - Version 3: Added sessions/messages support
+    // - Version 5: Removed file storage (moved to Rust backend)
+    // - Version 6: Added playbooks
+    // - Version 7: Cleanup of empty allowedBuiltInServiceAliases
+    // - Version 8: Added agentId index for playbooks
+    // - Version 9: Added threadId support with composite indices
     this.version(1).stores({
-      assistants: '&id',
-      objects: '&key',
-    });
-
-    this.version(2)
-      .stores({
-        assistants: '&id, createdAt, updatedAt, name',
-        objects: '&key, createdAt, updatedAt',
-      })
-      .upgrade(async (tx) => {
-        const now = new Date();
-
-        await tx
-          .table('assistants')
-          .toCollection()
-          .modify((assistant) => {
-            if (!assistant.createdAt) assistant.createdAt = now;
-            if (!assistant.updatedAt) assistant.updatedAt = now;
-          });
-
-        await tx
-          .table('objects')
-          .toCollection()
-          .modify((obj) => {
-            if (!obj.createdAt) obj.createdAt = now;
-            if (!obj.updatedAt) obj.updatedAt = now;
-          });
-      });
-
-    this.version(3).stores({
+      assistants: '&id, createdAt, updatedAt, name',
+      objects: '&key, createdAt, updatedAt',
       sessions: '&id, createdAt, updatedAt',
-      messages: '&id, sessionId, createdAt',
-    });
-
-    // Removed persistent groups store; groups are kept in-memory.
-
-    // Removed frontend fileStores/fileContents/fileChunks stores. Backend
-    // (Rust) is now authoritative for file content storage and indexing.
-    this.version(5).stores({});
-
-    this.version(6).stores({
-      playbooks: '&id, createdAt, updatedAt, goal',
-    });
-
-    this.version(7)
-      .stores({})
-      .upgrade(async (tx) => {
-        await tx
-          .table('assistants')
-          .toCollection()
-          .modify((assistant) => {
-            if (
-              Array.isArray(assistant.allowedBuiltInServiceAliases) &&
-              assistant.allowedBuiltInServiceAliases.length === 0
-            ) {
-              delete assistant.allowedBuiltInServiceAliases;
-            }
-          });
-      });
-
-    // Version 8: Add agentId index to playbooks table for optimized filtering
-    this.version(8).stores({
+      messages: '&id, sessionId, [sessionId+threadId], createdAt',
       playbooks: '&id, agentId, createdAt, updatedAt, goal',
     });
-
-    // Version 9: Add threadId support with composite index for (sessionId, threadId)
-    this.version(9)
-      .stores({
-        messages: '&id, sessionId, [sessionId+threadId], createdAt',
-      })
-      .upgrade(async (tx) => {
-        // Add threadId to existing messages (default to sessionId for top thread)
-        const messages = await tx.table('messages').toArray();
-        for (const msg of messages) {
-          if (!msg.threadId) {
-            await tx.table('messages').update(msg.id, {
-              threadId: msg.sessionId, // Default to top thread
-            });
-          }
-        }
-
-        // Add sessionThread to existing sessions
-        const sessions = await tx.table('sessions').toArray();
-        for (const session of sessions) {
-          if (!session.sessionThread) {
-            await tx.table('sessions').update(session.id, {
-              sessionThread: {
-                id: session.id,
-                sessionId: session.id,
-                assistantId: session.assistants?.[0]?.id,
-                createdAt: session.createdAt,
-              },
-            });
-          }
-        }
-
-        // Dispatch event to trigger SWR cache invalidation
-        if (typeof window !== 'undefined') {
-          try {
-            window.dispatchEvent(
-              new CustomEvent('database-migrated', {
-                detail: { version: 9, feature: 'threadId' },
-              }),
-            );
-          } catch {
-            // Fail silently if CustomEvent is not supported
-          }
-        }
-      });
   }
 }
 

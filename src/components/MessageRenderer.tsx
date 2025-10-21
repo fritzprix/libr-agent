@@ -35,12 +35,15 @@ interface MessageRendererProps {
   content?: MCPContent[];
   message?: Message;
   className?: string;
+  /** Allow resource blocks to expand to their content height (no internal scroll) */
+  expandResources?: boolean;
 }
 
 export const MessageRenderer: React.FC<MessageRendererProps> = ({
   content,
   message,
   className = '',
+  expandResources = false,
 }) => {
   const { copied, copyToClipboard } = useClipboard();
   const { openExternalUrl } = useRustBackend();
@@ -58,6 +61,38 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
   useEffect(() => {
     contentRef.current = finalContent;
   }, [finalContent]);
+
+  // Refs to resource wrappers so we can observe size changes and scroll into view
+  const resourceRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  // When resources are allowed to expand, watch size changes and scroll them into view
+  useEffect(() => {
+    if (!expandResources) return;
+
+    const observers: ResizeObserver[] = [];
+    Object.values(resourceRefs.current).forEach((el) => {
+      if (!el) return;
+      let lastHeight = el.getBoundingClientRect().height;
+      const ro = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          const height = entry.contentRect.height;
+          if (height > lastHeight) {
+            // Ensure the newly expanded content is visible in the scrollable container
+            try {
+              el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            } catch {
+              // ignore
+            }
+          }
+          lastHeight = height;
+        }
+      });
+      ro.observe(el);
+      observers.push(ro);
+    });
+
+    return () => observers.forEach((o) => o.disconnect());
+  }, [expandResources, finalContent]);
 
   // Memoize renderer props to keep identity stable across re-renders
   const remoteDomProps = useMemo(
@@ -389,14 +424,46 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
             // Use message.id + resource.uri to avoid index-based reordering issues
             // Also, pass stable props to avoid unnecessary teardown in the renderer
             return (
-              <UIResourceRenderer
+              <div
                 key={key}
-                remoteDomProps={remoteDomProps}
-                onUIAction={handleUIAction}
-                supportedContentTypes={[...supportedContentTypes]}
-                htmlProps={{ autoResizeIframe: { height: true } }}
-                resource={item.resource}
-              />
+                ref={(el) => {
+                  resourceRefs.current[key] = el;
+                }}
+                className={
+                  expandResources ? 'w-full overflow-visible min-h-[50vh]' : ''
+                }
+              >
+                <UIResourceRenderer
+                  remoteDomProps={remoteDomProps}
+                  onUIAction={handleUIAction}
+                  supportedContentTypes={[...supportedContentTypes]}
+                  htmlProps={{
+                    autoResizeIframe: { height: true },
+                    style: { height: 'auto', maxHeight: 'unset' },
+                    iframeProps: {
+                      className: 'h-auto min-h-[50vh] max-h-none',
+                      onLoad: (ev: React.SyntheticEvent<HTMLIFrameElement>) => {
+                        try {
+                          const el =
+                            ev?.currentTarget as HTMLIFrameElement | null;
+                          if (!el) return;
+                          const doc =
+                            el.contentDocument || el.contentWindow?.document;
+                          const height =
+                            doc?.documentElement?.scrollHeight ||
+                            doc?.body?.scrollHeight;
+                          if (height) {
+                            el.style.height = `${height}px`;
+                          }
+                        } catch {
+                          // ignore cross-origin or other errors
+                        }
+                      },
+                    },
+                  }}
+                  resource={item.resource}
+                />
+              </div>
             );
           case 'image': {
             const imageItem = item as {

@@ -615,7 +615,9 @@ export interface WebMCPServer {
     options?: SamplingOptions,
   ) => Promise<SamplingResponse>;
   /** An optional function to get the service context. */
-  getServiceContext?: (options?: ServiceContextOptions) => Promise<ServiceContext<unknown>>;
+  getServiceContext?: (
+    options?: ServiceContextOptions,
+  ) => Promise<ServiceContext<unknown>>;
   /**
    * An optional function to switch the context for the server.
    * This allows servers to maintain state based on external context like session IDs or assistant IDs.
