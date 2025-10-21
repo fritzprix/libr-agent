@@ -86,7 +86,7 @@ export class OllamaService extends BaseAIService {
     this.ollamaClient = new Ollama({
       host: this.host,
       headers: {
-        'User-Agent': 'SynapticFlow/1.0',
+        'User-Agent': 'LibrAgent/1.0',
       },
     });
 

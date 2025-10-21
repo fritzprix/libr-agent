@@ -1,5 +1,5 @@
 /**
- * @file SynapticFlow Global Logger System
+ * @file LibrAgent Global Logger System
  *
  * @description
  * This module provides a comprehensive logging solution for the application,
@@ -473,10 +473,7 @@ export const logUtils = {
   saveConfig: async (): Promise<void> => {
     try {
       const config = Logger.getConfig();
-      localStorage.setItem(
-        'synaptic-flow-logger-config',
-        JSON.stringify(config),
-      );
+      localStorage.setItem('libragent-logger-config', JSON.stringify(config));
     } catch (error) {
       console.error('Failed to save logger config:', error);
     }
@@ -488,7 +485,7 @@ export const logUtils = {
    */
   loadConfig: async (): Promise<LoggerConfig | null> => {
     try {
-      const configStr = localStorage.getItem('synaptic-flow-logger-config');
+      const configStr = localStorage.getItem('libragent-logger-config');
       if (configStr) {
         return JSON.parse(configStr) as LoggerConfig;
       }

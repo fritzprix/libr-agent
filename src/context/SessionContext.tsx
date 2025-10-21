@@ -211,7 +211,7 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
       if (typeof window !== 'undefined') {
         try {
           window.dispatchEvent(
-            new CustomEvent('synapticflow:session-switch', {
+            new CustomEvent('libragent:session-switch', {
               detail: { sessionId: id },
             }),
           );

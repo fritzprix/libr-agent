@@ -91,7 +91,7 @@ pub fn read_index(path: &Path) -> Result<IndexData, String> {
 pub fn get_index_path(session_id: &str) -> Result<PathBuf, String> {
     let data_dir = dirs::data_dir()
         .ok_or_else(|| "Failed to get data directory".to_string())?
-        .join("com.fritzprix.synapticflow")
+        .join("com.fritzprix.libragent")
         .join("message_indices");
 
     std::fs::create_dir_all(&data_dir)
