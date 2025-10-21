@@ -141,41 +141,6 @@ export class AnthropicService extends BaseAIService {
   }
 
   /**
-   * Determines whether to enable the 'thinking' feature based on the model name.
-   * Extended thinking is available for Claude 3.5 Sonnet and later models.
-   * @param modelName The name of the model.
-   * @param config The service configuration.
-   * @returns True if the thinking feature should be enabled, false otherwise.
-   * @private
-   */
-  private shouldEnableThinking(
-    modelName?: string,
-    config?: AIServiceConfig,
-  ): boolean {
-    const logger = getLogger('AnthropicService.shouldEnableThinking');
-    const modelId = modelName || config?.defaultModel;
-
-    if (!modelId) {
-      logger.debug('No model specified, thinking disabled by default');
-      return false;
-    }
-
-    // Use metadata from config instead of string matching
-    const modelInfo = llmConfigManager.getModel('anthropic', modelId);
-
-    if (!modelInfo) {
-      logger.warn(`Model ${modelId} not found in config, thinking disabled`);
-      return false;
-    }
-
-    const enabled = modelInfo.supportReasoning;
-    logger.debug(
-      `Thinking ${enabled ? 'enabled' : 'disabled'} for model ${modelId}`,
-    );
-    return enabled;
-  }
-
-  /**
    * Selects the best available model following priority order.
    * Priority: explicit option > config default > first available config model > safe fallback
    * @private
