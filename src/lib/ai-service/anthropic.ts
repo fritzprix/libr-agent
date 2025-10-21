@@ -248,21 +248,11 @@ export class AnthropicService extends BaseAIService {
       const anthropicMessages =
         this.convertToAnthropicMessages(sanitizedMessages);
 
-      const shouldEnableThinking = this.shouldEnableThinking(
-        options.modelName,
-        config,
-      );
       const stream = this.anthropic.messages.stream(
         {
           model: options.modelName || this.getDefaultModel(),
           max_tokens: config.maxTokens!,
           messages: anthropicMessages,
-          ...(shouldEnableThinking && {
-            thinking: {
-              budget_tokens: 1024,
-              type: 'enabled',
-            },
-          }),
           system: options.systemPrompt,
           tools: tools as AnthropicTool[],
           ...(options.forceToolUse &&
