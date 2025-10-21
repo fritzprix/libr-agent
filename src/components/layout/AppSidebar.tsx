@@ -73,7 +73,7 @@ export default function AppSidebar() {
                 : 'opacity-100 w-auto'
             }`}
           >
-            SynapticFlow
+            LibrAgent
           </span>
         </div>
       </SidebarHeader>

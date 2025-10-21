@@ -1,8 +1,8 @@
 {
-  "name": "synaptic-flow",
+  "name": "libragent",
   "private": false,
   "version": "0.1.1",
-  "description": "Lightning Fast AI Companion - Tauri-based AI agent platform with MCP integration",
+  "description": "A desktop app for AI agents with built-in tools",
   "author": "fritzprix",
   "license": "MIT",
   "repository": {

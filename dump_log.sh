@@ -17,16 +17,16 @@ get_tauri_log_path() {
 # Fallback to standard dirs crate paths (matching Tauri log plugin implementation)
 if [[ "$OSTYPE" == "darwin"* ]]; then
     # macOS - using Tauri log plugin path
-    DEFAULT_SRC="$HOME/Library/Logs/com.fritzprix.synapticflow/synaptic-flow.log"
+    DEFAULT_SRC="$HOME/Library/Logs/com.fritzprix.libragent/libragent.log"
 elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
     # Linux - using Tauri log plugin path  
-    DEFAULT_SRC="$HOME/.local/share/com.fritzprix.synapticflow/logs/synaptic-flow.log"
+    DEFAULT_SRC="$HOME/.local/share/com.fritzprix.libragent/logs/libragent.log"
 elif [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
     # Windows - using Tauri log plugin path
-    DEFAULT_SRC="$APPDATA/com.fritzprix.synapticflow/logs/synaptic-flow.log"
+    DEFAULT_SRC="$APPDATA/com.fritzprix.libragent/logs/libragent.log"
 else
     # Unknown OS, try Linux path as fallback
-    DEFAULT_SRC="$HOME/.local/share/com.fritzprix.synapticflow/logs/synaptic-flow.log"
+    DEFAULT_SRC="$HOME/.local/share/com.fritzprix.libragent/logs/libragent.log"
 fi
 
 SRC="${2:-$DEFAULT_SRC}"

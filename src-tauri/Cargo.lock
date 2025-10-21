@@ -2775,6 +2775,53 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9fbbcab51052fe104eb5e5d351cf728d30a5be1fe14d9be8a3b097481fb97de"
 
 [[package]]
+name = "libragent"
+version = "0.1.1"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "base64 0.22.1",
+ "bincode",
+ "bm25",
+ "calamine",
+ "chrono",
+ "cuid2",
+ "dashmap",
+ "dirs 5.0.1",
+ "docx-rs",
+ "dotenvy",
+ "futures",
+ "glob",
+ "html-escape",
+ "log",
+ "lopdf 0.31.0",
+ "once_cell",
+ "path-clean",
+ "pdf-extract",
+ "regex",
+ "rmcp",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sqlx",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-log",
+ "tauri-plugin-opener",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "url",
+ "uuid",
+ "walkdir",
+ "warp",
+ "zip",
+]
+
+[[package]]
 name = "libredox"
 version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5328,53 +5375,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
-]
-
-[[package]]
-name = "synaptic-flow"
-version = "0.1.1"
-dependencies = [
- "anyhow",
- "async-trait",
- "base64 0.22.1",
- "bincode",
- "bm25",
- "calamine",
- "chrono",
- "cuid2",
- "dashmap",
- "dirs 5.0.1",
- "docx-rs",
- "dotenvy",
- "futures",
- "glob",
- "html-escape",
- "log",
- "lopdf 0.31.0",
- "once_cell",
- "path-clean",
- "pdf-extract",
- "regex",
- "rmcp",
- "serde",
- "serde_json",
- "sha2",
- "sqlx",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-log",
- "tauri-plugin-opener",
- "tempfile",
- "thiserror 1.0.69",
- "tokio",
- "tokio-util",
- "tracing",
- "url",
- "uuid",
- "walkdir",
- "warp",
- "zip",
 ]
 
 [[package]]

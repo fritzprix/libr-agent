@@ -8,7 +8,7 @@ param(
 # Get default log path based on Windows Tauri log plugin implementation
 function Get-DefaultLogPath {
     $appDataPath = [Environment]::GetFolderPath('ApplicationData')
-    return Join-Path $appDataPath "com.fritzprix.synapticflow\logs\synaptic-flow.log"
+    return Join-Path $appDataPath "com.fritzprix.libragent\logs\libragent.log"
 }
 
 # Set source log path

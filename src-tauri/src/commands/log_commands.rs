@@ -24,7 +24,7 @@ pub async fn backup_current_log() -> Result<String, String> {
 
     // Create backup filename (including timestamp)
     let timestamp = Utc::now().format("%Y%m%d_%H%M%S").to_string();
-    let backup_file = log_dir.join(format!("synaptic-flow_{timestamp}.log.bak"));
+    let backup_file = log_dir.join(format!("libragent_{timestamp}.log.bak"));
 
     // Copy the file
     fs::copy(&log_file, &backup_file).map_err(|e| format!("Failed to backup log file: {e}"))?;
