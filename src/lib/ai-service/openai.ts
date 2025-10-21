@@ -5,6 +5,7 @@ import { Message } from '@/models/chat';
 import { MCPTool } from '../mcp-types';
 import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';
+import { llmConfigManager } from '../llm-config-manager';
 const logger = getLogger('OpenAIService');
 
 /**
@@ -13,6 +14,9 @@ const logger = getLogger('OpenAIService');
  */
 export class OpenAIService extends BaseAIService {
   protected openai: OpenAI;
+  private modelCache?: import('../llm-config-manager').ModelInfo[];
+  private cacheTimestamp?: number;
+  private readonly CACHE_TTL = 3600000; // 1 hour in milliseconds
 
   /**
    * Initializes a new instance of the `OpenAIService`.
@@ -41,6 +45,14 @@ export class OpenAIService extends BaseAIService {
    * On error, returns an empty array and logs the failure.
    */
   async listModels(): Promise<import('../llm-config-manager').ModelInfo[]> {
+    const logger = getLogger('OpenAIService.listModels');
+
+    // Return cached models if still valid
+    if (this.modelCache && this.isCacheValid()) {
+      logger.debug('Returning cached models');
+      return this.modelCache;
+    }
+
     try {
       logger.info('Fetching models from OpenAI...');
 
@@ -69,27 +81,31 @@ export class OpenAIService extends BaseAIService {
             (typeof e.name === 'string' && e.name) ||
             String(e);
 
-          const name = id;
+          // Merge with static config metadata
+          const staticModel = llmConfigManager.getModel('openai', id);
 
-          // Heuristic for context window
-          let contextWindow = 4096;
-          const lc = name.toLowerCase();
-          if (lc.includes('gpt-4o') || lc.includes('gpt-4o-mini'))
-            contextWindow = 65536;
-          else if (lc.includes('gpt-4')) contextWindow = 32768;
-          else if (lc.includes('gpt-3.5')) contextWindow = 4096;
+          // Heuristic for context window (fallback if static config doesn't have it)
+          let contextWindow = staticModel?.contextWindow ?? 4096;
+          if (!staticModel?.contextWindow) {
+            const lc = id.toLowerCase();
+            if (lc.includes('gpt-4o') || lc.includes('gpt-4o-mini'))
+              contextWindow = 65536;
+            else if (lc.includes('gpt-4')) contextWindow = 32768;
+            else if (lc.includes('gpt-3.5')) contextWindow = 4096;
+          }
 
-          const supportStreaming = true;
-          const supportReasoning =
-            lc.includes('gpt-4') || lc.includes('gpt-3.5');
-          const supportTools = false;
+          const name = staticModel?.name || id;
+          const supportStreaming = staticModel?.supportStreaming ?? true;
+          const supportReasoning = staticModel?.supportReasoning ?? (id.toLowerCase().includes('gpt-4') || id.toLowerCase().includes('gpt-3.5'));
+          const supportTools = staticModel?.supportTools ?? false;
 
           const description =
+            staticModel?.description ||
             (typeof e.description === 'string' && e.description) ||
             (Array.isArray(e.permission)
               ? e.permission.join(',')
               : undefined) ||
-            name;
+            id;
 
           const modelInfo: import('../llm-config-manager').ModelInfo = {
             id,
@@ -98,7 +114,7 @@ export class OpenAIService extends BaseAIService {
             supportReasoning,
             supportTools,
             supportStreaming,
-            cost: { input: 0, output: 0 },
+            cost: staticModel?.cost || { input: 0, output: 0 },
             description,
           };
 
@@ -108,11 +124,18 @@ export class OpenAIService extends BaseAIService {
           (v): v is import('../llm-config-manager').ModelInfo => v !== null,
         );
 
-      logger.info(`Found ${models.length} OpenAI models`);
+      // Cache the results
+      this.modelCache = models;
+      this.cacheTimestamp = Date.now();
+
+      logger.info(`Loaded ${models.length} models from OpenAI API`);
       return models;
     } catch (error) {
-      logger.error('Failed to fetch models from OpenAI:', error);
-      return [];
+      logger.warn(
+        'Failed to fetch models from OpenAI API, falling back to static config',
+        error,
+      );
+      return this.fallbackToStaticModels();
     }
   }
 
@@ -341,6 +364,27 @@ export class OpenAIService extends BaseAIService {
    * @inheritdoc
    * @description The OpenAI SDK does not require explicit resource cleanup.
    */
+
+  /**
+   * Check if model cache is still valid (1 hour TTL)
+   * @private
+   */
+  private isCacheValid(): boolean {
+    if (!this.cacheTimestamp) return false;
+    const age = Date.now() - this.cacheTimestamp;
+    return age < this.CACHE_TTL;
+  }
+
+  /**
+   * Fallback to static config models
+   * @private
+   */
+  private fallbackToStaticModels(): Promise<import('../llm-config-manager').ModelInfo[]> {
+    const logger = getLogger('OpenAIService.fallbackToStaticModels');
+    logger.info('Using static config models');
+    return super.listModels();
+  }
+
   dispose(): void {
     // OpenAI SDK doesn't require explicit cleanup
   }
