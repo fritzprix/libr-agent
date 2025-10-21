@@ -473,10 +473,7 @@ export const logUtils = {
   saveConfig: async (): Promise<void> => {
     try {
       const config = Logger.getConfig();
-      localStorage.setItem(
-        'libragent-logger-config',
-        JSON.stringify(config),
-      );
+      localStorage.setItem('libragent-logger-config', JSON.stringify(config));
     } catch (error) {
       console.error('Failed to save logger config:', error);
     }

@@ -85,13 +85,13 @@ Contributions welcome.
 
 ## Installation
 
-Download from [releases](https://github.com/you/libragent/releases).
+Download from [releases](https://github.com/fritzprix/libr-agent/releases).
 
 Or build from source:
 
 ```bash
-git clone https://github.com/you/libragent
-cd libragent
+git clone https://github.com/fritzprix/libr-agent
+cd libr-agent
 pnpm install
 pnpm tauri dev
 ```
