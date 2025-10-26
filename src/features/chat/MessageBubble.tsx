@@ -1,5 +1,6 @@
 import { Message } from '@/models/chat';
 import React from 'react';
+import { Wrench, Bot, User } from 'lucide-react';
 import { LoadingSpinner } from '../../components/ui';
 import MessageBubbleRouter from './MessageBubbleRouter';
 
@@ -16,12 +17,20 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
   const isTool = message.role === 'tool';
   const isAssistant = message.role === 'assistant' || message.role === 'system';
 
+  // 시스템 테마 감지
+  const isDark =
+    typeof window !== 'undefined' &&
+    window.matchMedia('(prefers-color-scheme: dark)').matches;
+
   const getBubbleStyles = () => {
     if (isUser) {
       return {
         container: 'justify-end',
         bubble: 'shadow-lg border border-primary/20',
-        avatar: '🧑‍💻',
+        // 다크 모드에서는 밝은 색상, 라이트 모드에서는 어두운 색상
+        getAvatar: () => (
+          <User size={16} className={isDark ? 'text-white' : 'text-gray-900'} />
+        ),
         avatarBg: 'bg-primary',
       };
     } else if (isTool) {
@@ -29,7 +38,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
         container: 'justify-start',
         bubble:
           'bg-muted text-muted-foreground shadow-lg border border-muted/20',
-        avatar: '🔧',
+        getAvatar: () => <Wrench size={16} className="text-muted-foreground" />,
         avatarBg: 'bg-muted',
       };
     } else {
@@ -37,7 +46,9 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
         container: 'justify-start',
         bubble:
           'bg-secondary text-secondary-foreground shadow-lg border border-secondary/20',
-        avatar: '🤖',
+        getAvatar: () => (
+          <Bot size={16} className="text-secondary-foreground" />
+        ),
         avatarBg: 'bg-secondary',
       };
     }
@@ -66,7 +77,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
           <div
             className={`w-7 h-7 ${styles.avatarBg} rounded-full flex items-center justify-center text-sm shadow-sm`}
           >
-            {styles.avatar}
+            {styles.getAvatar()}
           </div>
           <div className="flex flex-col">
             <span className="text-xs font-medium opacity-90">

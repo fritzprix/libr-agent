@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { Wrench } from 'lucide-react';
 import { useMCPServer } from '@/hooks/use-mcp-server';
 import { useBuiltInTool } from '.';
 import { MCPTool } from '@/lib/mcp-types';
@@ -99,11 +100,12 @@ const ToolsModal: React.FC<ToolsModalProps> = ({ isOpen, onClose }) => {
                 >
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
+                      <Wrench size={16} className="flex-shrink-0" />
                       <span
                         className="font-mono text-sm text-foreground break-words"
                         title={tool.name}
                       >
-                        🔧 {tool.name}
+                        {tool.name}
                       </span>
                       <span
                         className={
