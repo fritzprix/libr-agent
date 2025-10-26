@@ -5,6 +5,7 @@ use tauri_plugin_log::{Target, TargetKind};
 mod commands;
 mod config;
 mod mcp;
+mod repositories;
 mod search;
 mod services;
 mod session;
@@ -43,8 +44,9 @@ use session::get_session_manager;
 
 // Re-export state management functions
 pub use state::{
-    get_mcp_manager, get_sqlite_db_url, get_sqlite_pool, set_mcp_manager, set_sqlite_db_url,
-    set_sqlite_pool,
+    get_content_store_repository, get_mcp_manager, get_message_repository, get_session_repository,
+    get_sqlite_db_url, get_sqlite_pool, set_content_store_repository, set_mcp_manager,
+    set_message_repository, set_session_repository, set_sqlite_db_url, set_sqlite_pool,
 };
 
 /// A synchronous wrapper to initialize and run the application with SQLite support.
@@ -100,11 +102,21 @@ pub fn run_with_sqlite_sync(db_url: String) {
             }
         };
 
-        // Initialize messages table
-        commands::messages_commands::db::create_messages_table(&pool)
+        // Initialize repository instances
+        use repositories::{
+            MessageRepository, SqliteContentStoreRepository, SqliteMessageRepository,
+            SqliteSessionRepository,
+        };
+
+        let message_repo = SqliteMessageRepository::new(pool.clone());
+        message_repo
+            .create_table()
             .await
             .expect("Failed to create messages table");
         println!("✅ Messages table initialized");
+
+        let content_store_repo = SqliteContentStoreRepository::new(pool.clone());
+        let session_repo = SqliteSessionRepository::new(pool.clone());
 
         // Start background indexing worker (checks every 5 minutes)
         let _indexing_worker = search::IndexingWorker::new(std::time::Duration::from_secs(300));
@@ -113,6 +125,12 @@ pub fn run_with_sqlite_sync(db_url: String) {
         // Set the global SQLite pool
         set_sqlite_pool(pool);
         println!("✅ SQLite connection pool initialized");
+
+        // Set the global repository instances
+        set_message_repository(message_repo);
+        set_content_store_repository(content_store_repo);
+        set_session_repository(session_repo);
+        println!("✅ Repository instances initialized");
 
         // Initialize the MCP manager asynchronously
         let mcp_manager =

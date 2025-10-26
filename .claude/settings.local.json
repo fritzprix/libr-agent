@@ -16,7 +16,9 @@
       "Bash(cargo check)",
       "Bash(cargo check --manifest-path src-tauri/Cargo.toml)",
       "Bash(pnpm tauri dev --help)",
-      "Bash(pnpm rust:fmt)"
+      "Bash(pnpm rust:fmt)",
+      "Bash(cargo clippy:*)",
+      "Bash(pnpm format:*)"
     ],
     "deny": [],
     "ask": []
