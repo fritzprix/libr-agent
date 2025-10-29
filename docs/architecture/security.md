@@ -1,6 +1,6 @@
-# Security in SynapticFlow
+# Security in LibrAgent
 
-This document outlines the key security considerations and practices for SynapticFlow.
+This document outlines the key security considerations and practices for LibrAgent.
 
 ## 1. API Key Management
 

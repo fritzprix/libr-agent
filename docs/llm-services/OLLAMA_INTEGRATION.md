@@ -1,10 +1,10 @@
 # Ollama Integration
 
-This document describes how to integrate and use Ollama with SynapticFlow.
+This document describes how to integrate and use Ollama with LibrAgent.
 
 ## Overview
 
-SynapticFlow now supports Ollama as an AI service provider, allowing you to run local language models on your machine. Ollama provides a simple way to run large language models locally, offering privacy and control over your AI interactions.
+LibrAgent now supports Ollama as an AI service provider, allowing you to run local language models on your machine. Ollama provides a simple way to run large language models locally, offering privacy and control over your AI interactions.
 
 ## Prerequisites
 
@@ -35,7 +35,7 @@ ollama list
 
 ### Custom Configuration
 
-You can configure Ollama settings in the SynapticFlow settings:
+You can configure Ollama settings in the LibrAgent settings:
 
 1. Open Settings → AI Services
 2. Select Ollama as your provider
@@ -47,7 +47,7 @@ You can configure Ollama settings in the SynapticFlow settings:
 
 ## Supported Models
 
-The following models are preconfigured in SynapticFlow:
+The following models are preconfigured in LibrAgent:
 
 | Model            | Context Window | Description                        |
 | ---------------- | -------------- | ---------------------------------- |
@@ -65,7 +65,7 @@ The following models are preconfigured in SynapticFlow:
 To use models not listed above:
 
 1. Pull the model with Ollama: `ollama pull model-name`
-2. In SynapticFlow settings, enter the exact model name as it appears in `ollama list`
+2. In LibrAgent settings, enter the exact model name as it appears in `ollama list`
 
 ## Features
 
@@ -193,7 +193,7 @@ To connect to a remote Ollama instance:
    OLLAMA_HOST=0.0.0.0:11434 ollama serve
    ```
 
-2. Configure SynapticFlow with the remote host:
+2. Configure LibrAgent with the remote host:
 
    ```typescript
    const service = AIServiceFactory.getService(AIServiceProvider.Ollama, '', {
@@ -257,4 +257,4 @@ To contribute to the Ollama integration:
 
 - [Ollama Documentation](https://github.com/jmorganca/ollama)
 - [Ollama Model Library](https://ollama.ai/library)
-- [SynapticFlow AI Service Architecture](./AI_SERVICE_ARCHITECTURE.md)
+- [LibrAgent AI Service Architecture](./AI_SERVICE_ARCHITECTURE.md)

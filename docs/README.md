@@ -1,6 +1,6 @@
-# SynapticFlow Documentation
+# LibrAgent Documentation
 
-Welcome to the official documentation for SynapticFlow.
+Welcome to the official documentation for LibrAgent.
 
 This documentation is divided into the following sections:
 

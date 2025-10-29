@@ -1,6 +1,6 @@
 # Testing Guide
 
-This document outlines the testing strategies for the SynapticFlow project.
+This document outlines the testing strategies for the LibrAgent project.
 
 ## 1. Unit Tests
 

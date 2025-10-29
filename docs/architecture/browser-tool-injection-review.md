@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document reviews the current implementation of browser automation tools in the SynapticFlow project, focusing on the actual JavaScript injected for click and text input operations. It is intended for external developers to understand the current approach and propose improvements for reliability and robustness.
+This document reviews the current implementation of browser automation tools in the LibrAgent project, focusing on the actual JavaScript injected for click and text input operations. It is intended for external developers to understand the current approach and propose improvements for reliability and robustness.
 
 ## Current Implementation
 
@@ -220,5 +220,5 @@ We request external development partners to:
 
 ---
 
-Contact: SynapticFlow Dev Team
+Contact: LibrAgent Dev Team
 File: docs/architecture/browser-tool-injection-review.md

@@ -2,13 +2,13 @@
 
 ## Overview
 
-SynapticFlow provides comprehensive support for integrating external MCP (Model Context Protocol) servers, enabling unlimited tool expansion beyond built-in capabilities. This document details the architecture, implementation, and integration patterns for connecting external MCP servers.
+LibrAgent provides comprehensive support for integrating external MCP (Model Context Protocol) servers, enabling unlimited tool expansion beyond built-in capabilities. This document details the architecture, implementation, and integration patterns for connecting external MCP servers.
 
 ## Architecture Overview
 
 ### Dual MCP Backend System
 
-SynapticFlow implements a dual MCP backend architecture:
+LibrAgent implements a dual MCP backend architecture:
 
 1. **External MCP Servers**: Third-party MCP servers running as child processes
 2. **Built-in MCP Servers**: Native Rust implementations (content_store, workspace)
@@ -436,7 +436,7 @@ External MCP servers communicate using the Model Context Protocol over standard 
 
 ### RMCP Library Integration
 
-SynapticFlow uses the RMCP (Rust MCP) library for protocol handling:
+LibrAgent uses the RMCP (Rust MCP) library for protocol handling:
 
 ```rust
 use rmcp::{
@@ -632,4 +632,4 @@ console.log('Available tools:', tools);
 - Shared server configurations
 - Community-contributed tools
 - Server performance benchmarking</content>
-  <parameter name="filePath">/home/fritzprix/my_works/tauri-agent/docs/external-mcp-integration.md
+  <parameter name="filePath">/home/fritzprix/my_works/libr-agent/docs/external-mcp-integration.md

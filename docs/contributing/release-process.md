@@ -1,6 +1,6 @@
 # Release Process
 
-This document outlines the process for releasing new versions of SynapticFlow.
+This document outlines the process for releasing new versions of LibrAgent.
 
 ## 1. Versioning
 

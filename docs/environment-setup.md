@@ -133,4 +133,4 @@ VITE_AI_MAX_TOKENS=4096
 
 ---
 
-**Need help?** Check our [Issues](https://github.com/fritzprix/tauri-agent/issues) or create a new one!
+**Need help?** Check our [Issues](https://github.com/fritzprix/libr-agent/issues) or create a new one!
