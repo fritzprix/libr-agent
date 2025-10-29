@@ -40,6 +40,63 @@ const AssistantContext = createContext<AssistantContextType | undefined>(
   undefined,
 );
 
+/**
+ * Default MCP Configuration
+ *
+ * Supports both V1 (Legacy) and V2 (MCP 2025-06-18 Spec) formats.
+ * Both formats can be mixed in the same configuration.
+ *
+ * @example V1 Format (stdio only):
+ * ```json
+ * {
+ *   "mcpServers": {
+ *     "server-name": {
+ *       "command": "npx",
+ *       "args": ["-y", "@modelcontextprotocol/server-name"],
+ *       "env": {}
+ *     }
+ *   }
+ * }
+ * ```
+ *
+ * @example V2 Format with HTTP:
+ * ```json
+ * {
+ *   "mcpServers": {
+ *     "http-server": {
+ *       "name": "http-server",
+ *       "transport": {
+ *         "type": "http",
+ *         "url": "https://api.example.com/mcp"
+ *       }
+ *     }
+ *   }
+ * }
+ * ```
+ *
+ * @example V2 Format with OAuth 2.1:
+ * ```json
+ * {
+ *   "mcpServers": {
+ *     "oauth-server": {
+ *       "name": "oauth-server",
+ *       "transport": {
+ *         "type": "http",
+ *         "url": "https://api.example.com/mcp"
+ *       },
+ *       "authentication": {
+ *         "type": "oauth2.1",
+ *         "clientId": "your-client-id",
+ *         "redirectUri": "libr-agent://oauth/callback",
+ *         "scopes": ["read", "write"],
+ *         "usePKCE": true,
+ *         "discoveryUrl": "https://auth.example.com/.well-known/oauth-authorization-server"
+ *       }
+ *     }
+ *   }
+ * }
+ * ```
+ */
 export const DEFAULT_MCP_CONFIG = {
   mcpServers: {
     'sequential-thinking': {

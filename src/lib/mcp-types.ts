@@ -387,6 +387,8 @@ export interface MCPTool {
 
 /**
  * Defines the configuration for launching and connecting to an MCP server.
+ * This is the legacy format, kept for backward compatibility.
+ * New code should use MCPServerConfigV2 from @/models/chat instead.
  */
 export interface MCPServerConfig {
   /** The unique name of the server. */
@@ -404,6 +406,16 @@ export interface MCPServerConfig {
   /** The port number for http or websocket transports. */
   port?: number;
 }
+
+// Re-export V2 types from chat models for convenience
+export type {
+  TransportConfig,
+  OAuthConfig,
+  ServerMetadata,
+  MCPServerConfigV2,
+  LegacyMCPServerConfig,
+} from '@/models/chat';
+export { isMCPServerConfigV2, convertLegacyToV2 } from '@/models/chat';
 
 // ========================================
 // Helper Functions

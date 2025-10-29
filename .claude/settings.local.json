@@ -18,7 +18,13 @@
       "Bash(pnpm tauri dev --help)",
       "Bash(pnpm rust:fmt)",
       "Bash(cargo clippy:*)",
-      "Bash(pnpm format:*)"
+      "Bash(pnpm format:*)",
+      "Bash(cargo tree:*)",
+      "Read(//home/fritzprix/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmcp-0.8.1/src/**)",
+      "Bash(cargo metadata:*)",
+      "Bash(cargo test:*)",
+      "Read(//home/fritzprix/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmcp-0.8.1/**)",
+      "Read(//home/fritzprix/.cargo/registry/src/**)"
     ],
     "deny": [],
     "ask": []

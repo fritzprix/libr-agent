@@ -170,15 +170,86 @@ export async function listTools(serverName: string): Promise<MCPTool[]> {
  * @param config The configuration object containing MCP server definitions.
  * @returns A promise that resolves to a record mapping server names to their tool lists.
  */
-export async function listToolsFromConfig(config: {
-  mcpServers?: Record<
-    string,
-    { command: string; args?: string[]; env?: Record<string, string> }
-  >;
-}): Promise<Record<string, MCPTool[]>> {
+export async function listToolsFromConfig(
+  config: import('@/models/chat').MCPConfig,
+): Promise<Record<string, MCPTool[]>> {
   return safeInvoke<Record<string, MCPTool[]>>('list_tools_from_config', {
     config,
   });
+}
+
+// ============================================================================
+// OAuth 2.1 Authentication Functions
+// ============================================================================
+
+/**
+ * Starts an OAuth 2.1 authorization flow with PKCE for an MCP server.
+ *
+ * @param serverId - Unique identifier for the MCP server
+ * @param config - OAuth configuration
+ * @returns Tuple containing authorization URL and CSRF state token
+ */
+export async function startOAuthFlow(
+  serverId: string,
+  config: import('@/models/chat').OAuthConfig,
+): Promise<[string, string]> {
+  return safeInvoke<[string, string]>('start_oauth_flow', {
+    serverId,
+    config,
+  });
+}
+
+/**
+ * Completes an OAuth 2.1 authorization flow by exchanging code for token.
+ *
+ * @param serverId - Unique identifier for the MCP server
+ * @param config - OAuth configuration
+ * @param authorizationCode - Code received from OAuth callback
+ * @param state - CSRF state token for validation
+ * @returns Success message
+ */
+export async function completeOAuthFlow(
+  serverId: string,
+  config: import('@/models/chat').OAuthConfig,
+  authorizationCode: string,
+  state: string,
+): Promise<string> {
+  return safeInvoke<string>('complete_oauth_flow', {
+    serverId,
+    config,
+    authorizationCode,
+    state,
+  });
+}
+
+/**
+ * Checks if an OAuth token exists in the OS keychain.
+ *
+ * @param serverId - Unique identifier for the MCP server
+ * @returns True if token exists, false otherwise
+ */
+export async function hasOAuthToken(serverId: string): Promise<boolean> {
+  return safeInvoke<boolean>('has_oauth_token', { serverId });
+}
+
+/**
+ * Retrieves a cached OAuth token from the OS keychain.
+ *
+ * @param serverId - Unique identifier for the MCP server
+ * @returns Token if found, null otherwise
+ */
+export async function getOAuthToken(serverId: string): Promise<string | null> {
+  return safeInvoke<string | null>('get_oauth_token', { serverId });
+}
+
+/**
+ * Revokes and deletes an OAuth token from the OS keychain.
+ *
+ * @param serverId - Unique identifier for the MCP server
+ * @returns Success message
+ */
+export async function revokeOAuthToken(serverId: string): Promise<string> {
+  return safeInvoke<string>('revoke_oauth_token', { serverId });
 }
 
 /**

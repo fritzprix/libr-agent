@@ -1,5 +1,5 @@
 use log::error;
-use tauri::Manager;
+use tauri::{Emitter, Listener, Manager};
 use tauri_plugin_log::{Target, TargetKind};
 
 mod commands;
@@ -19,10 +19,11 @@ use commands::file_commands::{read_dropped_file, read_file, workspace_write_file
 use commands::log_commands::{backup_current_log, clear_current_log, list_log_files};
 use commands::mcp_commands::{
     call_builtin_tool, call_mcp_tool, call_tool_unified, check_all_servers_status,
-    check_server_status, get_connected_servers, get_service_context, get_validated_tools,
-    list_all_tools, list_all_tools_unified, list_builtin_servers, list_builtin_tools,
-    list_mcp_tools, list_tools_from_config, sample_from_mcp_server, start_mcp_server,
-    stop_mcp_server, switch_context, validate_tool_schema,
+    check_server_status, complete_oauth_flow, get_connected_servers, get_oauth_token,
+    get_service_context, get_validated_tools, has_oauth_token, list_all_tools,
+    list_all_tools_unified, list_builtin_servers, list_builtin_tools, list_mcp_tools,
+    list_tools_from_config, revoke_oauth_token, sample_from_mcp_server, start_mcp_server,
+    start_oauth_flow, stop_mcp_server, switch_context, validate_tool_schema,
 };
 use commands::messages_commands::{
     messages_delete, messages_delete_all_for_session, messages_get_page, messages_search,
@@ -264,6 +265,12 @@ pub fn run() {
                 find_element,
                 get_service_context,
                 switch_context,
+                // OAuth 2.1 Authentication commands
+                start_oauth_flow,
+                complete_oauth_flow,
+                has_oauth_token,
+                get_oauth_token,
+                revoke_oauth_token,
                 // Message management commands
                 messages_get_page,
                 messages_upsert_many,
@@ -288,6 +295,24 @@ pub fn run() {
                 // Built-in servers are now automatically initialized with SessionManager support
                 // via the get_mcp_manager() function when first called.
                 println!("✅ Builtin servers initialized with SessionManager support");
+
+                // Setup OAuth deep link handler for libr-agent://oauth/callback
+                let app_handle = app.handle().clone();
+                app.listen("deep-link://new-url", move |event| {
+                    let url_str = event.payload();
+                    log::info!("Deep link received: {url_str}");
+
+                    // Parse the deep link URL to extract OAuth callback parameters
+                    if url_str.starts_with("libr-agent://oauth/callback") {
+                        log::info!("OAuth callback detected: {url_str}");
+
+                        // Emit an event to the frontend with the OAuth callback URL
+                        if let Err(e) = app_handle.emit("oauth-callback", url_str) {
+                            log::error!("Failed to emit oauth-callback event: {e}");
+                        }
+                    }
+                });
+                println!("✅ OAuth deep link handler registered");
 
                 // Perform safety checks for WebView creation on Linux
                 #[cfg(target_os = "linux")]
