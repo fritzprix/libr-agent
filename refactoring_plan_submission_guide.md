@@ -11,6 +11,7 @@
 - Test Code 추가 및 수정 필요 부분에 대한 가이드 포함
 - file 규칙
   - ./docs/history/refactoring\_{yyyyMMdd_hhmm}.md
+- 불분명한 부분, 검토에 사용자의 의사 결정이 필요한 것은 마지막에 `Clarification Q-list`로 추가
 
 ## 주의 사항
 
