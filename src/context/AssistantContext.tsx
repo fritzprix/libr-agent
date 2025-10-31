@@ -30,8 +30,6 @@ interface AssistantContextType {
   getById: (id: string) => Assistant | null;
   saveAssistant: (assistant: Assistant) => Promise<Assistant | undefined>;
   deleteAssistant: (assistantId: string) => Promise<void>;
-  registerEphemeral: (assistant: Assistant) => void;
-  unregisterEphemeral: (id: string) => void;
   availableTools: MCPTool[];
   error: Error | null;
 }
@@ -143,9 +141,6 @@ export const AssistantContextProvider = ({
   const [currentAssistant, setCurrentAssistant] = useState<Assistant | null>(
     null,
   );
-  const [ephemeralAssistants, setEphemeralAssistants] = useState<Assistant[]>(
-    [],
-  );
 
   const { connectServers, availableTools } = useMCPServer();
 
@@ -166,14 +161,10 @@ export const AssistantContextProvider = ({
       return fetchedAssistants.items;
     }, []);
 
-  // Ephemeral has priority, remove duplicates by id
+  // Return assistants from DB
   const allAssistants = useMemo(() => {
-    const ephemeralMap = new Map(ephemeralAssistants.map((a) => [a.id, a]));
-    const dbAssistants = (assistants ?? []).filter(
-      (a) => !ephemeralMap.has(a.id),
-    );
-    return [...ephemeralAssistants, ...dbAssistants];
-  }, [assistants, ephemeralAssistants]);
+    return assistants ?? [];
+  }, [assistants]);
 
   const assistantsRef = useRef(assistants);
   useEffect(() => {
@@ -231,11 +222,6 @@ export const AssistantContextProvider = ({
         logger.info(`Saving assistant`, { assistantToSave });
 
         await dbService.assistants.upsert(assistantToSave);
-
-        // Remove from ephemeral if it was saved to DB
-        setEphemeralAssistants((prev) =>
-          prev.filter((a) => a.id !== assistantToSave.id),
-        );
 
         if (currentAssistant?.id === assistantToSave.id || !currentAssistant) {
           setCurrentAssistant(assistantToSave);
@@ -308,28 +294,6 @@ export const AssistantContextProvider = ({
     return currentAssistantRef.current;
   }, []);
 
-  const registerEphemeral = useCallback(
-    (assistant: Assistant) => {
-      const existsInDb = (assistantsRef.current ?? []).some(
-        (a) => a.id === assistant.id,
-      );
-      if (existsInDb) {
-        return;
-      }
-      setEphemeralAssistants((prev) => {
-        const filtered = prev.filter((a) => a.id !== assistant.id);
-        return [...filtered, assistant];
-      });
-    },
-    [], // No dependency on assistants to prevent circular dependency
-  );
-
-  const unregisterEphemeral = useCallback((id: string) => {
-    setEphemeralAssistants((prev) => {
-      return prev.filter((a) => a.id !== id);
-    });
-  }, []);
-
   const getById = useCallback(
     (id: string) => {
       return allAssistants.find((a) => a.id === id) || null;
@@ -349,8 +313,6 @@ export const AssistantContextProvider = ({
       assistants: allAssistants,
       currentAssistant,
       setCurrentAssistant,
-      unregisterEphemeral,
-      registerEphemeral,
       getById,
       getCurrent,
       saveAssistant: upsertAssistant,
@@ -366,8 +328,6 @@ export const AssistantContextProvider = ({
       upsertAssistant,
       deleteAssistant,
       error,
-      registerEphemeral,
-      unregisterEphemeral,
       getById,
       availableTools,
     ],

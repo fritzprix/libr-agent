@@ -191,7 +191,7 @@ export async function listToolsFromConfig(
  */
 export async function startOAuthFlow(
   serverId: string,
-  config: import('@/models/chat').OAuthConfig,
+  config: import('@/lib/mcp-types').OAuthConfig,
 ): Promise<[string, string]> {
   return safeInvoke<[string, string]>('start_oauth_flow', {
     serverId,
@@ -210,7 +210,7 @@ export async function startOAuthFlow(
  */
 export async function completeOAuthFlow(
   serverId: string,
-  config: import('@/models/chat').OAuthConfig,
+  config: import('@/lib/mcp-types').OAuthConfig,
   authorizationCode: string,
   state: string,
 ): Promise<string> {

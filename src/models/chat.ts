@@ -1,4 +1,9 @@
-import { MCPTool, MCPContent } from '../lib/mcp-types';
+import {
+  MCPTool,
+  MCPContent,
+  MCPServerConfigV2,
+  LegacyMCPServerConfig,
+} from '../lib/mcp-types';
 
 // UIResource interface for MCP-UI integration
 export interface UIResource {
@@ -112,105 +117,10 @@ export interface ToolCall {
 // ========================================
 
 /**
- * Discriminated union for transport-specific configurations
- */
-export type TransportConfig =
-  | {
-      type: 'stdio';
-      command: string;
-      args?: string[];
-      env?: Record<string, string>;
-    }
-  | {
-      type: 'http';
-      url: string;
-      protocolVersion?: string; // Default: "2025-06-18"
-      sessionId?: string;
-      headers?: Record<string, string>;
-      enableSSE?: boolean; // For backward compatibility with older servers
-      security?: {
-        enableDnsRebindingProtection?: boolean;
-        allowedOrigins?: string[];
-        allowedHosts?: string[];
-      };
-    };
-
-/**
- * OAuth 2.1 authentication configuration (RFC 8414, RFC 7636)
- */
-export interface OAuthConfig {
-  type: 'oauth2.1';
-  discoveryUrl?: string; // RFC 8414 Authorization Server Metadata
-  authorizationEndpoint?: string; // Fallback if discovery not available
-  tokenEndpoint?: string;
-  registrationEndpoint?: string; // RFC 7591 Dynamic Client Registration
-  clientId?: string;
-  redirectUri?: string;
-  scopes?: string[];
-  usePKCE?: boolean; // Default: true
-  resourceParameter?: string; // RFC 9728 Protected Resource Metadata
-}
-
-/**
- * Server metadata (optional descriptive information)
- */
-export interface ServerMetadata {
-  description?: string;
-  vendor?: string;
-  version?: string;
-}
-
-/**
- * V2 MCP Server Configuration (MCP 2025-06-18 Spec Compliant)
- */
-export interface MCPServerConfigV2 {
-  name: string;
-  transport: TransportConfig;
-  authentication?: OAuthConfig;
-  metadata?: ServerMetadata;
-}
-
-/**
- * Legacy MCP Server Configuration (stdio-only, for backward compatibility)
- */
-export interface LegacyMCPServerConfig {
-  command: string;
-  args?: string[];
-  env?: Record<string, string>;
-}
-
-/**
  * Top-level MCP configuration supporting both V1 and V2 formats
  */
 export interface MCPConfig {
   mcpServers?: Record<string, MCPServerConfigV2 | LegacyMCPServerConfig>;
-}
-
-/**
- * Type guard to check if config is V2 format
- */
-export function isMCPServerConfigV2(
-  config: MCPServerConfigV2 | LegacyMCPServerConfig,
-): config is MCPServerConfigV2 {
-  return 'transport' in config && typeof config.transport === 'object';
-}
-
-/**
- * Convert legacy config to V2 format
- */
-export function convertLegacyToV2(
-  name: string,
-  legacy: LegacyMCPServerConfig,
-): MCPServerConfigV2 {
-  return {
-    name,
-    transport: {
-      type: 'stdio',
-      command: legacy.command,
-      args: legacy.args,
-      env: legacy.env,
-    },
-  };
 }
 
 export interface Assistant {
