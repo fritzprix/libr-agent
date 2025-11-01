@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Wrench } from 'lucide-react';
-import { CompactModelPicker } from '@/components/ui';
+import { CompactModelPicker } from '@/features/chat/ModelPicker';
 import { useMCPServer } from '@/hooks/use-mcp-server';
 import { useBuiltInTool } from '@/features/tools';
 import { useAssistantContext } from '@/context/AssistantContext';
