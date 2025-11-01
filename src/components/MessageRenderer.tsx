@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Copy, Check } from 'lucide-react';
 import type { MCPContent } from '@/lib/mcp-types';
 import type { Message } from '@/models/chat';
@@ -7,6 +8,7 @@ import { extractServiceInfoFromContent } from '@/lib/mcp-types';
 import { useRustBackend } from '@/hooks/use-rust-backend';
 import { useClipboard } from '@/hooks/useClipboard';
 import { getLogger } from '@/lib/logger';
+import { Highlight, themes } from 'prism-react-renderer';
 import {
   basicComponentLibrary,
   UIResourceRenderer,
@@ -382,7 +384,10 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
             const textItem = item as { text: string };
 
             return (
-              <div key={key} className="group relative text-sm leading-relaxed">
+              <div
+                key={key}
+                className="group relative text-sm leading-relaxed overflow-x-hidden break-words"
+              >
                 {/* Copy button for individual text */}
                 <button
                   onClick={async () => {
@@ -401,16 +406,138 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
 
                 <ReactMarkdown
                   skipHtml={false}
-                  remarkPlugins={[]}
+                  remarkPlugins={[remarkGfm]}
                   rehypePlugins={[]}
                   components={{
-                    // ReactMarkdown은 기본적으로 관대하므로 간단한 fallback만 제공
-                    p: ({ children, ...props }) => <p {...props}>{children}</p>,
-                    code: ({ children, className }) => (
-                      <code className={className}>{children}</code>
+                    p: ({ children, ...props }) => (
+                      <p className="mb-2 last:mb-0" {...props}>
+                        {children}
+                      </p>
                     ),
+                    code: ({ children, className, ...props }) => {
+                      // Distinguish inline code vs block code
+                      // ReactMarkdown passes className="language-xxx" for code blocks
+                      const match = /language-(\w+)/.exec(className || '');
+                      const language = match ? match[1] : '';
+
+                      if (!language) {
+                        // Inline code
+                        return (
+                          <code
+                            className="px-1.5 py-0.5 bg-muted rounded text-sm font-mono border border-border"
+                            {...props}
+                          >
+                            {children}
+                          </code>
+                        );
+                      }
+
+                      // Block code with syntax highlighting
+                      const code = String(children).replace(/\n$/, '');
+
+                      // Detect dark mode
+                      const isDark =
+                        typeof window !== 'undefined' &&
+                        window.matchMedia('(prefers-color-scheme: dark)')
+                          .matches;
+
+                      return (
+                        <Highlight
+                          theme={isDark ? themes.oneDark : themes.oneLight}
+                          code={code}
+                          language={language}
+                        >
+                          {({
+                            className: highlightClassName,
+                            style,
+                            tokens,
+                            getLineProps,
+                            getTokenProps,
+                          }) => (
+                            <code
+                              className={`${highlightClassName} block font-mono text-sm`}
+                              style={style}
+                            >
+                              {tokens.map((line, i) => (
+                                <div key={i} {...getLineProps({ line })}>
+                                  {line.map((token, key) => (
+                                    <span
+                                      key={key}
+                                      {...getTokenProps({ token })}
+                                    />
+                                  ))}
+                                </div>
+                              ))}
+                            </code>
+                          )}
+                        </Highlight>
+                      );
+                    },
                     pre: ({ children, ...props }) => (
-                      <pre {...props}>{children}</pre>
+                      <pre
+                        className="overflow-x-auto bg-muted rounded-lg p-4 my-3 border border-border max-w-full"
+                        {...props}
+                      >
+                        {children}
+                      </pre>
+                    ),
+                    h1: ({ children, ...props }) => (
+                      <h1 className="text-2xl font-bold mb-3 mt-4" {...props}>
+                        {children}
+                      </h1>
+                    ),
+                    h2: ({ children, ...props }) => (
+                      <h2 className="text-xl font-bold mb-2 mt-3" {...props}>
+                        {children}
+                      </h2>
+                    ),
+                    h3: ({ children, ...props }) => (
+                      <h3
+                        className="text-lg font-semibold mb-2 mt-2"
+                        {...props}
+                      >
+                        {children}
+                      </h3>
+                    ),
+                    ul: ({ children, ...props }) => (
+                      <ul
+                        className="list-disc list-inside mb-2 space-y-1"
+                        {...props}
+                      >
+                        {children}
+                      </ul>
+                    ),
+                    ol: ({ children, ...props }) => (
+                      <ol
+                        className="list-decimal list-inside mb-2 space-y-1"
+                        {...props}
+                      >
+                        {children}
+                      </ol>
+                    ),
+                    li: ({ children, ...props }) => (
+                      <li className="ml-2" {...props}>
+                        {children}
+                      </li>
+                    ),
+                    blockquote: ({ children, ...props }) => (
+                      <blockquote
+                        className="border-l-4 border-primary pl-4 italic my-2 text-muted-foreground"
+                        {...props}
+                      >
+                        {children}
+                      </blockquote>
+                    ),
+                    a: ({ children, href, ...props }) => (
+                      <a
+                        href={href}
+                        className="text-primary hover:underline"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        {...props}
+                      >
+                        {children}
+                      </a>
                     ),
                   }}
                 >

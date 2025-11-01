@@ -6,6 +6,7 @@ import MessageBubble from '../MessageBubble';
 import { Message } from '@/models/chat';
 import { ErrorBubble } from '../ErrorBubble';
 import { getLogger } from '@/lib/logger';
+import { Bot } from 'lucide-react';
 
 const logger = getLogger('ChatMessages');
 
@@ -84,12 +85,39 @@ export function ChatMessages() {
           </div>
         )}
         {isLoading && (
-          <div className="flex justify-start">
-            <div className="rounded px-3 py-2">
-              <div className="text-xs mb-1">
-                Agent ({currentSession?.assistants[0]?.name})
+          <div className="flex justify-start mb-8 mt-3">
+            <div className="w-full max-w-full bg-secondary/30 rounded-lg px-6 py-5">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-7 h-7 bg-primary rounded-full flex items-center justify-center animate-pulse">
+                  <Bot size={16} className="text-primary-foreground" />
+                </div>
+                <span className="text-xs font-medium">
+                  Agent ({currentSession?.assistants[0]?.name})
+                </span>
               </div>
-              <div className="text-sm">thinking...</div>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <div className="flex gap-1">
+                  <span
+                    className="animate-bounce"
+                    style={{ animationDelay: '0ms' }}
+                  >
+                    ●
+                  </span>
+                  <span
+                    className="animate-bounce"
+                    style={{ animationDelay: '150ms' }}
+                  >
+                    ●
+                  </span>
+                  <span
+                    className="animate-bounce"
+                    style={{ animationDelay: '300ms' }}
+                  >
+                    ●
+                  </span>
+                </div>
+                <span className="animate-pulse">Thinking and analyzing...</span>
+              </div>
             </div>
           </div>
         )}
