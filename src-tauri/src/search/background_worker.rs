@@ -8,10 +8,10 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
 
-use crate::commands::messages_commands::db::{is_index_dirty, update_index_meta};
+use crate::repositories::MessageRepository;
 use crate::search::index_storage::{get_index_path, write_index_atomic, IndexData, IndexMetadata};
 use crate::search::message_index::{MessageDocument, MessageSearchEngine};
-use crate::state::get_sqlite_pool;
+use crate::state::{get_message_repository, get_sqlite_pool};
 
 /// Background worker that periodically reindexes dirty sessions.
 #[allow(dead_code)]
@@ -89,7 +89,11 @@ async fn reindex_dirty_sessions() -> Result<(), String> {
             .map_err(|e| format!("Failed to get session_id: {e}"))?;
 
         // Check if index is dirty
-        let is_dirty = is_index_dirty(pool, &session_id).await?;
+        let repo = get_message_repository();
+        let is_dirty = repo
+            .is_index_dirty(&session_id)
+            .await
+            .map_err(|e| e.to_string())?;
 
         if is_dirty {
             log::info!("🔨 Rebuilding index for session: {session_id}");
@@ -173,14 +177,15 @@ async fn rebuild_session_index(session_id: &str) -> Result<(), String> {
 
     // Update metadata in database
     let rebuild_duration = start_time.elapsed().as_millis() as i64;
-    update_index_meta(
-        pool,
+    let repo = get_message_repository();
+    repo.update_index_meta(
         session_id,
         &index_path.to_string_lossy(),
         engine.doc_count(),
         rebuild_duration,
     )
-    .await?;
+    .await
+    .map_err(|e| e.to_string())?;
 
     Ok(())
 }

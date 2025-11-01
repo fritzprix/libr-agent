@@ -1,6 +1,6 @@
 # LLM Services: A Comprehensive Comparison
 
-This document provides a detailed overview and comparison of the various Large Language Model (LLM) service providers integrated with SynapticFlow.
+This document provides a detailed overview and comparison of the various Large Language Model (LLM) service providers integrated with LibrAgent.
 
 ## Feature Matrix
 
@@ -272,7 +272,7 @@ Ollama is a desktop application that must be installed first. See the [Ollama we
 ### Configuration & Usage
 
 ```typescript
-// SynapticFlow specific integration
+// LibrAgent specific integration
 import { AIServiceFactory, AIServiceProvider } from '@/lib/ai-service';
 
 const service = AIServiceFactory.getService(

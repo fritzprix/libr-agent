@@ -2,7 +2,9 @@
 ///
 /// This module contains all commands related to managing external and built-in MCP servers,
 /// including server lifecycle, tool listing, and tool execution.
-use crate::mcp::types::{ServiceContext, ServiceContextOptions};
+use crate::mcp::types::{
+    MCPServerConfigV2, MCPServerConfigWrapper, OAuthConfig, ServiceContext, ServiceContextOptions,
+};
 use crate::mcp::{MCPResponse, MCPServerConfig, MCPServerManager, MCPTool};
 use crate::state::get_mcp_manager;
 use std::collections::HashMap;
@@ -78,12 +80,11 @@ pub async fn list_mcp_tools(server_name: String) -> Result<Vec<MCPTool>, String>
 
 /// Starts servers from a dynamic configuration object and lists their available tools.
 ///
-/// This command supports two configuration formats: a "Claude format" with an `mcpServers`
-/// object and a legacy format with a `servers` array. It will start any servers from
-/// the config that are not already running, then queries each one for its list of tools.
+/// This command now supports both V1 (legacy) and V2 (MCP 2025-06-18 spec) configurations.
+/// It automatically detects the format and converts legacy configs to V2.
 ///
 /// # Arguments
-/// * `config` - A `serde_json::Value` containing the server configurations.
+/// * `config` - A `serde_json::Value` containing the server configurations in either format.
 ///
 /// # Returns
 /// A `Result` containing a `HashMap` where keys are server names and values are vectors
@@ -98,11 +99,11 @@ pub async fn list_tools_from_config(
         serde_json::to_string_pretty(&config).unwrap_or_default()
     );
 
-    // Support for Claude format: handle mcpServers object or servers array
+    // Parse server configurations with automatic V1/V2 detection
     let servers_config =
         if let Some(mcp_servers) = config.get("mcpServers").and_then(|v| v.as_object()) {
-            // Claude format: Convert mcpServers object to an array of MCPServerConfig
-            println!("🚀 [TAURI] Processing Claude format (mcpServers)");
+            // MCPConfig format: Convert mcpServers object to V2 configs
+            println!("🚀 [TAURI] Processing mcpServers format");
             let mut server_list = Vec::new();
 
             for (name, server_config) in mcp_servers.iter() {
@@ -110,24 +111,24 @@ pub async fn list_tools_from_config(
                 // Add the name field
                 if let serde_json::Value::Object(ref mut obj) = server_value {
                     obj.insert("name".to_string(), serde_json::Value::String(name.clone()));
-                    obj.insert(
-                        "transport".to_string(),
-                        serde_json::Value::String("stdio".to_string()),
-                    );
                 }
-                let server_cfg: MCPServerConfig = serde_json::from_value(server_value)
-                    .map_err(|e| format!("Invalid server config: {e}"))?;
-                server_list.push(server_cfg);
+
+                // Try parsing as V2/V1 wrapper (auto-detects format)
+                let wrapper: MCPServerConfigWrapper = serde_json::from_value(server_value)
+                    .map_err(|e| format!("Invalid server config for '{name}': {e}"))?;
+                let v2_config: MCPServerConfigV2 = wrapper.into();
+                server_list.push(v2_config);
             }
             server_list
         } else if let Some(servers_array) = config.get("servers").and_then(|v| v.as_array()) {
             // Legacy format: servers array
-            println!("🚀 [TAURI] Processing legacy format (servers array)");
+            println!("🚀 [TAURI] Processing legacy servers array format");
             let mut server_list = Vec::new();
             for server_value in servers_array {
-                let server_cfg: MCPServerConfig = serde_json::from_value(server_value.clone())
+                let wrapper: MCPServerConfigWrapper = serde_json::from_value(server_value.clone())
                     .map_err(|e| format!("Invalid server config: {e}"))?;
-                server_list.push(server_cfg);
+                let v2_config: MCPServerConfigV2 = wrapper.into();
+                server_list.push(v2_config);
             }
             server_list
         } else {
@@ -148,7 +149,11 @@ pub async fn list_tools_from_config(
         let server_name = server_cfg.name.clone();
         if !manager.is_server_alive(&server_name).await {
             println!("🚀 [TAURI] Starting server: {server_name}");
-            if let Err(e) = manager.start_server(server_cfg).await {
+            // TODO: Remove this conversion once MCPServerManager supports V2 configs natively
+            // Convert V2 to legacy format for current manager (temporary workaround)
+            // This conversion loses OAuth config, HTTP headers, and security settings
+            let legacy_config: MCPServerConfig = server_cfg.into();
+            if let Err(e) = manager.start_server(legacy_config).await {
                 eprintln!("❌ [TAURI] Failed to start server {server_name}: {e}");
                 // Insert empty tools array for failed server
                 tools_by_server.insert(server_name, Vec::new());
@@ -329,4 +334,135 @@ pub async fn switch_context(
     options: ServiceContextOptions,
 ) -> Result<(), String> {
     get_mcp_manager().switch_context(&server_id, options).await
+}
+
+// ============================================================================
+// OAuth 2.1 Authentication Commands
+// ============================================================================
+
+/// Starts an OAuth 2.1 authorization flow with PKCE for an MCP server.
+///
+/// This command initiates the OAuth flow by:
+/// 1. Discovering OAuth endpoints (if discovery URL is provided)
+/// 2. Creating a PKCE challenge
+/// 3. Generating an authorization URL
+/// 4. Storing PKCE verifier and CSRF token for later validation
+///
+/// # Arguments
+/// * `server_id` - The unique identifier for the MCP server
+/// * `config` - OAuth configuration containing client_id, endpoints, scopes, etc.
+///
+/// # Returns
+/// A tuple containing:
+/// - `authorization_url`: The URL to open in the user's browser
+/// - `state`: The CSRF state token for validation
+///
+/// # Example
+/// ```
+/// let (url, state) = start_oauth_flow(
+///     "github-mcp".to_string(),
+///     oauth_config
+/// ).await?;
+/// // Open URL in browser: open::that(url)?;
+/// ```
+#[tauri::command]
+pub async fn start_oauth_flow(
+    server_id: String,
+    config: OAuthConfig,
+) -> Result<(String, String), String> {
+    log::info!("Starting OAuth flow for server: {server_id}");
+
+    let oauth_manager = get_mcp_manager().get_oauth_manager().await;
+    oauth_manager
+        .start_authorization_flow(&config, &server_id)
+        .await
+}
+
+/// Completes an OAuth 2.1 authorization flow by exchanging the authorization code for an access token.
+///
+/// This command:
+/// 1. Validates the CSRF state token
+/// 2. Retrieves the stored PKCE verifier
+/// 3. Exchanges the authorization code for an access token
+/// 4. Stores the token securely in the OS keychain
+///
+/// # Arguments
+/// * `server_id` - The unique identifier for the MCP server
+/// * `config` - OAuth configuration used for the flow
+/// * `authorization_code` - The code received from the OAuth callback
+/// * `state` - The CSRF state token for validation
+///
+/// # Returns
+/// Success message if token was stored successfully
+///
+/// # Security
+/// - Validates CSRF token to prevent CSRF attacks
+/// - Uses PKCE to prevent authorization code interception
+/// - Stores token in OS keychain (never in plain text)
+#[tauri::command]
+pub async fn complete_oauth_flow(
+    server_id: String,
+    config: OAuthConfig,
+    authorization_code: String,
+    state: String,
+) -> Result<String, String> {
+    log::info!("Completing OAuth flow for server: {server_id}");
+
+    let oauth_manager = get_mcp_manager().get_oauth_manager().await;
+
+    // Exchange code for token
+    let access_token = oauth_manager
+        .exchange_code_for_token(&config, &server_id, &authorization_code, &state)
+        .await?;
+
+    // Store token securely in OS keychain
+    crate::mcp::keychain::store_token_securely(&server_id, &access_token).await?;
+
+    log::info!("Successfully completed OAuth flow for server: {server_id}");
+    Ok(format!(
+        "OAuth flow completed successfully for server: {server_id}"
+    ))
+}
+
+/// Checks if an OAuth token exists in the OS keychain for a given server.
+///
+/// # Arguments
+/// * `server_id` - The unique identifier for the MCP server
+///
+/// # Returns
+/// `true` if a token exists, `false` otherwise
+#[tauri::command]
+pub async fn has_oauth_token(server_id: String) -> bool {
+    crate::mcp::keychain::has_token(&server_id).await
+}
+
+/// Retrieves a cached OAuth token from the OS keychain.
+///
+/// # Arguments
+/// * `server_id` - The unique identifier for the MCP server
+///
+/// # Returns
+/// `Some(token)` if found, `None` if not found
+///
+/// # Security
+/// This command should be used carefully. Consider whether the frontend
+/// actually needs the raw token or just needs to know if it exists.
+#[tauri::command]
+pub async fn get_oauth_token(server_id: String) -> Result<Option<String>, String> {
+    crate::mcp::keychain::get_cached_token(&server_id).await
+}
+
+/// Revokes and deletes an OAuth token from the OS keychain.
+///
+/// # Arguments
+/// * `server_id` - The unique identifier for the MCP server
+///
+/// # Returns
+/// Success message if token was deleted
+#[tauri::command]
+pub async fn revoke_oauth_token(server_id: String) -> Result<String, String> {
+    crate::mcp::keychain::delete_token(&server_id).await?;
+    Ok(format!(
+        "OAuth token revoked successfully for server: {server_id}"
+    ))
 }

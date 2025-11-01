@@ -76,7 +76,7 @@
 
 ## 🎯 Quick Start
 
-### 당신의 역할에 따라:
+### 당신의 역할에 따라
 
 #### Backend Engineer (Rust)
 
@@ -291,7 +291,7 @@ let session_id = &context.session_id; // ✅ From args
 
 [`tool-implementation-guide.md`](./tool-implementation-guide.md#7-faq) 참고
 
-### 일반적인 질문들:
+### 일반적인 질문들
 
 **Q: \_\_ prefix 필드가 Tool Definition에 나타나면?**
 A: 안 됩니다! Tool schema에서 제거해야 합니다.

@@ -28,6 +28,7 @@ import {
   AlertDialogCancel,
 } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
+import { MCPServerManagement } from './MCPServerManagement';
 import { getLogger } from '@/lib/logger';
 import { useSessionContext } from '@/context/SessionContext';
 
@@ -209,6 +210,7 @@ export default function SettingsPage() {
         <Tabs defaultValue="api-key" className="flex flex-col">
           <TabsList className="flex gap-2 overflow-x-auto mb-4">
             <TabsTrigger value="api-key">API Key Settings</TabsTrigger>
+            <TabsTrigger value="mcp-servers">MCP Servers</TabsTrigger>
             <TabsTrigger value="conversation-model">
               Conversation & Model Preferences
             </TabsTrigger>
@@ -233,6 +235,10 @@ export default function SettingsPage() {
                 );
               })}
             </div>
+          </TabsContent>
+
+          <TabsContent value="mcp-servers">
+            <MCPServerManagement />
           </TabsContent>
 
           <TabsContent value="conversation-model">

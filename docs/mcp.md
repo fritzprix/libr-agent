@@ -1,8 +1,8 @@
-# Tool Response Schema Management in SynapticFlow
+# Tool Response Schema Management in LibrAgent
 
 ## Project Approach
 
-In SynapticFlow, tool responses are managed using a strict, typesafe TypeScript schema that closely follows the MCP protocol specification. All tool responses implement the `MCPResponse` interface, which enforces:
+In LibrAgent, tool responses are managed using a strict, typesafe TypeScript schema that closely follows the MCP protocol specification. All tool responses implement the `MCPResponse` interface, which enforces:
 
 - JSON-RPC compliance (`jsonrpc`, `id`, `success`, `error`)
 - A `result` field of type `MCPResult`, which supports both unstructured and structured content

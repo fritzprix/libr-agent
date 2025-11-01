@@ -64,13 +64,13 @@ pnpm build && cd src-tauri && cargo tauri build
 
 ```bash
 # cargo build --release (백엔드만)
-src-tauri/target/release/synaptic-flow  # ❌ 프론트엔드 없음
+src-tauri/target/release/libr-agent  # ❌ 프론트엔드 없음
 
 # tauri build (완전한 앱)
 src-tauri/target/release/bundle/
-├── deb/SynapticFlow_0.1.1_amd64.deb                      # ✅ Debian 패키지
-├── rpm/SynapticFlow-0.1.1-1.x86_64.rpm                   # ✅ RPM 패키지
-└── appimage/SynapticFlow_0.1.1_amd64.AppImage            # ✅ AppImage
+├── deb/LibrAgent_0.1.1_amd64.deb                      # ✅ Debian 패키지
+├── rpm/LibrAgent-0.1.1-1.x86_64.rpm                   # ✅ RPM 패키지
+└── appimage/LibrAgent_0.1.1_amd64.AppImage            # ✅ AppImage
 ```
 
 ## 🚀 올바른 빌드 & 실행 방법
@@ -95,7 +95,7 @@ pnpm install
 pnpm tauri build
 
 # 3. 결과물 실행 (Linux 예시)
-./src-tauri/target/release/bundle/appimage/SynapticFlow_*.AppImage
+./src-tauri/target/release/bundle/appimage/LibrAgent_*.AppImage
 ```
 
 ### 릴리스 빌드 테스트
@@ -103,7 +103,7 @@ pnpm tauri build
 ```bash
 # 로그와 함께 실행
 RUST_LOG=debug RUST_BACKTRACE=1 \
-  ./src-tauri/target/release/bundle/appimage/SynapticFlow_*.AppImage
+  ./src-tauri/target/release/bundle/appimage/LibrAgent_*.AppImage
 ```
 
 ## 🔧 디버깅 팁
@@ -113,7 +113,7 @@ RUST_LOG=debug RUST_BACKTRACE=1 \
 ```bash
 # 상세 로그와 함께 실행
 RUST_LOG=trace RUST_BACKTRACE=full \
-  ./SynapticFlow_*.AppImage > app.log 2>&1
+  ./LibrAgent_*.AppImage > app.log 2>&1
 
 # 로그 확인
 tail -f app.log
@@ -133,7 +133,7 @@ ls -la dist/assets/
 
 ```bash
 # AppImage 내용 추출
-./SynapticFlow_*.AppImage --appimage-extract
+./LibrAgent_*.AppImage --appimage-extract
 
 # 번들된 파일 확인
 ls -la squashfs-root/usr/bin/

@@ -1,6 +1,6 @@
 # Troubleshooting Guide
 
-This guide provides solutions to common problems you might encounter while developing or using SynapticFlow.
+This guide provides solutions to common problems you might encounter while developing or using LibrAgent.
 
 ## Linux Environment Issues
 

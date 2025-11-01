@@ -1,10 +1,10 @@
-# 🚀 SynapticFlow Project Guidelines
+# 🚀 LibrAgent Project Guidelines
 
-## 1. Project Overview
+## Project Overview
 
-**SynapticFlow: A High-Freedom AI Agent Platform - Infinitely Expandable with MCP!**
+**LibrAgent: A High-Freedom AI Agent Platform - Infinitely Expandable with MCP!**
 
-SynapticFlow is a next-generation desktop AI agent platform that combines the lightness of Tauri with the intuitiveness of React. Users can automate daily tasks by giving AI agents their own unique personalities and abilities through a powerful and extensible tool ecosystem.
+LibrAgent is a next-generation desktop AI agent platform that combines the lightness of Tauri with the intuitiveness of React. Users can automate daily tasks by giving AI agents their own unique personalities and abilities through a powerful and extensible tool ecosystem.
 
 ## 2. Key Features
 
@@ -34,11 +34,11 @@ SynapticFlow is a next-generation desktop AI agent platform that combines the li
 
 ## 4. Architecture
 
-SynapticFlow's architecture is designed for modularity, performance, and extensibility. It is composed of a React frontend, a Tauri Rust backend, and a unique dual MCP (Model Context Protocol) system.
+LibrAgent's architecture is designed for modularity, performance, and extensibility. It is composed of a React frontend, a Tauri Rust backend, and a unique dual MCP (Model Context Protocol) system.
 
 ### A. MCP Integration: The Dual Backend
 
-The core of SynapticFlow's extensibility lies in its dual MCP backend, which allows for two types of tool servers to run concurrently:
+The core of LibrAgent's extensibility lies in its dual MCP backend, which allows for two types of tool servers to run concurrently:
 
 1. **Rust Tauri Backend (High-Performance Native Tools):**
    - Managed by `MCPServerManager` in the Rust backend (`src-tauri/src/mcp/server.rs`).
@@ -65,7 +65,9 @@ For a more detailed breakdown, see the [Chat Feature Architecture Document](docs
 
 ### C. Tool Ecosystem & Agent System
 
-SynapticFlow's power comes from its extensible tool ecosystem and agent management system.
+### B. Key Features
+
+LibrAgent's power comes from its extensible tool ecosystem and agent management system.
 
 - **Built-in Tools:** The platform includes a set of powerful built-in tools, such as:
   - **Secure File Manager:** For reading, writing, and listing files within a sandboxed workspace.

@@ -4,7 +4,7 @@ version = "0.1.1"
 description = "A desktop app for AI agents with built-in tools"
 authors = ["fritzprix"]
 license = "MIT"
-repository = "https://github.com/fritzprix/synaptic-flow.git"
+repository = "https://github.com/fritzprix/libr-agent.git"
 edition = "2021"
 keywords = ["ai", "agent", "multi-agent", "orchestration", "mcp", "model-context-protocol", "react", "desktop", "shareable-config"]
 
@@ -30,7 +30,10 @@ uuid = { version = "1.0", features = ["v4"] }
 anyhow = "1.0"
 tokio-util = "0.7"
 futures = "0.3"
-rmcp = { version = "0.8.1", features = ["client", "transport-child-process"] }
+rmcp = { version = "0.8.1", features = ["client", "transport-child-process", "transport-streamable-http-client-reqwest", "auth"] }
+oauth2 = "4.4"
+keyring = "3.0"
+reqwest = { version = "0.12", features = ["json", "stream"], default-features = false }
 tauri-plugin-log = "2"
 log = "0.4.27"
 tauri-plugin-dialog = "2"

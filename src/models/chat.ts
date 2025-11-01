@@ -1,4 +1,12 @@
-import { MCPTool, MCPContent } from '../lib/mcp-types';
+import {
+  MCPTool,
+  MCPContent,
+  MCPServerConfigV2,
+  LegacyMCPServerConfig,
+  TransportConfig,
+  OAuthConfig,
+  ServerMetadata,
+} from '../lib/mcp-types';
 
 // UIResource interface for MCP-UI integration
 export interface UIResource {
@@ -107,15 +115,33 @@ export interface ToolCall {
   };
 }
 
+// ========================================
+// V2 MCP Configuration Types (MCP 2025-06-18 Spec)
+// ========================================
+
+/**
+ * Top-level MCP configuration supporting both V1 and V2 formats
+ */
 export interface MCPConfig {
-  mcpServers?: Record<
-    string,
-    {
-      command: string;
-      args?: string[];
-      env?: Record<string, string>;
-    }
-  >;
+  mcpServers?: Record<string, MCPServerConfigV2 | LegacyMCPServerConfig>;
+}
+
+/**
+ * MCP Server Entity - Independent server configuration with DB metadata
+ * Separates MCP server management from Assistant configuration
+ */
+export interface MCPServerEntity {
+  // Database metadata
+  id: string;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+
+  // MCP Protocol spec (from MCPServerConfigV2)
+  name: string;
+  transport: TransportConfig;
+  authentication?: OAuthConfig;
+  metadata?: ServerMetadata;
 }
 
 export interface Assistant {
@@ -124,7 +150,7 @@ export interface Assistant {
   description?: string;
   avatar?: string; // Optional avatar URL or identifier
   systemPrompt: string;
-  mcpConfig: MCPConfig;
+  mcpServerIds?: string[]; // References to MCPServerEntity IDs
   localServices?: string[];
   /**
    * List of allowed built-in service aliases for this assistant.

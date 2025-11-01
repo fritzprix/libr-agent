@@ -151,7 +151,7 @@ const { data: sessionFiles = [], mutate } = useSWR(
   "app": {
     "windows": [
       {
-        "title": "SynapticFlow",
+        "title": "LibrAgent",
         // ... 기타 설정
         "devtools": true // ← Release 빌드에서도 DevTools 활성화
       }

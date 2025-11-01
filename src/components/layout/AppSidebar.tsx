@@ -5,7 +5,7 @@ import {
   Settings,
   Users,
 } from 'lucide-react';
-import React, { useEffect, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   Sidebar,
@@ -26,7 +26,7 @@ import { useNavigate } from 'react-router-dom';
 // Remove modal import; we'll navigate to a dedicated settings route
 
 export default function AppSidebar() {
-  const { state, toggleSidebar } = useSidebar();
+  const { state } = useSidebar();
   const navigate = useNavigate();
   const { select, sessions: sessionPages } = useSessionContext();
   const location = useLocation();
@@ -40,18 +40,7 @@ export default function AppSidebar() {
   const isCollapsed = state === 'collapsed';
   const currentView = location.pathname.substring(1); // Extract current view from path
 
-  // Add keyboard shortcut for sidebar toggle
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.ctrlKey && event.key === 'b') {
-        event.preventDefault();
-        toggleSidebar();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [toggleSidebar]);
+  // Keyboard shortcuts are handled by SidebarProvider's wrapper onKeyDown
 
   return (
     <Sidebar

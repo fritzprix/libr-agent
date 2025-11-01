@@ -1,6 +1,7 @@
 // Shadcn components
 export { Badge } from './badge';
 export { Button } from './button';
+export { Checkbox } from './checkbox';
 export { Input } from './input';
 export { Label } from './label';
 export { Textarea } from './textarea';
@@ -29,6 +30,18 @@ export {
   DropdownMenuSeparator,
 } from './dropdown-menu';
 export { Separator } from './separator';
+export {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectScrollDownButton,
+  SelectScrollUpButton,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+} from './select';
 export {
   Tooltip,
   TooltipContent,

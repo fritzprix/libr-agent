@@ -15,6 +15,7 @@ import { getLogger } from '../lib/logger';
 import { Assistant } from '../models/chat';
 import { toast } from 'sonner';
 import { useMCPServer } from '@/hooks/use-mcp-server';
+import { useMCPServerRegistry } from '@/context/MCPServerRegistryContext';
 import { MCPTool } from '@/lib/mcp-types';
 
 const logger = getLogger('AssistantContext');
@@ -30,8 +31,6 @@ interface AssistantContextType {
   getById: (id: string) => Assistant | null;
   saveAssistant: (assistant: Assistant) => Promise<Assistant | undefined>;
   deleteAssistant: (assistantId: string) => Promise<void>;
-  registerEphemeral: (assistant: Assistant) => void;
-  unregisterEphemeral: (id: string) => void;
   availableTools: MCPTool[];
   error: Error | null;
 }
@@ -40,6 +39,63 @@ const AssistantContext = createContext<AssistantContextType | undefined>(
   undefined,
 );
 
+/**
+ * Default MCP Configuration
+ *
+ * Supports both V1 (Legacy) and V2 (MCP 2025-06-18 Spec) formats.
+ * Both formats can be mixed in the same configuration.
+ *
+ * @example V1 Format (stdio only):
+ * ```json
+ * {
+ *   "mcpServers": {
+ *     "server-name": {
+ *       "command": "npx",
+ *       "args": ["-y", "@modelcontextprotocol/server-name"],
+ *       "env": {}
+ *     }
+ *   }
+ * }
+ * ```
+ *
+ * @example V2 Format with HTTP:
+ * ```json
+ * {
+ *   "mcpServers": {
+ *     "http-server": {
+ *       "name": "http-server",
+ *       "transport": {
+ *         "type": "http",
+ *         "url": "https://api.example.com/mcp"
+ *       }
+ *     }
+ *   }
+ * }
+ * ```
+ *
+ * @example V2 Format with OAuth 2.1:
+ * ```json
+ * {
+ *   "mcpServers": {
+ *     "oauth-server": {
+ *       "name": "oauth-server",
+ *       "transport": {
+ *         "type": "http",
+ *         "url": "https://api.example.com/mcp"
+ *       },
+ *       "authentication": {
+ *         "type": "oauth2.1",
+ *         "clientId": "your-client-id",
+ *         "redirectUri": "libr-agent://oauth/callback",
+ *         "scopes": ["read", "write"],
+ *         "usePKCE": true,
+ *         "discoveryUrl": "https://auth.example.com/.well-known/oauth-authorization-server"
+ *       }
+ *     }
+ *   }
+ * }
+ * ```
+ */
 export const DEFAULT_MCP_CONFIG = {
   mcpServers: {
     'sequential-thinking': {
@@ -60,7 +116,7 @@ export function getDefaultAssistant(): Assistant {
     createdAt: new Date(),
     name: 'Default Assistant',
     isDefault: true,
-    mcpConfig: DEFAULT_MCP_CONFIG,
+    mcpServerIds: [], // No servers by default - user selects from Settings
     systemPrompt: DEFAULT_PROMPT,
     updatedAt: new Date(),
   };
@@ -71,7 +127,7 @@ export function getNewAssistantTemplate(): Assistant {
     name: 'New Assistant',
     systemPrompt:
       'You are a helpful AI assistant with access to various tools. Use the available tools to help users accomplish their tasks.',
-    mcpConfig: DEFAULT_MCP_CONFIG,
+    mcpServerIds: [], // No servers by default - user selects from Settings
     createdAt: new Date(),
     updatedAt: new Date(),
     isDefault: false,
@@ -86,11 +142,9 @@ export const AssistantContextProvider = ({
   const [currentAssistant, setCurrentAssistant] = useState<Assistant | null>(
     null,
   );
-  const [ephemeralAssistants, setEphemeralAssistants] = useState<Assistant[]>(
-    [],
-  );
 
-  const { connectServers, availableTools } = useMCPServer();
+  const { connectServersFromAssistant, availableTools } = useMCPServer();
+  const { activeServers } = useMCPServerRegistry();
 
   const [error, setError] = useState<Error | null>(null);
 
@@ -109,14 +163,10 @@ export const AssistantContextProvider = ({
       return fetchedAssistants.items;
     }, []);
 
-  // Ephemeral has priority, remove duplicates by id
+  // Return assistants from DB
   const allAssistants = useMemo(() => {
-    const ephemeralMap = new Map(ephemeralAssistants.map((a) => [a.id, a]));
-    const dbAssistants = (assistants ?? []).filter(
-      (a) => !ephemeralMap.has(a.id),
-    );
-    return [...ephemeralAssistants, ...dbAssistants];
-  }, [assistants, ephemeralAssistants]);
+    return assistants ?? [];
+  }, [assistants]);
 
   const assistantsRef = useRef(assistants);
   useEffect(() => {
@@ -159,7 +209,7 @@ export const AssistantContextProvider = ({
           id: assistantId,
           name: editingAssistant.name,
           systemPrompt,
-          mcpConfig: editingAssistant.mcpConfig,
+          mcpServerIds: editingAssistant.mcpServerIds,
           isDefault: editingAssistant.isDefault ?? false,
           localServices: editingAssistant.localServices ?? [],
           createdAt: assistantCreatedAt || new Date(),
@@ -174,11 +224,6 @@ export const AssistantContextProvider = ({
         logger.info(`Saving assistant`, { assistantToSave });
 
         await dbService.assistants.upsert(assistantToSave);
-
-        // Remove from ephemeral if it was saved to DB
-        setEphemeralAssistants((prev) =>
-          prev.filter((a) => a.id !== assistantToSave.id),
-        );
 
         if (currentAssistant?.id === assistantToSave.id || !currentAssistant) {
           setCurrentAssistant(assistantToSave);
@@ -251,28 +296,6 @@ export const AssistantContextProvider = ({
     return currentAssistantRef.current;
   }, []);
 
-  const registerEphemeral = useCallback(
-    (assistant: Assistant) => {
-      const existsInDb = (assistantsRef.current ?? []).some(
-        (a) => a.id === assistant.id,
-      );
-      if (existsInDb) {
-        return;
-      }
-      setEphemeralAssistants((prev) => {
-        const filtered = prev.filter((a) => a.id !== assistant.id);
-        return [...filtered, assistant];
-      });
-    },
-    [], // No dependency on assistants to prevent circular dependency
-  );
-
-  const unregisterEphemeral = useCallback((id: string) => {
-    setEphemeralAssistants((prev) => {
-      return prev.filter((a) => a.id !== id);
-    });
-  }, []);
-
   const getById = useCallback(
     (id: string) => {
       return allAssistants.find((a) => a.id === id) || null;
@@ -283,17 +306,25 @@ export const AssistantContextProvider = ({
   useEffect(() => {
     currentAssistantRef.current = currentAssistant;
     if (currentAssistant) {
-      connectServers(currentAssistant.mcpConfig);
+      connectServersFromAssistant(currentAssistant);
     }
-  }, [currentAssistant, connectServers]);
+  }, [currentAssistant, connectServersFromAssistant]);
+
+  // React state-driven reconnection when MCP servers change (no window events)
+  useEffect(() => {
+    const current = currentAssistantRef.current;
+    if (current) {
+      logger.debug('MCP servers changed, reconnecting for current assistant');
+      connectServersFromAssistant(current);
+    }
+    // We intentionally depend on activeServers reference to reflect registry changes
+  }, [activeServers, connectServersFromAssistant]);
 
   const contextValue: AssistantContextType = useMemo(
     () => ({
       assistants: allAssistants,
       currentAssistant,
       setCurrentAssistant,
-      unregisterEphemeral,
-      registerEphemeral,
       getById,
       getCurrent,
       saveAssistant: upsertAssistant,
@@ -309,8 +340,6 @@ export const AssistantContextProvider = ({
       upsertAssistant,
       deleteAssistant,
       error,
-      registerEphemeral,
-      unregisterEphemeral,
       getById,
       availableTools,
     ],

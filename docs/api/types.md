@@ -1,6 +1,6 @@
 # Type Definitions
 
-This document provides definitions for the core data structures used in SynapticFlow, covering both the Rust backend and the TypeScript frontend.
+This document provides definitions for the core data structures used in LibrAgent, covering both the Rust backend and the TypeScript frontend.
 
 ## Rust Backend Types (`src-tauri/src/mcp.rs`)
 

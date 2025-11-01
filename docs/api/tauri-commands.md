@@ -1,6 +1,6 @@
 # Tauri Commands
 
-This document provides a comprehensive reference for all Tauri commands available in SynapticFlow.
+This document provides a comprehensive reference for all Tauri commands available in LibrAgent.
 
 ## Server Management
 
