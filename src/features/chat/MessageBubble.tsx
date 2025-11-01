@@ -17,10 +17,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
   const isTool = message.role === 'tool';
   const isAssistant = message.role === 'assistant' || message.role === 'system';
 
-  // 시스템 테마 감지
-  const isDark =
-    typeof window !== 'undefined' &&
-    window.matchMedia('(prefers-color-scheme: dark)').matches;
+  // Use theme tokens for colors; avoid direct color detection
 
   const getBubbleStyles = () => {
     if (isUser) {
@@ -28,9 +25,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
         container: 'justify-end',
         bubble: 'shadow-lg border border-primary/20',
         // 다크 모드에서는 밝은 색상, 라이트 모드에서는 어두운 색상
-        getAvatar: () => (
-          <User size={16} className={isDark ? 'text-white' : 'text-gray-900'} />
-        ),
+        getAvatar: () => <User size={16} className="text-primary-foreground" />,
         avatarBg: 'bg-primary',
       };
     } else if (isTool) {
