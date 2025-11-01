@@ -69,16 +69,21 @@ export function MCPServerDialog({
       const parsed = JSON.parse(envJson);
 
       // Check if it's an object (not array, null, etc.)
-      if (typeof parsed !== 'object' || Array.isArray(parsed) || parsed === null) {
+      if (
+        typeof parsed !== 'object' ||
+        Array.isArray(parsed) ||
+        parsed === null
+      ) {
         return {
           valid: false,
-          error: 'Environment variables must be a JSON object, e.g., {"KEY": "value"}',
+          error:
+            'Environment variables must be a JSON object, e.g., {"KEY": "value"}',
         };
       }
 
       // Check if all values are strings
       const invalidEntries = Object.entries(parsed).filter(
-        ([, value]) => typeof value !== 'string'
+        ([, value]) => typeof value !== 'string',
       );
 
       if (invalidEntries.length > 0) {
@@ -111,12 +116,14 @@ export function MCPServerDialog({
     if (draft.transport.type === 'stdio') {
       const envValidation = validateEnvJson();
       if (!envValidation.valid) {
-        setValidationError(envValidation.error || 'Invalid environment variables');
+        setValidationError(
+          envValidation.error || 'Invalid environment variables',
+        );
         return;
       }
 
       // Parse arguments from text input
-      const args = argsText.trim() 
+      const args = argsText.trim()
         ? argsText.trim().split(/\s+/).filter(Boolean)
         : [];
 
@@ -280,7 +287,8 @@ export function MCPServerDialog({
                   placeholder="e.g., -y @modelcontextprotocol/server-filesystem /tmp"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Space-separated command arguments. Multiple spaces will be normalized when saving.
+                  Space-separated command arguments. Multiple spaces will be
+                  normalized when saving.
                 </p>
               </div>
 
@@ -301,7 +309,8 @@ export function MCPServerDialog({
                   className="font-mono text-sm"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Optional environment variables as JSON object. Will be validated when saving.
+                  Optional environment variables as JSON object. Will be
+                  validated when saving.
                 </p>
               </div>
             </>
