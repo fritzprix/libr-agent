@@ -30,3 +30,4 @@ error.txt
 log.txt
 .envfile
 target
+.mcp.json

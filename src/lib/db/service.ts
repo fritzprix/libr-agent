@@ -1,9 +1,15 @@
-import type { Assistant, Message, Session } from '@/models/chat';
+import type {
+  Assistant,
+  Message,
+  Session,
+  MCPServerEntity,
+} from '@/models/chat';
 import Dexie, { Table } from 'dexie';
 import type { DatabaseObject, DatabaseService, Page } from './types';
 import type { Playbook } from '@/types/playbook';
 import {
   assistantsCRUD,
+  mcpServersCRUD,
   createPage,
   messagesCRUD,
   objectsCRUD,
@@ -32,6 +38,7 @@ export class LocalDatabase extends Dexie {
   }
 
   assistants!: Table<Assistant, string>;
+  mcpServers!: Table<MCPServerEntity, string>;
   objects!: Table<DatabaseObject<unknown>, string>;
   sessions!: Table<Session, string>;
   messages!: Table<Message, string>;
@@ -54,8 +61,10 @@ export class LocalDatabase extends Dexie {
     // - Version 7: Cleanup of empty allowedBuiltInServiceAliases
     // - Version 8: Added agentId index for playbooks
     // - Version 9: Added threadId support with composite indices
+    // - Version 10: Added mcpServers table for centralized MCP server management
     this.version(1).stores({
       assistants: '&id, createdAt, updatedAt, name',
+      mcpServers: '&id, name, createdAt, updatedAt, isActive',
       objects: '&key, createdAt, updatedAt',
       sessions: '&id, createdAt, updatedAt',
       messages: '&id, sessionId, [sessionId+threadId], createdAt',
@@ -71,6 +80,7 @@ export class LocalDatabase extends Dexie {
  */
 export const dbService: DatabaseService = {
   assistants: assistantsCRUD,
+  mcpServers: mcpServersCRUD,
   objects: objectsCRUD,
   sessions: sessionsCRUD,
   messages: messagesCRUD,
@@ -115,6 +125,52 @@ export const dbUtils = {
    */
   bulkUpsertAssistants: async (assistants: Assistant[]): Promise<void> => {
     await dbService.assistants.upsertMany(assistants);
+  },
+
+  // --- MCP Servers ---
+  /**
+   * Retrieves all MCP servers from the database, ordered by creation date.
+   * @returns A promise that resolves to an array of all MCP servers.
+   */
+  getAllMCPServers: async (): Promise<MCPServerEntity[]> => {
+    return LocalDatabase.getInstance()
+      .mcpServers.orderBy('createdAt')
+      .toArray();
+  },
+  /**
+   * Retrieves all active MCP servers from the database, ordered by creation date.
+   * @returns A promise that resolves to an array of active MCP servers.
+   */
+  getActiveMCPServers: async (): Promise<MCPServerEntity[]> => {
+    return LocalDatabase.getInstance()
+      .mcpServers.filter((s) => s.isActive)
+      .toArray();
+  },
+  /**
+   * Retrieves MCP servers by their IDs.
+   * @param ids An array of MCP server IDs to retrieve.
+   * @returns A promise that resolves to an array of MCP servers (may be fewer than requested if some IDs don't exist).
+   */
+  getMCPServersByIds: async (ids: string[]): Promise<MCPServerEntity[]> => {
+    return LocalDatabase.getInstance()
+      .mcpServers.where('id')
+      .anyOf(ids)
+      .toArray();
+  },
+  /**
+   * Checks if an MCP server with the given ID exists in the database.
+   * @param id The ID of the MCP server to check.
+   * @returns A promise that resolves to true if the server exists, false otherwise.
+   */
+  mcpServerExists: async (id: string): Promise<boolean> => {
+    return (await LocalDatabase.getInstance().mcpServers.get(id)) !== undefined;
+  },
+  /**
+   * Deletes all MCP servers from the database.
+   * @returns A promise that resolves when all servers have been cleared.
+   */
+  clearAllMCPServers: async (): Promise<void> => {
+    await LocalDatabase.getInstance().mcpServers.clear();
   },
 
   // --- Objects ---

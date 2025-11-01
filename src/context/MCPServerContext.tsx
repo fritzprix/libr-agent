@@ -15,9 +15,11 @@ import {
   MCPTool,
   SamplingOptions,
   SamplingResponse,
+  MCPServerConfigV2,
 } from '../lib/mcp-types';
-import { MCPConfig, ToolCall } from '../models/chat';
+import { MCPConfig, ToolCall, Assistant } from '../models/chat';
 import { toValidJsName } from '@/lib/utils';
+import { dbUtils } from '@/lib/db/service';
 
 const logger = getLogger('MCPServerContext');
 
@@ -28,6 +30,7 @@ export interface MCPServerContextType {
   error?: string;
   status: Record<string, boolean>;
   connectServers: (mcpConfigs: MCPConfig) => Promise<void>;
+  connectServersFromAssistant: (assistant: Assistant) => Promise<void>;
   executeToolCall: (toolCall: ToolCall) => Promise<MCPResponse<unknown>>;
   sampleFromModel: (
     serverName: string,
@@ -120,6 +123,77 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
       }
     },
     [],
+  );
+
+  /**
+   * Connects MCP servers from an Assistant configuration
+   * Loads server entities by IDs, filters active ones, and converts to MCPConfig
+   */
+  const connectServersFromAssistant = useCallback(
+    async (assistant: Assistant) => {
+      setError(undefined);
+
+      if (!assistant.mcpServerIds || assistant.mcpServerIds.length === 0) {
+        logger.debug('No MCP servers configured for assistant');
+        setAvailableTools([]);
+        setServerStatus({});
+        return;
+      }
+
+      try {
+        // 1. DB에서 서버 엔티티 조회
+        const entities = await dbUtils.getMCPServersByIds(
+          assistant.mcpServerIds,
+        );
+
+        if (entities.length === 0) {
+          logger.warn('No MCP server entities found for the given IDs');
+          setAvailableTools([]);
+          setServerStatus({});
+          return;
+        }
+
+        // 2. 활성화된 서버만 필터링
+        const activeEntities = entities.filter((e) => e.isActive);
+
+        if (activeEntities.length === 0) {
+          logger.info('All configured MCP servers are inactive');
+          setAvailableTools([]);
+          setServerStatus({});
+          return;
+        }
+
+        // 3. MCPConfig 구성 (DB metadata 제외)
+        const mcpConfig: MCPConfig = {
+          mcpServers: Object.fromEntries(
+            activeEntities.map((entity) => [
+              entity.name,
+              {
+                name: entity.name,
+                transport: entity.transport,
+                authentication: entity.authentication,
+                metadata: entity.metadata,
+              } as MCPServerConfigV2,
+            ]),
+          ),
+        };
+
+        logger.debug(
+          `Connecting ${activeEntities.length} active MCP servers from assistant "${assistant.name}"`,
+        );
+
+        // 4. 기존 connectServers 로직 재사용
+        await connectServers(mcpConfig);
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        setError(errorMessage);
+        logger.error('Error connecting servers from assistant:', { error });
+        setAvailableTools([]);
+        setServerStatus({});
+      }
+    },
+    [connectServers],
   );
 
   const executeToolCall = useCallback(
@@ -222,6 +296,7 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
       getAvailableTools,
       status: serverStatus,
       connectServers,
+      connectServersFromAssistant,
       executeToolCall,
       sampleFromModel,
     }),
@@ -232,6 +307,7 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
       serverStatus,
       getAvailableTools,
       connectServers,
+      connectServersFromAssistant,
       executeToolCall,
       sampleFromModel,
     ],

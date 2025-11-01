@@ -115,7 +115,7 @@ export function getDefaultAssistant(): Assistant {
     createdAt: new Date(),
     name: 'Default Assistant',
     isDefault: true,
-    mcpConfig: DEFAULT_MCP_CONFIG,
+    mcpServerIds: [], // No servers by default - user selects from Settings
     systemPrompt: DEFAULT_PROMPT,
     updatedAt: new Date(),
   };
@@ -126,7 +126,7 @@ export function getNewAssistantTemplate(): Assistant {
     name: 'New Assistant',
     systemPrompt:
       'You are a helpful AI assistant with access to various tools. Use the available tools to help users accomplish their tasks.',
-    mcpConfig: DEFAULT_MCP_CONFIG,
+    mcpServerIds: [], // No servers by default - user selects from Settings
     createdAt: new Date(),
     updatedAt: new Date(),
     isDefault: false,
@@ -142,7 +142,7 @@ export const AssistantContextProvider = ({
     null,
   );
 
-  const { connectServers, availableTools } = useMCPServer();
+  const { connectServersFromAssistant, availableTools } = useMCPServer();
 
   const [error, setError] = useState<Error | null>(null);
 
@@ -207,7 +207,7 @@ export const AssistantContextProvider = ({
           id: assistantId,
           name: editingAssistant.name,
           systemPrompt,
-          mcpConfig: editingAssistant.mcpConfig,
+          mcpServerIds: editingAssistant.mcpServerIds,
           isDefault: editingAssistant.isDefault ?? false,
           localServices: editingAssistant.localServices ?? [],
           createdAt: assistantCreatedAt || new Date(),
@@ -304,9 +304,33 @@ export const AssistantContextProvider = ({
   useEffect(() => {
     currentAssistantRef.current = currentAssistant;
     if (currentAssistant) {
-      connectServers(currentAssistant.mcpConfig);
+      connectServersFromAssistant(currentAssistant);
     }
-  }, [currentAssistant, connectServers]);
+  }, [currentAssistant, connectServersFromAssistant]);
+
+  // Listen for MCP server changes and reconnect if needed
+  useEffect(() => {
+    const handleServerChange = () => {
+      const current = currentAssistantRef.current;
+      if (current) {
+        logger.debug('MCP servers changed, reconnecting for current assistant');
+        connectServersFromAssistant(current);
+      }
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener(
+        'libragent:mcp-servers-changed',
+        handleServerChange,
+      );
+      return () => {
+        window.removeEventListener(
+          'libragent:mcp-servers-changed',
+          handleServerChange,
+        );
+      };
+    }
+  }, [connectServersFromAssistant]);
 
   const contextValue: AssistantContextType = useMemo(
     () => ({
