@@ -24,6 +24,7 @@ import planningServer from './modules/planning-server/index.ts';
 import playbookStore from './modules/playbook-store/index.ts';
 import uiTools from './modules/ui-tools/index.ts';
 import bootstrapServer from './modules/bootstrap-server/index.ts';
+import mcpManagerServer from './modules/mcp-manager/index.ts';
 
 /**
  * A simple logger for the worker context, as the main logger is not available here.
@@ -51,6 +52,7 @@ const MODULE_REGISTRY = [
   { key: 'playbook', module: playbookStore },
   { key: 'ui', module: uiTools },
   { key: 'bootstrap', module: bootstrapServer },
+  { key: 'mcp_manager', module: mcpManagerServer },
   // Future modules can be added here with static imports
 ] as const;
 

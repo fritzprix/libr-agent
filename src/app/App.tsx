@@ -42,7 +42,13 @@ function App() {
                   <BuiltInToolProvider>
                     <WebMCPProvider>
                       <WebMCPServiceRegistry
-                        servers={['planning', 'playbook', 'ui', 'bootstrap']}
+                        servers={[
+                          'planning',
+                          'playbook',
+                          'ui',
+                          'bootstrap',
+                          'mcp_manager',
+                        ]}
                       />
                       <BrowserToolProvider />
                       <RustMCPToolProvider />

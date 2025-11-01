@@ -76,6 +76,10 @@
     "src/lib/web-mcp/modules/bootstrap-server/tools.ts",
     "src/lib/web-mcp/modules/bootstrap-server/platform-detector.ts",
     "src/lib/web-mcp/modules/bootstrap-server/guides.ts",
+    "src/lib/web-mcp/modules/mcp-manager",
+    "src/lib/web-mcp/modules/mcp-manager/index.ts",
+    "src/lib/web-mcp/modules/mcp-manager/server.ts",
+    "src/lib/web-mcp/modules/mcp-manager/tools.ts",
     "src/test/setup.ts",
     "src/test/types/test-types.ts",
     "src/test/utils/html-test-utils.ts"
