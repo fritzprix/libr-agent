@@ -1,15 +1,6 @@
 {
-  "entry": [
-    "src/main.tsx",
-    "src/app/App.tsx",
-    "src/app/main.tsx"
-  ],
-  "extensions": [
-    ".ts",
-    ".tsx",
-    ".js",
-    ".jsx"
-  ],
+  "entry": ["src/main.tsx", "src/app/App.tsx", "src/app/main.tsx"],
+  "extensions": [".ts", ".tsx", ".js", ".jsx"],
   "ignorePatterns": [
     "**/node_modules/**",
     "**/dist/**",
@@ -31,30 +22,16 @@
     "../../lib/web-mcp/mcp-worker.ts?worker",
     [
       "../../lib/web-mcp/mcp-worker.ts?worker",
-      [
-        "src/features/tools/WebMCPToolProvider.tsx"
-      ]
+      ["src/features/tools/WebMCPToolProvider.tsx"]
     ],
     "../lib/web-mcp/mcp-worker.ts?worker",
     [
       "../lib/web-mcp/mcp-worker.ts?worker",
-      [
-        "src/hooks/use-web-mcp-server.ts"
-      ]
+      ["src/hooks/use-web-mcp-server.ts"]
     ],
     "@/lib/web-mcp/mcp-worker.ts?worker at src/context/WebMCPContext.tsx",
-    [
-      "@/lib/web-mcp/mcp-worker.ts?worker",
-      [
-        "src/context/WebMCPContext.tsx"
-      ]
-    ],
-    [
-      "@/lib/web-mcp/mcp-worker.ts?worker",
-      [
-        "src\\context\\WebMCPContext.tsx"
-      ]
-    ]
+    ["@/lib/web-mcp/mcp-worker.ts?worker", ["src/context/WebMCPContext.tsx"]],
+    ["@/lib/web-mcp/mcp-worker.ts?worker", ["src\\context\\WebMCPContext.tsx"]]
   ],
   "ignoreUnused": [
     "@mcp-ui/server",
@@ -93,11 +70,15 @@
     "src/lib/web-mcp/modules/ui-tools/templates/wait.hbs",
     "src/lib/web-mcp/modules/ui-tools/tools.ts",
     "src/lib/web-mcp/utils/ui-utils.ts",
+    "src/lib/web-mcp/modules/bootstrap-server",
+    "src/lib/web-mcp/modules/bootstrap-server/index.ts",
+    "src/lib/web-mcp/modules/bootstrap-server/server.ts",
+    "src/lib/web-mcp/modules/bootstrap-server/tools.ts",
+    "src/lib/web-mcp/modules/bootstrap-server/platform-detector.ts",
+    "src/lib/web-mcp/modules/bootstrap-server/guides.ts",
     "src/test/setup.ts",
     "src/test/types/test-types.ts",
     "src/test/utils/html-test-utils.ts"
   ],
-  "ignoreDependencies": [
-    "handlebars"
-  ]
+  "ignoreDependencies": ["handlebars"]
 }

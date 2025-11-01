@@ -1,5 +1,5 @@
 import { Route, Routes } from 'react-router-dom';
-import { Suspense, lazy } from 'react';
+import { lazy } from 'react';
 import AppSidebar from '../components/layout/AppSidebar';
 
 // Lazy-load route components to reduce initial bundle and improve first paint
@@ -25,6 +25,10 @@ import { ResourceAttachmentProvider } from '@/context/ResourceAttachmentContext'
 import { BuiltInToolProvider } from '@/features/tools';
 import { SystemPromptProvider } from '@/context/SystemPromptContext';
 import { DnDContextProvider } from '@/context/DnDContext';
+import { WebMCPProvider } from '@/context/WebMCPContext';
+import { WebMCPServiceRegistry } from '@/features/tools/WebMCPServiceRegistry';
+import { BrowserToolProvider } from '@/features/tools/BrowserToolProvider';
+import { RustMCPToolProvider } from '@/features/tools/RustMCPToolProvider';
 
 function App() {
   return (
@@ -32,10 +36,16 @@ function App() {
       <SettingsProvider>
         <MCPServerRegistryProvider>
           <MCPServerProvider>
-            <SystemPromptProvider>
-              <AssistantContextProvider>
-                <SessionContextProvider>
-                  <BuiltInToolProvider>
+          <SystemPromptProvider>
+            <AssistantContextProvider>
+              <SessionContextProvider>
+                <BuiltInToolProvider>
+                  <WebMCPProvider>
+                    <WebMCPServiceRegistry
+                      servers={['planning', 'playbook', 'ui', 'bootstrap']}
+                    />
+                    <BrowserToolProvider />
+                    <RustMCPToolProvider />
                     <SessionHistoryProvider>
                       <ResourceAttachmentProvider>
                         <ModelOptionsProvider>
@@ -48,40 +58,32 @@ function App() {
                                   <ThemeToggle />
                                 </AppHeader>
                                 <div className="flex-1 w-full min-h-0">
-                                  <Suspense
-                                    fallback={
-                                      <div className="p-4 text-sm text-muted-foreground">
-                                        Loading…
-                                      </div>
-                                    }
-                                  >
-                                    <Routes>
-                                      <Route
-                                        path="/"
-                                        element={<ChatContainer />}
-                                      />
-                                      <Route
-                                        path="/chat/single"
-                                        element={<ChatContainer />}
-                                      />
-                                      <Route
-                                        path="/assistants"
-                                        element={<AssistantList />}
-                                      />
-                                      <Route
-                                        path="/history"
-                                        element={<History />}
-                                      />
-                                      <Route
-                                        path="/history/search"
-                                        element={<History />}
-                                      />
-                                      <Route
-                                        path="/settings"
-                                        element={<SettingsPage />}
-                                      />
-                                    </Routes>
-                                  </Suspense>
+                                  <Routes>
+                                    <Route
+                                      path="/"
+                                      element={<ChatContainer />}
+                                    />
+                                    <Route
+                                      path="/chat/single"
+                                      element={<ChatContainer />}
+                                    />
+                                    <Route
+                                      path="/assistants"
+                                      element={<AssistantList />}
+                                    />
+                                    <Route
+                                      path="/history"
+                                      element={<History />}
+                                    />
+                                    <Route
+                                      path="/history/search"
+                                      element={<History />}
+                                    />
+                                    <Route
+                                      path="/settings"
+                                      element={<SettingsPage />}
+                                    />
+                                  </Routes>
                                 </div>
                               </div>
                             </DnDContextProvider>
@@ -90,11 +92,12 @@ function App() {
                         </ModelOptionsProvider>
                       </ResourceAttachmentProvider>
                     </SessionHistoryProvider>
-                  </BuiltInToolProvider>
-                </SessionContextProvider>
-              </AssistantContextProvider>
-            </SystemPromptProvider>
-          </MCPServerProvider>
+                  </WebMCPProvider>
+                </BuiltInToolProvider>
+              </SessionContextProvider>
+            </AssistantContextProvider>
+          </SystemPromptProvider>
+        </MCPServerProvider>
         </MCPServerRegistryProvider>
       </SettingsProvider>
     </div>

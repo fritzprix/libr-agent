@@ -23,6 +23,7 @@ import planningServer from './modules/planning-server/index.ts';
 // Import from the new playbook-store submodule (index.ts)
 import playbookStore from './modules/playbook-store/index.ts';
 import uiTools from './modules/ui-tools/index.ts';
+import bootstrapServer from './modules/bootstrap-server/index.ts';
 
 /**
  * A simple logger for the worker context, as the main logger is not available here.
@@ -49,6 +50,7 @@ const MODULE_REGISTRY = [
   { key: 'planning', module: planningServer },
   { key: 'playbook', module: playbookStore },
   { key: 'ui', module: uiTools },
+  { key: 'bootstrap', module: bootstrapServer },
   // Future modules can be added here with static imports
 ] as const;
 
