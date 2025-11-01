@@ -6,6 +6,7 @@ import MessageBubble from '../MessageBubble';
 import { Message } from '@/models/chat';
 import { ErrorBubble } from '../ErrorBubble';
 import { getLogger } from '@/lib/logger';
+import { useThrottle } from '@/hooks/useThrottle';
 import { Bot } from 'lucide-react';
 
 const logger = getLogger('ChatMessages');
@@ -26,21 +27,24 @@ export function ChatMessages() {
     }
   }, [messages, autoScrollEnabled]);
 
-  // Detect user scroll position
+  // Detect user scroll position with throttling to improve performance
+  const handleScroll = useThrottle(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    // If user is at the bottom, enable auto-scroll
+    const { scrollTop, scrollHeight, clientHeight } = container;
+    const atBottom = scrollHeight - scrollTop - clientHeight < 10;
+    setAutoScrollEnabled(atBottom);
+  }, 100);
+
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
 
-    const handleScroll = () => {
-      // If user is at the bottom, enable auto-scroll
-      const { scrollTop, scrollHeight, clientHeight } = container;
-      const atBottom = scrollHeight - scrollTop - clientHeight < 10;
-      setAutoScrollEnabled(atBottom);
-    };
-
-    container.addEventListener('scroll', handleScroll);
+    container.addEventListener('scroll', handleScroll, { passive: true });
     return () => container.removeEventListener('scroll', handleScroll);
-  }, []);
+  }, [handleScroll]);
 
   const getAssistantNameForMessage = useCallback(
     (m: Message) => {

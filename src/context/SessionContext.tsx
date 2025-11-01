@@ -135,10 +135,18 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
 
   const sessions = useMemo(() => data ?? [], [data]);
 
-  const hasNextPage = useMemo(
-    () => !(sessions.length > 0 && !sessions[sessions.length - 1].hasNextPage),
+  // Optimize: Move flatMap to useMemo to avoid repeated computation
+  const flatSessions = useMemo(
+    () => sessions.flatMap((page) => page.items),
     [sessions],
   );
+
+  // Simplify hasNextPage calculation for better readability
+  const hasNextPage = useMemo(() => {
+    if (sessions.length === 0) return false;
+    const lastPage = sessions[sessions.length - 1];
+    return lastPage.hasNextPage;
+  }, [sessions]);
 
   // Combined error state
   const error = useMemo(() => {
@@ -150,9 +158,10 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
     currentRef.current = current;
   }, [current]);
 
+  // Update ref with memoized flat sessions
   useEffect(() => {
-    sessionsRef.current = sessions.flatMap((page) => page.items);
-  }, [sessions]);
+    sessionsRef.current = flatSessions;
+  }, [flatSessions]);
 
   /**
    * Clears any current error state.
