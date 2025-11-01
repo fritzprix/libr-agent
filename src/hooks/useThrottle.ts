@@ -26,7 +26,8 @@ export function useThrottle<T extends (...args: unknown[]) => void>(
   callback: T,
   delay: number,
 ): T {
-  const lastRun = useRef(Date.now());
+  // Initialize to 0 so that the very first call executes immediately
+  const lastRun = useRef(0);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const throttledCallback = useCallback(
