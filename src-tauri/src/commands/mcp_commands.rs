@@ -149,7 +149,9 @@ pub async fn list_tools_from_config(
         let server_name = server_cfg.name.clone();
         if !manager.is_server_alive(&server_name).await {
             println!("🚀 [TAURI] Starting server: {server_name}");
-            // Convert V2 to legacy format for current manager (temporary)
+            // TODO: Remove this conversion once MCPServerManager supports V2 configs natively
+            // Convert V2 to legacy format for current manager (temporary workaround)
+            // This conversion loses OAuth config, HTTP headers, and security settings
             let legacy_config: MCPServerConfig = server_cfg.into();
             if let Err(e) = manager.start_server(legacy_config).await {
                 eprintln!("❌ [TAURI] Failed to start server {server_name}: {e}");

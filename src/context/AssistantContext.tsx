@@ -15,6 +15,7 @@ import { getLogger } from '../lib/logger';
 import { Assistant } from '../models/chat';
 import { toast } from 'sonner';
 import { useMCPServer } from '@/hooks/use-mcp-server';
+import { useMCPServerRegistry } from '@/context/MCPServerRegistryContext';
 import { MCPTool } from '@/lib/mcp-types';
 
 const logger = getLogger('AssistantContext');
@@ -143,6 +144,7 @@ export const AssistantContextProvider = ({
   );
 
   const { connectServersFromAssistant, availableTools } = useMCPServer();
+  const { activeServers } = useMCPServerRegistry();
 
   const [error, setError] = useState<Error | null>(null);
 
@@ -308,29 +310,15 @@ export const AssistantContextProvider = ({
     }
   }, [currentAssistant, connectServersFromAssistant]);
 
-  // Listen for MCP server changes and reconnect if needed
+  // React state-driven reconnection when MCP servers change (no window events)
   useEffect(() => {
-    const handleServerChange = () => {
-      const current = currentAssistantRef.current;
-      if (current) {
-        logger.debug('MCP servers changed, reconnecting for current assistant');
-        connectServersFromAssistant(current);
-      }
-    };
-
-    if (typeof window !== 'undefined') {
-      window.addEventListener(
-        'libragent:mcp-servers-changed',
-        handleServerChange,
-      );
-      return () => {
-        window.removeEventListener(
-          'libragent:mcp-servers-changed',
-          handleServerChange,
-        );
-      };
+    const current = currentAssistantRef.current;
+    if (current) {
+      logger.debug('MCP servers changed, reconnecting for current assistant');
+      connectServersFromAssistant(current);
     }
-  }, [connectServersFromAssistant]);
+    // We intentionally depend on activeServers reference to reflect registry changes
+  }, [activeServers, connectServersFromAssistant]);
 
   const contextValue: AssistantContextType = useMemo(
     () => ({

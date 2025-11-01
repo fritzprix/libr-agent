@@ -7,8 +7,9 @@ import {
   SamplingOptions,
   SamplingResponse,
 } from './mcp-types';
+import type { OAuthConfig } from './mcp-types';
 import type { ServiceContext, ServiceContextOptions } from '@/features/tools';
-import type { Message } from '@/models/chat';
+import type { Message, MCPConfig } from '@/models/chat';
 import type { Page } from '@/lib/db/types';
 
 const logger = getLogger('RustBackendClient');
@@ -171,7 +172,7 @@ export async function listTools(serverName: string): Promise<MCPTool[]> {
  * @returns A promise that resolves to a record mapping server names to their tool lists.
  */
 export async function listToolsFromConfig(
-  config: import('@/models/chat').MCPConfig,
+  config: MCPConfig,
 ): Promise<Record<string, MCPTool[]>> {
   return safeInvoke<Record<string, MCPTool[]>>('list_tools_from_config', {
     config,
@@ -191,7 +192,7 @@ export async function listToolsFromConfig(
  */
 export async function startOAuthFlow(
   serverId: string,
-  config: import('@/lib/mcp-types').OAuthConfig,
+  config: OAuthConfig,
 ): Promise<[string, string]> {
   return safeInvoke<[string, string]>('start_oauth_flow', {
     serverId,
@@ -210,7 +211,7 @@ export async function startOAuthFlow(
  */
 export async function completeOAuthFlow(
   serverId: string,
-  config: import('@/lib/mcp-types').OAuthConfig,
+  config: OAuthConfig,
   authorizationCode: string,
   state: string,
 ): Promise<string> {

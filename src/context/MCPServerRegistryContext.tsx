@@ -47,19 +47,7 @@ const invalidateMCPServerPages = async () => {
   await mutate((key) => Array.isArray(key) && key[0] === 'mcpServers');
 };
 
-/**
- * Broadcasts a custom event to notify all components about MCP server changes
- * Used to trigger reconnection in AssistantContext
- */
-const broadcastChange = () => {
-  if (typeof window !== 'undefined') {
-    try {
-      window.dispatchEvent(new CustomEvent('libragent:mcp-servers-changed'));
-    } catch (err) {
-      logger.error('Failed to broadcast MCP server change event', err);
-    }
-  }
-};
+// Window event broadcasting removed in favor of React state propagation via context
 
 export const MCPServerRegistryProvider = ({
   children,
@@ -107,7 +95,6 @@ export const MCPServerRegistryProvider = ({
         await dbService.mcpServers.upsert(server);
         await refreshAll();
         await invalidateMCPServerPages();
-        broadcastChange();
         logger.info(`MCP server "${server.name}" saved successfully`);
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';
@@ -128,7 +115,6 @@ export const MCPServerRegistryProvider = ({
         await dbService.mcpServers.delete(id);
         await refreshAll();
         await invalidateMCPServerPages();
-        broadcastChange();
         logger.info(`MCP server with ID "${id}" deleted successfully`);
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';

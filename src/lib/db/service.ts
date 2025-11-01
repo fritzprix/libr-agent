@@ -53,15 +53,12 @@ export class LocalDatabase extends Dexie {
   constructor() {
     super('MCPAgentDB');
 
-    // Consolidated schema (originally versions 1-9)
-    // - Version 1-2: Basic assistants/objects with timestamps and indices
-    // - Version 3: Added sessions/messages support
-    // - Version 5: Removed file storage (moved to Rust backend)
-    // - Version 6: Added playbooks
-    // - Version 7: Cleanup of empty allowedBuiltInServiceAliases
-    // - Version 8: Added agentId index for playbooks
-    // - Version 9: Added threadId support with composite indices
-    // - Version 10: Added mcpServers table for centralized MCP server management
+    // Consolidated schema (current version 1)
+    // Historical versions (1-9) have been squashed into v1 for fresh installations
+    // - Basic assistants/objects with timestamps and indices
+    // - Sessions/messages support with threadId composite indices
+    // - Playbooks with agentId index
+    // - MCP servers table for centralized server management
     this.version(1).stores({
       assistants: '&id, createdAt, updatedAt, name',
       mcpServers: '&id, name, createdAt, updatedAt, isActive',

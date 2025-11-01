@@ -206,20 +206,8 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
    */
   const handleSelect = useCallback(
     (id?: string) => {
-      // Notify other parts of the app that the session is switching so they can
-      // abort any in-flight operations immediately.
-      if (typeof window !== 'undefined') {
-        try {
-          window.dispatchEvent(
-            new CustomEvent('libragent:session-switch', {
-              detail: { sessionId: id },
-            }),
-          );
-        } catch {
-          // Fail silently if CustomEvent is not supported in the environment
-          // (very unlikely in browser runtimes)
-        }
-      }
+      // Consumers should react to session changes via context state,
+      // not global window events. Remove legacy broadcast.
 
       if (id === undefined) {
         setCurrent(null);
