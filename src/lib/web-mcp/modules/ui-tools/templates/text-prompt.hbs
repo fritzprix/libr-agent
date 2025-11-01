@@ -1,0 +1,100 @@
+<html>
+  <head>
+    <meta charset='utf-8' />
+    <meta name='viewport' content='width=device-width,initial-scale=1' />
+    <style>
+      body {
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+        margin: 0;
+        padding: 16px;
+        background: #f9fafb;
+      }
+      .prompt-container {
+        max-width: 600px;
+        background: white;
+        border-radius: 8px;
+        padding: 20px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      }
+      .prompt-label {
+        font-weight: 600;
+        margin-bottom: 12px;
+        color: #1f2937;
+      }
+      .prompt-input {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        font-size: 14px;
+        box-sizing: border-box;
+      }
+      .prompt-input:focus {
+        outline: none;
+        border-color: #3b82f6;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+      }
+      .prompt-actions {
+        margin-top: 16px;
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+      }
+      .btn {
+        padding: 8px 16px;
+        border-radius: 6px;
+        border: none;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .btn-primary {
+        background: #3b82f6;
+        color: white;
+      }
+      .btn-primary:hover {
+        background: #2563eb;
+      }
+      .btn-secondary {
+        background: #e5e7eb;
+        color: #374151;
+      }
+      .btn-secondary:hover {
+        background: #d1d5db;
+      }
+    </style>
+  </head>
+  <body>
+    <div class='prompt-container'>
+      <div class='prompt-label'>{{prompt}}</div>
+      <input
+        type='text'
+        id='userInput'
+        class='prompt-input'
+        placeholder='Type your answer...'
+      />
+      <div class='prompt-actions'>
+        <button class='btn btn-secondary' onclick='handleCancel()'>
+          Cancel
+        </button>
+        <button class='btn btn-primary' onclick='handleSubmit()'>Submit</button>
+      </div>
+    </div>
+    <script>
+      const messageId = '{{messageId}}'; const input =
+      document.getElementById('userInput'); input.addEventListener('keypress',
+      function (e) { if (e.key === 'Enter') { handleSubmit(); } }); function
+      handleSubmit() { const answer = input.value.trim(); if (!answer) {
+      alert('Please enter a response'); return; } window.parent.postMessage( {
+      type: 'tool', payload: { toolName: 'reply_prompt', params: { messageId,
+      answer }, }, }, '*', ); } function handleCancel() {
+      window.parent.postMessage( { type: 'tool', payload: { toolName:
+      'reply_prompt', params: { messageId, answer: null, cancelled: true }, },
+      }, '*', ); } // Auto-focus input input.focus();
+    </script>
+  </body>
+</html>

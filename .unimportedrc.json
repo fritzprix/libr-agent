@@ -1,6 +1,15 @@
 {
-  "entry": ["src/main.tsx", "src/app/App.tsx", "src/app/main.tsx"],
-  "extensions": [".ts", ".tsx", ".js", ".jsx"],
+  "entry": [
+    "src/main.tsx",
+    "src/app/App.tsx",
+    "src/app/main.tsx"
+  ],
+  "extensions": [
+    ".ts",
+    ".tsx",
+    ".js",
+    ".jsx"
+  ],
   "ignorePatterns": [
     "**/node_modules/**",
     "**/dist/**",
@@ -9,8 +18,7 @@
     "**/*.stories.*",
     "**/vite-env.d.ts",
     "src-tauri/**",
-    "**/mcp-worker.ts",
-    "**/web-mcp/modules/**",
+    "**/web-mcp/modules/__tests__/**",
     "src/test/setup.ts"
   ],
   "aliases": {
@@ -23,22 +31,37 @@
     "../../lib/web-mcp/mcp-worker.ts?worker",
     [
       "../../lib/web-mcp/mcp-worker.ts?worker",
-      ["src/features/tools/WebMCPToolProvider.tsx"]
+      [
+        "src/features/tools/WebMCPToolProvider.tsx"
+      ]
     ],
     "../lib/web-mcp/mcp-worker.ts?worker",
     [
       "../lib/web-mcp/mcp-worker.ts?worker",
-      ["src/hooks/use-web-mcp-server.ts"]
+      [
+        "src/hooks/use-web-mcp-server.ts"
+      ]
     ],
     "@/lib/web-mcp/mcp-worker.ts?worker at src/context/WebMCPContext.tsx",
-    ["@/lib/web-mcp/mcp-worker.ts?worker", ["src/context/WebMCPContext.tsx"]],
-    ["@/lib/web-mcp/mcp-worker.ts?worker", ["src\\context\\WebMCPContext.tsx"]]
+    [
+      "@/lib/web-mcp/mcp-worker.ts?worker",
+      [
+        "src/context/WebMCPContext.tsx"
+      ]
+    ],
+    [
+      "@/lib/web-mcp/mcp-worker.ts?worker",
+      [
+        "src\\context\\WebMCPContext.tsx"
+      ]
+    ]
   ],
   "ignoreUnused": [
     "@mcp-ui/server",
     "@radix-ui/react-alert-dialog",
     "@radix-ui/react-collapsible",
     "@remote-dom/core",
+    "handlebars",
     "postcss",
     "remark-gfm",
     "tailwindcss"
@@ -48,8 +71,33 @@
     "src/components/ui/collapsible.tsx",
     "src/components/ui/sonner.tsx",
     "src/hooks/__tests__/use-ai-service.completeText.spec.ts",
+    "src/lib/web-mcp/mcp-worker.ts",
+    "src/lib/web-mcp/modules/planning-server",
+    "src/lib/web-mcp/modules/planning-server/index.ts",
+    "src/lib/web-mcp/modules/planning-server/server.ts",
+    "src/lib/web-mcp/modules/planning-server/tools.ts",
+    "src/lib/web-mcp/modules/playbook-store",
+    "src/lib/web-mcp/modules/playbook-store/index.ts",
+    "src/lib/web-mcp/modules/playbook-store/store.ts",
+    "src/lib/web-mcp/modules/playbook-store/templates",
+    "src/lib/web-mcp/modules/playbook-store/templates/playbooks.hbs",
+    "src/lib/web-mcp/modules/playbook-store/tools.ts",
+    "src/lib/web-mcp/modules/ui-tools",
+    "src/lib/web-mcp/modules/ui-tools/index.ts",
+    "src/lib/web-mcp/modules/ui-tools/server.ts",
+    "src/lib/web-mcp/modules/ui-tools/templates",
+    "src/lib/web-mcp/modules/ui-tools/templates/bar-chart.hbs",
+    "src/lib/web-mcp/modules/ui-tools/templates/line-chart.hbs",
+    "src/lib/web-mcp/modules/ui-tools/templates/select-prompt.hbs",
+    "src/lib/web-mcp/modules/ui-tools/templates/text-prompt.hbs",
+    "src/lib/web-mcp/modules/ui-tools/templates/wait.hbs",
+    "src/lib/web-mcp/modules/ui-tools/tools.ts",
+    "src/lib/web-mcp/utils/ui-utils.ts",
     "src/test/setup.ts",
     "src/test/types/test-types.ts",
     "src/test/utils/html-test-utils.ts"
+  ],
+  "ignoreDependencies": [
+    "handlebars"
   ]
 }

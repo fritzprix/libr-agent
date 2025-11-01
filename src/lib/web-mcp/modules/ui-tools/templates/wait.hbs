@@ -1,0 +1,96 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset='utf-8' />
+    <meta name='viewport' content='width=device-width,initial-scale=1' />
+    <style>
+      body {
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+        margin: 0;
+        padding: 16px;
+        background: #f9fafb;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+      }
+      .wait-container {
+        max-width: 500px;
+        background: white;
+        border-radius: 8px;
+        padding: 32px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        text-align: center;
+      }
+      .spinner {
+        font-size: 48px;
+        margin-bottom: 16px;
+        animation: spin 2s linear infinite;
+      }
+      @keyframes spin {
+        from {
+          transform: rotate(0deg);
+        }
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .spinner {
+          animation: none;
+        }
+      }
+      .message {
+        font-size: 18px;
+        font-weight: 600;
+        color: #1f2937;
+        margin-bottom: 24px;
+      }
+      .btn-continue {
+        padding: 12px 24px;
+        background: #3b82f6;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        font-size: 16px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+      .btn-continue:hover {
+        background: #2563eb;
+      }
+      .btn-continue:focus {
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      class='wait-container'
+      role='dialog'
+      aria-modal='true'
+      aria-labelledby='wait-message'
+      data-context='{{contextHtml}}'
+    >
+      <div class='spinner' aria-hidden='true'>⏳</div>
+      <div id='wait-message' class='message'>{{message}}</div>
+      <button class='btn-continue' onclick='handleContinue()' autofocus>
+        계속
+      </button>
+    </div>
+    <script>
+      const context =
+      {{{contextJson}}}; function handleContinue() { // Post flattened params so
+      the parent can forward them directly to the tool // i.e. params: {
+      resumeInstruction, startedAt } window.parent.postMessage( { type: 'tool',
+      payload: { toolName: 'resume_from_wait', params: { ...context }, }, },
+      '*', ); } // Keyboard support document.addEventListener('keydown',
+      function (e) { if (e.key === 'Enter') { handleContinue(); } });
+    </script>
+  </body>
+</html>

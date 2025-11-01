@@ -9,3 +9,6 @@ src/**/*.test.ts
 src/**/*.test.tsx
 src-tauri/
 public/
+
+# Handlebars templates (preserve formatting and doctype)
+*.hbs
