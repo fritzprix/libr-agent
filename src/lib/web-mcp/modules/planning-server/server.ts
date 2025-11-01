@@ -3,9 +3,10 @@ import {
   createMCPStructuredResponse,
   createMCPTextResponse,
 } from '@/lib/mcp-response-utils';
-import type { MCPResponse, MCPTool, WebMCPServer } from '@/lib/mcp-types';
+import type { MCPResponse, WebMCPServer } from '@/lib/mcp-types';
 import type { ServiceContext, ServiceContextOptions } from '@/features/tools';
 import { getLogger } from '@/lib/logger';
+import { planningTools as tools } from './tools.ts';
 
 const logger = getLogger('PlanningServer');
 
@@ -78,8 +79,6 @@ type ClearGoalOutput = BaseOutput;
 interface AddToDoOutput extends BaseOutput {
   todos: SimpleTodo[];
 }
-
-// `toggle_todo` has been removed: toggle functionality is deprecated.
 
 /**
  * The output for the `check_todo` tool call.
@@ -168,9 +167,6 @@ class EphemeralState {
     );
   }
 
-  // toggle functionality removed; use remove_todo / clear_todos / add_todo
-  // to manage todo lifecycle programmatically.
-
   checkTodo(
     id: number,
     check: boolean = true,
@@ -190,7 +186,6 @@ class EphemeralState {
     }
 
     todo.status = check ? 'completed' : 'pending';
-    // Treat empty string as undefined
     if (summary !== undefined) {
       todo.summary = summary || undefined;
     }
@@ -208,7 +203,6 @@ class EphemeralState {
 
   clearTodos(ids?: number[]): MCPResponse<BaseOutput> {
     if (!ids || ids.length === 0) {
-      // Clear all todos if no IDs specified
       const clearedCount = this.todos.length;
       this.todos = [];
       const msg =
@@ -223,7 +217,6 @@ class EphemeralState {
       );
     }
 
-    // Clear specific todos by IDs
     const initialCount = this.todos.length;
     const clearedTodos = this.todos.filter((todo) => ids.includes(todo.id));
     this.todos = this.todos.filter((todo) => !ids.includes(todo.id));
@@ -360,7 +353,6 @@ class EphemeralState {
       }
 
       if (!this.disableThoughtLogging) {
-        // lightweight console output for server logs
         console.error(
           `SEQUENTIAL THOUGHT ${thought.thoughtNumber}/${thought.totalThoughts}: ${thought.thought}`,
         );
@@ -394,51 +386,32 @@ class SessionStateManager {
   private currentSessionId: string | null = null;
   private currentThreadId: string | null = null;
 
-  /**
-   * Sets the current session context and cleans up the previous session's state.
-   * @param sessionId The session ID to set as current context.
-   * @param threadId The thread ID to set as current context (optional, defaults to sessionId).
-   */
   setSession(sessionId: string, threadId?: string): void {
     const effectiveThreadId = threadId || sessionId;
 
-    // ✅ CLEANUP: Remove previous session's all thread states
     if (this.currentSessionId && this.currentSessionId !== sessionId) {
       const oldThreadMap = this.sessions.get(this.currentSessionId);
       if (oldThreadMap) {
-        // Clear all threads in old session
         oldThreadMap.clear();
       }
-      // Remove the session entry entirely
       this.sessions.delete(this.currentSessionId);
       console.info(
         `[PlanningServer] Session cleanup: removed all threads from session "${this.currentSessionId}"`,
       );
     }
 
-    // Set new session (lazy initialization)
     this.currentSessionId = sessionId;
     this.currentThreadId = effectiveThreadId;
   }
 
-  /**
-   * Returns the currently active session id for diagnostics.
-   */
   getCurrentSessionId(): string | null {
     return this.currentSessionId;
   }
 
-  /**
-   * Returns the currently active thread id for diagnostics.
-   */
   getCurrentThreadId(): string | null {
     return this.currentThreadId;
   }
 
-  /**
-   * Get or create state for (sessionId, threadId) pair.
-   * ✅ Lazy initialization: state is only created when a tool is called
-   */
   private getState(sessionId: string, threadId: string): EphemeralState {
     if (!this.sessions.has(sessionId)) {
       this.sessions.set(sessionId, new Map());
@@ -450,13 +423,8 @@ class SessionStateManager {
     return threadMap.get(threadId)!;
   }
 
-  /**
-   * Gets the current session's state, or creates a default session if none is set.
-   * @returns The EphemeralState for the current (sessionId, threadId).
-   */
   private getCurrentState(): EphemeralState {
     if (!this.currentSessionId) {
-      // Fallback to default session
       this.setSession('default');
     }
     const effectiveThreadId = this.currentThreadId || this.currentSessionId!;
@@ -474,8 +442,6 @@ class SessionStateManager {
   addTodo(name: string): MCPResponse<AddToDoOutput> {
     return this.getCurrentState().addTodo(name);
   }
-
-  // toggleTodo removed; use remove_todo / clear_todos / add_todo instead
 
   clearTodos(ids?: number[]): MCPResponse<BaseOutput> {
     return this.getCurrentState().clearTodos(ids);
@@ -521,11 +487,7 @@ class SessionStateManager {
     return this.getCurrentState().checkTodo(id, check, summary);
   }
 
-  /**
-   * Clears all session states. Useful for testing or complete reset.
-   */
   clearAllSessions(): void {
-    // ✅ Cleanup all sessions and their threads
     for (const [sessionId, threadMap] of this.sessions.entries()) {
       threadMap.clear();
       this.sessions.delete(sessionId);
@@ -534,13 +496,6 @@ class SessionStateManager {
     this.currentThreadId = null;
   }
 
-  /**
-   * Gets the planning state for a specific session/thread without changing current context.
-   * This allows querying other sessions' states without side effects.
-   * @param sessionId The session ID to query
-   * @param threadId The thread ID to query (optional, defaults to sessionId)
-   * @returns The planning state for the requested session/thread
-   */
   getStateForSession(
     sessionId: string,
     threadId?: string,
@@ -548,11 +503,11 @@ class SessionStateManager {
     const effectiveThreadId = threadId || sessionId;
     const threadMap = this.sessions.get(sessionId);
     if (!threadMap) {
-      return null; // Session does not exist
+      return null;
     }
     const state = threadMap.get(effectiveThreadId);
     if (!state) {
-      return null; // Thread does not exist
+      return null;
     }
     return {
       goal: state.getGoal(),
@@ -565,197 +520,13 @@ class SessionStateManager {
 
 const stateManager = new SessionStateManager();
 
-// Simplified tool definitions - flat schemas for Gemini API compatibility
-const tools: MCPTool[] = [
-  {
-    name: 'create_goal',
-    description:
-      'Create a single goal for the session. Use when starting a new or complex task.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        goal: {
-          type: 'string',
-          description:
-            'The goal text to set for the session (e.g., "Complete project setup").',
-        },
-      },
-      required: ['goal'],
-    },
-  },
-  {
-    name: 'clear_goal',
-    description:
-      'Clear the current goal. Use when finishing or abandoning the current goal.',
-    inputSchema: { type: 'object', properties: {} },
-  },
-  {
-    name: 'add_todo',
-    description:
-      'Add a todo item to the goal. Use to break down a goal into actionable steps.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        name: {
-          type: 'string',
-          description:
-            'The name or description of the todo item to add (e.g., "Write documentation").',
-        },
-      },
-      required: ['name'],
-    },
-  },
-  {
-    name: 'mark_todo',
-    description:
-      'Mark a todo item as completed or pending by its ID, optionally with a completion summary.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        id: {
-          type: 'number',
-          minimum: 1,
-          description: 'The ID of the todo to update',
-        },
-        completed: {
-          type: 'boolean',
-          description:
-            'Whether to mark the todo as completed (true) or pending (false). Defaults to true.',
-        },
-        summary: {
-          type: 'string',
-          description:
-            'Optional summary or completion note for the todo (e.g., "Completed with PR #42").',
-        },
-      },
-      required: ['id'],
-    },
-  },
-  {
-    name: 'clear_todos',
-    description:
-      'Clear specific todos by their IDs, or all todos if no IDs are provided. Use to remove completed tasks or reset the todo list.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        ids: {
-          type: 'array',
-          items: { type: 'number', minimum: 1 },
-          description:
-            'Array of todo IDs to clear. If not provided or empty, all todos will be cleared.',
-        },
-      },
-    },
-  },
-  {
-    name: 'clear_session',
-    description:
-      'Clear all session state (goal, todos, and notes). Use to reset everything and start fresh.',
-    inputSchema: { type: 'object', properties: {} },
-  },
-  {
-    name: 'add_memo',
-    description:
-      'Add a memo to the session. Memos are temporary records, observations, or context information. Each memo is assigned a unique ID for reference.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        memo: {
-          type: 'string',
-          description:
-            'The memo text to add (e.g., "User requested feature X").',
-        },
-      },
-      required: ['memo'],
-    },
-  },
-  {
-    name: 'clear_memo',
-    description: 'Clear a memo from the session by its ID.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        id: {
-          type: 'number',
-          minimum: 0,
-          description: 'The ID of the memo to clear.',
-        },
-      },
-      required: ['id'],
-    },
-  },
-  {
-    name: 'get_current_state',
-    description:
-      'Get current planning state as structured JSON data for UI visualization',
-    inputSchema: { type: 'object', properties: {} },
-  },
-  // Sequential thinking tool - adapted from thinking_seq.ts
-  {
-    name: 'sequentialthinking',
-    description:
-      'Sequential thinking tool for multi-step reflective problem solving. Accepts a thought payload and maintains per-session thought history and branches.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        thought: { type: 'string', description: 'Your current thinking step' },
-        nextThoughtNeeded: {
-          type: 'boolean',
-          description: 'Whether another thought step is needed',
-        },
-        thoughtNumber: { type: 'integer', minimum: 1 },
-        totalThoughts: { type: 'integer', minimum: 1 },
-        isRevision: { type: 'boolean' },
-        revisesThought: { type: 'integer', minimum: 1 },
-        branchFromThought: { type: 'integer', minimum: 1 },
-        branchId: { type: 'string' },
-        needsMoreThoughts: { type: 'boolean' },
-      },
-      required: [
-        'thought',
-        'nextThoughtNeeded',
-        'thoughtNumber',
-        'totalThoughts',
-      ],
-    },
-  },
-];
-
-// Planning server interface for better type safety
-interface PlanningServerMethods {
-  create_goal: (args: {
-    goal: string;
-  }) => Promise<MCPResponse<CreateGoalOutput>>;
-  clear_goal: () => Promise<MCPResponse<ClearGoalOutput>>;
-  add_todo: (args: { name: string }) => Promise<MCPResponse<AddToDoOutput>>;
-  mark_todo: (args: {
-    id: number;
-    completed?: boolean;
-    summary?: string;
-  }) => Promise<MCPResponse<CheckTodoOutput>>;
-  clear_todos: (args?: { ids?: number[] }) => Promise<MCPResponse<BaseOutput>>;
-  clear_session: () => Promise<MCPResponse<BaseOutput>>;
-  add_memo: (args: {
-    memo: string;
-  }) => Promise<MCPResponse<BaseOutput & { memos: Memo[] }>>;
-  remove_memo: (args: {
-    id: number;
-  }) => Promise<MCPResponse<BaseOutput & { memos: Memo[] }>>;
-  get_current_state: () => Promise<MCPResponse<PlanningState>>;
-}
-
-/**
- * The implementation of the `WebMCPServer` interface for the planning service.
- * It defines the server's metadata and its `callTool` and `getServiceContext` methods.
- */
-const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
+const planningServer: WebMCPServer = {
   name: 'planning',
   version: '2.2.0',
   description:
     'Ephemeral planning and goal management for AI agents with note-taking and completion summaries',
   tools,
   async callTool(name: string, args: unknown): Promise<MCPResponse<unknown>> {
-    // Debug logging for tool calls
     console.log(`[PlanningServer] callTool invoked: ${name}`, {
       args,
       currentSessionId: stateManager.getCurrentSessionId(),
@@ -764,12 +535,6 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
 
     const typedArgs = (args as Record<string, unknown>) || {};
 
-    // If caller included a sessionId in the tool args, do NOT implicitly
-    // switch the server session. Accepting session changes via tool args is
-    // an implicit API contract and can lead to race conditions, inconsistent
-    // state, and security surprises. Clients should call the explicit
-    // `switchContext`/`setContext` API to change sessions before invoking
-    // tools. Here we log a warning if a sessionId is present and ignore it.
     if (typeof typedArgs.sessionId === 'string' && typedArgs.sessionId) {
       console.warn(
         `[PlanningServer] callTool: sessionId provided in args ("${String(
@@ -777,7 +542,6 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
         )}") - ignored. Use switchContext/setContext to change sessions.`,
       );
     }
-    // Similarly, ignore threadId if provided in args
     if (typeof typedArgs.threadId === 'string' && typedArgs.threadId) {
       console.warn(
         `[PlanningServer] callTool: threadId provided in args ("${String(
@@ -839,10 +603,6 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
           memos: stateManager.getMemos(),
         };
 
-        // Provide a human-readable Markdown summary that includes the
-        // important fields. This is friendlier than raw JSON for text-only
-        // consumers (LLMs or UI previews) while the structuredContent still
-        // contains the typed object.
         const todosText = currentState.todos.length
           ? currentState.todos
               .map((t) => {
@@ -853,7 +613,6 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
               .join('\n')
           : '- (none)';
 
-        // Sanitize notes: replace newlines with spaces to maintain Markdown formatting
         const notesText = currentState.memos.length
           ? currentState.memos
               .map((m) => `- [ID: ${m.id}] ${m.content.replace(/\n/g, ' ')}`)
@@ -901,12 +660,9 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
   async getServiceContext(
     options?: ServiceContextOptions,
   ): Promise<ServiceContext<PlanningState>> {
-    // If options are provided with sessionId, query that specific session's state
-    // without changing the current context or triggering cleanup
     let planningState: PlanningState | null = null;
 
     if (options?.sessionId) {
-      // Query a specific session's state without side effects
       planningState = stateManager.getStateForSession(
         options.sessionId,
         options.threadId,
@@ -916,7 +672,6 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
           sessionId: options.sessionId,
           threadId: options.threadId,
         });
-        // Return empty state if session doesn't exist
         return {
           contextPrompt: '# No active goal',
           structuredState: {
@@ -928,7 +683,6 @@ const planningServer: WebMCPServer & { methods?: PlanningServerMethods } = {
         };
       }
     } else {
-      // Use current context
       const goal = stateManager.getGoal();
       const todos = stateManager.getTodos();
       const memos = stateManager.getMemos();
@@ -980,7 +734,6 @@ Recent Notes: ${
     const sessionId = context.sessionId;
     const threadId = context.threadId;
     if (sessionId) {
-      // ✅ This triggers cleanup of previous session's all threads
       stateManager.setSession(sessionId, threadId);
       console.info(
         `[PlanningServer] switchContext -> session: ${sessionId}, thread: ${threadId || sessionId} (previous session cleaned up)`,
@@ -991,7 +744,6 @@ Recent Notes: ${
 
 /**
  * Extends the `WebMCPServerProxy` with typed methods for the planning server's tools.
- * This provides a strongly-typed client for interacting with the planning server.
  */
 export interface PlanningServerProxy extends WebMCPServerProxy {
   create_goal: (args: { goal: string }) => Promise<CreateGoalOutput>;

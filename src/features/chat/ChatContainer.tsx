@@ -5,9 +5,5 @@ import StartChatView from './StartChatView';
 export default function ChatContainer() {
   const { current: currentSession } = useSessionContext();
 
-  if (!currentSession) {
-    return <StartChatView />;
-  }
-
-  return <ChatRouter />;
+  return currentSession ? <ChatRouter /> : <StartChatView />;
 }

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import SessionItem from './SessionItem';
 import { Input, Badge } from '@/components/ui';
+import { useDebounced } from '@/hooks/useDebounced';
 import type { SessionWithHits } from '@/models/search';
 
 interface SessionListProps {
@@ -19,14 +20,16 @@ export default function SessionList({
   isCollapsed = false,
 }: SessionListProps) {
   const [searchQuery, setSearchQuery] = useState('');
+  // Debounce search query to reduce filtering operations during typing
+  const debouncedQuery = useDebounced(searchQuery, 300);
 
-  // Filter sessions based on search query
+  // Filter sessions based on debounced search query
   const filteredSessions = useMemo(() => {
-    if (!searchQuery.trim()) {
+    if (!debouncedQuery.trim()) {
       return sessions;
     }
 
-    const query = searchQuery.toLowerCase();
+    const query = debouncedQuery.toLowerCase();
     return sessions.filter((session) => {
       const name = session.name?.toLowerCase() || '';
       const description = session.description?.toLowerCase() || '';
@@ -40,7 +43,7 @@ export default function SessionList({
         assistantNames.includes(query)
       );
     });
-  }, [sessions, searchQuery]);
+  }, [sessions, debouncedQuery]);
 
   return (
     <div className={`flex flex-col ${className}`}>

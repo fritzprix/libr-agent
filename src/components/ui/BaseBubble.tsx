@@ -44,9 +44,9 @@ export const BaseBubble: React.FC<BaseBubbleProps> = ({
       <div className="px-4 py-3 bg-muted border-b border-border flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="flex gap-1.5">
-            <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-            <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
-            <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+            <div className="w-3 h-3 bg-destructive rounded-full"></div>
+            <div className="w-3 h-3 bg-warning rounded-full"></div>
+            <div className="w-3 h-3 bg-success rounded-full"></div>
           </div>
           <button
             onClick={() => setIsExpanded(!isExpanded)}

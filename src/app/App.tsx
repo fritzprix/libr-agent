@@ -1,7 +1,13 @@
 import { Route, Routes } from 'react-router-dom';
+import { lazy } from 'react';
 import AppSidebar from '../components/layout/AppSidebar';
 
-import ChatContainer from '@/features/chat/ChatContainer';
+// Lazy-load route components to reduce initial bundle and improve first paint
+const ChatContainer = lazy(() => import('@/features/chat/ChatContainer'));
+const AssistantList = lazy(() => import('@/features/assistant/List'));
+const History = lazy(() => import('@/features/history/History'));
+const SettingsPage = lazy(() => import('@/features/settings/SettingsPage'));
+
 import { Toaster } from 'sonner';
 import { ThemeToggle } from '../components/common/ThemeToggle';
 import { AppHeader } from '../components/layout/AppHeader';
@@ -13,19 +19,16 @@ import { ModelOptionsProvider } from '../context/ModelProvider';
 import { SessionContextProvider } from '../context/SessionContext';
 import { SessionHistoryProvider } from '../context/SessionHistoryContext';
 import { SettingsProvider } from '../context/SettingsContext';
-import History from '../features/history/History';
 import '../styles/globals.css';
 import './App.css';
-import AssistantList from '@/features/assistant/List';
 import { ResourceAttachmentProvider } from '@/context/ResourceAttachmentContext';
 import { BuiltInToolProvider } from '@/features/tools';
-import { BrowserToolProvider } from '@/features/tools/BrowserToolProvider';
-import { RustMCPToolProvider } from '@/features/tools/RustMCPToolProvider';
-import { WebMCPServiceRegistry } from '@/features/tools/WebMCPServiceRegistry';
-import { WebMCPProvider } from '@/context/WebMCPContext';
 import { SystemPromptProvider } from '@/context/SystemPromptContext';
 import { DnDContextProvider } from '@/context/DnDContext';
-import SettingsPage from '@/features/settings/SettingsPage';
+import { WebMCPProvider } from '@/context/WebMCPContext';
+import { WebMCPServiceRegistry } from '@/features/tools/WebMCPServiceRegistry';
+import { BrowserToolProvider } from '@/features/tools/BrowserToolProvider';
+import { RustMCPToolProvider } from '@/features/tools/RustMCPToolProvider';
 
 function App() {
   return (
@@ -33,68 +36,68 @@ function App() {
       <SettingsProvider>
         <MCPServerRegistryProvider>
           <MCPServerProvider>
-            <SystemPromptProvider>
-              <AssistantContextProvider>
-                <SessionContextProvider>
-                  <BuiltInToolProvider>
-                    <WebMCPProvider>
-                      <WebMCPServiceRegistry
-                        servers={['planning', 'playbook', 'ui']}
-                      />
-                      <BrowserToolProvider />
-                      <RustMCPToolProvider />
-                      <SessionHistoryProvider>
-                        <ResourceAttachmentProvider>
-                          <ModelOptionsProvider>
-                            <SidebarProvider>
-                              <DnDContextProvider>
-                                <AppSidebar />
-                                {/* Main Content Area (children of AppSidebar) */}
-                                <div className="flex flex-1 flex-col min-w-0">
-                                  <AppHeader>
-                                    <ThemeToggle />
-                                  </AppHeader>
-                                  <div className="flex-1 w-full min-h-0">
-                                    <Routes>
-                                      <Route
-                                        path="/"
-                                        element={<ChatContainer />}
-                                      />
-                                      <Route
-                                        path="/chat/single"
-                                        element={<ChatContainer />}
-                                      />
-                                      <Route
-                                        path="/assistants"
-                                        element={<AssistantList />}
-                                      />
-                                      <Route
-                                        path="/history"
-                                        element={<History />}
-                                      />
-                                      <Route
-                                        path="/history/search"
-                                        element={<History />}
-                                      />
-                                      <Route
-                                        path="/settings"
-                                        element={<SettingsPage />}
-                                      />
-                                    </Routes>
-                                  </div>
+          <SystemPromptProvider>
+            <AssistantContextProvider>
+              <SessionContextProvider>
+                <BuiltInToolProvider>
+                  <WebMCPProvider>
+                    <WebMCPServiceRegistry
+                      servers={['planning', 'playbook', 'ui', 'bootstrap']}
+                    />
+                    <BrowserToolProvider />
+                    <RustMCPToolProvider />
+                    <SessionHistoryProvider>
+                      <ResourceAttachmentProvider>
+                        <ModelOptionsProvider>
+                          <SidebarProvider>
+                            <DnDContextProvider>
+                              <AppSidebar />
+                              {/* Main Content Area (children of AppSidebar) */}
+                              <div className="flex flex-1 flex-col min-w-0">
+                                <AppHeader>
+                                  <ThemeToggle />
+                                </AppHeader>
+                                <div className="flex-1 w-full min-h-0">
+                                  <Routes>
+                                    <Route
+                                      path="/"
+                                      element={<ChatContainer />}
+                                    />
+                                    <Route
+                                      path="/chat/single"
+                                      element={<ChatContainer />}
+                                    />
+                                    <Route
+                                      path="/assistants"
+                                      element={<AssistantList />}
+                                    />
+                                    <Route
+                                      path="/history"
+                                      element={<History />}
+                                    />
+                                    <Route
+                                      path="/history/search"
+                                      element={<History />}
+                                    />
+                                    <Route
+                                      path="/settings"
+                                      element={<SettingsPage />}
+                                    />
+                                  </Routes>
                                 </div>
-                              </DnDContextProvider>
-                            </SidebarProvider>
-                            <Toaster />
-                          </ModelOptionsProvider>
-                        </ResourceAttachmentProvider>
-                      </SessionHistoryProvider>
-                    </WebMCPProvider>
-                  </BuiltInToolProvider>
-                </SessionContextProvider>
-              </AssistantContextProvider>
-            </SystemPromptProvider>
-          </MCPServerProvider>
+                              </div>
+                            </DnDContextProvider>
+                          </SidebarProvider>
+                          <Toaster />
+                        </ModelOptionsProvider>
+                      </ResourceAttachmentProvider>
+                    </SessionHistoryProvider>
+                  </WebMCPProvider>
+                </BuiltInToolProvider>
+              </SessionContextProvider>
+            </AssistantContextProvider>
+          </SystemPromptProvider>
+        </MCPServerProvider>
         </MCPServerRegistryProvider>
       </SettingsProvider>
     </div>
