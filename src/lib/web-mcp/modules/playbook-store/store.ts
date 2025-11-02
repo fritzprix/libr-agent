@@ -3,32 +3,18 @@ import {
   createMCPTextResponse,
   createMCPStructuredMultipartResponse,
 } from '@/lib/mcp-response-utils';
-import type {
-  MCPResponse,
-  MCPTool,
-  WebMCPServer,
-  MCPContent,
-} from '@/lib/mcp-types';
+import type { MCPResponse, WebMCPServer, MCPContent } from '@/lib/mcp-types';
 import type { Playbook } from '@/types/playbook';
 import { dbService } from '@/lib/db';
-import { createUIResource, type UIResource } from '@mcp-ui/server';
-import type { ServiceInfo } from '@/lib/mcp-types';
 import type { ServiceContextOptions } from '@/features/tools';
 
-function escapeHtml(s: string): string {
-  if (!s) return '';
-  return String(s)
-    .split('&')
-    .join('&amp;')
-    .split('<')
-    .join('&lt;')
-    .split('>')
-    .join('&gt;')
-    .split('"')
-    .join('&quot;')
-    .split("'")
-    .join('&#39;');
-}
+import {
+  escapeHtml,
+  createUiResourceWithServiceInfo,
+  renderTemplate,
+} from '../../utils/ui-utils';
+import playbooksTemplate from './templates/playbooks.hbs?raw';
+import { playbookTools as tools } from './tools.ts';
 
 /**
  * In-memory fallback when DB is not available in worker environment.
@@ -68,7 +54,7 @@ function buildListItemsHtml(items: PlaybookRecord[]): string {
       const goal = escapeHtml(p.goal);
       const id = escapeHtml(p.id);
       const steps = (p.workflow || []).length;
-      return `<div class="pb-item" style="padding:8px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center;"><div style="flex:1"><strong>${goal}</strong><div style="font-size:12px;color:#666">id:${id} • steps:${steps}</div></div><div><button data-pbid="${id}" class="select-pb-btn" style="margin-right:8px;">Select</button><button data-pbid="${id}" class="delete-pb-btn" style="background-color:#dc3545;color:white;border:none;padding:4px 8px;border-radius:4px;">Delete</button></div></div>`;
+      return `<div class="pb-item" style="padding:8px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center;"><div style="flex:1"><strong>${goal}</strong><div style="font-size:12px;color:#666">id:${id} • steps:${steps}</div></div><div><button data-pbid="${id}" class="select-pb-btn" style="margin-right:8px;">Select</button><button data-pbid="${id}" class="delete-pb-btn" style="\n      background-color:#dc3545;color:white;border:none;padding:4px 8px;border-radius:4px;\n    ">Delete</button></div></div>`;
     })
     .join('');
 }
@@ -77,122 +63,26 @@ function buildUiHtml(listItemsHtml: string, pageInfo: PageResult): string {
   const prevDisabled = pageInfo.page <= 1 ? 'disabled' : '';
   const nextDisabled = pageInfo.page >= pageInfo.totalPages ? 'disabled' : '';
 
-  return `<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <style>
-    body {
-      font-family: system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-      margin: 0;
-      padding: 12px;
-    }
-    .pb-item {
-      padding: 8px;
-      border-bottom: 1px solid #eee;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .pagination {
-      margin-top: 16px;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      gap: 8px;
-      padding: 12px;
-      border-top: 1px solid #eee;
-    }
-    button {
-      padding: 6px 12px;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      background: white;
-      cursor: pointer;
-      font-size: 14px;
-    }
-    button:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-    button:hover:not(:disabled) {
-      background: #f5f5f5;
-    }
-    .delete-pb-btn {
-      background-color: #dc3545;
-      color: white;
-      border: none;
-    }
-    .delete-pb-btn:hover:not(:disabled) {
-      background-color: #c82333;
-    }
-    .page-info {
-      padding: 6px 12px;
-      color: #666;
-      font-size: 14px;
-    }
-  </style>
-</head>
-<body>
-  <h3>Playbooks</h3>
-  <div id="pb-list">${listItemsHtml}</div>
-
-  <!-- Pagination UI -->
-  <div class="pagination">
-    <button data-page="${pageInfo.page - 1}" class="nav-page-btn" ${prevDisabled}>
-      ← Previous
-    </button>
-    <span class="page-info">
-      Page ${pageInfo.page} of ${pageInfo.totalPages} (${pageInfo.totalItems} total)
-    </span>
-    <button data-page="${pageInfo.page + 1}" class="nav-page-btn" ${nextDisabled}>
-      Next →
-    </button>
-  </div>
-
-  <script>
-document.addEventListener('click', function(e) {
-  const btn = e.target;
-  if (btn && btn.classList) {
-    const id = btn.getAttribute('data-pbid');
-    const page = btn.getAttribute('data-page');
-
-    if (btn.classList.contains('select-pb-btn')) {
-      console.log('Select button clicked for id:', id);
-      // Security note: Using '*' as targetOrigin for compatibility.
-      // In production, consider restricting to specific origin if parent context is known.
-      window.parent.postMessage({type:'tool', payload:{toolName:'select_playbook', params:{id}}}, '*');
-    } else if (btn.classList.contains('delete-pb-btn')) {
-      console.log('Delete button clicked for id:', id);
-      window.parent.postMessage({type:'tool', payload:{toolName:'delete_playbook', params:{id}}}, '*');
-    } else if (btn.classList.contains('nav-page-btn') && !btn.disabled) {
-      console.log('Navigate to page:', page);
-      window.parent.postMessage({type:'tool', payload:{toolName:'get_playbook_page', params:{page: parseInt(page)}}}, '*');
-    }
-  }
-});
-</script>
-</body>
-</html>`;
+  return renderTemplate(playbooksTemplate, {
+    listItemsHtml,
+    prevPage: pageInfo.page - 1,
+    nextPage: pageInfo.page + 1,
+    prevDisabled,
+    nextDisabled,
+    page: pageInfo.page,
+    totalPages: pageInfo.totalPages,
+    totalItems: pageInfo.totalItems,
+  });
 }
 
 function createUiResourceFromHtml(html: string, toolName = 'show_playbooks') {
-  const res = createUIResource({
-    uri: `ui://playbooks/list/${Date.now()}`,
-    content: { type: 'rawHtml', htmlString: html },
-    encoding: 'text',
-  }) as UIResource & { serviceInfo?: ServiceInfo };
-
-  // Attach serviceInfo so the frontend can resolve tool names correctly
-  // Use the canonical server name ('playbook') and mark this as a built-in web server
-  res.serviceInfo = {
+  // Use shared helper to construct a UIResource with consistent serviceInfo.
+  return createUiResourceWithServiceInfo({
+    html,
     serverName: 'playbook',
     toolName,
-    backendType: 'BuiltInWeb',
-  };
-
-  return res;
+    uri: `ui://playbooks/list/${Date.now()}`,
+  });
 }
 
 function makeListMultipartResponse(
@@ -428,234 +318,6 @@ async function getPlaybooksWithUI(
     toolName,
   );
 }
-
-// --- end helpers ---
-
-const tools: MCPTool[] = [
-  {
-    name: 'create_playbook',
-    description: 'Create a new playbook (workflow)',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        goal: {
-          type: 'string',
-          description:
-            'Short, user-facing description of the intended goal this playbook achieves',
-        },
-        initialCommand: {
-          type: 'string',
-          description:
-            "The user's original natural-language command that spawned this playbook",
-        },
-        workflow: {
-          type: 'array',
-          description:
-            'An ordered list of steps (PlaybookStep) that make up this workflow',
-          items: {
-            type: 'object',
-            properties: {
-              stepId: { type: 'string', description: 'Unique id for the step' },
-              description: {
-                type: 'string',
-                description: 'Human readable description of this step',
-              },
-              action: {
-                type: 'object',
-                properties: {
-                  toolName: {
-                    type: 'string',
-                    description: 'The tool to invoke for this step',
-                  },
-                  purpose: {
-                    type: 'string',
-                    description:
-                      'High-level purpose for invoking the tool (agent will configure params)',
-                  },
-                },
-                required: ['toolName', 'purpose'],
-              },
-              requiredData: {
-                type: 'array',
-                items: { type: 'string' },
-                description: 'List of data keys required by this step',
-              },
-              outputVariable: {
-                type: 'string',
-                description:
-                  'Name used to reference this step output in later steps',
-              },
-            },
-            required: [
-              'description',
-              'action',
-              'requiredData',
-              'outputVariable',
-            ],
-          },
-        },
-        successCriteria: {
-          type: 'object',
-          description:
-            'Objective criteria describing when the playbook is considered successful',
-          properties: {
-            description: {
-              type: 'string',
-              description: 'Human readable success description',
-            },
-            requiredArtifacts: {
-              type: 'array',
-              items: { type: 'string' },
-              description: 'Files that must be produced for success',
-            },
-          },
-          required: ['description'],
-        },
-      },
-      required: ['goal', 'workflow'],
-    },
-  },
-  {
-    name: 'select_playbook',
-    description:
-      'Select a playbook by id and return detailed formatted text + agent prompt to execute it',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        id: { type: 'string', description: 'The playbook id to select' },
-      },
-      required: ['id'],
-    },
-  },
-  {
-    name: 'list_playbooks',
-    description:
-      'List playbooks with optional paging (text-only, non-interrupting for agent autonomous use)',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        page: {
-          type: 'number',
-          description: 'Page number to retrieve (1-based)',
-        },
-        pageSize: {
-          type: 'number',
-          description: 'Number of items per page; -1 for all',
-        },
-      },
-    },
-  },
-  {
-    name: 'show_playbooks',
-    description:
-      'Display playbooks with interactive UI (includes HTML UI resource for frontend, pauses agent)',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        page: {
-          type: 'number',
-          description: 'Page number to retrieve (1-based)',
-        },
-        pageSize: {
-          type: 'number',
-          description: 'Number of items per page; -1 for all',
-        },
-      },
-    },
-  },
-  {
-    name: 'get_playbook_page',
-    description:
-      'Navigate to a specific page of playbooks with interactive UI (for pagination buttons, pauses agent)',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        page: {
-          type: 'number',
-          description: 'Page number to navigate to (1-based)',
-        },
-        pageSize: {
-          type: 'number',
-          description:
-            'Number of items per page (optional, keeps previous size)',
-        },
-      },
-      required: ['page'],
-    },
-  },
-  {
-    name: 'delete_playbook',
-    description: 'Delete a playbook by id',
-    inputSchema: {
-      type: 'object',
-      properties: { id: { type: 'string' } },
-      required: ['id'],
-    },
-  },
-  {
-    name: 'get_playbook',
-    description:
-      'Get detailed information for a single playbook by id (formatted text + structured)',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        id: { type: 'string', description: 'The playbook id to retrieve' },
-      },
-      required: ['id'],
-    },
-  },
-  {
-    name: 'update_playbook',
-    description: 'Update a playbook by id',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        id: { type: 'string' },
-        playbook: {
-          type: 'object',
-          properties: {
-            agentId: { type: 'string' },
-            goal: { type: 'string' },
-            initialCommand: { type: 'string' },
-            workflow: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  description: { type: 'string' },
-                  action: {
-                    type: 'object',
-                    properties: {
-                      toolName: { type: 'string' },
-                      purpose: { type: 'string' },
-                    },
-                    required: ['toolName', 'purpose'],
-                  },
-                  requiredData: { type: 'array', items: { type: 'string' } },
-                  outputVariable: { type: 'string' },
-                },
-                required: [
-                  'description',
-                  'action',
-                  'requiredData',
-                  'outputVariable',
-                ],
-              },
-            },
-            successCriteria: {
-              type: 'object',
-              properties: {
-                description: { type: 'string' },
-                requiredArtifacts: { type: 'array', items: { type: 'string' } },
-              },
-            },
-          },
-        },
-      },
-      required: ['id'],
-    },
-  },
-];
 
 const playbookStore: WebMCPServer = {
   name: 'playbook',

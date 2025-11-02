@@ -17,10 +17,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
   const isTool = message.role === 'tool';
   const isAssistant = message.role === 'assistant' || message.role === 'system';
 
-  // 시스템 테마 감지
-  const isDark =
-    typeof window !== 'undefined' &&
-    window.matchMedia('(prefers-color-scheme: dark)').matches;
+  // Use theme tokens for colors; avoid direct color detection
 
   const getBubbleStyles = () => {
     if (isUser) {
@@ -28,9 +25,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
         container: 'justify-end',
         bubble: 'shadow-lg border border-primary/20',
         // 다크 모드에서는 밝은 색상, 라이트 모드에서는 어두운 색상
-        getAvatar: () => (
-          <User size={16} className={isDark ? 'text-white' : 'text-gray-900'} />
-        ),
+        getAvatar: () => <User size={16} className="text-primary-foreground" />,
         avatarBg: 'bg-primary',
       };
     } else if (isTool) {
@@ -54,6 +49,29 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
     }
   };
 
+  const getBubbleContainerStyles = () => {
+    if (isUser) {
+      // User: compact bubble style
+      return 'max-w-[85%] lg:max-w-4xl rounded-2xl';
+    } else if (isAssistant) {
+      // Agent: full-width flat layout (ChatGPT style)
+      return 'w-full max-w-full rounded-lg';
+    } else {
+      // Tool: medium size
+      return 'max-w-[90%] lg:max-w-5xl rounded-lg';
+    }
+  };
+
+  const getBubblePaddingStyles = () => {
+    if (isUser) {
+      return 'px-5 py-4';
+    } else if (isAssistant) {
+      return 'px-6 py-5'; // Agent gets more padding for full-width layout
+    } else {
+      return 'px-4 py-3';
+    }
+  };
+
   const styles = getBubbleStyles();
 
   const getRoleLabel = () => {
@@ -71,7 +89,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
       className={`flex ${styles.container} mb-8 mt-3 animate-in fade-in slide-in-from-bottom-4 duration-500`}
     >
       <div
-        className={`max-w-[85%] lg:max-w-4xl ${styles.bubble} rounded-2xl px-5 py-4 backdrop-blur-sm transition-all duration-200 hover:shadow-xl`}
+        className={`${getBubbleContainerStyles()} ${styles.bubble} ${getBubblePaddingStyles()} backdrop-blur-sm transition-all duration-200 hover:shadow-xl`}
       >
         <div className="flex items-center gap-3 mb-3">
           <div

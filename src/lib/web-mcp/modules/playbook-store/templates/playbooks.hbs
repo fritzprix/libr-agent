@@ -1,0 +1,101 @@
+<html>
+  <head>
+    <meta charset='utf-8' />
+    <meta name='viewport' content='width=device-width,initial-scale=1' />
+    <style>
+      body {
+        font-family:
+          system-ui,
+          Segoe UI,
+          Roboto,
+          Helvetica,
+          Arial,
+          sans-serif;
+        margin: 0;
+        padding: 12px;
+      }
+      .pb-item {
+        padding: 8px;
+        border-bottom: 1px solid #eee;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .pagination {
+        margin-top: 16px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 8px;
+        padding: 12px;
+        border-top: 1px solid #eee;
+      }
+      button {
+        padding: 6px 12px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        background: white;
+        cursor: pointer;
+        font-size: 14px;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      button:hover:not(:disabled) {
+        background: #f5f5f5;
+      }
+      .delete-pb-btn {
+        background-color: #dc3545;
+        color: white;
+        border: none;
+      }
+      .delete-pb-btn:hover:not(:disabled) {
+        background-color: #c82333;
+      }
+      .page-info {
+        padding: 6px 12px;
+        color: #666;
+        font-size: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <h3>Playbooks</h3>
+    <div id='pb-list'>{{{listItemsHtml}}}</div>
+
+    <!-- Pagination UI -->
+    <div class='pagination'>
+      <button data-page='{{prevPage}}' class='nav-page-btn' {{prevDisabled}}>
+        ← Previous
+      </button>
+      <span class='page-info'>
+        Page
+        {{page}}
+        of
+        {{totalPages}}
+        ({{totalItems}}
+        total)
+      </span>
+      <button data-page='{{nextPage}}' class='nav-page-btn' {{nextDisabled}}>
+        Next →
+      </button>
+    </div>
+
+    <script>
+      document.addEventListener('click', function (e) { const btn = e.target; if
+      (btn && btn.classList) { const id = btn.getAttribute('data-pbid'); const
+      page = btn.getAttribute('data-page'); if
+      (btn.classList.contains('select-pb-btn')) { console.log('Select button
+      clicked for id:', id); window.parent.postMessage( { type: 'tool', payload:
+      { toolName: 'select_playbook', params: { id } }, }, '*', ); } else if
+      (btn.classList.contains('delete-pb-btn')) { console.log('Delete button
+      clicked for id:', id); window.parent.postMessage( { type: 'tool', payload:
+      { toolName: 'delete_playbook', params: { id } }, }, '*', ); } else if
+      (btn.classList.contains('nav-page-btn') && !btn.disabled) {
+      console.log('Navigate to page:', page); window.parent.postMessage( { type:
+      'tool', payload: { toolName: 'get_playbook_page', params: { page:
+      parseInt(page) }, }, }, '*', ); } } });
+    </script>
+  </body>
+</html>

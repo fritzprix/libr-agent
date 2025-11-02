@@ -146,7 +146,8 @@ export const AssistantContextProvider = ({
   const { connectServersFromAssistant, availableTools } = useMCPServer();
   const { activeServers } = useMCPServerRegistry();
 
-  const [error, setError] = useState<Error | null>(null);
+  // Error state is derived from async operations errors - no longer needs setState
+  // const [error, setError] = useState<Error | null>(null);
 
   // Helper to show user-friendly error messages
   const showError = useCallback((message: string, errorObj?: unknown) => {
@@ -179,12 +180,22 @@ export const AssistantContextProvider = ({
     }
   }, [loadAssistants, loading, assistants]);
 
-  // Assistant switched toast notification in English
+  // Track previous assistant ID to prevent toast on initial load
+  const prevAssistantIdRef = useRef<string | null>(null);
+
+  // Assistant switched toast notification - only on manual switch
   useEffect(() => {
-    if (currentAssistant) {
-      toast(`Assistant switched: ${currentAssistant.name}`);
+    if (currentAssistant?.id) {
+      // Only show toast if this is a real switch (not initial load)
+      if (
+        prevAssistantIdRef.current !== null &&
+        prevAssistantIdRef.current !== currentAssistant.id
+      ) {
+        toast(`Assistant switched: ${currentAssistant.name}`);
+      }
+      prevAssistantIdRef.current = currentAssistant.id;
     }
-  }, [currentAssistant]);
+  }, [currentAssistant?.id, currentAssistant?.name]);
 
   const [{ error: saveError }, upsertAssistant] = useAsyncFn(
     async (editingAssistant: Assistant): Promise<Assistant | undefined> => {
@@ -232,9 +243,7 @@ export const AssistantContextProvider = ({
         return assistantToSave;
       } catch (err) {
         showError('Failed to save assistant.', err);
-        setError(
-          err instanceof Error ? err : new Error('Failed to save assistant'),
-        );
+        // Error is automatically captured by useAsyncFn's saveError
         return undefined;
       }
     },
@@ -254,11 +263,7 @@ export const AssistantContextProvider = ({
           await dbService.assistants.delete(assistantId);
         } catch (err) {
           showError('Failed to delete assistant.', err);
-          setError(
-            err instanceof Error
-              ? err
-              : new Error('Failed to delete assistant'),
-          );
+          // Error is automatically captured by useAsyncFn's deleteError
         } finally {
           await loadAssistants();
         }
@@ -267,15 +272,10 @@ export const AssistantContextProvider = ({
     [loadAssistants, assistants, showError],
   );
 
-  useEffect(() => {
-    // Prioritize showing the most recent error
-    if (saveError) {
-      setError(saveError);
-    } else if (deleteError) {
-      setError(deleteError);
-    } else if (loadError) {
-      setError(loadError);
-    }
+  // Consolidate errors from all async operations using useMemo
+  // Prioritize: saveError > deleteError > loadError
+  const error = useMemo<Error | null>(() => {
+    return saveError || deleteError || loadError || null;
   }, [saveError, deleteError, loadError]);
 
   useEffect(() => {
@@ -303,20 +303,55 @@ export const AssistantContextProvider = ({
     [allAssistants],
   );
 
+  // Debounce MCP server reconnection to avoid rapid successive calls
+  const debouncedConnectRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+
   useEffect(() => {
     currentAssistantRef.current = currentAssistant;
-    if (currentAssistant) {
-      connectServersFromAssistant(currentAssistant);
+
+    // Clear any pending connection attempt
+    if (debouncedConnectRef.current) {
+      clearTimeout(debouncedConnectRef.current);
     }
+
+    if (currentAssistant) {
+      // Debounce connection by 500ms to avoid rapid reconnections
+      debouncedConnectRef.current = setTimeout(() => {
+        connectServersFromAssistant(currentAssistant);
+      }, 500);
+    }
+
+    return () => {
+      if (debouncedConnectRef.current) {
+        clearTimeout(debouncedConnectRef.current);
+      }
+    };
   }, [currentAssistant, connectServersFromAssistant]);
 
   // React state-driven reconnection when MCP servers change (no window events)
   useEffect(() => {
     const current = currentAssistantRef.current;
+
+    // Clear any pending connection attempt
+    if (debouncedConnectRef.current) {
+      clearTimeout(debouncedConnectRef.current);
+    }
+
     if (current) {
       logger.debug('MCP servers changed, reconnecting for current assistant');
-      connectServersFromAssistant(current);
+      // Debounce connection by 500ms
+      debouncedConnectRef.current = setTimeout(() => {
+        connectServersFromAssistant(current);
+      }, 500);
     }
+
+    return () => {
+      if (debouncedConnectRef.current) {
+        clearTimeout(debouncedConnectRef.current);
+      }
+    };
     // We intentionally depend on activeServers reference to reflect registry changes
   }, [activeServers, connectServersFromAssistant]);
 
