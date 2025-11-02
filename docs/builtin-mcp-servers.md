@@ -1,6 +1,6 @@
 # Built-in MCP Servers
 
-SynapticFlow now includes built-in MCP servers that provide essential functionality without requiring external installations. These servers are implemented in Rust and offer excellent performance and security.
+LibrAgent now includes built-in MCP servers that provide essential functionality without requiring external installations. These servers are implemented in Rust and offer excellent performance and security.
 
 ## Available Built-in Servers
 
@@ -70,7 +70,7 @@ const writeResult = await tauriMCPClient.callBuiltinTool(
   'write_file',
   {
     path: 'output.txt',
-    content: 'Hello from SynapticFlow!',
+    content: 'Hello from LibrAgent!',
   },
 );
 

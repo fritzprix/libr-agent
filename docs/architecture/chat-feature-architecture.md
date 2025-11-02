@@ -1,6 +1,6 @@
-# SynapticFlow Chat Feature: Architecture & Implementation Manual
+# LibrAgent Chat Feature: Architecture & Implementation Manual
 
-This document focuses on the **chat feature** of SynapticFlow, detailing its architecture, data flow, and implementation patterns. It is intended for developers working on the chat system, excluding general project setup and non-chat features.
+This document focuses on the **chat feature** of LibrAgent, detailing its architecture, data flow, and implementation patterns. It is intended for developers working on the chat system, excluding general project setup and non-chat features.
 
 ---
 

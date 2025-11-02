@@ -1,6 +1,6 @@
 # Coding Standards
 
-This document outlines the coding standards and conventions for the SynapticFlow project.
+This document outlines the coding standards and conventions for the LibrAgent project.
 
 ## General
 

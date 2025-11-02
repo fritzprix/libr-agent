@@ -2,13 +2,13 @@
 
 ## Overview
 
-This guide provides instructions for testing the new BM25-based message search functionality in SynapticFlow.
+This guide provides instructions for testing the new BM25-based message search functionality in LibrAgent.
 
 ## Accessing the Search Feature
 
 ### Via Sidebar
 
-1. Launch SynapticFlow: `pnpm tauri dev`
+1. Launch LibrAgent: `pnpm tauri dev`
 2. Look for the **"Message Search"** menu item in the sidebar under the **"History"** section
 3. Click on it to navigate to `/search`
 
@@ -190,7 +190,7 @@ pnpm tauri dev
 Indices are stored in:
 
 ```
-~/.local/share/com.fritzprix.synapticflow/message_indices/
+~/.local/share/com.fritzprix.libragent/message_indices/
 ```
 
 Each session has a `.idx` file containing the BM25 index.
@@ -200,7 +200,7 @@ Each session has a `.idx` file containing the BM25 index.
 Check `message_index_meta` table:
 
 ```sql
-sqlite3 ~/.local/share/com.fritzprix.synapticflow/synapticflow_v2.db
+sqlite3 ~/.local/share/com.fritzprix.libragent/libragent_v2.db
 
 SELECT * FROM message_index_meta;
 ```
@@ -221,7 +221,7 @@ The background worker runs every 5 minutes to reindex dirty sessions.
 **Check logs:**
 
 ```
-~/.local/share/com.fritzprix.synapticflow/logs/synaptic-flow.log
+~/.local/share/com.fritzprix.libragent/logs/libr-agent.log
 ```
 
 Look for:

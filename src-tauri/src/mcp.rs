@@ -5,6 +5,8 @@ pub use types::{
 };
 
 pub mod builtin;
+pub mod keychain;
+pub mod oauth;
 pub mod schema;
 pub mod server;
 pub mod server_utils;

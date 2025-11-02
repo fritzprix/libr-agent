@@ -2,7 +2,7 @@ use anyhow::Result;
 use log::{debug, error, info, warn};
 use rmcp::{
     model::CallToolRequestParam,
-    transport::{ConfigureCommandExt, TokioChildProcess},
+    transport::{ConfigureCommandExt, StreamableHttpClientTransport, TokioChildProcess},
     ServiceExt,
 };
 use serde_json::Value;
@@ -14,8 +14,8 @@ use uuid::Uuid;
 
 use crate::mcp::schema::JSONSchemaType;
 use crate::mcp::types::{
-    MCPConnection, MCPError, MCPResponse, MCPServerConfig, MCPTool, SamplingRequest,
-    ServiceContext, ServiceContextOptions,
+    MCPConnection, MCPError, MCPResponse, MCPServerConfig, MCPServerConfigV2, MCPTool,
+    SamplingRequest, ServiceContext, ServiceContextOptions, TransportConfig,
 };
 use crate::session::SessionManager;
 
@@ -26,6 +26,8 @@ pub struct MCPServerManager {
     connections: Arc<Mutex<HashMap<String, MCPConnection>>>,
     /// A registry for the built-in MCP servers.
     builtin_servers: Arc<Mutex<Option<crate::mcp::builtin::BuiltinServerRegistry>>>,
+    /// OAuth manager for handling OAuth 2.1 flows.
+    oauth_manager: Arc<crate::mcp::oauth::OAuthManager>,
 }
 
 impl MCPServerManager {
@@ -38,6 +40,7 @@ impl MCPServerManager {
         let server_manager = Self {
             connections: Arc::new(Mutex::new(HashMap::new())),
             builtin_servers: Arc::new(Mutex::new(None)),
+            oauth_manager: Arc::new(crate::mcp::oauth::OAuthManager::new()),
         };
 
         // Initialize builtin servers immediately with SessionManager
@@ -64,6 +67,7 @@ impl MCPServerManager {
         let server_manager = Self {
             connections: Arc::new(Mutex::new(HashMap::new())),
             builtin_servers: Arc::new(Mutex::new(None)),
+            oauth_manager: Arc::new(crate::mcp::oauth::OAuthManager::new()),
         };
 
         // Initialize builtin servers with SessionManager and SQLite support
@@ -82,13 +86,55 @@ impl MCPServerManager {
         server_manager
     }
 
-    /// Starts and connects to an MCP server based on the provided configuration.
+    /// Starts and connects to an MCP server based on the provided V2 configuration.
     ///
-    /// Currently, only `stdio` transport is supported for starting servers.
-    /// `http` and `websocket` are assumed to be externally managed.
+    /// Supports both stdio and HTTP transports with the new MCP 2025-06-18 spec.
     ///
     /// # Arguments
-    /// * `config` - The configuration for the server to start.
+    /// * `config` - The V2 configuration for the server to start.
+    ///
+    /// # Returns
+    /// A `Result` containing a success message, or an error if the transport is unsupported.
+    pub async fn start_server_v2(&self, config: MCPServerConfigV2) -> Result<String> {
+        match &config.transport {
+            TransportConfig::Stdio { command, args, env } => {
+                // Convert to legacy format for stdio
+                let legacy_config = MCPServerConfig {
+                    name: config.name.clone(),
+                    command: Some(command.clone()),
+                    args: Some(args.clone()),
+                    env: Some(env.clone()),
+                    transport: "stdio".to_string(),
+                    url: None,
+                    port: None,
+                };
+                self.start_stdio_server(legacy_config).await
+            }
+            TransportConfig::Http {
+                url,
+                protocol_version,
+                session_id,
+                headers,
+                ..
+            } => {
+                self.start_http_server(
+                    config.name.clone(),
+                    url.clone(),
+                    protocol_version.clone(),
+                    session_id.clone(),
+                    headers.clone(),
+                )
+                .await
+            }
+        }
+    }
+
+    /// Starts and connects to an MCP server based on the provided legacy configuration.
+    ///
+    /// This is maintained for backward compatibility. New code should use `start_server_v2`.
+    ///
+    /// # Arguments
+    /// * `config` - The legacy configuration for the server to start.
     ///
     /// # Returns
     /// A `Result` containing a success message, or an error if the transport is unsupported.
@@ -96,13 +142,15 @@ impl MCPServerManager {
         match config.transport.as_str() {
             "stdio" => self.start_stdio_server(config).await,
             "http" => {
-                // Assume HTTP server is already running externally
-                Ok(format!("HTTP server configured: {}", config.name))
+                // Convert to V2 and use new HTTP handler
+                if let Some(url) = config.url {
+                    self.start_http_server(config.name, url, "2025-06-18".to_string(), None, None)
+                        .await
+                } else {
+                    Err(anyhow::anyhow!("HTTP transport requires URL"))
+                }
             }
-            "websocket" => {
-                // Assume WebSocket server is already running externally
-                Ok(format!("WebSocket server configured: {}", config.name))
-            }
+            "websocket" => Err(anyhow::anyhow!("WebSocket transport not yet implemented")),
             _ => Err(anyhow::anyhow!(
                 "Unsupported transport: {}",
                 config.transport
@@ -159,6 +207,57 @@ impl MCPServerManager {
         Ok(format!(
             "Started and connected to MCP server: {}",
             config.name
+        ))
+    }
+
+    /// Starts a new MCP server that communicates over HTTP (Streamable HTTP Transport).
+    ///
+    /// # Arguments
+    /// * `name` - The server name
+    /// * `url` - The HTTP endpoint URL
+    /// * `protocol_version` - MCP protocol version (default: "2025-06-18")
+    /// * `session_id` - Optional existing session ID
+    /// * `headers` - Optional custom headers
+    ///
+    /// # Returns
+    /// A `Result` containing a success message, or an error on failure.
+    async fn start_http_server(
+        &self,
+        name: String,
+        url: String,
+        protocol_version: String,
+        _session_id: Option<String>,
+        _headers: Option<HashMap<String, String>>,
+    ) -> Result<String> {
+        info!("Starting HTTP MCP server: {name} at {url}");
+
+        // Create HTTP transport using RMCP's built-in StreamableHttpClientTransport
+        let transport = StreamableHttpClientTransport::from_uri(url.clone());
+
+        // Add MCP protocol version header
+        // Note: RMCP's HTTP client automatically adds required headers
+
+        debug!("Created HTTP transport for {name} (protocol: {protocol_version})");
+
+        // Connect to the HTTP server
+        let client = ().serve(transport).await.map_err(|e| {
+            error!("Failed to connect to HTTP MCP server {name}: {e}");
+            anyhow::anyhow!("HTTP connection failed: {e}")
+        })?;
+
+        info!("Successfully connected to HTTP MCP server: {name}");
+
+        let connection = MCPConnection { client };
+
+        // Store connection
+        {
+            let mut connections = self.connections.lock().await;
+            connections.insert(name.clone(), connection);
+            debug!("Stored HTTP connection for server: {name}");
+        }
+
+        Ok(format!(
+            "Started and connected to HTTP MCP server: {name} at {url}"
         ))
     }
 
@@ -738,5 +837,13 @@ impl MCPServerManager {
         // Fallback for external MCP servers (future implementation)
         info!("Switching context for external server: {server_name} (not implemented)");
         Ok(())
+    }
+
+    /// Returns a reference to the OAuth manager for handling OAuth 2.1 flows.
+    ///
+    /// # Returns
+    /// An `Arc` reference to the `OAuthManager`.
+    pub async fn get_oauth_manager(&self) -> Arc<crate::mcp::oauth::OAuthManager> {
+        Arc::clone(&self.oauth_manager)
     }
 }

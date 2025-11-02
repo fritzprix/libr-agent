@@ -16,7 +16,7 @@ The AI service module follows a provider pattern with:
 
 ### Background
 
-In SynapticFlow, messages can originate from two distinct sources:
+In LibrAgent, messages can originate from two distinct sources:
 
 - **Assistant-generated messages**: Direct responses from AI models
 - **UI-generated messages**: Messages created by user interface actions (e.g., tool calls triggered by UI buttons)

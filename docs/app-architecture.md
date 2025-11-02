@@ -1,4 +1,4 @@
-# SynapticFlow — App Architecture & Runtime Flow
+# LibrAgent — App Architecture & Runtime Flow
 
 This document summarizes the frontend (`src/`) and backend (`src-tauri/`) structure and explains how the application initializes and routes requests at runtime. It focuses on the service-oriented architecture for tool integration.
 

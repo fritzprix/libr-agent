@@ -70,37 +70,34 @@ export default function AssistantCard({ assistant }: AssistantCardProps) {
         </p>
 
         <div className="text-xs text-muted-foreground mb-2">
-          MCP 서버:{' '}
-          {assistant.mcpConfig?.mcpServers
-            ? Object.keys(assistant.mcpConfig.mcpServers).length
-            : 0}
+          MCP 서버: {assistant.mcpServerIds?.length || 0}
           개, 로컬 서비스: {assistant.localServices?.length || 0}개
         </div>
 
-        {isActive && (
-          <div className="flex flex-wrap gap-1 mb-2">
-            {Object.keys(assistant.mcpConfig?.mcpServers || {}).map(
-              (serverName) => (
+        {isActive &&
+          assistant.mcpServerIds &&
+          assistant.mcpServerIds.length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-2">
+              {assistant.mcpServerIds.map((serverId) => (
                 <div
-                  key={serverName}
+                  key={serverId}
                   className="flex items-center gap-1 text-xs px-1 py-0.5 rounded bg-muted"
                 >
                   <StatusIndicator
                     status={
-                      status[serverName] === true
+                      status[serverId] === true
                         ? 'connected'
-                        : status[serverName] === false
+                        : status[serverId] === false
                           ? 'disconnected'
                           : 'unknown'
                     }
                     size="sm"
                   />
-                  <span className="text-foreground">{serverName}</span>
+                  <span className="text-foreground">{serverId}</span>
                 </div>
-              ),
-            )}
-          </div>
-        )}
+              ))}
+            </div>
+          )}
 
         <div className="flex flex-wrap gap-2">
           <Button size="sm" variant="secondary" onClick={() => setEdit(true)}>

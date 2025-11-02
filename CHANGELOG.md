@@ -63,9 +63,9 @@ All notable changes to this project will be documented in this file.
 
 For verifying download integrity:
 
-- `SynapticFlow_0.1.1_amd64.deb`: `44f55aeff87b755fa364119a9249486520731b041a4c980793c9dceca8efa73e`
-- `SynapticFlow-0.1.1-1.x86_64.rpm`: `c007bb2931a074eeb865b9dd50d3b1e4173354ea0ed57a911f7ada30fb02c00a`
-- `SynapticFlow_0.1.1_amd64.AppImage`: `48c0b415297d5f8bf0a0339669758842afc65c9547f9fdf3f9f0cc1121c0d853`
+- `LibrAgent_0.1.1_amd64.deb`: `44f55aeff87b755fa364119a9249486520731b041a4c980793c9dceca8efa73e`
+- `LibrAgent-0.1.1-1.x86_64.rpm`: `c007bb2931a074eeb865b9dd50d3b1e4173354ea0ed57a911f7ada30fb02c00a`
+- `LibrAgent_0.1.1_amd64.AppImage`: `48c0b415297d5f8bf0a0339669758842afc65c9547f9fdf3f9f0cc1121c0d853`
 
 ### Reference
 

@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
-import { CompactModelPicker } from '@/components/ui';
+import { Wrench } from 'lucide-react';
+import { CompactModelPicker } from '@/features/chat/ModelPicker';
 import { useMCPServer } from '@/hooks/use-mcp-server';
 import { useBuiltInTool } from '@/features/tools';
 import { useAssistantContext } from '@/context/AssistantContext';
@@ -94,7 +95,7 @@ export function ChatStatusBar({ children, onShowTools }: ChatStatusBarProps) {
   const getToolsIcon = () => {
     if (isLoading) return <LoadingSpinner />;
     if (error) return '⚠️';
-    return '🔧';
+    return <Wrench size={14} />;
   };
 
   return (

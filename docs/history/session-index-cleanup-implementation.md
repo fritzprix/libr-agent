@@ -140,7 +140,7 @@ graph TD
 
    ```bash
    # On Linux/macOS
-   ls ~/.local/share/com.fritzprix.synapticflow/message_indices/
+   ls ~/.local/share/com.fritzprix.libragent/message_indices/
    # Should show: {session-id}.idx
    ```
 
@@ -154,10 +154,10 @@ graph TD
 
    ```bash
    # Index file should be gone
-   ls ~/.local/share/com.fritzprix.synapticflow/message_indices/
+   ls ~/.local/share/com.fritzprix.libragent/message_indices/
 
    # Query SQLite to verify metadata deleted
-   sqlite3 synaptic-flow.db "SELECT * FROM message_index_meta WHERE session_id = '{id}';"
+   sqlite3 libr-agent.db "SELECT * FROM message_index_meta WHERE session_id = '{id}';"
    # Should return no rows
    ```
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-SynapticFlow provides a comprehensive set of built-in tools that enable AI agents to interact with web browsers, manage MCP servers, and perform various automation tasks. These tools are organized into three main categories:
+LibrAgent provides a comprehensive set of built-in tools that enable AI agents to interact with web browsers, manage MCP servers, and perform various automation tasks. These tools are organized into three main categories:
 
 1. **Browser Tools** - Web browser automation and interaction
 2. **Rust MCP Tools** - Native system-level operations via Rust backend

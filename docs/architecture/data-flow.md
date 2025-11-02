@@ -1,4 +1,4 @@
-# Data Flow in SynapticFlow
+# Data Flow in LibrAgent
 
 This document illustrates the flow of data between the React frontend, the Tauri backend, and the MCP servers.
 
@@ -29,7 +29,7 @@ This document illustrates the flow of data between the React frontend, the Tauri
 ## 5. MCP Server Executes the Tool
 
 1. **MCP Server**: The external process receives the request, parses it, and executes the corresponding tool logic.
-2. **MCP Server**: The server sends the result back to the SynapticFlow backend as a JSON-RPC response.
+2. **MCP Server**: The server sends the result back to the LibrAgent backend as a JSON-RPC response.
 
 ## 6. Data Returns to the Frontend
 

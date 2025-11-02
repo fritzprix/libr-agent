@@ -13,7 +13,7 @@ const logger = getLogger('StartChatView');
 export default function StartChatView() {
   const { assistants, setCurrentAssistant } = useAssistantContext();
   const { start } = useSessionContext();
-  const { connectServers } = useMCPServer();
+  const { connectServersFromAssistant } = useMCPServer();
   const [isStarting, setIsStarting] = useState(false);
   const [startingAssistantId, setStartingAssistantId] = useState<string | null>(
     null,
@@ -36,9 +36,9 @@ export default function StartChatView() {
 
         // 2. MCP 서버 연결 완료까지 대기
         logger.debug('Connecting MCP servers for assistant', {
-          mcpConfig: assistant.mcpConfig,
+          mcpServerIds: assistant.mcpServerIds,
         });
-        await connectServers(assistant.mcpConfig);
+        await connectServersFromAssistant(assistant);
         logger.info('MCP servers connected successfully', {
           assistantId: assistant.id,
         });
@@ -59,7 +59,7 @@ export default function StartChatView() {
         setStartingAssistantId(null);
       }
     },
-    [start, setCurrentAssistant, connectServers, isStarting],
+    [start, setCurrentAssistant, connectServersFromAssistant, isStarting],
   );
 
   return (

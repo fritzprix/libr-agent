@@ -42,6 +42,7 @@ export function ChatInput({ children }: ChatInputProps) {
   const { subscribe } = useDnDContext();
 
   const { current: currentSession } = useSessionContext();
+  const pendingInputRef = useRef<string>('');
   const { currentAssistant } = useAssistantContext();
   const { isLoading, isToolExecuting, pendingCancel } = useChatState();
   const { submit, cancel, addToMessageQueue } = useChatActions();
@@ -166,14 +167,17 @@ export function ChatInput({ children }: ChatInputProps) {
             hasAttachments: attachedFiles.length > 0,
             attachmentCount: attachedFiles.length,
           });
+          pendingInputRef.current = input;
+          setInput('');
           await submit([userMessage]);
           logger.info('User message submitted successfully');
           // Clear input and files only on success
-          setInput('');
           clearPendingFiles();
         } catch (err) {
           logger.error('Error submitting message:', err);
           // Keep input value on failure
+          setInput(pendingInputRef.current);
+          pendingInputRef.current = '';
         }
       }
     },

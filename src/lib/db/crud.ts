@@ -1,4 +1,9 @@
-import type { Assistant, Message, Session } from '@/models/chat';
+import type {
+  Assistant,
+  Message,
+  Session,
+  MCPServerEntity,
+} from '@/models/chat';
 import type { CRUD, DatabaseObject, Page } from './types';
 import { LocalDatabase } from './service';
 import type { Playbook } from '@/types/playbook';
@@ -98,6 +103,118 @@ export const assistantsCRUD: CRUD<Assistant> = {
   },
   count: async (): Promise<number> => {
     return LocalDatabase.getInstance().assistants.count();
+  },
+};
+
+/**
+ * CRUD operations for managing `MCPServerEntity` objects in the local database.
+ * This object provides a standardized interface for creating, reading,
+ * updating, deleting, and paginating MCP server configurations.
+ */
+export const mcpServersCRUD: CRUD<MCPServerEntity> = {
+  upsert: async (server: MCPServerEntity) => {
+    const db = LocalDatabase.getInstance();
+    const now = new Date();
+
+    // Check for unique name constraint (case-insensitive)
+    const existing = await db.mcpServers
+      .filter(
+        (s) =>
+          s.name.toLowerCase() === server.name.toLowerCase() &&
+          s.id !== server.id,
+      )
+      .first();
+
+    if (existing) {
+      throw new Error(`MCP server with name "${server.name}" already exists`);
+    }
+
+    if (!server.createdAt) server.createdAt = now;
+    server.updatedAt = now;
+    await db.mcpServers.put(server);
+  },
+  upsertMany: async (servers: MCPServerEntity[]) => {
+    const db = LocalDatabase.getInstance();
+    const now = new Date();
+
+    // Check for duplicate names within the batch
+    const nameMap = new Map<string, number>();
+    servers.forEach((server) => {
+      const lowerName = server.name.toLowerCase();
+      nameMap.set(lowerName, (nameMap.get(lowerName) || 0) + 1);
+      if (nameMap.get(lowerName)! > 1) {
+        throw new Error(`Duplicate server name in batch: "${server.name}"`);
+      }
+    });
+
+    // Check for conflicts with existing servers
+    const existingServers = await db.mcpServers.toArray();
+    const serverIds = new Set(servers.map((s) => s.id));
+
+    for (const existing of existingServers) {
+      if (!serverIds.has(existing.id)) {
+        const conflict = servers.find(
+          (s) => s.name.toLowerCase() === existing.name.toLowerCase(),
+        );
+        if (conflict) {
+          throw new Error(
+            `MCP server with name "${conflict.name}" already exists`,
+          );
+        }
+      }
+    }
+
+    const updatedServers = servers.map((server) => ({
+      ...server,
+      createdAt: server.createdAt || now,
+      updatedAt: now,
+    }));
+    await db.mcpServers.bulkPut(updatedServers);
+  },
+  read: async (id: string) => {
+    return LocalDatabase.getInstance().mcpServers.get(id);
+  },
+  delete: async (id: string) => {
+    const db = LocalDatabase.getInstance();
+
+    // Check if any assistant references this server
+    const assistants = await db.assistants.toArray();
+    const referencingAssistants = assistants.filter((a) =>
+      a.mcpServerIds?.includes(id),
+    );
+
+    if (referencingAssistants.length > 0) {
+      const names = referencingAssistants.map((a) => a.name).join(', ');
+      throw new Error(
+        `Cannot delete MCP server: it is used by ${referencingAssistants.length} assistant(s): ${names}`,
+      );
+    }
+
+    await db.mcpServers.delete(id);
+  },
+  getPage: async (
+    page: number,
+    pageSize: number,
+  ): Promise<Page<MCPServerEntity>> => {
+    const db = LocalDatabase.getInstance();
+    const totalItems = await db.mcpServers.count();
+
+    if (pageSize === -1) {
+      const items = await db.mcpServers.orderBy('createdAt').toArray();
+      return createPage(items, page, pageSize, totalItems);
+    }
+
+    const offset = (page - 1) * pageSize;
+    const items = await db.mcpServers
+      .orderBy('createdAt')
+      .offset(offset)
+      .limit(pageSize)
+      .toArray();
+
+    return createPage(items, page, pageSize, totalItems);
+  },
+  count: async (): Promise<number> => {
+    return LocalDatabase.getInstance().mcpServers.count();
   },
 };
 

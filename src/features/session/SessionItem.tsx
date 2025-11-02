@@ -1,4 +1,5 @@
 import React, { useCallback, useMemo } from 'react';
+import { MessageCircle, Users } from 'lucide-react';
 import { useSessionContext } from '../../context/SessionContext';
 import { Session } from '@/models/chat';
 import {
@@ -123,7 +124,12 @@ export default function SessionItem({
 
   const displayName =
     session.name || session.assistants[0]?.name || 'Untitled Session';
-  const sessionIcon = session.type === 'single' ? '💬' : '👥';
+  const sessionIconComponent =
+    session.type === 'single' ? (
+      <MessageCircle size={16} />
+    ) : (
+      <Users size={16} />
+    );
   const assistantSummary = useMemo(() => {
     if (!session.assistants?.length) {
       return '';
@@ -158,13 +164,13 @@ export default function SessionItem({
         >
           {isCollapsed ? (
             <span aria-hidden className="text-lg">
-              {sessionIcon}
+              {sessionIconComponent}
             </span>
           ) : (
             <div className="flex w-full flex-col gap-1.5 min-w-0 text-left">
               <div className="flex items-center gap-2 min-w-0">
                 <span aria-hidden className="text-base text-muted-foreground">
-                  {sessionIcon}
+                  {sessionIconComponent}
                 </span>
                 <span
                   className="truncate font-medium text-foreground"

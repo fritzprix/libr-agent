@@ -17,7 +17,7 @@
     - `read_process_output`: stdout/stderr 파일 내용 읽기 (tail/head 옵션 지원)
     - `list_processes`: 현재 세션의 모든 프로세스 목록 조회
   - [x] 추가 구현 사항
-    - Sync 모드 최대 타임아웃을 환경 변수로 설정 가능하도록 개선 (`SYNAPTICFLOW_DEFAULT_EXECUTION_TIMEOUT`)
+    - Sync 모드 최대 타임아웃을 환경 변수로 설정 가능하도록 개선 (`LIBRAGENT_DEFAULT_EXECUTION_TIMEOUT`)
     - 기본값 30초, 초과 시 async 모드 사용 안내
     - 대용량 출력(100MB 제한) 스트리밍 및 파일 저장으로 메모리 효율성 개선
     - 동기/비동기 실행 모두 통일된 `spawn_and_stream_to_files` 헬퍼 사용

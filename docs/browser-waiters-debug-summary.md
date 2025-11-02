@@ -181,7 +181,7 @@ const result = await invoke('run_browser_diagnostic', { sessionId: 'your-id' });
   - Test utilities
   - Monitoring functions
 
-- `synaptic-flow/docs/debugging-browser-waiters.md`
+- `libr-agent/docs/debugging-browser-waiters.md`
   - Comprehensive debugging guide
 
 ## Next Steps for Root Cause Resolution

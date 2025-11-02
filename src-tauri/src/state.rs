@@ -1,8 +1,11 @@
 /// Global state management module
 ///
 /// This module provides centralized access to application-wide state including
-/// the MCP server manager, SQLite database URL, and SQLite connection pool.
+/// the MCP server manager, SQLite database URL, SQLite connection pool, and repositories.
 use crate::mcp::MCPServerManager;
+use crate::repositories::{
+    SqliteContentStoreRepository, SqliteMessageRepository, SqliteSessionRepository,
+};
 use sqlx::sqlite::SqlitePool;
 use std::sync::OnceLock;
 
@@ -14,6 +17,15 @@ static SQLITE_DB_URL: OnceLock<String> = OnceLock::new();
 
 /// A global, thread-safe, once-initialized SQLite connection pool.
 static SQLITE_POOL: OnceLock<SqlitePool> = OnceLock::new();
+
+/// A global, thread-safe, once-initialized message repository.
+static MESSAGE_REPOSITORY: OnceLock<SqliteMessageRepository> = OnceLock::new();
+
+/// A global, thread-safe, once-initialized content store repository.
+static CONTENT_STORE_REPOSITORY: OnceLock<SqliteContentStoreRepository> = OnceLock::new();
+
+/// A global, thread-safe, once-initialized session repository.
+static SESSION_REPOSITORY: OnceLock<SqliteSessionRepository> = OnceLock::new();
 
 /// Sets the global SQLite database URL.
 ///
@@ -78,4 +90,73 @@ pub fn get_sqlite_pool() -> &'static SqlitePool {
     SQLITE_POOL
         .get()
         .expect("SQLite pool not initialized. Call set_sqlite_pool() first.")
+}
+
+/// Sets the global message repository instance.
+///
+/// # Panics
+/// This function will panic if the repository is already set.
+pub fn set_message_repository(repo: SqliteMessageRepository) {
+    MESSAGE_REPOSITORY
+        .set(repo)
+        .expect("Message repository already initialized");
+}
+
+/// Gets a reference to the global message repository.
+///
+/// # Returns
+/// A reference to the message repository.
+///
+/// # Panics
+/// Panics if the repository has not been initialized.
+pub fn get_message_repository() -> &'static SqliteMessageRepository {
+    MESSAGE_REPOSITORY
+        .get()
+        .expect("Message repository not initialized. Call set_message_repository() first.")
+}
+
+/// Sets the global content store repository instance.
+///
+/// # Panics
+/// This function will panic if the repository is already set.
+pub fn set_content_store_repository(repo: SqliteContentStoreRepository) {
+    CONTENT_STORE_REPOSITORY
+        .set(repo)
+        .expect("Content store repository already initialized");
+}
+
+/// Gets a reference to the global content store repository.
+///
+/// # Returns
+/// A reference to the content store repository.
+///
+/// # Panics
+/// Panics if the repository has not been initialized.
+pub fn get_content_store_repository() -> &'static SqliteContentStoreRepository {
+    CONTENT_STORE_REPOSITORY.get().expect(
+        "Content store repository not initialized. Call set_content_store_repository() first.",
+    )
+}
+
+/// Sets the global session repository instance.
+///
+/// # Panics
+/// This function will panic if the repository is already set.
+pub fn set_session_repository(repo: SqliteSessionRepository) {
+    SESSION_REPOSITORY
+        .set(repo)
+        .expect("Session repository already initialized");
+}
+
+/// Gets a reference to the global session repository.
+///
+/// # Returns
+/// A reference to the session repository.
+///
+/// # Panics
+/// Panics if the repository has not been initialized.
+pub fn get_session_repository() -> &'static SqliteSessionRepository {
+    SESSION_REPOSITORY
+        .get()
+        .expect("Session repository not initialized. Call set_session_repository() first.")
 }

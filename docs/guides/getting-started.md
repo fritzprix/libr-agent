@@ -1,4 +1,4 @@
-# Getting Started with SynapticFlow
+# Getting Started with LibrAgent
 
 This guide will walk you through setting up your development environment and connecting to your first MCP server.
 
@@ -15,8 +15,8 @@ This guide will walk you through setting up your development environment and con
 1. **Clone the repository**:
 
    ```bash
-   git clone https://github.com/your-username/synaptic-flow.git
-   cd synaptic-flow
+   git clone https://github.com/fritzprix/libr-agent.git
+   cd libr-agent
    ```
 
 2. **Install dependencies**:
@@ -37,7 +37,7 @@ Start the development server:
 pnpm tauri dev
 ```
 
-This will open the SynapticFlow desktop application.
+This will open the LibrAgent desktop application.
 
 ## 3. Connecting to Your First MCP Server
 
@@ -62,4 +62,4 @@ Once the server is running, you can interact with its tools:
 
 3. The assistant should be able to call the `listFiles` tool from the `filesystem` server and show you the output.
 
-Congratulations! You have successfully set up SynapticFlow and connected to your first MCP server.
+Congratulations! You have successfully set up LibrAgent and connected to your first MCP server.

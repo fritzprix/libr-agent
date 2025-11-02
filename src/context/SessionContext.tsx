@@ -135,10 +135,18 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
 
   const sessions = useMemo(() => data ?? [], [data]);
 
-  const hasNextPage = useMemo(
-    () => !(sessions.length > 0 && !sessions[sessions.length - 1].hasNextPage),
+  // Optimize: Move flatMap to useMemo to avoid repeated computation
+  const flatSessions = useMemo(
+    () => sessions.flatMap((page) => page.items),
     [sessions],
   );
+
+  // Simplify hasNextPage calculation for better readability
+  const hasNextPage = useMemo(() => {
+    if (sessions.length === 0) return false;
+    const lastPage = sessions[sessions.length - 1];
+    return lastPage.hasNextPage;
+  }, [sessions]);
 
   // Combined error state
   const error = useMemo(() => {
@@ -150,9 +158,10 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
     currentRef.current = current;
   }, [current]);
 
+  // Update ref with memoized flat sessions
   useEffect(() => {
-    sessionsRef.current = sessions.flatMap((page) => page.items);
-  }, [sessions]);
+    sessionsRef.current = flatSessions;
+  }, [flatSessions]);
 
   /**
    * Clears any current error state.
@@ -206,20 +215,8 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
    */
   const handleSelect = useCallback(
     (id?: string) => {
-      // Notify other parts of the app that the session is switching so they can
-      // abort any in-flight operations immediately.
-      if (typeof window !== 'undefined') {
-        try {
-          window.dispatchEvent(
-            new CustomEvent('libragent:session-switch', {
-              detail: { sessionId: id },
-            }),
-          );
-        } catch {
-          // Fail silently if CustomEvent is not supported in the environment
-          // (very unlikely in browser runtimes)
-        }
-      }
+      // Consumers should react to session changes via context state,
+      // not global window events. Remove legacy broadcast.
 
       if (id === undefined) {
         setCurrent(null);

@@ -1,43 +1,48 @@
 import { Route, Routes } from 'react-router-dom';
+import { lazy } from 'react';
 import AppSidebar from '../components/layout/AppSidebar';
 
-import ChatContainer from '@/features/chat/ChatContainer';
+// Lazy-load route components to reduce initial bundle and improve first paint
+const ChatContainer = lazy(() => import('@/features/chat/ChatContainer'));
+const AssistantList = lazy(() => import('@/features/assistant/List'));
+const History = lazy(() => import('@/features/history/History'));
+const SettingsPage = lazy(() => import('@/features/settings/SettingsPage'));
+
 import { Toaster } from 'sonner';
 import { ThemeToggle } from '../components/common/ThemeToggle';
 import { AppHeader } from '../components/layout/AppHeader';
 import { SidebarProvider } from '../components/ui/sidebar';
 import { AssistantContextProvider } from '../context/AssistantContext';
 import { MCPServerProvider } from '../context/MCPServerContext';
+import { MCPServerRegistryProvider } from '../context/MCPServerRegistryContext';
 import { ModelOptionsProvider } from '../context/ModelProvider';
 import { SessionContextProvider } from '../context/SessionContext';
 import { SessionHistoryProvider } from '../context/SessionHistoryContext';
 import { SettingsProvider } from '../context/SettingsContext';
-import History from '../features/history/History';
 import '../styles/globals.css';
 import './App.css';
-import AssistantList from '@/features/assistant/List';
 import { ResourceAttachmentProvider } from '@/context/ResourceAttachmentContext';
 import { BuiltInToolProvider } from '@/features/tools';
-import { BrowserToolProvider } from '@/features/tools/BrowserToolProvider';
-import { RustMCPToolProvider } from '@/features/tools/RustMCPToolProvider';
-import { WebMCPServiceRegistry } from '@/features/tools/WebMCPServiceRegistry';
-import { WebMCPProvider } from '@/context/WebMCPContext';
 import { SystemPromptProvider } from '@/context/SystemPromptContext';
 import { DnDContextProvider } from '@/context/DnDContext';
-import SettingsPage from '@/features/settings/SettingsPage';
+import { WebMCPProvider } from '@/context/WebMCPContext';
+import { WebMCPServiceRegistry } from '@/features/tools/WebMCPServiceRegistry';
+import { BrowserToolProvider } from '@/features/tools/BrowserToolProvider';
+import { RustMCPToolProvider } from '@/features/tools/RustMCPToolProvider';
 
 function App() {
   return (
     <div className="h-screen w-full">
       <SettingsProvider>
-        <MCPServerProvider>
+        <MCPServerRegistryProvider>
+          <MCPServerProvider>
           <SystemPromptProvider>
             <AssistantContextProvider>
               <SessionContextProvider>
                 <BuiltInToolProvider>
                   <WebMCPProvider>
                     <WebMCPServiceRegistry
-                      servers={['planning', 'playbook', 'ui']}
+                      servers={['planning', 'playbook', 'ui', 'bootstrap']}
                     />
                     <BrowserToolProvider />
                     <RustMCPToolProvider />
@@ -93,6 +98,7 @@ function App() {
             </AssistantContextProvider>
           </SystemPromptProvider>
         </MCPServerProvider>
+        </MCPServerRegistryProvider>
       </SettingsProvider>
     </div>
   );

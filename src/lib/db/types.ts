@@ -1,4 +1,9 @@
-import type { Assistant, Message, Session } from '@/models/chat';
+import type {
+  Assistant,
+  Message,
+  Session,
+  MCPServerEntity,
+} from '@/models/chat';
 import type { Playbook } from '@/types/playbook';
 
 /**
@@ -194,6 +199,8 @@ export interface PlaybookCRUD extends CRUD<Playbook & { id: string }> {
 export interface DatabaseService {
   /** CRUD operations for `Assistant` objects. */
   assistants: CRUD<Assistant>;
+  /** CRUD operations for `MCPServerEntity` objects. */
+  mcpServers: CRUD<MCPServerEntity>;
   /** Generic CRUD operations for `DatabaseObject`s. */
   objects: CRUD<DatabaseObject<unknown>, DatabaseObject<unknown>>;
   /** CRUD operations for `Session` objects. */

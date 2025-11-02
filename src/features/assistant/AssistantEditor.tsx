@@ -1,7 +1,7 @@
 import { useEditor } from '@/context/EditorContext';
 import { Assistant } from '@/models/chat';
 import { DialogProps } from '@radix-ui/react-dialog';
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Button,
   Dialog,
@@ -11,65 +11,137 @@ import {
   DialogTitle,
   InputWithLabel,
   TextareaWithLabel,
+  Input,
+  Checkbox,
+  Label,
 } from '../../components/ui';
 import LocalServicesEditor from './LocalServicesEditor';
-import MCPConfigEditor from './MCPConfigEditor';
 import BuiltInToolsEditor from './BuiltInToolsEditor';
+import { useMCPServerRegistry } from '@/context/MCPServerRegistryContext';
+import { Link } from 'react-router';
 
 export default function AssistantEditor() {
   const { draft, update } = useEditor<Assistant>();
-  const [mcpConfigText, setMcpConfigText] = useState<string>(
-    JSON.stringify(draft.mcpConfig, null, 2),
+  const { activeServers } = useMCPServerRegistry();
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const filteredServers = activeServers.filter(
+    (s) =>
+      s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      s.metadata?.description
+        ?.toLowerCase()
+        .includes(searchQuery.toLowerCase()),
   );
 
-  const handleMCPConfigUpdate = useCallback(
-    (jsonString: string) => {
-      setMcpConfigText(jsonString);
-      update((draft) => {
-        try {
-          draft.mcpConfig = JSON.parse(jsonString);
-        } catch {
-          // do nothing
+  const handleServerToggle = (serverId: string, enabled: boolean) => {
+    update((draft) => {
+      if (!draft.mcpServerIds) draft.mcpServerIds = [];
+
+      if (enabled) {
+        if (!draft.mcpServerIds.includes(serverId)) {
+          draft.mcpServerIds.push(serverId);
         }
-      });
-    },
-    [setMcpConfigText, update],
-  );
+      } else {
+        draft.mcpServerIds = draft.mcpServerIds.filter((id) => id !== serverId);
+      }
+    });
+  };
 
   return (
     <div className="w-full">
       <div className="p-4">
         <div className="space-y-4">
           <InputWithLabel
-            label="어시스턴트 이름 *"
+            label="Assistant Name *"
             value={draft?.name || ''}
             onChange={(e) =>
               update((draft) => {
                 draft.name = e.target.value;
               })
             }
-            placeholder="어시스턴트 이름을 입력하세요..."
+            placeholder="Enter assistant name..."
           />
 
           <TextareaWithLabel
-            label="시스템 프롬프트 *"
+            label="System Prompt *"
             value={draft?.systemPrompt || ''}
             onChange={(e) =>
               update((draft) => {
                 draft.systemPrompt = e.target.value;
               })
             }
-            placeholder="AI가 수행할 역할과 행동 방식을 설명하세요..."
+            placeholder="Describe the AI's role and behavior..."
             className="h-32"
           />
 
           <BuiltInToolsEditor />
 
           <LocalServicesEditor />
-          <MCPConfigEditor
-            mcpConfigText={mcpConfigText}
-            onChange={handleMCPConfigUpdate}
-          />
+
+          {/* MCP Server Selection UI */}
+          <div className="space-y-2">
+            <Label>MCP Servers</Label>
+
+            {activeServers.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No active MCP servers.{' '}
+                <Link to="/settings" className="underline">
+                  Add servers in Settings
+                </Link>
+              </p>
+            ) : (
+              <>
+                <Input
+                  placeholder="Search servers..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="mb-2"
+                />
+
+                <div className="max-h-64 overflow-y-auto border rounded-md p-2 space-y-2">
+                  {filteredServers.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-4">
+                      No servers match your search
+                    </p>
+                  ) : (
+                    filteredServers.map((server) => (
+                      <div
+                        key={server.id}
+                        className="flex items-start gap-2 p-2 hover:bg-accent rounded"
+                      >
+                        <Checkbox
+                          id={`server-${server.id}`}
+                          checked={
+                            draft.mcpServerIds?.includes(server.id) || false
+                          }
+                          onCheckedChange={(checked) =>
+                            handleServerToggle(server.id, checked as boolean)
+                          }
+                        />
+                        <label
+                          htmlFor={`server-${server.id}`}
+                          className="flex-1 cursor-pointer"
+                        >
+                          <div className="font-medium">{server.name}</div>
+                          {server.metadata?.description && (
+                            <div className="text-xs text-muted-foreground">
+                              {server.metadata.description}
+                            </div>
+                          )}
+                          <div className="text-xs text-muted-foreground mt-0.5">
+                            {server.transport.type === 'stdio' &&
+                              `stdio: ${server.transport.command}`}
+                            {server.transport.type === 'http' &&
+                              `http: ${server.transport.url}`}
+                          </div>
+                        </label>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
     </div>

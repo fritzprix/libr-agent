@@ -96,7 +96,10 @@ export class OpenAIService extends BaseAIService {
 
           const name = staticModel?.name || id;
           const supportStreaming = staticModel?.supportStreaming ?? true;
-          const supportReasoning = staticModel?.supportReasoning ?? (id.toLowerCase().includes('gpt-4') || id.toLowerCase().includes('gpt-3.5'));
+          const supportReasoning =
+            staticModel?.supportReasoning ??
+            (id.toLowerCase().includes('gpt-4') ||
+              id.toLowerCase().includes('gpt-3.5'));
           const supportTools = staticModel?.supportTools ?? false;
 
           const description =
@@ -379,7 +382,9 @@ export class OpenAIService extends BaseAIService {
    * Fallback to static config models
    * @private
    */
-  private fallbackToStaticModels(): Promise<import('../llm-config-manager').ModelInfo[]> {
+  private fallbackToStaticModels(): Promise<
+    import('../llm-config-manager').ModelInfo[]
+  > {
     const logger = getLogger('OpenAIService.fallbackToStaticModels');
     logger.info('Using static config models');
     return super.listModels();

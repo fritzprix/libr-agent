@@ -1,5 +1,6 @@
 import { Message } from '@/models/chat';
 import React from 'react';
+import { Wrench, Bot, User } from 'lucide-react';
 import { LoadingSpinner } from '../../components/ui';
 import MessageBubbleRouter from './MessageBubbleRouter';
 
@@ -16,12 +17,15 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
   const isTool = message.role === 'tool';
   const isAssistant = message.role === 'assistant' || message.role === 'system';
 
+  // Use theme tokens for colors; avoid direct color detection
+
   const getBubbleStyles = () => {
     if (isUser) {
       return {
         container: 'justify-end',
         bubble: 'shadow-lg border border-primary/20',
-        avatar: '🧑‍💻',
+        // 다크 모드에서는 밝은 색상, 라이트 모드에서는 어두운 색상
+        getAvatar: () => <User size={16} className="text-primary-foreground" />,
         avatarBg: 'bg-primary',
       };
     } else if (isTool) {
@@ -29,7 +33,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
         container: 'justify-start',
         bubble:
           'bg-muted text-muted-foreground shadow-lg border border-muted/20',
-        avatar: '🔧',
+        getAvatar: () => <Wrench size={16} className="text-muted-foreground" />,
         avatarBg: 'bg-muted',
       };
     } else {
@@ -37,9 +41,34 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
         container: 'justify-start',
         bubble:
           'bg-secondary text-secondary-foreground shadow-lg border border-secondary/20',
-        avatar: '🤖',
+        getAvatar: () => (
+          <Bot size={16} className="text-secondary-foreground" />
+        ),
         avatarBg: 'bg-secondary',
       };
+    }
+  };
+
+  const getBubbleContainerStyles = () => {
+    if (isUser) {
+      // User: compact bubble style
+      return 'max-w-[85%] lg:max-w-4xl rounded-2xl';
+    } else if (isAssistant) {
+      // Agent: full-width flat layout (ChatGPT style)
+      return 'w-full max-w-full rounded-lg';
+    } else {
+      // Tool: medium size
+      return 'max-w-[90%] lg:max-w-5xl rounded-lg';
+    }
+  };
+
+  const getBubblePaddingStyles = () => {
+    if (isUser) {
+      return 'px-5 py-4';
+    } else if (isAssistant) {
+      return 'px-6 py-5'; // Agent gets more padding for full-width layout
+    } else {
+      return 'px-4 py-3';
     }
   };
 
@@ -60,13 +89,13 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
       className={`flex ${styles.container} mb-8 mt-3 animate-in fade-in slide-in-from-bottom-4 duration-500`}
     >
       <div
-        className={`max-w-[85%] lg:max-w-4xl ${styles.bubble} rounded-2xl px-5 py-4 backdrop-blur-sm transition-all duration-200 hover:shadow-xl`}
+        className={`${getBubbleContainerStyles()} ${styles.bubble} ${getBubblePaddingStyles()} backdrop-blur-sm transition-all duration-200 hover:shadow-xl`}
       >
         <div className="flex items-center gap-3 mb-3">
           <div
             className={`w-7 h-7 ${styles.avatarBg} rounded-full flex items-center justify-center text-sm shadow-sm`}
           >
-            {styles.avatar}
+            {styles.getAvatar()}
           </div>
           <div className="flex flex-col">
             <span className="text-xs font-medium opacity-90">

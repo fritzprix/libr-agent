@@ -1,10 +1,10 @@
-# 🚀 SynapticFlow Project Guidelines
+# 🚀 LibrAgent Project Guidelines
 
 ## Project Overview
 
-**SynapticFlow: A High-Freedom AI Agent Platform - Infinitely Expandable with MCP!**
+**LibrAgent: A High-Freedom AI Agent Platform - Infinitely Expandable with MCP!**
 
-SynapticFlow is a next-generation desktop AI agent platform that combines the lightness of Tauri with the intuitiveness of React. Users can automate all daily tasks by giving AI agents their own unique personalities and abilities.
+LibrAgent is a next-generation desktop AI agent platform that combines the lightness of Tauri with the intuitiveness of React. Users can automate all daily tasks by giving AI agents their own unique personalities and abilities.
 
 ## Key Features
 
@@ -70,7 +70,7 @@ SynapticFlow is a next-generation desktop AI agent platform that combines the li
 
 ## Development Scripts & Workflow
 
-SynapticFlow provides several useful scripts for development and code quality:
+LibrAgent provides several useful scripts for development and code quality:
 
 - `pnpm dev` – Start the Vite development server
 - `pnpm tauri dev` – Start the Tauri desktop app with hot reload
@@ -103,7 +103,7 @@ This ensures:
 ## File Structure
 
 ```bash
-synaptic-flow/
+libr-agent/
 ├── src/                        # React Frontend
 │   ├── app/                    # App entry, root layout, global providers
 │   ├── assets/                 # Static assets (images, svgs, etc.)

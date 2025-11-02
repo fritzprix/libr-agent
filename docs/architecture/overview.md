@@ -1,6 +1,6 @@
-# SynapticFlow System Architecture
+# LibrAgent System Architecture
 
-This document provides a high-level overview of the SynapticFlow architecture, detailing its main components and their interactions.
+This document provides a high-level overview of the LibrAgent architecture, detailing its main components and their interactions.
 
 ## Core Philosophy
 
@@ -8,7 +8,7 @@ The architecture is designed to be modular and extensible, separating concerns b
 
 ## Architectural Layers
 
-SynapticFlow is composed of three primary layers:
+LibrAgent is composed of three primary layers:
 
 1. **Frontend Layer (React)**: The user-facing application built with React and TypeScript.
 2. **Backend Layer (Tauri/Rust)**: The native backend that manages system resources, provides native services, and communicates with external processes.
@@ -55,6 +55,6 @@ This is not a single process, but a collection of services that provide tools to
 
 - **Native Rust Services**: High-performance, secure tools implemented in Rust and exposed via Tauri commands. Examples include `filesystem` and `code sandbox`. These are managed by the `RustMCPToolProvider` on the frontend.
 - **Web Worker Services**: Tools that run in a separate browser thread, ideal for tasks like data processing or interacting with browser APIs without blocking the UI. Examples include `planning` and `playbook`. These are managed by the `WebMCPProvider`.
-- **External MCP Servers**: Standalone processes that communicate with SynapticFlow over stdio, adhering to the Model Context Protocol (MCP). This allows third-party developers to integrate their own tools.
+- **External MCP Servers**: Standalone processes that communicate with LibrAgent over stdio, adhering to the Model Context Protocol (MCP). This allows third-party developers to integrate their own tools.
 
 This layered and service-oriented architecture ensures that the UI remains decoupled from the underlying tool implementations, and that new capabilities can be added modularly by creating new services.

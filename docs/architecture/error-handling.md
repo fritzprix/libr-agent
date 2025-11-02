@@ -1,4 +1,4 @@
-# Error Handling in SynapticFlow
+# Error Handling in LibrAgent
 
 This document describes the error handling strategies used throughout the application.
 
