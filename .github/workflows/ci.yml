@@ -145,7 +145,7 @@ jobs:
         run: pnpm tauri build
 
       - name: 📦 Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: synapticflow-build-${{ matrix.os }}
           path: |
