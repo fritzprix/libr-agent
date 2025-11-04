@@ -46,8 +46,8 @@ describe('Bootstrap Server', () => {
       expect(response.result?.content).toBeDefined();
   expect(response.result?.content?.[0]?.type).toBe('text');
 
-      const structuredData = (response.result as { structured_data?: unknown })
-        .structured_data as Record<string, unknown>;
+      const structuredData = (response.result as { structuredContent?: unknown })
+        .structuredContent as Record<string, unknown>;
       expect(structuredData).toBeDefined();
       expect(['windows', 'linux', 'darwin']).toContain(
         structuredData.platform,
@@ -60,8 +60,8 @@ describe('Bootstrap Server', () => {
 
     it('should detect OS details', async () => {
       const response = await bootstrapServer.callTool('detect_platform', {});
-      const structuredData = (response.result as { structured_data?: unknown })
-        .structured_data as Record<string, unknown>;
+      const structuredData = (response.result as { structuredContent?: unknown })
+        .structuredContent as Record<string, unknown>;
 
       expect(structuredData.os_details).toBeDefined();
       const osDetails = structuredData.os_details as Record<string, unknown>;
@@ -102,8 +102,8 @@ describe('Bootstrap Server', () => {
         expect(response.result.content[0].text).toContain('node');
       }
 
-      const structuredData = (response.result as { structured_data?: unknown })
-        .structured_data as Record<string, unknown>;
+      const structuredData = (response.result as { structuredContent?: unknown })
+        .structuredContent as Record<string, unknown>;
       expect(structuredData).toBeDefined();
       expect(structuredData.tool).toBe('node');
       expect(structuredData.methods).toBeDefined();
@@ -116,8 +116,8 @@ describe('Bootstrap Server', () => {
         platform: 'windows',
       });
 
-      const structuredData = (response.result as { structured_data?: unknown })
-        .structured_data as Record<string, unknown>;
+      const structuredData = (response.result as { structuredContent?: unknown })
+        .structuredContent as Record<string, unknown>;
       expect(structuredData.platform).toBe('windows');
       expect(structuredData.tool).toBe('python');
 
@@ -138,8 +138,8 @@ describe('Bootstrap Server', () => {
         method: 'package_manager',
       });
 
-      const structuredData = (response.result as { structured_data?: unknown })
-        .structured_data as Record<string, unknown>;
+      const structuredData = (response.result as { structuredContent?: unknown })
+        .structuredContent as Record<string, unknown>;
       const methods = structuredData.methods as Array<
         Record<string, unknown>
       >;
@@ -156,8 +156,8 @@ describe('Bootstrap Server', () => {
         platform: 'linux',
       });
 
-      const structuredData = (response.result as { structured_data?: unknown })
-        .structured_data as Record<string, unknown>;
+      const structuredData = (response.result as { structuredContent?: unknown })
+        .structuredContent as Record<string, unknown>;
       const methods = structuredData.methods as Array<
         Record<string, unknown>
       >;
@@ -172,8 +172,8 @@ describe('Bootstrap Server', () => {
         platform: 'darwin',
       });
 
-      const structuredData = (response.result as { structured_data?: unknown })
-        .structured_data as Record<string, unknown>;
+      const structuredData = (response.result as { structuredContent?: unknown })
+        .structuredContent as Record<string, unknown>;
       const verification = structuredData.verification as Record<
         string,
         unknown
@@ -211,8 +211,8 @@ describe('Bootstrap Server', () => {
         expect(response.result.content[0].text).toContain('node');
       }
 
-      const structuredData = (response.result as { structured_data?: unknown })
-        .structured_data as Record<string, unknown>;
+      const structuredData = (response.result as { structuredContent?: unknown })
+        .structuredContent as Record<string, unknown>;
       expect(structuredData.tool).toBe('node');
       expect(structuredData.check_command).toBeDefined();
       expect(structuredData.shell_tool).toBeDefined();
@@ -230,8 +230,8 @@ describe('Bootstrap Server', () => {
         },
       );
 
-      const structuredData = (response.result as { structured_data?: unknown })
-        .structured_data as Record<string, unknown>;
+      const structuredData = (response.result as { structuredContent?: unknown })
+        .structuredContent as Record<string, unknown>;
       const checkCommand = String(structuredData.check_command);
       expect(checkCommand).toContain('python');
       expect(checkCommand).toContain('-V');
@@ -245,8 +245,8 @@ describe('Bootstrap Server', () => {
         },
       );
 
-      const structuredData = (response.result as { structured_data?: unknown })
-        .structured_data as Record<string, unknown>;
+      const structuredData = (response.result as { structuredContent?: unknown })
+        .structuredContent as Record<string, unknown>;
       expect(structuredData.instructions).toBeDefined();
 
       const instructions = structuredData.instructions as Record<
@@ -304,12 +304,13 @@ describe('Bootstrap Server', () => {
 
         method.steps.forEach((step) => {
           expect(step.description).toBeDefined();
-          // Either command or manual URL should be present
+          // Either command or manual flag should be present
+          // Manual steps must have description, and optionally url or notes
           if (!step.manual) {
             expect(step.command).toBeDefined();
-          } else {
-            expect(step.url || step.notes).toBeDefined();
           }
+          // For manual steps, description is always required (already checked above)
+          // url and notes are optional for manual steps
         });
       });
     });

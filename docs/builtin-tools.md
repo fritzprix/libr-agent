@@ -6,7 +6,82 @@ LibrAgent provides a comprehensive set of built-in tools that enable AI agents t
 
 1. **Browser Tools** - Web browser automation and interaction
 2. **Rust MCP Tools** - Native system-level operations via Rust backend
-3. **Web MCP Tools** - Browser-based MCP server tools
+3. **Web MCP Tools** - Browser-based MCP server tools running in Web Workers
+
+## Service Naming Convention
+
+### Tool Name Format
+
+All built-in tools follow a standardized naming pattern:
+
+```text
+builtin_<service_alias>__<tool_name>
+```
+
+- `builtin_` - Fixed prefix identifying built-in tools
+- `<service_alias>` - Service identifier (server name)
+- `__` (double underscore) - Delimiter separating service from tool
+- `<tool_name>` - Specific tool name
+
+**Examples:**
+
+- `builtin_browser__clickElement` - Browser service, click element tool
+- `builtin_mcp_manager__list_servers` - MCP Manager service, list servers tool
+- `builtin_workspace__read_file` - Workspace service, read file tool
+
+### Service Alias Rules
+
+Service aliases must adhere to these naming rules to ensure proper parsing and registration:
+
+#### ✅ Valid Service Names
+
+- **Single words**: `browser`, `workspace`, `planning`, `ui`
+- **Snake case with single underscores**: `mcp_manager`, `content_store`, `playbook_store`
+- **Multiple segments**: `a_b_c_d_e_f` (any number of single underscores)
+- **Alphanumeric**: Letters (a-z, A-Z) and numbers (0-9) are allowed
+
+#### ❌ Invalid Service Names
+
+- **Double underscores**: `service__name`, `a__b` (conflicts with delimiter)
+- **Leading/trailing underscores**: `_service`, `service_`
+- **Special characters**: `service-name`, `service.name`, `service name`
+- **Consecutive underscores**: `service___name`
+- **Empty strings**: Must have at least one character
+
+#### Validation
+
+The system includes automatic validation via `isValidServiceAlias()` function:
+
+```typescript
+// Valid examples
+isValidServiceAlias('browser'); // ✅ true
+isValidServiceAlias('mcp_manager'); // ✅ true
+isValidServiceAlias('content_store'); // ✅ true
+isValidServiceAlias('a_b_c_d'); // ✅ true
+
+// Invalid examples
+isValidServiceAlias('service__name'); // ❌ false (double underscore)
+isValidServiceAlias('_service'); // ❌ false (leading underscore)
+isValidServiceAlias('service-name'); // ❌ false (hyphen)
+isValidServiceAlias(''); // ❌ false (empty)
+```
+
+### Why These Rules?
+
+1. **Parser Reliability**: The `extractBuiltInServiceAlias()` function uses a non-greedy regex pattern (`/^builtin_(.+?)__/`) that stops at the first occurrence of `__`. Double underscores in service names would cause incorrect parsing.
+
+2. **Consistency**: Snake_case naming provides consistent, readable service identifiers across the codebase.
+
+3. **JavaScript Compatibility**: The `toValidJsName()` function ensures service names can be used as JavaScript identifiers.
+
+4. **Collision Avoidance**: Strict naming rules prevent ambiguity and tool name collisions.
+
+### Best Practices
+
+- Use descriptive, lowercase names: `content_store` instead of `cs`
+- Separate words with single underscores: `mcp_manager` not `mcpmanager`
+- Keep names concise but meaningful: `browser` not `web_browser_automation`
+- Follow existing patterns: Check registered services before adding new ones
 
 ## Built-in Tool Architecture and Context Coupling
 
@@ -304,72 +379,91 @@ Extracts information about all interactable elements on the page.
 
 ## Rust MCP Tools
 
-Rust MCP tools provide access to native system-level operations through the Tauri Rust backend. These tools are implemented as native Rust code for optimal performance and security.
+Rust MCP tools provide access to native system-level operations through the Tauri Rust backend. These tools are implemented as native Rust code for optimal performance, security, and direct system access.
 
 ### Available Rust MCP Servers
 
 #### Content Store Server (`content_store`)
 
-Provides advanced file content management with semantic search capabilities.
+Provides advanced file content management with semantic search capabilities and BM25 indexing.
 
 **Tools:**
 
 - `createStore`: Create a new content store for file management
-- `addContent`: Add and parse file content with chunking and BM25 indexing
-- `listContent`: List content in a store with pagination
-- `readContent`: Read content with line range filtering
+- `addContent`: Add and parse file content with automatic chunking and BM25 indexing
+- `listContent`: List content in a store with pagination support
+- `readContent`: Read content with optional line range filtering
 - `keywordSimilaritySearch`: Perform BM25-based keyword search across stored content
-- `semanticSimilaritySearch`: Perform semantic search using embeddings
+- `semanticSimilaritySearch`: Perform semantic search using embeddings (if configured)
 - `deleteContent`: Remove content from a store
 - `updateContent`: Update existing content in a store
-- `getStoreInfo`: Get information about a content store
+- `getStoreInfo`: Get metadata and statistics about a content store
 - `listStores`: List all available content stores
 
 **Features:**
 
-- BM25 keyword indexing for fast text search
-- Semantic search using embeddings
-- Content chunking for large files
+- BM25 keyword indexing for fast full-text search
+- Semantic search using vector embeddings
+- Intelligent content chunking for large files
 - Session-based store isolation
-- File attachment support
+- File attachment support with metadata
+- Configurable chunk size and overlap
+- Relevance scoring and ranking
+
+**Use Cases:**
+
+- Document retrieval and search
+- Code analysis and navigation
+- Knowledge base management
+- Context-aware content suggestions
 
 #### Workspace Server (`workspace`)
 
-Provides integrated workspace management with file operations, code execution, and export capabilities.
+Provides integrated workspace management with file operations, code execution, and export capabilities in a sandboxed environment.
 
 **File Operation Tools:**
 
-- `read_file`: Read file contents with optional line ranges
-- `write_file`: Write or create files
-- `list_directory`: List directory contents with filtering
-- `search_files`: Search for files by name/pattern
-- `replace_lines_in_file`: Replace specific lines in a file
-- `grep`: Search for text patterns in files
-- `import_file`: Import files from external sources
+- `read_file`: Read file contents with optional line range specification
+- `write_file`: Write or create files with automatic directory creation
+- `list_directory`: List directory contents with glob pattern filtering
+- `search_files`: Search for files by name pattern or content
+- `replace_lines_in_file`: Replace specific lines in a file atomically
+- `grep`: Search for text patterns in files with regex support
+- `import_file`: Import files from external sources with validation
 
 **Code Execution Tools:**
 
-- `execute_python`: Execute Python code with session isolation
-- `execute_typescript`: Execute TypeScript code
+- `execute_python`: Execute Python code with session isolation and virtual environments
+- `execute_typescript`: Execute TypeScript code with transpilation
 - `execute_shell` (Unix only): Execute shell commands using bash/sh
 - `execute_windows_cmd` (Windows only): Execute commands using cmd.exe
 
 **Export Tools:**
 
-- `export_file`: Export files to various formats
-- `export_zip`: Create ZIP archives of workspace content
+- `export_file`: Export files to various formats (JSON, CSV, etc.)
+- `export_zip`: Create ZIP archives of workspace content with compression
 
 **Features:**
 
 - Session-based workspace isolation
 - Secure file operations with permission checks
-- Code execution sandboxing
+- Code execution sandboxing with resource limits
 - Directory structure visualization
 - File size limits and validation
+- Atomic write operations
+- Cross-platform path handling
+
+**Security:**
+
+- Sandboxed execution environments
+- Path traversal protection
+- Resource usage limits
+- Permission validation
+- Safe file system access
 
 ### Service Context
 
-Rust MCP tools can provide service-specific context information for enhanced operation:
+Rust MCP tools provide service-specific context information for enhanced operation awareness:
 
 **Content Store Context:**
 
@@ -379,6 +473,7 @@ Rust MCP tools can provide service-specific context information for enhanced ope
 **Status**: Active
 **Stores Available**: X stores
 **Total Content**: Y items
+**Indexing**: BM25 + Semantic (if enabled)
 ```
 
 **Workspace Context:**
@@ -389,6 +484,7 @@ Rust MCP tools can provide service-specific context information for enhanced ope
 **Status**: Active
 **Working Directory**: /path/to/workspace
 **Available Tools**: 12 tools
+**Platform**: Linux/Windows/macOS
 
 ## Current Directory Structure
 directory_tree_here
@@ -396,36 +492,173 @@ directory_tree_here
 
 ## Web MCP Tools
 
-Web MCP tools run in browser-based MCP servers, providing client-side functionality without native dependencies.
+Web MCP tools run in browser-based MCP servers via Web Workers, providing client-side functionality without native dependencies. These tools are dynamically loaded and executed in an isolated worker context.
+
+### MCP Server Manager (`mcp_manager`)
+
+The MCP Server Manager provides comprehensive management and monitoring capabilities for all Web MCP servers running in the application.
+
+**Tools:**
+
+- `list_servers`: List all registered Web MCP servers with their status and tool counts
+- `search_server`: Search for specific servers by name or metadata
+- `get_server_info`: Get detailed information about a specific server including tools and capabilities
+
+**Features:**
+
+- Real-time server status monitoring
+- Tool inventory and capability discovery
+- Server metadata inspection
+- Service health checking
+
+**Usage Example:**
+
+```typescript
+// List all available Web MCP servers
+const servers = await listServersTool.execute({});
+// Returns: Array of server objects with name, status, toolCount
+
+// Search for specific server
+const planningServer = await searchServerTool.execute({
+  query: 'planning',
+});
+
+// Get detailed server information
+const info = await getServerInfoTool.execute({
+  serverName: 'planning',
+});
+```
+
+### Planning Server (`planning`)
+
+The planning server provides comprehensive task planning and goal management for AI agents, maintaining state across sessions for structured task execution.
+
+**Tools:**
+
+- `set_goal`: Set a new goal for the current session
+- `add_todo`: Add a new todo item to the current session's list
+- `complete_todo`: Mark a todo item as completed
+- `add_observation`: Record an observation or event for decision making
+- `get_status`: Get comprehensive planning status including goal, todos, and observations
+
+**Features:**
+
+- Session-based goal tracking
+- Todo list management with completion status
+- Observation history for context awareness
+- State persistence across tool calls
+- Progress monitoring and status reporting
+
+**Context Integration:**
+
+The planning server receives `sessionId` automatically through tight context coupling with the client application. No manual session management required.
+
+### Playbook Server (`playbook`)
+
+The playbook server manages reusable workflows and automation templates for AI assistants.
+
+**Tools:**
+
+- `create_playbook`: Create a new playbook with instructions and steps
+- `list_playbooks`: List all playbooks for the current assistant
+- `get_playbook`: Retrieve a specific playbook by ID
+- `update_playbook`: Update an existing playbook
+- `delete_playbook`: Remove a playbook
+
+**Features:**
+
+- Assistant-specific playbook storage
+- Template-based workflow management
+- Versioning and update tracking
+- Playbook execution guidance
+
+**Context Integration:**
+
+The playbook server receives `assistantId` automatically through tight context coupling. All operations are filtered to the current assistant's context.
+
+### Bootstrap Server (`bootstrap`)
+
+The bootstrap server provides example tools and templates for developing new Web MCP servers.
+
+**Tools:**
+
+- `echo`: Echo back provided text (basic test tool)
+- `get_template`: Get MCP server development templates
+- `list_examples`: List available server implementation examples
+
+**Features:**
+
+- Development examples and best practices
+- Template-based server creation
+- Testing and validation helpers
 
 ### Server Management
 
-Web MCP servers are loaded dynamically and can be:
+Web MCP servers are loaded dynamically through the `WebMCPServiceRegistry` and can be:
 
-- Planning servers for task orchestration
-- Custom tool servers for specific domains
+- Task orchestration servers (planning, playbook)
+- Management and monitoring servers (mcp_manager)
+- Custom domain-specific tool servers
 - Integration servers for external services
 
 ### Tool Registration
 
-Web MCP tools are automatically registered when servers are loaded, providing seamless integration with the built-in tool system.
+Web MCP tools are automatically registered when servers are loaded, providing seamless integration with the built-in tool system through the `BuiltInToolProvider`.
 
 ## Tool Providers
 
+### BuiltInToolProvider
+
+Central React context provider that manages all built-in tool registration and execution. Located at `src/features/tools/index.tsx`.
+
+**Responsibilities:**
+
+- Unified tool registry for browser, Rust MCP, and Web MCP tools
+- Tool name validation and service alias parsing
+- Tool execution routing and result handling
+- Service metadata management
+- Context propagation to Web MCP servers
+
+**Key Features:**
+
+- Service alias validation via `isValidServiceAlias()`
+- Tool name parsing via `extractBuiltInServiceAlias()`
+- Automatic context setting for Web MCP servers
+- Warning logs for invalid service names
+
+**Architecture:**
+
+```text
+BuiltInToolProvider
+├── BrowserToolProvider (browser automation)
+├── RustMCPToolProvider (native operations)
+├── WebMCPServiceRegistry (web workers)
+└── WebMCPContextSetter (automatic context)
+```
+
 ### BrowserToolProvider
 
-React component that registers all browser automation tools with the built-in tool system.
+React component that registers all browser automation tools with the built-in tool system. Located at `src/features/browser-tools/BrowserToolProvider.tsx`.
 
 **Features:**
 
 - Automatic tool registration on mount
-- Browser script execution integration
+- Browser script execution integration via `useBrowserScriptExecutor()`
 - Session state management
 - Error handling and logging
 
+**Registered Tools:**
+
+- Session management: `createSession`, `closeSession`, `listSessions`
+- Navigation: `navigateToUrl`, `navigateBack`, `navigateForward`
+- Content extraction: `extractPageContent`, `extractInteractable`
+- Element interaction: `clickElement`, `inputText`, `scrollPage`
+
+**Service Name:** `browser`
+
 ### RustMCPToolProvider
 
-React component that exposes Rust backend MCP tools to the application.
+React component that exposes Rust backend MCP tools to the application. Located at `src/features/rust-mcp-tools/RustMCPToolProvider.tsx`.
 
 **Features:**
 
@@ -433,6 +666,7 @@ React component that exposes Rust backend MCP tools to the application.
 - Tool execution delegation to Rust backend
 - Service context management
 - Async loading and caching
+- Comprehensive error handling
 
 **Integration Architecture:**
 The RustMCPToolProvider follows this integration flow:
@@ -445,7 +679,7 @@ The RustMCPToolProvider follows this integration flow:
    - `loadService()`: No-op (preloaded)
    - `unloadService()`: No-op
    - `getServiceContext()`: Returns service-specific context via `getServiceContext()`
-4. **Tool Name Mapping**: Tools are registered with names like `builtin_rustserver__toolname`
+4. **Tool Name Mapping**: Tools are registered with names like `builtin_<serverId>__<toolName>`
 
 **Argument Handling:**
 The provider includes robust argument parsing that handles both string and object formats:
@@ -466,16 +700,19 @@ try {
 }
 ```
 
+**Supported Servers:** `content_store`, `workspace`
+
 ### WebMCPServiceRegistry
 
-React component that manages web-based MCP server registration.
+React component that manages web-based MCP server registration and lifecycle. Located at `src/lib/web-mcp/WebMCPServiceRegistry.tsx`.
 
 **Features:**
 
-- Dynamic server loading
+- Dynamic server loading via Web Workers
 - Tool discovery and caching
-- Server state tracking
-- Activity monitoring
+- Server state tracking with activity monitoring
+- Error handling and retry logic
+- Service context propagation
 
 **Integration Architecture:**
 The WebMCPServiceRegistry manages browser-based MCP servers:
@@ -505,14 +742,21 @@ interface WebMCPServerState {
 **Execution Flow:**
 
 ```text
-WebMCPServiceRegistry Props → Server Loading → BuiltInService Creation → BuiltInToolProvider Registration → Tool Execution via Proxy
+WebMCPServiceRegistry Props
+  → Server Loading (getServerProxy)
+  → BuiltInService Creation
+  → BuiltInToolProvider Registration
+  → Tool Execution via Proxy
+  → Result Return to Agent
 ```
+
+**Supported Servers:** `planning`, `playbook`, `bootstrap`, `mcp_manager`
 
 ## Tool Architecture
 
 ### Type System
 
-The tool system uses a layered type architecture:
+The tool system uses a layered type architecture for different execution contexts:
 
 ```typescript
 // Base MCP tool interface
@@ -536,21 +780,83 @@ type StrictBrowserMCPTool = MCPTool & {
 };
 ```
 
+### Tool Name Parsing
+
+The system uses `extractBuiltInServiceAlias()` function to parse tool names:
+
+```typescript
+// Extract service alias from tool name
+extractBuiltInServiceAlias('builtin_browser__clickElement'); // → 'browser'
+extractBuiltInServiceAlias('builtin_mcp_manager__list_servers'); // → 'mcp_manager'
+extractBuiltInServiceAlias('builtin_content_store__readContent'); // → 'content_store'
+
+// Invalid tool names return null
+extractBuiltInServiceAlias('invalid_tool_name'); // → null
+extractBuiltInServiceAlias('builtin_only'); // → null
+```
+
+**Implementation:**
+
+- Regex Pattern: `/^builtin_(.+?)__/`
+- Non-greedy matching: `.+?` stops at first occurrence of `__`
+- Handles underscores within service names correctly
+
+### Service Validation
+
+All service registrations go through validation:
+
+```typescript
+// Validation check in BuiltInToolProvider
+if (!isValidServiceAlias(serviceAlias)) {
+  logger.warn(
+    `Service name "${serviceAlias}" contains invalid characters. ` +
+      'Service names must not contain double underscores (__) and should use snake_case.',
+  );
+  return; // Skip registration
+}
+```
+
 ### Execution Flow
 
 1. **Tool Registration**: Providers register tools with the BuiltInToolProvider
+   - Service name validation via `isValidServiceAlias()`
+   - Tool name mapping with `builtin_<alias>__<tool>` format
 2. **Tool Discovery**: AI agents query available tools through the provider
+   - Service alias extraction via `extractBuiltInServiceAlias()`
+   - Metadata lookup via `getServiceMetadata()`
 3. **Tool Execution**: Tools are executed with validated parameters
+   - Argument parsing and validation
+   - Execution delegation to appropriate provider
+   - Error handling and logging
 4. **Result Processing**: Responses are formatted and returned to agents
+   - Consistent MCPResponse format
+   - Error messages with context
+   - Execution time tracking
 
-### Context Coupling Error Handling
+### Context Coupling
+
+**Automatic Context Propagation:**
+
+- `WebMCPContextSetter` component provides automatic context
+- Session ID for planning server
+- Assistant ID for playbook server
+- No manual parameter passing required
+
+**Benefits:**
+
+- Simplified tool interfaces
+- Automatic state isolation
+- Enhanced security through context filtering
+- Consistent behavior across tool calls
+
+### Tool Error Handling
 
 All tools implement comprehensive error handling:
 
-- Parameter validation
-- Execution error catching
-- Detailed error messages
-- Logging and debugging information
+- **Parameter validation**: Schema-based input validation
+- **Execution error catching**: Try-catch blocks with detailed logging
+- **Detailed error messages**: Context-aware error descriptions
+- **Logging and debugging**: Centralized logger with component context
 
 ## Usage Examples
 
@@ -558,19 +864,35 @@ All tools implement comprehensive error handling:
 
 ```typescript
 // Create a session and navigate
-const sessionId = await createSessionTool.execute({
+const sessionResult = await createSessionTool.execute({
   url: 'https://example.com',
+  title: 'My Automation Session',
 });
-await navigateToUrlTool.execute({ sessionId, url: 'https://example.com/page' });
+const sessionId = sessionResult.content[0].text;
+
+// Navigate to another page
+await navigateToUrlTool.execute({
+  sessionId,
+  url: 'https://example.com/login',
+});
 
 // Extract page content
-const content = await extractPageContentTool.execute({ sessionId });
+const content = await extractPageContentTool.execute({
+  sessionId,
+  saveRawHtml: true,
+});
 
 // Click an element
-await clickElementTool.execute({ sessionId, selector: 'button.submit' });
+await clickElementTool.execute({
+  sessionId,
+  selector: 'button.submit',
+});
+
+// Clean up
+await closeSessionTool.execute({ sessionId });
 ```
 
-### Advanced Interaction
+### Advanced Browser Interaction
 
 ```typescript
 // Fill out a form
@@ -580,34 +902,314 @@ await inputTextTool.execute({
   text: 'user@example.com',
 });
 
-// Extract interactable elements for analysis
+await inputTextTool.execute({
+  sessionId,
+  selector: "input[name='password']",
+  text: 'secure_password',
+});
+
+// Extract all interactable elements
 const elements = await extractInteractableTool.execute({ sessionId });
+console.log(`Found ${elements.content[0].text.length} interactable elements`);
+
+// Scroll to load more content
+await scrollPageTool.execute({
+  sessionId,
+  direction: 'down',
+  amount: 1000,
+});
+```
+
+### Planning Server Workflow
+
+```typescript
+// Set a goal (sessionId is automatic via context)
+await setGoalTool.execute({
+  goal: 'Build a web scraping tool for product data',
+});
+
+// Add todos
+await addTodoTool.execute({
+  title: 'Create browser session',
+  description: 'Initialize browser automation session',
+});
+
+await addTodoTool.execute({
+  title: 'Navigate to product page',
+  description: 'Load the target e-commerce website',
+});
+
+// Add observations
+await addObservationTool.execute({
+  observation: 'Product page uses dynamic loading, need to wait for content',
+});
+
+// Get status
+const status = await getStatusTool.execute({});
+console.log(status.content[0].text);
+
+// Complete a todo
+await completeTodoTool.execute({
+  todoId: 0, // First todo
+});
+```
+
+### Content Store Operations
+
+```typescript
+// Create a new store
+await createStoreTool.execute({
+  storeId: 'project_docs',
+  description: 'Project documentation and code files',
+});
+
+// Add content with automatic indexing
+await addContentTool.execute({
+  storeId: 'project_docs',
+  uri: 'file:///path/to/README.md',
+  content: 'Documentation content...',
+  mimeType: 'text/markdown',
+});
+
+// Search with BM25
+const searchResults = await keywordSimilaritySearchTool.execute({
+  storeId: 'project_docs',
+  query: 'authentication implementation',
+  limit: 5,
+});
+
+// Read specific content
+const fileContent = await readContentTool.execute({
+  storeId: 'project_docs',
+  uri: 'file:///path/to/auth.ts',
+  startLine: 10,
+  endLine: 50,
+});
+```
+
+### Workspace Server Operations
+
+```typescript
+// Read file with line range
+const codeContent = await readFileTool.execute({
+  path: 'src/auth/login.ts',
+  startLine: 1,
+  endLine: 100,
+});
+
+// Search files
+const searchResults = await searchFilesTool.execute({
+  pattern: '*.ts',
+  query: 'authentication',
+});
+
+// Execute Python code
+const pythonResult = await executePythonTool.execute({
+  code: 'import pandas as pd\ndf = pd.DataFrame({"a": [1, 2, 3]})\nprint(df)',
+  sessionId: 'analysis_session',
+});
+
+// Export workspace as ZIP
+await exportZipTool.execute({
+  outputPath: 'project_backup.zip',
+  sourcePaths: ['src', 'docs', 'package.json'],
+});
+```
+
+### MCP Server Manager
+
+```typescript
+// List all available Web MCP servers
+const serverList = await listServersTool.execute({});
+console.log(serverList.content[0].text);
+
+// Search for specific server
+const planningInfo = await searchServerTool.execute({
+  query: 'planning',
+});
+
+// Get detailed server info
+const serverDetails = await getServerInfoTool.execute({
+  serverName: 'planning',
+});
+console.log(serverDetails.content[0].text);
 ```
 
 ## Configuration
 
-Tools are configured through the provider components and can be customized via:
+### Tool Provider Configuration
+
+Tools are configured through the provider components in the application:
+
+**BuiltInToolProvider Configuration:**
+
+```typescript
+// src/features/tools/index.tsx
+<BuiltInToolProvider>
+  <BrowserToolProvider />
+  <RustMCPToolProvider />
+  <WebMCPServiceRegistry servers={['planning', 'playbook', 'bootstrap', 'mcp_manager']} />
+  {children}
+</BuiltInToolProvider>
+```
+
+**Service Registration:**
+
+```typescript
+// Register a new service
+register(serviceAlias, {
+  listTools: () => [...tools],
+  executeTool: async (toolCall) => {
+    // Implementation
+  },
+  loadService: async () => {
+    // Load logic
+  },
+  unloadService: async () => {
+    // Cleanup logic
+  },
+  getServiceContext: () => {
+    // Context information
+  },
+});
+```
+
+### Environment Configuration
+
+Some tools support environment-based configuration:
+
+- **Browser Tools**: No environment variables required
+- **Rust MCP Tools**: Configured via `tauri.conf.json` and Rust backend settings
+- **Web MCP Tools**: Configured via server-specific settings in worker context
+
+### Runtime Parameters
+
+Tool behavior can be customized at runtime through:
 
 - MCP server configuration files
-- Environment variables
-- Application settings
-- Runtime parameters
+- Application settings in the UI
+- Per-session parameters
+- Context-specific overrides
 
 ## Performance Considerations
 
-- Browser tools use polling for async operations to avoid blocking
-- Element validation prevents unnecessary operations
-- Content extraction includes format optimization
-- Memory management through session lifecycle handling
+### Browser Tool Performance
+
+- **Async Operations**: Use polling mechanism to avoid blocking UI
+- **Element Validation**: Pre-flight checks prevent unnecessary operations
+- **Content Extraction**: Format-specific optimization (markdown, text, HTML)
+- **Memory Management**: Session-based lifecycle ensures proper cleanup
+- **Script Execution**: Efficient serialization and communication with browser context
+
+### Rust MCP Tool Performance
+
+- **Native Performance**: Direct system access without JavaScript overhead
+- **Concurrent Operations**: Tokio async runtime for parallel execution
+- **Resource Management**: Automatic cleanup and resource limits
+- **Caching**: Tool metadata and service context caching
+- **Optimized Indexing**: BM25 and vector search with efficient data structures
+
+### Web MCP Tool Performance
+
+- **Web Worker Isolation**: Non-blocking execution in separate thread
+- **State Persistence**: Efficient in-memory state management
+- **Message Passing**: Optimized serialization for tool calls
+- **Lazy Loading**: On-demand server loading reduces initial overhead
+- **Context Caching**: Session and assistant context cached for reuse
+
+### General Optimizations
+
+- **Tool Discovery Caching**: Tools enumerated once and cached
+- **Service Metadata**: Lightweight context information
+- **Error Fast-Fail**: Quick validation prevents expensive operations
+- **Batch Operations**: Support for bulk operations where applicable
 
 ## Security
 
-- All browser operations are sandboxed within sessions
-- Input validation prevents injection attacks
-- File system access is controlled through Rust backend
-- MCP server communication uses secure protocols
+### Browser Tools Security
 
-## Web MCP Server Details
+- **Session Sandboxing**: Each session isolated in separate browser context
+- **Input Validation**: All selectors and inputs validated before execution
+- **Script Injection Protection**: Safe script execution with proper escaping
+- **Cross-Origin Handling**: Respect CORS and security policies
+- **Session Lifecycle**: Automatic cleanup prevents resource leaks
+
+### Rust MCP Tools Security
+
+- **File System Access Control**: Path validation and permission checks
+- **Code Execution Sandboxing**: Isolated environments for code execution
+- **Resource Limits**: CPU, memory, and time limits for operations
+- **Path Traversal Protection**: Prevent access outside workspace
+- **Input Sanitization**: All inputs validated and sanitized
+
+### Web MCP Tools Security
+
+- **Worker Isolation**: Tools run in separate worker context
+- **State Isolation**: Session and assistant-based state separation
+- **Message Validation**: All tool calls validated before execution
+- **Context Verification**: Automatic context validation and filtering
+- **Error Information Control**: Sanitized error messages prevent information leakage
+
+### API Key Management
+
+- **Secure Storage**: API keys stored in encrypted application storage
+- **No Version Control**: Keys never committed to repository
+- **Runtime Only**: Keys loaded at runtime, never bundled
+- **Rotation Support**: Easy key update through application settings
+
+### General Security Practices
+
+- **Principle of Least Privilege**: Tools have minimal required permissions
+- **Input Validation**: Schema-based validation for all tool parameters
+- **Error Handling**: Safe error messages without sensitive information
+- **Logging Security**: No sensitive data in logs
+- **Regular Updates**: Security patches and dependency updates
+
+## Troubleshooting
+
+### Common Issues
+
+#### Service Not Appearing in UI
+
+**Problem:** New service like `mcp_manager` not visible in Built-in Tools list
+
+**Solution:**
+
+1. Check service name follows naming convention (no `__`, valid snake_case)
+2. Verify service registered in correct provider (Browser/Rust/Web MCP)
+3. Check browser console for validation warnings
+4. Ensure `extractBuiltInServiceAlias()` can parse tool names correctly
+
+#### Tool Execution Failures
+
+**Problem:** Tool calls fail with unclear error messages
+
+**Solution:**
+
+1. Validate tool arguments match inputSchema
+2. Check service context is properly set (for Web MCP tools)
+3. Review logs for detailed error information
+4. Verify service is loaded and initialized
+
+#### Context Not Available
+
+**Problem:** Planning or playbook tools can't access session/assistant context
+
+**Solution:**
+
+1. Ensure `WebMCPContextSetter` is mounted in component tree
+2. Check context values are set before tool execution
+3. Verify `BuiltInToolProvider` wraps all tool consumers
+4. Review context propagation in provider implementation
+
+### Debug Tools
+
+- **Browser Console**: Check for warning/error logs from providers
+- **Network Tab**: Monitor Web Worker communication
+- **Tauri DevTools**: Debug Rust backend MCP operations
+- **Logger Output**: Review centralized logging with context
+
+## Web MCP Server Implementation Details
 
 ### Planning Server Implementation
 

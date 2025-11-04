@@ -48,6 +48,7 @@
     "src/components/ui/collapsible.tsx",
     "src/components/ui/sonner.tsx",
     "src/hooks/__tests__/use-ai-service.completeText.spec.ts",
+    "src/lib/search/bm25.ts",
     "src/lib/web-mcp/mcp-worker.ts",
     "src/lib/web-mcp/modules/planning-server",
     "src/lib/web-mcp/modules/planning-server/index.ts",

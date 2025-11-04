@@ -116,3 +116,23 @@ export function createObjectSchema(options?: {
     ...options,
   };
 }
+
+/**
+ * Creates a JSON schema for an enum (string with restricted values).
+ * @param values Array of allowed string values.
+ * @param options Optional description and default value.
+ * @returns A `JSONSchemaString` object with enum constraint.
+ */
+export function createEnumSchema(
+  values: string[],
+  options?: {
+    description?: string;
+    default?: string;
+  },
+): JSONSchemaString {
+  return {
+    type: 'string',
+    enum: values,
+    ...options,
+  };
+}

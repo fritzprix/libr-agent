@@ -9,8 +9,90 @@ import { mcpManagerTools } from './tools';
 import { mcpServersCRUD, assistantsCRUD, createPage } from '@/lib/db/crud';
 import { LocalDatabase } from '@/lib/db/service';
 import type { MCPServerEntity } from '@/models/chat';
+import {
+  createBM25Index,
+  defaultTokenizer,
+  clearBM25Cache,
+} from '@/lib/search/bm25';
 
 const logger = getLogger('MCPManagerServer');
+
+// Input type interfaces for type safety
+interface ListServersInput {
+  page?: number;
+  pageSize?: number;
+  filterByAssistant?: boolean;
+  includeInactive?: boolean;
+}
+
+interface SearchServersInput {
+  query: string;
+  page?: number;
+  pageSize?: number;
+  searchMode?: 'bm25' | 'simple';
+  byNameOnly?: boolean;
+  includeInactive?: boolean;
+  weights?: {
+    nameWeight?: number;
+    descWeight?: number;
+  };
+}
+
+interface CreateServerInput {
+  name: string;
+  description?: string;
+  transport: unknown;
+  tags?: string[];
+}
+
+interface ConnectInput {
+  serverId?: string;
+  serverName?: string;
+  scope?: 'assistant' | 'global';
+  autoStart?: boolean;
+}
+
+interface DisconnectInput {
+  serverId?: string;
+  serverName?: string;
+  scope?: 'assistant' | 'global';
+}
+
+// Transport type guards
+interface StdioTransport {
+  type: 'stdio';
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+}
+
+interface HttpTransport {
+  type: 'http';
+  url: string;
+  headers?: Record<string, string>;
+}
+
+function isStdioTransport(t: unknown): t is StdioTransport {
+  return (
+    typeof t === 'object' &&
+    t !== null &&
+    'type' in t &&
+    t.type === 'stdio' &&
+    'command' in t &&
+    typeof t.command === 'string'
+  );
+}
+
+function isHttpTransport(t: unknown): t is HttpTransport {
+  return (
+    typeof t === 'object' &&
+    t !== null &&
+    'type' in t &&
+    t.type === 'http' &&
+    'url' in t &&
+    typeof t.url === 'string'
+  );
+}
 
 // Response types for structured content
 interface ListServersOutput {
@@ -25,6 +107,7 @@ interface ListServersOutput {
 
 interface SearchServersOutput extends ListServersOutput {
   query: string;
+  mode?: string;
 }
 
 interface CreateServerOutput {
@@ -40,130 +123,163 @@ interface ConnectServerOutput {
   assistantId?: string;
 }
 
-class MCPManagerServer implements WebMCPServer {
-  name = 'mcp_manager';
-  version = '1.0.0';
-  description =
-    'MCP server management tools for dynamic server registration and connection';
-  tools = mcpManagerTools;
+// Context state (module-scoped, set by WebMCPContextSetter)
+let assistantId: string | null = null;
+let sessionId: string | null = null;
 
-  // Context state (set by WebMCPContextSetter)
-  private assistantId: string | null = null;
-  private sessionId: string | null = null;
-
-  async callTool(name: string, args: unknown): Promise<MCPResponse<unknown>> {
-    const a = (args || {}) as Record<string, unknown>;
-
-    try {
-      switch (name) {
-        case 'list_servers':
-          return await this.listServers(a);
-        case 'search_server':
-          return await this.searchServer(a);
-        case 'create_server':
-          return await this.createServer(a);
-        case 'connect_server':
-          return await this.connectServer(a);
-        case 'disconnect_server':
-          return await this.disconnectServer(a);
-        default:
-          return createMCPTextResponse(`Unknown tool: ${name}`);
-      }
-    } catch (error) {
-      logger.error('Tool execution error', { name, error });
-      const message = error instanceof Error ? error.message : String(error);
-      return createMCPTextResponse(`Error: ${message}`);
-    }
+/**
+ * Helper function to find a server by ID or name
+ */
+async function findServer(
+  serverId?: string,
+  serverName?: string,
+): Promise<MCPServerEntity | undefined> {
+  if (serverId) {
+    return await mcpServersCRUD.read(serverId);
   }
-
-  private async listServers(
-    args: Record<string, unknown>,
-  ): Promise<MCPResponse<ListServersOutput>> {
-    const page = Number(args.page || 1);
-    const pageSize = Number(args.pageSize || 20);
-    const filterByAssistant = Boolean(args.filterByAssistant);
-    const includeInactive = Boolean(args.includeInactive ?? true);
-
-    let servers: MCPServerEntity[];
-
-    if (filterByAssistant && this.assistantId) {
-      // Get assistant's connected servers
-      const assistant = await assistantsCRUD.read(this.assistantId);
-      if (
-        !assistant ||
-        !assistant.mcpServerIds ||
-        assistant.mcpServerIds.length === 0
-      ) {
-        const emptyPage = createPage<MCPServerEntity>([], page, pageSize, 0);
-        return createMCPStructuredResponse(
-          `No MCP servers connected to assistant "${assistant?.name || 'current'}"`,
-          emptyPage,
-        );
-      }
-
-      // Fetch servers by IDs
-      const db = LocalDatabase.getInstance();
-      servers = await db.mcpServers
-        .where('id')
-        .anyOf(assistant.mcpServerIds)
-        .toArray();
-    } else {
-      // Get all servers
-      const db = LocalDatabase.getInstance();
-      servers = await db.mcpServers.toArray();
-    }
-
-    // Filter by active status
-    if (!includeInactive) {
-      servers = servers.filter((s: MCPServerEntity) => s.isActive);
-    }
-
-    // Sort by name
-    servers.sort((a, b) => a.name.localeCompare(b.name));
-
-    // Apply pagination
-    const totalItems = servers.length;
-    const result = createPage(servers, page, pageSize, totalItems);
-
-    const summary = [
-      `📋 MCP Servers (${result.totalItems} total)`,
-      filterByAssistant ? `   Filtered by current assistant` : '',
-      `   Page ${result.page}/${result.totalPages}`,
-      `   Showing ${result.items.length} server(s)`,
-    ]
-      .filter(Boolean)
-      .join('\n');
-
-    return createMCPStructuredResponse(summary, result);
-  }
-
-  private async searchServer(
-    args: Record<string, unknown>,
-  ): Promise<MCPResponse<SearchServersOutput>> {
-    const query = String(args.query || '')
-      .toLowerCase()
-      .trim();
-    const page = Number(args.page || 1);
-    const pageSize = Number(args.pageSize || 20);
-    const byNameOnly = Boolean(args.byNameOnly ?? true);
-    const includeInactive = Boolean(args.includeInactive ?? true);
-
-    if (!query) {
-      return createMCPTextResponse('Search query is required');
-    }
-
+  if (serverName) {
     const db = LocalDatabase.getInstance();
-    let servers = await db.mcpServers.toArray();
+    return await db.mcpServers
+      .filter((s) => s.name.toLowerCase() === serverName.toLowerCase())
+      .first();
+  }
+  return undefined;
+}
 
-    // Filter by active status
-    if (!includeInactive) {
-      servers = servers.filter((s: MCPServerEntity) => s.isActive);
+/**
+ * Normalize pagination including pageSize=-1 for all results
+ */
+function normalizePagination(
+  items: MCPServerEntity[],
+  page: number,
+  pageSize: number,
+): ListServersOutput {
+  if (pageSize === -1) {
+    // Return all items on page 1
+    return {
+      items,
+      page: 1,
+      pageSize: items.length,
+      totalPages: 1,
+      totalItems: items.length,
+      hasNextPage: false,
+      hasPreviousPage: false,
+    };
+  }
+
+  // Use standard pagination helper
+  return createPage(items, page, pageSize, items.length);
+}
+
+async function listServers(
+  args: Record<string, unknown>,
+): Promise<MCPResponse<ListServersOutput>> {
+  const input: ListServersInput = {
+    page: args.page !== undefined ? Number(args.page) : 1,
+    pageSize: args.pageSize !== undefined ? Number(args.pageSize) : 20,
+    filterByAssistant: Boolean(args.filterByAssistant),
+    includeInactive: Boolean(args.includeInactive ?? true),
+  };
+
+  let servers: MCPServerEntity[];
+
+  if (input.filterByAssistant && assistantId) {
+    // Get assistant's connected servers
+    const assistant = await assistantsCRUD.read(assistantId);
+    if (
+      !assistant ||
+      !assistant.mcpServerIds ||
+      assistant.mcpServerIds.length === 0
+    ) {
+      const emptyPage = normalizePagination([], input.page!, input.pageSize!);
+      return createMCPStructuredResponse(
+        `No MCP servers connected to assistant "${assistant?.name || 'current'}"`,
+        emptyPage,
+      );
     }
 
-    // Search filter
+    // Fetch servers by IDs
+    const db = LocalDatabase.getInstance();
+    servers = await db.mcpServers
+      .where('id')
+      .anyOf(assistant.mcpServerIds)
+      .toArray();
+  } else {
+    // Get all servers
+    const db = LocalDatabase.getInstance();
+    servers = await db.mcpServers.toArray();
+  }
+
+  // Filter by active status
+  if (!input.includeInactive) {
+    servers = servers.filter((s: MCPServerEntity) => s.isActive);
+  }
+
+  // Sort by name
+  servers.sort((a, b) => a.name.localeCompare(b.name));
+
+  // Apply pagination
+  const result = normalizePagination(servers, input.page!, input.pageSize!);
+
+  // Build summary with server details
+  const summaryLines = [
+    `📋 MCP Servers (${result.totalItems} total)`,
+    input.filterByAssistant ? `   Filtered by current assistant` : '',
+    `   Page ${result.page}/${result.totalPages}`,
+    `   Showing ${result.items.length} server(s)`,
+  ];
+
+  // Add server details
+  if (result.items.length > 0) {
+    summaryLines.push('');
+    summaryLines.push('Servers:');
+    result.items.forEach((server, idx) => {
+      const status = server.isActive ? '🟢' : '🔴';
+      const desc = server.metadata?.description
+        ? ` - ${server.metadata.description.slice(0, 60)}${server.metadata.description.length > 60 ? '...' : ''}`
+        : '';
+      summaryLines.push(`  ${idx + 1}. ${status} ${server.name}${desc}`);
+    });
+  }
+
+  const summary = summaryLines.filter(Boolean).join('\n');
+
+  return createMCPStructuredResponse(summary, result);
+}
+
+async function searchServer(
+  args: Record<string, unknown>,
+): Promise<MCPResponse<SearchServersOutput>> {
+  const input: SearchServersInput = {
+    query: String(args.query || '').trim(),
+    page: args.page !== undefined ? Number(args.page) : 1,
+    pageSize: args.pageSize !== undefined ? Number(args.pageSize) : 20,
+    searchMode: (args.searchMode as 'bm25' | 'simple') || 'bm25',
+    byNameOnly: Boolean(args.byNameOnly ?? true),
+    includeInactive: Boolean(args.includeInactive ?? true),
+    weights: args.weights as SearchServersInput['weights'],
+  };
+
+  if (!input.query) {
+    return createMCPTextResponse('Search query is required');
+  }
+
+  const db = LocalDatabase.getInstance();
+  let servers = await db.mcpServers.toArray();
+
+  // Filter by active status
+  if (!input.includeInactive) {
+    servers = servers.filter((s: MCPServerEntity) => s.isActive);
+  }
+
+  // Apply search based on mode
+  if (input.searchMode === 'simple') {
+    // Simple substring matching (backward compatibility)
+    const query = input.query.toLowerCase();
+
     servers = servers.filter((server: MCPServerEntity) => {
       const nameMatch = server.name.toLowerCase().includes(query);
-      if (byNameOnly) return nameMatch;
+      if (input.byNameOnly) return nameMatch;
 
       const descMatch = server.metadata?.description
         ?.toLowerCase()
@@ -172,277 +288,387 @@ class MCPManagerServer implements WebMCPServer {
       return nameMatch || descMatch;
     });
 
-    // Sort by relevance (exact matches first, then starts-with, then contains)
+    // Improved relevance sorting: exact > startsWith > contains
+    const scoreLevel = (name: string) => {
+      const lowerName = name.toLowerCase();
+      if (lowerName === query) return 3;
+      if (lowerName.startsWith(query)) return 2;
+      if (lowerName.includes(query)) return 1;
+      return 0;
+    };
+
     servers.sort((a: MCPServerEntity, b: MCPServerEntity) => {
-      const aName = a.name.toLowerCase();
-      const bName = b.name.toLowerCase();
-
-      if (aName === query && bName !== query) return -1;
-      if (aName !== query && bName === query) return 1;
-      if (aName.startsWith(query) && !bName.startsWith(query)) return -1;
-      if (!aName.startsWith(query) && bName.startsWith(query)) return 1;
-
-      return aName.localeCompare(bName);
+      const scoreA = scoreLevel(a.name);
+      const scoreB = scoreLevel(b.name);
+      if (scoreA !== scoreB) return scoreB - scoreA;
+      return a.name.localeCompare(b.name);
     });
 
-    const totalItems = servers.length;
-    const result = createPage(servers, page, pageSize, totalItems);
+    const result = normalizePagination(servers, input.page!, input.pageSize!);
 
-    const summary = [
-      `🔍 Search Results for "${query}"`,
+    // Build summary with search results
+    const summaryLines = [
+      `🔍 Search Results for "${input.query}" (simple)`,
       `   Found ${result.totalItems} matching server(s)`,
       `   Page ${result.page}/${result.totalPages}`,
       `   Showing ${result.items.length} server(s)`,
-    ].join('\n');
+    ];
+
+    // Add top results
+    if (result.items.length > 0) {
+      summaryLines.push('');
+      summaryLines.push('Top Results:');
+      result.items.slice(0, 5).forEach((server, idx) => {
+        const status = server.isActive ? '🟢' : '🔴';
+        const matchType =
+          server.name.toLowerCase() === query
+            ? '[exact]'
+            : server.name.toLowerCase().startsWith(query)
+              ? '[starts]'
+              : '[contains]';
+        summaryLines.push(
+          `  ${idx + 1}. ${status} ${server.name} ${matchType}`,
+        );
+      });
+      if (result.items.length > 5) {
+        summaryLines.push(`  ... and ${result.items.length - 5} more`);
+      }
+    }
+
+    const summary = summaryLines.join('\n');
 
     return createMCPStructuredResponse(summary, {
       ...result,
-      query,
+      query: input.query,
+      mode: 'simple',
     });
   }
 
-  private async createServer(
-    args: Record<string, unknown>,
-  ): Promise<MCPResponse<CreateServerOutput>> {
-    const name = String(args.name || '').trim();
-    const description = String(args.description || '');
-    const transport = args.transport as Record<string, unknown>;
-    // Note: tags are accepted in args but not stored in metadata (not part of ServerMetadata interface)
+  // BM25 mode (default)
+  const nameWeight = input.weights?.nameWeight ?? 2.0;
+  const descWeight = input.weights?.descWeight ?? 1.0;
 
-    // Validate required fields
-    if (!name) {
-      return createMCPTextResponse('Server name is required');
-    }
+  // Build BM25 documents with weighted token duplication
+  const docs = servers.map((server) => {
+    const nameTokens = defaultTokenizer(server.name);
+    const descTokens = defaultTokenizer(server.metadata?.description || '');
 
-    if (!transport || !transport.type) {
-      return createMCPTextResponse('Transport configuration is required');
-    }
+    // Duplicate tokens based on weights (round to nearest integer, min 1)
+    const weightedNameTokens = nameTokens.flatMap((token) =>
+      Array(Math.max(1, Math.round(nameWeight))).fill(token),
+    );
+    const weightedDescTokens = descTokens.flatMap((token) =>
+      Array(Math.max(1, Math.round(descWeight))).fill(token),
+    );
 
-    const transportType = String(transport.type);
-    if (transportType !== 'stdio' && transportType !== 'http') {
-      return createMCPTextResponse('Transport type must be "stdio" or "http"');
-    }
-
-    // Validate transport-specific fields
-    if (transportType === 'stdio' && !transport.command) {
-      return createMCPTextResponse('Command is required for stdio transport');
-    }
-    if (transportType === 'http' && !transport.url) {
-      return createMCPTextResponse('URL is required for http transport');
-    }
-
-    // Build server entity
-    const now = new Date();
-    const server: MCPServerEntity = {
-      id: `mcp-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-      name,
-      isActive: true,
-      createdAt: now,
-      updatedAt: now,
-      transport: transport as MCPServerEntity['transport'],
-      metadata: {
-        description,
-      },
+    return {
+      id: server.id,
+      tokens: [...weightedNameTokens, ...weightedDescTokens],
     };
+  });
 
-    // Try to save (will throw if name exists)
-    try {
-      await mcpServersCRUD.upsert(server);
+  // Create or retrieve cached BM25 index
+  const index = createBM25Index(docs);
+  const queryTokens = defaultTokenizer(input.query);
+  const scores = index.score(queryTokens);
 
-      const summary = [
-        `✅ MCP Server Created Successfully`,
-        `   Name: ${server.name}`,
-        `   ID: ${server.id}`,
-        `   Transport: ${transportType}`,
-        `   Status: Active`,
-        ``,
-        `💡 Use "connect_server" to enable this server for the current assistant.`,
-      ].join('\n');
+  // Sort by BM25 score descending, tie-breaker by name alphabetically
+  servers.sort((a, b) => {
+    const scoreA = scores.get(a.id) || 0;
+    const scoreB = scores.get(b.id) || 0;
+    if (scoreA !== scoreB) return scoreB - scoreA;
+    return a.name.localeCompare(b.name);
+  });
 
-      return createMCPStructuredResponse(summary, {
-        server,
-        message: 'Server created successfully',
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+  const result = normalizePagination(servers, input.page!, input.pageSize!);
 
-      if (message.includes('name already exists')) {
-        return createMCPTextResponse(
-          `❌ Server name "${name}" already exists. Please choose a different name.`,
-        );
-      }
+  // Build summary with BM25 search results
+  const summaryLines = [
+    `🔎 BM25 Results for "${input.query}" (name×${nameWeight}, desc×${descWeight})`,
+    `   Found ${result.totalItems} matching server(s)`,
+    `   Page ${result.page}/${result.totalPages}`,
+    `   Showing ${result.items.length} server(s)`,
+  ];
 
-      throw error;
+  // Add top results with scores
+  if (result.items.length > 0) {
+    summaryLines.push('');
+    summaryLines.push('Top Results (by relevance):');
+    result.items.slice(0, 5).forEach((server, idx) => {
+      const status = server.isActive ? '🟢' : '🔴';
+      const score = scores.get(server.id) || 0;
+      const scoreStr = score > 0 ? ` [score: ${score.toFixed(2)}]` : '';
+      summaryLines.push(`  ${idx + 1}. ${status} ${server.name}${scoreStr}`);
+    });
+    if (result.items.length > 5) {
+      summaryLines.push(`  ... and ${result.items.length - 5} more`);
     }
   }
 
-  private async connectServer(
-    args: Record<string, unknown>,
-  ): Promise<MCPResponse<ConnectServerOutput>> {
-    const serverId = String(args.serverId || '');
-    const serverName = String(args.serverName || '');
-    const scope = String(args.scope || 'assistant');
-    const autoStart = Boolean(args.autoStart ?? true);
+  const summary = summaryLines.join('\n');
 
-    // Validate scope
-    if (scope !== 'assistant' && scope !== 'global') {
-      return createMCPTextResponse('Scope must be "assistant" or "global"');
-    }
+  return createMCPStructuredResponse(summary, {
+    ...result,
+    query: input.query,
+    mode: 'bm25',
+  });
+}
 
-    // Find server
-    let server: MCPServerEntity | undefined;
+async function createServer(
+  args: Record<string, unknown>,
+): Promise<MCPResponse<CreateServerOutput>> {
+  const input: CreateServerInput = {
+    name: String(args.name || '').trim(),
+    description: args.description ? String(args.description) : undefined,
+    transport: args.transport,
+    tags: args.tags as string[] | undefined,
+  };
 
-    if (serverId) {
-      server = await mcpServersCRUD.read(serverId);
-    } else if (serverName) {
-      const db = LocalDatabase.getInstance();
-      server = await db.mcpServers
-        .filter(
-          (s: MCPServerEntity) =>
-            s.name.toLowerCase() === serverName.toLowerCase(),
-        )
-        .first();
-    } else {
-      return createMCPTextResponse('Either serverId or serverName is required');
-    }
-
-    if (!server) {
-      return createMCPTextResponse(
-        `Server not found: ${serverId || serverName}`,
-      );
-    }
-
-    // Connect based on scope
-    if (scope === 'assistant') {
-      if (!this.assistantId) {
-        return createMCPTextResponse(
-          '❌ Assistant context not available. Cannot connect to assistant scope.',
-        );
-      }
-
-      const assistant = await assistantsCRUD.read(this.assistantId);
-      if (!assistant) {
-        return createMCPTextResponse(
-          `Assistant not found: ${this.assistantId}`,
-        );
-      }
-
-      // Add to assistant's server list if not already connected
-      const serverIds = assistant.mcpServerIds || [];
-      if (!serverIds.includes(server.id)) {
-        assistant.mcpServerIds = [...serverIds, server.id];
-        await assistantsCRUD.upsert(assistant);
-      }
-
-      const summary = [
-        `✅ Server Connected to Assistant`,
-        `   Server: ${server.name}`,
-        `   Assistant: ${assistant.name}`,
-        `   Scope: assistant`,
-        autoStart
-          ? `   Status: Starting...`
-          : `   Status: Registered (manual start required)`,
-      ].join('\n');
-
-      return createMCPStructuredResponse(summary, {
-        success: true,
-        server,
-        scope: 'assistant',
-        assistantId: this.assistantId,
-        message: `Server "${server.name}" connected to assistant "${assistant.name}"`,
-      });
-    } else {
-      // Global scope: mark server as globally enabled
-      server.isActive = true;
-      server.updatedAt = new Date();
-      await mcpServersCRUD.upsert(server);
-
-      const summary = [
-        `✅ Server Enabled Globally`,
-        `   Server: ${server.name}`,
-        `   Scope: global`,
-        `   Status: Active`,
-      ].join('\n');
-
-      return createMCPStructuredResponse(summary, {
-        success: true,
-        server,
-        scope: 'global',
-        message: `Server "${server.name}" enabled globally`,
-      });
-    }
+  // Validate required fields
+  if (!input.name) {
+    return createMCPTextResponse('Server name is required');
   }
 
-  private async disconnectServer(
-    args: Record<string, unknown>,
-  ): Promise<MCPResponse<unknown>> {
-    const serverId = String(args.serverId || '');
-    const serverName = String(args.serverName || '');
-    const scope = String(args.scope || 'assistant');
+  // Validate transport with type guards
+  if (
+    !(isStdioTransport(input.transport) || isHttpTransport(input.transport))
+  ) {
+    return createMCPTextResponse(
+      'Invalid transport configuration. Must be stdio (with command) or http (with url).',
+    );
+  }
 
-    // Find server
-    let server: MCPServerEntity | undefined;
+  // Generate unique ID using crypto.randomUUID() with fallback
+  const id =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? `mcp-${crypto.randomUUID()}`
+      : `mcp-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
-    if (serverId) {
-      server = await mcpServersCRUD.read(serverId);
-    } else if (serverName) {
-      const db = LocalDatabase.getInstance();
-      server = await db.mcpServers
-        .filter(
-          (s: MCPServerEntity) =>
-            s.name.toLowerCase() === serverName.toLowerCase(),
-        )
-        .first();
-    } else {
-      return createMCPTextResponse('Either serverId or serverName is required');
-    }
+  // Build server entity
+  const now = new Date();
+  const server: MCPServerEntity = {
+    id,
+    name: input.name,
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+    transport: input.transport as MCPServerEntity['transport'],
+    metadata: {
+      description: input.description || '',
+    },
+  };
 
-    if (!server) {
+  // Try to save (will throw if name exists)
+  try {
+    await mcpServersCRUD.upsert(server);
+
+    // Clear BM25 cache when data changes
+    clearBM25Cache();
+
+    const transportType = input.transport.type;
+    const summary = [
+      `✅ MCP Server Created Successfully`,
+      `   Name: ${server.name}`,
+      `   ID: ${server.id}`,
+      `   Transport: ${transportType}`,
+      `   Status: Active`,
+      ``,
+      `💡 Use "connect_server" to enable this server for the current assistant.`,
+    ].join('\n');
+
+    return createMCPStructuredResponse(summary, {
+      server,
+      message: 'Server created successfully',
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+
+    if (message.includes('name already exists')) {
       return createMCPTextResponse(
-        `Server not found: ${serverId || serverName}`,
+        `❌ Server name "${input.name}" already exists. Please choose a different name.`,
       );
     }
 
-    if (scope === 'assistant') {
-      if (!this.assistantId) {
-        return createMCPTextResponse('❌ Assistant context not available.');
-      }
+    throw error;
+  }
+}
 
-      const assistant = await assistantsCRUD.read(this.assistantId);
-      if (!assistant) {
-        return createMCPTextResponse(
-          `Assistant not found: ${this.assistantId}`,
-        );
-      }
+async function connectServer(
+  args: Record<string, unknown>,
+): Promise<MCPResponse<ConnectServerOutput>> {
+  const input: ConnectInput = {
+    serverId: args.serverId ? String(args.serverId) : undefined,
+    serverName: args.serverName ? String(args.serverName) : undefined,
+    scope: (args.scope as 'assistant' | 'global') || 'assistant',
+    autoStart: Boolean(args.autoStart ?? true),
+  };
 
-      const serverIds = assistant.mcpServerIds || [];
-      assistant.mcpServerIds = serverIds.filter((id) => id !== server!.id);
+  // Validate scope
+  if (input.scope !== 'assistant' && input.scope !== 'global') {
+    return createMCPTextResponse('Scope must be "assistant" or "global"');
+  }
+
+  // Find server using helper
+  const server = await findServer(input.serverId, input.serverName);
+
+  if (!server) {
+    return createMCPTextResponse(
+      `Server not found: ${input.serverId || input.serverName}`,
+    );
+  }
+
+  // Connect based on scope
+  if (input.scope === 'assistant') {
+    if (!assistantId) {
+      return createMCPTextResponse(
+        '❌ Assistant context not available. Cannot connect to assistant scope.',
+      );
+    }
+
+    const assistant = await assistantsCRUD.read(assistantId);
+    if (!assistant) {
+      return createMCPTextResponse(`Assistant not found: ${assistantId}`);
+    }
+
+    // Add to assistant's server list if not already connected
+    const serverIds = assistant.mcpServerIds || [];
+    if (!serverIds.includes(server.id)) {
+      assistant.mcpServerIds = [...serverIds, server.id];
       await assistantsCRUD.upsert(assistant);
-
-      return createMCPStructuredResponse(
-        `✅ Server "${server.name}" disconnected from assistant "${assistant.name}"`,
-        { success: true, server, scope: 'assistant' },
-      );
-    } else {
-      server.isActive = false;
-      server.updatedAt = new Date();
-      await mcpServersCRUD.upsert(server);
-
-      return createMCPStructuredResponse(
-        `✅ Server "${server.name}" disabled globally`,
-        { success: true, server, scope: 'global' },
-      );
     }
+
+    const summary = [
+      `✅ Server Connected to Assistant`,
+      `   Server: ${server.name}`,
+      `   Assistant: ${assistant.name}`,
+      `   Scope: assistant`,
+      input.autoStart
+        ? `   Status: Starting...`
+        : `   Status: Registered (manual start required)`,
+    ].join('\n');
+
+    return createMCPStructuredResponse(summary, {
+      success: true,
+      server,
+      scope: 'assistant',
+      assistantId,
+      message: `Server "${server.name}" connected to assistant "${assistant.name}"`,
+    });
+  } else {
+    // Global scope: mark server as globally enabled
+    server.isActive = true;
+    server.updatedAt = new Date();
+    await mcpServersCRUD.upsert(server);
+
+    const summary = [
+      `✅ Server Enabled Globally`,
+      `   Server: ${server.name}`,
+      `   Scope: global`,
+      `   Status: Active`,
+    ].join('\n');
+
+    return createMCPStructuredResponse(summary, {
+      success: true,
+      server,
+      scope: 'global',
+      message: `Server "${server.name}" enabled globally`,
+    });
   }
+}
+
+async function disconnectServer(
+  args: Record<string, unknown>,
+): Promise<MCPResponse<unknown>> {
+  const input: DisconnectInput = {
+    serverId: args.serverId ? String(args.serverId) : undefined,
+    serverName: args.serverName ? String(args.serverName) : undefined,
+    scope: (args.scope as 'assistant' | 'global') || 'assistant',
+  };
+
+  // Validate scope
+  if (input.scope !== 'assistant' && input.scope !== 'global') {
+    return createMCPTextResponse('Scope must be "assistant" or "global"');
+  }
+
+  // Find server using helper
+  const server = await findServer(input.serverId, input.serverName);
+
+  if (!server) {
+    return createMCPTextResponse(
+      `Server not found: ${input.serverId || input.serverName}`,
+    );
+  }
+
+  if (input.scope === 'assistant') {
+    if (!assistantId) {
+      return createMCPTextResponse('❌ Assistant context not available.');
+    }
+
+    const assistant = await assistantsCRUD.read(assistantId);
+    if (!assistant) {
+      return createMCPTextResponse(`Assistant not found: ${assistantId}`);
+    }
+
+    const serverIds = assistant.mcpServerIds || [];
+    assistant.mcpServerIds = serverIds.filter((id) => id !== server.id);
+    await assistantsCRUD.upsert(assistant);
+
+    return createMCPStructuredResponse(
+      `✅ Server "${server.name}" disconnected from assistant "${assistant.name}"`,
+      { success: true, server, scope: 'assistant' },
+    );
+  } else {
+    server.isActive = false;
+    server.updatedAt = new Date();
+    await mcpServersCRUD.upsert(server);
+
+    return createMCPStructuredResponse(
+      `✅ Server "${server.name}" disabled globally`,
+      { success: true, server, scope: 'global' },
+    );
+  }
+}
+
+const mcpManagerServer: WebMCPServer = {
+  name: 'mcp_manager',
+  version: '1.0.0',
+  description:
+    'MCP server management tools for dynamic server registration and connection',
+  tools: mcpManagerTools,
+
+  async callTool(name: string, args: unknown): Promise<MCPResponse<unknown>> {
+    const a = (args || {}) as Record<string, unknown>;
+
+    try {
+      switch (name) {
+        case 'list_servers':
+          return await listServers(a);
+        case 'search_server':
+          return await searchServer(a);
+        case 'create_server':
+          return await createServer(a);
+        case 'connect_server':
+          return await connectServer(a);
+        case 'disconnect_server':
+          return await disconnectServer(a);
+        default:
+          return createMCPTextResponse(`Unknown tool: ${name}`);
+      }
+    } catch (error) {
+      logger.error('Tool execution error', { name, error });
+      const message = error instanceof Error ? error.message : String(error);
+      return createMCPTextResponse(`Error: ${message}`);
+    }
+  },
 
   async switchContext(options: ServiceContextOptions): Promise<void> {
-    this.assistantId = options.assistantId || null;
-    this.sessionId = options.sessionId || null;
+    assistantId = options.assistantId || null;
+    sessionId = options.sessionId || null;
     logger.debug('Context switched', {
-      assistantId: this.assistantId,
-      sessionId: this.sessionId,
+      assistantId,
+      sessionId,
     });
-  }
+  },
 
   async getServiceContext(
     options?: ServiceContextOptions,
@@ -454,11 +680,11 @@ class MCPManagerServer implements WebMCPServer {
       .count();
 
     // Use options.assistantId if provided, otherwise use the current context
-    const assistantId = options?.assistantId || this.assistantId;
+    const contextAssistantId = options?.assistantId || assistantId;
 
     let assistantInfo = '';
-    if (assistantId) {
-      const assistant = await assistantsCRUD.read(assistantId);
+    if (contextAssistantId) {
+      const assistant = await assistantsCRUD.read(contextAssistantId);
       const connectedCount = assistant?.mcpServerIds?.length || 0;
       assistantInfo = `\n**Current Assistant**: ${assistant?.name || 'Unknown'}\n**Connected Servers**: ${connectedCount}`;
     }
@@ -479,11 +705,11 @@ class MCPManagerServer implements WebMCPServer {
       structuredState: {
         totalServers,
         activeServers,
-        assistantId,
-        sessionId: options?.sessionId || this.sessionId,
+        assistantId: contextAssistantId,
+        sessionId: options?.sessionId || sessionId,
       },
     };
-  }
-}
+  },
+};
 
-export default new MCPManagerServer();
+export default mcpManagerServer;

@@ -174,10 +174,13 @@ function AssistantDialog(props: DialogProps) {
           <DialogTitle>
             {draft.id ? '어시스턴트 편집' : '새 어시스턴트 만들기'}
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            Configure assistant settings, system prompt, and available tools
+          </DialogDescription>
         </DialogHeader>
-        <DialogDescription className="flex-1 overflow-y-auto min-h-0">
+        <div className="flex-1 overflow-y-auto min-h-0">
           <AssistantEditor />
-        </DialogDescription>
+        </div>
         <div className="flex-shrink-0 flex justify-end gap-2 p-4 border-t">
           <Button variant="outline" onClick={handleCancel}>
             취소

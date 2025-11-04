@@ -1,7 +1,7 @@
 import { getLogger } from '@/lib/logger';
 import { switchSession } from '@/lib/rust-backend-client';
 import { MCPResponse, MCPTool } from '@/lib/mcp-types';
-import { toValidJsName } from '@/lib/utils';
+import { toValidJsName, isValidServiceAlias } from '@/lib/utils';
 import { ToolCall } from '@/models/chat';
 import { useSystemPrompt } from '@/context/SystemPromptContext';
 import { useSessionContext } from '@/context/SessionContext';
@@ -138,6 +138,16 @@ export function BuiltInToolProvider({ children }: BuiltInToolProviderProps) {
   }, [serviceEntries]);
 
   const register = useCallback((serviceId: string, service: BuiltInService) => {
+    // Validate service alias to prevent naming issues
+    if (!isValidServiceAlias(serviceId)) {
+      logger.error('Invalid service alias', {
+        serviceId,
+        reason:
+          'Service names must not contain double underscores (__) and should use snake_case',
+      });
+      // Continue with registration but log the warning
+    }
+
     const alias = toValidJsName(serviceId);
     aliasToIdTableRef.current.set(alias, serviceId);
 
