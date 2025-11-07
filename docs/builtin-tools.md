@@ -91,17 +91,16 @@ The built-in tool system implements a **tight coupling** between tool execution 
 
 #### Context Management Components
 
-##### WebMCPContextSetter Component
+##### Context management in practice
 
-- **Location**: `src/lib/web-mcp/WebMCPContextSetter.tsx`
-- **Purpose**: Headless component that automatically sets context for Web MCP servers
-- **Integration**: Mounted within `BuiltInToolProvider` for automatic context propagation
+- Web MCP worker/provider: `src/context/WebMCPContext.tsx` initializes the worker (`mcp-worker.ts`) and exposes `getServerProxy`, `getServiceContext`, and `switchServerContext`.
+- Built-in tool registry: `src/features/tools/index.tsx` (BuiltInToolProvider) aggregates all services and, on session/assistant change, calls each service's `switchContext({ sessionId, assistantId, threadId })` and collects `getServiceContext()` output for tool prompts.
 
 ##### BuiltInToolProvider Integration
 
 - **Location**: `src/features/tools/index.tsx`
-- **Architecture**: Wraps `WebMCPContextSetter` to ensure context is set before any tool operations
-- **Lifecycle**: Context is established on provider mount and updated when session/assistant changes
+- **Architecture**: Central registry that other providers register into (WebMCP, Browser, Rust). It builds the tool list (`builtin_<alias>__<tool>`) and routes calls.
+- **Lifecycle**: On mount, providers register services. When session/assistant changes, it propagates context via each service's `switchContext`.
 
 #### Automatic Context Propagation
 
@@ -121,15 +120,15 @@ The built-in tool system implements a **tight coupling** between tool execution 
 
 ```mermaid
 graph TD
-    A[BuiltInToolProvider Mount] --> B[WebMCPContextSetter Mount]
-    B --> C[Get Current Session ID]
-    B --> D[Get Current Assistant ID]
-    C --> E[Set Planning Server Context]
-    D --> F[Set Playbook Server Context]
-    E --> G[Planning Server Ready]
-    F --> H[Playbook Server Ready]
-    G --> I[Tool Calls Use Session Context]
-    H --> J[Tool Calls Use Assistant Context]
+  A[App Mounts Providers] --> B[BuiltInToolProvider]
+  B --> C[WebMCPProvider]
+  C --> D[WebMCPServiceRegistry loads servers]
+  B --> E[BrowserToolProvider registers browser service]
+  B --> F[RustMCPToolProvider registers native services]
+  G[Session/Assistant change] --> H[BuiltInToolProvider switchContext]
+  H --> D
+  H --> E
+  H --> F
 ```
 
 #### Benefits of Tight Coupling
@@ -385,20 +384,15 @@ Rust MCP tools provide access to native system-level operations through the Taur
 
 #### Content Store Server (`content_store`)
 
-Provides advanced file content management with semantic search capabilities and BM25 indexing.
+Provides file content management with BM25 keyword search. Current implemented tools (see `src-tauri/src/mcp/builtin/content_store/server.rs`):
 
-**Tools:**
+**Tools (exact as implemented):**
 
-- `createStore`: Create a new content store for file management
-- `addContent`: Add and parse file content with automatic chunking and BM25 indexing
-- `listContent`: List content in a store with pagination support
-- `readContent`: Read content with optional line range filtering
-- `keywordSimilaritySearch`: Perform BM25-based keyword search across stored content
-- `semanticSimilaritySearch`: Perform semantic search using embeddings (if configured)
-- `deleteContent`: Remove content from a store
-- `updateContent`: Update existing content in a store
-- `getStoreInfo`: Get metadata and statistics about a content store
-- `listStores`: List all available content stores
+- `addContent` — Add and parse file content with chunking and BM25 indexing
+- `listContent` — List content in a store with pagination
+- `readContent` — Read content with optional line range filtering
+- `keywordSimilaritySearch` — BM25-based keyword search across stored content
+- `deleteContent` — Remove content from a store
 
 **Features:**
 
@@ -419,29 +413,27 @@ Provides advanced file content management with semantic search capabilities and 
 
 #### Workspace Server (`workspace`)
 
-Provides integrated workspace management with file operations, code execution, and export capabilities in a sandboxed environment.
+Provides session-scoped workspace file operations, process management, and export utilities. Implemented tool sets (see `src-tauri/src/mcp/builtin/workspace/tools/`):
 
 **File Operation Tools:**
 
-- `read_file`: Read file contents with optional line range specification
-- `write_file`: Write or create files with automatic directory creation
-- `list_directory`: List directory contents with glob pattern filtering
-- `search_files`: Search for files by name pattern or content
-- `replace_lines_in_file`: Replace specific lines in a file atomically
-- `grep`: Search for text patterns in files with regex support
-- `import_file`: Import files from external sources with validation
+- `read_file` — Read file contents with optional line ranges
+- `write_file` — Write or append content to a file
+- `list_directory` — List contents of a directory
+- `replace_lines_in_file` — Replace or delete specific lines/ranges
+- `import_file` — Import external file into session workspace
 
-**Code Execution Tools:**
+**Code/Process Tools:**
 
-- `execute_python`: Execute Python code with session isolation and virtual environments
-- `execute_typescript`: Execute TypeScript code with transpilation
-- `execute_shell` (Unix only): Execute shell commands using bash/sh
-- `execute_windows_cmd` (Windows only): Execute commands using cmd.exe
+- `execute_shell` (Unix) / `execute_windows_cmd` (Windows) — Execute sandboxed commands (sync/async)
+- `poll_process` — Poll async process status/output
+- `read_process_output` — Read accumulated output for a process
+- `list_processes` — List managed processes for current session
 
 **Export Tools:**
 
-- `export_file`: Export files to various formats (JSON, CSV, etc.)
-- `export_zip`: Create ZIP archives of workspace content with compression
+- `export_file` — Export file (format-specific server-side handling)
+- `export_zip` — Create a ZIP archive of selected files
 
 **Features:**
 
@@ -531,15 +523,19 @@ const info = await getServerInfoTool.execute({
 
 ### Planning Server (`planning`)
 
-The planning server provides comprehensive task planning and goal management for AI agents, maintaining state across sessions for structured task execution.
+The planning server provides goal/todo/memo management and a sequential-thinking tool. Tool names reflect the implementation in `src/lib/web-mcp/modules/planning-server/tools.ts`.
 
-**Tools:**
+**Tools (exact):**
 
-- `set_goal`: Set a new goal for the current session
-- `add_todo`: Add a new todo item to the current session's list
-- `complete_todo`: Mark a todo item as completed
-- `add_observation`: Record an observation or event for decision making
-- `get_status`: Get comprehensive planning status including goal, todos, and observations
+- `create_goal` — Set a goal for the session
+- `clear_goal` — Clear the current goal
+- `add_todo` — Add a todo item
+- `mark_todo` — Mark a todo as completed or pending (optional summary)
+- `clear_todos` — Clear specific IDs or all todos
+- `add_memo` — Add a memo/observation
+- `clear_memo` — Remove a memo by id
+- `get_current_state` — Return structured planning state for UI
+- `sequentialthinking` — Multi-step reflective thinking with per-session history
 
 **Features:**
 
@@ -555,15 +551,13 @@ The planning server receives `sessionId` automatically through tight context cou
 
 ### Playbook Server (`playbook`)
 
-The playbook server manages reusable workflows and automation templates for AI assistants.
+The playbook server manages reusable workflows (see `src/lib/web-mcp/modules/playbook-store/tools.ts`).
 
-**Tools:**
+**Tools (high level):**
 
-- `create_playbook`: Create a new playbook with instructions and steps
-- `list_playbooks`: List all playbooks for the current assistant
-- `get_playbook`: Retrieve a specific playbook by ID
-- `update_playbook`: Update an existing playbook
-- `delete_playbook`: Remove a playbook
+- `create_playbook`, `update_playbook`, `delete_playbook`
+- `list_playbooks` (text listing), `show_playbooks` (interactive UI), `get_playbook_page` (pagination)
+- `select_playbook`, `get_playbook`
 
 **Features:**
 
@@ -630,15 +624,15 @@ Central React context provider that manages all built-in tool registration and e
 
 ```text
 BuiltInToolProvider
-├── BrowserToolProvider (browser automation)
-├── RustMCPToolProvider (native operations)
+├── WebMCPProvider (worker transport)
 ├── WebMCPServiceRegistry (web workers)
-└── WebMCPContextSetter (automatic context)
+├── BrowserToolProvider (browser automation)
+└── RustMCPToolProvider (native operations)
 ```
 
 ### BrowserToolProvider
 
-React component that registers all browser automation tools with the built-in tool system. Located at `src/features/browser-tools/BrowserToolProvider.tsx`.
+React component that registers all browser automation tools with the built-in tool system. Located at `src/features/tools/BrowserToolProvider.tsx`.
 
 **Features:**
 
@@ -647,12 +641,15 @@ React component that registers all browser automation tools with the built-in to
 - Session state management
 - Error handling and logging
 
-**Registered Tools:**
+**Registered Tools (names as implemented):**
 
 - Session management: `createSession`, `closeSession`, `listSessions`
-- Navigation: `navigateToUrl`, `navigateBack`, `navigateForward`
-- Content extraction: `extractPageContent`, `extractInteractable`
-- Element interaction: `clickElement`, `inputText`, `scrollPage`
+- Navigation: `navigateToUrl`, `navigateBack`, `navigateForward`, `scrollPage`
+- Page info: `getCurrentUrl`, `getPageTitle`
+- Element interaction: `clickElement`, `inputText`
+- Content extraction: `extractPageContent`, `listInteractable`
+
+Note: `inject_javascript` exists but is currently not registered in the provider.
 
 **Service Name:** `browser`
 
@@ -704,7 +701,7 @@ try {
 
 ### WebMCPServiceRegistry
 
-React component that manages web-based MCP server registration and lifecycle. Located at `src/lib/web-mcp/WebMCPServiceRegistry.tsx`.
+React component that manages web-based MCP server registration and lifecycle. Located at `src/features/tools/WebMCPServiceRegistry.tsx`.
 
 **Features:**
 
@@ -750,7 +747,7 @@ WebMCPServiceRegistry Props
   → Result Return to Agent
 ```
 
-**Supported Servers:** `planning`, `playbook`, `bootstrap`, `mcp_manager`
+**Supported Servers:** `planning`, `playbook`, `ui`, `bootstrap`, `mcp_manager`
 
 ## Tool Architecture
 
@@ -837,10 +834,9 @@ if (!isValidServiceAlias(serviceAlias)) {
 
 **Automatic Context Propagation:**
 
-- `WebMCPContextSetter` component provides automatic context
-- Session ID for planning server
-- Assistant ID for playbook server
-- No manual parameter passing required
+- BuiltInToolProvider watches session/assistant changes and invokes each service's `switchContext({ sessionId, assistantId, threadId })`.
+- WebMCPProvider exposes `switchServerContext` which is used by `WebMCPServiceRegistry` via service wrappers.
+- No manual parameter passing required in tool calls.
 
 **Benefits:**
 
@@ -1041,15 +1037,19 @@ console.log(serverDetails.content[0].text);
 
 Tools are configured through the provider components in the application:
 
-**BuiltInToolProvider Configuration:**
+**BuiltInToolProvider Configuration (as used in App.tsx):**
 
 ```typescript
-// src/features/tools/index.tsx
+// src/app/App.tsx
 <BuiltInToolProvider>
-  <BrowserToolProvider />
-  <RustMCPToolProvider />
-  <WebMCPServiceRegistry servers={['planning', 'playbook', 'bootstrap', 'mcp_manager']} />
-  {children}
+  <WebMCPProvider>
+    <WebMCPServiceRegistry
+      servers={["planning", "playbook", "ui", "bootstrap", "mcp_manager"]}
+    />
+    <BrowserToolProvider />
+    <RustMCPToolProvider />
+    {children}
+  </WebMCPProvider>
 </BuiltInToolProvider>
 ```
 

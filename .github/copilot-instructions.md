@@ -450,6 +450,16 @@ These steps must be completed successfully before considering any refactoring ta
 - `pnpm dead-code` - Find unused code with unimported tool
 - `pnpm refactor:validate` - Complete validation pipeline
 
+**⚠️ CRITICAL: Content Security Policy (CSP) Warning:**
+
+- **DO NOT add CSP configuration to `tauri.conf.json`** for desktop applications
+- CSP is designed for web browsers, not desktop environments
+- Tauri desktop apps using Web Workers and WASM require unrestricted access
+- Adding CSP will cause blank white screens in release builds due to Worker blob URL blocking
+- Dev mode has relaxed CSP enforcement, masking production issues
+- Industry-standard practice (validated against Jan project): No CSP in Tauri desktop apps
+- If security restrictions are absolutely necessary, use Tauri's native security features instead
+
 ## Security Considerations
 
 ### Tauri Security

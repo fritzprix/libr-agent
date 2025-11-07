@@ -84,10 +84,19 @@ export function WebMCPProvider({ children }: WebMCPProviderProps) {
   // Initialize the Web Worker MCP proxy
   const [{ loading: isLoading }, initializeProxy] = useAsyncFn(async () => {
     try {
-      logger.debug('Initializing WebMCP proxy with Vite worker');
+      logger.debug('🔄 Initializing WebMCP proxy with Vite worker');
 
       // Create Worker instance using Vite's ?worker import
-      const workerInstance = new MCPWorker();
+      let workerInstance: Worker;
+      try {
+        workerInstance = new MCPWorker();
+        logger.info('✅ Worker instance created successfully');
+      } catch (workerError) {
+        logger.error('❌ Failed to create Worker instance', workerError);
+        throw new Error(
+          `Worker creation failed: ${workerError instanceof Error ? workerError.message : String(workerError)}`,
+        );
+      }
 
       // Create new proxy instance with Worker instance
       const proxy = new WebMCPProxy({ workerInstance });
@@ -95,9 +104,9 @@ export function WebMCPProvider({ children }: WebMCPProviderProps) {
 
       proxyRef.current = proxy;
       setInitialized(true);
-      logger.info('WebMCP proxy initialized successfully');
+      logger.info('✅ WebMCP proxy initialized successfully');
     } catch (error) {
-      logger.error('Failed to initialize WebMCP proxy', error);
+      logger.error('❌ Failed to initialize WebMCP proxy', error);
       setInitialized(false);
       throw error;
     }
