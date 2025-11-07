@@ -23,7 +23,7 @@ pub struct SecurityValidator {
 
 impl SecurityValidator {
     pub fn new() -> Self {
-        let base_dir = if let Ok(root) = std::env::var("SYNAPTICFLOW_PROJECT_ROOT") {
+        let base_dir = if let Ok(root) = std::env::var("LIBRAGENT_PROJECT_ROOT") {
             // 1. 명시적 프로젝트 루트 환경변수
             PathBuf::from(root)
         } else {
@@ -40,7 +40,7 @@ impl SecurityValidator {
                         "Failed to get session manager, falling back to temp directory: {}",
                         e
                     );
-                    let tmp = std::env::temp_dir().join("synaptic-flow");
+                    let tmp = std::env::temp_dir().join("libragent");
 
                     // 디렉터리 생성 확인
                     if let Err(e) = std::fs::create_dir_all(&tmp) {

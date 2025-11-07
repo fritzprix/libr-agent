@@ -60,7 +60,7 @@ pub use state::{
 pub fn run_with_sqlite_sync(db_url: String) {
     // Set the SQLite URL
     set_sqlite_db_url(db_url.clone());
-    println!("🔄 Initializing SynapticFlow with SQLite support: {db_url}");
+    println!("🔄 Initializing LibrAgent with SQLite support: {db_url}");
 
     // Create a Tokio runtime for async initialization
     let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
@@ -184,7 +184,7 @@ pub fn run() {
                     .targets([
                         Target::new(TargetKind::Stdout),
                         Target::new(TargetKind::LogDir {
-                            file_name: Some("synaptic-flow".to_string()),
+                            file_name: Some("libragent".to_string()),
                         }),
                         Target::new(TargetKind::Webview),
                     ])
@@ -280,7 +280,7 @@ pub fn run() {
                 messages_search
             ])
             .setup(|app| {
-                println!("🚀 SynapticFlow initializing...");
+                println!("🚀 LibrAgent initializing...");
 
                 // Initialize SecureFileManager and add to managed state
                 let file_manager = SecureFileManager::new();
@@ -329,7 +329,7 @@ pub fn run() {
                     }
                 }
 
-                println!("✅ SynapticFlow setup completed successfully");
+                println!("✅ LibrAgent setup completed successfully");
                 Ok(())
             })
             .run(tauri::generate_context!())

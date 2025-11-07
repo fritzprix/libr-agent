@@ -100,19 +100,20 @@ pub fn create_execute_shell_tool() -> MCPTool {
 
     MCPTool {
         name: "execute_windows_cmd".to_string(),
-        title: Some("Execute Windows Command (cmd.exe)".to_string()),
-        description: "Execute a command using Windows cmd.exe in a sandboxed environment.\n\n\
+        title: Some("Execute Windows Command (PowerShell)".to_string()),
+        description: "Execute a command using Windows PowerShell in a sandboxed environment.\n\n\
                       MODES:\n\
                       - 'sync' (default): Wait for completion, return stdout/stderr immediately\n\
                       - 'async': Run in background, return process_id immediately\n\n\
                       For async mode, use 'poll_process' to check status and retrieve output.\n\n\
-                      PLATFORM: Windows - uses cmd.exe (Command Prompt).\n\
+                      PLATFORM: Windows - uses PowerShell (powershell.exe).\n\
                       IMPORTANT NOTES:\n\
-                      - Commands are executed via 'cmd /S /C' for proper quote handling\n\
-                      - Use double quotes for paths with spaces: dir \"C:\\Program Files\"\n\
-                      - To call external programs (ffmpeg, python, etc.), ensure they are in PATH\n\
-                      - For UTF-8 filenames, the system handles encoding automatically\n\
-                      - Simple commands work best; for complex scripts consider writing to a .bat file first"
+                      - Commands are executed via 'powershell -NoProfile -NonInteractive -Command'\n\
+                      - Use double quotes for paths with spaces: python \"C:\\Program Files\\script.py\"\n\
+                      - Single quotes are automatically converted to double quotes\n\
+                      - To call external programs (python, node, etc.), ensure they are in PATH\n\
+                      - PowerShell handles Unicode filenames properly\n\
+                      - Complex commands work better than cmd.exe due to better quote handling"
             .to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),
         output_schema: None,

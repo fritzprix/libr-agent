@@ -36,68 +36,68 @@ function App() {
       <SettingsProvider>
         <MCPServerRegistryProvider>
           <MCPServerProvider>
-          <SystemPromptProvider>
-            <AssistantContextProvider>
-              <SessionContextProvider>
-                <BuiltInToolProvider>
-                  <WebMCPProvider>
-                    <WebMCPServiceRegistry
-                      servers={['planning', 'playbook', 'ui', 'bootstrap']}
-                    />
-                    <BrowserToolProvider />
-                    <RustMCPToolProvider />
-                    <SessionHistoryProvider>
-                      <ResourceAttachmentProvider>
-                        <ModelOptionsProvider>
-                          <SidebarProvider>
-                            <DnDContextProvider>
-                              <AppSidebar />
-                              {/* Main Content Area (children of AppSidebar) */}
-                              <div className="flex flex-1 flex-col min-w-0">
-                                <AppHeader>
-                                  <ThemeToggle />
-                                </AppHeader>
-                                <div className="flex-1 w-full min-h-0">
-                                  <Routes>
-                                    <Route
-                                      path="/"
-                                      element={<ChatContainer />}
-                                    />
-                                    <Route
-                                      path="/chat/single"
-                                      element={<ChatContainer />}
-                                    />
-                                    <Route
-                                      path="/assistants"
-                                      element={<AssistantList />}
-                                    />
-                                    <Route
-                                      path="/history"
-                                      element={<History />}
-                                    />
-                                    <Route
-                                      path="/history/search"
-                                      element={<History />}
-                                    />
-                                    <Route
-                                      path="/settings"
-                                      element={<SettingsPage />}
-                                    />
-                                  </Routes>
+            <SystemPromptProvider>
+              <AssistantContextProvider>
+                <SessionContextProvider>
+                  <BuiltInToolProvider>
+                    <WebMCPProvider>
+                      <WebMCPServiceRegistry
+                        servers={['planning', 'playbook', 'ui', 'bootstrap']}
+                      />
+                      <BrowserToolProvider />
+                      <RustMCPToolProvider />
+                      <SessionHistoryProvider>
+                        <ResourceAttachmentProvider>
+                          <ModelOptionsProvider>
+                            <SidebarProvider>
+                              <DnDContextProvider>
+                                <AppSidebar />
+                                {/* Main Content Area (children of AppSidebar) */}
+                                <div className="flex flex-1 flex-col min-w-0">
+                                  <AppHeader>
+                                    <ThemeToggle />
+                                  </AppHeader>
+                                  <div className="flex-1 w-full min-h-0">
+                                    <Routes>
+                                      <Route
+                                        path="/"
+                                        element={<ChatContainer />}
+                                      />
+                                      <Route
+                                        path="/chat/single"
+                                        element={<ChatContainer />}
+                                      />
+                                      <Route
+                                        path="/assistants"
+                                        element={<AssistantList />}
+                                      />
+                                      <Route
+                                        path="/history"
+                                        element={<History />}
+                                      />
+                                      <Route
+                                        path="/history/search"
+                                        element={<History />}
+                                      />
+                                      <Route
+                                        path="/settings"
+                                        element={<SettingsPage />}
+                                      />
+                                    </Routes>
+                                  </div>
                                 </div>
-                              </div>
-                            </DnDContextProvider>
-                          </SidebarProvider>
-                          <Toaster />
-                        </ModelOptionsProvider>
-                      </ResourceAttachmentProvider>
-                    </SessionHistoryProvider>
-                  </WebMCPProvider>
-                </BuiltInToolProvider>
-              </SessionContextProvider>
-            </AssistantContextProvider>
-          </SystemPromptProvider>
-        </MCPServerProvider>
+                              </DnDContextProvider>
+                            </SidebarProvider>
+                            <Toaster />
+                          </ModelOptionsProvider>
+                        </ResourceAttachmentProvider>
+                      </SessionHistoryProvider>
+                    </WebMCPProvider>
+                  </BuiltInToolProvider>
+                </SessionContextProvider>
+              </AssistantContextProvider>
+            </SystemPromptProvider>
+          </MCPServerProvider>
         </MCPServerRegistryProvider>
       </SettingsProvider>
     </div>
