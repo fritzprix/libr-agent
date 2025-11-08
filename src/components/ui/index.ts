@@ -61,8 +61,6 @@ export { default as Modal } from './Modal';
 export { default as StatusIndicator } from './StatusIndicator';
 export { default as TextareaWithLabel } from './TextareaWithLabel';
 
-// Model picker components (from parent directory)
-export {
-  CompactModelPicker,
-  TerminalModelPicker,
-} from '../../features/chat/ModelPicker';
+// NOTE: Do not re-export ModelPicker here to avoid cycles.
+// ModelPicker imports from this UI index (Dropdown), and re-exporting ModelPicker
+// would create a circular dependency between chunks in Rollup/Vite.

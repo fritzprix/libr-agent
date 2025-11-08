@@ -48,6 +48,7 @@
     "src/components/ui/collapsible.tsx",
     "src/components/ui/sonner.tsx",
     "src/hooks/__tests__/use-ai-service.completeText.spec.ts",
+    "src/lib/search/bm25.ts",
     "src/lib/web-mcp/mcp-worker.ts",
     "src/lib/web-mcp/modules/planning-server",
     "src/lib/web-mcp/modules/planning-server/index.ts",
@@ -76,6 +77,10 @@
     "src/lib/web-mcp/modules/bootstrap-server/tools.ts",
     "src/lib/web-mcp/modules/bootstrap-server/platform-detector.ts",
     "src/lib/web-mcp/modules/bootstrap-server/guides.ts",
+    "src/lib/web-mcp/modules/mcp-manager",
+    "src/lib/web-mcp/modules/mcp-manager/index.ts",
+    "src/lib/web-mcp/modules/mcp-manager/server.ts",
+    "src/lib/web-mcp/modules/mcp-manager/tools.ts",
     "src/test/setup.ts",
     "src/test/types/test-types.ts",
     "src/test/utils/html-test-utils.ts"

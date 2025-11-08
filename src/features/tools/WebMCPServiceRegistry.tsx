@@ -149,6 +149,24 @@ export function WebMCPServiceRegistry({
           description: 'Workflow creation and execution',
           category: 'execution',
         };
+      } else if (s === 'mcp_manager') {
+        metadata = {
+          displayName: 'MCP Server Manager',
+          description: 'Create, search, and manage MCP server configurations',
+          category: 'automation',
+        };
+      } else if (s === 'ui') {
+        metadata = {
+          displayName: 'UI Tools',
+          description: 'User interaction and data visualization',
+          category: 'automation',
+        };
+      } else if (s === 'bootstrap') {
+        metadata = {
+          displayName: 'Bootstrap',
+          description: 'Platform detection and environment setup',
+          category: 'automation',
+        };
       }
 
       acc[s] = {
