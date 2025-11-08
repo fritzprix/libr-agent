@@ -1,11 +1,11 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-/// The main entry point for the SynapticFlow application.
+/// The main entry point for the LibrAgent application.
 ///
 /// This function is responsible for:
 /// 1. Loading environment variables from .env file (development mode only)
-/// 2. Determining the path for the SQLite database. It prioritizes the `SYNAPTICFLOW_DB_PATH`
+/// 2. Determining the path for the SQLite database. It prioritizes the `LIBRAGENT_DB_PATH`
 ///    environment variable, falling back to a default location within the user's data directory.
 /// 3. Ensuring the directory for the database exists.
 /// 4. Constructing the final SQLite connection URL.
@@ -28,14 +28,14 @@ fn main() {
     }
 
     // Set the SQLite database path - stored in the user's data directory.
-    let db_path = std::env::var("SYNAPTICFLOW_DB_PATH").unwrap_or_else(|_| {
+    let db_path = std::env::var("LIBRAGENT_DB_PATH").unwrap_or_else(|_| {
         // Default to storing in the user's data directory.
         let data_dir = dirs::data_dir()
             .expect("Failed to get data directory")
-            .join("com.fritzprix.synapticflow");
+            .join("com.fritzprix.libragent");
         // Use a different filename to avoid potential locking issues.
         data_dir
-            .join("synapticflow_v2.db")
+            .join("libragent_v2.db")
             .to_string_lossy()
             .to_string()
     });
@@ -47,7 +47,7 @@ fn main() {
 
     let db_url = format!("sqlite://{db_path}");
 
-    println!("🚀 Starting SynapticFlow with SQLite database: {db_url}");
+    println!("🚀 Starting LibrAgent with SQLite database: {db_url}");
 
     tauri_mcp_agent_lib::run_with_sqlite_sync(db_url)
 }

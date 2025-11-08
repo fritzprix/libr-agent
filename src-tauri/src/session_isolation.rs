@@ -147,7 +147,7 @@ impl SessionIsolationManager {
         }
 
         // Add user-specified environment variables (applies to all platforms)
-        for (key, value) in config.env_vars {
+        for (key, value) in &config.env_vars {
             cmd.env(key, value);
         }
 
@@ -171,17 +171,37 @@ impl SessionIsolationManager {
                     parts.get(1..).unwrap_or(&[])
                 );
             } else {
-                // Windows cmd.exe wrapper: use /S /C flags for proper quote handling
-                // /S modifies the treatment of quoted strings after /C or /K
-                // Without /S, cmd.exe strips outer quotes which can break commands
+                // Windows: Use PowerShell instead of cmd.exe for better quote handling
+                // PowerShell handles double quotes correctly without complex escaping
                 let full_command = if config.args.is_empty() {
                     config.command.clone()
                 } else {
                     format!("{} {}", config.command, config.args.join(" "))
                 };
-                info!("Windows cmd.exe wrapper: cmd /S /C \"{}\"", full_command);
-                // Use /S /C with properly quoted command for better handling of complex commands
-                cmd.args(["/S", "/C", &full_command]);
+
+                // Override to use PowerShell
+                cmd = AsyncCommand::new("powershell");
+                cmd.current_dir(&config.workspace_path);
+
+                // Reapply environment variables for PowerShell
+                cmd.env("USERPROFILE", &config.workspace_path);
+                cmd.env("HOME", &config.workspace_path);
+                cmd.env("TEMP", config.workspace_path.join("tmp"));
+                cmd.env("TMP", config.workspace_path.join("tmp"));
+                for (key, value) in &config.env_vars {
+                    cmd.env(key, value);
+                }
+
+                // PowerShell command-line arguments:
+                // -NoProfile: Don't load user profile (faster, more secure)
+                // -NonInteractive: Disable interactive prompts
+                // -Command: Execute the command string
+                cmd.args(["-NoProfile", "-NonInteractive", "-Command", &full_command]);
+
+                info!(
+                    "Windows PowerShell execution: powershell -Command \"{}\"",
+                    full_command
+                );
             }
         } else {
             // Unix shells (bash, sh) use -c flag

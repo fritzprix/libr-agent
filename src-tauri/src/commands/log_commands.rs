@@ -16,7 +16,7 @@ pub async fn backup_current_log() -> Result<String, String> {
     let log_dir = std::path::PathBuf::from(log_dir_str);
 
     // Find the current log file (using the specified filename)
-    let log_file = log_dir.join("synaptic-flow.log");
+    let log_file = log_dir.join("libragent.log");
 
     if !log_file.exists() {
         return Err("No current log file found".to_string());
@@ -37,7 +37,7 @@ pub async fn backup_current_log() -> Result<String, String> {
 pub async fn clear_current_log() -> Result<(), String> {
     let log_dir_str = get_app_logs_dir().await?;
     let log_dir = std::path::PathBuf::from(log_dir_str);
-    let log_file = log_dir.join("synaptic-flow.log");
+    let log_file = log_dir.join("libragent.log");
 
     if log_file.exists() {
         fs::write(&log_file, "").map_err(|e| format!("Failed to clear log file: {e}"))?;

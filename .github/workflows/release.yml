@@ -1,4 +1,4 @@
-name: 📦 Release SynapticFlow
+name: 📦 Release LibrAgent
 on:
   push:
     tags:
@@ -58,7 +58,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.event.inputs.tag != '' && github.event.inputs.tag || github.ref_name }}
-          releaseName: SynapticFlow ${{ github.event.inputs.tag != '' && github.event.inputs.tag || github.ref_name }}
+          releaseName: LibrAgent ${{ github.event.inputs.tag != '' && github.event.inputs.tag || github.ref_name }}
           releaseBody: |
             A High-Freedom AI Agent Platform - Infinitely Expandable with MCP!
 
@@ -71,10 +71,10 @@ jobs:
             ## 📦 Installation
 
             ### Windows
-            Download and run `SynapticFlow_x64_en-US.msi`
+            Download and run `LibrAgent_x64_en-US.msi`
 
             ### macOS
-            Download `SynapticFlow.app.tar.gz`, extract and copy to Applications folder
+            Download `LibrAgent.app.tar.gz`, extract and copy to Applications folder
 
             ### Linux
             - **Ubuntu/Debian**: Download and install `.deb` package

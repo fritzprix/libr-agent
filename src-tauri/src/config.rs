@@ -1,4 +1,4 @@
-/// Centralized configuration management for SynapticFlow
+/// Centralized configuration management for LibrAgent
 ///
 /// This module provides environment-driven configuration with fallback defaults.
 /// All configuration values can be overridden via environment variables.
@@ -12,14 +12,14 @@
 /// deployment environment accordingly.
 ///
 /// # Available Environment Variables
-/// - `SYNAPTICFLOW_MAX_FILE_SIZE`: Maximum file size in bytes (default: 10485760 = 10MB)
-/// - `SYNAPTICFLOW_DEFAULT_EXECUTION_TIMEOUT`: Default command timeout in seconds (default: 30)
-/// - `SYNAPTICFLOW_MAX_EXECUTION_TIMEOUT`: Maximum command timeout in seconds (default: 300)
-/// - `SYNAPTICFLOW_MAX_OUTPUT_SIZE`: Maximum process output size in bytes (default: 104857600 = 100MB)
-/// - `SYNAPTICFLOW_GRACEFUL_SHUTDOWN_TIMEOUT`: Graceful shutdown timeout in seconds (default: 3)
-/// - `SYNAPTICFLOW_POLL_THRESHOLD`: Excessive polling detection threshold (default: 5 consecutive polls)
+/// - `LIBRAGENT_MAX_FILE_SIZE`: Maximum file size in bytes (default: 10485760 = 10MB)
+/// - `LIBRAGENT_DEFAULT_EXECUTION_TIMEOUT`: Default command timeout in seconds (default: 30)
+/// - `LIBRAGENT_MAX_EXECUTION_TIMEOUT`: Maximum command timeout in seconds (default: 300)
+/// - `LIBRAGENT_MAX_OUTPUT_SIZE`: Maximum process output size in bytes (default: 104857600 = 100MB)
+/// - `LIBRAGENT_GRACEFUL_SHUTDOWN_TIMEOUT`: Graceful shutdown timeout in seconds (default: 3)
+/// - `LIBRAGENT_POLL_THRESHOLD`: Excessive polling detection threshold (default: 5 consecutive polls)
 /// - `MESSAGE_INDEX_SNIPPET_LENGTH`: Message snippet length for search index (default: 200)
-/// - `SYNAPTICFLOW_DB_PATH`: SQLite database file path (default: user data directory)
+/// - `LIBRAGENT_DB_PATH`: SQLite database file path (default: user data directory)
 use std::env;
 
 /// Default maximum file size (10 MB)
@@ -42,10 +42,10 @@ const DEFAULT_POLL_THRESHOLD: u32 = 5;
 
 /// Get maximum output size for process stdout/stderr capture from environment or use default
 ///
-/// Environment variable: SYNAPTICFLOW_MAX_OUTPUT_SIZE
+/// Environment variable: LIBRAGENT_MAX_OUTPUT_SIZE
 /// Default: 104857600 (100 MB)
 pub fn max_output_size() -> u64 {
-    env::var("SYNAPTICFLOW_MAX_OUTPUT_SIZE")
+    env::var("LIBRAGENT_MAX_OUTPUT_SIZE")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or_else(|| {
@@ -62,9 +62,9 @@ const DEFAULT_GRACEFUL_SHUTDOWN_TIMEOUT: u64 = 3;
 
 /// Get graceful shutdown timeout (seconds) from environment or default
 ///
-/// Environment variable: SYNAPTICFLOW_GRACEFUL_SHUTDOWN_TIMEOUT
+/// Environment variable: LIBRAGENT_GRACEFUL_SHUTDOWN_TIMEOUT
 pub fn graceful_shutdown_timeout() -> u64 {
-    env::var("SYNAPTICFLOW_GRACEFUL_SHUTDOWN_TIMEOUT")
+    env::var("LIBRAGENT_GRACEFUL_SHUTDOWN_TIMEOUT")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or_else(|| {
@@ -78,10 +78,10 @@ pub fn graceful_shutdown_timeout() -> u64 {
 
 /// Get maximum file size from environment or use default
 ///
-/// Environment variable: SYNAPTICFLOW_MAX_FILE_SIZE
+/// Environment variable: LIBRAGENT_MAX_FILE_SIZE
 /// Default: 10485760 (10 MB)
 pub fn max_file_size() -> usize {
-    env::var("SYNAPTICFLOW_MAX_FILE_SIZE")
+    env::var("LIBRAGENT_MAX_FILE_SIZE")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or_else(|| {
@@ -95,10 +95,10 @@ pub fn max_file_size() -> usize {
 
 /// Get default execution timeout from environment or use default
 ///
-/// Environment variable: SYNAPTICFLOW_DEFAULT_EXECUTION_TIMEOUT
+/// Environment variable: LIBRAGENT_DEFAULT_EXECUTION_TIMEOUT
 /// Default: 30 seconds
 pub fn default_execution_timeout() -> u64 {
-    env::var("SYNAPTICFLOW_DEFAULT_EXECUTION_TIMEOUT")
+    env::var("LIBRAGENT_DEFAULT_EXECUTION_TIMEOUT")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or_else(|| {
@@ -112,10 +112,10 @@ pub fn default_execution_timeout() -> u64 {
 
 /// Get maximum execution timeout from environment or use default
 ///
-/// Environment variable: SYNAPTICFLOW_MAX_EXECUTION_TIMEOUT
+/// Environment variable: LIBRAGENT_MAX_EXECUTION_TIMEOUT
 /// Default: 300 seconds (5 minutes)
 pub fn max_execution_timeout() -> u64 {
-    let max_timeout = env::var("SYNAPTICFLOW_MAX_EXECUTION_TIMEOUT")
+    let max_timeout = env::var("LIBRAGENT_MAX_EXECUTION_TIMEOUT")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or_else(|| {
@@ -159,10 +159,10 @@ pub fn message_index_snippet_length() -> usize {
 
 /// Get polling threshold for excessive polling detection from environment or use default
 ///
-/// Environment variable: SYNAPTICFLOW_POLL_THRESHOLD
+/// Environment variable: LIBRAGENT_POLL_THRESHOLD
 /// Default: 5 consecutive polls while process is running
 pub fn poll_threshold() -> u32 {
-    env::var("SYNAPTICFLOW_POLL_THRESHOLD")
+    env::var("LIBRAGENT_POLL_THRESHOLD")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or_else(|| {
