@@ -6,7 +6,6 @@
 
 export { default } from './server';
 export { bootstrapToolsSchema } from './tools';
-export { metadata } from './metadata';
 export { detectPlatform, getCheckCommand } from './platform-detector';
 export { BOOTSTRAP_GUIDES } from './guides';
 export type { PlatformInfo } from './platform-detector';

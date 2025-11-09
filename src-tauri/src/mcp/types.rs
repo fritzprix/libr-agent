@@ -411,9 +411,6 @@ pub struct BuiltinServerMetadata {
     pub display_name: String,
     /// Description of what the server does
     pub description: String,
-    /// Category classification for grouping in UI
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub category: Option<String>, // automation|storage|planning|execution
     /// Optional icon identifier
     #[serde(skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,

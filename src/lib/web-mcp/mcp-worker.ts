@@ -5,38 +5,43 @@
  * environment for executing MCP-compatible servers and tools without blocking the
  * main UI thread. It communicates with the main application using `postMessage`.
  *
- * ## Module Import Strategy
+ * ## Server Structure
  *
- * We use **namespace imports** (`import * as moduleName`) instead of default-only imports
- * for the following reasons:
- *
- * 1. **Access to both exports**: Each module exports both a default export (the server instance)
- *    and named exports (metadata, tools). Namespace imports give us access to both.
- *
- * 2. **Runtime metadata extraction**: The `metadata` named export from each module
- *    (e.g., `planningModule.metadata`) provides UI display information (displayName,
- *    description, category) that is shown in the BuiltInToolsEditor.
- *
- * 3. **Type safety**: Static imports provide better type checking and bundler compatibility
- *    compared to dynamic imports.
+ * Each Web MCP server is a WebMCPServer instance with flat properties:
+ * - `name`: Internal server identifier
+ * - `displayName`: Human-readable name shown in UI
+ * - `description`: Brief description of server capabilities
+ * - `category`: UI grouping category (automation, storage, planning, execution)
+ * - `tools`: Array of MCP tools provided by the server
+ * - `callTool`: Function to execute tools
  *
  * ## Module Structure Example
  *
- * Each MCP server module exports:
+ * Each MCP server module exports a configured WebMCPServer instance:
  * ```typescript
+ * // modules/planning-server/server.ts
+ * const planningServer: WebMCPServer = {
+ *   name: 'planning',
+ *   displayName: 'Task Planning',
+ *   description: 'Goal setting, task planning',
+ *   category: 'planning',
+ *   tools: [...],
+ *   callTool: async (name, args) => { ... }
+ * };
+ * export default planningServer;
+ *
  * // modules/planning-server/index.ts
- * export { default } from './server.ts';        // Default: WebMCPServer instance
- * export { metadata } from './metadata';        // Named: ServiceMetadata object
- * export { planningTools } from './tools.ts';   // Named: Tool definitions
+ * export { default } from './server.ts';
  * ```
  *
  * ## Adding New Servers
  *
  * To add a new Web MCP server:
- * 1. Create the module directory with index.ts, server.ts, metadata.ts, tools.ts
- * 2. Add namespace import: `import * as newModule from './modules/new-server/index.ts';`
- * 3. Register in MODULE_REGISTRY: `{ key: 'new_server', module: newModule }`
- * 4. The metadata will be automatically discovered and displayed in the UI
+ * 1. Create the module directory with index.ts, server.ts, tools.ts
+ * 2. Define your server with all required properties (name, displayName, description, tools, callTool)
+ * 3. Add default import: `import newServer from './modules/new-server/index.ts';`
+ * 4. Register in MODULE_REGISTRY: `{ key: 'new_server', server: newServer }`
+ * 5. The server metadata will be automatically extracted and displayed in the UI
  */
 
 import type {
@@ -52,21 +57,17 @@ import {
 } from '../../features/tools';
 
 /**
- * Static namespace imports for all Web MCP server modules.
+ * Static imports for all Web MCP server modules.
  *
- * IMPORTANT: Use namespace imports (`import * as`) to access both:
- * - module.default: The WebMCPServer instance
- * - module.metadata: The ServiceMetadata object for UI display
- * - module.tools: Tool definitions (if exported)
- *
- * DO NOT use default-only imports like `import planningServer from '...'`
- * as they won't give access to the metadata named export.
+ * Each server module exports a WebMCPServer instance as the default export.
+ * Server metadata (displayName, description, category) is included directly
+ * as properties on the server instance.
  */
-import * as planningModule from './modules/planning-server/index.ts';
-import * as playbookModule from './modules/playbook-store/index.ts';
-import * as uiModule from './modules/ui-tools/index.ts';
-import * as bootstrapModule from './modules/bootstrap-server/index.ts';
-import * as mcpManagerModule from './modules/mcp-manager/index.ts';
+import planningServer from './modules/planning-server/index.ts';
+import playbookStore from './modules/playbook-store/index.ts';
+import uiTools from './modules/ui-tools/index.ts';
+import bootstrapServer from './modules/bootstrap-server/index.ts';
+import mcpManagerServer from './modules/mcp-manager/index.ts';
 
 /**
  * A simple logger for the worker context, as the main logger is not available here.
@@ -88,45 +89,32 @@ const log = {
 };
 
 /**
- * Central registry of all Web MCP server modules.
+ * Central registry of all Web MCP servers.
  *
- * This registry maps server keys (used as identifiers) to their module namespaces.
- * Each module namespace contains:
- * - default: The WebMCPServer instance
- * - metadata: ServiceMetadata (displayName, description, category, icon)
- * - tools: Tool definitions (optional)
- *
- * The registry is used by:
- * - serverInstances: To create a map of server instances (module.default)
- * - getMetadata handler: To extract metadata for UI display (module.metadata)
- * - listServers handler: To provide complete server information to the frontend
+ * This registry maps server keys (used as identifiers) to their WebMCPServer instances.
+ * Each server instance contains metadata directly as properties (displayName, description, category).
  *
  * When adding a new server:
- * 1. Import the module namespace above: `import * as newModule from './modules/new-server'`
- * 2. Add to this registry: `{ key: 'new_server', module: newModule }`
- * 3. No other changes needed - metadata will be auto-discovered
+ * 1. Import the server above: `import newServer from './modules/new-server'`
+ * 2. Add to this registry: `{ key: 'new_server', server: newServer }`
+ * 3. The server's metadata will be automatically extracted from its properties
  */
 const MODULE_REGISTRY = [
-  { key: 'planning', module: planningModule },
-  { key: 'playbook', module: playbookModule },
-  { key: 'ui', module: uiModule },
-  { key: 'bootstrap', module: bootstrapModule },
-  { key: 'mcp_manager', module: mcpManagerModule },
+  { key: 'planning', server: planningServer },
+  { key: 'playbook', server: playbookStore },
+  { key: 'ui', server: uiTools },
+  { key: 'bootstrap', server: bootstrapServer },
+  { key: 'mcp_manager', server: mcpManagerServer },
 ] as const;
 
 /**
  * Map of server keys to their WebMCPServer instances.
  *
- * This is initialized by extracting the default export (server instance)
- * from each module namespace in MODULE_REGISTRY.
- *
- * Example: planningModule.default → WebMCPServer instance for 'planning'
- *
- * This map is used by getMCPServer() for fast server instance lookups
+ * This is initialized directly from MODULE_REGISTRY for fast lookups
  * during tool execution and server context operations.
  */
 const serverInstances = new Map<string, WebMCPServer>(
-  MODULE_REGISTRY.map(({ key, module }) => [key, module.default]),
+  MODULE_REGISTRY.map(({ key, server }) => [key, server]),
 );
 
 /**
@@ -406,31 +394,14 @@ async function handleMCPMessage(
         }
 
         const server = getMCPServer(serverName);
-        const registryEntry = MODULE_REGISTRY.find(
-          (entry) => entry.key === serverName,
-        );
 
         /**
-         * Extract metadata from the module's named export.
-         *
-         * IMPORTANT: We cast to include both `default` and `metadata` because
-         * TypeScript doesn't infer namespace import structure automatically.
-         *
-         * - registryEntry.module.default: WebMCPServer instance
-         * - registryEntry.module.metadata: ServiceMetadata from metadata.ts file
-         *
-         * Fallback: If metadata export doesn't exist, use server properties.
-         * This ensures backwards compatibility with older server implementations.
+         * Build metadata from server's flat properties.
          */
-        const metadata: ServiceMetadata = (
-          registryEntry?.module as {
-            default: WebMCPServer;
-            metadata?: ServiceMetadata;
-          }
-        ).metadata || {
-          displayName: server.name,
-          description: server.description || '',
-          category: 'automation',
+        const metadata: ServiceMetadata = {
+          displayName: server.displayName,
+          description: server.description,
+          icon: server.icon,
         };
 
         return {
@@ -447,28 +418,18 @@ async function handleMCPMessage(
         /**
          * Build a list of all available servers with their metadata.
          *
-         * For each module in MODULE_REGISTRY, we extract:
+         * For each server in MODULE_REGISTRY, we extract:
          * - name: Server key/identifier
-         * - metadata: From module.metadata (named export) or fallback
+         * - metadata: Built from server's flat properties
          * - toolCount: Number of tools the server provides
-         *
-         * The metadata extraction uses the same pattern as getMetadata handler:
-         * we cast the module to access both default and named exports.
          */
-        const serverList = MODULE_REGISTRY.map(({ key, module }) => {
-          const typedModule = module as {
-            default: WebMCPServer;
-            metadata?: ServiceMetadata;
-            tools?: MCPTool[];
-          };
-          const server = getMCPServer(key);
-
+        const serverList = MODULE_REGISTRY.map(({ key, server }) => {
           return {
             name: key,
-            metadata: typedModule.metadata || {
-              displayName: key,
-              description: server.description || `MCP server: ${key}`,
-              category: 'automation' as const,
+            metadata: {
+              displayName: server.displayName,
+              description: server.description,
+              icon: server.icon,
             },
             toolCount: server.tools?.length || 0,
           };

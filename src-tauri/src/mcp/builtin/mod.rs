@@ -25,13 +25,6 @@ pub trait BuiltinMCPServer: Send + Sync + std::fmt::Debug {
         "1.0.0"
     }
 
-    /// Returns the category for UI classification.
-    /// Default: "automation"
-    /// Options: "automation" | "storage" | "planning" | "execution"
-    fn category(&self) -> &str {
-        "automation"
-    }
-
     /// Returns a human-friendly display name for the UI.
     /// Default: Capitalize the server name
     fn display_name(&self) -> String {
@@ -54,7 +47,6 @@ pub trait BuiltinMCPServer: Send + Sync + std::fmt::Debug {
         BuiltinServerMetadata {
             display_name: self.display_name(),
             description: self.description().to_string(),
-            category: Some(self.category().to_string()),
             icon: None,
         }
     }

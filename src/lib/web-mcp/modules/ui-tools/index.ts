@@ -6,4 +6,3 @@
 
 export { default } from './server.ts';
 export { uiToolsSchema } from './tools.ts';
-export { metadata } from './metadata';

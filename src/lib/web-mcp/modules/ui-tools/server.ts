@@ -232,9 +232,9 @@ function buildLineChartHtml(
 
 const uiTools: WebMCPServer = {
   name: 'ui',
+  displayName: 'UI Tools',
+  description: 'User interaction and data visualization',
   version: '0.1.0',
-  description:
-    'Built-in UI interaction tools for user prompts and visualizations',
   tools: uiToolsSchema,
 
   async callTool(name: string, args: unknown): Promise<MCPResponse<unknown>> {

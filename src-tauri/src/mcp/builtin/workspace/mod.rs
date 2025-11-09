@@ -562,10 +562,6 @@ impl BuiltinMCPServer for WorkspaceServer {
         "Integrated workspace for file operations and code execution"
     }
 
-    fn category(&self) -> &str {
-        "execution"
-    }
-
     fn display_name(&self) -> String {
         "Workspace".to_string()
     }

@@ -60,7 +60,6 @@ export function RustMCPToolProvider() {
         servers: serverInfos.map((s) => ({
           name: s.name,
           displayName: s.metadata.displayName,
-          category: s.metadata.category,
         })),
       });
 

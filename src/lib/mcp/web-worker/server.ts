@@ -14,10 +14,14 @@ import type { ServiceContext, ServiceContextOptions } from '@/features/tools';
 export interface WebMCPServer {
   /** The name of the server. */
   name: string;
-  /** An optional description of the server. */
-  description?: string;
+  /** The display name shown in the UI. */
+  displayName: string;
+  /** A description of the server. */
+  description: string;
   /** The version of the server. */
   version?: string;
+  /** Optional icon for UI display. */
+  icon?: string;
   /** An array of tools provided by the server. */
   tools: MCPTool[];
   /**

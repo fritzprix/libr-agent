@@ -522,9 +522,9 @@ const stateManager = new SessionStateManager();
 
 const planningServer: WebMCPServer = {
   name: 'planning',
+  displayName: 'Task Planning',
+  description: 'Goal setting, task planning',
   version: '2.2.0',
-  description:
-    'Ephemeral planning and goal management for AI agents with note-taking and completion summaries',
   tools,
   async callTool(name: string, args: unknown): Promise<MCPResponse<unknown>> {
     console.log(`[PlanningServer] callTool invoked: ${name}`, {

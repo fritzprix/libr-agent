@@ -43,7 +43,6 @@ export interface ServiceContext<T = unknown> {
 export interface ServiceMetadata {
   displayName: string;
   description: string;
-  category?: 'automation' | 'storage' | 'planning' | 'execution';
   icon?: string;
 }
 
