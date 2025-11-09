@@ -18,9 +18,9 @@ import { BOOTSTRAP_GUIDES, type ToolGuide } from './guides';
 
 const bootstrapServer: WebMCPServer = {
   name: 'bootstrap',
+  displayName: 'Bootstrap',
+  description: 'Platform detection and environment setup',
   version: '1.0.0',
-  description:
-    'Built-in server for platform detection and dependency installation guides',
   tools: bootstrapToolsSchema,
 
   async callTool(name: string, args: unknown): Promise<MCPResponse<unknown>> {

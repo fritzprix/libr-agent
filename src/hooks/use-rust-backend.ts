@@ -45,6 +45,7 @@ export const useRustBackend = () => {
     // Built-in Tools
     listBuiltinServers: client.listBuiltinServers,
     listBuiltinTools: client.listBuiltinTools,
+    listBuiltinServersWithMetadata: client.listBuiltinServersWithMetadata,
     callBuiltinTool: client.callBuiltinTool,
 
     // Unified Tools API

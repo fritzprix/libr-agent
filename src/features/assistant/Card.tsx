@@ -5,6 +5,9 @@ import { Assistant } from '../../models/chat';
 import { Badge, Button, StatusIndicator } from '@/components/ui';
 import { EditorProvider } from '@/context/EditorContext';
 import AssistantEditor from './AssistantEditor';
+import { useTranslation } from 'react-i18next';
+import { Loader2 } from 'lucide-react';
+import { getLogger } from '@/lib/logger';
 
 interface AssistantCardProps {
   assistant: Assistant;
@@ -17,11 +20,12 @@ export default function AssistantCard({ assistant }: AssistantCardProps) {
     deleteAssistant,
     saveAssistant: upsertAssistant,
   } = useAssistantContext();
-  const { status, isLoading: isCheckingStatus } = useMCPServer();
+  const { status, isLoading: isCheckingStatus, serversById, connectServersFromAssistant } = useMCPServer();
   const [isDeleting, setIsDeleting] = useState(false);
   const isActive = currentAssistant?.id === assistant.id;
-
   const [edit, setEdit] = useState<boolean>(false);
+  const { t } = useTranslation('common');
+  const logger = getLogger('AssistantCard');
 
   const handleEditComplete = useCallback(
     async (assistant: Assistant) => {
@@ -30,9 +34,18 @@ export default function AssistantCard({ assistant }: AssistantCardProps) {
     [upsertAssistant],
   );
 
+  const handleCheckStatus = useCallback(async () => {
+    try {
+      logger.debug(`Checking MCP status for assistant: ${assistant.name}`);
+      await connectServersFromAssistant(assistant);
+    } catch (error) {
+      logger.error('Error checking server status:', error);
+    }
+  }, [assistant, connectServersFromAssistant, logger]);
+
   const handleDelete = async () => {
     if (assistant.isDefault) {
-      alert('기본 어시스턴트는 삭제할 수 없습니다.');
+      alert(t('assistant.card.deleteBlocked'));
       return;
     }
 
@@ -59,9 +72,11 @@ export default function AssistantCard({ assistant }: AssistantCardProps) {
           <h3 className="text-primary font-medium">{assistant.name}</h3>
           <div className="flex gap-1 flex-wrap">
             {assistant.isDefault && (
-              <Badge variant="destructive">DEFAULT</Badge>
+              <Badge variant="destructive">{t('assistant.card.default')}</Badge>
             )}
-            {isActive && <Badge variant="default">ACTIVE</Badge>}
+            {isActive && (
+              <Badge variant="default">{t('assistant.card.active')}</Badge>
+            )}
           </div>
         </div>
 
@@ -70,41 +85,68 @@ export default function AssistantCard({ assistant }: AssistantCardProps) {
         </p>
 
         <div className="text-xs text-muted-foreground mb-2">
-          MCP 서버: {assistant.mcpServerIds?.length || 0}
-          개, 로컬 서비스: {assistant.localServices?.length || 0}개
+          {t('assistant.card.mcpCount', {
+            count: assistant.mcpServerIds?.length || 0,
+          })}
+          {', '}
+          {t('assistant.card.localServiceCount', {
+            count: assistant.localServices?.length || 0,
+          })}
         </div>
 
         {isActive &&
           assistant.mcpServerIds &&
           assistant.mcpServerIds.length > 0 && (
             <div className="flex flex-wrap gap-1 mb-2">
-              {assistant.mcpServerIds.map((serverId) => (
-                <div
-                  key={serverId}
-                  className="flex items-center gap-1 text-xs px-1 py-0.5 rounded bg-muted"
-                >
-                  <StatusIndicator
-                    status={
-                      status[serverId] === true
-                        ? 'connected'
-                        : status[serverId] === false
-                          ? 'disconnected'
-                          : 'unknown'
-                    }
-                    size="sm"
-                  />
-                  <span className="text-foreground">{serverId}</span>
-                </div>
-              ))}
+              {assistant.mcpServerIds.map((serverId) => {
+                const serverMeta = serversById?.[serverId];
+                const serverName = serverMeta?.name ?? serverId;
+                // status 맵은 server name을 키로 사용 (serverId가 아님)
+                const isConnected = serverMeta?.name ? status[serverMeta.name] : undefined;
+                const version = serverMeta?.metadata?.version;
+                const description = serverMeta?.metadata?.description;
+                
+                return (
+                  <div
+                    key={serverId}
+                    className="flex items-center gap-1 text-xs px-1 py-0.5 rounded bg-muted"
+                    title={`Name: ${serverName}\nID: ${serverId}${version ? `\nVersion: ${version}` : ''}${description ? `\nDescription: ${description}` : ''}`}
+                  >
+                    <StatusIndicator
+                      status={
+                        isConnected === true
+                          ? 'connected'
+                          : isConnected === false
+                            ? 'disconnected'
+                            : 'unknown'
+                      }
+                      size="sm"
+                    />
+                    <span className="text-foreground truncate max-w-[120px]">
+                      {serverName}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           )}
 
         <div className="flex flex-wrap gap-2">
           <Button size="sm" variant="secondary" onClick={() => setEdit(true)}>
-            편집
+            {t('assistant.card.edit')}
           </Button>
-          <Button size="sm" variant="ghost" disabled={isCheckingStatus}>
-            {isCheckingStatus && isActive ? '확인중...' : '상태확인'}
+          <Button 
+            size="sm" 
+            variant="ghost" 
+            onClick={handleCheckStatus}
+            disabled={isCheckingStatus}
+            title={isCheckingStatus ? t('assistant.card.checking') : t('assistant.card.checkStatus')}
+            className="gap-1"
+          >
+            {isCheckingStatus && (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            )}
+            {isCheckingStatus ? t('assistant.card.checking') : t('assistant.card.checkStatus')}
           </Button>
           <Button
             size="sm"
@@ -112,11 +154,13 @@ export default function AssistantCard({ assistant }: AssistantCardProps) {
             onClick={handleDelete}
             title={
               assistant.isDefault
-                ? '기본 어시스턴트는 삭제할 수 없습니다.'
-                : '어시스턴트 삭제'
+                ? t('assistant.card.deleteBlocked')
+                : t('assistant.card.deleteConfirmTitle')
             }
           >
-            {isDeleting ? '삭제중...' : '삭제'}
+            {isDeleting
+              ? t('assistant.card.deleting')
+              : t('assistant.card.delete')}
           </Button>
         </div>
       </div>

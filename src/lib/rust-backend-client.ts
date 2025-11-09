@@ -8,7 +8,11 @@ import {
   SamplingResponse,
 } from './mcp-types';
 import type { OAuthConfig } from './mcp-types';
-import type { ServiceContext, ServiceContextOptions } from '@/features/tools';
+import type {
+  ServiceContext,
+  ServiceContextOptions,
+  ServiceMetadata,
+} from '@/features/tools';
 import type { Message, MCPConfig } from '@/models/chat';
 import type { Page } from '@/lib/db/types';
 
@@ -323,6 +327,29 @@ export async function listBuiltinTools(
     'list_builtin_tools',
     serverName ? { serverName } : undefined,
   );
+}
+
+/**
+ * Complete information about a builtin server including metadata.
+ */
+export interface BuiltinServerInfo {
+  /** Server identifier (e.g., "workspace", "contentstore") */
+  name: string;
+  /** UI metadata (displayName, description, category, icon) */
+  metadata: ServiceMetadata;
+  /** Number of tools this server provides */
+  toolCount: number;
+}
+
+/**
+ * Lists all built-in MCP servers with their metadata.
+ * Returns server name, UI metadata, and tool count for each server.
+ * @returns A promise that resolves to an array of `BuiltinServerInfo` objects.
+ */
+export async function listBuiltinServersWithMetadata(): Promise<
+  BuiltinServerInfo[]
+> {
+  return safeInvoke<BuiltinServerInfo[]>('list_builtin_servers_with_metadata');
 }
 
 /**

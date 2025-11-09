@@ -3,7 +3,8 @@
 /// This module contains all commands related to managing external and built-in MCP servers,
 /// including server lifecycle, tool listing, and tool execution.
 use crate::mcp::types::{
-    MCPServerConfigV2, MCPServerConfigWrapper, OAuthConfig, ServiceContext, ServiceContextOptions,
+    BuiltinServerInfo, MCPServerConfigV2, MCPServerConfigWrapper, OAuthConfig, ServiceContext,
+    ServiceContextOptions,
 };
 use crate::mcp::{MCPResponse, MCPServerConfig, MCPServerManager, MCPTool};
 use crate::state::get_mcp_manager;
@@ -255,6 +256,21 @@ pub async fn list_builtin_tools(server_name: Option<String>) -> Vec<MCPTool> {
         Some(name) => get_mcp_manager().list_builtin_tools_for(&name).await,
         None => get_mcp_manager().list_builtin_tools().await,
     }
+}
+
+/// Lists all built-in MCP servers with their metadata.
+///
+/// Returns a vector of `BuiltinServerInfo` containing:
+/// - Server name (e.g., "workspace", "contentstore")
+/// - UI metadata (displayName, description, category, icon)
+/// - Tool count
+///
+/// This enables the frontend to dynamically discover servers and display
+/// proper metadata without hardcoding.
+#[tauri::command]
+pub async fn list_builtin_servers_with_metadata() -> Vec<BuiltinServerInfo> {
+    let manager = get_mcp_manager();
+    manager.list_builtin_servers_with_metadata().await
 }
 
 /// Calls a tool on one of the built-in MCP servers.

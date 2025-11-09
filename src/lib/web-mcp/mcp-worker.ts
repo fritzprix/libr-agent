@@ -5,8 +5,43 @@
  * environment for executing MCP-compatible servers and tools without blocking the
  * main UI thread. It communicates with the main application using `postMessage`.
  *
- * It uses static imports for server modules to ensure compatibility with bundlers
- * like Vite and to provide better type safety.
+ * ## Server Structure
+ *
+ * Each Web MCP server is a WebMCPServer instance with flat properties:
+ * - `name`: Internal server identifier
+ * - `displayName`: Human-readable name shown in UI
+ * - `description`: Brief description of server capabilities
+ * - `category`: UI grouping category (automation, storage, planning, execution)
+ * - `tools`: Array of MCP tools provided by the server
+ * - `callTool`: Function to execute tools
+ *
+ * ## Module Structure Example
+ *
+ * Each MCP server module exports a configured WebMCPServer instance:
+ * ```typescript
+ * // modules/planning-server/server.ts
+ * const planningServer: WebMCPServer = {
+ *   name: 'planning',
+ *   displayName: 'Task Planning',
+ *   description: 'Goal setting, task planning',
+ *   category: 'planning',
+ *   tools: [...],
+ *   callTool: async (name, args) => { ... }
+ * };
+ * export default planningServer;
+ *
+ * // modules/planning-server/index.ts
+ * export { default } from './server.ts';
+ * ```
+ *
+ * ## Adding New Servers
+ *
+ * To add a new Web MCP server:
+ * 1. Create the module directory with index.ts, server.ts, tools.ts
+ * 2. Define your server with all required properties (name, displayName, description, tools, callTool)
+ * 3. Add default import: `import newServer from './modules/new-server/index.ts';`
+ * 4. Register in MODULE_REGISTRY: `{ key: 'new_server', server: newServer }`
+ * 5. The server metadata will be automatically extracted and displayed in the UI
  */
 
 import type {
@@ -15,12 +50,20 @@ import type {
   MCPResponse,
   MCPTool,
 } from '../mcp-types';
-import { ServiceContext, ServiceContextOptions } from '../../features/tools';
+import {
+  ServiceContext,
+  ServiceContextOptions,
+  ServiceMetadata,
+} from '../../features/tools';
 
-// Static imports for MCP server modules to avoid Vite dynamic import warnings
-// This approach provides better bundling compatibility and type safety
+/**
+ * Static imports for all Web MCP server modules.
+ *
+ * Each server module exports a WebMCPServer instance as the default export.
+ * Server metadata (displayName, description, category) is included directly
+ * as properties on the server instance.
+ */
 import planningServer from './modules/planning-server/index.ts';
-// Import from the new playbook-store submodule (index.ts)
 import playbookStore from './modules/playbook-store/index.ts';
 import uiTools from './modules/ui-tools/index.ts';
 import bootstrapServer from './modules/bootstrap-server/index.ts';
@@ -45,20 +88,33 @@ const log = {
   },
 };
 
-// Static module registry - using direct imports instead of dynamic imports
-// This eliminates Vite bundling warnings and provides better type safety
+/**
+ * Central registry of all Web MCP servers.
+ *
+ * This registry maps server keys (used as identifiers) to their WebMCPServer instances.
+ * Each server instance contains metadata directly as properties (displayName, description, category).
+ *
+ * When adding a new server:
+ * 1. Import the server above: `import newServer from './modules/new-server'`
+ * 2. Add to this registry: `{ key: 'new_server', server: newServer }`
+ * 3. The server's metadata will be automatically extracted from its properties
+ */
 const MODULE_REGISTRY = [
-  { key: 'planning', module: planningServer },
-  { key: 'playbook', module: playbookStore },
-  { key: 'ui', module: uiTools },
-  { key: 'bootstrap', module: bootstrapServer },
-  { key: 'mcp_manager', module: mcpManagerServer },
-  // Future modules can be added here with static imports
+  { key: 'planning', server: planningServer },
+  { key: 'playbook', server: playbookStore },
+  { key: 'ui', server: uiTools },
+  { key: 'bootstrap', server: bootstrapServer },
+  { key: 'mcp_manager', server: mcpManagerServer },
 ] as const;
 
-// Initialize server instances directly with static modules
+/**
+ * Map of server keys to their WebMCPServer instances.
+ *
+ * This is initialized directly from MODULE_REGISTRY for fast lookups
+ * during tool execution and server context operations.
+ */
 const serverInstances = new Map<string, WebMCPServer>(
-  MODULE_REGISTRY.map(({ key, module }) => [key, module]),
+  MODULE_REGISTRY.map(({ key, server }) => [key, server]),
 );
 
 /**
@@ -328,6 +384,63 @@ async function handleMCPMessage(
               },
             ],
             structuredContent: { success: false },
+          },
+        };
+      }
+
+      case 'getMetadata': {
+        if (!serverName) {
+          throw new Error('Server name is required for getMetadata');
+        }
+
+        const server = getMCPServer(serverName);
+
+        /**
+         * Build metadata from server's flat properties.
+         */
+        const metadata: ServiceMetadata = {
+          displayName: server.displayName,
+          description: server.description,
+          icon: server.icon,
+        };
+
+        return {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            content: [{ type: 'text', text: JSON.stringify(metadata) }],
+            structuredContent: metadata,
+          },
+        };
+      }
+
+      case 'listServers': {
+        /**
+         * Build a list of all available servers with their metadata.
+         *
+         * For each server in MODULE_REGISTRY, we extract:
+         * - name: Server key/identifier
+         * - metadata: Built from server's flat properties
+         * - toolCount: Number of tools the server provides
+         */
+        const serverList = MODULE_REGISTRY.map(({ key, server }) => {
+          return {
+            name: key,
+            metadata: {
+              displayName: server.displayName,
+              description: server.description,
+              icon: server.icon,
+            },
+            toolCount: server.tools?.length || 0,
+          };
+        });
+
+        return {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            content: [{ type: 'text', text: JSON.stringify(serverList) }],
+            structuredContent: serverList,
           },
         };
       }

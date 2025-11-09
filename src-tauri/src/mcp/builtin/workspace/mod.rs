@@ -562,6 +562,10 @@ impl BuiltinMCPServer for WorkspaceServer {
         "Integrated workspace for file operations and code execution"
     }
 
+    fn display_name(&self) -> String {
+        "Workspace".to_string()
+    }
+
     fn tools(&self) -> Vec<MCPTool> {
         let mut tools = Vec::new();
         tools.extend(tools::file_tools());

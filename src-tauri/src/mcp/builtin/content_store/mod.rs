@@ -33,6 +33,10 @@ impl BuiltinMCPServer for ContentStoreServer {
         "File attachment and semantic search system with native performance and BM25 indexing"
     }
 
+    fn display_name(&self) -> String {
+        "Content Store".to_string()
+    }
+
     fn tools(&self) -> Vec<MCPTool> {
         self.tools()
     }

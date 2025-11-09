@@ -1,4 +1,4 @@
-use crate::mcp::types::{ServiceContext, ServiceContextOptions};
+use crate::mcp::types::{BuiltinServerMetadata, ServiceContext, ServiceContextOptions};
 use crate::mcp::{MCPResponse, MCPTool};
 use crate::session::SessionManager;
 use async_trait::async_trait;
@@ -23,6 +23,32 @@ pub trait BuiltinMCPServer: Send + Sync + std::fmt::Debug {
     #[allow(dead_code)]
     fn version(&self) -> &str {
         "1.0.0"
+    }
+
+    /// Returns a human-friendly display name for the UI.
+    /// Default: Capitalize the server name
+    fn display_name(&self) -> String {
+        // Default: capitalize first letter of each word
+        self.name()
+            .split('_')
+            .map(|word| {
+                let mut chars = word.chars();
+                match chars.next() {
+                    None => String::new(),
+                    Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    /// Returns complete UI metadata for this server.
+    fn metadata(&self) -> BuiltinServerMetadata {
+        BuiltinServerMetadata {
+            display_name: self.display_name(),
+            description: self.description().to_string(),
+            icon: None,
+        }
     }
 
     /// Returns a list of all tools provided by this server.

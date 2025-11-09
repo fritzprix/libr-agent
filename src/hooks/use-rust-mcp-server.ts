@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getLogger } from '@/lib/logger';
 import type { MCPResponse, MCPTool } from '@/lib/mcp-types';
+import type { ServiceMetadata } from '@/features/tools';
 import { listBuiltinTools, callBuiltinTool } from '@/lib/rust-backend-client';
 
 const logger = getLogger('useRustMCPServer');
@@ -13,6 +14,7 @@ export interface RustMCPServerProxy {
   name: string;
   isLoaded: boolean;
   tools: MCPTool[];
+  metadata?: ServiceMetadata; // Optional for backward compatibility
   // Dynamic tool methods are attached at runtime
   [methodName: string]: unknown;
 }

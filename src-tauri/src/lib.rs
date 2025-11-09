@@ -21,9 +21,10 @@ use commands::mcp_commands::{
     call_builtin_tool, call_mcp_tool, call_tool_unified, check_all_servers_status,
     check_server_status, complete_oauth_flow, get_connected_servers, get_oauth_token,
     get_service_context, get_validated_tools, has_oauth_token, list_all_tools,
-    list_all_tools_unified, list_builtin_servers, list_builtin_tools, list_mcp_tools,
-    list_tools_from_config, revoke_oauth_token, sample_from_mcp_server, start_mcp_server,
-    start_oauth_flow, stop_mcp_server, switch_context, validate_tool_schema,
+    list_all_tools_unified, list_builtin_servers, list_builtin_servers_with_metadata,
+    list_builtin_tools, list_mcp_tools, list_tools_from_config, revoke_oauth_token,
+    sample_from_mcp_server, start_mcp_server, start_oauth_flow, stop_mcp_server, switch_context,
+    validate_tool_schema,
 };
 use commands::messages_commands::{
     messages_delete, messages_delete_all_for_session, messages_get_page, messages_search,
@@ -209,6 +210,7 @@ pub fn run() {
                 validate_tool_schema,
                 list_builtin_servers,
                 list_builtin_tools,
+                list_builtin_servers_with_metadata,
                 call_builtin_tool,
                 list_all_tools_unified,
                 call_tool_unified,

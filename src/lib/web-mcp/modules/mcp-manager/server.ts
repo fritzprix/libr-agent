@@ -631,9 +631,9 @@ async function disconnectServer(
 
 const mcpManagerServer: WebMCPServer = {
   name: 'mcp_manager',
+  displayName: 'MCP Server Manager',
+  description: 'Create, search, and manage MCP server configurations',
   version: '1.0.0',
-  description:
-    'MCP server management tools for dynamic server registration and connection',
   tools: mcpManagerTools,
 
   async callTool(name: string, args: unknown): Promise<MCPResponse<unknown>> {
