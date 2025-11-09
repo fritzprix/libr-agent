@@ -1,7 +1,7 @@
 import { useEditor } from '@/context/EditorContext';
 import { Assistant } from '@/models/chat';
 import { DialogProps } from '@radix-ui/react-dialog';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   Button,
   Dialog,
@@ -150,25 +150,17 @@ export default function AssistantEditor() {
 
 function AssistantDialog(props: DialogProps) {
   const { draft, commit } = useEditor<Assistant>();
-  const [open, setOpen] = useState(props.open ?? false);
-
-  // Keep dialog open state in sync with props
-  useEffect(() => {
-    if (typeof props.open === 'boolean') setOpen(props.open);
-  }, [props.open]);
 
   const handleSave = () => {
     commit();
-    setOpen(false);
     if (props.onOpenChange) props.onOpenChange(false);
   };
   const handleCancel = () => {
-    setOpen(false);
     if (props.onOpenChange) props.onOpenChange(false);
   };
 
   return (
-    <Dialog {...props} open={open} onOpenChange={setOpen}>
+    <Dialog {...props} open={props.open} onOpenChange={props.onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[85vh] p-0 flex flex-col overflow-hidden">
         <DialogHeader className="flex-shrink-0 p-4 border-b">
           <DialogTitle>
