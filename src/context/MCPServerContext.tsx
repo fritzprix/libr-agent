@@ -18,6 +18,7 @@ import {
   MCPServerConfigV2,
 } from '../lib/mcp-types';
 import { MCPConfig, ToolCall, Assistant } from '../models/chat';
+import type { MCPServerEntity } from '../models/chat';
 import { toValidJsName } from '@/lib/utils';
 import { dbUtils } from '@/lib/db/service';
 
@@ -29,6 +30,7 @@ export interface MCPServerContextType {
   isLoading: boolean;
   error?: string;
   status: Record<string, boolean>;
+  serversById: Record<string, MCPServerEntity>;
   connectServers: (mcpConfigs: MCPConfig) => Promise<void>;
   connectServersFromAssistant: (assistant: Assistant) => Promise<void>;
   executeToolCall: (toolCall: ToolCall) => Promise<MCPResponse<unknown>>;
@@ -47,6 +49,7 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
   children,
 }) => {
   const [availableTools, setAvailableTools] = useState<MCPTool[]>([]);
+  const [serversById, setServersById] = useState<Record<string, MCPServerEntity>>({});
   const toolsByServer = useRef<Record<string, MCPTool[]>>({});
   const aliasToIdTableRef = useRef<Map<string, string>>(new Map());
   const [serverStatus, setServerStatus] = useState<Record<string, boolean>>({});
@@ -150,8 +153,16 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
           logger.warn('No MCP server entities found for the given IDs');
           setAvailableTools([]);
           setServerStatus({});
+          setServersById({});
           return;
         }
+
+        // 저장할 서버 메타 맵 생성 (모든 엔티티, 활성/비활성 구분 안 함)
+        const serversMap: Record<string, MCPServerEntity> = {};
+        entities.forEach((entity) => {
+          serversMap[entity.id] = entity;
+        });
+        setServersById(serversMap);
 
         // 2. 활성화된 서버만 필터링
         const activeEntities = entities.filter((e) => e.isActive);
@@ -191,6 +202,7 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
         logger.error('Error connecting servers from assistant:', { error });
         setAvailableTools([]);
         setServerStatus({});
+        setServersById({});
       }
     },
     [connectServers],
@@ -295,6 +307,7 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
       error,
       getAvailableTools,
       status: serverStatus,
+      serversById,
       connectServers,
       connectServersFromAssistant,
       executeToolCall,
@@ -305,6 +318,7 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
       isLoading,
       error,
       serverStatus,
+      serversById,
       getAvailableTools,
       connectServers,
       connectServersFromAssistant,

@@ -6,6 +6,8 @@ import { Badge, Button, StatusIndicator } from '@/components/ui';
 import { EditorProvider } from '@/context/EditorContext';
 import AssistantEditor from './AssistantEditor';
 import { useTranslation } from 'react-i18next';
+import { Loader2 } from 'lucide-react';
+import { getLogger } from '@/lib/logger';
 
 interface AssistantCardProps {
   assistant: Assistant;
@@ -18,12 +20,12 @@ export default function AssistantCard({ assistant }: AssistantCardProps) {
     deleteAssistant,
     saveAssistant: upsertAssistant,
   } = useAssistantContext();
-  const { status, isLoading: isCheckingStatus } = useMCPServer();
+  const { status, isLoading: isCheckingStatus, serversById, connectServersFromAssistant } = useMCPServer();
   const [isDeleting, setIsDeleting] = useState(false);
   const isActive = currentAssistant?.id === assistant.id;
-
   const [edit, setEdit] = useState<boolean>(false);
   const { t } = useTranslation('common');
+  const logger = getLogger('AssistantCard');
 
   const handleEditComplete = useCallback(
     async (assistant: Assistant) => {
@@ -31,6 +33,15 @@ export default function AssistantCard({ assistant }: AssistantCardProps) {
     },
     [upsertAssistant],
   );
+
+  const handleCheckStatus = useCallback(async () => {
+    try {
+      logger.debug(`Checking MCP status for assistant: ${assistant.name}`);
+      await connectServersFromAssistant(assistant);
+    } catch (error) {
+      logger.error('Error checking server status:', error);
+    }
+  }, [assistant, connectServersFromAssistant, logger]);
 
   const handleDelete = async () => {
     if (assistant.isDefault) {
@@ -87,24 +98,36 @@ export default function AssistantCard({ assistant }: AssistantCardProps) {
           assistant.mcpServerIds &&
           assistant.mcpServerIds.length > 0 && (
             <div className="flex flex-wrap gap-1 mb-2">
-              {assistant.mcpServerIds.map((serverId) => (
-                <div
-                  key={serverId}
-                  className="flex items-center gap-1 text-xs px-1 py-0.5 rounded bg-muted"
-                >
-                  <StatusIndicator
-                    status={
-                      status[serverId] === true
-                        ? 'connected'
-                        : status[serverId] === false
-                          ? 'disconnected'
-                          : 'unknown'
-                    }
-                    size="sm"
-                  />
-                  <span className="text-foreground">{serverId}</span>
-                </div>
-              ))}
+              {assistant.mcpServerIds.map((serverId) => {
+                const serverMeta = serversById?.[serverId];
+                const serverName = serverMeta?.name ?? serverId;
+                // status 맵은 server name을 키로 사용 (serverId가 아님)
+                const isConnected = serverMeta?.name ? status[serverMeta.name] : undefined;
+                const version = serverMeta?.metadata?.version;
+                const description = serverMeta?.metadata?.description;
+                
+                return (
+                  <div
+                    key={serverId}
+                    className="flex items-center gap-1 text-xs px-1 py-0.5 rounded bg-muted"
+                    title={`Name: ${serverName}\nID: ${serverId}${version ? `\nVersion: ${version}` : ''}${description ? `\nDescription: ${description}` : ''}`}
+                  >
+                    <StatusIndicator
+                      status={
+                        isConnected === true
+                          ? 'connected'
+                          : isConnected === false
+                            ? 'disconnected'
+                            : 'unknown'
+                      }
+                      size="sm"
+                    />
+                    <span className="text-foreground truncate max-w-[120px]">
+                      {serverName}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           )}
 
@@ -112,10 +135,18 @@ export default function AssistantCard({ assistant }: AssistantCardProps) {
           <Button size="sm" variant="secondary" onClick={() => setEdit(true)}>
             {t('assistant.card.edit')}
           </Button>
-          <Button size="sm" variant="ghost" disabled={isCheckingStatus}>
-            {isCheckingStatus && isActive
-              ? t('assistant.card.checking')
-              : t('assistant.card.checkStatus')}
+          <Button 
+            size="sm" 
+            variant="ghost" 
+            onClick={handleCheckStatus}
+            disabled={isCheckingStatus}
+            title={isCheckingStatus ? t('assistant.card.checking') : t('assistant.card.checkStatus')}
+            className="gap-1"
+          >
+            {isCheckingStatus && (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            )}
+            {isCheckingStatus ? t('assistant.card.checking') : t('assistant.card.checkStatus')}
           </Button>
           <Button
             size="sm"
