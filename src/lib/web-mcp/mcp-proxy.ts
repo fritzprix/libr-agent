@@ -12,7 +12,11 @@ import {
   MCPTool,
   MCPResponse,
 } from '../mcp-types';
-import { ServiceContext, ServiceContextOptions } from '../../features/tools';
+import {
+  ServiceContext,
+  ServiceContextOptions,
+  ServiceMetadata,
+} from '../../features/tools';
 import { getLogger } from '../logger';
 
 const logger = getLogger('WebMCPProxy');
@@ -404,5 +408,41 @@ export class WebMCPProxy {
     });
     const result = this.parseResponse<{ success: boolean }>(response);
     return result || { success: false };
+  }
+
+  /**
+   * Gets metadata for a specific server within the worker.
+   * @param serverName The name of the server.
+   * @returns A promise that resolves to the server metadata.
+   */
+  async getMetadata(serverName: string): Promise<ServiceMetadata> {
+    const response = await this.sendMessage<MCPResponse<unknown>>({
+      type: 'getMetadata',
+      serverName,
+    });
+    return this.parseResponse<ServiceMetadata>(response);
+  }
+
+  /**
+   * Lists all available servers with their metadata.
+   * @returns A promise that resolves to an array of server info with metadata.
+   */
+  async listAvailableServers(): Promise<
+    Array<{
+      name: string;
+      metadata: ServiceMetadata;
+      toolCount: number;
+    }>
+  > {
+    const response = await this.sendMessage<MCPResponse<unknown>>({
+      type: 'listServers',
+    });
+    return this.parseResponse<
+      Array<{
+        name: string;
+        metadata: ServiceMetadata;
+        toolCount: number;
+      }>
+    >(response);
   }
 }

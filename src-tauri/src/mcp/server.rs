@@ -14,8 +14,8 @@ use uuid::Uuid;
 
 use crate::mcp::schema::JSONSchemaType;
 use crate::mcp::types::{
-    MCPConnection, MCPError, MCPResponse, MCPServerConfig, MCPServerConfigV2, MCPTool,
-    SamplingRequest, ServiceContext, ServiceContextOptions, TransportConfig,
+    BuiltinServerInfo, MCPConnection, MCPError, MCPResponse, MCPServerConfig, MCPServerConfigV2,
+    MCPTool, SamplingRequest, ServiceContext, ServiceContextOptions, TransportConfig,
 };
 use crate::session::SessionManager;
 
@@ -687,6 +687,31 @@ impl MCPServerManager {
         let servers = self.builtin_servers.lock().await;
         match servers.as_ref() {
             Some(registry) => registry.list_tools_for_server(server_name),
+            None => Vec::new(),
+        }
+    }
+
+    /// Lists all built-in servers with their metadata.
+    ///
+    /// # Returns
+    /// A vector of `BuiltinServerInfo` containing server names, metadata, and tool counts.
+    pub async fn list_builtin_servers_with_metadata(&self) -> Vec<BuiltinServerInfo> {
+        let servers = self.builtin_servers.lock().await;
+        match servers.as_ref() {
+            Some(registry) => registry
+                .list_servers()
+                .into_iter()
+                .filter_map(|name| {
+                    registry.get_server(&name).map(|server| {
+                        let tools = server.tools();
+                        BuiltinServerInfo {
+                            name: server.name().to_string(),
+                            metadata: server.metadata(),
+                            tool_count: tools.len(),
+                        }
+                    })
+                })
+                .collect(),
             None => Vec::new(),
         }
     }

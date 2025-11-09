@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getLogger } from '@/lib/logger';
 import { MCPResponse, WebMCPServerState } from '@/lib/mcp-types';
 import { ToolCall } from '@/models/chat';
@@ -7,6 +7,7 @@ import {
   useBuiltInTool,
   ServiceContextOptions,
   ServiceContext,
+  ServiceMetadata,
 } from '.';
 import { useWebMCP } from '@/context/WebMCPContext';
 
@@ -22,6 +23,39 @@ export function WebMCPServiceRegistry({
   const serverStatesRef = useRef<Record<string, WebMCPServerState>>({});
   const { proxy, isLoading, initialized, getServerProxy } = useWebMCP();
   const { register, unregister } = useBuiltInTool();
+  const [serverMetadata, setServerMetadata] = useState<
+    Record<string, ServiceMetadata>
+  >({});
+
+  // Load metadata from worker on initialization
+  useEffect(() => {
+    if (!initialized || !proxy) return;
+
+    const currentProxy = proxy; // Capture proxy to avoid null check issues
+
+    async function loadMetadata() {
+      try {
+        logger.debug('Loading server metadata from worker...');
+        const serverList = await currentProxy.listAvailableServers();
+        const metadataMap = serverList.reduce(
+          (acc, server) => {
+            acc[server.name] = server.metadata;
+            return acc;
+          },
+          {} as Record<string, ServiceMetadata>,
+        );
+        setServerMetadata(metadataMap);
+        logger.info('Server metadata loaded', {
+          serverCount: serverList.length,
+          servers: serverList.map((s) => s.name),
+        });
+      } catch (error) {
+        logger.error('Failed to load server metadata', error);
+      }
+    }
+
+    loadMetadata();
+  }, [initialized, proxy]);
 
   // Load a specific MCP server
   const loadServer = useCallback(
@@ -112,82 +146,32 @@ export function WebMCPServiceRegistry({
     if (isLoading || !initialized) {
       return {};
     }
-    return servers.reduce<Record<string, BuiltInService>>((acc, s) => {
-      // Determine metadata based on server name
-      let metadata: {
-        displayName: string;
-        description: string;
-        category: 'automation' | 'storage' | 'planning' | 'execution';
-      } = {
-        displayName: s,
-        description: `Web MCP server: ${s}`,
+    return servers.reduce<Record<string, BuiltInService>>((acc, serverName) => {
+      // Get metadata from state or use default
+      const metadata: ServiceMetadata = serverMetadata[serverName] || {
+        displayName: serverName,
+        description: `Web MCP server: ${serverName}`,
         category: 'automation',
       };
 
-      // Override metadata for known servers
-      if (s === 'content_store') {
-        metadata = {
-          displayName: 'Content Store',
-          description: 'File storage, search, BM25 indexing',
-          category: 'storage',
-        };
-      } else if (s === 'workspace') {
-        metadata = {
-          displayName: 'Workspace',
-          description: 'File read/write, code execution, search',
-          category: 'storage',
-        };
-      } else if (s === 'planning') {
-        metadata = {
-          displayName: 'Task Planning',
-          description: 'Goal setting, task planning',
-          category: 'planning',
-        };
-      } else if (s === 'playbook') {
-        metadata = {
-          displayName: 'Playbook',
-          description: 'Workflow creation and execution',
-          category: 'execution',
-        };
-      } else if (s === 'mcp_manager') {
-        metadata = {
-          displayName: 'MCP Server Manager',
-          description: 'Create, search, and manage MCP server configurations',
-          category: 'automation',
-        };
-      } else if (s === 'ui') {
-        metadata = {
-          displayName: 'UI Tools',
-          description: 'User interaction and data visualization',
-          category: 'automation',
-        };
-      } else if (s === 'bootstrap') {
-        metadata = {
-          displayName: 'Bootstrap',
-          description: 'Platform detection and environment setup',
-          category: 'automation',
-        };
-      }
-
-      acc[s] = {
+      acc[serverName] = {
         metadata,
-        executeTool: (tc) => executeTool(s, tc),
-        listTools: () => serverStatesRef.current[s]?.tools || [],
+        executeTool: (tc) => executeTool(serverName, tc),
+        listTools: () => serverStatesRef.current[serverName]?.tools || [],
         unloadService: async () => {},
-        loadService: async () => loadServer(s),
+        loadService: async () => loadServer(serverName),
         getServiceContext: async (
           options?: ServiceContextOptions,
         ): Promise<ServiceContext<unknown>> => {
           if (!proxy) {
             return { contextPrompt: '', structuredState: undefined };
           }
-          return await proxy.getServiceContext(s, options);
+          return await proxy.getServiceContext(serverName, options);
         },
         switchContext: async (options?: ServiceContextOptions) => {
           if (proxy && proxy.switchContext) {
-            // switchContext로 통합
             await proxy.switchContext(
-              s,
+              serverName,
               (options || {}) as ServiceContextOptions,
             );
           }
@@ -195,7 +179,15 @@ export function WebMCPServiceRegistry({
       };
       return acc;
     }, {});
-  }, [servers, executeTool, loadServer, isLoading, initialized, proxy]);
+  }, [
+    servers,
+    executeTool,
+    loadServer,
+    isLoading,
+    initialized,
+    proxy,
+    serverMetadata,
+  ]);
 
   // Register services with BuiltInToolProvider
   useEffect(() => {

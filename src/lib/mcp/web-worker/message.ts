@@ -18,7 +18,9 @@ export interface WebMCPMessage {
     | 'sampleText'
     | 'getServiceContext'
     | 'setContext'
-    | 'switchContext';
+    | 'switchContext'
+    | 'getMetadata'
+    | 'listServers';
   /** The name of the server, for loading specific servers. */
   serverName?: string;
   /** The name of the tool to call. */
