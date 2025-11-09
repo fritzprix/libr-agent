@@ -18,12 +18,14 @@ import {
 import LocalServicesEditor from './LocalServicesEditor';
 import BuiltInToolsEditor from './BuiltInToolsEditor';
 import { useMCPServerRegistry } from '@/context/MCPServerRegistryContext';
-import { Link } from 'react-router';
+import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 
 export default function AssistantEditor() {
   const { draft, update } = useEditor<Assistant>();
   const { activeServers } = useMCPServerRegistry();
   const [searchQuery, setSearchQuery] = useState('');
+  const { t } = useTranslation('common');
 
   const filteredServers = activeServers.filter(
     (s) =>
@@ -52,25 +54,25 @@ export default function AssistantEditor() {
       <div className="p-4">
         <div className="space-y-4">
           <InputWithLabel
-            label="Assistant Name *"
+            label={t('assistant.nameLabel')}
             value={draft?.name || ''}
             onChange={(e) =>
               update((draft) => {
                 draft.name = e.target.value;
               })
             }
-            placeholder="Enter assistant name..."
+            placeholder={t('assistant.namePlaceholder')}
           />
 
           <TextareaWithLabel
-            label="System Prompt *"
+            label={t('assistant.systemPromptLabel')}
             value={draft?.systemPrompt || ''}
             onChange={(e) =>
               update((draft) => {
                 draft.systemPrompt = e.target.value;
               })
             }
-            placeholder="Describe the AI's role and behavior..."
+            placeholder={t('assistant.systemPromptPlaceholder')}
             className="h-32"
           />
 
@@ -80,19 +82,19 @@ export default function AssistantEditor() {
 
           {/* MCP Server Selection UI */}
           <div className="space-y-2">
-            <Label>MCP Servers</Label>
+            <Label>{t('assistant.mcp.label', 'MCP Servers')}</Label>
 
             {activeServers.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                No active MCP servers.{' '}
+                {t('assistant.mcp.noActive')}{' '}
                 <Link to="/settings" className="underline">
-                  Add servers in Settings
+                  {t('assistant.mcp.addServersLink')}
                 </Link>
               </p>
             ) : (
               <>
                 <Input
-                  placeholder="Search servers..."
+                  placeholder={t('assistant.mcp.searchPlaceholder')}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="mb-2"
@@ -101,7 +103,7 @@ export default function AssistantEditor() {
                 <div className="max-h-64 overflow-y-auto border rounded-md p-2 space-y-2">
                   {filteredServers.length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-4">
-                      No servers match your search
+                      {t('assistant.mcp.noMatch')}
                     </p>
                   ) : (
                     filteredServers.map((server) => (
@@ -130,9 +132,9 @@ export default function AssistantEditor() {
                           )}
                           <div className="text-xs text-muted-foreground mt-0.5">
                             {server.transport.type === 'stdio' &&
-                              `stdio: ${server.transport.command}`}
+                              `${t('assistant.mcp.transport.stdio', 'stdio')}: ${server.transport.command}`}
                             {server.transport.type === 'http' &&
-                              `http: ${server.transport.url}`}
+                              `${t('assistant.mcp.transport.http', 'http')}: ${server.transport.url}`}
                           </div>
                         </label>
                       </div>
@@ -150,6 +152,7 @@ export default function AssistantEditor() {
 
 function AssistantDialog(props: DialogProps) {
   const { draft, commit } = useEditor<Assistant>();
+  const { t } = useTranslation('common');
 
   const handleSave = () => {
     commit();
@@ -164,7 +167,9 @@ function AssistantDialog(props: DialogProps) {
       <DialogContent className="max-w-2xl max-h-[85vh] p-0 flex flex-col overflow-hidden">
         <DialogHeader className="flex-shrink-0 p-4 border-b">
           <DialogTitle>
-            {draft.id ? '어시스턴트 편집' : '새 어시스턴트 만들기'}
+            {draft.id
+              ? t('assistant.edit.titleEdit')
+              : t('assistant.edit.titleNew')}
           </DialogTitle>
           <DialogDescription className="sr-only">
             Configure assistant settings, system prompt, and available tools
@@ -175,10 +180,10 @@ function AssistantDialog(props: DialogProps) {
         </div>
         <div className="flex-shrink-0 flex justify-end gap-2 p-4 border-t">
           <Button variant="outline" onClick={handleCancel}>
-            취소
+            {t('assistant.edit.cancel')}
           </Button>
           <Button variant="default" onClick={handleSave}>
-            저장
+            {t('assistant.edit.save')}
           </Button>
         </div>
       </DialogContent>

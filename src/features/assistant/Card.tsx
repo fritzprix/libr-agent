@@ -5,6 +5,7 @@ import { Assistant } from '../../models/chat';
 import { Badge, Button, StatusIndicator } from '@/components/ui';
 import { EditorProvider } from '@/context/EditorContext';
 import AssistantEditor from './AssistantEditor';
+import { useTranslation } from 'react-i18next';
 
 interface AssistantCardProps {
   assistant: Assistant;
@@ -22,6 +23,7 @@ export default function AssistantCard({ assistant }: AssistantCardProps) {
   const isActive = currentAssistant?.id === assistant.id;
 
   const [edit, setEdit] = useState<boolean>(false);
+  const { t } = useTranslation('common');
 
   const handleEditComplete = useCallback(
     async (assistant: Assistant) => {
@@ -32,7 +34,7 @@ export default function AssistantCard({ assistant }: AssistantCardProps) {
 
   const handleDelete = async () => {
     if (assistant.isDefault) {
-      alert('기본 어시스턴트는 삭제할 수 없습니다.');
+      alert(t('assistant.card.deleteBlocked'));
       return;
     }
 
@@ -59,9 +61,11 @@ export default function AssistantCard({ assistant }: AssistantCardProps) {
           <h3 className="text-primary font-medium">{assistant.name}</h3>
           <div className="flex gap-1 flex-wrap">
             {assistant.isDefault && (
-              <Badge variant="destructive">DEFAULT</Badge>
+              <Badge variant="destructive">{t('assistant.card.default')}</Badge>
             )}
-            {isActive && <Badge variant="default">ACTIVE</Badge>}
+            {isActive && (
+              <Badge variant="default">{t('assistant.card.active')}</Badge>
+            )}
           </div>
         </div>
 
@@ -70,8 +74,13 @@ export default function AssistantCard({ assistant }: AssistantCardProps) {
         </p>
 
         <div className="text-xs text-muted-foreground mb-2">
-          MCP 서버: {assistant.mcpServerIds?.length || 0}
-          개, 로컬 서비스: {assistant.localServices?.length || 0}개
+          {t('assistant.card.mcpCount', {
+            count: assistant.mcpServerIds?.length || 0,
+          })}
+          {', '}
+          {t('assistant.card.localServiceCount', {
+            count: assistant.localServices?.length || 0,
+          })}
         </div>
 
         {isActive &&
@@ -101,10 +110,12 @@ export default function AssistantCard({ assistant }: AssistantCardProps) {
 
         <div className="flex flex-wrap gap-2">
           <Button size="sm" variant="secondary" onClick={() => setEdit(true)}>
-            편집
+            {t('assistant.card.edit')}
           </Button>
           <Button size="sm" variant="ghost" disabled={isCheckingStatus}>
-            {isCheckingStatus && isActive ? '확인중...' : '상태확인'}
+            {isCheckingStatus && isActive
+              ? t('assistant.card.checking')
+              : t('assistant.card.checkStatus')}
           </Button>
           <Button
             size="sm"
@@ -112,11 +123,13 @@ export default function AssistantCard({ assistant }: AssistantCardProps) {
             onClick={handleDelete}
             title={
               assistant.isDefault
-                ? '기본 어시스턴트는 삭제할 수 없습니다.'
-                : '어시스턴트 삭제'
+                ? t('assistant.card.deleteBlocked')
+                : t('assistant.card.deleteConfirmTitle')
             }
           >
-            {isDeleting ? '삭제중...' : '삭제'}
+            {isDeleting
+              ? t('assistant.card.deleting')
+              : t('assistant.card.delete')}
           </Button>
         </div>
       </div>

@@ -2,6 +2,8 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AIServiceProvider } from '@/lib/ai-service';
 import { useSettings } from '@/hooks/use-settings';
+import { useTranslation } from 'react-i18next';
+import i18n from '@/lib/i18n';
 import type { ServiceConfig } from '@/context/SettingsContext';
 import {
   Button,
@@ -129,9 +131,10 @@ const ProviderCard = React.memo(ProviderCardBase, (prev, next) => {
 export default function SettingsPage() {
   const navigate = useNavigate();
   const {
-    value: { serviceConfigs, windowSize },
+    value: { serviceConfigs, windowSize, uiLanguage },
     update,
   } = useSettings();
+  const { t } = useTranslation('common');
 
   // pending updates are collected here without causing re-renders
   const pendingRef = useRef<Partial<Record<AIServiceProvider, ServiceConfig>>>(
@@ -190,18 +193,20 @@ export default function SettingsPage() {
   return (
     <div className="p-6 text-gray-300 min-h-screen">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl text-foreground font-semibold">Settings</h1>
+        <h1 className="text-2xl text-foreground font-semibold">
+          {t('settings.title', 'Settings')}
+        </h1>
         <div className="flex items-center gap-3">
           {pendingCount > 0 && (
             <span className="text-sm text-yellow-400">
-              Unsaved ({pendingCount})
+              {t('settings.unsaved', 'Unsaved')} ({pendingCount})
             </span>
           )}
           <Button onClick={() => navigate(-1)} variant="ghost">
-            Close
+            {t('common.close', 'Close')}
           </Button>
           <Button onClick={flushPending} disabled={pendingCount === 0}>
-            Apply Changes
+            {t('settings.applyChanges', 'Apply Changes')}
           </Button>
         </div>
       </div>
@@ -209,12 +214,21 @@ export default function SettingsPage() {
       <div className="max-w-5xl">
         <Tabs defaultValue="api-key" className="flex flex-col">
           <TabsList className="flex gap-2 overflow-x-auto mb-4">
-            <TabsTrigger value="api-key">API Key Settings</TabsTrigger>
-            <TabsTrigger value="mcp-servers">MCP Servers</TabsTrigger>
-            <TabsTrigger value="conversation-model">
-              Conversation & Model Preferences
+            <TabsTrigger value="api-key">
+              {t('settings.tabs.apiKey', 'API Key Settings')}
             </TabsTrigger>
-            <TabsTrigger value="data-reset">Data & Reset</TabsTrigger>
+            <TabsTrigger value="mcp-servers">
+              {t('settings.tabs.mcpServers', 'MCP Servers')}
+            </TabsTrigger>
+            <TabsTrigger value="conversation-model">
+              {t(
+                'settings.tabs.conversationModel',
+                'Conversation & Model Preferences',
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="data-reset">
+              {t('settings.tabs.dataReset', 'Data & Reset')}
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="api-key">
@@ -245,7 +259,7 @@ export default function SettingsPage() {
             <div className="space-y-6">
               <div className="min-w-0">
                 <label className="block text-muted-foreground mb-2 font-medium">
-                  Message Window Size
+                  {t('settings.messageWindowSize', 'Message Window Size')}
                 </label>
                 <Input
                   type="number"
@@ -260,9 +274,33 @@ export default function SettingsPage() {
 
               <div className="min-w-0">
                 <label className="block text-muted-foreground mb-2 font-medium">
-                  LLM Preference
+                  {t('settings.llmPreference', 'LLM Preference')}
                 </label>
                 <TerminalModelPicker />
+              </div>
+
+              <div className="min-w-0">
+                <label className="block text-muted-foreground mb-2 font-medium">
+                  {t('settings.language.label', 'Language')}
+                </label>
+                <div className="flex gap-3 items-center">
+                  <select
+                    className="bg-background border text-foreground rounded px-2 py-1"
+                    value={uiLanguage}
+                    onChange={(e) => {
+                      const lng = e.target.value;
+                      i18n.changeLanguage(lng);
+                      update({ uiLanguage: lng });
+                    }}
+                  >
+                    <option value="en">
+                      {t('settings.language.english', 'English')}
+                    </option>
+                    <option value="ko">
+                      {t('settings.language.korean', 'Korean')}
+                    </option>
+                  </select>
+                </div>
               </div>
             </div>
           </TabsContent>
@@ -272,15 +310,15 @@ export default function SettingsPage() {
               <Card className="bg-background border shadow-sm">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-foreground text-base font-medium">
-                    Data & Reset
+                    {t('settings.dataReset.title', 'Data & Reset')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <p className="text-sm text-muted-foreground">
-                    This will permanently delete all local sessions, their
-                    messages, and workspace file stores from the local database
-                    and native workspace directories. This action is destructive
-                    and cannot be undone.
+                    {t(
+                      'settings.dataReset.description',
+                      'This will permanently delete all local sessions, their messages, and workspace file stores from the local database and native workspace directories. This action is destructive and cannot be undone.',
+                    )}
                   </p>
                   <div className="flex items-center justify-left pt-4 gap-x-2">
                     <>
@@ -296,7 +334,12 @@ export default function SettingsPage() {
                           setConfirmOpen(true);
                         }}
                       >
-                        <span>Clear All Sessions, Messages & Workspace</span>
+                        <span>
+                          {t(
+                            'settings.dataReset.clearAll',
+                            'Clear All Sessions, Messages & Workspace',
+                          )}
+                        </span>
                       </Button>
                       {isDeleting && (
                         <>
@@ -310,18 +353,22 @@ export default function SettingsPage() {
                         <AlertDialogContent>
                           <AlertDialogHeader>
                             <AlertDialogTitle>
-                              Delete All Sessions, Messages & Workspace
+                              {t(
+                                'settings.dataReset.confirmTitle',
+                                'Delete All Sessions, Messages & Workspace',
+                              )}
                             </AlertDialogTitle>
                             <AlertDialogDescription>
-                              This will permanently delete all local sessions,
-                              their messages, and workspace file stores from the
-                              local database and native workspace directories.
-                              This action cannot be undone. Are you sure you
-                              want to continue?
+                              {t(
+                                'settings.dataReset.confirmDescription',
+                                'This will permanently delete all local sessions, their messages, and workspace file stores from the local database and native workspace directories. This action cannot be undone. Are you sure you want to continue?',
+                              )}
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogCancel>
+                              {t('common.cancel', 'Cancel')}
+                            </AlertDialogCancel>
                             <AlertDialogAction
                               onClick={async () => {
                                 setConfirmOpen(false);
@@ -329,19 +376,25 @@ export default function SettingsPage() {
                                 try {
                                   await sessionCtx.clearAllSessions();
                                   toast.success(
-                                    'All sessions, messages and workspace files have been successfully deleted.',
+                                    t(
+                                      'settings.dataReset.success',
+                                      'All sessions, messages and workspace files have been successfully deleted.',
+                                    ),
                                   );
                                 } catch (e) {
                                   logger.error('Failed to clear sessions', e);
                                   toast.error(
-                                    'Failed to clear sessions. See logs for details.',
+                                    t(
+                                      'settings.dataReset.error',
+                                      'Failed to clear sessions. See logs for details.',
+                                    ),
                                   );
                                 } finally {
                                   setIsDeleting(false);
                                 }
                               }}
                             >
-                              Delete
+                              {t('common.delete', 'Delete')}
                             </AlertDialogAction>
                           </AlertDialogFooter>
                         </AlertDialogContent>
