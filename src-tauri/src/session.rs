@@ -48,7 +48,7 @@ impl SessionManager {
     pub fn new() -> Result<Self, String> {
         let base_data_dir = dirs::data_dir()
             .ok_or_else(|| "Failed to get system data directory".to_string())?
-            .join("com.fritzprix.synapticflow");
+            .join("com.fritzprix.libragent");
 
         // Create base directory structure
         fs::create_dir_all(base_data_dir.join("workspaces"))
@@ -680,7 +680,7 @@ pub fn get_session_manager() -> Result<&'static SessionManager, String> {
         SessionManager::new().unwrap_or_else(|e| {
             error!("Failed to initialize SessionManager: {e}");
             // Create fallback session manager with temp directory
-            let temp_base = std::env::temp_dir().join("com.fritzprix.synapticflow");
+            let temp_base = std::env::temp_dir().join("com.fritzprix.libragent");
             let _ = std::fs::create_dir_all(temp_base.join("workspaces").join("default"));
             let _ = std::fs::create_dir_all(temp_base.join("workspaces").join("templates"));
             let _ = std::fs::create_dir_all(temp_base.join("logs"));

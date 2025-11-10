@@ -1,0 +1,50 @@
+{
+  "assistant": {
+    "nameLabel": "Assistant Name *",
+    "namePlaceholder": "Enter assistant name...",
+    "systemPromptLabel": "System Prompt *",
+    "systemPromptPlaceholder": "Describe the AI's role and behavior...",
+    "mcp": {
+      "label": "MCP Servers",
+      "noActive": "No active MCP servers.",
+      "addServersLink": "Add servers in Settings",
+      "searchPlaceholder": "Search servers...",
+      "noMatch": "No servers match your search",
+      "transport": {
+        "stdio": "stdio",
+        "http": "http"
+      }
+    },
+    "edit": {
+      "titleNew": "Create New Assistant",
+      "titleEdit": "Edit Assistant",
+      "cancel": "Cancel",
+      "save": "Save"
+    },
+    "card": {
+      "default": "DEFAULT",
+      "active": "ACTIVE",
+      "mcpCount": "MCP Servers: {{count}}",
+      "localServiceCount": "Local Services: {{count}}",
+      "edit": "Edit",
+      "checkStatus": "Check Status",
+      "checking": "Checking...",
+      "delete": "Delete",
+      "deleting": "Deleting...",
+      "deleteBlocked": "Default assistant cannot be deleted.",
+      "deleteConfirmTitle": "Delete Assistant"
+    }
+  },
+  "status": {
+    "connected": "connected",
+    "disconnected": "disconnected",
+    "unknown": "unknown"
+  },
+  "settings": {
+    "language": {
+      "label": "Language",
+      "english": "English",
+      "korean": "Korean"
+    }
+  }
+}

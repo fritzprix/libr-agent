@@ -157,10 +157,49 @@ export function toValidJsName(name: string): string {
  * Extracts the service alias from a built-in tool name.
  * Built-in tools follow the format: `builtin_<alias>__<toolname>`
  *
- * @param toolName The tool name to extract the alias from (e.g., "builtin_browser__clickElement")
- * @returns The service alias (e.g., "browser") or null if the tool name doesn't match the pattern
+ * IMPORTANT: Service aliases (names) can contain single underscores (e.g., `mcp_manager`, `content_store`)
+ * but MUST NOT contain double underscores (`__`) as that is the delimiter between alias and tool name.
+ *
+ * Examples:
+ * - `builtin_browser__clickElement` → `browser`
+ * - `builtin_mcp_manager__list_servers` → `mcp_manager`
+ * - `builtin_a_b_c__tool` → `a_b_c` (multiple underscores OK)
+ * - `builtin_a__b__tool` → `a` (stops at first `__`, so `a__b` is INVALID service name)
+ *
+ * @param toolName The tool name to extract the alias from
+ * @returns The service alias or null if the tool name doesn't match the pattern
  */
 export function extractBuiltInServiceAlias(toolName: string): string | null {
-  const match = toolName.match(/^builtin_([^_]+)__/);
+  // Match everything between 'builtin_' and '__' (non-greedy, including underscores)
+  // Uses .+? (non-greedy) to stop at the first occurrence of '__'
+  const match = toolName.match(/^builtin_(.+?)__/);
   return match ? match[1] : null;
+}
+
+/**
+ * Validates a service alias (name) for use in built-in tool naming.
+ *
+ * Valid service names:
+ * - Must not be empty
+ * - Must not contain double underscores (`__`)
+ * - Should use snake_case convention
+ * - Can contain single underscores (e.g., `mcp_manager`, `content_store`)
+ *
+ * @param serviceAlias The service alias to validate
+ * @returns true if valid, false otherwise
+ */
+export function isValidServiceAlias(serviceAlias: string): boolean {
+  if (!serviceAlias || serviceAlias.trim().length === 0) {
+    return false;
+  }
+
+  // Check for double underscores (reserved as delimiter)
+  if (serviceAlias.includes('__')) {
+    return false;
+  }
+
+  // Optional: Check for valid characters (alphanumeric and single underscore)
+  // This allows names like: browser, mcp_manager, content_store, a_b_c_d
+  const validPattern = /^[a-z0-9]+(_[a-z0-9]+)*$/i;
+  return validPattern.test(serviceAlias);
 }

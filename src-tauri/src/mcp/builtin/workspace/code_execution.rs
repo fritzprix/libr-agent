@@ -443,24 +443,16 @@ impl WorkspaceServer {
     fn normalize_shell_command(raw_command: &str) -> String {
         #[cfg(windows)]
         {
-            // Windows cmd.exe has special quoting rules:
-            // 1. Use double quotes for arguments with spaces
-            // 2. Escape double quotes inside quoted strings with backslash
-            // 3. For cmd /S /C, the entire command should work as-is in most cases
-            //    because /S preserves quotes properly
+            // Windows: Convert single quotes to double quotes
+            // PowerShell handles double quotes properly, and it's the preferred
+            // shell for modern Windows systems
+            let normalized = raw_command.replace('\'', "\"");
 
-            // For now, return the command as-is since we're using /S /C
-            // which handles quotes more reliably than /C alone
-            // If we detect unbalanced quotes, try to fix them
-            let double_quote_count = raw_command.chars().filter(|&c| c == '"').count();
-
-            if double_quote_count % 2 != 0 {
-                // Odd number of quotes - add closing quote at the end
-                info!("Windows command: Added missing double quote");
-                format!("{raw_command}\"")
-            } else {
-                raw_command.to_string()
-            }
+            info!(
+                "Windows command normalized: {} -> {}",
+                raw_command, normalized
+            );
+            normalized
         }
 
         #[cfg(not(windows))]
@@ -564,7 +556,7 @@ impl WorkspaceServer {
                 request_id,
                 -32603,
                 &format!(
-                    "Sync mode supports a maximum timeout of {sync_max} seconds.\nFor longer-running commands, set \"run_mode\" to \"async\" so the command runs in background and can be polled.\nYou can adjust the default via the SYNAPTICFLOW_DEFAULT_EXECUTION_TIMEOUT environment variable.",
+                    "Sync mode supports a maximum timeout of {sync_max} seconds.\nFor longer-running commands, set \"run_mode\" to \"async\" so the command runs in background and can be polled.\nYou can adjust the default via the LIBRAGENT_DEFAULT_EXECUTION_TIMEOUT environment variable.",
                 ),
             );
         }

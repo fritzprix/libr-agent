@@ -321,9 +321,9 @@ async function getPlaybooksWithUI(
 
 const playbookStore: WebMCPServer = {
   name: 'playbook',
+  displayName: 'Playbook',
+  description: 'Workflow creation and execution',
   version: '0.1.1',
-  description:
-    'Persisted playbook store for agent workflows (create/list/show/navigate/update/delete)',
   tools,
   async callTool(name: string, args: unknown): Promise<MCPResponse<unknown>> {
     const a = (args || {}) as Record<string, unknown>;

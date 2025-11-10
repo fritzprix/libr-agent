@@ -6,9 +6,11 @@ param(
 )
 
 # Get default log path based on Windows Tauri log plugin implementation
+# Using LibrAgent project name for consistency across all paths
+# Note: Windows uses LocalAppData, not AppData\Roaming
 function Get-DefaultLogPath {
-    $appDataPath = [Environment]::GetFolderPath('ApplicationData')
-    return Join-Path $appDataPath "com.fritzprix.libragent\logs\libragent.log"
+    $localAppData = [Environment]::GetFolderPath('LocalApplicationData')
+    return Join-Path $localAppData "com.fritzprix.libragent\logs\libragent.log"
 }
 
 # Set source log path

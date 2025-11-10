@@ -2,9 +2,12 @@ import { attachConsole } from '@tauri-apps/plugin-log';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
-import { BrowserRouter } from 'react-router';
+// i18n side-effect initialization (must come before components using useTranslation)
+import '@/lib/i18n';
+import { BrowserRouter } from 'react-router-dom';
 import { ThemeProvider } from 'next-themes';
 import { logUtils } from '@/lib/logger';
+import ErrorBoundary from '@/components/common/ErrorBoundary';
 
 // Initialize Tauri logger
 attachConsole().catch(console.error);
@@ -17,7 +20,9 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
     <BrowserRouter>
       <ThemeProvider attribute="class" defaultTheme="dark">
-        <App />
+        <ErrorBoundary>
+          <App />
+        </ErrorBoundary>
       </ThemeProvider>
     </BrowserRouter>
   </React.StrictMode>,

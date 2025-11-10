@@ -21,9 +21,10 @@ use commands::mcp_commands::{
     call_builtin_tool, call_mcp_tool, call_tool_unified, check_all_servers_status,
     check_server_status, complete_oauth_flow, get_connected_servers, get_oauth_token,
     get_service_context, get_validated_tools, has_oauth_token, list_all_tools,
-    list_all_tools_unified, list_builtin_servers, list_builtin_tools, list_mcp_tools,
-    list_tools_from_config, revoke_oauth_token, sample_from_mcp_server, start_mcp_server,
-    start_oauth_flow, stop_mcp_server, switch_context, validate_tool_schema,
+    list_all_tools_unified, list_builtin_servers, list_builtin_servers_with_metadata,
+    list_builtin_tools, list_mcp_tools, list_tools_from_config, revoke_oauth_token,
+    sample_from_mcp_server, start_mcp_server, start_oauth_flow, stop_mcp_server, switch_context,
+    validate_tool_schema,
 };
 use commands::messages_commands::{
     messages_delete, messages_delete_all_for_session, messages_get_page, messages_search,
@@ -60,7 +61,7 @@ pub use state::{
 pub fn run_with_sqlite_sync(db_url: String) {
     // Set the SQLite URL
     set_sqlite_db_url(db_url.clone());
-    println!("🔄 Initializing SynapticFlow with SQLite support: {db_url}");
+    println!("🔄 Initializing LibrAgent with SQLite support: {db_url}");
 
     // Create a Tokio runtime for async initialization
     let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
@@ -184,11 +185,11 @@ pub fn run() {
                     .targets([
                         Target::new(TargetKind::Stdout),
                         Target::new(TargetKind::LogDir {
-                            file_name: Some("synaptic-flow".to_string()),
+                            file_name: Some("libragent".to_string()),
                         }),
                         Target::new(TargetKind::Webview),
                     ])
-                    .level(log::LevelFilter::Info)
+                    .level(log::LevelFilter::Trace)
                     .build(),
             )
             .plugin(tauri_plugin_opener::init())
@@ -209,6 +210,7 @@ pub fn run() {
                 validate_tool_schema,
                 list_builtin_servers,
                 list_builtin_tools,
+                list_builtin_servers_with_metadata,
                 call_builtin_tool,
                 list_all_tools_unified,
                 call_tool_unified,
@@ -280,7 +282,7 @@ pub fn run() {
                 messages_search
             ])
             .setup(|app| {
-                println!("🚀 SynapticFlow initializing...");
+                println!("🚀 LibrAgent initializing...");
 
                 // Initialize SecureFileManager and add to managed state
                 let file_manager = SecureFileManager::new();
@@ -329,7 +331,7 @@ pub fn run() {
                     }
                 }
 
-                println!("✅ SynapticFlow setup completed successfully");
+                println!("✅ LibrAgent setup completed successfully");
                 Ok(())
             })
             .run(tauri::generate_context!())

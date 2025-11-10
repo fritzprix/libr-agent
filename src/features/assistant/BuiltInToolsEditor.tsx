@@ -5,6 +5,9 @@ import { useCallback, useMemo } from 'react';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { extractBuiltInServiceAlias } from '@/lib/utils';
+import { getLogger } from '@/lib/logger';
+
+const logger = getLogger('BuiltIn');
 
 interface BuiltInServiceInfo {
   alias: string;
@@ -23,11 +26,18 @@ export default function BuiltInToolsEditor() {
 
     availableTools.forEach((tool) => {
       const alias = extractBuiltInServiceAlias(tool.name);
-      if (!alias) return;
+
+      if (!alias) {
+        logger.warn("alias doesn't exist for ", { name: tool.name });
+        return;
+      }
 
       if (!serviceMap.has(alias)) {
-        // Get metadata from context
+        // Get metadata from context (runtime metadata from Web/Rust MCP providers)
         const metadata = getServiceMetadata(alias);
+        if (!metadata) {
+          logger.warn("metadata doesn't exist for service", { alias });
+        }
 
         serviceMap.set(alias, {
           alias,

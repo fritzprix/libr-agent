@@ -3,7 +3,12 @@ import { getLogger } from '@/lib/logger';
 import type { MCPTool, MCPResponse } from '@/lib/mcp-types';
 import { useEffect } from 'react';
 import { useAsyncFn } from 'react-use';
-import { useBuiltInTool, ServiceContextOptions, ServiceContext } from '.';
+import {
+  useBuiltInTool,
+  ServiceContextOptions,
+  ServiceContext,
+  ServiceMetadata,
+} from '.';
 
 const logger = getLogger('RustMCPToolProvider');
 
@@ -16,7 +21,7 @@ const logger = getLogger('RustMCPToolProvider');
 export function RustMCPToolProvider() {
   const { register, unregister } = useBuiltInTool();
   const {
-    listBuiltinServers,
+    listBuiltinServersWithMetadata,
     listBuiltinTools,
     callBuiltinTool,
     getServiceContext,
@@ -25,33 +30,49 @@ export function RustMCPToolProvider() {
 
   const [{ loading, value, error }, loadBuiltInServers] =
     useAsyncFn(async () => {
-      const servers = await listBuiltinServers();
+      logger.debug('Loading built-in servers with metadata from Rust backend');
 
-      const toolsByServer = await Promise.all(
-        servers.map(async (s) => ({
-          server: s,
-          tools: await listBuiltinTools(s),
+      // Use new API to get metadata in one call
+      const serverInfos = await listBuiltinServersWithMetadata();
+
+      // Load tools for each server
+      const serverData = await Promise.all(
+        serverInfos.map(async (info) => ({
+          name: info.name,
+          metadata: info.metadata,
+          tools: await listBuiltinTools(info.name),
         })),
       );
 
-      const serverTools: Record<string, MCPTool[]> = {};
-      for (const entry of toolsByServer) {
-        serverTools[entry.server] = entry.tools;
+      const serverMap: Record<
+        string,
+        { tools: MCPTool[]; metadata: ServiceMetadata }
+      > = {};
+      for (const data of serverData) {
+        serverMap[data.name] = {
+          tools: data.tools,
+          metadata: data.metadata,
+        };
       }
-      return serverTools;
-    }, [listBuiltinServers, listBuiltinTools]);
+
+      logger.info('Built-in servers loaded with metadata', {
+        serverCount: serverInfos.length,
+        servers: serverInfos.map((s) => ({
+          name: s.name,
+          displayName: s.metadata.displayName,
+        })),
+      });
+
+      return serverMap;
+    }, [listBuiltinServersWithMetadata, listBuiltinTools]);
 
   useEffect(() => {
     if (!loading && value) {
-      Object.entries(value).forEach(([serviceId, tools]) => {
+      Object.entries(value).forEach(([serviceId, { tools, metadata }]) => {
         const cachedTools = tools;
 
         register(serviceId, {
-          metadata: {
-            displayName: serviceId,
-            description: `Rust MCP server: ${serviceId}`,
-            category: 'automation',
-          },
+          metadata, // Use runtime metadata from Rust backend
           listTools: () => cachedTools,
           loadService: async () => {
             // no-op: preloaded

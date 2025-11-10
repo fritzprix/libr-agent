@@ -400,6 +400,35 @@ pub struct ServiceContext<T = serde_json::Value> {
 }
 
 // ========================================
+// Builtin Server Metadata (UI-facing)
+// ========================================
+
+/// UI metadata for builtin MCP servers (matches TypeScript ServiceMetadata interface)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BuiltinServerMetadata {
+    /// Human-friendly display name for the UI
+    pub display_name: String,
+    /// Description of what the server does
+    pub description: String,
+    /// Optional icon identifier
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+}
+
+/// Complete information about a builtin server including metadata
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BuiltinServerInfo {
+    /// Server identifier (e.g., "workspace", "contentstore")
+    pub name: String,
+    /// UI metadata
+    pub metadata: BuiltinServerMetadata,
+    /// Number of tools this server provides
+    pub tool_count: usize,
+}
+
+// ========================================
 // Unit Tests
 // ========================================
 

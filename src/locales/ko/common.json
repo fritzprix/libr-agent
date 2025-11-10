@@ -1,0 +1,50 @@
+{
+  "assistant": {
+    "nameLabel": "어시스턴트 이름 *",
+    "namePlaceholder": "어시스턴트 이름을 입력하세요...",
+    "systemPromptLabel": "시스템 프롬프트 *",
+    "systemPromptPlaceholder": "AI의 역할과 행동을 설명하세요...",
+    "mcp": {
+      "label": "MCP 서버",
+      "noActive": "활성화된 MCP 서버가 없습니다.",
+      "addServersLink": "설정에서 서버 추가",
+      "searchPlaceholder": "서버 검색...",
+      "noMatch": "검색과 일치하는 서버가 없습니다",
+      "transport": {
+        "stdio": "stdio",
+        "http": "http"
+      }
+    },
+    "edit": {
+      "titleNew": "새 어시스턴트 만들기",
+      "titleEdit": "어시스턴트 편집",
+      "cancel": "취소",
+      "save": "저장"
+    },
+    "card": {
+      "default": "기본",
+      "active": "활성",
+      "mcpCount": "MCP 서버: {{count}}개",
+      "localServiceCount": "로컬 서비스: {{count}}개",
+      "edit": "편집",
+      "checkStatus": "상태확인",
+      "checking": "확인중...",
+      "delete": "삭제",
+      "deleting": "삭제중...",
+      "deleteBlocked": "기본 어시스턴트는 삭제할 수 없습니다.",
+      "deleteConfirmTitle": "어시스턴트 삭제"
+    }
+  },
+  "status": {
+    "connected": "연결됨",
+    "disconnected": "연결해제",
+    "unknown": "알 수 없음"
+  },
+  "settings": {
+    "language": {
+      "label": "언어",
+      "english": "영어",
+      "korean": "한국어"
+    }
+  }
+}

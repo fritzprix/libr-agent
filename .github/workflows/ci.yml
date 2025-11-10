@@ -1,4 +1,4 @@
-name: 🚀 SynapticFlow CI/CD
+name: 🚀 LibrAgent CI/CD
 
 on:
   push:
@@ -147,7 +147,7 @@ jobs:
       - name: 📦 Upload build artifacts
         uses: actions/upload-artifact@v5
         with:
-          name: synapticflow-build-${{ matrix.os }}
+          name: libragent-build-${{ matrix.os }}
           path: |
             src-tauri/target/release/bundle/
           retention-days: 7

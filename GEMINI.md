@@ -161,6 +161,24 @@ For more details, refer to the [Copilot Instructions](.github/copilot-instructio
 3. **Validate Changes:** `pnpm refactor:validate` (run this before committing)
 4. **Build for Production:** `pnpm tauri build`
 
+### ⚠️ CRITICAL: Content Security Policy (CSP) Warning
+
+**DO NOT add CSP configuration to `tauri.conf.json`** for desktop applications:
+
+- CSP is designed for web browsers, not desktop environments
+- Tauri desktop apps using Web Workers and WASM require unrestricted access
+- Adding CSP will cause blank white screens in release builds due to Worker blob URL blocking
+- Dev mode has relaxed CSP enforcement, masking production issues
+- Industry-standard practice (validated against Jan project): No CSP in Tauri desktop apps
+- If security restrictions are absolutely necessary, use Tauri's native security features instead
+
+**Why this matters:**
+
+- Vite bundles Web Workers as blob URLs at runtime
+- CSP blocks blob: scheme by default, preventing Worker initialization
+- Release builds fail silently without proper logging configuration
+- Symptoms: Blank white screen on Windows, works fine in dev mode
+
 ## 7. References & Documentation
 
 - **Architecture:**
