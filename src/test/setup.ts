@@ -1,6 +1,8 @@
 import { expect, afterEach, vi } from 'vitest';
 import { cleanup } from '@testing-library/react';
 import * as matchers from '@testing-library/jest-dom/matchers';
+import 'fake-indexeddb/auto';
+import { IDBFactory } from 'fake-indexeddb';
 
 // Mock Tauri APIs for testing environment
 Object.defineProperty(window, '__TAURI_INTERNALS__', {
@@ -22,6 +24,14 @@ if (typeof CSS === 'undefined' || !CSS.escape) {
 expect.extend(matchers);
 
 // Clean up after each test
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  // Reset IndexedDB to ensure isolation between tests
+  // Delete all databases to ensure complete isolation
+  const databases = await indexedDB.databases();
+  for (const db of databases) {
+    if (db.name) {
+      indexedDB.deleteDatabase(db.name);
+    }
+  }
 });

@@ -44,9 +44,12 @@ export const createPage = <T>(
   }
 
   const totalPages = Math.ceil(totalItems / pageSize);
+  const start = (page - 1) * pageSize;
+  const end = start + pageSize;
+  const paginatedItems = items.slice(start, end);
 
   return {
-    items,
+    items: paginatedItems,
     page,
     pageSize,
     totalItems,

@@ -37,6 +37,17 @@ export class LocalDatabase extends Dexie {
     return LocalDatabase.instance;
   }
 
+  /**
+   * Resets the singleton instance. Used for testing purposes.
+   * WARNING: This should only be called in test environments.
+   */
+  public static resetInstance(): void {
+    if (LocalDatabase.instance) {
+      LocalDatabase.instance.close();
+      LocalDatabase.instance = null as unknown as LocalDatabase;
+    }
+  }
+
   assistants!: Table<Assistant, string>;
   mcpServers!: Table<MCPServerEntity, string>;
   objects!: Table<DatabaseObject<unknown>, string>;
