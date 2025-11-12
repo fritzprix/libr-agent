@@ -111,17 +111,6 @@ export const DEFAULT_MCP_CONFIG = {
   },
 };
 
-export function getDefaultAssistant(): Assistant {
-  return {
-    createdAt: new Date(),
-    name: 'Default Assistant',
-    isDefault: true,
-    mcpServerIds: [], // No servers by default - user selects from Settings
-    systemPrompt: DEFAULT_PROMPT,
-    updatedAt: new Date(),
-  };
-}
-
 export function getNewAssistantTemplate(): Assistant {
   return {
     name: 'New Assistant',
@@ -280,17 +269,13 @@ export const AssistantContextProvider = ({
 
   useEffect(() => {
     if (!loading && assistants && !currentAssistant) {
-      if (assistants.length === 0) {
-        // Create and save default assistant if none available
-        const a = getDefaultAssistant();
-        setCurrentAssistant(a);
-        upsertAssistant(a);
-      } else {
-        const a = assistants.find((a) => a.isDefault) || assistants[0];
+      // DB v2 migration ensures assistants exist, just select default or first
+      const a = assistants.find((a) => a.isDefault) || assistants[0];
+      if (a) {
         setCurrentAssistant(a);
       }
     }
-  }, [loading, assistants, currentAssistant, upsertAssistant]);
+  }, [loading, assistants, currentAssistant]);
 
   const getCurrent = useCallback(() => {
     return currentAssistantRef.current;

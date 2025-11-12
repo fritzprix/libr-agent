@@ -17,6 +17,7 @@ import {
   playbooksCRUD,
 } from './crud';
 import { removeSession as backendRemoveSession } from '@/lib/rust-backend-client';
+import { createId } from '@paralleldrive/cuid2';
 
 /**
  * A singleton class that extends Dexie to provide a local database service.
@@ -64,12 +65,8 @@ export class LocalDatabase extends Dexie {
   constructor() {
     super('MCPAgentDB');
 
-    // Consolidated schema (current version 1)
+    // Version 1: Initial consolidated schema
     // Historical versions (1-9) have been squashed into v1 for fresh installations
-    // - Basic assistants/objects with timestamps and indices
-    // - Sessions/messages support with threadId composite indices
-    // - Playbooks with agentId index
-    // - MCP servers table for centralized server management
     this.version(1).stores({
       assistants: '&id, createdAt, updatedAt, name',
       mcpServers: '&id, name, createdAt, updatedAt, isActive',
@@ -77,6 +74,70 @@ export class LocalDatabase extends Dexie {
       sessions: '&id, createdAt, updatedAt',
       messages: '&id, sessionId, [sessionId+threadId], createdAt',
       playbooks: '&id, agentId, createdAt, updatedAt, goal',
+    });
+
+    // Populate hook: Seed default assistants only on fresh DB creation
+    this.on('populate', async () => {
+      const now = new Date();
+
+      const bootstrapAssistant: Assistant = {
+        id: createId(),
+        name: 'Bootstrap Assistant',
+        systemPrompt:
+          'You are the Bootstrap Assistant for LibrAgent.\n' +
+          'Your job is to configure MCP servers and install required dependencies based on user requests.\n\n' +
+          'Workflow:\n' +
+          '1) When user provides MCP server configuration (command, args, env), add it to the backend MCP registry.\n' +
+          '2) Check if required dependencies exist (e.g., Node.js, npx, Python packages, or specific commands).\n' +
+          '3) If dependencies are missing, guide the user through installation:\n' +
+          '   - Use builtin_workspace__execute_shell (Unix) or builtin_workspace__execute_windows_cmd (Windows)\n' +
+          '   - Verify installation with version checks or test commands\n' +
+          '4) Test MCP server connectivity after installation using builtin_mcp_manager__get_server_info.\n' +
+          '5) Use planning tools to track installation steps (create_goal, add_todo, mark_todo).\n\n' +
+          'Rules:\n' +
+          '- Always ask for confirmation before executing system commands or installing packages.\n' +
+          "- Detect the user's platform (check environment or ask) to provide correct commands.\n" +
+          '- Provide clear error messages and troubleshooting steps if installation fails.\n' +
+          '- After successful setup, summarize what was installed and how to verify it.',
+        mcpServerIds: [],
+        isDefault: false,
+        localServices: [],
+        allowedBuiltInServiceAliases: ['mcp_manager', 'workspace', 'planning'],
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      const librAssistant: Assistant = {
+        id: createId(),
+        name: 'Libr Assistant',
+        systemPrompt:
+          'You are the Libr Assistant: a general-purpose knowledge and automation agent.\n' +
+          'Workflow:\n' +
+          '1) Analyze the request and set/maintain goals via planning tools (create_goal, add_todo, get_current_state).\n' +
+          '2) Prefer local knowledge first: query builtin_content_store__keywordSimilaritySearch and read with readContent.\n' +
+          '3) If missing, use builtin_workspace__read_file to search the workspace; with permission, use browser tools to gather web content, then add to content_store via addContent.\n' +
+          '4) Persist results to the workspace, cite sources (paths/URIs/URLs), and update planning state. Keep answers concise.\n' +
+          'Rules:\n' +
+          '- Ask before web browsing or executing commands.\n' +
+          '- Use minimal changes; confirm write paths.\n' +
+          '- Provide sources and next-step suggestions.',
+        mcpServerIds: [],
+        isDefault: true,
+        localServices: [],
+        allowedBuiltInServiceAliases: [
+          'contentstore',
+          'workspace',
+          'browser',
+          'planning',
+          'playbook',
+          'mcp_manager',
+          'ui',
+        ],
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      await this.assistants.bulkAdd([bootstrapAssistant, librAssistant]);
     });
   }
 }

@@ -2,7 +2,6 @@ import { expect, afterEach, vi } from 'vitest';
 import { cleanup } from '@testing-library/react';
 import * as matchers from '@testing-library/jest-dom/matchers';
 import 'fake-indexeddb/auto';
-import { IDBFactory } from 'fake-indexeddb';
 
 // Mock Tauri APIs for testing environment
 Object.defineProperty(window, '__TAURI_INTERNALS__', {

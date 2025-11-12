@@ -49,7 +49,9 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
   children,
 }) => {
   const [availableTools, setAvailableTools] = useState<MCPTool[]>([]);
-  const [serversById, setServersById] = useState<Record<string, MCPServerEntity>>({});
+  const [serversById, setServersById] = useState<
+    Record<string, MCPServerEntity>
+  >({});
   const toolsByServer = useRef<Record<string, MCPTool[]>>({});
   const aliasToIdTableRef = useRef<Map<string, string>>(new Map());
   const [serverStatus, setServerStatus] = useState<Record<string, boolean>>({});

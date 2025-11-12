@@ -515,9 +515,7 @@ async function connectServer(
 
   // Validate that at least one identifier is provided
   if (!input.serverId && !input.serverName) {
-    return createMCPTextResponse(
-      'Either serverId or serverName is required',
-    );
+    return createMCPTextResponse('Either serverId or serverName is required');
   }
 
   // Find server using helper
@@ -604,9 +602,7 @@ async function disconnectServer(
 
   // Validate that at least one identifier is provided
   if (!input.serverId && !input.serverName) {
-    return createMCPTextResponse(
-      'Either serverId or serverName is required',
-    );
+    return createMCPTextResponse('Either serverId or serverName is required');
   }
 
   // Find server using helper
