@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.2.0] - 2025-11-10
+
 ### Breaking Changes
 
 - **Platform-specific shell execution tool names**:
@@ -12,6 +14,12 @@ All notable changes to this project will be documented in this file.
   - This change improves tool naming clarity and prevents cross-platform confusion
   - Tool descriptions and examples are now platform-specific
   - **Migration**: Update any hardcoded tool name references from `execute_shell` to `execute_windows_cmd` on Windows
+
+### Highlights
+
+- Cross-platform build support with Windows target compilation from Linux
+- Enhanced release automation via GitHub Actions
+- Multi-platform binary distribution (Windows, macOS, Linux)
 
 ## [0.1.1] - 2025-10-11
 

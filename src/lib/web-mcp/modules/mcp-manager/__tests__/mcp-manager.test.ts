@@ -37,7 +37,11 @@ describe('MCP Manager Server', () => {
   let createdServerIds: string[] = [];
 
   beforeEach(async () => {
+    // Reset database instance to ensure complete isolation
+    LocalDatabase.resetInstance();
     db = LocalDatabase.getInstance();
+    // Clear all servers before each test to ensure isolation
+    await db.mcpServers.clear();
     createdServerIds = [];
     clearBM25Cache();
   });
@@ -51,6 +55,8 @@ describe('MCP Manager Server', () => {
         // Ignore if already deleted
       }
     }
+    // Clear all servers after each test to ensure isolation
+    await db.mcpServers.clear();
     createdServerIds = [];
     clearBM25Cache();
   });

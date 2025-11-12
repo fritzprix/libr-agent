@@ -20,7 +20,12 @@ export default function AssistantCard({ assistant }: AssistantCardProps) {
     deleteAssistant,
     saveAssistant: upsertAssistant,
   } = useAssistantContext();
-  const { status, isLoading: isCheckingStatus, serversById, connectServersFromAssistant } = useMCPServer();
+  const {
+    status,
+    isLoading: isCheckingStatus,
+    serversById,
+    connectServersFromAssistant,
+  } = useMCPServer();
   const [isDeleting, setIsDeleting] = useState(false);
   const isActive = currentAssistant?.id === assistant.id;
   const [edit, setEdit] = useState<boolean>(false);
@@ -102,10 +107,12 @@ export default function AssistantCard({ assistant }: AssistantCardProps) {
                 const serverMeta = serversById?.[serverId];
                 const serverName = serverMeta?.name ?? serverId;
                 // status 맵은 server name을 키로 사용 (serverId가 아님)
-                const isConnected = serverMeta?.name ? status[serverMeta.name] : undefined;
+                const isConnected = serverMeta?.name
+                  ? status[serverMeta.name]
+                  : undefined;
                 const version = serverMeta?.metadata?.version;
                 const description = serverMeta?.metadata?.description;
-                
+
                 return (
                   <div
                     key={serverId}
@@ -135,18 +142,22 @@ export default function AssistantCard({ assistant }: AssistantCardProps) {
           <Button size="sm" variant="secondary" onClick={() => setEdit(true)}>
             {t('assistant.card.edit')}
           </Button>
-          <Button 
-            size="sm" 
-            variant="ghost" 
+          <Button
+            size="sm"
+            variant="ghost"
             onClick={handleCheckStatus}
             disabled={isCheckingStatus}
-            title={isCheckingStatus ? t('assistant.card.checking') : t('assistant.card.checkStatus')}
+            title={
+              isCheckingStatus
+                ? t('assistant.card.checking')
+                : t('assistant.card.checkStatus')
+            }
             className="gap-1"
           >
-            {isCheckingStatus && (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            )}
-            {isCheckingStatus ? t('assistant.card.checking') : t('assistant.card.checkStatus')}
+            {isCheckingStatus && <Loader2 className="h-3 w-3 animate-spin" />}
+            {isCheckingStatus
+              ? t('assistant.card.checking')
+              : t('assistant.card.checkStatus')}
           </Button>
           <Button
             size="sm"

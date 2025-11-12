@@ -372,7 +372,12 @@ async function searchServer(
   const queryTokens = defaultTokenizer(input.query);
   const scores = index.score(queryTokens);
 
-  // Sort by BM25 score descending, tie-breaker by name alphabetically
+  // Filter out servers with score of 0 (no match) and sort by BM25 score descending
+  servers = servers.filter((server) => {
+    const score = scores.get(server.id) || 0;
+    return score > 0;
+  });
+
   servers.sort((a, b) => {
     const scoreA = scores.get(a.id) || 0;
     const scoreB = scores.get(b.id) || 0;
@@ -508,6 +513,11 @@ async function connectServer(
     return createMCPTextResponse('Scope must be "assistant" or "global"');
   }
 
+  // Validate that at least one identifier is provided
+  if (!input.serverId && !input.serverName) {
+    return createMCPTextResponse('Either serverId or serverName is required');
+  }
+
   // Find server using helper
   const server = await findServer(input.serverId, input.serverName);
 
@@ -588,6 +598,11 @@ async function disconnectServer(
   // Validate scope
   if (input.scope !== 'assistant' && input.scope !== 'global') {
     return createMCPTextResponse('Scope must be "assistant" or "global"');
+  }
+
+  // Validate that at least one identifier is provided
+  if (!input.serverId && !input.serverName) {
+    return createMCPTextResponse('Either serverId or serverName is required');
   }
 
   // Find server using helper
