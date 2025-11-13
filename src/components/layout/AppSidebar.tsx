@@ -28,7 +28,7 @@ import { useNavigate } from 'react-router-dom';
 export default function AppSidebar() {
   const { state } = useSidebar();
   const navigate = useNavigate();
-  const { select, sessions: sessionPages } = useSessionContext();
+  const { sessions: sessionPages } = useSessionContext();
   const location = useLocation();
   // modal state removed; settings is now a routed page
 
@@ -78,7 +78,6 @@ export default function AppSidebar() {
               <SidebarMenuItem>
                 <Link to="/chat/single">
                   <SidebarMenuButton
-                    onClick={() => select()}
                     isActive={location.pathname === '/chat/single'}
                     tooltip="Start Chat"
                   >
