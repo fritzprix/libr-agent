@@ -129,7 +129,8 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
   } = useSWRInfinite(
     (pageIndex) => [`session`, pageIndex],
     async ([, pageIndex]) => {
-      return dbService.sessions.getPage(pageIndex, 10);
+      // SWR Infinite pageIndex starts from 0, but getPage expects 1-based page numbers
+      return dbService.sessions.getPage(pageIndex + 1, 10);
     },
   );
 
