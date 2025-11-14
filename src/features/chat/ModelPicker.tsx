@@ -169,7 +169,7 @@ const TerminalModelPicker: FC<ModelPickerProps> = ({ className = '' }) => {
   if (isLoading) {
     return (
       <div
-        className={`bg-muted border border-primary/30 rounded-lg p-4 font-mono text-primary w-full max-w-lg mx-auto flex items-center space-x-3 ${className}`}
+        className={`bg-muted border border-primary/30 rounded-lg p-4 font-mono text-primary w-full max-w-lg flex items-center space-x-3 ${className}`}
       >
         <div className="animate-spin w-5 h-5 border-2 border-primary border-t-transparent rounded-full"></div>
         <span className="text-sm text-muted-foreground">
@@ -181,7 +181,7 @@ const TerminalModelPicker: FC<ModelPickerProps> = ({ className = '' }) => {
 
   return (
     <div
-      className={`bg-muted/70 backdrop-blur-sm border border-primary/30 rounded-lg p-4 font-mono text-primary w-full max-w-lg mx-auto ${className}`}
+      className={`bg-muted/70 backdrop-blur-sm border border-primary/30 rounded-lg p-4 font-mono text-primary w-full max-w-lg ${className}`}
     >
       <div className="space-y-4">
         <div className="grid grid-cols-[90px_1fr_auto] gap-3 items-center">
