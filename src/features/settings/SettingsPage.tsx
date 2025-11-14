@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AIServiceProvider } from '@/lib/ai-service';
 import { useSettings } from '@/hooks/use-settings';
@@ -411,58 +417,58 @@ export default function SettingsPage() {
                       </span>
                     </Button>
                     <AlertDialog
-                        open={confirmOpen}
-                        onOpenChange={setConfirmOpen}
-                      >
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>
-                              {t(
-                                'settings.dataReset.confirmTitle',
-                                'Delete All Sessions, Messages & Workspace',
-                              )}
-                            </AlertDialogTitle>
-                            <AlertDialogDescription>
-                              {t(
-                                'settings.dataReset.confirmDescription',
-                                'This will permanently delete all local sessions, their messages, and workspace file stores from the local database and native workspace directories. This action cannot be undone. Are you sure you want to continue?',
-                              )}
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>
-                              {t('common.cancel', 'Cancel')}
-                            </AlertDialogCancel>
-                            <AlertDialogAction
-                              onClick={async () => {
-                                setConfirmOpen(false);
-                                setIsDeleting(true);
-                                try {
-                                  await sessionCtx.clearAllSessions();
-                                  toast.success(
-                                    t(
-                                      'settings.dataReset.success',
-                                      'All sessions, messages and workspace files have been successfully deleted.',
-                                    ),
-                                  );
-                                } catch (e) {
-                                  logger.error('Failed to clear sessions', e);
-                                  toast.error(
-                                    t(
-                                      'settings.dataReset.error',
-                                      'Failed to clear sessions. See logs for details.',
-                                    ),
-                                  );
-                                } finally {
-                                  setIsDeleting(false);
-                                }
-                              }}
-                            >
-                              {t('common.delete', 'Delete')}
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
+                      open={confirmOpen}
+                      onOpenChange={setConfirmOpen}
+                    >
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>
+                            {t(
+                              'settings.dataReset.confirmTitle',
+                              'Delete All Sessions, Messages & Workspace',
+                            )}
+                          </AlertDialogTitle>
+                          <AlertDialogDescription>
+                            {t(
+                              'settings.dataReset.confirmDescription',
+                              'This will permanently delete all local sessions, their messages, and workspace file stores from the local database and native workspace directories. This action cannot be undone. Are you sure you want to continue?',
+                            )}
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>
+                            {t('common.cancel', 'Cancel')}
+                          </AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={async () => {
+                              setConfirmOpen(false);
+                              setIsDeleting(true);
+                              try {
+                                await sessionCtx.clearAllSessions();
+                                toast.success(
+                                  t(
+                                    'settings.dataReset.success',
+                                    'All sessions, messages and workspace files have been successfully deleted.',
+                                  ),
+                                );
+                              } catch (e) {
+                                logger.error('Failed to clear sessions', e);
+                                toast.error(
+                                  t(
+                                    'settings.dataReset.error',
+                                    'Failed to clear sessions. See logs for details.',
+                                  ),
+                                );
+                              } finally {
+                                setIsDeleting(false);
+                              }
+                            }}
+                          >
+                            {t('common.delete', 'Delete')}
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </div>
                 </CardContent>
               </Card>

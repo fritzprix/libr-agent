@@ -6,6 +6,7 @@ import { MCPTool } from '../mcp-types';
 import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';
 import { llmConfigManager } from '../llm-config-manager';
+import { supportsThinking, getContextWindow } from './model-capabilities';
 const logger = getLogger('OpenAIService');
 
 /**
@@ -70,62 +71,56 @@ export class OpenAIService extends BaseAIService {
         ? (response.data as Array<unknown>)
         : [];
 
-      const models = modelsRaw
-        .map((entry) => {
-          if (entry == null || typeof entry !== 'object') return null;
-          const e = entry as Record<string, unknown>;
+      const modelPromises = modelsRaw.map(async (entry) => {
+        if (entry == null || typeof entry !== 'object') return null;
+        const e = entry as Record<string, unknown>;
 
-          const id =
-            (typeof e.id === 'string' && e.id) ||
-            (typeof e.model === 'string' && e.model) ||
-            (typeof e.name === 'string' && e.name) ||
-            String(e);
+        const id =
+          (typeof e.id === 'string' && e.id) ||
+          (typeof e.model === 'string' && e.model) ||
+          (typeof e.name === 'string' && e.name) ||
+          String(e);
 
-          // Merge with static config metadata
-          const staticModel = llmConfigManager.getModel('openai', id);
+        // Merge with static config metadata
+        const staticModel = llmConfigManager.getModel('openai', id);
 
-          // Heuristic for context window (fallback if static config doesn't have it)
-          let contextWindow = staticModel?.contextWindow ?? 4096;
-          if (!staticModel?.contextWindow) {
-            const lc = id.toLowerCase();
-            if (lc.includes('gpt-4o') || lc.includes('gpt-4o-mini'))
-              contextWindow = 65536;
-            else if (lc.includes('gpt-4')) contextWindow = 32768;
-            else if (lc.includes('gpt-3.5')) contextWindow = 4096;
-          }
-
-          const name = staticModel?.name || id;
-          const supportStreaming = staticModel?.supportStreaming ?? true;
-          const supportReasoning =
-            staticModel?.supportReasoning ??
-            (id.toLowerCase().includes('gpt-4') ||
-              id.toLowerCase().includes('gpt-3.5'));
-          const supportTools = staticModel?.supportTools ?? false;
-
-          const description =
-            staticModel?.description ||
-            (typeof e.description === 'string' && e.description) ||
-            (Array.isArray(e.permission)
-              ? e.permission.join(',')
-              : undefined) ||
-            id;
-
-          const modelInfo: import('../llm-config-manager').ModelInfo = {
-            id,
-            name,
-            contextWindow,
-            supportReasoning,
-            supportTools,
-            supportStreaming,
-            cost: staticModel?.cost || { input: 0, output: 0 },
-            description,
-          };
-
-          return modelInfo;
-        })
-        .filter(
-          (v): v is import('../llm-config-manager').ModelInfo => v !== null,
+        // Use dynamic context window detection (OpenRouter API → fallback)
+        const contextWindow = await getContextWindow(
+          id,
+          AIServiceProvider.OpenAI,
         );
+
+        const name = staticModel?.name || id;
+        const supportStreaming = staticModel?.supportStreaming ?? true;
+        const supportReasoning =
+          staticModel?.supportReasoning ??
+          (id.toLowerCase().includes('gpt-4') ||
+            id.toLowerCase().includes('gpt-3.5'));
+        const supportTools = staticModel?.supportTools ?? false;
+
+        const description =
+          staticModel?.description ||
+          (typeof e.description === 'string' && e.description) ||
+          (Array.isArray(e.permission) ? e.permission.join(',') : undefined) ||
+          id;
+
+        const modelInfo: import('../llm-config-manager').ModelInfo = {
+          id,
+          name,
+          contextWindow,
+          supportReasoning,
+          supportTools,
+          supportStreaming,
+          cost: staticModel?.cost || { input: 0, output: 0 },
+          description,
+        };
+
+        return modelInfo;
+      });
+
+      const models = (await Promise.all(modelPromises)).filter(
+        (v): v is import('../llm-config-manager').ModelInfo => v !== null,
+      );
 
       // Cache the results
       this.modelCache = models;
@@ -191,9 +186,33 @@ export class OpenAIService extends BaseAIService {
         modelName = `${fireworksPrefix}${modelName}`;
       }
 
+      // Prepare reasoning_effort for reasoning models
+      // Check model capability dynamically instead of hardcoded patterns
+      let reasoningEffort: 'low' | 'medium' | 'high' | undefined;
+      if (config.enableReasoning && config.reasoningEffort) {
+        const modelSupportsThinking = await supportsThinking(
+          modelName,
+          provider,
+        );
+        if (modelSupportsThinking) {
+          reasoningEffort = config.reasoningEffort;
+          logger.info('OpenAI reasoning mode enabled', {
+            model: modelName,
+            reasoning_effort: reasoningEffort,
+          });
+        } else {
+          logger.debug(
+            'Model does not support reasoning, ignoring enableReasoning flag',
+            { model: modelName },
+          );
+        }
+      }
+
       logger.info(`${provider} call : `, {
         model: modelName,
         messages: openaiMessages,
+        reasoningEnabled: config.enableReasoning,
+        reasoningEffort: reasoningEffort,
       });
 
       const completion = await this.withRetry(() =>
@@ -203,6 +222,7 @@ export class OpenAIService extends BaseAIService {
             messages: openaiMessages,
             max_completion_tokens: config.maxTokens,
             stream: true,
+            ...(reasoningEffort && { reasoning_effort: reasoningEffort }),
             tools: tools as OpenAIChatCompletionTool[],
             tool_choice: !options.availableTools?.length
               ? undefined

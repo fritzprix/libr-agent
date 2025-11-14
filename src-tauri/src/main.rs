@@ -12,18 +12,66 @@
 /// 5. Calling the main application runner (`run_with_sqlite_sync`) from the `tauri_mcp_agent_lib`
 ///    crate, passing it the database URL to initialize the application with database support.
 fn main() {
-    // Load environment variables from .env file (development mode only)
-    // In production, use system environment variables instead
+    // Load environment variables from .env file
+    // Development: loads .env.dev (if exists) or .env from current directory
+    // Production: loads .env from executable directory or current directory
     #[cfg(debug_assertions)]
     {
-        match dotenvy::dotenv() {
-            Ok(path) => println!("✅ Loaded .env file from: {}", path.display()),
+        // Try .env.dev first in development, fallback to .env
+        match dotenvy::from_filename(".env.dev") {
+            Ok(path) => println!("✅ Loaded .env.dev file from: {}", path.display()),
+            Err(_) => {
+                // Fallback to .env
+                match dotenvy::dotenv() {
+                    Ok(path) => println!("✅ Loaded .env file from: {}", path.display()),
+                    Err(dotenvy::Error::Io(err)) if err.kind() == std::io::ErrorKind::NotFound => {
+                        println!("ℹ️  No .env or .env.dev file found (using system environment variables)");
+                    }
+                    Err(e) => {
+                        eprintln!("⚠️  Warning: Failed to load .env file: {e}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[cfg(not(debug_assertions))]
+    {
+        // Production: Try multiple .env locations for better compatibility
+        // 1. Current working directory (when run from project root)
+        // 2. Executable directory (when installed/distributed)
+        let loaded = match dotenvy::dotenv() {
+            Ok(path) => {
+                println!("✅ Loaded .env file from: {}", path.display());
+                true
+            }
             Err(dotenvy::Error::Io(err)) if err.kind() == std::io::ErrorKind::NotFound => {
-                println!("ℹ️  No .env file found (this is OK, using system environment variables)");
+                // Try loading from executable directory
+                if let Ok(exe_path) = std::env::current_exe() {
+                    if let Some(exe_dir) = exe_path.parent() {
+                        let env_path = exe_dir.join(".env");
+                        match dotenvy::from_path(&env_path) {
+                            Ok(_) => {
+                                println!("✅ Loaded .env file from: {}", env_path.display());
+                                true
+                            }
+                            Err(_) => false,
+                        }
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
             }
             Err(e) => {
                 eprintln!("⚠️  Warning: Failed to load .env file: {e}");
+                false
             }
+        };
+
+        if !loaded {
+            println!("ℹ️  No .env file found (using system environment variables and defaults)");
         }
     }
 

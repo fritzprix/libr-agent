@@ -24,6 +24,7 @@ import {
   extractBuiltInServiceAlias,
 } from '@/lib/utils';
 import { MCPTool } from '@/lib/mcp-types';
+import { supportsThinking } from '@/lib/ai-service/model-capabilities';
 
 const logger = getLogger('ChatContext');
 
@@ -52,6 +53,9 @@ interface ChatStateContextValue {
   // Current top-level assistant error (if any) and the message id it came from
   error: Message['error'] | null;
   agenticMode: boolean;
+  // Reasoning mode state
+  reasoningEnabled: boolean;
+  canUseReasoning: boolean; // Computed from model capabilities
 }
 
 const ChatStateContext = createContext<ChatStateContextValue | undefined>(
@@ -65,6 +69,7 @@ interface ChatActionsContextValue {
   addToMessageQueue: (message: Partial<Message>) => void;
   retryMessage: () => Promise<void>;
   setAgenticMode: (enabled: boolean) => void;
+  toggleReasoning: () => void;
 }
 
 const ChatActionsContext = createContext<ChatActionsContextValue | undefined>(
@@ -93,6 +98,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const [pendingCancel, setPendingCancel] = useState(false);
   const [messageQueue, setMessageQueue] = useState<Message[]>([]);
   const [agenticMode, setAgenticMode] = useState(false);
+  const [reasoningEnabled, setReasoningEnabled] = useState(false);
+  const [canUseReasoning, setCanUseReasoning] = useState(false);
 
   // Extract window size with default fallback
   const messageWindowSize = settingValue?.windowSize ?? 20;
@@ -207,14 +214,16 @@ export function ChatProvider({ children }: ChatProviderProps) {
     [currentAssistant, toolAliasMap],
   );
 
-  // AI Service configuration with tools only
+  // AI Service configuration with tools and reasoning
   const aiServiceConfig = useMemo(
     (): AIServiceConfig => ({
       tools: [...availableTools, ...filterBuiltInTools(builtInTools)],
       maxRetries: 3,
       maxTokens: 4096,
+      enableReasoning: reasoningEnabled,
+      reasoningEffort: 'medium', // Default to medium effort
     }),
-    [availableTools, builtInTools, filterBuiltInTools],
+    [availableTools, builtInTools, filterBuiltInTools, reasoningEnabled],
   );
 
   const {
@@ -249,6 +258,39 @@ export function ChatProvider({ children }: ChatProviderProps) {
     // Clear current error when switching sessions
     setError(null);
   }, [currentSession?.id, cancelAIService]); // Run when currentSession?.id changes
+
+  // Check if current model supports reasoning
+  useEffect(() => {
+    const checkReasoningSupport = async () => {
+      const modelName = settingValue?.preferredModel?.model;
+      const provider = settingValue?.preferredModel?.provider;
+
+      if (!modelName || !provider) {
+        setCanUseReasoning(false);
+        return;
+      }
+
+      try {
+        const supports = await supportsThinking(modelName, provider);
+        setCanUseReasoning(supports);
+
+        // Auto-disable if model doesn't support reasoning
+        if (!supports && reasoningEnabled) {
+          setReasoningEnabled(false);
+          logger.info('Reasoning disabled: model does not support it');
+        }
+      } catch (error) {
+        logger.error('Failed to check reasoning support', error);
+        setCanUseReasoning(false);
+      }
+    };
+
+    checkReasoningSupport();
+  }, [
+    settingValue?.preferredModel?.model,
+    settingValue?.preferredModel?.provider,
+    reasoningEnabled,
+  ]);
 
   // Combine history with streaming message, avoiding duplicates
   const messages = useMemo(() => {
@@ -527,6 +569,15 @@ export function ChatProvider({ children }: ChatProviderProps) {
     await submit([]);
   }, [submit]);
 
+  const toggleReasoning = useCallback(() => {
+    if (!canUseReasoning) {
+      logger.warn('Reasoning mode not supported for current model');
+      return;
+    }
+    setReasoningEnabled((prev) => !prev);
+    logger.info(`Reasoning mode ${!reasoningEnabled ? 'enabled' : 'disabled'}`);
+  }, [canUseReasoning, reasoningEnabled]);
+
   const handleCancel = useCallback(() => {
     setPendingCancel(true);
     cancelRequestRef.current = true;
@@ -581,8 +632,19 @@ export function ChatProvider({ children }: ChatProviderProps) {
       pendingCancel,
       error,
       agenticMode,
+      reasoningEnabled,
+      canUseReasoning,
     }),
-    [isLoading, isProcessing, messages, pendingCancel, error, agenticMode],
+    [
+      isLoading,
+      isProcessing,
+      messages,
+      pendingCancel,
+      error,
+      agenticMode,
+      reasoningEnabled,
+      canUseReasoning,
+    ],
   );
 
   const actionsValue: ChatActionsContextValue = useMemo(
@@ -592,8 +654,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
       addToMessageQueue,
       retryMessage,
       setAgenticMode,
+      toggleReasoning,
     }),
-    [submit, handleCancel, addToMessageQueue, retryMessage],
+    [submit, handleCancel, addToMessageQueue, retryMessage, toggleReasoning],
   );
 
   return (

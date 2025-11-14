@@ -20,7 +20,7 @@ pub async fn read_file(
 ///
 /// This function performs several security checks:
 /// - Verifies the file exists and is a file.
-/// - Enforces a maximum file size (10MB).
+/// - Enforces a maximum file size (100MB, configurable via LIBRAGENT_MAX_FILE_SIZE).
 /// - Restricts allowed file extensions to a predefined list.
 ///
 /// # Arguments

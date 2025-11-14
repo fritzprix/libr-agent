@@ -12,12 +12,12 @@ import { MCPTool } from '../mcp-types';
 import { ModelInfo } from '../llm-config-manager';
 import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';
+import { supportsThinking, getContextWindow } from './model-capabilities';
 
 const logger = getLogger('OllamaService');
 
 // Constants
 const DEFAULT_MODEL = 'llama3.1';
-const DEFAULT_HOST = 'http://127.0.0.1:11434';
 
 // Internal Interfaces
 /** @internal */
@@ -74,23 +74,17 @@ export class OllamaService extends BaseAIService {
   private ollamaClient: Ollama;
 
   /**
-   * Initializes a new instance of the `OllamaService`.
-   * @param apiKey A dummy API key (not used by Ollama, but required by the base class).
-   * @param config Optional configuration, including the Ollama server host.
+   * Initializes a new instance of the OllamaService.
+   * @param apiKey The API key (not required for local Ollama, but kept for interface consistency).
+   * @param config Optional configuration for the service.
    */
   constructor(apiKey: string, config?: AIServiceConfig & { host?: string }) {
     super(apiKey, config);
-    this.host = config?.host || DEFAULT_HOST;
-
-    // Create an Ollama client instance
-    this.ollamaClient = new Ollama({
+    this.host = config?.host || 'http://127.0.0.1:11434';
+    this.ollamaClient = new Ollama({ host: this.host });
+    logger.info('Ollama service initialized', {
       host: this.host,
-      headers: {
-        'User-Agent': 'LibrAgent/1.0',
-      },
     });
-
-    logger.info(`Ollama service initialized with host: ${this.host}`);
   }
 
   /**
@@ -126,16 +120,25 @@ export class OllamaService extends BaseAIService {
       });
 
       // Convert the ollama.list() response to our standard ModelInfo format
-      const models: ModelInfo[] = response.models.map(
-        (model: ModelResponse) => ({
-          id: model.name,
-          name: model.name,
-          contextWindow: this.getModelContextWindow(model.name),
-          supportReasoning: true,
-          supportTools: this.getModelToolSupport(model.name),
-          supportStreaming: true,
-          cost: { input: 0, output: 0 },
-          description: model.details?.family || model.name || 'Ollama model',
+      // Use getContextWindow for dynamic context window detection
+      const models: ModelInfo[] = await Promise.all(
+        response.models.map(async (model: ModelResponse) => {
+          const contextWindow = await getContextWindow(
+            model.name,
+            AIServiceProvider.Ollama,
+            { apiBase: this.host },
+          );
+
+          return {
+            id: model.name,
+            name: model.name,
+            contextWindow,
+            supportReasoning: true,
+            supportTools: this.getModelToolSupport(model.name),
+            supportStreaming: true,
+            cost: { input: 0, output: 0 },
+            description: model.details?.family || model.name || 'Ollama model',
+          };
         }),
       );
 
@@ -174,19 +177,53 @@ export class OllamaService extends BaseAIService {
       const model = options.modelName || config.defaultModel || DEFAULT_MODEL;
       const ollamaTools = convertMCPToolsToOllamaTools(options.availableTools);
 
+      // Prepare reasoning parameter based on config
+      // Ollama expects: think: true | 'low' | 'medium' | 'high'
+      // Note: Not all models support granular levels ('low', 'medium', 'high')
+      // For models that only support boolean (like qwen3), use true
+      let thinkParam: boolean | 'low' | 'medium' | 'high' | undefined;
+      if (config.enableReasoning) {
+        // Check if model actually supports thinking (optional, for better UX)
+        const modelSupportsThinking = await supportsThinking(
+          model,
+          AIServiceProvider.Ollama,
+          { apiBase: this.host },
+        );
+
+        if (modelSupportsThinking) {
+          // If reasoningEffort is specified, use it; otherwise default to true
+          thinkParam = config.reasoningEffort || true;
+          logger.info('Ollama thinking mode enabled', {
+            model,
+            thinkParam,
+            detectedViaAPI: modelSupportsThinking,
+          });
+        } else {
+          logger.debug(
+            'Model may not support thinking, but will try anyway (Ollama ignores unsupported params)',
+            { model },
+          );
+          // Still send the parameter - Ollama will ignore if not supported
+          thinkParam = config.reasoningEffort || true;
+        }
+      }
+
       logger.info('Ollama API call:', {
         model,
         messagesCount: ollamaMessages.length,
         ollamaMessages,
         host: this.host,
         toolsCount: ollamaTools.length,
+        reasoningEnabled: config.enableReasoning,
+        reasoningEffort: config.reasoningEffort,
+        thinkParam,
       });
 
       const requestOptions: ChatRequest & { stream: true } = {
         model,
         messages: ollamaMessages as OllamaMessage[],
         stream: true,
-        think: true,
+        ...(thinkParam !== undefined && { think: thinkParam }), // Conditional inclusion
         tools: ollamaTools,
         keep_alive: '5m',
         options: {
@@ -195,8 +232,28 @@ export class OllamaService extends BaseAIService {
         },
       };
 
+      logger.info('Ollama request options:', { requestOptions });
+
       const stream = await this.withRetry(async () => {
-        return await this.ollamaClient.chat(requestOptions);
+        try {
+          return await this.ollamaClient.chat(requestOptions);
+        } catch (error: unknown) {
+          // If model doesn't support granular think levels, retry with boolean true
+          if (
+            error instanceof Error &&
+            error.message.includes('think value') &&
+            error.message.includes('is not supported') &&
+            requestOptions.think &&
+            typeof requestOptions.think === 'string'
+          ) {
+            logger.warn(
+              `Model ${model} doesn't support think level '${requestOptions.think}', falling back to boolean true`,
+            );
+            requestOptions.think = true;
+            return await this.ollamaClient.chat(requestOptions);
+          }
+          throw error;
+        }
       });
 
       if (this.getAbortSignal().aborted) {
@@ -209,9 +266,15 @@ export class OllamaService extends BaseAIService {
           this.logger.info('Stream aborted during iteration');
           break;
         }
+
+        logger.debug('Received chunk from Ollama', { chunk });
+
         const processedChunk = this.processChunk(chunk);
         if (processedChunk) {
+          logger.debug('Processed chunk successfully', { processedChunk });
           yield processedChunk;
+        } else {
+          logger.debug('processChunk returned null');
         }
       }
     } catch (error: unknown) {
@@ -240,11 +303,18 @@ export class OllamaService extends BaseAIService {
         !chunk.message ||
         typeof chunk.message !== 'object'
       ) {
+        logger.debug('Chunk missing expected structure, skipping', {
+          hasChunk: !!chunk,
+          chunkType: typeof chunk,
+          hasMessage: chunk && typeof chunk === 'object' && 'message' in chunk,
+          chunkKeys: chunk ? Object.keys(chunk) : [],
+        });
         return null;
       }
 
       const message = chunk.message as {
         content?: string;
+        thinking?: string; // Ollama reasoning mode thinking content
         tool_calls?: Array<{
           id: string;
           type: string;
@@ -257,6 +327,7 @@ export class OllamaService extends BaseAIService {
 
       const result: {
         content?: string;
+        thinking?: string; // Add thinking field to result
         tool_calls?: Array<{
           id: string;
           type: string;
@@ -271,6 +342,24 @@ export class OllamaService extends BaseAIService {
       // Handle content
       if (message.content && typeof message.content === 'string') {
         result.content = message.content;
+        logger.debug('Content extracted from chunk', {
+          contentLength: message.content.length,
+          contentPreview: message.content.substring(0, 100),
+        });
+      } else {
+        logger.debug('No content in message', {
+          hasContent: !!message.content,
+          contentType: typeof message.content,
+        });
+      }
+
+      // Handle thinking (Ollama reasoning mode)
+      if (message.thinking && typeof message.thinking === 'string') {
+        result.thinking = message.thinking;
+        logger.debug('Thinking extracted from chunk', {
+          thinkingLength: message.thinking.length,
+          thinkingPreview: message.thinking.substring(0, 100),
+        });
       }
 
       // Handle tool calls
@@ -286,14 +375,20 @@ export class OllamaService extends BaseAIService {
                 : JSON.stringify(tc.function.arguments || {}),
           },
         }));
-        logger.debug('Tool calls detected in chunk:', result.tool_calls);
+        logger.debug('Tool calls detected in chunk:', {
+          toolCallCount: result.tool_calls.length,
+          toolCalls: result.tool_calls,
+        });
       }
 
-      // Return if we have meaningful data
-      if (result.content || result.tool_calls) {
+      // Return if we have meaningful data (content, thinking, or tool_calls)
+      if (result.content || result.thinking || result.tool_calls) {
         return JSON.stringify(result);
       }
 
+      logger.debug(
+        'Chunk has no content, thinking, or tool_calls, returning null',
+      );
       return null;
     } catch (error: unknown) {
       logger.error('Failed to process chunk', { error, chunk });
@@ -452,23 +547,6 @@ export class OllamaService extends BaseAIService {
       });
       return {};
     }
-  }
-
-  /**
-   * Gets a default context window size for a given Ollama model name.
-   * @param modelName The name of the model.
-   * @returns The estimated context window size.
-   * @private
-   */
-  private getModelContextWindow(modelName: string): number {
-    // Context window for common Ollama models
-    if (modelName.includes('llama3.1')) return 128000;
-    if (modelName.includes('llama3')) return 8192;
-    if (modelName.includes('llama2')) return 4096;
-    if (modelName.includes('codellama')) return 16384;
-    if (modelName.includes('mistral')) return 8192;
-    if (modelName.includes('qwen')) return 32768;
-    return 4096; // default value
   }
 
   /**

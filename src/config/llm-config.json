@@ -622,6 +622,7 @@
       "name": "Ollama",
       "apiKeyEnvVar": "OLLAMA_API_KEY",
       "baseUrl": "http://127.0.0.1:11434",
+      "requiresApiKey": false,
       "models": {
         "llama3.1": {
           "name": "llama3.1",

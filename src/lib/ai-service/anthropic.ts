@@ -10,6 +10,7 @@ import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';
 import { formatToolCall } from './utils';
 import { ModelInfo, llmConfigManager } from '../llm-config-manager';
+import { supportsThinking, getContextWindow } from './model-capabilities';
 const logger = getLogger('AnthropicService');
 
 const MAX_PARTIAL_TOOL_INPUT_LENGTH = 200_000;
@@ -91,10 +92,16 @@ export class AnthropicService extends BaseAIService {
         // Merge SDK data with static config metadata
         const staticModel = llmConfigManager.getModel('anthropic', model.id);
 
+        // Use dynamic context window detection
+        const contextWindow = await getContextWindow(
+          model.id,
+          AIServiceProvider.Anthropic,
+        );
+
         models.push({
           id: model.id,
           name: model.display_name || staticModel?.name || model.id,
-          contextWindow: staticModel?.contextWindow || 200000,
+          contextWindow,
           // Use static config as source of truth for capabilities
           supportReasoning: staticModel?.supportReasoning ?? false,
           supportTools: staticModel?.supportTools ?? true,
@@ -213,12 +220,32 @@ export class AnthropicService extends BaseAIService {
       const anthropicMessages =
         this.convertToAnthropicMessages(sanitizedMessages);
 
+      // Check if model supports extended thinking via dynamic capability detection
+      const model = options.modelName || this.getDefaultModel();
+      let extendedThinking: boolean | undefined;
+      if (config.enableReasoning) {
+        const modelSupportsThinking = await supportsThinking(
+          model,
+          AIServiceProvider.Anthropic,
+        );
+        if (modelSupportsThinking) {
+          extendedThinking = true;
+          logger.info('Anthropic extended thinking enabled', { model });
+        } else {
+          logger.debug(
+            'Model does not support extended thinking, ignoring enableReasoning flag',
+            { model },
+          );
+        }
+      }
+
       const stream = this.anthropic.messages.stream(
         {
-          model: options.modelName || this.getDefaultModel(),
+          model: model,
           max_tokens: config.maxTokens!,
           messages: anthropicMessages,
           system: options.systemPrompt,
+          ...(extendedThinking && { extended_thinking: extendedThinking }),
           tools: tools as AnthropicTool[],
           ...(options.forceToolUse &&
             options.availableTools?.length && { tool_choice: { type: 'any' } }),

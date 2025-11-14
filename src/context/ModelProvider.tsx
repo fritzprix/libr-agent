@@ -33,6 +33,7 @@ interface ModelOptionsContextType {
   provider: AIServiceProvider;
   models: Record<string, ModelInfo>;
   providers: Array<ProviderInfo>;
+  currentProviderInfo: ProviderInfo | null;
   setProvider: (provider: AIServiceProvider) => void;
   setModel: (modelId: string) => void;
   isLoading: boolean;
@@ -185,6 +186,11 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
     return models[model] || DEFAULT_MODEL_INFO;
   }, [models, model]);
 
+  const currentProviderInfo = useMemo(() => {
+    const providers = llmConfigManager.getProviders();
+    return providers[provider] || null;
+  }, [provider]);
+
   const setProvider = useCallback(
     (newProvider: AIServiceProvider) => {
       const availableModels =
@@ -218,6 +224,7 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
       provider,
       models,
       providers: Object.values(llmConfigManager.getProviders()),
+      currentProviderInfo,
       setProvider,
       setModel,
       isLoading: isLoading || isRefreshingModels,
@@ -232,6 +239,7 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
       model,
       provider,
       models,
+      currentProviderInfo,
       setProvider,
       setModel,
       isLoading,

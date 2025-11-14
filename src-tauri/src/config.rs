@@ -12,7 +12,7 @@
 /// deployment environment accordingly.
 ///
 /// # Available Environment Variables
-/// - `LIBRAGENT_MAX_FILE_SIZE`: Maximum file size in bytes (default: 10485760 = 10MB)
+/// - `LIBRAGENT_MAX_FILE_SIZE`: Maximum file size in bytes (default: 104857600 = 100MB)
 /// - `LIBRAGENT_DEFAULT_EXECUTION_TIMEOUT`: Default command timeout in seconds (default: 30)
 /// - `LIBRAGENT_MAX_EXECUTION_TIMEOUT`: Maximum command timeout in seconds (default: 300)
 /// - `LIBRAGENT_MAX_OUTPUT_SIZE`: Maximum process output size in bytes (default: 104857600 = 100MB)
@@ -22,8 +22,8 @@
 /// - `LIBRAGENT_DB_PATH`: SQLite database file path (default: user data directory)
 use std::env;
 
-/// Default maximum file size (10 MB)
-const DEFAULT_MAX_FILE_SIZE: usize = 10 * 1024 * 1024;
+/// Default maximum file size (100 MB)
+const DEFAULT_MAX_FILE_SIZE: usize = 100 * 1024 * 1024;
 
 /// Default execution timeout (30 seconds)
 const DEFAULT_EXECUTION_TIMEOUT: u64 = 30;
@@ -79,7 +79,7 @@ pub fn graceful_shutdown_timeout() -> u64 {
 /// Get maximum file size from environment or use default
 ///
 /// Environment variable: LIBRAGENT_MAX_FILE_SIZE
-/// Default: 10485760 (10 MB)
+/// Default: 104857600 (100 MB)
 pub fn max_file_size() -> usize {
     env::var("LIBRAGENT_MAX_FILE_SIZE")
         .ok()

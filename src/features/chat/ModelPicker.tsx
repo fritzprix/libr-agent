@@ -20,15 +20,25 @@ const CompactModelPicker: FC<ModelPickerProps> = ({ className = '' }) => {
     modelOptions,
     refreshModels,
     isRefreshingModels,
+    currentProviderInfo,
   } = useModelOptions();
 
   const apiKeyStatus = useMemo(() => {
+    // Provider가 API 키를 요구하지 않으면 항상 configured
+    if (currentProviderInfo?.requiresApiKey === false) {
+      return {
+        text: provider,
+        configured: true,
+      };
+    }
+
+    // API 키가 필요한 경우, 키 존재 여부 확인
     const key = apiKeys[provider];
     return {
       text: provider,
       configured: key && key.length > 0,
     };
-  }, [provider, apiKeys]);
+  }, [provider, apiKeys, currentProviderInfo]);
 
   const onProviderChange = useCallback(
     (newProvider: string) => {
@@ -142,15 +152,25 @@ const TerminalModelPicker: FC<ModelPickerProps> = ({ className = '' }) => {
     modelOptions,
     refreshModels,
     isRefreshingModels,
+    currentProviderInfo,
   } = useModelOptions();
 
   const apiKeyStatus = useMemo(() => {
+    // Provider가 API 키를 요구하지 않으면 항상 configured
+    if (currentProviderInfo?.requiresApiKey === false) {
+      return {
+        text: provider,
+        configured: true,
+      };
+    }
+
+    // API 키가 필요한 경우, 키 존재 여부 확인
     const key = apiKeys[provider];
     return {
       text: provider,
       configured: key && key.length > 0,
     };
-  }, [provider, apiKeys]);
+  }, [provider, apiKeys, currentProviderInfo]);
 
   const onProviderChange = useCallback(
     (newProvider: string) => {
