@@ -245,20 +245,37 @@ impl ContentStoreStorage {
         name: Option<String>,
         description: Option<String>,
     ) -> Result<ContentStore, String> {
-        // Check if store already exists
-        if self.store_exists(&session_id) {
-            // Return existing store
-            if let Some(store) = self.stores.get(&session_id) {
-                Ok(store.clone())
-            } else {
-                Err(format!(
-                    "Store exists but could not retrieve for session: {session_id}"
-                ))
-            }
-        } else {
-            // Create new store
-            self.create_store(session_id, name, description).await
+        // Check if store already exists in memory cache
+        if let Some(store) = self.stores.get(&session_id) {
+            return Ok(store.clone());
         }
+
+        // If using SQLite, check if store exists in database
+        if let Some(pool) = &self.sqlite_pool {
+            let result = sqlx::query_as::<_, (String, Option<String>, Option<String>, String, String)>(
+                "SELECT session_id, name, description, created_at, updated_at FROM stores WHERE session_id = ?"
+            )
+            .bind(&session_id)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| format!("Failed to check store existence in SQLite: {e}"))?;
+
+            if let Some((session_id, name, description, created_at, updated_at)) = result {
+                // Store exists in database, add to memory cache
+                let store = ContentStore {
+                    session_id: session_id.clone(),
+                    name,
+                    description,
+                    created_at,
+                    updated_at,
+                };
+                self.stores.insert(session_id.clone(), store.clone());
+                return Ok(store);
+            }
+        }
+
+        // Store doesn't exist, create new one
+        self.create_store(session_id, name, description).await
     }
 
     /// Add content to a session's store
