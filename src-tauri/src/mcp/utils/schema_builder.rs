@@ -109,11 +109,18 @@ pub fn boolean_prop(description: Option<&str>) -> JSONSchema {
 }
 
 /// Creates an object schema with properties and required fields
+/// Note: If required is empty, it will be set to None instead of an empty array
+/// to avoid DeepSeek/Fireworks JSON Schema validation errors
 pub fn object_schema(properties: HashMap<String, JSONSchema>, required: Vec<String>) -> JSONSchema {
     JSONSchema {
         schema_type: JSONSchemaType::Object {
             properties: Some(properties),
-            required: Some(required),
+            // Only set required if it has values, otherwise use None
+            required: if required.is_empty() {
+                None
+            } else {
+                Some(required)
+            },
             additional_properties: Some(false),
             min_properties: None,
             max_properties: None,

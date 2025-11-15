@@ -9,6 +9,9 @@ pub mod content_store;
 pub mod utils;
 pub mod workspace;
 
+#[cfg(test)]
+mod tests;
+
 /// A trait that defines the common interface for all built-in MCP servers.
 #[async_trait]
 pub trait BuiltinMCPServer: Send + Sync + std::fmt::Debug {
