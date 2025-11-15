@@ -228,15 +228,19 @@ export const useAIService = (config?: AIServiceConfig) => {
             thinkingSignature = parsedChunk.thinkingSignature as string;
           }
           if (parsedChunk.tool_calls && Array.isArray(parsedChunk.tool_calls)) {
+            // Handle both complete tool calls (Ollama, Gemini) and incremental chunks (OpenAI, Anthropic)
             (
-              parsedChunk.tool_calls as (ToolCall & { index: number })[]
-            ).forEach((toolCallChunk: ToolCall & { index: number }) => {
+              parsedChunk.tool_calls as (ToolCall & { index?: number })[]
+            ).forEach((toolCallChunk: ToolCall & { index?: number }) => {
               const { index } = toolCallChunk;
+
+              // If no index provided, treat as a complete tool call (Ollama/Gemini pattern)
               if (index === undefined) {
                 toolCalls.push(toolCallChunk);
                 return;
               }
 
+              // Index-based merging for providers that send incremental chunks
               if (toolCalls[index]) {
                 if (toolCallChunk.function?.arguments) {
                   toolCalls[index].function.arguments +=

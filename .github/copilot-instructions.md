@@ -41,7 +41,7 @@ LibrAgent is a next-generation desktop AI agent platform that combines the light
 - Tauri 2.x (Latest cross-platform desktop framework)
 - React 18.3 (Modern UI with concurrent features)
 - TypeScript 5.6 (Advanced type safety)
-- RMCP 0.2.1 (Rust-based Model Context Protocol client)
+- `rmcp` 0.8.x (Rust-based Model Context Protocol client; see `src-tauri/Cargo.toml`)
 
 **Frontend Technologies:**
 
@@ -125,6 +125,11 @@ libr-agent/
 3. Start development: `pnpm tauri dev`
 4. Build for production: `pnpm tauri build`
 5. API keys are managed in-app via the settings modal (not in .env files).
+
+## CI / Release
+
+- GitHub Actions are used for CI and releases. See `.github/workflows/ci.yml` for tests, linting and Rust checks, and `.github/workflows/release.yml` for multi-platform packaging.
+- Node.js version in CI is pinned to 18; use a compatible Node LTS for local development.
 
 ## Coding Style
 
@@ -330,7 +335,7 @@ The project uses a centralized logging system located at `src/lib/logger.ts` tha
 - `react-dom`: Version 18.x - React DOM renderer
 - `typescript`: Version 5.x - Type safety
 - `vite`: Version 4.x - Build tool and dev server
-- `tailwindcss`: Version 3.x - Utility-first CSS framework
+- `tailwindcss`: Version 4.x - Utility-first CSS framework
 
 ### Backend Dependencies (Rust)
 
@@ -513,3 +518,4 @@ These steps must be completed successfully before considering any refactoring ta
 - [Chat Feature Architecture & Implementation Manual](docs/architecture/chat-feature-architecture.md)
 - [Built-in Tools Documentation](docs/builtin-tools.md)
 - [External MCP Server Integration](docs/external-mcp-integration.md)
+- [Project structure overview](../docs/project-structure.md)

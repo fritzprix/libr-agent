@@ -49,7 +49,12 @@ impl BuiltinMCPServer for ContentStoreServer {
         self.switch_context(options).await
     }
 
-    async fn call_tool(&self, tool_name: &str, args: Value) -> MCPResponse {
+    async fn call_tool(
+        &self,
+        tool_name: &str,
+        args: Value,
+        request_id: Option<Value>,
+    ) -> MCPResponse {
         match tool_name {
             "addContent" => self.handle_add_content(args).await,
             "listContent" => self.handle_list_content(args).await,
@@ -57,7 +62,7 @@ impl BuiltinMCPServer for ContentStoreServer {
             "keywordSimilaritySearch" => self.handle_keyword_search(args).await,
             "deleteContent" => self.handle_delete_content(args).await,
             _ => {
-                let id = ContentStoreServer::generate_request_id();
+                let id = request_id.unwrap_or_else(ContentStoreServer::generate_request_id);
                 ContentStoreServer::error_response(
                     id,
                     -32601,

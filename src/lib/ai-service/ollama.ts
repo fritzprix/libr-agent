@@ -3,7 +3,6 @@ import type {
   ChatRequest,
   ListResponse,
   ModelResponse,
-  Tool,
   Message as OllamaMessage,
 } from 'ollama';
 import { getLogger } from '../logger';
@@ -12,12 +11,32 @@ import { MCPTool } from '../mcp-types';
 import { ModelInfo } from '../llm-config-manager';
 import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';
+import { supportsThinking, getContextWindow } from './model-capabilities';
+import {
+  convertMCPToolsToOllamaTools,
+  convertToOllamaMessages,
+  convertMessage,
+  processChunk,
+  getModelToolSupport,
+  determineThinkParam,
+  type Logger,
+  type SimpleOllamaMessage,
+} from './ollama-core';
 
 const logger = getLogger('OllamaService');
 
+// Adapter to convert Tauri logger to core Logger interface
+const coreLogger: Logger = {
+  debug: (message: string, ...args: unknown[]) =>
+    logger.debug(message, ...args),
+  info: (message: string, ...args: unknown[]) => logger.info(message, ...args),
+  warn: (message: string, ...args: unknown[]) => logger.warn(message, ...args),
+  error: (message: string, ...args: unknown[]) =>
+    logger.error(message, ...args),
+};
+
 // Constants
 const DEFAULT_MODEL = 'llama3.1';
-const DEFAULT_HOST = 'http://127.0.0.1:11434';
 
 // Internal Interfaces
 /** @internal */
@@ -26,44 +45,6 @@ interface StreamChatOptions {
   systemPrompt?: string;
   availableTools?: MCPTool[];
   config?: AIServiceConfig;
-}
-/** @internal */
-interface SimpleOllamaMessage {
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  tool_calls?: Array<{
-    id: string;
-    type: 'function';
-    function: {
-      name: string;
-      arguments: Record<string, unknown>;
-    };
-  }>;
-  tool_call_id?: string;
-}
-
-/**
- * Converts an array of `MCPTool` objects to the format required by the Ollama API.
- * @param mcpTools The array of `MCPTool` objects to convert.
- * @returns An array of Ollama-compatible `Tool` objects.
- * @internal
- */
-function convertMCPToolsToOllamaTools(mcpTools?: MCPTool[]): Tool[] {
-  if (!mcpTools || mcpTools.length === 0) {
-    return [];
-  }
-
-  return mcpTools.map((tool) => ({
-    type: 'function',
-    function: {
-      name: tool.name,
-      description: tool.description,
-      parameters: tool.inputSchema || {
-        type: 'object',
-        properties: {},
-      },
-    },
-  }));
 }
 
 /**
@@ -74,23 +55,17 @@ export class OllamaService extends BaseAIService {
   private ollamaClient: Ollama;
 
   /**
-   * Initializes a new instance of the `OllamaService`.
-   * @param apiKey A dummy API key (not used by Ollama, but required by the base class).
-   * @param config Optional configuration, including the Ollama server host.
+   * Initializes a new instance of the OllamaService.
+   * @param apiKey The API key (not required for local Ollama, but kept for interface consistency).
+   * @param config Optional configuration for the service.
    */
   constructor(apiKey: string, config?: AIServiceConfig & { host?: string }) {
     super(apiKey, config);
-    this.host = config?.host || DEFAULT_HOST;
-
-    // Create an Ollama client instance
-    this.ollamaClient = new Ollama({
+    this.host = config?.host || 'http://127.0.0.1:11434';
+    this.ollamaClient = new Ollama({ host: this.host });
+    logger.info('Ollama service initialized', {
       host: this.host,
-      headers: {
-        'User-Agent': 'LibrAgent/1.0',
-      },
     });
-
-    logger.info(`Ollama service initialized with host: ${this.host}`);
   }
 
   /**
@@ -99,6 +74,17 @@ export class OllamaService extends BaseAIService {
    */
   getProvider(): AIServiceProvider {
     return AIServiceProvider.Ollama;
+  }
+
+  /**
+   * Ollama runs locally and doesn't require API key validation.
+   * Override base class validation to allow empty API keys.
+   * @protected
+   */
+  protected validateApiKey(apiKey: string): void {
+    // Ollama doesn't require API key for local server
+    // Allow empty or any string value
+    void apiKey;
   }
 
   /**
@@ -126,16 +112,25 @@ export class OllamaService extends BaseAIService {
       });
 
       // Convert the ollama.list() response to our standard ModelInfo format
-      const models: ModelInfo[] = response.models.map(
-        (model: ModelResponse) => ({
-          id: model.name,
-          name: model.name,
-          contextWindow: this.getModelContextWindow(model.name),
-          supportReasoning: true,
-          supportTools: this.getModelToolSupport(model.name),
-          supportStreaming: true,
-          cost: { input: 0, output: 0 },
-          description: model.details?.family || model.name || 'Ollama model',
+      // Use getContextWindow for dynamic context window detection
+      const models: ModelInfo[] = await Promise.all(
+        response.models.map(async (model: ModelResponse) => {
+          const contextWindow = await getContextWindow(
+            model.name,
+            AIServiceProvider.Ollama,
+            { apiBase: this.host },
+          );
+
+          return {
+            id: model.name,
+            name: model.name,
+            contextWindow,
+            supportReasoning: true,
+            supportTools: this.getModelToolSupport(model.name),
+            supportStreaming: true,
+            cost: { input: 0, output: 0 },
+            description: model.details?.family || model.name || 'Ollama model',
+          };
         }),
       );
 
@@ -172,7 +167,25 @@ export class OllamaService extends BaseAIService {
         options.systemPrompt,
       );
       const model = options.modelName || config.defaultModel || DEFAULT_MODEL;
-      const ollamaTools = convertMCPToolsToOllamaTools(options.availableTools);
+      const ollamaTools = convertMCPToolsToOllamaTools(
+        options.availableTools,
+        coreLogger,
+      );
+
+      // Prepare reasoning parameter based on config
+      // Check if model actually supports thinking (optional, for better UX)
+      const modelSupportsThinking = config.enableReasoning
+        ? await supportsThinking(model, AIServiceProvider.Ollama, {
+            apiBase: this.host,
+          })
+        : false;
+
+      const thinkParam = determineThinkParam(
+        config.enableReasoning ?? false,
+        config.reasoningEffort,
+        modelSupportsThinking,
+        coreLogger,
+      );
 
       logger.info('Ollama API call:', {
         model,
@@ -180,13 +193,16 @@ export class OllamaService extends BaseAIService {
         ollamaMessages,
         host: this.host,
         toolsCount: ollamaTools.length,
+        reasoningEnabled: config.enableReasoning,
+        reasoningEffort: config.reasoningEffort,
+        thinkParam,
       });
 
       const requestOptions: ChatRequest & { stream: true } = {
         model,
         messages: ollamaMessages as OllamaMessage[],
         stream: true,
-        think: true,
+        ...(thinkParam !== undefined && { think: thinkParam }), // Conditional inclusion
         tools: ollamaTools,
         keep_alive: '5m',
         options: {
@@ -195,8 +211,28 @@ export class OllamaService extends BaseAIService {
         },
       };
 
+      logger.info('Ollama request options:', { requestOptions });
+
       const stream = await this.withRetry(async () => {
-        return await this.ollamaClient.chat(requestOptions);
+        try {
+          return await this.ollamaClient.chat(requestOptions);
+        } catch (error: unknown) {
+          // If model doesn't support granular think levels, retry with boolean true
+          if (
+            error instanceof Error &&
+            error.message.includes('think value') &&
+            error.message.includes('is not supported') &&
+            requestOptions.think &&
+            typeof requestOptions.think === 'string'
+          ) {
+            logger.warn(
+              `Model ${model} doesn't support think level '${requestOptions.think}', falling back to boolean true`,
+            );
+            requestOptions.think = true;
+            return await this.ollamaClient.chat(requestOptions);
+          }
+          throw error;
+        }
       });
 
       if (this.getAbortSignal().aborted) {
@@ -209,9 +245,15 @@ export class OllamaService extends BaseAIService {
           this.logger.info('Stream aborted during iteration');
           break;
         }
+
+        logger.debug('Received chunk from Ollama', { chunk });
+
         const processedChunk = this.processChunk(chunk);
         if (processedChunk) {
+          logger.debug('Processed chunk successfully', { processedChunk });
           yield processedChunk;
+        } else {
+          logger.debug('processChunk returned null');
         }
       }
     } catch (error: unknown) {
@@ -231,74 +273,7 @@ export class OllamaService extends BaseAIService {
    * @private
    */
   private processChunk(chunk: unknown): string | null {
-    try {
-      // Type guard to check if chunk has the expected structure
-      if (
-        !chunk ||
-        typeof chunk !== 'object' ||
-        !('message' in chunk) ||
-        !chunk.message ||
-        typeof chunk.message !== 'object'
-      ) {
-        return null;
-      }
-
-      const message = chunk.message as {
-        content?: string;
-        tool_calls?: Array<{
-          id: string;
-          type: string;
-          function: {
-            name: string;
-            arguments: string;
-          };
-        }>;
-      };
-
-      const result: {
-        content?: string;
-        tool_calls?: Array<{
-          id: string;
-          type: string;
-          function: {
-            name: string;
-            arguments: string;
-          };
-        }>;
-        error?: string;
-      } = {};
-
-      // Handle content
-      if (message.content && typeof message.content === 'string') {
-        result.content = message.content;
-      }
-
-      // Handle tool calls
-      if (message.tool_calls && Array.isArray(message.tool_calls)) {
-        result.tool_calls = message.tool_calls.map((tc) => ({
-          id: tc.id || `call_${Math.random().toString(36).substring(2, 15)}`,
-          type: 'function' as const,
-          function: {
-            name: tc.function.name,
-            arguments:
-              typeof tc.function.arguments === 'string'
-                ? tc.function.arguments
-                : JSON.stringify(tc.function.arguments || {}),
-          },
-        }));
-        logger.debug('Tool calls detected in chunk:', result.tool_calls);
-      }
-
-      // Return if we have meaningful data
-      if (result.content || result.tool_calls) {
-        return JSON.stringify(result);
-      }
-
-      return null;
-    } catch (error: unknown) {
-      logger.error('Failed to process chunk', { error, chunk });
-      return JSON.stringify({ error: 'Failed to process response chunk' });
-    }
+    return processChunk(chunk, coreLogger);
   }
 
   /**
@@ -312,29 +287,7 @@ export class OllamaService extends BaseAIService {
     messages: Message[],
     systemPrompt?: string,
   ): SimpleOllamaMessage[] {
-    if (!Array.isArray(messages) || messages.length === 0) {
-      throw new Error('Messages must be a non-empty array');
-    }
-
-    const ollamaMessages: SimpleOllamaMessage[] = [];
-
-    // Add system prompt if provided
-    if (systemPrompt?.trim()) {
-      ollamaMessages.push({
-        role: 'system',
-        content: systemPrompt.trim(),
-      });
-    }
-
-    // Convert each message
-    for (const message of messages) {
-      const converted = this.convertMessage(message);
-      if (converted) {
-        ollamaMessages.push(converted);
-      }
-    }
-
-    return ollamaMessages;
+    return convertToOllamaMessages(messages, systemPrompt, coreLogger);
   }
 
   /**
@@ -344,131 +297,7 @@ export class OllamaService extends BaseAIService {
    * @private
    */
   private convertMessage(message: Message): SimpleOllamaMessage | null {
-    if (!message?.role) {
-      logger.warn('Invalid message structure', { message });
-      return null;
-    }
-
-    switch (message.role) {
-      case 'user':
-        return this.convertUserMessage(message);
-
-      case 'assistant':
-        return this.convertAssistantMessage(message);
-
-      case 'system':
-        // System messages are handled separately in convertToOllamaMessages
-        return {
-          role: 'system',
-          content: this.processMessageContent(message.content) || '',
-          tool_call_id: message.tool_call_id,
-        };
-
-      case 'tool':
-        // Convert tool result to a user message for processing in Ollama
-        return {
-          role: 'user',
-          content: `Tool result: ${this.processMessageContent(message.content)}`,
-          tool_call_id: message.tool_call_id,
-        };
-
-      default:
-        logger.warn(`Unsupported message role: ${message.role}`);
-        return null;
-    }
-  }
-
-  /**
-   * Converts a user message to the Ollama format.
-   * @param message The user message.
-   * @returns A `SimpleOllamaMessage` object.
-   * @private
-   */
-  private convertUserMessage(message: Message): SimpleOllamaMessage | null {
-    return {
-      role: 'user',
-      content: this.processMessageContent(message.content),
-    };
-  }
-
-  /**
-   * Converts an assistant message to the Ollama format, including tool calls.
-   * @param message The assistant message.
-   * @returns A `SimpleOllamaMessage` object.
-   * @private
-   */
-  private convertAssistantMessage(
-    message: Message,
-  ): SimpleOllamaMessage | null {
-    const result: SimpleOllamaMessage = {
-      role: 'assistant',
-      content: this.processMessageContent(message.content) || '',
-    };
-
-    // Handle tool calls
-    if (message.tool_calls && message.tool_calls.length > 0) {
-      result.tool_calls = message.tool_calls.map((tc) => ({
-        id: tc.id || this.generateToolCallId(),
-        type: 'function' as const,
-        function: {
-          name: tc.function.name,
-          arguments: this.parseArguments(tc.function.arguments),
-        },
-      }));
-      logger.debug(
-        'Converted tool calls for assistant message',
-        result.tool_calls,
-      );
-    }
-
-    return result;
-  }
-
-  /**
-   * Generates a random ID for a tool call.
-   * @returns A unique tool call ID string.
-   * @private
-   */
-  private generateToolCallId(): string {
-    return `call_${Math.random().toString(36).substring(2, 15)}`;
-  }
-
-  /**
-   * Safely parses a string of tool call arguments into a record.
-   * @param args The stringified arguments.
-   * @returns A record of the arguments, or an empty object on failure.
-   * @private
-   */
-  private parseArguments(args: string): Record<string, unknown> {
-    try {
-      if (typeof args === 'string') {
-        return JSON.parse(args || '{}');
-      }
-      return args || {};
-    } catch (error) {
-      logger.warn('Failed to parse tool call arguments, using empty object:', {
-        args,
-        error,
-      });
-      return {};
-    }
-  }
-
-  /**
-   * Gets a default context window size for a given Ollama model name.
-   * @param modelName The name of the model.
-   * @returns The estimated context window size.
-   * @private
-   */
-  private getModelContextWindow(modelName: string): number {
-    // Context window for common Ollama models
-    if (modelName.includes('llama3.1')) return 128000;
-    if (modelName.includes('llama3')) return 8192;
-    if (modelName.includes('llama2')) return 4096;
-    if (modelName.includes('codellama')) return 16384;
-    if (modelName.includes('mistral')) return 8192;
-    if (modelName.includes('qwen')) return 32768;
-    return 4096; // default value
+    return convertMessage(message, coreLogger);
   }
 
   /**
@@ -478,15 +307,7 @@ export class OllamaService extends BaseAIService {
    * @private
    */
   private getModelToolSupport(modelName: string): boolean {
-    // Models that support tool calling (actual support may vary by model)
-    const toolSupportModels = [
-      'llama3.1',
-      'llama3.2',
-      'qwen',
-      'mistral',
-      'dolphin',
-    ];
-    return toolSupportModels.some((model) => modelName.includes(model));
+    return getModelToolSupport(modelName);
   }
 
   /**

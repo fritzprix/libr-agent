@@ -25,6 +25,10 @@ interface GeminiServiceConfig {
   maxOutputTokens?: number;
   temperature?: number;
   functionCallingConfig?: { mode: 'auto' | 'any' | 'none' };
+  thinkingConfig?: {
+    thinkingBudget?: number; // -1 (dynamic) | 0 (disabled) | positive number (token count)
+    includeThoughts?: boolean; // Include thinking process in response
+  };
 }
 
 /**
@@ -53,6 +57,27 @@ export class GeminiService extends BaseAIService {
   private generateToolCallId(): string {
     // keep for backward compatibility with subclasses expecting this method
     return generateToolCallId();
+  }
+
+  /**
+   * Maps reasoning effort level to Gemini thinkingBudget tokens.
+   * @param level The reasoning effort level.
+   * @returns The thinking budget in tokens.
+   * @private
+   */
+  private mapReasoningEffortToBudget(
+    level?: 'low' | 'medium' | 'high',
+  ): number {
+    switch (level) {
+      case 'low':
+        return 1024; // Fast, minimal reasoning
+      case 'medium':
+        return 8192; // Balanced reasoning (default)
+      case 'high':
+        return 24576; // Deep reasoning (higher cost)
+      default:
+        return -1; // Dynamic adjustment by the model
+    }
   }
 
   /**
@@ -119,6 +144,24 @@ export class GeminiService extends BaseAIService {
         geminiConfig.temperature = config.temperature;
       }
 
+      // Add thinkingConfig for Gemini 2.5+ models
+      if (config.enableReasoning) {
+        const isGemini25Plus = /gemini-2\.[5-9]|gemini-[3-9]/.test(model);
+        if (isGemini25Plus) {
+          const thinkingBudget = this.mapReasoningEffortToBudget(
+            config.reasoningEffort,
+          );
+          geminiConfig.thinkingConfig = {
+            thinkingBudget,
+            includeThoughts: true,
+          };
+          logger.info('Gemini thinking mode enabled', {
+            model,
+            thinkingBudget,
+          });
+        }
+      }
+
       const result = await this.withRetry(async () => {
         return this.genAI.models.generateContentStream({
           model: model,
@@ -138,7 +181,14 @@ export class GeminiService extends BaseAIService {
           break;
         }
 
-        logger.info('chunk : ', { chunk });
+        logger.info('Gemini chunk received:', {
+          chunk,
+          hasText: !!chunk.text,
+          hasFunctionCalls: !!chunk.functionCalls,
+          hasThoughts: !!(chunk as { thoughts?: unknown }).thoughts,
+          chunkKeys: Object.keys(chunk || {}),
+        });
+
         if (chunk.functionCalls && chunk.functionCalls.length > 0) {
           const validFunctionCalls = chunk.functionCalls.filter(
             (fc) => fc.name && typeof fc.name === 'string',
@@ -157,6 +207,8 @@ export class GeminiService extends BaseAIService {
           }
         } else if (chunk.text) {
           yield JSON.stringify({ content: chunk.text });
+        } else {
+          logger.warn('Gemini chunk has no text or functionCalls', { chunk });
         }
       }
     } catch (error) {

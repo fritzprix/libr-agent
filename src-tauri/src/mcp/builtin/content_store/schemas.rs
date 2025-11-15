@@ -13,55 +13,58 @@ pub(crate) fn tool_add_content_schema() -> JSONSchema {
         "content".to_string(),
         string_prop(None, None, Some("Direct content to add")),
     );
-    props.insert(
-        "metadata".to_string(),
-        object_schema(
-            {
-                let mut meta_props: HashMap<String, JSONSchema> = HashMap::new();
-                meta_props.insert(
-                    "filename".to_string(),
-                    string_prop(None, None, Some("Content filename")),
-                );
-                meta_props.insert(
-                    "mime_type".to_string(),
-                    string_prop(None, None, Some("MIME type")),
-                );
-                meta_props.insert(
-                    "size".to_string(),
-                    integer_prop(Some(0), None, Some("Content size in bytes")),
-                );
-                meta_props.insert(
-                    "uploaded_at".to_string(),
-                    string_prop(None, None, Some("Upload timestamp")),
-                );
-                meta_props
-            },
-            vec![],
-        ),
+
+    // Create metadata object schema with description
+    let mut meta_props: HashMap<String, JSONSchema> = HashMap::new();
+    meta_props.insert(
+        "filename".to_string(),
+        string_prop(None, None, Some("Content filename")),
     );
+    meta_props.insert(
+        "mime_type".to_string(),
+        string_prop(None, None, Some("MIME type")),
+    );
+    meta_props.insert(
+        "size".to_string(),
+        integer_prop(Some(0), None, Some("Content size in bytes")),
+    );
+    meta_props.insert(
+        "uploaded_at".to_string(),
+        string_prop(None, None, Some("Upload timestamp")),
+    );
+
+    let mut metadata_schema = object_schema(meta_props, vec![]);
+    // Add description to the metadata object itself
+    metadata_schema.description = Some("Optional metadata about the content".to_string());
+
+    props.insert("metadata".to_string(), metadata_schema);
+
+    // Use None instead of empty vec![] for required
     object_schema(props, vec![])
 }
 
 pub(crate) fn tool_list_content_schema() -> JSONSchema {
     let mut props: HashMap<String, JSONSchema> = HashMap::new();
-    props.insert(
-        "pagination".to_string(),
-        object_schema(
-            {
-                let mut pagination_props: HashMap<String, JSONSchema> = HashMap::new();
-                pagination_props.insert(
-                    "offset".to_string(),
-                    integer_prop(Some(0), None, Some("Pagination offset")),
-                );
-                pagination_props.insert(
-                    "limit".to_string(),
-                    integer_prop(Some(1), Some(1000), Some("Pagination limit")),
-                );
-                pagination_props
-            },
-            vec![],
-        ),
+
+    // Create pagination object schema with description
+    let mut pagination_props: HashMap<String, JSONSchema> = HashMap::new();
+    pagination_props.insert(
+        "offset".to_string(),
+        integer_prop(Some(0), None, Some("Pagination offset")),
     );
+    pagination_props.insert(
+        "limit".to_string(),
+        integer_prop(Some(1), Some(1000), Some("Pagination limit")),
+    );
+
+    let mut pagination_schema = object_schema(pagination_props, vec![]);
+    // Add description to the pagination object itself
+    pagination_schema.description =
+        Some("Optional pagination parameters for listing content".to_string());
+
+    props.insert("pagination".to_string(), pagination_schema);
+
+    // Use None instead of empty vec![] for required
     object_schema(props, vec![])
 }
 
@@ -88,32 +91,33 @@ pub(crate) fn tool_keyword_search_schema() -> JSONSchema {
         "query".to_string(),
         string_prop(None, None, Some("Search query string")),
     );
-    props.insert(
-        "options".to_string(),
-        object_schema(
-            {
-                let mut option_props: HashMap<String, JSONSchema> = HashMap::new();
-                option_props.insert(
-                    "top_n".to_string(),
-                    integer_prop(
-                        Some(1),
-                        Some(100),
-                        Some("Maximum number of results to return"),
-                    ),
-                );
-                option_props.insert(
-                    "threshold".to_string(),
-                    number_prop(
-                        Some(0.0),
-                        Some(1.0),
-                        Some("Minimum relevance score (0-1 float)"),
-                    ),
-                );
-                option_props
-            },
-            vec![],
+
+    // Create options object schema with description
+    let mut option_props: HashMap<String, JSONSchema> = HashMap::new();
+    option_props.insert(
+        "top_n".to_string(),
+        integer_prop(
+            Some(1),
+            Some(100),
+            Some("Maximum number of results to return"),
         ),
     );
+    option_props.insert(
+        "threshold".to_string(),
+        number_prop(
+            Some(0.0),
+            Some(1.0),
+            Some("Minimum relevance score (0-1 float)"),
+        ),
+    );
+
+    let mut options_schema = object_schema(option_props, vec![]);
+    // Add description to the options object itself
+    options_schema.description =
+        Some("Optional search parameters for fine-tuning results".to_string());
+
+    props.insert("options".to_string(), options_schema);
+
     object_schema(props, vec!["query".to_string()])
 }
 

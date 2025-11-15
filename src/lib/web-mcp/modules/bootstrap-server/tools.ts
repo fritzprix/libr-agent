@@ -14,7 +14,8 @@ export const bootstrapToolsSchema: MCPTool[] = [
     inputSchema: {
       type: 'object',
       properties: {},
-      required: [],
+      // Omit required field when empty instead of using empty array
+      // to avoid DeepSeek/Fireworks JSON Schema validation errors
     },
   },
   {

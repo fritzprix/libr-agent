@@ -38,9 +38,11 @@ pub async fn call_mcp_tool(
     server_name: String,
     tool_name: String,
     arguments: serde_json::Value,
+    request_id: Option<String>,
 ) -> MCPResponse {
+    let request_id = request_id.map(serde_json::Value::String);
     get_mcp_manager()
-        .call_tool(&server_name, &tool_name, arguments)
+        .call_tool(&server_name, &tool_name, arguments, request_id)
         .await
 }
 
@@ -50,6 +52,7 @@ pub async fn sample_from_mcp_server(
     server_name: String,
     prompt: String,
     options: Option<serde_json::Value>,
+    request_id: Option<String>,
 ) -> Result<MCPResponse, String> {
     let sampling_options = if let Some(opts) = options {
         Some(
@@ -65,8 +68,9 @@ pub async fn sample_from_mcp_server(
         options: sampling_options,
     };
 
+    let request_id = request_id.map(serde_json::Value::String);
     Ok(get_mcp_manager()
-        .sample_from_model(&server_name, request)
+        .sample_from_model(&server_name, request, request_id)
         .await)
 }
 
@@ -279,9 +283,11 @@ pub async fn call_builtin_tool(
     server_name: String,
     tool_name: String,
     arguments: serde_json::Value,
+    request_id: Option<String>,
 ) -> MCPResponse {
+    let request_id = request_id.map(serde_json::Value::String);
     get_mcp_manager()
-        .call_builtin_tool(&server_name, &tool_name, arguments)
+        .call_builtin_tool(&server_name, &tool_name, arguments, request_id)
         .await
 }
 
@@ -304,9 +310,11 @@ pub async fn call_tool_unified(
     server_name: String,
     tool_name: String,
     arguments: serde_json::Value,
+    request_id: Option<String>,
 ) -> MCPResponse {
+    let request_id = request_id.map(serde_json::Value::String);
     get_mcp_manager()
-        .call_tool_unified(&server_name, &tool_name, arguments)
+        .call_tool_unified(&server_name, &tool_name, arguments, request_id)
         .await
 }
 

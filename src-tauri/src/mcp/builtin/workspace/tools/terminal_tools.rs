@@ -115,7 +115,7 @@ pub fn create_list_processes_tool() -> MCPTool {
         description: "List all background processes in the current session. \
                       Filter by status: 'all' (default), 'running', or 'finished'."
             .to_string(),
-        input_schema: object_schema(props, Vec::new()),
+        input_schema: object_schema(props, vec![]),
         output_schema: None,
         annotations: None,
     }

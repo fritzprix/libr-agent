@@ -39,6 +39,8 @@ export interface ProviderInfo {
   apiKeyEnvVar: string;
   /** The base URL for the provider's API. */
   baseUrl: string;
+  /** Indicates whether this provider requires an API key for authentication. */
+  requiresApiKey?: boolean;
   /** A record of the models offered by this provider, keyed by model ID. */
   models: Record<string, ModelInfo>;
 }

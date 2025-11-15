@@ -8,8 +8,10 @@ import { FireworksService } from './fireworks';
 import { CerebrasService } from './cerebras';
 import { OllamaService } from './ollama';
 import { EmptyAIService } from './empty';
+import { LLMConfigManager } from '../llm-config-manager';
 
 const logger = getLogger('AIService');
+const configManager = new LLMConfigManager();
 
 /**
  * An internal interface to store a cached AI service instance along with its metadata.
@@ -45,7 +47,18 @@ export class AIServiceFactory {
     apiKey: string,
     config?: AIServiceConfig,
   ): IAIService {
-    const instanceKey = `${provider}:${apiKey}`;
+    // Check if this provider requires an API key
+    const providers = configManager.getProviders();
+    const providerInfo = providers[provider];
+    const requiresApiKey = providerInfo?.requiresApiKey ?? true; // Default to true for safety
+
+    // If provider doesn't require API key and none provided, use a dummy key
+    const effectiveApiKey =
+      !requiresApiKey && (!apiKey || apiKey.trim().length === 0)
+        ? `${provider}-local`
+        : apiKey;
+
+    const instanceKey = `${provider}:${effectiveApiKey}`;
     const now = Date.now();
 
     // Clean up expired instances
@@ -66,25 +79,25 @@ export class AIServiceFactory {
     try {
       switch (provider) {
         case AIServiceProvider.Groq:
-          service = new GroqService(apiKey, config);
+          service = new GroqService(effectiveApiKey, config);
           break;
         case AIServiceProvider.OpenAI:
-          service = new OpenAIService(apiKey, config);
+          service = new OpenAIService(effectiveApiKey, config);
           break;
         case AIServiceProvider.Anthropic:
-          service = new AnthropicService(apiKey, config);
+          service = new AnthropicService(effectiveApiKey, config);
           break;
         case AIServiceProvider.Gemini:
-          service = new GeminiService(apiKey, config);
+          service = new GeminiService(effectiveApiKey, config);
           break;
         case AIServiceProvider.Fireworks:
-          service = new FireworksService(apiKey, config);
+          service = new FireworksService(effectiveApiKey, config);
           break;
         case AIServiceProvider.Cerebras:
-          service = new CerebrasService(apiKey, config);
+          service = new CerebrasService(effectiveApiKey, config);
           break;
         case AIServiceProvider.Ollama:
-          service = new OllamaService(apiKey, config);
+          service = new OllamaService(effectiveApiKey, config);
           break;
         default:
           logger.warn(
@@ -102,7 +115,7 @@ export class AIServiceFactory {
 
     this.instances.set(instanceKey, {
       service,
-      apiKey,
+      apiKey: effectiveApiKey,
       created: now,
     });
 

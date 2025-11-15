@@ -1,4 +1,10 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AIServiceProvider } from '@/lib/ai-service';
 import { useSettings } from '@/hooks/use-settings';
@@ -72,7 +78,7 @@ function ProviderCardBase({
 
   return (
     <Card className="bg-background border shadow-sm min-w-0 w-full">
-      <CardHeader className="pb-2">
+      <CardHeader className="pb-4">
         <CardTitle className="text-foreground text-base font-medium break-words">
           {providerName}
         </CardTitle>
@@ -145,6 +151,23 @@ export default function SettingsPage() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const sessionCtx = useSessionContext();
 
+  // Local state for window size and language to prevent immediate context updates
+  const [localWindowSize, setLocalWindowSize] = useState(windowSize);
+  const [localLanguage, setLocalLanguage] = useState(uiLanguage);
+  const otherPendingRef = useRef<{
+    windowSize?: number;
+    uiLanguage?: string;
+  }>({});
+
+  // Sync local state with context when context changes (e.g., after Apply or external updates)
+  useEffect(() => {
+    setLocalWindowSize(windowSize);
+  }, [windowSize]);
+
+  useEffect(() => {
+    setLocalLanguage(uiLanguage);
+  }, [uiLanguage]);
+
   const handlePendingChange = useCallback(
     (provider: AIServiceProvider, patch: Partial<ServiceConfig>) => {
       pendingRef.current = {
@@ -154,29 +177,83 @@ export default function SettingsPage() {
           ...patch,
         },
       } as Partial<Record<AIServiceProvider, ServiceConfig>>;
-      setPendingCount(Object.keys(pendingRef.current).length);
+      setPendingCount(
+        Object.keys(pendingRef.current).length +
+          Object.keys(otherPendingRef.current).length,
+      );
     },
     [serviceConfigs],
   );
 
+  const handleWindowSizeChange = useCallback((value: number) => {
+    setLocalWindowSize(value);
+    otherPendingRef.current = {
+      ...otherPendingRef.current,
+      windowSize: value,
+    };
+    setPendingCount(
+      Object.keys(pendingRef.current).length +
+        Object.keys(otherPendingRef.current).length,
+    );
+  }, []);
+
+  const handleLanguageChange = useCallback((lng: string) => {
+    setLocalLanguage(lng);
+    otherPendingRef.current = {
+      ...otherPendingRef.current,
+      uiLanguage: lng,
+    };
+    setPendingCount(
+      Object.keys(pendingRef.current).length +
+        Object.keys(otherPendingRef.current).length,
+    );
+  }, []);
+
   const flushPending = useCallback(async () => {
     const pending = pendingRef.current;
-    if (!pending || Object.keys(pending).length === 0) return;
+    const otherPending = otherPendingRef.current;
+    if (
+      (!pending || Object.keys(pending).length === 0) &&
+      (!otherPending || Object.keys(otherPending).length === 0)
+    ) {
+      return;
+    }
     try {
-      // Merge pending into the current serviceConfigs and write once
-      const merged: Record<AIServiceProvider, ServiceConfig> = {
-        ...(serviceConfigs || {}),
-      } as Record<AIServiceProvider, ServiceConfig>;
+      // Prepare updates object
+      const updates: Partial<{
+        serviceConfigs: Record<AIServiceProvider, ServiceConfig>;
+        windowSize: number;
+        uiLanguage: string;
+      }> = {};
 
-      for (const k of Object.keys(pending) as Array<AIServiceProvider>) {
-        merged[k] = {
-          ...(merged[k] || {}),
-          ...(pending[k] as ServiceConfig),
-        };
+      // Merge pending service configs
+      if (pending && Object.keys(pending).length > 0) {
+        const merged: Record<AIServiceProvider, ServiceConfig> = {
+          ...(serviceConfigs || {}),
+        } as Record<AIServiceProvider, ServiceConfig>;
+
+        for (const k of Object.keys(pending) as Array<AIServiceProvider>) {
+          merged[k] = {
+            ...(merged[k] || {}),
+            ...(pending[k] as ServiceConfig),
+          };
+        }
+        updates.serviceConfigs = merged;
       }
 
-      await update({ serviceConfigs: merged });
+      // Add other pending changes
+      if (otherPending.windowSize !== undefined) {
+        updates.windowSize = otherPending.windowSize;
+      }
+      if (otherPending.uiLanguage !== undefined) {
+        updates.uiLanguage = otherPending.uiLanguage;
+        // Apply i18n language change when applying settings
+        i18n.changeLanguage(otherPending.uiLanguage);
+      }
+
+      await update(updates);
       pendingRef.current = {};
+      otherPendingRef.current = {};
       setPendingCount(0);
     } catch (e) {
       logger.error('Failed to apply pending settings', e);
@@ -232,7 +309,7 @@ export default function SettingsPage() {
           </TabsList>
 
           <TabsContent value="api-key">
-            <div className="flex flex-col gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {providerEntries.map((provider) => {
                 const cfg = serviceConfigs[provider] || {};
                 const providerName =
@@ -264,9 +341,9 @@ export default function SettingsPage() {
                 <Input
                   type="number"
                   placeholder="e.g., 50"
-                  value={windowSize}
+                  value={localWindowSize}
                   onChange={(e) =>
-                    update({ windowSize: parseInt(e.target.value, 10) || 0 })
+                    handleWindowSizeChange(parseInt(e.target.value, 10) || 0)
                   }
                   className="bg-background border text-foreground w-full max-w-xs"
                 />
@@ -283,24 +360,18 @@ export default function SettingsPage() {
                 <label className="block text-muted-foreground mb-2 font-medium">
                   {t('settings.language.label', 'Language')}
                 </label>
-                <div className="flex gap-3 items-center">
-                  <select
-                    className="bg-background border text-foreground rounded px-2 py-1"
-                    value={uiLanguage}
-                    onChange={(e) => {
-                      const lng = e.target.value;
-                      i18n.changeLanguage(lng);
-                      update({ uiLanguage: lng });
-                    }}
-                  >
-                    <option value="en">
-                      {t('settings.language.english', 'English')}
-                    </option>
-                    <option value="ko">
-                      {t('settings.language.korean', 'Korean')}
-                    </option>
-                  </select>
-                </div>
+                <select
+                  className="bg-background border text-foreground rounded px-3 py-2 w-full max-w-xs"
+                  value={localLanguage}
+                  onChange={(e) => handleLanguageChange(e.target.value)}
+                >
+                  <option value="en">
+                    {t('settings.language.english', 'English')}
+                  </option>
+                  <option value="ko">
+                    {t('settings.language.korean', 'Korean')}
+                  </option>
+                </select>
               </div>
             </div>
           </TabsContent>
@@ -308,7 +379,7 @@ export default function SettingsPage() {
           <TabsContent value="data-reset">
             <div className="space-y-6">
               <Card className="bg-background border shadow-sm">
-                <CardHeader className="pb-2">
+                <CardHeader className="pb-4">
                   <CardTitle className="text-foreground text-base font-medium">
                     {t('settings.dataReset.title', 'Data & Reset')}
                   </CardTitle>
@@ -320,86 +391,84 @@ export default function SettingsPage() {
                       'This will permanently delete all local sessions, their messages, and workspace file stores from the local database and native workspace directories. This action is destructive and cannot be undone.',
                     )}
                   </p>
-                  <div className="flex items-center justify-left pt-4 gap-x-2">
-                    <>
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        disabled={isDeleting}
-                        onClick={async (e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
+                  <div className="flex items-center justify-start pt-4 gap-x-2">
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      disabled={isDeleting}
+                      onClick={async (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
 
-                          // Open confirmation dialog
-                          setConfirmOpen(true);
-                        }}
-                      >
-                        <span>
-                          {t(
-                            'settings.dataReset.clearAll',
-                            'Clear All Sessions, Messages & Workspace',
-                          )}
-                        </span>
-                      </Button>
+                        // Open confirmation dialog
+                        setConfirmOpen(true);
+                      }}
+                    >
                       {isDeleting && (
-                        <>
-                          <LoadingSpinner size="sm" className="inline-block" />
-                        </>
+                        <LoadingSpinner size="sm" className="mr-2" />
                       )}
-                      <AlertDialog
-                        open={confirmOpen}
-                        onOpenChange={setConfirmOpen}
-                      >
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>
-                              {t(
-                                'settings.dataReset.confirmTitle',
-                                'Delete All Sessions, Messages & Workspace',
-                              )}
-                            </AlertDialogTitle>
-                            <AlertDialogDescription>
-                              {t(
-                                'settings.dataReset.confirmDescription',
-                                'This will permanently delete all local sessions, their messages, and workspace file stores from the local database and native workspace directories. This action cannot be undone. Are you sure you want to continue?',
-                              )}
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>
-                              {t('common.cancel', 'Cancel')}
-                            </AlertDialogCancel>
-                            <AlertDialogAction
-                              onClick={async () => {
-                                setConfirmOpen(false);
-                                setIsDeleting(true);
-                                try {
-                                  await sessionCtx.clearAllSessions();
-                                  toast.success(
-                                    t(
-                                      'settings.dataReset.success',
-                                      'All sessions, messages and workspace files have been successfully deleted.',
-                                    ),
-                                  );
-                                } catch (e) {
-                                  logger.error('Failed to clear sessions', e);
-                                  toast.error(
-                                    t(
-                                      'settings.dataReset.error',
-                                      'Failed to clear sessions. See logs for details.',
-                                    ),
-                                  );
-                                } finally {
-                                  setIsDeleting(false);
-                                }
-                              }}
-                            >
-                              {t('common.delete', 'Delete')}
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    </>
+                      <span>
+                        {isDeleting
+                          ? t('settings.dataReset.deleting', 'Deleting...')
+                          : t(
+                              'settings.dataReset.clearAll',
+                              'Clear All Sessions, Messages & Workspace',
+                            )}
+                      </span>
+                    </Button>
+                    <AlertDialog
+                      open={confirmOpen}
+                      onOpenChange={setConfirmOpen}
+                    >
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>
+                            {t(
+                              'settings.dataReset.confirmTitle',
+                              'Delete All Sessions, Messages & Workspace',
+                            )}
+                          </AlertDialogTitle>
+                          <AlertDialogDescription>
+                            {t(
+                              'settings.dataReset.confirmDescription',
+                              'This will permanently delete all local sessions, their messages, and workspace file stores from the local database and native workspace directories. This action cannot be undone. Are you sure you want to continue?',
+                            )}
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>
+                            {t('common.cancel', 'Cancel')}
+                          </AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={async () => {
+                              setConfirmOpen(false);
+                              setIsDeleting(true);
+                              try {
+                                await sessionCtx.clearAllSessions();
+                                toast.success(
+                                  t(
+                                    'settings.dataReset.success',
+                                    'All sessions, messages and workspace files have been successfully deleted.',
+                                  ),
+                                );
+                              } catch (e) {
+                                logger.error('Failed to clear sessions', e);
+                                toast.error(
+                                  t(
+                                    'settings.dataReset.error',
+                                    'Failed to clear sessions. See logs for details.',
+                                  ),
+                                );
+                              } finally {
+                                setIsDeleting(false);
+                              }
+                            }}
+                          >
+                            {t('common.delete', 'Delete')}
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </div>
                 </CardContent>
               </Card>
