@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### [0.2.2] - 2025-11-15
+
+#### Added
+
+- **Automatic Version Display**: Implemented build-time version injection system
+  - Version is now automatically injected from `package.json` during build process using Vite's `define` feature
+  - Added `__APP_VERSION__` global constant for consistent version display across the app
+  - No more hardcoded version strings in source code
+- **Version Display in UI**:
+  - Added version display at the bottom of AppSidebar (visible when sidebar is expanded)
+  - Added LibrAgent logo and version info in SettingsPage header
+
+#### Changed
+
+- **Build Configuration**: Updated `vite.config.ts` to inject version from package.json
+- **Type Definitions**: Added TypeScript global type declaration for `__APP_VERSION__`
+- **Linting**: Configured ESLint to recognize `__APP_VERSION__` as a global readonly variable
+
+#### Technical Details
+
+- Version is now maintained in a single source of truth (`package.json`)
+- Build system automatically propagates version to all UI components
+- Type-safe version access throughout the application
+
 ### [0.2.1] - 2025-11-15
 
 ### Patch
