@@ -295,7 +295,8 @@ impl MCPServerManager {
         request_id: Option<serde_json::Value>,
     ) -> MCPResponse {
         let connections = self.connections.lock().await;
-        let request_id = request_id.unwrap_or_else(|| serde_json::Value::String(Uuid::new_v4().to_string()));
+        let request_id =
+            request_id.unwrap_or_else(|| serde_json::Value::String(Uuid::new_v4().to_string()));
 
         if let Some(_connection) = connections.get(server_name) {
             // This needs to be implemented once RMCP supports sampling.
@@ -347,7 +348,8 @@ impl MCPServerManager {
         let connections = self.connections.lock().await;
 
         // Use provided request_id or generate a new unique ID
-        let request_id = request_id.unwrap_or_else(|| serde_json::Value::String(Uuid::new_v4().to_string()));
+        let request_id =
+            request_id.unwrap_or_else(|| serde_json::Value::String(Uuid::new_v4().to_string()));
 
         if let Some(connection) = connections.get(server_name) {
             // Use the rmcp API - CallToolRequestParam struct
@@ -743,9 +745,14 @@ impl MCPServerManager {
 
         let servers = self.builtin_servers.lock().await;
         let result = match servers.as_ref() {
-            Some(registry) => registry.call_tool(server_name, tool_name, args, request_id).await,
+            Some(registry) => {
+                registry
+                    .call_tool(server_name, tool_name, args, request_id)
+                    .await
+            }
             None => {
-                let request_id = request_id.unwrap_or_else(|| serde_json::Value::String(Uuid::new_v4().to_string()));
+                let request_id = request_id
+                    .unwrap_or_else(|| serde_json::Value::String(Uuid::new_v4().to_string()));
                 MCPResponse {
                     jsonrpc: "2.0".to_string(),
                     id: Some(request_id),
@@ -810,7 +817,8 @@ impl MCPServerManager {
             self.call_builtin_tool(normalized_server_name, tool_name, args, request_id)
                 .await
         } else {
-            self.call_tool(server_name, tool_name, args, request_id).await
+            self.call_tool(server_name, tool_name, args, request_id)
+                .await
         }
     }
 

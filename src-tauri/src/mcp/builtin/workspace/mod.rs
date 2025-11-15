@@ -739,7 +739,12 @@ impl BuiltinMCPServer for WorkspaceServer {
         Ok(())
     }
 
-    async fn call_tool(&self, tool_name: &str, args: Value, request_id: Option<Value>) -> MCPResponse {
+    async fn call_tool(
+        &self,
+        tool_name: &str,
+        args: Value,
+        request_id: Option<Value>,
+    ) -> MCPResponse {
         match tool_name {
             // File operation tools
             "read_file" => self.handle_read_file(args).await,
@@ -765,7 +770,7 @@ impl BuiltinMCPServer for WorkspaceServer {
             "read_process_output" => self.handle_read_process_output(args).await,
             "list_processes" => self.handle_list_processes(args).await,
             _ => {
-                let request_id = request_id.unwrap_or_else(|| Self::generate_request_id());
+                let request_id = request_id.unwrap_or_else(Self::generate_request_id);
                 Self::error_response(request_id, -32601, &format!("Tool '{tool_name}' not found"))
             }
         }

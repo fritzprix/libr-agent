@@ -63,7 +63,12 @@ pub trait BuiltinMCPServer: Send + Sync + std::fmt::Debug {
     /// * `tool_name` - The name of the tool to call.
     /// * `args` - The arguments for the tool.
     /// * `request_id` - Optional request ID from the client. If None, a new UUID is generated.
-    async fn call_tool(&self, tool_name: &str, args: Value, request_id: Option<Value>) -> MCPResponse;
+    async fn call_tool(
+        &self,
+        tool_name: &str,
+        args: Value,
+        request_id: Option<Value>,
+    ) -> MCPResponse;
 
     /// Returns a markdown-formatted string describing the server's current status and context.
     fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
@@ -515,9 +520,12 @@ impl BuiltinServerRegistry {
         if let Some(server) = self.get_server(server_name) {
             // Apply JSON normalization before calling the tool
             let normalized_args = Self::normalize_json_args(args);
-            server.call_tool(tool_name, normalized_args, request_id).await
+            server
+                .call_tool(tool_name, normalized_args, request_id)
+                .await
         } else {
-            let request_id = request_id.unwrap_or_else(|| Value::String(uuid::Uuid::new_v4().to_string()));
+            let request_id =
+                request_id.unwrap_or_else(|| Value::String(uuid::Uuid::new_v4().to_string()));
             MCPResponse {
                 jsonrpc: "2.0".to_string(),
                 id: Some(request_id),
