@@ -1,15 +1,16 @@
 import { Message } from '@/models/chat';
 import React from 'react';
 import ContentBubble from './ContentBubble';
-import ToolCallBubble from './ToolCallBubble';
-import ToolOutputBubble from './ToolOutputBubble';
+import ToolCallResultBubble from './ToolCallResultBubble';
 
 interface MessageBubbleRouterProps {
   message: Message;
+  nextMessages?: Message[]; // Tool result messages following this message
 }
 
 const MessageBubbleRouter: React.FC<MessageBubbleRouterProps> = ({
   message,
+  nextMessages = [],
 }) => {
   const hasToolCalls =
     message.tool_calls &&
@@ -19,22 +20,34 @@ const MessageBubbleRouter: React.FC<MessageBubbleRouterProps> = ({
 
   const hasText = !!(message.content && message.content.length > 0);
 
-  // If the message contains both text and tool_calls, render both.
-  if (hasToolCalls && hasText) {
+  // If the message has tool calls, use the integrated bubble
+  if (hasToolCalls) {
     return (
       <>
-        <ContentBubble message={message} />
-        <ToolCallBubble tool_calls={message.tool_calls!} />
+        {hasText && <ContentBubble message={message} />}
+        {message.tool_calls!.map((toolCall) => {
+          // Find the matching tool result by tool_call_id
+          const toolResult = nextMessages.find(
+            (m) => m.role === 'tool' && m.tool_call_id === toolCall.id,
+          );
+
+          return (
+            <ToolCallResultBubble
+              key={toolCall.id}
+              toolCall={toolCall}
+              toolResult={toolResult}
+              isLoading={!toolResult}
+            />
+          );
+        })}
       </>
     );
   }
 
-  if (hasToolCalls) {
-    return <ToolCallBubble tool_calls={message.tool_calls!} />;
-  }
-
+  // Standalone tool messages are already rendered with their parent assistant message
+  // So we return null to avoid duplicate rendering
   if (message.role === 'tool') {
-    return <ToolOutputBubble message={message} />;
+    return null;
   }
 
   return <ContentBubble message={message} />;

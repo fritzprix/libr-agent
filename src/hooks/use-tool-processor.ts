@@ -130,6 +130,9 @@ export const useToolProcessor = ({ submit }: UseToolProcessorConfig) => {
                 tool_call_id: toolCall.id,
                 sessionId: currentSession?.id || '',
                 threadId: currentSession?.id || '', // Default to top thread
+                metadata: {
+                  executionTime,
+                },
               };
 
               const hasUi = hasUIResource(mcpResponse);
@@ -142,6 +145,7 @@ export const useToolProcessor = ({ submit }: UseToolProcessorConfig) => {
 
               return { message: toolResultMessage, hasUi };
             } catch (error) {
+              const executionTime = Date.now() - executionStartTime;
               logger.error('Tool execution failed', { toolName, error });
 
               const errorMessage: Message = {
@@ -154,6 +158,9 @@ export const useToolProcessor = ({ submit }: UseToolProcessorConfig) => {
                 sessionId: currentSession?.id || '',
                 threadId: currentSession?.id || '', // Default to top thread
                 tool_call_id: toolCall.id,
+                metadata: {
+                  executionTime,
+                },
               };
 
               return { message: errorMessage, hasUi: false };

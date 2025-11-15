@@ -104,6 +104,12 @@ export interface Message {
       context?: Record<string, unknown>;
     };
   };
+  // Optional metadata for tool execution tracking
+  metadata?: {
+    executionTime?: number; // Tool execution time in milliseconds
+    retryCount?: number; // Number of retry attempts
+    [key: string]: unknown; // Extensible for future metadata
+  };
 }
 
 export interface ToolCall {
