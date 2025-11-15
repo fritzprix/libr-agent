@@ -1,6 +1,8 @@
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use serde_json::{json, Value};
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use tracing::info;
 
 use super::BuiltinMCPServer;
@@ -18,11 +20,47 @@ pub mod tools;
 pub mod ui_resources;
 pub mod utils;
 
+/// Pending execution state (server-side only)
+/// Stores metadata for shell commands awaiting user input
+#[derive(Debug, Clone)]
+pub struct PendingShellExecution {
+    pub execution_id: String,
+    pub session_id: String,
+    pub executable_command: String, // Command to execute (may include -S flag)
+    pub display_command: String,    // Sanitized version for logs/UI
+    pub run_mode: String,           // "sync" or "async" from 1st call
+    pub timeout: u64,               // Command execution timeout in seconds
+    pub created_at: DateTime<Utc>,
+}
+
+/// Thread-safe storage for pending shell executions
+/// Manages a map of execution_id -> PendingShellExecution
+#[derive(Debug)]
+pub struct PendingExecutions(Mutex<HashMap<String, PendingShellExecution>>);
+
+impl PendingExecutions {
+    pub fn new() -> Self {
+        Self(Mutex::new(HashMap::new()))
+    }
+
+    pub fn insert(&self, exec: PendingShellExecution) {
+        self.0
+            .lock()
+            .unwrap()
+            .insert(exec.execution_id.clone(), exec);
+    }
+
+    pub fn remove(&self, id: &str) -> Option<PendingShellExecution> {
+        self.0.lock().unwrap().remove(id)
+    }
+}
+
 #[derive(Debug)]
 pub struct WorkspaceServer {
     session_manager: Arc<SessionManager>,
     isolation_manager: crate::session_isolation::SessionIsolationManager,
     process_registry: terminal_manager::ProcessRegistry,
+    pending_executions: Arc<PendingExecutions>,
 }
 
 impl WorkspaceServer {
@@ -37,6 +75,7 @@ impl WorkspaceServer {
             session_manager,
             isolation_manager: crate::session_isolation::SessionIsolationManager::new(),
             process_registry,
+            pending_executions: Arc::new(PendingExecutions::new()),
         }
     }
 
@@ -762,6 +801,10 @@ impl BuiltinMCPServer for WorkspaceServer {
             "execute_shell" => self.handle_execute_shell(args).await,
             #[cfg(windows)]
             "execute_windows_cmd" => self.handle_execute_shell(args).await,
+            // Interactive shell execution (2nd tool for user input)
+            "execute_pending_shell" => self.handle_execute_pending_shell(args).await,
+            // Cancel pending execution (UI callback tool)
+            "cancel_pending_execution" => self.handle_cancel_pending_execution(args).await,
             // Export tools
             "export_file" => self.handle_export_file(args).await,
             "export_zip" => self.handle_export_zip(args).await,

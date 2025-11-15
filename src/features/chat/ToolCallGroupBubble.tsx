@@ -156,7 +156,8 @@ export const ToolCallGroupBubble: React.FC<ToolCallGroupBubbleProps> = ({
           >
             <div className="absolute inset-0 flex items-center justify-center">
               <span className="text-xs text-muted-foreground font-medium">
-                {hiddenCount} older {hiddenCount === 1 ? 'call' : 'calls'} hidden
+                {hiddenCount} older {hiddenCount === 1 ? 'call' : 'calls'}{' '}
+                hidden
               </span>
             </div>
           </div>

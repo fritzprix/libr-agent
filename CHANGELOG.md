@@ -107,6 +107,20 @@ All notable changes to this project will be documented in this file.
 
 ## [0.2.0] - 2025-11-10
 
+### Added
+
+- **Interactive Shell Execution with User Prompts (Zero-Knowledge Architecture)** - [Refactoring Plan](docs/history/refactoring_20251115_1430.md)
+  - Added `require_user_input` parameter to `execute_shell` tool for requesting user input before command execution
+  - Implemented secure password handling via direct Tauri command (`execute_with_user_input`)
+  - **Security**: User input (passwords) NEVER appears in MCP requests/responses or logs
+  - **Architecture**: Frontend → Tauri IPC (encrypted) → Backend execution, bypassing MCP protocol entirely
+  - Supports password (hidden) and text (visible) input types with UIResource-based prompt UI
+  - Automatic sudo detection and password prompt generation
+  - Pending execution state management with timeout protection (5 minutes)
+  - Use cases: sudo commands, interactive scripts, confirmation prompts
+  - Password is cleared from memory immediately after execution
+  - See detailed implementation plan and security analysis in refactoring document
+
 ### Breaking Changes
 
 - **Platform-specific shell execution tool names**:
