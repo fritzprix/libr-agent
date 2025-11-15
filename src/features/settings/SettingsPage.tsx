@@ -6,6 +6,7 @@ import React, {
   useState,
 } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { BrainCircuit } from 'lucide-react';
 import { AIServiceProvider } from '@/lib/ai-service';
 import { useSettings } from '@/hooks/use-settings';
 import { useTranslation } from 'react-i18next';
@@ -270,9 +271,17 @@ export default function SettingsPage() {
   return (
     <div className="p-6 text-gray-300 min-h-screen">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl text-foreground font-semibold">
-          {t('settings.title', 'Settings')}
-        </h1>
+        <div className="flex items-center gap-3">
+          <BrainCircuit size={32} className="text-primary" />
+          <div>
+            <h1 className="text-2xl text-foreground font-semibold">
+              {t('settings.title', 'Settings')}
+            </h1>
+            <p className="text-xs text-muted-foreground">
+              LibrAgent v{__APP_VERSION__}
+            </p>
+          </div>
+        </div>
         <div className="flex items-center gap-3">
           {pendingCount > 0 && (
             <span className="text-sm text-yellow-400">

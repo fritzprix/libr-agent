@@ -1,11 +1,11 @@
 import { safeInvoke } from './core';
 import type {
-  MCPServerConfig,
   MCPTool,
   MCPResponse,
   SamplingOptions,
   SamplingResponse,
   OAuthConfig,
+  MCPServerConfigV2,
 } from '@/lib/mcp-types';
 import type { MCPConfig } from '@/models/chat';
 import { createId } from '@paralleldrive/cuid2';
@@ -19,7 +19,7 @@ import { createId } from '@paralleldrive/cuid2';
  * @param config The configuration for the server to start.
  * @returns A promise that resolves with a message from the backend.
  */
-export async function startServer(config: MCPServerConfig): Promise<string> {
+export async function startServer(config: MCPServerConfigV2): Promise<string> {
   return safeInvoke<string>('start_mcp_server', { config });
 }
 
