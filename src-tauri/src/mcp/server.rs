@@ -284,6 +284,7 @@ impl MCPServerManager {
     /// # Arguments
     /// * `server_name` - The name of the server to use for sampling.
     /// * `request` - The `SamplingRequest` containing the prompt and options.
+    /// * `request_id` - Optional request ID from the client. If None, a new UUID is generated.
     ///
     /// # Returns
     /// An `MCPResponse` indicating that the method is not yet implemented.
@@ -291,9 +292,10 @@ impl MCPServerManager {
         &self,
         server_name: &str,
         request: SamplingRequest,
+        request_id: Option<serde_json::Value>,
     ) -> MCPResponse {
         let connections = self.connections.lock().await;
-        let request_id = serde_json::Value::String(Uuid::new_v4().to_string());
+        let request_id = request_id.unwrap_or_else(|| serde_json::Value::String(Uuid::new_v4().to_string()));
 
         if let Some(_connection) = connections.get(server_name) {
             // This needs to be implemented once RMCP supports sampling.
@@ -331,6 +333,7 @@ impl MCPServerManager {
     /// * `server_name` - The name of the server that provides the tool.
     /// * `tool_name` - The name of the tool to call.
     /// * `arguments` - The arguments for the tool, as a `serde_json::Value`.
+    /// * `request_id` - Optional request ID from the client. If None, a new UUID is generated.
     ///
     /// # Returns
     /// An `MCPResponse` containing the result or error of the tool call.
@@ -339,11 +342,12 @@ impl MCPServerManager {
         server_name: &str,
         tool_name: &str,
         arguments: serde_json::Value,
+        request_id: Option<serde_json::Value>,
     ) -> MCPResponse {
         let connections = self.connections.lock().await;
 
-        // Generate a unique ID for this request
-        let request_id = serde_json::Value::String(Uuid::new_v4().to_string());
+        // Use provided request_id or generate a new unique ID
+        let request_id = request_id.unwrap_or_else(|| serde_json::Value::String(Uuid::new_v4().to_string()));
 
         if let Some(connection) = connections.get(server_name) {
             // Use the rmcp API - CallToolRequestParam struct
@@ -722,6 +726,7 @@ impl MCPServerManager {
     /// * `server_name` - The name of the built-in server.
     /// * `tool_name` - The name of the tool to call.
     /// * `args` - The arguments for the tool, as a `serde_json::Value`.
+    /// * `request_id` - Optional request ID from the client. If None, a new UUID is generated.
     ///
     /// # Returns
     /// An `MCPResponse` containing the result of the tool call.
@@ -730,6 +735,7 @@ impl MCPServerManager {
         server_name: &str,
         tool_name: &str,
         args: serde_json::Value,
+        request_id: Option<serde_json::Value>,
     ) -> MCPResponse {
         debug!(
             "call_builtin_tool: server_name='{server_name}', tool_name='{tool_name}', args={args}"
@@ -737,9 +743,9 @@ impl MCPServerManager {
 
         let servers = self.builtin_servers.lock().await;
         let result = match servers.as_ref() {
-            Some(registry) => registry.call_tool(server_name, tool_name, args).await,
+            Some(registry) => registry.call_tool(server_name, tool_name, args, request_id).await,
             None => {
-                let request_id = serde_json::Value::String(Uuid::new_v4().to_string());
+                let request_id = request_id.unwrap_or_else(|| serde_json::Value::String(Uuid::new_v4().to_string()));
                 MCPResponse {
                     jsonrpc: "2.0".to_string(),
                     id: Some(request_id),
@@ -786,6 +792,7 @@ impl MCPServerManager {
     ///   routed to the built-in server registry.
     /// * `tool_name` - The name of the tool to call.
     /// * `args` - The arguments for the tool.
+    /// * `request_id` - Optional request ID from the client. If None, a new UUID is generated.
     ///
     /// # Returns
     /// An `MCPResponse` from the appropriate server.
@@ -794,15 +801,16 @@ impl MCPServerManager {
         server_name: &str,
         tool_name: &str,
         args: serde_json::Value,
+        request_id: Option<serde_json::Value>,
     ) -> MCPResponse {
         // Check if it's a builtin server (starts with "builtin.")
         if server_name.starts_with("builtin.") {
             let normalized_server_name =
                 server_name.strip_prefix("builtin.").unwrap_or(server_name);
-            self.call_builtin_tool(normalized_server_name, tool_name, args)
+            self.call_builtin_tool(normalized_server_name, tool_name, args, request_id)
                 .await
         } else {
-            self.call_tool(server_name, tool_name, args).await
+            self.call_tool(server_name, tool_name, args, request_id).await
         }
     }
 

@@ -8,6 +8,7 @@ import type {
   OAuthConfig,
 } from '@/lib/mcp-types';
 import type { MCPConfig } from '@/models/chat';
+import { createId } from '@paralleldrive/cuid2';
 
 // ========================================
 // MCP Server Management
@@ -36,17 +37,21 @@ export async function stopServer(serverName: string): Promise<void> {
  * @param serverName The name of the server.
  * @param toolName The name of the tool to call.
  * @param args The arguments to pass to the tool.
+ * @param requestId Optional request ID for tracking. If not provided, a new ID is generated.
  * @returns A promise that resolves to an `MCPResponse`.
  */
 export async function callTool(
   serverName: string,
   toolName: string,
   args: Record<string, unknown>,
+  requestId?: string,
 ): Promise<MCPResponse<unknown>> {
+  const id = requestId ?? createId();
   return safeInvoke<MCPResponse<unknown>>('call_mcp_tool', {
     serverName,
     toolName,
     arguments: args,
+    requestId: id,
   });
 }
 

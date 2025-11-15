@@ -58,7 +58,12 @@ pub trait BuiltinMCPServer: Send + Sync + std::fmt::Debug {
     fn tools(&self) -> Vec<MCPTool>;
 
     /// Calls a tool on this server with the given arguments.
-    async fn call_tool(&self, tool_name: &str, args: Value) -> MCPResponse;
+    ///
+    /// # Arguments
+    /// * `tool_name` - The name of the tool to call.
+    /// * `args` - The arguments for the tool.
+    /// * `request_id` - Optional request ID from the client. If None, a new UUID is generated.
+    async fn call_tool(&self, tool_name: &str, args: Value, request_id: Option<Value>) -> MCPResponse;
 
     /// Returns a markdown-formatted string describing the server's current status and context.
     fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
@@ -496,18 +501,26 @@ impl BuiltinServerRegistry {
     /// * `server_name` - The name of the server.
     /// * `tool_name` - The name of the tool to call.
     /// * `args` - The arguments for the tool.
+    /// * `request_id` - Optional request ID from the client. If None, a new UUID is generated.
     ///
     /// # Returns
     /// An `MCPResponse` containing the result of the tool call.
-    pub async fn call_tool(&self, server_name: &str, tool_name: &str, args: Value) -> MCPResponse {
+    pub async fn call_tool(
+        &self,
+        server_name: &str,
+        tool_name: &str,
+        args: Value,
+        request_id: Option<Value>,
+    ) -> MCPResponse {
         if let Some(server) = self.get_server(server_name) {
             // Apply JSON normalization before calling the tool
             let normalized_args = Self::normalize_json_args(args);
-            server.call_tool(tool_name, normalized_args).await
+            server.call_tool(tool_name, normalized_args, request_id).await
         } else {
+            let request_id = request_id.unwrap_or_else(|| Value::String(uuid::Uuid::new_v4().to_string()));
             MCPResponse {
                 jsonrpc: "2.0".to_string(),
-                id: Some(Value::String(uuid::Uuid::new_v4().to_string())),
+                id: Some(request_id),
                 result: None,
                 error: Some(crate::mcp::MCPError {
                     code: -32601,

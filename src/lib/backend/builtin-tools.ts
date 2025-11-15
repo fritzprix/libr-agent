@@ -1,6 +1,7 @@
 import { safeInvoke } from './core';
 import type { MCPTool, MCPResponse } from '@/lib/mcp-types';
 import type { BuiltinServerInfo } from './types';
+import { createId } from '@paralleldrive/cuid2';
 
 // ========================================
 // Built-in Tools
@@ -44,17 +45,21 @@ export async function listBuiltinServersWithMetadata(): Promise<
  * @param serverName The name of the built-in server.
  * @param toolName The name of the tool to call.
  * @param args The arguments to pass to the tool.
+ * @param requestId Optional request ID for tracking. If not provided, a new ID is generated.
  * @returns A promise that resolves to an `MCPResponse`.
  */
 export async function callBuiltinTool(
   serverName: string,
   toolName: string,
   args: Record<string, unknown>,
+  requestId?: string,
 ): Promise<MCPResponse<unknown>> {
+  const id = requestId ?? createId();
   return safeInvoke<MCPResponse<unknown>>('call_builtin_tool', {
     serverName,
     toolName,
     arguments: args,
+    requestId: id,
   });
 }
 
@@ -77,16 +82,20 @@ export async function listAllToolsUnified(): Promise<MCPTool[]> {
  * @param serverName The name of the server providing the tool.
  * @param toolName The name of the tool to call.
  * @param args The arguments to pass to the tool.
+ * @param requestId Optional request ID for tracking. If not provided, a new ID is generated.
  * @returns A promise that resolves to an `MCPResponse`.
  */
 export async function callToolUnified(
   serverName: string,
   toolName: string,
   args: Record<string, unknown>,
+  requestId?: string,
 ): Promise<MCPResponse<unknown>> {
+  const id = requestId ?? createId();
   return safeInvoke<MCPResponse<unknown>>('call_tool_unified', {
     serverName,
     toolName,
     arguments: args,
+    requestId: id,
   });
 }
