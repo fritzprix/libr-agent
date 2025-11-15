@@ -4,6 +4,7 @@ import path from 'path';
 import tailwindcss from '@tailwindcss/vite';
 import wasm from 'vite-plugin-wasm';
 import topLevelAwait from 'vite-plugin-top-level-await';
+import packageJson from './package.json';
 
 const host = process.env.TAURI_DEV_HOST;
 
@@ -30,6 +31,11 @@ export default defineConfig(() => ({
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
+  },
+
+  // Define global constants
+  define: {
+    __APP_VERSION__: JSON.stringify(packageJson.version),
   },
 
   // Worker configuration for Web MCP support
