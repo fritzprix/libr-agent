@@ -1,9 +1,9 @@
 import { WebMCPServerProxy } from '@/context/WebMCPContext';
 import {
-  createMCPStructuredResponse,
-  createMCPTextResponse,
+  createMCPStructuredToolResult,
+  createMCPErrorToolResult,
 } from '@/lib/mcp-response-utils';
-import type { MCPResponse, WebMCPServer } from '@/lib/mcp-types';
+import type { MCPResult, WebMCPServer } from '@/lib/mcp-types';
 import type { ServiceContext, ServiceContextOptions } from '@/features/tools';
 import { getLogger } from '@/lib/logger';
 import { planningTools as tools } from './tools.ts';
@@ -108,7 +108,7 @@ class EphemeralState {
   private branches: Record<string, ThoughtData[]> = {};
   private disableThoughtLogging = false;
 
-  createGoal(goal: string): MCPResponse<CreateGoalOutput> {
+  createGoal(goal: string): MCPResult<CreateGoalOutput> {
     const previousGoal = this.goal;
     this.goal = goal;
     const context = [];
@@ -117,7 +117,7 @@ class EphemeralState {
       context.push(`Todos from previous goal: ${this.todos.length}`);
     }
     const contextStr = context.length > 0 ? `\n${context.join('\n')}\n` : '';
-    return createMCPStructuredResponse<CreateGoalOutput>(
+    return createMCPStructuredToolResult<CreateGoalOutput>(
       `Goal created: "${goal}"${contextStr}New todos can be added to support this goal.`,
       {
         goal,
@@ -126,7 +126,7 @@ class EphemeralState {
     );
   }
 
-  clearGoal(): MCPResponse<ClearGoalOutput> {
+  clearGoal(): MCPResult<ClearGoalOutput> {
     if (this.goal) {
       const clearedGoal = this.goal;
       this.lastClearedGoal = this.goal;
@@ -136,19 +136,19 @@ class EphemeralState {
         remainingTodos > 0
           ? `Remaining todos: ${remainingTodos}`
           : 'All todos have been completed or cleared.';
-      return createMCPStructuredResponse<ClearGoalOutput>(
+      return createMCPStructuredToolResult<ClearGoalOutput>(
         `Goal cleared: "${clearedGoal}"\n${todoSummary}\nSession is now ready for a new goal.`,
         {
           success: true,
         },
       );
     }
-    return createMCPStructuredResponse('No active goal to clear', {
+    return createMCPStructuredToolResult('No active goal to clear', {
       success: false,
     });
   }
 
-  addTodo(name: string): MCPResponse<AddToDoOutput> {
+  addTodo(name: string): MCPResult<AddToDoOutput> {
     const todo: SimpleTodo = {
       id: this.nextId++,
       name,
@@ -158,7 +158,7 @@ class EphemeralState {
     const goalContext = this.goal
       ? `Goal: "${this.goal}"\n`
       : 'No active goal.\n';
-    return createMCPStructuredResponse<AddToDoOutput>(
+    return createMCPStructuredToolResult<AddToDoOutput>(
       `Todo added: ID:${todo.id} "${name}"\n${goalContext}Total todos: ${this.todos.length}`,
       {
         success: true,
@@ -171,11 +171,11 @@ class EphemeralState {
     id: number,
     check: boolean = true,
     summary?: string,
-  ): MCPResponse<CheckTodoOutput> {
+  ): MCPResult<CheckTodoOutput> {
     const todo = this.todos.find((t) => t.id === id);
     if (!todo) {
       const availableIds = this.todos.map((t) => t.id);
-      return createMCPStructuredResponse<CheckTodoOutput>(
+      return createMCPStructuredToolResult<CheckTodoOutput>(
         `Todo with ID ${id} not found. Available IDs: ${availableIds.length > 0 ? availableIds.join(', ') : 'none'}`,
         {
           success: false,
@@ -191,7 +191,7 @@ class EphemeralState {
     }
 
     const summaryText = todo.summary ? ` (Summary: "${todo.summary}")` : '';
-    return createMCPStructuredResponse<CheckTodoOutput>(
+    return createMCPStructuredToolResult<CheckTodoOutput>(
       `Todo ${check ? 'checked' : 'unchecked'}: "${todo.name}"${summaryText}`,
       {
         success: true,
@@ -201,7 +201,7 @@ class EphemeralState {
     );
   }
 
-  clearTodos(ids?: number[]): MCPResponse<BaseOutput> {
+  clearTodos(ids?: number[]): MCPResult<BaseOutput> {
     if (!ids || ids.length === 0) {
       const clearedCount = this.todos.length;
       this.todos = [];
@@ -209,7 +209,7 @@ class EphemeralState {
         clearedCount > 0
           ? `All ${clearedCount} todo(s) cleared`
           : 'No todos to clear.';
-      return createMCPStructuredResponse<BaseOutput>(
+      return createMCPStructuredToolResult<BaseOutput>(
         `${msg}\nSession todos reset. Current goal: ${this.goal || '(none)'}`,
         {
           success: true,
@@ -223,20 +223,20 @@ class EphemeralState {
     const removedCount = initialCount - this.todos.length;
 
     if (removedCount === 0) {
-      return createMCPStructuredResponse<BaseOutput>(
+      return createMCPStructuredToolResult<BaseOutput>(
         `No todos found with the specified IDs: ${ids.join(', ')}\nAvailable IDs: ${initialCount > 0 ? this.todos.map((t) => t.id).join(', ') : '(none)'}`,
         { success: false },
       );
     }
 
     const clearedNames = clearedTodos.map((t) => t.name).join(', ');
-    return createMCPStructuredResponse<BaseOutput>(
+    return createMCPStructuredToolResult<BaseOutput>(
       `Cleared ${removedCount} todo(s): ${clearedNames}\nRemaining todos: ${this.todos.length}`,
       { success: true },
     );
   }
 
-  clear(): MCPResponse<BaseOutput> {
+  clear(): MCPResult<BaseOutput> {
     const clearedGoal = this.goal;
     const clearedTodos = this.todos.length;
     const clearedMemos = this.memos.length;
@@ -248,7 +248,7 @@ class EphemeralState {
     this.nextId = 1;
 
     const summaryText = `Session state cleared:\n- Goal: ${clearedGoal ? `"${clearedGoal}"` : '(none)'}\n- Todos cleared: ${clearedTodos}\n- Memos cleared: ${clearedMemos}\n\nSession is now completely reset.`;
-    return createMCPStructuredResponse(summaryText, {
+    return createMCPStructuredToolResult(summaryText, {
       success: true,
     });
   }
@@ -261,7 +261,7 @@ class EphemeralState {
     return this.todos;
   }
 
-  addMemo(memo: string): MCPResponse<BaseOutput & { memos: Memo[] }> {
+  addMemo(memo: string): MCPResult<BaseOutput & { memos: Memo[] }> {
     const nMeme = {
       id: this.memos.length > 0 ? this.memos[this.memos.length - 1].id + 1 : 0,
       content: memo,
@@ -274,23 +274,23 @@ class EphemeralState {
       this.memos.length === MAX_NOTES
         ? `⚠️ At capacity (${MAX_NOTES}/${MAX_NOTES}) - oldest memos will be removed`
         : `Memos: ${this.memos.length}/${MAX_NOTES}`;
-    return createMCPStructuredResponse<BaseOutput & { memos: Memo[] }>(
+    return createMCPStructuredToolResult<BaseOutput & { memos: Memo[] }>(
       `Memo ID:${nMeme.id} added\n${capacityWarning}`,
       { success: true, memos: [...this.memos] },
     );
   }
 
-  clearMemo(id: number): MCPResponse<BaseOutput & { memos: Memo[] }> {
+  clearMemo(id: number): MCPResult<BaseOutput & { memos: Memo[] }> {
     const index = this.memos.findIndex((memo) => memo.id === id);
     if (index === -1) {
       const validIds = this.memos.map((memo) => memo.id);
-      return createMCPStructuredResponse<BaseOutput & { memos: Memo[] }>(
+      return createMCPStructuredToolResult<BaseOutput & { memos: Memo[] }>(
         `Memo ID:${id} not found.\nValid IDs: ${validIds.length > 0 ? validIds.join(', ') : '(no memos)'}`,
         { success: false, memos: [...this.memos] },
       );
     }
     const removed = this.memos.splice(index, 1)[0];
-    return createMCPStructuredResponse<BaseOutput & { memos: Memo[] }>(
+    return createMCPStructuredToolResult<BaseOutput & { memos: Memo[] }>(
       `Memo ID:${id} cleared: "${removed.content}"\nRemaining memos: ${this.memos.length}`,
       { success: true, memos: [...this.memos] },
     );
@@ -304,7 +304,7 @@ class EphemeralState {
     return this.lastClearedGoal;
   }
 
-  processThought(input: unknown): MCPResponse<Record<string, unknown>> {
+  processThought(input: unknown): MCPResult<Record<string, unknown>> {
     try {
       const data = input as Record<string, unknown>;
 
@@ -366,9 +366,9 @@ class EphemeralState {
         thoughtHistoryLength: this.thoughtHistory.length,
       } as Record<string, unknown>;
 
-      return createMCPStructuredResponse('Thought processed', summary);
+      return createMCPStructuredToolResult('Thought processed', summary);
     } catch (error) {
-      return createMCPStructuredResponse('Failed to process thought', {
+      return createMCPStructuredToolResult('Failed to process thought', {
         error: error instanceof Error ? error.message : String(error),
         status: 'failed',
       });
@@ -431,23 +431,23 @@ class SessionStateManager {
     return this.getState(this.currentSessionId!, effectiveThreadId);
   }
 
-  createGoal(goal: string): MCPResponse<CreateGoalOutput> {
+  createGoal(goal: string): MCPResult<CreateGoalOutput> {
     return this.getCurrentState().createGoal(goal);
   }
 
-  clearGoal(): MCPResponse<ClearGoalOutput> {
+  clearGoal(): MCPResult<ClearGoalOutput> {
     return this.getCurrentState().clearGoal();
   }
 
-  addTodo(name: string): MCPResponse<AddToDoOutput> {
+  addTodo(name: string): MCPResult<AddToDoOutput> {
     return this.getCurrentState().addTodo(name);
   }
 
-  clearTodos(ids?: number[]): MCPResponse<BaseOutput> {
+  clearTodos(ids?: number[]): MCPResult<BaseOutput> {
     return this.getCurrentState().clearTodos(ids);
   }
 
-  clear(): MCPResponse<BaseOutput> {
+  clear(): MCPResult<BaseOutput> {
     return this.getCurrentState().clear();
   }
 
@@ -459,11 +459,11 @@ class SessionStateManager {
     return this.getCurrentState().getTodos();
   }
 
-  addMemo(memo: string): MCPResponse<BaseOutput & { memos: Memo[] }> {
+  addMemo(memo: string): MCPResult<BaseOutput & { memos: Memo[] }> {
     return this.getCurrentState().addMemo(memo);
   }
 
-  removeMemo(id: number): MCPResponse<BaseOutput & { memos: Memo[] }> {
+  removeMemo(id: number): MCPResult<BaseOutput & { memos: Memo[] }> {
     return this.getCurrentState().clearMemo(id);
   }
 
@@ -475,7 +475,7 @@ class SessionStateManager {
     return this.getCurrentState().getLastClearedGoal();
   }
 
-  processThought(input: unknown): MCPResponse<Record<string, unknown>> {
+  processThought(input: unknown): MCPResult<Record<string, unknown>> {
     return this.getCurrentState().processThought(input);
   }
 
@@ -483,7 +483,7 @@ class SessionStateManager {
     id: number,
     check: boolean = true,
     summary?: string,
-  ): MCPResponse<CheckTodoOutput> {
+  ): MCPResult<CheckTodoOutput> {
     return this.getCurrentState().checkTodo(id, check, summary);
   }
 
@@ -526,7 +526,7 @@ const planningServer: WebMCPServer = {
   description: 'Goal setting, task planning',
   version: '2.2.0',
   tools,
-  async callTool(name: string, args: unknown): Promise<MCPResponse<unknown>> {
+  async callTool(name: string, args: unknown): Promise<MCPResult<unknown>> {
     console.log(`[PlanningServer] callTool invoked: ${name}`, {
       args,
       currentSessionId: stateManager.getCurrentSessionId(),
@@ -568,7 +568,7 @@ const planningServer: WebMCPServer = {
         const summary = typedArgs.summary as string | undefined;
 
         if (!Number.isInteger(id) || id < 1) {
-          return createMCPTextResponse(
+          return createMCPErrorToolResult(
             `Invalid ID: ${id}. ID must be a positive integer.`,
           );
         }
@@ -586,7 +586,7 @@ const planningServer: WebMCPServer = {
       case 'clear_memo': {
         const id = typedArgs.id as number;
         if (!Number.isInteger(id) || id < 0) {
-          return createMCPTextResponse(
+          return createMCPErrorToolResult(
             `Invalid ID: ${id}. ID must be a non-negative integer.`,
           );
         }
@@ -644,16 +644,18 @@ const planningServer: WebMCPServer = {
 
         const detailedText = lines.join('\n');
 
-        return createMCPStructuredResponse<PlanningState>(
+        return createMCPStructuredToolResult<PlanningState>(
           detailedText,
           currentState,
         );
       }
       default: {
-        const availableTools = tools.map((t) => t.name).join(', ');
-        const errorMessage = `Unknown tool: ${name}. Available tools: ${availableTools}`;
+        const errorMessage = `Unknown tool: ${name}`;
         console.error(`[PlanningServer] ${errorMessage}`);
-        throw new Error(errorMessage);
+        return createMCPErrorToolResult(errorMessage, {
+          toolName: name,
+          availableTools: tools.map((t) => t.name),
+        });
       }
     }
   },

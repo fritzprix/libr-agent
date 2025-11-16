@@ -61,6 +61,16 @@ export interface Thread {
   createdAt: Date;
 }
 
+/**
+ * Type-safe error type classification for Message errors
+ */
+export type MessageErrorType =
+  | 'MCP_ERROR'
+  | 'TOOL_EXECUTION_ERROR'
+  | 'AI_SERVICE_ERROR'
+  | 'NETWORK_ERROR'
+  | 'VALIDATION_ERROR';
+
 export interface Message {
   id: string;
   sessionId: string; // Added sessionId
@@ -93,7 +103,7 @@ export interface Message {
     // User-friendly message to display
     displayMessage: string;
     // Error type classification for UI handling
-    type: string;
+    type: MessageErrorType;
     // Whether the error can be retried
     recoverable: boolean;
     // Detailed logging information (not shown to user)

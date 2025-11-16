@@ -2,22 +2,16 @@
 use super::server::ContentStoreServer;
 use super::types::*;
 use super::{helpers, parsers, search};
-use crate::mcp::MCPResponse;
+use crate::mcp::types::MCPResult;
 use log::error;
 use serde_json::Value;
 
 impl ContentStoreServer {
-    pub(crate) async fn handle_add_content(&self, params: Value) -> MCPResponse {
-        let id = Self::generate_request_id();
-
+    pub(crate) async fn handle_add_content(&self, params: Value) -> Result<MCPResult, String> {
         let args: AddContentArgs = match serde_json::from_value(params) {
             Ok(args) => args,
             Err(e) => {
-                return Self::error_response(
-                    id,
-                    -32602,
-                    &format!("Invalid add_content parameters: {e}"),
-                );
+                return Err(format!("Invalid add_content parameters: {e}"));
             }
         };
 
@@ -35,7 +29,7 @@ impl ContentStoreServer {
                 let file_path_str = match helpers::extract_file_path_from_url(file_url) {
                     Ok(path) => path,
                     Err(e) => {
-                        return Self::error_response(id, -32602, &format!("Invalid file URL: {e}"));
+                        return Err(format!("Invalid file URL: {e}"));
                     }
                 };
 
@@ -51,42 +45,28 @@ impl ContentStoreServer {
                 {
                     parsers::ParseResult::Text(content) => content,
                     parsers::ParseResult::Error(e) => {
-                        return Self::error_response(
-                            id,
-                            -32603,
-                            &format!("Failed to parse file {file_path_str}: {e}"),
-                        );
+                        return Err(format!("Failed to parse file {file_path_str}: {e}"));
                     }
                 }
             }
             (Some(_), Some(_)) => {
-                return Self::error_response(
-                    id,
-                    -32602,
-                    "Cannot provide both content and fileUrl. Choose one.",
-                );
+                return Err("Cannot provide both content and fileUrl. Choose one.".to_string());
             }
             (None, None) => {
-                return Self::error_response(
-                    id,
-                    -32602,
-                    "Either content or fileUrl must be provided.",
-                );
+                return Err("Either content or fileUrl must be provided.".to_string());
             }
         };
 
-        let session_id = match self.require_active_session(&id) {
+        let session_id = match self.require_active_session_result() {
             Ok(session_id) => session_id,
-            Err(error_response) => return *error_response,
+            Err(e) => return Err(e),
         };
 
         if let Err(e) = self.ensure_session_store(&session_id).await {
             error!("Failed to ensure content store for session {session_id}: {e}");
-            return Self::error_response(
-                id,
-                -32603,
-                &format!("Failed to prepare content store for session {session_id}: {e}"),
-            );
+            return Err(format!(
+                "Failed to prepare content store for session {session_id}: {e}"
+            ));
         }
 
         // Create chunks from content (simple line-based chunking)
@@ -143,7 +123,7 @@ impl ContentStoreServer {
         {
             Ok(item) => item,
             Err(e) => {
-                return Self::error_response(id, -32603, &format!("Failed to store content: {e}"));
+                return Err(format!("Failed to store content: {e}"));
             }
         };
 
@@ -172,21 +152,22 @@ impl ContentStoreServer {
             }
         }
 
-        Self::dual_response(
-            id,
-            &format!(
-                "Content added successfully!\n\nFile: {}\nContent ID: {}\nSession ID: {}\nMIME Type: {}\nSize: {} bytes\nLine Count: {}\nChunks Created: {}\nUploaded: {}\n\nPreview:\n{}",
-                content_item.filename,
-                content_item.id,
-                content_item.session_id,
-                content_item.mime_type,
-                content_item.size,
-                content_item.line_count,
-                content_item.chunk_count,
-                content_item.uploaded_at,
-                content_item.preview
-            ),
-            serde_json::json!({
+        Ok(MCPResult {
+            content: Some(vec![crate::mcp::types::MCPContent::Text {
+                text: format!(
+                    "Content added successfully!\n\nFile: {}\nContent ID: {}\nSession ID: {}\nMIME Type: {}\nSize: {} bytes\nLine Count: {}\nChunks Created: {}\nUploaded: {}\n\nPreview:\n{}",
+                    content_item.filename,
+                    content_item.id,
+                    content_item.session_id,
+                    content_item.mime_type,
+                    content_item.size,
+                    content_item.line_count,
+                    content_item.chunk_count,
+                    content_item.uploaded_at,
+                    content_item.preview
+                ),
+            }]),
+            structured_content: Some(serde_json::json!({
                 "sessionId": content_item.session_id,
                 "contentId": content_item.id,
                 "filename": content_item.filename,
@@ -196,41 +177,30 @@ impl ContentStoreServer {
                 "preview": content_item.preview,
                 "uploadedAt": content_item.uploaded_at,
                 "chunkCount": content_item.chunk_count
-            }),
-        )
+            })),
+            is_error: Some(false),
+        })
     }
 
-    pub(crate) async fn handle_list_content(&self, params: Value) -> MCPResponse {
-        let id = Self::generate_request_id();
+    pub(crate) async fn handle_list_content(&self, params: Value) -> Result<MCPResult, String> {
         let args: ListContentArgs = if params.is_null() {
             ListContentArgs { pagination: None }
         } else {
             match serde_json::from_value(params) {
                 Ok(args) => args,
                 Err(e) => {
-                    return Self::error_response(
-                        id,
-                        -32602,
-                        &format!("Invalid list_content parameters: {e}"),
-                    );
+                    return Err(format!("Invalid list_content parameters: {e}"));
                 }
             }
         };
 
-        let session_id = match self.require_active_session(&id) {
-            Ok(session_id) => session_id,
-            Err(error_response) => return *error_response,
-        };
+        let session_id = self.require_active_session_result()?;
 
         if let Err(e) = self.ensure_session_store(&session_id).await {
             error!(
                 "Failed to ensure content store for session {session_id} while listing content: {e}"
             );
-            return Self::error_response(
-                id,
-                -32603,
-                &format!("Failed to prepare content store for session {session_id}: {e}"),
-            );
+            return Err(format!("Failed to prepare content store for session {session_id}: {e}"));
         }
 
         let (offset, limit) = args.pagination.as_ref().map_or((0usize, 100usize), |p| {
@@ -243,7 +213,7 @@ impl ContentStoreServer {
         let (contents, total) = match storage.list_content(&session_id, offset, limit).await {
             Ok((contents, total)) => (contents, total),
             Err(e) => {
-                return Self::error_response(id, -32603, &format!("Failed to list content: {e}"));
+                return Err(format!("Failed to list content: {e}"));
             }
         };
 
@@ -265,46 +235,43 @@ impl ContentStoreServer {
             })
             .collect();
 
-        Self::dual_response(
-            id,
-            &format!(
-                "Content listing for store:\n\nTotal items: {}\n\n{}",
-                total,
-                content_list
-                    .iter()
-                    .map(|item| format!(
-                        "• {} (ID: {}, {} bytes, {} lines)",
-                        item.get("filename")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("unknown"),
-                        item.get("contentId")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("unknown"),
-                        item.get("size").and_then(|v| v.as_u64()).unwrap_or(0),
-                        item.get("lineCount").and_then(|v| v.as_u64()).unwrap_or(0)
-                    ))
-                    .collect::<Vec<String>>()
-                    .join("\n")
-            ),
-            serde_json::json!({
+        Ok(MCPResult {
+            content: Some(vec![crate::mcp::types::MCPContent::Text {
+                text: format!(
+                    "Content listing for store:\n\nTotal items: {}\n\n{}",
+                    total,
+                    content_list
+                        .iter()
+                        .map(|item| format!(
+                            "• {} (ID: {}, {} bytes, {} lines)",
+                            item.get("filename")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown"),
+                            item.get("contentId")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown"),
+                            item.get("size").and_then(|v| v.as_u64()).unwrap_or(0),
+                            item.get("lineCount").and_then(|v| v.as_u64()).unwrap_or(0)
+                        ))
+                        .collect::<Vec<String>>()
+                        .join("\n")
+                ),
+            }]),
+            structured_content: Some(serde_json::json!({
                 "sessionId": session_id,
                 "contents": content_list,
                 "total": total,
                 "hasMore": false
-            }),
-        )
+            })),
+            is_error: Some(false),
+        })
     }
 
-    pub(crate) async fn handle_read_content(&self, params: Value) -> MCPResponse {
-        let id = Self::generate_request_id();
+    pub(crate) async fn handle_read_content(&self, params: Value) -> Result<MCPResult, String> {
         let args: ReadContentArgs = match serde_json::from_value(params) {
             Ok(args) => args,
             Err(e) => {
-                return Self::error_response(
-                    id,
-                    -32602,
-                    &format!("Invalid read_content parameters: {e}"),
-                );
+                return Err(format!("Invalid read_content parameters: {e}"));
             }
         };
 
@@ -315,56 +282,46 @@ impl ContentStoreServer {
         {
             Ok(content) => content,
             Err(e) => {
-                return Self::error_response(id, -32603, &format!("Failed to read content: {e}"));
+                return Err(format!("Failed to read content: {e}"));
             }
         };
 
-        Self::dual_response(
-            id,
-            &format!(
-                "Content read successfully!\n\nContent ID: {}\nFrom Line: {}\nTo Line: {}\n\n--- Content ---\n{}",
-                args.content_id,
-                args.from_line.unwrap_or(1),
-                args.to_line.map(|n| n.to_string()).unwrap_or("end".to_string()),
-                content
-            ),
-            serde_json::json!({
+        Ok(MCPResult {
+            content: Some(vec![crate::mcp::types::MCPContent::Text {
+                text: format!(
+                    "Content read successfully!\n\nContent ID: {}\nFrom Line: {}\nTo Line: {}\n\n--- Content ---\n{}",
+                    args.content_id,
+                    args.from_line.unwrap_or(1),
+                    args.to_line.map(|n| n.to_string()).unwrap_or("end".to_string()),
+                    content
+                ),
+            }]),
+            structured_content: Some(serde_json::json!({
                 "content": content,
                 "lineRange": [
                     args.from_line.unwrap_or(1),
                     args.to_line.unwrap_or_else(|| content.lines().count().max(1))
                 ]
-            }),
-        )
+            })),
+            is_error: Some(false),
+        })
     }
 
-    pub(crate) async fn handle_keyword_search(&self, params: Value) -> MCPResponse {
-        let id = Self::generate_request_id();
+    pub(crate) async fn handle_keyword_search(&self, params: Value) -> Result<MCPResult, String> {
         let args: KeywordSearchArgs = match serde_json::from_value(params) {
             Ok(args) => args,
             Err(e) => {
-                return Self::error_response(
-                    id,
-                    -32602,
-                    &format!("Invalid keyword_search parameters: {e}"),
-                );
+                return Err(format!("Invalid keyword_search parameters: {e}"));
             }
         };
 
-        let session_id = match self.require_active_session(&id) {
-            Ok(session_id) => session_id,
-            Err(error_response) => return *error_response,
-        };
+        let session_id = self.require_active_session_result()?;
 
         if let Err(e) = self.ensure_session_store(&session_id).await {
             error!(
                 "Failed to ensure content store for session {session_id} during keyword search: {e}"
             );
-            return Self::error_response(
-                id,
-                -32603,
-                &format!("Failed to prepare content store for session {session_id}: {e}"),
-            );
+            return Err(format!("Failed to prepare content store for session {session_id}: {e}"));
         }
 
         let top_n = args
@@ -381,7 +338,7 @@ impl ContentStoreServer {
         let all_results = match search_engine.search_bm25(&args.query, ranking_limit).await {
             Ok(results) => results,
             Err(e) => {
-                return Self::error_response(id, -32603, &format!("Failed to search content: {e}"));
+                return Err(format!("Failed to search content: {e}"));
             }
         };
 
@@ -424,104 +381,89 @@ impl ContentStoreServer {
             })
             .collect();
 
-        Self::dual_response(
-            id,
-            &format!(
-                "Search completed!\n\nQuery: \"{}\"\nSession ID: {}\nResults found: {}\n\n{}",
-                args.query,
-                session_id,
-                search_results.len(),
-                if search_results.is_empty() {
-                    "No results found for your search query.".to_string()
-                } else {
-                    search_results
-                        .iter()
-                        .map(|result| {
-                            format!(
-                                "📄 Content ID: {} (Score: {:.2})\n   Lines {}-{}: {}",
-                                result
-                                    .get("contentId")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("unknown"),
-                                result.get("score").and_then(|v| v.as_f64()).unwrap_or(0.0),
-                                result
-                                    .get("lineRange")
-                                    .and_then(|v| v.as_array())
-                                    .and_then(|arr| arr.first())
-                                    .and_then(|v| v.as_u64())
-                                    .unwrap_or(0),
-                                result
-                                    .get("lineRange")
-                                    .and_then(|v| v.as_array())
-                                    .and_then(|arr| arr.get(1))
-                                    .and_then(|v| v.as_u64())
-                                    .unwrap_or(0),
-                                result
-                                    .get("matchedText")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .trim()
-                            )
-                        })
-                        .collect::<Vec<String>>()
-                        .join("\n\n")
-                }
-            ),
-            serde_json::json!({
-                    "sessionId": session_id,
+        Ok(MCPResult {
+            content: Some(vec![crate::mcp::types::MCPContent::Text {
+                text: format!(
+                    "Search completed!\n\nQuery: \"{}\"\nSession ID: {}\nResults found: {}\n\n{}",
+                    args.query,
+                    session_id,
+                    search_results.len(),
+                    if search_results.is_empty() {
+                        "No results found for your search query.".to_string()
+                    } else {
+                        search_results
+                            .iter()
+                            .map(|result| {
+                                format!(
+                                    "📄 Content ID: {} (Score: {:.2})\n   Lines {}-{}: {}",
+                                    result
+                                        .get("contentId")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("unknown"),
+                                    result.get("score").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                                    result
+                                        .get("lineRange")
+                                        .and_then(|v| v.as_array())
+                                        .and_then(|arr| arr.first())
+                                        .and_then(|v| v.as_u64())
+                                        .unwrap_or(0),
+                                    result
+                                        .get("lineRange")
+                                        .and_then(|v| v.as_array())
+                                        .and_then(|arr| arr.get(1))
+                                        .and_then(|v| v.as_u64())
+                                        .unwrap_or(0),
+                                    result
+                                        .get("matchedText")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                        .trim()
+                                )
+                            })
+                            .collect::<Vec<String>>()
+                            .join("\n\n")
+                    }
+                ),
+            }]),
+            structured_content: Some(serde_json::json!({
+                "sessionId": session_id,
                 "results": search_results
-            }),
-        )
+            })),
+            is_error: Some(false),
+        })
     }
 
-    pub(crate) async fn handle_delete_content(&self, params: Value) -> MCPResponse {
-        let id = Self::generate_request_id();
-
+    pub(crate) async fn handle_delete_content(&self, params: Value) -> Result<MCPResult, String> {
         let args: DeleteContentArgs = match serde_json::from_value(params) {
             Ok(args) => args,
             Err(e) => {
-                return Self::error_response(
-                    id,
-                    -32602,
-                    &format!("Invalid delete_content parameters: {e}"),
-                );
+                return Err(format!("Invalid delete_content parameters: {e}"));
             }
         };
 
         // Get current session ID from context
-        let session_id = match self.require_active_session(&id) {
-            Ok(session_id) => session_id,
-            Err(error_response) => return *error_response,
-        };
+        let session_id = self.require_active_session_result()?;
 
         // Verify the content belongs to the current session
         let storage = self.storage.lock().await;
         let content_session_id = match storage.get_content_session_id(&args.content_id) {
             Some(sid) => sid,
             None => {
-                return Self::error_response(
-                    id,
-                    -32603,
-                    &format!("Content '{}' not found", args.content_id),
-                );
+                return Err(format!("Content '{}' not found", args.content_id));
             }
         };
 
         if content_session_id != session_id {
-            return Self::error_response(
-                id,
-                -32603,
-                &format!(
-                    "Content '{}' does not belong to current session",
-                    args.content_id
-                ),
-            );
+            return Err(format!(
+                "Content '{}' does not belong to current session",
+                args.content_id
+            ));
         }
 
         // Delete from storage
         let mut storage = self.storage.lock().await;
         if let Err(e) = storage.delete_content(&args.content_id).await {
-            return Self::error_response(id, -32603, &format!("Failed to delete content: {e}"));
+            return Err(format!("Failed to delete content: {e}"));
         }
 
         // Remove from search index
@@ -531,14 +473,16 @@ impl ContentStoreServer {
             error!("Failed to remove content from search index: {e}");
         }
 
-        Self::dual_response(
-            id,
-            &format!("Content '{}' deleted successfully", args.content_id),
-            serde_json::json!({
+        Ok(MCPResult {
+            content: Some(vec![crate::mcp::types::MCPContent::Text {
+                text: format!("Content '{}' deleted successfully", args.content_id),
+            }]),
+            structured_content: Some(serde_json::json!({
                 "contentId": args.content_id,
                 "sessionId": session_id
-            }),
-        )
+            })),
+            is_error: Some(false),
+        })
     }
 }
 

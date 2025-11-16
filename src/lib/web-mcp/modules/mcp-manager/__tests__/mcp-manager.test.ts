@@ -110,9 +110,10 @@ describe('MCP Manager Server', () => {
         },
       });
 
-      expect(response.result).toBeDefined();
-      const structuredData = (response.result as { structuredContent?: { server?: MCPServerEntity } })
-        .structuredContent;
+      expect(response).toBeDefined();
+      const structuredData = response.structuredContent as {
+        server?: MCPServerEntity;
+      } | undefined;
       expect(structuredData?.server).toBeDefined();
       expect(structuredData?.server?.name).toBe('Test Stdio Server');
       expect(structuredData?.server?.id).toMatch(/^mcp-/);
@@ -134,9 +135,10 @@ describe('MCP Manager Server', () => {
         },
       });
 
-      expect(response.result).toBeDefined();
-      const structuredData = (response.result as { structuredContent?: { server?: MCPServerEntity } })
-        .structuredContent;
+      expect(response).toBeDefined();
+      const structuredData = response.structuredContent as {
+        server?: MCPServerEntity;
+      } | undefined;
       expect(structuredData?.server).toBeDefined();
       expect(structuredData?.server?.name).toBe('Test HTTP Server');
 
@@ -153,8 +155,8 @@ describe('MCP Manager Server', () => {
         },
       });
 
-      expect(response.result?.content?.[0]?.type).toBe('text');
-      const text = response.result?.content?.[0] as { text?: string };
+      expect(response.content?.[0]?.type).toBe('text');
+      const text = response.content?.[0] as { text?: string };
       expect(text?.text).toContain('Invalid transport configuration');
     });
 
@@ -166,8 +168,8 @@ describe('MCP Manager Server', () => {
         },
       });
 
-      expect(response.result?.content?.[0]?.type).toBe('text');
-      const text = response.result?.content?.[0] as { text?: string };
+      expect(response.content?.[0]?.type).toBe('text');
+      const text = response.content?.[0] as { text?: string };
       expect(text?.text).toContain('Invalid transport configuration');
     });
 
@@ -179,8 +181,8 @@ describe('MCP Manager Server', () => {
         },
       });
 
-      expect(response.result?.content?.[0]?.type).toBe('text');
-      const text = response.result?.content?.[0] as { text?: string };
+      expect(response.content?.[0]?.type).toBe('text');
+      const text = response.content?.[0] as { text?: string };
       expect(text?.text).toContain('Invalid transport configuration');
     });
 
@@ -193,8 +195,8 @@ describe('MCP Manager Server', () => {
         },
       });
 
-      expect(response.result?.content?.[0]?.type).toBe('text');
-      const text = response.result?.content?.[0] as { text?: string };
+      expect(response.content?.[0]?.type).toBe('text');
+      const text = response.content?.[0] as { text?: string };
       expect(text?.text).toContain('Server name is required');
     });
   });
@@ -215,9 +217,10 @@ describe('MCP Manager Server', () => {
     it('should list all servers', async () => {
       const response = await mcpManagerServer.callTool('list_servers', {});
 
-      expect(response.result).toBeDefined();
-      const data = (response.result as { structuredContent?: { items?: unknown[] } })
-        .structuredContent;
+      expect(response).toBeDefined();
+      const data = response.structuredContent as
+        | { items?: unknown[] }
+        | undefined;
       expect(data?.items).toBeDefined();
       expect(data!.items!.length).toBeGreaterThanOrEqual(5);
     });
@@ -228,9 +231,10 @@ describe('MCP Manager Server', () => {
         pageSize: 2,
       });
 
-      expect(response.result).toBeDefined();
-      const data = (response.result as { structuredContent?: { items?: unknown[]; totalPages?: number } })
-        .structuredContent;
+      expect(response).toBeDefined();
+      const data = response.structuredContent as
+        | { items?: unknown[]; totalPages?: number }
+        | undefined;
       expect(data?.items?.length).toBe(2);
       expect(data?.totalPages).toBeGreaterThanOrEqual(3);
     });
@@ -240,10 +244,10 @@ describe('MCP Manager Server', () => {
         pageSize: -1,
       });
 
-      expect(response.result).toBeDefined();
-      const data = (response.result as {
-        structuredContent?: { items?: unknown[]; page?: number; totalPages?: number }
-      }).structuredContent;
+      expect(response).toBeDefined();
+      const data = response.structuredContent as
+        | { items?: unknown[]; page?: number; totalPages?: number }
+        | undefined;
       expect(data?.items!.length).toBeGreaterThanOrEqual(5);
       expect(data?.page).toBe(1);
       expect(data?.totalPages).toBe(1);
@@ -263,8 +267,9 @@ describe('MCP Manager Server', () => {
         includeInactive: false,
       });
 
-      const data = (response.result as { structuredContent?: { items?: MCPServerEntity[] } })
-        .structuredContent;
+      const data = response.structuredContent as
+        | { items?: MCPServerEntity[] }
+        | undefined;
       const hasInactive = data?.items?.some((s) => !s.isActive);
       expect(hasInactive).toBe(false);
     });
@@ -302,9 +307,8 @@ describe('MCP Manager Server', () => {
         query: 'database',
       });
 
-      expect(response.result).toBeDefined();
-      const data = (response.result as { structuredContent?: { mode?: string } })
-        .structuredContent;
+      expect(response).toBeDefined();
+      const data = response.structuredContent as { mode?: string } | undefined;
       expect(data?.mode).toBe('bm25');
     });
 
@@ -313,8 +317,9 @@ describe('MCP Manager Server', () => {
         query: 'database',
       });
 
-      const data = (response.result as { structuredContent?: { items?: MCPServerEntity[] } })
-        .structuredContent;
+      const data = response.structuredContent as
+        | { items?: MCPServerEntity[] }
+        | undefined;
       expect(data?.items).toBeDefined();
       expect(data!.items!.length).toBeGreaterThanOrEqual(2);
 
@@ -331,8 +336,9 @@ describe('MCP Manager Server', () => {
         },
       });
 
-      const data = (response.result as { structuredContent?: { items?: MCPServerEntity[] } })
-        .structuredContent;
+      const data = response.structuredContent as
+        | { items?: MCPServerEntity[] }
+        | undefined;
       expect(data?.items).toBeDefined();
 
       // With higher desc weight, description match should rank higher
@@ -348,8 +354,9 @@ describe('MCP Manager Server', () => {
         query: 'database manager',
       });
 
-      const data = (response.result as { structuredContent?: { items?: MCPServerEntity[] } })
-        .structuredContent;
+      const data = response.structuredContent as
+        | { items?: MCPServerEntity[] }
+        | undefined;
       expect(data?.items).toBeDefined();
       expect(data!.items!.length).toBeGreaterThan(0);
     });
@@ -359,8 +366,9 @@ describe('MCP Manager Server', () => {
         query: 'nonexistent-keyword-xyz',
       });
 
-      const data = (response.result as { structuredContent?: { items?: unknown[] } })
-        .structuredContent;
+      const data = response.structuredContent as
+        | { items?: unknown[] }
+        | undefined;
       expect(data?.items).toBeDefined();
       expect(data!.items!.length).toBe(0);
     });
@@ -371,9 +379,9 @@ describe('MCP Manager Server', () => {
         pageSize: -1,
       });
 
-      const data = (response.result as {
-        structuredContent?: { items?: unknown[]; page?: number; totalPages?: number }
-      }).structuredContent;
+      const data = response.structuredContent as
+        | { items?: unknown[]; page?: number; totalPages?: number }
+        | undefined;
       expect(data?.page).toBe(1);
       expect(data?.totalPages).toBe(1);
       expect(data!.items!.length).toBeGreaterThanOrEqual(2);
@@ -412,8 +420,7 @@ describe('MCP Manager Server', () => {
         searchMode: 'simple',
       });
 
-      const data = (response.result as { structuredContent?: { mode?: string } })
-        .structuredContent;
+      const data = response.structuredContent as { mode?: string } | undefined;
       expect(data?.mode).toBe('simple');
     });
 
@@ -423,8 +430,9 @@ describe('MCP Manager Server', () => {
         searchMode: 'simple',
       });
 
-      const data = (response.result as { structuredContent?: { items?: MCPServerEntity[] } })
-        .structuredContent;
+      const data = response.structuredContent as
+        | { items?: MCPServerEntity[] }
+        | undefined;
       expect(data?.items).toBeDefined();
       expect(data!.items!.length).toBe(3);
 
@@ -450,8 +458,9 @@ describe('MCP Manager Server', () => {
         byNameOnly: true,
       });
 
-      const data = (response.result as { structuredContent?: { items?: MCPServerEntity[] } })
-        .structuredContent;
+      const data = response.structuredContent as
+        | { items?: MCPServerEntity[] }
+        | undefined;
       const descOnlyFound = data?.items?.some((s) => s.id === 'desc-only-match');
       expect(descOnlyFound).toBe(false);
     });
@@ -472,8 +481,9 @@ describe('MCP Manager Server', () => {
         byNameOnly: false,
       });
 
-      const data = (response.result as { structuredContent?: { items?: MCPServerEntity[] } })
-        .structuredContent;
+      const data = response.structuredContent as
+        | { items?: MCPServerEntity[] }
+        | undefined;
       const descOnlyFound = data?.items?.some((s) => s.id === 'desc-only-match');
       expect(descOnlyFound).toBe(true);
     });
@@ -499,7 +509,7 @@ describe('MCP Manager Server', () => {
       });
 
       // Should not error on scope validation
-      const text = response.result?.content?.[0] as { text?: string };
+      const text = response.content?.[0] as { text?: string };
       expect(text?.text).not.toContain('Scope must be');
     });
 
@@ -509,10 +519,10 @@ describe('MCP Manager Server', () => {
         scope: 'global',
       });
 
-      expect(response.result).toBeDefined();
-      const structuredData = (response.result as {
-        structuredContent?: { success?: boolean; scope?: string }
-      }).structuredContent;
+      expect(response).toBeDefined();
+      const structuredData = response.structuredContent as
+        | { success?: boolean; scope?: string }
+        | undefined;
       expect(structuredData?.success).toBe(true);
       expect(structuredData?.scope).toBe('global');
     });
@@ -523,7 +533,7 @@ describe('MCP Manager Server', () => {
         scope: 'invalid',
       });
 
-      const text = response.result?.content?.[0] as { text?: string };
+      const text = response.content?.[0] as { text?: string };
       expect(text?.text).toContain('Scope must be "assistant" or "global"');
     });
 
@@ -533,7 +543,7 @@ describe('MCP Manager Server', () => {
       });
 
       // Default scope is assistant, which requires assistant context
-      const text = response.result?.content?.[0] as { text?: string };
+      const text = response.content?.[0] as { text?: string };
       expect(text?.text).toContain('Assistant context not available');
     });
   });
@@ -557,10 +567,10 @@ describe('MCP Manager Server', () => {
         scope: 'global',
       });
 
-      expect(response.result).toBeDefined();
-      const structuredData = (response.result as {
-        structuredContent?: { success?: boolean; scope?: string }
-      }).structuredContent;
+      expect(response).toBeDefined();
+      const structuredData = response.structuredContent as
+        | { success?: boolean; scope?: string }
+        | undefined;
       expect(structuredData?.success).toBe(true);
       expect(structuredData?.scope).toBe('global');
     });
@@ -571,7 +581,7 @@ describe('MCP Manager Server', () => {
         scope: 'invalid',
       });
 
-      const text = response.result?.content?.[0] as { text?: string };
+      const text = response.content?.[0] as { text?: string };
       expect(text?.text).toContain('Scope must be "assistant" or "global"');
     });
   });
@@ -596,9 +606,9 @@ describe('MCP Manager Server', () => {
         scope: 'global',
       });
 
-      const structuredData = (response.result as {
-        structuredContent?: { server?: MCPServerEntity }
-      }).structuredContent;
+      const structuredData = response.structuredContent as
+        | { server?: MCPServerEntity }
+        | undefined;
       expect(structuredData?.server?.id).toBe(testServerId);
     });
 
@@ -608,9 +618,9 @@ describe('MCP Manager Server', () => {
         scope: 'global',
       });
 
-      const structuredData = (response.result as {
-        structuredContent?: { server?: MCPServerEntity }
-      }).structuredContent;
+      const structuredData = response.structuredContent as
+        | { server?: MCPServerEntity }
+        | undefined;
       expect(structuredData?.server?.id).toBe(testServerId);
     });
 
@@ -620,7 +630,7 @@ describe('MCP Manager Server', () => {
         scope: 'global',
       });
 
-      const text = response.result?.content?.[0] as { text?: string };
+      const text = response.content?.[0] as { text?: string };
       expect(text?.text).toContain('Server not found');
     });
 
@@ -630,7 +640,7 @@ describe('MCP Manager Server', () => {
         scope: 'global',
       });
 
-      const text = response.result?.content?.[0] as { text?: string };
+      const text = response.content?.[0] as { text?: string };
       expect(text?.text).toContain('Server not found');
     });
 
@@ -639,7 +649,7 @@ describe('MCP Manager Server', () => {
         scope: 'global',
       });
 
-      const text = response.result?.content?.[0] as { text?: string };
+      const text = response.content?.[0] as { text?: string };
       expect(text?.text).toContain('Either serverId or serverName is required');
     });
   });
@@ -650,7 +660,7 @@ describe('MCP Manager Server', () => {
         query: '',
       });
 
-      const text = response.result?.content?.[0] as { text?: string };
+      const text = response.content?.[0] as { text?: string };
       expect(text?.text).toContain('Search query is required');
     });
 
@@ -659,14 +669,14 @@ describe('MCP Manager Server', () => {
         query: '   ',
       });
 
-      const text = response.result?.content?.[0] as { text?: string };
+      const text = response.content?.[0] as { text?: string };
       expect(text?.text).toContain('Search query is required');
     });
 
     it('should handle unknown tool name', async () => {
       const response = await mcpManagerServer.callTool('unknown_tool', {});
 
-      const text = response.result?.content?.[0] as { text?: string };
+      const text = response.content?.[0] as { text?: string };
       expect(text?.text).toContain('Unknown tool');
     });
   });

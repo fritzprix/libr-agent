@@ -4,7 +4,7 @@
  */
 
 import type { MCPTool } from '../protocol';
-import type { MCPResponse, SamplingResponse } from '../protocol';
+import type { MCPResult, SamplingResponse } from '../protocol';
 import type { SamplingOptions } from '../protocol';
 import type { ServiceContext, ServiceContextOptions } from '@/features/tools';
 
@@ -28,9 +28,9 @@ export interface WebMCPServer {
    * A function to call a tool on the server.
    * @param name The name of the tool to call.
    * @param args The arguments for the tool.
-   * @returns A promise that resolves to an MCP response.
+   * @returns A promise that resolves to an MCP result (unwrapped, no JSON-RPC envelope).
    */
-  callTool: (name: string, args: unknown) => Promise<MCPResponse<unknown>>;
+  callTool: (name: string, args: unknown) => Promise<MCPResult<unknown>>;
   /**
    * An optional function to perform text sampling.
    * @param prompt The prompt to use for sampling.

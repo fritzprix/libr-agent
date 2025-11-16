@@ -36,6 +36,30 @@ pub fn create_execute_shell_tool() -> MCPTool {
             Some("Execution mode: 'sync' (wait for completion), 'async' (return immediately with process_id)"),
         ),
     );
+    props.insert(
+        "require_user_input".to_string(),
+        {
+            let mut schema = boolean_prop(Some("Request user input before execution (e.g., sudo password). Auto-detects sudo/su/doas/pkexec on Unix."));
+            schema.default = Some(json!(false));
+            schema
+        },
+    );
+    props.insert(
+        "input_prompt".to_string(),
+        string_prop(
+            None,
+            None,
+            Some("Custom prompt message for user input (default: auto-detected based on command)"),
+        ),
+    );
+    props.insert(
+        "input_type".to_string(),
+        enum_prop(
+            vec!["password", "text"],
+            "text",
+            Some("Input type: 'password' (hidden) or 'text' (visible). Auto-set to 'password' for sudo commands."),
+        ),
+    );
     // Isolation level removed - always use Medium isolation for security
     // This prevents AI agents from choosing weaker isolation that could be exploited
     // 'working_dir' intentionally removed from the public tool schema to
@@ -46,6 +70,12 @@ pub fn create_execute_shell_tool() -> MCPTool {
         name: "execute_shell".to_string(),
         title: Some("Execute Shell Command (bash/sh)".to_string()),
         description: "Execute a shell command using bash or sh in a sandboxed environment.\n\n\
+                      INTERACTIVE INPUT:\n\
+                      - Set 'require_user_input: true' to prompt for user input before execution\n\
+                      - Auto-detects privilege escalation commands (sudo, su, doas, pkexec)\n\
+                      - Supports password (hidden) and text (visible) input types\n\
+                      - ⚠️ LIMITATION: Only supports SINGLE pre-execution input (stdin closed after input)\n\
+                      - Multiple prompts (e.g., password → y/n confirmation) are NOT supported\n\n\
                       MODES:\n\
                       - 'sync' (default): Wait for completion, return stdout/stderr immediately\n\
                       - 'async': Run in background, return process_id immediately\n\n\
@@ -92,6 +122,26 @@ pub fn create_execute_shell_tool() -> MCPTool {
             Some("Execution mode: 'sync' (wait for completion), 'async' (return immediately with process_id)"),
         ),
     );
+    props.insert(
+        "require_user_input".to_string(),
+        {
+            let mut schema = boolean_prop(Some("Request user input before execution. Must be explicitly set on Windows (no auto-detection)."));
+            schema.default = Some(json!(false));
+            schema
+        },
+    );
+    props.insert(
+        "input_prompt".to_string(),
+        string_prop(None, None, Some("Custom prompt message for user input")),
+    );
+    props.insert(
+        "input_type".to_string(),
+        enum_prop(
+            vec!["password", "text"],
+            "text",
+            Some("Input type: 'password' (hidden) or 'text' (visible)"),
+        ),
+    );
     // Isolation level removed - always use Medium isolation for security
     // This prevents AI agents from choosing weaker isolation that could be exploited
     // 'working_dir' intentionally removed from the public tool schema to
@@ -102,6 +152,15 @@ pub fn create_execute_shell_tool() -> MCPTool {
         name: "execute_windows_cmd".to_string(),
         title: Some("Execute Windows Command (PowerShell)".to_string()),
         description: "Execute a command using Windows PowerShell in a sandboxed environment.\n\n\
+                      INTERACTIVE INPUT:\n\
+                      - Set 'require_user_input: true' to prompt for user input before execution\n\
+                      - ⚠️ WINDOWS LIMITATION: Cannot auto-detect admin privilege requirements\n\
+                      - ⚠️ UAC (User Account Control) requires manual approval dialog\n\n\
+                      SUPPORTED INTERACTIVE INPUTS:\n\
+                      - ✅ Custom text input (Read-Host prompts) - SINGLE INPUT ONLY\n\
+                      - ✅ Non-privileged password inputs - SINGLE INPUT ONLY\n\
+                      - ❌ Administrator password input (use system UAC instead)\n\
+                      - ❌ Multiple sequential prompts (e.g., y/n confirmations)\n\n\
                       MODES:\n\
                       - 'sync' (default): Wait for completion, return stdout/stderr immediately\n\
                       - 'async': Run in background, return process_id immediately\n\n\
@@ -116,6 +175,88 @@ pub fn create_execute_shell_tool() -> MCPTool {
                       - Complex commands work better than cmd.exe due to better quote handling"
             .to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),
+        output_schema: None,
+        annotations: None,
+    }
+}
+
+/// Create execute_pending_shell tool (2nd tool in Two-Tool Pattern)
+/// This tool is called automatically by UIResource after user input
+pub fn create_execute_pending_shell_tool() -> MCPTool {
+    let mut props = HashMap::new();
+
+    props.insert(
+        "execution_id".to_string(),
+        string_prop(
+            None,
+            None,
+            Some("Execution ID returned from execute_shell with require_user_input"),
+        ),
+    );
+
+    props.insert(
+        "user_input".to_string(),
+        string_prop(
+            None,
+            None,
+            Some("User input (password or text) to inject into command stdin"),
+        ),
+    );
+
+    MCPTool {
+        name: "execute_pending_shell".to_string(),
+        title: Some("Execute Pending Shell Command".to_string()),
+        description: "Execute a pending shell command with user input.\n\n\
+                      This tool is called automatically by the UIResource after user input.\n\
+                      DO NOT call this tool directly - it is triggered by user interaction.\n\n\
+                      FLOW:\n\
+                      1. Agent calls execute_shell with require_user_input: true\n\
+                      2. Agent receives UIResource with execution_id\n\
+                      3. User enters input in UIResource\n\
+                      4. UIResource calls this tool with execution_id and user_input\n\
+                      5. Agent receives final stdout/stderr result\n\n\
+                      SECURITY:\n\
+                      - user_input is passed through MCP but NOT logged in agent context\n\
+                      - Commands are sanitized before logging (-S flags removed)\n\
+                      - Passwords are cleared from memory immediately after use"
+            .to_string(),
+        input_schema: object_schema(
+            props,
+            vec!["execution_id".to_string(), "user_input".to_string()],
+        ),
+        output_schema: None,
+        annotations: None,
+    }
+}
+
+/// Create cancel_pending_execution tool
+/// This tool is called from UIResource when user cancels the operation
+pub fn create_cancel_pending_execution_tool() -> MCPTool {
+    let mut props = HashMap::new();
+
+    props.insert(
+        "execution_id".to_string(),
+        string_prop(
+            None,
+            None,
+            Some("Execution ID of the pending shell command to cancel"),
+        ),
+    );
+
+    MCPTool {
+        name: "cancel_pending_execution".to_string(),
+        title: Some("Cancel Pending Execution".to_string()),
+        description: "Cancel a pending shell execution without executing it.\n\n\
+                      This tool is called automatically when user clicks Cancel in UIResource.\n\
+                      DO NOT call this tool directly - it is triggered by user interaction.\n\n\
+                      FLOW:\n\
+                      1. Agent calls execute_shell with require_user_input: true\n\
+                      2. Agent receives UIResource with execution_id\n\
+                      3. User clicks Cancel button in UIResource\n\
+                      4. UIResource calls this tool with execution_id\n\
+                      5. Pending execution is removed from state"
+            .to_string(),
+        input_schema: object_schema(props, vec!["execution_id".to_string()]),
         output_schema: None,
         annotations: None,
     }

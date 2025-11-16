@@ -327,6 +327,85 @@ pub struct SamplingRequest {
     pub options: Option<SamplingOptions>,
 }
 
+/// Represents MCP content items (text or resource).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+#[serde(rename_all = "lowercase")]
+pub enum MCPContent {
+    #[serde(rename = "text")]
+    Text { text: String },
+    #[serde(rename = "resource")]
+    Resource { resource: serde_json::Value },
+}
+
+/// Represents the pure result of a tool execution (without JSON-RPC wrapper).
+/// This is what built-in tools should return before being wrapped in MCPResponse.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MCPResult {
+    /// Content items returned by the tool.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<Vec<MCPContent>>,
+    /// Structured data returned by the tool.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub structured_content: Option<serde_json::Value>,
+    /// Flag indicating if this is a tool execution error (not a protocol error).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_error: Option<bool>,
+}
+
+impl MCPResult {
+    /// Creates a successful MCPResult with text content.
+    #[allow(dead_code)]
+    pub fn success(text: &str) -> Self {
+        Self {
+            content: Some(vec![MCPContent::Text {
+                text: text.to_string(),
+            }]),
+            structured_content: None,
+            is_error: Some(false),
+        }
+    }
+
+    /// Creates a successful MCPResult with text and structured content.
+    #[allow(dead_code)]
+    pub fn success_with_data(text: &str, data: serde_json::Value) -> Self {
+        Self {
+            content: Some(vec![MCPContent::Text {
+                text: text.to_string(),
+            }]),
+            structured_content: Some(data),
+            is_error: Some(false),
+        }
+    }
+
+    /// Creates an error MCPResult.
+    #[allow(dead_code)]
+    pub fn error(message: &str) -> Self {
+        Self {
+            content: Some(vec![MCPContent::Text {
+                text: message.to_string(),
+            }]),
+            structured_content: None,
+            is_error: Some(true),
+        }
+    }
+
+    /// Creates an error MCPResult with additional structured data.
+    #[allow(dead_code)]
+    pub fn error_with_data(message: &str, data: serde_json::Value) -> Self {
+        Self {
+            content: Some(vec![MCPContent::Text {
+                text: message.to_string(),
+            }]),
+            structured_content: Some(serde_json::json!({
+                "error": data
+            })),
+            is_error: Some(true),
+        }
+    }
+}
+
 /// Represents a standard MCP response, compliant with JSON-RPC 2.0.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MCPResponse {

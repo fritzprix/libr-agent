@@ -1,3 +1,5 @@
+import { MessageErrorType } from '@/models/chat';
+
 /**
  * Defines a standardized structure for classified AI service errors.
  */
@@ -5,7 +7,7 @@ export interface ErrorClassification {
   /** A user-friendly message to display in the UI. */
   displayMessage: string;
   /** The type of the error (e.g., 'NETWORK_ERROR', 'AUTHENTICATION_ERROR'). */
-  type: string;
+  type: MessageErrorType;
   /** Indicates whether the operation can be retried. */
   recoverable: boolean;
   /** Contains detailed information about the error for debugging. */
@@ -43,7 +45,7 @@ export const classifyAIServiceError = (
     return {
       displayMessage:
         'I encountered an issue while trying to use tools. Let me try again without tools.',
-      type: 'MALFORMED_FUNCTION_CALL',
+      type: 'VALIDATION_ERROR' as MessageErrorType,
       recoverable: true,
       details: {
         originalError: error,
@@ -62,7 +64,7 @@ export const classifyAIServiceError = (
     return {
       displayMessage:
         'I had trouble processing the response. Please try again.',
-      type: 'JSON_PARSING_ERROR',
+      type: 'AI_SERVICE_ERROR' as MessageErrorType,
       recoverable: true,
       details: {
         originalError: error,
@@ -83,7 +85,7 @@ export const classifyAIServiceError = (
     return {
       displayMessage:
         'Network connection issue. Please check your connection and try again.',
-      type: 'NETWORK_ERROR',
+      type: 'NETWORK_ERROR' as MessageErrorType,
       recoverable: true,
       details: {
         originalError: error,
@@ -105,7 +107,7 @@ export const classifyAIServiceError = (
     return {
       displayMessage:
         'Authentication issue. Please check your API key configuration.',
-      type: 'AUTHENTICATION_ERROR',
+      type: 'AI_SERVICE_ERROR' as MessageErrorType,
       recoverable: false,
       details: {
         originalError: error,
@@ -126,7 +128,7 @@ export const classifyAIServiceError = (
     return {
       displayMessage:
         'Rate limit exceeded. Please wait a moment and try again.',
-      type: 'RATE_LIMIT_ERROR',
+      type: 'AI_SERVICE_ERROR' as MessageErrorType,
       recoverable: true,
       details: {
         originalError: error,
@@ -140,7 +142,7 @@ export const classifyAIServiceError = (
   // Other unknown errors
   return {
     displayMessage: 'Something went wrong. Please try again.',
-    type: 'UNKNOWN_ERROR',
+    type: 'AI_SERVICE_ERROR' as MessageErrorType,
     recoverable: true,
     details: {
       originalError: error,

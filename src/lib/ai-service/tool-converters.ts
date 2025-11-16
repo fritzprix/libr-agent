@@ -4,7 +4,11 @@ import { Tool as AnthropicTool } from '@anthropic-ai/sdk/resources/messages.mjs'
 import { MCPTool, JSONSchema } from '../mcp-types';
 import { getLogger } from '../logger';
 import { AIServiceProvider, AIServiceError } from './types';
-import { FunctionDeclaration, Type } from '@google/genai';
+import {
+  FunctionDeclaration,
+  Type,
+  Schema as GeminiSchema,
+} from '@google/genai';
 import Cerebras from '@cerebras/cerebras_cloud_sdk';
 
 const logger = getLogger('AIService');
@@ -33,113 +37,78 @@ interface OllamaTool {
 /** Represents an array of provider-specific tools. @internal */
 type ProviderToolsType = ProviderToolType[];
 
-/** A simplified representation of a JSON schema property for internal conversion. @internal */
-interface JsonSchemaProperty {
-  type: string;
-  description?: string;
-  items?: JsonSchemaProperty;
-}
-
 /**
- * Converts a structured `JSONSchema` object into a simplified `JsonSchemaProperty` object.
- * This is a helper for the Gemini tool conversion process.
- * @param schema The `JSONSchema` to convert.
- * @returns A `JsonSchemaProperty` object.
+ * Recursively converts an MCPTool's JSONSchema into the Google GenAI FunctionDeclaration format.
+ * This properly handles nested objects and arrays, preserving all schema information.
+ * @param schema The MCP JSONSchema to convert.
+ * @returns The schema in the format required by Google GenAI SDK.
  * @internal
  */
-function convertJSONSchemaToJsonSchemaProperty(
-  schema: JSONSchema,
-): JsonSchemaProperty {
-  // Extract the base type from our structured JSONSchema
-  const getTypeString = (schema: JSONSchema): string => {
-    if (schema.type === 'string') return 'string';
-    if (schema.type === 'number') return 'number';
-    if (schema.type === 'integer') return 'integer';
-    if (schema.type === 'boolean') return 'boolean';
-    if (schema.type === 'array') return 'array';
-    if (schema.type === 'object') return 'object';
-    if (schema.type === 'null') return 'null';
-    return 'string'; // fallback
-  };
+function convertMCPSchemaToGeminiParameters(schema: JSONSchema): GeminiSchema {
+  // Base case: String type with optional enum
+  if (schema.type === 'string') {
+    const result: GeminiSchema = { type: Type.STRING };
+    if (schema.description) result.description = schema.description;
+    if ('enum' in schema && Array.isArray(schema.enum)) {
+      result.enum = schema.enum as string[];
+    }
+    return result;
+  }
 
-  const result: JsonSchemaProperty = {
-    type: getTypeString(schema),
-    description: schema.description,
-  };
+  // Base case: Number types
+  if (schema.type === 'number' || schema.type === 'integer') {
+    const result: GeminiSchema = { type: Type.NUMBER };
+    if (schema.description) result.description = schema.description;
+    return result;
+  }
 
-  // Handle array items recursively
+  // Base case: Boolean type
+  if (schema.type === 'boolean') {
+    const result: GeminiSchema = { type: Type.BOOLEAN };
+    if (schema.description) result.description = schema.description;
+    return result;
+  }
+
+  // Base case: Null type
+  if (schema.type === 'null') {
+    const result: GeminiSchema = { type: Type.STRING };
+    if (schema.description) result.description = schema.description;
+    return result;
+  }
+
+  // Recursive case: Arrays
   if (schema.type === 'array' && 'items' in schema && schema.items) {
-    if (Array.isArray(schema.items)) {
-      // If items is an array, use the first item
-      result.items =
-        schema.items.length > 0
-          ? convertJSONSchemaToJsonSchemaProperty(schema.items[0])
-          : { type: 'string' };
-    } else {
-      result.items = convertJSONSchemaToJsonSchemaProperty(schema.items);
-    }
+    const arrayItems = Array.isArray(schema.items)
+      ? schema.items[0]
+      : schema.items;
+    const result: GeminiSchema = {
+      type: Type.ARRAY,
+      items: arrayItems
+        ? convertMCPSchemaToGeminiParameters(arrayItems)
+        : { type: Type.STRING },
+    };
+    if (schema.description) result.description = schema.description;
+    return result;
   }
 
-  return result;
-}
+  // Recursive case: Objects
+  if (schema.type === 'object' && 'properties' in schema && schema.properties) {
+    const geminiProperties: Record<string, GeminiSchema> = {};
 
-/**
- * Converts a record of `JsonSchemaProperty` objects to the format required by the Google GenAI SDK.
- * @param properties The properties to convert.
- * @returns A record of properties formatted for Gemini.
- * @internal
- */
-function convertPropertiesToGeminiTypes(
-  properties: Record<string, JsonSchemaProperty>,
-): Record<
-  string,
-  { type: Type; description?: string; items?: { type: Type } }
-> {
-  if (!properties || typeof properties !== 'object') {
-    return {};
-  }
-
-  const convertedProperties: Record<
-    string,
-    { type: Type; description?: string; items?: { type: Type } }
-  > = {};
-
-  for (const [key, value] of Object.entries(properties)) {
-    const propType = value.type;
-
-    switch (propType) {
-      case 'string':
-        convertedProperties[key] = { type: Type.STRING };
-        break;
-      case 'number':
-      case 'integer':
-        convertedProperties[key] = { type: Type.NUMBER };
-        break;
-      case 'boolean':
-        convertedProperties[key] = { type: Type.BOOLEAN };
-        break;
-      case 'array':
-        convertedProperties[key] = {
-          type: Type.ARRAY,
-          items: value.items
-            ? convertSinglePropertyToGeminiType(value.items)
-            : { type: Type.STRING },
-        };
-        break;
-      case 'object':
-        convertedProperties[key] = { type: Type.OBJECT };
-        break;
-      default:
-        convertedProperties[key] = { type: Type.STRING };
-        break;
+    for (const [key, propSchema] of Object.entries(schema.properties)) {
+      geminiProperties[key] = convertMCPSchemaToGeminiParameters(propSchema);
     }
 
-    if (value.description && typeof value.description === 'string') {
-      convertedProperties[key].description = value.description;
-    }
+    const result: GeminiSchema = {
+      type: Type.OBJECT,
+      properties: geminiProperties,
+    };
+    if (schema.description) result.description = schema.description;
+    return result;
   }
 
-  return convertedProperties;
+  // Fallback for unknown or incomplete types
+  return { type: Type.STRING };
 }
 
 /**
@@ -172,7 +141,9 @@ function ensureSchemaTypeField(
 
   // Handle array-type type fields (convert to single type)
   if (Array.isArray(result.type)) {
-    result.type = result.type[0] || 'string';
+    // Prioritize the first non-null type
+    const nonNullType = (result.type as string[]).find((t) => t !== 'null');
+    result.type = nonNullType || 'string';
   }
 
   // Recursively ensure properties have type fields
@@ -297,33 +268,6 @@ function sanitizeSchemaForCerebras(
 }
 
 /**
- * Converts a single `JsonSchemaProperty` to the format required by the Google GenAI SDK.
- * @param prop The property to convert.
- * @returns An object with the correct `Type` enum.
- * @internal
- */
-function convertSinglePropertyToGeminiType(prop: JsonSchemaProperty): {
-  type: Type;
-  items?: { type: Type };
-} {
-  switch (prop.type) {
-    case 'string':
-      return { type: Type.STRING };
-    case 'number':
-    case 'integer':
-      return { type: Type.NUMBER };
-    case 'boolean':
-      return { type: Type.BOOLEAN };
-    case 'array':
-      return { type: Type.ARRAY };
-    case 'object':
-      return { type: Type.OBJECT };
-    default:
-      return { type: Type.STRING };
-  }
-}
-
-/**
  * Validates the basic structure of an `MCPTool`.
  * @param tool The tool to validate.
  * @throws An error if the tool is missing required fields.
@@ -345,7 +289,179 @@ function validateTool(tool: MCPTool): void {
 }
 
 /**
+ * Converts a single MCPTool to the Cerebras-specific format.
+ * Cerebras requires sanitized JSON schemas without unsupported fields.
+ * @param mcpTool The MCPTool to convert.
+ * @returns The tool in Cerebras-specific format.
+ * @internal
+ */
+function convertMCPToolToCerebras(
+  mcpTool: MCPTool,
+): Cerebras.Chat.Completions.ChatCompletionCreateParams.Tool {
+  validateTool(mcpTool);
+
+  const properties = mcpTool.inputSchema.properties || {};
+  const required = mcpTool.inputSchema.required || [];
+
+  const commonParameters = ensureSchemaTypeField({
+    type: 'object' as const,
+    properties: properties,
+    required: required,
+  });
+
+  const sanitizedParameters = sanitizeSchemaForCerebras(commonParameters);
+
+  logger.info('Cerebras tool conversion:', {
+    toolName: mcpTool.name,
+  });
+
+  return {
+    type: 'function',
+    function: {
+      name: mcpTool.name,
+      description: mcpTool.description,
+      parameters: sanitizedParameters,
+    },
+  } satisfies Cerebras.Chat.Completions.ChatCompletionCreateParams.Tool;
+}
+
+/**
+ * Converts a single MCPTool to the OpenAI-compatible format.
+ * Used by OpenAI and Fireworks providers.
+ * @param mcpTool The MCPTool to convert.
+ * @returns The tool in OpenAI-compatible format.
+ * @internal
+ */
+function convertMCPToolToOpenAI(mcpTool: MCPTool): OpenAIChatCompletionTool {
+  validateTool(mcpTool);
+
+  const properties = mcpTool.inputSchema.properties || {};
+  const required = mcpTool.inputSchema.required || [];
+
+  const commonParameters = ensureSchemaTypeField({
+    type: 'object' as const,
+    properties: properties,
+    required: required,
+  });
+
+  return {
+    type: 'function',
+    function: {
+      name: mcpTool.name,
+      description: mcpTool.description,
+      parameters: commonParameters,
+    },
+  } satisfies OpenAIChatCompletionTool;
+}
+
+/**
+ * Converts a single MCPTool to the Groq-specific format.
+ * @param mcpTool The MCPTool to convert.
+ * @returns The tool in Groq-specific format.
+ * @internal
+ */
+function convertMCPToolToGroq(mcpTool: MCPTool): GroqChatCompletionTool {
+  validateTool(mcpTool);
+
+  const properties = mcpTool.inputSchema.properties || {};
+  const required = mcpTool.inputSchema.required || [];
+
+  const commonParameters = ensureSchemaTypeField({
+    type: 'object' as const,
+    properties: properties,
+    required: required,
+  });
+
+  return {
+    type: 'function',
+    function: {
+      name: mcpTool.name,
+      description: mcpTool.description,
+      parameters: commonParameters,
+    },
+  };
+}
+
+/**
+ * Converts a single MCPTool to the Anthropic-specific format.
+ * @param mcpTool The MCPTool to convert.
+ * @returns The tool in Anthropic-specific format.
+ * @internal
+ */
+function convertMCPToolToAnthropic(mcpTool: MCPTool): AnthropicTool {
+  validateTool(mcpTool);
+
+  const properties = mcpTool.inputSchema.properties || {};
+  const required = mcpTool.inputSchema.required || [];
+
+  const commonParameters = ensureSchemaTypeField({
+    type: 'object' as const,
+    properties: properties,
+    required: required,
+  });
+
+  return {
+    name: mcpTool.name,
+    description: mcpTool.description,
+    input_schema: commonParameters as AnthropicTool['input_schema'],
+  };
+}
+
+/**
+ * Converts a single MCPTool to the Gemini-specific format.
+ * @param mcpTool The MCPTool to convert.
+ * @returns The tool in Gemini-specific format.
+ * @internal
+ */
+function convertMCPToolToGemini(mcpTool: MCPTool): FunctionDeclaration {
+  validateTool(mcpTool);
+
+  // Convert the entire inputSchema to Gemini format
+  const geminiParams = convertMCPSchemaToGeminiParameters(mcpTool.inputSchema);
+
+  return {
+    name: mcpTool.name,
+    description: mcpTool.description,
+    parameters: {
+      type: Type.OBJECT,
+      description: mcpTool.inputSchema.description,
+      properties: geminiParams.properties || {},
+      required: mcpTool.inputSchema.required || [],
+    },
+  } satisfies FunctionDeclaration;
+}
+
+/**
+ * Converts a single MCPTool to the Ollama-specific format.
+ * @param mcpTool The MCPTool to convert.
+ * @returns The tool in Ollama-specific format.
+ * @internal
+ */
+function convertMCPToolToOllama(mcpTool: MCPTool): OllamaTool {
+  validateTool(mcpTool);
+
+  const properties = mcpTool.inputSchema.properties || {};
+  const required = mcpTool.inputSchema.required || [];
+
+  const commonParameters = ensureSchemaTypeField({
+    type: 'object' as const,
+    properties: properties,
+    required: required,
+  });
+
+  return {
+    type: 'function',
+    function: {
+      name: mcpTool.name,
+      description: mcpTool.description,
+      parameters: commonParameters,
+    },
+  } satisfies OllamaTool;
+}
+
+/**
  * Converts a single `MCPTool` object into the format required by a specific AI service provider.
+ * This function acts as a dispatcher to provider-specific conversion functions.
  * @param mcpTool The `MCPTool` to convert.
  * @param provider The target `AIServiceProvider`.
  * @returns The tool in the provider-specific format.
@@ -356,91 +472,20 @@ function convertMCPToolToProviderFormat(
   mcpTool: MCPTool,
   provider: AIServiceProvider,
 ): ProviderToolType {
-  validateTool(mcpTool);
-
-  // Extract properties and required fields from the structured schema
-  const properties = mcpTool.inputSchema.properties || {};
-  const required = mcpTool.inputSchema.required || [];
-
-  // Ensure schema has proper type fields before sending to any provider
-  const commonParameters = ensureSchemaTypeField({
-    type: 'object' as const,
-    properties: properties,
-    required: required,
-  });
-
   switch (provider) {
     case AIServiceProvider.OpenAI:
     case AIServiceProvider.Fireworks:
-      return {
-        type: 'function',
-        function: {
-          name: mcpTool.name,
-          description: mcpTool.description,
-          parameters: commonParameters,
-        },
-      } satisfies OpenAIChatCompletionTool;
+      return convertMCPToolToOpenAI(mcpTool);
     case AIServiceProvider.Groq:
-      return {
-        type: 'function',
-        function: {
-          name: mcpTool.name,
-          description: mcpTool.description,
-          parameters: commonParameters,
-        },
-      };
+      return convertMCPToolToGroq(mcpTool);
     case AIServiceProvider.Anthropic:
-      return {
-        name: mcpTool.name,
-        description: mcpTool.description,
-        input_schema: commonParameters,
-      };
+      return convertMCPToolToAnthropic(mcpTool);
     case AIServiceProvider.Gemini:
-      // Use parameters with Type enums for Google GenAI SDK
-      return {
-        name: mcpTool.name,
-        description: mcpTool.description,
-        parameters: {
-          type: Type.OBJECT,
-          properties: convertPropertiesToGeminiTypes(
-            Object.fromEntries(
-              Object.entries(mcpTool.inputSchema.properties || {}).map(
-                ([key, value]) => [
-                  key,
-                  convertJSONSchemaToJsonSchemaProperty(value),
-                ],
-              ),
-            ),
-          ),
-          required: mcpTool.inputSchema.required || [],
-        },
-      };
-    case AIServiceProvider.Cerebras: {
-      // Cerebras doesn't support certain JSON schema fields like 'minimum', 'maximum', etc.
-      const sanitizedParameters = sanitizeSchemaForCerebras(commonParameters);
-      logger.info('Cerebras tool conversion:', {
-        original: commonParameters,
-        sanitized: sanitizedParameters,
-        toolName: mcpTool.name,
-      });
-      return {
-        type: 'function',
-        function: {
-          name: mcpTool.name,
-          description: mcpTool.description,
-          parameters: sanitizedParameters,
-        },
-      } satisfies Cerebras.Chat.Completions.ChatCompletionCreateParams.Tool;
-    }
+      return convertMCPToolToGemini(mcpTool);
+    case AIServiceProvider.Cerebras:
+      return convertMCPToolToCerebras(mcpTool);
     case AIServiceProvider.Ollama:
-      return {
-        type: 'function',
-        function: {
-          name: mcpTool.name,
-          description: mcpTool.description,
-          parameters: commonParameters,
-        },
-      } satisfies OllamaTool;
+      return convertMCPToolToOllama(mcpTool);
     case AIServiceProvider.Empty:
       throw new AIServiceError(
         `Tool conversion not supported for Empty AIServiceProvider`,
@@ -476,29 +521,5 @@ export function convertMCPToolsToProviderTools(
 export function convertMCPToolsToCerebrasTools(
   mcpTools: MCPTool[],
 ): Cerebras.Chat.Completions.ChatCompletionCreateParams.Tool[] {
-  return mcpTools.map((tool) => {
-    validateTool(tool);
-
-    const properties = tool.inputSchema.properties || {};
-    const required = tool.inputSchema.required || [];
-
-    // Ensure schema has proper type fields and sanitize for Cerebras
-    const commonParameters = ensureSchemaTypeField({
-      type: 'object' as const,
-      properties: properties,
-      required: required,
-    });
-
-    // Cerebras doesn't support certain JSON schema fields like 'minimum', 'maximum', etc.
-    const sanitizedParameters = sanitizeSchemaForCerebras(commonParameters);
-
-    return {
-      type: 'function',
-      function: {
-        name: tool.name,
-        description: tool.description,
-        parameters: sanitizedParameters,
-      },
-    } satisfies Cerebras.Chat.Completions.ChatCompletionCreateParams.Tool;
-  });
+  return mcpTools.map(convertMCPToolToCerebras);
 }

@@ -2,16 +2,11 @@ import type { Message } from '@/models/chat';
 
 /**
  * Checks if a tool result message contains an error.
- * Errors are identified by text content starting with '❌' or 'Error:'.
+ * Uses the Message.error property for type-safe error detection.
  */
 export function hasToolCallError(toolResult?: Message): boolean {
-  return (
-    toolResult?.content?.some(
-      (c) =>
-        c.type === 'text' &&
-        (c.text?.startsWith('❌') || c.text?.startsWith('Error:')),
-    ) || false
-  );
+  // Type-safe error detection using Message.error property
+  return !!toolResult?.error;
 }
 
 /**

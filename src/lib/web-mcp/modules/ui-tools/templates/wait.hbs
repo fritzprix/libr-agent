@@ -84,13 +84,29 @@
       </button>
     </div>
     <script>
-      const context =
-      {{{contextJson}}}; function handleContinue() { // Post flattened params so
-      the parent can forward them directly to the tool // i.e. params: {
-      resumeInstruction, startedAt } window.parent.postMessage( { type: 'tool',
-      payload: { toolName: 'resume_from_wait', params: { ...context }, }, },
-      '*', ); } // Keyboard support document.addEventListener('keydown',
-      function (e) { if (e.key === 'Enter') { handleContinue(); } });
+      const context = {{{contextJson}}};
+      
+      function handleContinue() {
+        // Post flattened params so the parent can forward them directly to the tool
+        // i.e. params: { resumeInstruction, startedAt }
+        window.parent.postMessage(
+          {
+            type: 'tool',
+            payload: {
+              toolName: 'resume_from_wait',
+              params: { ...context },
+            },
+          },
+          '*',
+        );
+      }
+      
+      // Keyboard support
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+          handleContinue();
+        }
+      });
     </script>
   </body>
 </html>

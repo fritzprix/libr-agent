@@ -1,4 +1,4 @@
-import { MCPResponse, MCPContent } from './mcp-types';
+import type { MCPResponse, MCPContent, MCPResult } from './mcp-types';
 import { createId } from '@paralleldrive/cuid2';
 
 /**
@@ -127,5 +127,113 @@ export function createMCPStructuredMultipartResponse<T>(
       content: contents,
       structuredContent,
     },
+  };
+}
+
+// ============================================================================
+// Tool Result Helpers (for Built-in Tools - No Transport Layer)
+// ============================================================================
+
+/**
+ * Creates a successful tool result (MCPResult) for built-in tools.
+ * Use this for built-in tools that don't need JSON-RPC transport layer.
+ *
+ * @param text The text content for the result.
+ * @returns An `MCPResult` object with the specified text content.
+ *
+ * @example
+ * ```typescript
+ * return createMCPSuccessToolResult('Operation completed successfully');
+ * ```
+ */
+export function createMCPSuccessToolResult(text: string): MCPResult<unknown> {
+  return {
+    content: [{ type: 'text', text }],
+    isError: false,
+  };
+}
+
+/**
+ * Creates a successful tool result with structured content for built-in tools.
+ *
+ * @template T The type of the structured content.
+ * @param text The text content for the result.
+ * @param structuredContent The structured data payload.
+ * @returns An `MCPResult` object with both text and structured content.
+ *
+ * @example
+ * ```typescript
+ * return createMCPStructuredToolResult('Found 3 items', { items: [...], count: 3 });
+ * ```
+ */
+export function createMCPStructuredToolResult<T>(
+  text: string,
+  structuredContent: T,
+): MCPResult<T> {
+  return {
+    content: [{ type: 'text', text }],
+    structuredContent,
+    isError: false,
+  };
+}
+
+/**
+ * Creates a multipart successful tool result with arbitrary content for built-in tools.
+ *
+ * @template T The type of the structured content.
+ * @param contents Array of MCPContent items (can include UI resources, images, etc.)
+ * @param structuredContent Optional structured data payload.
+ * @returns An `MCPResult` object with the specified content and structured data.
+ *
+ * @example
+ * ```typescript
+ * return createMCPMultipartToolResult(
+ *   [
+ *     { type: 'text', text: 'Chart generated' },
+ *     { type: 'resource', resource: { uri: 'ui://chart', mimeType: 'text/html' } }
+ *   ],
+ *   { chartData: [...] }
+ * );
+ * ```
+ */
+export function createMCPMultipartToolResult<T>(
+  contents: MCPContent[],
+  structuredContent?: T,
+): MCPResult<T> {
+  return {
+    content: contents,
+    structuredContent,
+    isError: false,
+  };
+}
+
+/**
+ * Creates an error tool result (MCPResult with isError flag) for built-in tools.
+ * This represents a tool execution that failed due to business logic errors.
+ *
+ * Note: This is different from protocol-level errors (MCPError in MCPResponse).
+ * Use this when the tool executed but encountered a logical error (not found, validation, etc.)
+ *
+ * @param message The error message.
+ * @param data Optional additional error context data.
+ * @returns An `MCPResult` object with isError flag set to true.
+ *
+ * @example
+ * ```typescript
+ * // Not found error
+ * return createMCPErrorToolResult('Server not found', { serverName: 'test' });
+ *
+ * // Validation error
+ * return createMCPErrorToolResult('Invalid scope parameter', { validScopes: ['assistant', 'global'] });
+ * ```
+ */
+export function createMCPErrorToolResult(
+  message: string,
+  data?: unknown,
+): MCPResult<unknown> {
+  return {
+    content: [{ type: 'text', text: message }],
+    isError: true,
+    structuredContent: data ? { error: data } : undefined,
   };
 }
