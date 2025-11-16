@@ -1,13 +1,13 @@
 // server.rs - ContentStoreServer implementation
 use crate::mcp::types::{ServiceContext, ServiceContextOptions};
-use crate::mcp::{MCPResponse, MCPTool};
+use crate::mcp::MCPTool;
 use crate::session::SessionManager;
 use log::{error, info};
 use serde_json::Value;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use super::{schemas, search, storage, utils};
+use super::{schemas, search, storage};
 
 /// Content-Store built-in MCP server (native backend)
 #[derive(Debug)]
@@ -95,35 +95,12 @@ impl ContentStoreServer {
         ]
     }
 
-    // Utility methods
-    pub(crate) fn generate_request_id() -> Value {
-        utils::generate_request_id()
-    }
-
-    pub(crate) fn dual_response(
-        request_id: Value,
-        message: &str,
-        structured_content: Value,
-    ) -> MCPResponse {
-        utils::create_dual_response(request_id, message, structured_content)
-    }
-
-    pub(crate) fn error_response(request_id: Value, code: i32, message: &str) -> MCPResponse {
-        utils::create_error_response(request_id, code, message)
-    }
-
-    pub(crate) fn require_active_session(
-        &self,
-        request_id: &Value,
-    ) -> Result<String, Box<MCPResponse>> {
+    /// New Result-based helper for require_active_session
+    pub(crate) fn require_active_session_result(&self) -> Result<String, String> {
         if let Some(session_id) = self.session_manager.get_current_session() {
             Ok(session_id)
         } else {
-            Err(Box::new(Self::error_response(
-                request_id.clone(),
-                -32002,
-                "No active session context. Call switch_context with a sessionId before invoking this tool.",
-            )))
+            Err("No active session context. Call switch_context with a sessionId before invoking this tool.".to_string())
         }
     }
 

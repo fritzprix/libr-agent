@@ -1,4 +1,5 @@
 use crate::mcp::types::{BuiltinServerMetadata, ServiceContext, ServiceContextOptions};
+use crate::mcp::types::MCPResult;
 use crate::mcp::{MCPResponse, MCPTool};
 use crate::session::SessionManager;
 use async_trait::async_trait;
@@ -62,13 +63,11 @@ pub trait BuiltinMCPServer: Send + Sync + std::fmt::Debug {
     /// # Arguments
     /// * `tool_name` - The name of the tool to call.
     /// * `args` - The arguments for the tool.
-    /// * `request_id` - Optional request ID from the client. If None, a new UUID is generated.
-    async fn call_tool(
-        &self,
-        tool_name: &str,
-        args: Value,
-        request_id: Option<Value>,
-    ) -> MCPResponse;
+    ///
+    /// # Returns
+    /// A `Result` containing the `MCPResult` on success, or an error message on failure.
+    /// The wrapping into `MCPResponse` is handled by `BuiltinServerRegistry`.
+    async fn call_tool(&self, tool_name: &str, args: Value) -> Result<MCPResult, String>;
 
     /// Returns a markdown-formatted string describing the server's current status and context.
     fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
@@ -510,6 +509,7 @@ impl BuiltinServerRegistry {
     ///
     /// # Returns
     /// An `MCPResponse` containing the result of the tool call.
+    /// This method wraps the `MCPResult` from the server's `call_tool` into an `MCPResponse`.
     pub async fn call_tool(
         &self,
         server_name: &str,
@@ -517,21 +517,50 @@ impl BuiltinServerRegistry {
         args: Value,
         request_id: Option<Value>,
     ) -> MCPResponse {
+        // Generate request_id if not provided
+        let id = request_id.unwrap_or_else(|| Value::String(uuid::Uuid::new_v4().to_string()));
+
         if let Some(server) = self.get_server(server_name) {
             // Apply JSON normalization before calling the tool
             let normalized_args = Self::normalize_json_args(args);
-            server
-                .call_tool(tool_name, normalized_args, request_id)
-                .await
+
+            // Call the server's tool - returns Result<MCPResult, String>
+            match server.call_tool(tool_name, normalized_args).await {
+                Ok(mcp_result) => {
+                    // Success: wrap MCPResult in MCPResponse
+                    MCPResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id: Some(id),
+                        result: Some(serde_json::to_value(mcp_result).unwrap_or_else(|e| {
+                            serde_json::json!({
+                                "error": format!("Failed to serialize result: {}", e)
+                            })
+                        })),
+                        error: None,
+                    }
+                }
+                Err(err_msg) => {
+                    // Error from tool execution: return as MCPError
+                    MCPResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id: Some(id),
+                        result: None,
+                        error: Some(crate::mcp::MCPError {
+                            code: -32603, // Internal error
+                            message: err_msg,
+                            data: None,
+                        }),
+                    }
+                }
+            }
         } else {
-            let request_id =
-                request_id.unwrap_or_else(|| Value::String(uuid::Uuid::new_v4().to_string()));
+            // Server not found
             MCPResponse {
                 jsonrpc: "2.0".to_string(),
-                id: Some(request_id),
+                id: Some(id),
                 result: None,
                 error: Some(crate::mcp::MCPError {
-                    code: -32601,
+                    code: -32601, // Method not found
                     message: format!("Built-in server '{server_name}' not found"),
                     data: None,
                 }),

@@ -3,22 +3,10 @@ import type { Message } from '@/models/chat';
 /**
  * Checks if a tool result message contains an error.
  * Uses the Message.error property for type-safe error detection.
- * Falls back to text pattern matching for backward compatibility.
  */
 export function hasToolCallError(toolResult?: Message): boolean {
-  // Primary: Check for structured error property
-  if (toolResult?.error) {
-    return true;
-  }
-
-  // Fallback: Check text patterns for backward compatibility
-  return (
-    toolResult?.content?.some(
-      (c) =>
-        c.type === 'text' &&
-        (c.text?.startsWith('❌') || c.text?.startsWith('Error:')),
-    ) || false
-  );
+  // Type-safe error detection using Message.error property
+  return !!toolResult?.error;
 }
 
 /**

@@ -4,20 +4,14 @@ use tracing::error;
 use zip::write::FileOptions;
 
 use super::{ui_resources, WorkspaceServer};
-use crate::mcp::MCPResponse;
+use crate::mcp::types::MCPResult;
 
 impl WorkspaceServer {
-    pub async fn handle_export_file(&self, args: Value) -> MCPResponse {
-        let request_id = Self::generate_request_id();
-
+    pub async fn handle_export_file(&self, args: Value) -> Result<MCPResult, String> {
         let path = match args.get("path").and_then(|v| v.as_str()) {
             Some(path) => path,
             None => {
-                return Self::error_response(
-                    request_id,
-                    -32602,
-                    "Missing required parameter: path",
-                );
+                return Err("Missing required parameter: path".to_string());
             }
         };
         let display_name = args
@@ -28,16 +22,12 @@ impl WorkspaceServer {
 
         let source_path = self.get_workspace_dir().join(path);
         if !source_path.exists() || !source_path.is_file() {
-            return Self::error_response(
-                request_id,
-                -32603,
-                "File not found or is not a regular file",
-            );
+            return Err("File not found or is not a regular file".to_string());
         }
 
         let exports_dir = match self.ensure_exports_directory() {
             Ok(dir) => dir,
-            Err(e) => return Self::error_response(request_id, -32603, &e),
+            Err(e) => return Err(e),
         };
 
         let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
@@ -57,7 +47,7 @@ impl WorkspaceServer {
 
         let export_path = exports_dir.join("files").join(&export_filename);
         if let Err(e) = std::fs::copy(&source_path, &export_path) {
-            return Self::error_response(request_id, -32603, &format!("Failed to copy file: {e}"));
+            return Err(format!("Failed to copy file: {e}"));
         }
 
         let relative_path = format!("exports/files/{export_filename}");
@@ -90,24 +80,17 @@ impl WorkspaceServer {
             "파일 '{display_name}'이(가) 성공적으로 export되었습니다. 아래 링크에서 다운로드할 수 있습니다."
         );
 
-        ui_resources::success_response_with_text_and_resource(
-            request_id,
+        Ok(ui_resources::mcp_result_with_text_and_resource(
             &success_message,
             ui_resource,
-        )
+        ))
     }
 
-    pub async fn handle_export_zip(&self, args: Value) -> MCPResponse {
-        let request_id = Self::generate_request_id();
-
+    pub async fn handle_export_zip(&self, args: Value) -> Result<MCPResult, String> {
         let files_array = match args.get("files").and_then(|v| v.as_array()) {
             Some(files) => files,
             None => {
-                return Self::error_response(
-                    request_id,
-                    -32602,
-                    "Missing required parameter: files (array)",
-                );
+                return Err("Missing required parameter: files (array)".to_string());
             }
         };
         let package_name = args
@@ -117,12 +100,12 @@ impl WorkspaceServer {
             .to_string();
 
         if files_array.is_empty() {
-            return Self::error_response(request_id, -32602, "Files array cannot be empty");
+            return Err("Files array cannot be empty".to_string());
         }
 
         let exports_dir = match self.ensure_exports_directory() {
             Ok(dir) => dir,
-            Err(e) => return Self::error_response(request_id, -32603, &e),
+            Err(e) => return Err(e),
         };
 
         let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
@@ -132,11 +115,7 @@ impl WorkspaceServer {
         let zip_file = match std::fs::File::create(&zip_path) {
             Ok(file) => file,
             Err(e) => {
-                return Self::error_response(
-                    request_id,
-                    -32603,
-                    &format!("Failed to create ZIP file: {e}"),
-                )
+                return Err(format!("Failed to create ZIP file: {e}"));
             }
         };
 
@@ -183,19 +162,11 @@ impl WorkspaceServer {
         }
 
         if let Err(e) = zip.finish() {
-            return Self::error_response(
-                request_id,
-                -32603,
-                &format!("Failed to finalize ZIP: {e}"),
-            );
+            return Err(format!("Failed to finalize ZIP: {e}"));
         }
 
         if processed_files.is_empty() {
-            return Self::error_response(
-                request_id,
-                -32603,
-                "No files were successfully added to ZIP",
-            );
+            return Err("No files were successfully added to ZIP".to_string());
         }
 
         let relative_path = format!("exports/packages/{zip_filename}");
@@ -229,11 +200,10 @@ impl WorkspaceServer {
             processed_files.len()
         );
 
-        ui_resources::success_response_with_text_and_resource(
-            request_id,
+        Ok(ui_resources::mcp_result_with_text_and_resource(
             &success_message,
             ui_resource,
-        )
+        ))
     }
 
     fn ensure_exports_directory(&self) -> Result<std::path::PathBuf, String> {

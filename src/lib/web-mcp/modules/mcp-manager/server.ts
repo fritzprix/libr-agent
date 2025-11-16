@@ -1,8 +1,8 @@
 import {
-  createMCPStructuredResponse,
-  createMCPTextResponse,
+  createMCPStructuredToolResult,
+  createMCPErrorToolResult,
 } from '@/lib/mcp-response-utils';
-import type { MCPResponse, WebMCPServer } from '@/lib/mcp-types';
+import type { MCPResult, WebMCPServer } from '@/lib/mcp-types';
 import type { ServiceContext, ServiceContextOptions } from '@/features/tools';
 import { getLogger } from '@/lib/logger';
 import { mcpManagerTools } from './tools';
@@ -173,7 +173,7 @@ function normalizePagination(
 
 async function listServers(
   args: Record<string, unknown>,
-): Promise<MCPResponse<ListServersOutput>> {
+): Promise<MCPResult<ListServersOutput>> {
   const input: ListServersInput = {
     page: args.page !== undefined ? Number(args.page) : 1,
     pageSize: args.pageSize !== undefined ? Number(args.pageSize) : 20,
@@ -192,7 +192,7 @@ async function listServers(
       assistant.mcpServerIds.length === 0
     ) {
       const emptyPage = normalizePagination([], input.page!, input.pageSize!);
-      return createMCPStructuredResponse(
+      return createMCPStructuredToolResult(
         `No MCP servers connected to assistant "${assistant?.name || 'current'}"`,
         emptyPage,
       );
@@ -244,12 +244,12 @@ async function listServers(
 
   const summary = summaryLines.filter(Boolean).join('\n');
 
-  return createMCPStructuredResponse(summary, result);
+  return createMCPStructuredToolResult(summary, result);
 }
 
 async function searchServer(
   args: Record<string, unknown>,
-): Promise<MCPResponse<SearchServersOutput>> {
+): Promise<MCPResult<SearchServersOutput>> {
   const input: SearchServersInput = {
     query: String(args.query || '').trim(),
     page: args.page !== undefined ? Number(args.page) : 1,
@@ -261,7 +261,9 @@ async function searchServer(
   };
 
   if (!input.query) {
-    return createMCPTextResponse('Search query is required');
+    return createMCPErrorToolResult(
+      'Search query is required',
+    ) as MCPResult<SearchServersOutput>;
   }
 
   const db = LocalDatabase.getInstance();
@@ -337,7 +339,7 @@ async function searchServer(
 
     const summary = summaryLines.join('\n');
 
-    return createMCPStructuredResponse(summary, {
+    return createMCPStructuredToolResult(summary, {
       ...result,
       query: input.query,
       mode: 'simple',
@@ -412,7 +414,7 @@ async function searchServer(
 
   const summary = summaryLines.join('\n');
 
-  return createMCPStructuredResponse(summary, {
+  return createMCPStructuredToolResult(summary, {
     ...result,
     query: input.query,
     mode: 'bm25',
@@ -421,7 +423,7 @@ async function searchServer(
 
 async function createServer(
   args: Record<string, unknown>,
-): Promise<MCPResponse<CreateServerOutput>> {
+): Promise<MCPResult<CreateServerOutput>> {
   const input: CreateServerInput = {
     name: String(args.name || '').trim(),
     description: args.description ? String(args.description) : undefined,
@@ -431,16 +433,18 @@ async function createServer(
 
   // Validate required fields
   if (!input.name) {
-    return createMCPTextResponse('Server name is required');
+    return createMCPErrorToolResult(
+      'Server name is required',
+    ) as MCPResult<CreateServerOutput>;
   }
 
   // Validate transport with type guards
   if (
     !(isStdioTransport(input.transport) || isHttpTransport(input.transport))
   ) {
-    return createMCPTextResponse(
+    return createMCPErrorToolResult(
       'Invalid transport configuration. Must be stdio (with command) or http (with url).',
-    );
+    ) as MCPResult<CreateServerOutput>;
   }
 
   // Generate unique ID using crypto.randomUUID() with fallback
@@ -481,7 +485,7 @@ async function createServer(
       `💡 Use "connect_server" to enable this server for the current assistant.`,
     ].join('\n');
 
-    return createMCPStructuredResponse(summary, {
+    return createMCPStructuredToolResult(summary, {
       server,
       message: 'Server created successfully',
     });
@@ -489,9 +493,10 @@ async function createServer(
     const message = error instanceof Error ? error.message : String(error);
 
     if (message.includes('name already exists')) {
-      return createMCPTextResponse(
-        `❌ Server name "${input.name}" already exists. Please choose a different name.`,
-      );
+      return createMCPErrorToolResult(
+        `Server name "${input.name}" already exists. Please choose a different name.`,
+        { tool: 'create_server', serverName: input.name },
+      ) as MCPResult<CreateServerOutput>;
     }
 
     throw error;
@@ -500,7 +505,7 @@ async function createServer(
 
 async function connectServer(
   args: Record<string, unknown>,
-): Promise<MCPResponse<ConnectServerOutput>> {
+): Promise<MCPResult<ConnectServerOutput>> {
   const input: ConnectInput = {
     serverId: args.serverId ? String(args.serverId) : undefined,
     serverName: args.serverName ? String(args.serverName) : undefined,
@@ -510,34 +515,41 @@ async function connectServer(
 
   // Validate scope
   if (input.scope !== 'assistant' && input.scope !== 'global') {
-    return createMCPTextResponse('Scope must be "assistant" or "global"');
+    return createMCPErrorToolResult(
+      'Scope must be "assistant" or "global"',
+    ) as MCPResult<ConnectServerOutput>;
   }
 
   // Validate that at least one identifier is provided
   if (!input.serverId && !input.serverName) {
-    return createMCPTextResponse('Either serverId or serverName is required');
+    return createMCPErrorToolResult(
+      'Either serverId or serverName is required',
+    ) as MCPResult<ConnectServerOutput>;
   }
 
   // Find server using helper
   const server = await findServer(input.serverId, input.serverName);
 
   if (!server) {
-    return createMCPTextResponse(
+    return createMCPErrorToolResult(
       `Server not found: ${input.serverId || input.serverName}`,
-    );
+    ) as MCPResult<ConnectServerOutput>;
   }
 
   // Connect based on scope
   if (input.scope === 'assistant') {
     if (!assistantId) {
-      return createMCPTextResponse(
-        '❌ Assistant context not available. Cannot connect to assistant scope.',
-      );
+      return createMCPErrorToolResult(
+        'Assistant context not available. Cannot connect to assistant scope.',
+        { tool: 'connect_server', scope: input.scope },
+      ) as MCPResult<ConnectServerOutput>;
     }
 
     const assistant = await assistantsCRUD.read(assistantId);
     if (!assistant) {
-      return createMCPTextResponse(`Assistant not found: ${assistantId}`);
+      return createMCPErrorToolResult(
+        `Assistant not found: ${assistantId}`,
+      ) as MCPResult<ConnectServerOutput>;
     }
 
     // Add to assistant's server list if not already connected
@@ -557,7 +569,7 @@ async function connectServer(
         : `   Status: Registered (manual start required)`,
     ].join('\n');
 
-    return createMCPStructuredResponse(summary, {
+    return createMCPStructuredToolResult(summary, {
       success: true,
       server,
       scope: 'assistant',
@@ -577,7 +589,7 @@ async function connectServer(
       `   Status: Active`,
     ].join('\n');
 
-    return createMCPStructuredResponse(summary, {
+    return createMCPStructuredToolResult(summary, {
       success: true,
       server,
       scope: 'global',
@@ -588,7 +600,7 @@ async function connectServer(
 
 async function disconnectServer(
   args: Record<string, unknown>,
-): Promise<MCPResponse<unknown>> {
+): Promise<MCPResult<unknown>> {
   const input: DisconnectInput = {
     serverId: args.serverId ? String(args.serverId) : undefined,
     serverName: args.serverName ? String(args.serverName) : undefined,
@@ -597,38 +609,45 @@ async function disconnectServer(
 
   // Validate scope
   if (input.scope !== 'assistant' && input.scope !== 'global') {
-    return createMCPTextResponse('Scope must be "assistant" or "global"');
+    return createMCPErrorToolResult(
+      'Scope must be "assistant" or "global"',
+    ) as MCPResult<ConnectServerOutput>;
   }
 
   // Validate that at least one identifier is provided
   if (!input.serverId && !input.serverName) {
-    return createMCPTextResponse('Either serverId or serverName is required');
+    return createMCPErrorToolResult(
+      'Either serverId or serverName is required',
+    ) as MCPResult<ConnectServerOutput>;
   }
 
   // Find server using helper
   const server = await findServer(input.serverId, input.serverName);
 
   if (!server) {
-    return createMCPTextResponse(
+    return createMCPErrorToolResult(
       `Server not found: ${input.serverId || input.serverName}`,
-    );
+    ) as MCPResult<ConnectServerOutput>;
   }
 
   if (input.scope === 'assistant') {
     if (!assistantId) {
-      return createMCPTextResponse('❌ Assistant context not available.');
+      return createMCPErrorToolResult('Assistant context not available.', {
+        tool: 'disconnect_server',
+        scope: input.scope,
+      });
     }
 
     const assistant = await assistantsCRUD.read(assistantId);
     if (!assistant) {
-      return createMCPTextResponse(`Assistant not found: ${assistantId}`);
+      return createMCPErrorToolResult(`Assistant not found: ${assistantId}`);
     }
 
     const serverIds = assistant.mcpServerIds || [];
     assistant.mcpServerIds = serverIds.filter((id) => id !== server.id);
     await assistantsCRUD.upsert(assistant);
 
-    return createMCPStructuredResponse(
+    return createMCPStructuredToolResult(
       `✅ Server "${server.name}" disconnected from assistant "${assistant.name}"`,
       { success: true, server, scope: 'assistant' },
     );
@@ -637,7 +656,7 @@ async function disconnectServer(
     server.updatedAt = new Date();
     await mcpServersCRUD.upsert(server);
 
-    return createMCPStructuredResponse(
+    return createMCPStructuredToolResult(
       `✅ Server "${server.name}" disabled globally`,
       { success: true, server, scope: 'global' },
     );
@@ -651,7 +670,7 @@ const mcpManagerServer: WebMCPServer = {
   version: '1.0.0',
   tools: mcpManagerTools,
 
-  async callTool(name: string, args: unknown): Promise<MCPResponse<unknown>> {
+  async callTool(name: string, args: unknown): Promise<MCPResult<unknown>> {
     const a = (args || {}) as Record<string, unknown>;
 
     try {
@@ -667,12 +686,18 @@ const mcpManagerServer: WebMCPServer = {
         case 'disconnect_server':
           return await disconnectServer(a);
         default:
-          return createMCPTextResponse(`Unknown tool: ${name}`);
+          return createMCPErrorToolResult(`Unknown tool: ${name}`, {
+            toolName: name,
+            availableTools: mcpManagerTools.map((t) => t.name),
+          });
       }
     } catch (error) {
       logger.error('Tool execution error', { name, error });
       const message = error instanceof Error ? error.message : String(error);
-      return createMCPTextResponse(`Error: ${message}`);
+      return createMCPErrorToolResult(message, {
+        error: message,
+        stack: error instanceof Error ? error.stack : undefined,
+      });
     }
   },
 

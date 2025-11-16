@@ -6,8 +6,8 @@ use std::sync::{Arc, Mutex};
 use tracing::info;
 
 use super::BuiltinMCPServer;
-use crate::mcp::types::{ServiceContext, ServiceContextOptions};
-use crate::mcp::{MCPResponse, MCPTool};
+use crate::mcp::types::{MCPResult, ServiceContext, ServiceContextOptions};
+use crate::mcp::MCPTool;
 use crate::services::SecureFileManager;
 use crate::session::SessionManager;
 
@@ -203,18 +203,12 @@ impl WorkspaceServer {
     // Terminal Tool Handlers
 
     /// Handle poll_process tool call
-    pub async fn handle_poll_process(&self, args: Value) -> MCPResponse {
-        let request_id = Self::generate_request_id();
-
+    pub async fn handle_poll_process(&self, args: Value) -> Result<MCPResult, String> {
         // Parse process_id
         let process_id = match args.get("process_id").and_then(|v| v.as_str()) {
             Some(id) => id,
             None => {
-                return Self::error_response(
-                    request_id,
-                    -32602,
-                    "Missing required parameter: process_id",
-                );
+                return Err("Missing required parameter: process_id".to_string());
             }
         };
 
@@ -232,11 +226,7 @@ impl WorkspaceServer {
                     // Access granted, continue
                 }
                 _ => {
-                    return Self::error_response(
-                        request_id,
-                        -32603,
-                        "Process not found or access denied",
-                    );
+                    return Err("Process not found or access denied".to_string());
                 }
             }
         }
@@ -268,11 +258,7 @@ impl WorkspaceServer {
                 let should_guide = is_running && entry.consecutive_running_polls >= threshold;
                 (should_guide, entry.clone())
             } else {
-                return Self::error_response(
-                    request_id,
-                    -32603,
-                    "Process not found or access denied",
-                );
+                return Err("Process not found or access denied".to_string());
             }
         };
 
@@ -342,33 +328,23 @@ impl WorkspaceServer {
             serde_json::to_string_pretty(&response).unwrap_or_default()
         };
 
-        Self::success_response(request_id, &response_text)
+        Ok(MCPResult::success(&response_text))
     }
 
     /// Handle read_process_output tool call
-    pub async fn handle_read_process_output(&self, args: Value) -> MCPResponse {
-        let request_id = Self::generate_request_id();
-
+    pub async fn handle_read_process_output(&self, args: Value) -> Result<MCPResult, String> {
         // Parse parameters
         let process_id = match args.get("process_id").and_then(|v| v.as_str()) {
             Some(id) => id,
             None => {
-                return Self::error_response(
-                    request_id,
-                    -32602,
-                    "Missing required parameter: process_id",
-                );
+                return Err("Missing required parameter: process_id".to_string());
             }
         };
 
         let stream = match args.get("stream").and_then(|v| v.as_str()) {
             Some(s) => s,
             None => {
-                return Self::error_response(
-                    request_id,
-                    -32602,
-                    "Missing required parameter: stream",
-                );
+                return Err("Missing required parameter: stream".to_string());
             }
         };
 
@@ -387,17 +363,13 @@ impl WorkspaceServer {
         let entry = match registry.entries.get(process_id) {
             Some(e) => e.clone(),
             None => {
-                return Self::error_response(
-                    request_id,
-                    -32603,
-                    "Process not found or access denied",
-                );
+                return Err("Process not found or access denied".to_string());
             }
         };
 
         // Verify session access
         if entry.session_id != session_id {
-            return Self::error_response(request_id, -32603, "Process not found or access denied");
+            return Err("Process not found or access denied".to_string());
         }
         drop(registry);
 
@@ -427,21 +399,16 @@ impl WorkspaceServer {
                     "note": "Text output only. Max 100 lines per request.",
                 });
 
-                Self::success_response(
-                    request_id,
+                Ok(MCPResult::success(
                     &serde_json::to_string_pretty(&response).unwrap_or_default(),
-                )
+                ))
             }
-            Err(e) => {
-                Self::error_response(request_id, -32603, &format!("Failed to read output: {e}"))
-            }
+            Err(e) => Err(format!("Failed to read output: {e}")),
         }
     }
 
     /// Handle list_processes tool call
-    pub async fn handle_list_processes(&self, args: Value) -> MCPResponse {
-        let request_id = Self::generate_request_id();
-
+    pub async fn handle_list_processes(&self, args: Value) -> Result<MCPResult, String> {
         let status_filter = args
             .get("status_filter")
             .and_then(|v| v.as_str())
@@ -515,10 +482,9 @@ impl WorkspaceServer {
             "finished": finished,
         });
 
-        Self::success_response(
-            request_id,
+        Ok(MCPResult::success(
             &serde_json::to_string_pretty(&response).unwrap_or_default(),
-        )
+        ))
     }
 
     // Common utility methods
@@ -528,19 +494,6 @@ impl WorkspaceServer {
 
     pub fn get_file_manager(&self) -> Arc<SecureFileManager> {
         self.session_manager.get_file_manager()
-    }
-
-    // Common response creation methods (wrappers)
-    pub fn generate_request_id() -> Value {
-        utils::generate_request_id()
-    }
-
-    pub fn success_response(request_id: Value, message: &str) -> MCPResponse {
-        utils::create_success_response(request_id, message)
-    }
-
-    pub fn error_response(request_id: Value, code: i32, message: &str) -> MCPResponse {
-        utils::create_error_response(request_id, code, message)
     }
 
     fn get_workspace_tree(&self, path: &str, max_depth: usize) -> String {
@@ -778,12 +731,7 @@ impl BuiltinMCPServer for WorkspaceServer {
         Ok(())
     }
 
-    async fn call_tool(
-        &self,
-        tool_name: &str,
-        args: Value,
-        request_id: Option<Value>,
-    ) -> MCPResponse {
+    async fn call_tool(&self, tool_name: &str, args: Value) -> Result<MCPResult, String> {
         match tool_name {
             // File operation tools
             "read_file" => self.handle_read_file(args).await,
@@ -812,10 +760,7 @@ impl BuiltinMCPServer for WorkspaceServer {
             "poll_process" => self.handle_poll_process(args).await,
             "read_process_output" => self.handle_read_process_output(args).await,
             "list_processes" => self.handle_list_processes(args).await,
-            _ => {
-                let request_id = request_id.unwrap_or_else(Self::generate_request_id);
-                Self::error_response(request_id, -32601, &format!("Tool '{tool_name}' not found"))
-            }
+            _ => Err(format!("Tool '{tool_name}' not found")),
         }
     }
 }

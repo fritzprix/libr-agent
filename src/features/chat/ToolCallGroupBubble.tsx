@@ -17,14 +17,12 @@ import {
   formatExecutionTime,
 } from '@/lib/tool-call-utils';
 import { useSettings } from '@/hooks/use-settings';
+import { useSessionHistory } from '@/context/SessionHistoryContext';
 
 interface ToolCallGroupBubbleProps {
   message: Message;
   toolGroup: {
-    calls: Array<{
-      toolCall: ToolCall;
-      toolResult?: Message;
-    }>;
+    calls: ToolCall[]; // Simplified - just the tool calls, results looked up dynamically
   };
 }
 
@@ -341,6 +339,7 @@ export const ToolCallGroupBubble: React.FC<ToolCallGroupBubbleProps> = ({
   const {
     value: { toolCallGroupVisibleCount },
   } = useSettings();
+  const { messages } = useSessionHistory();
 
   // Check if this is a multipart message (has text content)
   const hasTextContent =
@@ -350,13 +349,17 @@ export const ToolCallGroupBubble: React.FC<ToolCallGroupBubbleProps> = ({
       (c) => c.type === 'text' && c.text && c.text.trim().length > 0,
     );
 
-  // Calculate status summary
+  // Calculate status summary by looking up tool results dynamically
   const statusSummary: StatusSummary = useMemo(() => {
     let success = 0;
     let error = 0;
     let running = 0;
 
-    toolGroup.calls.forEach(({ toolResult }) => {
+    toolGroup.calls.forEach((toolCall) => {
+      const toolResult = messages.find(
+        (m) => m.role === 'tool' && m.tool_call_id === toolCall.id,
+      );
+
       if (!toolResult) {
         running++;
       } else {
@@ -369,7 +372,7 @@ export const ToolCallGroupBubble: React.FC<ToolCallGroupBubbleProps> = ({
     });
 
     return { successCount: success, errorCount: error, runningCount: running };
-  }, [toolGroup.calls]);
+  }, [toolGroup.calls, messages]);
 
   // Determine visible items
   const visibleCalls = isExpanded
@@ -418,13 +421,19 @@ export const ToolCallGroupBubble: React.FC<ToolCallGroupBubbleProps> = ({
 
       {/* Tool Call List - Compact items without individual borders */}
       <div className="px-2 py-2 space-y-0.5">
-        {visibleCalls.map(({ toolCall, toolResult }) => (
-          <ToolCallCompactItem
-            key={toolCall.id}
-            toolCall={toolCall}
-            toolResult={toolResult}
-          />
-        ))}
+        {visibleCalls.map((toolCall) => {
+          const toolResult = messages.find(
+            (m) => m.role === 'tool' && m.tool_call_id === toolCall.id,
+          );
+
+          return (
+            <ToolCallCompactItem
+              key={toolCall.id}
+              toolCall={toolCall}
+              toolResult={toolResult}
+            />
+          );
+        })}
       </div>
 
       {toolGroup.calls.length > toolCallGroupVisibleCount && (

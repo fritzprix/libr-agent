@@ -42,12 +42,14 @@ describe('Bootstrap Server', () => {
     it('should detect platform without arguments', async () => {
       const response = await bootstrapServer.callTool('detect_platform', {});
 
-      expect(response.result).toBeDefined();
-      expect(response.result?.content).toBeDefined();
-  expect(response.result?.content?.[0]?.type).toBe('text');
+      expect(response).toBeDefined();
+      expect(response.content).toBeDefined();
+      expect(response.content?.[0]?.type).toBe('text');
 
-      const structuredData = (response.result as { structuredContent?: unknown })
-        .structuredContent as Record<string, unknown>;
+      const structuredData = response.structuredContent as Record<
+        string,
+        unknown
+      >;
       expect(structuredData).toBeDefined();
       expect(['windows', 'linux', 'darwin']).toContain(
         structuredData.platform,
@@ -60,8 +62,10 @@ describe('Bootstrap Server', () => {
 
     it('should detect OS details', async () => {
       const response = await bootstrapServer.callTool('detect_platform', {});
-      const structuredData = (response.result as { structuredContent?: unknown })
-        .structuredContent as Record<string, unknown>;
+      const structuredData = response.structuredContent as Record<
+        string,
+        unknown
+      >;
 
       expect(structuredData.os_details).toBeDefined();
       const osDetails = structuredData.os_details as Record<string, unknown>;
@@ -74,9 +78,9 @@ describe('Bootstrap Server', () => {
     it('should return error for missing tool parameter', async () => {
       const response = await bootstrapServer.callTool('get_bootstrap_guide', {});
 
-      expect(response.result?.content?.[0].type).toBe('text');
-      if (response.result?.content?.[0].type === 'text') {
-        expect(response.result.content[0].text).toContain('required');
+      expect(response.content?.[0].type).toBe('text');
+      if (response.content?.[0].type === 'text') {
+        expect(response.content[0].text).toContain('required');
       }
     });
 
@@ -85,8 +89,8 @@ describe('Bootstrap Server', () => {
         tool: 'invalid_tool',
       });
 
-      if (response.result?.content?.[0].type === 'text') {
-        expect(response.result.content[0].text).toContain('Invalid tool');
+      if (response.content?.[0].type === 'text') {
+        expect(response.content[0].text).toContain('Invalid tool');
       }
     });
 
@@ -96,14 +100,16 @@ describe('Bootstrap Server', () => {
         platform: 'auto',
       });
 
-      expect(response.result?.content?.[0].type).toBe('text');
-      if (response.result?.content?.[0].type === 'text') {
-        expect(response.result.content[0].text).toContain('Installation Guide');
-        expect(response.result.content[0].text).toContain('node');
+      expect(response.content?.[0].type).toBe('text');
+      if (response.content?.[0].type === 'text') {
+        expect(response.content[0].text).toContain('Installation Guide');
+        expect(response.content[0].text).toContain('node');
       }
 
-      const structuredData = (response.result as { structuredContent?: unknown })
-        .structuredContent as Record<string, unknown>;
+      const structuredData = response.structuredContent as Record<
+        string,
+        unknown
+      >;
       expect(structuredData).toBeDefined();
       expect(structuredData.tool).toBe('node');
       expect(structuredData.methods).toBeDefined();
@@ -116,8 +122,10 @@ describe('Bootstrap Server', () => {
         platform: 'windows',
       });
 
-      const structuredData = (response.result as { structuredContent?: unknown })
-        .structuredContent as Record<string, unknown>;
+      const structuredData = response.structuredContent as Record<
+        string,
+        unknown
+      >;
       expect(structuredData.platform).toBe('windows');
       expect(structuredData.tool).toBe('python');
 
@@ -138,8 +146,10 @@ describe('Bootstrap Server', () => {
         method: 'package_manager',
       });
 
-      const structuredData = (response.result as { structuredContent?: unknown })
-        .structuredContent as Record<string, unknown>;
+      const structuredData = response.structuredContent as Record<
+        string,
+        unknown
+      >;
       const methods = structuredData.methods as Array<
         Record<string, unknown>
       >;
@@ -156,8 +166,10 @@ describe('Bootstrap Server', () => {
         platform: 'linux',
       });
 
-      const structuredData = (response.result as { structuredContent?: unknown })
-        .structuredContent as Record<string, unknown>;
+      const structuredData = response.structuredContent as Record<
+        string,
+        unknown
+      >;
       const methods = structuredData.methods as Array<
         Record<string, unknown>
       >;
@@ -172,8 +184,10 @@ describe('Bootstrap Server', () => {
         platform: 'darwin',
       });
 
-      const structuredData = (response.result as { structuredContent?: unknown })
-        .structuredContent as Record<string, unknown>;
+      const structuredData = response.structuredContent as Record<
+        string,
+        unknown
+      >;
       const verification = structuredData.verification as Record<
         string,
         unknown
@@ -192,8 +206,8 @@ describe('Bootstrap Server', () => {
         {},
       );
 
-      if (response.result?.content?.[0].type === 'text') {
-        expect(response.result.content[0].text).toContain('required');
+      if (response.content?.[0].type === 'text') {
+        expect(response.content[0].text).toContain('required');
       }
     });
 
@@ -205,14 +219,16 @@ describe('Bootstrap Server', () => {
         },
       );
 
-      expect(response.result?.content?.[0].type).toBe('text');
-      if (response.result?.content?.[0].type === 'text') {
-        expect(response.result.content[0].text).toContain('Check Instructions');
-        expect(response.result.content[0].text).toContain('node');
+      expect(response.content?.[0].type).toBe('text');
+      if (response.content?.[0].type === 'text') {
+        expect(response.content[0].text).toContain('Check Instructions');
+        expect(response.content[0].text).toContain('node');
       }
 
-      const structuredData = (response.result as { structuredContent?: unknown })
-        .structuredContent as Record<string, unknown>;
+      const structuredData = response.structuredContent as Record<
+        string,
+        unknown
+      >;
       expect(structuredData.tool).toBe('node');
       expect(structuredData.check_command).toBeDefined();
       expect(structuredData.shell_tool).toBeDefined();
@@ -230,8 +246,10 @@ describe('Bootstrap Server', () => {
         },
       );
 
-      const structuredData = (response.result as { structuredContent?: unknown })
-        .structuredContent as Record<string, unknown>;
+      const structuredData = response.structuredContent as Record<
+        string,
+        unknown
+      >;
       const checkCommand = String(structuredData.check_command);
       expect(checkCommand).toContain('python');
       expect(checkCommand).toContain('-V');
@@ -245,8 +263,10 @@ describe('Bootstrap Server', () => {
         },
       );
 
-      const structuredData = (response.result as { structuredContent?: unknown })
-        .structuredContent as Record<string, unknown>;
+      const structuredData = response.structuredContent as Record<
+        string,
+        unknown
+      >;
       expect(structuredData.instructions).toBeDefined();
 
       const instructions = structuredData.instructions as Record<

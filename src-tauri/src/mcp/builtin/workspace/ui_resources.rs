@@ -1,22 +1,18 @@
 use serde_json::{json, Value};
 
-pub fn success_response_with_text_and_resource(
-    request_id: Value,
-    message: &str,
-    ui_resource: Value,
-) -> crate::mcp::MCPResponse {
-    crate::mcp::MCPResponse::success(
-        request_id,
-        json!({
-            "content": [
-                {
-                    "type": "text",
-                    "text": message
-                },
-                ui_resource
-            ]
-        }),
-    )
+use crate::mcp::types::MCPResult;
+
+pub fn mcp_result_with_text_and_resource(message: &str, ui_resource: Value) -> MCPResult {
+    MCPResult {
+        content: Some(vec![
+            crate::mcp::types::MCPContent::Text {
+                text: message.to_string(),
+            },
+            crate::mcp::types::MCPContent::Resource { resource: ui_resource },
+        ]),
+        structured_content: None,
+        is_error: Some(false),
+    }
 }
 
 pub fn create_export_ui_resource(
@@ -28,18 +24,15 @@ pub fn create_export_ui_resource(
     content: String,
 ) -> Value {
     json!({
-        "type": "resource",
-        "resource": {
-            "uri": format!("ui://export/{}/{}", export_type.to_lowercase(), request_id),
-            "mimeType": "text/html",
-            "text": content,
+        "uri": format!("ui://export/{}/{}", export_type.to_lowercase(), request_id),
+        "mimeType": "text/html",
+        "text": content,
+        "_meta": {
             "title": title,
-            "annotations": {
-                "export_type": export_type,
-                "file_count": files.len(),
-                "download_path": download_path,
-                "created_at": chrono::Utc::now().to_rfc3339()
-            }
+            "export_type": export_type,
+            "file_count": files.len(),
+            "download_path": download_path,
+            "created_at": chrono::Utc::now().to_rfc3339()
         }
     })
 }

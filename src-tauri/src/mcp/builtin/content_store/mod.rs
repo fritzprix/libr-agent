@@ -1,7 +1,8 @@
 // mod.rs - Module declarations and re-exports
 use async_trait::async_trait;
 
-use crate::mcp::{MCPResponse, MCPTool};
+use crate::mcp::types::MCPResult;
+use crate::mcp::MCPTool;
 
 mod handlers;
 mod helpers;
@@ -53,22 +54,14 @@ impl BuiltinMCPServer for ContentStoreServer {
         &self,
         tool_name: &str,
         args: Value,
-        request_id: Option<Value>,
-    ) -> MCPResponse {
+    ) -> Result<MCPResult, String> {
         match tool_name {
             "addContent" => self.handle_add_content(args).await,
             "listContent" => self.handle_list_content(args).await,
             "readContent" => self.handle_read_content(args).await,
             "keywordSimilaritySearch" => self.handle_keyword_search(args).await,
             "deleteContent" => self.handle_delete_content(args).await,
-            _ => {
-                let id = request_id.unwrap_or_else(ContentStoreServer::generate_request_id);
-                ContentStoreServer::error_response(
-                    id,
-                    -32601,
-                    &format!("Unknown tool: {tool_name}"),
-                )
-            }
+            _ => Err(format!("Unknown tool: {tool_name}")),
         }
     }
 }

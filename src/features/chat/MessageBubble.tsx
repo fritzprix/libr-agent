@@ -7,13 +7,11 @@ import MessageBubbleRouter from './MessageBubbleRouter';
 interface MessageBubbleProps {
   message: Message;
   currentAssistantName?: string;
-  nextMessages?: Message[]; // Tool result messages following this message
 }
 
 const MessageBubble: React.FC<MessageBubbleProps> = ({
   message,
   currentAssistantName,
-  nextMessages = [],
 }) => {
   const isUser = message.role === 'user';
   const isTool = message.role === 'tool';
@@ -148,7 +146,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
             </span>
           </div>
         )}
-        <MessageBubbleRouter message={message} nextMessages={nextMessages} />
+        <MessageBubbleRouter message={message} />
       </div>
     </div>
   );

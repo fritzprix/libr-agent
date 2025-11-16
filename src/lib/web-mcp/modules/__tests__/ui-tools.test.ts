@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import uiTools from '../ui-tools';
-import type { MCPResponse, MCPResult } from '@/lib/mcp-types';
 
 interface UIResourceWithContent {
   serviceInfo?: { serverName: string; toolName: string; backendType: string };
@@ -11,11 +10,11 @@ interface UIResourceWithContent {
   type: 'resource';
 }
 
-interface TestMCPResponse extends MCPResponse<unknown> {
-  result: MCPResult<unknown> & {
-    content: Array<{ type: string; text?: string } | UIResourceWithContent>;
-    structuredContent?: unknown;
-  };
+// Simplified test result type that doesn't strictly extend MCPResult
+interface TestMCPResult {
+  content: Array<{ type: string; text?: string } | UIResourceWithContent>;
+  structuredContent?: unknown;
+  isError: boolean;
 }
 
 describe('UI Tools - Wait UI Functionality', () => {
@@ -28,19 +27,19 @@ describe('UI Tools - Wait UI Functionality', () => {
       const response = (await uiTools.callTool('wait_for_user_resume', {
         message: 'Testing wait',
         resumeInstruction: 'Continue with the next step',
-      })) as TestMCPResponse;
+      })) as TestMCPResult;
 
-      expect(response.result.content).toHaveLength(2);
-      expect(response.result.content[0].type).toBe('text');
-      expect(response.result.content[1].type).toBe('resource');
+      expect(response.content).toHaveLength(2);
+      expect(response.content[0].type).toBe('text');
+      expect(response.content[1].type).toBe('resource');
 
       // Check text content
-      const textContent = response.result.content[0] as { text: string };
+      const textContent = response.content[0] as { text: string };
       expect(textContent.text).toContain('⏳ Waiting: Testing wait');
       expect(textContent.text).toContain('Resume instruction: Continue with the next step');
 
       // Check metadata
-      expect(response.result.structuredContent).toMatchObject({
+      expect(response.structuredContent).toMatchObject({
         waiting: true,
         resumeInstruction: 'Continue with the next step',
         startedAt: expect.any(String),
@@ -52,10 +51,10 @@ describe('UI Tools - Wait UI Functionality', () => {
       const response = (await uiTools.callTool('wait_for_user_resume', {
         message: 'Test',
         resumeInstruction: 'Test instruction',
-      })) as TestMCPResponse;
+      })) as TestMCPResult;
       const after = new Date().toISOString();
 
-      const metadata = response.result.structuredContent as {
+      const metadata = response.structuredContent as {
         startedAt: string;
       };
       expect(metadata.startedAt).toBeDefined();
@@ -67,11 +66,11 @@ describe('UI Tools - Wait UI Functionality', () => {
       const response = (await uiTools.callTool('wait_for_user_resume', {
         message: '',
         resumeInstruction: 'Test instruction',
-      })) as TestMCPResponse;
+      })) as TestMCPResult;
 
-      expect(response.result.content).toHaveLength(1);
-      expect(response.result.content[0].type).toBe('text');
-      const textContent = response.result.content[0] as { text: string };
+      expect(response.content).toHaveLength(1);
+      expect(response.content[0].type).toBe('text');
+      const textContent = response.content[0] as { text: string };
       expect(textContent.text).toContain('Message is required');
     });
 
@@ -79,10 +78,10 @@ describe('UI Tools - Wait UI Functionality', () => {
       const response = (await uiTools.callTool('wait_for_user_resume', {
         message: 'Test',
         resumeInstruction: '',
-      })) as TestMCPResponse;
+      })) as TestMCPResult;
 
-      expect(response.result.content).toHaveLength(1);
-      const textContent = response.result.content[0] as { text: string };
+      expect(response.content).toHaveLength(1);
+      const textContent = response.content[0] as { text: string };
       expect(textContent.text).toContain('Resume instruction is required');
     });
 
@@ -90,9 +89,9 @@ describe('UI Tools - Wait UI Functionality', () => {
       const response = (await uiTools.callTool('wait_for_user_resume', {
         message: 'Test message',
         resumeInstruction: 'Continue with next step',
-      })) as TestMCPResponse;
+      })) as TestMCPResult;
 
-      const uiResource = response.result.content[1] as UIResourceWithContent;
+      const uiResource = response.content[1] as UIResourceWithContent;
       expect(uiResource.type).toBe('resource');
       expect(uiResource.resource).toBeDefined();
       expect(uiResource.resource?.uri).toMatch(/^ui:\/\/wait\/\d+$/);
@@ -110,10 +109,10 @@ describe('UI Tools - Wait UI Functionality', () => {
       const response = (await uiTools.callTool('resume_from_wait', {
         resumeInstruction: 'Continue deployment',
         startedAt,
-      })) as TestMCPResponse;
+      })) as TestMCPResult;
 
-      expect(response.result.content).toHaveLength(1);
-      const textContent = response.result.content[0] as { text: string };
+      expect(response.content).toHaveLength(1);
+      const textContent = response.content[0] as { text: string };
       expect(textContent.text).toContain('✅ User resumed after waiting');
       expect(textContent.text).toContain('Resume instruction: Continue deployment');
       expect(textContent.text).toContain(`Started: ${startedAt}`);
@@ -124,12 +123,12 @@ describe('UI Tools - Wait UI Functionality', () => {
       const response = (await uiTools.callTool('resume_from_wait', {
         resumeInstruction: 'Test instruction',
         startedAt,
-      })) as TestMCPResponse;
+      })) as TestMCPResult;
 
-      const textContent = response.result.content[0] as { text: string };
+      const textContent = response.content[0] as { text: string };
       expect(textContent.text).toMatch(/1m \d+s/);
 
-      const metadata = response.result.structuredContent as {
+      const metadata = response.structuredContent as {
         duration: string;
       };
       expect(metadata.duration).toMatch(/1m \d+s/);
@@ -140,9 +139,9 @@ describe('UI Tools - Wait UI Functionality', () => {
       const response = (await uiTools.callTool('resume_from_wait', {
         resumeInstruction: 'Test instruction',
         startedAt,
-      })) as TestMCPResponse;
+      })) as TestMCPResult;
 
-      expect(response.result.structuredContent).toMatchObject({
+      expect(response.structuredContent).toMatchObject({
         resumed: true,
         duration: expect.any(String),
         resumeInstruction: 'Test instruction',
@@ -157,20 +156,20 @@ describe('UI Tools - Wait UI Functionality', () => {
         {
           startedAt: '2025-10-11T17:00:00Z',
         },
-      )) as TestMCPResponse;
+      )) as TestMCPResult;
 
-      expect(response.result.content).toHaveLength(1);
-      const textContent = response.result.content[0] as { text: string };
+      expect(response.content).toHaveLength(1);
+      const textContent = response.content[0] as { text: string };
       expect(textContent.text).toContain('Resume instruction is required');
     });
 
     it('rejects missing startedAt', async () => {
       const response = (await uiTools.callTool('resume_from_wait', {
         resumeInstruction: 'Test instruction',
-      })) as TestMCPResponse;
+      })) as TestMCPResult;
 
-      expect(response.result.content).toHaveLength(1);
-      const textContent = response.result.content[0] as { text: string };
+      expect(response.content).toHaveLength(1);
+      const textContent = response.content[0] as { text: string };
       expect(textContent.text).toContain('Started at timestamp is required');
     });
   });
@@ -189,9 +188,9 @@ describe('UI Tools - Wait UI Functionality', () => {
         const response = (await uiTools.callTool('resume_from_wait', {
           resumeInstruction: 'Test instruction',
           startedAt,
-        })) as TestMCPResponse;
+        })) as TestMCPResult;
 
-        const metadata = response.result.structuredContent as {
+        const metadata = response.structuredContent as {
           duration: string;
         };
         expect(metadata.duration).toMatch(expected);
@@ -204,9 +203,9 @@ describe('UI Tools - Wait UI Functionality', () => {
       const response = (await uiTools.callTool('wait_for_user_resume', {
         message: 'Test message',
         resumeInstruction: 'Continue with next step',
-      })) as TestMCPResponse;
+      })) as TestMCPResult;
 
-      const uiResource = response.result.content[1] as UIResourceWithContent;
+      const uiResource = response.content[1] as UIResourceWithContent;
       const htmlContent = uiResource.resource?.text ?? '';
 
       expect(htmlContent).toContain('<!doctype html>');
@@ -223,9 +222,9 @@ describe('UI Tools - Wait UI Functionality', () => {
       const response = (await uiTools.callTool('wait_for_user_resume', {
         message: '<script>alert("xss")</script>',
         resumeInstruction: 'Test instruction',
-      })) as TestMCPResponse;
+      })) as TestMCPResult;
 
-      const uiResource = response.result.content[1] as UIResourceWithContent;
+      const uiResource = response.content[1] as UIResourceWithContent;
       const htmlContent = uiResource.resource?.text ?? '';
 
       expect(htmlContent).toContain(
@@ -238,9 +237,9 @@ describe('UI Tools - Wait UI Functionality', () => {
       const response = (await uiTools.callTool('wait_for_user_resume', {
         message: 'Test',
         resumeInstruction: 'Test instruction',
-      })) as TestMCPResponse;
+      })) as TestMCPResult;
 
-      const uiResource = response.result.content[1] as UIResourceWithContent;
+      const uiResource = response.content[1] as UIResourceWithContent;
       const htmlContent = uiResource.resource?.text ?? '';
 
       // Handlebars uses single quotes for attributes
@@ -255,9 +254,9 @@ describe('UI Tools - Wait UI Functionality', () => {
       const response = (await uiTools.callTool('wait_for_user_resume', {
         message: 'Test',
         resumeInstruction: 'Continue with "quoted" action',
-      })) as TestMCPResponse;
+      })) as TestMCPResult;
 
-      const uiResource = response.result.content[1] as UIResourceWithContent;
+      const uiResource = response.content[1] as UIResourceWithContent;
       const htmlContent = uiResource.resource?.text ?? '';
 
       // Handlebars may compress whitespace, so just check for presence
@@ -273,24 +272,24 @@ describe('UI Tools - Wait UI Functionality', () => {
       const response1 = (await uiTools.callTool(
         'wait_for_user_resume',
         null,
-      )) as TestMCPResponse;
-      expect(response1.result.content[0].type).toBe('text');
+      )) as TestMCPResult;
+      expect(response1.content[0].type).toBe('text');
 
       const response2 = (await uiTools.callTool(
         'resume_from_wait',
         undefined,
-      )) as TestMCPResponse;
-      expect(response2.result.content[0].type).toBe('text');
+      )) as TestMCPResult;
+      expect(response2.content[0].type).toBe('text');
     });
 
     it('handles malformed arguments', async () => {
       const response = (await uiTools.callTool('wait_for_user_resume', {
         message: 'Test',
         resumeInstruction: null,
-      })) as TestMCPResponse;
+      })) as TestMCPResult;
 
-      expect(response.result.content).toHaveLength(1);
-      const textContent = response.result.content[0] as { text: string };
+      expect(response.content).toHaveLength(1);
+      const textContent = response.content[0] as { text: string };
       expect(textContent.text).toContain('Resume instruction is required');
     });
   });
@@ -300,13 +299,13 @@ describe('UI Tools - Wait UI Functionality', () => {
       const response = (await uiTools.callTool('prompt_user', {
         prompt: 'Test prompt',
         type: 'text',
-      })) as TestMCPResponse;
+      })) as TestMCPResult;
 
-      expect(response.result.content).toHaveLength(2);
-      expect(response.result.content[0].type).toBe('text');
-      expect(response.result.content[1].type).toBe('resource');
+      expect(response.content).toHaveLength(2);
+      expect(response.content[0].type).toBe('text');
+      expect(response.content[1].type).toBe('resource');
 
-      const textContent = response.result.content[0] as { text: string };
+      const textContent = response.content[0] as { text: string };
       expect(textContent.text).toContain('📋 User prompt created');
     });
 
@@ -317,13 +316,13 @@ describe('UI Tools - Wait UI Functionality', () => {
           { label: 'A', value: 10 },
           { label: 'B', value: 20 },
         ],
-      })) as TestMCPResponse;
+      })) as TestMCPResult;
 
-      expect(response.result.content).toHaveLength(2);
-      expect(response.result.content[0].type).toBe('text');
-      expect(response.result.content[1].type).toBe('resource');
+      expect(response.content).toHaveLength(2);
+      expect(response.content[0].type).toBe('text');
+      expect(response.content[1].type).toBe('resource');
 
-      const textContent = response.result.content[0] as { text: string };
+      const textContent = response.content[0] as { text: string };
       expect(textContent.text).toContain('📊 BAR Chart');
     });
   });

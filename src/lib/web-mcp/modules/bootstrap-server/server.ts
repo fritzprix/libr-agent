@@ -8,10 +8,10 @@
  */
 
 import {
-  createMCPStructuredResponse,
-  createMCPTextResponse,
+  createMCPStructuredToolResult,
+  createMCPErrorToolResult,
 } from '@/lib/mcp-response-utils';
-import type { MCPResponse, WebMCPServer } from '@/lib/mcp-types';
+import type { MCPResult, WebMCPServer } from '@/lib/mcp-types';
 import { bootstrapToolsSchema } from './tools';
 import { detectPlatform, getCheckCommand } from './platform-detector';
 import { BOOTSTRAP_GUIDES, type ToolGuide } from './guides';
@@ -23,7 +23,7 @@ const bootstrapServer: WebMCPServer = {
   version: '1.0.0',
   tools: bootstrapToolsSchema,
 
-  async callTool(name: string, args: unknown): Promise<MCPResponse<unknown>> {
+  async callTool(name: string, args: unknown): Promise<MCPResult<unknown>> {
     const a = (args || {}) as Record<string, unknown>;
 
     try {
@@ -31,7 +31,7 @@ const bootstrapServer: WebMCPServer = {
         case 'detect_platform': {
           const platformInfo = detectPlatform();
 
-          return createMCPStructuredResponse(
+          return createMCPStructuredToolResult(
             `🖥️  Platform Detection Results:\n` +
               `OS: ${platformInfo.platform} (${platformInfo.os_details.type})\n` +
               `Architecture: ${platformInfo.arch}\n` +
@@ -47,13 +47,15 @@ const bootstrapServer: WebMCPServer = {
           const methodFilter = String(a.method || 'all');
 
           if (!tool) {
-            return createMCPTextResponse('Tool name is required');
+            return createMCPErrorToolResult('Tool name is required', {
+              missingParam: 'tool',
+            });
           }
 
           // Validate tool
           const validTools = ['node', 'python', 'uv', 'docker', 'git'];
           if (!validTools.includes(tool)) {
-            return createMCPTextResponse(
+            return createMCPErrorToolResult(
               `Invalid tool: ${tool}. Valid tools: ${validTools.join(', ')}`,
             );
           }
@@ -70,7 +72,7 @@ const bootstrapServer: WebMCPServer = {
           // Get guide
           const toolGuides = BOOTSTRAP_GUIDES[tool];
           if (!toolGuides || !toolGuides[platform]) {
-            return createMCPTextResponse(
+            return createMCPErrorToolResult(
               `No installation guide available for ${tool} on ${platform}`,
             );
           }
@@ -151,7 +153,7 @@ const bootstrapServer: WebMCPServer = {
             });
           }
 
-          return createMCPStructuredResponse(summary.join('\n'), fullGuide);
+          return createMCPStructuredToolResult(summary.join('\n'), fullGuide);
         }
 
         case 'check_tool_installed': {
@@ -159,7 +161,9 @@ const bootstrapServer: WebMCPServer = {
           const versionFlag = String(a.versionFlag || '--version');
 
           if (!tool) {
-            return createMCPTextResponse('Tool name is required');
+            return createMCPErrorToolResult('Tool name is required', {
+              missingParam: 'tool',
+            });
           }
 
           // Get platform info
@@ -168,7 +172,7 @@ const bootstrapServer: WebMCPServer = {
 
           // Return instructions for checking
           // The actual execution should be done by the AI agent using execute_shell/execute_windows_cmd
-          return createMCPStructuredResponse(
+          return createMCPStructuredToolResult(
             `🔍 Tool Check Instructions for "${tool}":\n\n` +
               `To check if ${tool} is installed, execute the following command using ` +
               `the "${platformInfo.platform === 'windows' ? 'execute_windows_cmd' : 'execute_shell'}" tool:\n\n` +
@@ -200,11 +204,18 @@ const bootstrapServer: WebMCPServer = {
         }
 
         default:
-          return createMCPTextResponse(`Unknown tool: ${name}`);
+          return createMCPErrorToolResult(`Unknown tool: ${name}`, {
+            toolName: name,
+            availableTools: bootstrapToolsSchema.map((t) => t.name),
+          });
       }
     } catch (err) {
-      return createMCPTextResponse(
+      return createMCPErrorToolResult(
         `Error in bootstrap server: ${err instanceof Error ? err.message : String(err)}`,
+        {
+          error: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : undefined,
+        },
       );
     }
   },

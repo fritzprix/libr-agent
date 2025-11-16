@@ -245,16 +245,16 @@ async function handleMCPMessage(
         const server = getMCPServer(serverName);
 
         try {
-          const result = await server.callTool(toolName, args);
+          const mcpResult = await server.callTool(toolName, args);
 
           // Log tool call completion (without full result for performance)
           log.debug('Tool call completed', { id, serverName, toolName });
 
-          // Return MCPResponse directly since callTool now returns MCPResponse
-          // but update the id to match the request
+          // Wrap MCPResult in JSON-RPC MCPResponse envelope
           const response = {
-            ...result,
+            jsonrpc: '2.0' as const,
             id,
+            result: mcpResult,
           };
 
           return response;

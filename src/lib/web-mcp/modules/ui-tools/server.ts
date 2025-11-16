@@ -10,12 +10,12 @@
  */
 
 import {
-  createMCPStructuredResponse,
-  createMCPTextResponse,
-  createMCPStructuredMultipartResponse,
+  createMCPStructuredToolResult,
+  createMCPMultipartToolResult,
+  createMCPErrorToolResult,
 } from '@/lib/mcp-response-utils';
 import type {
-  MCPResponse,
+  MCPResult,
   WebMCPServer,
   MCPContent,
   ServiceInfo,
@@ -237,7 +237,7 @@ const uiTools: WebMCPServer = {
   version: '0.1.0',
   tools: uiToolsSchema,
 
-  async callTool(name: string, args: unknown): Promise<MCPResponse<unknown>> {
+  async callTool(name: string, args: unknown): Promise<MCPResult<unknown>> {
     const a = (args || {}) as Record<string, unknown>;
 
     try {
@@ -251,15 +251,23 @@ const uiTools: WebMCPServer = {
           const options = (a.options as string[]) || [];
 
           if (!prompt) {
-            return createMCPTextResponse('Prompt text is required');
+            return createMCPErrorToolResult('Prompt text is required', {
+              tool: 'prompt_user',
+              missingParam: 'prompt',
+            });
           }
 
           if (
             (type === 'select' || type === 'multiselect') &&
             options.length === 0
           ) {
-            return createMCPTextResponse(
+            return createMCPErrorToolResult(
               `Options are required for ${type} prompts`,
+              {
+                tool: 'prompt_user',
+                missingParam: 'options',
+                type,
+              },
             );
           }
 
@@ -300,17 +308,14 @@ const uiTools: WebMCPServer = {
             text: `📋 User prompt created (ID: ${messageId})\nType: ${type}\nPrompt: ${prompt}`,
           } as MCPContent;
 
-          // Return multipart response
-          return createMCPStructuredMultipartResponse(
-            [textContent, uiResource],
-            {
-              messageId,
-              type,
-              prompt,
-              options: type !== 'text' ? options : undefined,
-              status: 'awaiting_response',
-            },
-          );
+          // Return multipart result
+          return createMCPMultipartToolResult([textContent, uiResource], {
+            messageId,
+            type,
+            prompt,
+            options: type !== 'text' ? options : undefined,
+            status: 'awaiting_response',
+          });
         }
 
         case 'reply_prompt': {
@@ -319,14 +324,21 @@ const uiTools: WebMCPServer = {
           const cancelled = Boolean(a.cancelled);
 
           if (!messageId) {
-            return createMCPTextResponse('Message ID is required');
+            return createMCPErrorToolResult('Message ID is required', {
+              tool: 'reply_prompt',
+              missingParam: 'messageId',
+            });
           }
 
           // Retrieve prompt state
           const promptState = activePrompts.get(messageId);
           if (!promptState) {
-            return createMCPTextResponse(
+            return createMCPErrorToolResult(
               `Unknown prompt ID: ${messageId}. The prompt may have expired or already been answered.`,
+              {
+                tool: 'reply_prompt',
+                messageId,
+              },
             );
           }
 
@@ -334,8 +346,8 @@ const uiTools: WebMCPServer = {
           activePrompts.delete(messageId);
 
           if (cancelled) {
-            return createMCPStructuredResponse(
-              `❌ User cancelled the prompt: "${promptState.prompt}"`,
+            return createMCPStructuredToolResult(
+              `User cancelled the prompt: "${promptState.prompt}"`,
               {
                 messageId,
                 cancelled: true,
@@ -356,8 +368,8 @@ const uiTools: WebMCPServer = {
             answerText = String(answer);
           }
 
-          return createMCPStructuredResponse(
-            `✅ User responded to: "${promptState.prompt}"\nAnswer: ${answerText}`,
+          return createMCPStructuredToolResult(
+            `User responded to: "${promptState.prompt}"\nAnswer: ${answerText}`,
             {
               messageId,
               prompt: promptState.prompt,
@@ -374,16 +386,24 @@ const uiTools: WebMCPServer = {
           const title = String(a.title || '');
 
           if (data.length === 0) {
-            return createMCPTextResponse(
+            return createMCPErrorToolResult(
               'Data array is required and cannot be empty',
+              {
+                tool: 'visualize_data',
+                missingParam: 'data',
+              },
             );
           }
 
           // Validate data format
           for (const item of data) {
             if (!item.label || typeof item.value !== 'number') {
-              return createMCPTextResponse(
+              return createMCPErrorToolResult(
                 'Each data item must have a "label" (string) and "value" (number)',
+                {
+                  tool: 'visualize_data',
+                  invalidData: item,
+                },
               );
             }
           }
@@ -405,16 +425,13 @@ const uiTools: WebMCPServer = {
             text: `📊 ${type.toUpperCase()} Chart${title ? `: ${title}` : ''}\nData: ${summary}`,
           } as MCPContent;
 
-          // Return multipart response
-          return createMCPStructuredMultipartResponse(
-            [textContent, uiResource],
-            {
-              type,
-              title,
-              data,
-              dataPoints: data.length,
-            },
-          );
+          // Return multipart result
+          return createMCPMultipartToolResult([textContent, uiResource], {
+            type,
+            title,
+            data,
+            dataPoints: data.length,
+          });
         }
 
         case 'wait_for_user_resume': {
@@ -422,11 +439,17 @@ const uiTools: WebMCPServer = {
           const resumeInstruction = String(a.resumeInstruction || '');
 
           if (!message) {
-            return createMCPTextResponse('Message is required');
+            return createMCPErrorToolResult('Message is required', {
+              tool: 'wait_for_user_resume',
+              missingParam: 'message',
+            });
           }
 
           if (!resumeInstruction) {
-            return createMCPTextResponse('Resume instruction is required');
+            return createMCPErrorToolResult('Resume instruction is required', {
+              tool: 'wait_for_user_resume',
+              missingParam: 'resumeInstruction',
+            });
           }
 
           // Generate startedAt timestamp
@@ -443,11 +466,12 @@ const uiTools: WebMCPServer = {
             text: `⏳ Waiting: ${message}\nResume instruction: ${resumeInstruction}`,
           } as MCPContent;
 
-          // Return multipart
-          return createMCPStructuredMultipartResponse(
-            [textContent, uiResource],
-            { waiting: true, resumeInstruction, startedAt },
-          );
+          // Return multipart result
+          return createMCPMultipartToolResult([textContent, uiResource], {
+            waiting: true,
+            resumeInstruction,
+            startedAt,
+          });
         }
 
         case 'resume_from_wait': {
@@ -455,11 +479,20 @@ const uiTools: WebMCPServer = {
           const startedAt = String(a.startedAt || '');
 
           if (!resumeInstruction) {
-            return createMCPTextResponse('Resume instruction is required');
+            return createMCPErrorToolResult('Resume instruction is required', {
+              tool: 'resume_from_wait',
+              missingParam: 'resumeInstruction',
+            });
           }
 
           if (!startedAt) {
-            return createMCPTextResponse('Started at timestamp is required');
+            return createMCPErrorToolResult(
+              'Started at timestamp is required',
+              {
+                tool: 'resume_from_wait',
+                missingParam: 'startedAt',
+              },
+            );
           }
 
           // Calculate duration
@@ -478,7 +511,7 @@ const uiTools: WebMCPServer = {
             `Ended: ${resumedAt.toISOString()}`,
           ].join('\n');
 
-          return createMCPStructuredResponse(text, {
+          return createMCPStructuredToolResult(text, {
             resumed: true,
             duration,
             resumeInstruction,
@@ -488,11 +521,18 @@ const uiTools: WebMCPServer = {
         }
 
         default:
-          return createMCPTextResponse(`Unknown tool: ${name}`);
+          return createMCPErrorToolResult(`Unknown tool: ${name}`, {
+            toolName: name,
+            availableTools: this.tools.map((t) => t.name),
+          });
       }
     } catch (err) {
-      return createMCPTextResponse(
+      return createMCPErrorToolResult(
         `Error in ui-tools: ${err instanceof Error ? err.message : String(err)}`,
+        {
+          error: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : undefined,
+        },
       );
     }
   },

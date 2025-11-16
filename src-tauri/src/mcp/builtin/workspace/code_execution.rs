@@ -4,10 +4,10 @@ use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
+use crate::mcp::types::MCPResult;
 use crate::session_isolation::{IsolatedProcessConfig, IsolationLevel};
 
 use super::{terminal_manager, utils, WorkspaceServer};
-use crate::mcp::MCPResponse;
 
 #[allow(dead_code)]
 impl WorkspaceServer {
@@ -233,9 +233,7 @@ impl WorkspaceServer {
         command: &str,
         isolation_level: IsolationLevel,
         timeout_secs: u64,
-    ) -> MCPResponse {
-        let request_id = Self::generate_request_id();
-
+    ) -> Result<MCPResult, String> {
         let session_id = self
             .session_manager
             .get_current_session()
@@ -255,11 +253,7 @@ impl WorkspaceServer {
             .join(format!("sync_{process_id}"));
 
         if let Err(e) = tokio::fs::create_dir_all(&process_tmp_dir).await {
-            return Self::error_response(
-                request_id,
-                -32603,
-                &format!("Failed to create temp directory: {e}"),
-            );
+            return Err(format!("Failed to create temp directory: {e}"));
         }
 
         let stdout_path = process_tmp_dir.join("stdout");
@@ -282,11 +276,7 @@ impl WorkspaceServer {
         {
             Ok(cmd) => cmd,
             Err(e) => {
-                return Self::error_response(
-                    request_id,
-                    -32603,
-                    &format!("Failed to create isolated shell command: {e}"),
-                );
+                return Err(format!("Failed to create isolated shell command: {e}"));
             }
         };
 
@@ -390,7 +380,7 @@ impl WorkspaceServer {
                     command, session_id, exit_code
                 );
 
-                Self::success_response(request_id, &result_text)
+                Ok(MCPResult::success(&result_text))
             }
             Ok(Err(e)) => {
                 // Update registry entry to Failed
@@ -408,7 +398,7 @@ impl WorkspaceServer {
                     "Failed to execute isolated shell command '{}': {}",
                     command, e
                 );
-                Self::error_response(request_id, -32603, &format!("Execution error: {e}"))
+                Err(format!("Execution error: {e}"))
             }
             Err(_) => {
                 // Timeout - cancel the process
@@ -429,11 +419,7 @@ impl WorkspaceServer {
                     "Isolated shell command '{}' timed out after {} seconds",
                     command, timeout_secs
                 );
-                Self::error_response(
-                    request_id,
-                    -32603,
-                    &format!("Command timed out after {timeout_secs} seconds"),
-                )
+                Err(format!("Command timed out after {timeout_secs} seconds"))
             }
         }
     }
@@ -517,17 +503,11 @@ impl WorkspaceServer {
         result
     }
 
-    pub async fn handle_execute_shell(&self, args: Value) -> MCPResponse {
-        let request_id = Self::generate_request_id();
-
+    pub async fn handle_execute_shell(&self, args: Value) -> Result<MCPResult, String> {
         let raw_command = match args.get("command").and_then(|v| v.as_str()) {
             Some(cmd) => cmd,
             None => {
-                return Self::error_response(
-                    request_id,
-                    -32602,
-                    "Missing required parameter: command",
-                );
+                return Err("Missing required parameter: command".to_string());
             }
         };
 
@@ -564,13 +544,9 @@ impl WorkspaceServer {
         // sync requests short-lived and encourage async for long-running work.
         let sync_max = crate::config::default_execution_timeout();
         if timeout_secs > sync_max {
-            return Self::error_response(
-                request_id,
-                -32603,
-                &format!(
-                    "Sync mode supports a maximum timeout of {sync_max} seconds.\nFor longer-running commands, set \"run_mode\" to \"async\" so the command runs in background and can be polled.\nYou can adjust the default via the LIBRAGENT_DEFAULT_EXECUTION_TIMEOUT environment variable.",
-                ),
-            );
+            return Err(format!(
+                "Sync mode supports a maximum timeout of {sync_max} seconds.\nFor longer-running commands, set \"run_mode\" to \"async\" so the command runs in background and can be polled.\nYou can adjust the default via the LIBRAGENT_DEFAULT_EXECUTION_TIMEOUT environment variable.",
+            ));
         }
 
         // Always use Medium isolation for security (isolation parameter removed from tool)
@@ -583,9 +559,7 @@ impl WorkspaceServer {
     }
 
     /// Execute shell command asynchronously in background
-    async fn execute_shell_async(&self, command: &str, _args: &Value) -> MCPResponse {
-        let request_id = Self::generate_request_id();
-
+    async fn execute_shell_async(&self, command: &str, _args: &Value) -> Result<MCPResult, String> {
         // Get session info
         let session_id = self
             .session_manager
@@ -607,13 +581,9 @@ impl WorkspaceServer {
                 .count();
 
             if running_count >= MAX_CONCURRENT_PROCESSES {
-                return Self::error_response(
-                    request_id,
-                    -32603,
-                    &format!(
-                        "Maximum concurrent processes limit reached ({MAX_CONCURRENT_PROCESSES})"
-                    ),
-                );
+                return Err(format!(
+                    "Maximum concurrent processes limit reached ({MAX_CONCURRENT_PROCESSES})"
+                ));
             }
         }
 
@@ -626,11 +596,7 @@ impl WorkspaceServer {
             .join(format!("process_{process_id}"));
 
         if let Err(e) = tokio::fs::create_dir_all(&process_tmp_dir).await {
-            return Self::error_response(
-                request_id,
-                -32603,
-                &format!("Failed to create process directory: {e}"),
-            );
+            return Err(format!("Failed to create process directory: {e}"));
         }
 
         let stdout_path = process_tmp_dir.join("stdout");
@@ -660,11 +626,7 @@ impl WorkspaceServer {
         {
             Ok(cmd) => cmd,
             Err(e) => {
-                return Self::error_response(
-                    request_id,
-                    -32603,
-                    &format!("Failed to create isolated command: {e}"),
-                );
+                return Err(format!("Failed to create isolated command: {e}"));
             }
         };
 
@@ -766,7 +728,7 @@ impl WorkspaceServer {
             let registry = self.process_registry.read().await;
             if let Some(entry) = registry.entries.get(&process_id) {
                 if matches!(entry.status, terminal_manager::ProcessStatus::Failed) {
-                    return Self::error_response(request_id, -32603, "Process failed to start");
+                    return Err("Process failed to start".to_string());
                 }
             }
         }
@@ -786,12 +748,12 @@ impl WorkspaceServer {
             "{response_msg}\n\nNote: async mode is intended for long-running commands (over 30s)."
         );
 
-        Self::success_response(request_id, &response_msg)
+        Ok(MCPResult::success(&response_msg))
     }
 
     /// Handle interactive shell execution (1st tool call)
     /// Returns UIResource with execution_id for user input
-    async fn handle_interactive_shell(&self, command: &str, args: &Value) -> MCPResponse {
+    async fn handle_interactive_shell(&self, command: &str, args: &Value) -> Result<MCPResult, String> {
         use super::{utils::sanitize_command_for_logging, PendingShellExecution};
 
         let execution_id = uuid::Uuid::new_v4().to_string();
@@ -829,53 +791,43 @@ impl WorkspaceServer {
 
         // Create UI resource JSON
         let ui_resource = serde_json::json!({
-            "type": "resource",
-            "resource": {
-                "uri": format!("ui://shell-input/{}", execution_id),
-                "mimeType": "text/html",
-                "text": html
+            "uri": format!("ui://shell-input/{}", execution_id),
+            "mimeType": "text/html",
+            "text": html,
+            "_meta": {
+                "title": "Shell Command Input",
+                "execution_id": execution_id,
+                "created_at": chrono::Utc::now().to_rfc3339()
             }
         });
 
         // Return response with text and resource
-        let request_id = Self::generate_request_id();
-        super::ui_resources::success_response_with_text_and_resource(
-            request_id,
+        Ok(super::ui_resources::mcp_result_with_text_and_resource(
             &format!(
                 "⏳ Waiting for user input\nExecution ID: {execution_id}\nCommand: {sanitized_command}"
             ),
             ui_resource,
-        )
+        ))
     }
 
     /// Handle execute_pending_shell tool call (2nd tool call)
     /// Executes pending command with user input via stdin
-    pub async fn handle_execute_pending_shell(&self, args: Value) -> MCPResponse {
+    pub async fn handle_execute_pending_shell(&self, args: Value) -> Result<MCPResult, String> {
         use super::utils::sanitize_command_for_logging;
         use std::collections::HashMap;
         use tokio::io::AsyncWriteExt;
 
-        let request_id = Self::generate_request_id();
-
         let execution_id = match args.get("execution_id").and_then(|v| v.as_str()) {
             Some(id) => id,
             None => {
-                return Self::error_response(
-                    request_id,
-                    -32602,
-                    "Missing required parameter: execution_id",
-                );
+                return Err("Missing required parameter: execution_id".to_string());
             }
         };
 
         let user_input = match args.get("user_input").and_then(|v| v.as_str()) {
             Some(input) => input,
             None => {
-                return Self::error_response(
-                    request_id,
-                    -32602,
-                    "Missing required parameter: user_input",
-                );
+                return Err("Missing required parameter: user_input".to_string());
             }
         };
 
@@ -883,11 +835,7 @@ impl WorkspaceServer {
         let pending = match self.pending_executions.remove(execution_id) {
             Some(p) => p,
             None => {
-                return Self::error_response(
-                    request_id,
-                    -32603,
-                    &format!("Unknown or expired execution_id: {execution_id}"),
-                );
+                return Err(format!("Unknown or expired execution_id: {execution_id}"));
             }
         };
 
@@ -897,11 +845,7 @@ impl WorkspaceServer {
             .signed_duration_since(pending.created_at)
             .num_seconds();
         if elapsed > USER_INPUT_TIMEOUT_SECS {
-            return Self::error_response(
-                request_id,
-                -32603,
-                "Execution request expired. Please retry.",
-            );
+            return Err("Execution request expired. Please retry.".to_string());
         }
 
         // Auto-inject -S flag for sudo commands (Agent doesn't know about it)
@@ -944,11 +888,7 @@ impl WorkspaceServer {
         {
             Ok(cmd) => cmd,
             Err(e) => {
-                return Self::error_response(
-                    request_id,
-                    -32603,
-                    &format!("Failed to create isolated command: {e}"),
-                );
+                return Err(format!("Failed to create isolated command: {e}"));
             }
         };
 
@@ -961,11 +901,7 @@ impl WorkspaceServer {
         let mut child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
-                return Self::error_response(
-                    request_id,
-                    -32603,
-                    &format!("Failed to spawn process: {e}"),
-                );
+                return Err(format!("Failed to spawn process: {e}"));
             }
         };
 
@@ -973,18 +909,10 @@ impl WorkspaceServer {
         if let Some(mut stdin) = child.stdin.take() {
             // CRITICAL: Write password and close stdin
             if let Err(e) = stdin.write_all(user_input.as_bytes()).await {
-                return Self::error_response(
-                    request_id,
-                    -32603,
-                    &format!("Failed to write to stdin: {e}"),
-                );
+                return Err(format!("Failed to write to stdin: {e}"));
             }
             if let Err(e) = stdin.write_all(b"\n").await {
-                return Self::error_response(
-                    request_id,
-                    -32603,
-                    &format!("Failed to write newline: {e}"),
-                );
+                return Err(format!("Failed to write newline: {e}"));
             }
             drop(stdin); // Close stdin to signal EOF
         }
@@ -1002,15 +930,13 @@ impl WorkspaceServer {
             {
                 Ok(Ok(output)) => output,
                 Ok(Err(e)) => {
-                    return Self::error_response(request_id, -32603, &format!("Process error: {e}"))
+                    return Err(format!("Process error: {e}"));
                 }
                 Err(_) => {
                     let timeout_secs = pending.timeout;
-                    return Self::error_response(
-                        request_id,
-                        -32603,
-                        &format!("Command execution timeout after {timeout_secs} seconds"),
-                    );
+                    return Err(format!(
+                        "Command execution timeout after {timeout_secs} seconds"
+                    ));
                 }
             };
 
@@ -1048,7 +974,7 @@ impl WorkspaceServer {
                 )
             };
 
-            Self::success_response(request_id, &result_text)
+            Ok(MCPResult::success(&result_text))
         } else {
             // Async mode: Return process_id immediately and spawn monitoring task
             let process_id = cuid2::create_id();
@@ -1059,11 +985,7 @@ impl WorkspaceServer {
                 .join(format!("process_{process_id}"));
 
             if let Err(e) = tokio::fs::create_dir_all(&process_tmp_dir).await {
-                return Self::error_response(
-                    request_id,
-                    -32603,
-                    &format!("Failed to create process directory: {e}"),
-                );
+                return Err(format!("Failed to create process directory: {e}"));
             }
 
             let stdout_path = process_tmp_dir.join("stdout");
@@ -1127,27 +1049,24 @@ impl WorkspaceServer {
                 reg.cancellation_tokens.remove(&pid_copy);
             });
 
-            Self::success_response(
-                request_id,
-                &format!("Command running in background.\nProcess ID: {process_id}\n\nUse 'poll_process' to check status."),
-            )
+            Ok(MCPResult::success(&format!(
+                "Command running in background.\nProcess ID: {process_id}\n\nUse 'poll_process' to check status."
+            )))
         }
     }
 
     /// Cancel a pending shell execution
     /// Removes the pending execution from state without executing it
-    pub async fn handle_cancel_pending_execution(&self, args: Value) -> MCPResponse {
-        let request_id = Self::generate_request_id();
+    pub async fn handle_cancel_pending_execution(
+        &self,
+        args: Value,
+    ) -> Result<MCPResult, String> {
 
         // Extract execution_id
         let execution_id = match args.get("execution_id").and_then(|v| v.as_str()) {
             Some(id) => id,
             None => {
-                return Self::error_response(
-                    request_id,
-                    -32602,
-                    "Missing required parameter: execution_id",
-                )
+                return Err("Missing required parameter: execution_id".to_string());
             }
         };
 
@@ -1158,13 +1077,11 @@ impl WorkspaceServer {
                     "✅ Cancelled pending command execution\n\nExecution ID: {}\nCommand: {}",
                     execution_id, pending.display_command
                 );
-                Self::success_response(request_id, &message)
+                Ok(MCPResult::success(&message))
             }
-            None => Self::error_response(
-                request_id,
-                -32602,
-                &format!("No pending execution found with ID: {execution_id}"),
-            ),
+            None => Err(format!(
+                "No pending execution found with ID: {execution_id}"
+            )),
         }
     }
 
