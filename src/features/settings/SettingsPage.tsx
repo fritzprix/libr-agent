@@ -138,7 +138,12 @@ const ProviderCard = React.memo(ProviderCardBase, (prev, next) => {
 export default function SettingsPage() {
   const navigate = useNavigate();
   const {
-    value: { serviceConfigs, windowSize, uiLanguage },
+    value: {
+      serviceConfigs,
+      windowSize,
+      uiLanguage,
+      toolCallGroupVisibleCount,
+    },
     update,
   } = useSettings();
   const { t } = useTranslation('common');
@@ -155,9 +160,12 @@ export default function SettingsPage() {
   // Local state for window size and language to prevent immediate context updates
   const [localWindowSize, setLocalWindowSize] = useState(windowSize);
   const [localLanguage, setLocalLanguage] = useState(uiLanguage);
+  const [localToolCallGroupVisibleCount, setLocalToolCallGroupVisibleCount] =
+    useState(toolCallGroupVisibleCount);
   const otherPendingRef = useRef<{
     windowSize?: number;
     uiLanguage?: string;
+    toolCallGroupVisibleCount?: number;
   }>({});
 
   // Sync local state with context when context changes (e.g., after Apply or external updates)
@@ -168,6 +176,10 @@ export default function SettingsPage() {
   useEffect(() => {
     setLocalLanguage(uiLanguage);
   }, [uiLanguage]);
+
+  useEffect(() => {
+    setLocalToolCallGroupVisibleCount(toolCallGroupVisibleCount);
+  }, [toolCallGroupVisibleCount]);
 
   const handlePendingChange = useCallback(
     (provider: AIServiceProvider, patch: Partial<ServiceConfig>) => {
@@ -210,6 +222,18 @@ export default function SettingsPage() {
     );
   }, []);
 
+  const handleToolCallGroupVisibleCountChange = useCallback((value: number) => {
+    setLocalToolCallGroupVisibleCount(value);
+    otherPendingRef.current = {
+      ...otherPendingRef.current,
+      toolCallGroupVisibleCount: value,
+    };
+    setPendingCount(
+      Object.keys(pendingRef.current).length +
+        Object.keys(otherPendingRef.current).length,
+    );
+  }, []);
+
   const flushPending = useCallback(async () => {
     const pending = pendingRef.current;
     const otherPending = otherPendingRef.current;
@@ -225,6 +249,7 @@ export default function SettingsPage() {
         serviceConfigs: Record<AIServiceProvider, ServiceConfig>;
         windowSize: number;
         uiLanguage: string;
+        toolCallGroupVisibleCount: number;
       }> = {};
 
       // Merge pending service configs
@@ -251,6 +276,10 @@ export default function SettingsPage() {
         // Apply i18n language change when applying settings
         i18n.changeLanguage(otherPending.uiLanguage);
       }
+      if (otherPending.toolCallGroupVisibleCount !== undefined) {
+        updates.toolCallGroupVisibleCount =
+          otherPending.toolCallGroupVisibleCount;
+      }
 
       await update(updates);
       pendingRef.current = {};
@@ -269,7 +298,7 @@ export default function SettingsPage() {
   }, []);
 
   return (
-    <div className="p-6 text-gray-300 min-h-screen">
+    <div className="p-6 text-muted-foreground min-h-screen">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <BrainCircuit size={32} className="text-primary" />
@@ -356,6 +385,40 @@ export default function SettingsPage() {
                   }
                   className="bg-background border text-foreground w-full max-w-xs"
                 />
+                <p className="text-xs text-muted-foreground mt-1">
+                  {t(
+                    'settings.messageWindowSizeDescription',
+                    'Number of messages to keep in conversation history',
+                  )}
+                </p>
+              </div>
+
+              <div className="min-w-0">
+                <label className="block text-muted-foreground mb-2 font-medium">
+                  {t(
+                    'settings.toolCallGroupVisibleCount',
+                    'Tool Calls Visible Count',
+                  )}
+                </label>
+                <Input
+                  type="number"
+                  placeholder="e.g., 4"
+                  min={1}
+                  max={20}
+                  value={localToolCallGroupVisibleCount}
+                  onChange={(e) =>
+                    handleToolCallGroupVisibleCountChange(
+                      parseInt(e.target.value, 10) || 4,
+                    )
+                  }
+                  className="bg-background border text-foreground w-full max-w-xs"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  {t(
+                    'settings.toolCallGroupVisibleCountDescription',
+                    'Number of tool calls to show in collapsed group view (default: 4)',
+                  )}
+                </p>
               </div>
 
               <div className="min-w-0">

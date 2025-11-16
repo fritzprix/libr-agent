@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo } from 'react';
 import { MessageCircle, Users } from 'lucide-react';
 import { useSessionContext } from '../../context/SessionContext';
+import { useSessionNavigation } from '@/hooks/use-session-navigation';
 import { Session } from '@/models/chat';
 import {
   Button,
@@ -17,6 +18,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { formatSessionTimestamp } from '@/lib/date-utils';
 
 const logger = getLogger('SessionItem');
 
@@ -26,80 +28,18 @@ interface SessionItemProps {
   isCollapsed?: boolean;
 }
 
-function formatRelativeTime(target: Date, reference: Date): string | null {
-  const diffMs = target.getTime() - reference.getTime();
-  const diffSeconds = Math.round(diffMs / 1000);
-
-  const thresholds = [
-    { limit: 60, divisor: 1, unit: 'second' as const },
-    { limit: 3600, divisor: 60, unit: 'minute' as const },
-    { limit: 86400, divisor: 3600, unit: 'hour' as const },
-    { limit: 604800, divisor: 86400, unit: 'day' as const },
-    { limit: 2629800, divisor: 604800, unit: 'week' as const },
-    { limit: 31557600, divisor: 2629800, unit: 'month' as const },
-  ];
-
-  const absSeconds = Math.abs(diffSeconds);
-
-  for (const threshold of thresholds) {
-    if (absSeconds < threshold.limit) {
-      const value = Math.round(diffSeconds / threshold.divisor);
-      return new Intl.RelativeTimeFormat(undefined, {
-        numeric: 'auto',
-      }).format(value, threshold.unit);
-    }
-  }
-
-  const years = Math.round(diffSeconds / 31557600);
-  return new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' }).format(
-    years,
-    'year',
-  );
-}
-
-function formatSessionTimestamp(dateInput: Date | string | undefined) {
-  if (!dateInput) {
-    return {
-      display: 'Unknown date',
-      tooltip: 'Unknown date',
-      relative: null as string | null,
-    };
-  }
-
-  const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
-  if (Number.isNaN(date.getTime())) {
-    return {
-      display: 'Invalid date',
-      tooltip: 'Invalid date',
-      relative: null as string | null,
-    };
-  }
-
-  const absolute = date.toLocaleDateString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
-  const relative = formatRelativeTime(date, new Date());
-
-  const display = relative ? `${absolute} · ${relative}` : absolute;
-
-  return {
-    display,
-    tooltip: date.toLocaleString(),
-    relative,
-  };
-}
-
 export default function SessionItem({
   session,
   className,
   isCollapsed = false,
 }: SessionItemProps) {
-  const { current, select, delete: onDelete } = useSessionContext();
+  const { current, delete: onDelete } = useSessionContext();
+  const { selectAndNavigate } = useSessionNavigation();
+
   const handleSelect = useCallback(() => {
-    select(session.id);
-  }, [select, session.id]);
+    selectAndNavigate(session.id);
+  }, [selectAndNavigate, session.id]);
+
   const isSelected = useMemo(
     () => current?.id === session.id,
     [current, session],

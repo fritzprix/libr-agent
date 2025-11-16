@@ -29,6 +29,7 @@ export interface Settings {
   preferredModel: ModelChoice;
   windowSize: number;
   uiLanguage: string; // i18n UI language code (e.g., 'en', 'ko')
+  toolCallGroupVisibleCount: number; // Number of tool calls to show in collapsed group view
 }
 
 const DEFAULT_MODEL = llmConfigManager.recommendModel({});
@@ -47,6 +48,7 @@ export const DEFAULT_SETTING: Settings = {
   },
   windowSize: 20,
   uiLanguage: 'en',
+  toolCallGroupVisibleCount: 4,
 };
 
 interface SettingsContextType {
@@ -81,12 +83,14 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         preferredModelObject,
         windowSizeObject,
         uiLanguageObject,
+        toolCallGroupVisibleCountObject,
       ] = await Promise.all([
         dbService.objects.read('serviceConfigs'),
         dbService.objects.read('apiKeys'), // for backward compatibility
         dbService.objects.read('preferredModel'),
         dbService.objects.read('windowSize'),
         dbService.objects.read('uiLanguage'),
+        dbService.objects.read('toolCallGroupVisibleCount'),
       ]);
 
       // Handle migration from old format to new format
@@ -132,6 +136,12 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         ...(uiLanguageObject != null
           ? { uiLanguage: uiLanguageObject.value as string }
           : {}),
+        ...(toolCallGroupVisibleCountObject != null
+          ? {
+              toolCallGroupVisibleCount:
+                toolCallGroupVisibleCountObject.value as number,
+            }
+          : {}),
       };
       return settings;
     } catch (e) {
@@ -176,6 +186,12 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
             value: settings.uiLanguage,
           });
         }
+        if (settings.toolCallGroupVisibleCount != null) {
+          await dbService.objects.upsert({
+            key: 'toolCallGroupVisibleCount',
+            value: settings.toolCallGroupVisibleCount,
+          });
+        }
         await load();
       } catch (e) {
         logger.error('Failed to update settings', e);
@@ -199,7 +215,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       isOpen: openSettingModal,
       toggleOpen: () => setOpenSettingModal((prev) => !prev),
     };
-  }, []);
+  }, [openSettingModal]);
 
   return (
     <SettingModalViewContext.Provider value={modalViewContextValue}>

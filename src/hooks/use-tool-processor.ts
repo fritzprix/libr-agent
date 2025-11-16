@@ -5,7 +5,7 @@ import { useAssistantContext } from '../context/AssistantContext';
 import { useUnifiedMCP } from './use-unified-mcp';
 import { createId } from '@paralleldrive/cuid2';
 import { getLogger } from '../lib/logger';
-import { Message, ToolCall } from '@/models/chat';
+import { Message, ToolCall, MessageErrorType } from '@/models/chat';
 import { isMCPError, MCPContent, MCPResponse } from '@/lib/mcp-types';
 import { useSessionHistory } from '@/context/SessionHistoryContext';
 import { extractBuiltInServiceAlias } from '@/lib/utils';
@@ -20,11 +20,11 @@ const buildErrorContent = (text: string): MCPContent[] => {
   return [{ type: 'text', text }];
 };
 
-// Tool Call ID 검증 강화
+// Enhanced Tool Call ID validation
 const fixInvalidToolCall = (toolCall: ToolCall): ToolCall => {
-  // Tool call ID가 유효한지 검증
+  // Validate if tool call ID is valid
   if (!toolCall.id || toolCall.id.trim().length === 0) {
-    return { ...toolCall, id: createId() }; // 유효하지 않으면 새로운 ID 생성
+    return { ...toolCall, id: createId() }; // Generate new ID if invalid
   }
   return toolCall;
 };
@@ -133,6 +133,23 @@ export const useToolProcessor = ({ submit }: UseToolProcessorConfig) => {
                 metadata: {
                   executionTime,
                 },
+                // Map MCPResponse.error to Message.error for type-safe error detection
+                ...(isMCPError(mcpResponse) && {
+                  error: {
+                    displayMessage: mcpResponse.error.message,
+                    type: 'MCP_ERROR' as MessageErrorType,
+                    recoverable: true,
+                    details: {
+                      originalError: mcpResponse.error,
+                      errorCode: `MCP_${mcpResponse.error.code}`,
+                      timestamp: new Date().toISOString(),
+                      context: {
+                        toolName,
+                        toolCallId: toolCall.id,
+                      },
+                    },
+                  },
+                }),
               };
 
               const hasUi = hasUIResource(mcpResponse);
@@ -148,18 +165,35 @@ export const useToolProcessor = ({ submit }: UseToolProcessorConfig) => {
               const executionTime = Date.now() - executionStartTime;
               logger.error('Tool execution failed', { toolName, error });
 
+              const errorMsg =
+                error instanceof Error ? error.message : 'Unknown error';
+
               const errorMessage: Message = {
                 id: createId(),
                 assistantId: currentAssistant?.id,
                 role: 'tool',
                 content: buildErrorContent(
-                  `Error executing ${toolName}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                  `Error executing ${toolName}: ${errorMsg}`,
                 ),
                 sessionId: currentSession?.id || '',
                 threadId: currentSession?.id || '', // Default to top thread
                 tool_call_id: toolCall.id,
                 metadata: {
                   executionTime,
+                },
+                // Structured error for type-safe error detection
+                error: {
+                  displayMessage: `Error executing ${toolName}`,
+                  type: 'TOOL_EXECUTION_ERROR' as MessageErrorType,
+                  recoverable: true,
+                  details: {
+                    originalError: error,
+                    timestamp: new Date().toISOString(),
+                    context: {
+                      toolName,
+                      toolCallId: toolCall.id,
+                    },
+                  },
                 },
               };
 

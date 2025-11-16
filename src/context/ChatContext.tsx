@@ -542,7 +542,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         logger.error('Message submission failed', { error, agentKey });
         setError({
           displayMessage: 'Message submission failed. Please try again.',
-          type: 'SUBMIT_FAILED',
+          type: 'AI_SERVICE_ERROR',
           recoverable: true,
           details: {
             originalError: error,
