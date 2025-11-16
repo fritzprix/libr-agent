@@ -4,6 +4,85 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.0] - 2025-11-16
+
+### 🔧 Changed - Major Architecture Improvements
+
+#### Rust Built-in Tools MCPResult Architecture Refactoring
+
+- **Breaking Internal Change**: Refactored Rust built-in tool servers (`content_store`, `workspace`) to return pure `MCPResult` instead of `MCPResponse`
+  - Removed unnecessary JSON-RPC 2.0 transport layer generation from individual handlers
+  - Centralized transport layer wrapping in Tauri Command layer
+  - Eliminated 50+ duplicate `MCPResponse` creation instances across handlers
+  - Unified architecture pattern with Web MCP tools
+- **Trait Signature Update**: Changed `BuiltinMCPServer::call_tool()` to return `Result<MCPResult, String>` instead of `MCPResponse`
+- **Request ID Management**: Moved request ID generation from individual handlers to centralized registry layer
+- **Code Quality**: Reduced code complexity and improved maintainability across all built-in tools
+
+#### Web MCP Architecture Refactoring
+
+- **Interface Simplification**: Updated `WebMCPServer` interface to return `MCPResult` instead of `MCPResponse`
+  - Built-in tools no longer handle JSON-RPC protocol details
+  - Worker layer now handles all transport layer wrapping
+- **Response Factory Cleanup**: Removed 38+ duplicate response factory function calls across 5 built-in servers
+  - ui-tools: 6 instances removed
+  - playbook-store: 14 instances removed
+  - mcp-manager: 12 instances removed
+  - bootstrap-server: 2 instances removed
+  - planning-server: 4 instances removed
+- **Consistent Error Handling**: Unified error response generation in worker proxy layer
+- **Type Safety**: Improved type consistency between Web MCP and External MCP tools
+
+### 🐛 Fixed
+
+#### UI Resource Protocol Compliance
+
+- **MCP-UI Protocol Fix**: Corrected UI resource structure to comply with MCP-UI specification
+  - Fixed `text/html` mimeType resources to use direct `text` field instead of nested `content` object
+  - Moved metadata from nested structure to `_meta` field
+  - Affected tools: `export_file`, `export_zip`, `execute_shell_with_input`
+- **Error Resolution**: Fixed "HTML resource requires text or blob content" error
+- **Rendering Fix**: UI resources now render correctly in `UIResourceRenderer` iframe
+- **Structure Validation**: All built-in UI resource generation code validated and updated
+
+### ✨ Added
+
+#### Tool Call Grouping UI Enhancement (from 0.2.2)
+
+- **Collapsible Tool Groups**: Multiple consecutive tool calls now grouped into single collapsible bubble
+  - Displays latest 4 tool calls by default with gradient overlay for older items
+  - "Show All" button to expand and view complete execution history
+- **Visual Improvements**:
+  - Success/error status indicators with color coding
+  - Execution time display for each tool call
+  - Summary statistics (total calls, success rate, total time)
+- **Smart Grouping Logic**:
+  - Separates text content and UI resources into individual bubbles
+  - Groups only pure tool-only calls together
+  - Maintains chronological order within groups
+
+### 📚 Documentation
+
+- Added comprehensive refactoring documentation:
+  - `docs/history/refactoring_rust_builtin_20251116_2130.md` - Rust built-in tools architecture
+  - `docs/history/refactoring_20251116_2114.md` - Web MCP architecture
+  - `docs/history/refactoring_20251115_1856_tool_call_grouping.md` - Tool call grouping feature
+
+### 🔍 Technical Details
+
+**Impact on Codebase:**
+
+- **Files Modified**: 15+ core files across Rust and TypeScript
+- **Code Removed**: ~200 lines of duplicate response wrapping code
+- **Architecture**: Cleaner separation between business logic and transport layer
+- **Compatibility**: External MCP servers remain unaffected (still use JSON-RPC 2.0)
+- **Performance**: Slight improvement due to reduced object creation overhead
+
+**Breaking Changes (Internal Only):**
+
+- Internal trait signatures updated (does not affect user-facing API)
+- Built-in tool handler return types changed (transparent to frontend)
+
 ### [0.2.2] - 2025-11-15
 
 #### Added
