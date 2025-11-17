@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+No changes yet.
+
+## [0.3.1] - 2025-11-18
+
 ### 🐛 Fixed
 
 #### Windows PowerShell Error Output Capture
