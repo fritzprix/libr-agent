@@ -48,6 +48,33 @@ interface PromptState {
 
 const activePrompts = new Map<string, PromptState>();
 
+// TTL for prompts: 1 hour (in milliseconds)
+const PROMPT_TTL_MS = 60 * 60 * 1000;
+
+/**
+ * Clean up expired prompts from activePrompts Map
+ * Prompts older than PROMPT_TTL_MS are removed to prevent memory leaks
+ */
+function cleanupExpiredPrompts(): void {
+  const now = Date.now();
+  const expiredIds: string[] = [];
+
+  for (const [id, state] of activePrompts.entries()) {
+    if (now - state.createdAt > PROMPT_TTL_MS) {
+      expiredIds.push(id);
+    }
+  }
+
+  for (const id of expiredIds) {
+    activePrompts.delete(id);
+  }
+}
+
+// Run cleanup every 5 minutes
+if (typeof setInterval !== 'undefined') {
+  setInterval(cleanupExpiredPrompts, 5 * 60 * 1000);
+}
+
 /**
  * Format duration in human-readable format
  */
@@ -243,6 +270,9 @@ const uiTools: WebMCPServer = {
     try {
       switch (name) {
         case 'prompt_user': {
+          // Clean up expired prompts before creating new one
+          cleanupExpiredPrompts();
+
           const prompt = String(a.prompt || '');
           const type = String(a.type || 'text') as
             | 'text'
@@ -395,14 +425,46 @@ const uiTools: WebMCPServer = {
             );
           }
 
-          // Validate data format
-          for (const item of data) {
-            if (!item.label || typeof item.value !== 'number') {
+          // Validate data format with strict checks
+          for (let i = 0; i < data.length; i++) {
+            const item = data[i];
+
+            // Check label exists and is non-empty
+            if (
+              !item.label ||
+              typeof item.label !== 'string' ||
+              item.label.trim() === ''
+            ) {
               return createMCPErrorToolResult(
-                'Each data item must have a "label" (string) and "value" (number)',
+                `Data item at index ${i} must have a non-empty "label" (string)`,
                 {
                   tool: 'visualize_data',
                   invalidData: item,
+                  index: i,
+                },
+              );
+            }
+
+            // Check value is a valid finite number
+            if (typeof item.value !== 'number') {
+              return createMCPErrorToolResult(
+                `Data item at index ${i} must have a "value" (number)`,
+                {
+                  tool: 'visualize_data',
+                  invalidData: item,
+                  index: i,
+                },
+              );
+            }
+
+            if (!Number.isFinite(item.value)) {
+              return createMCPErrorToolResult(
+                `Data item at index ${i} has invalid value: ${item.value}. Value must be finite (no NaN, Infinity, or -Infinity)`,
+                {
+                  tool: 'visualize_data',
+                  invalidData: item,
+                  index: i,
+                  value: item.value,
                 },
               );
             }
@@ -418,11 +480,15 @@ const uiTools: WebMCPServer = {
             `ui://visualizations/${type}-${Date.now()}`,
           );
 
-          // Create text content
+          // Create text content with optional warning for large datasets
           const summary = data.map((d) => `${d.label}: ${d.value}`).join(', ');
+          const warningText =
+            data.length > 20
+              ? `\n⚠️ Warning: ${data.length} data points provided. For better readability, consider limiting to 20 or fewer.`
+              : '';
           const textContent: MCPContent = {
             type: 'text',
-            text: `📊 ${type.toUpperCase()} Chart${title ? `: ${title}` : ''}\nData: ${summary}`,
+            text: `📊 ${type.toUpperCase()} Chart${title ? `: ${title}` : ''}\nData: ${summary}${warningText}`,
           } as MCPContent;
 
           // Return multipart result
