@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 🐛 Fixed
+
+#### Windows PowerShell Error Output Capture
+
+- **Error Capture Fix**: Fixed `builtin_workspace__execute_windows_cmd` tool to properly capture PowerShell error messages in stderr
+  - Previously, failed PowerShell commands (e.g., `Remove-Item`) returned `exit_code: 1` but empty stdout/stderr
+  - Now wraps PowerShell commands with try-catch and `$ErrorActionPreference = 'Stop'` to redirect errors to stderr
+  - Error messages now include exception details and stack traces for better debugging
+  - Affects: `execute_windows_cmd` tool on Windows platform
+- **Testing**: Added unit tests for PowerShell error wrapping and quote escaping logic
+
 ## [0.3.0] - 2025-11-16
 
 ### 🔧 Changed - Major Architecture Improvements
