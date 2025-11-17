@@ -63,6 +63,7 @@ export const uiToolsSchema: MCPTool[] = [
           description: 'ID of the prompt being replied to',
         },
         answer: {
+          type: 'string',
           description:
             'User answer: string for text/select, array of strings for multiselect, null if cancelled',
         },
