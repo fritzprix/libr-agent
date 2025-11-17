@@ -152,7 +152,6 @@ export const uiToolsSchema: MCPTool[] = [
         sessionId: {
           type: 'string',
           description: 'Optional session ID for validation',
-          default: '',
         },
       },
       required: ['resumeInstruction', 'startedAt'],
