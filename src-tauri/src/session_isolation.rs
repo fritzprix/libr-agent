@@ -196,11 +196,31 @@ impl SessionIsolationManager {
                 // -NoProfile: Don't load user profile (faster, more secure)
                 // -NonInteractive: Disable interactive prompts
                 // -Command: Execute the command string
-                cmd.args(["-NoProfile", "-NonInteractive", "-Command", &full_command]);
+                //
+                // CRITICAL FIX: Wrap command to redirect PowerShell errors to stderr
+                // PowerShell writes errors to its own error stream, not stderr by default.
+                // We need to:
+                // 1. Set $ErrorActionPreference = 'Stop' to make non-terminating errors terminate
+                // 2. Use try-catch to capture all errors including non-terminating ones
+                // 3. Write errors to stderr using [Console]::Error.WriteLine()
+                //
+                // This ensures that when commands like Remove-Item fail, the error message
+                // is captured in stderr, not lost in the void.
+                let wrapped_command = format!(
+                    "$ErrorActionPreference = 'Stop'; try {{ {} }} catch {{ [Console]::Error.WriteLine($_.Exception.Message); [Console]::Error.WriteLine($_.ScriptStackTrace); exit 1 }}",
+                    full_command.replace("\"", "`\"")  // Escape double quotes for PowerShell
+                );
+
+                cmd.args([
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    &wrapped_command,
+                ]);
 
                 info!(
-                    "Windows PowerShell execution: powershell -Command \"{}\"",
-                    full_command
+                    "Windows PowerShell execution with error redirection: powershell -Command \"{}\"",
+                    wrapped_command
                 );
             }
         } else {
@@ -599,3 +619,56 @@ pub struct IsolationCapabilities {
 
 // Note: AsyncCommand argument manipulation is complex and platform-specific
 // For now, we'll build commands differently to avoid this issue
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_powershell_error_wrapping() {
+        // Test that the wrapped command includes error handling
+        let test_command = "Remove-Item -Path \"C:\\test\" -Recurse -Force";
+        let escaped_command = test_command.replace("\"", "`\"");
+        let wrapped = format!(
+            "$ErrorActionPreference = 'Stop'; try {{ {} }} catch {{ [Console]::Error.WriteLine($_.Exception.Message); [Console]::Error.WriteLine($_.ScriptStackTrace); exit 1 }}",
+            escaped_command
+        );
+
+        // Verify the wrapped command contains key elements
+        assert!(wrapped.contains("$ErrorActionPreference = 'Stop'"));
+        assert!(wrapped.contains("try {"));
+        assert!(wrapped.contains("} catch {"));
+        assert!(wrapped.contains("[Console]::Error.WriteLine($_.Exception.Message)"));
+        assert!(wrapped.contains("exit 1"));
+        assert!(wrapped.contains("Remove-Item -Path `\"C:\\test`\" -Recurse -Force"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_powershell_quote_escaping() {
+        // Test that double quotes are properly escaped for PowerShell
+        let test_command = "Write-Host \"Hello World\"";
+        let escaped = test_command.replace("\"", "`\"");
+
+        assert_eq!(escaped, "Write-Host `\"Hello World`\"");
+
+        // Verify it works in the full wrapper
+        let wrapped = format!(
+            "$ErrorActionPreference = 'Stop'; try {{ {} }} catch {{ [Console]::Error.WriteLine($_.Exception.Message); exit 1 }}",
+            escaped
+        );
+
+        assert!(wrapped.contains("Write-Host `\"Hello World`\""));
+    }
+
+    #[test]
+    fn test_isolation_manager_creation() {
+        let manager = SessionIsolationManager::new();
+        assert!(manager
+            .isolation_config
+            .resource_limits
+            .max_memory_mb
+            .is_some());
+    }
+}

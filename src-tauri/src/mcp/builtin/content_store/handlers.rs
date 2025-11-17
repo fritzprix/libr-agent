@@ -200,7 +200,9 @@ impl ContentStoreServer {
             error!(
                 "Failed to ensure content store for session {session_id} while listing content: {e}"
             );
-            return Err(format!("Failed to prepare content store for session {session_id}: {e}"));
+            return Err(format!(
+                "Failed to prepare content store for session {session_id}: {e}"
+            ));
         }
 
         let (offset, limit) = args.pagination.as_ref().map_or((0usize, 100usize), |p| {
@@ -321,7 +323,9 @@ impl ContentStoreServer {
             error!(
                 "Failed to ensure content store for session {session_id} during keyword search: {e}"
             );
-            return Err(format!("Failed to prepare content store for session {session_id}: {e}"));
+            return Err(format!(
+                "Failed to prepare content store for session {session_id}: {e}"
+            ));
         }
 
         let top_n = args

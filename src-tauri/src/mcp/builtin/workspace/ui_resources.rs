@@ -8,7 +8,9 @@ pub fn mcp_result_with_text_and_resource(message: &str, ui_resource: Value) -> M
             crate::mcp::types::MCPContent::Text {
                 text: message.to_string(),
             },
-            crate::mcp::types::MCPContent::Resource { resource: ui_resource },
+            crate::mcp::types::MCPContent::Resource {
+                resource: ui_resource,
+            },
         ]),
         structured_content: None,
         is_error: Some(false),
