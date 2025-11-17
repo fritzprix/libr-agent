@@ -753,7 +753,11 @@ impl WorkspaceServer {
 
     /// Handle interactive shell execution (1st tool call)
     /// Returns UIResource with execution_id for user input
-    async fn handle_interactive_shell(&self, command: &str, args: &Value) -> Result<MCPResult, String> {
+    async fn handle_interactive_shell(
+        &self,
+        command: &str,
+        args: &Value,
+    ) -> Result<MCPResult, String> {
         use super::{utils::sanitize_command_for_logging, PendingShellExecution};
 
         let execution_id = uuid::Uuid::new_v4().to_string();
@@ -1057,11 +1061,7 @@ impl WorkspaceServer {
 
     /// Cancel a pending shell execution
     /// Removes the pending execution from state without executing it
-    pub async fn handle_cancel_pending_execution(
-        &self,
-        args: Value,
-    ) -> Result<MCPResult, String> {
-
+    pub async fn handle_cancel_pending_execution(&self, args: Value) -> Result<MCPResult, String> {
         // Extract execution_id
         let execution_id = match args.get("execution_id").and_then(|v| v.as_str()) {
             Some(id) => id,

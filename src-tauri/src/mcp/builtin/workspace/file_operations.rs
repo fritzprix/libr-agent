@@ -8,10 +8,7 @@ use tracing::{error, info};
 
 #[allow(dead_code)]
 impl WorkspaceServer {
-    fn validate_path_with_error(
-        &self,
-        path_str: &str,
-    ) -> Result<std::path::PathBuf, String> {
+    fn validate_path_with_error(&self, path_str: &str) -> Result<std::path::PathBuf, String> {
         let file_manager = self.get_file_manager();
         match file_manager
             .get_security_validator()
