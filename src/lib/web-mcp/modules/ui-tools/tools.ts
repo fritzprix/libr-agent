@@ -6,6 +6,21 @@
 
 import type { MCPTool } from '@/lib/mcp-types';
 
+/**
+ * UI Tools Schema with usage examples
+ *
+ * Example usage:
+ * 1. Text prompt:
+ *    { prompt: "What is your name?", type: "text" }
+ * 2. Single select:
+ *    { prompt: "Choose color", type: "select", options: ["Red", "Blue"] }
+ * 3. Multi-select:
+ *    { prompt: "Select features", type: "multiselect", options: ["A", "B", "C"] }
+ * 4. Bar chart:
+ *    { type: "bar", data: [{label: "Jan", value: 100}, {label: "Feb", value: 150}], title: "Sales" }
+ * 5. Wait UI:
+ *    { message: "Processing...", resumeInstruction: "Continue after data processing" }
+ */
 export const uiToolsSchema: MCPTool[] = [
   // Migration note: Previously used context object with {reason, command, nextAction}.
   // Now simplified to direct resumeInstruction parameter for both tools.
@@ -13,7 +28,7 @@ export const uiToolsSchema: MCPTool[] = [
   {
     name: 'prompt_user',
     description:
-      'Display an interactive prompt to the user (text input, select, or multiselect)',
+      'Display an interactive prompt to the user (text input, select, or multiselect). Use this to gather user input interactively.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -48,8 +63,9 @@ export const uiToolsSchema: MCPTool[] = [
           description: 'ID of the prompt being replied to',
         },
         answer: {
+          type: 'string',
           description:
-            'User answer (string, array of strings, or null if cancelled)',
+            'User answer: string for text/select, array of strings for multiselect, null if cancelled',
         },
         cancelled: {
           type: 'boolean',
@@ -61,14 +77,16 @@ export const uiToolsSchema: MCPTool[] = [
   },
   {
     name: 'visualize_data',
-    description: 'Create a simple data visualization (bar or line chart)',
+    description:
+      'Create a simple data visualization (bar or line chart). Useful for presenting numeric data in a visual format. Maximum 20 data points recommended for readability.',
     inputSchema: {
       type: 'object',
       properties: {
         type: {
           type: 'string',
           enum: ['bar', 'line'],
-          description: 'Type of chart to create',
+          description:
+            'Type of chart to create: "bar" for comparisons, "line" for trends',
         },
         data: {
           type: 'array',
@@ -77,17 +95,23 @@ export const uiToolsSchema: MCPTool[] = [
             properties: {
               label: {
                 type: 'string',
-                description: 'Label for this data point',
+                description: 'Label for this data point (must be non-empty)',
               },
-              value: { type: 'number', description: 'Numeric value' },
+              value: {
+                type: 'number',
+                description: 'Numeric value (must be finite, non-NaN)',
+              },
             },
             required: ['label', 'value'],
           },
-          description: 'Data points to visualize',
+          description: 'Data points to visualize (at least 1 required)',
+          minItems: 1,
+          maxItems: 50,
         },
         title: {
           type: 'string',
-          description: 'Optional title for the chart',
+          description:
+            'Optional title for the chart (displayed above the visualization)',
         },
       },
       required: ['type', 'data'],

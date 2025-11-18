@@ -85,16 +85,50 @@
       </div>
     </div>
     <script>
-      const messageId = '{{messageId}}'; const input =
-      document.getElementById('userInput'); input.addEventListener('keypress',
-      function (e) { if (e.key === 'Enter') { handleSubmit(); } }); function
-      handleSubmit() { const answer = input.value.trim(); if (!answer) {
-      alert('Please enter a response'); return; } window.parent.postMessage( {
-      type: 'tool', payload: { toolName: 'reply_prompt', params: { messageId,
-      answer }, }, }, '*', ); } function handleCancel() {
-      window.parent.postMessage( { type: 'tool', payload: { toolName:
-      'reply_prompt', params: { messageId, answer: null, cancelled: true }, },
-      }, '*', ); } // Auto-focus input input.focus();
+      const messageId = '{{messageId}}';
+      const input = document.getElementById('userInput');
+
+      // Submit on Enter key
+      input.addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') {
+          handleSubmit();
+        }
+      });
+
+      function handleSubmit() {
+        const answer = input.value.trim();
+        if (!answer) {
+          alert('Please enter a response');
+          return;
+        }
+
+        window.parent.postMessage(
+          {
+            type: 'tool',
+            payload: {
+              toolName: 'reply_prompt',
+              params: { messageId, answer },
+            },
+          },
+          '*'
+        );
+      }
+
+      function handleCancel() {
+        window.parent.postMessage(
+          {
+            type: 'tool',
+            payload: {
+              toolName: 'reply_prompt',
+              params: { messageId, answer: null, cancelled: true },
+            },
+          },
+          '*'
+        );
+      }
+
+      // Auto-focus input
+      input.focus();
     </script>
   </body>
 </html>
