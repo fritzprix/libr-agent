@@ -117,9 +117,16 @@ export async function fetchOllamaModelInfo(
       data.template?.toLowerCase().includes('thinking') ||
       data.parameters?.think !== undefined;
 
-    // Extract context window from parameters
-    const contextWindow =
-      data.parameters?.num_ctx || data.model_info?.['llama.context_length'];
+    // Extract context window from parameters or model_info
+    // Search for any *.context_length key in model_info (supports all model families)
+    let contextWindow = data.parameters?.num_ctx;
+    
+    if (!contextWindow && data.model_info) {
+      const contextEntry = Object.entries(data.model_info).find(([key]) =>
+        key.endsWith('.context_length'),
+      );
+      contextWindow = contextEntry?.[1] as number | undefined;
+    }
 
     logger.debug(`Ollama model info for ${modelName}`, {
       hasThinkingParam,
@@ -274,7 +281,7 @@ export async function getContextWindow(
 ): Promise<number> {
   if (!modelName) {
     logger.warn('Empty model name provided for context window check');
-    return 4096; // Safe default
+    return 32768; // Safe default
   }
 
   // Check cache first (unless explicitly skipped)
@@ -290,7 +297,7 @@ export async function getContextWindow(
     }
   }
 
-  let contextWindow = 4096; // Default fallback
+  let contextWindow = 32768; // Default fallback (safe for most modern models)
 
   // TIER 1: OpenRouter metadata API (works for ALL providers except Ollama)
   if (provider !== AIServiceProvider.Ollama) {
@@ -491,11 +498,9 @@ export function estimateContextWindow(
 
   switch (provider) {
     case AIServiceProvider.Ollama:
-      if (lowerName.includes('llama3.1')) return 128000;
-      if (lowerName.includes('llama3')) return 8192;
-      if (lowerName.includes('qwen')) return 32768;
-      if (lowerName.includes('codellama')) return 16384;
-      return 4096; // conservative default
+      // Ollama models should be detected via /api/show endpoint
+      // This fallback should rarely be used
+      return 32768; // Safe default to avoid context overflow
 
     case AIServiceProvider.OpenAI:
       if (lowerName.includes('gpt-4.1')) return 1000000;
