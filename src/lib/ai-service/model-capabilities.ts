@@ -120,7 +120,7 @@ export async function fetchOllamaModelInfo(
     // Extract context window from parameters or model_info
     // Search for any *.context_length key in model_info (supports all model families)
     let contextWindow = data.parameters?.num_ctx;
-    
+
     if (!contextWindow && data.model_info) {
       const contextEntry = Object.entries(data.model_info).find(([key]) =>
         key.endsWith('.context_length'),
