@@ -134,6 +134,14 @@ impl SessionIsolationManager {
             // Security isolation is achieved through workspace directory restrictions
 
             info!("Windows environment configured: workspace isolated, PATH preserved");
+            // Additional env diagnostic info to help diagnose missing output on Windows
+            let path_len = std::env::var("PATH").map(|p| p.len()).unwrap_or(0);
+            let system_root =
+                std::env::var("SystemRoot").unwrap_or_else(|_| "<not-set>".to_string());
+            let comspec = std::env::var("COMSPEC").unwrap_or_else(|_| "<not-set>".to_string());
+            let psmodulepath =
+                std::env::var("PSModulePath").unwrap_or_else(|_| "<not-set>".to_string());
+            info!("Windows env snapshot (for debugging): PATH.len={}, SystemRoot={}, COMSPEC={}, PSModulePath.present={}", path_len, system_root, comspec, !psmodulepath.is_empty());
         }
 
         #[cfg(not(target_os = "windows"))]
@@ -169,6 +177,13 @@ impl SessionIsolationManager {
                     "PowerShell direct execution configured: {} with args: {:?}",
                     shell_cmd,
                     parts.get(1..).unwrap_or(&[])
+                );
+                // Log selected parts of environment for debug: sometimes missing PATH or SystemRoot
+                info!(
+                    "PowerShell direct exec: command='{}' args={:?} workspace_dir={}",
+                    shell_cmd,
+                    parts.get(1..).unwrap_or(&[]),
+                    config.workspace_path.display()
                 );
             } else {
                 // Windows: Use PowerShell instead of cmd.exe for better quote handling
@@ -206,9 +221,13 @@ impl SessionIsolationManager {
                 //
                 // This ensures that when commands like Remove-Item fail, the error message
                 // is captured in stderr, not lost in the void.
+                //
+                // IMPORTANT: Do NOT escape double quotes in full_command
+                // PowerShell -Command already handles quotes correctly
+                // Escaping breaks nested quotes in commands like: python -c "print('test')"
                 let wrapped_command = format!(
                     "$ErrorActionPreference = 'Stop'; try {{ {} }} catch {{ [Console]::Error.WriteLine($_.Exception.Message); [Console]::Error.WriteLine($_.ScriptStackTrace); exit 1 }}",
-                    full_command.replace("\"", "`\"")  // Escape double quotes for PowerShell
+                    full_command  // No escaping - PowerShell handles quotes correctly
                 );
 
                 cmd.args([
@@ -221,6 +240,16 @@ impl SessionIsolationManager {
                 info!(
                     "Windows PowerShell execution with error redirection: powershell -Command \"{}\"",
                     wrapped_command
+                );
+
+                // Log environment snapshot to help debugging commands that behave differently
+                let path_len = std::env::var("PATH").map(|p| p.len()).unwrap_or(0);
+                let system_root =
+                    std::env::var("SystemRoot").unwrap_or_else(|_| "<not-set>".to_string());
+                let comspec = std::env::var("COMSPEC").unwrap_or_else(|_| "<not-set>".to_string());
+                info!(
+                    "PowerShell wrapper env snapshot: PATH.len={}, SystemRoot={}, COMSPEC={}",
+                    path_len, system_root, comspec
                 );
             }
         } else {
