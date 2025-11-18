@@ -6,6 +6,13 @@ All notable changes to this project will be documented in this file.
 
 No changes yet.
 
+## [0.3.2] - 2025-11-19
+
+### 🛠️ Patch
+
+- Bumped patch version to 0.3.2. This release contains small maintenance updates and minor bug fixes.
+  (See release notes / Git tags for details.)
+
 ## [0.3.1] - 2025-11-18
 
 ### 🐛 Fixed
