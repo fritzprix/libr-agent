@@ -226,8 +226,7 @@ impl SessionIsolationManager {
                 // PowerShell -Command already handles quotes correctly
                 // Escaping breaks nested quotes in commands like: python -c "print('test')"
                 let wrapped_command = format!(
-                    "$ErrorActionPreference = 'Stop'; try {{ {} }} catch {{ [Console]::Error.WriteLine($_.Exception.Message); [Console]::Error.WriteLine($_.ScriptStackTrace); exit 1 }}",
-                    full_command  // No escaping - PowerShell handles quotes correctly
+                    "$ErrorActionPreference = 'Stop'; try {{ {full_command} }} catch {{ [Console]::Error.WriteLine($_.Exception.Message); [Console]::Error.WriteLine($_.ScriptStackTrace); exit 1 }}"
                 );
 
                 cmd.args([

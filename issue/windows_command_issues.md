@@ -276,15 +276,15 @@ let stdout = tokio::fs::read_to_string(&stdout_path).await?;
 
 ### Current Support Scope
 
-| Scenario                    | Sync | Async | Notes                  |
-| --------------------------- | ---- | ----- | ---------------------- |
-| Simple commands (echo)      | ✅   | ✅    | Normal                 |
-| Python inline               | ❌   | ❌    | Quote bug              |
-| Scripts under 30s           | ⚠️   | ✅    | Sync stderr bug        |
-| Tasks over 30s              | ❌   | ✅    | Sync timeout           |
-| Servers (npm run dev)       | ❌   | ⚠️    | Lack of real-time logs |
-| Watch (vite)                | ❌   | ⚠️    | Lack of real-time logs |
-| Interactive (REPL)          | ❌   | ❌    | stdin not supported    |
+| Scenario               | Sync | Async | Notes                  |
+| ---------------------- | ---- | ----- | ---------------------- |
+| Simple commands (echo) | ✅   | ✅    | Normal                 |
+| Python inline          | ❌   | ❌    | Quote bug              |
+| Scripts under 30s      | ⚠️   | ✅    | Sync stderr bug        |
+| Tasks over 30s         | ❌   | ✅    | Sync timeout           |
+| Servers (npm run dev)  | ❌   | ⚠️    | Lack of real-time logs |
+| Watch (vite)           | ❌   | ⚠️    | Lack of real-time logs |
+| Interactive (REPL)     | ❌   | ❌    | stdin not supported    |
 
 ---
 
@@ -747,6 +747,6 @@ class ProcessExecutor {
 
 - Test date: November 18, 2025
 - Environment: Windows PowerShell-based
-- Execution method: Using builtin_workspace__execute_windows_cmd
+- Execution method: Using builtin_workspace\_\_execute_windows_cmd
 - Log file: `log.txt` (1811 lines)
 - Diagnostic logs added (2025-11-18)
