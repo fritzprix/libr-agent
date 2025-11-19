@@ -11,6 +11,8 @@ import { MCPTool } from '../mcp-types';
 import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';
 import { tryParse, formatToolCall, generateToolCallId } from './utils';
+import type { ModelInfo } from '../llm-config-manager';
+import { llmConfigManager } from '../llm-config-manager';
 
 const logger = getLogger('GeminiService');
 
@@ -36,6 +38,9 @@ interface GeminiServiceConfig {
  */
 export class GeminiService extends BaseAIService {
   private genAI: GoogleGenAI;
+  private modelCache?: ModelInfo[];
+  private cacheTimestamp?: number;
+  private readonly CACHE_TTL = 3600000; // 1 hour in milliseconds
 
   /**
    * Initializes a new instance of the `GeminiService`.
@@ -89,6 +94,141 @@ export class GeminiService extends BaseAIService {
   }
 
   /**
+   * Fetches the list of available models from the Gemini API.
+   * Uses pagination to retrieve all models and caches results for 1 hour.
+   * Falls back to static config on API failure.
+   */
+  async listModels(): Promise<ModelInfo[]> {
+    const logger = getLogger('GeminiService.listModels');
+
+    // Return cached models if still valid
+    if (this.modelCache && this.isCacheValid()) {
+      logger.debug('Returning cached models');
+      return this.modelCache;
+    }
+
+    try {
+      logger.info('Fetching models from Gemini API...');
+
+      // Call Gemini API models.list() with pagination
+      const pager = await this.withRetry(async () => {
+        return this.genAI.models.list({
+          config: {
+            pageSize: 100, // Fetch up to 100 models per page
+          },
+        });
+      });
+
+      const models: ModelInfo[] = [];
+      let totalFetched = 0;
+      let filteredOut = 0;
+
+      // Iterate through all pages using AsyncIterable
+      for await (const geminiModel of pager) {
+        totalFetched++;
+
+        // Extract model name (remove 'models/' prefix if present)
+        const modelId = geminiModel.name?.replace(/^models\//, '') || '';
+
+        if (!modelId) {
+          logger.warn('Skipping model with empty ID', { geminiModel });
+          filteredOut++;
+          continue;
+        }
+
+        // Filter: Only include models that support generateContent
+        const supportsGeneration =
+          geminiModel.supportedActions?.includes('generateContent') ?? true;
+
+        if (!supportsGeneration) {
+          logger.debug('Skipping non-generation model', {
+            modelId,
+            supportedActions: geminiModel.supportedActions,
+          });
+          filteredOut++;
+          continue;
+        }
+
+        logger.debug('Processing model from API', {
+          modelId,
+          displayName: geminiModel.displayName,
+          inputTokenLimit: geminiModel.inputTokenLimit,
+          supportedActions: geminiModel.supportedActions,
+        });
+
+        // Merge with static config metadata
+        const staticModel = llmConfigManager.getModel('gemini', modelId);
+
+        // Use API-provided context window with fallback
+        const contextWindow =
+          geminiModel.inputTokenLimit || staticModel?.contextWindow || 1048576; // Default to 1M tokens
+
+        const modelInfo: ModelInfo = {
+          id: modelId,
+          name: geminiModel.displayName || staticModel?.name || modelId,
+          contextWindow,
+          // Detect thinking mode support from API response or model name
+          supportReasoning:
+            staticModel?.supportReasoning ??
+            /gemini-2\.[5-9]|gemini-[3-9]/.test(modelId),
+          supportTools: staticModel?.supportTools ?? true,
+          supportStreaming: staticModel?.supportStreaming ?? true,
+          cost: staticModel?.cost || { input: 0, output: 0 },
+          description:
+            geminiModel.description ||
+            staticModel?.description ||
+            `Gemini model: ${modelId}`,
+        };
+
+        models.push(modelInfo);
+      }
+
+      // Add static config models that aren't in the API response
+      const staticModels = llmConfigManager.getModelsForProvider('gemini');
+      if (staticModels) {
+        const apiModelIds = new Set(models.map((m) => m.id));
+        const staticModelIds = Object.keys(staticModels);
+
+        for (const staticId of staticModelIds) {
+          if (!apiModelIds.has(staticId)) {
+            const staticModel = staticModels[staticId];
+            logger.debug('Adding static-only model', {
+              modelId: staticId,
+              name: staticModel.name,
+            });
+
+            models.push({
+              id: staticId,
+              name: staticModel.name,
+              contextWindow: staticModel.contextWindow,
+              supportReasoning: staticModel.supportReasoning,
+              supportTools: staticModel.supportTools,
+              supportStreaming: staticModel.supportStreaming,
+              cost: staticModel.cost,
+              description: staticModel.description,
+            });
+          }
+        }
+      }
+
+      // Cache the results
+      this.modelCache = models;
+      this.cacheTimestamp = Date.now();
+
+      logger.info(
+        `Loaded ${models.length} total models (API: ${models.length - (staticModels ? Object.keys(staticModels).length - totalFetched + filteredOut : 0)}, static-only: ${staticModels ? Object.keys(staticModels).length - (models.length - filteredOut) : 0})`,
+      );
+      return models;
+    } catch (error) {
+      logger.warn(
+        'Failed to fetch models from Gemini API, falling back to static config',
+        error,
+      );
+      return this.fallbackToStaticModels();
+    }
+  }
+
+  /**
    * Initiates a streaming chat session with the Gemini API.
    * @param messages The array of messages for the conversation.
    * @param options Optional parameters for the chat.
@@ -119,7 +259,7 @@ export class GeminiService extends BaseAIService {
         : undefined;
 
       const model =
-        options.modelName || config.defaultModel || 'gemini-1.5-pro';
+        options.modelName || config.defaultModel || this.getDefaultModel();
 
       const geminiConfig: GeminiServiceConfig = {
         responseMimeType: 'text/plain',
@@ -144,10 +284,10 @@ export class GeminiService extends BaseAIService {
         geminiConfig.temperature = config.temperature;
       }
 
-      // Add thinkingConfig for Gemini 2.5+ models
+      // Add thinkingConfig for models that support thinking
       if (config.enableReasoning) {
-        const isGemini25Plus = /gemini-2\.[5-9]|gemini-[3-9]/.test(model);
-        if (isGemini25Plus) {
+        const modelSupportsThinking = await this.checkThinkingSupport(model);
+        if (modelSupportsThinking) {
           const thinkingBudget = this.mapReasoningEffortToBudget(
             config.reasoningEffort,
           );
@@ -437,6 +577,70 @@ export class GeminiService extends BaseAIService {
       return null;
     }
     return null;
+  }
+
+  /**
+   * Check if model cache is still valid (1 hour TTL)
+   * @private
+   */
+  private isCacheValid(): boolean {
+    if (!this.cacheTimestamp) return false;
+    const age = Date.now() - this.cacheTimestamp;
+    return age < this.CACHE_TTL;
+  }
+
+  /**
+   * Fallback to static config models
+   * @private
+   */
+  private fallbackToStaticModels(): Promise<ModelInfo[]> {
+    const logger = getLogger('GeminiService.fallbackToStaticModels');
+    logger.info('Using static config models');
+    return super.listModels();
+  }
+
+  /**
+   * Get the default model from static config
+   * @private
+   */
+  private getDefaultModel(): string {
+    // Try to get from static config first
+    const staticModels = llmConfigManager.getModelsForProvider('gemini');
+    if (staticModels) {
+      const modelIds = Object.keys(staticModels);
+      // Prefer Gemini 2.5 Flash as default (fast & capable)
+      const preferred = modelIds.find((id) => id.includes('gemini-2.5-flash'));
+      if (preferred) return preferred;
+
+      // Fallback to first available model
+      if (modelIds.length > 0) return modelIds[0];
+    }
+
+    // Ultimate fallback
+    return 'gemini-1.5-pro';
+  }
+
+  /**
+   * Check if a model supports thinking mode
+   * @private
+   */
+  private async checkThinkingSupport(modelId: string): Promise<boolean> {
+    // Check cache first
+    if (this.modelCache) {
+      const cachedModel = this.modelCache.find((m) => m.id === modelId);
+      if (cachedModel) {
+        return cachedModel.supportReasoning;
+      }
+    }
+
+    // Check static config
+    const staticModel = llmConfigManager.getModel('gemini', modelId);
+    if (staticModel?.supportReasoning !== undefined) {
+      return staticModel.supportReasoning;
+    }
+
+    // Fallback to pattern matching
+    return /gemini-2\.[5-9]|gemini-[3-9]/.test(modelId);
   }
 
   /**
