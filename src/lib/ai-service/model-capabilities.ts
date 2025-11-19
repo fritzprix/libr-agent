@@ -297,7 +297,7 @@ export async function getContextWindow(
     }
   }
 
-  let contextWindow = 32768; // Default fallback (safe for most modern models)
+  let contextWindow: number;
 
   // TIER 1: OpenRouter metadata API (works for ALL providers except Ollama)
   if (provider !== AIServiceProvider.Ollama) {

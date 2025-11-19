@@ -65,23 +65,22 @@ export function selectMessagesWithinContext(
   const baseTokenLimit = maxTokens ?? Math.floor(modelInfo.contextWindow * 0.9);
 
   // Reserve tokens for system prompt and tools
-  let reservedTokens = 0;
-  if (options?.systemPrompt) {
-    reservedTokens += estimateTextTokens(options.systemPrompt);
-  }
-  if (options?.toolsJson) {
-    reservedTokens += estimateTextTokens(options.toolsJson);
-  }
+  const systemPromptTokens = options?.systemPrompt
+    ? estimateTextTokens(options.systemPrompt)
+    : 0;
+  const toolsTokens = options?.toolsJson
+    ? estimateTextTokens(options.toolsJson)
+    : 0;
+
+  const reservedTokens = systemPromptTokens + toolsTokens;
 
   const tokenLimit = Math.max(1024, baseTokenLimit - reservedTokens); // Keep at least 1K for messages
 
   logger.debug('Token budget allocation', {
     contextWindow: modelInfo.contextWindow,
     baseLimit: baseTokenLimit,
-    systemPromptTokens: options?.systemPrompt
-      ? estimateTextTokens(options.systemPrompt)
-      : 0,
-    toolsTokens: options?.toolsJson ? estimateTextTokens(options.toolsJson) : 0,
+    systemPromptTokens,
+    toolsTokens,
     reservedTokens,
     availableForMessages: tokenLimit,
   });
