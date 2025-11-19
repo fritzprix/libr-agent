@@ -1,56 +1,56 @@
 # Windows Command Execution Issue Analysis
 
-## 개요
+## Overview
 
-Windows 환경에서 명령어 실행 시 발생하는 문제들을 분석한 문서
+This document analyzes issues that occur when executing commands in the Windows environment.
 
-## 테스트 환경
+## Test Environment
 
 - **OS**: Windows
-- **환경**: PowerShell 기반 명령 실행
-- **테스트 일시**: 2025년 11월 18일
+- **Environment**: PowerShell-based command execution
+- **Test Date**: November 18, 2025
 
 ---
 
-## 🔍 근본 원인 분석 (Root Cause Analysis)
+## 🔍 Root Cause Analysis
 
-### 핵심 문제: 따옴표(Quote) 정규화 로직의 치명적 결함
+### Core Issue: Critical Flaw in Quote Normalization Logic
 
-**위치**: `src-tauri/src/mcp/builtin/workspace/code_execution.rs`의 `normalize_shell_command()` 함수
+**Location**: `normalize_shell_command()` function in `src-tauri/src/mcp/builtin/workspace/code_execution.rs`
 
-#### 문제가 발생하는 흐름
+#### Problem Flow
 
-1. **입력 명령어**: `python -c "print('Python inline test')"`
-   - 정상적으로 Python에 전달되어야 하는 명령어
+1. **Input Command**: `python -c "print('Python inline test')"`
+   - A command that should be passed normally to Python
 
-2. **정규화 과정**:
+2. **Normalization Process**:
 
    ```rust
-   // normalize_shell_command() 내부 로직
-   // Single quotes를 double quotes로 변환
+   // Logic inside normalize_shell_command()
+   // Convert single quotes to double quotes
    normalized = normalized.replace('\'', "\"");
    ```
 
-   **결과**: `python -c "print("Python inline test")"`
-   - 중첩된 따옴표가 모두 double quote로 변환됨
-   - Python 문법상 잘못된 명령어가 됨
+   **Result**: `python -c "print("Python inline test")"`
+   - All nested quotes are converted to double quotes
+   - Results in syntactically incorrect Python command
 
-3. **PowerShell 래핑**:
+3. **PowerShell Wrapping**:
 
    ```powershell
    powershell -Command "$ErrorActionPreference = 'Stop'; try { python -c `"print(`"Python inline test`")`" } catch { ... }"
    ```
 
-   - 이미 잘못 변환된 명령어가 PowerShell 이스케이프 처리됨
+   - The already incorrectly converted command is PowerShell-escaped
 
-4. **실행 결과**:
-   - Python 파서가 `print("Python inline test")` 대신
-   - `print("Python` 와 `inline` , `test")` 로 인식
-   - 구문 오류(SyntaxError) 발생
+4. **Execution Result**:
+   - Python parser recognizes `print("Python inline test")` as
+   - `print("Python` , `inline` , `test")` separately
+   - SyntaxError occurs
    - Exit code: 1
-   - **stderr 파일에는 238 bytes 기록되었으나, 읽기 시 0 bytes 반환**
+   - **238 bytes written to stderr file, but 0 bytes returned when reading**
 
-#### 로그 증거
+#### Log Evidence
 
 ```log
 [14:23:11] Windows command normalized: python -c "print('Python inline test')"
@@ -66,129 +66,129 @@ Windows 환경에서 명령어 실행 시 발생하는 문제들을 분석한 �
 [14:23:14] WARN: returned non-zero exit code 1 but both stdout and stderr are empty
 ```
 
-**핵심 모순**: stderr 파일에는 238 bytes가 기록되었으나, 읽을 때는 0 bytes로 나옴
+**Core Contradiction**: 238 bytes were written to the stderr file, but 0 bytes were read
 
 ---
 
-## 🐛 추가 발견된 문제들
+## 🐛 Additional Issues Discovered
 
-### 문제 1: stderr 파일 읽기 실패
+### Issue 1: Stderr File Read Failure
 
-**증거**:
+**Evidence**:
 
-- stderr 스트리밍: 238 bytes 기록됨
-- 파일 읽기 결과: 0 bytes
-- 실제 오류 메시지가 사용자에게 전달되지 않음
+- Stderr streaming: 238 bytes written
+- File read result: 0 bytes
+- Actual error message not delivered to user
 
-**추정 원인**:
+**Suspected Cause**:
 
-- 파일 핸들이 닫히기 전에 읽기 시도
-- 비동기 파일 I/O 타이밍 문제
-- 파일 flush() 미호출 가능성
+- Attempting to read file before file handle is closed
+- Asynchronous file I/O timing issue
+- Possible missing flush() call
 
-### 문제 2: 따옴표 정규화 로직의 설계 결함
+### Issue 2: Design Flaw in Quote Normalization Logic
 
-**현재 로직**:
+**Current Logic**:
 
 ```rust
 fn normalize_shell_command(input: &str) -> String {
     let mut normalized = input.to_string();
-    // Single quotes를 double quotes로 무조건 변환
+    // Unconditionally convert single quotes to double quotes
     normalized = normalized.replace('\'', "\"");
-    // ... 추가 처리
+    // ... additional processing
     normalized
 }
 ```
 
-**문제점**:
+**Problems**:
 
-1. **컨텍스트 무시**: 문자열 내부의 따옴표까지 모두 변환
-2. **중첩 따옴표 지원 불가**: `"print('test')"` → `"print("test")"`
-3. **언어별 문법 미고려**: Python, JavaScript 등의 문법이 깨짐
+1. **Ignores Context**: Converts all quotes including those inside strings
+2. **No Support for Nested Quotes**: `"print('test')"` → `"print("test")"`
+3. **Language-Specific Syntax Not Considered**: Breaks Python, JavaScript, etc. syntax
 
 ---
 
-## 📋 테스트 케이스 분석
+## 📋 Test Case Analysis
 
-### 성공 케이스
+### Successful Cases
 
 ```bash
-# 테스트 1: 간단한 echo 명령
+# Test 1: Simple echo command
 echo "Simple test"
-# 결과: 성공 - "Simple test"
+# Result: Success - "Simple test"
 
-# 테스트 2: 따옴표 없는 echo
+# Test 2: Echo without quotes
 echo Simple test
-# 결과: 성공 - "Simple test"
+# Result: Success - "Simple test"
 
-# 테스트 3: dir 명령
-# 결과: 성공 - 디렉토리 목록 출력
+# Test 3: dir command
+# Result: Success - Directory listing displayed
 ```
 
-### 2. Python 명령 실행 (실패)
+### Python Command Execution (Failed)
 
 ```bash
-# 테스트 4: Get-Command python
+# Test 4: Get-Command python
 Get-Command python
-# 결과: 성공 - Python 경로 확인 가능
+# Result: Success - Python path confirmed
 # Output:
 # CommandType     Name                                               Version    Source
 # -----------     ----                                               -------    ------
 # Application     python.exe                                         3.12.61... C:\Python312\python.exe
 
-# 테스트 5: 직접 경로로 Python 실행
+# Test 5: Python execution with direct path
 C:\Python312\python.exe -c "print('Direct path test')"
-# 결과: 실패 - Exit code 1, 출력 없음
+# Result: Failed - Exit code 1, no output
 
-# 테스트 6: PowerShell 변수로 Python 실행
+# Test 6: Python execution using PowerShell variable
 $PYTHON_PATH = (Get-Command python).Source; & $PYTHON_PATH -c "print('Test using PowerShell call operator')"
-# 결과: 실패 - Exit code 1
+# Result: Failed - Exit code 1
 ```
 
-### 3. PowerShell 명령 실행 (실패)
+### PowerShell Command Execution (Failed)
 
 ```bash
-# 테스트 7: 복잡한 PowerShell 명령
+# Test 7: Complex PowerShell command
 powershell -Command "Write-Host 'PowerShell direct command'; $python = Get-Command python; Write-Host \"Python path: $python\"; & $python.Source -c \"print('Python test')\""
-# 결과: 실패 - Exit code 1
+# Result: Failed - Exit code 1
 
-# 테스트 8: 간소화된 PowerShell
+# Test 8: Simplified PowerShell
 powershell -NoProfile -NonInteractive -Command "Write-Host 'PowerShell direct'"
-# 결과: 실패 - Exit code 1
+# Result: Failed - Exit code 1
 ```
 
 ---
 
-## 🏗️ 현재 아키텍처 분석 (As-Is)
+## 🏗️ Current Architecture Analysis (As-Is)
 
-### Async 모드와 Poll Process 상호작용 구조
+### Async Mode and Poll Process Interaction Structure
 
-#### 1. 데이터 구조 (`terminal_manager.rs`)
+#### 1. Data Structure (`terminal_manager.rs`)
 
 ```rust
 pub enum ProcessStatus {
-    Starting,  // 프로세스 생성 중
-    Running,   // 실행 중
-    Finished,  // 정상 종료 (exit_code == 0)
-    Failed,    // 오류 종료 (exit_code != 0)
-    Killed,    // 사용자/시스템에 의해 종료
+    Starting,  // Process being created
+    Running,   // Executing
+    Finished,  // Normal termination (exit_code == 0)
+    Failed,    // Error termination (exit_code != 0)
+    Killed,    // Terminated by user/system
 }
 
 pub struct ProcessEntry {
-    pub id: String,                    // cuid2 생성 프로세스 ID
-    pub session_id: String,            // 세션 격리
-    pub command: String,               // 실행된 명령어
+    pub id: String,                    // cuid2-generated process ID
+    pub session_id: String,            // Session isolation
+    pub command: String,               // Executed command
     pub status: ProcessStatus,
-    pub pid: Option<u32>,              // OS 프로세스 ID
+    pub pid: Option<u32>,              // OS process ID
     pub exit_code: Option<i32>,
     pub started_at: DateTime<Utc>,
     pub finished_at: Option<DateTime<Utc>>,
-    pub stdout_path: String,           // 파일: workspace/tmp/process_{id}/stdout
-    pub stderr_path: String,           // 파일: workspace/tmp/process_{id}/stderr
-    pub stdout_size: u64,              // 파일 크기 (bytes)
+    pub stdout_path: String,           // File: workspace/tmp/process_{id}/stdout
+    pub stderr_path: String,           // File: workspace/tmp/process_{id}/stderr
+    pub stdout_size: u64,              // File size (bytes)
     pub stderr_size: u64,
 
-    // Poll 추적 (과도한 폴링 감지)
+    // Poll tracking (excessive polling detection)
     pub last_poll_at: Option<DateTime<Utc>>,
     pub poll_count: u32,
     pub consecutive_running_polls: u32,
@@ -196,12 +196,12 @@ pub struct ProcessEntry {
 }
 ```
 
-#### 2. Async 실행 흐름
+#### 2. Async Execution Flow
 
-1. **동시 실행 제한**: 세션당 최대 20개 프로세스
-2. **프로세스 ID 생성**: `cuid2::create_id()` → `workspace/tmp/process_{id}/`
-3. **Registry 등록**: `status: Starting`, stdout/stderr 경로 저장
-4. **백그라운드 태스크 생성**:
+1. **Concurrent Execution Limit**: Maximum 20 processes per session
+2. **Process ID Generation**: `cuid2::create_id()` → `workspace/tmp/process_{id}/`
+3. **Registry Registration**: `status: Starting`, save stdout/stderr paths
+4. **Background Task Creation**:
    ```rust
    tokio::spawn(async move {
        entry.status = Running;
@@ -210,160 +210,125 @@ pub struct ProcessEntry {
        entry.stdout_size = file_metadata.len();
    });
    ```
-5. **즉시 응답**: `process_id` 반환, "Use poll_process to check status"
+5. **Immediate Response**: Return `process_id`, "Use poll_process to check status"
 
-#### 3. Poll Process 메커니즘
+#### 3. Poll Process Mechanism
 
-**MCP 도구**: `poll_process(process_id, tail?: {src, n})`
+**MCP Tool**: `poll_process(process_id, tail?: {src, n})`
 
-**동작 흐름**:
+**Operation Flow**:
 
-1. Registry에서 `ProcessEntry` 조회 (세션 검증)
-2. Poll 추적 업데이트:
+1. Query `ProcessEntry` from Registry (session validation)
+2. Update poll tracking:
    - `poll_count++`
-   - `Running` 상태면 `consecutive_running_polls++`
-   - Threshold(기본 5회) 초과 시 가이던스 메시지 추가
-3. 응답 생성:
+   - If `Running` status: `consecutive_running_polls++`
+   - Add guidance message if threshold (default 5) exceeded
+3. Generate response:
    - `status`, `pid`, `exit_code`, `stdout_size`, `stderr_size`
-   - 선택적 `tail`: `tail_lines(file_path, n)` 호출
-4. 파일 기반 출력 읽기:
+   - Optional `tail`: Call `tail_lines(file_path, n)`
+4. File-based output reading:
    ```rust
-   // tail_lines()는 파일에서 마지막 N줄 읽기
-   // 프로세스 실행 중에도 호출 가능하지만 flush 보장 없음
+   // tail_lines() reads last N lines from file
+   // Can be called while process is running but flush not guaranteed
    ```
 
-#### 4. 파일 스트리밍 구조 (`spawn_and_stream_to_files`)
+#### 4. File Streaming Structure (`spawn_and_stream_to_files`)
 
 ```rust
-// stdout/stderr를 파일로 스트리밍
+// Stream stdout/stderr to files
 tokio::spawn(async move {
     let mut file = File::create(stdout_path).await?;
     loop {
         let n = stdout.read(&mut buf).await?;
         if n == 0 { break; }
         file.write_all(&buf[..n]).await?;
-        // ⚠️ 문제: flush() 없음!
+        // ⚠️ Problem: No flush()!
     }
 });
 
-// 프로세스 종료 대기
+// Wait for process termination
 child.wait().await?;
 stdout_handle.await?;
 stderr_handle.await?;
 
-// ⚠️ 문제: 스트리밍 직후 파일 읽기
-// 파일 핸들이 drop되기 전에 읽기 시도
+// ⚠️ Problem: File read immediately after streaming
+// Attempting to read before file handle is dropped
 let stdout = tokio::fs::read_to_string(&stdout_path).await?;
 ```
 
-### 핵심 문제점
+### Core Problems
 
-#### 1. **Sync 모드의 stderr 읽기 버그**
+#### 1. **Sync Mode Stderr Read Bug**
 
-- 스트리밍 완료 후 즉시 파일 읽기 → flush 보장 없음
-- 결과: 238 bytes 쓰여졌으나 0 bytes 읽힘
+- Immediate file read after streaming completion → no flush guarantee
+- Result: 238 bytes written but 0 bytes read
 
-#### 2. **Long-running 프로세스 지원 부족**
+#### 2. **Lack of Long-running Process Support**
 
-- Async 모드는 파일 기반 스트리밍
-- `poll_process`는 파일에서 읽지만 실시간 flush 보장 없음
-- 서버/워처는 출력이 지연되거나 누락될 수 있음
+- Async mode uses file-based streaming
+- `poll_process` reads from file but no real-time flush guarantee
+- Server/watcher output may be delayed or missing
 
-#### 3. **따옴표 정규화 버그**
+#### 3. **Quote Normalization Bug**
 
-- `normalize_shell_command()`가 `'` → `"` 일괄 변환
-- Python `-c "print('test')"` → `-c "print("test")"` 구문 오류
+- `normalize_shell_command()` converts `'` → `"` indiscriminately
+- Python `-c "print('test')"` → `-c "print("test")"` syntax error
 
-### 현재 지원 범위
+### Current Support Scope
 
-| 시나리오           | Sync | Async | 비고             |
-| ------------------ | ---- | ----- | ---------------- |
-| 단순 명령어 (echo) | ✅   | ✅    | 정상             |
-| Python inline      | ❌   | ❌    | 따옴표 버그      |
-| 30초 이하 스크립트 | ⚠️   | ✅    | Sync stderr 버그 |
-| 30초 이상 작업     | ❌   | ✅    | Sync timeout     |
-| 서버 (npm run dev) | ❌   | ⚠️    | 실시간 로그 부족 |
-| Watch (vite)       | ❌   | ⚠️    | 실시간 로그 부족 |
-| 대화형 (REPL)      | ❌   | ❌    | stdin 미지원     |
-
----
-
-## 📋 테스트 케이스 분석
-
-### ✅ 성공 케이스
-
-```bash
-# 1. 간단한 echo
-echo "Hello World"
-# 결과: 성공 - "Hello\r\nWorld"
-
-# 2. Python 버전 확인
-python --version
-# 결과: 성공 - "Python 3.12.6"
-
-# 3. where 명령
-where python
-# 결과: 성공 (no output)
-```
-
-### ❌ 실패 케이스
-
-```bash
-# 모든 Python -c 명령이 실패
-python -c "print('Python inline test')"
-python -c "print('Test with quotes'); print('Second line')"
-C:\Python312\python.exe -c "print('Direct path test')"
-
-# 공통점:
-# - 중첩된 따옴표 사용
-# - Exit code 1
-# - stderr 238 bytes 기록, 0 bytes 읽힘
-# - 실제 오류 메시지 전달 안 됨
-```
+| Scenario               | Sync | Async | Notes                  |
+| ---------------------- | ---- | ----- | ---------------------- |
+| Simple commands (echo) | ✅   | ✅    | Normal                 |
+| Python inline          | ❌   | ❌    | Quote bug              |
+| Scripts under 30s      | ⚠️   | ✅    | Sync stderr bug        |
+| Tasks over 30s         | ❌   | ✅    | Sync timeout           |
+| Servers (npm run dev)  | ❌   | ⚠️    | Lack of real-time logs |
+| Watch (vite)           | ❌   | ⚠️    | Lack of real-time logs |
+| Interactive (REPL)     | ❌   | ❌    | stdin not supported    |
 
 ---
 
-## 💡 해결 방안
+## 💡 Solutions
 
-### 단기 해결책 (Immediate Fix)
+### Short-term Solution (Immediate Fix)
 
-#### 1. 따옴표 정규화 로직 제거 또는 개선
+#### 1. Remove or Improve Quote Normalization Logic
 
-**Option A: 정규화 비활성화**
+**Option A: Disable Normalization**
 
 ```rust
 fn normalize_shell_command(input: &str) -> String {
-    // Windows PowerShell은 따옴표 처리 능력이 우수함
-    // 불필요한 정규화 제거
+    // Windows PowerShell has excellent quote handling capability
+    // Remove unnecessary normalization
     input.to_string()
 }
 ```
 
-**Option B: 스마트 정규화 (컨텍스트 인식)**
+**Option B: Smart Normalization (Context-Aware)**
 
 ```rust
 fn normalize_shell_command(input: &str) -> String {
-    // 문자열 리터럴 내부의 따옴표는 보존
-    // 외부 따옴표만 정규화
+    // Preserve quotes inside string literals
+    // Normalize only external quotes
     smart_quote_normalization(input)
 }
 ```
 
-#### 2. stderr 파일 읽기 동기화 수정
+#### 2. Fix Stderr File Read Synchronization
 
-**현재 아키텍처의 근본적 한계**:
+**Fundamental Limitation of Current Architecture**:
 
-- 파일 기반 I/O는 프로세스 종료 시점에만 완전한 출력을 보장
-- Long-running processes (서버, watch 모드)는 실시간 출력이 필요
-- 현재 설계는 short-lived 명령어만 지원 가능
+- File-based I/O only guarantees complete output when process terminates
+- Long-running processes (servers, watch mode) need real-time output
+- Current design only supports short-lived commands
 
-**Option A: 하이브리드 접근 (Short-lived + Long-running 분리)**
+**Option A: Hybrid Approach (Separate Short-lived + Long-running)**
 
 ```rust
 #[derive(Debug)]
 enum ExecutionMode {
-    Sync,       // 프로세스 종료 대기 (기존 방식)
-    Background, // 백그라운드 실행 (새로운 방식)
+    Sync,       // Wait for process termination (existing method)
+    Background, // Background execution (new method)
 }
 
 async fn execute_command(
@@ -372,13 +337,13 @@ async fn execute_command(
 ) -> Result<CommandOutput> {
     match mode {
         ExecutionMode::Sync => {
-            // 기존: 파일 기반, 프로세스 종료 대기
+            // Existing: file-based, wait for process termination
             let output = spawn_and_wait(cmd).await?;
-            // 프로세스 종료 후 파일 읽기 - sync 보장됨
+            // Read file after process termination - sync guaranteed
             Ok(output)
         }
         ExecutionMode::Background => {
-            // 신규: 실시간 스트리밍, 프로세스 핸들 반환
+            // New: real-time streaming, return process handle
             let handle = spawn_background(cmd).await?;
             Ok(CommandOutput::Background {
                 pid: handle.id(),
@@ -389,7 +354,7 @@ async fn execute_command(
 }
 ```
 
-**Option B: 실시간 스트리밍 아키텍처 (권장)**
+**Option B: Real-time Streaming Architecture (Recommended)**
 
 ```rust
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -412,7 +377,7 @@ async fn spawn_with_streaming(cmd: &str) -> Result<ProcessHandle> {
     let (stdout_tx, stdout_rx) = broadcast::channel(1000);
     let (stderr_tx, stderr_rx) = broadcast::channel(1000);
 
-    // stdout 실시간 스트리밍
+    // Real-time stdout streaming
     if let Some(stdout) = child.stdout.take() {
         let stdout_tx = stdout_tx.clone();
         tokio::spawn(async move {
@@ -424,7 +389,7 @@ async fn spawn_with_streaming(cmd: &str) -> Result<ProcessHandle> {
         });
     }
 
-    // stderr 실시간 스트리밍
+    // Real-time stderr streaming
     if let Some(stderr) = child.stderr.take() {
         let stderr_tx = stderr_tx.clone();
         tokio::spawn(async move {
@@ -444,7 +409,7 @@ async fn spawn_with_streaming(cmd: &str) -> Result<ProcessHandle> {
     })
 }
 
-// MCP 프로토콜 레벨에서 스트리밍 지원
+// MCP protocol-level streaming support
 #[tauri::command]
 async fn stream_process_output(
     pid: u32,
@@ -462,16 +427,16 @@ async fn stream_process_output(
             Ok(lines)
         }
         StreamType::Stderr => {
-            // 동일한 패턴
+            // Same pattern
         }
     }
 }
 ```
 
-**Option C: 파일 기반 + Tail 패턴**
+**Option C: File-based + Tail Pattern**
 
 ```rust
-// 기존 파일 기반 유지하되, tail -f 방식으로 읽기
+// Maintain existing file-based approach, but read tail -f style
 async fn spawn_and_tail(cmd: &str) -> Result<ProcessHandle> {
     let stdout_path = create_temp_file("stdout");
     let stderr_path = create_temp_file("stderr");
@@ -481,7 +446,7 @@ async fn spawn_and_tail(cmd: &str) -> Result<ProcessHandle> {
             cmd, stdout_path, stderr_path)])
         .spawn()?;
 
-    // 파일을 주기적으로 읽는 태스크
+    // Task to periodically read file
     tokio::spawn(async move {
         let mut last_pos = 0;
         loop {
@@ -490,13 +455,13 @@ async fn spawn_and_tail(cmd: &str) -> Result<ProcessHandle> {
             if let Ok(content) = tokio::fs::read_to_string(&stdout_path).await {
                 if content.len() > last_pos {
                     let new_content = &content[last_pos..];
-                    // 새 내용 전송
+                    // Send new content
                     OUTPUT_CHANNEL.send(new_content).await;
                     last_pos = content.len();
                 }
             }
 
-            // 프로세스 종료 확인
+            // Check process termination
             if child.try_wait()?.is_some() {
                 break;
             }
@@ -507,12 +472,12 @@ async fn spawn_and_tail(cmd: &str) -> Result<ProcessHandle> {
 }
 ```
 
-### 중기 해결책 (Architecture Improvement)
+### Mid-term Solution (Architecture Improvement)
 
-#### 1. 실행 모드 분리 (Sync vs Background)
+#### 1. Separate Execution Modes (Sync vs Background)
 
 ```rust
-// MCP 도구 파라미터에 execution_mode 추가
+// Add execution_mode to MCP tool parameters
 #[derive(Deserialize)]
 struct ExecuteCommandArgs {
     command: String,
@@ -520,11 +485,11 @@ struct ExecuteCommandArgs {
     execution_mode: ExecutionMode,  // "sync" | "background"
 }
 
-// Sync 모드: 기존 동작, 프로세스 종료 대기
-// Background 모드: 프로세스 핸들 반환, 실시간 로그 스트리밍
+// Sync mode: existing behavior, wait for process termination
+// Background mode: return process handle, real-time log streaming
 ```
 
-#### 2. 프로세스 관리 레이어 도입
+#### 2. Introduce Process Management Layer
 
 ```rust
 struct ProcessManager {
@@ -540,64 +505,64 @@ impl ProcessManager {
     }
 
     async fn get_output(&self, pid: u32, stream: StreamType) -> Result<String> {
-        // 실시간 또는 누적 출력 반환
+        // Return real-time or accumulated output
     }
 
     async fn stop(&self, pid: u32) -> Result<()> {
-        // 프로세스 종료
+        // Terminate process
     }
 }
 ```
 
-#### 3. MCP 도구 확장
+#### 3. Extend MCP Tools
 
 ```rust
-// 기존: execute_windows_cmd (sync만 지원)
-// 신규 추가:
-// - start_background_process: 백그라운드 프로세스 시작
-// - get_process_output: 프로세스 출력 조회
-// - stop_process: 프로세스 중단
-// - list_processes: 실행 중인 프로세스 목록
+// Existing: execute_windows_cmd (sync only)
+// New additions:
+// - start_background_process: Start background process
+// - get_process_output: Query process output
+// - stop_process: Stop process
+// - list_processes: List running processes
 ```
 
-### 장기 해결책 (Long-term Solution)
+### Long-term Solution
 
-#### 1. 통합 프로세스 실행 아키텍처
+#### 1. Unified Process Execution Architecture
 
 ```rust
-// 모든 실행 시나리오를 지원하는 통합 시스템
+// Unified system supporting all execution scenarios
 pub struct UnifiedProcessExecutor {
-    // Short-lived 명령어: 즉시 결과 반환
+    // Short-lived commands: return results immediately
     sync_executor: SyncExecutor,
 
-    // Long-running 프로세스: 실시간 스트리밍
+    // Long-running processes: real-time streaming
     background_executor: BackgroundExecutor,
 
-    // 대화형 프로세스: stdin/stdout 양방향 통신
+    // Interactive processes: bidirectional stdin/stdout communication
     interactive_executor: InteractiveExecutor,
 }
 
-// 사용 예시
+// Usage example
 match command_pattern {
     "npm run dev" | "python -m http.server" => {
-        // 백그라운드 모드로 자동 전환
+        // Automatically switch to background mode
         executor.background_executor.spawn(cmd).await
     }
     "python -c \"...\"" | "echo ..." => {
-        // Sync 모드
+        // Sync mode
         executor.sync_executor.run(cmd).await
     }
     "python" | "node" => {
-        // 대화형 모드 (REPL)
+        // Interactive mode (REPL)
         executor.interactive_executor.start(cmd).await
     }
 }
 ```
 
-#### 2. 실시간 스트리밍 프로토콜
+#### 2. Real-time Streaming Protocol
 
 ```rust
-// WebSocket 기반 실시간 출력 스트리밍
+// WebSocket-based real-time output streaming
 #[tauri::command]
 async fn subscribe_process_output(
     window: tauri::Window,
@@ -634,10 +599,10 @@ async fn subscribe_process_output(
 }
 ```
 
-#### 3. 언어별 전용 실행 환경
+#### 3. Language-Specific Execution Environments
 
 ```rust
-// Python, Node.js 등 주요 런타임의 최적화된 실행
+// Optimized execution for major runtimes like Python, Node.js
 trait LanguageRuntime {
     async fn execute_inline(&self, code: &str) -> Result<Output>;
     async fn start_repl(&self) -> Result<ReplSession>;
@@ -646,16 +611,16 @@ trait LanguageRuntime {
 
 struct PythonRuntime {
     interpreter_path: PathBuf,
-    // 따옴표 처리 로직이 언어 특성에 맞게 구현됨
+    // Quote handling logic implemented to match language characteristics
 }
 
 impl LanguageRuntime for PythonRuntime {
     async fn execute_inline(&self, code: &str) -> Result<Output> {
-        // python -c "..." 를 올바르게 처리
-        // PowerShell 래핑 없이 직접 실행
+        // Properly handle python -c "..."
+        // Execute directly without PowerShell wrapping
         let output = Command::new(&self.interpreter_path)
             .arg("-c")
-            .arg(code)  // 따옴표 정규화 없음!
+            .arg(code)  // No quote normalization!
             .output()
             .await?;
         Ok(output)
@@ -663,21 +628,21 @@ impl LanguageRuntime for PythonRuntime {
 }
 ```
 
-#### 4. AI 에이전트 친화적 인터페이스
+#### 4. AI Agent-Friendly Interface
 
 ```typescript
-// Frontend에서 사용하기 쉬운 추상화
+// Easy-to-use abstraction on frontend
 class ProcessExecutor {
-  // 단순 명령어 실행
+  // Execute simple command
   async run(command: string): Promise<CommandResult> {
     return invoke('execute_command', { command, mode: 'sync' });
   }
 
-  // 서버/워처 시작
+  // Start server/watcher
   async startServer(command: string): Promise<ProcessHandle> {
     const handle = await invoke('start_background_process', { command });
 
-    // 실시간 로그 구독
+    // Subscribe to real-time logs
     await listen(`process:${handle.pid}:stdout`, (event) => {
       console.log('[STDOUT]', event.payload);
     });
@@ -685,7 +650,7 @@ class ProcessExecutor {
     return handle;
   }
 
-  // 대화형 세션
+  // Interactive session
   async startRepl(language: 'python' | 'node'): Promise<ReplSession> {
     return new ReplSession(language);
   }
@@ -694,94 +659,94 @@ class ProcessExecutor {
 
 ---
 
-## 🎯 권장 조치 사항
+## 🎯 Recommended Actions
 
-### 즉시 조치 (P0 - Critical)
+### Immediate Actions (P0 - Critical)
 
-1. **`normalize_shell_command()` 함수 비활성화**
-   - 위치: `src-tauri/src/mcp/builtin/workspace/code_execution.rs`
-   - 단순히 input을 그대로 반환하도록 수정
+1. **Disable `normalize_shell_command()` function**
+   - Location: `src-tauri/src/mcp/builtin/workspace/code_execution.rs`
+   - Simply modify to return input as-is
 
-2. **Short-lived 명령어에 대한 stderr 동기화 수정**
-   - 프로세스가 종료될 때까지 대기
-   - 프로세스 종료 후 파일 읽기 (자동으로 sync 보장됨)
-   - 현재 버그: 프로세스 실행 중에 파일을 읽으려고 시도
+2. **Fix stderr synchronization for short-lived commands**
+   - Wait until process terminates
+   - Read file after process termination (automatically sync guaranteed)
+   - Current bug: attempting to read file while process is running
 
-### 단기 조치 (P1 - High)
+### Short-term Actions (P1 - High)
 
-1. **Python inline 실행 직접 구현**
-   - PowerShell 래핑 제거
-   - `python.exe -c "code"` 직접 실행
-   - 따옴표 정규화 완전히 제거
+1. **Implement Python inline execution directly**
+   - Remove PowerShell wrapping
+   - Execute `python.exe -c "code"` directly
+   - Completely remove quote normalization
 
-2. **실행 모드 감지 로직 추가**
-   - 명령어 패턴으로 long-running 여부 판단
-   - 서버/워처 명령어 자동 감지: `npm run dev`, `vite`, `python -m http.server` 등
-   - Background 모드로 자동 전환
+2. **Add execution mode detection logic**
+   - Determine long-running status by command pattern
+   - Auto-detect server/watcher commands: `npm run dev`, `vite`, `python -m http.server`, etc.
+   - Auto-switch to background mode
 
-3. **에러 메시지 전달 개선**
-   - Sync 모드: 프로세스 종료 후 stderr 읽기
-   - Background 모드: 실시간 stderr 스트리밍
+3. **Improve error message delivery**
+   - Sync mode: read stderr after process termination
+   - Background mode: real-time stderr streaming
 
-### 중기 조치 (P2 - Medium)
+### Mid-term Actions (P2 - Medium)
 
-1. **프로세스 관리 시스템 구축**
-   - `ProcessManager` 글로벌 인스턴스 생성
-   - PID 기반 프로세스 추적
-   - 실행 중인 프로세스 상태 관리
+1. **Build process management system**
+   - Create global `ProcessManager` instance
+   - Track processes by PID
+   - Manage running process state
 
-2. **Background 실행 지원**
-   - MCP 도구 추가: `start_background_process`, `get_process_output`, `stop_process`
-   - 실시간 stdout/stderr 스트리밍 (broadcast channel 사용)
-   - 프로세스 생명주기 관리
+2. **Support background execution**
+   - Add MCP tools: `start_background_process`, `get_process_output`, `stop_process`
+   - Real-time stdout/stderr streaming (using broadcast channel)
+   - Process lifecycle management
 
-3. **통합 테스트 추가**
-   - Short-lived 명령어 테스트
-   - Long-running 프로세스 테스트 (서버 시작/중지)
-   - 실시간 출력 스트리밍 테스트
-   - CI에서 Windows 환경 테스트
-
----
-
-## 📊 영향 범위
-
-### 영향받는 기능
-
-- ✅ 기본 Windows 명령 (dir, echo): **정상**
-- ❌ Python inline 실행: **완전 실패**
-- ❌ Node.js inline 실행: **실패 예상**
-- ❌ 중첩 따옴표 사용 명령: **실패**
-- ⚠️ PowerShell 스크립트: **부분 실패 가능**
-
-### 영향받는 사용자
-
-- AI 에이전트의 코드 실행 기능 사용자
-- Python/Node.js 스크립트 실행이 필요한 워크플로우
-- 복잡한 명령어 체인 사용자
+3. **Add integration tests**
+   - Test short-lived commands
+   - Test long-running processes (server start/stop)
+   - Test real-time output streaming
+   - Test Windows environment in CI
 
 ---
 
-## 🔬 추가 조사 필요 사항
+## 📊 Impact Scope
 
-1. **stderr 파일 읽기 실패 원인 규명**
-   - Windows 파일 시스템 동기화 이슈?
-   - tokio async I/O 버그?
-   - 파일 핸들 타이밍 문제?
+### Affected Features
 
-2. **다른 플랫폼에서의 동작 확인**
-   - Unix/Linux에서는 정상 동작하는지?
-   - macOS에서의 테스트 결과는?
+- ✅ Basic Windows commands (dir, echo): **Normal**
+- ❌ Python inline execution: **Complete failure**
+- ❌ Node.js inline execution: **Expected failure**
+- ❌ Commands using nested quotes: **Failure**
+- ⚠️ PowerShell scripts: **Partial failures possible**
 
-3. **PowerShell 버전별 차이**
+### Affected Users
+
+- Users of AI agent code execution features
+- Workflows requiring Python/Node.js script execution
+- Users of complex command chains
+
+---
+
+## 🔬 Further Investigation Needed
+
+1. **Identify cause of stderr file read failure**
+   - Windows file system synchronization issue?
+   - tokio async I/O bug?
+   - File handle timing problem?
+
+2. **Verify behavior on other platforms**
+   - Does it work normally on Unix/Linux?
+   - macOS test results?
+
+3. **PowerShell version differences**
    - PowerShell 5.1 vs 7.x
-   - `-Command` vs `-File` 옵션 비교
+   - Compare `-Command` vs `-File` options
 
 ---
 
-## 참고 사항
+## References
 
-- 테스트 일자: 2025년 11월 18일
-- 환경: Windows PowerShell 기반
-- 실행 방식: builtin_workspace\_\_execute_windows_cmd 사용
-- 로그 파일: `log.txt` (1811 lines)
-- 진단 로그 추가됨 (2025-11-18)
+- Test date: November 18, 2025
+- Environment: Windows PowerShell-based
+- Execution method: Using builtin_workspace\_\_execute_windows_cmd
+- Log file: `log.txt` (1811 lines)
+- Diagnostic logs added (2025-11-18)

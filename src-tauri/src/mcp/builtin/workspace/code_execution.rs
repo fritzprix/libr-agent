@@ -349,6 +349,8 @@ impl WorkspaceServer {
                     Ok(file) => {
                         let mut writer = tokio::io::BufWriter::new(file);
                         let mut total_bytes = 0u64;
+                        let mut lines_since_flush = 0;
+                        const FLUSH_INTERVAL: usize = 10;
 
                         loop {
                             tokio::select! {
@@ -371,10 +373,14 @@ impl WorkspaceServer {
                                             // 1. Send to broadcast channel + buffer
                                             streaming_clone.push_stdout(line.clone()).await;
 
-                                            // 2. Write to file with explicit flush
+                                            // 2. Write to file with periodic flush
                                             if writer.write_all(line.as_bytes()).await.is_ok() {
                                                 let _ = writer.write_all(b"\n").await;
-                                                let _ = writer.flush().await;
+                                                lines_since_flush += 1;
+                                                if lines_since_flush >= FLUSH_INTERVAL {
+                                                    let _ = writer.flush().await;
+                                                    lines_since_flush = 0;
+                                                }
                                             }
                                         }
                                         Ok(None) => break, // EOF
@@ -418,6 +424,8 @@ impl WorkspaceServer {
                     Ok(file) => {
                         let mut writer = tokio::io::BufWriter::new(file);
                         let mut total_bytes = 0u64;
+                        let mut lines_since_flush = 0;
+                        const FLUSH_INTERVAL: usize = 10;
 
                         loop {
                             tokio::select! {
@@ -440,10 +448,14 @@ impl WorkspaceServer {
                                             // 1. Send to broadcast channel + buffer
                                             streaming_clone.push_stderr(line.clone()).await;
 
-                                            // 2. Write to file with explicit flush
+                                            // 2. Write to file with periodic flush
                                             if writer.write_all(line.as_bytes()).await.is_ok() {
                                                 let _ = writer.write_all(b"\n").await;
-                                                let _ = writer.flush().await;
+                                                lines_since_flush += 1;
+                                                if lines_since_flush >= FLUSH_INTERVAL {
+                                                    let _ = writer.flush().await;
+                                                    lines_since_flush = 0;
+                                                }
                                             }
                                         }
                                         Ok(None) => break, // EOF
