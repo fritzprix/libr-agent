@@ -7,6 +7,20 @@ import { AIServiceProvider } from './ai-service/types';
 const logger = getLogger('token-utils');
 
 /**
+ * Estimates the token count for arbitrary text using the `cl100k_base`
+ * Byte-Pair Encoding (BPE), which is a common encoding for many modern LLMs.
+ *
+ * @param text The text to estimate the token count for.
+ * @returns The estimated number of tokens.
+ */
+export function estimateTextTokens(text: string): number {
+  const encoding = get_encoding('cl100k_base');
+  const tokens = encoding.encode(text);
+  encoding.free();
+  return tokens.length;
+}
+
+/**
  * Estimates the token count for a given message using the `cl100k_base`
  * Byte-Pair Encoding (BPE), which is a common encoding for many modern LLMs.
  *
@@ -15,10 +29,7 @@ const logger = getLogger('token-utils');
  */
 export function estimateTokensBPE(message: Message): number {
   const text = `${message.role}: ${message.content ?? ''}`;
-  const encoding = get_encoding('cl100k_base');
-  const tokens = encoding.encode(text);
-  encoding.free();
-  return tokens.length;
+  return estimateTextTokens(text);
 }
 
 /**
@@ -32,6 +43,8 @@ export function estimateTokensBPE(message: Message): number {
  * @param providerId The ID of the LLM provider.
  * @param modelId The ID of the model.
  * @param maxTokens An optional maximum number of tokens to include.
+ * @param options.systemPrompt Optional system prompt to account for in token budget.
+ * @param options.toolsJson Optional tools JSON string to account for in token budget.
  * @returns A new array of messages that fits within the context window.
  */
 export function selectMessagesWithinContext(
@@ -39,6 +52,7 @@ export function selectMessagesWithinContext(
   providerId: string,
   modelId: string,
   maxTokens?: number,
+  options?: { systemPrompt?: string; toolsJson?: string },
 ): Message[] {
   const modelInfo = llmConfigManager.getModel(providerId, modelId);
   if (!modelInfo) {
@@ -48,7 +62,28 @@ export function selectMessagesWithinContext(
     return messages;
   }
 
-  const tokenLimit = maxTokens ?? Math.floor(modelInfo.contextWindow * 0.9);
+  const baseTokenLimit = maxTokens ?? Math.floor(modelInfo.contextWindow * 0.9);
+
+  // Reserve tokens for system prompt and tools
+  const systemPromptTokens = options?.systemPrompt
+    ? estimateTextTokens(options.systemPrompt)
+    : 0;
+  const toolsTokens = options?.toolsJson
+    ? estimateTextTokens(options.toolsJson)
+    : 0;
+
+  const reservedTokens = systemPromptTokens + toolsTokens;
+
+  const tokenLimit = Math.max(1024, baseTokenLimit - reservedTokens); // Keep at least 1K for messages
+
+  logger.debug('Token budget allocation', {
+    contextWindow: modelInfo.contextWindow,
+    baseLimit: baseTokenLimit,
+    systemPromptTokens,
+    toolsTokens,
+    reservedTokens,
+    availableForMessages: tokenLimit,
+  });
   let totalTokens = 0;
   const selected: Message[] = [];
 

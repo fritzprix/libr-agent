@@ -77,7 +77,8 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
       const supportsDynamic =
         provider === AIServiceProvider.Ollama ||
         provider === AIServiceProvider.OpenAI ||
-        provider === AIServiceProvider.Anthropic;
+        provider === AIServiceProvider.Anthropic ||
+        provider === AIServiceProvider.Gemini;
 
       if (!supportsDynamic) return {};
 

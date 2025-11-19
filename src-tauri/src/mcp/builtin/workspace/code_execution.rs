@@ -41,6 +41,22 @@ impl WorkspaceServer {
 
             // Log the full command for debugging Windows execution issues
             info!("Windows process command debug: {:?}", cmd.as_std());
+
+            // Also log important environment variables that affect Windows process
+            // execution (PATH, SystemRoot, COMSPEC, PSModulePath, ProgramFiles).
+            // We avoid logging full PATH contents to reduce noise; instead log
+            // lengths and key variable presence.
+            let path_len = std::env::var("PATH").map(|p| p.len()).unwrap_or(0);
+            let system_root =
+                std::env::var("SystemRoot").unwrap_or_else(|_| "<not-set>".to_string());
+            let comspec = std::env::var("COMSPEC").unwrap_or_else(|_| "<not-set>".to_string());
+            let psmodulepath =
+                std::env::var("PSModulePath").unwrap_or_else(|_| "<not-set>".to_string());
+            let program_files =
+                std::env::var("ProgramFiles").unwrap_or_else(|_| "<not-set>".to_string());
+
+            info!("Windows env: PATH.len={}, SystemRoot={}, COMSPEC={}, PSModulePath.present={}, ProgramFiles={}",
+                path_len, system_root, comspec, !psmodulepath.is_empty(), program_files);
         }
 
         let mut child = cmd.spawn().map_err(|e| {
@@ -62,7 +78,8 @@ impl WorkspaceServer {
             let label = process_label.clone();
             let cancel_clone = cancel_token.clone();
             Some(tokio::spawn(async move {
-                if let Ok(mut file) = tokio::fs::File::create(&stdout_path_clone).await {
+                if let Ok(file) = tokio::fs::File::create(&stdout_path_clone).await {
+                    let mut writer = tokio::io::BufWriter::new(file);
                     info!(
                         "Process {} stdout streaming started to {:?}",
                         label, stdout_path_clone
@@ -86,12 +103,12 @@ impl WorkspaceServer {
                                                 "Process {} stdout size limit exceeded, truncating",
                                                 label
                                             );
-                                            let _ = file
+                                            let _ = writer
                                                 .write_all(b"\n[Output truncated: size limit exceeded]\n")
                                                 .await;
                                             break;
                                         }
-                                        if file.write_all(&buffer[..n]).await.is_err() {
+                                        if writer.write_all(&buffer[..n]).await.is_err() {
                                             break;
                                         }
                                     }
@@ -100,6 +117,11 @@ impl WorkspaceServer {
                             }
                         }
                     }
+
+                    // Explicit flush before drop
+                    let _ = writer.flush().await;
+                    drop(writer);
+
                     info!(
                         "Process {} stdout streaming completed, total bytes: {}",
                         label, total_written
@@ -121,7 +143,8 @@ impl WorkspaceServer {
             let label = process_label.clone();
             let cancel_clone = cancel_token.clone();
             Some(tokio::spawn(async move {
-                if let Ok(mut file) = tokio::fs::File::create(&stderr_path_clone).await {
+                if let Ok(file) = tokio::fs::File::create(&stderr_path_clone).await {
+                    let mut writer = tokio::io::BufWriter::new(file);
                     info!(
                         "Process {} stderr streaming started to {:?}",
                         label, stderr_path_clone
@@ -145,12 +168,12 @@ impl WorkspaceServer {
                                                 "Process {} stderr size limit exceeded, truncating",
                                                 label
                                             );
-                                            let _ = file
+                                            let _ = writer
                                                 .write_all(b"\n[Output truncated: size limit exceeded]\n")
                                                 .await;
                                             break;
                                         }
-                                        if file.write_all(&buffer[..n]).await.is_err() {
+                                        if writer.write_all(&buffer[..n]).await.is_err() {
                                             break;
                                         }
                                     }
@@ -159,6 +182,11 @@ impl WorkspaceServer {
                             }
                         }
                     }
+
+                    // Explicit flush before drop
+                    let _ = writer.flush().await;
+                    drop(writer);
+
                     info!(
                         "Process {} stderr streaming completed, total bytes: {}",
                         label, total_written
@@ -211,6 +239,10 @@ impl WorkspaceServer {
             let _ = h.await;
         }
 
+        // Add small delay for Windows file system sync to ensure data is fully written
+        #[cfg(windows)]
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+
         // Read output files
         let stdout_content = tokio::fs::read_to_string(&stdout_path)
             .await
@@ -224,7 +256,270 @@ impl WorkspaceServer {
             process_label, exit_code
         );
 
+        // Log sizes of captured outputs for debugging intermittent missing output
+        // on Windows; this helps determine whether the process produced no data
+        // or whether it failed before output was written.
+        info!(
+            "Process {} output sizes: stdout={} bytes, stderr={} bytes",
+            process_label,
+            stdout_content.len(),
+            stderr_content.len()
+        );
+
+        // If both stdout and stderr are empty but process exit code is non-zero,
+        // log a warning and point back to the command label so operations team
+        // can correlate with Windows process details.
+        if stdout_content.is_empty() && stderr_content.is_empty() {
+            if let Some(code) = exit_code {
+                if code != 0 {
+                    warn!(
+                        "Process {} returned non-zero exit code {} but both stdout and stderr are empty",
+                        process_label, code
+                    );
+                }
+            }
+        }
+
         Ok((pid, exit_code, stdout_content, stderr_content))
+    }
+
+    /// Spawn process and stream output to both in-memory buffers and files (for async/long-running processes)
+    /// Returns (pid, exit_code, streaming_handle)
+    /// Provides real-time access to output through broadcast channels and circular buffers
+    async fn spawn_and_stream_hybrid(
+        mut cmd: tokio::process::Command,
+        stdout_path: std::path::PathBuf,
+        stderr_path: std::path::PathBuf,
+        process_label: String,
+        cancel_token: CancellationToken,
+    ) -> Result<
+        (
+            Option<u32>,
+            Option<i32>,
+            std::sync::Arc<terminal_manager::StreamingHandle>,
+        ),
+        String,
+    > {
+        use std::process::Stdio;
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+        // Configure stdio pipes
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::piped());
+        cmd.stdin(Stdio::null());
+
+        #[cfg(target_os = "windows")]
+        {
+            info!(
+                "Spawning Windows process with hybrid streaming: {}",
+                process_label
+            );
+        }
+
+        let mut child = cmd.spawn().map_err(|e| {
+            error!(
+                "Failed to spawn process {}: {}. Check command path and permissions.",
+                process_label, e
+            );
+            format!("Failed to spawn process: {e}")
+        })?;
+
+        let pid = child.id();
+        info!(
+            "Process {} started with PID {:?} (hybrid streaming)",
+            process_label, pid
+        );
+
+        // Create streaming handle with 1000 line buffer
+        let streaming = std::sync::Arc::new(terminal_manager::StreamingHandle::new(1000));
+        let max_output_size = crate::config::max_output_size();
+
+        // Stdout streaming: line-by-line with broadcast and file
+        let stdout_handle = if let Some(stdout) = child.stdout.take() {
+            let streaming_clone = streaming.clone();
+            let stdout_path_clone = stdout_path.clone();
+            let label = process_label.clone();
+            let cancel_clone = cancel_token.clone();
+
+            tokio::spawn(async move {
+                let reader = BufReader::new(stdout);
+                let mut lines = reader.lines();
+
+                match tokio::fs::File::create(&stdout_path_clone).await {
+                    Ok(file) => {
+                        let mut writer = tokio::io::BufWriter::new(file);
+                        let mut total_bytes = 0u64;
+                        let mut lines_since_flush = 0;
+                        const FLUSH_INTERVAL: usize = 10;
+
+                        loop {
+                            tokio::select! {
+                                _ = cancel_clone.cancelled() => {
+                                    info!("Process {} stdout streaming cancelled", label);
+                                    break;
+                                }
+                                line_result = lines.next_line() => {
+                                    match line_result {
+                                        Ok(Some(line)) => {
+                                            let line_bytes = line.len() as u64 + 1; // +1 for newline
+                                            total_bytes += line_bytes;
+
+                                            if total_bytes > max_output_size {
+                                                warn!("Process {} stdout size limit exceeded", label);
+                                                let _ = writer.write_all(b"\n[Output truncated: size limit exceeded]\n").await;
+                                                break;
+                                            }
+
+                                            // 1. Send to broadcast channel + buffer
+                                            streaming_clone.push_stdout(line.clone()).await;
+
+                                            // 2. Write to file with periodic flush
+                                            if writer.write_all(line.as_bytes()).await.is_ok() {
+                                                let _ = writer.write_all(b"\n").await;
+                                                lines_since_flush += 1;
+                                                if lines_since_flush >= FLUSH_INTERVAL {
+                                                    let _ = writer.flush().await;
+                                                    lines_since_flush = 0;
+                                                }
+                                            }
+                                        }
+                                        Ok(None) => break, // EOF
+                                        Err(e) => {
+                                            warn!("Process {} stdout read error: {}", label, e);
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        let _ = writer.flush().await;
+                        drop(writer);
+                        info!(
+                            "Process {} stdout hybrid streaming completed ({} bytes)",
+                            label, total_bytes
+                        );
+                    }
+                    Err(e) => {
+                        error!("Process {} failed to create stdout file: {}", label, e);
+                    }
+                }
+            })
+        } else {
+            tokio::spawn(async {})
+        };
+
+        // Stderr streaming: same pattern
+        let stderr_handle = if let Some(stderr) = child.stderr.take() {
+            let streaming_clone = streaming.clone();
+            let stderr_path_clone = stderr_path.clone();
+            let label = process_label.clone();
+            let cancel_clone = cancel_token.clone();
+
+            tokio::spawn(async move {
+                let reader = BufReader::new(stderr);
+                let mut lines = reader.lines();
+
+                match tokio::fs::File::create(&stderr_path_clone).await {
+                    Ok(file) => {
+                        let mut writer = tokio::io::BufWriter::new(file);
+                        let mut total_bytes = 0u64;
+                        let mut lines_since_flush = 0;
+                        const FLUSH_INTERVAL: usize = 10;
+
+                        loop {
+                            tokio::select! {
+                                _ = cancel_clone.cancelled() => {
+                                    info!("Process {} stderr streaming cancelled", label);
+                                    break;
+                                }
+                                line_result = lines.next_line() => {
+                                    match line_result {
+                                        Ok(Some(line)) => {
+                                            let line_bytes = line.len() as u64 + 1;
+                                            total_bytes += line_bytes;
+
+                                            if total_bytes > max_output_size {
+                                                warn!("Process {} stderr size limit exceeded", label);
+                                                let _ = writer.write_all(b"\n[Output truncated: size limit exceeded]\n").await;
+                                                break;
+                                            }
+
+                                            // 1. Send to broadcast channel + buffer
+                                            streaming_clone.push_stderr(line.clone()).await;
+
+                                            // 2. Write to file with periodic flush
+                                            if writer.write_all(line.as_bytes()).await.is_ok() {
+                                                let _ = writer.write_all(b"\n").await;
+                                                lines_since_flush += 1;
+                                                if lines_since_flush >= FLUSH_INTERVAL {
+                                                    let _ = writer.flush().await;
+                                                    lines_since_flush = 0;
+                                                }
+                                            }
+                                        }
+                                        Ok(None) => break, // EOF
+                                        Err(e) => {
+                                            warn!("Process {} stderr read error: {}", label, e);
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        let _ = writer.flush().await;
+                        drop(writer);
+                        info!(
+                            "Process {} stderr hybrid streaming completed ({} bytes)",
+                            label, total_bytes
+                        );
+                    }
+                    Err(e) => {
+                        error!("Process {} failed to create stderr file: {}", label, e);
+                    }
+                }
+            })
+        } else {
+            tokio::spawn(async {})
+        };
+
+        // Wait for process completion or cancellation
+        let exit_code = tokio::select! {
+            _ = cancel_token.cancelled() => {
+                info!("Process {} cancellation requested, killing child", process_label);
+                let _ = child.kill().await;
+
+                let graceful_secs = crate::config::graceful_shutdown_timeout();
+                match tokio::time::timeout(Duration::from_secs(graceful_secs), child.wait()).await {
+                    Ok(Ok(status)) => status.code(),
+                    _ => {
+                        warn!("Process {} did not terminate gracefully", process_label);
+                        None
+                    }
+                }
+            }
+            result = child.wait() => {
+                match result {
+                    Ok(status) => status.code(),
+                    Err(e) => {
+                        error!("Process {} wait error: {}", process_label, e);
+                        None
+                    }
+                }
+            }
+        };
+
+        // Wait for streaming tasks to complete
+        let _ = stdout_handle.await;
+        let _ = stderr_handle.await;
+
+        info!(
+            "Process {} completed with exit code {:?} (hybrid streaming)",
+            process_label, exit_code
+        );
+
+        Ok((pid, exit_code, streaming))
     }
 
     /// Execute shell commands with isolation
@@ -429,16 +724,11 @@ impl WorkspaceServer {
     fn normalize_shell_command(raw_command: &str) -> String {
         #[cfg(windows)]
         {
-            // Windows: Convert single quotes to double quotes
-            // PowerShell handles double quotes properly, and it's the preferred
-            // shell for modern Windows systems
-            let normalized = raw_command.replace('\'', "\"");
-
-            info!(
-                "Windows command normalized: {} -> {}",
-                raw_command, normalized
-            );
-            normalized
+            // Windows: PowerShell handles both single and double quotes correctly
+            // No normalization needed - pass command as-is to avoid breaking nested quotes
+            // in Python/Node.js inline commands like: python -c "print('Hello')"
+            info!("Windows command (no normalization): {}", raw_command);
+            raw_command.to_string()
         }
 
         #[cfg(not(windows))]
@@ -554,6 +844,11 @@ impl WorkspaceServer {
         let isolation_level = IsolationLevel::Medium;
 
         // Use existing isolation-aware shell execution
+        #[cfg(windows)]
+        info!(
+            "execute_windows_cmd invoked: command='{}' run_mode='{}' require_input='{}' timeout={}",
+            raw_command, run_mode, require_input, timeout_secs
+        );
         self.execute_shell_with_isolation(raw_command, isolation_level, timeout_secs)
             .await
     }
@@ -661,7 +956,7 @@ impl WorkspaceServer {
                 .insert(process_id.clone(), cancel_token.clone());
         }
 
-        // Spawn monitoring task using common spawn+stream logic
+        // Spawn monitoring task using hybrid streaming
         let registry = self.process_registry.clone();
         let pid_copy = process_id.clone();
 
@@ -674,8 +969,8 @@ impl WorkspaceServer {
                 }
             }
 
-            // Execute using common logic
-            let result = Self::spawn_and_stream_to_files(
+            // Execute using hybrid streaming
+            let result = Self::spawn_and_stream_hybrid(
                 cmd,
                 stdout_path.clone(),
                 stderr_path.clone(),
@@ -688,7 +983,7 @@ impl WorkspaceServer {
             let mut reg = registry.write().await;
             if let Some(entry) = reg.entries.get_mut(&pid_copy) {
                 match result {
-                    Ok((pid, exit_code, _, _)) => {
+                    Ok((pid, exit_code, streaming_handle)) => {
                         entry.pid = pid;
                         let code = exit_code.unwrap_or(-1);
                         entry.status = if code == 0 {
@@ -697,20 +992,29 @@ impl WorkspaceServer {
                             terminal_manager::ProcessStatus::Failed
                         };
                         entry.exit_code = exit_code;
+                        entry.finished_at = Some(chrono::Utc::now());
+
+                        // Update file sizes
+                        entry.stdout_size = terminal_manager::get_file_size(&stdout_path).await;
+                        entry.stderr_size = terminal_manager::get_file_size(&stderr_path).await;
+
+                        // Store streaming handle for real-time access (after entry mutations)
+                        reg.streaming_handles
+                            .insert(pid_copy.clone(), streaming_handle);
                     }
                     Err(e) => {
                         entry.status = terminal_manager::ProcessStatus::Failed;
+                        entry.finished_at = Some(chrono::Utc::now());
                         error!("Process {} execution error: {}", pid_copy, e);
+
+                        // Update file sizes even on error
+                        entry.stdout_size = terminal_manager::get_file_size(&stdout_path).await;
+                        entry.stderr_size = terminal_manager::get_file_size(&stderr_path).await;
                     }
                 }
-                entry.finished_at = Some(chrono::Utc::now());
-
-                // Update file sizes
-                entry.stdout_size = terminal_manager::get_file_size(&stdout_path).await;
-                entry.stderr_size = terminal_manager::get_file_size(&stderr_path).await;
             }
 
-            // Remove cancellation token
+            // Remove cancellation token (keep streaming handle for 5 minutes)
             reg.cancellation_tokens.remove(&pid_copy);
 
             info!(

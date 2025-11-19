@@ -231,11 +231,11 @@ impl WorkspaceServer {
             }
         }
 
-        // Update poll tracking and get entry (write lock)
+        // Update poll tracking and get entry + streaming handle (write lock)
         let threshold = crate::config::poll_threshold();
-        let (should_show_guidance, entry_for_response) = {
+        let (should_show_guidance, entry_for_response, streaming_handle) = {
             let mut registry = self.process_registry.write().await;
-            if let Some(entry) = registry.entries.get_mut(process_id) {
+            let entry_clone = if let Some(entry) = registry.entries.get_mut(process_id) {
                 let now = chrono::Utc::now();
 
                 // Update poll metadata
@@ -259,7 +259,11 @@ impl WorkspaceServer {
                 (should_guide, entry.clone())
             } else {
                 return Err("Process not found or access denied".to_string());
-            }
+            };
+
+            // Get streaming handle after releasing entry borrow
+            let handle = registry.streaming_handles.get(process_id).cloned();
+            (entry_clone.0, entry_clone.1, handle)
         };
 
         // Build response
@@ -273,9 +277,10 @@ impl WorkspaceServer {
             "finished_at": entry_for_response.finished_at.map(|t| t.to_rfc3339()),
             "stdout_size": entry_for_response.stdout_size,
             "stderr_size": entry_for_response.stderr_size,
+            "streaming_available": streaming_handle.is_some(),
         });
 
-        // Optional tail
+        // Optional tail - check in-memory buffer first, fallback to file
         if let Some(tail_obj) = args.get("tail").and_then(|v| v.as_object()) {
             let src = tail_obj
                 .get("src")
@@ -283,23 +288,35 @@ impl WorkspaceServer {
                 .unwrap_or("stdout");
             let n = tail_obj.get("n").and_then(|v| v.as_u64()).unwrap_or(10) as usize;
 
-            let file_path = if src == "stdout" {
-                std::path::PathBuf::from(&entry_for_response.stdout_path)
+            let (lines, source) = if let Some(handle) = &streaming_handle {
+                // Fast path: get from in-memory buffer
+                let stream_type = if src == "stdout" {
+                    terminal_manager::StreamType::Stdout
+                } else {
+                    terminal_manager::StreamType::Stderr
+                };
+                (handle.get_tail(stream_type, n).await, "buffer")
             } else {
-                std::path::PathBuf::from(&entry_for_response.stderr_path)
+                // Fallback: read from file (process finished or old entry)
+                let file_path = if src == "stdout" {
+                    std::path::PathBuf::from(&entry_for_response.stdout_path)
+                } else {
+                    std::path::PathBuf::from(&entry_for_response.stderr_path)
+                };
+                match terminal_manager::tail_lines(&file_path, n).await {
+                    Ok(lines) => (lines, "file"),
+                    Err(e) => {
+                        tracing::warn!("Failed to read tail from file: {}", e);
+                        (Vec::new(), "error")
+                    }
+                }
             };
 
-            match terminal_manager::tail_lines(&file_path, n).await {
-                Ok(lines) => {
-                    response["tail"] = serde_json::json!({
-                        "src": src,
-                        "lines": lines,
-                    });
-                }
-                Err(e) => {
-                    tracing::warn!("Failed to read tail: {}", e);
-                }
-            }
+            response["tail"] = serde_json::json!({
+                "src": src,
+                "lines": lines,
+                "source": source,
+            });
         }
 
         // Add guidance message if threshold exceeded
@@ -732,6 +749,7 @@ impl BuiltinMCPServer for WorkspaceServer {
     }
 
     async fn call_tool(&self, tool_name: &str, args: Value) -> Result<MCPResult, String> {
+        info!("Workspace tool called: {} with args: {:?}", tool_name, args);
         match tool_name {
             // File operation tools
             "read_file" => self.handle_read_file(args).await,

@@ -187,11 +187,21 @@ export const useAIService = (config?: AIServiceConfig) => {
 
         // Context enforcement: Truncate messages to fit the context window
         const maxTokens = config?.maxTokens ?? 4096;
+
+        // Prepare tools JSON for token estimation
+        const toolsJson = config?.tools?.length
+          ? JSON.stringify(config.tools)
+          : undefined;
+
         const contextMessages = selectMessagesWithinContext(
           validMessages,
           provider,
           model,
           maxTokens,
+          {
+            systemPrompt: resolvedSystemPrompt,
+            toolsJson,
+          },
         );
 
         // Sanitize messages to prevent malformed JSON

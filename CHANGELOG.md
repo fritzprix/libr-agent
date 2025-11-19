@@ -6,6 +6,17 @@ All notable changes to this project will be documented in this file.
 
 No changes yet.
 
+## [0.3.2] - 2025-11-19
+
+### 🛠️ Improvements
+
+- **Windows Process Execution Improvements**: Enhanced file output streaming with explicit buffering and flushing to ensure complete stderr/stdout capture on Windows. Added detailed logging of Windows environment variables and output file sizes for better diagnostics. Implemented a short delay after process completion to ensure file system synchronization.
+- **Process Output Streaming Enhancements**: Switched to `tokio::io::BufWriter` with explicit flushing for more reliable file writes. Added a new hybrid streaming method (`spawn_and_stream_hybrid`) that streams process output to both files and in-memory buffers, supporting broadcast channels and circular buffers for async and long-running processes.
+- **Quote Normalization Fix**: Fixed Windows command normalization logic to avoid altering quotes, preventing issues with nested quotes in inline Python and Node.js commands.
+- **Token Budget Improvements**: Enhanced token budget calculations to account for system prompts and tools JSON when selecting messages within context windows, allowing for more accurate prompt management.
+- **Ollama Dependency Update**: Updated Ollama dependency from 0.6.0 to 0.6.3 for improved model support and bug fixes.
+- **Default Context Window**: Increased default context window fallback from 4096 to 32768 tokens to better support modern large language models.
+
 ## [0.3.1] - 2025-11-18
 
 ### 🐛 Fixed

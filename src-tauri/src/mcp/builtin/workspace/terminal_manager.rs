@@ -1,9 +1,9 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{broadcast, Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
 
 /// Process status enumeration
@@ -43,11 +43,87 @@ pub struct ProcessEntry {
     pub first_running_poll_at: Option<DateTime<Utc>>,
 }
 
-/// Thread-safe process registry with cancellation tokens
+/// Stream type for identifying stdout or stderr
+#[derive(Debug, Clone, Copy)]
+pub enum StreamType {
+    Stdout,
+    Stderr,
+}
+
+/// Real-time streaming handle for background processes
+/// Provides broadcast channels and circular buffers for efficient output access
+#[derive(Debug)]
+pub struct StreamingHandle {
+    /// Broadcast channel for real-time stdout
+    pub stdout_tx: broadcast::Sender<String>,
+
+    /// Broadcast channel for real-time stderr
+    pub stderr_tx: broadcast::Sender<String>,
+
+    /// In-memory circular buffer (last N lines) for fast polling
+    pub stdout_buffer: Arc<Mutex<VecDeque<String>>>,
+    pub stderr_buffer: Arc<Mutex<VecDeque<String>>>,
+
+    /// Buffer size limit (default: 1000 lines)
+    pub buffer_limit: usize,
+}
+
+impl StreamingHandle {
+    /// Create new streaming handle with specified buffer limit
+    pub fn new(buffer_limit: usize) -> Self {
+        let (stdout_tx, _) = broadcast::channel(1000);
+        let (stderr_tx, _) = broadcast::channel(1000);
+
+        Self {
+            stdout_tx,
+            stderr_tx,
+            stdout_buffer: Arc::new(Mutex::new(VecDeque::with_capacity(buffer_limit))),
+            stderr_buffer: Arc::new(Mutex::new(VecDeque::with_capacity(buffer_limit))),
+            buffer_limit,
+        }
+    }
+
+    /// Add line to stdout buffer (circular, drops oldest if full)
+    pub async fn push_stdout(&self, line: String) {
+        let mut buffer = self.stdout_buffer.lock().await;
+        if buffer.len() >= self.buffer_limit {
+            buffer.pop_front();
+        }
+        buffer.push_back(line.clone());
+        drop(buffer);
+
+        let _ = self.stdout_tx.send(line);
+    }
+
+    /// Add line to stderr buffer (circular, drops oldest if full)
+    pub async fn push_stderr(&self, line: String) {
+        let mut buffer = self.stderr_buffer.lock().await;
+        if buffer.len() >= self.buffer_limit {
+            buffer.pop_front();
+        }
+        buffer.push_back(line.clone());
+        drop(buffer);
+
+        let _ = self.stderr_tx.send(line);
+    }
+
+    /// Get last N lines from buffer
+    pub async fn get_tail(&self, stream: StreamType, n: usize) -> Vec<String> {
+        let buffer = match stream {
+            StreamType::Stdout => self.stdout_buffer.lock().await,
+            StreamType::Stderr => self.stderr_buffer.lock().await,
+        };
+
+        buffer.iter().rev().take(n).rev().cloned().collect()
+    }
+}
+
+/// Thread-safe process registry with cancellation tokens and streaming handles
 #[derive(Debug)]
 pub struct ProcessRegistryData {
     pub entries: HashMap<String, ProcessEntry>,
     pub cancellation_tokens: HashMap<String, CancellationToken>,
+    pub streaming_handles: HashMap<String, Arc<StreamingHandle>>,
 }
 
 pub type ProcessRegistry = Arc<RwLock<ProcessRegistryData>>;
@@ -57,6 +133,7 @@ pub fn create_process_registry() -> ProcessRegistry {
     Arc::new(RwLock::new(ProcessRegistryData {
         entries: HashMap::new(),
         cancellation_tokens: HashMap::new(),
+        streaming_handles: HashMap::new(),
     }))
 }
 
