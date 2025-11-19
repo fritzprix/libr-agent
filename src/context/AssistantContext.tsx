@@ -119,7 +119,7 @@ export function getNewAssistantTemplate(): Assistant {
     mcpServerIds: [], // No servers by default - user selects from Settings
     createdAt: new Date(),
     updatedAt: new Date(),
-    isDefault: false,
+    deletionProtected: false,
   };
 }
 
@@ -210,7 +210,7 @@ export const AssistantContextProvider = ({
           name: editingAssistant.name,
           systemPrompt,
           mcpServerIds: editingAssistant.mcpServerIds,
-          isDefault: editingAssistant.isDefault ?? false,
+          deletionProtected: editingAssistant.deletionProtected ?? false,
           localServices: editingAssistant.localServices ?? [],
           createdAt: assistantCreatedAt || new Date(),
           updatedAt: new Date(),
@@ -269,8 +269,8 @@ export const AssistantContextProvider = ({
 
   useEffect(() => {
     if (!loading && assistants && !currentAssistant) {
-      // DB v2 migration ensures assistants exist, just select default or first
-      const a = assistants.find((a) => a.isDefault) || assistants[0];
+      // Select the first assistant by default (no implicit default)
+      const a = assistants[0];
       if (a) {
         setCurrentAssistant(a);
       }
