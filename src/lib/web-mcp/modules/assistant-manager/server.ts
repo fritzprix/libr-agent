@@ -12,6 +12,27 @@ import { Assistant } from '@/models/chat';
 
 const logger = getLogger('AssistantManagerServer');
 
+let cachedService: {
+  service: AssistantService;
+  agentHubUrl: string | undefined;
+} | null = null;
+
+async function getService() {
+  const agentHubUrlObj = await dbService.objects.read('agentHubUrl');
+  const agentHubUrl = agentHubUrlObj?.value as string;
+
+  if (cachedService && cachedService.agentHubUrl === agentHubUrl) {
+    return cachedService.service;
+  }
+
+  const service = new AssistantService(agentHubUrl);
+  cachedService = {
+    service,
+    agentHubUrl,
+  };
+  return service;
+}
+
 interface AssistantToolArgs {
   id: string;
   name: string;
@@ -31,10 +52,7 @@ export const assistantManagerServer: WebMCPServer = {
   async callTool(name: string, args: unknown): Promise<MCPResult> {
     const typedArgs = (args || {}) as Partial<AssistantToolArgs>;
     try {
-      // Initialize service with agentHubUrl from DB
-      const agentHubUrlObj = await dbService.objects.read('agentHubUrl');
-      const agentHubUrl = agentHubUrlObj?.value as string;
-      const service = new AssistantService(agentHubUrl);
+      const service = await getService();
 
       switch (name) {
         case 'list_assistants': {

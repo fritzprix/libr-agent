@@ -11,6 +11,7 @@ export interface IMcpServerService {
   getById(id: string): Promise<MCPServerEntity | undefined>;
   getByName(name: string): Promise<MCPServerEntity | undefined>;
   save(server: MCPServerEntity): Promise<MCPServerEntity>;
+  saveAll(servers: MCPServerEntity[]): Promise<MCPServerEntity[]>;
   delete(id: string): Promise<void>;
   count(): Promise<number>;
 }
@@ -41,6 +42,12 @@ export class LocalMcpServerService implements IMcpServerService {
   async save(server: MCPServerEntity): Promise<MCPServerEntity> {
     await dbService.mcpServers.upsert(server);
     return server;
+  }
+
+  async saveAll(servers: MCPServerEntity[]): Promise<MCPServerEntity[]> {
+    if (servers.length === 0) return [];
+    await dbService.mcpServers.upsertMany(servers);
+    return servers;
   }
 
   async delete(id: string): Promise<void> {
@@ -98,6 +105,15 @@ export class RemoteMcpServerService implements IMcpServerService {
     return response.json();
   }
 
+  async saveAll(servers: MCPServerEntity[]): Promise<MCPServerEntity[]> {
+    // Remote API doesn't support bulk save yet, so we do sequential
+    const saved: MCPServerEntity[] = [];
+    for (const server of servers) {
+      saved.push(await this.save(server));
+    }
+    return saved;
+  }
+
   async delete(id: string): Promise<void> {
     const response = await fetch(`${this.baseUrl}/mcp-servers/${id}`, {
       method: 'DELETE',
@@ -128,10 +144,8 @@ export class McpServerService implements IMcpServerService {
     if (this.remoteService) {
       try {
         const remoteServers = await this.remoteService.getAll();
-        // Sync to local (simple overwrite for now)
-        for (const server of remoteServers) {
-          await this.localService.save(server);
-        }
+        // Sync to local (batch operation)
+        await this.localService.saveAll(remoteServers);
         return remoteServers;
       } catch (error) {
         logger.error(
@@ -206,14 +220,37 @@ export class McpServerService implements IMcpServerService {
     return this.localService.save(server);
   }
 
+  async saveAll(servers: MCPServerEntity[]): Promise<MCPServerEntity[]> {
+    if (this.remoteService) {
+      try {
+        const saved = await this.remoteService.saveAll(servers);
+        await this.localService.saveAll(saved);
+        return saved;
+      } catch (error) {
+        logger.error('Failed to save to remote', error);
+        throw error;
+      }
+    }
+    return this.localService.saveAll(servers);
+  }
+
   async delete(id: string): Promise<void> {
     if (this.remoteService) {
       try {
         await this.remoteService.delete(id);
-        await this.localService.delete(id);
       } catch (error) {
         logger.error('Failed to delete from remote', error);
         throw error;
+      }
+
+      try {
+        await this.localService.delete(id);
+      } catch (error) {
+        logger.error(
+          'Remote deletion succeeded, but failed to delete from local',
+          error,
+        );
+        // Do not throw; treat as success, but log for reconciliation
       }
     } else {
       await this.localService.delete(id);
