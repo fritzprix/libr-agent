@@ -87,7 +87,11 @@
     "src/lib/web-mcp/utils/ui-utils.ts",
     "src/test/setup.ts",
     "src/test/types/test-types.ts",
-    "src/test/utils/html-test-utils.ts"
+    "src/test/utils/html-test-utils.ts",
+    "src/lib/services/mcp-server-service.ts",
+    "src/lib/web-mcp/modules/assistant-manager/index.ts",
+    "src/lib/web-mcp/modules/assistant-manager/server.ts",
+    "src/lib/web-mcp/modules/assistant-manager/tools.ts"
   ],
   "ignoreDependencies": ["handlebars"]
 }

@@ -177,7 +177,7 @@ export interface Assistant {
    * - Example: ['browser', 'content_store', 'workspace', 'planning', 'playbook']
    */
   allowedBuiltInServiceAliases?: string[];
-  isDefault: boolean;
+  deletionProtected: boolean;
   createdAt: Date;
   updatedAt: Date;
 }

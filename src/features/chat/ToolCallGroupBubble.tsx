@@ -7,7 +7,6 @@ import {
   CheckCircle,
   XCircle,
   Loader2,
-  AlertCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { MessageRenderer } from '@/components/MessageRenderer';
@@ -15,9 +14,12 @@ import {
   hasToolCallError,
   parseToolName,
   formatExecutionTime,
+  parseToolArguments,
+  formatToolArgumentsSummary,
 } from '@/lib/tool-call-utils';
 import { useSettings } from '@/hooks/use-settings';
 import { useSessionHistory } from '@/context/SessionHistoryContext';
+import { ToolCallDetails } from './ToolCallDetails';
 
 interface ToolCallGroupBubbleProps {
   message: Message;
@@ -62,11 +64,6 @@ interface ToolCallCompactItemProps {
 
 interface ToolStatusIconProps {
   hasResult: boolean;
-  hasError: boolean;
-}
-
-interface ExpandedDetailsProps {
-  toolResult: Message;
   hasError: boolean;
 }
 
@@ -211,44 +208,6 @@ const ToolStatusIcon: React.FC<ToolStatusIconProps> = ({
 };
 
 /**
- * Expanded details showing tool result or error
- */
-const ExpandedDetails: React.FC<ExpandedDetailsProps> = ({
-  toolResult,
-  hasError,
-}) => {
-  if (hasError) {
-    return (
-      <div className="flex items-start gap-2">
-        <AlertCircle className="w-4 h-4 text-destructive flex-shrink-0 mt-0.5" />
-        <div className="flex-1 min-w-0">
-          <div className="text-xs font-medium text-destructive mb-1">
-            Error Details
-          </div>
-          <MessageRenderer
-            content={toolResult.content}
-            className="text-sm text-foreground"
-          />
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      <div className="text-xs font-medium text-muted-foreground mb-1">
-        Result
-      </div>
-      <MessageRenderer
-        content={toolResult.content}
-        className="text-sm"
-        expandResources={true}
-      />
-    </div>
-  );
-};
-
-/**
  * Compact tool call item - no individual border, tight spacing
  */
 const ToolCallCompactItem: React.FC<ToolCallCompactItemProps> = ({
@@ -259,6 +218,10 @@ const ToolCallCompactItem: React.FC<ToolCallCompactItemProps> = ({
 
   // Parse tool name (remove server prefix)
   const toolName = parseToolName(toolCall.function.name);
+
+  // Parse arguments for summary
+  const params = parseToolArguments(toolCall.function.arguments);
+  const paramSummary = formatToolArgumentsSummary(params);
 
   // Check for error using utility function
   const hasError = hasToolCallError(toolResult);
@@ -288,11 +251,19 @@ const ToolCallCompactItem: React.FC<ToolCallCompactItemProps> = ({
         <ToolStatusIcon hasResult={!!toolResult} hasError={hasError} />
 
         {/* Tool name */}
-        <span className="flex-1 truncate font-medium">{toolName}</span>
+        <span className="flex-shrink-0 font-medium">{toolName}</span>
+
+        {/* Params Summary */}
+        {paramSummary && (
+          <span className="flex-1 text-xs text-muted-foreground truncate font-mono opacity-70 min-w-0">
+            {paramSummary}
+          </span>
+        )}
+        {!paramSummary && <span className="flex-1" />}
 
         {/* Execution time */}
         {executionTime !== undefined && (
-          <span className="text-xs text-muted-foreground">
+          <span className="text-xs text-muted-foreground flex-shrink-0">
             {formatExecutionTime(executionTime)}
           </span>
         )}
@@ -307,19 +278,14 @@ const ToolCallCompactItem: React.FC<ToolCallCompactItemProps> = ({
       </div>
 
       {/* Expanded details */}
-      {isExpanded && toolResult && (
+      {isExpanded && (
         <div className="mt-3 pt-3 border-t border-muted/50">
-          <ExpandedDetails toolResult={toolResult} hasError={hasError} />
-        </div>
-      )}
-
-      {/* Loading state */}
-      {isExpanded && !toolResult && (
-        <div className="mt-3 pt-3 border-t border-muted/50">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            <span>Executing tool...</span>
-          </div>
+          <ToolCallDetails
+            toolCall={toolCall}
+            toolResult={toolResult}
+            hasError={hasError}
+            isLoading={!toolResult}
+          />
         </div>
       )}
     </div>

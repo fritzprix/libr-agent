@@ -53,3 +53,25 @@ export function formatExecutionTime(ms: number): string {
   }
   return `${(ms / 1000).toFixed(1)}s`;
 }
+
+/**
+ * Creates a compact summary string of tool arguments.
+ * Example: { path: "./src", recursive: true } -> "path: ./src, recursive: true"
+ */
+export function formatToolArgumentsSummary(
+  args: Record<string, unknown>,
+  maxLength: number = 50,
+): string {
+  if (!args || Object.keys(args).length === 0) return '';
+
+  const summary = Object.entries(args)
+    .map(([key, value]) => {
+      const valueStr =
+        typeof value === 'object' ? JSON.stringify(value) : String(value);
+      return `${key}: ${valueStr}`;
+    })
+    .join(', ');
+
+  if (summary.length <= maxLength) return summary;
+  return summary.slice(0, maxLength) + '...';
+}

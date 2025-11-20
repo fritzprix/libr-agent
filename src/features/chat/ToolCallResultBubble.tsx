@@ -7,17 +7,17 @@ import {
   XCircle,
   Loader2,
   ChevronDown,
-  AlertCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { MessageRenderer } from '@/components/MessageRenderer';
 import {
   hasToolCallError,
   hasUIResource,
   parseToolName,
   parseToolArguments,
   formatExecutionTime,
+  formatToolArgumentsSummary,
 } from '@/lib/tool-call-utils';
+import { ToolCallDetails } from './ToolCallDetails';
 
 interface ToolCallResultBubbleProps {
   toolCall: ToolCall;
@@ -57,7 +57,7 @@ export const ToolCallResultBubble: React.FC<ToolCallResultBubbleProps> = ({
   // Use shared utility functions for parsing
   const toolName = parseToolName(toolCall.function.name);
   const params = parseToolArguments(toolCall.function.arguments);
-  const paramCount = Object.keys(params).length;
+  const paramSummary = formatToolArgumentsSummary(params);
 
   // Status badge component
   const getStatusBadge = () => {
@@ -113,12 +113,14 @@ export const ToolCallResultBubble: React.FC<ToolCallResultBubbleProps> = ({
         onClick={() => setIsExpanded(!isExpanded)}
       >
         {/* Left: Tool information */}
-        <div className="flex items-center gap-2 flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-1 min-w-0 mr-4">
           <Wrench className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
-          <span className="font-medium truncate">{toolName}</span>
-          <span className="text-xs text-muted-foreground">
-            • {paramCount} {paramCount === 1 ? 'param' : 'params'}
-          </span>
+          <span className="font-medium flex-shrink-0">{toolName}</span>
+          {paramSummary && (
+            <span className="text-xs text-muted-foreground truncate font-mono opacity-70">
+              {paramSummary}
+            </span>
+          )}
         </div>
 
         {/* Right: Status + Time + Expand icon */}
@@ -140,56 +142,13 @@ export const ToolCallResultBubble: React.FC<ToolCallResultBubbleProps> = ({
 
       {/* Expanded state: Details */}
       {isExpanded && (
-        <div className="border-t px-3 pb-3 space-y-3">
-          {/* Parameters section */}
-          <div className="pt-3">
-            <div className="text-xs font-medium text-muted-foreground mb-2">
-              Parameters
-            </div>
-            <div className="bg-muted/50 rounded p-2">
-              <pre className="text-xs overflow-x-auto font-mono">
-                {JSON.stringify(params, null, 2)}
-              </pre>
-            </div>
-          </div>
-
-          {/* Result or Error section */}
-          {toolResult && (
-            <div>
-              <div className="text-xs font-medium text-muted-foreground mb-2">
-                {hasError ? 'Error Details' : 'Result'}
-              </div>
-              {hasError ? (
-                <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded p-3">
-                  <div className="flex items-start gap-2">
-                    <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
-                    <div className="flex-1 min-w-0">
-                      <MessageRenderer
-                        content={toolResult.content}
-                        className="text-sm text-red-900 dark:text-red-100"
-                      />
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-background rounded border p-2">
-                  <MessageRenderer
-                    content={toolResult.content}
-                    className="text-sm"
-                    expandResources={true}
-                  />
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Loading state */}
-          {isLoading && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Executing tool...</span>
-            </div>
-          )}
+        <div className="border-t px-3 pb-3 pt-3">
+          <ToolCallDetails
+            toolCall={toolCall}
+            toolResult={toolResult}
+            hasError={hasError}
+            isLoading={isLoading}
+          />
         </div>
       )}
     </div>

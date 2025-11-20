@@ -5,7 +5,7 @@ import type {
   MCPServerEntity,
 } from '@/models/chat';
 import type { CRUD, DatabaseObject, Page } from './types';
-import { LocalDatabase } from './service';
+import { LocalDatabase } from './database';
 import type { Playbook } from '@/types/playbook';
 type PlaybookRecord = Playbook & {
   id: string;

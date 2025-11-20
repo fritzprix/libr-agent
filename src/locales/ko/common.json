@@ -22,7 +22,7 @@
       "save": "저장"
     },
     "card": {
-      "default": "기본",
+      "protected": "보호됨",
       "active": "활성",
       "mcpCount": "MCP 서버: {{count}}개",
       "localServiceCount": "로컬 서비스: {{count}}개",
@@ -31,7 +31,7 @@
       "checking": "확인중...",
       "delete": "삭제",
       "deleting": "삭제중...",
-      "deleteBlocked": "기본 어시스턴트는 삭제할 수 없습니다.",
+      "deleteBlocked": "보호된 어시스턴트는 삭제할 수 없습니다.",
       "deleteConfirmTitle": "어시스턴트 삭제"
     }
   },
