@@ -100,9 +100,14 @@ export class LocalDatabase extends Dexie {
           '- Provide clear error messages and troubleshooting steps if installation fails.\n' +
           '- After successful setup, summarize what was installed and how to verify it.',
         mcpServerIds: [],
-        isDefault: false,
+        deletionProtected: true,
         localServices: [],
-        allowedBuiltInServiceAliases: ['mcp_manager', 'workspace', 'planning'],
+        allowedBuiltInServiceAliases: [
+          'mcp_manager',
+          'workspace',
+          'planning',
+          'assistant_manager',
+        ],
         createdAt: now,
         updatedAt: now,
       };
@@ -122,7 +127,7 @@ export class LocalDatabase extends Dexie {
           '- Use minimal changes; confirm write paths.\n' +
           '- Provide sources and next-step suggestions.',
         mcpServerIds: [],
-        isDefault: true,
+        deletionProtected: true,
         localServices: [],
         allowedBuiltInServiceAliases: [
           'contentstore',
@@ -132,6 +137,7 @@ export class LocalDatabase extends Dexie {
           'playbook',
           'mcp_manager',
           'ui',
+          'assistant_manager',
         ],
         createdAt: now,
         updatedAt: now,

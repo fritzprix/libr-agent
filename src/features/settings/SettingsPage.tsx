@@ -143,6 +143,7 @@ export default function SettingsPage() {
       windowSize,
       uiLanguage,
       toolCallGroupVisibleCount,
+      agentHubUrl,
     },
     update,
   } = useSettings();
@@ -162,10 +163,13 @@ export default function SettingsPage() {
   const [localLanguage, setLocalLanguage] = useState(uiLanguage);
   const [localToolCallGroupVisibleCount, setLocalToolCallGroupVisibleCount] =
     useState(toolCallGroupVisibleCount);
+  const [localAgentHubUrl, setLocalAgentHubUrl] = useState(agentHubUrl || '');
+
   const otherPendingRef = useRef<{
     windowSize?: number;
     uiLanguage?: string;
     toolCallGroupVisibleCount?: number;
+    agentHubUrl?: string;
   }>({});
 
   // Sync local state with context when context changes (e.g., after Apply or external updates)
@@ -180,6 +184,10 @@ export default function SettingsPage() {
   useEffect(() => {
     setLocalToolCallGroupVisibleCount(toolCallGroupVisibleCount);
   }, [toolCallGroupVisibleCount]);
+
+  useEffect(() => {
+    setLocalAgentHubUrl(agentHubUrl || '');
+  }, [agentHubUrl]);
 
   const handlePendingChange = useCallback(
     (provider: AIServiceProvider, patch: Partial<ServiceConfig>) => {
@@ -210,29 +218,32 @@ export default function SettingsPage() {
     );
   }, []);
 
-  const handleLanguageChange = useCallback((lng: string) => {
-    setLocalLanguage(lng);
-    otherPendingRef.current = {
-      ...otherPendingRef.current,
-      uiLanguage: lng,
-    };
+  const handleLanguageChange = (lang: string) => {
+    setLocalLanguage(lang);
+    otherPendingRef.current.uiLanguage = lang;
     setPendingCount(
       Object.keys(pendingRef.current).length +
         Object.keys(otherPendingRef.current).length,
     );
-  }, []);
+  };
 
-  const handleToolCallGroupVisibleCountChange = useCallback((value: number) => {
-    setLocalToolCallGroupVisibleCount(value);
-    otherPendingRef.current = {
-      ...otherPendingRef.current,
-      toolCallGroupVisibleCount: value,
-    };
+  const handleToolCallGroupVisibleCountChange = (count: number) => {
+    setLocalToolCallGroupVisibleCount(count);
+    otherPendingRef.current.toolCallGroupVisibleCount = count;
     setPendingCount(
       Object.keys(pendingRef.current).length +
         Object.keys(otherPendingRef.current).length,
     );
-  }, []);
+  };
+
+  const handleAgentHubUrlChange = (url: string) => {
+    setLocalAgentHubUrl(url);
+    otherPendingRef.current.agentHubUrl = url;
+    setPendingCount(
+      Object.keys(pendingRef.current).length +
+        Object.keys(otherPendingRef.current).length,
+    );
+  };
 
   const flushPending = useCallback(async () => {
     const pending = pendingRef.current;
@@ -341,6 +352,7 @@ export default function SettingsPage() {
                 'Conversation & Model Preferences',
               )}
             </TabsTrigger>
+            <TabsTrigger value="agent-hub">Agent Hub</TabsTrigger>
             <TabsTrigger value="data-reset">
               {t('settings.tabs.dataReset', 'Data & Reset')}
             </TabsTrigger>
@@ -444,6 +456,27 @@ export default function SettingsPage() {
                     {t('settings.language.korean', 'Korean')}
                   </option>
                 </select>
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="agent-hub">
+            <div className="space-y-6">
+              <div className="min-w-0">
+                <label className="block text-muted-foreground mb-2 font-medium">
+                  Agent Hub URL
+                </label>
+                <Input
+                  type="url"
+                  placeholder="https://api.agenthub.com"
+                  value={localAgentHubUrl}
+                  onChange={(e) => handleAgentHubUrlChange(e.target.value)}
+                  className="bg-background border text-foreground w-full"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  URL of the remote Agent Hub server. If set, assistants will be
+                  synced with this server.
+                </p>
               </div>
             </div>
           </TabsContent>

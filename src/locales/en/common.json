@@ -22,7 +22,7 @@
       "save": "Save"
     },
     "card": {
-      "default": "DEFAULT",
+      "protected": "PROTECTED",
       "active": "ACTIVE",
       "mcpCount": "MCP Servers: {{count}}",
       "localServiceCount": "Local Services: {{count}}",
@@ -31,7 +31,7 @@
       "checking": "Checking...",
       "delete": "Delete",
       "deleting": "Deleting...",
-      "deleteBlocked": "Default assistant cannot be deleted.",
+      "deleteBlocked": "Protected assistant cannot be deleted.",
       "deleteConfirmTitle": "Delete Assistant"
     }
   },

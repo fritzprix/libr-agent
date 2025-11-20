@@ -49,7 +49,7 @@ export default function AssistantCard({ assistant }: AssistantCardProps) {
   }, [assistant, connectServersFromAssistant, logger]);
 
   const handleDelete = async () => {
-    if (assistant.isDefault) {
+    if (assistant.deletionProtected === true) {
       alert(t('assistant.card.deleteBlocked'));
       return;
     }
@@ -76,8 +76,10 @@ export default function AssistantCard({ assistant }: AssistantCardProps) {
         <div className="flex justify-between items-start mb-2">
           <h3 className="text-primary font-medium">{assistant.name}</h3>
           <div className="flex gap-1 flex-wrap">
-            {assistant.isDefault && (
-              <Badge variant="destructive">{t('assistant.card.default')}</Badge>
+            {assistant.deletionProtected === true && (
+              <Badge variant="destructive">
+                {t('assistant.card.protected')}
+              </Badge>
             )}
             {isActive && (
               <Badge variant="default">{t('assistant.card.active')}</Badge>
@@ -164,7 +166,7 @@ export default function AssistantCard({ assistant }: AssistantCardProps) {
             variant="destructive"
             onClick={handleDelete}
             title={
-              assistant.isDefault
+              assistant.deletionProtected === true
                 ? t('assistant.card.deleteBlocked')
                 : t('assistant.card.deleteConfirmTitle')
             }

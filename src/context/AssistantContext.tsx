@@ -10,13 +10,14 @@ import {
   useState,
 } from 'react';
 import { useAsyncFn } from 'react-use';
-import { dbService } from '../lib/db';
 import { getLogger } from '../lib/logger';
 import { Assistant } from '../models/chat';
 import { toast } from 'sonner';
 import { useMCPServer } from '@/hooks/use-mcp-server';
 import { useMCPServerRegistry } from '@/context/MCPServerRegistryContext';
 import { MCPTool } from '@/lib/mcp-types';
+import { useSettings } from '@/hooks/use-settings';
+import { AssistantService } from '@/lib/services/assistant-service';
 
 const logger = getLogger('AssistantContext');
 
@@ -119,7 +120,7 @@ export function getNewAssistantTemplate(): Assistant {
     mcpServerIds: [], // No servers by default - user selects from Settings
     createdAt: new Date(),
     updatedAt: new Date(),
-    isDefault: false,
+    deletionProtected: false,
   };
 }
 
@@ -134,6 +135,11 @@ export const AssistantContextProvider = ({
 
   const { connectServersFromAssistant, availableTools } = useMCPServer();
   const { activeServers } = useMCPServerRegistry();
+  const { value: settings } = useSettings();
+
+  const assistantService = useMemo(() => {
+    return new AssistantService(settings.agentHubUrl);
+  }, [settings.agentHubUrl]);
 
   // Error state is derived from async operations errors - no longer needs setState
   // const [error, setError] = useState<Error | null>(null);
@@ -148,10 +154,10 @@ export const AssistantContextProvider = ({
 
   const [{ value: assistants, loading, error: loadError }, loadAssistants] =
     useAsyncFn(async () => {
-      let fetchedAssistants = await dbService.assistants.getPage(0, -1);
+      let fetchedAssistants = await assistantService.getAll();
       logger.debug('fetched assistants : ', { fetchedAssistants });
-      return fetchedAssistants.items;
-    }, []);
+      return fetchedAssistants;
+    }, [assistantService]);
 
   // Return assistants from DB
   const allAssistants = useMemo(() => {
@@ -210,7 +216,7 @@ export const AssistantContextProvider = ({
           name: editingAssistant.name,
           systemPrompt,
           mcpServerIds: editingAssistant.mcpServerIds,
-          isDefault: editingAssistant.isDefault ?? false,
+          deletionProtected: editingAssistant.deletionProtected ?? false,
           localServices: editingAssistant.localServices ?? [],
           createdAt: assistantCreatedAt || new Date(),
           updatedAt: new Date(),
@@ -223,7 +229,7 @@ export const AssistantContextProvider = ({
 
         logger.info(`Saving assistant`, { assistantToSave });
 
-        await dbService.assistants.upsert(assistantToSave);
+        await assistantService.save(assistantToSave);
 
         if (currentAssistant?.id === assistantToSave.id || !currentAssistant) {
           setCurrentAssistant(assistantToSave);
@@ -236,7 +242,7 @@ export const AssistantContextProvider = ({
         return undefined;
       }
     },
-    [currentAssistant, loadAssistants, showError],
+    [currentAssistant, loadAssistants, showError, assistantService],
   );
 
   const [{ error: deleteError }, deleteAssistant] = useAsyncFn(
@@ -249,7 +255,7 @@ export const AssistantContextProvider = ({
         )
       ) {
         try {
-          await dbService.assistants.delete(assistantId);
+          await assistantService.delete(assistantId);
         } catch (err) {
           showError('Failed to delete assistant.', err);
           // Error is automatically captured by useAsyncFn's deleteError
@@ -258,7 +264,7 @@ export const AssistantContextProvider = ({
         }
       }
     },
-    [loadAssistants, assistants, showError],
+    [loadAssistants, assistants, showError, assistantService],
   );
 
   // Consolidate errors from all async operations using useMemo
@@ -269,8 +275,8 @@ export const AssistantContextProvider = ({
 
   useEffect(() => {
     if (!loading && assistants && !currentAssistant) {
-      // DB v2 migration ensures assistants exist, just select default or first
-      const a = assistants.find((a) => a.isDefault) || assistants[0];
+      // Select the first assistant by default (no implicit default)
+      const a = assistants[0];
       if (a) {
         setCurrentAssistant(a);
       }
