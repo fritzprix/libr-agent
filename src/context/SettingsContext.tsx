@@ -30,6 +30,7 @@ export interface Settings {
   windowSize: number;
   uiLanguage: string; // i18n UI language code (e.g., 'en', 'ko')
   toolCallGroupVisibleCount: number; // Number of tool calls to show in collapsed group view
+  agentHubUrl?: string; // URL for the remote Agent Hub backend
 }
 
 const DEFAULT_MODEL = llmConfigManager.recommendModel({});
@@ -48,7 +49,8 @@ export const DEFAULT_SETTING: Settings = {
   },
   windowSize: 20,
   uiLanguage: 'en',
-  toolCallGroupVisibleCount: 4,
+  toolCallGroupVisibleCount: 3,
+  agentHubUrl: '',
 };
 
 interface SettingsContextType {
@@ -84,6 +86,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         windowSizeObject,
         uiLanguageObject,
         toolCallGroupVisibleCountObject,
+        agentHubUrlObject,
       ] = await Promise.all([
         dbService.objects.read('serviceConfigs'),
         dbService.objects.read('apiKeys'), // for backward compatibility
@@ -91,6 +94,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         dbService.objects.read('windowSize'),
         dbService.objects.read('uiLanguage'),
         dbService.objects.read('toolCallGroupVisibleCount'),
+        dbService.objects.read('agentHubUrl'),
       ]);
 
       // Handle migration from old format to new format
@@ -142,6 +146,9 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
                 toolCallGroupVisibleCountObject.value as number,
             }
           : {}),
+        ...(agentHubUrlObject != null
+          ? { agentHubUrl: agentHubUrlObject.value as string }
+          : {}),
       };
       return settings;
     } catch (e) {
@@ -190,6 +197,12 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
           await dbService.objects.upsert({
             key: 'toolCallGroupVisibleCount',
             value: settings.toolCallGroupVisibleCount,
+          });
+        }
+        if (settings.agentHubUrl != null) {
+          await dbService.objects.upsert({
+            key: 'agentHubUrl',
+            value: settings.agentHubUrl,
           });
         }
         await load();

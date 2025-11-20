@@ -6,16 +6,33 @@ import type { MCPResult, WebMCPServer } from '@/lib/mcp-types';
 import type { ServiceContext, ServiceContextOptions } from '@/features/tools';
 import { getLogger } from '@/lib/logger';
 import { mcpManagerTools } from './tools';
-import { mcpServersCRUD, assistantsCRUD, createPage } from '@/lib/db/crud';
-import { LocalDatabase } from '@/lib/db/service';
+import { createPage } from '@/lib/db/crud';
+import { dbService } from '@/lib/db/service';
 import type { MCPServerEntity } from '@/models/chat';
 import {
   createBM25Index,
   defaultTokenizer,
   clearBM25Cache,
 } from '@/lib/search/bm25';
+import {
+  McpServerService,
+  IMcpServerService,
+} from '@/lib/services/mcp-server-service';
+import {
+  AssistantService,
+  IAssistantService,
+} from '@/lib/services/assistant-service';
 
 const logger = getLogger('MCPManagerServer');
+
+async function getServices() {
+  const agentHubUrlObj = await dbService.objects.read('agentHubUrl');
+  const agentHubUrl = agentHubUrlObj?.value as string;
+  return {
+    mcpService: new McpServerService(agentHubUrl),
+    assistantService: new AssistantService(agentHubUrl),
+  };
+}
 
 // Input type interfaces for type safety
 interface ListServersInput {
@@ -131,17 +148,15 @@ let sessionId: string | null = null;
  * Helper function to find a server by ID or name
  */
 async function findServer(
+  service: IMcpServerService,
   serverId?: string,
   serverName?: string,
 ): Promise<MCPServerEntity | undefined> {
   if (serverId) {
-    return await mcpServersCRUD.read(serverId);
+    return await service.getById(serverId);
   }
   if (serverName) {
-    const db = LocalDatabase.getInstance();
-    return await db.mcpServers
-      .filter((s) => s.name.toLowerCase() === serverName.toLowerCase())
-      .first();
+    return await service.getByName(serverName);
   }
   return undefined;
 }
@@ -172,6 +187,8 @@ function normalizePagination(
 }
 
 async function listServers(
+  mcpService: IMcpServerService,
+  assistantService: IAssistantService,
   args: Record<string, unknown>,
 ): Promise<MCPResult<ListServersOutput>> {
   const input: ListServersInput = {
@@ -185,7 +202,7 @@ async function listServers(
 
   if (input.filterByAssistant && assistantId) {
     // Get assistant's connected servers
-    const assistant = await assistantsCRUD.read(assistantId);
+    const assistant = await assistantService.getById(assistantId);
     if (
       !assistant ||
       !assistant.mcpServerIds ||
@@ -199,15 +216,15 @@ async function listServers(
     }
 
     // Fetch servers by IDs
-    const db = LocalDatabase.getInstance();
-    servers = await db.mcpServers
-      .where('id')
-      .anyOf(assistant.mcpServerIds)
-      .toArray();
+    // Note: IMcpServerService doesn't have getByIds, so we fetch all and filter or fetch individually
+    // For efficiency with remote, we might want to add getByIds to service, but for now let's fetch all
+    // or fetch individually if count is small.
+    // Let's fetch all for now as it's safer for remote consistency if getByIds isn't available
+    const allServers = await mcpService.getAll();
+    servers = allServers.filter((s) => assistant.mcpServerIds?.includes(s.id));
   } else {
     // Get all servers
-    const db = LocalDatabase.getInstance();
-    servers = await db.mcpServers.toArray();
+    servers = await mcpService.getAll();
   }
 
   // Filter by active status
@@ -248,6 +265,7 @@ async function listServers(
 }
 
 async function searchServer(
+  mcpService: IMcpServerService,
   args: Record<string, unknown>,
 ): Promise<MCPResult<SearchServersOutput>> {
   const input: SearchServersInput = {
@@ -266,8 +284,7 @@ async function searchServer(
     ) as MCPResult<SearchServersOutput>;
   }
 
-  const db = LocalDatabase.getInstance();
-  let servers = await db.mcpServers.toArray();
+  let servers = await mcpService.getAll();
 
   // Filter by active status
   if (!input.includeInactive) {
@@ -422,6 +439,7 @@ async function searchServer(
 }
 
 async function createServer(
+  mcpService: IMcpServerService,
   args: Record<string, unknown>,
 ): Promise<MCPResult<CreateServerOutput>> {
   const input: CreateServerInput = {
@@ -469,7 +487,7 @@ async function createServer(
 
   // Try to save (will throw if name exists)
   try {
-    await mcpServersCRUD.upsert(server);
+    await mcpService.save(server);
 
     // Clear BM25 cache when data changes
     clearBM25Cache();
@@ -487,23 +505,19 @@ async function createServer(
 
     return createMCPStructuredToolResult(summary, {
       server,
-      message: 'Server created successfully',
+      message: `Server "${server.name}" created successfully`,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-
-    if (message.includes('name already exists')) {
-      return createMCPErrorToolResult(
-        `Server name "${input.name}" already exists. Please choose a different name.`,
-        { tool: 'create_server', serverName: input.name },
-      ) as MCPResult<CreateServerOutput>;
-    }
-
-    throw error;
+    logger.error('Failed to create server', error as Error);
+    return createMCPErrorToolResult(
+      `Failed to create server: ${error instanceof Error ? error.message : String(error)}`,
+    ) as MCPResult<CreateServerOutput>;
   }
 }
 
 async function connectServer(
+  mcpService: IMcpServerService,
+  assistantService: IAssistantService,
   args: Record<string, unknown>,
 ): Promise<MCPResult<ConnectServerOutput>> {
   const input: ConnectInput = {
@@ -528,7 +542,7 @@ async function connectServer(
   }
 
   // Find server using helper
-  const server = await findServer(input.serverId, input.serverName);
+  const server = await findServer(mcpService, input.serverId, input.serverName);
 
   if (!server) {
     return createMCPErrorToolResult(
@@ -545,7 +559,7 @@ async function connectServer(
       ) as MCPResult<ConnectServerOutput>;
     }
 
-    const assistant = await assistantsCRUD.read(assistantId);
+    const assistant = await assistantService.getById(assistantId);
     if (!assistant) {
       return createMCPErrorToolResult(
         `Assistant not found: ${assistantId}`,
@@ -556,7 +570,7 @@ async function connectServer(
     const serverIds = assistant.mcpServerIds || [];
     if (!serverIds.includes(server.id)) {
       assistant.mcpServerIds = [...serverIds, server.id];
-      await assistantsCRUD.upsert(assistant);
+      await assistantService.save(assistant);
     }
 
     const summary = [
@@ -580,7 +594,7 @@ async function connectServer(
     // Global scope: mark server as globally enabled
     server.isActive = true;
     server.updatedAt = new Date();
-    await mcpServersCRUD.upsert(server);
+    await mcpService.save(server);
 
     const summary = [
       `✅ Server Enabled Globally`,
@@ -599,6 +613,8 @@ async function connectServer(
 }
 
 async function disconnectServer(
+  mcpService: IMcpServerService,
+  assistantService: IAssistantService,
   args: Record<string, unknown>,
 ): Promise<MCPResult<unknown>> {
   const input: DisconnectInput = {
@@ -622,7 +638,7 @@ async function disconnectServer(
   }
 
   // Find server using helper
-  const server = await findServer(input.serverId, input.serverName);
+  const server = await findServer(mcpService, input.serverId, input.serverName);
 
   if (!server) {
     return createMCPErrorToolResult(
@@ -638,14 +654,14 @@ async function disconnectServer(
       });
     }
 
-    const assistant = await assistantsCRUD.read(assistantId);
+    const assistant = await assistantService.getById(assistantId);
     if (!assistant) {
       return createMCPErrorToolResult(`Assistant not found: ${assistantId}`);
     }
 
     const serverIds = assistant.mcpServerIds || [];
     assistant.mcpServerIds = serverIds.filter((id) => id !== server.id);
-    await assistantsCRUD.upsert(assistant);
+    await assistantService.save(assistant);
 
     return createMCPStructuredToolResult(
       `✅ Server "${server.name}" disconnected from assistant "${assistant.name}"`,
@@ -654,7 +670,7 @@ async function disconnectServer(
   } else {
     server.isActive = false;
     server.updatedAt = new Date();
-    await mcpServersCRUD.upsert(server);
+    await mcpService.save(server);
 
     return createMCPStructuredToolResult(
       `✅ Server "${server.name}" disabled globally`,
@@ -672,19 +688,20 @@ const mcpManagerServer: WebMCPServer = {
 
   async callTool(name: string, args: unknown): Promise<MCPResult<unknown>> {
     const a = (args || {}) as Record<string, unknown>;
+    const { mcpService, assistantService } = await getServices();
 
     try {
       switch (name) {
         case 'list_servers':
-          return await listServers(a);
+          return await listServers(mcpService, assistantService, a);
         case 'search_server':
-          return await searchServer(a);
+          return await searchServer(mcpService, a);
         case 'create_server':
-          return await createServer(a);
+          return await createServer(mcpService, a);
         case 'connect_server':
-          return await connectServer(a);
+          return await connectServer(mcpService, assistantService, a);
         case 'disconnect_server':
-          return await disconnectServer(a);
+          return await disconnectServer(mcpService, assistantService, a);
         default:
           return createMCPErrorToolResult(`Unknown tool: ${name}`, {
             toolName: name,
@@ -692,12 +709,10 @@ const mcpManagerServer: WebMCPServer = {
           });
       }
     } catch (error) {
-      logger.error('Tool execution error', { name, error });
-      const message = error instanceof Error ? error.message : String(error);
-      return createMCPErrorToolResult(message, {
-        error: message,
-        stack: error instanceof Error ? error.stack : undefined,
-      });
+      logger.error(`Error executing tool ${name}`, error as Error);
+      return createMCPErrorToolResult(
+        `Error executing tool ${name}: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   },
 
@@ -713,18 +728,17 @@ const mcpManagerServer: WebMCPServer = {
   async getServiceContext(
     options?: ServiceContextOptions,
   ): Promise<ServiceContext<unknown>> {
-    const db = LocalDatabase.getInstance();
-    const totalServers = await db.mcpServers.count();
-    const activeServers = await db.mcpServers
-      .filter((s: MCPServerEntity) => s.isActive)
-      .count();
+    const { mcpService, assistantService } = await getServices();
+    const totalServers = await mcpService.count();
+    const allServers = await mcpService.getAll();
+    const activeServers = allServers.filter((s) => s.isActive).length;
 
     // Use options.assistantId if provided, otherwise use the current context
     const contextAssistantId = options?.assistantId || assistantId;
 
     let assistantInfo = '';
     if (contextAssistantId) {
-      const assistant = await assistantsCRUD.read(contextAssistantId);
+      const assistant = await assistantService.getById(contextAssistantId);
       const connectedCount = assistant?.mcpServerIds?.length || 0;
       assistantInfo = `\n**Current Assistant**: ${assistant?.name || 'Unknown'}\n**Connected Servers**: ${connectedCount}`;
     }

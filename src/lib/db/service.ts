@@ -102,7 +102,12 @@ export class LocalDatabase extends Dexie {
         mcpServerIds: [],
         deletionProtected: true,
         localServices: [],
-        allowedBuiltInServiceAliases: ['mcp_manager', 'workspace', 'planning'],
+        allowedBuiltInServiceAliases: [
+          'mcp_manager',
+          'workspace',
+          'planning',
+          'assistant_manager',
+        ],
         createdAt: now,
         updatedAt: now,
       };
@@ -132,6 +137,7 @@ export class LocalDatabase extends Dexie {
           'playbook',
           'mcp_manager',
           'ui',
+          'assistant_manager',
         ],
         createdAt: now,
         updatedAt: now,
