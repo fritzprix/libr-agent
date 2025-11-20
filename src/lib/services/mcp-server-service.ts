@@ -34,7 +34,7 @@ export class LocalMcpServerService implements IMcpServerService {
   async getByName(name: string): Promise<MCPServerEntity | undefined> {
     return LocalDatabase.getInstance()
       .mcpServers.where('name')
-      .equals(name)
+      .equalsIgnoreCase(name)
       .first();
   }
 
