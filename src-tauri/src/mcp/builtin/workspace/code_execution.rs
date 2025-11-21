@@ -244,12 +244,12 @@ impl WorkspaceServer {
         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
         // Read output files
-        let stdout_content = tokio::fs::read_to_string(&stdout_path)
-            .await
-            .unwrap_or_default();
-        let stderr_content = tokio::fs::read_to_string(&stderr_path)
-            .await
-            .unwrap_or_default();
+        // Read output files using lossy UTF-8 conversion to handle non-UTF8 output (e.g. CP949)
+        let stdout_bytes = tokio::fs::read(&stdout_path).await.unwrap_or_default();
+        let stdout_content = String::from_utf8_lossy(&stdout_bytes).to_string();
+
+        let stderr_bytes = tokio::fs::read(&stderr_path).await.unwrap_or_default();
+        let stderr_content = String::from_utf8_lossy(&stderr_bytes).to_string();
 
         info!(
             "Process {} completed with exit code {:?}",

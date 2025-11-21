@@ -130,29 +130,27 @@ impl SessionIsolationManager {
             cmd.env("TEMP", config.workspace_path.join("tmp"));
             cmd.env("TMP", config.workspace_path.join("tmp"));
 
-            // Auto-detect and append Anaconda to PATH if not present
-            // This fixes issues where Python is installed but not in the system PATH
+            // Smart Discovery: Auto-detect and prepend valid Python to PATH
+            // This fixes issues where the Windows Store shim (WindowsApps\python.exe) takes precedence
             let current_path = std::env::var("PATH").unwrap_or_default();
-            let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
-            let anaconda_dir = PathBuf::from(local_app_data).join("anaconda3");
+            if let Some(python_dir) = self.detect_python_path().await {
+                let python_str = python_dir.to_string_lossy();
+                // Simple check to avoid duplicate appending if it's already in PATH
+                if !current_path.contains(python_str.as_ref()) {
+                    let scripts_dir = python_dir.join("Scripts");
+                    let lib_bin_dir = python_dir.join("Library").join("bin");
 
-            if anaconda_dir.exists() {
-                let anaconda_str = anaconda_dir.to_string_lossy();
-                // Simple check to avoid duplicate appending
-                if !current_path.contains(anaconda_str.as_ref()) {
-                    let scripts_dir = anaconda_dir.join("Scripts");
-                    let lib_bin_dir = anaconda_dir.join("Library").join("bin");
-
+                    // PREPEND to PATH to ensure this Python takes precedence over WindowsApps shim
                     let new_path = format!(
                         "{};{};{};{}",
-                        anaconda_str,
+                        python_str,
                         scripts_dir.to_string_lossy(),
                         lib_bin_dir.to_string_lossy(),
                         current_path
                     );
 
                     cmd.env("PATH", new_path);
-                    info!("Detected Anaconda at {} and appended to PATH", anaconda_str);
+                    info!("Smart Discovery: Preended Python at {} to PATH", python_str);
                 }
             }
 
@@ -656,6 +654,72 @@ impl SessionIsolationManager {
 
         info!("Isolation capabilities validated: {:?}", capabilities);
         capabilities
+    }
+    /// Detects a valid Python installation on Windows, prioritizing non-Store versions.
+    #[cfg(target_os = "windows")]
+    async fn detect_python_path(&self) -> Option<PathBuf> {
+        // 1. Try `where python` to find registered executables
+        if let Ok(output) = AsyncCommand::new("where").arg("python").output().await {
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                for line in stdout.lines() {
+                    let path = PathBuf::from(line.trim());
+                    // Filter out WindowsApps shim which redirects to Microsoft Store
+                    if !path.to_string_lossy().contains("WindowsApps") && path.exists() {
+                        if let Some(parent) = path.parent() {
+                            info!("Detected Python via 'where': {:?}", parent);
+                            return Some(parent.to_path_buf());
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Check standard installation locations as fallback
+        let common_paths = vec![
+            // Anaconda (User)
+            std::env::var("LOCALAPPDATA")
+                .ok()
+                .map(|p| PathBuf::from(p).join("Anaconda3")),
+            // Anaconda (System)
+            std::env::var("ProgramData")
+                .ok()
+                .map(|p| PathBuf::from(p).join("Anaconda3")),
+            // Anaconda (User Profile)
+            std::env::var("USERPROFILE")
+                .ok()
+                .map(|p| PathBuf::from(p).join("anaconda3")),
+            // Standard Python (User) - check for Python3* directories
+            std::env::var("LOCALAPPDATA")
+                .ok()
+                .map(|p| PathBuf::from(p).join("Programs").join("Python")),
+        ];
+
+        for path in common_paths.into_iter().flatten() {
+            // For standard Python, we might need to look deeper (e.g. Python39, Python310)
+            if path.join("python.exe").exists() {
+                info!("Detected Python via standard path: {:?}", path);
+                return Some(path);
+            }
+
+            // Check subdirectories for standard Python installs
+            if path.exists() && path.is_dir() {
+                if let Ok(entries) = std::fs::read_dir(&path) {
+                    for entry in entries.flatten() {
+                        let subpath = entry.path();
+                        if subpath.join("python.exe").exists() {
+                            info!(
+                                "Detected Python via standard path subdirectory: {:?}",
+                                subpath
+                            );
+                            return Some(subpath);
+                        }
+                    }
+                }
+            }
+        }
+
+        None
     }
 }
 

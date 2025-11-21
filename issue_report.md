@@ -7,6 +7,7 @@
 The agent encountered issues executing Python scripts using the `python` command directly, specifically when the `python` executable was not found in the system's PATH environment variable.
 
 **Observed Behavior:**
+
 1. **Attempt to run `process_image.py`:**
    - Command: `python process_image.py`
    - Result: `Command failed with exit code 1: STDOUT: STDERR: Python`
@@ -34,10 +35,12 @@ The agent encountered issues executing Python scripts using the `python` command
 
 **Resolution:**
 The issue was resolved by explicitly providing the full path to the Python executable:
+
 - Command: `C:\Users\SKTelecom\AppData\Local\Anaconda3\python.exe process_image.py`
 - Result: `Command executed successfully: STDOUT: Image resized from switch-shield.jpeg to switch-shield_resized.jpeg with scale factor 0.25 Image resized from switch-tsc-1000.jpeg to switch-tsc-1000_resized.jpeg with scale factor 0.25`
 - Analysis: This confirmed that Python was installed and functional, but its location was not included in the system's PATH environment variable for direct command execution.
 
 **Recommendations:**
+
 - Ensure that the Python installation directory (e.g., `C:\Users\SKTelecom\AppData\Local\Anaconda3\`) and its Scripts subdirectory are added to the system's PATH environment variable for easier command-line execution.
 - When `python` command fails, try to locate the python executable using `where python` or `dir` in known installation paths, and then use the full path to execute scripts.
