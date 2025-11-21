@@ -49,7 +49,7 @@ export const DEFAULT_SETTING: Settings = {
   },
   windowSize: 20,
   uiLanguage: 'en',
-  toolCallGroupVisibleCount: 3,
+  toolCallGroupVisibleCount: 4,
   agentHubUrl: '',
 };
 

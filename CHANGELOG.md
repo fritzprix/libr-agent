@@ -6,6 +6,13 @@ All notable changes to this project will be documented in this file.
 
 No changes yet.
 
+## [0.3.5] - 2025-11-20
+
+### 🐛 Fixed
+
+- **Circular Dependency**: Resolved a circular dependency in the database module by extracting `LocalDatabase` into a separate file (`src/lib/db/database.ts`). This fixes the `TypeError` during test initialization.
+- **Server Lookup**: Fixed case-insensitive server lookup in `McpServerService` to correctly find servers regardless of name casing.
+
 ## [0.3.2] - 2025-11-19
 
 ### 🛠️ Improvements

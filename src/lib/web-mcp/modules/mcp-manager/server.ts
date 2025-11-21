@@ -25,13 +25,33 @@ import {
 
 const logger = getLogger('MCPManagerServer');
 
+let cachedServices: {
+  mcpService: IMcpServerService;
+  assistantService: IAssistantService;
+  agentHubUrl: string | undefined;
+} | null = null;
+
 async function getServices() {
   const agentHubUrlObj = await dbService.objects.read('agentHubUrl');
   const agentHubUrl = agentHubUrlObj?.value as string;
-  return {
-    mcpService: new McpServerService(agentHubUrl),
-    assistantService: new AssistantService(agentHubUrl),
+
+  if (cachedServices && cachedServices.agentHubUrl === agentHubUrl) {
+    return {
+      mcpService: cachedServices.mcpService,
+      assistantService: cachedServices.assistantService,
+    };
+  }
+
+  const mcpService = new McpServerService(agentHubUrl);
+  const assistantService = new AssistantService(agentHubUrl);
+
+  cachedServices = {
+    mcpService,
+    assistantService,
+    agentHubUrl,
   };
+
+  return { mcpService, assistantService };
 }
 
 // Input type interfaces for type safety

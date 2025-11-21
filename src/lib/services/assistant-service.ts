@@ -8,6 +8,7 @@ export interface IAssistantService {
   getAll(): Promise<Assistant[]>;
   getById(id: string): Promise<Assistant | undefined>;
   save(assistant: Assistant): Promise<Assistant>;
+  saveAll(assistants: Assistant[]): Promise<Assistant[]>;
   delete(id: string): Promise<void>;
 }
 
@@ -23,6 +24,12 @@ export class LocalAssistantService implements IAssistantService {
   async save(assistant: Assistant): Promise<Assistant> {
     await dbService.assistants.upsert(assistant);
     return assistant;
+  }
+
+  async saveAll(assistants: Assistant[]): Promise<Assistant[]> {
+    if (assistants.length === 0) return [];
+    await dbService.assistants.upsertMany(assistants);
+    return assistants;
   }
 
   async delete(id: string): Promise<void> {
@@ -56,6 +63,16 @@ export class RemoteAssistantService implements IAssistantService {
     return response.json();
   }
 
+  async saveAll(assistants: Assistant[]): Promise<Assistant[]> {
+    // Remote API doesn't support bulk save yet, so we do sequential
+    // This is mainly used for sync to local, so this path might not be used often
+    const saved: Assistant[] = [];
+    for (const assistant of assistants) {
+      saved.push(await this.save(assistant));
+    }
+    return saved;
+  }
+
   async delete(id: string): Promise<void> {
     const response = await fetch(`${this.baseUrl}/assistants/${id}`, {
       method: 'DELETE',
@@ -79,10 +96,8 @@ export class AssistantService implements IAssistantService {
     if (this.remoteService) {
       try {
         const remoteAssistants = await this.remoteService.getAll();
-        // Sync to local (simple overwrite for now)
-        for (const assistant of remoteAssistants) {
-          await this.localService.save(assistant);
-        }
+        // Sync to local (batch operation)
+        await this.localService.saveAll(remoteAssistants);
         return remoteAssistants;
       } catch (error) {
         logger.error(
@@ -124,14 +139,37 @@ export class AssistantService implements IAssistantService {
     return this.localService.save(assistant);
   }
 
+  async saveAll(assistants: Assistant[]): Promise<Assistant[]> {
+    if (this.remoteService) {
+      try {
+        const saved = await this.remoteService.saveAll(assistants);
+        await this.localService.saveAll(saved);
+        return saved;
+      } catch (error) {
+        logger.error('Failed to save to remote', error);
+        throw error;
+      }
+    }
+    return this.localService.saveAll(assistants);
+  }
+
   async delete(id: string): Promise<void> {
     if (this.remoteService) {
       try {
         await this.remoteService.delete(id);
-        await this.localService.delete(id);
       } catch (error) {
         logger.error('Failed to delete from remote', error);
         throw error;
+      }
+
+      try {
+        await this.localService.delete(id);
+      } catch (error) {
+        logger.error(
+          'Remote deletion succeeded, but failed to delete from local',
+          error,
+        );
+        // Do not throw; treat as success, but log for reconciliation
       }
     } else {
       await this.localService.delete(id);
