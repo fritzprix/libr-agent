@@ -129,11 +129,38 @@ impl SessionIsolationManager {
             cmd.env("HOME", &config.workspace_path);
             cmd.env("TEMP", config.workspace_path.join("tmp"));
             cmd.env("TMP", config.workspace_path.join("tmp"));
-            // NOTE: We DO NOT override PATH on Windows!
+
+            // Auto-detect and append Anaconda to PATH if not present
+            // This fixes issues where Python is installed but not in the system PATH
+            let current_path = std::env::var("PATH").unwrap_or_default();
+            let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
+            let anaconda_dir = PathBuf::from(local_app_data).join("anaconda3");
+
+            if anaconda_dir.exists() {
+                let anaconda_str = anaconda_dir.to_string_lossy();
+                // Simple check to avoid duplicate appending
+                if !current_path.contains(anaconda_str.as_ref()) {
+                    let scripts_dir = anaconda_dir.join("Scripts");
+                    let lib_bin_dir = anaconda_dir.join("Library").join("bin");
+
+                    let new_path = format!(
+                        "{};{};{};{}",
+                        anaconda_str,
+                        scripts_dir.to_string_lossy(),
+                        lib_bin_dir.to_string_lossy(),
+                        current_path
+                    );
+
+                    cmd.env("PATH", new_path);
+                    info!("Detected Anaconda at {} and appended to PATH", anaconda_str);
+                }
+            }
+
+            // NOTE: We DO NOT override PATH on Windows unless we are appending to it!
             // Preserving user's PATH allows access to Python, Node.js, Git, etc.
             // Security isolation is achieved through workspace directory restrictions
 
-            info!("Windows environment configured: workspace isolated, PATH preserved");
+            info!("Windows environment configured: workspace isolated, PATH preserved (with Anaconda if found)");
             // Additional env diagnostic info to help diagnose missing output on Windows
             let path_len = std::env::var("PATH").map(|p| p.len()).unwrap_or(0);
             let system_root =
