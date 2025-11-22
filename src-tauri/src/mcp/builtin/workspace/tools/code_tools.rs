@@ -88,7 +88,7 @@ pub fn create_execute_shell_tool() -> MCPTool {
     }
 }
 
-// Windows platform tool (cmd.exe)
+// Windows platform tool (PowerShell)
 #[cfg(windows)]
 pub fn create_execute_shell_tool() -> MCPTool {
     let mut props = HashMap::new();
@@ -97,11 +97,11 @@ pub fn create_execute_shell_tool() -> MCPTool {
         string_prop_with_examples(
             Some(1),
             Some(1000),
-            Some("Command to execute using cmd.exe"),
+            Some("Command to execute using PowerShell"),
             vec![
-                json!("dir /b"),
-                json!("echo Hello World"),
-                json!("type file.txt"),
+                json!("Get-ChildItem"),
+                json!("Write-Host 'Hello World'"),
+                json!("Get-Content file.txt"),
             ],
         ),
     );

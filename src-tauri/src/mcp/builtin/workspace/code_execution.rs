@@ -556,26 +556,15 @@ impl WorkspaceServer {
                 // Success case - format result
                 let success = exit_code == 0;
 
-                let result_text = if success {
-                    if stdout.trim().is_empty() && stderr.trim().is_empty() {
-                        "Command executed successfully (no output)".to_string()
-                    } else if stderr.trim().is_empty() {
-                        format!("Command executed successfully:\n{}", stdout.trim())
-                    } else {
-                        format!(
-                            "Command executed successfully:\nSTDOUT:\n{}\n\nSTDERR:\n{}",
-                            stdout.trim(),
-                            stderr.trim()
-                        )
-                    }
-                } else {
-                    format!(
-                        "Command failed with exit code {}:\nSTDOUT:\n{}\n\nSTDERR:\n{}",
-                        exit_code,
-                        stdout.trim(),
-                        stderr.trim()
-                    )
-                };
+                // Construct JSON response
+                let response = serde_json::json!({
+                    "command": command,
+                    "exit_code": exit_code,
+                    "stdout": stdout,
+                    "stderr": stderr,
+                    "status": if success { "finished" } else { "failed" }
+                });
+                let result_text = response.to_string();
 
                 info!(
                     "Persistent shell command executed: {} (session: {}, exit: {})",
@@ -736,26 +725,15 @@ impl WorkspaceServer {
 
                 let success = exit_code.unwrap_or(-1) == 0;
 
-                let result_text = if success {
-                    if stdout.trim().is_empty() && stderr.trim().is_empty() {
-                        "Command executed successfully (no output)".to_string()
-                    } else if stderr.trim().is_empty() {
-                        format!("Command executed successfully:\n{}", stdout.trim())
-                    } else {
-                        format!(
-                            "Command executed successfully:\nSTDOUT:\n{}\n\nSTDERR:\n{}",
-                            stdout.trim(),
-                            stderr.trim()
-                        )
-                    }
-                } else {
-                    format!(
-                        "Command failed with exit code {}:\nSTDOUT:\n{}\n\nSTDERR:\n{}",
-                        exit_code.unwrap_or(-1),
-                        stdout.trim(),
-                        stderr.trim()
-                    )
-                };
+                // Construct JSON response
+                let response = serde_json::json!({
+                    "command": command,
+                    "exit_code": exit_code.unwrap_or(-1),
+                    "stdout": stdout,
+                    "stderr": stderr,
+                    "status": if success { "finished" } else { "failed" }
+                });
+                let result_text = response.to_string();
 
                 info!(
                     "Isolated shell command executed: {} (session: {}, exit: {:?})",

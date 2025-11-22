@@ -167,6 +167,10 @@ impl PersistentShell {
 
         self.stdin.flush().await?;
 
+        self.read_until_sentinel(&sentinel).await
+    }
+
+    async fn read_until_sentinel(&mut self, sentinel: &str) -> Result<(String, String, i32)> {
         // Read output until sentinel found
         let mut stdout_lines = Vec::new();
         let mut stderr_lines = Vec::new();
@@ -264,18 +268,43 @@ impl PersistentShell {
         command: &str,
         user_input: &str,
     ) -> Result<(String, String, i32)> {
+        let sentinel = generate_sentinel();
+
         debug!(
             "Executing command with input in session {}: {}",
             self.session_id, command
         );
 
-        // 1. Send user input first (stdin injection)
+        // 1. Send command first
+        self.stdin.write_all(command.as_bytes()).await?;
+        self.stdin.write_all(b"\n").await?;
+
+        // 2. Send user input (stdin injection)
         self.stdin.write_all(user_input.as_bytes()).await?;
         self.stdin.write_all(b"\n").await?;
+
+        // 3. Send sentinel markers
+        #[cfg(unix)]
+        {
+            self.stdin
+                .write_all(format!("echo '{sentinel}'\n").as_bytes())
+                .await?;
+            self.stdin.write_all(b"echo \"EXIT_CODE_$?\"\n").await?;
+        }
+
+        #[cfg(windows)]
+        {
+            self.stdin
+                .write_all(format!("Write-Output '{}'\n", sentinel).as_bytes())
+                .await?;
+            self.stdin
+                .write_all("Write-Output \"EXIT_CODE_$LASTEXITCODE\"\n".as_bytes())
+                .await?;
+        }
+
         self.stdin.flush().await?;
 
-        // 2. Execute command normally (reuse execute logic)
-        self.execute(command).await
+        self.read_until_sentinel(&sentinel).await
     }
 
     /// Get the session ID
