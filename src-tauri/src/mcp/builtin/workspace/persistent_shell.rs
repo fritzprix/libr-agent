@@ -167,6 +167,10 @@ impl PersistentShell {
 
         self.stdin.flush().await?;
 
+        self.read_until_sentinel(&sentinel).await
+    }
+
+    async fn read_until_sentinel(&mut self, sentinel: &str) -> Result<(String, String, i32)> {
         // Read output until sentinel found
         let mut stdout_lines = Vec::new();
         let mut stderr_lines = Vec::new();
@@ -264,55 +268,43 @@ impl PersistentShell {
         command: &str,
         user_input: &str,
     ) -> Result<(String, String, i32)> {
+        let sentinel = generate_sentinel();
+
         debug!(
             "Executing command with input in session {}: {}",
             self.session_id, command
         );
 
+        // 1. Send command first
+        self.stdin.write_all(command.as_bytes()).await?;
+        self.stdin.write_all(b"\n").await?;
+
+        // 2. Send user input (stdin injection)
+        self.stdin.write_all(user_input.as_bytes()).await?;
+        self.stdin.write_all(b"\n").await?;
+
+        // 3. Send sentinel markers
         #[cfg(unix)]
         {
-            // Use heredoc to safely pass input to command stdin
-            // This prevents the input from being interpreted as a shell command
-            // even if the target command doesn't consume it.
-            // We use quoted delimiter (<<'EOF') to prevent variable expansion in the input.
-            let sentinel = generate_sentinel();
-            let delimiter = format!("EOF_{sentinel}");
-
-            // Ensure delimiter is not in user_input to prevent breakout
-            if user_input.contains(&delimiter) {
-                anyhow::bail!("User input contains delimiter sequence");
-            }
-
-            // Construct heredoc command
-            // Note: execute() appends a newline, which terminates the heredoc
-            let heredoc_command = format!("{command} <<'{delimiter}'\n{user_input}\n{delimiter}");
-
-            self.execute(&heredoc_command).await
+            self.stdin
+                .write_all(format!("echo '{sentinel}'\n").as_bytes())
+                .await?;
+            self.stdin.write_all(b"echo \"EXIT_CODE_$?\"\n").await?;
         }
 
         #[cfg(windows)]
         {
-            // Use PowerShell Here-String to safely pass input via pipeline
-            // This prevents the input from being interpreted as a command
-            let sentinel = generate_sentinel();
-            let var_name = format!("Input_{sentinel}");
-
-            // Ensure delimiter is not in user_input to prevent breakout
-            // PowerShell Here-String terminator is "'@" at the start of a line
-            if user_input.contains("\n'@") || user_input.starts_with("'@") {
-                anyhow::bail!("User input contains Here-String delimiter sequence");
-            }
-
-            // Construct command using Here-String and Pipeline
-            // $Input_XYZ = @'
-            // ...input...
-            // '@; $Input_XYZ | command; Remove-Variable Input_XYZ
-            let ps_command = format!(
-                "${var_name} = @'\n{user_input}\n'@; ${var_name} | {command}; Remove-Variable {var_name}"
-            );
-
-            self.execute(&ps_command).await
+            self.stdin
+                .write_all(format!("Write-Output '{}'\n", sentinel).as_bytes())
+                .await?;
+            self.stdin
+                .write_all("Write-Output \"EXIT_CODE_$LASTEXITCODE\"\n".as_bytes())
+                .await?;
         }
+
+        self.stdin.flush().await?;
+
+        self.read_until_sentinel(&sentinel).await
     }
 
     /// Get the session ID
