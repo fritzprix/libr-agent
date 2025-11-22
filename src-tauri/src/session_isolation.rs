@@ -600,7 +600,7 @@ impl SessionIsolationManager {
     /// Get the appropriate shell command for the platform
     fn get_shell_command(&self) -> &str {
         if cfg!(target_os = "windows") {
-            "cmd"
+            "powershell"
         } else {
             "bash"
         }
