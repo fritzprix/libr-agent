@@ -10,6 +10,7 @@
 /// - Separate stdout/stderr streams
 /// - Exit code capture for error handling
 use anyhow::Result;
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU32, Ordering};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -41,7 +42,7 @@ async fn read_line_lossy<R: tokio::io::AsyncBufRead + Unpin>(
 fn generate_sentinel() -> String {
     static COUNTER: AtomicU32 = AtomicU32::new(0);
     let id = COUNTER.fetch_add(1, Ordering::Relaxed);
-    format!("STDIO_SENTINEL_{}", id)
+    format!("STDIO_SENTINEL_{id}")
 }
 
 /// Persistent shell session with state preservation
@@ -62,11 +63,12 @@ impl PersistentShell {
     ///
     /// # Arguments
     /// * `session_id` - Unique identifier for this shell session
+    /// * `workspace_path` - Working directory for the shell session
     ///
     /// # Platform-specific behavior
     /// - Unix: Spawns `bash --norc --noprofile`
     /// - Windows: Spawns `powershell.exe -NoProfile -NoLogo -NonInteractive`
-    pub async fn new(session_id: String) -> Result<Self> {
+    pub async fn new(session_id: String, workspace_path: PathBuf) -> Result<Self> {
         #[cfg(unix)]
         let mut cmd = Command::new("bash");
         #[cfg(unix)]
@@ -85,6 +87,13 @@ impl PersistentShell {
             cmd.arg("-NonInteractive"); // Critical: removes prompts and echo
             debug!("Creating persistent PowerShell session for: {}", session_id);
         }
+
+        // Set working directory to workspace
+        cmd.current_dir(&workspace_path);
+        debug!(
+            "Setting persistent shell working directory to: {}",
+            workspace_path.display()
+        );
 
         cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -141,7 +150,7 @@ impl PersistentShell {
         #[cfg(unix)]
         {
             self.stdin
-                .write_all(format!("echo '{}'\n", sentinel).as_bytes())
+                .write_all(format!("echo '{sentinel}'\n").as_bytes())
                 .await?;
             self.stdin.write_all(b"echo \"EXIT_CODE_$?\"\n").await?;
         }
@@ -221,9 +230,8 @@ impl PersistentShell {
                 "Sentinel not found for session {}: {}",
                 self.session_id, sentinel
             );
-            anyhow::bail!("Sentinel not found: {}", sentinel);
+            anyhow::bail!("Sentinel not found: {sentinel}");
         }
-
         let stdout = stdout_lines.join("");
         let stderr = stderr_lines.join("");
 
@@ -312,7 +320,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_basic_command() -> Result<()> {
-        let mut shell = PersistentShell::new("test-basic".to_string()).await?;
+        let temp_dir = std::env::temp_dir().join("test_basic_command");
+        std::fs::create_dir_all(&temp_dir)?;
+        let mut shell = PersistentShell::new("test-basic".to_string(), temp_dir.clone()).await?;
 
         #[cfg(unix)]
         let (stdout, _, exit_code) = shell.execute("echo 'Hello World'").await?;
@@ -323,12 +333,15 @@ mod tests {
         assert!(stdout.contains("Hello World"));
 
         shell.terminate().await?;
+        let _ = std::fs::remove_dir_all(&temp_dir);
         Ok(())
     }
 
     #[tokio::test]
     async fn test_working_directory_persistence() -> Result<()> {
-        let mut shell = PersistentShell::new("test-cd".to_string()).await?;
+        let temp_dir = std::env::temp_dir().join("test_working_dir");
+        std::fs::create_dir_all(&temp_dir)?;
+        let mut shell = PersistentShell::new("test-cd".to_string(), temp_dir.clone()).await?;
 
         #[cfg(unix)]
         {
@@ -347,12 +360,15 @@ mod tests {
         }
 
         shell.terminate().await?;
+        let _ = std::fs::remove_dir_all(&temp_dir);
         Ok(())
     }
 
     #[tokio::test]
     async fn test_environment_variable_persistence() -> Result<()> {
-        let mut shell = PersistentShell::new("test-env".to_string()).await?;
+        let temp_dir = std::env::temp_dir().join("test_env_vars");
+        std::fs::create_dir_all(&temp_dir)?;
+        let mut shell = PersistentShell::new("test-env".to_string(), temp_dir.clone()).await?;
 
         #[cfg(unix)]
         {
@@ -371,6 +387,7 @@ mod tests {
         }
 
         shell.terminate().await?;
+        let _ = std::fs::remove_dir_all(&temp_dir);
         Ok(())
     }
 }
