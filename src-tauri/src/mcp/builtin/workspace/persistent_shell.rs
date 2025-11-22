@@ -1,0 +1,376 @@
+/// Persistent Shell Session Manager
+///
+/// Provides STDIO-based persistent shell sessions for state preservation
+/// (working directory, environment variables) without PTY complexity.
+///
+/// Key features:
+/// - Cross-platform unified logic (bash for Unix, PowerShell for Windows)
+/// - Sentinel-based command synchronization (no timing dependencies)
+/// - UTF-8 lossy conversion for robust encoding handling
+/// - Separate stdout/stderr streams
+/// - Exit code capture for error handling
+use anyhow::Result;
+use std::process::Stdio;
+use std::sync::atomic::{AtomicU32, Ordering};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
+use tracing::{debug, warn};
+
+/// Read a line from BufReader with lossy UTF-8 conversion
+///
+/// This handles PowerShell error messages that may contain non-UTF8 characters
+/// (e.g., Windows CP949 encoding for Korean error messages).
+async fn read_line_lossy<R: tokio::io::AsyncBufRead + Unpin>(
+    reader: &mut R,
+    buf: &mut String,
+) -> Result<usize> {
+    buf.clear();
+    let mut raw_buf = Vec::new();
+    let n = reader.read_until(b'\n', &mut raw_buf).await?;
+
+    if n > 0 {
+        // Convert to String with lossy UTF-8 (replaces invalid bytes with �)
+        let line = String::from_utf8_lossy(&raw_buf);
+        buf.push_str(&line);
+    }
+
+    Ok(n)
+}
+
+/// Generate unique sentinel marker for command completion detection
+fn generate_sentinel() -> String {
+    static COUNTER: AtomicU32 = AtomicU32::new(0);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("STDIO_SENTINEL_{}", id)
+}
+
+/// Persistent shell session with state preservation
+///
+/// Maintains a single shell process with redirected stdio streams,
+/// allowing commands to preserve working directory, environment variables,
+/// and other shell state across multiple executions.
+pub struct PersistentShell {
+    child: Child,
+    stdin: ChildStdin,
+    stdout: BufReader<ChildStdout>,
+    stderr: BufReader<ChildStderr>,
+    session_id: String,
+}
+
+impl PersistentShell {
+    /// Create a new persistent shell session
+    ///
+    /// # Arguments
+    /// * `session_id` - Unique identifier for this shell session
+    ///
+    /// # Platform-specific behavior
+    /// - Unix: Spawns `bash --norc --noprofile`
+    /// - Windows: Spawns `powershell.exe -NoProfile -NoLogo -NonInteractive`
+    pub async fn new(session_id: String) -> Result<Self> {
+        #[cfg(unix)]
+        let mut cmd = Command::new("bash");
+        #[cfg(unix)]
+        {
+            cmd.arg("--norc");
+            cmd.arg("--noprofile");
+            debug!("Creating persistent bash shell for session: {}", session_id);
+        }
+
+        #[cfg(windows)]
+        let mut cmd = Command::new("powershell.exe");
+        #[cfg(windows)]
+        {
+            cmd.arg("-NoProfile");
+            cmd.arg("-NoLogo");
+            cmd.arg("-NonInteractive"); // Critical: removes prompts and echo
+            debug!("Creating persistent PowerShell session for: {}", session_id);
+        }
+
+        cmd.stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        let mut child = cmd.spawn()?;
+
+        let stdin = child.stdin.take().expect("Failed to get stdin");
+        let stdout = BufReader::new(child.stdout.take().expect("Failed to get stdout"));
+        let stderr = BufReader::new(child.stderr.take().expect("Failed to get stderr"));
+
+        debug!(
+            "Persistent shell created successfully (PID: {:?})",
+            child.id()
+        );
+
+        Ok(Self {
+            child,
+            stdin,
+            stdout,
+            stderr,
+            session_id,
+        })
+    }
+
+    /// Execute a command in the persistent shell
+    ///
+    /// # Arguments
+    /// * `command` - Shell command to execute
+    ///
+    /// # Returns
+    /// Tuple of (stdout, stderr, exit_code)
+    ///
+    /// # Algorithm
+    /// 1. Send command + newline
+    /// 2. Send unique sentinel marker
+    /// 3. Send exit code capture command
+    /// 4. Read stdout/stderr until sentinel found
+    /// 5. Parse exit code from next line
+    /// 6. Return collected output
+    pub async fn execute(&mut self, command: &str) -> Result<(String, String, i32)> {
+        let sentinel = generate_sentinel();
+
+        debug!(
+            "Executing command in session {}: {}",
+            self.session_id, command
+        );
+
+        // Send command
+        self.stdin.write_all(command.as_bytes()).await?;
+        self.stdin.write_all(b"\n").await?;
+
+        // Send sentinel markers (platform-specific exit code syntax)
+        #[cfg(unix)]
+        {
+            self.stdin
+                .write_all(format!("echo '{}'\n", sentinel).as_bytes())
+                .await?;
+            self.stdin.write_all(b"echo \"EXIT_CODE_$?\"\n").await?;
+        }
+
+        #[cfg(windows)]
+        {
+            self.stdin
+                .write_all(format!("Write-Output '{}'\n", sentinel).as_bytes())
+                .await?;
+            self.stdin
+                .write_all("Write-Output \"EXIT_CODE_$LASTEXITCODE\"\n".as_bytes())
+                .await?;
+        }
+
+        self.stdin.flush().await?;
+
+        // Read output until sentinel found
+        let mut stdout_lines = Vec::new();
+        let mut stderr_lines = Vec::new();
+        let mut found_sentinel = false;
+        let mut exit_code = 0;
+
+        loop {
+            let mut stdout_line = String::new();
+            let mut stderr_line = String::new();
+
+            tokio::select! {
+                result = read_line_lossy(&mut self.stdout, &mut stdout_line) => {
+                    if result? == 0 { break; } // EOF
+
+                    // Skip PowerShell prompts (lines starting with "PS ")
+                    if stdout_line.trim_start().starts_with("PS ") {
+                        continue;
+                    }
+
+                    // Check for sentinel
+                    if stdout_line.trim() == sentinel {
+                        found_sentinel = true;
+
+                        // Next line should be exit code
+                        let mut exit_line = String::new();
+                        loop {
+                            exit_line.clear();
+                            read_line_lossy(&mut self.stdout, &mut exit_line).await?;
+
+                            // Skip prompts in exit code line too
+                            if exit_line.trim_start().starts_with("PS ") {
+                                continue;
+                            }
+
+                            if let Some(code_str) = exit_line.trim().strip_prefix("EXIT_CODE_") {
+                                exit_code = code_str.parse().unwrap_or(0);
+                            }
+                            break;
+                        }
+
+                        break;
+                    }
+
+                    // Skip orphaned exit code markers
+                    if stdout_line.trim().starts_with("EXIT_CODE_") {
+                        continue;
+                    }
+
+                    stdout_lines.push(stdout_line);
+                }
+
+                result = read_line_lossy(&mut self.stderr, &mut stderr_line) => {
+                    if result? == 0 { continue; }
+                    stderr_lines.push(stderr_line);
+                }
+            }
+        }
+
+        if !found_sentinel {
+            warn!(
+                "Sentinel not found for session {}: {}",
+                self.session_id, sentinel
+            );
+            anyhow::bail!("Sentinel not found: {}", sentinel);
+        }
+
+        let stdout = stdout_lines.join("");
+        let stderr = stderr_lines.join("");
+
+        debug!(
+            "Command completed (exit: {}, stdout: {} bytes, stderr: {} bytes)",
+            exit_code,
+            stdout.len(),
+            stderr.len()
+        );
+
+        Ok((stdout, stderr, exit_code))
+    }
+
+    /// Execute a command with user input (Two-Tool Pattern)
+    ///
+    /// Injects user input via stdin before executing the command.
+    /// This is used for interactive commands like sudo that require password input.
+    ///
+    /// # Arguments
+    /// * `command` - Shell command to execute
+    /// * `user_input` - Input to inject via stdin
+    ///
+    /// # Returns
+    /// Tuple of (stdout, stderr, exit_code)
+    ///
+    /// # Security
+    /// Input is passed via stdin pipe, not visible in process command line
+    pub async fn execute_with_input(
+        &mut self,
+        command: &str,
+        user_input: &str,
+    ) -> Result<(String, String, i32)> {
+        debug!(
+            "Executing command with input in session {}: {}",
+            self.session_id, command
+        );
+
+        // 1. Send user input first (stdin injection)
+        self.stdin.write_all(user_input.as_bytes()).await?;
+        self.stdin.write_all(b"\n").await?;
+        self.stdin.flush().await?;
+
+        // 2. Execute command normally (reuse execute logic)
+        self.execute(command).await
+    }
+
+    /// Get the session ID
+    #[allow(dead_code)]
+    pub fn session_id(&self) -> &str {
+        &self.session_id
+    }
+
+    /// Get the process ID if available
+    pub fn pid(&self) -> Option<u32> {
+        self.child.id()
+    }
+
+    /// Terminate the shell session
+    pub async fn terminate(&mut self) -> Result<()> {
+        debug!("Terminating persistent shell session: {}", self.session_id);
+        self.child.kill().await?;
+        Ok(())
+    }
+}
+
+impl Drop for PersistentShell {
+    fn drop(&mut self) {
+        debug!("Dropping persistent shell session: {}", self.session_id);
+        // Best effort kill - ignore errors in drop
+        let _ = self.child.start_kill();
+    }
+}
+
+impl std::fmt::Debug for PersistentShell {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PersistentShell")
+            .field("session_id", &self.session_id)
+            .field("pid", &self.child.id())
+            .finish_non_exhaustive()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_basic_command() -> Result<()> {
+        let mut shell = PersistentShell::new("test-basic".to_string()).await?;
+
+        #[cfg(unix)]
+        let (stdout, _, exit_code) = shell.execute("echo 'Hello World'").await?;
+        #[cfg(windows)]
+        let (stdout, _, exit_code) = shell.execute("Write-Output 'Hello World'").await?;
+
+        assert_eq!(exit_code, 0);
+        assert!(stdout.contains("Hello World"));
+
+        shell.terminate().await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_working_directory_persistence() -> Result<()> {
+        let mut shell = PersistentShell::new("test-cd".to_string()).await?;
+
+        #[cfg(unix)]
+        {
+            shell.execute("cd /tmp").await?;
+            let (stdout, _, exit_code) = shell.execute("pwd").await?;
+            assert_eq!(exit_code, 0);
+            assert!(stdout.contains("/tmp"));
+        }
+
+        #[cfg(windows)]
+        {
+            shell.execute("cd C:\\Windows").await?;
+            let (stdout, _, exit_code) = shell.execute("pwd").await?;
+            assert_eq!(exit_code, 0);
+            assert!(stdout.contains("C:\\Windows"));
+        }
+
+        shell.terminate().await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_environment_variable_persistence() -> Result<()> {
+        let mut shell = PersistentShell::new("test-env".to_string()).await?;
+
+        #[cfg(unix)]
+        {
+            shell.execute("export MY_VAR=TestValue").await?;
+            let (stdout, _, exit_code) = shell.execute("echo $MY_VAR").await?;
+            assert_eq!(exit_code, 0);
+            assert!(stdout.contains("TestValue"));
+        }
+
+        #[cfg(windows)]
+        {
+            shell.execute("$env:MY_VAR='TestValue'").await?;
+            let (stdout, _, exit_code) = shell.execute("echo $env:MY_VAR").await?;
+            assert_eq!(exit_code, 0);
+            assert!(stdout.contains("TestValue"));
+        }
+
+        shell.terminate().await?;
+        Ok(())
+    }
+}

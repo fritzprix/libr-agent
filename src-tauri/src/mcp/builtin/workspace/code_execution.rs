@@ -522,6 +522,92 @@ impl WorkspaceServer {
         Ok((pid, exit_code, streaming))
     }
 
+    /// Execute command using persistent shell
+    ///
+    /// This method provides state preservation across commands (cd, export, venv)
+    /// by reusing a single shell process per session.
+    async fn execute_shell_persistent(
+        &self,
+        command: &str,
+        timeout_secs: u64,
+    ) -> Result<MCPResult, String> {
+        let session_id = self
+            .session_manager
+            .get_current_session()
+            .unwrap_or_else(|| "default".to_string());
+
+        // Normalize command
+        let normalized_command = Self::normalize_shell_command(command);
+
+        // Execute with timeout
+        let timeout_duration = Duration::from_secs(timeout_secs);
+
+        let execution_result = tokio::time::timeout(
+            timeout_duration,
+            self.shell_manager
+                .execute(session_id.clone(), &normalized_command),
+        )
+        .await;
+
+        match execution_result {
+            Ok(Ok((stdout, stderr, exit_code))) => {
+                // Success case - format result
+                let success = exit_code == 0;
+
+                let result_text = if success {
+                    if stdout.trim().is_empty() && stderr.trim().is_empty() {
+                        "Command executed successfully (no output)".to_string()
+                    } else if stderr.trim().is_empty() {
+                        format!("Command executed successfully:\n{}", stdout.trim())
+                    } else {
+                        format!(
+                            "Command executed successfully:\nSTDOUT:\n{}\n\nSTDERR:\n{}",
+                            stdout.trim(),
+                            stderr.trim()
+                        )
+                    }
+                } else {
+                    format!(
+                        "Command failed with exit code {}:\nSTDOUT:\n{}\n\nSTDERR:\n{}",
+                        exit_code,
+                        stdout.trim(),
+                        stderr.trim()
+                    )
+                };
+
+                info!(
+                    "Persistent shell command executed: {} (session: {}, exit: {})",
+                    command, session_id, exit_code
+                );
+
+                if success {
+                    Ok(MCPResult::success(&result_text))
+                } else {
+                    Ok(MCPResult::error(&result_text))
+                }
+            }
+            Ok(Err(e)) => {
+                // Execution error - shell crashed or command failed
+                warn!(
+                    "Persistent shell execution failed for session {}: {}. Falling back to one-shot.",
+                    session_id, e
+                );
+
+                // Fallback to one-shot execution
+                let isolation_level = IsolationLevel::Medium;
+                self.execute_shell_with_isolation(command, isolation_level, timeout_secs)
+                    .await
+            }
+            Err(_) => {
+                // Timeout
+                Err(format!(
+                    "Command execution timeout after {} seconds",
+                    timeout_secs
+                ))
+            }
+        }
+    }
+
     /// Execute shell commands with isolation
     async fn execute_shell_with_isolation(
         &self,
@@ -824,7 +910,7 @@ impl WorkspaceServer {
             return self.execute_shell_async(raw_command, &args).await;
         }
 
-        // Sync mode: existing behavior
+        // Sync mode: check persistent shell preference
         let timeout_secs = utils::validate_timeout(args.get("timeout").and_then(|v| v.as_u64()));
 
         // Enforce maximum sync timeout. Read default/max values from runtime
@@ -839,6 +925,20 @@ impl WorkspaceServer {
             ));
         }
 
+        // Check persistent shell preference (default: enabled)
+        let use_persistent_shell = args
+            .get("use_persistent_shell")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true); // Default enabled per Q1 decision
+
+        if use_persistent_shell {
+            // NEW PATH: Persistent shell execution (state preservation)
+            return self
+                .execute_shell_persistent(raw_command, timeout_secs)
+                .await;
+        }
+
+        // FALLBACK PATH: One-shot isolation execution
         // Always use Medium isolation for security (isolation parameter removed from tool)
         // Medium provides good balance between security and compatibility
         let isolation_level = IsolationLevel::Medium;
@@ -1176,6 +1276,83 @@ impl WorkspaceServer {
         // Get workspace and session info
         let workspace_path = self.get_workspace_dir();
         let session_id = pending.session_id.clone();
+
+        // Check if persistent shell should be used (default: true)
+        let use_persistent_shell = args
+            .get("use_persistent_shell")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+
+        // Try persistent shell path first (if enabled)
+        if use_persistent_shell && pending.run_mode == "sync" {
+            let normalized_command = Self::normalize_shell_command(&final_command);
+
+            // Execute with persistent shell (includes timeout and retry)
+            let execution_result = tokio::time::timeout(
+                Duration::from_secs(pending.timeout),
+                self.shell_manager.execute_with_input(
+                    session_id.clone(),
+                    &normalized_command,
+                    user_input,
+                ),
+            )
+            .await;
+
+            match execution_result {
+                Ok(Ok((stdout, stderr, exit_code))) => {
+                    // Success - format and return result
+                    info!(
+                        "Interactive persistent shell executed: {} (session: {}, exit: {})",
+                        sanitize_command_for_logging(&pending.display_command),
+                        session_id,
+                        exit_code
+                    );
+
+                    let result_text = if exit_code == 0 {
+                        if stdout.trim().is_empty() && stderr.trim().is_empty() {
+                            "Command executed successfully (no output)".to_string()
+                        } else if stderr.trim().is_empty() {
+                            format!("Command executed successfully:\n{}", stdout.trim())
+                        } else {
+                            format!(
+                                "Command executed successfully:\nSTDOUT:\n{}\n\nSTDERR:\n{}",
+                                stdout.trim(),
+                                stderr.trim()
+                            )
+                        }
+                    } else {
+                        format!(
+                            "Command failed with exit code {}:\nSTDOUT:\n{}\n\nSTDERR:\n{}",
+                            exit_code,
+                            stdout.trim(),
+                            stderr.trim()
+                        )
+                    };
+
+                    if exit_code == 0 {
+                        return Ok(MCPResult::success(&result_text));
+                    } else {
+                        return Ok(MCPResult::error(&result_text));
+                    }
+                }
+                Ok(Err(e)) => {
+                    // Shell error - log and fallback to one-shot
+                    warn!(
+                        "Persistent shell execution with input failed: {}. Falling back to one-shot.",
+                        e
+                    );
+                }
+                Err(_) => {
+                    // Timeout
+                    return Err(format!(
+                        "Command execution timeout after {} seconds",
+                        pending.timeout
+                    ));
+                }
+            }
+        }
+
+        // FALLBACK: One-shot execution with stdin injection (original implementation)
 
         // Create isolation config
         let normalized_command = Self::normalize_shell_command(&final_command);

@@ -15,6 +15,8 @@ use crate::session::SessionManager;
 pub mod code_execution;
 pub mod export_operations;
 pub mod file_operations;
+pub mod persistent_shell;
+pub mod persistent_shell_manager;
 pub mod terminal_manager;
 pub mod tools;
 pub mod ui_resources;
@@ -61,6 +63,7 @@ pub struct WorkspaceServer {
     isolation_manager: crate::session_isolation::SessionIsolationManager,
     process_registry: terminal_manager::ProcessRegistry,
     pending_executions: Arc<PendingExecutions>,
+    shell_manager: Arc<persistent_shell_manager::PersistentShellManager>,
 }
 
 impl WorkspaceServer {
@@ -76,6 +79,7 @@ impl WorkspaceServer {
             isolation_manager: crate::session_isolation::SessionIsolationManager::new(),
             process_registry,
             pending_executions: Arc::new(PendingExecutions::new()),
+            shell_manager: Arc::new(persistent_shell_manager::PersistentShellManager::new()),
         }
     }
 
@@ -198,6 +202,15 @@ impl WorkspaceServer {
             "Cleaned up {} processes for session {}",
             process_count, session_id
         );
+
+        // Cleanup persistent shell for this session
+        if let Err(e) = self.shell_manager.terminate_shell(session_id).await {
+            tracing::warn!(
+                "Failed to terminate persistent shell for session {}: {}",
+                session_id,
+                e
+            );
+        }
     }
 
     // Terminal Tool Handlers
