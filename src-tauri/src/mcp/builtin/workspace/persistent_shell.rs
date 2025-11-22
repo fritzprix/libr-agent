@@ -269,13 +269,50 @@ impl PersistentShell {
             self.session_id, command
         );
 
-        // 1. Send user input first (stdin injection)
-        self.stdin.write_all(user_input.as_bytes()).await?;
-        self.stdin.write_all(b"\n").await?;
-        self.stdin.flush().await?;
+        #[cfg(unix)]
+        {
+            // Use heredoc to safely pass input to command stdin
+            // This prevents the input from being interpreted as a shell command
+            // even if the target command doesn't consume it.
+            // We use quoted delimiter (<<'EOF') to prevent variable expansion in the input.
+            let sentinel = generate_sentinel();
+            let delimiter = format!("EOF_{sentinel}");
 
-        // 2. Execute command normally (reuse execute logic)
-        self.execute(command).await
+            // Ensure delimiter is not in user_input to prevent breakout
+            if user_input.contains(&delimiter) {
+                anyhow::bail!("User input contains delimiter sequence");
+            }
+
+            // Construct heredoc command
+            // Note: execute() appends a newline, which terminates the heredoc
+            let heredoc_command = format!("{command} <<'{delimiter}'\n{user_input}\n{delimiter}");
+
+            self.execute(&heredoc_command).await
+        }
+
+        #[cfg(windows)]
+        {
+            // Use PowerShell Here-String to safely pass input via pipeline
+            // This prevents the input from being interpreted as a command
+            let sentinel = generate_sentinel();
+            let var_name = format!("Input_{sentinel}");
+
+            // Ensure delimiter is not in user_input to prevent breakout
+            // PowerShell Here-String terminator is "'@" at the start of a line
+            if user_input.contains("\n'@") || user_input.starts_with("'@") {
+                anyhow::bail!("User input contains Here-String delimiter sequence");
+            }
+
+            // Construct command using Here-String and Pipeline
+            // $Input_XYZ = @'
+            // ...input...
+            // '@; $Input_XYZ | command; Remove-Variable Input_XYZ
+            let ps_command = format!(
+                "${var_name} = @'\n{user_input}\n'@; ${var_name} | {command}; Remove-Variable {var_name}"
+            );
+
+            self.execute(&ps_command).await
+        }
     }
 
     /// Get the session ID
