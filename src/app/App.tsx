@@ -48,6 +48,7 @@ function App() {
                           'ui',
                           'bootstrap',
                           'mcp_manager',
+                          "assistant_manager",
                         ]}
                       />
                       <BrowserToolProvider />
