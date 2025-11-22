@@ -536,6 +536,8 @@ impl WorkspaceServer {
             .get_current_session()
             .unwrap_or_else(|| "default".to_string());
 
+        let workspace_path = self.get_workspace_dir();
+
         // Normalize command
         let normalized_command = Self::normalize_shell_command(command);
 
@@ -545,7 +547,7 @@ impl WorkspaceServer {
         let execution_result = tokio::time::timeout(
             timeout_duration,
             self.shell_manager
-                .execute(session_id.clone(), &normalized_command),
+                .execute(session_id.clone(), workspace_path, &normalized_command),
         )
         .await;
 
@@ -601,8 +603,7 @@ impl WorkspaceServer {
             Err(_) => {
                 // Timeout
                 Err(format!(
-                    "Command execution timeout after {} seconds",
-                    timeout_secs
+                    "Command execution timeout after {timeout_secs} seconds"
                 ))
             }
         }
@@ -1292,6 +1293,7 @@ impl WorkspaceServer {
                 Duration::from_secs(pending.timeout),
                 self.shell_manager.execute_with_input(
                     session_id.clone(),
+                    workspace_path.clone(),
                     &normalized_command,
                     user_input,
                 ),
