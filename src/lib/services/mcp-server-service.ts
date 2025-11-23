@@ -5,6 +5,12 @@ import { Page } from '@/lib/db/types';
 
 const logger = getLogger('McpServerService');
 
+export interface RevalidateEvent {
+  entity: 'mcpServers' | 'assistants';
+  action: 'save' | 'delete';
+  entityId?: string;
+}
+
 export interface IMcpServerService {
   getAll(): Promise<MCPServerEntity[]>;
   getPage(page: number, pageSize: number): Promise<Page<MCPServerEntity>>;
@@ -14,9 +20,12 @@ export interface IMcpServerService {
   saveAll(servers: MCPServerEntity[]): Promise<MCPServerEntity[]>;
   delete(id: string): Promise<void>;
   count(): Promise<number>;
+  onRevalidate?: (callback: (event: RevalidateEvent) => void) => () => void;
 }
 
 export class LocalMcpServerService implements IMcpServerService {
+  private revalidateCallbacks = new Set<(event: RevalidateEvent) => void>();
+
   async getAll(): Promise<MCPServerEntity[]> {
     return dbUtils.getAllMCPServers();
   }
@@ -41,21 +50,58 @@ export class LocalMcpServerService implements IMcpServerService {
 
   async save(server: MCPServerEntity): Promise<MCPServerEntity> {
     await dbService.mcpServers.upsert(server);
+
+    // Emit revalidation event
+    this.emitRevalidate({
+      entity: 'mcpServers',
+      action: 'save',
+      entityId: server.id,
+    });
+
     return server;
   }
 
   async saveAll(servers: MCPServerEntity[]): Promise<MCPServerEntity[]> {
     if (servers.length === 0) return [];
     await dbService.mcpServers.upsertMany(servers);
+
+    // Emit revalidation event for batch save
+    this.emitRevalidate({
+      entity: 'mcpServers',
+      action: 'save',
+    });
+
     return servers;
   }
 
   async delete(id: string): Promise<void> {
     await dbService.mcpServers.delete(id);
+
+    // Emit revalidation event
+    this.emitRevalidate({
+      entity: 'mcpServers',
+      action: 'delete',
+      entityId: id,
+    });
   }
 
   async count(): Promise<number> {
     return dbService.mcpServers.count();
+  }
+
+  onRevalidate(callback: (event: RevalidateEvent) => void): () => void {
+    this.revalidateCallbacks.add(callback);
+    return () => this.revalidateCallbacks.delete(callback);
+  }
+
+  private emitRevalidate(event: RevalidateEvent): void {
+    for (const callback of this.revalidateCallbacks) {
+      try {
+        callback(event);
+      } catch (error) {
+        logger.error('Error in revalidate callback', error);
+      }
+    }
   }
 }
 
@@ -140,6 +186,13 @@ export class McpServerService implements IMcpServerService {
     }
   }
 
+  /**
+   * Subscribe to revalidation events from the local service
+   */
+  onRevalidate(callback: (event: RevalidateEvent) => void): () => void {
+    return this.localService.onRevalidate(callback);
+  }
+
   async getAll(): Promise<MCPServerEntity[]> {
     if (this.remoteService) {
       try {
@@ -211,13 +264,31 @@ export class McpServerService implements IMcpServerService {
       try {
         const saved = await this.remoteService.save(server);
         await this.localService.save(saved);
+
+        // Notify Main Thread if running in Worker context
+        this.sendWorkerNotification({
+          entity: 'mcpServers',
+          action: 'save',
+          entityId: saved.id,
+        });
+
         return saved;
       } catch (error) {
         logger.error('Failed to save to remote', error);
         throw error;
       }
     }
-    return this.localService.save(server);
+
+    const result = await this.localService.save(server);
+
+    // Notify Main Thread if running in Worker context
+    this.sendWorkerNotification({
+      entity: 'mcpServers',
+      action: 'save',
+      entityId: result.id,
+    });
+
+    return result;
   }
 
   async saveAll(servers: MCPServerEntity[]): Promise<MCPServerEntity[]> {
@@ -225,13 +296,29 @@ export class McpServerService implements IMcpServerService {
       try {
         const saved = await this.remoteService.saveAll(servers);
         await this.localService.saveAll(saved);
+
+        // Notify Main Thread if running in Worker context
+        this.sendWorkerNotification({
+          entity: 'mcpServers',
+          action: 'save',
+        });
+
         return saved;
       } catch (error) {
         logger.error('Failed to save to remote', error);
         throw error;
       }
     }
-    return this.localService.saveAll(servers);
+
+    const result = await this.localService.saveAll(servers);
+
+    // Notify Main Thread if running in Worker context
+    this.sendWorkerNotification({
+      entity: 'mcpServers',
+      action: 'save',
+    });
+
+    return result;
   }
 
   async delete(id: string): Promise<void> {
@@ -245,6 +332,13 @@ export class McpServerService implements IMcpServerService {
 
       try {
         await this.localService.delete(id);
+
+        // Notify Main Thread if running in Worker context
+        this.sendWorkerNotification({
+          entity: 'mcpServers',
+          action: 'delete',
+          entityId: id,
+        });
       } catch (error) {
         logger.error(
           'Remote deletion succeeded, but failed to delete from local',
@@ -254,6 +348,13 @@ export class McpServerService implements IMcpServerService {
       }
     } else {
       await this.localService.delete(id);
+
+      // Notify Main Thread if running in Worker context
+      this.sendWorkerNotification({
+        entity: 'mcpServers',
+        action: 'delete',
+        entityId: id,
+      });
     }
   }
 
@@ -270,5 +371,25 @@ export class McpServerService implements IMcpServerService {
       }
     }
     return this.localService.count();
+  }
+
+  /**
+   * Sends notification to Main Thread if running in Worker context
+   */
+  private sendWorkerNotification(event: RevalidateEvent): void {
+    // Check if running in Worker context
+    if (
+      typeof self !== 'undefined' &&
+      'sendNotification' in self &&
+      typeof (self as { sendNotification?: unknown }).sendNotification ===
+        'function'
+    ) {
+      (
+        self as typeof self & {
+          sendNotification: (type: string, data: unknown) => void;
+        }
+      ).sendNotification('service-revalidate', event);
+      logger.debug('Sent service-revalidate notification from Worker', event);
+    }
   }
 }

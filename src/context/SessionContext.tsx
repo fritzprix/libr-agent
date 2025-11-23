@@ -10,12 +10,11 @@ import {
   useState,
 } from 'react';
 import useSWRInfinite from 'swr/infinite';
-import { dbService, Page } from '../lib/db';
-import { dbUtils } from '@/lib/db/service';
-import { deleteContentStore } from '@/lib/rust-backend-client';
+import { Page } from '../lib/db';
 import { getLogger } from '../lib/logger';
 import { Assistant, Session, Thread } from '../models/chat';
 import { useAssistantContext } from './AssistantContext';
+import { LocalSessionService } from '@/lib/services/session-service';
 
 const logger = getLogger('SessionContext');
 
@@ -119,6 +118,8 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
   const currentRef = useRef(current);
   const sessionsRef = useRef<Session[]>([]);
 
+  const sessionService = useMemo(() => new LocalSessionService(), []);
+
   const {
     data,
     error: fetchError,
@@ -130,7 +131,7 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
     (pageIndex) => [`session`, pageIndex],
     async ([, pageIndex]) => {
       // SWR Infinite pageIndex starts from 0, but getPage expects 1-based page numbers
-      return dbService.sessions.getPage(pageIndex + 1, 10);
+      return sessionService.getPage(pageIndex + 1, 10);
     },
   );
 
@@ -318,7 +319,7 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
         );
 
         try {
-          await dbService.sessions.upsert(session);
+          await sessionService.save(session);
           // No need to revalidate - optimistic update contains all necessary data
         } catch (error) {
           // Rollback optimistic update
@@ -339,7 +340,7 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
         setLastFailedOperation(() => operation);
       }
     },
-    [mutate],
+    [mutate, sessionService],
   );
 
   /**
@@ -366,20 +367,7 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
         );
 
         try {
-          // Remove backend content-store artifacts first (best-effort)
-          try {
-            await deleteContentStore(id);
-          } catch (e) {
-            logger.warn('deleteContentStore failed for session ' + id, e);
-          }
-
-          // Clear DB artifacts and native workspace (best-effort)
-          try {
-            await dbUtils.clearSessionAndWorkspace(id);
-          } catch (e) {
-            logger.warn('clearSessionAndWorkspace failed for session ' + id, e);
-          }
-
+          await sessionService.delete(id);
           // No need to revalidate - optimistic update is accurate
         } catch (error) {
           // Unexpected error: log but do not rollback (best-effort mode)
@@ -398,7 +386,7 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
         setLastFailedOperation(() => operation);
       }
     },
-    [mutate, data],
+    [mutate, data, sessionService],
   );
 
   /**
@@ -443,7 +431,7 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
         );
 
         try {
-          await dbService.sessions.upsert(updatedSession);
+          await sessionService.save(updatedSession);
           // No need to revalidate - optimistic update is accurate
         } catch (error) {
           // Rollback optimistic updates
@@ -464,7 +452,7 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
         setLastFailedOperation(() => operation);
       }
     },
-    [mutate, data],
+    [mutate, data, sessionService],
   );
 
   /**
@@ -480,24 +468,10 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
       // Optimistic: clear current and sessions in UI
       setCurrent(null);
       try {
-        // Collect existing session ids so we can attempt to remove native workspaces
-        const sessions = await dbUtils.getAllSessions();
-
-        // Clear sessions/messages in DB in one operation first to ensure any
-        // concurrent SWR revalidation will see an empty DB.
-        await dbUtils.clearAllSessions();
+        await sessionService.clearAll();
 
         // Update UI to reflect cleared DB
         await mutate([], false);
-
-        // Attempt native workspace removal for each previously-known session id
-        for (const s of sessions) {
-          try {
-            await deleteContentStore(s.id);
-          } catch (e) {
-            logger.warn('deleteContentStore failed for session ' + s.id, e);
-          }
-        }
       } catch (e) {
         // Rollback optimistic updates
         setCurrent(originalCurrent);
@@ -517,7 +491,7 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
       setLastFailedOperation(() => operation);
       throw errorObj;
     }
-  }, [data, mutate]);
+  }, [data, mutate, sessionService]);
 
   // Derive sessionThread from current session
   const sessionThread = useMemo(

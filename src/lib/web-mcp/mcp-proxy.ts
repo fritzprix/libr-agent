@@ -12,6 +12,10 @@ import {
   MCPTool,
   MCPResponse,
 } from '../mcp-types';
+import type {
+  WebMCPNotification,
+  WebMCPWorkerMessage,
+} from '../mcp/web-worker/message';
 import {
   ServiceContext,
   ServiceContextOptions,
@@ -42,6 +46,12 @@ export class WebMCPProxy {
   };
   private isInitialized = false;
   private initializationPromise: Promise<void> | null = null;
+
+  // Notification handlers
+  private notificationHandlers = new Map<
+    string,
+    Set<(data: unknown) => void>
+  >();
 
   /**
    * Initializes a new instance of the `WebMCPProxy`.
@@ -124,12 +134,15 @@ export class WebMCPProxy {
   cleanup(): void {
     logger.debug('Cleaning up WebMCP proxy', {
       pendingRequests: this.pendingRequests.size,
+      notificationHandlers: this.notificationHandlers.size,
     });
     for (const [, { reject, timeout }] of this.pendingRequests.entries()) {
       clearTimeout(timeout);
       reject(new Error('Worker terminated'));
     }
     this.pendingRequests.clear();
+
+    this.clearNotificationHandlers();
 
     if (this.worker) {
       this.worker.terminate();
@@ -201,13 +214,23 @@ export class WebMCPProxy {
   }
 
   /**
-   * Handles incoming messages from the worker, resolving or rejecting the
-   * corresponding pending request.
+   * Handles incoming messages from the worker
+   * Now supports both responses and notifications
    * @param event The `MessageEvent` from the worker.
    * @private
    */
-  private handleWorkerMessage(event: MessageEvent<MCPResponse<unknown>>): void {
-    const response = event.data;
+  private handleWorkerMessage(event: MessageEvent<WebMCPWorkerMessage>): void {
+    const message = event.data;
+
+    // Check if this is a notification (no request ID)
+    if ('type' in message && message.type === 'notify') {
+      const notification = message as WebMCPNotification;
+      this.handleNotification(notification);
+      return;
+    }
+
+    // Otherwise, treat as response (existing logic)
+    const response = message as MCPResponse<unknown>;
 
     if (!response || response.id === undefined || response.id === null) {
       logger.warn('Invalid worker response - missing id', {
@@ -444,5 +467,64 @@ export class WebMCPProxy {
         toolCount: number;
       }>
     >(response);
+  }
+
+  /**
+   * Register a notification handler for a specific notification type
+   * @param notifyType Type of notification to listen for
+   * @param handler Callback function to handle the notification
+   * @returns Unsubscribe function
+   */
+  onNotify(notifyType: string, handler: (data: unknown) => void): () => void {
+    if (!this.notificationHandlers.has(notifyType)) {
+      this.notificationHandlers.set(notifyType, new Set());
+    }
+
+    this.notificationHandlers.get(notifyType)!.add(handler);
+    logger.debug(`Registered notification handler for: ${notifyType}`);
+
+    // Return unsubscribe function
+    return () => {
+      const handlers = this.notificationHandlers.get(notifyType);
+      if (handlers) {
+        handlers.delete(handler);
+        if (handlers.size === 0) {
+          this.notificationHandlers.delete(notifyType);
+        }
+      }
+      logger.debug(`Unregistered notification handler for: ${notifyType}`);
+    };
+  }
+
+  /**
+   * Remove all notification handlers (cleanup)
+   * @private
+   */
+  private clearNotificationHandlers(): void {
+    this.notificationHandlers.clear();
+  }
+
+  /**
+   * Handle notification from worker
+   * @private
+   */
+  private handleNotification(notification: WebMCPNotification): void {
+    const { notifyType, data } = notification;
+    logger.debug(`Received notification: ${notifyType}`, data);
+
+    const handlers = this.notificationHandlers.get(notifyType);
+    if (!handlers || handlers.size === 0) {
+      logger.debug(`No handlers registered for notification: ${notifyType}`);
+      return;
+    }
+
+    // Execute all registered handlers
+    for (const handler of handlers) {
+      try {
+        handler(data);
+      } catch (error) {
+        logger.error(`Error in notification handler for ${notifyType}`, error);
+      }
+    }
   }
 }

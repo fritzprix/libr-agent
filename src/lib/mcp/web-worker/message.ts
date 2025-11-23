@@ -3,6 +3,8 @@
  * @description Message protocol for Web Worker communication
  */
 
+import type { MCPResponse } from '../protocol/response';
+
 /**
  * Defines the structure of messages sent to and from a Web Worker MCP server.
  */
@@ -28,3 +30,21 @@ export interface WebMCPMessage {
   /** The arguments for the tool call. */
   args?: unknown;
 }
+
+/**
+ * Notification message sent from Worker to Main Thread
+ * (asynchronous, no request ID required)
+ */
+export interface WebMCPNotification {
+  /** Message type identifier */
+  type: 'notify';
+  /** Notification type (e.g., 'db-changed', 'server-status') */
+  notifyType: string;
+  /** Notification payload */
+  data?: unknown;
+}
+
+/**
+ * Combined message type for Worker → Main Thread communication
+ */
+export type WebMCPWorkerMessage = MCPResponse<unknown> | WebMCPNotification;

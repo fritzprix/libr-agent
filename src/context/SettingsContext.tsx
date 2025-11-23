@@ -7,51 +7,19 @@ import React, {
   useState,
 } from 'react';
 import { useAsyncFn } from 'react-use';
-import { AIServiceProvider } from '../lib/ai-service';
-import { dbService } from '../lib/db';
-import { llmConfigManager } from '../lib/llm-config-manager';
 import { getLogger } from '../lib/logger';
+import {
+  LocalSettingsService,
+  Settings,
+  ServiceConfig,
+  DEFAULT_SETTING,
+} from '@/lib/services/settings-service';
 
 const logger = getLogger('SettingsContext');
 
-interface ModelChoice {
-  provider: AIServiceProvider;
-  model: string;
-}
-
-export interface ServiceConfig {
-  apiKey?: string;
-  baseUrl?: string;
-}
-
-export interface Settings {
-  serviceConfigs: Record<AIServiceProvider, ServiceConfig>;
-  preferredModel: ModelChoice;
-  windowSize: number;
-  uiLanguage: string; // i18n UI language code (e.g., 'en', 'ko')
-  toolCallGroupVisibleCount: number; // Number of tool calls to show in collapsed group view
-  agentHubUrl?: string; // URL for the remote Agent Hub backend
-}
-
-const DEFAULT_MODEL = llmConfigManager.recommendModel({});
-
-export const DEFAULT_SETTING: Settings = {
-  serviceConfigs: Object.values(AIServiceProvider).reduce(
-    (acc, provider) => {
-      acc[provider] = {};
-      return acc;
-    },
-    {} as Record<AIServiceProvider, ServiceConfig>,
-  ),
-  preferredModel: {
-    provider: (DEFAULT_MODEL?.providerId || 'openai') as AIServiceProvider,
-    model: DEFAULT_MODEL?.modelId || '',
-  },
-  windowSize: 20,
-  uiLanguage: 'en',
-  toolCallGroupVisibleCount: 4,
-  agentHubUrl: '',
-};
+// Re-export types for backward compatibility
+export type { Settings, ServiceConfig };
+export { DEFAULT_SETTING };
 
 interface SettingsContextType {
   value: Settings;
@@ -68,7 +36,7 @@ interface SettingModalViewContextType {
 export const SettingModalViewContext =
   createContext<SettingModalViewContextType>({
     isOpen: false,
-    toggleOpen: () => {},
+    toggleOpen: () => { },
   });
 
 export const SettingsContext = createContext<SettingsContextType | undefined>(
@@ -77,85 +45,12 @@ export const SettingsContext = createContext<SettingsContextType | undefined>(
 
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [openSettingModal, setOpenSettingModal] = useState(false);
+
+  const settingsService = useMemo(() => new LocalSettingsService(), []);
+
   const [{ value, loading, error }, load] = useAsyncFn(async () => {
-    try {
-      const [
-        serviceConfigsObject,
-        apiKeysObject,
-        preferredModelObject,
-        windowSizeObject,
-        uiLanguageObject,
-        toolCallGroupVisibleCountObject,
-        agentHubUrlObject,
-      ] = await Promise.all([
-        dbService.objects.read('serviceConfigs'),
-        dbService.objects.read('apiKeys'), // for backward compatibility
-        dbService.objects.read('preferredModel'),
-        dbService.objects.read('windowSize'),
-        dbService.objects.read('uiLanguage'),
-        dbService.objects.read('toolCallGroupVisibleCount'),
-        dbService.objects.read('agentHubUrl'),
-      ]);
-
-      // Handle migration from old format to new format
-      let serviceConfigs: Record<AIServiceProvider, ServiceConfig> =
-        DEFAULT_SETTING.serviceConfigs;
-      if (serviceConfigsObject) {
-        serviceConfigs = {
-          ...DEFAULT_SETTING.serviceConfigs,
-          ...(serviceConfigsObject.value as Record<
-            AIServiceProvider,
-            ServiceConfig
-          >),
-        };
-      } else if (apiKeysObject) {
-        // Migrate old format to new format
-        const oldApiKeys = apiKeysObject.value as Record<
-          AIServiceProvider,
-          string
-        >;
-        serviceConfigs = Object.entries(oldApiKeys).reduce(
-          (acc, [provider, apiKey]) => {
-            acc[provider as AIServiceProvider] = { apiKey };
-            return acc;
-          },
-          { ...DEFAULT_SETTING.serviceConfigs },
-        );
-        // Save migrated data
-        await dbService.objects.upsert({
-          key: 'serviceConfigs',
-          value: serviceConfigs,
-        });
-      }
-
-      const settings: Settings = {
-        ...DEFAULT_SETTING,
-        serviceConfigs,
-        ...(preferredModelObject
-          ? { preferredModel: preferredModelObject.value as ModelChoice }
-          : {}),
-        ...(windowSizeObject != null
-          ? { windowSize: windowSizeObject.value as number }
-          : {}),
-        ...(uiLanguageObject != null
-          ? { uiLanguage: uiLanguageObject.value as string }
-          : {}),
-        ...(toolCallGroupVisibleCountObject != null
-          ? {
-              toolCallGroupVisibleCount:
-                toolCallGroupVisibleCountObject.value as number,
-            }
-          : {}),
-        ...(agentHubUrlObject != null
-          ? { agentHubUrl: agentHubUrlObject.value as string }
-          : {}),
-      };
-      return settings;
-    } catch (e) {
-      logger.error('Failed to load settings', e);
-      throw e;
-    }
-  }, []);
+    return settingsService.getSettings();
+  }, [settingsService]);
 
   useEffect(() => {
     load();
@@ -165,53 +60,14 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const update = useCallback(
     async (settings: Partial<Settings>) => {
       try {
-        if (settings.serviceConfigs) {
-          const newServiceConfigs = {
-            ...(value?.serviceConfigs || {}),
-            ...settings.serviceConfigs,
-          };
-          await dbService.objects.upsert({
-            key: 'serviceConfigs',
-            value: newServiceConfigs,
-          });
-        }
-        if (settings.preferredModel) {
-          await dbService.objects.upsert({
-            key: 'preferredModel',
-            value: settings.preferredModel,
-          });
-        }
-        if (settings.windowSize != null) {
-          await dbService.objects.upsert({
-            key: 'windowSize',
-            value: settings.windowSize,
-          });
-        }
-        if (settings.uiLanguage != null) {
-          await dbService.objects.upsert({
-            key: 'uiLanguage',
-            value: settings.uiLanguage,
-          });
-        }
-        if (settings.toolCallGroupVisibleCount != null) {
-          await dbService.objects.upsert({
-            key: 'toolCallGroupVisibleCount',
-            value: settings.toolCallGroupVisibleCount,
-          });
-        }
-        if (settings.agentHubUrl != null) {
-          await dbService.objects.upsert({
-            key: 'agentHubUrl',
-            value: settings.agentHubUrl,
-          });
-        }
+        await settingsService.updateSettings(settings);
         await load();
       } catch (e) {
         logger.error('Failed to update settings', e);
         throw e;
       }
     },
-    [load, value],
+    [load, settingsService],
   );
 
   const contextValue: SettingsContextType = useMemo(() => {
