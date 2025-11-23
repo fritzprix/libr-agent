@@ -36,7 +36,7 @@ interface SettingModalViewContextType {
 export const SettingModalViewContext =
   createContext<SettingModalViewContextType>({
     isOpen: false,
-    toggleOpen: () => { },
+    toggleOpen: () => {},
   });
 
 export const SettingsContext = createContext<SettingsContextType | undefined>(
