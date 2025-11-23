@@ -124,7 +124,7 @@ export const mcpManagerTools: MCPTool[] = [
               type: 'object',
               additionalProperties: { type: 'string' },
               description:
-                'Environment variables (optional for stdio, e.g., {"API_KEY": "xxx", "DEBUG": "true"})',
+                'Environment variables as an object (NOT a JSON string). Example: {"API_KEY": "xxx", "DEBUG": "true"}. Do NOT use string format like \'{"key": "value"}\'.',
             },
             // http fields
             url: createStringSchema({
@@ -135,7 +135,7 @@ export const mcpManagerTools: MCPTool[] = [
               type: 'object',
               additionalProperties: { type: 'string' },
               description:
-                'HTTP headers (optional for http, e.g., {"Authorization": "Bearer token", "X-API-Key": "xxx"})',
+                'HTTP headers as an object (NOT a JSON string). Example: {"Authorization": "Bearer token", "X-API-Key": "xxx"}. Do NOT use string format.',
             },
           },
           required: ['type'],

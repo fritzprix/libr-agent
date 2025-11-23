@@ -26,7 +26,7 @@ impl WorkspaceServer {
         let path_str = match args.get("path").and_then(|v| v.as_str()) {
             Some(path) => path,
             None => {
-                return Err("Missing required parameter: path".to_string());
+                return Ok(MCPResult::error("Missing required parameter: path"));
             }
         };
 
@@ -41,7 +41,9 @@ impl WorkspaceServer {
 
         if let (Some(start), Some(end)) = (start_line, end_line) {
             if start > end {
-                return Err("start_line must be less than or equal to end_line".to_string());
+                return Ok(MCPResult::error(
+                    "start_line must be less than or equal to end_line",
+                ));
             }
         }
 
@@ -54,7 +56,7 @@ impl WorkspaceServer {
                 .validate_file_size(&safe_path, crate::config::max_file_size())
             {
                 error!("File size validation failed: {}", e);
-                return Err(format!("File size error: {e}"));
+                return Ok(MCPResult::error(&format!("File size error: {e}")));
             }
 
             self.read_file_lines_range(&safe_path, start_line, end_line)
@@ -73,7 +75,7 @@ impl WorkspaceServer {
             }
             Err(e) => {
                 error!("Failed to read file {}: {}", path_str, e);
-                Err(format!("Failed to read file: {e}"))
+                Ok(MCPResult::error(&format!("Failed to read file: {e}")))
             }
         }
     }
@@ -133,14 +135,14 @@ impl WorkspaceServer {
         let path_str = match args.get("path").and_then(|v| v.as_str()) {
             Some(path) => path,
             None => {
-                return Err("Missing required parameter: path".to_string());
+                return Ok(MCPResult::error("Missing required parameter: path"));
             }
         };
 
         let content = match args.get("content").and_then(|v| v.as_str()) {
             Some(content) => content,
             None => {
-                return Err("Missing required parameter: content".to_string());
+                return Ok(MCPResult::error("Missing required parameter: content"));
             }
         };
 
@@ -151,7 +153,7 @@ impl WorkspaceServer {
             "w" => file_manager.write_file_string(path_str, content).await,
             "a" => file_manager.append_file_string(path_str, content).await,
             _ => {
-                return Err("Invalid mode. Use 'w' or 'a'".to_string());
+                return Ok(MCPResult::error("Invalid mode. Use 'w' or 'a'"));
             }
         };
 
@@ -167,7 +169,7 @@ impl WorkspaceServer {
             }
             Err(e) => {
                 error!("Failed to write file {}: {}", path_str, e);
-                Err(format!("Failed to write file: {e}"))
+                Ok(MCPResult::error(&format!("Failed to write file: {e}")))
             }
         }
     }
@@ -232,7 +234,7 @@ impl WorkspaceServer {
             }
             Err(e) => {
                 error!("Failed to list directory {:?}: {}", safe_path, e);
-                Err(format!("Failed to list directory: {e}"))
+                Ok(MCPResult::error(&format!("Failed to list directory: {e}")))
             }
         }
     }
@@ -241,7 +243,7 @@ impl WorkspaceServer {
         let pattern = match args.get("pattern").and_then(|v| v.as_str()) {
             Some(pattern) => pattern,
             None => {
-                return Err("Missing required parameter: pattern".to_string());
+                return Ok(MCPResult::error("Missing required parameter: pattern"));
             }
         };
 
@@ -343,14 +345,14 @@ impl WorkspaceServer {
         let path_str = match args.get("path").and_then(|v| v.as_str()) {
             Some(path) => path,
             None => {
-                return Err("Missing required parameter: path".to_string());
+                return Ok(MCPResult::error("Missing required parameter: path"));
             }
         };
 
         let replacements_val = match args.get("replacements") {
             Some(val) => val,
             None => {
-                return Err("Missing required parameter: replacements".to_string());
+                return Ok(MCPResult::error("Missing required parameter: replacements"));
             }
         };
 
@@ -358,7 +360,9 @@ impl WorkspaceServer {
             match serde_json::from_value(replacements_val.clone()) {
                 Ok(r) => r,
                 Err(e) => {
-                    return Err(format!("Invalid replacements format: {e}"));
+                    return Ok(MCPResult::error(&format!(
+                        "Invalid replacements format: {e}"
+                    )));
                 }
             };
 
@@ -367,7 +371,7 @@ impl WorkspaceServer {
         let lines = match self.read_file_lines(&safe_path).await {
             Ok(lines) => lines,
             Err(e) => {
-                return Err(format!("Failed to read file: {e}"));
+                return Ok(MCPResult::error(&format!("Failed to read file: {e}")));
             }
         };
 
@@ -380,7 +384,7 @@ impl WorkspaceServer {
                 None => match rep.get("line_number").and_then(|v| v.as_u64()) {
                     Some(num) => num as usize,
                     None => {
-                        return Err("Missing start_line or line_number".to_string());
+                        return Ok(MCPResult::error("Missing start_line or line_number"));
                     }
                 },
             };
@@ -392,23 +396,23 @@ impl WorkspaceServer {
                 .unwrap_or(start_line);
 
             if start_line > end_line {
-                return Err("start_line must be <= end_line".to_string());
+                return Ok(MCPResult::error("start_line must be <= end_line"));
             }
 
             if start_line == 0 || end_line > new_lines.len() {
-                return Err(format!(
+                return Ok(MCPResult::error(&format!(
                     "Line range {}-{} is out of bounds (file has {} lines)",
                     start_line,
                     end_line,
                     new_lines.len()
-                ));
+                )));
             }
 
             let content = match rep.get("new_content") {
                 Some(Value::String(s)) => s.to_string(), // Handle string values including empty strings
                 Some(Value::Null) => String::new(), // Handle explicit null as empty string for deletion
                 Some(_) => {
-                    return Err("new_content must be a string".to_string());
+                    return Ok(MCPResult::error("new_content must be a string"));
                 }
                 None => String::new(), // Missing new_content means delete lines
             };
@@ -452,7 +456,7 @@ impl WorkspaceServer {
     pub async fn handle_grep(&self, args: Value) -> Result<MCPResult, String> {
         let pattern = match args.get("pattern").and_then(|v| v.as_str()) {
             Some(p) => p,
-            None => return Err("missing 'pattern' argument".to_string()),
+            None => return Ok(MCPResult::error("missing 'pattern' argument")),
         };
 
         let ignore_case = args
@@ -473,17 +477,19 @@ impl WorkspaceServer {
                 Ok(safe_path) => match tokio::fs::read_to_string(safe_path).await {
                     Ok(s) => s,
                     Err(e) => {
-                        return Err(format!("failed to read file {path_str}: {e}"));
+                        return Ok(MCPResult::error(&format!("failed to read file {path_str}: {e}")));
                     }
                 },
                 Err(e) => {
-                    return Err(format!("Security error: {e}"));
+                    return Ok(MCPResult::error(&format!("Security error: {e}")));
                 }
             }
         } else if let Some(s) = args.get("input").and_then(|v| v.as_str()) {
             s.to_string()
         } else {
-            return Err("either 'path' or 'input' must be provided".to_string());
+            return Ok(MCPResult::error(
+                "either 'path' or 'input' must be provided",
+            ));
         };
 
         let regex = match regex::RegexBuilder::new(pattern)
@@ -492,7 +498,7 @@ impl WorkspaceServer {
         {
             Ok(r) => r,
             Err(e) => {
-                return Err(format!("invalid pattern: {e}"));
+                return Ok(MCPResult::error(&format!("invalid pattern: {e}")));
             }
         };
 
@@ -518,14 +524,16 @@ impl WorkspaceServer {
         let src_path_str = match args.get("src_abs_path").and_then(|v| v.as_str()) {
             Some(path) => path,
             None => {
-                return Err("Missing required parameter: src_abs_path".to_string());
+                return Ok(MCPResult::error("Missing required parameter: src_abs_path"));
             }
         };
 
         let dest_rel_path = match args.get("dest_rel_path").and_then(|v| v.as_str()) {
             Some(path) => path,
             None => {
-                return Err("Missing required parameter: dest_rel_path".to_string());
+                return Ok(MCPResult::error(
+                    "Missing required parameter: dest_rel_path",
+                ));
             }
         };
 
@@ -543,17 +551,19 @@ impl WorkspaceServer {
                     "Failed to canonicalize source path '{}': {}",
                     src_path_str, e
                 );
-                return Err(format!(
+                return Ok(MCPResult::error(&format!(
                     "Invalid source path: '{src_path_str}'. {e}. \
                      Please ensure the file exists and the path is correct. \
                      On Windows, use absolute paths like 'C:\\Users\\...'"
-                ));
+                )));
             }
         };
 
         // Ensure source is a file, not a directory
         if !src_path.is_file() {
-            return Err("Source path must be a file, not a directory".to_string());
+            return Ok(MCPResult::error(
+                "Source path must be a file, not a directory",
+            ));
         }
 
         // Use file manager to handle destination path validation and copying

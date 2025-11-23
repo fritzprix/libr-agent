@@ -3,5 +3,7 @@
     "allow": ["Bash(pnpm refactor:validate:*)", "Bash(cargo fmt:*)"],
     "deny": [],
     "ask": []
-  }
+  },
+  "enabledMcpjsonServers": ["serena"],
+  "enableAllProjectMcpServers": true
 }

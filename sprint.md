@@ -22,15 +22,17 @@
     - 대용량 출력(100MB 제한) 스트리밍 및 파일 저장으로 메모리 효율성 개선
     - 동기/비동기 실행 모두 통일된 `spawn_and_stream_to_files` 헬퍼 사용
 - [ ] Assistant를 검색하고 assistant가 assistant에게 task를 부여할 수 있는 MCP Server 구현
-  - list_assistant
-    - pagination 지원
-  - search_assistant
+  - [x] Assistant CRUD (create, get, update, delete) 구현
+  - [ ] list_assistant
+    - [x] 기본 목록 조회 구현
+    - [ ] pagination 지원
+  - [ ] search_assistant
     - query: string
     - assistant의 description을 기반으로 bm25 matching 검색 제공
-  - spawn_assistant
+  - [ ] spawn_assistant
     - assistant_id: string
     - query: string
-  - poll_assistant
+  - [ ] poll_assistant
 - [ ] light weight assistant runner 구현을 위한 기획
   - 현재 프로젝트의 타입과 호환되는 light weight assistant runner program을 rust로 작성하고자 한다.
   - stdio를 통한 RPC 통신으로 main process와 통신 필수적인 callback을 지원, main process의 아래 함수를 구현해야 함

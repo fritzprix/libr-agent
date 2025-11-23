@@ -118,14 +118,26 @@ export const useToolProcessor = ({ submit }: UseToolProcessorConfig) => {
                   [],
               });
 
+              // Detect both protocol-level and tool execution errors
+              const hasProtocolError = isMCPError(mcpResponse);
+              const hasToolExecutionError =
+                mcpResponse.result?.isError === true;
+              const hasAnyError = hasProtocolError || hasToolExecutionError;
+
+              // Extract appropriate error message
+              const errorMessage = hasProtocolError
+                ? `Error: ${mcpResponse.error.message} (Code: ${mcpResponse.error.code})`
+                : hasToolExecutionError
+                  ? ((mcpResponse.result?.content?.[0] as { text?: string })
+                      ?.text ?? 'Unknown error')
+                  : '';
+
               const toolResultMessage: Message = {
                 id: createId(),
                 assistantId: currentAssistant?.id,
                 role: 'tool',
-                content: isMCPError(mcpResponse)
-                  ? buildErrorContent(
-                      `Error: ${mcpResponse.error.message} (Code: ${mcpResponse.error.code})`,
-                    )
+                content: hasAnyError
+                  ? buildErrorContent(errorMessage)
                   : mcpResponse.result?.content || [],
                 tool_call_id: toolCall.id,
                 sessionId: currentSession?.id || '',
@@ -133,19 +145,31 @@ export const useToolProcessor = ({ submit }: UseToolProcessorConfig) => {
                 metadata: {
                   executionTime,
                 },
-                // Map MCPResponse.error to Message.error for type-safe error detection
-                ...(isMCPError(mcpResponse) && {
+                // Map both protocol errors and tool execution errors to Message.error
+                ...(hasAnyError && {
                   error: {
-                    displayMessage: mcpResponse.error.message,
-                    type: 'MCP_ERROR' as MessageErrorType,
+                    displayMessage: hasProtocolError
+                      ? mcpResponse.error.message
+                      : errorMessage,
+                    type: hasProtocolError
+                      ? ('MCP_ERROR' as MessageErrorType)
+                      : ('TOOL_EXECUTION_ERROR' as MessageErrorType),
                     recoverable: true,
                     details: {
-                      originalError: mcpResponse.error,
-                      errorCode: `MCP_${mcpResponse.error.code}`,
+                      originalError: hasProtocolError
+                        ? mcpResponse.error
+                        : {
+                            isError: true,
+                            content: mcpResponse.result?.content,
+                          },
+                      errorCode: hasProtocolError
+                        ? `MCP_${mcpResponse.error.code}`
+                        : 'TOOL_ERROR',
                       timestamp: new Date().toISOString(),
                       context: {
                         toolName,
                         toolCallId: toolCall.id,
+                        isToolExecutionError: hasToolExecutionError,
                       },
                     },
                   },
@@ -156,7 +180,9 @@ export const useToolProcessor = ({ submit }: UseToolProcessorConfig) => {
 
               logger.info('Tool execution completed', {
                 toolName,
-                success: !isMCPError(mcpResponse),
+                success: !hasAnyError,
+                hasProtocolError,
+                hasToolExecutionError,
                 executionTime,
               });
 

@@ -11,11 +11,11 @@ import {
 } from 'react';
 import { useAsyncFn } from 'react-use';
 import { getLogger } from '../lib/logger';
-import { Assistant } from '../models/chat';
+import type { Assistant } from '../models/chat';
 import { toast } from 'sonner';
 import { useMCPServer } from '@/hooks/use-mcp-server';
 import { useMCPServerRegistry } from '@/context/MCPServerRegistryContext';
-import { MCPTool } from '@/lib/mcp-types';
+import type { MCPTool } from '@/lib/mcp-types';
 import { useSettings } from '@/hooks/use-settings';
 import { AssistantService } from '@/lib/services/assistant-service';
 
@@ -32,8 +32,16 @@ interface AssistantContextType {
   getById: (id: string) => Assistant | null;
   saveAssistant: (assistant: Assistant) => Promise<Assistant | undefined>;
   deleteAssistant: (assistantId: string) => Promise<void>;
+  searchAssistants: (query: string) => Promise<Assistant[]>;
   availableTools: MCPTool[];
   error: Error | null;
+  // Pagination support
+  paginationMode: 'full' | 'paginated';
+  setPaginationMode: (mode: 'full' | 'paginated') => void;
+  currentPage: number;
+  setPage: (page: number) => void;
+  pageSize: number;
+  totalAssistants: number;
 }
 
 const AssistantContext = createContext<AssistantContextType | undefined>(
@@ -133,6 +141,14 @@ export const AssistantContextProvider = ({
     null,
   );
 
+  // Pagination state
+  const [paginationMode, setPaginationMode] = useState<'full' | 'paginated'>(
+    'full',
+  );
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalAssistants, setTotalAssistants] = useState(0);
+  const pageSize = 20;
+
   const { connectServersFromAssistant, availableTools } = useMCPServer();
   const { activeServers } = useMCPServerRegistry();
   const { value: settings } = useSettings();
@@ -154,10 +170,40 @@ export const AssistantContextProvider = ({
 
   const [{ value: assistants, loading, error: loadError }, loadAssistants] =
     useAsyncFn(async () => {
-      let fetchedAssistants = await assistantService.getAll();
-      logger.debug('fetched assistants : ', { fetchedAssistants });
-      return fetchedAssistants;
-    }, [assistantService]);
+      if (paginationMode === 'paginated') {
+        const result = await assistantService.getList({
+          page: currentPage,
+          pageSize,
+        });
+        setTotalAssistants(result.totalItems);
+        logger.debug('fetched assistants (paginated):', {
+          items: result.items.length,
+          total: result.totalItems,
+          page: currentPage,
+        });
+        return result.items;
+      } else {
+        // Full mode: use large pageSize for backward compatibility
+        const result = await assistantService.getList({
+          page: 1,
+          pageSize: 1000,
+        });
+        setTotalAssistants(result.totalItems);
+        logger.debug('fetched assistants (full mode):', {
+          count: result.items.length,
+          total: result.totalItems,
+        });
+
+        // Warn if total exceeds our batch size
+        if (result.totalItems > 1000) {
+          logger.warn(
+            'Total assistants exceed 1000, consider implementing multi-page loading or switching to paginated mode',
+          );
+        }
+
+        return result.items;
+      }
+    }, [assistantService, paginationMode, currentPage, pageSize]);
 
   // Return assistants from DB
   const allAssistants = useMemo(() => {
@@ -267,6 +313,18 @@ export const AssistantContextProvider = ({
     [loadAssistants, assistants, showError, assistantService],
   );
 
+  const searchAssistants = useCallback(
+    async (query: string): Promise<Assistant[]> => {
+      try {
+        return await assistantService.search(query);
+      } catch (err) {
+        showError('Failed to search assistants.', err);
+        return [];
+      }
+    },
+    [assistantService, showError],
+  );
+
   // Consolidate errors from all async operations using useMemo
   // Prioritize: saveError > deleteError > loadError
   const error = useMemo<Error | null>(() => {
@@ -355,8 +413,15 @@ export const AssistantContextProvider = ({
       getCurrent,
       saveAssistant: upsertAssistant,
       deleteAssistant: deleteAssistant,
+      searchAssistants,
       error: error ?? null,
       availableTools,
+      paginationMode,
+      setPaginationMode,
+      currentPage,
+      setPage: setCurrentPage,
+      pageSize,
+      totalAssistants,
     }),
     [
       allAssistants,
@@ -365,9 +430,16 @@ export const AssistantContextProvider = ({
       getCurrent,
       upsertAssistant,
       deleteAssistant,
+      searchAssistants,
       error,
       getById,
       availableTools,
+      paginationMode,
+      setPaginationMode,
+      currentPage,
+      setCurrentPage,
+      pageSize,
+      totalAssistants,
     ],
   );
 
