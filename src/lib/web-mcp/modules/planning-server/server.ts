@@ -309,22 +309,30 @@ class EphemeralState {
       const data = input as Record<string, unknown>;
 
       if (!data.thought || typeof data.thought !== 'string') {
-        throw new Error('Invalid thought: must be a string');
+        return createMCPErrorToolResult(
+          'Invalid thought: must be a string',
+        ) as MCPResult<Record<string, unknown>>;
       }
       if (
         data.thoughtNumber === undefined ||
         typeof data.thoughtNumber !== 'number'
       ) {
-        throw new Error('Invalid thoughtNumber: must be a number');
+        return createMCPErrorToolResult(
+          'Invalid thoughtNumber: must be a number',
+        ) as MCPResult<Record<string, unknown>>;
       }
       if (
         data.totalThoughts === undefined ||
         typeof data.totalThoughts !== 'number'
       ) {
-        throw new Error('Invalid totalThoughts: must be a number');
+        return createMCPErrorToolResult(
+          'Invalid totalThoughts: must be a number',
+        ) as MCPResult<Record<string, unknown>>;
       }
       if (typeof data.nextThoughtNeeded !== 'boolean') {
-        throw new Error('Invalid nextThoughtNeeded: must be a boolean');
+        return createMCPErrorToolResult(
+          'Invalid nextThoughtNeeded: must be a boolean',
+        ) as MCPResult<Record<string, unknown>>;
       }
 
       const thought: ThoughtData = {

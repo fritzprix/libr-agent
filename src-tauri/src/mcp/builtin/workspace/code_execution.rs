@@ -591,9 +591,9 @@ impl WorkspaceServer {
             }
             Err(_) => {
                 // Timeout
-                Err(format!(
+                Ok(MCPResult::error(&format!(
                     "Command execution timeout after {timeout_secs} seconds"
-                ))
+                )))
             }
         }
     }
@@ -624,7 +624,9 @@ impl WorkspaceServer {
             .join(format!("sync_{process_id}"));
 
         if let Err(e) = tokio::fs::create_dir_all(&process_tmp_dir).await {
-            return Err(format!("Failed to create temp directory: {e}"));
+            return Ok(MCPResult::error(&format!(
+                "Failed to create temp directory: {e}"
+            )));
         }
 
         let stdout_path = process_tmp_dir.join("stdout");
@@ -647,7 +649,9 @@ impl WorkspaceServer {
         {
             Ok(cmd) => cmd,
             Err(e) => {
-                return Err(format!("Failed to create isolated shell command: {e}"));
+                return Ok(MCPResult::error(&format!(
+                    "Failed to create isolated shell command: {e}"
+                )));
             }
         };
 
@@ -758,7 +762,7 @@ impl WorkspaceServer {
                     "Failed to execute isolated shell command '{}': {}",
                     command, e
                 );
-                Err(format!("Execution error: {e}"))
+                Ok(MCPResult::error(&format!("Execution error: {e}")))
             }
             Err(_) => {
                 // Timeout - cancel the process
@@ -779,7 +783,9 @@ impl WorkspaceServer {
                     "Isolated shell command '{}' timed out after {} seconds",
                     command, timeout_secs
                 );
-                Err(format!("Command timed out after {timeout_secs} seconds"))
+                Ok(MCPResult::error(&format!(
+                    "Command timed out after {timeout_secs} seconds"
+                )))
             }
         }
     }
@@ -862,7 +868,7 @@ impl WorkspaceServer {
         let raw_command = match args.get("command").and_then(|v| v.as_str()) {
             Some(cmd) => cmd,
             None => {
-                return Err("Missing required parameter: command".to_string());
+                return Ok(MCPResult::error("Missing required parameter: command"));
             }
         };
 
@@ -899,9 +905,9 @@ impl WorkspaceServer {
         // sync requests short-lived and encourage async for long-running work.
         let sync_max = crate::config::default_execution_timeout();
         if timeout_secs > sync_max {
-            return Err(format!(
+            return Ok(MCPResult::error(&format!(
                 "Sync mode supports a maximum timeout of {sync_max} seconds.\nFor longer-running commands, set \"run_mode\" to \"async\" so the command runs in background and can be polled.\nYou can adjust the default via the LIBRAGENT_DEFAULT_EXECUTION_TIMEOUT environment variable.",
-            ));
+            )));
         }
 
         // Check persistent shell preference (default: enabled)
@@ -955,9 +961,9 @@ impl WorkspaceServer {
                 .count();
 
             if running_count >= MAX_CONCURRENT_PROCESSES {
-                return Err(format!(
+                return Ok(MCPResult::error(&format!(
                     "Maximum concurrent processes limit reached ({MAX_CONCURRENT_PROCESSES})"
-                ));
+                )));
             }
         }
 
@@ -970,7 +976,9 @@ impl WorkspaceServer {
             .join(format!("process_{process_id}"));
 
         if let Err(e) = tokio::fs::create_dir_all(&process_tmp_dir).await {
-            return Err(format!("Failed to create process directory: {e}"));
+            return Ok(MCPResult::error(&format!(
+                "Failed to create process directory: {e}"
+            )));
         }
 
         let stdout_path = process_tmp_dir.join("stdout");
@@ -1000,7 +1008,9 @@ impl WorkspaceServer {
         {
             Ok(cmd) => cmd,
             Err(e) => {
-                return Err(format!("Failed to create isolated command: {e}"));
+                return Ok(MCPResult::error(&format!(
+                    "Failed to create isolated command: {e}"
+                )));
             }
         };
 
@@ -1111,7 +1121,7 @@ impl WorkspaceServer {
             let registry = self.process_registry.read().await;
             if let Some(entry) = registry.entries.get(&process_id) {
                 if matches!(entry.status, terminal_manager::ProcessStatus::Failed) {
-                    return Err("Process failed to start".to_string());
+                    return Ok(MCPResult::error("Process failed to start"));
                 }
             }
         }
@@ -1207,14 +1217,14 @@ impl WorkspaceServer {
         let execution_id = match args.get("execution_id").and_then(|v| v.as_str()) {
             Some(id) => id,
             None => {
-                return Err("Missing required parameter: execution_id".to_string());
+                return Ok(MCPResult::error("Missing required parameter: execution_id"));
             }
         };
 
         let user_input = match args.get("user_input").and_then(|v| v.as_str()) {
             Some(input) => input,
             None => {
-                return Err("Missing required parameter: user_input".to_string());
+                return Ok(MCPResult::error("Missing required parameter: user_input"));
             }
         };
 
@@ -1222,7 +1232,9 @@ impl WorkspaceServer {
         let pending = match self.pending_executions.remove(execution_id) {
             Some(p) => p,
             None => {
-                return Err(format!("Unknown or expired execution_id: {execution_id}"));
+                return Ok(MCPResult::error(&format!(
+                    "Unknown or expired execution_id: {execution_id}"
+                )));
             }
         };
 
@@ -1232,7 +1244,7 @@ impl WorkspaceServer {
             .signed_duration_since(pending.created_at)
             .num_seconds();
         if elapsed > USER_INPUT_TIMEOUT_SECS {
-            return Err("Execution request expired. Please retry.".to_string());
+            return Ok(MCPResult::error("Execution request expired. Please retry."));
         }
 
         // Auto-inject -S flag for sudo commands (Agent doesn't know about it)
@@ -1324,10 +1336,10 @@ impl WorkspaceServer {
                 }
                 Err(_) => {
                     // Timeout
-                    return Err(format!(
+                    return Ok(MCPResult::error(&format!(
                         "Command execution timeout after {} seconds",
                         pending.timeout
-                    ));
+                    )));
                 }
             }
         }
@@ -1353,7 +1365,9 @@ impl WorkspaceServer {
         {
             Ok(cmd) => cmd,
             Err(e) => {
-                return Err(format!("Failed to create isolated command: {e}"));
+                return Ok(MCPResult::error(&format!(
+                    "Failed to create isolated command: {e}"
+                )));
             }
         };
 
@@ -1366,7 +1380,7 @@ impl WorkspaceServer {
         let mut child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
-                return Err(format!("Failed to spawn process: {e}"));
+                return Ok(MCPResult::error(&format!("Failed to spawn process: {e}")));
             }
         };
 
@@ -1374,10 +1388,10 @@ impl WorkspaceServer {
         if let Some(mut stdin) = child.stdin.take() {
             // CRITICAL: Write password and close stdin
             if let Err(e) = stdin.write_all(user_input.as_bytes()).await {
-                return Err(format!("Failed to write to stdin: {e}"));
+                return Ok(MCPResult::error(&format!("Failed to write to stdin: {e}")));
             }
             if let Err(e) = stdin.write_all(b"\n").await {
-                return Err(format!("Failed to write newline: {e}"));
+                return Ok(MCPResult::error(&format!("Failed to write newline: {e}")));
             }
             drop(stdin); // Close stdin to signal EOF
         }
@@ -1395,13 +1409,13 @@ impl WorkspaceServer {
             {
                 Ok(Ok(output)) => output,
                 Ok(Err(e)) => {
-                    return Err(format!("Process error: {e}"));
+                    return Ok(MCPResult::error(&format!("Process error: {e}")));
                 }
                 Err(_) => {
                     let timeout_secs = pending.timeout;
-                    return Err(format!(
+                    return Ok(MCPResult::error(&format!(
                         "Command execution timeout after {timeout_secs} seconds"
-                    ));
+                    )));
                 }
             };
 
@@ -1450,7 +1464,9 @@ impl WorkspaceServer {
                 .join(format!("process_{process_id}"));
 
             if let Err(e) = tokio::fs::create_dir_all(&process_tmp_dir).await {
-                return Err(format!("Failed to create process directory: {e}"));
+                return Ok(MCPResult::error(&format!(
+                    "Failed to create process directory: {e}"
+                )));
             }
 
             let stdout_path = process_tmp_dir.join("stdout");
@@ -1527,7 +1543,7 @@ impl WorkspaceServer {
         let execution_id = match args.get("execution_id").and_then(|v| v.as_str()) {
             Some(id) => id,
             None => {
-                return Err("Missing required parameter: execution_id".to_string());
+                return Ok(MCPResult::error("Missing required parameter: execution_id"));
             }
         };
 

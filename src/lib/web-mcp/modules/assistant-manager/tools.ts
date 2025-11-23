@@ -1,16 +1,24 @@
-import { MCPTool } from '@/lib/mcp-types';
+import type { MCPTool } from '@/lib/mcp-types';
 import {
   createStringSchema,
   createObjectSchema,
   createArraySchema,
+  createNumberSchema,
 } from '@/lib/mcp-types';
 
 export const assistantManagerTools: MCPTool[] = [
   {
     name: 'list_assistants',
-    description: 'List all available assistants.',
+    description: 'List available assistants with pagination support.',
     inputSchema: createObjectSchema({
-      properties: {},
+      properties: {
+        page: createNumberSchema({
+          description: 'Page number (default: 1)',
+        }),
+        pageSize: createNumberSchema({
+          description: 'Items per page (default: 20)',
+        }),
+      },
     }),
   },
   {
@@ -88,6 +96,22 @@ export const assistantManagerTools: MCPTool[] = [
         }),
       },
       required: ['id'],
+    }),
+  },
+  {
+    name: 'search_assistant',
+    description:
+      'Search assistants using BM25 ranking algorithm based on name, description, and system prompt.',
+    inputSchema: createObjectSchema({
+      properties: {
+        query: createStringSchema({
+          description: 'Search query to match against assistant fields',
+        }),
+        limit: createNumberSchema({
+          description: 'Maximum number of results to return (default: 10)',
+        }),
+      },
+      required: ['query'],
     }),
   },
 ];

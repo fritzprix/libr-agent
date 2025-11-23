@@ -8,7 +8,7 @@ import { assistantManagerTools } from './tools';
 import { AssistantService } from '@/lib/services/assistant-service';
 import { dbService } from '@/lib/db';
 import { createId } from '@paralleldrive/cuid2';
-import { Assistant } from '@/models/chat';
+import type { Assistant } from '@/models/chat';
 
 const logger = getLogger('AssistantManagerServer');
 
@@ -34,12 +34,16 @@ async function getService() {
 }
 
 interface AssistantToolArgs {
-  id: string;
-  name: string;
-  systemPrompt: string;
+  id?: string;
+  name?: string;
+  systemPrompt?: string;
   description?: string;
   mcpServerIds?: string[];
   allowedBuiltInServiceAliases?: string[];
+  page?: number;
+  pageSize?: number;
+  query?: string;
+  limit?: number;
 }
 
 export const assistantManagerServer: WebMCPServer = {
@@ -56,16 +60,21 @@ export const assistantManagerServer: WebMCPServer = {
 
       switch (name) {
         case 'list_assistants': {
-          const assistants = await service.getAll();
+          const page = typedArgs.page ?? 1;
+          const pageSize = typedArgs.pageSize ?? 20;
+          const result = await service.getList({ page, pageSize });
+
           return createMCPStructuredToolResult(
-            `Found ${assistants.length} assistants`,
-            assistants,
+            `Found ${result.items.length} assistants (Page ${page}/${result.totalPages}, Total: ${result.totalItems})`,
+            result,
           );
         }
 
         case 'get_assistant': {
           const { id } = typedArgs;
-          if (!id) throw new Error('ID is required');
+          if (!id) {
+            return createMCPErrorToolResult('ID is required');
+          }
           const assistant = await service.getById(id);
           if (!assistant) {
             return createMCPErrorToolResult(
@@ -86,8 +95,12 @@ export const assistantManagerServer: WebMCPServer = {
             mcpServerIds,
             allowedBuiltInServiceAliases,
           } = typedArgs;
-          if (!name) throw new Error('Name is required');
-          if (!systemPrompt) throw new Error('System prompt is required');
+          if (!name) {
+            return createMCPErrorToolResult('Name is required');
+          }
+          if (!systemPrompt) {
+            return createMCPErrorToolResult('System prompt is required');
+          }
 
           const newAssistant: Assistant = {
             id: createId(),
@@ -109,7 +122,9 @@ export const assistantManagerServer: WebMCPServer = {
 
         case 'update_assistant': {
           const { id, ...updates } = typedArgs;
-          if (!id) throw new Error('ID is required');
+          if (!id) {
+            return createMCPErrorToolResult('ID is required');
+          }
 
           const existing = await service.getById(id);
           if (!existing) {
@@ -131,11 +146,26 @@ export const assistantManagerServer: WebMCPServer = {
 
         case 'delete_assistant': {
           const { id } = typedArgs;
-          if (!id) throw new Error('ID is required');
+          if (!id) {
+            return createMCPErrorToolResult('ID is required');
+          }
           await service.delete(id);
           return createMCPStructuredToolResult(
             `Deleted assistant with ID ${id}`,
             { success: true, id },
+          );
+        }
+
+        case 'search_assistant': {
+          const { query, limit = 10 } = typedArgs;
+          if (!query) {
+            return createMCPErrorToolResult('Query is required');
+          }
+
+          const results = await service.search(query, limit);
+          return createMCPStructuredToolResult(
+            `Found ${results.length} assistants matching "${query}"`,
+            results,
           );
         }
 

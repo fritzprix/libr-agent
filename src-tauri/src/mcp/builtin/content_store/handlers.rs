@@ -11,7 +11,9 @@ impl ContentStoreServer {
         let args: AddContentArgs = match serde_json::from_value(params) {
             Ok(args) => args,
             Err(e) => {
-                return Err(format!("Invalid add_content parameters: {e}"));
+                return Ok(MCPResult::error(&format!(
+                    "Invalid add_content parameters: {e}"
+                )));
             }
         };
 
@@ -29,7 +31,7 @@ impl ContentStoreServer {
                 let file_path_str = match helpers::extract_file_path_from_url(file_url) {
                     Ok(path) => path,
                     Err(e) => {
-                        return Err(format!("Invalid file URL: {e}"));
+                        return Ok(MCPResult::error(&format!("Invalid file URL: {e}")));
                     }
                 };
 
@@ -45,28 +47,34 @@ impl ContentStoreServer {
                 {
                     parsers::ParseResult::Text(content) => content,
                     parsers::ParseResult::Error(e) => {
-                        return Err(format!("Failed to parse file {file_path_str}: {e}"));
+                        return Ok(MCPResult::error(&format!(
+                            "Failed to parse file {file_path_str}: {e}"
+                        )));
                     }
                 }
             }
             (Some(_), Some(_)) => {
-                return Err("Cannot provide both content and fileUrl. Choose one.".to_string());
+                return Ok(MCPResult::error(
+                    "Cannot provide both content and fileUrl. Choose one.",
+                ));
             }
             (None, None) => {
-                return Err("Either content or fileUrl must be provided.".to_string());
+                return Ok(MCPResult::error(
+                    "Either content or fileUrl must be provided.",
+                ));
             }
         };
 
         let session_id = match self.require_active_session_result() {
             Ok(session_id) => session_id,
-            Err(e) => return Err(e),
+            Err(e) => return Ok(MCPResult::error(&e)),
         };
 
         if let Err(e) = self.ensure_session_store(&session_id).await {
             error!("Failed to ensure content store for session {session_id}: {e}");
-            return Err(format!(
+            return Ok(MCPResult::error(&format!(
                 "Failed to prepare content store for session {session_id}: {e}"
-            ));
+            )));
         }
 
         // Create chunks from content (simple line-based chunking)
@@ -123,7 +131,7 @@ impl ContentStoreServer {
         {
             Ok(item) => item,
             Err(e) => {
-                return Err(format!("Failed to store content: {e}"));
+                return Ok(MCPResult::error(&format!("Failed to store content: {e}")));
             }
         };
 
@@ -189,20 +197,25 @@ impl ContentStoreServer {
             match serde_json::from_value(params) {
                 Ok(args) => args,
                 Err(e) => {
-                    return Err(format!("Invalid list_content parameters: {e}"));
+                    return Ok(MCPResult::error(&format!(
+                        "Invalid list_content parameters: {e}"
+                    )));
                 }
             }
         };
 
-        let session_id = self.require_active_session_result()?;
+        let session_id = match self.require_active_session_result() {
+            Ok(id) => id,
+            Err(e) => return Ok(MCPResult::error(&e)),
+        };
 
         if let Err(e) = self.ensure_session_store(&session_id).await {
             error!(
                 "Failed to ensure content store for session {session_id} while listing content: {e}"
             );
-            return Err(format!(
+            return Ok(MCPResult::error(&format!(
                 "Failed to prepare content store for session {session_id}: {e}"
-            ));
+            )));
         }
 
         let (offset, limit) = args.pagination.as_ref().map_or((0usize, 100usize), |p| {
@@ -215,7 +228,7 @@ impl ContentStoreServer {
         let (contents, total) = match storage.list_content(&session_id, offset, limit).await {
             Ok((contents, total)) => (contents, total),
             Err(e) => {
-                return Err(format!("Failed to list content: {e}"));
+                return Ok(MCPResult::error(&format!("Failed to list content: {e}")));
             }
         };
 
@@ -273,7 +286,9 @@ impl ContentStoreServer {
         let args: ReadContentArgs = match serde_json::from_value(params) {
             Ok(args) => args,
             Err(e) => {
-                return Err(format!("Invalid read_content parameters: {e}"));
+                return Ok(MCPResult::error(&format!(
+                    "Invalid read_content parameters: {e}"
+                )));
             }
         };
 
@@ -284,7 +299,7 @@ impl ContentStoreServer {
         {
             Ok(content) => content,
             Err(e) => {
-                return Err(format!("Failed to read content: {e}"));
+                return Ok(MCPResult::error(&format!("Failed to read content: {e}")));
             }
         };
 
@@ -313,19 +328,24 @@ impl ContentStoreServer {
         let args: KeywordSearchArgs = match serde_json::from_value(params) {
             Ok(args) => args,
             Err(e) => {
-                return Err(format!("Invalid keyword_search parameters: {e}"));
+                return Ok(MCPResult::error(&format!(
+                    "Invalid keyword_search parameters: {e}"
+                )));
             }
         };
 
-        let session_id = self.require_active_session_result()?;
+        let session_id = match self.require_active_session_result() {
+            Ok(id) => id,
+            Err(e) => return Ok(MCPResult::error(&e)),
+        };
 
         if let Err(e) = self.ensure_session_store(&session_id).await {
             error!(
                 "Failed to ensure content store for session {session_id} during keyword search: {e}"
             );
-            return Err(format!(
+            return Ok(MCPResult::error(&format!(
                 "Failed to prepare content store for session {session_id}: {e}"
-            ));
+            )));
         }
 
         let top_n = args
@@ -342,7 +362,7 @@ impl ContentStoreServer {
         let all_results = match search_engine.search_bm25(&args.query, ranking_limit).await {
             Ok(results) => results,
             Err(e) => {
-                return Err(format!("Failed to search content: {e}"));
+                return Ok(MCPResult::error(&format!("Failed to search content: {e}")));
             }
         };
 
@@ -441,33 +461,41 @@ impl ContentStoreServer {
         let args: DeleteContentArgs = match serde_json::from_value(params) {
             Ok(args) => args,
             Err(e) => {
-                return Err(format!("Invalid delete_content parameters: {e}"));
+                return Ok(MCPResult::error(&format!(
+                    "Invalid delete_content parameters: {e}"
+                )));
             }
         };
 
         // Get current session ID from context
-        let session_id = self.require_active_session_result()?;
+        let session_id = match self.require_active_session_result() {
+            Ok(id) => id,
+            Err(e) => return Ok(MCPResult::error(&e)),
+        };
 
         // Verify the content belongs to the current session
         let storage = self.storage.lock().await;
         let content_session_id = match storage.get_content_session_id(&args.content_id) {
             Some(sid) => sid,
             None => {
-                return Err(format!("Content '{}' not found", args.content_id));
+                return Ok(MCPResult::error(&format!(
+                    "Content '{}' not found",
+                    args.content_id
+                )));
             }
         };
 
         if content_session_id != session_id {
-            return Err(format!(
+            return Ok(MCPResult::error(&format!(
                 "Content '{}' does not belong to current session",
                 args.content_id
-            ));
+            )));
         }
 
         // Delete from storage
         let mut storage = self.storage.lock().await;
         if let Err(e) = storage.delete_content(&args.content_id).await {
-            return Err(format!("Failed to delete content: {e}"));
+            return Ok(MCPResult::error(&format!("Failed to delete content: {e}")));
         }
 
         // Remove from search index

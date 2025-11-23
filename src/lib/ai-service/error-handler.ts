@@ -123,12 +123,13 @@ export const classifyAIServiceError = (
     error instanceof Error &&
     (error.message.includes('rate limit') ||
       error.message.includes('429') ||
-      error.message.includes('quota'))
+      error.message.includes('quota') ||
+      error.message.includes('usage limit'))
   ) {
     return {
       displayMessage:
         'Rate limit exceeded. Please wait a moment and try again.',
-      type: 'AI_SERVICE_ERROR' as MessageErrorType,
+      type: 'RATE_LIMIT_ERROR' as MessageErrorType,
       recoverable: true,
       details: {
         originalError: error,
