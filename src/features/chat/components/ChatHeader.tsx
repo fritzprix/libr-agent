@@ -18,7 +18,8 @@ export function ChatHeader({ children, assistantName }: ChatHeaderProps) {
   const { current: currentSession } = useSessionContext();
   const { showPlanningPanel, togglePlanningPanel } = useChatPlanning();
   const { showWorkspacePanel, toggleWorkspacePanel } = useChatWorkspace();
-  const { agenticMode, reasoningEnabled, canUseReasoning, messages } = useChatState();
+  const { agenticMode, reasoningEnabled, canUseReasoning, messages } =
+    useChatState();
   const { setAgenticMode, toggleReasoning } = useChatActions();
 
   // Planning toggle comes from ChatPlanningContext to keep state in sync
@@ -49,7 +50,7 @@ export function ChatHeader({ children, assistantName }: ChatHeaderProps) {
       const json = JSON.stringify(messages, null, 2);
       await navigator.clipboard.writeText(json);
       toast.success('대화 내용이 클립보드에 복사되었습니다');
-    } catch (error) {
+    } catch {
       toast.error('클립보드 복사에 실패했습니다');
     }
   };
