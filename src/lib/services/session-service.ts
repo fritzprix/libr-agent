@@ -33,23 +33,18 @@ export class LocalSessionService implements ISessionService {
   }
 
   async delete(id: string): Promise<void> {
+    // Remove backend content-store artifacts first (best-effort)
     try {
-      // Remove backend content-store artifacts first (best-effort)
-      try {
-        await deleteContentStore(id);
-      } catch (e) {
-        logger.warn('deleteContentStore failed for session ' + id, e);
-      }
+      await deleteContentStore(id);
+    } catch (e) {
+      logger.warn('deleteContentStore failed for session ' + id, e);
+    }
 
-      // Clear DB artifacts and native workspace (best-effort)
-      try {
-        await dbUtils.clearSessionAndWorkspace(id);
-      } catch (e) {
-        logger.warn('clearSessionAndWorkspace failed for session ' + id, e);
-      }
-    } catch (error) {
-      logger.error(`Unexpected error while deleting session ${id}`, error);
-      throw error;
+    // Clear DB artifacts and native workspace (best-effort)
+    try {
+      await dbUtils.clearSessionAndWorkspace(id);
+    } catch (e) {
+      logger.warn('clearSessionAndWorkspace failed for session ' + id, e);
     }
   }
 
