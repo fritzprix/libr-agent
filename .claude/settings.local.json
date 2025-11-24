@@ -1,9 +1,13 @@
 {
   "permissions": {
-    "allow": ["Bash(pnpm refactor:validate:*)", "Bash(cargo fmt:*)"],
+    "allow": [
+      "Bash(pnpm refactor:validate:*)",
+      "Bash(cargo fmt:*)",
+      "Bash(pnpm build:*)"
+    ],
     "deny": [],
     "ask": []
   },
-  "enabledMcpjsonServers": ["serena"],
-  "enableAllProjectMcpServers": true
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": ["serena"]
 }

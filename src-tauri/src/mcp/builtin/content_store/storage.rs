@@ -228,10 +228,11 @@ impl ContentStoreStorage {
             .take(limit)
             .map(|content| {
                 // Get first 200 characters of content as preview
-                let preview = if content.content.len() > 200 {
-                    format!("{}...", &content.content[..200])
+                // Use pre-calculated preview (first 200 chars)
+                let preview = if content.content.len() > content.preview.len() {
+                    format!("{}...", content.preview)
                 } else {
-                    content.content.clone()
+                    content.preview.clone()
                 };
                 (content.filename.clone(), content.size, preview)
             })

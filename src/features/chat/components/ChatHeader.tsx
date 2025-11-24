@@ -6,7 +6,8 @@ import { useChatWorkspace } from '../context/ChatWorkspaceContext';
 import { useChatState, useChatActions } from '@/context/ChatContext';
 import { SessionFilesPopover } from './SessionFilesPopover';
 import { Button } from '@/components/ui/button';
-import { PanelRight, FolderOpen, Bot, Brain } from 'lucide-react';
+import { PanelRight, FolderOpen, Bot, Brain, Copy } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface ChatHeaderProps {
   children?: React.ReactNode;
@@ -17,7 +18,8 @@ export function ChatHeader({ children, assistantName }: ChatHeaderProps) {
   const { current: currentSession } = useSessionContext();
   const { showPlanningPanel, togglePlanningPanel } = useChatPlanning();
   const { showWorkspacePanel, toggleWorkspacePanel } = useChatWorkspace();
-  const { agenticMode, reasoningEnabled, canUseReasoning } = useChatState();
+  const { agenticMode, reasoningEnabled, canUseReasoning, messages } =
+    useChatState();
   const { setAgenticMode, toggleReasoning } = useChatActions();
 
   // Planning toggle comes from ChatPlanningContext to keep state in sync
@@ -41,6 +43,16 @@ export function ChatHeader({ children, assistantName }: ChatHeaderProps) {
 
   const handleToggleAgenticMode = () => {
     setAgenticMode(!agenticMode);
+  };
+
+  const handleCopyMessages = async () => {
+    try {
+      const json = JSON.stringify(messages, null, 2);
+      await navigator.clipboard.writeText(json);
+      toast.success('대화 내용이 클립보드에 복사되었습니다');
+    } catch {
+      toast.error('클립보드 복사에 실패했습니다');
+    }
   };
 
   return (
@@ -78,6 +90,16 @@ export function ChatHeader({ children, assistantName }: ChatHeaderProps) {
             className="h-6 px-2"
           >
             <Bot className={`h-4 w-4 ${agenticMode ? 'text-green-400' : ''}`} />
+          </Button>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleCopyMessages}
+            title="Copy conversation as JSON"
+            className="h-6 px-2"
+          >
+            <Copy className="h-4 w-4" />
           </Button>
 
           <Button

@@ -6,7 +6,7 @@ import type { MCPResult, WebMCPServer } from '@/lib/mcp-types';
 import { getLogger } from '@/lib/logger';
 import { assistantManagerTools } from './tools';
 import { AssistantService } from '@/lib/services/assistant-service';
-import { dbService } from '@/lib/db';
+import { LocalSettingsService } from '@/lib/services/settings-service';
 import { createId } from '@paralleldrive/cuid2';
 import type { Assistant } from '@/models/chat';
 
@@ -18,8 +18,9 @@ let cachedService: {
 } | null = null;
 
 async function getService() {
-  const agentHubUrlObj = await dbService.objects.read('agentHubUrl');
-  const agentHubUrl = agentHubUrlObj?.value as string;
+  const settingsService = new LocalSettingsService();
+  const settings = await settingsService.getSettings();
+  const agentHubUrl = settings.agentHubUrl;
 
   if (cachedService && cachedService.agentHubUrl === agentHubUrl) {
     return cachedService.service;

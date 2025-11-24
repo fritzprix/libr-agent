@@ -50,6 +50,7 @@ import type {
   MCPResponse,
   MCPTool,
 } from '../mcp-types';
+import type { WebMCPNotification } from '../mcp/web-worker/message';
 import {
   ServiceContext,
   ServiceContextOptions,
@@ -518,6 +519,26 @@ self.onunhandledrejection = (event) => {
   log.error('Unhandled rejection', { reason: String(event.reason) });
   event.preventDefault();
 };
+
+/**
+ * Send a notification from Worker to Main Thread
+ * @param notifyType Type of notification
+ * @param data Notification payload
+ */
+export function sendNotification(notifyType: string, data?: unknown): void {
+  const notification: WebMCPNotification = {
+    type: 'notify',
+    notifyType,
+    data,
+  };
+  self.postMessage(notification);
+  log.debug(`Notification sent: ${notifyType}`, data);
+}
+
+// Export for use in server modules
+(
+  self as typeof self & { sendNotification: typeof sendNotification }
+).sendNotification = sendNotification;
 
 // Initialize worker
 log.info('Initializing WebMCP worker');

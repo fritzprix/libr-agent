@@ -3,8 +3,9 @@ import useSWRInfinite from 'swr/infinite';
 import { Plus } from 'lucide-react';
 import { createId } from '@paralleldrive/cuid2';
 import { MCPServerEntity } from '@/models/chat';
-import { dbService } from '@/lib/db/service';
+import { McpServerService } from '@/lib/services/mcp-server-service';
 import { useMCPServerRegistry } from '@/context/MCPServerRegistryContext';
+import { useSettings } from '@/hooks/use-settings';
 import {
   Button,
   Card,
@@ -21,6 +22,11 @@ const logger = getLogger('MCPServerManagement');
 
 export function MCPServerManagement() {
   const { saveServer, deleteServer, toggleActive } = useMCPServerRegistry();
+  const { value: settings } = useSettings();
+
+  const mcpServerService = useMemo(() => {
+    return new McpServerService(settings.agentHubUrl);
+  }, [settings.agentHubUrl]);
 
   // Follow SessionContext pattern: useSWRInfinite + Page<T>
   const {
@@ -33,7 +39,7 @@ export function MCPServerManagement() {
     (pageIndex) => ['mcpServers', pageIndex],
     async ([, pageIndex]) => {
       // getPage is 1-based; pass pageIndex + 1
-      return dbService.mcpServers.getPage(pageIndex + 1, 10);
+      return mcpServerService.getPage(pageIndex + 1, 10);
     },
     {
       revalidateOnFocus: false,

@@ -9,7 +9,12 @@ import React, {
 } from 'react';
 import { mutate } from 'swr';
 import { MCPServerEntity } from '@/models/chat';
-import { dbService, dbUtils } from '@/lib/db/service';
+import {
+  McpServerService,
+  type RevalidateEvent,
+} from '@/lib/services/mcp-server-service';
+import { useWebMCP } from '@/context/WebMCPContext';
+import { useSettings } from '@/hooks/use-settings';
 import { getLogger } from '@/lib/logger';
 
 const logger = getLogger('MCPServerRegistryContext');
@@ -58,6 +63,14 @@ export const MCPServerRegistryProvider = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
 
+  const { value: settings } = useSettings();
+  const { proxy: webMCPProxy } = useWebMCP();
+
+  // Use service layer
+  const mcpServerService = useMemo(() => {
+    return new McpServerService(settings.agentHubUrl);
+  }, [settings.agentHubUrl]);
+
   // Use ref to avoid stale closures in event handlers
   const allServersRef = useRef<MCPServerEntity[]>([]);
 
@@ -72,10 +85,10 @@ export const MCPServerRegistryProvider = ({
   const refreshAll = useCallback(async () => {
     setLoading(true);
     try {
-      const servers = await dbUtils.getAllMCPServers();
+      const servers = await mcpServerService.getAll();
       setAllServers(servers);
       setError(undefined);
-      logger.debug(`Loaded ${servers.length} MCP servers from database`);
+      logger.debug(`Loaded ${servers.length} MCP servers from service`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       logger.error('Failed to load all MCP servers', err);
@@ -83,7 +96,7 @@ export const MCPServerRegistryProvider = ({
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [mcpServerService]);
 
   /**
    * Saves or updates an MCP server
@@ -92,8 +105,8 @@ export const MCPServerRegistryProvider = ({
   const saveServer = useCallback(
     async (server: MCPServerEntity) => {
       try {
-        await dbService.mcpServers.upsert(server);
-        await refreshAll();
+        await mcpServerService.save(server);
+        // No need to manually call refreshAll - event listener will handle it
         await invalidateMCPServerPages();
         logger.info(`MCP server "${server.name}" saved successfully`);
       } catch (err) {
@@ -102,7 +115,7 @@ export const MCPServerRegistryProvider = ({
         throw new Error(`Failed to save server: ${message}`);
       }
     },
-    [refreshAll],
+    [mcpServerService],
   );
 
   /**
@@ -112,8 +125,8 @@ export const MCPServerRegistryProvider = ({
   const deleteServer = useCallback(
     async (id: string) => {
       try {
-        await dbService.mcpServers.delete(id);
-        await refreshAll();
+        await mcpServerService.delete(id);
+        // No need to manually call refreshAll - event listener will handle it
         await invalidateMCPServerPages();
         logger.info(`MCP server with ID "${id}" deleted successfully`);
       } catch (err) {
@@ -122,7 +135,7 @@ export const MCPServerRegistryProvider = ({
         throw new Error(`Failed to delete server: ${message}`);
       }
     },
-    [refreshAll],
+    [mcpServerService],
   );
 
   /**
@@ -148,6 +161,36 @@ export const MCPServerRegistryProvider = ({
     () => allServers.filter((s) => s.isActive),
     [allServers],
   );
+
+  // Subscribe to Worker revalidation events
+  useEffect(() => {
+    if (!webMCPProxy) return;
+
+    const unsubscribe = webMCPProxy.onNotify(
+      'service-revalidate',
+      (data: unknown) => {
+        const event = data as RevalidateEvent;
+        if (event.entity === 'mcpServers') {
+          logger.debug(
+            'Received service-revalidate event from Worker, refreshing...',
+            event,
+          );
+          refreshAll();
+        }
+      },
+    );
+
+    return unsubscribe;
+  }, [webMCPProxy, refreshAll]);
+
+  // Subscribe to local service events (Main Thread changes)
+  useEffect(() => {
+    const unsubscribe = mcpServerService.onRevalidate((event) => {
+      logger.debug('Local service changed, refreshing...', event);
+      refreshAll();
+    });
+    return unsubscribe;
+  }, [mcpServerService, refreshAll]);
 
   // Initial load on mount
   useEffect(() => {

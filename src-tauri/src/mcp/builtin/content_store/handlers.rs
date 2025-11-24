@@ -552,14 +552,13 @@ mod tests {
             }
         });
 
-        let response = server.handle_add_content(params).await;
+        let result = server.handle_add_content(params).await.unwrap();
 
         // Verify response
-        assert!(response.error.is_none());
-        assert!(response.result.is_some());
+        assert_eq!(result.is_error, Some(false));
+        assert!(result.structured_content.is_some());
 
-        let result = response.result.unwrap();
-        let structured_content = &result["structuredContent"];
+        let structured_content = result.structured_content.unwrap();
         assert_eq!(structured_content["filename"], "test.txt");
         assert_eq!(structured_content["mimeType"], "text/plain");
     }
@@ -573,11 +572,11 @@ mod tests {
             "content": "Test content"
         });
 
-        let response = server.handle_add_content(params).await;
+        let result = server.handle_add_content(params).await.unwrap();
 
         // Should return error about missing session
-        assert!(response.error.is_some());
-        assert_eq!(response.error.unwrap().code, -32002);
+        assert_eq!(result.is_error, Some(true));
+        assert!(result.content.is_some());
     }
 
     #[tokio::test]
@@ -597,11 +596,11 @@ mod tests {
             "file_url": "file:///test.txt"
         });
 
-        let response = server.handle_add_content(params).await;
+        let result = server.handle_add_content(params).await.unwrap();
 
         // Should return error about ambiguous input
-        assert!(response.error.is_some());
-        assert_eq!(response.error.unwrap().code, -32602);
+        assert_eq!(result.is_error, Some(true));
+        assert!(result.content.is_some());
     }
 
     #[tokio::test]
@@ -617,11 +616,10 @@ mod tests {
             .unwrap();
 
         let params = serde_json::json!({});
-        let response = server.handle_list_content(params).await;
+        let result = server.handle_list_content(params).await.unwrap();
 
-        assert!(response.error.is_none());
-        let result = response.result.unwrap();
-        let structured_content = &result["structuredContent"];
+        assert_eq!(result.is_error, Some(false));
+        let structured_content = result.structured_content.unwrap();
         assert_eq!(structured_content["total"], 0);
         assert_eq!(structured_content["contents"].as_array().unwrap().len(), 0);
     }
@@ -645,11 +643,10 @@ mod tests {
             }
         });
 
-        let response = server.handle_keyword_search(params).await;
+        let result = server.handle_keyword_search(params).await.unwrap();
 
-        assert!(response.error.is_none());
-        let result = response.result.unwrap();
-        let structured_content = &result["structuredContent"];
+        assert_eq!(result.is_error, Some(false));
+        let structured_content = result.structured_content.unwrap();
         assert_eq!(structured_content["results"].as_array().unwrap().len(), 0);
     }
 }

@@ -5,6 +5,10 @@ import { createPage } from '@/lib/db/crud';
 import { getLogger } from '@/lib/logger';
 import { BM25Index, defaultTokenizer } from '@/lib/search/bm25';
 import type { BM25Doc } from '@/lib/search/bm25';
+import { type RevalidateEvent } from './mcp-server-service';
+
+// Re-export for convenience
+export type { RevalidateEvent };
 
 const logger = getLogger('AssistantService');
 
@@ -21,12 +25,14 @@ export interface IAssistantService {
   save(assistant: Assistant): Promise<Assistant>;
   saveAll(assistants: Assistant[]): Promise<Assistant[]>;
   delete(id: string): Promise<void>;
+  onRevalidate?: (callback: (event: RevalidateEvent) => void) => () => void;
 }
 
 export class LocalAssistantService implements IAssistantService {
   private searchIndex: BM25Index | null = null;
   private assistantMap: Map<string, Assistant> = new Map();
   private isIndexing = false;
+  private revalidateCallbacks = new Set<(event: RevalidateEvent) => void>();
 
   constructor() {
     // Initialize index in background (non-blocking)
@@ -109,6 +115,14 @@ export class LocalAssistantService implements IAssistantService {
     await dbService.assistants.upsert(assistant);
     // Background index refresh (non-blocking)
     this.refreshIndex();
+
+    // Emit revalidation event
+    this.emitRevalidate({
+      entity: 'assistants',
+      action: 'save',
+      entityId: assistant.id,
+    });
+
     return assistant;
   }
 
@@ -117,6 +131,13 @@ export class LocalAssistantService implements IAssistantService {
     await dbService.assistants.upsertMany(assistants);
     // Background index refresh (non-blocking)
     this.refreshIndex();
+
+    // Emit revalidation event for batch save
+    this.emitRevalidate({
+      entity: 'assistants',
+      action: 'save',
+    });
+
     return assistants;
   }
 
@@ -124,6 +145,28 @@ export class LocalAssistantService implements IAssistantService {
     await dbService.assistants.delete(id);
     // Background index refresh (non-blocking)
     this.refreshIndex();
+
+    // Emit revalidation event
+    this.emitRevalidate({
+      entity: 'assistants',
+      action: 'delete',
+      entityId: id,
+    });
+  }
+
+  onRevalidate(callback: (event: RevalidateEvent) => void): () => void {
+    this.revalidateCallbacks.add(callback);
+    return () => this.revalidateCallbacks.delete(callback);
+  }
+
+  private emitRevalidate(event: RevalidateEvent): void {
+    for (const callback of this.revalidateCallbacks) {
+      try {
+        callback(event);
+      } catch (error) {
+        logger.error('Error in revalidate callback', error);
+      }
+    }
   }
 }
 
@@ -205,6 +248,13 @@ export class AssistantService implements IAssistantService {
     }
   }
 
+  /**
+   * Subscribe to revalidation events from the local service
+   */
+  onRevalidate(callback: (event: RevalidateEvent) => void): () => void {
+    return this.localService.onRevalidate(callback);
+  }
+
   async getList(params: PaginationParams): Promise<Page<Assistant>> {
     if (this.remoteService) {
       try {
@@ -273,13 +323,31 @@ export class AssistantService implements IAssistantService {
       try {
         const saved = await this.remoteService.save(assistant);
         await this.localService.save(saved);
+
+        // Notify Main Thread if running in Worker context
+        this.sendWorkerNotification({
+          entity: 'assistants',
+          action: 'save',
+          entityId: saved.id,
+        });
+
         return saved;
       } catch (error) {
         logger.error('Failed to save to remote', error);
         throw error;
       }
     }
-    return this.localService.save(assistant);
+
+    const result = await this.localService.save(assistant);
+
+    // Notify Main Thread if running in Worker context
+    this.sendWorkerNotification({
+      entity: 'assistants',
+      action: 'save',
+      entityId: result.id,
+    });
+
+    return result;
   }
 
   async saveAll(assistants: Assistant[]): Promise<Assistant[]> {
@@ -287,13 +355,29 @@ export class AssistantService implements IAssistantService {
       try {
         const saved = await this.remoteService.saveAll(assistants);
         await this.localService.saveAll(saved);
+
+        // Notify Main Thread if running in Worker context
+        this.sendWorkerNotification({
+          entity: 'assistants',
+          action: 'save',
+        });
+
         return saved;
       } catch (error) {
         logger.error('Failed to save to remote', error);
         throw error;
       }
     }
-    return this.localService.saveAll(assistants);
+
+    const result = await this.localService.saveAll(assistants);
+
+    // Notify Main Thread if running in Worker context
+    this.sendWorkerNotification({
+      entity: 'assistants',
+      action: 'save',
+    });
+
+    return result;
   }
 
   async delete(id: string): Promise<void> {
@@ -307,6 +391,13 @@ export class AssistantService implements IAssistantService {
 
       try {
         await this.localService.delete(id);
+
+        // Notify Main Thread if running in Worker context
+        this.sendWorkerNotification({
+          entity: 'assistants',
+          action: 'delete',
+          entityId: id,
+        });
       } catch (error) {
         logger.error(
           'Remote deletion succeeded, but failed to delete from local',
@@ -316,6 +407,33 @@ export class AssistantService implements IAssistantService {
       }
     } else {
       await this.localService.delete(id);
+
+      // Notify Main Thread if running in Worker context
+      this.sendWorkerNotification({
+        entity: 'assistants',
+        action: 'delete',
+        entityId: id,
+      });
+    }
+  }
+
+  /**
+   * Sends notification to Main Thread if running in Worker context
+   */
+  private sendWorkerNotification(event: RevalidateEvent): void {
+    // Check if running in Worker context
+    if (
+      typeof self !== 'undefined' &&
+      'sendNotification' in self &&
+      typeof (self as { sendNotification?: unknown }).sendNotification ===
+        'function'
+    ) {
+      (
+        self as typeof self & {
+          sendNotification: (type: string, data: unknown) => void;
+        }
+      ).sendNotification('service-revalidate', event);
+      logger.debug('Sent service-revalidate notification from Worker', event);
     }
   }
 }

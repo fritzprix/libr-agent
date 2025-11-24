@@ -176,8 +176,15 @@ impl ContentSearchEngine {
         let text_lower = text.to_lowercase();
 
         if let Some(pos) = text_lower.find(&query_lower) {
-            let start = pos.saturating_sub(max_length / 2);
-            let end = (pos + query.len() + max_length / 2).min(text.len());
+            let mut start = pos.saturating_sub(max_length / 2);
+            while !text.is_char_boundary(start) {
+                start = start.saturating_sub(1);
+            }
+
+            let mut end = (pos + query.len() + max_length / 2).min(text.len());
+            while !text.is_char_boundary(end) {
+                end += 1;
+            }
 
             let snippet = &text[start..end];
             if start > 0 {

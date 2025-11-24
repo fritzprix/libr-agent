@@ -34,13 +34,13 @@ function App() {
   return (
     <div className="h-screen w-full">
       <SettingsProvider>
-        <MCPServerRegistryProvider>
-          <MCPServerProvider>
-            <SystemPromptProvider>
-              <AssistantContextProvider>
-                <SessionContextProvider>
-                  <BuiltInToolProvider>
-                    <WebMCPProvider>
+        <WebMCPProvider>
+          <MCPServerRegistryProvider>
+            <MCPServerProvider>
+              <SystemPromptProvider>
+                <AssistantContextProvider>
+                  <SessionContextProvider>
+                    <BuiltInToolProvider>
                       <WebMCPServiceRegistry
                         servers={[
                           'planning',
@@ -99,13 +99,13 @@ function App() {
                           </ModelOptionsProvider>
                         </ResourceAttachmentProvider>
                       </SessionHistoryProvider>
-                    </WebMCPProvider>
-                  </BuiltInToolProvider>
-                </SessionContextProvider>
-              </AssistantContextProvider>
-            </SystemPromptProvider>
-          </MCPServerProvider>
-        </MCPServerRegistryProvider>
+                    </BuiltInToolProvider>
+                  </SessionContextProvider>
+                </AssistantContextProvider>
+              </SystemPromptProvider>
+            </MCPServerProvider>
+          </MCPServerRegistryProvider>
+        </WebMCPProvider>
       </SettingsProvider>
     </div>
   );
