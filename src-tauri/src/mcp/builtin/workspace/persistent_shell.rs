@@ -10,6 +10,7 @@
 /// - Separate stdout/stderr streams
 /// - Exit code capture for error handling
 use anyhow::Result;
+use base64::Engine;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -21,18 +22,25 @@ use tracing::{debug, warn};
 ///
 /// This handles PowerShell error messages that may contain non-UTF8 characters
 /// (e.g., Windows CP949 encoding for Korean error messages).
+///
+/// # Arguments
+/// * `reader` - The async reader
+/// * `buf` - The string buffer to store the decoded line
+/// * `raw_buf` - The raw byte buffer to store read bytes (must be preserved across calls for cancellation safety)
 async fn read_line_lossy<R: tokio::io::AsyncBufRead + Unpin>(
     reader: &mut R,
     buf: &mut String,
+    raw_buf: &mut Vec<u8>,
 ) -> Result<usize> {
     buf.clear();
-    let mut raw_buf = Vec::new();
-    let n = reader.read_until(b'\n', &mut raw_buf).await?;
+    // We append to raw_buf. If this future is cancelled, raw_buf preserves the partial read.
+    let n = reader.read_until(b'\n', raw_buf).await?;
 
-    if n > 0 {
-        // Convert to String with lossy UTF-8 (replaces invalid bytes with �)
-        let line = String::from_utf8_lossy(&raw_buf);
+    if !raw_buf.is_empty() {
+        // Convert to String with lossy UTF-8 (replaces invalid bytes with )
+        let line = String::from_utf8_lossy(raw_buf);
         buf.push_str(&line);
+        raw_buf.clear();
     }
 
     Ok(n)
@@ -101,9 +109,18 @@ impl PersistentShell {
 
         let mut child = cmd.spawn()?;
 
-        let stdin = child.stdin.take().expect("Failed to get stdin");
+        let mut stdin = child.stdin.take().expect("Failed to get stdin");
         let stdout = BufReader::new(child.stdout.take().expect("Failed to get stdout"));
         let stderr = BufReader::new(child.stderr.take().expect("Failed to get stderr"));
+
+        #[cfg(windows)]
+        {
+            // Set encoding to UTF-8 for Windows PowerShell to handle non-ASCII characters correctly
+            // We suppress output with [void] cast to avoid polluting the first command's output
+            let setup_cmd = "[void]([Console]::InputEncoding = [Console]::OutputEncoding = [System.Text.Encoding]::UTF8)\n";
+            stdin.write_all(setup_cmd.as_bytes()).await?;
+            stdin.flush().await?;
+        }
 
         debug!(
             "Persistent shell created successfully (PID: {:?})",
@@ -143,8 +160,25 @@ impl PersistentShell {
         );
 
         // Send command
-        self.stdin.write_all(command.as_bytes()).await?;
-        self.stdin.write_all(b"\n").await?;
+        #[cfg(windows)]
+        {
+            // Encode command to Base64 to avoid encoding issues in the pipe
+            // This ensures that characters like Korean are transmitted correctly
+            // regardless of the current console code page.
+            let encoded = base64::engine::general_purpose::STANDARD.encode(command);
+            // We use Invoke-Expression to execute the decoded string
+            let wrapper = format!(
+                "Invoke-Expression ([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('{}')))\n",
+                encoded
+            );
+            self.stdin.write_all(wrapper.as_bytes()).await?;
+        }
+
+        #[cfg(unix)]
+        {
+            self.stdin.write_all(command.as_bytes()).await?;
+            self.stdin.write_all(b"\n").await?;
+        }
 
         // Send sentinel markers (platform-specific exit code syntax)
         #[cfg(unix)]
@@ -177,13 +211,18 @@ impl PersistentShell {
         let mut found_sentinel = false;
         let mut exit_code = 0;
 
+        // Raw buffers for cancellation safety
+        let mut stdout_raw_buf = Vec::new();
+        let mut stderr_raw_buf = Vec::new();
+
         loop {
             let mut stdout_line = String::new();
             let mut stderr_line = String::new();
 
             tokio::select! {
-                result = read_line_lossy(&mut self.stdout, &mut stdout_line) => {
-                    if result? == 0 { break; } // EOF
+                result = read_line_lossy(&mut self.stdout, &mut stdout_line, &mut stdout_raw_buf) => {
+                    let n = result?;
+                    if n == 0 && stdout_line.is_empty() { break; } // EOF
 
                     // Skip PowerShell prompts (lines starting with "PS ")
                     if stdout_line.trim_start().starts_with("PS ") {
@@ -198,7 +237,8 @@ impl PersistentShell {
                         let mut exit_line = String::new();
                         loop {
                             exit_line.clear();
-                            read_line_lossy(&mut self.stdout, &mut exit_line).await?;
+                            // We reuse stdout_raw_buf here, it should be empty after previous read_line_lossy
+                            read_line_lossy(&mut self.stdout, &mut exit_line, &mut stdout_raw_buf).await?;
 
                             // Skip prompts in exit code line too
                             if exit_line.trim_start().starts_with("PS ") {
@@ -222,8 +262,9 @@ impl PersistentShell {
                     stdout_lines.push(stdout_line);
                 }
 
-                result = read_line_lossy(&mut self.stderr, &mut stderr_line) => {
-                    if result? == 0 { continue; }
+                result = read_line_lossy(&mut self.stderr, &mut stderr_line, &mut stderr_raw_buf) => {
+                    let n = result?;
+                    if n == 0 && stderr_line.is_empty() { continue; }
                     stderr_lines.push(stderr_line);
                 }
             }
