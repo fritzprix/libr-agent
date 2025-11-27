@@ -73,15 +73,15 @@ mod tests {
     fn test_extract_file_path_from_url_valid_windows() {
         let result = extract_file_path_from_url("file:///C:/Users/Me/doc.txt");
         assert!(result.is_ok());
-        let path = result.unwrap();
+        let _path = result.unwrap();
         // On Windows: C:\Users\Me\doc.txt
         // On Unix: might work differently
         #[cfg(windows)]
         {
-            assert!(path.starts_with("C:"));
-            assert!(path.contains("Users"));
-            assert!(path.contains("Me"));
-            assert!(path.ends_with("doc.txt"));
+            assert!(_path.starts_with("C:"));
+            assert!(_path.contains("Users"));
+            assert!(_path.contains("Me"));
+            assert!(_path.ends_with("doc.txt"));
         }
     }
 
@@ -133,7 +133,7 @@ mod tests {
     #[test]
     fn test_extract_file_path_from_url_unc_path() {
         // UNC path: file://server/share/file.txt
-        let result = extract_file_path_from_url("file://server/share/file.txt");
+        let _result = extract_file_path_from_url("file://server/share/file.txt");
         // On Windows, this should convert to \\server\share\file.txt
         // On Unix, this will likely fail or behave differently
         #[cfg(windows)]

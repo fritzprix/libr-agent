@@ -321,17 +321,24 @@ impl PersistentShell {
             self.session_id, command
         );
 
-        // 1. Send command first
-        self.stdin.write_all(command.as_bytes()).await?;
-        self.stdin.write_all(b"\n").await?;
-
-        // 2. Send user input (stdin injection)
-        self.stdin.write_all(user_input.as_bytes()).await?;
-        self.stdin.write_all(b"\n").await?;
-
-        // 3. Send sentinel markers
+        // 3. Send command with heredoc for input (Unix) or piped input (Windows)
         #[cfg(unix)]
         {
+            // Use a unique sentinel for the heredoc to avoid conflicts with input content
+            let input_sentinel = format!("INPUT_SENTINEL_{}", generate_sentinel());
+
+            // Wrap command in a block and feed input via heredoc
+            // Format: { command; } <<'SENTINEL'
+            // input
+            // SENTINEL
+            //
+            // We use single quotes around SENTINEL to prevent variable expansion in input
+            let heredoc_cmd =
+                format!("{{ {command}; }} <<'{input_sentinel}'\n{user_input}\n{input_sentinel}\n");
+
+            self.stdin.write_all(heredoc_cmd.as_bytes()).await?;
+
+            // Send sentinel markers for exit code capture
             self.stdin
                 .write_all(format!("echo '{sentinel}'\n").as_bytes())
                 .await?;
@@ -340,6 +347,15 @@ impl PersistentShell {
 
         #[cfg(windows)]
         {
+            // 1. Send command first
+            self.stdin.write_all(command.as_bytes()).await?;
+            self.stdin.write_all(b"\n").await?;
+
+            // 2. Send user input (stdin injection)
+            self.stdin.write_all(user_input.as_bytes()).await?;
+            self.stdin.write_all(b"\n").await?;
+
+            // 3. Send sentinel markers
             self.stdin
                 .write_all(format!("Write-Output '{}'\n", sentinel).as_bytes())
                 .await?;
@@ -459,6 +475,35 @@ mod tests {
             let (stdout, _, exit_code) = shell.execute("echo $env:MY_VAR").await?;
             assert_eq!(exit_code, 0);
             assert!(stdout.contains("TestValue"));
+        }
+
+        shell.terminate().await?;
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        Ok(())
+    }
+    #[tokio::test]
+    async fn test_input_injection_safety() -> Result<()> {
+        let temp_dir = std::env::temp_dir().join("test_input_safety");
+        std::fs::create_dir_all(&temp_dir)?;
+        let mut shell = PersistentShell::new("test-safety".to_string(), temp_dir.clone()).await?;
+
+        // Test case: Command that ignores input, followed by input that looks like a command
+        // If injection is possible, "touch injected_file" might be executed
+        let injected_file = temp_dir.join("injected_file");
+        if injected_file.exists() {
+            std::fs::remove_file(&injected_file)?;
+        }
+
+        #[cfg(unix)]
+        {
+            let command = "echo 'ignoring input'";
+            let dangerous_input = "touch injected_file\nexit 1";
+
+            let (stdout, _, exit_code) = shell.execute_with_input(command, dangerous_input).await?;
+
+            assert_eq!(exit_code, 0);
+            assert!(stdout.contains("ignoring input"));
+            assert!(!injected_file.exists(), "Injected command was executed!");
         }
 
         shell.terminate().await?;
