@@ -109,7 +109,8 @@ impl PersistentShell {
 
         let mut child = cmd.spawn()?;
 
-        let stdin = child.stdin.take().expect("Failed to get stdin");
+        #[allow(unused_mut)]
+        let mut stdin = child.stdin.take().expect("Failed to get stdin");
         let stdout = BufReader::new(child.stdout.take().expect("Failed to get stdout"));
         let stderr = BufReader::new(child.stderr.take().expect("Failed to get stderr"));
 
