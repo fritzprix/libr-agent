@@ -10,6 +10,10 @@
 /// - Separate stdout/stderr streams
 /// - Exit code capture for error handling
 use anyhow::Result;
+#[cfg(windows)]
+use base64::engine::general_purpose;
+#[cfg(windows)]
+use base64::Engine;
 
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -166,7 +170,7 @@ impl PersistentShell {
             // Encode command to Base64 to avoid encoding issues in the pipe
             // This ensures that characters like Korean are transmitted correctly
             // regardless of the current console code page.
-            let encoded = base64::engine::general_purpose::STANDARD.encode(command);
+            let encoded = general_purpose::STANDARD.encode(command);
             // We use Invoke-Expression to execute the decoded string
             let wrapper = format!(
                 "Invoke-Expression ([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('{}')))\n",
