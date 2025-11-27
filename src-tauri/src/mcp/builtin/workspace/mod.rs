@@ -59,11 +59,11 @@ impl PendingExecutions {
 
 #[derive(Debug)]
 pub struct WorkspaceServer {
-    session_manager: Arc<SessionManager>,
-    isolation_manager: crate::session_isolation::SessionIsolationManager,
-    process_registry: terminal_manager::ProcessRegistry,
-    pending_executions: Arc<PendingExecutions>,
-    shell_manager: Arc<persistent_shell_manager::PersistentShellManager>,
+    pub(crate) session_manager: Arc<SessionManager>,
+    pub(crate) isolation_manager: crate::session_isolation::SessionIsolationManager,
+    pub(crate) process_registry: terminal_manager::ProcessRegistry,
+    pub(crate) pending_executions: Arc<PendingExecutions>,
+    pub(crate) shell_manager: Arc<persistent_shell_manager::PersistentShellManager>,
 }
 
 impl WorkspaceServer {

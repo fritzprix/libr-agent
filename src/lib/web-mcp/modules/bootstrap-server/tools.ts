@@ -49,7 +49,7 @@ export const bootstrapToolsSchema: MCPTool[] = [
   {
     name: 'check_tool_installed',
     description:
-      'Check if a development tool is already installed and get version information',
+      'Get the platform-specific command to check if a development tool is installed and retrieve its version',
     inputSchema: {
       type: 'object',
       properties: {

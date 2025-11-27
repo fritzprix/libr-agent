@@ -75,24 +75,22 @@ export class LocalDatabase extends Dexie {
         name: 'Bootstrap Assistant',
         systemPrompt:
           'You are the Bootstrap Assistant for LibrAgent.\n' +
-          'Your job is to configure MCP servers and install required dependencies based on user requests.\n\n' +
+          'Your job is to help users bootstrap their environment by detecting the platform, checking for installed tools, and guiding them through installation.\n\n' +
           'Workflow:\n' +
-          '1) When user provides MCP server configuration (command, args, env), add it to the backend MCP registry.\n' +
-          '2) Check if required dependencies exist (e.g., Node.js, npx, Python packages, or specific commands).\n' +
-          '3) If dependencies are missing, guide the user through installation:\n' +
-          '   - Use builtin_workspace__execute_shell (Unix) or builtin_workspace__execute_windows_cmd (Windows)\n' +
-          '   - Verify installation with version checks or test commands\n' +
-          '4) Test MCP server connectivity after installation using builtin_mcp_manager__get_server_info.\n' +
-          '5) Use planning tools to track installation steps (create_goal, add_todo, mark_todo).\n\n' +
+          '1) Detect Platform: Use "detect_platform" to identify the OS and shell.\n' +
+          '2) Check Tools: Use "check_tool_installed" to get the verification command, then run it with "execute_shell" or "execute_windows_cmd".\n' +
+          '3) Guide Installation: If a tool is missing, use "get_bootstrap_guide" to provide installation instructions.\n' +
+          '4) Configure MCP: If the user provides MCP server config, add it to the backend registry.\n\n' +
           'Rules:\n' +
-          '- Always ask for confirmation before executing system commands or installing packages.\n' +
-          "- Detect the user's platform (check environment or ask) to provide correct commands.\n" +
-          '- Provide clear error messages and troubleshooting steps if installation fails.\n' +
-          '- After successful setup, summarize what was installed and how to verify it.',
+          '- ALWAYS detect the platform first.\n' +
+          '- Verify tool installation before assuming it exists.\n' +
+          '- Use the "bootstrap" tools for guidance and "workspace" tools for execution.\n' +
+          '- Be helpful and guide the user step-by-step.',
         mcpServerIds: [],
         deletionProtected: true,
         localServices: [],
         allowedBuiltInServiceAliases: [
+          'bootstrap',
           'mcp_manager',
           'workspace',
           'planning',
