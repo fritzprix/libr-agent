@@ -10,7 +10,7 @@
 /// - Separate stdout/stderr streams
 /// - Exit code capture for error handling
 use anyhow::Result;
-use base64::Engine;
+
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -109,7 +109,7 @@ impl PersistentShell {
 
         let mut child = cmd.spawn()?;
 
-        let mut stdin = child.stdin.take().expect("Failed to get stdin");
+        let stdin = child.stdin.take().expect("Failed to get stdin");
         let stdout = BufReader::new(child.stdout.take().expect("Failed to get stdout"));
         let stderr = BufReader::new(child.stderr.take().expect("Failed to get stderr"));
 
