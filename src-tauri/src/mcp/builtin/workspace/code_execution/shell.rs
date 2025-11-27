@@ -320,6 +320,7 @@ impl WorkspaceServer {
     }
 
     /// Fix consecutive quotes based on context
+    #[cfg(not(windows))]
     fn fix_consecutive_quotes(input: &str) -> String {
         let mut result = String::new();
         let chars: Vec<char> = input.chars().collect();
