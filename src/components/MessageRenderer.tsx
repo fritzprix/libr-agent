@@ -587,7 +587,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
                           const el =
                             ev?.currentTarget as HTMLIFrameElement | null;
                           if (!el) return;
-                          
+
                           // Inject console.log interceptor into iframe
                           const iframeWindow = el.contentWindow;
                           if (iframeWindow) {
@@ -596,22 +596,33 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
                               const win = iframeWindow as any;
                               const originalConsoleLog = win.console?.log;
                               if (originalConsoleLog) {
-                                win.console.log = function(...args: unknown[]) {
+                                win.console.log = function (
+                                  ...args: unknown[]
+                                ) {
                                   logger.info('📄 IFrame Console:', args);
-                                  return originalConsoleLog.apply(win.console, args);
+                                  return originalConsoleLog.apply(
+                                    win.console,
+                                    args,
+                                  );
                                 };
                               }
-                              
-                              logger.info('🔗 IFrame loaded, interceptor installed', {
-                                iframeSrc: el.src,
-                                hasContentWindow: !!iframeWindow,
-                                hasConsole: !!win.console,
-                              });
+
+                              logger.info(
+                                '🔗 IFrame loaded, interceptor installed',
+                                {
+                                  iframeSrc: el.src,
+                                  hasContentWindow: !!iframeWindow,
+                                  hasConsole: !!win.console,
+                                },
+                              );
                             } catch (consoleError) {
-                              logger.warn('⚠️ Could not install console interceptor', { consoleError });
+                              logger.warn(
+                                '⚠️ Could not install console interceptor',
+                                { consoleError },
+                              );
                             }
                           }
-                          
+
                           const doc =
                             el.contentDocument || el.contentWindow?.document;
                           const height =
@@ -621,10 +632,14 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
                             el.style.height = `${height}px`;
                           }
                         } catch (error) {
-                          logger.warn('⚠️ IFrame onLoad error', { 
+                          logger.warn('⚠️ IFrame onLoad error', {
                             error,
-                            errorMessage: error instanceof Error ? error.message : String(error),
-                            errorStack: error instanceof Error ? error.stack : undefined,
+                            errorMessage:
+                              error instanceof Error
+                                ? error.message
+                                : String(error),
+                            errorStack:
+                              error instanceof Error ? error.stack : undefined,
                           });
                           // ignore cross-origin or other errors
                         }
