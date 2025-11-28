@@ -292,9 +292,9 @@ The project uses a centralized logging system located at `src/lib/logger.ts` tha
 
 ### Core Framework
 
-- `@tauri-apps/api`: Version 1.x - Frontend-backend communication
-- `@tauri-apps/cli`: Version 1.x - Development and build tools
-- `tauri`: Version 1.x - Rust backend framework
+- `@tauri-apps/api`: Version 2.x - Enhanced frontend-backend communication
+- `@tauri-apps/cli`: Version 2.x - Latest development and build tools
+- `tauri`: Version 2.x - Advanced Rust backend framework with improved security
 
 ### Frontend Dependencies
 
@@ -302,7 +302,7 @@ The project uses a centralized logging system located at `src/lib/logger.ts` tha
 - `react-dom`: Version 18.x - React DOM renderer
 - `typescript`: Version 5.x - Type safety
 - `vite`: Version 4.x - Build tool and dev server
-- `tailwindcss`: Version 3.x - Utility-first CSS framework
+- `tailwindcss`: Version 4.x - Utility-first CSS framework
 
 ### Backend Dependencies (Rust)
 
@@ -465,3 +465,4 @@ These steps must be completed successfully before considering any refactoring ta
 
 - [Chat Feature Architecture & Implementation Manual](docs/architecture/chat-feature-architecture.md)
 - [Built-in Tools Documentation](docs/builtin-tools.md)
+- [UI Resource Implementation Guide](docs/guides/ui-resource-implementation.md)
