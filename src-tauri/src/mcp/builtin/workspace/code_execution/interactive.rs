@@ -749,6 +749,8 @@ mod tests {
         // Test with invalid base64 (should return error when nonce is provided)
         let result_invalid = WorkspaceServer::deobfuscate_input("not base64", nonce);
         assert!(result_invalid.is_err());
-        assert!(result_invalid.unwrap_err().contains("Input must be base64-obfuscated"));
+        assert!(result_invalid
+            .unwrap_err()
+            .contains("Input must be base64-obfuscated"));
     }
 }

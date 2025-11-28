@@ -239,8 +239,16 @@ impl PersistentShell {
                     }
 
                     // Check for sentinel
-                    if stdout_line.trim() == sentinel {
+                    let trimmed_line = stdout_line.trim_end();
+                    if trimmed_line.ends_with(sentinel) {
                         found_sentinel = true;
+
+                        // Extract content before sentinel if any
+                        let content_len = trimmed_line.len() - sentinel.len();
+                        if content_len > 0 {
+                            let content = &trimmed_line[..content_len];
+                            stdout_lines.push(content.to_string());
+                        }
 
                         // Next line should be exit code
                         let mut exit_line = String::new();
