@@ -181,8 +181,12 @@ impl PersistentShell {
 
         #[cfg(unix)]
         {
+            // Wrap in group with /dev/null redirection to prevent stdin consumption
+            // Use { ...; } to preserve side effects like 'cd' or 'export'
+            // We use multiple lines to handle comments in command safely
+            self.stdin.write_all(b"{\n").await?;
             self.stdin.write_all(command.as_bytes()).await?;
-            self.stdin.write_all(b"\n").await?;
+            self.stdin.write_all(b"\n} < /dev/null\n").await?;
         }
 
         // Send sentinel markers (platform-specific exit code syntax)
@@ -504,6 +508,31 @@ mod tests {
             assert_eq!(exit_code, 0);
             assert!(stdout.contains("ignoring input"));
             assert!(!injected_file.exists(), "Injected command was executed!");
+        }
+
+        shell.terminate().await?;
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_stdin_isolation() -> Result<()> {
+        let temp_dir = std::env::temp_dir().join("test_stdin_isolation");
+        std::fs::create_dir_all(&temp_dir)?;
+        let mut shell = PersistentShell::new("test-isolation".to_string(), temp_dir.clone()).await?;
+
+        #[cfg(unix)]
+        {
+            // 'cat' without args reads from stdin. 
+            // If stdin is not isolated, it might hang or consume subsequent commands.
+            // With isolation, it should read EOF immediately and exit.
+            let (stdout, _, exit_code) = tokio::time::timeout(
+                std::time::Duration::from_secs(2),
+                shell.execute("cat")
+            ).await.map_err(|_| anyhow::anyhow!("Timeout"))??;
+
+            assert_eq!(exit_code, 0);
+            assert_eq!(stdout, "");
         }
 
         shell.terminate().await?;
