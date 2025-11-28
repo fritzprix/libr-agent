@@ -224,6 +224,11 @@ export function BuiltInToolProvider({ children }: BuiltInToolProviderProps) {
   }, []);
 
   const executeTool = useCallback(async (toolcall: ToolCall) => {
+    logger.info('🔧 BuiltInToolProvider - Tool execution request', {
+      fullToolName: toolcall.function.name,
+      toolCallId: toolcall.id,
+    });
+
     let strippedToolName;
     if (!toolcall.function.name.startsWith(BUILTIN_PREFIX)) {
       strippedToolName = toolcall.function.name;
@@ -234,29 +239,46 @@ export function BuiltInToolProvider({ children }: BuiltInToolProviderProps) {
 
     const idx = strippedToolName.indexOf('__');
     if (idx === -1) {
+      logger.error('Invalid builtin tool name format - missing __', {
+        strippedToolName,
+      });
       throw new Error(`Invalid builtin tool name format: ${strippedToolName}`);
     }
 
     // Improved error handling for more specific feedback.
     const alias = strippedToolName.slice(0, idx);
     const serviceId = aliasToIdTableRef.current.get(alias);
+
     if (!serviceId) {
+      logger.error('No service registered for alias', {
+        alias,
+        availableAliases: Array.from(aliasToIdTableRef.current.keys()),
+      });
       throw new Error(`No service registered for alias: "${alias}"`);
     }
 
     const entry = serviceEntriesRef.current.get(serviceId);
     if (!entry) {
       // This is a safeguard for state consistency.
+      logger.error('Service not found in registry', {
+        serviceId,
+        availableServices: Array.from(serviceEntriesRef.current.keys()),
+      });
       throw new Error(`Service with ID "${serviceId}" not found in registry.`);
     }
 
     if (entry.status !== 'ready') {
+      logger.error('Service not ready', {
+        serviceId,
+        status: entry.status,
+      });
       throw new Error(
         `Service "${serviceId}" is not ready. Current status: ${entry.status}`,
       );
     }
 
     const toolName = strippedToolName.slice(idx + 2);
+
     return entry.service.executeTool({
       ...toolcall,
       function: {

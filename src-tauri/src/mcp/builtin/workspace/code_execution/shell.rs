@@ -373,6 +373,22 @@ impl WorkspaceServer {
         while i < chars.len() {
             if i + 1 < chars.len() && chars[i] == '"' && chars[i + 1] == '"' {
                 // Consecutive quotes found
+
+                // Check if the first quote is escaped (preceded by odd number of backslashes)
+                let mut backslash_count = 0;
+                let mut j = i;
+                while j > 0 && chars[j - 1] == '\\' {
+                    backslash_count += 1;
+                    j -= 1;
+                }
+
+                if backslash_count % 2 != 0 {
+                    // It is an escaped quote (e.g. \"), so it's not a start of consecutive quotes
+                    result.push(chars[i]);
+                    i += 1;
+                    continue;
+                }
+
                 if i > 0 && chars[i - 1] != ' ' && chars[i - 1] != '=' {
                     // If no space or equals before, escape the first one
                     result.push('\\');
@@ -686,5 +702,80 @@ impl WorkspaceServer {
     #[cfg(windows)]
     pub(crate) fn detect_privilege_escalation(&self, _command: &str) -> bool {
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[cfg(not(windows))]
+    fn test_normalize_shell_command_unix() {
+        // Basic cases
+        assert_eq!(
+            WorkspaceServer::normalize_shell_command("echo hello"),
+            "echo hello"
+        );
+        assert_eq!(
+            WorkspaceServer::normalize_shell_command("echo 'hello'"),
+            "echo 'hello'"
+        );
+        assert_eq!(
+            WorkspaceServer::normalize_shell_command("echo \"hello\""),
+            "echo \"hello\""
+        );
+
+        // Missing quotes
+        assert_eq!(
+            WorkspaceServer::normalize_shell_command("echo \"hello"),
+            "echo \"hello\""
+        );
+        assert_eq!(
+            WorkspaceServer::normalize_shell_command("echo 'hello"),
+            "echo 'hello'"
+        );
+
+        // Escaped quotes (should NOT be counted as closing quotes)
+        assert_eq!(
+            WorkspaceServer::normalize_shell_command("echo \"foo\\\"bar\""),
+            "echo \"foo\\\"bar\""
+        );
+
+        // Nested quotes
+        assert_eq!(
+            WorkspaceServer::normalize_shell_command("echo '\"hello\"'"),
+            "echo '\"hello\"'"
+        );
+        assert_eq!(
+            WorkspaceServer::normalize_shell_command("echo \"'hello'\""),
+            "echo \"'hello'\""
+        );
+
+        // Complex case with multiple escapes
+        assert_eq!(
+            WorkspaceServer::normalize_shell_command("echo \"path: \\\"/tmp/foo\\\"\""),
+            "echo \"path: \\\"/tmp/foo\\\"\""
+        );
+
+        // Trailing backslash (should be preserved)
+        assert_eq!(
+            WorkspaceServer::normalize_shell_command("echo hello \\"),
+            "echo hello \\"
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_normalize_shell_command_windows() {
+        // Windows should pass through everything as-is
+        assert_eq!(
+            WorkspaceServer::normalize_shell_command("echo hello"),
+            "echo hello"
+        );
+        assert_eq!(
+            WorkspaceServer::normalize_shell_command("echo \"hello"),
+            "echo \"hello"
+        );
     }
 }

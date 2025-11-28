@@ -548,4 +548,24 @@ mod tests {
         let _ = std::fs::remove_dir_all(&temp_dir);
         Ok(())
     }
+
+    #[tokio::test]
+    async fn test_command_without_newline() -> Result<()> {
+        let temp_dir = std::env::temp_dir().join("test_no_newline");
+        std::fs::create_dir_all(&temp_dir)?;
+        let mut shell =
+            PersistentShell::new("test-no-newline".to_string(), temp_dir.clone()).await?;
+
+        #[cfg(unix)]
+        let (stdout, _, exit_code) = shell.execute("printf 'NoNewline'").await?;
+        #[cfg(windows)]
+        let (stdout, _, exit_code) = shell.execute("Write-Host -NoNewline 'NoNewline'").await?;
+
+        assert_eq!(exit_code, 0);
+        assert_eq!(stdout, "NoNewline");
+
+        shell.terminate().await?;
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        Ok(())
+    }
 }

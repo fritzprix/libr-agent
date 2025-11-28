@@ -379,7 +379,7 @@ pub async fn switch_context(
 /// - `state`: The CSRF state token for validation
 ///
 /// # Example
-/// ```
+/// ```ignore
 /// let (url, state) = start_oauth_flow(
 ///     "github-mcp".to_string(),
 ///     oauth_config

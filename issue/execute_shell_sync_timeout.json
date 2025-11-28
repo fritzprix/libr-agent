@@ -1,0 +1,2689 @@
+[
+  {
+    "id": "r2cqlheolbzgc1h3svig0fbi",
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "dfx7pl1tol282x38i9wduihb",
+    "role": "user",
+    "content": [
+      {
+        "type": "text",
+        "text": "execute_shell 도구를 다양한 시나리오를 구상하여 파라미터 등의 조합을 최대한 광범위하게 테스트 수행하자"
+      }
+    ],
+    "tool_call_id": null,
+    "isStreaming": null,
+    "thinking": null,
+    "thinkingSignature": null,
+    "assistantId": null,
+    "createdAt": "2025-11-28T08:19:59.533Z",
+    "updatedAt": "2025-11-28T08:19:59.533Z",
+    "source": null
+  },
+  {
+    "id": "bdwsdjyndxztxjnqj37h2nmv",
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "dfx7pl1tol282x38i9wduihb",
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": "I need to test the `builtin_workspace__execute_shell` tool extensively. I'll cover various `command`, `run_mode`, `require_user_input`, `input_type`, and `timeout` combinations.\n\nMy goal is to thoroughly test the `builtin_workspace__execute_shell` tool.\n\nI'll start with these scenarios:\n1.  **Basic `sync` command:** Simple `echo`, multi-argument commands, `stderr` output, and non-zero exit status.\n2.  **Basic `async` command:** `sleep` command, verifying `process_id`, and using `poll_process`.\n3.  **`require_user_input` scenarios:** `sudo` with password, text input, custom prompts, and canceling execution.\n4.  **`timeout` parameter:** Testing commands exceeding the timeout in `sync` mode.\n5.  **Edge cases:** Invalid commands and commands with long output.\n\nI will begin with the **Basic `sync` command** scenario."
+      }
+    ],
+    "tool_calls": [
+      {
+        "id": "tool_zz53igvxbt1y9md0cax99160",
+        "function": {
+          "name": "builtin_planning__create_goal",
+          "arguments": "{\"goal\":\"Thoroughly test the builtin_workspace__execute_shell tool with diverse parameter combinations and scenarios to ensure its robust functionality.\"}"
+        }
+      }
+    ],
+    "tool_call_id": null,
+    "isStreaming": null,
+    "thinking": null,
+    "thinkingSignature": null,
+    "assistantId": null,
+    "createdAt": "2025-11-28T08:20:04.667Z",
+    "updatedAt": "2025-11-28T08:20:04.667Z",
+    "source": null
+  },
+  {
+    "id": "myr8tl8xz2618vs6k5vp6dw1",
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "dfx7pl1tol282x38i9wduihb",
+    "role": "tool",
+    "content": [
+      {
+        "type": "text",
+        "text": "Goal created: \"Thoroughly test the builtin_workspace__execute_shell tool with diverse parameter combinations and scenarios to ensure its robust functionality.\"New todos can be added to support this goal.",
+        "serviceInfo": {
+          "serverName": "builtin_planning",
+          "toolName": "create_goal",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_zz53igvxbt1y9md0cax99160",
+    "isStreaming": null,
+    "thinking": null,
+    "thinkingSignature": null,
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "createdAt": "2025-11-28T08:20:04.791Z",
+    "updatedAt": "2025-11-28T08:20:04.791Z",
+    "source": null
+  },
+  {
+    "id": "y24al2vxuq4agntx4cq68dhz",
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "dfx7pl1tol282x38i9wduihb",
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "tool_calls": [
+      {
+        "id": "tool_z96tfjys4uvm01y5e1kd6jdg",
+        "function": {
+          "name": "builtin_planning__add_todo",
+          "arguments": "{\"name\":\"Execute a simple 'echo' command in sync mode.\"}"
+        }
+      },
+      {
+        "id": "tool_n30l6ypzzadv4y1c1ikiovdc",
+        "function": {
+          "name": "builtin_planning__add_todo",
+          "arguments": "{\"name\":\"Execute a command with arguments in sync mode.\"}"
+        }
+      },
+      {
+        "id": "tool_i374awr0ab372dnn4wzivgl0",
+        "function": {
+          "name": "builtin_planning__add_todo",
+          "arguments": "{\"name\":\"Execute a command with special characters in sync mode.\"}"
+        }
+      },
+      {
+        "id": "tool_ajjg8a8t7kdj2ti1ivyf8oj8",
+        "function": {
+          "name": "builtin_planning__add_todo",
+          "arguments": "{\"name\":\"Execute a command that produces both stdout and stderr in sync mode.\"}"
+        }
+      },
+      {
+        "id": "tool_odov419wjb8qafu3trwitswv",
+        "function": {
+          "name": "builtin_planning__add_todo",
+          "arguments": "{\"name\":\"Execute a command that fails (non-zero exit code) in sync mode.\"}"
+        }
+      }
+    ],
+    "tool_call_id": null,
+    "isStreaming": null,
+    "thinking": null,
+    "thinkingSignature": null,
+    "assistantId": null,
+    "createdAt": "2025-11-28T08:20:09.159Z",
+    "updatedAt": "2025-11-28T08:20:09.159Z",
+    "source": null
+  },
+  {
+    "id": "ydtbgakhiss2vgoo0xqv6155",
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "dfx7pl1tol282x38i9wduihb",
+    "role": "tool",
+    "content": [
+      {
+        "type": "text",
+        "text": "Todo added: ID:1 \"Execute a simple 'echo' command in sync mode.\"\nGoal: \"Thoroughly test the builtin_workspace__execute_shell tool with diverse parameter combinations and scenarios to ensure its robust functionality.\"\nTotal todos: 1",
+        "serviceInfo": {
+          "serverName": "builtin_planning",
+          "toolName": "add_todo",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_z96tfjys4uvm01y5e1kd6jdg",
+    "isStreaming": null,
+    "thinking": null,
+    "thinkingSignature": null,
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "createdAt": "2025-11-28T08:20:09.261Z",
+    "updatedAt": "2025-11-28T08:20:09.261Z",
+    "source": null
+  },
+  {
+    "id": "m3yu5wq6ja71843wld0hcmq5",
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "dfx7pl1tol282x38i9wduihb",
+    "role": "tool",
+    "content": [
+      {
+        "type": "text",
+        "text": "Todo added: ID:2 \"Execute a command with arguments in sync mode.\"\nGoal: \"Thoroughly test the builtin_workspace__execute_shell tool with diverse parameter combinations and scenarios to ensure its robust functionality.\"\nTotal todos: 2",
+        "serviceInfo": {
+          "serverName": "builtin_planning",
+          "toolName": "add_todo",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_n30l6ypzzadv4y1c1ikiovdc",
+    "isStreaming": null,
+    "thinking": null,
+    "thinkingSignature": null,
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "createdAt": "2025-11-28T08:20:09.261Z",
+    "updatedAt": "2025-11-28T08:20:09.261Z",
+    "source": null
+  },
+  {
+    "id": "glxgy43uzjj1hvwd0yy3p6tz",
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "dfx7pl1tol282x38i9wduihb",
+    "role": "tool",
+    "content": [
+      {
+        "type": "text",
+        "text": "Todo added: ID:3 \"Execute a command with special characters in sync mode.\"\nGoal: \"Thoroughly test the builtin_workspace__execute_shell tool with diverse parameter combinations and scenarios to ensure its robust functionality.\"\nTotal todos: 3",
+        "serviceInfo": {
+          "serverName": "builtin_planning",
+          "toolName": "add_todo",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_i374awr0ab372dnn4wzivgl0",
+    "isStreaming": null,
+    "thinking": null,
+    "thinkingSignature": null,
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "createdAt": "2025-11-28T08:20:09.261Z",
+    "updatedAt": "2025-11-28T08:20:09.261Z",
+    "source": null
+  },
+  {
+    "id": "yd52m25g0vbff7y8l1kn5zrz",
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "dfx7pl1tol282x38i9wduihb",
+    "role": "tool",
+    "content": [
+      {
+        "type": "text",
+        "text": "Todo added: ID:4 \"Execute a command that produces both stdout and stderr in sync mode.\"\nGoal: \"Thoroughly test the builtin_workspace__execute_shell tool with diverse parameter combinations and scenarios to ensure its robust functionality.\"\nTotal todos: 4",
+        "serviceInfo": {
+          "serverName": "builtin_planning",
+          "toolName": "add_todo",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_ajjg8a8t7kdj2ti1ivyf8oj8",
+    "isStreaming": null,
+    "thinking": null,
+    "thinkingSignature": null,
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "createdAt": "2025-11-28T08:20:09.261Z",
+    "updatedAt": "2025-11-28T08:20:09.261Z",
+    "source": null
+  },
+  {
+    "id": "igdtfmr778ozpgsp5xhq8ti8",
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "dfx7pl1tol282x38i9wduihb",
+    "role": "tool",
+    "content": [
+      {
+        "type": "text",
+        "text": "Todo added: ID:5 \"Execute a command that fails (non-zero exit code) in sync mode.\"\nGoal: \"Thoroughly test the builtin_workspace__execute_shell tool with diverse parameter combinations and scenarios to ensure its robust functionality.\"\nTotal todos: 5",
+        "serviceInfo": {
+          "serverName": "builtin_planning",
+          "toolName": "add_todo",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_odov419wjb8qafu3trwitswv",
+    "isStreaming": null,
+    "thinking": null,
+    "thinkingSignature": null,
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "createdAt": "2025-11-28T08:20:09.261Z",
+    "updatedAt": "2025-11-28T08:20:09.261Z",
+    "source": null
+  },
+  {
+    "id": "hx4b9o3kcp70of1fzun4h2le",
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "dfx7pl1tol282x38i9wduihb",
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "tool_calls": [
+      {
+        "id": "tool_vxhhimc1hpy5yu73nyj2ho74",
+        "function": {
+          "name": "builtin_workspace__execute_shell",
+          "arguments": "{\"command\":\"echo Hello World\",\"run_mode\":\"sync\"}"
+        }
+      }
+    ],
+    "tool_call_id": null,
+    "isStreaming": null,
+    "thinking": null,
+    "thinkingSignature": null,
+    "assistantId": null,
+    "createdAt": "2025-11-28T08:20:11.846Z",
+    "updatedAt": "2025-11-28T08:20:11.846Z",
+    "source": null
+  },
+  {
+    "id": "dmptkqe1ssvb1slqn7oyloie",
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "dfx7pl1tol282x38i9wduihb",
+    "role": "tool",
+    "content": [
+      {
+        "text": "{\"command\":\"echo Hello World\",\"exit_code\":0,\"status\":\"finished\",\"stderr\":\"\",\"stdout\":\"Hello World\\n\"}",
+        "type": "text",
+        "serviceInfo": {
+          "serverName": "builtin_workspace",
+          "toolName": "execute_shell",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_vxhhimc1hpy5yu73nyj2ho74",
+    "isStreaming": null,
+    "thinking": null,
+    "thinkingSignature": null,
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "createdAt": "2025-11-28T08:20:11.925Z",
+    "updatedAt": "2025-11-28T08:20:11.925Z",
+    "source": null
+  },
+  {
+    "id": "thuf9d0fe4nrvcgrm2fxb68d",
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "dfx7pl1tol282x38i9wduihb",
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "tool_calls": [
+      {
+        "id": "tool_f9fwkm3jxumicte9udwbzcq0",
+        "function": {
+          "name": "builtin_planning__mark_todo",
+          "arguments": "{\"summary\":\"Successfully executed a simple 'echo' command in sync mode.\",\"id\":1,\"completed\":true}"
+        }
+      }
+    ],
+    "tool_call_id": null,
+    "isStreaming": null,
+    "thinking": null,
+    "thinkingSignature": null,
+    "assistantId": null,
+    "createdAt": "2025-11-28T08:20:14.558Z",
+    "updatedAt": "2025-11-28T08:20:14.558Z",
+    "source": null
+  },
+  {
+    "id": "t98nhvtb3yfxup2qk2bwijx6",
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "dfx7pl1tol282x38i9wduihb",
+    "role": "tool",
+    "content": [
+      {
+        "type": "text",
+        "text": "Todo checked: \"Execute a simple 'echo' command in sync mode.\" (Summary: \"Successfully executed a simple 'echo' command in sync mode.\")",
+        "serviceInfo": {
+          "serverName": "builtin_planning",
+          "toolName": "mark_todo",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_f9fwkm3jxumicte9udwbzcq0",
+    "isStreaming": null,
+    "thinking": null,
+    "thinkingSignature": null,
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "createdAt": "2025-11-28T08:20:14.638Z",
+    "updatedAt": "2025-11-28T08:20:14.638Z",
+    "source": null
+  },
+  {
+    "id": "k4l4ndc6top2vjc88i6ih0y2",
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "dfx7pl1tol282x38i9wduihb",
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "tool_calls": [
+      {
+        "id": "tool_ry415mn62kw7kk6ktvy41vml",
+        "function": {
+          "name": "builtin_workspace__execute_shell",
+          "arguments": "{\"run_mode\":\"sync\",\"command\":\"echo Argument1 Argument2 \\\"Argument with spaces\\\"\"}"
+        }
+      }
+    ],
+    "tool_call_id": null,
+    "isStreaming": null,
+    "thinking": null,
+    "thinkingSignature": null,
+    "assistantId": null,
+    "createdAt": "2025-11-28T08:20:18.355Z",
+    "updatedAt": "2025-11-28T08:20:18.355Z",
+    "source": null
+  },
+  {
+    "id": "ctmhblf92ye7d7btyr9wszam",
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "dfx7pl1tol282x38i9wduihb",
+    "role": "tool",
+    "content": [
+      {
+        "text": "{\"command\":\"echo Argument1 Argument2 \\\"Argument with spaces\\\"\",\"exit_code\":0,\"status\":\"finished\",\"stderr\":\"\",\"stdout\":\"Argument1 Argument2 Argument with spaces\\n\"}",
+        "type": "text",
+        "serviceInfo": {
+          "serverName": "builtin_workspace",
+          "toolName": "execute_shell",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_ry415mn62kw7kk6ktvy41vml",
+    "isStreaming": null,
+    "thinking": null,
+    "thinkingSignature": null,
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "createdAt": "2025-11-28T08:20:18.440Z",
+    "updatedAt": "2025-11-28T08:20:18.440Z",
+    "source": null
+  },
+  {
+    "id": "swy0708p1dbxl9yw0xxui6t4",
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "dfx7pl1tol282x38i9wduihb",
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "tool_calls": [
+      {
+        "id": "tool_etz6vr0u1vb0v9eur9929sju",
+        "function": {
+          "name": "builtin_planning__mark_todo",
+          "arguments": "{\"id\":2,\"completed\":true,\"summary\":\"Successfully executed a command with arguments in sync mode.\"}"
+        }
+      }
+    ],
+    "tool_call_id": null,
+    "isStreaming": null,
+    "thinking": null,
+    "thinkingSignature": null,
+    "assistantId": null,
+    "createdAt": "2025-11-28T08:20:21.232Z",
+    "updatedAt": "2025-11-28T08:20:21.232Z",
+    "source": null
+  },
+  {
+    "id": "p3bgffidl6z2sg6ttefnpdc8",
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "dfx7pl1tol282x38i9wduihb",
+    "role": "tool",
+    "content": [
+      {
+        "type": "text",
+        "text": "Todo checked: \"Execute a command with arguments in sync mode.\" (Summary: \"Successfully executed a command with arguments in sync mode.\")",
+        "serviceInfo": {
+          "serverName": "builtin_planning",
+          "toolName": "mark_todo",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_etz6vr0u1vb0v9eur9929sju",
+    "isStreaming": null,
+    "thinking": null,
+    "thinkingSignature": null,
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "createdAt": "2025-11-28T08:20:21.313Z",
+    "updatedAt": "2025-11-28T08:20:21.313Z",
+    "source": null
+  },
+  {
+    "id": "lmbmdh2ij3t0l2qbb8q61q2v",
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "dfx7pl1tol282x38i9wduihb",
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "tool_calls": [
+      {
+        "id": "tool_zi05ep6saazkpjsdpdp3o1jh",
+        "function": {
+          "name": "builtin_workspace__execute_shell",
+          "arguments": "{\"command\":\"echo 'Special characters: !@#$%^&*()[]{};'\\\"<>?|\\\\'\",\"run_mode\":\"sync\"}"
+        }
+      }
+    ],
+    "tool_call_id": null,
+    "isStreaming": null,
+    "thinking": null,
+    "thinkingSignature": null,
+    "assistantId": null,
+    "createdAt": "2025-11-28T08:20:24.410Z",
+    "updatedAt": "2025-11-28T08:20:24.410Z",
+    "source": null
+  },
+  {
+    "id": "mk6hhwykzzukc7pd5o5v45t9",
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "dfx7pl1tol282x38i9wduihb",
+    "role": "tool",
+    "content": [
+      {
+        "type": "text",
+        "text": "Command execution timeout after 30 seconds"
+      }
+    ],
+    "tool_call_id": "tool_zi05ep6saazkpjsdpdp3o1jh",
+    "isStreaming": null,
+    "thinking": null,
+    "thinkingSignature": null,
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "createdAt": "2025-11-28T08:20:54.490Z",
+    "updatedAt": "2025-11-28T08:20:54.490Z",
+    "source": null,
+    "error": {
+      "displayMessage": "Command execution timeout after 30 seconds",
+      "type": "TOOL_EXECUTION_ERROR",
+      "recoverable": true,
+      "details": {
+        "originalError": {
+          "isError": true,
+          "content": [
+            {
+              "text": "Command execution timeout after 30 seconds",
+              "type": "text",
+              "serviceInfo": {
+                "serverName": "builtin_workspace",
+                "toolName": "execute_shell",
+                "backendType": "BuiltInRust"
+              }
+            }
+          ]
+        },
+        "errorCode": "TOOL_ERROR",
+        "timestamp": "2025-11-28T08:20:54.474Z",
+        "context": {
+          "toolName": "builtin_workspace__execute_shell",
+          "toolCallId": "tool_zi05ep6saazkpjsdpdp3o1jh",
+          "isToolExecutionError": true
+        }
+      }
+    }
+  },
+  {
+    "id": "tmbb5l9n6563hxzk6kyzygbh",
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "dfx7pl1tol282x38i9wduihb",
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "tool_calls": [
+      {
+        "id": "tool_lkpfpsji6evxque3jl7pb2wp",
+        "function": {
+          "name": "builtin_workspace__execute_shell",
+          "arguments": "{\"command\":\"echo \\\"Special characters: !@#$%^&*()[]{}\\\"\",\"run_mode\":\"sync\"}"
+        }
+      }
+    ],
+    "tool_call_id": null,
+    "isStreaming": null,
+    "thinking": null,
+    "thinkingSignature": null,
+    "assistantId": null,
+    "createdAt": "2025-11-28T08:20:57.768Z",
+    "updatedAt": "2025-11-28T08:20:57.768Z",
+    "source": null
+  },
+  {
+    "id": "hg4kigm3vg3med8g8c2pklu4",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "text": "{\"command\":\"echo \\\"Special characters: !@#$%^&*()[]{}\\\"\",\"exit_code\":0,\"status\":\"finished\",\"stderr\":\"\",\"stdout\":\"Special characters: !@#$%^&*()[]{}\\n\"}",
+        "type": "text",
+        "serviceInfo": {
+          "serverName": "builtin_workspace",
+          "toolName": "execute_shell",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_lkpfpsji6evxque3jl7pb2wp",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 14
+    }
+  },
+  {
+    "id": "pt6qm965u4ymwhcrbt3j4gi2",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_orfiv7ctc2t2uv22s925tbp4",
+        "function": {
+          "name": "builtin_planning__mark_todo",
+          "arguments": "{\"summary\":\"Successfully executed a command with special characters in sync mode by adjusting escaping.\",\"completed\":true,\"id\":3}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "dfx7pl1tol282x38i9wduihb"
+  },
+  {
+    "id": "vdzelegw198ugq4sanpt1go5",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "type": "text",
+        "text": "Todo with ID 3 not found. Available IDs: none",
+        "serviceInfo": {
+          "serverName": "builtin_planning",
+          "toolName": "mark_todo",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_orfiv7ctc2t2uv22s925tbp4",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 30
+    }
+  },
+  {
+    "id": "dhoggq05vzrsilws25bkor4j",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_hcl17kz5yg1531knf7zi5grm",
+        "function": {
+          "name": "builtin_planning__get_current_state",
+          "arguments": "{}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "dfx7pl1tol282x38i9wduihb"
+  },
+  {
+    "id": "hmj3xb5i4t4ssxw4mwnz0uhx",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "type": "text",
+        "text": "# Planning State\n\n**Summary**\n- Todos: 0\n- Memos: 0\n\n**Goal**\n- (none)\n\n**Todos**\n- (none)\n\n**Recent Notes**\n- (none)",
+        "serviceInfo": {
+          "serverName": "builtin_planning",
+          "toolName": "get_current_state",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_hcl17kz5yg1531knf7zi5grm",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 39
+    }
+  },
+  {
+    "id": "wuvcv5afxnfsoxsbe1irupa2",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_vqogasni2d505m0rtk6bl7k6",
+        "function": {
+          "name": "builtin_planning__add_todo",
+          "arguments": "{\"name\":\"Execute a command with special characters in sync mode.\"}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "dfx7pl1tol282x38i9wduihb"
+  },
+  {
+    "id": "n3iw3822n0ncbhwx3sof94g2",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "type": "text",
+        "text": "Todo added: ID:1 \"Execute a command with special characters in sync mode.\"\nNo active goal.\nTotal todos: 1",
+        "serviceInfo": {
+          "serverName": "builtin_planning",
+          "toolName": "add_todo",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_vqogasni2d505m0rtk6bl7k6",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 23
+    }
+  },
+  {
+    "id": "bglpxtgj298yidpukrxvwj91",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_wou96jun7s4jiybhs3me4bix",
+        "function": {
+          "name": "builtin_planning__mark_todo",
+          "arguments": "{\"id\":1,\"summary\":\"Successfully executed a command with special characters in sync mode.\",\"completed\":true}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "dfx7pl1tol282x38i9wduihb"
+  },
+  {
+    "id": "fuff76jm3anmn6hvwy3qs0q5",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "type": "text",
+        "text": "Todo checked: \"Execute a command with special characters in sync mode.\" (Summary: \"Successfully executed a command with special characters in sync mode.\")",
+        "serviceInfo": {
+          "serverName": "builtin_planning",
+          "toolName": "mark_todo",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_wou96jun7s4jiybhs3me4bix",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 27
+    }
+  },
+  {
+    "id": "c8rrxu0ryx2zcxvwh0iwuzin",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_t7qzhutngwluk7a1xdi6d9g1",
+        "function": {
+          "name": "builtin_planning__add_todo",
+          "arguments": "{\"name\":\"Execute a command producing multi-line output in sync mode.\"}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "dfx7pl1tol282x38i9wduihb"
+  },
+  {
+    "id": "q11f9zwk8pl3ke6y38tb2um5",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "type": "text",
+        "text": "Todo added: ID:2 \"Execute a command producing multi-line output in sync mode.\"\nNo active goal.\nTotal todos: 2",
+        "serviceInfo": {
+          "serverName": "builtin_planning",
+          "toolName": "add_todo",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_t7qzhutngwluk7a1xdi6d9g1",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 22
+    }
+  },
+  {
+    "id": "g52iw527hh1nrd69lpt2gz35",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_r14wj5qfegqfo1jmfx94ov56",
+        "function": {
+          "name": "builtin_workspace__execute_shell",
+          "arguments": "{\"run_mode\":\"sync\",\"command\":\"printf \\\"Line 1\\\\nLine 2\\\\nLine 3\\\"\"}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "dfx7pl1tol282x38i9wduihb"
+  },
+  {
+    "id": "dphxphqy95qu7nz36j5o8i9z",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "type": "text",
+        "text": "Command execution timeout after 30 seconds"
+      }
+    ],
+    "tool_call_id": "tool_r14wj5qfegqfo1jmfx94ov56",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 30004
+    },
+    "error": {
+      "displayMessage": "Command execution timeout after 30 seconds",
+      "type": "TOOL_EXECUTION_ERROR",
+      "recoverable": true,
+      "details": {
+        "originalError": {
+          "isError": true,
+          "content": [
+            {
+              "text": "Command execution timeout after 30 seconds",
+              "type": "text",
+              "serviceInfo": {
+                "serverName": "builtin_workspace",
+                "toolName": "execute_shell",
+                "backendType": "BuiltInRust"
+              }
+            }
+          ]
+        },
+        "errorCode": "TOOL_ERROR",
+        "timestamp": "2025-11-28T08:22:35.437Z",
+        "context": {
+          "toolName": "builtin_workspace__execute_shell",
+          "toolCallId": "tool_r14wj5qfegqfo1jmfx94ov56",
+          "isToolExecutionError": true
+        }
+      }
+    }
+  },
+  {
+    "id": "xbz2upseyr22lgy0a6dsen85",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_bmy9ix9gvxvb5qtp128expow",
+        "function": {
+          "name": "builtin_workspace__execute_shell",
+          "arguments": "{\"command\":\"printf \\\"Line 1\\\\nLine 2\\\\nLine 3\\\"\",\"timeout\":60,\"run_mode\":\"sync\"}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "dfx7pl1tol282x38i9wduihb"
+  },
+  {
+    "id": "b9l6q5zfu9vlvesghhzhivmp",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "type": "text",
+        "text": "Sync mode supports a maximum timeout of 30 seconds.\nFor longer-running commands, set \"run_mode\" to \"async\" so the command runs in background and can be polled.\nYou can adjust the default via the LIBRAGENT_DEFAULT_EXECUTION_TIMEOUT environment variable."
+      }
+    ],
+    "tool_call_id": "tool_bmy9ix9gvxvb5qtp128expow",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 29
+    },
+    "error": {
+      "displayMessage": "Sync mode supports a maximum timeout of 30 seconds.\nFor longer-running commands, set \"run_mode\" to \"async\" so the command runs in background and can be polled.\nYou can adjust the default via the LIBRAGENT_DEFAULT_EXECUTION_TIMEOUT environment variable.",
+      "type": "TOOL_EXECUTION_ERROR",
+      "recoverable": true,
+      "details": {
+        "originalError": {
+          "isError": true,
+          "content": [
+            {
+              "text": "Sync mode supports a maximum timeout of 30 seconds.\nFor longer-running commands, set \"run_mode\" to \"async\" so the command runs in background and can be polled.\nYou can adjust the default via the LIBRAGENT_DEFAULT_EXECUTION_TIMEOUT environment variable.",
+              "type": "text",
+              "serviceInfo": {
+                "serverName": "builtin_workspace",
+                "toolName": "execute_shell",
+                "backendType": "BuiltInRust"
+              }
+            }
+          ]
+        },
+        "errorCode": "TOOL_ERROR",
+        "timestamp": "2025-11-28T08:22:38.248Z",
+        "context": {
+          "toolName": "builtin_workspace__execute_shell",
+          "toolCallId": "tool_bmy9ix9gvxvb5qtp128expow",
+          "isToolExecutionError": true
+        }
+      }
+    }
+  },
+  {
+    "id": "drjlizh2fwosn6wt8hqtjv74",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_zcoihylzji65sb27fibuvyhx",
+        "function": {
+          "name": "builtin_workspace__execute_shell",
+          "arguments": "{\"command\":\"echo -e \\\"Line 1\\\\nLine 2\\\\nLine 3\\\"\",\"run_mode\":\"sync\"}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "dfx7pl1tol282x38i9wduihb"
+  },
+  {
+    "id": "xctsaatb3a23iatlvavi7hhc",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "text": "{\"command\":\"echo -e \\\"Line 1\\\\nLine 2\\\\nLine 3\\\"\",\"exit_code\":0,\"status\":\"finished\",\"stderr\":\"\",\"stdout\":\"Line 1\\nLine 2\\nLine 3\\n\"}",
+        "type": "text",
+        "serviceInfo": {
+          "serverName": "builtin_workspace",
+          "toolName": "execute_shell",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_zcoihylzji65sb27fibuvyhx",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 63
+    }
+  },
+  {
+    "id": "ow58do7xyu11bcew3xgukuex",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_v7i7t49w64jz3l0ljkpowsf2",
+        "function": {
+          "name": "builtin_planning__mark_todo",
+          "arguments": "{\"completed\":true,\"summary\":\"Successfully executed a command producing multi-line output in sync mode.\",\"id\":2}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "dfx7pl1tol282x38i9wduihb"
+  },
+  {
+    "id": "poupfbrv41ccp43e1q8ywbow",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "type": "text",
+        "text": "Todo checked: \"Execute a command producing multi-line output in sync mode.\" (Summary: \"Successfully executed a command producing multi-line output in sync mode.\")",
+        "serviceInfo": {
+          "serverName": "builtin_planning",
+          "toolName": "mark_todo",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_v7i7t49w64jz3l0ljkpowsf2",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 88
+    }
+  },
+  {
+    "id": "bezsi0n2herin9vpdc9k5n8t",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_gkhoehppmilv6r3tsw4zfjcy",
+        "function": {
+          "name": "builtin_planning__add_todo",
+          "arguments": "{\"name\":\"Execute a command producing large output in sync mode.\"}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "dfx7pl1tol282x38i9wduihb"
+  },
+  {
+    "id": "qpl7ytirkyqzm0ri4ruz8rmz",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "type": "text",
+        "text": "Todo added: ID:3 \"Execute a command producing large output in sync mode.\"\nNo active goal.\nTotal todos: 3",
+        "serviceInfo": {
+          "serverName": "builtin_planning",
+          "toolName": "add_todo",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_gkhoehppmilv6r3tsw4zfjcy",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 87
+    }
+  },
+  {
+    "id": "cs41gh7g9t0razyly13hvr07",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_qrzv76ekjifkx5a26o48jjtp",
+        "function": {
+          "name": "builtin_workspace__execute_shell",
+          "arguments": "{\"command\":\"yes 'This is a long line of text.' | head -n 1000 | cat\",\"run_mode\":\"sync\"}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "dfx7pl1tol282x38i9wduihb"
+  },
+  {
+    "id": "qoaue5zvpczztcig924gryf3",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "text": "{\"command\":\"yes 'This is a long line of text.' | head -n 1000 | cat\",\"exit_code\":0,\"status\":\"finished\",\"stderr\":\"\",\"stdout\":\"This is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\nThis is a long line of text.\\n\"}",
+        "type": "text",
+        "serviceInfo": {
+          "serverName": "builtin_workspace",
+          "toolName": "execute_shell",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_qrzv76ekjifkx5a26o48jjtp",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 26
+    }
+  },
+  {
+    "id": "zosaljvjhjmnr8hamyafx3mz",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_fvpeq8lkbosma0cu81gnhjy3",
+        "function": {
+          "name": "builtin_planning__mark_todo",
+          "arguments": "{\"id\":3,\"summary\":\"Successfully executed a command producing large output in sync mode.\",\"completed\":true}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "dfx7pl1tol282x38i9wduihb"
+  },
+  {
+    "id": "acfiecd6fegald91dcngtrfq",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "type": "text",
+        "text": "Todo checked: \"Execute a command producing large output in sync mode.\" (Summary: \"Successfully executed a command producing large output in sync mode.\")",
+        "serviceInfo": {
+          "serverName": "builtin_planning",
+          "toolName": "mark_todo",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_fvpeq8lkbosma0cu81gnhjy3",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 24
+    }
+  },
+  {
+    "id": "d11yfms9nwdp4c0yk4er2kml",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_e62rofa80kikpns2wm6u5sax",
+        "function": {
+          "name": "builtin_planning__clear_todos",
+          "arguments": "{}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "dfx7pl1tol282x38i9wduihb"
+  },
+  {
+    "id": "mywk8tra2cov6yj97joky9ju",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "type": "text",
+        "text": "All 3 todo(s) cleared\nSession todos reset. Current goal: (none)",
+        "serviceInfo": {
+          "serverName": "builtin_planning",
+          "toolName": "clear_todos",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_e62rofa80kikpns2wm6u5sax",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 86
+    }
+  },
+  {
+    "id": "y3mq5mygdu5vbuax244nxp8t",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_dxwifb9c1fgxsgk936qmml34",
+        "function": {
+          "name": "builtin_planning__create_goal",
+          "arguments": "{\"goal\":\"Test all modes of `execute_shell`\"}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "dfx7pl1tol282x38i9wduihb"
+  },
+  {
+    "id": "qu8r2beqp8dhifiamsy2cr18",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "type": "text",
+        "text": "Goal created: \"Test all modes of `execute_shell`\"New todos can be added to support this goal.",
+        "serviceInfo": {
+          "serverName": "builtin_planning",
+          "toolName": "create_goal",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_dxwifb9c1fgxsgk936qmml34",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 88
+    }
+  },
+  {
+    "id": "hjocxo05w85oqgskqzk2fzm0",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_p84lenmtv4fs7np86ui1djz0",
+        "function": {
+          "name": "builtin_planning__add_todo",
+          "arguments": "{\"name\":\"Execute a command in async mode and poll its status.\"}"
+        }
+      },
+      {
+        "id": "tool_ku9dl2secxq6hbsxdxcvo0p3",
+        "function": {
+          "name": "builtin_planning__add_todo",
+          "arguments": "{\"name\":\"Execute a command with `require_user_input` set to true (password type).\"}"
+        }
+      },
+      {
+        "id": "tool_g1sj9l1siyz1xce9rdcl7pnc",
+        "function": {
+          "name": "builtin_planning__add_todo",
+          "arguments": "{\"name\":\"Execute a command with `require_user_input` set to true (text type).\"}"
+        }
+      },
+      {
+        "id": "tool_jdfuv8vgz1wy03cee8fun7aa",
+        "function": {
+          "name": "builtin_planning__add_todo",
+          "arguments": "{\"name\":\"Execute a command in async mode with a timeout.\"}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "dfx7pl1tol282x38i9wduihb"
+  },
+  {
+    "id": "r4uxxe674ptk8idbc5unb3jr",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "type": "text",
+        "text": "Todo added: ID:4 \"Execute a command in async mode and poll its status.\"\nGoal: \"Test all modes of `execute_shell`\"\nTotal todos: 1",
+        "serviceInfo": {
+          "serverName": "builtin_planning",
+          "toolName": "add_todo",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_p84lenmtv4fs7np86ui1djz0",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 25
+    }
+  },
+  {
+    "id": "vifxqk58w4wba2q8tdda8axw",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "type": "text",
+        "text": "Todo added: ID:5 \"Execute a command with `require_user_input` set to true (password type).\"\nGoal: \"Test all modes of `execute_shell`\"\nTotal todos: 2",
+        "serviceInfo": {
+          "serverName": "builtin_planning",
+          "toolName": "add_todo",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_ku9dl2secxq6hbsxdxcvo0p3",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 26
+    }
+  },
+  {
+    "id": "s7off8qr44oappgip8hso1qu",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "type": "text",
+        "text": "Todo added: ID:6 \"Execute a command with `require_user_input` set to true (text type).\"\nGoal: \"Test all modes of `execute_shell`\"\nTotal todos: 3",
+        "serviceInfo": {
+          "serverName": "builtin_planning",
+          "toolName": "add_todo",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_g1sj9l1siyz1xce9rdcl7pnc",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 26
+    }
+  },
+  {
+    "id": "en7gjccf89hxstbwva0opizx",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "type": "text",
+        "text": "Todo added: ID:7 \"Execute a command in async mode with a timeout.\"\nGoal: \"Test all modes of `execute_shell`\"\nTotal todos: 4",
+        "serviceInfo": {
+          "serverName": "builtin_planning",
+          "toolName": "add_todo",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_jdfuv8vgz1wy03cee8fun7aa",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 27
+    }
+  },
+  {
+    "id": "vx037ec2kq32atfqy0t8atpa",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_lex5jlpkyg0l0kit26demrzj",
+        "function": {
+          "name": "builtin_workspace__execute_shell",
+          "arguments": "{\"command\":\"sleep 5\",\"run_mode\":\"async\"}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "teud024skev7zuizd2q7wr8s"
+  },
+  {
+    "id": "u67hkq5oayw4wwvyj18iaho7",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "text": "Process started in background.\nProcess ID: shyyulpt6vpbf93f50cvzutl\nCommand: sleep 5\n\nUse 'poll_process' to check status and view output:\npoll_process(process_id: \"shyyulpt6vpbf93f50cvzutl\", tail: {src: \"stdout\", n: 20})\n\nNote: async mode is intended for long-running commands (over 30s).",
+        "type": "text",
+        "serviceInfo": {
+          "serverName": "builtin_workspace",
+          "toolName": "execute_shell",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_lex5jlpkyg0l0kit26demrzj",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 104
+    }
+  },
+  {
+    "id": "tifh1i7dmno5684pzp4d0i6o",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_xb9f423oe9vbz0ostgqoo3zy",
+        "function": {
+          "name": "builtin_workspace__poll_process",
+          "arguments": "{\"process_id\":\"shyyulpt6vpbf93f50cvzutl\"}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "teud024skev7zuizd2q7wr8s"
+  },
+  {
+    "id": "dlb96ze3zrwo0if5s0mdi8gc",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "text": "{\n  \"command\": \"sleep 5\",\n  \"exit_code\": null,\n  \"finished_at\": null,\n  \"pid\": null,\n  \"process_id\": \"shyyulpt6vpbf93f50cvzutl\",\n  \"started_at\": \"2025-11-28T08:23:14.497603230+00:00\",\n  \"status\": \"running\",\n  \"stderr_size\": 0,\n  \"stdout_size\": 0,\n  \"streaming_available\": false\n}",
+        "type": "text",
+        "serviceInfo": {
+          "serverName": "builtin_workspace",
+          "toolName": "poll_process",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_xb9f423oe9vbz0ostgqoo3zy",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 13
+    }
+  },
+  {
+    "id": "fxjt4uyeil1sycw9uc2fde5o",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_oazpmmkgnnlqu0nyo2y31nbm",
+        "function": {
+          "name": "builtin_workspace__poll_process",
+          "arguments": "{\"process_id\":\"shyyulpt6vpbf93f50cvzutl\"}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "teud024skev7zuizd2q7wr8s"
+  },
+  {
+    "id": "w8a9gzyo1nr6jbx5lumkevyo",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "text": "{\n  \"command\": \"sleep 5\",\n  \"exit_code\": 0,\n  \"finished_at\": \"2025-11-28T08:23:19.509158817+00:00\",\n  \"pid\": 151626,\n  \"process_id\": \"shyyulpt6vpbf93f50cvzutl\",\n  \"started_at\": \"2025-11-28T08:23:14.497603230+00:00\",\n  \"status\": \"finished\",\n  \"stderr_size\": 0,\n  \"stdout_size\": 0,\n  \"streaming_available\": true\n}",
+        "type": "text",
+        "serviceInfo": {
+          "serverName": "builtin_workspace",
+          "toolName": "poll_process",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_oazpmmkgnnlqu0nyo2y31nbm",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 25
+    }
+  },
+  {
+    "id": "w7lbwydydq80cpcce7wq6ynx",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_wznwxbrdob8eyb0ywueo6q7l",
+        "function": {
+          "name": "builtin_planning__mark_todo",
+          "arguments": "{\"summary\":\"Executed a command in async mode and polled its status until it finished.\",\"completed\":true,\"id\":4}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "teud024skev7zuizd2q7wr8s"
+  },
+  {
+    "id": "d91mbgu7aziryektelz75cho",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "type": "text",
+        "text": "Todo checked: \"Execute a command in async mode and poll its status.\" (Summary: \"Executed a command in async mode and polled its status until it finished.\")",
+        "serviceInfo": {
+          "serverName": "builtin_planning",
+          "toolName": "mark_todo",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_wznwxbrdob8eyb0ywueo6q7l",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 20
+    }
+  },
+  {
+    "id": "kixbzi6pd7bk0gbihgxgtuly",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_bvukhovolj3tvb7ol7nwsxpg",
+        "function": {
+          "name": "builtin_workspace__execute_shell",
+          "arguments": "{\"require_user_input\":true,\"input_type\":\"password\",\"command\":\"sudo echo 'Hello sudo'\"}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "teud024skev7zuizd2q7wr8s"
+  },
+  {
+    "id": "ld74wlhsfev558f7ylpctr5m",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "text": "⏳ Waiting for user input\nExecution ID: e2caca7c-3f3e-4b8f-882e-a012da0ac62b\nCommand: sudo echo 'Hello sudo'",
+        "type": "text",
+        "serviceInfo": {
+          "serverName": "builtin_workspace",
+          "toolName": "execute_shell",
+          "backendType": "BuiltInRust"
+        }
+      },
+      {
+        "resource": {
+          "_meta": {
+            "created_at": "2025-11-28T08:23:27.320060432+00:00",
+            "execution_id": "e2caca7c-3f3e-4b8f-882e-a012da0ac62b",
+            "title": "Shell Command Input"
+          },
+          "mimeType": "text/html",
+          "text": "<!DOCTYPE html>\n<html>\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <style>\n      body {\n        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;\n        padding: 20px;\n        background: #1e1e1e;\n        color: #d4d4d4;\n        margin: 0;\n      }\n      .container {\n        max-width: 500px;\n        margin: 0 auto;\n      }\n      h3 {\n        margin-top: 0;\n        color: #e0e0e0;\n      }\n      input {\n        width: 100%;\n        padding: 10px;\n        margin: 10px 0;\n        background: #2d2d2d;\n        color: #d4d4d4;\n        border: 1px solid #444;\n        border-radius: 4px;\n        box-sizing: border-box;\n        font-size: 14px;\n      }\n      input:focus {\n        outline: none;\n        border-color: #0e639c;\n      }\n      button {\n        padding: 10px 20px;\n        margin: 5px 5px 5px 0;\n        background: #0e639c;\n        color: white;\n        border: none;\n        border-radius: 4px;\n        cursor: pointer;\n        font-size: 14px;\n      }\n      button:hover {\n        background: #1177bb;\n      }\n      .cancel {\n        background: #6c757d;\n      }\n      .cancel:hover {\n        background: #5a6268;\n      }\n    </style>\n  </head>\n  <body>\n    <div class=\"container\">\n      <h3>Enter your sudo password:</h3>\n      <form id=\"inputForm\">\n        <input\n          type=\"password\"\n          id=\"userInput\"\n          placeholder=\"Enter password...\"\n          required\n          autofocus\n        />\n        <div>\n          <button type=\"submit\">Submit</button>\n          <button type=\"button\" class=\"cancel\" onclick=\"handleCancel()\">\n            Cancel\n          </button>\n        </div>\n      </form>\n    </div>\n\n    <script>\n      const executionId = 'e2caca7c-3f3e-4b8f-882e-a012da0ac62b';\n      const nonce = 'b06fbd79-d9ec-4619-8baf-f5ed5d512edf';\n\n      function obfuscate(input, nonce) {\n        const textEncoder = new TextEncoder();\n        const inputBytes = textEncoder.encode(input);\n        const nonceBytes = textEncoder.encode(nonce);\n        const xored = new Uint8Array(inputBytes.length);\n        for (let i = 0; i < inputBytes.length; i++) {\n          xored[i] = inputBytes[i] ^ nonceBytes[i % nonceBytes.length];\n        }\n        // Convert to Base64 more safely (avoid stack overflow)\n        let binary = '';\n        for (let i = 0; i < xored.length; i++) {\n          binary += String.fromCharCode(xored[i]);\n        }\n        return btoa(binary);\n      }\n\n      document\n        .getElementById('inputForm')\n        .addEventListener('submit', async (e) => {\n          e.preventDefault();\n          const userInput = document.getElementById('userInput').value;\n          const obfuscatedInput = obfuscate(userInput, nonce);\n\n          // Send to parent window (MCP Worker) - triggers 2nd tool call\n          // IMPORTANT: Use window.parent.postMessage to send to parent frame\n          // Using MCP-UI protocol format: type='tool' with payload wrapper\n          window.parent.postMessage(\n            {\n              type: 'tool',\n              payload: {\n                toolName: 'execute_pending_shell',\n                params: {\n                  execution_id: executionId,\n                  user_input: obfuscatedInput,\n                },\n              },\n            },\n            '*',\n          );\n\n          // Clear input immediately\n          document.getElementById('userInput').value = '';\n          document.body.innerHTML =\n            '<p style=\"text-align:center; color:#d4d4d4;\">⏳ Executing command...</p>';\n        });\n\n      function handleCancel() {\n        // Send to parent window (MCP Worker) - triggers cancel tool call\n        // IMPORTANT: Use window.parent.postMessage to send to parent frame\n        // Using MCP-UI protocol format: type='tool' with payload wrapper\n        window.parent.postMessage(\n          {\n            type: 'tool',\n            payload: {\n              toolName: 'cancel_pending_execution',\n              params: {\n                execution_id: executionId,\n              },\n            },\n          },\n          '*',\n        );\n\n        document.body.innerHTML =\n          '<p style=\"text-align:center; color:#d4d4d4;\">❌ Cancelled</p>';\n      }\n    </script>\n  </body>\n</html>",
+          "uri": "ui://shell-input/e2caca7c-3f3e-4b8f-882e-a012da0ac62b"
+        },
+        "type": "resource",
+        "serviceInfo": {
+          "serverName": "builtin_workspace",
+          "toolName": "execute_shell",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_bvukhovolj3tvb7ol7nwsxpg",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 30
+    }
+  },
+  {
+    "id": "s3qfyboxplw79z132bx28p52",
+    "content": [],
+    "role": "assistant",
+    "tool_calls": [
+      {
+        "id": "nm5dlt1nrax85x3e817wfkun",
+        "type": "function",
+        "function": {
+          "name": "builtin_workspace__execute_pending_shell",
+          "arguments": "{\"execution_id\":\"e2caca7c-3f3e-4b8f-882e-a012da0ac62b\",\"user_input\":\"BlxTCAYKUwkURR0=\"}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "assistantId": "ui",
+    "createdAt": "2025-11-28T08:24:13.496Z"
+  },
+  {
+    "id": "v05g8fmz3a7i9c73hlmgv81p",
+    "content": [
+      {
+        "text": "Command executed successfully:\nHello sudo",
+        "type": "text",
+        "serviceInfo": {
+          "serverName": "builtin_workspace",
+          "toolName": "execute_pending_shell",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "role": "tool",
+    "tool_call_id": "nm5dlt1nrax85x3e817wfkun",
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "assistantId": "ui",
+    "createdAt": "2025-11-28T08:24:13.796Z"
+  },
+  {
+    "id": "akxrltnmqy1080ujv4pfcgku",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_l15w9diq6vtgo00bc48zgz1q",
+        "function": {
+          "name": "builtin_planning__mark_todo",
+          "arguments": "{\"completed\":true,\"summary\":\"Executed a command with `require_user_input` set to true (password type) and provided the input.\",\"id\":5}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "teud024skev7zuizd2q7wr8s"
+  },
+  {
+    "id": "wpyt3b4x3wlrhah0sxi0uzl4",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "type": "text",
+        "text": "Todo checked: \"Execute a command with `require_user_input` set to true (password type).\" (Summary: \"Executed a command with `require_user_input` set to true (password type) and provided the input.\")",
+        "serviceInfo": {
+          "serverName": "builtin_planning",
+          "toolName": "mark_todo",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_l15w9diq6vtgo00bc48zgz1q",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 12
+    }
+  },
+  {
+    "id": "ph5r8812dlszsqqe9hjj3x6o",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_y840fvnf6jfib9rmu7203nvl",
+        "function": {
+          "name": "builtin_workspace__execute_shell",
+          "arguments": "{\"require_user_input\":true,\"input_type\":\"text\",\"command\":\"read -p \\\"Enter your name: \\\" name && echo \\\"Hello, $name\\\"\",\"input_prompt\":\"Please enter your name:\"}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "teud024skev7zuizd2q7wr8s"
+  },
+  {
+    "id": "vj4lwh4cl7xv279u6h2ak2dv",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "text": "⏳ Waiting for user input\nExecution ID: b5317eaa-41ab-4751-96ce-7dac7a14b5aa\nCommand: read -p \"Enter your name: \" name && echo \"Hello, $name\"",
+        "type": "text",
+        "serviceInfo": {
+          "serverName": "builtin_workspace",
+          "toolName": "execute_shell",
+          "backendType": "BuiltInRust"
+        }
+      },
+      {
+        "resource": {
+          "_meta": {
+            "created_at": "2025-11-28T08:24:20.019304708+00:00",
+            "execution_id": "b5317eaa-41ab-4751-96ce-7dac7a14b5aa",
+            "title": "Shell Command Input"
+          },
+          "mimeType": "text/html",
+          "text": "<!DOCTYPE html>\n<html>\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <style>\n      body {\n        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;\n        padding: 20px;\n        background: #1e1e1e;\n        color: #d4d4d4;\n        margin: 0;\n      }\n      .container {\n        max-width: 500px;\n        margin: 0 auto;\n      }\n      h3 {\n        margin-top: 0;\n        color: #e0e0e0;\n      }\n      input {\n        width: 100%;\n        padding: 10px;\n        margin: 10px 0;\n        background: #2d2d2d;\n        color: #d4d4d4;\n        border: 1px solid #444;\n        border-radius: 4px;\n        box-sizing: border-box;\n        font-size: 14px;\n      }\n      input:focus {\n        outline: none;\n        border-color: #0e639c;\n      }\n      button {\n        padding: 10px 20px;\n        margin: 5px 5px 5px 0;\n        background: #0e639c;\n        color: white;\n        border: none;\n        border-radius: 4px;\n        cursor: pointer;\n        font-size: 14px;\n      }\n      button:hover {\n        background: #1177bb;\n      }\n      .cancel {\n        background: #6c757d;\n      }\n      .cancel:hover {\n        background: #5a6268;\n      }\n    </style>\n  </head>\n  <body>\n    <div class=\"container\">\n      <h3>Please enter your name:</h3>\n      <form id=\"inputForm\">\n        <input\n          type=\"text\"\n          id=\"userInput\"\n          placeholder=\"Enter text...\"\n          required\n          autofocus\n        />\n        <div>\n          <button type=\"submit\">Submit</button>\n          <button type=\"button\" class=\"cancel\" onclick=\"handleCancel()\">\n            Cancel\n          </button>\n        </div>\n      </form>\n    </div>\n\n    <script>\n      const executionId = 'b5317eaa-41ab-4751-96ce-7dac7a14b5aa';\n      const nonce = '6ff8f81d-b39b-4dc9-bb99-20937000f479';\n\n      function obfuscate(input, nonce) {\n        const textEncoder = new TextEncoder();\n        const inputBytes = textEncoder.encode(input);\n        const nonceBytes = textEncoder.encode(nonce);\n        const xored = new Uint8Array(inputBytes.length);\n        for (let i = 0; i < inputBytes.length; i++) {\n          xored[i] = inputBytes[i] ^ nonceBytes[i % nonceBytes.length];\n        }\n        // Convert to Base64 more safely (avoid stack overflow)\n        let binary = '';\n        for (let i = 0; i < xored.length; i++) {\n          binary += String.fromCharCode(xored[i]);\n        }\n        return btoa(binary);\n      }\n\n      document\n        .getElementById('inputForm')\n        .addEventListener('submit', async (e) => {\n          e.preventDefault();\n          const userInput = document.getElementById('userInput').value;\n          const obfuscatedInput = obfuscate(userInput, nonce);\n\n          // Send to parent window (MCP Worker) - triggers 2nd tool call\n          // IMPORTANT: Use window.parent.postMessage to send to parent frame\n          // Using MCP-UI protocol format: type='tool' with payload wrapper\n          window.parent.postMessage(\n            {\n              type: 'tool',\n              payload: {\n                toolName: 'execute_pending_shell',\n                params: {\n                  execution_id: executionId,\n                  user_input: obfuscatedInput,\n                },\n              },\n            },\n            '*',\n          );\n\n          // Clear input immediately\n          document.getElementById('userInput').value = '';\n          document.body.innerHTML =\n            '<p style=\"text-align:center; color:#d4d4d4;\">⏳ Executing command...</p>';\n        });\n\n      function handleCancel() {\n        // Send to parent window (MCP Worker) - triggers cancel tool call\n        // IMPORTANT: Use window.parent.postMessage to send to parent frame\n        // Using MCP-UI protocol format: type='tool' with payload wrapper\n        window.parent.postMessage(\n          {\n            type: 'tool',\n            payload: {\n              toolName: 'cancel_pending_execution',\n              params: {\n                execution_id: executionId,\n              },\n            },\n          },\n          '*',\n        );\n\n        document.body.innerHTML =\n          '<p style=\"text-align:center; color:#d4d4d4;\">❌ Cancelled</p>';\n      }\n    </script>\n  </body>\n</html>",
+          "uri": "ui://shell-input/b5317eaa-41ab-4751-96ce-7dac7a14b5aa"
+        },
+        "type": "resource",
+        "serviceInfo": {
+          "serverName": "builtin_workspace",
+          "toolName": "execute_shell",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_y840fvnf6jfib9rmu7203nvl",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 50
+    }
+  },
+  {
+    "id": "z2efnnrtudtul8ugbi7yc2l6",
+    "content": [],
+    "role": "assistant",
+    "tool_calls": [
+      {
+        "id": "yb1f39gjk57i4rcpck7r0qzg",
+        "type": "function",
+        "function": {
+          "name": "builtin_workspace__execute_pending_shell",
+          "arguments": "{\"execution_id\":\"b5317eaa-41ab-4751-96ce-7dac7a14b5aa\",\"user_input\":\"UgcQUQI=\"}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "assistantId": "ui",
+    "createdAt": "2025-11-28T08:24:25.854Z"
+  },
+  {
+    "id": "ovywth4kgq0nwcp7ji2he21h",
+    "content": [
+      {
+        "text": "Command executed successfully:\nHello, ********",
+        "type": "text",
+        "serviceInfo": {
+          "serverName": "builtin_workspace",
+          "toolName": "execute_pending_shell",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "role": "tool",
+    "tool_call_id": "yb1f39gjk57i4rcpck7r0qzg",
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "assistantId": "ui",
+    "createdAt": "2025-11-28T08:24:26.154Z"
+  },
+  {
+    "id": "ucw01xt63cw89b3zqibahxc4",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_kbhckao2nnxxwqs0ay42fd8i",
+        "function": {
+          "name": "builtin_planning__mark_todo",
+          "arguments": "{\"id\":6,\"completed\":true,\"summary\":\"Executed a command with `require_user_input` set to true (text type) and provided the input.\"}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "teud024skev7zuizd2q7wr8s"
+  },
+  {
+    "id": "x2eynibvdx9mbv8qk8mepx6x",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "type": "text",
+        "text": "Todo checked: \"Execute a command with `require_user_input` set to true (text type).\" (Summary: \"Executed a command with `require_user_input` set to true (text type) and provided the input.\")",
+        "serviceInfo": {
+          "serverName": "builtin_planning",
+          "toolName": "mark_todo",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_kbhckao2nnxxwqs0ay42fd8i",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 12
+    }
+  },
+  {
+    "id": "g9i8d9c8kchqn75whlkbor2m",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_o9e365117l0hq0q2joji12ge",
+        "function": {
+          "name": "builtin_workspace__execute_shell",
+          "arguments": "{\"run_mode\":\"async\",\"command\":\"sleep 10\"}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "teud024skev7zuizd2q7wr8s"
+  },
+  {
+    "id": "zn9ofrl99w7ub3hygdfdym29",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "text": "Process started in background.\nProcess ID: m10e7bkq5brvbr8dwqa305rp\nCommand: sleep 10\n\nUse 'poll_process' to check status and view output:\npoll_process(process_id: \"m10e7bkq5brvbr8dwqa305rp\", tail: {src: \"stdout\", n: 20})\n\nNote: async mode is intended for long-running commands (over 30s).",
+        "type": "text",
+        "serviceInfo": {
+          "serverName": "builtin_workspace",
+          "toolName": "execute_shell",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_o9e365117l0hq0q2joji12ge",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 115
+    }
+  },
+  {
+    "id": "vs8a13h22z9w80kbri0us0lw",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_jl81o3wc20rcr90y23s1rsc0",
+        "function": {
+          "name": "builtin_workspace__execute_shell",
+          "arguments": "{\"run_mode\":\"async\",\"timeout\":5,\"command\":\"sleep 10\"}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "teud024skev7zuizd2q7wr8s"
+  },
+  {
+    "id": "g4nt5qmhbwn9ihcfco7i8ocu",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "text": "Process started in background.\nProcess ID: r113s4durzpr8jsp3gnqevr3\nCommand: sleep 10\n\nUse 'poll_process' to check status and view output:\npoll_process(process_id: \"r113s4durzpr8jsp3gnqevr3\", tail: {src: \"stdout\", n: 20})\n\nNote: async mode is intended for long-running commands (over 30s).",
+        "type": "text",
+        "serviceInfo": {
+          "serverName": "builtin_workspace",
+          "toolName": "execute_shell",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_jl81o3wc20rcr90y23s1rsc0",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 110
+    }
+  },
+  {
+    "id": "wvddqh07th5q7sunotzaswcm",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_fxifw570wko274qy6ae3bvdn",
+        "function": {
+          "name": "builtin_workspace__poll_process",
+          "arguments": "{\"process_id\":\"r113s4durzpr8jsp3gnqevr3\"}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "teud024skev7zuizd2q7wr8s"
+  },
+  {
+    "id": "dznyzixzw5midnrx0m5b5tsi",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "text": "{\n  \"command\": \"sleep 10\",\n  \"exit_code\": null,\n  \"finished_at\": null,\n  \"pid\": null,\n  \"process_id\": \"r113s4durzpr8jsp3gnqevr3\",\n  \"started_at\": \"2025-11-28T08:24:38.023352780+00:00\",\n  \"status\": \"running\",\n  \"stderr_size\": 0,\n  \"stdout_size\": 0,\n  \"streaming_available\": false\n}",
+        "type": "text",
+        "serviceInfo": {
+          "serverName": "builtin_workspace",
+          "toolName": "poll_process",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_fxifw570wko274qy6ae3bvdn",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 26
+    }
+  },
+  {
+    "id": "tz17senh0d3yfc7uziocumak",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_qc8zb7qqyvlj2e61xmo5kila",
+        "function": {
+          "name": "builtin_workspace__poll_process",
+          "arguments": "{\"process_id\":\"r113s4durzpr8jsp3gnqevr3\"}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "teud024skev7zuizd2q7wr8s"
+  },
+  {
+    "id": "wipu8vlomrwnqvfk9ayupjsg",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "text": "{\n  \"command\": \"sleep 10\",\n  \"exit_code\": null,\n  \"finished_at\": null,\n  \"pid\": null,\n  \"process_id\": \"r113s4durzpr8jsp3gnqevr3\",\n  \"started_at\": \"2025-11-28T08:24:38.023352780+00:00\",\n  \"status\": \"running\",\n  \"stderr_size\": 0,\n  \"stdout_size\": 0,\n  \"streaming_available\": false\n}",
+        "type": "text",
+        "serviceInfo": {
+          "serverName": "builtin_workspace",
+          "toolName": "poll_process",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_qc8zb7qqyvlj2e61xmo5kila",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 25
+    }
+  },
+  {
+    "id": "vjme4ya4piza677mz59j7ydr",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_io5urvurvj6coj0rma4bsqpc",
+        "function": {
+          "name": "builtin_workspace__poll_process",
+          "arguments": "{\"process_id\":\"r113s4durzpr8jsp3gnqevr3\"}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "teud024skev7zuizd2q7wr8s"
+  },
+  {
+    "id": "yjo4guu34fbi6ceqrfe60fjp",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "text": "{\n  \"command\": \"sleep 10\",\n  \"exit_code\": null,\n  \"finished_at\": null,\n  \"pid\": null,\n  \"process_id\": \"r113s4durzpr8jsp3gnqevr3\",\n  \"started_at\": \"2025-11-28T08:24:38.023352780+00:00\",\n  \"status\": \"running\",\n  \"stderr_size\": 0,\n  \"stdout_size\": 0,\n  \"streaming_available\": false\n}",
+        "type": "text",
+        "serviceInfo": {
+          "serverName": "builtin_workspace",
+          "toolName": "poll_process",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_io5urvurvj6coj0rma4bsqpc",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 33
+    }
+  },
+  {
+    "id": "dto5ph3p23nhf0m83iopflea",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_k10um4xz2419jas8u20m2qo5",
+        "function": {
+          "name": "builtin_planning__mark_todo",
+          "arguments": "{\"completed\":true,\"id\":7,\"summary\":\"Executed a command in async mode with a timeout. Observed that the `timeout` parameter in async mode does not terminate the process, but rather is primarily for `sync` mode.\"}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "g3btvkjaafwi3yv8ksx1rwcb"
+  },
+  {
+    "id": "bu9bk7u425afkuj6ce514k1l",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "type": "text",
+        "text": "Todo checked: \"Execute a command in async mode with a timeout.\" (Summary: \"Executed a command in async mode with a timeout. Observed that the `timeout` parameter in async mode does not terminate the process, but rather is primarily for `sync` mode.\")",
+        "serviceInfo": {
+          "serverName": "builtin_planning",
+          "toolName": "mark_todo",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_k10um4xz2419jas8u20m2qo5",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 30
+    }
+  },
+  {
+    "id": "juh6v619rvrthprkcoew573l",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_nsacwdvrerukrtk7tlcoqgfl",
+        "function": {
+          "name": "builtin_planning__clear_goal",
+          "arguments": "{}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "teud024skev7zuizd2q7wr8s"
+  },
+  {
+    "id": "hbjm8fc6rdljee2sftm9tyo1",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "type": "text",
+        "text": "Goal cleared: \"Test all modes of `execute_shell`\"\nRemaining todos: 4\nSession is now ready for a new goal.",
+        "serviceInfo": {
+          "serverName": "builtin_planning",
+          "toolName": "clear_goal",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_nsacwdvrerukrtk7tlcoqgfl",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 32
+    }
+  },
+  {
+    "id": "fje96g6fx805qlh7gaeu0j81",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_x8gkgz3abhmif1x5bii7aquu",
+        "function": {
+          "name": "builtin_planning__create_goal",
+          "arguments": "{\"goal\":\"Continue testing the `execute_shell` tool.\"}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "teud024skev7zuizd2q7wr8s"
+  },
+  {
+    "id": "n1l5a261lhg5cmebc3xbji3s",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "type": "text",
+        "text": "Goal created: \"Continue testing the `execute_shell` tool.\"New todos can be added to support this goal.",
+        "serviceInfo": {
+          "serverName": "builtin_planning",
+          "toolName": "create_goal",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_x8gkgz3abhmif1x5bii7aquu",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 88
+    }
+  },
+  {
+    "id": "vhjug3pnz6xty6vitr5pboxj",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_qgyq4bm2fwt3gtvb8jh7246f",
+        "function": {
+          "name": "builtin_planning__add_todo",
+          "arguments": "{\"name\":\"Execute a command that produces a lot of output and read it using `read_process_output`.\"}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "g3btvkjaafwi3yv8ksx1rwcb"
+  },
+  {
+    "id": "jqu06snc3p9q6c1flkgcdqj0",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "type": "text",
+        "text": "Todo added: ID:8 \"Execute a command that produces a lot of output and read it using `read_process_output`.\"\nGoal: \"Continue testing the `execute_shell` tool.\"\nTotal todos: 5",
+        "serviceInfo": {
+          "serverName": "builtin_planning",
+          "toolName": "add_todo",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_qgyq4bm2fwt3gtvb8jh7246f",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 30
+    }
+  },
+  {
+    "id": "mttnxcofozpan5663drtem5c",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_rnoa0j3ixfgcgdbjc69qf8nx",
+        "function": {
+          "name": "builtin_workspace__write_file",
+          "arguments": "{\"content\":\"#!/bin/bash\\nfor i in $(seq 1 200); do\\n  echo \\\"Line $i\\\"\\ndone\",\"path\":\"generate_large_output.sh\"}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "teud024skev7zuizd2q7wr8s"
+  },
+  {
+    "id": "q5c0c5dz51ctoavk8ce79d64",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "text": "Successfully wrote 59 bytes to generate_large_output.sh (mode: w)",
+        "type": "text",
+        "serviceInfo": {
+          "serverName": "builtin_workspace",
+          "toolName": "write_file",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_rnoa0j3ixfgcgdbjc69qf8nx",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 33
+    }
+  },
+  {
+    "id": "jzitu32cwhxwqzwx1f6jzsds",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_qii8a9e9u18mos8zs2gx7g7h",
+        "function": {
+          "name": "builtin_workspace__execute_shell",
+          "arguments": "{\"command\":\"chmod +x generate_large_output.sh\"}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "teud024skev7zuizd2q7wr8s"
+  },
+  {
+    "id": "swhkca8ysxl2w08opz2h6ds6",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "text": "{\"command\":\"chmod +x generate_large_output.sh\",\"exit_code\":0,\"status\":\"finished\",\"stderr\":\"\",\"stdout\":\"\"}",
+        "type": "text",
+        "serviceInfo": {
+          "serverName": "builtin_workspace",
+          "toolName": "execute_shell",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_qii8a9e9u18mos8zs2gx7g7h",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 33
+    }
+  },
+  {
+    "id": "xssxph5w20gtsu4vyx2d1n5u",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_flbj1hcrk5x7ljbzfk904f69",
+        "function": {
+          "name": "builtin_workspace__execute_shell",
+          "arguments": "{\"run_mode\":\"async\",\"command\":\"./generate_large_output.sh\"}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "teud024skev7zuizd2q7wr8s"
+  },
+  {
+    "id": "jscq5o75y7q2gftzlpwi7x3h",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "text": "Process started in background.\nProcess ID: qmdq1xwu1gcg8l710f22qa2e\nCommand: ./generate_large_output.sh\n\nUse 'poll_process' to check status and view output:\npoll_process(process_id: \"qmdq1xwu1gcg8l710f22qa2e\", tail: {src: \"stdout\", n: 20})\n\nNote: async mode is intended for long-running commands (over 30s).",
+        "type": "text",
+        "serviceInfo": {
+          "serverName": "builtin_workspace",
+          "toolName": "execute_shell",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_flbj1hcrk5x7ljbzfk904f69",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 107
+    }
+  },
+  {
+    "id": "hdvydtncz8krzv4fcc1cb2x2",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_n8c8fbw1tfcs3u8xvqh50zv7",
+        "function": {
+          "name": "builtin_workspace__read_process_output",
+          "arguments": "{\"process_id\":\"qmdq1xwu1gcg8l710f22qa2e\",\"mode\":\"tail\",\"lines\":100,\"stream\":\"stdout\"}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "teud024skev7zuizd2q7wr8s"
+  },
+  {
+    "id": "h5anz9xlh7ik3zmztbxp3jtu",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "text": "{\n  \"content\": [\n    \"Line 101\",\n    \"Line 102\",\n    \"Line 103\",\n    \"Line 104\",\n    \"Line 105\",\n    \"Line 106\",\n    \"Line 107\",\n    \"Line 108\",\n    \"Line 109\",\n    \"Line 110\",\n    \"Line 111\",\n    \"Line 112\",\n    \"Line 113\",\n    \"Line 114\",\n    \"Line 115\",\n    \"Line 116\",\n    \"Line 117\",\n    \"Line 118\",\n    \"Line 119\",\n    \"Line 120\",\n    \"Line 121\",\n    \"Line 122\",\n    \"Line 123\",\n    \"Line 124\",\n    \"Line 125\",\n    \"Line 126\",\n    \"Line 127\",\n    \"Line 128\",\n    \"Line 129\",\n    \"Line 130\",\n    \"Line 131\",\n    \"Line 132\",\n    \"Line 133\",\n    \"Line 134\",\n    \"Line 135\",\n    \"Line 136\",\n    \"Line 137\",\n    \"Line 138\",\n    \"Line 139\",\n    \"Line 140\",\n    \"Line 141\",\n    \"Line 142\",\n    \"Line 143\",\n    \"Line 144\",\n    \"Line 145\",\n    \"Line 146\",\n    \"Line 147\",\n    \"Line 148\",\n    \"Line 149\",\n    \"Line 150\",\n    \"Line 151\",\n    \"Line 152\",\n    \"Line 153\",\n    \"Line 154\",\n    \"Line 155\",\n    \"Line 156\",\n    \"Line 157\",\n    \"Line 158\",\n    \"Line 159\",\n    \"Line 160\",\n    \"Line 161\",\n    \"Line 162\",\n    \"Line 163\",\n    \"Line 164\",\n    \"Line 165\",\n    \"Line 166\",\n    \"Line 167\",\n    \"Line 168\",\n    \"Line 169\",\n    \"Line 170\",\n    \"Line 171\",\n    \"Line 172\",\n    \"Line 173\",\n    \"Line 174\",\n    \"Line 175\",\n    \"Line 176\",\n    \"Line 177\",\n    \"Line 178\",\n    \"Line 179\",\n    \"Line 180\",\n    \"Line 181\",\n    \"Line 182\",\n    \"Line 183\",\n    \"Line 184\",\n    \"Line 185\",\n    \"Line 186\",\n    \"Line 187\",\n    \"Line 188\",\n    \"Line 189\",\n    \"Line 190\",\n    \"Line 191\",\n    \"Line 192\",\n    \"Line 193\",\n    \"Line 194\",\n    \"Line 195\",\n    \"Line 196\",\n    \"Line 197\",\n    \"Line 198\",\n    \"Line 199\",\n    \"Line 200\"\n  ],\n  \"lines_requested\": 100,\n  \"lines_returned\": 100,\n  \"mode\": \"tail\",\n  \"note\": \"Text output only. Max 100 lines per request.\",\n  \"process_id\": \"qmdq1xwu1gcg8l710f22qa2e\",\n  \"stream\": \"stdout\",\n  \"total_size\": 1692\n}",
+        "type": "text",
+        "serviceInfo": {
+          "serverName": "builtin_workspace",
+          "toolName": "read_process_output",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_n8c8fbw1tfcs3u8xvqh50zv7",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 88
+    }
+  },
+  {
+    "id": "ul7o1y03rh4ug2yitbopf0z8",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_ttakabwsptv4318hsqs7ou4o",
+        "function": {
+          "name": "builtin_planning__mark_todo",
+          "arguments": "{\"completed\":true,\"summary\":\"Executed a command that produces a lot of output and read it using `read_process_output`.\",\"id\":8}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "teud024skev7zuizd2q7wr8s"
+  },
+  {
+    "id": "y2295rwwztzhq3873fth8wm2",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "type": "text",
+        "text": "Todo checked: \"Execute a command that produces a lot of output and read it using `read_process_output`.\" (Summary: \"Executed a command that produces a lot of output and read it using `read_process_output`.\")",
+        "serviceInfo": {
+          "serverName": "builtin_planning",
+          "toolName": "mark_todo",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_ttakabwsptv4318hsqs7ou4o",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 67
+    }
+  },
+  {
+    "id": "e413vjcanvx7ics00aklhpa5",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_cyrx210bexuyavbhww1tmv3d",
+        "function": {
+          "name": "builtin_planning__clear_goal",
+          "arguments": "{}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "teud024skev7zuizd2q7wr8s"
+  },
+  {
+    "id": "y1w0s61sbyf3f2qs8ilg20a5",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "type": "text",
+        "text": "Goal cleared: \"Continue testing the `execute_shell` tool.\"\nRemaining todos: 5\nSession is now ready for a new goal.",
+        "serviceInfo": {
+          "serverName": "builtin_planning",
+          "toolName": "clear_goal",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_cyrx210bexuyavbhww1tmv3d",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 12
+    }
+  },
+  {
+    "id": "nwwdejich04sij4zi33srhj7",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_yj68nevcj2qgokctc6gk6b34",
+        "function": {
+          "name": "builtin_planning__create_goal",
+          "arguments": "{\"goal\":\"Test `execute_shell` with `input_prompt` and `input_type`.\"}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "g3btvkjaafwi3yv8ksx1rwcb"
+  },
+  {
+    "id": "ck61xon3zydd737y6bmz0sqo",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "type": "text",
+        "text": "Goal created: \"Test `execute_shell` with `input_prompt` and `input_type`.\"New todos can be added to support this goal.",
+        "serviceInfo": {
+          "serverName": "builtin_planning",
+          "toolName": "create_goal",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_yj68nevcj2qgokctc6gk6b34",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 26
+    }
+  },
+  {
+    "id": "z9jc6ejcel2wi8sgv6y3t2fe",
+    "content": [
+      {
+        "type": "text",
+        "text": ""
+      }
+    ],
+    "thinking": "",
+    "thinkingSignature": "",
+    "role": "assistant",
+    "isStreaming": false,
+    "tool_calls": [
+      {
+        "id": "tool_p56nfsxp1qp7esuow0vo627f",
+        "function": {
+          "name": "builtin_planning__add_todo",
+          "arguments": "{\"name\":\"Execute a command with `require_user_input` set to true (password type).\"}"
+        }
+      }
+    ],
+    "sessionId": "dfx7pl1tol282x38i9wduihb",
+    "threadId": "teud024skev7zuizd2q7wr8s"
+  },
+  {
+    "id": "zq9vrivppe7k2v5o27pm7hxv",
+    "assistantId": "g3btvkjaafwi3yv8ksx1rwcb",
+    "role": "tool",
+    "content": [
+      {
+        "type": "text",
+        "text": "Todo added: ID:9 \"Execute a command with `require_user_input` set to true (password type).\"\nGoal: \"Test `execute_shell` with `input_prompt` and `input_type`.\"\nTotal todos: 6",
+        "serviceInfo": {
+          "serverName": "builtin_planning",
+          "toolName": "add_todo",
+          "backendType": "BuiltInRust"
+        }
+      }
+    ],
+    "tool_call_id": "tool_p56nfsxp1qp7esuow0vo627f",
+    "sessionId": "teud024skev7zuizd2q7wr8s",
+    "threadId": "teud024skev7zuizd2q7wr8s",
+    "metadata": {
+      "executionTime": 27
+    }
+  }
+]
