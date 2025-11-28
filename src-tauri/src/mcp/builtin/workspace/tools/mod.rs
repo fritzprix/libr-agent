@@ -55,7 +55,8 @@ mod tests {
     #[test]
     fn test_code_tools_returns_platform_tool() {
         let tools = code_tools();
-        assert_eq!(tools.len(), 1);
+        // Updated to expect 3 tools: execute_shell, execute_pending_shell, cancel_pending_execution
+        assert_eq!(tools.len(), 3);
 
         let tool = &tools[0];
 

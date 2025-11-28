@@ -226,11 +226,10 @@ impl WorkspaceServer {
                     safe_path,
                     items.len()
                 );
-                Ok(MCPResult::success(&format!(
-                    "Directory listing for {}:\n{}",
-                    path_str,
-                    serde_json::to_string_pretty(&items).unwrap_or_default()
-                )))
+                Ok(MCPResult::success_with_data(
+                    &format!("Directory listing for {}: {} items", path_str, items.len()),
+                    json!({ "items": items }),
+                ))
             }
             Err(e) => {
                 error!("Failed to list directory {:?}: {}", safe_path, e);
@@ -268,18 +267,20 @@ impl WorkspaceServer {
                     format!("No files found matching pattern '{pattern}' in '{search_path}'")
                 } else {
                     format!(
-                        "Found {} files matching pattern '{}':\n{}",
+                        "Found {} files matching pattern '{}'",
                         results.len(),
-                        pattern,
-                        serde_json::to_string_pretty(&results).unwrap_or_default()
+                        pattern
                     )
                 };
 
-                Ok(MCPResult::success(&result_text))
+                Ok(MCPResult::success_with_data(
+                    &result_text,
+                    json!({ "matches": results }),
+                ))
             }
             Err(e) => {
                 error!("File search failed: {}", e);
-                Err(format!("Search failed: {e}"))
+                Ok(MCPResult::error(&format!("Search failed: {e}")))
             }
         }
     }
@@ -449,7 +450,7 @@ impl WorkspaceServer {
             Ok(_) => Ok(MCPResult::success(&format!(
                 "Successfully replaced lines in file {path_str}"
             ))),
-            Err(e) => Err(format!("Failed to write file: {e}")),
+            Err(e) => Ok(MCPResult::error(&format!("Failed to write file: {e}"))),
         }
     }
 
@@ -513,11 +514,10 @@ impl WorkspaceServer {
             }
         }
 
-        Ok(MCPResult::success(&format!(
-            "Found {} matches:\n{}",
-            matches.len(),
-            serde_json::to_string_pretty(&matches).unwrap_or_default()
-        )))
+        Ok(MCPResult::success_with_data(
+            &format!("Found {} matches", matches.len()),
+            json!({ "matches": matches }),
+        ))
     }
 
     pub async fn handle_import_file(&self, args: Value) -> Result<MCPResult, String> {
@@ -599,7 +599,7 @@ impl WorkspaceServer {
                     dest_rel_path,
                     e
                 );
-                Err(format!("Failed to import file: {e}"))
+                Ok(MCPResult::error(&format!("Failed to import file: {e}")))
             }
         }
     }

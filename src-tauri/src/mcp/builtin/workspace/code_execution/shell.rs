@@ -296,9 +296,53 @@ impl WorkspaceServer {
             // Unix shell quoting normalization (existing logic)
             let mut normalized = raw_command.to_string();
 
-            // 1. Detect incomplete quote pairs
-            let double_quote_count = normalized.chars().filter(|&c| c == '"').count();
-            let single_quote_count = normalized.chars().filter(|&c| c == '\'').count();
+            // 1. Detect incomplete quote pairs using a state machine
+            let mut double_quote_count = 0;
+            let mut single_quote_count = 0;
+            let mut in_double_quote = false;
+            let mut in_single_quote = false;
+            let mut escaped = false;
+
+            for c in normalized.chars() {
+                if in_single_quote {
+                    // Inside single quotes, backslash is literal, only single quote escapes
+                    if c == '\'' {
+                        in_single_quote = false;
+                        single_quote_count += 1;
+                    }
+                } else if in_double_quote {
+                    // Inside double quotes, backslash escapes next char
+                    if escaped {
+                        escaped = false;
+                        continue;
+                    }
+                    if c == '\\' {
+                        escaped = true;
+                        continue;
+                    }
+                    if c == '"' {
+                        in_double_quote = false;
+                        double_quote_count += 1;
+                    }
+                } else {
+                    // Normal state
+                    if escaped {
+                        escaped = false;
+                        continue;
+                    }
+                    if c == '\\' {
+                        escaped = true;
+                        continue;
+                    }
+                    if c == '"' {
+                        in_double_quote = true;
+                        double_quote_count += 1;
+                    } else if c == '\'' {
+                        in_single_quote = true;
+                        single_quote_count += 1;
+                    }
+                }
+            }
 
             // 2. Add missing closing quotes
             if double_quote_count % 2 != 0 {
@@ -329,6 +373,22 @@ impl WorkspaceServer {
         while i < chars.len() {
             if i + 1 < chars.len() && chars[i] == '"' && chars[i + 1] == '"' {
                 // Consecutive quotes found
+
+                // Check if the first quote is escaped (preceded by odd number of backslashes)
+                let mut backslash_count = 0;
+                let mut j = i;
+                while j > 0 && chars[j - 1] == '\\' {
+                    backslash_count += 1;
+                    j -= 1;
+                }
+
+                if backslash_count % 2 != 0 {
+                    // It is an escaped quote (e.g. \"), so it's not a start of consecutive quotes
+                    result.push(chars[i]);
+                    i += 1;
+                    continue;
+                }
+
                 if i > 0 && chars[i - 1] != ' ' && chars[i - 1] != '=' {
                     // If no space or equals before, escape the first one
                     result.push('\\');
@@ -642,5 +702,80 @@ impl WorkspaceServer {
     #[cfg(windows)]
     pub(crate) fn detect_privilege_escalation(&self, _command: &str) -> bool {
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[cfg(not(windows))]
+    fn test_normalize_shell_command_unix() {
+        // Basic cases
+        assert_eq!(
+            WorkspaceServer::normalize_shell_command("echo hello"),
+            "echo hello"
+        );
+        assert_eq!(
+            WorkspaceServer::normalize_shell_command("echo 'hello'"),
+            "echo 'hello'"
+        );
+        assert_eq!(
+            WorkspaceServer::normalize_shell_command("echo \"hello\""),
+            "echo \"hello\""
+        );
+
+        // Missing quotes
+        assert_eq!(
+            WorkspaceServer::normalize_shell_command("echo \"hello"),
+            "echo \"hello\""
+        );
+        assert_eq!(
+            WorkspaceServer::normalize_shell_command("echo 'hello"),
+            "echo 'hello'"
+        );
+
+        // Escaped quotes (should NOT be counted as closing quotes)
+        assert_eq!(
+            WorkspaceServer::normalize_shell_command("echo \"foo\\\"bar\""),
+            "echo \"foo\\\"bar\""
+        );
+
+        // Nested quotes
+        assert_eq!(
+            WorkspaceServer::normalize_shell_command("echo '\"hello\"'"),
+            "echo '\"hello\"'"
+        );
+        assert_eq!(
+            WorkspaceServer::normalize_shell_command("echo \"'hello'\""),
+            "echo \"'hello'\""
+        );
+
+        // Complex case with multiple escapes
+        assert_eq!(
+            WorkspaceServer::normalize_shell_command("echo \"path: \\\"/tmp/foo\\\"\""),
+            "echo \"path: \\\"/tmp/foo\\\"\""
+        );
+
+        // Trailing backslash (should be preserved)
+        assert_eq!(
+            WorkspaceServer::normalize_shell_command("echo hello \\"),
+            "echo hello \\"
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_normalize_shell_command_windows() {
+        // Windows should pass through everything as-is
+        assert_eq!(
+            WorkspaceServer::normalize_shell_command("echo hello"),
+            "echo hello"
+        );
+        assert_eq!(
+            WorkspaceServer::normalize_shell_command("echo \"hello"),
+            "echo \"hello"
+        );
     }
 }

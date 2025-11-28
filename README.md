@@ -85,7 +85,7 @@ Contributions welcome.
 
 ## Installation
 
-Download from [releases](https://github.com/fritzprix/libr-agent/releases).
+Download from [releases](https://github.com/fritzprix/libr-agent/releases/latest).
 
 Or build from source:
 

@@ -87,6 +87,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    #[ignore = "Requires OS keychain service (not available in CI/headless env)"]
     async fn test_store_and_retrieve_token() {
         let server_id = "test-server-keychain-store";
         let token = "test-token-12345";
@@ -108,6 +109,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "Requires OS keychain service (not available in CI/headless env)"]
     async fn test_delete_token() {
         let server_id = "test-server-keychain-delete";
         let token = "test-token-67890";
@@ -126,6 +128,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "Requires OS keychain service (not available in CI/headless env)"]
     async fn test_has_token() {
         let server_id = "test-server-keychain-has";
         let token = "test-token-abcde";

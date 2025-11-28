@@ -202,7 +202,8 @@ export const useUnifiedMCP = () => {
         logger.warn(
           `Could not resolve tool: ${calledToolName} (namespace: ${namespace})`,
           {
-            availableTools: Array.from(toolTypeMap.keys()),
+            availableTools: Array.from(toolTypeMap.keys()).slice(0, 20), // 처음 20개만 로깅
+            totalAvailableTools: toolTypeMap.size,
             detectedNamespace: namespace,
           },
         );
@@ -222,6 +223,7 @@ export const useUnifiedMCP = () => {
       }
 
       const toolType = getToolType(resolvedToolName);
+
       if (!toolType) {
         logger.error(
           `Resolved tool name has no type mapping: ${resolvedToolName}`,
@@ -236,11 +238,6 @@ export const useUnifiedMCP = () => {
           },
         };
       }
-
-      logger.info(
-        `Executing ${toolType} tool: ${resolvedToolName} (called as: ${calledToolName})`,
-        { toolCall },
-      );
 
       // Use the resolved tool name for execution
       const actualToolCall = {

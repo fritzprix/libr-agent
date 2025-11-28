@@ -192,13 +192,14 @@ export function ChatMessages() {
         ref={scrollContainerRef}
         className="flex-1 p-4 overflow-y-auto flex flex-col gap-6 terminal-scrollbar"
       >
-        {groupedMessages.map((groupedMessage) => {
+        {groupedMessages.map((groupedMessage, index) => {
           if (groupedMessage.type === 'tool_group') {
             return (
               <ToolCallGroupBubble
                 key={groupedMessage.message.id}
                 message={groupedMessage.message}
                 toolGroup={groupedMessage.toolGroup}
+                isLast={index === groupedMessages.length - 1}
               />
             );
           }
@@ -210,6 +211,7 @@ export function ChatMessages() {
               currentAssistantName={getAssistantNameForMessage(
                 groupedMessage.message,
               )}
+              isLast={index === groupedMessages.length - 1}
             />
           );
         })}

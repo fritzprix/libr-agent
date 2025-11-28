@@ -83,19 +83,73 @@
     </div>
 
     <script>
-      document.addEventListener('click', function (e) { const btn = e.target; if
-      (btn && btn.classList) { const id = btn.getAttribute('data-pbid'); const
-      page = btn.getAttribute('data-page'); if
-      (btn.classList.contains('select-pb-btn')) { console.log('Select button
-      clicked for id:', id); window.parent.postMessage( { type: 'tool', payload:
-      { toolName: 'select_playbook', params: { id } }, }, '*', ); } else if
-      (btn.classList.contains('delete-pb-btn')) { console.log('Delete button
-      clicked for id:', id); window.parent.postMessage( { type: 'tool', payload:
-      { toolName: 'delete_playbook', params: { id } }, }, '*', ); } else if
-      (btn.classList.contains('nav-page-btn') && !btn.disabled) {
-      console.log('Navigate to page:', page); window.parent.postMessage( { type:
-      'tool', payload: { toolName: 'get_playbook_page', params: { page:
-      parseInt(page) }, }, }, '*', ); } } });
+      function handleSelectPlaybook(id) {
+        window.parent.postMessage(
+          {
+            type: 'tool',
+            payload: {
+              toolName: 'select_playbook',
+              params: { id: id },
+            },
+          },
+          '*'
+        );
+      }
+
+      function handleDeletePlaybook(id) {
+        window.parent.postMessage(
+          {
+            type: 'tool',
+            payload: {
+              toolName: 'delete_playbook',
+              params: { id: id },
+            },
+          },
+          '*'
+        );
+      }
+
+      function handleNavigatePage(page) {
+        window.parent.postMessage(
+          {
+            type: 'tool',
+            payload: {
+              toolName: 'get_playbook_page',
+              params: { page: parseInt(page) },
+            },
+          },
+          '*'
+        );
+      }
+
+      // Attach event listeners to all buttons
+      document.addEventListener('DOMContentLoaded', function () {
+        // Select buttons
+        document.querySelectorAll('.select-pb-btn').forEach(function (btn) {
+          const id = btn.getAttribute('data-pbid');
+          btn.addEventListener('click', function () {
+            handleSelectPlaybook(id);
+          });
+        });
+
+        // Delete buttons
+        document.querySelectorAll('.delete-pb-btn').forEach(function (btn) {
+          const id = btn.getAttribute('data-pbid');
+          btn.addEventListener('click', function () {
+            handleDeletePlaybook(id);
+          });
+        });
+
+        // Navigation buttons
+        document.querySelectorAll('.nav-page-btn').forEach(function (btn) {
+          const page = btn.getAttribute('data-page');
+          btn.addEventListener('click', function () {
+            if (!btn.disabled) {
+              handleNavigatePage(page);
+            }
+          });
+        });
+      });
     </script>
   </body>
 </html>

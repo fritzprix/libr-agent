@@ -234,13 +234,26 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
               const serviceInfo = extractServiceInfoFromContent(
                 contentRef.current,
               );
+
               let finalToolName = toolName;
               if (serviceInfo) {
                 const isBaseName =
-                  !toolName.includes('__') && !toolName.startsWith('builtin.');
+                  !toolName.includes('__') && !toolName.startsWith('builtin_');
+
+                logger.debug('UI Action Tool Call - Name Resolution', {
+                  originalToolName: toolName,
+                  isBaseName,
+                  backendType: serviceInfo.backendType,
+                  serverName: serviceInfo.serverName,
+                });
 
                 if (isBaseName) {
-                  finalToolName = `${serviceInfo.serverName}__${toolName}`;
+                  // Web MCP (BuiltInWeb) 도구는 builtin_ prefix 필요
+                  if (serviceInfo.backendType === 'BuiltInWeb') {
+                    finalToolName = `builtin_${serviceInfo.serverName}__${toolName}`;
+                  } else {
+                    finalToolName = `${serviceInfo.serverName}__${toolName}`;
+                  }
                 }
               } else {
                 logger.warn(
@@ -574,6 +587,42 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
                           const el =
                             ev?.currentTarget as HTMLIFrameElement | null;
                           if (!el) return;
+
+                          // Inject console.log interceptor into iframe
+                          const iframeWindow = el.contentWindow;
+                          if (iframeWindow) {
+                            try {
+                              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                              const win = iframeWindow as any;
+                              const originalConsoleLog = win.console?.log;
+                              if (originalConsoleLog) {
+                                win.console.log = function (
+                                  ...args: unknown[]
+                                ) {
+                                  logger.info('📄 IFrame Console:', args);
+                                  return originalConsoleLog.apply(
+                                    win.console,
+                                    args,
+                                  );
+                                };
+                              }
+
+                              logger.info(
+                                '🔗 IFrame loaded, interceptor installed',
+                                {
+                                  iframeSrc: el.src,
+                                  hasContentWindow: !!iframeWindow,
+                                  hasConsole: !!win.console,
+                                },
+                              );
+                            } catch (consoleError) {
+                              logger.warn(
+                                '⚠️ Could not install console interceptor',
+                                { consoleError },
+                              );
+                            }
+                          }
+
                           const doc =
                             el.contentDocument || el.contentWindow?.document;
                           const height =
@@ -582,7 +631,16 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
                           if (height) {
                             el.style.height = `${height}px`;
                           }
-                        } catch {
+                        } catch (error) {
+                          logger.warn('⚠️ IFrame onLoad error', {
+                            error,
+                            errorMessage:
+                              error instanceof Error
+                                ? error.message
+                                : String(error),
+                            errorStack:
+                              error instanceof Error ? error.stack : undefined,
+                          });
                           // ignore cross-origin or other errors
                         }
                       },

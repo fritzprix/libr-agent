@@ -16,6 +16,7 @@ import {
   formatExecutionTime,
   parseToolArguments,
   formatToolArgumentsSummary,
+  hasUIResource,
 } from '@/lib/tool-call-utils';
 import { useSettings } from '@/hooks/use-settings';
 import { useSessionHistory } from '@/context/SessionHistoryContext';
@@ -26,6 +27,7 @@ interface ToolCallGroupBubbleProps {
   toolGroup: {
     calls: ToolCall[]; // Simplified - just the tool calls, results looked up dynamically
   };
+  isLast?: boolean;
 }
 
 interface StatusSummary {
@@ -60,6 +62,7 @@ interface ExpandToggleProps {
 interface ToolCallCompactItemProps {
   toolCall: ToolCall;
   toolResult?: Message;
+  isLast?: boolean;
 }
 
 interface ToolStatusIconProps {
@@ -213,6 +216,7 @@ const ToolStatusIcon: React.FC<ToolStatusIconProps> = ({
 const ToolCallCompactItem: React.FC<ToolCallCompactItemProps> = ({
   toolCall,
   toolResult,
+  isLast = false,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -225,16 +229,19 @@ const ToolCallCompactItem: React.FC<ToolCallCompactItemProps> = ({
 
   // Check for error using utility function
   const hasError = hasToolCallError(toolResult);
+  const hasResource = hasUIResource(toolResult);
 
   // Get execution time
   const executionTime = toolResult?.metadata?.executionTime;
 
-  // Auto-expand on error
+  // Auto-expand on error or if it's the last message with a UI resource
   useEffect(() => {
     if (hasError && !isExpanded) {
       setIsExpanded(true);
+    } else if (hasResource) {
+      setIsExpanded(isLast);
     }
-  }, [hasError, isExpanded]);
+  }, [hasError, hasResource, isLast, isExpanded]);
 
   return (
     <div
@@ -300,6 +307,7 @@ const ToolCallCompactItem: React.FC<ToolCallCompactItemProps> = ({
 export const ToolCallGroupBubble: React.FC<ToolCallGroupBubbleProps> = ({
   message,
   toolGroup,
+  isLast = false,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const {
@@ -387,16 +395,19 @@ export const ToolCallGroupBubble: React.FC<ToolCallGroupBubbleProps> = ({
 
       {/* Tool Call List - Compact items without individual borders */}
       <div className="px-2 py-2 space-y-0.5">
-        {visibleCalls.map((toolCall) => {
+        {visibleCalls.map((toolCall, index) => {
           const toolResult = messages.find(
             (m) => m.role === 'tool' && m.tool_call_id === toolCall.id,
           );
+
+          const isLastItem = isLast && index === visibleCalls.length - 1;
 
           return (
             <ToolCallCompactItem
               key={toolCall.id}
               toolCall={toolCall}
               toolResult={toolResult}
+              isLast={isLastItem}
             />
           );
         })}
