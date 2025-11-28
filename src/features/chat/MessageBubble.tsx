@@ -1,21 +1,40 @@
 import { Message } from '@/models/chat';
-import React from 'react';
-import { Wrench, Bot, User } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Wrench, Bot, User, ChevronDown } from 'lucide-react';
 import { LoadingSpinner } from '../../components/ui';
 import MessageBubbleRouter from './MessageBubbleRouter';
+import { hasUIResource } from '@/lib/tool-call-utils';
+import { createCompactText } from '@/lib/text-utils';
 
 interface MessageBubbleProps {
   message: Message;
   currentAssistantName?: string;
+  isLast?: boolean;
 }
 
 const MessageBubble: React.FC<MessageBubbleProps> = ({
   message,
   currentAssistantName,
+  isLast = false,
 }) => {
   const isUser = message.role === 'user';
   const isTool = message.role === 'tool';
   const isAssistant = message.role === 'assistant' || message.role === 'system';
+
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
+  useEffect(() => {
+    if (message.isStreaming || message.error) {
+      setIsCollapsed(false);
+      return;
+    }
+
+    if (hasUIResource(message)) {
+      setIsCollapsed(!isLast);
+    } else {
+      setIsCollapsed(false);
+    }
+  }, [isLast, message.isStreaming, message.error, message.content]);
 
   // Use theme tokens for colors; avoid direct color detection
 
@@ -105,48 +124,79 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
               {message.createdAt?.toLocaleString()}
             </span>
           </div>
+          <button
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            className="ml-auto p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded transition-colors opacity-50 hover:opacity-100"
+          >
+            <ChevronDown
+              size={16}
+              className={`transition-transform duration-200 ${isCollapsed ? '-rotate-90' : 'rotate-0'}`}
+            />
+          </button>
         </div>
-        {message.attachments && message.attachments.length > 0 && (
-          <div className="mb-3 p-3 bg-muted/30 rounded-lg border border-muted/20">
-            <div className="text-sm mb-2 font-medium flex items-center gap-2">
-              <span>📎</span>
-              <span>
-                {message.attachments.length} file
-                {message.attachments.length > 1 ? 's' : ''} attached
-              </span>
-            </div>
-            <div className="space-y-2">
-              {message.attachments.map((attachment) => (
-                <div
-                  key={attachment.contentId}
-                  className="flex items-center justify-between p-2 bg-background/50 rounded border"
-                >
-                  <div className="flex items-center gap-2 min-w-0 flex-1">
-                    <span className="text-xs">📄</span>
-                    <span className="text-xs font-medium truncate">
-                      {attachment.filename}
-                    </span>
-                    <span className="text-xs opacity-60 whitespace-nowrap">
-                      ({Math.round(attachment.size / 1024)}KB)
-                    </span>
-                  </div>
-                  <div className="text-xs opacity-50 whitespace-nowrap ml-2">
-                    {attachment.lineCount} lines
-                  </div>
+
+        {!isCollapsed ? (
+          <>
+            {message.attachments && message.attachments.length > 0 && (
+              <div className="mb-3 p-3 bg-muted/30 rounded-lg border border-muted/20">
+                <div className="text-sm mb-2 font-medium flex items-center gap-2">
+                  <span>📎</span>
+                  <span>
+                    {message.attachments.length} file
+                    {message.attachments.length > 1 ? 's' : ''} attached
+                  </span>
                 </div>
-              ))}
-            </div>
+                <div className="space-y-2">
+                  {message.attachments.map((attachment) => (
+                    <div
+                      key={attachment.contentId}
+                      className="flex items-center justify-between p-2 bg-background/50 rounded border"
+                    >
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <span className="text-xs">📄</span>
+                        <span className="text-xs font-medium truncate">
+                          {attachment.filename}
+                        </span>
+                        <span className="text-xs opacity-60 whitespace-nowrap">
+                          ({Math.round(attachment.size / 1024)}KB)
+                        </span>
+                      </div>
+                      <div className="text-xs opacity-50 whitespace-nowrap ml-2">
+                        {attachment.lineCount} lines
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {message.thinking && (
+              <div className="flex items-center gap-3 mt-4 p-3 bg-popover rounded-lg border border-border">
+                {message.isStreaming ? <LoadingSpinner size="sm" /> : <></>}
+                <span className="text-sm opacity-50 italic">
+                  {message.thinking}
+                </span>
+              </div>
+            )}
+            <MessageBubbleRouter message={message} />
+          </>
+        ) : (
+          <div className="text-sm text-muted-foreground opacity-70 italic">
+            {(() => {
+              const textContent =
+                message.content?.find((c) => c.type === 'text')?.text || '';
+              const compact = createCompactText(textContent);
+              if (compact)
+                return (
+                  compact.slice(0, 60) + (compact.length > 60 ? '...' : '')
+                );
+
+              if (message.tool_calls?.length)
+                return `${message.tool_calls.length} tool calls`;
+              if (hasUIResource(message)) return 'UI Resource';
+              return 'Collapsed message';
+            })()}
           </div>
         )}
-        {message.thinking && (
-          <div className="flex items-center gap-3 mt-4 p-3 bg-popover rounded-lg border border-border">
-            {message.isStreaming ? <LoadingSpinner size="sm" /> : <></>}
-            <span className="text-sm opacity-50 italic">
-              {message.thinking}
-            </span>
-          </div>
-        )}
-        <MessageBubbleRouter message={message} />
       </div>
     </div>
   );

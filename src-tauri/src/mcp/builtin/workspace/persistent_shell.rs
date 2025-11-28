@@ -519,17 +519,18 @@ mod tests {
     async fn test_stdin_isolation() -> Result<()> {
         let temp_dir = std::env::temp_dir().join("test_stdin_isolation");
         std::fs::create_dir_all(&temp_dir)?;
-        let mut shell = PersistentShell::new("test-isolation".to_string(), temp_dir.clone()).await?;
+        let mut shell =
+            PersistentShell::new("test-isolation".to_string(), temp_dir.clone()).await?;
 
         #[cfg(unix)]
         {
-            // 'cat' without args reads from stdin. 
+            // 'cat' without args reads from stdin.
             // If stdin is not isolated, it might hang or consume subsequent commands.
             // With isolation, it should read EOF immediately and exit.
-            let (stdout, _, exit_code) = tokio::time::timeout(
-                std::time::Duration::from_secs(2),
-                shell.execute("cat")
-            ).await.map_err(|_| anyhow::anyhow!("Timeout"))??;
+            let (stdout, _, exit_code) =
+                tokio::time::timeout(std::time::Duration::from_secs(2), shell.execute("cat"))
+                    .await
+                    .map_err(|_| anyhow::anyhow!("Timeout"))??;
 
             assert_eq!(exit_code, 0);
             assert_eq!(stdout, "");
