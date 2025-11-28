@@ -138,7 +138,7 @@ mod tests {
         // On Unix, this will likely fail or behave differently
         #[cfg(windows)]
         {
-            if let Ok(path) = result {
+            if let Ok(path) = _result {
                 // Should be UNC path format
                 assert!(path.starts_with(r"\\") || path.contains("server"));
             }

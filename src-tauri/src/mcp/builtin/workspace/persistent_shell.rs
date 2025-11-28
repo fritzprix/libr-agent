@@ -325,7 +325,7 @@ impl PersistentShell {
             self.session_id, command
         );
 
-        // 3. Send command with heredoc for input (Unix) or piped input (Windows)
+        // Send command with heredoc for input (Unix) or piped input (Windows)
         #[cfg(unix)]
         {
             // Use a unique sentinel for the heredoc to avoid conflicts with input content
@@ -351,15 +351,15 @@ impl PersistentShell {
 
         #[cfg(windows)]
         {
-            // 1. Send command first
+            // Send command first
             self.stdin.write_all(command.as_bytes()).await?;
             self.stdin.write_all(b"\n").await?;
 
-            // 2. Send user input (stdin injection)
+            // Send user input (stdin injection)
             self.stdin.write_all(user_input.as_bytes()).await?;
             self.stdin.write_all(b"\n").await?;
 
-            // 3. Send sentinel markers
+            // Send sentinel markers
             self.stdin
                 .write_all(format!("Write-Output '{}'\n", sentinel).as_bytes())
                 .await?;

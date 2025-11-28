@@ -12,6 +12,10 @@ use super::super::{terminal_manager, PendingShellExecution, WorkspaceServer};
 
 impl WorkspaceServer {
     /// Redact sensitive input from output string
+    ///
+    /// Note: This uses simple string replacement which may result in over-redaction
+    /// (e.g. "pass" will be redacted in "compass"). This is intentional for security
+    /// as over-redaction is safer than under-redaction in this context.
     fn redact_sensitive_input(output: &str, sensitive: &str) -> String {
         if sensitive.is_empty() {
             return output.to_string();
@@ -28,7 +32,18 @@ impl WorkspaceServer {
 
         let input_bytes = match general_purpose::STANDARD.decode(input_base64) {
             Ok(b) => b,
-            Err(_) => return Ok(input_base64.to_string()), // Fallback to plain text if decode fails
+            Err(e) => {
+                if !nonce.is_empty() {
+                    // Security: fail if nonce is present and decoding fails
+                    return Err(format!(
+                        "Input must be base64-obfuscated when nonce is provided. Decode error: {e}"
+                    ));
+                } else {
+                    // For legacy/plain text, allow fallback but log a warning
+                    warn!("Base64 decode failed, falling back to plain text input: {e}");
+                    return Ok(input_base64.to_string());
+                }
+            }
         };
 
         let nonce_bytes = nonce.as_bytes();
@@ -71,6 +86,13 @@ impl WorkspaceServer {
             .to_string();
 
         // Generate nonce for client-side obfuscation
+        // SECURITY WARNING:
+        // XOR-based obfuscation with a UUID nonce provides only limited security.
+        // Since the nonce is transmitted in the HTML, an attacker who can intercept or observe
+        // the HTML content can easily reverse the obfuscation by applying the same XOR operation.
+        // This approach protects against casual logging but NOT against determined attackers.
+        // If the threat model requires protection against active attackers who can observe the UI content,
+        // consider using a stronger encryption method (e.g., AES with secure key exchange via Web Crypto API).
         let encryption_nonce = uuid::Uuid::new_v4().to_string();
 
         // Store pending execution
@@ -596,8 +618,12 @@ impl WorkspaceServer {
         for (let i = 0; i < inputBytes.length; i++) {{
           xored[i] = inputBytes[i] ^ nonceBytes[i % nonceBytes.length];
         }}
-        // Convert to Base64
-        return btoa(String.fromCharCode.apply(null, xored));
+        // Convert to Base64 more safely (avoid stack overflow)
+        let binary = '';
+        for (let i = 0; i < xored.length; i++) {{
+          binary += String.fromCharCode(xored[i]);
+        }}
+        return btoa(binary);
       }}
 
       document
@@ -720,8 +746,9 @@ mod tests {
         let decoded_empty = WorkspaceServer::deobfuscate_input(original, "").unwrap();
         assert_eq!(decoded_empty, original);
 
-        // Test with invalid base64 (should fallback to plain text)
-        let decoded_invalid = WorkspaceServer::deobfuscate_input("not base64", nonce).unwrap();
-        assert_eq!(decoded_invalid, "not base64");
+        // Test with invalid base64 (should return error when nonce is provided)
+        let result_invalid = WorkspaceServer::deobfuscate_input("not base64", nonce);
+        assert!(result_invalid.is_err());
+        assert!(result_invalid.unwrap_err().contains("Input must be base64-obfuscated"));
     }
 }
