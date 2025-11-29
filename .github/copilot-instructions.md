@@ -515,7 +515,5 @@ These steps must be completed successfully before considering any refactoring ta
 
 ## References
 
-- [Chat Feature Architecture & Implementation Manual](docs/architecture/chat-feature-architecture.md)
-- [Built-in Tools Documentation](docs/builtin-tools.md)
-- [External MCP Server Integration](docs/external-mcp-integration.md)
-- [Project structure overview](../docs/project-structure.md)
+- [Chat Feature Architecture & Implementation Manual](../docs/architecture/chat-feature-architecture.md)
+- [UI Resource Implementation Guide](../docs/guides/ui-resource-implementation.md)

@@ -120,3 +120,24 @@ pub fn create_list_processes_tool() -> MCPTool {
         annotations: None,
     }
 }
+
+/// Create stop_process tool
+pub fn create_stop_process_tool() -> MCPTool {
+    let mut props = HashMap::new();
+
+    props.insert(
+        "process_id".to_string(),
+        string_prop_required("Process ID to stop"),
+    );
+
+    MCPTool {
+        name: "stop_process".to_string(),
+        title: Some("Stop Process".to_string()),
+        description: "Stop a running background process. \
+                      Sends a termination signal to the process."
+            .to_string(),
+        input_schema: object_schema(props, vec!["process_id".to_string()]),
+        output_schema: None,
+        annotations: None,
+    }
+}
