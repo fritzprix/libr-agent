@@ -549,8 +549,36 @@ impl WorkspaceServer {
             token.cancel();
         }
 
-        // Update status to Killed
+        // Update status and kill process
         if let Some(entry) = registry.entries.get_mut(process_id) {
+            // Kill process if running
+            if let Some(pid) = entry.pid {
+                if matches!(
+                    entry.status,
+                    terminal_manager::ProcessStatus::Running
+                        | terminal_manager::ProcessStatus::Starting
+                ) {
+                    info!("Force-killing process {} (PID {})", process_id, pid);
+
+                    #[cfg(unix)]
+                    {
+                        use std::process::Command;
+                        let _ = Command::new("kill")
+                            .arg("-TERM")
+                            .arg(pid.to_string())
+                            .output();
+                    }
+
+                    #[cfg(windows)]
+                    {
+                        use std::process::Command;
+                        let _ = Command::new("taskkill")
+                            .args(["/PID", &pid.to_string(), "/F"])
+                            .output();
+                    }
+                }
+            }
+
             entry.status = terminal_manager::ProcessStatus::Killed;
             entry.finished_at = Some(chrono::Utc::now());
         }
