@@ -316,14 +316,12 @@ pub fn run() {
                 });
                 println!("✅ OAuth deep link handler registered");
 
-                // Perform safety checks for WebView creation on Linux
+                // Linux-specific checks (environment variables are now set in main.rs)
                 #[cfg(target_os = "linux")]
                 {
-                    println!("🐧 Linux detected - checking WebKit compatibility...");
-
-                    // Set environment variables for better WebKit compatibility on some systems
-                    std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
-                    std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+                    println!(
+                        "🐧 Linux detected - WebKit compatibility flags already set in main.rs"
+                    );
 
                     // Check if running in a container or other limited graphics environment
                     if std::env::var("container").is_ok() || std::env::var("DISPLAY").is_err() {

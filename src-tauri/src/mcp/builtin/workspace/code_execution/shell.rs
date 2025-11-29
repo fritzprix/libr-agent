@@ -80,8 +80,21 @@ impl WorkspaceServer {
             }
             Err(_) => {
                 // Timeout
+                warn!(
+                    "Persistent shell execution timed out for session {}. Terminating shell to cleanup.",
+                    session_id
+                );
+
+                // Cleanup: Terminate the stuck shell
+                if let Err(e) = self.shell_manager.terminate_shell(&session_id).await {
+                    error!(
+                        "Failed to terminate stuck shell for session {}: {}",
+                        session_id, e
+                    );
+                }
+
                 Ok(MCPResult::error(&format!(
-                    "Command execution timeout after {timeout_secs} seconds"
+                    "Command execution timeout after {timeout_secs} seconds. The shell session has been reset."
                 )))
             }
         }

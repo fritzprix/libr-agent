@@ -39,12 +39,14 @@ pub fn export_tools() -> Vec<MCPTool> {
 pub fn terminal_tools() -> Vec<MCPTool> {
     use terminal_tools::{
         create_list_processes_tool, create_poll_process_tool, create_read_process_output_tool,
+        create_stop_process_tool,
     };
 
     vec![
         create_poll_process_tool(),
         create_read_process_output_tool(),
         create_list_processes_tool(),
+        create_stop_process_tool(),
     ]
 }
 

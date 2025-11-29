@@ -9,11 +9,11 @@ This guide explains how to implement UI resources in Web MCP servers for LibrAge
 ### Component Flow
 
 ```text
-UIResourceRenderer (iframe) 
-  → postMessage 
-    → MessageRenderer 
-      → useUnifiedMCP 
-        → BuiltInToolProvider 
+UIResourceRenderer (iframe)
+  → postMessage
+    → MessageRenderer
+      → useUnifiedMCP
+        → BuiltInToolProvider
           → Web MCP Server
 ```
 
@@ -43,17 +43,17 @@ UIResourceRenderer (iframe)
 
 ```typescript
 // Format: builtin_${serverName}__${toolName}
-builtin_playbook__show_playbook
-builtin_ui__select_prompt
-builtin_planning__create_plan
+builtin_playbook__show_playbook;
+builtin_ui__select_prompt;
+builtin_planning__create_plan;
 ```
 
 ### External MCP Tools
 
 ```typescript
 // Format: ${serverName}__${toolName}
-filesystem__read_file
-github__create_issue
+filesystem__read_file;
+github__create_issue;
 ```
 
 ## Implementation Steps
@@ -64,67 +64,51 @@ Create a `.hbs` file in your Web MCP server's templates directory:
 
 ```handlebars
 <!-- templates/example.hbs -->
-<!DOCTYPE html>
+
 <html>
-<head>
-  <meta charset="UTF-8">
-  <style>
-    /* Add your styles */
-    .action-btn {
-      padding: 8px 16px;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    {{#each items}}
-    <div class="item">
-      <span>{{this.name}}</span>
-      <button 
-        class="action-btn select-btn" 
-        data-id="{{this.id}}"
-        data-value="{{this.value}}">
-        Select
-      </button>
+  <head>
+    <meta charset='UTF-8' />
+    <style>
+      /* Add your styles */
+      .action-btn {
+        padding: 8px 16px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <div class='container'>
+      {{#each items}}
+        <div class='item'>
+          <span>{{this.name}}</span>
+          <button
+            class='action-btn select-btn'
+            data-id='{{this.id}}'
+            data-value='{{this.value}}'
+          >
+            Select
+          </button>
+        </div>
+      {{/each}}
     </div>
-    {{/each}}
-  </div>
 
-  <script>
-    // ✅ CORRECT: Explicit event listeners
-    document.addEventListener('DOMContentLoaded', function() {
-      // Attach listeners to each button
+    <script>
+      // ✅ CORRECT: Explicit event listeners
+      document.addEventListener('DOMContentLoaded', function() { // Attach
+      listeners to each button
       document.querySelectorAll('.select-btn').forEach(function(btn) {
-        btn.addEventListener('click', function(e) {
-          const id = e.target.dataset.id;
-          const value = e.target.dataset.value;
-          
-          // Send postMessage to parent
-          window.parent.postMessage({
-            type: 'ui-action',
-            action: {
-              tool: 'select_item',
-              params: {
-                id: id,
-                value: value
-              }
-            }
-          }, '*');
-        });
-      });
-    });
-
-    // ❌ WRONG: Event delegation (fragile, hard to debug)
-    // document.addEventListener('click', function(e) {
-    //   if (e.target.classList.contains('select-btn')) {
-    //     // This pattern is unreliable
-    //   }
-    // });
-  </script>
-</body>
+      btn.addEventListener('click', function(e) { const id =
+      e.target.dataset.id; const value = e.target.dataset.value; // Send
+      postMessage to parent window.parent.postMessage({ type: 'ui-action',
+      action: { tool: 'select_item', params: { id: id, value: value } } }, '*');
+      }); }); }); // ❌ WRONG: Event delegation (fragile, hard to debug) //
+      document.addEventListener('click', function(e) { // if
+      (e.target.classList.contains('select-btn')) { // // This pattern is
+      unreliable // } // });
+    </script>
+  </body>
 </html>
 ```
 
@@ -151,7 +135,7 @@ class ExampleServer {
 
   private async showItems(params: unknown) {
     const items = await this.fetchItems();
-    
+
     const template = Handlebars.compile(exampleTemplate);
     const html = template({ items });
 
@@ -162,10 +146,10 @@ class ExampleServer {
           resource: {
             uri: 'ui://example/items',
             mimeType: 'text/html',
-            text: html
-          }
-        }
-      ]
+            text: html,
+          },
+        },
+      ],
     };
   }
 
@@ -175,9 +159,9 @@ class ExampleServer {
       content: [
         {
           type: 'text' as const,
-          text: `Selected item: ${params.value}`
-        }
-      ]
+          text: `Selected item: ${params.value}`,
+        },
+      ],
     };
   }
 }
@@ -216,23 +200,23 @@ The server is automatically registered through `WebMCPServiceRegistry`:
 export class WebMCPServiceRegistry {
   async registerServer(
     name: string,
-    getServerProxy: () => WebMCPServerProxy | null
+    getServerProxy: () => WebMCPServerProxy | null,
   ): Promise<void> {
     const service: BuiltInService = {
       name: `builtin_${name}`,
       description: `Web MCP Server: ${name}`,
-      
+
       async listTools() {
         const proxy = getServerProxy();
         if (!proxy) return [];
         return proxy.listTools();
       },
-      
+
       async executeTool(toolName: string, params: ToolParams) {
         const proxy = getServerProxy();
         if (!proxy) throw new Error('Server not available');
         return proxy.callTool(toolName, params);
-      }
+      },
     };
 
     this.services.set(name, service);
@@ -247,7 +231,7 @@ export class WebMCPServiceRegistry {
 1. **Use DOMContentLoaded event**
 
    ```javascript
-   document.addEventListener('DOMContentLoaded', function() {
+   document.addEventListener('DOMContentLoaded', function () {
      // Attach listeners here
    });
    ```
@@ -255,7 +239,7 @@ export class WebMCPServiceRegistry {
 2. **Use querySelectorAll for multiple elements**
 
    ```javascript
-   document.querySelectorAll('.action-btn').forEach(function(btn) {
+   document.querySelectorAll('.action-btn').forEach(function (btn) {
      btn.addEventListener('click', handleClick);
    });
    ```
@@ -269,13 +253,16 @@ export class WebMCPServiceRegistry {
 4. **Send structured postMessage**
 
    ```javascript
-   window.parent.postMessage({
-     type: 'ui-action',
-     action: {
-       tool: 'tool_name',
-       params: { key: 'value' }
-     }
-   }, '*');
+   window.parent.postMessage(
+     {
+       type: 'ui-action',
+       action: {
+         tool: 'tool_name',
+         params: { key: 'value' },
+       },
+     },
+     '*',
+   );
    ```
 
 5. **Match ui-tools pattern**
@@ -287,8 +274,9 @@ export class WebMCPServiceRegistry {
 
    ```javascript
    // ❌ Fragile and hard to debug
-   document.addEventListener('click', function(e) {
-     if (e.target.classList.contains('btn')) { }
+   document.addEventListener('click', function (e) {
+     if (e.target.classList.contains('btn')) {
+     }
    });
    ```
 
@@ -320,11 +308,11 @@ Temporarily add logs to diagnose issues:
 // MessageRenderer.tsx
 const handleUIAction = (toolName: string, params: unknown) => {
   console.log('🎨 UI Action:', { toolName, params, serviceInfo });
-  
+
   if (serviceInfo.backendType === 'BuiltInWeb') {
     console.log('🌐 Web MCP tool:', finalToolName);
   }
-  
+
   executeToolCall(finalToolName, params);
 };
 ```

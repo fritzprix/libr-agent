@@ -4,14 +4,34 @@
 /// The main entry point for the LibrAgent application.
 ///
 /// This function is responsible for:
-/// 1. Loading environment variables from .env file (development mode only)
-/// 2. Determining the path for the SQLite database. It prioritizes the `LIBRAGENT_DB_PATH`
+/// 1. Setting Linux-specific WebKit compatibility environment variables (if on Linux)
+/// 2. Loading environment variables from .env file (development mode only)
+/// 3. Determining the path for the SQLite database. It prioritizes the `LIBRAGENT_DB_PATH`
 ///    environment variable, falling back to a default location within the user's data directory.
-/// 3. Ensuring the directory for the database exists.
-/// 4. Constructing the final SQLite connection URL.
-/// 5. Calling the main application runner (`run_with_sqlite_sync`) from the `tauri_mcp_agent_lib`
+/// 4. Ensuring the directory for the database exists.
+/// 5. Constructing the final SQLite connection URL.
+/// 6. Calling the main application runner (`run_with_sqlite_sync`) from the `tauri_mcp_agent_lib`
 ///    crate, passing it the database URL to initialize the application with database support.
 fn main() {
+    // Set Linux-specific WebKit compatibility environment variables FIRST
+    // This must happen before any WebView initialization
+    #[cfg(target_os = "linux")]
+    {
+        println!("🐧 Linux detected - setting WebKit compatibility flags...");
+
+        // Disable WebKit hardware acceleration to fix blank screen issues on Arch Linux
+        std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        std::env::set_var("WEBKIT_DISABLE_WEBGL", "1");
+        std::env::set_var("WEBKIT_FORCE_SOFTWARE_RENDERING", "1");
+
+        // Additional compatibility flags
+        std::env::set_var("GDK_BACKEND", "x11");
+        std::env::set_var("LIBGL_ALWAYS_SOFTWARE", "1");
+
+        println!("✅ WebKit compatibility flags set (software rendering enabled)");
+    }
+
     // Load environment variables from .env file
     // Development: loads .env.dev (if exists) or .env from current directory
     // Production: loads .env from executable directory or current directory

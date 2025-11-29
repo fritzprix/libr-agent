@@ -518,6 +518,52 @@ impl WorkspaceServer {
         ))
     }
 
+    /// Handle stop_process tool call
+    pub async fn handle_stop_process(&self, args: Value) -> Result<MCPResult, String> {
+        let process_id = match args.get("process_id").and_then(|v| v.as_str()) {
+            Some(id) => id,
+            None => {
+                return Err("Missing required parameter: process_id".to_string());
+            }
+        };
+
+        // Get current session
+        let session_id = self
+            .session_manager
+            .get_current_session()
+            .unwrap_or_else(|| "default".to_string());
+
+        let mut registry = self.process_registry.write().await;
+
+        // Check if process exists and belongs to session
+        if let Some(entry) = registry.entries.get(process_id) {
+            if entry.session_id != session_id {
+                return Err("Process not found or access denied".to_string());
+            }
+        } else {
+            return Err("Process not found".to_string());
+        }
+
+        // Cancel process via token
+        if let Some(token) = registry.cancellation_tokens.get(process_id) {
+            token.cancel();
+        }
+
+        // Update status to Killed
+        if let Some(entry) = registry.entries.get_mut(process_id) {
+            entry.status = terminal_manager::ProcessStatus::Killed;
+            entry.finished_at = Some(chrono::Utc::now());
+        }
+
+        // Remove cancellation token
+        registry.cancellation_tokens.remove(process_id);
+
+        Ok(MCPResult::success(&format!(
+            "Process {} stopped",
+            process_id
+        )))
+    }
+
     // Common utility methods
     pub fn get_workspace_dir(&self) -> std::path::PathBuf {
         self.session_manager.get_session_workspace_dir()
@@ -792,6 +838,7 @@ impl BuiltinMCPServer for WorkspaceServer {
             "poll_process" => self.handle_poll_process(args).await,
             "read_process_output" => self.handle_read_process_output(args).await,
             "list_processes" => self.handle_list_processes(args).await,
+            "stop_process" => self.handle_stop_process(args).await,
             _ => Err(format!("Tool '{tool_name}' not found")),
         }
     }
