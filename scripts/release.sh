@@ -18,26 +18,19 @@ if ! command -v gh &> /dev/null; then
     exit 1
 fi
 
+echo ">>> Running pre-release checks..."
+# 1. Frontend Tests
+pnpm test:run
+# 2. Backend Tests
+pnpm rust:test
+# 3. Verify Frontend Build (Type check + Build)
+pnpm build
+# 4. Verify Backend Compilation
+(cd src-tauri && cargo check)
+
 echo ">>> Bumping version..."
 NEW_VERSION=$(node scripts/bump-version.cjs "$1" | tail -n 1)
 echo "New Version: $NEW_VERSION"
-
-echo ">>> Building project (this may take a while)..."
-# Allow tauri build to fail (e.g. AppImage failure) as long as deb is created
-pnpm tauri build || true
-
-# Check for both lowercase and CamelCase filenames
-DEB_PATH_LOWER="src-tauri/target/release/bundle/deb/libragent_${NEW_VERSION}_amd64.deb"
-DEB_PATH_CAMEL="src-tauri/target/release/bundle/deb/LibrAgent_${NEW_VERSION}_amd64.deb"
-
-if [ -f "$DEB_PATH_LOWER" ]; then
-    DEB_PATH="$DEB_PATH_LOWER"
-elif [ -f "$DEB_PATH_CAMEL" ]; then
-    DEB_PATH="$DEB_PATH_CAMEL"
-else
-    echo "Error: .deb file not found at $DEB_PATH_LOWER or $DEB_PATH_CAMEL"
-    exit 1
-fi
 
 echo ">>> Committing and Tagging..."
 git add package.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json aur/PKGBUILD snap/snapcraft.yaml
@@ -45,11 +38,12 @@ git commit -m "chore(release): bump to v$NEW_VERSION"
 git tag "v$NEW_VERSION"
 
 echo ">>> Pushing to GitHub..."
-git push origin dev/0.3.x
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+git push origin "$CURRENT_BRANCH"
 git push origin "v$NEW_VERSION"
 
-echo ">>> Creating GitHub Release..."
-gh release create "v$NEW_VERSION" "$DEB_PATH" --generate-notes --title "v$NEW_VERSION"
+echo ">>> Triggered GitHub Action for Release..."
+echo "The release artifacts (deb, AppImage, etc.) will be built and uploaded by GitHub Actions."
 
 echo ">>> Updating AUR..."
 # Create a temporary dir for AUR
