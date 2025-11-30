@@ -12,6 +12,7 @@ source=("${pkgname}::git+https://github.com/fritzprix/libr-agent.git#tag=v${pkgv
         "libragent.desktop")
 sha256sums=('SKIP'
             'SKIP')
+options=('!lto')
 
 prepare() {
   cd "$pkgname"
