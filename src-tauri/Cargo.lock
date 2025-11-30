@@ -2794,7 +2794,7 @@ checksum = "f9fbbcab51052fe104eb5e5d351cf728d30a5be1fe14d9be8a3b097481fb97de"
 
 [[package]]
 name = "libragent"
-version = "0.3.14"
+version = "0.3.15"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2812,6 +2812,7 @@ dependencies = [
  "glob",
  "html-escape",
  "keyring",
+ "libsqlite3-sys",
  "log",
  "lopdf 0.31.0",
  "oauth2 4.4.2",
