@@ -25,9 +25,42 @@ dist-ssr
 .env
 prompt
 error.txt
+.claude
+.vscode
 # LangGraph API
 .langgraph_api
 log.txt
 .envfile
 target
 .mcp.json
+
+# Additional ignores added on review (caches, local env, coverage, editor/runtime artifacts)
+
+# dotenv files (local/specific env files)
+# keep .env.example tracked as a template
+.env.*
+!.env.example
+
+# Common caches and build artifacts
+.cache/
+.vite/
+/.parcel-cache
+coverage/
+playwright-report/
+
+# pnpm & node caches
+.pnpm-store/
+.pnpm-debug.log*
+
+# Python artifacts
+__pycache__/
+*.pyc
+venv/
+
+# Misc OS/editor/runtime
+npm-debug.log*
+node-repl.history
+Thumbs.db
+*.pem
+*.p12
+*.key
