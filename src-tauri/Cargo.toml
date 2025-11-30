@@ -52,7 +52,7 @@ dashmap = "5.5"
 regex = "1"
 cuid2 = "0.1.4"
 dirs = "5.0"
-zip = "0.6"
+zip = { version = "0.6", default-features = false, features = ["deflate"] }
 
 # File parsing dependencies
 docx-rs = "0.4"           # DOCX parsing
