@@ -19,15 +19,23 @@ if ! command -v gh &> /dev/null; then
 fi
 
 echo ">>> Bumping version..."
-NEW_VERSION=$(node scripts/bump-version.js "$1" | tail -n 1)
+NEW_VERSION=$(node scripts/bump-version.cjs "$1" | tail -n 1)
 echo "New Version: $NEW_VERSION"
 
 echo ">>> Building project (this may take a while)..."
-pnpm tauri build
+# Allow tauri build to fail (e.g. AppImage failure) as long as deb is created
+pnpm tauri build || true
 
-DEB_PATH="src-tauri/target/release/bundle/deb/libragent_${NEW_VERSION}_amd64.deb"
-if [ ! -f "$DEB_PATH" ]; then
-    echo "Error: .deb file not found at $DEB_PATH"
+# Check for both lowercase and CamelCase filenames
+DEB_PATH_LOWER="src-tauri/target/release/bundle/deb/libragent_${NEW_VERSION}_amd64.deb"
+DEB_PATH_CAMEL="src-tauri/target/release/bundle/deb/LibrAgent_${NEW_VERSION}_amd64.deb"
+
+if [ -f "$DEB_PATH_LOWER" ]; then
+    DEB_PATH="$DEB_PATH_LOWER"
+elif [ -f "$DEB_PATH_CAMEL" ]; then
+    DEB_PATH="$DEB_PATH_CAMEL"
+else
+    echo "Error: .deb file not found at $DEB_PATH_LOWER or $DEB_PATH_CAMEL"
     exit 1
 fi
 
