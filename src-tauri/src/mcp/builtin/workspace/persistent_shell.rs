@@ -132,6 +132,7 @@ impl PersistentShell {
             child.id()
         );
 
+        #[allow(unused_mut)]
         let mut shell = Self {
             child,
             stdin,
