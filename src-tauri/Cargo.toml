@@ -56,7 +56,7 @@ zip = { version = "0.6", default-features = false, features = ["deflate"] }
 
 # File parsing dependencies
 docx-rs = "0.4"           # DOCX parsing
-calamine = { version = "0.24", features = ["dates"] }  # XLSX parsing
+calamine = { version = "0.32", features = ["dates"] }  # XLSX parsing
 lopdf = "0.31"            # PDF parsing
 pdf-extract = "0.7"       # Better PDF text extraction
 # tantivy = "0.21"       # BM25 text search - temporarily disabled due to zstd conflicts
