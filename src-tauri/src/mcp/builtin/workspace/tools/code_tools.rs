@@ -331,10 +331,12 @@ mod tests {
                 let examples = command_schema.examples.as_ref().unwrap();
 
                 // Windows 명령어 예제 확인
-                assert!(examples.iter().any(|e| e.as_str().unwrap().contains("dir")));
                 assert!(examples
                     .iter()
-                    .any(|e| e.as_str().unwrap().contains("echo")));
+                    .any(|e| e.as_str().unwrap().contains("Get-ChildItem")));
+                assert!(examples
+                    .iter()
+                    .any(|e| e.as_str().unwrap().contains("Write-Host")));
             }
             _ => panic!("Expected Object schema type"),
         }

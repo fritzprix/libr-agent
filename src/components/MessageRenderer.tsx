@@ -151,7 +151,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
               if (
                 strippedCommand &&
                 typeof tauriCommands[
-                strippedCommand as keyof typeof tauriCommands
+                  strippedCommand as keyof typeof tauriCommands
                 ] === 'function'
               ) {
                 // Tauri 명령어도 완전한 tool chain으로 처리
@@ -502,7 +502,10 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
                       </div>
                     ),
                     thead: ({ children, ...props }) => (
-                      <thead className="bg-muted/50 text-muted-foreground" {...props}>
+                      <thead
+                        className="bg-muted/50 text-muted-foreground"
+                        {...props}
+                      >
                         {children}
                       </thead>
                     ),
@@ -512,7 +515,10 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
                       </tbody>
                     ),
                     tr: ({ children, ...props }) => (
-                      <tr className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors" {...props}>
+                      <tr
+                        className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors"
+                        {...props}
+                      >
                         {children}
                       </tr>
                     ),

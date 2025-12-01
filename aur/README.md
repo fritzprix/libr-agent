@@ -13,9 +13,11 @@ sudo pacman -S --needed base-devel git
 ## Building Locally
 
 1.  **Update Checksums**: If you modified `libragent.desktop` or want to ensure integrity, update the checksums in `PKGBUILD`.
+
     ```bash
     updpkgsums
     ```
+
     (Requires `pacman-contrib` package)
 
 2.  **Build and Install**: Run the following command to build the package and install it:
