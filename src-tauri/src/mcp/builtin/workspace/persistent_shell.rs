@@ -132,13 +132,23 @@ impl PersistentShell {
             child.id()
         );
 
-        Ok(Self {
+        let mut shell = Self {
             child,
             stdin,
             stdout,
             stderr,
             session_id,
-        })
+        };
+
+        #[cfg(windows)]
+        {
+            // Force UTF-8 encoding for console I/O and pipe output
+            // This is critical for handling non-ASCII characters in filenames/output
+            debug!("Configuring PowerShell encoding to UTF-8");
+            let _ = shell.execute("[Console]::InputEncoding = [Console]::OutputEncoding = $OutputEncoding = [System.Text.Encoding]::UTF8").await?;
+        }
+
+        Ok(shell)
     }
 
     /// Execute a command in the persistent shell
@@ -563,6 +573,37 @@ mod tests {
 
         assert_eq!(exit_code, 0);
         assert_eq!(stdout, "NoNewline");
+        
+        shell.terminate().await?;
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_unicode_handling() -> Result<()> {
+        let temp_dir = std::env::temp_dir().join("test_unicode");
+        std::fs::create_dir_all(&temp_dir)?;
+        let mut shell = PersistentShell::new("test-unicode".to_string(), temp_dir.clone()).await?;
+
+        let unicode_str = "안녕하세요 Hello World";
+
+        #[cfg(unix)]
+        let (stdout, _, exit_code) = shell.execute(&format!("echo '{}'", unicode_str)).await?;
+        #[cfg(windows)]
+        let (stdout, _, exit_code) = shell
+            .execute(&format!("Write-Output '{}'", unicode_str))
+            .await?;
+
+        println!("DEBUG: stdout bytes: {:?}", stdout.as_bytes());
+        println!("DEBUG: stdout string: {}", stdout);
+
+        assert_eq!(exit_code, 0);
+        assert!(
+            stdout.contains(unicode_str),
+            "Output '{}' did not contain '{}'",
+            stdout,
+            unicode_str
+        );
 
         shell.terminate().await?;
         let _ = std::fs::remove_dir_all(&temp_dir);

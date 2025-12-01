@@ -151,7 +151,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
               if (
                 strippedCommand &&
                 typeof tauriCommands[
-                  strippedCommand as keyof typeof tauriCommands
+                strippedCommand as keyof typeof tauriCommands
                 ] === 'function'
               ) {
                 // Tauri 명령어도 완전한 tool chain으로 처리
@@ -437,7 +437,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
                         // Inline code
                         return (
                           <code
-                            className="px-1.5 py-0.5 bg-muted rounded text-sm font-mono border border-border"
+                            className="px-1.5 py-0.5 bg-muted rounded text-sm font-mono border border-border break-all"
                             {...props}
                           >
                             {children}
@@ -493,6 +493,38 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
                       >
                         {children}
                       </pre>
+                    ),
+                    table: ({ children, ...props }) => (
+                      <div className="overflow-x-auto w-full my-4 border rounded-lg">
+                        <table className="w-full text-sm text-left" {...props}>
+                          {children}
+                        </table>
+                      </div>
+                    ),
+                    thead: ({ children, ...props }) => (
+                      <thead className="bg-muted/50 text-muted-foreground" {...props}>
+                        {children}
+                      </thead>
+                    ),
+                    tbody: ({ children, ...props }) => (
+                      <tbody className="divide-y divide-border" {...props}>
+                        {children}
+                      </tbody>
+                    ),
+                    tr: ({ children, ...props }) => (
+                      <tr className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors" {...props}>
+                        {children}
+                      </tr>
+                    ),
+                    th: ({ children, ...props }) => (
+                      <th className="px-4 py-3 font-medium" {...props}>
+                        {children}
+                      </th>
+                    ),
+                    td: ({ children, ...props }) => (
+                      <td className="px-4 py-3" {...props}>
+                        {children}
+                      </td>
                     ),
                     h1: ({ children, ...props }) => (
                       <h1 className="text-2xl font-bold mb-3 mt-4" {...props}>
