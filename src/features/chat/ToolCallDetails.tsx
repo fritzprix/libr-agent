@@ -25,15 +25,15 @@ export const ToolCallDetails: React.FC<ToolCallDetailsProps> = ({
   const hasParams = Object.keys(params).length > 0;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 w-full">
       {/* Parameters section */}
       {hasParams && (
         <div>
           <div className="text-xs font-medium text-muted-foreground mb-2">
             Parameters
           </div>
-          <div className="bg-muted/50 rounded p-2">
-            <pre className="text-xs overflow-x-auto font-mono max-w-full">
+          <div className="bg-muted/50 rounded p-2 w-full overflow-hidden">
+            <pre className="text-xs overflow-x-auto font-mono">
               {JSON.stringify(params, null, 2)}
             </pre>
           </div>

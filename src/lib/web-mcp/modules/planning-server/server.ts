@@ -16,6 +16,8 @@ interface SimpleTodo {
   name: string;
   status: 'pending' | 'completed';
   summary?: string;
+  priority?: 'low' | 'medium' | 'high';
+  dependsOn?: number[];
 }
 
 export interface Memo {
@@ -89,7 +91,7 @@ interface CheckTodoOutput extends BaseOutput {
   todos: SimpleTodo[];
 }
 
-const MAX_NOTES = 10;
+const MAX_NOTES = 50;
 
 /**
  * Manages the in-memory state for the planning server, including goals,
@@ -126,6 +128,27 @@ class EphemeralState {
     );
   }
 
+  updateGoal(goal: string): MCPResult<CreateGoalOutput> {
+    if (!this.goal) {
+      return createMCPStructuredToolResult(
+        'No active goal to update. Use create_goal first.',
+        {
+          success: false,
+          goal: '',
+        },
+      );
+    }
+    const oldGoal = this.goal;
+    this.goal = goal;
+    return createMCPStructuredToolResult<CreateGoalOutput>(
+      `Goal updated from "${oldGoal}" to "${goal}"`,
+      {
+        goal,
+        success: true,
+      },
+    );
+  }
+
   clearGoal(): MCPResult<ClearGoalOutput> {
     if (this.goal) {
       const clearedGoal = this.goal;
@@ -148,11 +171,17 @@ class EphemeralState {
     });
   }
 
-  addTodo(name: string): MCPResult<AddToDoOutput> {
+  addTodo(
+    name: string,
+    priority?: 'low' | 'medium' | 'high',
+    dependsOn?: number[],
+  ): MCPResult<AddToDoOutput> {
     const todo: SimpleTodo = {
       id: this.nextId++,
       name,
       status: 'pending',
+      priority,
+      dependsOn,
     };
     this.todos.push(todo);
     const goalContext = this.goal
@@ -162,6 +191,43 @@ class EphemeralState {
       `Todo added: ID:${todo.id} "${name}"\n${goalContext}Total todos: ${this.todos.length}`,
       {
         success: true,
+        todos: this.todos,
+      },
+    );
+  }
+
+  updateTodo(
+    id: number,
+    updates: {
+      name?: string;
+      status?: 'pending' | 'completed';
+      priority?: 'low' | 'medium' | 'high';
+      dependsOn?: number[];
+    },
+  ): MCPResult<CheckTodoOutput> {
+    const todo = this.todos.find((t) => t.id === id);
+    if (!todo) {
+      const availableIds = this.todos.map((t) => t.id);
+      return createMCPStructuredToolResult<CheckTodoOutput>(
+        `Todo with ID ${id} not found. Available IDs: ${availableIds.length > 0 ? availableIds.join(', ') : 'none'}`,
+        {
+          success: false,
+          todo: null,
+          todos: this.todos,
+        },
+      );
+    }
+
+    if (updates.name !== undefined) todo.name = updates.name;
+    if (updates.status !== undefined) todo.status = updates.status;
+    if (updates.priority !== undefined) todo.priority = updates.priority;
+    if (updates.dependsOn !== undefined) todo.dependsOn = updates.dependsOn;
+
+    return createMCPStructuredToolResult<CheckTodoOutput>(
+      `Todo ${id} updated: "${todo.name}"`,
+      {
+        success: true,
+        todo,
         todos: this.todos,
       },
     );
@@ -443,12 +509,32 @@ class SessionStateManager {
     return this.getCurrentState().createGoal(goal);
   }
 
+  updateGoal(goal: string): MCPResult<CreateGoalOutput> {
+    return this.getCurrentState().updateGoal(goal);
+  }
+
   clearGoal(): MCPResult<ClearGoalOutput> {
     return this.getCurrentState().clearGoal();
   }
 
-  addTodo(name: string): MCPResult<AddToDoOutput> {
-    return this.getCurrentState().addTodo(name);
+  addTodo(
+    name: string,
+    priority?: 'low' | 'medium' | 'high',
+    dependsOn?: number[],
+  ): MCPResult<AddToDoOutput> {
+    return this.getCurrentState().addTodo(name, priority, dependsOn);
+  }
+
+  updateTodo(
+    id: number,
+    updates: {
+      name?: string;
+      status?: 'pending' | 'completed';
+      priority?: 'low' | 'medium' | 'high';
+      dependsOn?: number[];
+    },
+  ): MCPResult<CheckTodoOutput> {
+    return this.getCurrentState().updateTodo(id, updates);
   }
 
   clearTodos(ids?: number[]): MCPResult<BaseOutput> {
@@ -561,11 +647,32 @@ const planningServer: WebMCPServer = {
       case 'create_goal': {
         return stateManager.createGoal(typedArgs.goal as string);
       }
+      case 'update_goal': {
+        return stateManager.updateGoal(typedArgs.goal as string);
+      }
       case 'clear_goal': {
         return stateManager.clearGoal();
       }
       case 'add_todo': {
-        return stateManager.addTodo(typedArgs.name as string);
+        return stateManager.addTodo(
+          typedArgs.name as string,
+          typedArgs.priority as 'low' | 'medium' | 'high' | undefined,
+          typedArgs.dependsOn as number[] | undefined,
+        );
+      }
+      case 'update_todo': {
+        const id = typedArgs.id as number;
+        if (!Number.isInteger(id) || id < 1) {
+          return createMCPErrorToolResult(
+            `Invalid ID: ${id}. ID must be a positive integer.`,
+          );
+        }
+        return stateManager.updateTodo(id, {
+          name: typedArgs.name as string | undefined,
+          status: typedArgs.status as 'pending' | 'completed' | undefined,
+          priority: typedArgs.priority as 'low' | 'medium' | 'high' | undefined,
+          dependsOn: typedArgs.dependsOn as number[] | undefined,
+        });
       }
       case 'mark_todo': {
         const id = typedArgs.id as number;
@@ -604,6 +711,9 @@ const planningServer: WebMCPServer = {
         return stateManager.processThought(typedArgs);
       }
       case 'get_current_state': {
+        const includeCompleted = typedArgs.include_completed !== false; // Default true
+        const includeMemos = typedArgs.include_memos !== false; // Default true
+
         const currentState: PlanningState = {
           goal: stateManager.getGoal(),
           lastClearedGoal: stateManager.getLastClearedGoal(),
@@ -611,21 +721,31 @@ const planningServer: WebMCPServer = {
           memos: stateManager.getMemos(),
         };
 
-        const todosText = currentState.todos.length
+        const filteredTodos = includeCompleted
           ? currentState.todos
+          : currentState.todos.filter((t) => t.status === 'pending');
+
+        const todosText = filteredTodos.length
+          ? filteredTodos
               .map((t) => {
                 const checkbox = t.status === 'completed' ? '✓' : ' ';
                 const summaryPart = t.summary ? ` - ${t.summary}` : '';
-                return `- ID:${t.id} [${checkbox}] ${t.name}${summaryPart}`;
+                const priorityPart = t.priority ? ` [${t.priority}]` : '';
+                const dependsPart =
+                  t.dependsOn && t.dependsOn.length > 0
+                    ? ` (depends on: ${t.dependsOn.join(', ')})`
+                    : '';
+                return `- ID:${t.id} [${checkbox}] ${t.name}${priorityPart}${dependsPart}${summaryPart}`;
               })
               .join('\n')
           : '- (none)';
 
-        const notesText = currentState.memos.length
-          ? currentState.memos
-              .map((m) => `- [ID: ${m.id}] ${m.content.replace(/\n/g, ' ')}`)
-              .join('\n')
-          : '- (none)';
+        const notesText =
+          includeMemos && currentState.memos.length
+            ? currentState.memos
+                .map((m) => `- [ID: ${m.id}] ${m.content.replace(/\n/g, ' ')}`)
+                .join('\n')
+            : '- (none)';
 
         const lines: string[] = [];
         lines.push('# Planning State', '');
@@ -641,14 +761,11 @@ const planningServer: WebMCPServer = {
             `- ${currentState.lastClearedGoal}`,
           );
         }
-        lines.push(
-          '',
-          '**Todos**',
-          todosText,
-          '',
-          '**Recent Notes**',
-          notesText,
-        );
+        lines.push('', '**Todos**', todosText);
+
+        if (includeMemos) {
+          lines.push('', '**Memos**', notesText);
+        }
 
         const detailedText = lines.join('\n');
 
@@ -757,8 +874,20 @@ Recent Notes: ${
  */
 export interface PlanningServerProxy extends WebMCPServerProxy {
   create_goal: (args: { goal: string }) => Promise<CreateGoalOutput>;
+  update_goal: (args: { goal: string }) => Promise<CreateGoalOutput>;
   clear_goal: () => Promise<ClearGoalOutput>;
-  add_todo: (args: { name: string }) => Promise<AddToDoOutput>;
+  add_todo: (args: {
+    name: string;
+    priority?: 'low' | 'medium' | 'high';
+    dependsOn?: number[];
+  }) => Promise<AddToDoOutput>;
+  update_todo: (args: {
+    id: number;
+    name?: string;
+    status?: 'pending' | 'completed';
+    priority?: 'low' | 'medium' | 'high';
+    dependsOn?: number[];
+  }) => Promise<CheckTodoOutput>;
   mark_todo: (args: {
     id: number;
     completed?: boolean;
@@ -768,7 +897,10 @@ export interface PlanningServerProxy extends WebMCPServerProxy {
   clear_session: () => Promise<BaseOutput>;
   add_memo: (args: { memo: string }) => Promise<BaseOutput & { memos: Memo[] }>;
   clear_memo: (args: { id: number }) => Promise<BaseOutput & { memos: Memo[] }>;
-  get_current_state: () => Promise<PlanningState>;
+  get_current_state: (args?: {
+    include_completed?: boolean;
+    include_memos?: boolean;
+  }) => Promise<PlanningState>;
   sequentialthinking: (args: {
     thought: string;
     nextThoughtNeeded: boolean;

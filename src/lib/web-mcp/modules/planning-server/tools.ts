@@ -22,6 +22,21 @@ export const planningTools: MCPTool[] = [
     },
   },
   {
+    name: 'update_goal',
+    description:
+      'Update the current goal. Use when the goal needs refinement or correction without clearing context.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        goal: {
+          type: 'string',
+          description: 'The new goal text.',
+        },
+      },
+      required: ['goal'],
+    },
+  },
+  {
     name: 'clear_goal',
     description:
       'Clear the current goal. Use when finishing or abandoning the current goal.',
@@ -39,8 +54,53 @@ export const planningTools: MCPTool[] = [
           description:
             'The name or description of the todo item to add (e.g., "Write documentation").',
         },
+        priority: {
+          type: 'string',
+          enum: ['low', 'medium', 'high'],
+          description: 'The priority of the todo item.',
+        },
+        dependsOn: {
+          type: 'array',
+          items: { type: 'number' },
+          description: 'List of todo IDs that this todo depends on.',
+        },
       },
       required: ['name'],
+    },
+  },
+  {
+    name: 'update_todo',
+    description:
+      'Update an existing todo item. Use to refine task details, change priority, or update dependencies.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: {
+          type: 'number',
+          minimum: 1,
+          description: 'The ID of the todo to update.',
+        },
+        name: {
+          type: 'string',
+          description: 'The new name/description of the todo.',
+        },
+        status: {
+          type: 'string',
+          enum: ['pending', 'completed'],
+          description: 'The new status of the todo.',
+        },
+        priority: {
+          type: 'string',
+          enum: ['low', 'medium', 'high'],
+          description: 'The new priority of the todo.',
+        },
+        dependsOn: {
+          type: 'array',
+          items: { type: 'number' },
+          description: 'The new list of dependencies.',
+        },
+      },
+      required: ['id'],
     },
   },
   {
@@ -126,7 +186,21 @@ export const planningTools: MCPTool[] = [
     name: 'get_current_state',
     description:
       'Get current planning state as structured JSON data for UI visualization',
-    inputSchema: { type: 'object', properties: {} },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        include_completed: {
+          type: 'boolean',
+          description:
+            'Whether to include completed todos in the output. Defaults to true.',
+        },
+        include_memos: {
+          type: 'boolean',
+          description:
+            'Whether to include memos in the output. Defaults to true.',
+        },
+      },
+    },
   },
   {
     name: 'sequentialthinking',
