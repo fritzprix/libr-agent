@@ -151,7 +151,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
               if (
                 strippedCommand &&
                 typeof tauriCommands[
-                strippedCommand as keyof typeof tauriCommands
+                  strippedCommand as keyof typeof tauriCommands
                 ] === 'function'
               ) {
                 // Tauri 명령어도 완전한 tool chain으로 처리

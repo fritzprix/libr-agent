@@ -11,16 +11,16 @@ import { ToolCallGroupBubble } from '../ToolCallGroupBubble';
 
 type GroupedMessage =
   | {
-    type: 'single';
-    message: Message;
-  }
+      type: 'single';
+      message: Message;
+    }
   | {
-    type: 'tool_group';
-    message: Message;
-    toolGroup: {
-      calls: ToolCall[];
+      type: 'tool_group';
+      message: Message;
+      toolGroup: {
+        calls: ToolCall[];
+      };
     };
-  };
 
 export function ChatMessages() {
   const { messages, isLoading, error } = useChatState();
