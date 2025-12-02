@@ -234,16 +234,31 @@ impl DocumentParser {
     /// Parse PDF files using pdf-extract (primary) with lopdf fallback
     async fn parse_pdf(file_path: &Path) -> ParseResult {
         // First try pdf-extract for better text extraction
-        match pdf_extract::extract_text(file_path) {
-            Ok(extracted_text) => {
+        // Wrap in catch_unwind to handle potential panics in dependencies
+        let file_path_buf = file_path.to_path_buf();
+        let result = std::panic::catch_unwind(move || pdf_extract::extract_text(&file_path_buf));
+
+        match result {
+            Ok(Ok(extracted_text)) => {
                 let content = extracted_text.trim();
                 if !content.is_empty() {
                     return ParseResult::Text(content.to_string());
                 }
                 // If pdf-extract returns empty content, fall back to lopdf
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 log::warn!("pdf-extract failed: {e}, falling back to lopdf");
+                // Fall back to lopdf
+            }
+            Err(e) => {
+                let err_msg = if let Some(s) = e.downcast_ref::<&str>() {
+                    format!("Panic: {}", s)
+                } else if let Some(s) = e.downcast_ref::<String>() {
+                    format!("Panic: {}", s)
+                } else {
+                    "Unknown panic".to_string()
+                };
+                log::error!("pdf-extract panicked: {}, falling back to lopdf", err_msg);
                 // Fall back to lopdf
             }
         }
@@ -514,6 +529,26 @@ mod tests {
                 assert!(msg.contains("Unsupported MIME type"));
             }
             _ => panic!("Expected error for unsupported MIME type"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_pdf_parsing_graceful_failure() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("test.pdf");
+
+        // Write invalid PDF content
+        fs::write(&file_path, "invalid pdf content").await.unwrap();
+
+        // Should not panic, but return an error or empty text
+        let result = DocumentParser::parse_file(&file_path, "application/pdf").await;
+        match result {
+            ParseResult::Error(_) => {
+                // Expected error for invalid PDF
+            }
+            ParseResult::Text(_) => {
+                // If it somehow extracts text from invalid PDF, that's also fine as long as it doesn't panic
+            }
         }
     }
 }

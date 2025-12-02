@@ -151,7 +151,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
               if (
                 strippedCommand &&
                 typeof tauriCommands[
-                  strippedCommand as keyof typeof tauriCommands
+                strippedCommand as keyof typeof tauriCommands
                 ] === 'function'
               ) {
                 // Tauri 명령어도 완전한 tool chain으로 처리
@@ -389,7 +389,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
   }
 
   return (
-    <div className={`flex flex-col gap-2 ${className}`}>
+    <div className={`flex flex-col gap-2 min-w-0 ${className}`}>
       {finalContent.map((item, index) => {
         const key = `${message?.id}_${item.type}_${index}`;
         switch (item.type) {
@@ -495,7 +495,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
                       </pre>
                     ),
                     table: ({ children, ...props }) => (
-                      <div className="overflow-x-auto w-full my-4 border rounded-lg">
+                      <div className="overflow-x-auto w-full max-w-full my-4 border rounded-lg">
                         <table className="w-full text-sm text-left" {...props}>
                           {children}
                         </table>

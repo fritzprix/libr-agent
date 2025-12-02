@@ -33,7 +33,7 @@ export const ToolCallDetails: React.FC<ToolCallDetailsProps> = ({
             Parameters
           </div>
           <div className="bg-muted/50 rounded p-2">
-            <pre className="text-xs overflow-x-auto font-mono">
+            <pre className="text-xs overflow-x-auto font-mono max-w-full">
               {JSON.stringify(params, null, 2)}
             </pre>
           </div>
