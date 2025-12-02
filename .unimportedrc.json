@@ -91,7 +91,11 @@
     "src/lib/services/mcp-server-service.ts",
     "src/lib/web-mcp/modules/assistant-manager/index.ts",
     "src/lib/web-mcp/modules/assistant-manager/server.ts",
-    "src/lib/web-mcp/modules/assistant-manager/tools.ts"
+    "src/lib/web-mcp/modules/assistant-manager/tools.ts",
+    "src/lib/web-mcp/modules/knowledge-server/db.ts",
+    "src/lib/web-mcp/modules/knowledge-server/index.ts",
+    "src/lib/web-mcp/modules/knowledge-server/server.ts",
+    "src/lib/web-mcp/modules/knowledge-server/tools.ts"
   ],
   "ignoreDependencies": ["handlebars"]
 }

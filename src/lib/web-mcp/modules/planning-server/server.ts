@@ -1,12 +1,13 @@
-import { WebMCPServerProxy } from '@/context/WebMCPContext';
 import {
   createMCPStructuredToolResult,
   createMCPErrorToolResult,
 } from '@/lib/mcp-response-utils';
 import type { MCPResult, WebMCPServer } from '@/lib/mcp-types';
+import type { WebMCPServerProxy } from '@/context/WebMCPContext';
 import type { ServiceContext, ServiceContextOptions } from '@/features/tools';
 import { getLogger } from '@/lib/logger';
 import { planningTools as tools } from './tools.ts';
+import { db, type PlanningGoal, type PlanningTodo } from './db';
 
 const logger = getLogger('PlanningServer');
 
@@ -14,7 +15,7 @@ const logger = getLogger('PlanningServer');
 interface SimpleTodo {
   id: number;
   name: string;
-  status: 'pending' | 'completed';
+  status: 'pending' | 'completed' | 'blocked';
   summary?: string;
   priority?: 'low' | 'medium' | 'high';
   dependsOn?: number[];
@@ -36,6 +37,9 @@ interface ThoughtData {
   branchId?: string;
   needsMoreThoughts?: boolean;
   nextThoughtNeeded: boolean;
+  category?: string;
+  relatedTodoId?: number;
+  nextAction?: string;
 }
 
 /**
@@ -91,32 +95,95 @@ interface CheckTodoOutput extends BaseOutput {
   todos: SimpleTodo[];
 }
 
-const MAX_NOTES = 50;
+const MAX_NOTES = 20;
 
 /**
- * Manages the in-memory state for the planning server, including goals,
- * to-dos, and notes. This state is not persisted and will be lost
- * when the worker is terminated.
+ * Manages the persistent state for the planning server using Dexie.js.
+ * Goals, Todos, and Memos are persisted.
+ * Sequential Thinking state remains ephemeral (in-memory) for now.
  * @internal
  */
-class EphemeralState {
-  private goal: string | null = null;
-  private lastClearedGoal: string | null = null;
-  private todos: SimpleTodo[] = [];
-  private memos: Memo[] = [];
-  private nextId = 1;
-  // Sequential thinking state
+class PersistentState {
+  private sessionId: string;
+  private threadId: string;
+
+  // Sequential thinking state (Ephemeral)
   private thoughtHistory: ThoughtData[] = [];
   private branches: Record<string, ThoughtData[]> = {};
   private disableThoughtLogging = false;
 
-  createGoal(goal: string): MCPResult<CreateGoalOutput> {
-    const previousGoal = this.goal;
-    this.goal = goal;
+  constructor(sessionId: string, threadId: string) {
+    this.sessionId = sessionId;
+    this.threadId = threadId;
+  }
+
+  private async getActiveGoal(): Promise<PlanningGoal | undefined> {
+    return db.goals
+      .where({
+        sessionId: this.sessionId,
+        threadId: this.threadId,
+        isActive: 1,
+      })
+      .last();
+  }
+
+  private async getLastClearedGoalRecord(): Promise<PlanningGoal | undefined> {
+    return db.goals
+      .where({
+        sessionId: this.sessionId,
+        threadId: this.threadId,
+        isActive: 0,
+      })
+      .last();
+  }
+
+  private async getTodosList(): Promise<SimpleTodo[]> {
+    const todos = await db.todos
+      .where({ sessionId: this.sessionId, threadId: this.threadId })
+      .sortBy('order');
+
+    return todos.map((t) => ({
+      id: t.id!,
+      name: t.name,
+      status: t.status,
+      summary: t.summary,
+      priority: t.priority,
+      dependsOn: t.dependsOn,
+    }));
+  }
+
+  private async getMemosList(): Promise<Memo[]> {
+    const memos = await db.memos
+      .where({ sessionId: this.sessionId, threadId: this.threadId })
+      .sortBy('id');
+
+    return memos.map((m) => ({
+      id: m.id!,
+      content: m.content,
+    }));
+  }
+
+  async createGoal(goal: string): Promise<MCPResult<CreateGoalOutput>> {
+    const previousGoal = await this.getActiveGoal();
+
+    // Deactivate previous goal if exists
+    if (previousGoal && previousGoal.id) {
+      await db.goals.update(previousGoal.id, { isActive: 0 });
+    }
+
+    await db.goals.add({
+      sessionId: this.sessionId,
+      threadId: this.threadId,
+      content: goal,
+      isActive: 1,
+      createdAt: Date.now(),
+    });
+
+    const todos = await this.getTodosList();
     const context = [];
     if (previousGoal) {
-      context.push(`Previous goal: "${previousGoal}"`);
-      context.push(`Todos from previous goal: ${this.todos.length}`);
+      context.push(`Previous goal: "${previousGoal.content}"`);
+      context.push(`Todos from previous goal: ${todos.length}`);
     }
     const contextStr = context.length > 0 ? `\n${context.join('\n')}\n` : '';
     return createMCPStructuredToolResult<CreateGoalOutput>(
@@ -128,8 +195,9 @@ class EphemeralState {
     );
   }
 
-  updateGoal(goal: string): MCPResult<CreateGoalOutput> {
-    if (!this.goal) {
+  async updateGoal(goal: string): Promise<MCPResult<CreateGoalOutput>> {
+    const activeGoal = await this.getActiveGoal();
+    if (!activeGoal || !activeGoal.id) {
       return createMCPStructuredToolResult(
         'No active goal to update. Use create_goal first.',
         {
@@ -138,10 +206,11 @@ class EphemeralState {
         },
       );
     }
-    const oldGoal = this.goal;
-    this.goal = goal;
+    const oldGoalContent = activeGoal.content;
+    await db.goals.update(activeGoal.id, { content: goal });
+
     return createMCPStructuredToolResult<CreateGoalOutput>(
-      `Goal updated from "${oldGoal}" to "${goal}"`,
+      `Goal updated from "${oldGoalContent}" to "${goal}"`,
       {
         goal,
         success: true,
@@ -149,18 +218,20 @@ class EphemeralState {
     );
   }
 
-  clearGoal(): MCPResult<ClearGoalOutput> {
-    if (this.goal) {
-      const clearedGoal = this.goal;
-      this.lastClearedGoal = this.goal;
-      this.goal = null;
-      const remainingTodos = this.todos.length;
+  async clearGoal(): Promise<MCPResult<ClearGoalOutput>> {
+    const activeGoal = await this.getActiveGoal();
+    if (activeGoal && activeGoal.id) {
+      const clearedGoalContent = activeGoal.content;
+      await db.goals.update(activeGoal.id, { isActive: 0 });
+
+      const todos = await this.getTodosList();
+      const remainingTodos = todos.length;
       const todoSummary =
         remainingTodos > 0
           ? `Remaining todos: ${remainingTodos}`
           : 'All todos have been completed or cleared.';
       return createMCPStructuredToolResult<ClearGoalOutput>(
-        `Goal cleared: "${clearedGoal}"\n${todoSummary}\nSession is now ready for a new goal.`,
+        `Goal cleared: "${clearedGoalContent}"\n${todoSummary}\nSession is now ready for a new goal.`,
         {
           success: true,
         },
@@ -171,147 +242,217 @@ class EphemeralState {
     });
   }
 
-  addTodo(
+  async addTodo(
     name: string,
     priority?: 'low' | 'medium' | 'high',
     dependsOn?: number[],
-  ): MCPResult<AddToDoOutput> {
-    const todo: SimpleTodo = {
-      id: this.nextId++,
+  ): Promise<MCPResult<AddToDoOutput>> {
+    const todos = await this.getTodosList();
+    const order = todos.length;
+
+    const id = await db.todos.add({
+      sessionId: this.sessionId,
+      threadId: this.threadId,
       name,
       status: 'pending',
       priority,
       dependsOn,
-    };
-    this.todos.push(todo);
-    const goalContext = this.goal
-      ? `Goal: "${this.goal}"\n`
+      order,
+      createdAt: Date.now(),
+    });
+
+    const newTodos = await this.getTodosList();
+    const activeGoal = await this.getActiveGoal();
+    const goalContext = activeGoal
+      ? `Goal: "${activeGoal.content}"\n`
       : 'No active goal.\n';
+
     return createMCPStructuredToolResult<AddToDoOutput>(
-      `Todo added: ID:${todo.id} "${name}"\n${goalContext}Total todos: ${this.todos.length}`,
+      `Todo added: ID:${id} "${name}"\n${goalContext}Total todos: ${newTodos.length}`,
       {
         success: true,
-        todos: this.todos,
+        todos: newTodos,
       },
     );
   }
 
-  updateTodo(
+  async updateTodo(
     id: number,
     updates: {
       name?: string;
-      status?: 'pending' | 'completed';
+      status?: 'pending' | 'completed' | 'blocked';
       priority?: 'low' | 'medium' | 'high';
       dependsOn?: number[];
     },
-  ): MCPResult<CheckTodoOutput> {
-    const todo = this.todos.find((t) => t.id === id);
-    if (!todo) {
-      const availableIds = this.todos.map((t) => t.id);
+  ): Promise<MCPResult<CheckTodoOutput>> {
+    const todo = await db.todos.get(id);
+    // Ensure todo belongs to this session
+    if (
+      !todo ||
+      todo.sessionId !== this.sessionId ||
+      todo.threadId !== this.threadId
+    ) {
+      const todos = await this.getTodosList();
+      const availableIds = todos.map((t) => t.id);
       return createMCPStructuredToolResult<CheckTodoOutput>(
         `Todo with ID ${id} not found. Available IDs: ${availableIds.length > 0 ? availableIds.join(', ') : 'none'}`,
         {
           success: false,
           todo: null,
-          todos: this.todos,
+          todos,
         },
       );
     }
 
-    if (updates.name !== undefined) todo.name = updates.name;
-    if (updates.status !== undefined) todo.status = updates.status;
-    if (updates.priority !== undefined) todo.priority = updates.priority;
-    if (updates.dependsOn !== undefined) todo.dependsOn = updates.dependsOn;
+    await db.todos.update(id, updates);
+    const updatedTodoRecord = await db.todos.get(id);
+    const todos = await this.getTodosList();
+
+    const simpleTodo: SimpleTodo = {
+      id: updatedTodoRecord!.id!,
+      name: updatedTodoRecord!.name,
+      status: updatedTodoRecord!.status,
+      summary: updatedTodoRecord!.summary,
+      priority: updatedTodoRecord!.priority,
+      dependsOn: updatedTodoRecord!.dependsOn,
+    };
 
     return createMCPStructuredToolResult<CheckTodoOutput>(
-      `Todo ${id} updated: "${todo.name}"`,
+      `Todo ${id} updated: "${simpleTodo.name}"`,
       {
         success: true,
-        todo,
-        todos: this.todos,
+        todo: simpleTodo,
+        todos,
       },
     );
   }
 
-  checkTodo(
+  async checkTodo(
     id: number,
     check: boolean = true,
     summary?: string,
-  ): MCPResult<CheckTodoOutput> {
-    const todo = this.todos.find((t) => t.id === id);
-    if (!todo) {
-      const availableIds = this.todos.map((t) => t.id);
+  ): Promise<MCPResult<CheckTodoOutput>> {
+    const todo = await db.todos.get(id);
+    if (
+      !todo ||
+      todo.sessionId !== this.sessionId ||
+      todo.threadId !== this.threadId
+    ) {
+      const todos = await this.getTodosList();
+      const availableIds = todos.map((t) => t.id);
       return createMCPStructuredToolResult<CheckTodoOutput>(
         `Todo with ID ${id} not found. Available IDs: ${availableIds.length > 0 ? availableIds.join(', ') : 'none'}`,
         {
           success: false,
           todo: null,
-          todos: this.todos,
+          todos,
         },
       );
     }
 
-    todo.status = check ? 'completed' : 'pending';
+    const updates: Partial<PlanningTodo> = {
+      status: check ? 'completed' : 'pending',
+    };
     if (summary !== undefined) {
-      todo.summary = summary || undefined;
+      updates.summary = summary || undefined;
     }
 
-    const summaryText = todo.summary ? ` (Summary: "${todo.summary}")` : '';
+    await db.todos.update(id, updates);
+    const updatedTodoRecord = await db.todos.get(id);
+    const todos = await this.getTodosList();
+
+    const simpleTodo: SimpleTodo = {
+      id: updatedTodoRecord!.id!,
+      name: updatedTodoRecord!.name,
+      status: updatedTodoRecord!.status,
+      summary: updatedTodoRecord!.summary,
+      priority: updatedTodoRecord!.priority,
+      dependsOn: updatedTodoRecord!.dependsOn,
+    };
+
+    const summaryText = simpleTodo.summary
+      ? ` (Summary: "${simpleTodo.summary}")`
+      : '';
     return createMCPStructuredToolResult<CheckTodoOutput>(
-      `Todo ${check ? 'checked' : 'unchecked'}: "${todo.name}"${summaryText}`,
+      `Todo ${check ? 'checked' : 'unchecked'}: "${simpleTodo.name}"${summaryText}`,
       {
         success: true,
-        todo,
-        todos: this.todos,
+        todo: simpleTodo,
+        todos,
       },
     );
   }
 
-  clearTodos(ids?: number[]): MCPResult<BaseOutput> {
+  async clearTodos(ids?: number[]): Promise<MCPResult<BaseOutput>> {
+    const todos = await this.getTodosList();
+
     if (!ids || ids.length === 0) {
-      const clearedCount = this.todos.length;
-      this.todos = [];
+      const clearedCount = todos.length;
+      await db.todos
+        .where({ sessionId: this.sessionId, threadId: this.threadId })
+        .delete();
+
+      const activeGoal = await this.getActiveGoal();
       const msg =
         clearedCount > 0
           ? `All ${clearedCount} todo(s) cleared`
           : 'No todos to clear.';
       return createMCPStructuredToolResult<BaseOutput>(
-        `${msg}\nSession todos reset. Current goal: ${this.goal || '(none)'}`,
+        `${msg}\nSession todos reset. Current goal: ${activeGoal ? activeGoal.content : '(none)'}`,
         {
           success: true,
         },
       );
     }
 
-    const initialCount = this.todos.length;
-    const clearedTodos = this.todos.filter((todo) => ids.includes(todo.id));
-    this.todos = this.todos.filter((todo) => !ids.includes(todo.id));
-    const removedCount = initialCount - this.todos.length;
+    const initialCount = todos.length;
+    // Verify IDs belong to session
+    const validIds = todos.map((t) => t.id);
+    const idsToDelete = ids.filter((id) => validIds.includes(id));
 
-    if (removedCount === 0) {
+    if (idsToDelete.length === 0) {
       return createMCPStructuredToolResult<BaseOutput>(
-        `No todos found with the specified IDs: ${ids.join(', ')}\nAvailable IDs: ${initialCount > 0 ? this.todos.map((t) => t.id).join(', ') : '(none)'}`,
+        `No todos found with the specified IDs: ${ids.join(', ')}\nAvailable IDs: ${initialCount > 0 ? validIds.join(', ') : '(none)'}`,
         { success: false },
       );
     }
 
-    const clearedNames = clearedTodos.map((t) => t.name).join(', ');
+    const todosToDelete = todos.filter((t) => idsToDelete.includes(t.id));
+    await db.todos.bulkDelete(idsToDelete);
+
+    const remainingTodos = await this.getTodosList();
+    const removedCount = idsToDelete.length;
+    const clearedNames = todosToDelete.map((t) => t.name).join(', ');
+
     return createMCPStructuredToolResult<BaseOutput>(
-      `Cleared ${removedCount} todo(s): ${clearedNames}\nRemaining todos: ${this.todos.length}`,
+      `Cleared ${removedCount} todo(s): ${clearedNames}\nRemaining todos: ${remainingTodos.length}`,
       { success: true },
     );
   }
 
-  clear(): MCPResult<BaseOutput> {
-    const clearedGoal = this.goal;
-    const clearedTodos = this.todos.length;
-    const clearedMemos = this.memos.length;
+  async clear(): Promise<MCPResult<BaseOutput>> {
+    const activeGoal = await this.getActiveGoal();
+    const todos = await this.getTodosList();
+    const memos = await this.getMemosList();
 
-    this.goal = null;
-    this.lastClearedGoal = null;
-    this.todos = [];
-    this.memos = [];
-    this.nextId = 1;
+    const clearedGoal = activeGoal ? activeGoal.content : null;
+    const clearedTodos = todos.length;
+    const clearedMemos = memos.length;
+
+    // Delete all data for this session/thread
+    await db.goals
+      .where({ sessionId: this.sessionId, threadId: this.threadId })
+      .delete();
+    await db.todos
+      .where({ sessionId: this.sessionId, threadId: this.threadId })
+      .delete();
+    await db.memos
+      .where({ sessionId: this.sessionId, threadId: this.threadId })
+      .delete();
+
+    // Reset sequential thinking
+    this.thoughtHistory = [];
+    this.branches = {};
 
     const summaryText = `Session state cleared:\n- Goal: ${clearedGoal ? `"${clearedGoal}"` : '(none)'}\n- Todos cleared: ${clearedTodos}\n- Memos cleared: ${clearedMemos}\n\nSession is now completely reset.`;
     return createMCPStructuredToolResult(summaryText, {
@@ -319,55 +460,81 @@ class EphemeralState {
     });
   }
 
-  getGoal(): string | null {
-    return this.goal;
+  async getGoal(): Promise<string | null> {
+    const goal = await this.getActiveGoal();
+    return goal ? goal.content : null;
   }
 
-  getTodos(): SimpleTodo[] {
-    return this.todos;
+  async getTodos(): Promise<SimpleTodo[]> {
+    return this.getTodosList();
   }
 
-  addMemo(memo: string): MCPResult<BaseOutput & { memos: Memo[] }> {
-    const nMeme = {
-      id: this.memos.length > 0 ? this.memos[this.memos.length - 1].id + 1 : 0,
+  async addMemo(
+    memo: string,
+  ): Promise<MCPResult<BaseOutput & { memos: Memo[] }>> {
+    await db.memos.add({
+      sessionId: this.sessionId,
+      threadId: this.threadId,
       content: memo,
-    };
-    this.memos.push(nMeme);
-    if (this.memos.length > MAX_NOTES) {
-      this.memos.shift();
+      createdAt: Date.now(),
+    });
+
+    // Enforce MAX_NOTES
+    const memos = await this.getMemosList();
+    if (memos.length > MAX_NOTES) {
+      // Remove oldest
+      const oldest = memos[0]; // Sorted by id (auto-inc)
+      await db.memos.delete(oldest.id);
     }
+
+    const updatedMemos = await this.getMemosList();
     const capacityWarning =
-      this.memos.length === MAX_NOTES
+      updatedMemos.length === MAX_NOTES
         ? `⚠️ At capacity (${MAX_NOTES}/${MAX_NOTES}) - oldest memos will be removed`
-        : `Memos: ${this.memos.length}/${MAX_NOTES}`;
+        : `Memos: ${updatedMemos.length}/${MAX_NOTES}`;
+
+    // Get the ID of the newly added memo (last one)
+    const newMemoId = updatedMemos[updatedMemos.length - 1].id;
+
     return createMCPStructuredToolResult<BaseOutput & { memos: Memo[] }>(
-      `Memo ID:${nMeme.id} added\n${capacityWarning}`,
-      { success: true, memos: [...this.memos] },
+      `Memo ID:${newMemoId} added\n${capacityWarning}`,
+      { success: true, memos: updatedMemos },
     );
   }
 
-  clearMemo(id: number): MCPResult<BaseOutput & { memos: Memo[] }> {
-    const index = this.memos.findIndex((memo) => memo.id === id);
-    if (index === -1) {
-      const validIds = this.memos.map((memo) => memo.id);
+  async clearMemo(
+    id: number,
+  ): Promise<MCPResult<BaseOutput & { memos: Memo[] }>> {
+    const memo = await db.memos.get(id);
+    if (
+      !memo ||
+      memo.sessionId !== this.sessionId ||
+      memo.threadId !== this.threadId
+    ) {
+      const memos = await this.getMemosList();
+      const validIds = memos.map((m) => m.id);
       return createMCPStructuredToolResult<BaseOutput & { memos: Memo[] }>(
         `Memo ID:${id} not found.\nValid IDs: ${validIds.length > 0 ? validIds.join(', ') : '(no memos)'}`,
-        { success: false, memos: [...this.memos] },
+        { success: false, memos },
       );
     }
-    const removed = this.memos.splice(index, 1)[0];
+
+    await db.memos.delete(id);
+    const memos = await this.getMemosList();
+
     return createMCPStructuredToolResult<BaseOutput & { memos: Memo[] }>(
-      `Memo ID:${id} cleared: "${removed.content}"\nRemaining memos: ${this.memos.length}`,
-      { success: true, memos: [...this.memos] },
+      `Memo ID:${id} cleared: "${memo.content}"\nRemaining memos: ${memos.length}`,
+      { success: true, memos },
     );
   }
 
-  getMemos(): Memo[] {
-    return [...this.memos];
+  async getMemos(): Promise<Memo[]> {
+    return this.getMemosList();
   }
 
-  getLastClearedGoal(): string | null {
-    return this.lastClearedGoal;
+  async getLastClearedGoal(): Promise<string | null> {
+    const goal = await this.getLastClearedGoalRecord();
+    return goal ? goal.content : null;
   }
 
   processThought(input: unknown): MCPResult<Record<string, unknown>> {
@@ -411,6 +578,9 @@ class EphemeralState {
         branchFromThought: data.branchFromThought as number | undefined,
         branchId: data.branchId as string | undefined,
         needsMoreThoughts: data.needsMoreThoughts as boolean | undefined,
+        category: data.category as string | undefined,
+        relatedTodoId: data.relatedTodoId as number | undefined,
+        nextAction: data.nextAction as string | undefined,
       };
 
       if (thought.thoughtNumber > thought.totalThoughts) {
@@ -451,12 +621,12 @@ class EphemeralState {
 }
 
 /**
- * Session-based state manager that maintains separate EphemeralState instances
+ * Session-based state manager that maintains separate PersistentState instances
  * for each (sessionId, threadId) pair.
  * @internal
  */
 class SessionStateManager {
-  private sessions = new Map<string, Map<string, EphemeralState>>();
+  private sessions = new Map<string, Map<string, PersistentState>>();
   private currentSessionId: string | null = null;
   private currentThreadId: string | null = null;
 
@@ -464,10 +634,11 @@ class SessionStateManager {
     const effectiveThreadId = threadId || sessionId;
 
     if (this.currentSessionId && this.currentSessionId !== sessionId) {
-      const oldThreadMap = this.sessions.get(this.currentSessionId);
-      if (oldThreadMap) {
-        oldThreadMap.clear();
-      }
+      // In persistent mode, we don't strictly need to clear memory,
+      // but we can to keep memory usage low.
+      // However, if we want to keep sequential thinking history for the session,
+      // we should keep it until explicitly cleared or maybe LRU.
+      // For now, we'll keep the same behavior: clear old session from memory.
       this.sessions.delete(this.currentSessionId);
       console.info(
         `[PlanningServer] Session cleanup: removed all threads from session "${this.currentSessionId}"`,
@@ -486,18 +657,18 @@ class SessionStateManager {
     return this.currentThreadId;
   }
 
-  private getState(sessionId: string, threadId: string): EphemeralState {
+  private getState(sessionId: string, threadId: string): PersistentState {
     if (!this.sessions.has(sessionId)) {
       this.sessions.set(sessionId, new Map());
     }
     const threadMap = this.sessions.get(sessionId)!;
     if (!threadMap.has(threadId)) {
-      threadMap.set(threadId, new EphemeralState());
+      threadMap.set(threadId, new PersistentState(sessionId, threadId));
     }
     return threadMap.get(threadId)!;
   }
 
-  private getCurrentState(): EphemeralState {
+  private getCurrentState(): PersistentState {
     if (!this.currentSessionId) {
       this.setSession('default');
     }
@@ -505,67 +676,71 @@ class SessionStateManager {
     return this.getState(this.currentSessionId!, effectiveThreadId);
   }
 
-  createGoal(goal: string): MCPResult<CreateGoalOutput> {
+  async createGoal(goal: string): Promise<MCPResult<CreateGoalOutput>> {
     return this.getCurrentState().createGoal(goal);
   }
 
-  updateGoal(goal: string): MCPResult<CreateGoalOutput> {
+  async updateGoal(goal: string): Promise<MCPResult<CreateGoalOutput>> {
     return this.getCurrentState().updateGoal(goal);
   }
 
-  clearGoal(): MCPResult<ClearGoalOutput> {
+  async clearGoal(): Promise<MCPResult<ClearGoalOutput>> {
     return this.getCurrentState().clearGoal();
   }
 
-  addTodo(
+  async addTodo(
     name: string,
     priority?: 'low' | 'medium' | 'high',
     dependsOn?: number[],
-  ): MCPResult<AddToDoOutput> {
+  ): Promise<MCPResult<AddToDoOutput>> {
     return this.getCurrentState().addTodo(name, priority, dependsOn);
   }
 
-  updateTodo(
+  async updateTodo(
     id: number,
     updates: {
       name?: string;
-      status?: 'pending' | 'completed';
+      status?: 'pending' | 'completed' | 'blocked';
       priority?: 'low' | 'medium' | 'high';
       dependsOn?: number[];
     },
-  ): MCPResult<CheckTodoOutput> {
+  ): Promise<MCPResult<CheckTodoOutput>> {
     return this.getCurrentState().updateTodo(id, updates);
   }
 
-  clearTodos(ids?: number[]): MCPResult<BaseOutput> {
+  async clearTodos(ids?: number[]): Promise<MCPResult<BaseOutput>> {
     return this.getCurrentState().clearTodos(ids);
   }
 
-  clear(): MCPResult<BaseOutput> {
+  async clear(): Promise<MCPResult<BaseOutput>> {
     return this.getCurrentState().clear();
   }
 
-  getGoal(): string | null {
+  async getGoal(): Promise<string | null> {
     return this.getCurrentState().getGoal();
   }
 
-  getTodos(): SimpleTodo[] {
+  async getTodos(): Promise<SimpleTodo[]> {
     return this.getCurrentState().getTodos();
   }
 
-  addMemo(memo: string): MCPResult<BaseOutput & { memos: Memo[] }> {
+  async addMemo(
+    memo: string,
+  ): Promise<MCPResult<BaseOutput & { memos: Memo[] }>> {
     return this.getCurrentState().addMemo(memo);
   }
 
-  removeMemo(id: number): MCPResult<BaseOutput & { memos: Memo[] }> {
+  async removeMemo(
+    id: number,
+  ): Promise<MCPResult<BaseOutput & { memos: Memo[] }>> {
     return this.getCurrentState().clearMemo(id);
   }
 
-  getMemos(): Memo[] {
+  async getMemos(): Promise<Memo[]> {
     return this.getCurrentState().getMemos();
   }
 
-  getLastClearedGoal(): string | null {
+  async getLastClearedGoal(): Promise<string | null> {
     return this.getCurrentState().getLastClearedGoal();
   }
 
@@ -573,16 +748,18 @@ class SessionStateManager {
     return this.getCurrentState().processThought(input);
   }
 
-  checkTodo(
+  async checkTodo(
     id: number,
     check: boolean = true,
     summary?: string,
-  ): MCPResult<CheckTodoOutput> {
+  ): Promise<MCPResult<CheckTodoOutput>> {
     return this.getCurrentState().checkTodo(id, check, summary);
   }
 
   clearAllSessions(): void {
     for (const [sessionId, threadMap] of this.sessions.entries()) {
+      // In persistent mode, this only clears in-memory instances.
+      // It does NOT clear the DB.
       threadMap.clear();
       this.sessions.delete(sessionId);
     }
@@ -590,24 +767,19 @@ class SessionStateManager {
     this.currentThreadId = null;
   }
 
-  getStateForSession(
+  async getStateForSession(
     sessionId: string,
     threadId?: string,
-  ): PlanningState | null {
+  ): Promise<PlanningState | null> {
     const effectiveThreadId = threadId || sessionId;
-    const threadMap = this.sessions.get(sessionId);
-    if (!threadMap) {
-      return null;
-    }
-    const state = threadMap.get(effectiveThreadId);
-    if (!state) {
-      return null;
-    }
+    // We can create a temporary state to fetch data even if not in memory
+    const state = new PersistentState(sessionId, effectiveThreadId);
+
     return {
-      goal: state.getGoal(),
-      lastClearedGoal: state.getLastClearedGoal(),
-      todos: state.getTodos(),
-      memos: state.getMemos(),
+      goal: await state.getGoal(),
+      lastClearedGoal: await state.getLastClearedGoal(),
+      todos: await state.getTodos(),
+      memos: await state.getMemos(),
     };
   }
 }
@@ -645,16 +817,16 @@ const planningServer: WebMCPServer = {
     }
     switch (name) {
       case 'create_goal': {
-        return stateManager.createGoal(typedArgs.goal as string);
+        return await stateManager.createGoal(typedArgs.goal as string);
       }
       case 'update_goal': {
-        return stateManager.updateGoal(typedArgs.goal as string);
+        return await stateManager.updateGoal(typedArgs.goal as string);
       }
       case 'clear_goal': {
-        return stateManager.clearGoal();
+        return await stateManager.clearGoal();
       }
       case 'add_todo': {
-        return stateManager.addTodo(
+        return await stateManager.addTodo(
           typedArgs.name as string,
           typedArgs.priority as 'low' | 'medium' | 'high' | undefined,
           typedArgs.dependsOn as number[] | undefined,
@@ -667,9 +839,13 @@ const planningServer: WebMCPServer = {
             `Invalid ID: ${id}. ID must be a positive integer.`,
           );
         }
-        return stateManager.updateTodo(id, {
+        return await stateManager.updateTodo(id, {
           name: typedArgs.name as string | undefined,
-          status: typedArgs.status as 'pending' | 'completed' | undefined,
+          status: typedArgs.status as
+            | 'pending'
+            | 'completed'
+            | 'blocked'
+            | undefined,
           priority: typedArgs.priority as 'low' | 'medium' | 'high' | undefined,
           dependsOn: typedArgs.dependsOn as number[] | undefined,
         });
@@ -687,16 +863,16 @@ const planningServer: WebMCPServer = {
             `Invalid ID: ${id}. ID must be a positive integer.`,
           );
         }
-        return stateManager.checkTodo(id, completed, summary);
+        return await stateManager.checkTodo(id, completed, summary);
       }
       case 'clear_todos': {
         const ids = typedArgs.ids as number[] | undefined;
-        return stateManager.clearTodos(ids);
+        return await stateManager.clearTodos(ids);
       }
       case 'clear_session':
-        return stateManager.clear();
+        return await stateManager.clear();
       case 'add_memo': {
-        return stateManager.addMemo(typedArgs.memo as string);
+        return await stateManager.addMemo(typedArgs.memo as string);
       }
       case 'clear_memo': {
         const id = typedArgs.id as number;
@@ -705,7 +881,7 @@ const planningServer: WebMCPServer = {
             `Invalid ID: ${id}. ID must be a non-negative integer.`,
           );
         }
-        return stateManager.removeMemo(id);
+        return await stateManager.removeMemo(id);
       }
       case 'sequentialthinking': {
         return stateManager.processThought(typedArgs);
@@ -713,29 +889,51 @@ const planningServer: WebMCPServer = {
       case 'get_current_state': {
         const includeCompleted = typedArgs.include_completed !== false; // Default true
         const includeMemos = typedArgs.include_memos !== false; // Default true
+        const offset =
+          typeof typedArgs.offset === 'number' ? typedArgs.offset : 0;
+        const limit =
+          typeof typedArgs.limit === 'number' ? typedArgs.limit : 50;
 
         const currentState: PlanningState = {
-          goal: stateManager.getGoal(),
-          lastClearedGoal: stateManager.getLastClearedGoal(),
-          todos: stateManager.getTodos(),
-          memos: stateManager.getMemos(),
+          goal: await stateManager.getGoal(),
+          lastClearedGoal: await stateManager.getLastClearedGoal(),
+          todos: await stateManager.getTodos(),
+          memos: await stateManager.getMemos(),
         };
 
         const filteredTodos = includeCompleted
           ? currentState.todos
           : currentState.todos.filter((t) => t.status === 'pending');
 
-        const todosText = filteredTodos.length
-          ? filteredTodos
+        // Calculate metrics
+        const totalTodos = currentState.todos.length;
+        const pendingCount = currentState.todos.filter(
+          (t) => t.status === 'pending',
+        ).length;
+        const completedCount = currentState.todos.filter(
+          (t) => t.status === 'completed',
+        ).length;
+        const blockedCount = currentState.todos.filter(
+          (t) => t.status === 'blocked',
+        ).length;
+
+        // Apply pagination to todos
+        const paginatedTodos = filteredTodos.slice(offset, offset + limit);
+
+        const todosText = paginatedTodos.length
+          ? paginatedTodos
               .map((t) => {
-                const checkbox = t.status === 'completed' ? '✓' : ' ';
+                let checkbox = '[ ]';
+                if (t.status === 'completed') checkbox = '[x]';
+                else if (t.status === 'blocked') checkbox = '[!]';
+
                 const summaryPart = t.summary ? ` - ${t.summary}` : '';
                 const priorityPart = t.priority ? ` [${t.priority}]` : '';
                 const dependsPart =
                   t.dependsOn && t.dependsOn.length > 0
                     ? ` (depends on: ${t.dependsOn.join(', ')})`
                     : '';
-                return `- ID:${t.id} [${checkbox}] ${t.name}${priorityPart}${dependsPart}${summaryPart}`;
+                return `- ID:${t.id} ${checkbox} ${t.name}${priorityPart}${dependsPart}${summaryPart}`;
               })
               .join('\n')
           : '- (none)';
@@ -750,8 +948,11 @@ const planningServer: WebMCPServer = {
         const lines: string[] = [];
         lines.push('# Planning State', '');
         lines.push('**Summary**');
-        lines.push(`- Todos: ${currentState.todos.length}`);
-        lines.push(`- Memos: ${currentState.memos.length}`, '');
+        lines.push(`- Total Todos: ${totalTodos}`);
+        lines.push(`  - Pending: ${pendingCount}`);
+        lines.push(`  - Completed: ${completedCount}`);
+        if (blockedCount > 0) lines.push(`  - Blocked: ${blockedCount}`);
+        lines.push(`- Scratchpad Items: ${currentState.memos.length}`, '');
         lines.push('**Goal**');
         lines.push(currentState.goal ? `- ${currentState.goal}` : '- (none)');
         if (currentState.lastClearedGoal) {
@@ -761,157 +962,127 @@ const planningServer: WebMCPServer = {
             `- ${currentState.lastClearedGoal}`,
           );
         }
-        lines.push('', '**Todos**', todosText);
+        lines.push('', '**Todos**');
+        if (offset > 0 || filteredTodos.length > limit) {
+          lines.push(
+            `(Showing ${offset + 1}-${offset + paginatedTodos.length} of ${filteredTodos.length})`,
+          );
+        }
+        lines.push(todosText);
 
         if (includeMemos) {
-          lines.push('', '**Memos**', notesText);
+          lines.push('', '**Scratchpad**');
+          lines.push(notesText);
         }
 
-        const detailedText = lines.join('\n');
-
-        return createMCPStructuredToolResult<PlanningState>(
-          detailedText,
-          currentState,
-        );
-      }
-      default: {
-        const errorMessage = `Unknown tool: ${name}`;
-        console.error(`[PlanningServer] ${errorMessage}`);
-        return createMCPErrorToolResult(errorMessage, {
-          toolName: name,
-          availableTools: tools.map((t) => t.name),
-        });
+        return createMCPStructuredToolResult(lines.join('\n'), currentState);
       }
     }
+
+    return createMCPErrorToolResult(`Unknown tool: ${name}`);
   },
+
   async getServiceContext(
     options?: ServiceContextOptions,
   ): Promise<ServiceContext<PlanningState>> {
-    let planningState: PlanningState | null = null;
+    const sessionId = options?.sessionId || 'default';
+    const threadId = options?.threadId || sessionId;
 
-    if (options?.sessionId) {
-      planningState = stateManager.getStateForSession(
-        options.sessionId,
-        options.threadId,
-      );
-      if (!planningState) {
-        logger.debug('getServiceContext: requested session/thread not found', {
-          sessionId: options.sessionId,
-          threadId: options.threadId,
-        });
-        return {
-          contextPrompt: '# No active goal',
-          structuredState: {
-            goal: null,
-            lastClearedGoal: null,
-            todos: [],
-            memos: [],
-          },
-        };
-      }
-    } else {
-      const goal = stateManager.getGoal();
-      const todos = stateManager.getTodos();
-      const memos = stateManager.getMemos();
-      planningState = {
-        goal,
-        lastClearedGoal: stateManager.getLastClearedGoal(),
-        todos,
-        memos,
+    // Ensure session is set
+    stateManager.setSession(sessionId, threadId);
+
+    // We can use getStateForSession to get the state even if we just switched
+    const state = await stateManager.getStateForSession(sessionId, threadId);
+
+    if (!state) {
+      // Should not happen as setSession creates it
+      return {
+        contextPrompt: 'Error: Could not retrieve planning state.',
+        structuredState: {
+          goal: null,
+          lastClearedGoal: null,
+          todos: [],
+          memos: [],
+        },
       };
     }
 
-    const { goal, todos, memos } = planningState;
+    const { goal, todos, memos } = state;
+    const pendingTodos = todos.filter((t) => t.status === 'pending');
 
-    const todosPrompt =
-      todos.length > 0
-        ? todos
-            .map((t) => {
-              const status = t.status === 'completed' ? '[✓]' : '[ ]';
-              const summaryPart = t.summary ? ` (${t.summary})` : '';
-              return `ID:${t.id} ${status} ${t.name}${summaryPart}`;
-            })
-            .join(', ')
-        : '(none)';
-
-    const contextPrompt = goal
-      ? `# Current Goal: ${goal}
-Todos: ${todosPrompt}
-Recent Notes: ${
-          memos.length > 0
-            ? memos
-                .slice(-2)
-                .map((m) => `(ID: ${m.id}: ${m.content})`)
-                .join('; ')
-            : '(none)'
-        }`
-      : '# No active goal';
+    const contextParts = [];
+    if (goal) {
+      contextParts.push(`Current Goal: "${goal}"`);
+    }
+    if (pendingTodos.length > 0) {
+      contextParts.push(`Pending Todos (${pendingTodos.length}):`);
+      pendingTodos.slice(0, 5).forEach((t) => {
+        contextParts.push(`- [ ] ${t.name}`);
+      });
+      if (pendingTodos.length > 5) {
+        contextParts.push(`...and ${pendingTodos.length - 5} more`);
+      }
+    }
+    if (memos.length > 0) {
+      contextParts.push(`Scratchpad (${memos.length}):`);
+      memos.slice(0, 3).forEach((m) => {
+        contextParts.push(`- ${m.content}`);
+      });
+    }
 
     return {
-      contextPrompt,
-      structuredState: {
-        goal,
-        lastClearedGoal: planningState.lastClearedGoal,
-        todos,
-        memos,
-      },
+      contextPrompt:
+        contextParts.length > 0
+          ? contextParts.join('\n')
+          : 'No active plan or todos.',
+      structuredState: state,
     };
   },
-  async switchContext(context: ServiceContextOptions): Promise<void> {
-    const sessionId = context.sessionId;
-    const threadId = context.threadId;
-    if (sessionId) {
-      stateManager.setSession(sessionId, threadId);
-      console.info(
-        `[PlanningServer] switchContext -> session: ${sessionId}, thread: ${threadId || sessionId} (previous session cleaned up)`,
-      );
-    }
+
+  async switchContext(options: ServiceContextOptions): Promise<void> {
+    const sessionId = options.sessionId || 'default';
+    const threadId = options.threadId || sessionId;
+    stateManager.setSession(sessionId, threadId);
+    logger.info(
+      `Switched planning context to session: ${sessionId}, thread: ${threadId}`,
+    );
   },
 };
 
-/**
- * Extends the `WebMCPServerProxy` with typed methods for the planning server's tools.
- */
 export interface PlanningServerProxy extends WebMCPServerProxy {
-  create_goal: (args: { goal: string }) => Promise<CreateGoalOutput>;
-  update_goal: (args: { goal: string }) => Promise<CreateGoalOutput>;
-  clear_goal: () => Promise<ClearGoalOutput>;
-  add_todo: (args: {
+  create_goal(args: { goal: string }): Promise<MCPResult<CreateGoalOutput>>;
+  update_goal(args: { goal: string }): Promise<MCPResult<CreateGoalOutput>>;
+  clear_goal(): Promise<MCPResult<ClearGoalOutput>>;
+  add_todo(args: {
     name: string;
     priority?: 'low' | 'medium' | 'high';
     dependsOn?: number[];
-  }) => Promise<AddToDoOutput>;
-  update_todo: (args: {
+  }): Promise<MCPResult<AddToDoOutput>>;
+  update_todo(args: {
     id: number;
     name?: string;
-    status?: 'pending' | 'completed';
+    status?: 'pending' | 'completed' | 'blocked';
     priority?: 'low' | 'medium' | 'high';
     dependsOn?: number[];
-  }) => Promise<CheckTodoOutput>;
-  mark_todo: (args: {
+  }): Promise<MCPResult<CheckTodoOutput>>;
+  mark_todo(args: {
     id: number;
     completed?: boolean;
     summary?: string;
-  }) => Promise<CheckTodoOutput>;
-  clear_todos: (args?: { ids?: number[] }) => Promise<BaseOutput>;
-  clear_session: () => Promise<BaseOutput>;
-  add_memo: (args: { memo: string }) => Promise<BaseOutput & { memos: Memo[] }>;
-  clear_memo: (args: { id: number }) => Promise<BaseOutput & { memos: Memo[] }>;
-  get_current_state: (args?: {
+  }): Promise<MCPResult<CheckTodoOutput>>;
+  clear_todos(args: { ids?: number[] }): Promise<MCPResult<BaseOutput>>;
+  clear_session(): Promise<MCPResult<BaseOutput>>;
+  add_memo(args: {
+    memo: string;
+  }): Promise<MCPResult<BaseOutput & { memos: Memo[] }>>;
+  clear_memo(args: {
+    id: number;
+  }): Promise<MCPResult<BaseOutput & { memos: Memo[] }>>;
+  get_current_state(args: {
     include_completed?: boolean;
     include_memos?: boolean;
-  }) => Promise<PlanningState>;
-  sequentialthinking: (args: {
-    thought: string;
-    nextThoughtNeeded: boolean;
-    thoughtNumber: number;
-    totalThoughts: number;
-    isRevision?: boolean;
-    revisesThought?: number;
-    branchFromThought?: number;
-    branchId?: string;
-    needsMoreThoughts?: boolean;
-  }) => Promise<Record<string, unknown>>;
+  }): Promise<MCPResult<unknown>>;
+  sequentialthinking(args: unknown): Promise<MCPResult<unknown>>;
 }
 
 export default planningServer;

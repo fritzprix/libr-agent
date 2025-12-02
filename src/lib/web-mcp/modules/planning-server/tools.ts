@@ -86,7 +86,7 @@ export const planningTools: MCPTool[] = [
         },
         status: {
           type: 'string',
-          enum: ['pending', 'completed'],
+          enum: ['pending', 'completed', 'blocked'],
           description: 'The new status of the todo.',
         },
         priority: {
@@ -148,20 +148,20 @@ export const planningTools: MCPTool[] = [
   {
     name: 'clear_session',
     description:
-      'Clear all session state (goal, todos, and notes). Use to reset everything and start fresh.',
+      'Clear all session state (goal, todos, and scratchpad items). Use to reset everything and start fresh.',
     inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'add_memo',
     description:
-      'Add a memo to the session. Memos are temporary records, observations, or context information. Each memo is assigned a unique ID for reference.',
+      'Add a note to your Scratchpad (Working Memory). Content here is ALWAYS visible in your context. Use this for keeping track of important findings, file paths, IDs, or intermediate analysis results that you need to reference frequently during the task.',
     inputSchema: {
       type: 'object',
       properties: {
         memo: {
           type: 'string',
           description:
-            'The memo text to add (e.g., "User requested feature X").',
+            'The content to add to the scratchpad (e.g., "User requested feature X", "File path: src/main.ts").',
         },
       },
       required: ['memo'],
@@ -169,7 +169,8 @@ export const planningTools: MCPTool[] = [
   },
   {
     name: 'clear_memo',
-    description: 'Clear a memo from the session by its ID.',
+    description:
+      'Remove a note from your Scratchpad. Use this to clear information that is no longer relevant to free up context window space.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -185,7 +186,7 @@ export const planningTools: MCPTool[] = [
   {
     name: 'get_current_state',
     description:
-      'Get current planning state as structured JSON data for UI visualization',
+      'Get current planning state including Goal, Todos, and Scratchpad as structured JSON data for UI visualization',
     inputSchema: {
       type: 'object',
       properties: {
@@ -221,6 +222,19 @@ export const planningTools: MCPTool[] = [
         branchFromThought: { type: 'integer', minimum: 1 },
         branchId: { type: 'string' },
         needsMoreThoughts: { type: 'boolean' },
+        category: {
+          type: 'string',
+          description:
+            'The category of the thought (e.g., "hypothesis", "planning", "reflection").',
+        },
+        relatedTodoId: {
+          type: 'integer',
+          description: 'The ID of the todo item related to this thought.',
+        },
+        nextAction: {
+          type: 'string',
+          description: 'The next action to take based on this thought.',
+        },
       },
       required: [
         'thought',
