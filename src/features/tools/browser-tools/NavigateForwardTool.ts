@@ -25,7 +25,7 @@ export const navigateForwardTool: StrictBrowserMCPTool = {
 
     const result = await executeScript(
       sessionId,
-      'history.forward(); "Navigated forward"',
+      'setTimeout(() => history.forward(), 10); "Navigated forward"',
     );
     return createMCPTextResponse(result);
   },

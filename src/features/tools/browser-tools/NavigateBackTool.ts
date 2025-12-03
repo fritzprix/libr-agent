@@ -25,7 +25,7 @@ export const navigateBackTool: StrictBrowserMCPTool = {
 
     const result = await executeScript(
       sessionId,
-      'history.back(); "Navigated back"',
+      'setTimeout(() => history.back(), 10); "Navigated back"',
     );
     return createMCPTextResponse(result);
   },
