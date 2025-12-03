@@ -18,7 +18,8 @@ import {
   scrollPageTool,
   navigateBackTool,
   navigateForwardTool,
-  extractPageContentTool,
+  extractWebContentTool,
+  readWebContentTool,
   listInteractableTool,
   // injectJavascriptTool, // <-- Add import
   // Types
@@ -68,7 +69,8 @@ export function BrowserToolProvider() {
       navigateForwardTool,
       clickElementTool,
       inputTextTool,
-      extractPageContentTool,
+      extractWebContentTool,
+      readWebContentTool,
       listInteractableTool,
       // injectJavascriptTool, // <-- Add to array
     ];

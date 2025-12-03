@@ -152,27 +152,18 @@ pub fn create_execute_shell_tool() -> MCPTool {
         name: "execute_windows_cmd".to_string(),
         title: Some("Execute Windows Command (PowerShell)".to_string()),
         description: "Execute a command using Windows PowerShell in a sandboxed environment.\n\n\
-                      INTERACTIVE INPUT:\n\
-                      - Set 'require_user_input: true' to prompt for user input before execution\n\
-                      - ⚠️ WINDOWS LIMITATION: Cannot auto-detect admin privilege requirements\n\
-                      - ⚠️ UAC (User Account Control) requires manual approval dialog\n\n\
-                      SUPPORTED INTERACTIVE INPUTS:\n\
-                      - ✅ Custom text input (Read-Host prompts) - SINGLE INPUT ONLY\n\
-                      - ✅ Non-privileged password inputs - SINGLE INPUT ONLY\n\
-                      - ❌ Administrator password input (use system UAC instead)\n\
-                      - ❌ Multiple sequential prompts (e.g., y/n confirmations)\n\n\
-                      MODES:\n\
-                      - 'sync' (default): Wait for completion, return stdout/stderr immediately\n\
-                      - 'async': Run in background, return process_id immediately\n\n\
-                      For async mode, use 'poll_process' to check status and retrieve output.\n\n\
-                      PLATFORM: Windows - uses PowerShell (powershell.exe).\n\
-                      IMPORTANT NOTES:\n\
-                      - Commands are executed via 'powershell -NoProfile -NonInteractive -Command'\n\
-                      - Use double quotes for paths with spaces: python \"C:\\Program Files\\script.py\"\n\
-                      - Single quotes are automatically converted to double quotes\n\
-                      - To call external programs (python, node, etc.), ensure they are in PATH\n\
-                      - PowerShell handles Unicode filenames properly\n\
-                      - Complex commands work better than cmd.exe due to better quote handling"
+                      FEATURES:
+                      - Interactive Input: Set 'require_user_input: true'. Supports text/password (single prompt only).
+                      - Modes: 'sync' (wait for output) or 'async' (background).
+
+                      WINDOWS TIPS:
+                      - Shell: PowerShell (powershell.exe).
+                      - Path: Use double quotes for paths with spaces.
+                      - External Tools: Ensure 'python', 'node', etc. are in PATH.
+                      - Troubleshooting:
+                        - 'python' not found? Try 'py' or 'where.exe python'.
+                        - 'where' command failed? Use 'where.exe' (PowerShell alias conflict).
+                        - 'del' failed? Use comma-separated paths: 'del file1, file2'."
             .to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),
         output_schema: None,
@@ -338,10 +329,12 @@ mod tests {
                 let examples = command_schema.examples.as_ref().unwrap();
 
                 // Windows 명령어 예제 확인
-                assert!(examples.iter().any(|e| e.as_str().unwrap().contains("dir")));
                 assert!(examples
                     .iter()
-                    .any(|e| e.as_str().unwrap().contains("echo")));
+                    .any(|e| e.as_str().unwrap().contains("Get-ChildItem")));
+                assert!(examples
+                    .iter()
+                    .any(|e| e.as_str().unwrap().contains("Write-Host")));
             }
             _ => panic!("Expected Object schema type"),
         }

@@ -4,7 +4,10 @@ import { getLogger } from '@/lib/logger';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useServiceContext } from '@/features/tools/useServiceContext';
-import { Memo, PlanningState } from '@/lib/web-mcp/modules/planning-server';
+import {
+  ScratchpadItem,
+  PlanningState,
+} from '@/lib/web-mcp/modules/planning-server';
 
 const logger = getLogger('ChatPlanningPanel');
 
@@ -80,11 +83,11 @@ export function ChatPlanningPanel() {
         {/* Notes Section */}
         <div>
           <h4 className="font-medium text-sm text-muted-foreground mb-2">
-            Recent Notes
+            Scratchpad
           </h4>
           <div className="max-h-32 overflow-y-auto space-y-1">
-            {planningState?.memos.length ? (
-              planningState.memos.map((m: Memo) => (
+            {planningState?.scratchpad.length ? (
+              planningState.scratchpad.map((m: ScratchpadItem) => (
                 <div
                   key={m.id}
                   className="text-xs p-2 bg-accent/50 rounded-sm border-l-2 border-accent"

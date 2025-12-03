@@ -9,8 +9,10 @@ mod schema_validation_tests {
 
     /// Helper function to create a test registry
     fn create_test_registry() -> BuiltinServerRegistry {
-        let session_manager =
-            Arc::new(SessionManager::new().expect("Failed to create SessionManager"));
+        let temp_dir = std::env::temp_dir().join(format!("test-session-{}", uuid::Uuid::new_v4()));
+        let session_manager = Arc::new(
+            SessionManager::new_with_base_dir(temp_dir).expect("Failed to create SessionManager"),
+        );
         BuiltinServerRegistry::new_with_session_manager(session_manager)
     }
 

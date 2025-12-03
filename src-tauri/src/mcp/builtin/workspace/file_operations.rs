@@ -221,13 +221,42 @@ impl WorkspaceServer {
                     }
                 });
 
+                let item_lines: Vec<String> = items
+                    .iter()
+                    .map(|item| {
+                        let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+                        let type_ = item.get("type").and_then(|v| v.as_str()).unwrap_or("?");
+                        let size = item.get("size").and_then(|v| v.as_u64());
+
+                        let prefix = if type_ == "directory" {
+                            "[DIR]"
+                        } else {
+                            "[FILE]"
+                        };
+                        let size_str = if let Some(s) = size {
+                            format!(" ({} bytes)", s)
+                        } else {
+                            "".to_string()
+                        };
+
+                        format!("{} {}{}", prefix, name, size_str)
+                    })
+                    .collect();
+
+                let listing_str = item_lines.join("\n");
+
                 info!(
                     "Successfully listed directory: {:?} ({} items)",
                     safe_path,
                     items.len()
                 );
                 Ok(MCPResult::success_with_data(
-                    &format!("Directory listing for {}: {} items", path_str, items.len()),
+                    &format!(
+                        "Directory listing for {} ({} items):\n{}",
+                        path_str,
+                        items.len(),
+                        listing_str
+                    ),
                     json!({ "items": items }),
                 ))
             }

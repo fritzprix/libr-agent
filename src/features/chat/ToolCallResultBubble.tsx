@@ -95,7 +95,7 @@ export const ToolCallResultBubble: React.FC<ToolCallResultBubbleProps> = ({
 
   // Container styling based on status
   const containerClass = cn(
-    'rounded-lg border transition-all mb-2',
+    'rounded-lg border transition-all mb-2 w-full max-w-full',
     isLoading && 'border-l-4 border-blue-500 bg-blue-50/30 dark:bg-blue-950/30',
     !isLoading &&
       hasError &&

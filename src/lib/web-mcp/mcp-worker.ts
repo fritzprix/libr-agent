@@ -70,6 +70,7 @@ import uiTools from './modules/ui-tools/index.ts';
 import bootstrapServer from './modules/bootstrap-server/index.ts';
 import mcpManagerServer from './modules/mcp-manager/index.ts';
 import assistantManagerServer from './modules/assistant-manager/index.ts';
+import knowledgeServer from './modules/knowledge-server/index.ts';
 
 /**
  * A simple logger for the worker context, as the main logger is not available here.
@@ -108,6 +109,7 @@ const MODULE_REGISTRY = [
   { key: 'bootstrap', server: bootstrapServer },
   { key: 'mcp_manager', server: mcpManagerServer },
   { key: 'assistant_manager', server: assistantManagerServer },
+  { key: 'knowledge', server: knowledgeServer },
 ] as const;
 
 /**

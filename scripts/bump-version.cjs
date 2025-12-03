@@ -3,7 +3,10 @@ const path = require('path');
 const { execSync } = require('child_process');
 
 const versionType = process.argv[2];
-if (!['patch', 'minor', 'major'].includes(versionType) && !/^\d+\.\d+\.\d+$/.test(versionType)) {
+if (
+  !['patch', 'minor', 'major'].includes(versionType) &&
+  !/^\d+\.\d+\.\d+$/.test(versionType)
+) {
   console.error('Usage: node bump-version.js <patch|minor|major|version>');
   process.exit(1);
 }
@@ -16,9 +19,12 @@ let newVersion = versionType;
 if (['patch', 'minor', 'major'].includes(versionType)) {
   const parts = packageJson.version.split('.').map(Number);
   if (versionType === 'major') {
-    parts[0]++; parts[1] = 0; parts[2] = 0;
+    parts[0]++;
+    parts[1] = 0;
+    parts[2] = 0;
   } else if (versionType === 'minor') {
-    parts[1]++; parts[2] = 0;
+    parts[1]++;
+    parts[2] = 0;
   } else {
     parts[2]++;
   }
@@ -39,9 +45,12 @@ console.log(`Bumped tauri.conf.json to ${newVersion}`);
 // 3. Bump src-tauri/Cargo.toml
 const cargoTomlPath = path.join(__dirname, '../src-tauri/Cargo.toml');
 let cargoToml = fs.readFileSync(cargoTomlPath, 'utf8');
-// Replace version = "x.y.z" inside [package] block. 
+// Replace version = "x.y.z" inside [package] block.
 // This is a simple regex, might need adjustment if Cargo.toml structure changes.
-cargoToml = cargoToml.replace(/^version = "[^"]+"/m, `version = "${newVersion}"`);
+cargoToml = cargoToml.replace(
+  /^version = "[^"]+"/m,
+  `version = "${newVersion}"`,
+);
 fs.writeFileSync(cargoTomlPath, cargoToml);
 console.log(`Bumped Cargo.toml to ${newVersion}`);
 
@@ -61,7 +70,10 @@ if (fs.existsSync(snapcraftPath)) {
   snapcraft = snapcraft.replace(/^version: '.+'/m, `version: '${newVersion}'`);
   // Update source deb path
   // source: src-tauri/target/release/bundle/deb/libragent_0.3.15_amd64.deb
-  snapcraft = snapcraft.replace(/libragent_[0-9]+\.[0-9]+\.[0-9]+_amd64\.deb/, `libragent_${newVersion}_amd64.deb`);
+  snapcraft = snapcraft.replace(
+    /libragent_[0-9]+\.[0-9]+\.[0-9]+_amd64\.deb/,
+    `libragent_${newVersion}_amd64.deb`,
+  );
   fs.writeFileSync(snapcraftPath, snapcraft);
   console.log(`Bumped snap/snapcraft.yaml to ${newVersion}`);
 }

@@ -108,7 +108,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
       className={`flex ${styles.container} mb-8 mt-3 animate-in fade-in slide-in-from-bottom-4 duration-500`}
     >
       <div
-        className={`${getBubbleContainerStyles()} ${styles.bubble} ${getBubblePaddingStyles()} backdrop-blur-sm transition-all duration-200 hover:shadow-xl`}
+        className={`${getBubbleContainerStyles()} ${styles.bubble} ${getBubblePaddingStyles()} backdrop-blur-sm transition-all duration-200 hover:shadow-xl min-w-0`}
       >
         <div className="flex items-center gap-3 mb-3">
           <div

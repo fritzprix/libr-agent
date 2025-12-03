@@ -50,6 +50,10 @@ impl SessionManager {
             .ok_or_else(|| "Failed to get system data directory".to_string())?
             .join("com.fritzprix.libragent");
 
+        Self::new_with_base_dir(base_data_dir)
+    }
+
+    pub fn new_with_base_dir(base_data_dir: PathBuf) -> Result<Self, String> {
         // Create base directory structure
         fs::create_dir_all(base_data_dir.join("workspaces"))
             .map_err(|e| format!("Failed to create workspaces directory: {e}"))?;

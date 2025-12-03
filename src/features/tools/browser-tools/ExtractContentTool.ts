@@ -9,8 +9,9 @@ import { createId } from '@paralleldrive/cuid2';
 import TurndownService from 'turndown';
 import { cleanMarkdownText } from '@/lib/text-utils';
 import { workspaceWriteFile } from '@/lib/rust-backend-client';
+import { ContentStore } from './content-store';
 
-const logger = getLogger('ExtractPageContentTool');
+const logger = getLogger('ExtractContentTool');
 
 // 타입 정의
 interface ValidatedArgs {
@@ -29,10 +30,10 @@ interface ConversionResult {
 }
 
 // 타입 검증 함수
-function validateExtractPageContentArgs(
+function validateExtractContentArgs(
   args: Record<string, unknown>,
 ): ValidatedArgs | null {
-  logger.debug('Validating extractPageContent args:', args);
+  logger.debug('Validating extractWebContent args:', args);
 
   if (typeof args.sessionId !== 'string') {
     logger.warn('Invalid sessionId type', {
@@ -50,11 +51,6 @@ function validateExtractPageContentArgs(
     });
     return null;
   }
-
-  logger.debug('Validation successful', {
-    sessionId: args.sessionId,
-    saveRawHtml,
-  });
 
   return {
     sessionId: args.sessionId,
@@ -101,12 +97,12 @@ async function extractHtmlFromPage(
 ): Promise<string> {
   const rawHtml = await executeScript(
     sessionId,
-    `document.querySelector("body").outerHTML`,
+    `document.body ? document.body.outerHTML : ""`,
   );
 
-  if (!rawHtml || typeof rawHtml !== 'string') {
+  if (typeof rawHtml !== 'string') {
     throw new Error(
-      'Failed to extract HTML from the page - no content found or invalid content type',
+      'Failed to extract HTML from the page - invalid content type',
     );
   }
 
@@ -117,6 +113,7 @@ async function extractHtmlFromPage(
 function createMetadata(
   result: ConversionResult,
   rawHtml: string,
+  totalPages: number,
 ): Record<string, unknown> {
   if (result.metadata) {
     return result;
@@ -131,40 +128,15 @@ function createMetadata(
       raw_html_size: rawHtml.length,
       selector: 'body',
       format: 'markdown',
+      total_pages: totalPages,
     },
   };
 }
 
-// 응답 텍스트 생성 함수
-function generateResponseText(result: ConversionResult): string {
-  let baseContent: string;
-
-  if (typeof result.content === 'string') {
-    baseContent = result.content;
-  } else {
-    const contentToStringify = result.content || result.domMap;
-    baseContent = JSON.stringify(contentToStringify);
-  }
-
-  // Raw HTML 저장 경로가 있는 경우 추가 정보 포함
-  if (result.raw_html_path) {
-    const additionalInfo = `\n\n--- File Save Information ---\nRaw HTML saved to: ${result.raw_html_path}`;
-    return baseContent + additionalInfo;
-  }
-
-  // 저장 실패한 경우 에러 정보 포함
-  if (result.save_html_error) {
-    const errorInfo = `\n\n--- File Save Error ---\n${result.save_html_error}`;
-    return baseContent + errorInfo;
-  }
-
-  return baseContent;
-}
-
-export const extractPageContentTool: StrictBrowserMCPTool = {
-  name: 'extractPageContent',
+export const extractWebContentTool: StrictBrowserMCPTool = {
+  name: 'extractWebContent',
   description:
-    'Convert the entire webpage into clean, readable markdown format. Extracts the main textual content while removing navigation, ads, scripts, and formatting noise. Ideal for content analysis, summarization, and reading.',
+    'Convert the webpage into clean, readable markdown format. Returns the first page of content and the total number of pages. Use readWebContent to access subsequent pages. Ideal for content analysis, summarization, and reading.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -179,28 +151,28 @@ export const extractPageContentTool: StrictBrowserMCPTool = {
   },
   execute: async (args: Record<string, unknown>, executeScript) => {
     // 인자 검증
-    const validatedArgs = validateExtractPageContentArgs(args);
+    const validatedArgs = validateExtractContentArgs(args);
     if (!validatedArgs) {
       return createMCPErrorResponse(
         'Invalid arguments provided - check sessionId type and other parameter types',
         -32602,
-        { toolName: 'extractPageContent', args },
+        { toolName: 'extractWebContent', args },
         createId(),
       );
     }
 
     const { sessionId, saveRawHtml } = validatedArgs;
 
-    logger.debug('Executing browser_extractPageContent', {
+    logger.debug('Executing browser_extractWebContent', {
       sessionId,
     });
 
     // executeScript 함수 존재 검증
     if (!executeScript) {
       return createMCPErrorResponse(
-        'executeScript function is required for extractPageContent',
+        'executeScript function is required for extractWebContent',
         -32603,
-        { toolName: 'extractPageContent', args },
+        { toolName: 'extractWebContent', args },
         createId(),
       );
     }
@@ -221,7 +193,7 @@ export const extractPageContentTool: StrictBrowserMCPTool = {
         return createMCPErrorResponse(
           `Content conversion failed: ${conversionError instanceof Error ? conversionError.message : String(conversionError)}`,
           -32603,
-          { toolName: 'extractContent', args },
+          { toolName: 'extractWebContent', args },
           createId(),
         );
       }
@@ -251,26 +223,50 @@ export const extractPageContentTool: StrictBrowserMCPTool = {
         }
       }
 
-      // 메타데이터 추가
-      const resultWithMetadata = createMetadata(result, rawHtml);
+      // Pagination 처리
+      let contentText = '';
+      if (typeof result.content === 'string') {
+        contentText = result.content;
+      } else {
+        contentText = JSON.stringify(result.content || result.domMap);
+      }
 
-      // 응답 생성
-      const textContent = generateResponseText(result);
+      const { totalPages, firstPage } = ContentStore.saveContent(
+        sessionId,
+        contentText,
+      );
+
+      // 메타데이터 추가
+      const resultWithMetadata = createMetadata(result, rawHtml, totalPages);
+
+      // 응답 텍스트 생성
+      let responseText = `[Page 1/${totalPages}]\n\n${firstPage}`;
+      if (totalPages > 1) {
+        responseText += `\n\n--- End of Page 1 ---\nThere are ${totalPages} pages in total. Use readWebContent(sessionId, page) to read more.`;
+      }
+
+      // Raw HTML 저장 정보 추가
+      if (result.raw_html_path) {
+        responseText += `\n\n--- File Save Information ---\nRaw HTML saved to: ${result.raw_html_path}`;
+      }
+      if (result.save_html_error) {
+        responseText += `\n\n--- File Save Error ---\n${result.save_html_error}`;
+      }
 
       return createMCPStructuredResponse(
-        textContent,
+        responseText,
         resultWithMetadata,
         createId(),
       );
     } catch (error) {
-      logger.error('Error in browser_extractPageContent:', {
+      logger.error('Error in browser_extractWebContent:', {
         error,
         sessionId,
       });
       return createMCPErrorResponse(
         `Failed to extract page content: ${error instanceof Error ? error.message : String(error)}`,
         -32603,
-        { toolName: 'extractPageContent', args, error },
+        { toolName: 'extractWebContent', args, error },
         createId(),
       );
     }
