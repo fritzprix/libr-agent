@@ -152,23 +152,23 @@ export const planningTools: MCPTool[] = [
     inputSchema: { type: 'object', properties: {} },
   },
   {
-    name: 'add_memo',
+    name: 'add_scratchpad',
     description:
       'Add a note to your Scratchpad (Working Memory). Content here is ALWAYS visible in your context. Use this for keeping track of important findings, file paths, IDs, or intermediate analysis results that you need to reference frequently during the task.',
     inputSchema: {
       type: 'object',
       properties: {
-        memo: {
+        note: {
           type: 'string',
           description:
             'The content to add to the scratchpad (e.g., "User requested feature X", "File path: src/main.ts").',
         },
       },
-      required: ['memo'],
+      required: ['note'],
     },
   },
   {
-    name: 'clear_memo',
+    name: 'clear_scratchpad',
     description:
       'Remove a note from your Scratchpad. Use this to clear information that is no longer relevant to free up context window space.',
     inputSchema: {
@@ -177,7 +177,7 @@ export const planningTools: MCPTool[] = [
         id: {
           type: 'number',
           minimum: 0,
-          description: 'The ID of the memo to clear.',
+          description: 'The ID of the scratchpad item to clear.',
         },
       },
       required: ['id'],
@@ -195,10 +195,10 @@ export const planningTools: MCPTool[] = [
           description:
             'Whether to include completed todos in the output. Defaults to true.',
         },
-        include_memos: {
+        include_scratchpad: {
           type: 'boolean',
           description:
-            'Whether to include memos in the output. Defaults to true.',
+            'Whether to include scratchpad items in the output. Defaults to true.',
         },
       },
     },

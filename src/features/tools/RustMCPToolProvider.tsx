@@ -37,11 +37,13 @@ export function RustMCPToolProvider() {
 
       // Load tools for each server
       const serverData = await Promise.all(
-        serverInfos.map(async (info) => ({
-          name: info.name,
-          metadata: info.metadata,
-          tools: await listBuiltinTools(info.name),
-        })),
+        serverInfos
+          .filter((info) => info.name !== 'builtin_planning') // Disable Rust planning server in favor of WebMCP
+          .map(async (info) => ({
+            name: info.name,
+            metadata: info.metadata,
+            tools: await listBuiltinTools(info.name),
+          })),
       );
 
       const serverMap: Record<

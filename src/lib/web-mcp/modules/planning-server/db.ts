@@ -22,7 +22,7 @@ export interface PlanningTodo {
   createdAt: number;
 }
 
-export interface PlanningMemo {
+export interface PlanningScratchpadItem {
   id?: number;
   sessionId: string;
   threadId: string;
@@ -33,14 +33,14 @@ export interface PlanningMemo {
 export class PlanningDatabase extends Dexie {
   goals!: Table<PlanningGoal>;
   todos!: Table<PlanningTodo>;
-  memos!: Table<PlanningMemo>;
+  scratchpad!: Table<PlanningScratchpadItem>;
 
   constructor() {
     super('PlanningDatabase');
     this.version(1).stores({
       goals: '++id, [sessionId+threadId], isActive',
       todos: '++id, [sessionId+threadId], status',
-      memos: '++id, [sessionId+threadId]',
+      scratchpad: '++id, [sessionId+threadId]',
     });
   }
 }

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import 'fake-indexeddb/auto';
 import { db } from '../db';
-import planningServer from '../server';
+import planningServer, { ScratchpadItem } from '../server';
 
 describe('Planning Server Persistence', () => {
     const sessionId = 'test-session';
@@ -11,7 +11,7 @@ describe('Planning Server Persistence', () => {
         await db.open();
         await db.goals.clear();
         await db.todos.clear();
-        await db.memos.clear();
+        await db.scratchpad.clear();
 
         // Reset context
         if (planningServer.switchContext) {
@@ -31,7 +31,7 @@ describe('Planning Server Persistence', () => {
         const state = await planningServer.callTool('get_current_state', {});
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const structuredState = (state as any).structuredContent;
-        expect(structuredState.goal).toBe(goal);
+        expect(structuredState.state.goal).toBe(goal);
 
         // Verify DB directly
         const dbGoal = await db.goals.where({ sessionId, threadId }).last();
@@ -46,15 +46,31 @@ describe('Planning Server Persistence', () => {
         const state = await planningServer.callTool('get_current_state', {});
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const structuredState = (state as any).structuredContent;
-        expect(structuredState.todos).toHaveLength(2);
-        expect(structuredState.todos[0].name).toBe('Task 1');
-        expect(structuredState.todos[1].name).toBe('Task 2');
+        expect(structuredState.state.todos).toHaveLength(2);
+        expect(structuredState.state.todos[0].name).toBe('Task 1');
+        expect(structuredState.state.todos[1].name).toBe('Task 2');
 
         // Verify DB directly
         const dbTodos = await db.todos.where({ sessionId, threadId }).toArray();
         expect(dbTodos).toHaveLength(2);
     });
 
+    it('should add and clear scratchpad items', async () => {
+        const result = await planningServer.callTool('add_scratchpad', {
+            note: 'Test Note',
+        });
+        expect(result.isError).toBe(false);
+        expect(result.structuredContent).toHaveProperty('scratchpad');
+        const { scratchpad } = result.structuredContent as { scratchpad: ScratchpadItem[] };
+        expect(scratchpad).toHaveLength(1);
+        expect(scratchpad[0].content).toBe('Test Note');
+
+        const id = scratchpad[0].id;
+        const clearResult = await planningServer.callTool('clear_scratchpad', { id });
+        expect(clearResult.isError).toBe(false);
+        const { scratchpad: remaining } = clearResult.structuredContent as { scratchpad: ScratchpadItem[] };
+        expect(remaining).toHaveLength(0);
+    });
     it('should update todo status', async () => {
         const addResult = await planningServer.callTool('add_todo', { name: 'Task 1' });
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -65,7 +81,7 @@ describe('Planning Server Persistence', () => {
         const state = await planningServer.callTool('get_current_state', {});
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const structuredState = (state as any).structuredContent;
-        expect(structuredState.todos[0].status).toBe('completed');
+        expect(structuredState.state.todos[0].status).toBe('completed');
 
         const dbTodo = await db.todos.get(todoId);
         expect(dbTodo?.status).toBe('completed');
@@ -84,12 +100,12 @@ describe('Planning Server Persistence', () => {
         await planningServer.switchContext!({ sessionId: 'session1' });
         const state1 = await planningServer.callTool('get_current_state', {});
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        expect((state1 as any).structuredContent.goal).toBe('Goal 1');
+        expect((state1 as any).structuredContent.state.goal).toBe('Goal 1');
 
         // Verify Session 2
         await planningServer.switchContext!({ sessionId: 'session2' });
         const state2 = await planningServer.callTool('get_current_state', {});
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        expect((state2 as any).structuredContent.goal).toBe('Goal 2');
+        expect((state2 as any).structuredContent.state.goal).toBe('Goal 2');
     });
 });

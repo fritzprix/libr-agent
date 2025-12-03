@@ -21,7 +21,7 @@ interface SimpleTodo {
   dependsOn?: number[];
 }
 
-export interface Memo {
+export interface ScratchpadItem {
   id: number;
   content: string;
 }
@@ -53,7 +53,7 @@ export interface PlanningState {
   /** The list of to-do items. */
   todos: SimpleTodo[];
   /** A list of recent notes or temporary records. */
-  memos: Memo[];
+  scratchpad: ScratchpadItem[];
 }
 
 /**
@@ -152,12 +152,12 @@ class PersistentState {
     }));
   }
 
-  private async getMemosList(): Promise<Memo[]> {
-    const memos = await db.memos
+  async getScratchpadList(): Promise<ScratchpadItem[]> {
+    const items = await db.scratchpad
       .where({ sessionId: this.sessionId, threadId: this.threadId })
       .sortBy('id');
 
-    return memos.map((m) => ({
+    return items.map((m) => ({
       id: m.id!,
       content: m.content,
     }));
@@ -433,11 +433,11 @@ class PersistentState {
   async clear(): Promise<MCPResult<BaseOutput>> {
     const activeGoal = await this.getActiveGoal();
     const todos = await this.getTodosList();
-    const memos = await this.getMemosList();
+    const scratchpad = await this.getScratchpadList();
 
     const clearedGoal = activeGoal ? activeGoal.content : null;
     const clearedTodos = todos.length;
-    const clearedMemos = memos.length;
+    const clearedScratchpad = scratchpad.length;
 
     // Delete all data for this session/thread
     await db.goals
@@ -446,7 +446,7 @@ class PersistentState {
     await db.todos
       .where({ sessionId: this.sessionId, threadId: this.threadId })
       .delete();
-    await db.memos
+    await db.scratchpad
       .where({ sessionId: this.sessionId, threadId: this.threadId })
       .delete();
 
@@ -454,7 +454,7 @@ class PersistentState {
     this.thoughtHistory = [];
     this.branches = {};
 
-    const summaryText = `Session state cleared:\n- Goal: ${clearedGoal ? `"${clearedGoal}"` : '(none)'}\n- Todos cleared: ${clearedTodos}\n- Memos cleared: ${clearedMemos}\n\nSession is now completely reset.`;
+    const summaryText = `Session state cleared:\n- Goal: ${clearedGoal ? `"${clearedGoal}"` : '(none)'}\n- Todos cleared: ${clearedTodos}\n- Scratchpad items cleared: ${clearedScratchpad}\n\nSession is now completely reset.`;
     return createMCPStructuredToolResult(summaryText, {
       success: true,
     });
@@ -469,67 +469,69 @@ class PersistentState {
     return this.getTodosList();
   }
 
-  async addMemo(
-    memo: string,
-  ): Promise<MCPResult<BaseOutput & { memos: Memo[] }>> {
-    await db.memos.add({
+  async addScratchpad(
+    note: string,
+  ): Promise<MCPResult<BaseOutput & { scratchpad: ScratchpadItem[] }>> {
+    await db.scratchpad.add({
       sessionId: this.sessionId,
       threadId: this.threadId,
-      content: memo,
+      content: note,
       createdAt: Date.now(),
     });
 
     // Enforce MAX_NOTES
-    const memos = await this.getMemosList();
-    if (memos.length > MAX_NOTES) {
+    const items = await this.getScratchpadList();
+    if (items.length > MAX_NOTES) {
       // Remove oldest
-      const oldest = memos[0]; // Sorted by id (auto-inc)
-      await db.memos.delete(oldest.id);
+      const oldest = items[0]; // Sorted by id (auto-inc)
+      await db.scratchpad.delete(oldest.id);
     }
 
-    const updatedMemos = await this.getMemosList();
+    const updatedItems = await this.getScratchpadList();
     const capacityWarning =
-      updatedMemos.length === MAX_NOTES
-        ? `⚠️ At capacity (${MAX_NOTES}/${MAX_NOTES}) - oldest memos will be removed`
-        : `Memos: ${updatedMemos.length}/${MAX_NOTES}`;
+      updatedItems.length === MAX_NOTES
+        ? `⚠️ At capacity (${MAX_NOTES}/${MAX_NOTES}) - oldest items will be removed`
+        : `Scratchpad: ${updatedItems.length}/${MAX_NOTES}`;
 
-    // Get the ID of the newly added memo (last one)
-    const newMemoId = updatedMemos[updatedMemos.length - 1].id;
+    // Get the ID of the newly added item (last one)
+    const newItemId = updatedItems[updatedItems.length - 1].id;
 
-    return createMCPStructuredToolResult<BaseOutput & { memos: Memo[] }>(
-      `Memo ID:${newMemoId} added\n${capacityWarning}`,
-      { success: true, memos: updatedMemos },
-    );
+    return createMCPStructuredToolResult<
+      BaseOutput & { scratchpad: ScratchpadItem[] }
+    >(`Scratchpad ID:${newItemId} added\n${capacityWarning}`, {
+      success: true,
+      scratchpad: updatedItems,
+    });
   }
 
-  async clearMemo(
+  async clearScratchpad(
     id: number,
-  ): Promise<MCPResult<BaseOutput & { memos: Memo[] }>> {
-    const memo = await db.memos.get(id);
+  ): Promise<MCPResult<BaseOutput & { scratchpad: ScratchpadItem[] }>> {
+    const item = await db.scratchpad.get(id);
     if (
-      !memo ||
-      memo.sessionId !== this.sessionId ||
-      memo.threadId !== this.threadId
+      !item ||
+      item.sessionId !== this.sessionId ||
+      item.threadId !== this.threadId
     ) {
-      const memos = await this.getMemosList();
-      const validIds = memos.map((m) => m.id);
-      return createMCPStructuredToolResult<BaseOutput & { memos: Memo[] }>(
-        `Memo ID:${id} not found.\nValid IDs: ${validIds.length > 0 ? validIds.join(', ') : '(no memos)'}`,
-        { success: false, memos },
+      const scratchpad = await this.getScratchpadList();
+      const validIds = scratchpad.map((m) => m.id);
+      return createMCPStructuredToolResult<
+        BaseOutput & { scratchpad: ScratchpadItem[] }
+      >(
+        `Scratchpad ID:${id} not found.\nValid IDs: ${validIds.length > 0 ? validIds.join(', ') : '(no scratchpad items)'}`,
+        { success: false, scratchpad },
       );
     }
 
-    await db.memos.delete(id);
-    const memos = await this.getMemosList();
+    await db.scratchpad.delete(id);
+    const scratchpad = await this.getScratchpadList();
 
-    return createMCPStructuredToolResult<BaseOutput & { memos: Memo[] }>(
-      `Memo ID:${id} cleared: "${memo.content}"\nRemaining memos: ${memos.length}`,
-      { success: true, memos },
+    return createMCPStructuredToolResult<
+      BaseOutput & { scratchpad: ScratchpadItem[] }
+    >(
+      `Scratchpad ID:${id} cleared: "${item.content}"\nRemaining scratchpad items: ${scratchpad.length}`,
+      { success: true, scratchpad },
     );
-  }
-
-  async getMemos(): Promise<Memo[]> {
-    return this.getMemosList();
   }
 
   async getLastClearedGoal(): Promise<string | null> {
@@ -724,20 +726,20 @@ class SessionStateManager {
     return this.getCurrentState().getTodos();
   }
 
-  async addMemo(
-    memo: string,
-  ): Promise<MCPResult<BaseOutput & { memos: Memo[] }>> {
-    return this.getCurrentState().addMemo(memo);
+  async addScratchpad(
+    note: string,
+  ): Promise<MCPResult<BaseOutput & { scratchpad: ScratchpadItem[] }>> {
+    return this.getCurrentState().addScratchpad(note);
   }
 
-  async removeMemo(
+  async clearScratchpad(
     id: number,
-  ): Promise<MCPResult<BaseOutput & { memos: Memo[] }>> {
-    return this.getCurrentState().clearMemo(id);
+  ): Promise<MCPResult<BaseOutput & { scratchpad: ScratchpadItem[] }>> {
+    return this.getCurrentState().clearScratchpad(id);
   }
 
-  async getMemos(): Promise<Memo[]> {
-    return this.getCurrentState().getMemos();
+  async getScratchpad(): Promise<ScratchpadItem[]> {
+    return this.getCurrentState().getScratchpadList();
   }
 
   async getLastClearedGoal(): Promise<string | null> {
@@ -779,7 +781,7 @@ class SessionStateManager {
       goal: await state.getGoal(),
       lastClearedGoal: await state.getLastClearedGoal(),
       todos: await state.getTodos(),
-      memos: await state.getMemos(),
+      scratchpad: await state.getScratchpadList(),
     };
   }
 }
@@ -871,53 +873,43 @@ const planningServer: WebMCPServer = {
       }
       case 'clear_session':
         return await stateManager.clear();
-      case 'add_memo': {
-        return await stateManager.addMemo(typedArgs.memo as string);
+      case 'add_scratchpad': {
+        return await stateManager.addScratchpad(typedArgs.note as string);
       }
-      case 'clear_memo': {
+      case 'clear_scratchpad': {
         const id = typedArgs.id as number;
         if (!Number.isInteger(id) || id < 0) {
           return createMCPErrorToolResult(
             `Invalid ID: ${id}. ID must be a non-negative integer.`,
           );
         }
-        return await stateManager.removeMemo(id);
+        return await stateManager.clearScratchpad(id);
       }
       case 'sequentialthinking': {
         return stateManager.processThought(typedArgs);
       }
       case 'get_current_state': {
         const includeCompleted = typedArgs.include_completed !== false; // Default true
-        const includeMemos = typedArgs.include_memos !== false; // Default true
-        const offset =
-          typeof typedArgs.offset === 'number' ? typedArgs.offset : 0;
-        const limit =
-          typeof typedArgs.limit === 'number' ? typedArgs.limit : 50;
+        const includeScratchpad = typedArgs.include_scratchpad !== false; // Default true
+        const state = await stateManager.getStateForSession(
+          stateManager.getCurrentSessionId() || 'default',
+          stateManager.getCurrentThreadId() || 'default',
+        );
 
-        const currentState: PlanningState = {
-          goal: await stateManager.getGoal(),
-          lastClearedGoal: await stateManager.getLastClearedGoal(),
-          todos: await stateManager.getTodos(),
-          memos: await stateManager.getMemos(),
-        };
+        if (!state) {
+          return createMCPStructuredToolResult('No active state found.', {
+            success: false,
+          });
+        }
 
+        const { goal, todos, scratchpad } = state;
         const filteredTodos = includeCompleted
-          ? currentState.todos
-          : currentState.todos.filter((t) => t.status === 'pending');
+          ? todos
+          : todos.filter((t) => t.status === 'pending');
 
-        // Calculate metrics
-        const totalTodos = currentState.todos.length;
-        const pendingCount = currentState.todos.filter(
-          (t) => t.status === 'pending',
-        ).length;
-        const completedCount = currentState.todos.filter(
-          (t) => t.status === 'completed',
-        ).length;
-        const blockedCount = currentState.todos.filter(
-          (t) => t.status === 'blocked',
-        ).length;
-
-        // Apply pagination to todos
+        // Pagination logic for todos (optional, keeping simple for now)
+        const limit = 50;
+        const offset = 0;
         const paginatedTodos = filteredTodos.slice(offset, offset + limit);
 
         const todosText = paginatedTodos.length
@@ -933,49 +925,43 @@ const planningServer: WebMCPServer = {
                   t.dependsOn && t.dependsOn.length > 0
                     ? ` (depends on: ${t.dependsOn.join(', ')})`
                     : '';
-                return `- ID:${t.id} ${checkbox} ${t.name}${priorityPart}${dependsPart}${summaryPart}`;
+                return `- ID:${t.id} ${checkbox} ${t.name}${priorityPart}${summaryPart}${dependsPart}`;
               })
               .join('\n')
-          : '- (none)';
+          : '(none)';
 
-        const notesText =
-          includeMemos && currentState.memos.length
-            ? currentState.memos
-                .map((m) => `- [ID: ${m.id}] ${m.content.replace(/\n/g, ' ')}`)
-                .join('\n')
-            : '- (none)';
+        const scratchpadText =
+          includeScratchpad && scratchpad.length > 0
+            ? scratchpad.map((m) => `- [ID: ${m.id}] ${m.content}`).join('\n')
+            : '(none)';
 
-        const lines: string[] = [];
-        lines.push('# Planning State', '');
-        lines.push('**Summary**');
-        lines.push(`- Total Todos: ${totalTodos}`);
-        lines.push(`  - Pending: ${pendingCount}`);
-        lines.push(`  - Completed: ${completedCount}`);
-        if (blockedCount > 0) lines.push(`  - Blocked: ${blockedCount}`);
-        lines.push(`- Scratchpad Items: ${currentState.memos.length}`, '');
-        lines.push('**Goal**');
-        lines.push(currentState.goal ? `- ${currentState.goal}` : '- (none)');
-        if (currentState.lastClearedGoal) {
-          lines.push(
-            '',
-            '**Last Cleared Goal**',
-            `- ${currentState.lastClearedGoal}`,
-          );
-        }
-        lines.push('', '**Todos**');
-        if (offset > 0 || filteredTodos.length > limit) {
-          lines.push(
-            `(Showing ${offset + 1}-${offset + paginatedTodos.length} of ${filteredTodos.length})`,
-          );
-        }
-        lines.push(todosText);
+        const goalText = goal ? `- ${goal}` : '(none)';
 
-        if (includeMemos) {
-          lines.push('', '**Scratchpad**');
-          lines.push(notesText);
-        }
+        const outputText = `# Planning State
 
-        return createMCPStructuredToolResult(lines.join('\n'), currentState);
+**Summary**
+- Total Todos: ${todos.length}
+  - Pending: ${todos.filter((t) => t.status === 'pending').length}
+  - Completed: ${todos.filter((t) => t.status === 'completed').length}
+- Scratchpad Items: ${scratchpad.length}
+
+**Goal**
+${goalText}
+
+**Todos**
+${todosText}
+
+**Scratchpad**
+${scratchpadText}`;
+
+        return createMCPStructuredToolResult(outputText, {
+          success: true,
+          state: {
+            goal,
+            todos: filteredTodos,
+            scratchpad: includeScratchpad ? scratchpad : [],
+          },
+        });
       }
     }
 
@@ -1002,12 +988,12 @@ const planningServer: WebMCPServer = {
           goal: null,
           lastClearedGoal: null,
           todos: [],
-          memos: [],
+          scratchpad: [],
         },
       };
     }
 
-    const { goal, todos, memos } = state;
+    const { goal, todos, scratchpad } = state;
     const pendingTodos = todos.filter((t) => t.status === 'pending');
 
     const contextParts = [];
@@ -1023,9 +1009,9 @@ const planningServer: WebMCPServer = {
         contextParts.push(`...and ${pendingTodos.length - 5} more`);
       }
     }
-    if (memos.length > 0) {
-      contextParts.push(`Scratchpad (${memos.length}):`);
-      memos.slice(0, 3).forEach((m) => {
+    if (scratchpad.length > 0) {
+      contextParts.push(`Scratchpad (${scratchpad.length}):`);
+      scratchpad.slice(0, 3).forEach((m) => {
         contextParts.push(`- ${m.content}`);
       });
     }
@@ -1072,15 +1058,15 @@ export interface PlanningServerProxy extends WebMCPServerProxy {
   }): Promise<MCPResult<CheckTodoOutput>>;
   clear_todos(args: { ids?: number[] }): Promise<MCPResult<BaseOutput>>;
   clear_session(): Promise<MCPResult<BaseOutput>>;
-  add_memo(args: {
-    memo: string;
-  }): Promise<MCPResult<BaseOutput & { memos: Memo[] }>>;
-  clear_memo(args: {
+  add_scratchpad(args: {
+    note: string;
+  }): Promise<MCPResult<BaseOutput & { scratchpad: ScratchpadItem[] }>>;
+  clear_scratchpad(args: {
     id: number;
-  }): Promise<MCPResult<BaseOutput & { memos: Memo[] }>>;
+  }): Promise<MCPResult<BaseOutput & { scratchpad: ScratchpadItem[] }>>;
   get_current_state(args: {
     include_completed?: boolean;
-    include_memos?: boolean;
+    include_scratchpad?: boolean;
   }): Promise<MCPResult<unknown>>;
   sequentialthinking(args: unknown): Promise<MCPResult<unknown>>;
 }
