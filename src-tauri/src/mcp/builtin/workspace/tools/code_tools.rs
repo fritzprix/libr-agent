@@ -152,8 +152,6 @@ pub fn create_execute_shell_tool() -> MCPTool {
         name: "execute_windows_cmd".to_string(),
         title: Some("Execute Windows Command (PowerShell)".to_string()),
         description: "Execute a command using Windows PowerShell in a sandboxed environment.\n\n\
-                      Execute PowerShell commands in a sandboxed environment.
-
                       FEATURES:
                       - Interactive Input: Set 'require_user_input: true'. Supports text/password (single prompt only).
                       - Modes: 'sync' (wait for output) or 'async' (background).

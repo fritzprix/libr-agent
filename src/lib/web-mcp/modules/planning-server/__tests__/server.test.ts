@@ -3,6 +3,24 @@ import 'fake-indexeddb/auto';
 import { db } from '../db';
 import planningServer, { ScratchpadItem } from '../server';
 
+interface TodoItem {
+    id: number;
+    name: string;
+    status: 'pending' | 'completed';
+}
+
+interface PlanningState {
+    state: {
+        goal: string | null;
+        todos: TodoItem[];
+        scratchpad: ScratchpadItem[];
+    };
+}
+
+interface AddTodoResult {
+    todos: TodoItem[];
+}
+
 describe('Planning Server Persistence', () => {
     const sessionId = 'test-session';
     const threadId = 'test-thread';
@@ -29,8 +47,7 @@ describe('Planning Server Persistence', () => {
         expect(result.structuredContent).toBeDefined();
 
         const state = await planningServer.callTool('get_current_state', {});
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const structuredState = (state as any).structuredContent;
+        const structuredState = state.structuredContent as PlanningState;
         expect(structuredState.state.goal).toBe(goal);
 
         // Verify DB directly
@@ -44,8 +61,7 @@ describe('Planning Server Persistence', () => {
         await planningServer.callTool('add_todo', { name: 'Task 2' });
 
         const state = await planningServer.callTool('get_current_state', {});
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const structuredState = (state as any).structuredContent;
+        const structuredState = state.structuredContent as PlanningState;
         expect(structuredState.state.todos).toHaveLength(2);
         expect(structuredState.state.todos[0].name).toBe('Task 1');
         expect(structuredState.state.todos[1].name).toBe('Task 2');
@@ -73,14 +89,13 @@ describe('Planning Server Persistence', () => {
     });
     it('should update todo status', async () => {
         const addResult = await planningServer.callTool('add_todo', { name: 'Task 1' });
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const todoId = (addResult as any).structuredContent.todos[0].id;
+        const { todos } = addResult.structuredContent as AddTodoResult;
+        const todoId = todos[0].id;
 
         await planningServer.callTool('mark_todo', { id: todoId, completed: true });
 
         const state = await planningServer.callTool('get_current_state', {});
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const structuredState = (state as any).structuredContent;
+        const structuredState = state.structuredContent as PlanningState;
         expect(structuredState.state.todos[0].status).toBe('completed');
 
         const dbTodo = await db.todos.get(todoId);
@@ -99,13 +114,13 @@ describe('Planning Server Persistence', () => {
         // Verify Session 1
         await planningServer.switchContext!({ sessionId: 'session1' });
         const state1 = await planningServer.callTool('get_current_state', {});
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        expect((state1 as any).structuredContent.state.goal).toBe('Goal 1');
+        const content1 = state1.structuredContent as PlanningState;
+        expect(content1.state.goal).toBe('Goal 1');
 
         // Verify Session 2
         await planningServer.switchContext!({ sessionId: 'session2' });
         const state2 = await planningServer.callTool('get_current_state', {});
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        expect((state2 as any).structuredContent.state.goal).toBe('Goal 2');
+        const content2 = state2.structuredContent as PlanningState;
+        expect(content2.state.goal).toBe('Goal 2');
     });
 });

@@ -153,8 +153,7 @@ describe('Knowledge Server', () => {
             title: 'To Delete',
             content: 'Delete me',
         });
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const id = (saveResult.structuredContent as any).id;
+        const { id } = saveResult.structuredContent as SaveKnowledgeResult;
 
         await knowledgeServer.callTool('delete_knowledge', { id });
 
