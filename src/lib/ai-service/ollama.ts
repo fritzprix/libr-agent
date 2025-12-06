@@ -125,7 +125,7 @@ export class OllamaService extends BaseAIService {
    */
   async listModels(): Promise<ModelInfo[]> {
     try {
-      logger.info('Fetching models from Ollama server...');
+      logger.info(`Fetching models from Ollama server at ${this.host}...`);
 
       const response: ListResponse = await this.withRetry(async () => {
         return await this.ollamaClient.list();
