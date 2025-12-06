@@ -63,10 +63,29 @@ export class OllamaService extends BaseAIService {
   constructor(apiKey: string, config?: AIServiceConfig & { host?: string }) {
     super(apiKey, config);
     this.host = config?.host || 'http://127.0.0.1:11434';
-    this.ollamaClient = new Ollama({ host: this.host, fetch: fetch });
-    logger.info('Ollama service initialized', {
-      host: this.host,
-    });
+
+    // Hybrid fetch strategy:
+    // 1. For local connections (localhost/127.0.0.1), use native browser fetch.
+    //    Tauri's plugin-http can have issues with localhost on Windows, and native fetch
+    //    works fine because Ollama sets Access-Control-Allow-Origin: *.
+    // 2. For remote connections, use Tauri's plugin-http fetch.
+    //    This bypasses CORS restrictions that would block native browser fetch
+    //    if the remote server isn't explicitly configured to allow the app's origin.
+    const isLocal =
+      this.host.includes('localhost') || this.host.includes('127.0.0.1');
+
+    if (isLocal) {
+      this.ollamaClient = new Ollama({ host: this.host });
+      logger.info('Ollama service initialized (Local mode - Native Fetch)', {
+        host: this.host,
+      });
+    } else {
+      this.ollamaClient = new Ollama({ host: this.host, fetch: fetch });
+      logger.info(
+        'Ollama service initialized (Remote mode - Tauri Plugin Fetch)',
+        { host: this.host },
+      );
+    }
   }
 
   /**
