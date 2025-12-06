@@ -22,6 +22,13 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
   const isAssistant = message.role === 'assistant' || message.role === 'system';
 
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const thinkingRef = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (message.thinking && thinkingRef.current) {
+      thinkingRef.current.scrollTop = thinkingRef.current.scrollHeight;
+    }
+  }, [message.thinking]);
 
   useEffect(() => {
     if (message.isStreaming || message.error) {
@@ -105,7 +112,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
 
   return (
     <div
-      className={`flex ${styles.container} mb-8 mt-3 animate-in fade-in slide-in-from-bottom-4 duration-500`}
+      className={`flex ${styles.container} mb-8 mt-3 animate-in fade-in slide-in-from-bottom-4 duration-500 w-full min-w-0`}
     >
       <div
         className={`${getBubbleContainerStyles()} ${styles.bubble} ${getBubblePaddingStyles()} backdrop-blur-sm transition-all duration-200 hover:shadow-xl min-w-0`}
@@ -170,11 +177,17 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
               </div>
             )}
             {message.thinking && (
-              <div className="flex items-center gap-3 mt-4 p-3 bg-popover rounded-lg border border-border">
-                {message.isStreaming ? <LoadingSpinner size="sm" /> : <></>}
-                <span className="text-sm opacity-50 italic">
+              <div className="flex flex-col gap-2 mt-4 p-3 bg-popover rounded-lg border border-border w-full max-w-full overflow-hidden">
+                <div className="flex items-center gap-2 text-xs font-medium opacity-70">
+                  {message.isStreaming && <LoadingSpinner size="sm" />}
+                  <span>Thinking Process</span>
+                </div>
+                <div
+                  ref={thinkingRef}
+                  className="text-sm opacity-50 italic break-all whitespace-pre-wrap min-w-0 flex-1 max-h-32 overflow-y-auto"
+                >
                   {message.thinking}
-                </span>
+                </div>
               </div>
             )}
             <MessageBubbleRouter message={message} />
