@@ -66,16 +66,6 @@ export class LocalDatabase extends Dexie {
       playbooks: '&id, agentId, createdAt, updatedAt, goal',
     });
 
-    // Version 2: Add title index to playbooks and reset data for schema change
-    this.version(2)
-      .stores({
-        playbooks: '&id, agentId, createdAt, updatedAt, goal, title',
-      })
-      .upgrade(async (trans) => {
-        // Clear old playbooks as the schema has changed significantly (inputs added)
-        await trans.table('playbooks').clear();
-      });
-
     // Populate hook: Seed default assistants only on fresh DB creation
     this.on('populate', async () => {
       const now = new Date();

@@ -371,42 +371,6 @@ impl WorkspaceServer {
         Ok(results)
     }
 
-    fn parse_replacements(replacements_val: &Value) -> Result<Vec<HashMap<String, Value>>, String> {
-        let replacements_array: Vec<Value> = match serde_json::from_value(replacements_val.clone())
-        {
-            Ok(r) => r,
-            Err(e) => return Err(format!("Invalid replacements format: {e}")),
-        };
-
-        let mut replacements: Vec<HashMap<String, Value>> = Vec::new();
-        for (i, item) in replacements_array.iter().enumerate() {
-            match item {
-                Value::Object(map) => {
-                    replacements.push(map.iter().map(|(k, v)| (k.clone(), v.clone())).collect());
-                }
-                Value::String(s) => {
-                    // Try to parse string as JSON object
-                    match serde_json::from_str::<HashMap<String, Value>>(s) {
-                        Ok(map) => replacements.push(map),
-                        Err(e) => {
-                            return Err(format!(
-                                "Invalid replacement item at index {}: expected JSON object or stringified JSON object. Error: {}",
-                                i, e
-                            ));
-                        }
-                    }
-                }
-                _ => {
-                    return Err(format!(
-                        "Invalid replacement item at index {}: expected JSON object or stringified JSON object",
-                        i
-                    ));
-                }
-            }
-        }
-        Ok(replacements)
-    }
-
     pub async fn handle_replace_lines_in_file(&self, args: Value) -> Result<MCPResult, String> {
         let path_str = match args.get("path").and_then(|v| v.as_str()) {
             Some(path) => path,
@@ -422,10 +386,15 @@ impl WorkspaceServer {
             }
         };
 
-        let replacements = match Self::parse_replacements(replacements_val) {
-            Ok(r) => r,
-            Err(e) => return Ok(MCPResult::error(&e)),
-        };
+        let replacements: Vec<HashMap<String, Value>> =
+            match serde_json::from_value(replacements_val.clone()) {
+                Ok(r) => r,
+                Err(e) => {
+                    return Ok(MCPResult::error(&format!(
+                        "Invalid replacements format: {e}"
+                    )));
+                }
+            };
 
         let safe_path = self.validate_path_with_error(path_str)?;
 
@@ -662,97 +631,5 @@ impl WorkspaceServer {
                 Ok(MCPResult::error(&format!("Failed to import file: {e}")))
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    #[test]
-    fn test_parse_replacements_valid_objects() {
-        let input = json!([
-            {
-                "start_line": 1,
-                "new_content": "foo"
-            },
-            {
-                "start_line": 2,
-                "new_content": "bar"
-            }
-        ]);
-
-        let result = WorkspaceServer::parse_replacements(&input);
-        assert!(result.is_ok());
-        let replacements = result.unwrap();
-        assert_eq!(replacements.len(), 2);
-        assert_eq!(
-            replacements[0]
-                .get("new_content")
-                .unwrap()
-                .as_str()
-                .unwrap(),
-            "foo"
-        );
-    }
-
-    #[test]
-    fn test_parse_replacements_valid_strings() {
-        let input = json!([
-            "{\"start_line\": 1, \"new_content\": \"foo\"}",
-            "{\"start_line\": 2, \"new_content\": \"bar\"}"
-        ]);
-
-        let result = WorkspaceServer::parse_replacements(&input);
-        assert!(result.is_ok());
-        let replacements = result.unwrap();
-        assert_eq!(replacements.len(), 2);
-        assert_eq!(
-            replacements[0]
-                .get("new_content")
-                .unwrap()
-                .as_str()
-                .unwrap(),
-            "foo"
-        );
-    }
-
-    #[test]
-    fn test_parse_replacements_mixed() {
-        let input = json!([
-            {
-                "start_line": 1,
-                "new_content": "foo"
-            },
-            "{\"start_line\": 2, \"new_content\": \"bar\"}"
-        ]);
-
-        let result = WorkspaceServer::parse_replacements(&input);
-        assert!(result.is_ok());
-        let replacements = result.unwrap();
-        assert_eq!(replacements.len(), 2);
-    }
-
-    #[test]
-    fn test_parse_replacements_invalid_json_string() {
-        let input = json!(["not valid json"]);
-
-        let result = WorkspaceServer::parse_replacements(&input);
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .contains("expected JSON object or stringified JSON object"));
-    }
-
-    #[test]
-    fn test_parse_replacements_invalid_type() {
-        let input = json!([123]);
-
-        let result = WorkspaceServer::parse_replacements(&input);
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .contains("expected JSON object or stringified JSON object"));
     }
 }

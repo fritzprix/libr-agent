@@ -363,7 +363,7 @@ export const ToolCallGroupBubble: React.FC<ToolCallGroupBubbleProps> = ({
   const isAnyRunning = statusSummary.runningCount > 0;
 
   const containerClass = cn(
-    'rounded-lg border transition-all mb-2 hover:bg-accent/50 w-full max-w-full min-w-0',
+    'rounded-lg border transition-all mb-2 hover:bg-accent/50 w-full max-w-full',
     isAnyRunning && 'border-l-4 border-primary bg-primary/10',
     !isAnyRunning &&
       hasAnyError &&
