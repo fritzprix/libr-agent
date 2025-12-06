@@ -2710,7 +2710,7 @@ dependencies = [
 
 [[package]]
 name = "libragent"
-version = "0.3.28"
+version = "0.3.29"
 dependencies = [
  "anyhow",
  "async-trait",
