@@ -93,9 +93,16 @@ impl WorkspaceServer {
                     );
                 }
 
-                Ok(MCPResult::error(&format!(
-                    "Command execution timeout after {timeout_secs} seconds. The shell session has been reset."
-                )))
+                // Return structured JSON error for consistency
+                let response = serde_json::json!({
+                    "command": command,
+                    "exit_code": -1,
+                    "stdout": "",
+                    "stderr": format!("Command execution timeout after {timeout_secs} seconds. The shell session has been reset."),
+                    "status": "timeout"
+                });
+
+                Ok(MCPResult::error(&response.to_string()))
             }
         }
     }

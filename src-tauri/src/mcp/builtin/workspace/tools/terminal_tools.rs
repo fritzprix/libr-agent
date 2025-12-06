@@ -113,7 +113,7 @@ pub fn create_list_processes_tool() -> MCPTool {
         name: "list_processes".to_string(),
         title: Some("List Processes".to_string()),
         description: "List all background processes in the current session. \
-                      Filter by status: 'all' (default), 'running', or 'finished'."
+                      Filter by status: 'all' (default), 'running', or 'finished' (includes failed)."
             .to_string(),
         input_schema: object_schema(props, vec![]),
         output_schema: None,
