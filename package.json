@@ -1,7 +1,7 @@
 {
   "name": "libragent",
   "private": false,
-  "version": "0.3.27",
+  "version": "0.3.28",
   "description": "A desktop app for AI agents with built-in tools",
   "author": "fritzprix",
   "license": "MIT",
@@ -69,6 +69,7 @@
     "@remote-dom/core": "^1.9.0",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "~2",
+    "@tauri-apps/plugin-http": "^2.5.4",
     "@tauri-apps/plugin-log": "~2.6.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

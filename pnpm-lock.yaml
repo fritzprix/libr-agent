@@ -70,6 +70,9 @@ importers:
       '@tauri-apps/plugin-dialog':
         specifier: ~2
         version: 2.3.2
+      '@tauri-apps/plugin-http':
+        specifier: ^2.5.4
+        version: 2.5.4
       '@tauri-apps/plugin-log':
         specifier: ~2.6.0
         version: 2.6.0
@@ -2162,6 +2165,12 @@ packages:
         integrity: sha512-hRNcdercfgpzgFrMXWwNDBN0B7vNzOzRepy6ZAmhxi5mDLVPNrTpo9MGg2tN/F7JRugj4d2aF7E1rtPXAHaetg==,
       }
 
+  '@tauri-apps/api@2.9.1':
+    resolution:
+      {
+        integrity: sha512-IGlhP6EivjXHepbBic618GOmiWe4URJiIeZFlB7x3czM0yDHHYviH1Xvoiv4FefdkQtn6v7TuwWCRfOGdnVUGw==,
+      }
+
   '@tauri-apps/cli-darwin-arm64@2.6.2':
     resolution:
       {
@@ -2273,6 +2282,12 @@ packages:
     resolution:
       {
         integrity: sha512-cNLo9YeQSC0MF4IgXnotHsqEgJk72MBZLXmQPrLA95qTaaWiiaFQ38hIMdZ6YbGUNkr3oni3EhU+AD5jLHcdUA==,
+      }
+
+  '@tauri-apps/plugin-http@2.5.4':
+    resolution:
+      {
+        integrity: sha512-/i4U/9za3mrytTgfRn5RHneKubZE/dwRmshYwyMvNRlkWjvu1m4Ma72kcbVJMZFGXpkbl+qLyWMGrihtWB76Zg==,
       }
 
   '@tauri-apps/plugin-log@2.6.0':
@@ -8653,6 +8668,8 @@ snapshots:
 
   '@tauri-apps/api@2.6.0': {}
 
+  '@tauri-apps/api@2.9.1': {}
+
   '@tauri-apps/cli-darwin-arm64@2.6.2':
     optional: true
 
@@ -8703,6 +8720,10 @@ snapshots:
   '@tauri-apps/plugin-dialog@2.3.2':
     dependencies:
       '@tauri-apps/api': 2.6.0
+
+  '@tauri-apps/plugin-http@2.5.4':
+    dependencies:
+      '@tauri-apps/api': 2.9.1
 
   '@tauri-apps/plugin-log@2.6.0':
     dependencies:
