@@ -31,30 +31,52 @@ export interface PlaybookStep {
 }
 
 /**
- * A reusable playbook for achieving a single goal. Playbooks represent
- * successful agent workflows that can be re-used or replayed.
+ * Defines an input parameter for a playbook template
+ */
+export interface PlaybookInput {
+  /** Variable name used in template strings (e.g., "targetCompany") */
+  name: string;
+
+  /** Human-readable description of this input */
+  description: string;
+
+  /** Data type of the input value */
+  type?: 'string' | 'number' | 'boolean';
+
+  /** Optional default value if not provided at runtime */
+  defaultValue?: string;
+}
+
+/**
+ * A reusable playbook template for achieving a goal.
+ * Supports parameterization via inputs for flexible re-execution.
  */
 export interface Playbook {
-  /** Identifier of the agent suitable for performing this playbook */
-  agentId: string;
+  /** Optional unique identifier (auto-generated if omitted) */
+  playbookId?: string;
 
-  /** The final goal this playbook aims to achieve */
+  /** Short, user-facing title for this playbook */
+  title: string;
+
+  /** Goal description (supports {{variableName}} templates) */
   goal: string;
 
-  /** Stores the user's initial natural language command as-is */
-  initialCommand: string;
+  /** Input parameters required to execute this playbook */
+  inputs: PlaybookInput[];
 
-  /** Set of sequential steps for achieving the goal */
+  /** Sequential workflow steps */
   workflow: PlaybookStep[];
 
-  /**
-   * Describes the objective criteria for this playbook to be considered 'successful'
-   */
+  /** Success criteria definition */
   successCriteria: {
-    // 기존의 설명
     description: string;
-
-    // (추가) Task 성공 시 반드시 생성되어야 하는 파일 목록
-    requiredArtifacts?: string[]; // 예: ["report.pdf", "summary.txt"]
+    requiredArtifacts?: string[];
   };
+
+  // Legacy/optional fields for backward compatibility
+  /** Agent ID (optional for template playbooks) */
+  agentId?: string;
+
+  /** Example initial command (optional, for documentation) */
+  initialCommand?: string;
 }

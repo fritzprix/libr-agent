@@ -33,10 +33,28 @@ impl WorkspaceServer {
         // Execute with timeout
         let timeout_duration = Duration::from_secs(timeout_secs);
 
+        // Reset working directory to workspace root before executing command
+        // This ensures predictable behavior (always starting from root) while preserving env vars
+        // Note: We use to_string_lossy() which should be safe for most paths, but might be an issue for some non-UTF8 paths on Unix
+        let full_command = if cfg!(windows) {
+            format!(
+                "Set-Location -Path \"{}\"; {}",
+                workspace_path.to_string_lossy(),
+                normalized_command
+            )
+        } else {
+            format!(
+                "cd \"{}\" && {}",
+                workspace_path.to_string_lossy(),
+                normalized_command
+            )
+        };
+
+        // Pass workspace_path to execute (it is used for creation if shell doesn't exist)
         let execution_result = tokio::time::timeout(
             timeout_duration,
             self.shell_manager
-                .execute(session_id.clone(), workspace_path, &normalized_command),
+                .execute(session_id.clone(), workspace_path, &full_command),
         )
         .await;
 

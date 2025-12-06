@@ -474,7 +474,7 @@ impl ContentStoreServer {
         };
 
         // Verify the content belongs to the current session
-        let storage = self.storage.lock().await;
+        let mut storage = self.storage.lock().await;
         let content_session_id = match storage.get_content_session_id(&args.content_id) {
             Some(sid) => sid,
             None => {
@@ -493,7 +493,7 @@ impl ContentStoreServer {
         }
 
         // Delete from storage
-        let mut storage = self.storage.lock().await;
+        // let mut storage = self.storage.lock().await; // Removed to avoid deadlock
         if let Err(e) = storage.delete_content(&args.content_id).await {
             return Ok(MCPResult::error(&format!("Failed to delete content: {e}")));
         }
@@ -648,5 +648,41 @@ mod tests {
         assert_eq!(result.is_error, Some(false));
         let structured_content = result.structured_content.unwrap();
         assert_eq!(structured_content["results"].as_array().unwrap().len(), 0);
+    }
+    #[tokio::test]
+    async fn test_handle_delete_content() {
+        let (server, _temp) = setup_test_server().await;
+
+        server
+            .switch_context(ServiceContextOptions {
+                session_id: Some("test-session".to_string()),
+                assistant_id: None,
+            })
+            .await
+            .unwrap();
+
+        // Add content
+        let params = serde_json::json!({
+            "content": "To be deleted",
+            "metadata": {
+                "filename": "delete_me.txt"
+            }
+        });
+        let add_result = server.handle_add_content(params).await.unwrap();
+        let content_id = add_result.structured_content.unwrap()["contentId"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        // Delete content
+        let delete_params = serde_json::json!({
+            "content_id": content_id
+        });
+        let delete_result = server.handle_delete_content(delete_params).await.unwrap();
+
+        if delete_result.is_error == Some(true) {
+            panic!("Delete failed with error: {:?}", delete_result);
+        }
+        assert_eq!(delete_result.is_error, Some(false));
     }
 }

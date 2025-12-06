@@ -34,7 +34,7 @@ let currentAssistantId: string | null = null;
 function formatPlaybook(p: PlaybookRecord): string {
   const created = p.createdAt ? String(p.createdAt) : 'unknown';
   const steps = Array.isArray(p.workflow) ? p.workflow.length : 0;
-  return `id:${p.id} goal:"${p.goal}" initial:"${p.initialCommand || ''}" steps:${steps} createdAt:${created}`;
+  return `id:${p.id} title:"${p.title}" goal:"${p.goal}" initial:"${p.initialCommand || ''}" steps:${steps} createdAt:${created}`;
 }
 
 // --- Helpers to reduce duplication between DB and in-memory branches ---
@@ -43,7 +43,7 @@ function formatPlaybooksList(items: PlaybookRecord[]): string {
     .map((p, idx) => {
       const created = p.createdAt ? String(p.createdAt) : 'unknown';
       const steps = Array.isArray(p.workflow) ? p.workflow.length : 0;
-      return `${idx + 1}. id:${p.id} goal:"${p.goal}" initial:"${p.initialCommand || ''}" steps:${steps} createdAt:${created}`;
+      return `${idx + 1}. id:${p.id} title:"${p.title}" goal:"${p.goal}" initial:"${p.initialCommand || ''}" steps:${steps} createdAt:${created}`;
     })
     .join('\n');
 }
@@ -51,10 +51,12 @@ function formatPlaybooksList(items: PlaybookRecord[]): string {
 function buildListItemsHtml(items: PlaybookRecord[]): string {
   return items
     .map((p) => {
+      const title = escapeHtml(p.title || p.goal);
       const goal = escapeHtml(p.goal);
       const id = escapeHtml(p.id);
       const steps = (p.workflow || []).length;
-      return `<div class="pb-item" style="padding:8px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center;"><div style="flex:1"><strong>${goal}</strong><div style="font-size:12px;color:#666">id:${id} • steps:${steps}</div></div><div><button data-pbid="${id}" class="select-pb-btn" style="margin-right:8px;">Select</button><button data-pbid="${id}" class="delete-pb-btn" style="\n      background-color:#dc3545;color:white;border:none;padding:4px 8px;border-radius:4px;\n    ">Delete</button></div></div>`;
+      const inputsCount = (p.inputs || []).length;
+      return `<div class="pb-item" style="padding:8px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center;"><div style="flex:1"><strong>${title}</strong><div style="font-size:12px;color:#666">Goal: ${goal}</div><div style="font-size:12px;color:#666">id:${id} • steps:${steps} • inputs:${inputsCount}</div></div><div><button data-pbid="${id}" class="select-pb-btn" style="margin-right:8px;">Select</button><button data-pbid="${id}" class="delete-pb-btn" style="\n      background-color:#dc3545;color:white;border:none;padding:4px 8px;border-radius:4px;\n    ">Delete</button></div></div>`;
     })
     .join('');
 }
@@ -106,8 +108,20 @@ function makeListMultipartResponse(
 function formatPlaybookDetailed(rec: PlaybookRecord) {
   const lines: string[] = [];
   lines.push(`id: ${rec.id}`);
-  lines.push(`agentId: ${rec.agentId}`);
+  lines.push(`title: ${rec.title}`);
+  lines.push(`agentId: ${rec.agentId || 'N/A'}`);
   lines.push(`goal: ${rec.goal}`);
+  if (rec.inputs && rec.inputs.length > 0) {
+    lines.push('--- inputs ---');
+    rec.inputs.forEach((inp, idx) => {
+      lines.push(
+        `${idx + 1}. ${inp.name} (${inp.type || 'string'}): ${inp.description}`,
+      );
+      if (inp.defaultValue) {
+        lines.push(`   default: ${inp.defaultValue}`);
+      }
+    });
+  }
   lines.push(`initialCommand: ${rec.initialCommand || ''}`);
   lines.push(`createdAt: ${rec.createdAt ?? 'unknown'}`);
   lines.push(`updatedAt: ${rec.updatedAt ?? 'unknown'}`);
@@ -341,7 +355,14 @@ const playbookStore: WebMCPServer = {
           const playbook: PlaybookRecord = {
             id,
             agentId: currentAssistantId,
+            title: String(a.title || ''),
             goal: String(a.goal || ''),
+            inputs: ((a.inputs as Playbook['inputs']) || []).map((inp) => ({
+              name: String(inp?.name || ''),
+              description: String(inp?.description || ''),
+              type: inp?.type || 'string',
+              defaultValue: inp?.defaultValue,
+            })),
             initialCommand: String(a.initialCommand || ''),
             workflow: ((a.workflow as Playbook['workflow']) || []).map(
               (s, i) => ({
@@ -704,18 +725,43 @@ The playbook has been modified. Changes are immediately available.`;
           // Build detailed text
           const formattedText = formatPlaybookDetailed(existing);
 
-          const agentPrompt = `[select_playbook] Playbook "${existing.goal}" (ID: ${existing.id}) has been selected for execution.
+          const inputsDescription =
+            existing.inputs && existing.inputs.length > 0
+              ? `\n\nRequired Inputs:\n${existing.inputs
+                  .map(
+                    (inp) =>
+                      `- ${inp.name} (${inp.type || 'string'}): ${inp.description}${inp.defaultValue ? ` [default: ${inp.defaultValue}]` : ''}`,
+                  )
+                  .join('\n')}`
+              : '\n\n(No inputs required for this playbook)';
+
+          const handlebarsGuide =
+            existing.inputs && existing.inputs.length > 0
+              ? `\n\nHandlebars Template Syntax Guide:
+- Variables: {{variableName}}
+- Conditionals: {{#if condition}}...{{else}}...{{/if}}
+- Loops: {{#each array}}{{this}}{{/each}}
+- Safe execution: All template strings will be resolved when you provide input values.`
+              : '';
+
+          const agentPrompt = `[select_playbook] Playbook "${existing.title}" (ID: ${existing.id}) has been selected for execution.
+
+Goal: ${existing.goal}${inputsDescription}${handlebarsGuide}
 
 Playbook Details:
 ---
 ${formattedText}
 ---
 
-Instructions:
-1. Review the workflow steps and success criteria above
-2. Establish todos based on the workflow steps
-3. Begin executing the tasks according to the defined steps
-4. Track progress and verify against success criteria
+Execution Instructions:
+1. If this playbook requires inputs, gather the necessary values from the user or context
+2. Note that descriptions and purposes may contain Handlebars templates ({{variable}})
+3. Review the workflow steps and success criteria above
+4. Establish todos based on the workflow steps
+5. Begin executing the tasks, interpreting template placeholders with actual values
+6. Track progress and verify against success criteria
+
+Note: Type hints are provided for guidance only. Use your judgment to interpret and convert values as needed.
 
 You may now proceed with execution.`;
 

@@ -6,24 +6,52 @@ import type { MCPTool } from '@/lib/mcp-types';
 export const playbookTools: MCPTool[] = [
   {
     name: 'create_playbook',
-    description: 'Create a new playbook (workflow)',
+    description:
+      'Create a new reusable playbook template with parameterized inputs. Supports {{variableName}} templates in descriptions and purposes.',
     inputSchema: {
       type: 'object',
       properties: {
+        title: {
+          type: 'string',
+          description:
+            'Short, user-facing title for this playbook (e.g., "Company Financial Analysis")',
+        },
         goal: {
           type: 'string',
           description:
-            'Short, user-facing description of the intended goal this playbook achieves',
+            'Goal description. Supports {{variableName}} templates (e.g., "Analyze {{targetCompany}}\'s financials")',
         },
-        initialCommand: {
-          type: 'string',
-          description:
-            "The user's original natural-language command that spawned this playbook",
+        inputs: {
+          type: 'array',
+          description: 'Input parameters required to execute this playbook',
+          items: {
+            type: 'object',
+            properties: {
+              name: {
+                type: 'string',
+                description: 'Variable name (e.g., "targetCompany")',
+              },
+              description: {
+                type: 'string',
+                description: 'Human-readable description of this input',
+              },
+              type: {
+                type: 'string',
+                enum: ['string', 'number', 'boolean'],
+                description: 'Data type of the input value',
+              },
+              defaultValue: {
+                type: 'string',
+                description: 'Optional default value',
+              },
+            },
+            required: ['name', 'description'],
+          },
         },
         workflow: {
           type: 'array',
           description:
-            'An ordered list of steps (PlaybookStep) that make up this workflow',
+            'An ordered list of steps (PlaybookStep) that make up this workflow. Descriptions and purposes support {{variableName}} templates.',
           items: {
             type: 'object',
             properties: {
@@ -83,8 +111,17 @@ export const playbookTools: MCPTool[] = [
           },
           required: ['description'],
         },
+        // Legacy/Optional fields
+        agentId: {
+          type: 'string',
+          description: 'Optional agent ID for playbook ownership',
+        },
+        initialCommand: {
+          type: 'string',
+          description: 'Optional example command that inspired this playbook',
+        },
       },
-      required: ['goal', 'workflow'],
+      required: ['title', 'goal', 'inputs', 'workflow'],
     },
   },
   {
@@ -186,8 +223,25 @@ export const playbookTools: MCPTool[] = [
         playbook: {
           type: 'object',
           properties: {
+            title: { type: 'string' },
             agentId: { type: 'string' },
             goal: { type: 'string' },
+            inputs: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  name: { type: 'string' },
+                  description: { type: 'string' },
+                  type: {
+                    type: 'string',
+                    enum: ['string', 'number', 'boolean'],
+                  },
+                  defaultValue: { type: 'string' },
+                },
+                required: ['name', 'description'],
+              },
+            },
             initialCommand: { type: 'string' },
             workflow: {
               type: 'array',

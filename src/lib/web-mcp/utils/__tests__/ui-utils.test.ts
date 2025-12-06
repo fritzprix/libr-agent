@@ -167,6 +167,34 @@ const options = {{{optionsJson}}};`;
       expect(() => eval(result)).not.toThrow();
     });
   });
+
+  describe('Playbook Template Scenarios', () => {
+    it('should substitute playbook input variables', () => {
+      const template = 'Analyze {{targetCompany}} financial report for {{year}}';
+      const result = renderTemplate(template, {
+        targetCompany: 'Apple',
+        year: 2024,
+      });
+      expect(result).toBe('Analyze Apple financial report for 2024');
+    });
+
+    it('should handle conditionals for workflow steps', () => {
+      const template =
+        '{{#if includeCompetitors}}Compare with competitors{{else}}Solo analysis{{/if}}';
+      const result1 = renderTemplate(template, { includeCompetitors: true });
+      const result2 = renderTemplate(template, { includeCompetitors: false });
+      expect(result1).toBe('Compare with competitors');
+      expect(result2).toBe('Solo analysis');
+    });
+
+    it('should handle loops for multiple targets', () => {
+      const template = '{{#each companies}}{{this}} {{/each}}';
+      const result = renderTemplate(template, {
+        companies: ['Apple', 'Google', 'Microsoft'],
+      });
+      expect(result).toBe('Apple Google Microsoft ');
+    });
+  });
 });
 
 describe('escapeHtml', () => {
