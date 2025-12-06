@@ -179,6 +179,7 @@ pub fn run() {
     // Configure Tauri builder with error handling
     let result = std::panic::catch_unwind(|| {
         tauri::Builder::default()
+            .plugin(tauri_plugin_http::init())
             .plugin(tauri_plugin_dialog::init())
             .plugin(
                 tauri_plugin_log::Builder::default()

@@ -69,7 +69,7 @@ pub fn create_execute_shell_tool() -> MCPTool {
     MCPTool {
         name: "execute_shell".to_string(),
         title: Some("Execute Shell Command (bash/sh)".to_string()),
-        description: "Execute a shell command using bash or sh in a sandboxed environment.\n\n\
+        description: "Execute a shell command using bash or sh.\n\n\
                       INTERACTIVE INPUT:\n\
                       - Set 'require_user_input: true' to prompt for user input before execution\n\
                       - Auto-detects privilege escalation commands (sudo, su, doas, pkexec)\n\
@@ -77,8 +77,9 @@ pub fn create_execute_shell_tool() -> MCPTool {
                       - ⚠️ LIMITATION: Only supports SINGLE pre-execution input (stdin closed after input)\n\
                       - Multiple prompts (e.g., password → y/n confirmation) are NOT supported\n\n\
                       MODES:\n\
-                      - 'sync' (default): Wait for completion, return stdout/stderr immediately\n\
-                      - 'async': Run in background, return process_id immediately\n\n\
+                      - 'sync' (default): Uses a PERSISTENT shell session. State (variables, working dir) is preserved between calls.\n\
+                        ⚠️ SECURITY NOTE: This mode is NOT fully sandboxed. It inherits the host environment and allows navigation outside the workspace.\n\
+                      - 'async': Runs in a background process with Medium Isolation (restricted env). Returns process_id immediately.\n\n\
                       For async mode, use 'poll_process' to check status and retrieve output.\n\n\
                       PLATFORM: Unix (Linux, macOS) - uses bash or sh shell."
             .to_string(),
@@ -151,18 +152,21 @@ pub fn create_execute_shell_tool() -> MCPTool {
     MCPTool {
         name: "execute_windows_cmd".to_string(),
         title: Some("Execute Windows Command (PowerShell)".to_string()),
-        description: "Execute a command using Windows PowerShell in a sandboxed environment.\n\n\
-                      FEATURES:
-                      - Interactive Input: Set 'require_user_input: true'. Supports text/password (single prompt only).
-                      - Modes: 'sync' (wait for output) or 'async' (background).
-
-                      WINDOWS TIPS:
-                      - Shell: PowerShell (powershell.exe).
-                      - Path: Use double quotes for paths with spaces.
-                      - External Tools: Ensure 'python', 'node', etc. are in PATH.
-                      - Troubleshooting:
-                        - 'python' not found? Try 'py' or 'where.exe python'.
-                        - 'where' command failed? Use 'where.exe' (PowerShell alias conflict).
+        description: "Execute a command using Windows PowerShell.\n\n\
+                      FEATURES:\n\
+                      - Interactive Input: Set 'require_user_input: true'. Supports text/password (single prompt only).\n\
+                      - Modes: 'sync' (wait for output) or 'async' (background).\n\n\
+                      MODES:\n\
+                      - 'sync' (default): Uses a PERSISTENT shell session. State (variables, working dir) is preserved between calls.\n\
+                        ⚠️ SECURITY NOTE: This mode is NOT fully sandboxed. It inherits the host environment/PATH and allows navigation outside the workspace.\n\
+                      - 'async': Runs in a background process with Medium Isolation.\n\n\
+                      WINDOWS TIPS:\n\
+                      - Shell: PowerShell (powershell.exe).\n\
+                      - Path: Use double quotes for paths with spaces.\n\
+                      - External Tools: Ensure 'python', 'node', etc. are in PATH.\n\
+                      - Troubleshooting:\n\
+                        - 'python' not found? Try 'py' or 'where.exe python'.\n\
+                        - 'where' command failed? Use 'where.exe' (PowerShell alias conflict).\n\
                         - 'del' failed? Use comma-separated paths: 'del file1, file2'."
             .to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),

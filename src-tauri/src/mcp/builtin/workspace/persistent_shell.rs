@@ -214,8 +214,14 @@ impl PersistentShell {
             self.stdin
                 .write_all(format!("Write-Output '{}'\n", sentinel).as_bytes())
                 .await?;
+            // Robust exit code capture for PowerShell (PS 5.1 compatible):
+            // If $LASTEXITCODE is non-zero OR $? is false:
+            //   If $LASTEXITCODE is 0 (meaning $? was false but LASTEXITCODE wasn't set), return 1.
+            //   Else return $LASTEXITCODE.
+            // Else return 0.
+            // Note: Ternary operator (?:) is not supported in PS 5.1, so we use if/else statements.
             self.stdin
-                .write_all("Write-Output \"EXIT_CODE_$LASTEXITCODE\"\n".as_bytes())
+                .write_all("Write-Output \"EXIT_CODE_$(if ($LASTEXITCODE -ne 0 -or -not $?) { if ($LASTEXITCODE -eq 0) { 1 } else { $LASTEXITCODE } } else { 0 })\"\n".as_bytes())
                 .await?;
         }
 
@@ -382,8 +388,9 @@ impl PersistentShell {
             self.stdin
                 .write_all(format!("Write-Output '{}'\n", sentinel).as_bytes())
                 .await?;
+            // Robust exit code capture for PowerShell (PS 5.1 compatible)
             self.stdin
-                .write_all("Write-Output \"EXIT_CODE_$LASTEXITCODE\"\n".as_bytes())
+                .write_all("Write-Output \"EXIT_CODE_$(if ($LASTEXITCODE -ne 0 -or -not $?) { if ($LASTEXITCODE -eq 0) { 1 } else { $LASTEXITCODE } } else { 0 })\"\n".as_bytes())
                 .await?;
         }
 

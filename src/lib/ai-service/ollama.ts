@@ -1,4 +1,5 @@
 import { Ollama } from 'ollama/browser';
+import { fetch } from '@tauri-apps/plugin-http';
 import type {
   ChatRequest,
   ListResponse,
@@ -62,7 +63,7 @@ export class OllamaService extends BaseAIService {
   constructor(apiKey: string, config?: AIServiceConfig & { host?: string }) {
     super(apiKey, config);
     this.host = config?.host || 'http://127.0.0.1:11434';
-    this.ollamaClient = new Ollama({ host: this.host });
+    this.ollamaClient = new Ollama({ host: this.host, fetch: fetch });
     logger.info('Ollama service initialized', {
       host: this.host,
     });
