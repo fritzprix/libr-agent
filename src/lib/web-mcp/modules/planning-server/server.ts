@@ -148,20 +148,20 @@ const planningServer: WebMCPServer = {
 
         const todosText = paginatedTodos.length
           ? paginatedTodos
-            .map((t) => {
-              let checkbox = '[ ]';
-              if (t.status === 'completed') checkbox = '[x]';
-              else if (t.status === 'blocked') checkbox = '[!]';
+              .map((t) => {
+                let checkbox = '[ ]';
+                if (t.status === 'completed') checkbox = '[x]';
+                else if (t.status === 'blocked') checkbox = '[!]';
 
-              const summaryPart = t.summary ? ` - ${t.summary}` : '';
-              const priorityPart = t.priority ? ` [${t.priority}]` : '';
-              const dependsPart =
-                t.dependsOn && t.dependsOn.length > 0
-                  ? ` (depends on: ${t.dependsOn.join(', ')})`
-                  : '';
-              return `- ID:${t.id} ${checkbox} ${t.name}${priorityPart}${summaryPart}${dependsPart}`;
-            })
-            .join('\n')
+                const summaryPart = t.summary ? ` - ${t.summary}` : '';
+                const priorityPart = t.priority ? ` [${t.priority}]` : '';
+                const dependsPart =
+                  t.dependsOn && t.dependsOn.length > 0
+                    ? ` (depends on: ${t.dependsOn.join(', ')})`
+                    : '';
+                return `- ID:${t.id} ${checkbox} ${t.name}${priorityPart}${summaryPart}${dependsPart}`;
+              })
+              .join('\n')
           : '(none)';
 
         const scratchpadText =

@@ -1,46 +1,46 @@
 /** Represents a single to-do item in the planning state. @internal */
 export interface SimpleTodo {
-    id: number;
-    name: string;
-    status: 'pending' | 'completed' | 'blocked';
-    summary?: string;
-    priority?: 'low' | 'medium' | 'high';
-    dependsOn?: number[];
+  id: number;
+  name: string;
+  status: 'pending' | 'completed' | 'blocked';
+  summary?: string;
+  priority?: 'low' | 'medium' | 'high';
+  dependsOn?: number[];
 }
 
 export interface ScratchpadItem {
-    id: number;
-    content: string;
+  id: number;
+  content: string;
 }
 
 /** Represents a single thought in the sequential-thinking tool. @internal */
 export interface ThoughtData {
-    thought: string;
-    thoughtNumber: number;
-    totalThoughts: number;
-    isRevision?: boolean;
-    revisesThought?: number;
-    branchFromThought?: number;
-    branchId?: string;
-    needsMoreThoughts?: boolean;
-    nextThoughtNeeded: boolean;
-    category?: string;
-    relatedTodoId?: number;
-    nextAction?: string;
+  thought: string;
+  thoughtNumber: number;
+  totalThoughts: number;
+  isRevision?: boolean;
+  revisesThought?: number;
+  branchFromThought?: number;
+  branchId?: string;
+  needsMoreThoughts?: boolean;
+  nextThoughtNeeded: boolean;
+  category?: string;
+  relatedTodoId?: number;
+  nextAction?: string;
 }
 
 /**
  * Represents the entire state of the planning server.
  */
 export interface PlanningState {
-    /** The current main goal. */
-    goal: string | null;
-    /** The most recently cleared goal, for context. */
-    lastClearedGoal: string | null;
-    /** The list of to-do items. */
-    todos: SimpleTodo[];
-    /** A list of recent notes or temporary records. */
-    scratchpad: ScratchpadItem[];
+  /** The current main goal. */
+  goal: string | null;
+  /** The most recently cleared goal, for context. */
+  lastClearedGoal: string | null;
+  /** The list of to-do items. */
+  todos: SimpleTodo[];
+  /** A list of recent notes or temporary records. */
+  scratchpad: ScratchpadItem[];
 }
 
 /**
@@ -48,7 +48,7 @@ export interface PlanningState {
  * @internal
  */
 export interface BaseOutput {
-    success: boolean;
+  success: boolean;
 }
 
 /**
@@ -56,7 +56,7 @@ export interface BaseOutput {
  * @internal
  */
 export interface CreateGoalOutput extends BaseOutput {
-    goal: string;
+  goal: string;
 }
 
 /**
@@ -70,7 +70,7 @@ export type ClearGoalOutput = BaseOutput;
  * @internal
  */
 export interface AddToDoOutput extends BaseOutput {
-    todos: SimpleTodo[];
+  todos: SimpleTodo[];
 }
 
 /**
@@ -78,6 +78,6 @@ export interface AddToDoOutput extends BaseOutput {
  * @internal
  */
 export interface CheckTodoOutput extends BaseOutput {
-    todo: SimpleTodo | null;
-    todos: SimpleTodo[];
+  todo: SimpleTodo | null;
+  todos: SimpleTodo[];
 }
