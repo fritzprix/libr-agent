@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import 'fake-indexeddb/auto';
 import { db } from '../db';
-import planningServer, { ScratchpadItem } from '../server';
+import planningServer from '../server';
+import { ScratchpadItem } from '../types';
 
 interface TodoItem {
     id: number;

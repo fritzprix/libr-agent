@@ -16,6 +16,15 @@
 
 ---
 
+## Demo
+
+![LibrAgent Demo](assets/demo_1280_4x_optimized.gif)
+
+This demo highlights the core capabilities of LibrAgent:
+
+- **Integrated Browser & Computer Use Tools**: Seamlessly control the browser and execute Shell/PowerShell commands.
+- **AI Agent Assistance**: Unified planning and UI bubbles to assist the agent in complex tasks.
+
 ## The Problem
 
 MCP (Model Context Protocol) is a good idea, but using it has friction:

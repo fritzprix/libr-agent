@@ -49,8 +49,9 @@ export default [
     },
   },
   {
+    files: ['**/*.ts', '**/*.tsx'],
     rules: {
-      // Add any custom rules here
+      'no-undef': 'off',
     },
   },
 ];
