@@ -236,18 +236,28 @@ impl DocumentParser {
         // First try pdf-extract for better text extraction
         // Wrap in catch_unwind to handle potential panics in dependencies
         let file_path_buf = file_path.to_path_buf();
-        let result = std::panic::catch_unwind(move || pdf_extract::extract_text(&file_path_buf));
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            pdf_extract::extract_text(&file_path_buf)
+        }));
 
         match result {
             Ok(Ok(extracted_text)) => {
                 let content = extracted_text.trim();
+                // If pdf-extract returns empty content, fall back to lopdf
                 if !content.is_empty() {
                     return ParseResult::Text(content.to_string());
+                } else {
+                    log::warn!(
+                        "pdf-extract returned empty content for {:?}, falling back to lopdf",
+                        file_path
+                    );
                 }
-                // If pdf-extract returns empty content, fall back to lopdf
             }
             Ok(Err(e)) => {
-                log::warn!("pdf-extract failed: {e}, falling back to lopdf");
+                log::warn!(
+                    "pdf-extract failed for {:?}: {e}, falling back to lopdf",
+                    file_path
+                );
                 // Fall back to lopdf
             }
             Err(e) => {
@@ -258,7 +268,11 @@ impl DocumentParser {
                 } else {
                     "Unknown panic".to_string()
                 };
-                log::error!("pdf-extract panicked: {}, falling back to lopdf", err_msg);
+                log::error!(
+                    "pdf-extract panicked processing {:?}: {}, falling back to lopdf",
+                    file_path,
+                    err_msg
+                );
                 // Fall back to lopdf
             }
         }

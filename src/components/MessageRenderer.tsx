@@ -389,7 +389,8 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
   }
 
   return (
-    <div className={`flex flex-col gap-2 min-w-0 ${className}`}>
+    // min-w-0 is crucial for flex items to shrink below their content size, preventing overflow
+    <div className={`flex flex-col gap-2 min-w-0 max-w-full ${className}`}>
       {finalContent.map((item, index) => {
         const key = `${message?.id}_${item.type}_${index}`;
         switch (item.type) {
