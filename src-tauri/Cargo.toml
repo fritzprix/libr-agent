@@ -36,7 +36,7 @@ keyring = "3.0"
 reqwest = { version = "0.12", features = ["json", "stream"], default-features = false }
 tauri-plugin-log = "2"
 tauri-plugin-http = { version = "2", features = ["unsafe-headers"] }
-log = "0.4.27"
+log = "0.4.29"
 tauri-plugin-dialog = "2"
 path-clean = "1.0"
 tempfile = "3.22"
