@@ -126,7 +126,7 @@ export function ChatInput({ children }: ChatInputProps) {
     }`;
   }, [dragState]);
 
-  const handleAgentInputChange = React.useCallback(
+  const handleAgentInputChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       setInput(e.target.value);
     },
@@ -239,7 +239,7 @@ export function ChatInput({ children }: ChatInputProps) {
     return () => unsub();
   }, [subscribe, processFileDrop, validateFiles]);
 
-  const removeAttachedFile = React.useCallback(
+  const removeAttachedFile = useCallback(
     (filename: string) => {
       const fileToRemove = attachedFiles.find(
         (f: AttachmentReference) => f.filename === filename,

@@ -55,7 +55,7 @@ impl ContentStoreStorage {
             stores: HashMap::new(),
             contents: HashMap::new(),
             chunks: HashMap::new(),
-            sqlite_pool: None,
+            sqlite_pool: Option::None,
         }
     }
 

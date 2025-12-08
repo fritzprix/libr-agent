@@ -150,8 +150,8 @@ export function ChatMessages() {
           j = skipToolResults(j + 1, toolCallIds);
         }
 
-        // Group if multiple messages or multiple tool calls
-        const shouldGroup = j > i + 1 || allToolCalls.length >= 2;
+        // Group if there are any tool calls (ensures consistent UI for single/multiple calls)
+        const shouldGroup = allToolCalls.length > 0;
 
         if (shouldGroup) {
           result.push({
