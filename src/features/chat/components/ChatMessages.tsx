@@ -182,8 +182,8 @@ export function ChatMessages() {
 
   const { retryMessage } = useChatActions();
   // Adapter to satisfy ErrorBubble's onRetry signature which may pass undefined
-  const handleRetry = async () => {
-    return retryMessage();
+  const handleRetry = async (messageIdToDelete?: string) => {
+    return retryMessage(messageIdToDelete);
   };
 
   return (
@@ -201,6 +201,20 @@ export function ChatMessages() {
                 toolGroup={groupedMessage.toolGroup}
                 isLast={index === groupedMessages.length - 1}
               />
+            );
+          }
+
+          if (groupedMessage.message.error) {
+            return (
+              <div
+                className="self-start mt-2 mb-2"
+                key={groupedMessage.message.id}
+              >
+                <ErrorBubble
+                  error={groupedMessage.message.error}
+                  onRetry={() => handleRetry(groupedMessage.message.id)}
+                />
+              </div>
             );
           }
 
