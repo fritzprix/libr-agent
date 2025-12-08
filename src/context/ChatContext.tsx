@@ -66,7 +66,6 @@ const ChatStateContext = createContext<ChatStateContextValue | undefined>(
 interface ChatActionsContextValue {
   submit: (messageToAdd?: Message[], agentKey?: string) => Promise<Message>;
   cancel: () => void;
-  addToMessageQueue: (message: Partial<Message>) => void;
   retryMessage: () => Promise<void>;
   setAgenticMode: (enabled: boolean) => void;
   toggleReasoning: () => void;
@@ -96,7 +95,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   );
   const [error, setError] = useState<Message['error'] | null>(null);
   const [pendingCancel, setPendingCancel] = useState(false);
-  const [messageQueue, setMessageQueue] = useState<Message[]>([]);
+
   const [agenticMode, setAgenticMode] = useState(false);
   const [reasoningEnabled, setReasoningEnabled] = useState(false);
   const [canUseReasoning, setCanUseReasoning] = useState(false);
@@ -109,7 +108,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
     return () => {
       setStreamingMessage(null);
       setPendingCancel(false);
-      setMessageQueue([]);
     };
   }, []);
 
@@ -128,32 +126,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
     });
     return combined;
   }, [currentAssistant, getSystemPrompt]);
-
-  // Message queue management function
-  const addToMessageQueue = useCallback(
-    (message: Partial<Message>) => {
-      if (!currentSession?.id) {
-        logger.warn('No current session available for queuing message');
-        return;
-      }
-
-      const queuedMessage: Message = {
-        id: createId(),
-        role: 'user',
-        sessionId: currentSession.id,
-        threadId: currentSession.id, // Default to top thread
-        content: stringToMCPContentArray(''),
-        ...message,
-      };
-
-      setMessageQueue((prev) => [...prev, queuedMessage]);
-      logger.info('Message added to queue', {
-        messageId: queuedMessage.id,
-        queueLength: messageQueue.length + 1,
-      });
-    },
-    [currentSession, messageQueue.length],
-  );
 
   // Pre-compute tool-to-alias mapping for performance
   const toolAliasMap = useMemo(() => {
@@ -254,7 +226,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     // Clear streaming and queue state to avoid stray UI
     setStreamingMessage(null);
     setPendingCancel(false);
-    setMessageQueue([]);
+    setPendingCancel(false);
     // Clear current error when switching sessions
     setError(null);
   }, [currentSession?.id, cancelAIService]); // Run when currentSession?.id changes
@@ -431,11 +403,15 @@ export function ChatProvider({ children }: ChatProviderProps) {
         // Clear any previous streaming state before starting new request
         setStreamingMessage(null);
 
+        // Consuming of queued messages is now handled by the useEffect hook
+        // to prevent circular dependencies and infinite update loops.
+        // We simply process whatever is passed in messageToAdd.
         let messagesToSend = messages;
+        const combinedFilesToAdd = messageToAdd || [];
 
         // Process and validate new messages if provided (to prevent loss of tool results)
-        if (messageToAdd?.length) {
-          const messagesWithSession = messageToAdd.map((m) => {
+        if (combinedFilesToAdd.length) {
+          const messagesWithSession = combinedFilesToAdd.map((m) => {
             if (!m.sessionId) {
               throw new Error('Cannot add message: missing sessionId');
             }
@@ -562,6 +538,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       addMessages,
       buildSystemPrompt,
       agenticMode,
+      // messageQueue removed from dependencies to prevent circular updates
     ],
   );
 
@@ -599,19 +576,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const { processToolCalls, isProcessing } = useToolProcessor({
     submit,
   });
-  // Process queued messages when tool execution completes
-  useEffect(() => {
-    if (!isProcessing && messageQueue.length > 0) {
-      const nextMessage = messageQueue[0];
-      logger.info('Processing queued message', {
-        messageId: nextMessage.id,
-        remainingInQueue: messageQueue.length - 1,
-      });
-
-      setMessageQueue((prev) => prev.slice(1));
-      submit([nextMessage]);
-    }
-  }, [isProcessing, messageQueue, submit]);
 
   // Process tool calls when messages change
   useEffect(() => {
@@ -651,12 +615,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
     () => ({
       submit,
       cancel: handleCancel,
-      addToMessageQueue,
       retryMessage,
       setAgenticMode,
       toggleReasoning,
     }),
-    [submit, handleCancel, addToMessageQueue, retryMessage, toggleReasoning],
+    [submit, handleCancel, retryMessage, toggleReasoning],
   );
 
   return (

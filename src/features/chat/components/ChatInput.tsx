@@ -14,7 +14,7 @@ import { useFileAttachment } from '../hooks/useFileAttachment';
 import { toast } from 'sonner';
 import { getLogger } from '@/lib/logger';
 import { AttachmentReference } from '@/models/chat';
-import { stringToMCPContentArray } from '@/lib/utils';
+
 import { createUserMessage } from '@/lib/chat-utils';
 import {
   useDnDContext,
@@ -44,8 +44,9 @@ export function ChatInput({ children }: ChatInputProps) {
   const { current: currentSession } = useSessionContext();
   const pendingInputRef = useRef<string>('');
   const { currentAssistant } = useAssistantContext();
-  const { isLoading, isToolExecuting, pendingCancel } = useChatState();
-  const { submit, cancel, addToMessageQueue } = useChatActions();
+  const { isLoading, isToolExecuting, pendingCancel, messages } =
+    useChatState();
+  const { submit, cancel } = useChatActions();
   const {
     pendingFiles,
     commitPendingFiles,
@@ -59,15 +60,41 @@ export function ChatInput({ children }: ChatInputProps) {
 
   const attachedFiles = pendingFiles;
 
+  // Derive busy state from both loading flags AND message history state
+  // This prevents UI flickering between tool execution and AI response
+  const isBusy = useMemo(() => {
+    // 1. Basic flags
+    if (isLoading || isToolExecuting) return true;
+
+    // 2. Check history for "waiting for response" states
+    const lastMessage = messages[messages.length - 1];
+    if (!lastMessage) return false;
+
+    // Case A: Last message was a tool output -> system must respond
+    if (lastMessage.role === 'tool') return true;
+
+    // Case B: Last message was assistant requesting tool (and not streaming) -> tool execution gap
+    if (
+      lastMessage.role === 'assistant' &&
+      lastMessage.tool_calls &&
+      lastMessage.tool_calls.length > 0 &&
+      !lastMessage.isStreaming
+    ) {
+      return true;
+    }
+
+    return false;
+  }, [isLoading, isToolExecuting, messages]);
+
   const inputPlaceholder = useMemo(() => {
     if (dragState !== 'none') {
       return dragState === 'valid'
         ? 'Drop supported files here...'
         : 'Unsupported file type!';
     }
-    if (isLoading || isAttachmentLoading) return 'Agent busy...';
+    if (isBusy || isAttachmentLoading) return 'Agent busy...';
     return 'Query agent or drop files...';
-  }, [dragState, isLoading, isAttachmentLoading]);
+  }, [dragState, isBusy, isAttachmentLoading, isToolExecuting]);
 
   const inputClassName = useMemo(() => {
     return `flex-1 min-w-0 transition-colors ${
@@ -102,7 +129,7 @@ export function ChatInput({ children }: ChatInputProps) {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         if (
-          !isLoading &&
+          !isBusy &&
           !isAttachmentLoading &&
           (input.trim() || attachedFiles.length > 0)
         ) {
@@ -112,7 +139,13 @@ export function ChatInput({ children }: ChatInputProps) {
         }
       }
     },
-    [isLoading, isAttachmentLoading, input, attachedFiles.length],
+    [
+      isLoading,
+      isAttachmentLoading,
+      input,
+      attachedFiles.length,
+      isToolExecuting,
+    ],
   );
 
   const handleSubmit = useCallback(
@@ -144,41 +177,35 @@ export function ChatInput({ children }: ChatInputProps) {
         }
       }
 
-      if (isToolExecuting) {
-        // If a tool is running, add the message to the queue
-        addToMessageQueue({
-          content: stringToMCPContentArray(input.trim()),
-          attachments: attachedFiles,
+      if (isBusy) return;
+
+      // Normal submission
+      const userMessage = createUserMessage(input.trim(), currentSession.id);
+
+      // Optimistic update
+      setInput('');
+
+      // Add attachments if they exist
+      if (attachedFiles.length > 0) {
+        userMessage.attachments = attachedFiles;
+      }
+
+      try {
+        logger.info('Submitting user message', {
+          hasAttachments: attachedFiles.length > 0,
+          attachmentCount: attachedFiles.length,
         });
+        pendingInputRef.current = input;
         setInput('');
+        await submit([userMessage]);
+        logger.info('User message submitted successfully');
+        // Clear input and files only on success
         clearPendingFiles();
-        logger.info('Message queued during tool execution');
-      } else {
-        // Normal submission
-        const userMessage = createUserMessage(input.trim(), currentSession.id);
-
-        // Add attachments if they exist
-        if (attachedFiles.length > 0) {
-          userMessage.attachments = attachedFiles;
-        }
-
-        try {
-          logger.info('Submitting user message', {
-            hasAttachments: attachedFiles.length > 0,
-            attachmentCount: attachedFiles.length,
-          });
-          pendingInputRef.current = input;
-          setInput('');
-          await submit([userMessage]);
-          logger.info('User message submitted successfully');
-          // Clear input and files only on success
-          clearPendingFiles();
-        } catch (err) {
-          logger.error('Error submitting message:', err);
-          // Keep input value on failure
-          setInput(pendingInputRef.current);
-          pendingInputRef.current = '';
-        }
+      } catch (err) {
+        logger.error('Error submitting message:', err);
+        // Keep input value on failure
+        setInput(pendingInputRef.current);
+        pendingInputRef.current = '';
       }
     },
     [
@@ -190,7 +217,6 @@ export function ChatInput({ children }: ChatInputProps) {
       commitPendingFiles,
       clearPendingFiles,
       isToolExecuting,
-      addToMessageQueue,
     ],
   );
 
@@ -258,7 +284,7 @@ export function ChatInput({ children }: ChatInputProps) {
           onChange={handleAgentInputChange}
           onKeyDown={handleKeyDown}
           placeholder={inputPlaceholder}
-          disabled={isLoading || isAttachmentLoading}
+          disabled={isBusy || isAttachmentLoading}
           className={`flex-1 min-w-0 resize-none transition-colors bg-transparent outline-none border-none py-2 px-3 text-base leading-relaxed max-h-24 overflow-y-auto ${inputClassName}`}
           style={textareaStyle}
           autoComplete="off"
@@ -279,16 +305,18 @@ export function ChatInput({ children }: ChatInputProps) {
         <Button
           type="submit"
           disabled={
-            isAttachmentLoading || (!input.trim() && attachedFiles.length === 0)
+            (!input.trim() && attachedFiles.length === 0) ||
+            isBusy ||
+            isAttachmentLoading
           }
           variant="ghost"
           size="icon"
-          title={isToolExecuting ? 'Queue message' : 'Send message'}
+          title="Send message"
         >
           <Send className="h-4 w-4" />
         </Button>
 
-        {isLoading && (
+        {isBusy && (
           <Button
             onClick={handleCancel}
             variant="destructive"

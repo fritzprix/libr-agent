@@ -80,7 +80,7 @@ export class LocalDatabase extends Dexie {
           '1) Detect Platform: Use "detect_platform" to identify the OS and shell.\n' +
           '2) Check Tools: Use "check_tool_installed" to get the verification command, then run it with "execute_shell" or "execute_windows_cmd".\n' +
           '3) Guide Installation: If a tool is missing, use "get_bootstrap_guide" to provide installation instructions.\n' +
-          '4) Configure MCP: If the user provides MCP server config, add it to the backend registry.\n\n' +
+          '4) Configure MCP: If the user provides MCP server config or URL, use "create_server" to register it (transport type "http" for URLs) and "connect_server" to enable it.\n\n' +
           'Rules:\n' +
           '- ALWAYS detect the platform first.\n' +
           '- Verify tool installation before assuming it exists.\n' +

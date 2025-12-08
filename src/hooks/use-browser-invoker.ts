@@ -5,7 +5,7 @@ import { useCallback } from 'react';
 const logger = getLogger('useBrowserInvoker');
 
 const POLLING_INTERVAL = 100; // ms
-const TIMEOUT = 10000; // ms
+const TIMEOUT = 30000; // ms
 
 export interface BrowserInvoker {
   executeScript: (sessionId: string, script: string) => Promise<string>;
