@@ -56,6 +56,7 @@ interface ChatStateContextValue {
   // Reasoning mode state
   reasoningEnabled: boolean;
   canUseReasoning: boolean; // Computed from model capabilities
+  pendingQueue: Message[];
 }
 
 const ChatStateContext = createContext<ChatStateContextValue | undefined>(
@@ -69,6 +70,7 @@ interface ChatActionsContextValue {
   retryMessage: (messageIdToDelete?: string) => Promise<void>;
   setAgenticMode: (enabled: boolean) => void;
   toggleReasoning: () => void;
+  addToPendingQueue: (messages: Message[]) => void;
 }
 
 const ChatActionsContext = createContext<ChatActionsContextValue | undefined>(
@@ -100,6 +102,13 @@ export function ChatProvider({ children }: ChatProviderProps) {
   );
   const [error, setError] = useState<Message['error'] | null>(null);
   const [pendingCancel, setPendingCancel] = useState(false);
+  const [pendingQueue, setPendingQueue] = useState<Message[]>([]);
+  const pendingQueueRef = useRef<Message[]>([]);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    pendingQueueRef.current = pendingQueue;
+  }, [pendingQueue]);
 
   const [agenticMode, setAgenticMode] = useState(false);
   const [reasoningEnabled, setReasoningEnabled] = useState(false);
@@ -113,6 +122,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     return () => {
       setStreamingMessage(null);
       setPendingCancel(false);
+      setPendingQueue([]);
     };
   }, []);
 
@@ -231,7 +241,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     // Clear streaming and queue state to avoid stray UI
     setStreamingMessage(null);
     setPendingCancel(false);
-    setPendingCancel(false);
+    setPendingQueue([]);
     // Clear current error when switching sessions
     setError(null);
   }, [currentSession?.id, cancelAIService]); // Run when currentSession?.id changes
@@ -450,6 +460,32 @@ export function ChatProvider({ children }: ChatProviderProps) {
           }
         }
 
+        // Consume pending queue if not retrying
+        if (!messageIdToDelete && pendingQueueRef.current.length > 0) {
+          const pendingMessages = [...pendingQueueRef.current];
+          setPendingQueue([]); // Clear queue immediately
+
+          const messagesWithSession = pendingMessages.map((m) => {
+            if (!m.sessionId) {
+              return { ...m, sessionId: currentSession.id };
+            }
+            return m;
+          });
+
+          if (typeof addMessages === 'function') {
+            await addMessages(messagesWithSession);
+            messagesToSend = [...messagesToSend, ...messagesWithSession];
+          } else {
+            for (const msg of messagesWithSession) {
+              const added = await addMessage(msg);
+              messagesToSend.push(added);
+            }
+          }
+          logger.info('Consumed pending messages', {
+            count: pendingMessages.length,
+          });
+        }
+
         // Move cancel check to after message addition (to preserve tool results)
         if (cancelRequestRef.current) {
           cancelRequestRef.current = false;
@@ -556,6 +592,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       addMessages,
       buildSystemPrompt,
       agenticMode,
+      // pendingQueue removed from dependencies to prevent circular updates
       // messageQueue removed from dependencies to prevent circular updates
     ],
   );
@@ -593,6 +630,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
     }, 1000);
   }, [cancelAIService]);
 
+  const addToPendingQueue = useCallback((messages: Message[]) => {
+    setPendingQueue((prev) => [...prev, ...messages]);
+  }, []);
+
   // Tool processor will be initialized after submit is defined
   const { processToolCalls, isProcessing } = useToolProcessor({
     submit,
@@ -609,6 +650,25 @@ export function ChatProvider({ children }: ChatProviderProps) {
   // Combined loading state: AI service loading OR tool execution
   const isLoading = aiServiceLoading || isProcessing;
 
+  // Auto-submit pending messages when agent becomes idle
+  const isLoadingRef = useRef(isLoading);
+  const submitRef = useRef(submit);
+
+  useEffect(() => {
+    isLoadingRef.current = isLoading;
+    submitRef.current = submit;
+  });
+
+  useEffect(() => {
+    // Use refs to avoid dependency on submit function
+    if (!isLoadingRef.current && pendingQueueRef.current.length > 0) {
+      logger.info('Auto-submitting pending messages', {
+        count: pendingQueueRef.current.length,
+      });
+      submitRef.current();
+    }
+  }, [pendingQueue]);
+
   const stateValue: ChatStateContextValue = useMemo(
     () => ({
       isLoading,
@@ -619,6 +679,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       agenticMode,
       reasoningEnabled,
       canUseReasoning,
+      pendingQueue,
     }),
     [
       isLoading,
@@ -629,6 +690,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       agenticMode,
       reasoningEnabled,
       canUseReasoning,
+      pendingQueue,
     ],
   );
 
@@ -639,8 +701,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
       retryMessage,
       setAgenticMode,
       toggleReasoning,
+      addToPendingQueue,
     }),
-    [submit, handleCancel, retryMessage, toggleReasoning],
+    [submit, handleCancel, retryMessage, toggleReasoning, addToPendingQueue],
   );
 
   return (

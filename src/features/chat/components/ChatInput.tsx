@@ -42,11 +42,10 @@ export function ChatInput({ children }: ChatInputProps) {
   const { subscribe } = useDnDContext();
 
   const { current: currentSession } = useSessionContext();
-  const pendingInputRef = useRef<string>('');
   const { currentAssistant } = useAssistantContext();
-  const { isLoading, isToolExecuting, pendingCancel, messages } =
+  const { isLoading, isToolExecuting, pendingCancel, messages, pendingQueue } =
     useChatState();
-  const { submit, cancel } = useChatActions();
+  const { cancel, addToPendingQueue } = useChatActions();
   const {
     pendingFiles,
     commitPendingFiles,
@@ -92,9 +91,20 @@ export function ChatInput({ children }: ChatInputProps) {
         ? 'Drop supported files here...'
         : 'Unsupported file type!';
     }
-    if (isBusy || isAttachmentLoading) return 'Agent busy...';
+    if (isAttachmentLoading) return 'Uploading...';
+
+    if (isBusy) {
+      return pendingQueue.length > 0
+        ? `Agent busy. ${pendingQueue.length} requests queued. Type to add more...`
+        : 'Agent busy. Type to queue request...';
+    }
+
+    if (pendingQueue.length > 0) {
+      return `Query agent... (${pendingQueue.length} pending requests)`;
+    }
+
     return 'Query agent or drop files...';
-  }, [dragState, isBusy, isAttachmentLoading, isToolExecuting]);
+  }, [dragState, isBusy, isAttachmentLoading, pendingQueue.length]);
 
   const inputClassName = useMemo(() => {
     return `flex-1 min-w-0 transition-colors ${
@@ -129,9 +139,8 @@ export function ChatInput({ children }: ChatInputProps) {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         if (
-          !isBusy &&
           !isAttachmentLoading &&
-          (input.trim() || attachedFiles.length > 0)
+          (input.trim() || attachedFiles.length > 0 || pendingQueue.length > 0)
         ) {
           chatInputRef.current?.dispatchEvent(
             new Event('submit', { bubbles: true, cancelable: true }),
@@ -139,21 +148,20 @@ export function ChatInput({ children }: ChatInputProps) {
         }
       }
     },
-    [
-      isLoading,
-      isAttachmentLoading,
-      input,
-      attachedFiles.length,
-      isToolExecuting,
-    ],
+    [isAttachmentLoading, input, attachedFiles.length, pendingQueue.length],
   );
 
   const handleSubmit = useCallback(
     async (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault();
 
-      if (!input.trim() && pendingFiles.length === 0) {
-        logger.info('Submit ignored: no input and no pending files');
+      const hasInput = input.trim().length > 0 || pendingFiles.length > 0;
+      const hasPending = pendingQueue.length > 0;
+
+      if (!hasInput && !hasPending) {
+        logger.info(
+          'Submit ignored: no input, no pending files, and no pending queue',
+        );
         return;
       }
       if (!currentAssistant || !currentSession) return;
@@ -177,46 +185,33 @@ export function ChatInput({ children }: ChatInputProps) {
         }
       }
 
-      if (isBusy) return;
+      // Always add to pending queue - ChatContext will handle submission
+      // either immediately (if idle) or after current task (if busy)
+      if (input.trim() || attachedFiles.length > 0) {
+        const msg = createUserMessage(input.trim(), currentSession.id);
+        if (attachedFiles.length > 0) {
+          msg.attachments = attachedFiles;
+        }
 
-      // Normal submission
-      const userMessage = createUserMessage(input.trim(), currentSession.id);
-
-      // Optimistic update
-      setInput('');
-
-      // Add attachments if they exist
-      if (attachedFiles.length > 0) {
-        userMessage.attachments = attachedFiles;
-      }
-
-      try {
-        logger.info('Submitting user message', {
-          hasAttachments: attachedFiles.length > 0,
-          attachmentCount: attachedFiles.length,
-        });
-        pendingInputRef.current = input;
+        addToPendingQueue([msg]);
         setInput('');
-        await submit([userMessage]);
-        logger.info('User message submitted successfully');
-        // Clear input and files only on success
         clearPendingFiles();
-      } catch (err) {
-        logger.error('Error submitting message:', err);
-        // Keep input value on failure
-        setInput(pendingInputRef.current);
-        pendingInputRef.current = '';
+
+        if (isBusy) {
+          toast.info('Request queued (Agent is busy)');
+        }
       }
     },
     [
-      submit,
       input,
       pendingFiles,
+      pendingQueue,
+      isBusy,
       currentAssistant,
       currentSession,
       commitPendingFiles,
       clearPendingFiles,
-      isToolExecuting,
+      addToPendingQueue,
     ],
   );
 
@@ -284,7 +279,7 @@ export function ChatInput({ children }: ChatInputProps) {
           onChange={handleAgentInputChange}
           onKeyDown={handleKeyDown}
           placeholder={inputPlaceholder}
-          disabled={isBusy || isAttachmentLoading}
+          disabled={isAttachmentLoading}
           className={`flex-1 min-w-0 resize-none transition-colors bg-transparent outline-none border-none py-2 px-3 text-base leading-relaxed max-h-24 overflow-y-auto ${inputClassName}`}
           style={textareaStyle}
           autoComplete="off"
@@ -305,15 +300,22 @@ export function ChatInput({ children }: ChatInputProps) {
         <Button
           type="submit"
           disabled={
-            (!input.trim() && attachedFiles.length === 0) ||
-            isBusy ||
+            (!input.trim() &&
+              attachedFiles.length === 0 &&
+              pendingQueue.length === 0) ||
             isAttachmentLoading
           }
           variant="ghost"
           size="icon"
           title="Send message"
+          className="relative"
         >
           <Send className="h-4 w-4" />
+          {pendingQueue.length > 0 && (
+            <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] text-white">
+              {pendingQueue.length}
+            </span>
+          )}
         </Button>
 
         {isBusy && (
