@@ -87,7 +87,12 @@ export const readWebContentTool: StrictBrowserMCPTool = {
       );
     }
 
-    const responseText = `[Page ${contentPage.pageNumber}/${contentPage.totalPages}]\n\n${contentPage.content}`;
+    let responseText = `[Page ${contentPage.pageNumber}/${contentPage.totalPages}]\n\n${contentPage.content}`;
+
+    // 빈 페이지 감지 및 경고 메시지 추가
+    if (!contentPage.content.trim()) {
+      responseText += `\n\n(Empty Page) The extracted content is empty. This suggests the page might not have loaded correctly or contains no text. Please try calling 'extractWebContent' again to re-capture the page, or use 'extractWebContent' with 'saveRawHtml': true to save the raw HTML for inspection.`;
+    }
 
     return createMCPStructuredResponse(
       responseText,
