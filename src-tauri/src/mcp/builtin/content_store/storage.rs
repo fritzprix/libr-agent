@@ -26,6 +26,7 @@ pub struct ContentItem {
     pub last_accessed_at: String,
     // Full content storage (like web-mcp FileContent)
     pub content: String,
+    pub src_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -120,6 +121,7 @@ impl ContentStoreStorage {
                 chunk_count INTEGER NOT NULL,
                 last_accessed_at TEXT NOT NULL,
                 content TEXT NOT NULL,
+                src_url TEXT,
                 FOREIGN KEY (session_id) REFERENCES stores(session_id) ON DELETE CASCADE
             );
 
@@ -140,6 +142,19 @@ impl ContentStoreStorage {
         .execute(pool)
         .await
         .map_err(|e| format!("Failed to create tables: {e}"))?;
+
+        // Migration: Ensure src_url column exists
+        // We attempt to add it. If it fails because it exists, we ignore the error.
+        if let Err(e) = sqlx::query("ALTER TABLE contents ADD COLUMN src_url TEXT")
+            .execute(pool)
+            .await
+        {
+            let error_msg = e.to_string();
+            if !error_msg.contains("duplicate column name") {
+                // Only return error if it's NOT about the column already existing
+                return Err(format!("Failed to migrate schema (add src_url): {e}"));
+            }
+        }
 
         Ok(())
     }
@@ -280,6 +295,7 @@ impl ContentStoreStorage {
     }
 
     /// Add content to a session's store
+    #[allow(clippy::too_many_arguments)]
     pub async fn add_content(
         &mut self,
         session_id: &str,
@@ -288,6 +304,7 @@ impl ContentStoreStorage {
         size: usize,
         content: &str,
         chunks: Vec<String>,
+        src_url: Option<String>,
     ) -> Result<ContentItem, String> {
         // Verify store exists for this session
         if !self.stores.contains_key(session_id) {
@@ -331,6 +348,7 @@ impl ContentStoreStorage {
             chunk_count,
             last_accessed_at: now,
             content: content.to_string(),
+            src_url: src_url.clone(),
         };
 
         self.contents
@@ -342,7 +360,7 @@ impl ContentStoreStorage {
         if let Some(pool) = &self.sqlite_pool {
             // Insert content
             sqlx::query(
-                "INSERT INTO contents (id, session_id, filename, mime_type, size, line_count, preview, uploaded_at, chunk_count, last_accessed_at, content) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "INSERT INTO contents (id, session_id, filename, mime_type, size, line_count, preview, uploaded_at, chunk_count, last_accessed_at, content, src_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             )
             .bind(content_id)
             .bind(session_id)
@@ -355,6 +373,7 @@ impl ContentStoreStorage {
             .bind(chunk_count as i64)
             .bind(&content_item.last_accessed_at)
             .bind(content)
+            .bind(src_url)
             .execute(pool)
             .await
             .map_err(|e| format!("Failed to save content to SQLite: {e}"))?;

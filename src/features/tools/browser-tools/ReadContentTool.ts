@@ -1,38 +1,16 @@
 import { getLogger } from '@/lib/logger';
 import { BROWSER_TOOL_SCHEMAS } from './helpers';
 import { StrictBrowserMCPTool } from './types';
-import {
-  createMCPStructuredResponse,
-  createMCPErrorResponse,
-} from '@/lib/mcp-response-utils';
+import { createMCPStructuredResponse } from '@/lib/mcp-response-utils';
 import { createId } from '@paralleldrive/cuid2';
 import { ContentStore } from './content-store';
+import {
+  validateSessionId,
+  handleBrowserError,
+  createBrowserErrorResponse,
+} from './error-utils';
 
 const logger = getLogger('ReadContentTool');
-
-interface ValidatedArgs {
-  sessionId: string;
-  page: number;
-}
-
-function validateReadContentArgs(
-  args: Record<string, unknown>,
-): ValidatedArgs | null {
-  if (typeof args.sessionId !== 'string') {
-    return null;
-  }
-
-  const page =
-    typeof args.page === 'number' ? args.page : parseInt(String(args.page), 10);
-  if (isNaN(page) || page < 1) {
-    return null;
-  }
-
-  return {
-    sessionId: args.sessionId,
-    page,
-  };
-}
 
 export const readWebContentTool: StrictBrowserMCPTool = {
   name: 'readWebContent',
@@ -50,58 +28,62 @@ export const readWebContentTool: StrictBrowserMCPTool = {
     required: ['sessionId', 'page'],
   },
   execute: async (args: Record<string, unknown>) => {
-    const validatedArgs = validateReadContentArgs(args);
-    if (!validatedArgs) {
-      return createMCPErrorResponse(
-        'Invalid arguments provided. Page must be a number >= 1.',
-        -32602,
-        { toolName: 'readWebContent', args },
-        createId(),
-      );
+    // Session validation
+    const { isValid, errorResponse } = validateSessionId(args.sessionId);
+    if (!isValid && errorResponse) {
+      return errorResponse;
     }
 
-    const { sessionId, page } = validatedArgs;
+    const sessionId = args.sessionId as string;
+    const page =
+      typeof args.page === 'number'
+        ? args.page
+        : parseInt(String(args.page), 10);
+
+    if (isNaN(page) || page < 1) {
+      return createBrowserErrorResponse(
+        'Invalid arguments provided. Page must be a number >= 1.',
+      );
+    }
 
     logger.debug('Executing browser_readWebContent', {
       sessionId,
       page,
     });
 
-    const contentPage = ContentStore.getPage(sessionId, page);
+    try {
+      const contentPage = ContentStore.getPage(sessionId, page);
 
-    if (!contentPage) {
-      if (!ContentStore.hasContent(sessionId)) {
-        return createMCPErrorResponse(
-          'No content found for this session. Please call extractWebContent first.',
-          -32604, // Content not found
-          { toolName: 'readWebContent', args },
-          createId(),
-        );
+      if (!contentPage) {
+        if (!ContentStore.hasContent(sessionId)) {
+          return createBrowserErrorResponse(
+            'No content found for this session. Please call extractWebContent first.',
+          );
+        }
+
+        return createBrowserErrorResponse(`Page ${page} not found.`);
+      }
+      let responseText = contentPage.content;
+
+      // 빈 페이지 감지 및 경고 메시지 추가
+      if (!contentPage.content.trim()) {
+        responseText += `\n\n(Empty Page) The extracted content is empty. This suggests the page might not have loaded correctly or contains no text. Please try calling 'extractWebContent' again to re-capture the page, or use 'extractWebContent' with 'saveRawHtml': true to save the raw HTML for inspection.`;
       }
 
-      return createMCPErrorResponse(
-        `Page ${page} not found.`,
-        -32604,
-        { toolName: 'readWebContent', args },
+      return createMCPStructuredResponse(
+        responseText,
+        {
+          page: contentPage.pageNumber,
+          total_pages: contentPage.totalPages,
+          content_length: contentPage.content.length,
+        },
         createId(),
       );
+    } catch (error) {
+      return handleBrowserError(error, {
+        toolName: 'readWebContent',
+        sessionId,
+      });
     }
-
-    let responseText = `[Page ${contentPage.pageNumber}/${contentPage.totalPages}]\n\n${contentPage.content}`;
-
-    // 빈 페이지 감지 및 경고 메시지 추가
-    if (!contentPage.content.trim()) {
-      responseText += `\n\n(Empty Page) The extracted content is empty. This suggests the page might not have loaded correctly or contains no text. Please try calling 'extractWebContent' again to re-capture the page, or use 'extractWebContent' with 'saveRawHtml': true to save the raw HTML for inspection.`;
-    }
-
-    return createMCPStructuredResponse(
-      responseText,
-      {
-        page: contentPage.pageNumber,
-        total_pages: contentPage.totalPages,
-        content_length: contentPage.content.length,
-      },
-      createId(),
-    );
   },
 };

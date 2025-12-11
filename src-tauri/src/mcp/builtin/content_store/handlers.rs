@@ -125,6 +125,7 @@ impl ContentStoreServer {
                 final_size as usize,
                 &content_text,
                 chunks,
+                args.src_url.clone(),
             )
             .await
         {

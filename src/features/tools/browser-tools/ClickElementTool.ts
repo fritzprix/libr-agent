@@ -2,6 +2,11 @@ import { getLogger } from '@/lib/logger';
 import { BROWSER_TOOL_SCHEMAS } from './helpers';
 import { createMCPTextResponse } from '@/lib/mcp-response-utils';
 import { StrictBrowserMCPTool } from './types';
+import {
+  validateSessionId,
+  handleBrowserError,
+  createBrowserErrorResponse,
+} from './error-utils';
 
 const logger = getLogger('ClickElementTool');
 
@@ -22,20 +27,19 @@ export const clickElementTool: StrictBrowserMCPTool = {
     const selector = args.selector;
 
     // Input validation
-    if (typeof sessionId !== 'string' || !sessionId.trim()) {
-      return createMCPTextResponse(
-        '✗ Click failed: Invalid sessionId parameter - must be non-empty string',
-      );
+    const { isValid, errorResponse } = validateSessionId(sessionId);
+    if (!isValid && errorResponse) {
+      return errorResponse;
     }
 
     if (typeof selector !== 'string' || !selector.trim()) {
-      return createMCPTextResponse(
+      return createBrowserErrorResponse(
         `✗ Click failed: Invalid selector parameter - must be non-empty string (session: ${sessionId})`,
       );
     }
 
     if (!executeScript) {
-      return createMCPTextResponse(
+      return createBrowserErrorResponse(
         '✗ Click failed: executeScript function is required',
       );
     }
@@ -47,24 +51,18 @@ export const clickElementTool: StrictBrowserMCPTool = {
       const script = `(function() { const el = document.querySelector(${JSON.stringify(selector)}); if (el) { el.scrollIntoView({block: 'center'}); el.focus(); el.click(); } return el ? 'Clicked element' : 'Element not found'; })()`;
 
       // Execute script using the provided executeScript function
-      const result = await executeScript(sessionId, script);
+      const result = await executeScript(sessionId as string, script);
 
       logger.debug('Click completed', { selector, result });
       return createMCPTextResponse(
         `✓ Click ${result === 'Clicked element' ? 'successful' : 'failed'} (selector: ${selector})\nResult: ${result}`,
       );
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      logger.error('Click execution error', {
-        error: errorMessage,
-        sessionId,
-        selector,
+      return handleBrowserError(error, {
+        toolName: 'clickElement',
+        sessionId: sessionId as string,
+        selector: selector as string,
       });
-
-      return createMCPTextResponse(
-        `✗ Click failed: ${errorMessage} (selector: ${selector}, session: ${sessionId})`,
-      );
     }
   },
 };

@@ -2,6 +2,7 @@ import { getLogger } from '@/lib/logger';
 import { createMCPTextResponse } from '@/lib/mcp-response-utils';
 import { BROWSER_TOOL_SCHEMAS } from './helpers';
 import { StrictBrowserMCPTool } from './types';
+import { validateSessionId, handleBrowserError } from './error-utils';
 
 const logger = getLogger('ScrollPageTool');
 
@@ -29,14 +30,26 @@ export const scrollPageTool: StrictBrowserMCPTool = {
       x: number;
       y: number;
     };
+
+    const { isValid, errorResponse } = validateSessionId(sessionId);
+    if (!isValid && errorResponse) {
+      return errorResponse;
+    }
+
     logger.debug('Executing browser_scrollPage', { sessionId, x, y });
 
     if (!executeScript) {
-      throw new Error('executeScript function is required for scrollPage');
+      return createMCPTextResponse(
+        '✗ Scroll failed: executeScript function is required',
+      );
     }
 
-    const script = `window.scrollTo(${x}, ${y}); 'Scrolled to (${x}, ${y})'`;
-    const result = await executeScript(sessionId, script);
-    return createMCPTextResponse(result);
+    try {
+      const script = `window.scrollTo(${x}, ${y}); 'Scrolled to (${x}, ${y})'`;
+      const result = await executeScript(sessionId, script);
+      return createMCPTextResponse(result);
+    } catch (error) {
+      return handleBrowserError(error, { toolName: 'scrollPage', sessionId });
+    }
   },
 };

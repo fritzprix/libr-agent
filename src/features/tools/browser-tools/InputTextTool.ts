@@ -2,6 +2,11 @@ import { getLogger } from '@/lib/logger';
 import { BROWSER_TOOL_SCHEMAS } from './helpers';
 import { createMCPTextResponse } from '@/lib/mcp-response-utils';
 import { StrictBrowserMCPTool } from './types';
+import {
+  validateSessionId,
+  handleBrowserError,
+  createBrowserErrorResponse,
+} from './error-utils';
 
 const logger = getLogger('InputTextTool');
 
@@ -23,26 +28,25 @@ export const inputTextTool: StrictBrowserMCPTool = {
     const text = args.text;
 
     // Input validation
-    if (typeof sessionId !== 'string' || !sessionId.trim()) {
-      return createMCPTextResponse(
-        '✗ Input failed: Invalid sessionId parameter - must be non-empty string',
-      );
+    const { isValid, errorResponse } = validateSessionId(sessionId);
+    if (!isValid && errorResponse) {
+      return errorResponse;
     }
 
     if (typeof selector !== 'string' || !selector.trim()) {
-      return createMCPTextResponse(
+      return createBrowserErrorResponse(
         `✗ Input failed: Invalid selector parameter - must be non-empty string (session: ${sessionId})`,
       );
     }
 
     if (typeof text !== 'string') {
-      return createMCPTextResponse(
+      return createBrowserErrorResponse(
         `✗ Input failed: Invalid text parameter - must be string (session: ${sessionId}, selector: ${selector})`,
       );
     }
 
     if (!executeScript) {
-      return createMCPTextResponse(
+      return createBrowserErrorResponse(
         '✗ Input failed: executeScript function is required',
       );
     }
@@ -54,24 +58,18 @@ export const inputTextTool: StrictBrowserMCPTool = {
       const script = `(function() { const el = document.querySelector(${JSON.stringify(selector)}); if (el) { el.value = ${JSON.stringify(text)}; el.dispatchEvent(new Event('input', {bubbles: true})); el.dispatchEvent(new Event('change', {bubbles: true})); } return el ? 'Input successful: ' + el.value : 'Element not found'; })()`;
 
       // Execute script using the provided executeScript function
-      const result = await executeScript(sessionId, script);
+      const result = await executeScript(sessionId as string, script);
 
       logger.debug('Input completed', { selector, result });
       return createMCPTextResponse(
         `✓ Input ${result.startsWith('Input successful') ? 'successful' : 'failed'} (selector: ${selector})\nResult: ${result}`,
       );
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      logger.error('Input execution error', {
-        error: errorMessage,
-        sessionId,
-        selector,
+      return handleBrowserError(error, {
+        toolName: 'inputText',
+        sessionId: sessionId as string,
+        selector: selector as string,
       });
-
-      return createMCPTextResponse(
-        `✗ Input failed: ${errorMessage} (selector: ${selector}, session: ${sessionId})`,
-      );
     }
   },
 };

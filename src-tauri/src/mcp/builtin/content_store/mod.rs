@@ -61,3 +61,8 @@ impl BuiltinMCPServer for ContentStoreServer {
         }
     }
 }
+
+#[cfg(test)]
+mod test_functional;
+#[cfg(test)]
+mod test_migration;
