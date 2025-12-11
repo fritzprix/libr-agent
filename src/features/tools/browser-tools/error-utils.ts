@@ -1,23 +1,18 @@
-import { createMCPTextResponse } from '@/lib/mcp-response-utils';
 import { getLogger } from '@/lib/logger';
+import { createMCPErrorResponse } from '@/lib/mcp-response-utils';
 import { MCPResponse } from '@/lib/mcp-types';
+import {
+  BrowserError,
+  BrowserErrorCode,
+  parseBrowserError,
+  getBrowserErrorMessage,
+  isBrowserError,
+} from './browser-error';
 
 const logger = getLogger('BrowserErrorUtils');
 
-/**
- * Creates an MCP response representing an error.
- * @param message The error message.
- * @returns An MCPResponse with isError set to true.
- */
-export function createBrowserErrorResponse(
-  message: string,
-): MCPResponse<unknown> {
-  const response = createMCPTextResponse(message);
-  if (response.result) {
-    response.result.isError = true;
-  }
-  return response;
-}
+// Legacy alias for backward compatibility
+export const createBrowserErrorResponse = createMCPErrorResponse;
 
 /**
  * Validates the sessionId parameter.
@@ -31,7 +26,7 @@ export function validateSessionId(sessionId: unknown): {
   if (typeof sessionId !== 'string' || !sessionId.trim()) {
     return {
       isValid: false,
-      errorResponse: createBrowserErrorResponse(
+      errorResponse: createMCPErrorResponse(
         '✗ Invalid sessionId parameter - must be a non-empty string. Please check the session ID from listSessions.',
       ),
     };
@@ -41,6 +36,7 @@ export function validateSessionId(sessionId: unknown): {
 
 /**
  * Handles errors from browser tools and provides actionable guidance.
+ * Supports both structured BrowserError types and legacy string errors.
  * @param error The error object or message.
  * @param context Context information for the error (tool name, session ID, selector, etc.).
  * @returns An MCPResponse with the error message and guidance.
@@ -49,45 +45,99 @@ export function handleBrowserError(
   error: unknown,
   context: { toolName: string; sessionId?: string; selector?: string },
 ): MCPResponse<unknown> {
-  const errorMessage = error instanceof Error ? error.message : String(error);
   const { toolName, selector } = context;
 
   logger.error(`Error in ${toolName}`, { error, context });
 
+  // Try to parse as structured error
+  const parsedError = parseBrowserError(error);
+
+  let errorMessage: string;
   let guidance = '';
 
-  // Session errors
-  if (
-    errorMessage.toLowerCase().includes('session not found') ||
-    errorMessage.toLowerCase().includes('session closed') ||
-    errorMessage.toLowerCase().includes('invalid session')
-  ) {
-    guidance =
-      'The browser session might have been closed or does not exist. Please use `listSessions` to verify active sessions or `createSession` to start a new one.';
+  // Handle structured browser errors
+  if (isBrowserError(parsedError)) {
+    errorMessage = getBrowserErrorMessage(parsedError);
+    guidance = getGuidanceForError(parsedError, selector);
   }
-  // Selector errors
-  else if (
-    errorMessage.toLowerCase().includes('element not found') ||
-    (selector && errorMessage.toLowerCase().includes('selector'))
-  ) {
-    guidance = `The element with selector "${selector}" could not be found. Please use \`listInteractable\` to see available elements and their selectors on the current page.`;
-  }
-  // Navigation/Network errors
-  else if (
-    errorMessage.toLowerCase().includes('navigation') ||
-    errorMessage.toLowerCase().includes('timeout') ||
-    errorMessage.toLowerCase().includes('network')
-  ) {
-    guidance =
-      'Navigation failed or timed out. Please check the URL format and your network connection. You can also try checking if the page loaded using `getPageTitle`.';
-  }
-  // Empty content
-  else if (errorMessage.toLowerCase().includes('no content found')) {
-    guidance =
-      'No content was extracted. The page might not be fully loaded yet. Try waiting a moment or using `readWebContent` to inspect the raw HTML.';
+  // Handle legacy string errors (backward compatibility)
+  else {
+    errorMessage =
+      typeof parsedError === 'string' ? parsedError : String(error);
+    guidance = getLegacyGuidance(errorMessage, selector);
   }
 
   const finalMessage = `✗ ${toolName} failed: ${errorMessage}\n\nGuidance: ${guidance || 'Please check the tool parameters and try again.'}`;
 
-  return createBrowserErrorResponse(finalMessage);
+  return createMCPErrorResponse(finalMessage);
+}
+
+/**
+ * Get actionable guidance based on structured error type
+ */
+function getGuidanceForError(error: BrowserError, selector?: string): string {
+  switch (error.code) {
+    case BrowserErrorCode.SESSION_NOT_FOUND:
+      return 'The browser session does not exist. Please use `listSessions` to verify active sessions or `createSession` to start a new one.';
+
+    case BrowserErrorCode.SESSION_CLOSED:
+      return 'The browser session was already closed. Please create a new session with `createSession`.';
+
+    case BrowserErrorCode.WINDOW_NOT_FOUND:
+      return 'The browser window was closed or not found. Please create a new session with `createSession`.';
+
+    case BrowserErrorCode.ELEMENT_NOT_FOUND:
+      return `The element with selector "${error.context.selector || selector || 'unknown'}" could not be found. Please use \`listInteractable\` to see available elements and their selectors on the current page.`;
+
+    case BrowserErrorCode.ELEMENT_NOT_INTERACTABLE:
+      return `The element with selector "${error.context.selector}" exists but cannot be interacted with (${error.context.reason}). Please check if the element is visible, enabled, and not obscured by other elements.`;
+
+    case BrowserErrorCode.NAVIGATION_FAILED:
+      return `Navigation to "${error.context.url}" failed (${error.context.reason}). Please check the URL format and your network connection. You can also try checking if the page loaded using \`getPageTitle\`.`;
+
+    case BrowserErrorCode.SCRIPT_EXECUTION_FAILED:
+      return `JavaScript execution failed (${error.context.reason}). The page might not be fully loaded yet, or the script might have syntax errors.`;
+
+    case BrowserErrorCode.TIMEOUT:
+      return `The operation "${error.context.operation}" took too long to complete (${error.context.duration_ms}ms). The page might be slow to respond, or the network connection might be unstable.`;
+
+    case BrowserErrorCode.LOCK_FAILED:
+      return 'Internal error: Failed to acquire resource lock. This is likely a temporary issue, please try again.';
+
+    case BrowserErrorCode.INVALID_PARAMETER:
+      return `Invalid parameter "${error.context.parameter}": ${error.context.reason}. Please check the tool documentation for correct parameter format.`;
+
+    case BrowserErrorCode.UNKNOWN:
+      return 'An unexpected error occurred. Please check the error message for details.';
+
+    default:
+      return 'Please check the tool parameters and try again.';
+  }
+}
+
+/**
+ * Legacy guidance for string-based errors (backward compatibility)
+ */
+function getLegacyGuidance(errorMessage: string, selector?: string): string {
+  // Session errors - Use exact matching for reliability
+  if (errorMessage === 'Session not found') {
+    return 'The browser session does not exist. Please use `listSessions` to verify active sessions or `createSession` to start a new one.';
+  }
+  // Browser window errors
+  else if (errorMessage === 'Browser window not found') {
+    return 'The browser window was closed or not found. Please create a new session with `createSession`.';
+  }
+  // Element not found (from structured JSON response)
+  else if (
+    errorMessage.includes('"reason":"not_found"') ||
+    errorMessage.includes('not_found')
+  ) {
+    return `The element with selector "${selector || 'unknown'}" could not be found. Please use \`listInteractable\` to see available elements and their selectors on the current page.`;
+  }
+  // Content store errors
+  else if (errorMessage.startsWith('No content found')) {
+    return 'No content was extracted. The page might not be fully loaded yet. Try waiting a moment or using `readWebContent` to inspect the raw HTML.';
+  }
+
+  return 'Please check the tool parameters and try again.';
 }

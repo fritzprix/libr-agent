@@ -14,6 +14,8 @@ use dashmap::DashMap;
 
 use uuid::Uuid;
 
+use super::browser_error::BrowserError;
+
 /// Represents an interactive browser session, corresponding to a Tauri window.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BrowserSession {
@@ -177,15 +179,17 @@ impl InteractiveBrowserServer {
         debug!("Executing script in session {session_id}: {script}");
 
         let session = {
-            let sessions = self
-                .sessions
-                .read()
-                .map_err(|e| format!("Failed to acquire read lock: {e}"))?;
+            let sessions = self.sessions.read().map_err(|e| {
+                String::from(BrowserError::LockFailed {
+                    reason: format!("Failed to acquire read lock: {e}"),
+                })
+            })?;
 
-            sessions
-                .get(session_id)
-                .cloned()
-                .ok_or("Session not found")?
+            sessions.get(session_id).cloned().ok_or_else(|| {
+                String::from(BrowserError::SessionNotFound {
+                    session_id: session_id.to_string(),
+                })
+            })?
         };
 
         if let Some(window) = self.app_handle.get_webview_window(&session.window_label) {
@@ -586,15 +590,17 @@ return false;
         info!("Closing browser session: {session_id}");
 
         let session = {
-            let sessions = self
-                .sessions
-                .read()
-                .map_err(|e| format!("Failed to acquire read lock: {e}"))?;
+            let sessions = self.sessions.read().map_err(|e| {
+                String::from(BrowserError::LockFailed {
+                    reason: format!("Failed to acquire read lock: {e}"),
+                })
+            })?;
 
-            sessions
-                .get(session_id)
-                .cloned()
-                .ok_or("Session not found")?
+            sessions.get(session_id).cloned().ok_or_else(|| {
+                String::from(BrowserError::SessionNotFound {
+                    session_id: session_id.to_string(),
+                })
+            })?
         };
 
         if let Some(window) = self.app_handle.get_webview_window(&session.window_label) {
@@ -652,10 +658,11 @@ return false;
             // Update session URL
 
             {
-                let mut sessions = self
-                    .sessions
-                    .write()
-                    .map_err(|e| format!("Failed to acquire write lock: {e}"))?;
+                let mut sessions = self.sessions.write().map_err(|e| {
+                    String::from(BrowserError::LockFailed {
+                        reason: format!("Failed to acquire write lock: {e}"),
+                    })
+                })?;
 
                 if let Some(session) = sessions.get_mut(session_id) {
                     session.url = url.to_string();
@@ -668,7 +675,9 @@ return false;
         } else {
             error!("Browser window not found for session: {session_id}");
 
-            Err("Browser window not found".to_string())
+            Err(String::from(BrowserError::WindowNotFound {
+                session_id: session_id.to_string(),
+            }))
         }
     }
 

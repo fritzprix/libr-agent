@@ -1,12 +1,11 @@
 import { getLogger } from '@/lib/logger';
 import { BROWSER_TOOL_SCHEMAS } from './helpers';
-import { createMCPTextResponse } from '@/lib/mcp-response-utils';
-import { StrictBrowserMCPTool } from './types';
 import {
-  validateSessionId,
-  handleBrowserError,
-  createBrowserErrorResponse,
-} from './error-utils';
+  createMCPErrorResponse,
+  createMCPTextResponse,
+} from '@/lib/mcp-response-utils';
+import { StrictBrowserMCPTool } from './types';
+import { validateSessionId, handleBrowserError } from './error-utils';
 
 const logger = getLogger('ClickElementTool');
 
@@ -33,13 +32,13 @@ export const clickElementTool: StrictBrowserMCPTool = {
     }
 
     if (typeof selector !== 'string' || !selector.trim()) {
-      return createBrowserErrorResponse(
+      return createMCPErrorResponse(
         `✗ Click failed: Invalid selector parameter - must be non-empty string (session: ${sessionId})`,
       );
     }
 
     if (!executeScript) {
-      return createBrowserErrorResponse(
+      return createMCPErrorResponse(
         '✗ Click failed: executeScript function is required',
       );
     }
