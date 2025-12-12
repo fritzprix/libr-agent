@@ -3,10 +3,7 @@ import { createMCPTextResponse } from '@/lib/mcp-response-utils';
 import { navigateForward } from '@/lib/backend/browser';
 import { BROWSER_TOOL_SCHEMAS } from './helpers';
 import { StrictBrowserMCPTool } from './types';
-import {
-  validateSessionId,
-  handleBrowserError,
-} from './error-utils';
+import { validateSessionId, handleBrowserError } from './error-utils';
 
 const logger = getLogger('NavigateForwardTool');
 

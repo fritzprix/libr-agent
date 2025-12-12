@@ -147,6 +147,9 @@ impl InteractiveBrowserServer {
 
     /// Helper to apply platform-specific window settings (Linux focus fixes)
     fn apply_platform_window_settings(&self, window: &tauri::WebviewWindow) {
+        #[cfg(not(target_os = "linux"))]
+        let _ = window;
+
         #[cfg(target_os = "linux")]
         {
             use log::error;
