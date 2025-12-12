@@ -7,13 +7,16 @@ Successfully implemented Phase 1 of the message squeezing system: **Tool Call/Re
 ## Files Created
 
 ### 1. `src/lib/message-deduplicator.ts` (205 lines)
+
 Core deduplication module with:
+
 - `deduplicateToolCallPairs()` - Main entry point
 - `extractToolCallPairs()` - Identifies tool call/response pairs
 - `deduplicatePairs()` - Hash-based deduplication logic
 - `createPairHash()` - Creates hash from tool name + arguments + response
 
 **Key Features:**
+
 - ✅ Deduplicates both error AND successful responses
 - ✅ O(n) time complexity using hash-based comparison
 - ✅ Early exit for small message arrays (< 10 messages)
@@ -23,7 +26,9 @@ Core deduplication module with:
 - ✅ Centralized logging via `getLogger('MessageDeduplicator')`
 
 ### 2. `src/lib/message-deduplicator.test.ts` (186 lines)
+
 Comprehensive test suite with 5 test cases:
+
 1. Early exit for small message counts
 2. Deduplication of repeated error messages
 3. Deduplication of repeated successful reads
@@ -33,6 +38,7 @@ Comprehensive test suite with 5 test cases:
 ## Integration Points
 
 ### Modified: `src/hooks/use-ai-service.ts`
+
 Added deduplication step in the message processing pipeline:
 
 ```typescript
@@ -53,6 +59,7 @@ const contextMessages = selectMessagesWithinContext(
 ```
 
 **Processing Order:**
+
 1. `prepareMessagesForLLM()` - Attachment preprocessing
 2. `removeInvalidToolUseAndToolResponse()` - Validation
 3. **`deduplicateToolCallPairs()` - NEW: Deduplication** ⬅️
@@ -63,11 +70,13 @@ const contextMessages = selectMessagesWithinContext(
 ## Configuration
 
 **Phase 1: Hardcoded defaults (no UI settings)**
+
 - `preserveRecentN: 3` - Keep last 3 messages untouched
 - `minMessageCount: 10` - Only activate if 10+ messages
 - Always enabled (safe operation)
 
 **Future Phase 2+: Settings UI**
+
 - Add toggle in settings modal
 - Expose aggressiveness levels
 - Provider-specific configurations
@@ -75,23 +84,28 @@ const contextMessages = selectMessagesWithinContext(
 ## Performance Characteristics
 
 **Time Complexity:** O(n) where n = message count
+
 - Single pass to extract pairs
 - Hash-based comparison (not O(n²))
 - Set-based removal tracking
 
 **Expected Overhead:**
+
 - ✅ <1ms for arrays < 10 messages (early exit)
 - ✅ <5ms for typical 50-message chat
 - ✅ <20ms for 200-message chat with retries
 
 **Memory Usage:**
+
 - Minimal: Only stores hash map + removal set
 - No message cloning until final result
 
 ## Token Savings Examples
 
 ### Case 1: Repeated Error (3x retry)
+
 **Before:** 600 tokens (6 messages)
+
 ```json
 [
   {"role": "assistant", "tool_calls": [...]},
@@ -104,6 +118,7 @@ const contextMessages = selectMessagesWithinContext(
 ```
 
 **After:** 200 tokens (2 messages)
+
 ```json
 [
   {"role": "assistant", "tool_calls": [...]},
@@ -114,6 +129,7 @@ const contextMessages = selectMessagesWithinContext(
 **Savings:** ~400 tokens (67% reduction)
 
 ### Case 2: Repeated Successful Read (2x)
+
 **Before:** 400 tokens (4 messages)
 
 **After:** 200 tokens (2 messages)
@@ -123,28 +139,33 @@ const contextMessages = selectMessagesWithinContext(
 ## Validation Checklist
 
 ✅ **Correctness:**
+
 - Never orphans tool messages (atomic pair removal)
 - Preserves tool_call_id integrity
 - Doesn't touch last 3 messages (active context)
 - Logs deduplication count for debugging
 
 ✅ **Performance:**
+
 - Early exit for small arrays
 - O(n) time complexity
 - Hash-based comparison
 
 ✅ **Safety:**
+
 - Vendor-neutral (works before normalization)
 - No breaking changes to existing flow
 - Graceful degradation (returns original if issues)
 
 ✅ **Testing:**
+
 - 5 comprehensive test cases
 - Edge cases covered (small arrays, recent preservation, pairing integrity)
 
 ## Future Enhancements (Phase 2+)
 
 **Not implemented in Phase 1:**
+
 1. **Thinking block compression** (Anthropic reasoning)
 2. **Tool response minification** (compress verbose content)
 3. **Attachment metadata deduplication** (reference system)
@@ -154,6 +175,7 @@ const contextMessages = selectMessagesWithinContext(
 ## Testing
 
 Run the test suite:
+
 ```bash
 pnpm test src/lib/message-deduplicator.test.ts
 ```
@@ -176,6 +198,7 @@ pnpm test src/lib/message-deduplicator.test.ts
 ## Deployment
 
 The feature is **ready for production** with:
+
 1. Clean code following project conventions
 2. TypeScript type safety (no `any` types)
 3. Centralized logging via `getLogger()`

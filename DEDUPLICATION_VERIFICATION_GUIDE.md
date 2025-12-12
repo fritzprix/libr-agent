@@ -28,7 +28,7 @@ pnpm test src/lib/message-deduplicator.test.ts
 # ✓ should deduplicate repeated successful reads
 # ✓ should preserve recent N messages
 # ✓ should not break tool_call_id pairing
-# 
+#
 # Test Files  1 passed (1)
 # Tests  5 passed (5)
 ```
@@ -74,6 +74,7 @@ logger.debug(
 ### Test in Development
 
 1. **Start the app:**
+
    ```bash
    pnpm tauri dev
    ```
@@ -98,11 +99,13 @@ User: "Try to read the file 'nonexistent.txt' three times and tell me what happe
 ```
 
 The AI will likely:
+
 1. Call `read_file("nonexistent.txt")` → Error
 2. Call `read_file("nonexistent.txt")` → Error (DEDUPLICATED)
 3. Call `read_file("nonexistent.txt")` → Error (DEDUPLICATED)
 
 **Expected behavior:**
+
 - Only the first error pair is sent to the LLM on subsequent requests
 - The tool message shows "(repeated 3x)"
 - Metadata includes `dedupCount: 3`
@@ -128,6 +131,7 @@ logger.debug(`Deduplication took ${dedupTime.toFixed(2)}ms`);
 ```
 
 **Expected results:**
+
 - < 1ms for small chats (< 10 messages)
 - < 5ms for typical chats (50 messages)
 - < 20ms for large chats (200 messages)
@@ -146,7 +150,9 @@ const deduplicatedMessages = deduplicateToolCallPairs(validMessages, {
 });
 
 logger.info(`Messages after dedup: ${deduplicatedMessages.length}`);
-logger.info(`Removed ${validMessages.length - deduplicatedMessages.length} messages`);
+logger.info(
+  `Removed ${validMessages.length - deduplicatedMessages.length} messages`,
+);
 ```
 
 ## Manual Inspection
@@ -174,6 +180,7 @@ if (matchingPair && matchingPair.count > 1) {
 ```
 
 **Expected output:**
+
 ```json
 {
   "id": "msg_123",
@@ -215,7 +222,9 @@ const result = deduplicateToolCallPairs(messages, {
 
 ```typescript
 // Messages 8, 9, 10 should be preserved even if duplicates
-const messages = [ /* 10 messages, last 3 are duplicates */ ];
+const messages = [
+  /* 10 messages, last 3 are duplicates */
+];
 
 const result = deduplicateToolCallPairs(messages, {
   minMessageCount: 10,
@@ -265,6 +274,7 @@ const result = deduplicateToolCallPairs(messages);
 ### Issue: Tests fail with "Cannot find module"
 
 **Solution:** Ensure vitest is installed and configured:
+
 ```bash
 pnpm install -D vitest
 ```
@@ -272,6 +282,7 @@ pnpm install -D vitest
 ### Issue: Import errors in IDE
 
 **Solution:** TypeScript may need to rebuild. Restart the TypeScript server or rebuild:
+
 ```bash
 pnpm build
 ```
@@ -279,6 +290,7 @@ pnpm build
 ### Issue: No deduplication happening in runtime
 
 **Check:**
+
 1. Message count >= 10? (Early exit if below)
 2. Are the tool calls truly identical? (Same arguments AND response)
 3. Are duplicates in the compressible range? (Not in last 3 messages)
@@ -287,6 +299,7 @@ pnpm build
 ### Issue: "any" type errors
 
 **Solution:** The implementation uses proper TypeScript types. Ensure:
+
 ```typescript
 import { Message } from '@/models/chat';
 ```
@@ -317,6 +330,7 @@ Once verified, the implementation is ready for:
 ## Contact
 
 For questions or issues with this implementation, refer to:
+
 - `IMPLEMENTATION_SUMMARY_DEDUPLICATION.md` - Overview and architecture
 - `DEDUPLICATION_VISUAL_GUIDE.md` - Visual flow and examples
 - `src/lib/message-deduplicator.test.ts` - Test cases and examples

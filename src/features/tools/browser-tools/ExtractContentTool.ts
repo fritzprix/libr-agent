@@ -163,7 +163,10 @@ export const extractWebContentTool: StrictBrowserMCPTool = {
       }
 
       try {
-        const urlResult = await executeScript(sessionId, 'window.location.href');
+        const urlResult = await executeScript(
+          sessionId,
+          'window.location.href',
+        );
         currentUrl = typeof urlResult === 'string' ? urlResult : '';
       } catch (error) {
         logger.warn('Failed to extract current URL', { error });
@@ -226,8 +229,10 @@ export const extractWebContentTool: StrictBrowserMCPTool = {
       const resultWithMetadata = createMetadata(result, rawHtml, totalPages);
 
       // Add page title and URL to metadata
+      const currentMetadata =
+        (resultWithMetadata.metadata as Record<string, unknown>) || {};
       resultWithMetadata.metadata = {
-        ...resultWithMetadata.metadata,
+        ...currentMetadata,
         pageTitle,
         sourceUrl: currentUrl,
       };

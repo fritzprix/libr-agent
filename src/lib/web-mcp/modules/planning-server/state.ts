@@ -27,9 +27,7 @@ function formatTodosList(todos: SimpleTodo[]): string {
   if (todos.length === 0) {
     return '  (no todos)';
   }
-  return todos
-    .map((t) => `  - ID: ${t.id} [${t.status}] ${t.name}`)
-    .join('\n');
+  return todos.map((t) => `  - ID: ${t.id} [${t.status}] ${t.name}`).join('\n');
 }
 
 /**
@@ -220,13 +218,13 @@ export class PersistentState {
     dependsOn?: number[],
   ): Promise<MCPResult<AddToDoOutput>> {
     const todos = await this.getTodosList();
-    
+
     // Check for duplicate todos (case-insensitive, trimmed)
     const normalizedName = name.trim().toLowerCase();
     const duplicate = todos.find(
       (t) => t.name.trim().toLowerCase() === normalizedName,
     );
-    
+
     if (duplicate) {
       return new MCPResponseBuilder({
         success: false,
@@ -236,9 +234,9 @@ export class PersistentState {
       })
         .withMessage(
           `Duplicate todo detected.\n\n` +
-          `A todo with similar content already exists:\n` +
-          `  - ID: ${duplicate.id} [${duplicate.status}] ${duplicate.name}\n\n` +
-          `Current todos:\n${formatTodosList(todos)}`,
+            `A todo with similar content already exists:\n` +
+            `  - ID: ${duplicate.id} [${duplicate.status}] ${duplicate.name}\n\n` +
+            `Current todos:\n${formatTodosList(todos)}`,
         )
         .withSuggestions([
           'Use a different name for the new todo',

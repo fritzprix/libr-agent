@@ -19,8 +19,7 @@ export const listSessionsTool: StrictLocalMCPTool = {
     logger.debug('Executing browser_listSessions');
     const sessions = await listBrowserSessions();
 
-    const currentActiveSessionId =
-      sessions.length > 0 ? sessions[0].id : null;
+    const currentActiveSessionId = sessions.length > 0 ? sessions[0].id : null;
 
     let message = '';
     if (sessions.length === 0) {

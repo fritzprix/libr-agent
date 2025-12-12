@@ -107,27 +107,31 @@ Deduplicated Messages
 // Example tool call/response pair
 const pair = {
   assistant: {
-    tool_calls: [{
-      function: {
-        name: "read_file",
-        arguments: '{"path":"missing.txt"}'
-      }
-    }]
+    tool_calls: [
+      {
+        function: {
+          name: 'read_file',
+          arguments: '{"path":"missing.txt"}',
+        },
+      },
+    ],
   },
   tool: {
-    content: [{ 
-      type: "text", 
-      text: "Error: File not found" 
-    }]
-  }
-}
+    content: [
+      {
+        type: 'text',
+        text: 'Error: File not found',
+      },
+    ],
+  },
+};
 
 // Hash creation
 const hash = createPairHash(
-  "read_file",                    // Tool name
-  '{"path":"missing.txt"}',       // Arguments
-  "Error: File not found"         // Response content
-)
+  'read_file', // Tool name
+  '{"path":"missing.txt"}', // Arguments
+  'Error: File not found', // Response content
+);
 
 // Result: "read_file::{"path":"missing.txt"}::Error: File not found"
 ```
@@ -135,6 +139,7 @@ const hash = createPairHash(
 ## Real-World Scenarios
 
 ### Scenario 1: AI Agent Retry Loop (Most Common)
+
 ```
 AI tries to read a file that doesn't exist
 → Error: File not found
@@ -147,6 +152,7 @@ Token Savings: ~400 tokens
 ```
 
 ### Scenario 2: Repeated Configuration Checks
+
 ```
 AI checks config.json multiple times during workflow
 → {"version": "1.0", "theme": "dark"}
@@ -157,6 +163,7 @@ Token Savings: ~150 tokens per duplicate
 ```
 
 ### Scenario 3: Health/Status Checks
+
 ```
 AI polls service status during long operation
 → check_status() → "Running"
@@ -170,12 +177,12 @@ Token Savings: ~200 tokens
 ## Performance Profile
 
 | Message Count | Pairs Found | Dedup Time | Token Savings |
-|--------------|-------------|------------|---------------|
-| < 10         | N/A         | 0ms (skip) | 0             |
-| 20           | 5           | <2ms       | ~300 tokens   |
-| 50           | 15          | <5ms       | ~800 tokens   |
-| 100          | 30          | <10ms      | ~1500 tokens  |
-| 200          | 60          | <20ms      | ~3000 tokens  |
+| ------------- | ----------- | ---------- | ------------- |
+| < 10          | N/A         | 0ms (skip) | 0             |
+| 20            | 5           | <2ms       | ~300 tokens   |
+| 50            | 15          | <5ms       | ~800 tokens   |
+| 100           | 30          | <10ms      | ~1500 tokens  |
+| 200           | 60          | <20ms      | ~3000 tokens  |
 
 ## Integration Test Checklist
 

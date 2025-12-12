@@ -77,20 +77,23 @@ function extractToolCallPairs(messages: Message[]): ToolCallPair[] {
  */
 function deduplicatePairs(messages: Message[]): Message[] {
   const pairs = extractToolCallPairs(messages);
-  
+
   if (pairs.length === 0) {
     return messages;
   }
 
   // Track which messages to remove (using Set for O(1) lookup)
   const messagesToRemove = new Set<string>();
-  
+
   // Track first occurrence of each hash and count duplicates
-  const seenHashes = new Map<string, { count: number; firstPair: ToolCallPair }>();
+  const seenHashes = new Map<
+    string,
+    { count: number; firstPair: ToolCallPair }
+  >();
 
   for (const pair of pairs) {
     const existing = seenHashes.get(pair.hash);
-    
+
     if (existing) {
       // This is a duplicate - mark for removal
       messagesToRemove.add(pair.assistantMessage.id);
@@ -104,7 +107,7 @@ function deduplicatePairs(messages: Message[]): Message[] {
 
   // Update metadata on first occurrences if there were duplicates
   const result: Message[] = [];
-  
+
   for (const message of messages) {
     if (messagesToRemove.has(message.id)) {
       continue; // Skip duplicate messages
@@ -163,17 +166,17 @@ function deduplicatePairs(messages: Message[]): Message[] {
 /**
  * Main deduplication function
  * Removes repeated identical tool call/response pairs to reduce token usage
- * 
+ *
  * Performance optimizations:
  * - Early exit for small message arrays (< minMessageCount)
  * - Preserves recent N messages untouched (active context)
  * - O(n) time complexity using hash-based comparison
- * 
+ *
  * Safety guarantees:
  * - Never orphans tool messages (removes pairs atomically)
  * - Preserves tool_call_id integrity
  * - Adds metadata to track deduplication count
- * 
+ *
  * @param messages - Original message array
  * @param options - Configuration options
  * @returns Deduplicated message array

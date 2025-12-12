@@ -3,10 +3,7 @@ import {
   listBrowserSessions,
 } from '@/lib/rust-backend-client';
 import { getLogger } from '@/lib/logger';
-import {
-  createMCPTextResponse,
-  createMCPStructuredResponse,
-} from '@/lib/mcp-response-utils';
+import { createMCPStructuredResponse } from '@/lib/mcp-response-utils';
 import { BROWSER_TOOL_SCHEMAS } from './helpers';
 import { StrictLocalMCPTool } from './types';
 import { createId } from '@paralleldrive/cuid2';
