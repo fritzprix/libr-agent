@@ -21,6 +21,18 @@ import { WebMCPErrorCodes } from '@/lib/web-mcp/error-codes';
 const MAX_NOTES = 20;
 
 /**
+ * Formats a list of todos for error messages
+ */
+function formatTodosList(todos: SimpleTodo[]): string {
+  if (todos.length === 0) {
+    return '  (no todos)';
+  }
+  return todos
+    .map((t) => `  - ID: ${t.id} [${t.status}] ${t.name}`)
+    .join('\n');
+}
+
+/**
  * Manages the persistent state for the planning server using Dexie.js.
  * Goals, Todos, and Memos are persisted.
  * Sequential Thinking state remains ephemeral (in-memory) for now.
@@ -183,6 +195,34 @@ export class PersistentState {
     dependsOn?: number[],
   ): Promise<MCPResult<AddToDoOutput>> {
     const todos = await this.getTodosList();
+    
+    // Check for duplicate todos (case-insensitive, trimmed)
+    const normalizedName = name.trim().toLowerCase();
+    const duplicate = todos.find(
+      (t) => t.name.trim().toLowerCase() === normalizedName,
+    );
+    
+    if (duplicate) {
+      return new MCPResponseBuilder({
+        success: false,
+        duplicateId: duplicate.id,
+        existingTodo: duplicate,
+        todos,
+      })
+        .withMessage(
+          `Duplicate todo detected.\n\n` +
+          `A todo with similar content already exists:\n` +
+          `  - ID: ${duplicate.id} [${duplicate.status}] ${duplicate.name}\n\n` +
+          `Current todos:\n${formatTodosList(todos)}`,
+        )
+        .withSuggestions([
+          'Use a different name for the new todo',
+          `Update the existing todo with update_todo(id=${duplicate.id})`,
+          `Mark the existing todo as completed if needed`,
+        ])
+        .asError(WebMCPErrorCodes.PLANNING.DUPLICATE_TODO);
+    }
+
     const order = todos.length;
 
     const id = await db.todos.add({
@@ -250,6 +290,7 @@ export class PersistentState {
 
       const suggestions = [
         'Use get_current_state to see all todos with their IDs',
+        'Check the ID number - valid IDs are listed below',
       ];
 
       return new MCPResponseBuilder({
@@ -262,10 +303,8 @@ export class PersistentState {
       })
         .withMessage(
           `Todo ${id} not found.\n\n` +
-            `Current todos (${todos.length} total):\n` +
-            `  - Pending: ${pendingCount}\n` +
-            `  - Completed: ${completedCount}\n` +
-            `  - Valid IDs: [${validIds.join(', ') || 'none'}]`,
+            `Available todos (${todos.length} total, ${pendingCount} pending, ${completedCount} completed):\n` +
+            formatTodosList(todos),
         )
         .withSuggestions(suggestions)
         .asError(WebMCPErrorCodes.PLANNING.TODO_NOT_FOUND);
@@ -314,6 +353,7 @@ export class PersistentState {
 
       const suggestions = [
         'Use get_current_state to see all todos with their IDs',
+        'Check the ID number - valid IDs are listed below',
       ];
 
       return new MCPResponseBuilder({
@@ -326,10 +366,8 @@ export class PersistentState {
       })
         .withMessage(
           `Todo ${id} not found.\n\n` +
-            `Current todos (${todos.length} total):\n` +
-            `  - Pending: ${pendingCount}\n` +
-            `  - Completed: ${completedCount}\n` +
-            `  - Valid IDs: [${validIds.join(', ') || 'none'}]`,
+            `Available todos (${todos.length} total, ${pendingCount} pending, ${completedCount} completed):\n` +
+            formatTodosList(todos),
         )
         .withSuggestions(suggestions)
         .asError(WebMCPErrorCodes.PLANNING.TODO_NOT_FOUND);
