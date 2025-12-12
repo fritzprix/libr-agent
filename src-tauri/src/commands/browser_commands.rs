@@ -59,182 +59,6 @@ pub async fn close_browser_session(
     }
 }
 
-/// Clicks an element in a browser session identified by a CSS selector.
-///
-/// # Arguments
-/// * `server` - The `InteractiveBrowserServer` state.
-/// * `session_id` - The ID of the browser session.
-/// * `selector` - The CSS selector of the element to click.
-///
-/// # Returns
-/// A `Result` containing a success message or the script result, or an error string on failure.
-#[tauri::command]
-pub async fn click_element(
-    server: State<'_, InteractiveBrowserServer>,
-    session_id: String,
-    selector: String,
-) -> Result<String, String> {
-    debug!("Command: click_element called - session: {session_id}, selector: {selector}");
-
-    match server.click_element(&session_id, &selector).await {
-        Ok(result) => {
-            debug!("Element clicked successfully: {result}");
-            Ok(result)
-        }
-        Err(e) => {
-            error!("Failed to click element '{selector}' in session {session_id}: {e}");
-            Err(e)
-        }
-    }
-}
-
-/// Inputs text into an element in a browser session.
-///
-/// # Arguments
-/// * `server` - The `InteractiveBrowserServer` state.
-/// * `session_id` - The ID of the browser session.
-/// * `selector` - The CSS selector of the input element.
-/// * `text` - The text to input into the element.
-///
-/// # Returns
-/// A `Result` containing a success message or the script result, or an error string on failure.
-#[tauri::command]
-pub async fn input_text(
-    server: State<'_, InteractiveBrowserServer>,
-    session_id: String,
-    selector: String,
-    text: String,
-) -> Result<String, String> {
-    debug!(
-        "Command: input_text called - session: {session_id}, selector: {selector}, text: {text}"
-    );
-
-    match server.input_text(&session_id, &selector, &text).await {
-        Ok(result) => {
-            debug!("Text input successful: {result}");
-            Ok(result)
-        }
-        Err(e) => {
-            error!("Failed to input text into '{selector}' in session {session_id}: {e}");
-            Err(e)
-        }
-    }
-}
-
-/// Scrolls the page in a browser session by a given amount.
-///
-/// # Arguments
-/// * `server` - The `InteractiveBrowserServer` state.
-/// * `session_id` - The ID of the browser session.
-/// * `x` - The horizontal scroll amount.
-/// * `y` - The vertical scroll amount.
-///
-/// # Returns
-/// A `Result` containing a success message, or an error string on failure.
-#[tauri::command]
-pub async fn scroll_page(
-    server: State<'_, InteractiveBrowserServer>,
-    session_id: String,
-    x: i32,
-    y: i32,
-) -> Result<String, String> {
-    debug!("Command: scroll_page called - session: {session_id}, x: {x}, y: {y}");
-
-    match server.scroll_page(&session_id, x, y).await {
-        Ok(result) => {
-            debug!("Page scroll successful: {result}");
-            Ok(result)
-        }
-        Err(e) => {
-            error!("Failed to scroll page in session {session_id}: {e}");
-            Err(e)
-        }
-    }
-}
-
-/// Gets the current URL of a browser session.
-///
-/// # Arguments
-/// * `server` - The `InteractiveBrowserServer` state.
-/// * `session_id` - The ID of the browser session.
-///
-/// # Returns
-/// A `Result` containing the current URL, or an error string on failure.
-#[tauri::command]
-pub async fn get_current_url(
-    server: State<'_, InteractiveBrowserServer>,
-    session_id: String,
-) -> Result<String, String> {
-    debug!("Command: get_current_url called for session: {session_id}");
-
-    match server.get_current_url(&session_id).await {
-        Ok(url) => {
-            debug!("Current URL retrieved: {url}");
-            Ok(url)
-        }
-        Err(e) => {
-            error!("Failed to get current URL for session {session_id}: {e}");
-            Err(e)
-        }
-    }
-}
-
-/// Gets the title of the current page in a browser session.
-///
-/// # Arguments
-/// * `server` - The `InteractiveBrowserServer` state.
-/// * `session_id` - The ID of the browser session.
-///
-/// # Returns
-/// A `Result` containing the page title, or an error string on failure.
-#[tauri::command]
-pub async fn get_page_title(
-    server: State<'_, InteractiveBrowserServer>,
-    session_id: String,
-) -> Result<String, String> {
-    debug!("Command: get_page_title called for session: {session_id}");
-
-    match server.get_page_title(&session_id).await {
-        Ok(title) => {
-            debug!("Page title retrieved: {title}");
-            Ok(title)
-        }
-        Err(e) => {
-            error!("Failed to get page title for session {session_id}: {e}");
-            Err(e)
-        }
-    }
-}
-
-/// Checks if an element exists in a browser session.
-///
-/// # Arguments
-/// * `server` - The `InteractiveBrowserServer` state.
-/// * `session_id` - The ID of the browser session.
-/// * `selector` - The CSS selector of the element to check.
-///
-/// # Returns
-/// A `Result` containing `true` if the element exists, `false` otherwise, or an error string on failure.
-#[tauri::command]
-pub async fn element_exists(
-    server: State<'_, InteractiveBrowserServer>,
-    session_id: String,
-    selector: String,
-) -> Result<bool, String> {
-    debug!("Command: element_exists called - session: {session_id}, selector: {selector}");
-
-    match server.element_exists(&session_id, &selector).await {
-        Ok(exists) => {
-            debug!("Element existence check: {selector} = {exists}");
-            Ok(exists)
-        }
-        Err(e) => {
-            error!("Failed to check element existence '{selector}' in session {session_id}: {e}");
-            Err(e)
-        }
-    }
-}
-
 /// Lists all active browser sessions.
 ///
 /// # Arguments
@@ -277,64 +101,6 @@ pub async fn navigate_to_url(
         }
         Err(e) => {
             error!("Failed to navigate session {session_id} to {url}: {e}");
-            Err(e)
-        }
-    }
-}
-
-/// Gets the full HTML content of the current page in a browser session.
-///
-/// # Arguments
-/// * `server` - The `InteractiveBrowserServer` state.
-/// * `session_id` - The ID of the browser session.
-///
-/// # Returns
-/// A `Result` containing the page's HTML content as a string, or an error string on failure.
-#[tauri::command]
-pub async fn get_page_content(
-    server: State<'_, InteractiveBrowserServer>,
-    session_id: String,
-) -> Result<String, String> {
-    debug!("Command: get_page_content called for session: {session_id}");
-
-    match server.get_page_content(&session_id).await {
-        Ok(content) => {
-            debug!(
-                "Page content retrieved for session: {} (length: {})",
-                session_id,
-                content.len()
-            );
-            Ok(content)
-        }
-        Err(e) => {
-            error!("Failed to get page content for session {session_id}: {e}");
-            Err(e)
-        }
-    }
-}
-
-/// Takes a screenshot of the current page in a browser session.
-///
-/// # Arguments
-/// * `server` - The `InteractiveBrowserServer` state.
-/// * `session_id` - The ID of the browser session.
-///
-/// # Returns
-/// A `Result` containing the path to the saved screenshot, or an error string on failure.
-#[tauri::command]
-pub async fn take_screenshot(
-    server: State<'_, InteractiveBrowserServer>,
-    session_id: String,
-) -> Result<String, String> {
-    debug!("Command: take_screenshot called for session: {session_id}");
-
-    match server.take_screenshot(&session_id).await {
-        Ok(result) => {
-            debug!("Screenshot taken successfully");
-            Ok(result)
-        }
-        Err(e) => {
-            error!("Failed to take screenshot for session {session_id}: {e}");
             Err(e)
         }
     }
@@ -430,7 +196,7 @@ pub async fn poll_script_result(
 /// * `session_id` - The ID of the browser session.
 ///
 /// # Returns
-/// A `Result` containing the script request ID, or an error string on failure.
+/// A `Result` containing a success message, or an error string on failure.
 #[tauri::command]
 pub async fn navigate_back(
     server: State<'_, InteractiveBrowserServer>,
@@ -438,11 +204,8 @@ pub async fn navigate_back(
 ) -> Result<String, String> {
     debug!("Command: navigate_back called for session: {session_id}");
 
-    match server
-        .execute_script(&session_id, "history.back(); 'Navigated back'")
-        .await
-    {
-        Ok(request_id) => Ok(request_id),
+    match server.navigate_back(&session_id).await {
+        Ok(result) => Ok(result),
         Err(e) => {
             error!("Failed to navigate back in session {session_id}: {e}");
             Err(e)
@@ -457,7 +220,7 @@ pub async fn navigate_back(
 /// * `session_id` - The ID of the browser session.
 ///
 /// # Returns
-/// A `Result` containing the script request ID, or an error string on failure.
+/// A `Result` containing a success message, or an error string on failure.
 #[tauri::command]
 pub async fn navigate_forward(
     server: State<'_, InteractiveBrowserServer>,
@@ -465,143 +228,10 @@ pub async fn navigate_forward(
 ) -> Result<String, String> {
     debug!("Command: navigate_forward called for session: {session_id}");
 
-    match server
-        .execute_script(&session_id, "history.forward(); 'Navigated forward'")
-        .await
-    {
-        Ok(request_id) => Ok(request_id),
+    match server.navigate_forward(&session_id).await {
+        Ok(result) => Ok(result),
         Err(e) => {
             error!("Failed to navigate forward in session {session_id}: {e}");
-            Err(e)
-        }
-    }
-}
-
-/// Gets the text content of an element in a browser session.
-///
-/// # Arguments
-/// * `server` - The `InteractiveBrowserServer` state.
-/// * `session_id` - The ID of the browser session.
-/// * `selector` - The CSS selector of the element.
-///
-/// # Returns
-/// A `Result` containing the script request ID, or an error string on failure.
-#[tauri::command]
-pub async fn get_element_text(
-    server: State<'_, InteractiveBrowserServer>,
-    session_id: String,
-    selector: String,
-) -> Result<String, String> {
-    debug!("Command: get_element_text called - session: {session_id}, selector: {selector}");
-
-    let script = format!(
-        "const el = document.querySelector('{}'); el ? el.textContent.trim() : null",
-        selector.replace('\'', "\\'")
-    );
-
-    match server.execute_script(&session_id, &script).await {
-        Ok(request_id) => Ok(request_id),
-        Err(e) => {
-            error!("Failed to get element text '{selector}' in session {session_id}: {e}");
-            Err(e)
-        }
-    }
-}
-
-/// Gets the value of a specific attribute from an element in a browser session.
-///
-/// # Arguments
-/// * `server` - The `InteractiveBrowserServer` state.
-/// * `session_id` - The ID of the browser session.
-/// * `selector` - The CSS selector of the element.
-/// * `attribute` - The name of the attribute to get.
-///
-/// # Returns
-/// A `Result` containing the script request ID, or an error string on failure.
-#[tauri::command]
-pub async fn get_element_attribute(
-    server: State<'_, InteractiveBrowserServer>,
-    session_id: String,
-    selector: String,
-    attribute: String,
-) -> Result<String, String> {
-    debug!(
-        "Command: get_element_attribute called - session: {session_id}, selector: {selector}, attribute: {attribute}"
-    );
-
-    let script = format!(
-        "const el = document.querySelector('{}'); el ? el.getAttribute('{}') : null",
-        selector.replace('\'', "\\'"),
-        attribute.replace('\'', "\\'")
-    );
-
-    match server.execute_script(&session_id, &script).await {
-        Ok(request_id) => Ok(request_id),
-        Err(e) => {
-            error!(
-                "Failed to get element attribute '{attribute}' for '{selector}' in session {session_id}: {e}"
-            );
-            Err(e)
-        }
-    }
-}
-
-/// Finds an element in a browser session and returns detailed information about it.
-///
-/// # Arguments
-/// * `server` - The `InteractiveBrowserServer` state.
-/// * `session_id` - The ID of the browser session.
-/// * `selector` - The CSS selector of the element to find.
-///
-/// # Returns
-/// A `Result` containing the script request ID. The script result will be a JSON string
-/// with details about the element (e.g., visibility, position, attributes).
-#[tauri::command]
-pub async fn find_element(
-    server: State<'_, InteractiveBrowserServer>,
-    session_id: String,
-    selector: String,
-) -> Result<String, String> {
-    debug!("Command: find_element called - session: {session_id}, selector: {selector}");
-
-    let script = format!(
-        r#"
-(function() {{
-  const selector = '{}';
-  try {{
-    const el = document.querySelector(selector);
-    if (!el) return JSON.stringify({{ exists: false, selector }});
-
-    const rect = el.getBoundingClientRect();
-    const style = window.getComputedStyle(el);
-    const visible = !!(rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden');
-    const clickable = visible && style.pointerEvents !== 'none' && !el.disabled;
-
-    return JSON.stringify({{
-      exists: true,
-      visible,
-      clickable,
-      tagName: el.tagName.toLowerCase(),
-      rect: {{ x: rect.x, y: rect.y, width: rect.width, height: rect.height }},
-      attributes: {{
-        id: el.id || null,
-        className: el.className || null,
-        disabled: el.disabled || false
-      }},
-      selector
-    }});
-  }} catch (error) {{
-    return JSON.stringify({{ exists: false, error: error.message, selector }});
-  }}
-}})()
-"#,
-        selector.replace('\'', "\\'")
-    );
-
-    match server.execute_script(&session_id, &script).await {
-        Ok(request_id) => Ok(request_id),
-        Err(e) => {
-            error!("Failed to find element '{selector}' in session {session_id}: {e}");
             Err(e)
         }
     }
