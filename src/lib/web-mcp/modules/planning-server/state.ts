@@ -376,9 +376,7 @@ export class PersistentState {
         .withMessage(
           `Todo ${resolvedId} not found.\n\n` +
             `Current todos (${allTodos.length} total):\n` +
-            `  - Pending: ${pendingCount}\n` +
-            `  - Completed: ${completedCount}\n` +
-            `  - Valid IDs: [${validIds.join(', ') || 'none'}]`,
+            formatTodosList(allTodos),
         )
         .withSuggestions(suggestions)
         .asError(WebMCPErrorCodes.PLANNING.TODO_NOT_FOUND);
@@ -493,9 +491,7 @@ export class PersistentState {
         .withMessage(
           `Todo ${resolvedId} not found.\n\n` +
             `Current todos (${allTodos.length} total):\n` +
-            `  - Pending: ${pendingCount}\n` +
-            `  - Completed: ${completedCount}\n` +
-            `  - Valid IDs: [${validIds.join(', ') || 'none'}]`,
+            formatTodosList(allTodos),
         )
         .withSuggestions(suggestions)
         .asError(WebMCPErrorCodes.PLANNING.TODO_NOT_FOUND);
