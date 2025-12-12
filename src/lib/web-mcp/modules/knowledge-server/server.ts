@@ -7,6 +7,8 @@ import type { ServiceContext, ServiceContextOptions } from '@/features/tools';
 import { getLogger } from '@/lib/logger';
 import { db } from './db';
 import { knowledgeTools as tools } from './tools';
+import { MCPResponseBuilder } from '@/lib/web-mcp/response-builder';
+import { WebMCPErrorCodes } from '@/lib/web-mcp/error-codes';
 
 const logger = getLogger('KnowledgeServer');
 
@@ -39,10 +41,41 @@ class KnowledgeManager {
       updatedAt: now,
     });
 
-    return createMCPStructuredToolResult(
-      `Knowledge saved: "${title}" (ID: ${id})`,
-      { id, title, tags },
-    );
+    // Get database stats for context
+    const totalItems = await db.knowledge
+      .where('assistantId')
+      .equals(this.assistantId!)
+      .count();
+
+    const nextActions: string[] = [
+      'Use search_knowledge to find this item later',
+      'Use read_knowledge to view full content',
+    ];
+
+    const suggestions: string[] = [];
+    if (tags.length > 0) {
+      suggestions.push(
+        `Search by tags: search_knowledge with tags: [${tags.map((t) => `"${t}"`).join(', ')}]`,
+      );
+    }
+    suggestions.push(`Search by title or content keywords from: "${title}"`);
+
+    let message = `Knowledge saved: "${title}" (ID: ${id})`;
+    if (tags.length > 0) {
+      message += `\nTags: ${tags.join(', ')}`;
+    }
+    message += `\n\nTotal knowledge items: ${totalItems}`;
+
+    return new MCPResponseBuilder({
+      id,
+      title,
+      tags,
+      totalItems,
+    })
+      .withMessage(message)
+      .withNextActions(nextActions)
+      .withSuggestions(suggestions)
+      .asSuccess();
   }
 
   async searchKnowledge(query?: string, tags?: string[]): Promise<MCPResult> {
@@ -64,6 +97,7 @@ class KnowledgeManager {
     // and filter manually. For < 10k items per assistant, this is fast enough.
 
     let results = await collection.toArray();
+    const totalItems = results.length;
 
     if (tags && tags.length > 0) {
       results = results.filter((item) =>
@@ -88,9 +122,71 @@ class KnowledgeManager {
         item.content.slice(0, 100) + (item.content.length > 100 ? '...' : ''),
     }));
 
-    return createMCPStructuredToolResult(`Found ${results.length} items.`, {
+    // Handle no results with improved guidance
+    if (results.length === 0) {
+      const suggestions: string[] = [];
+
+      if (query && tags && tags.length > 0) {
+        suggestions.push('Try search with query only (remove tags filter)');
+        suggestions.push('Try search with tags only (remove query)');
+      } else if (query) {
+        suggestions.push('Try shorter or different keywords');
+        suggestions.push('Use list_knowledge to browse all items');
+      } else if (tags && tags.length > 0) {
+        suggestions.push('Try fewer tags or different tag combinations');
+        suggestions.push('Use list_knowledge to see available items and tags');
+      }
+
+      if (totalItems < 20) {
+        suggestions.push('Use list_knowledge to browse all items');
+      }
+
+      let message = 'No knowledge items found';
+      if (query && tags && tags.length > 0) {
+        message += ` matching query "${query}" with tags [${tags.join(', ')}]`;
+      } else if (query) {
+        message += ` matching query "${query}"`;
+      } else if (tags && tags.length > 0) {
+        message += ` with tags [${tags.join(', ')}]`;
+      }
+      message += `.\n\nTotal knowledge items: ${totalItems}`;
+
+      return new MCPResponseBuilder({
+        results: [],
+        query,
+        tags,
+        totalItems,
+        suggestions,
+      })
+        .withMessage(message)
+        .withSuggestions(suggestions)
+        .asSuccess();
+    }
+
+    // Success with results
+    let message = `Found ${results.length} knowledge item(s)`;
+    if (query && tags && tags.length > 0) {
+      message += ` matching "${query}" with tags [${tags.join(', ')}]`;
+    } else if (query) {
+      message += ` matching "${query}"`;
+    } else if (tags && tags.length > 0) {
+      message += ` with tags [${tags.join(', ')}]`;
+    }
+
+    const nextActions: string[] = ['Use read_knowledge to view full content'];
+    if (results.length > 5) {
+      nextActions.push('Refine search with more specific keywords or tags');
+    }
+
+    return new MCPResponseBuilder({
       results: summary,
-    });
+      query,
+      tags,
+      totalItems,
+    })
+      .withMessage(message)
+      .withNextActions(nextActions)
+      .asSuccess();
   }
 
   async listKnowledge(limit = 50, offset = 0): Promise<MCPResult> {
@@ -129,7 +225,18 @@ class KnowledgeManager {
     const item = await db.knowledge.get(id);
 
     if (!item || item.assistantId !== this.assistantId) {
-      return createMCPErrorToolResult(`Knowledge item ${id} not found.`);
+      const suggestions: string[] = [
+        'Use search_knowledge to find items by keywords or tags',
+        'Use list_knowledge to browse all available items',
+      ];
+
+      return new MCPResponseBuilder({
+        requestedId: id,
+        suggestions,
+      })
+        .withMessage(`Knowledge item ${id} not found.`)
+        .withSuggestions(suggestions)
+        .asError(WebMCPErrorCodes.KNOWLEDGE.ITEM_NOT_FOUND);
     }
 
     return createMCPStructuredToolResult(
@@ -143,14 +250,38 @@ class KnowledgeManager {
     const item = await db.knowledge.get(id);
 
     if (!item || item.assistantId !== this.assistantId) {
-      return createMCPErrorToolResult(`Knowledge item ${id} not found.`);
+      const suggestions: string[] = [
+        'Use search_knowledge to find items by keywords or tags',
+        'Use list_knowledge to browse all available items',
+      ];
+
+      return new MCPResponseBuilder({
+        requestedId: id,
+        suggestions,
+      })
+        .withMessage(`Knowledge item ${id} not found.`)
+        .withSuggestions(suggestions)
+        .asError(WebMCPErrorCodes.KNOWLEDGE.ITEM_NOT_FOUND);
     }
 
     await db.knowledge.delete(id);
-    return createMCPStructuredToolResult(`Knowledge item ${id} deleted.`, {
+
+    const remainingItems = await db.knowledge
+      .where('assistantId')
+      .equals(this.assistantId!)
+      .count();
+
+    return new MCPResponseBuilder({
       deleted: true,
       id,
-    });
+      title: item.title,
+      remainingItems,
+    })
+      .withMessage(
+        `Knowledge item deleted: "${item.title}" (ID: ${id})\n\n` +
+          `Remaining knowledge items: ${remainingItems}`,
+      )
+      .asSuccess();
   }
 }
 

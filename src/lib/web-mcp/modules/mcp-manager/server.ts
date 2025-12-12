@@ -23,6 +23,8 @@ import {
   AssistantService,
   IAssistantService,
 } from '@/lib/services/assistant-service';
+import { MCPResponseBuilder } from '@/lib/web-mcp/response-builder';
+import { WebMCPErrorCodes } from '@/lib/web-mcp/error-codes';
 
 const logger = getLogger('MCPManagerServer');
 
@@ -414,6 +416,44 @@ async function searchServer(
 
     const result = normalizePagination(servers, input.page!, input.pageSize!);
 
+    // Handle no results with improved guidance
+    if (result.totalItems === 0) {
+      const allServers = await mcpService.getAll();
+      const totalCount = allServers.length;
+      const activeCount = allServers.filter((s) => s.isActive).length;
+
+      const suggestions: string[] = [];
+
+      // Suggest switching to BM25 mode
+      suggestions.push('Try searchMode: "bm25" for fuzzy matching');
+
+      // Suggest browsing if database is small
+      if (totalCount < 20) {
+        suggestions.push('Use list_servers to browse all servers');
+      } else {
+        suggestions.push('Try different or shorter keywords');
+      }
+
+      // Suggest including inactive if filtered
+      if (!input.includeInactive && totalCount > activeCount) {
+        suggestions.push('Set includeInactive: true to search all servers');
+      }
+
+      return new MCPResponseBuilder({
+        ...result,
+        query: input.query,
+        mode: 'simple',
+        databaseStats: { total: totalCount, active: activeCount },
+        suggestions,
+      })
+        .withMessage(
+          `No servers found matching "${input.query}".\n` +
+            `Database has ${activeCount} active servers (${totalCount} total).`,
+        )
+        .withSuggestions(suggestions)
+        .asSuccess();
+    }
+
     // Build summary with search results
     const summaryLines = [
       `🔍 Search Results for "${input.query}" (simple)`,
@@ -494,6 +534,45 @@ async function searchServer(
   });
 
   const result = normalizePagination(servers, input.page!, input.pageSize!);
+
+  // Handle no results with improved guidance
+  if (result.totalItems === 0) {
+    const allServers = await mcpService.getAll();
+    const totalCount = allServers.length;
+    const activeCount = allServers.filter((s) => s.isActive).length;
+
+    const suggestions: string[] = [];
+
+    // Suggest switching to simple mode
+    suggestions.push('Try searchMode: "simple" for exact matching');
+
+    // Suggest browsing if database is small
+    if (totalCount < 20) {
+      suggestions.push('Use list_servers to browse all servers');
+    } else {
+      suggestions.push('Try broader or alternative keywords');
+    }
+
+    // Suggest including inactive if filtered
+    if (!input.includeInactive && totalCount > activeCount) {
+      suggestions.push('Set includeInactive: true to search all servers');
+    }
+
+    return new MCPResponseBuilder({
+      ...result,
+      query: input.query,
+      mode: 'bm25',
+      weights: { name: nameWeight, desc: descWeight },
+      databaseStats: { total: totalCount, active: activeCount },
+      suggestions,
+    })
+      .withMessage(
+        `No servers found matching "${input.query}" (BM25 search).\n` +
+          `Database has ${activeCount} active servers (${totalCount} total).`,
+      )
+      .withSuggestions(suggestions)
+      .asSuccess();
+  }
 
   // Build summary with BM25 search results
   const summaryLines = [
@@ -609,7 +688,7 @@ async function connectServer(
   mcpService: IMcpServerService,
   assistantService: IAssistantService,
   args: Record<string, unknown>,
-): Promise<MCPResult<ConnectServerOutput>> {
+): Promise<MCPResult<unknown>> {
   const input: ConnectInput = {
     serverId: args.serverId ? String(args.serverId) : undefined,
     serverName: args.serverName ? String(args.serverName) : undefined,
@@ -635,9 +714,21 @@ async function connectServer(
   const server = await findServer(mcpService, input.serverId, input.serverName);
 
   if (!server) {
-    return createMCPErrorToolResult(
-      `Server not found: ${input.serverId || input.serverName}`,
-    ) as MCPResult<ConnectServerOutput>;
+    const searchTerm = input.serverId || input.serverName || '';
+    const suggestions: string[] = [
+      'Use search_server to find servers by name',
+      'Use list_servers to see all available servers',
+      'Check spelling and try exact server name',
+    ];
+
+    return new MCPResponseBuilder({
+      requestedId: input.serverId,
+      requestedName: input.serverName,
+      suggestions,
+    })
+      .withMessage(`Server not found: "${searchTerm}".`)
+      .withSuggestions(suggestions)
+      .asError(WebMCPErrorCodes.MCP_MANAGER.SERVER_NOT_FOUND);
   }
 
   // Connect based on scope
@@ -663,42 +754,49 @@ async function connectServer(
       await assistantService.save(assistant);
     }
 
-    const summary = [
-      `✅ Server Connected to Assistant`,
-      `   Server: ${server.name}`,
-      `   Assistant: ${assistant.name}`,
-      `   Scope: assistant`,
-      input.autoStart
-        ? `   Status: Starting...`
-        : `   Status: Registered (manual start required)`,
-    ].join('\n');
+    const nextActions = [
+      'Use list_servers with filterByAssistant=true to verify connection',
+      "Check your assistant's tool list for new capabilities",
+      'Server tools are now available for this assistant',
+    ];
 
-    return createMCPStructuredToolResult(summary, {
+    return new MCPResponseBuilder({
       success: true,
       server,
-      scope: 'assistant',
+      scope: 'assistant' as const,
       assistantId,
-      message: `Server "${server.name}" connected to assistant "${assistant.name}"`,
-    });
+    })
+      .withMessage(
+        `Server "${server.name}" connected to assistant "${assistant.name}".\n` +
+          `Scope: assistant\n` +
+          (input.autoStart
+            ? `Status: Starting...`
+            : `Status: Registered (manual start required)`),
+      )
+      .withNextActions(nextActions)
+      .asSuccess();
   } else {
     // Global scope: mark server as globally enabled
     server.isActive = true;
     server.updatedAt = new Date();
     await mcpService.save(server);
 
-    const summary = [
-      `✅ Server Enabled Globally`,
-      `   Server: ${server.name}`,
-      `   Scope: global`,
-      `   Status: Active`,
-    ].join('\n');
+    const nextActions = [
+      'Use list_servers to verify the server is active',
+      'Tools from this server are now available system-wide',
+      "All assistants can access this server's capabilities",
+    ];
 
-    return createMCPStructuredToolResult(summary, {
+    return new MCPResponseBuilder({
       success: true,
       server,
-      scope: 'global',
-      message: `Server "${server.name}" enabled globally`,
-    });
+      scope: 'global' as const,
+    })
+      .withMessage(
+        `Server "${server.name}" enabled globally.\n` + `Status: Active`,
+      )
+      .withNextActions(nextActions)
+      .asSuccess();
   }
 }
 
@@ -731,9 +829,21 @@ async function disconnectServer(
   const server = await findServer(mcpService, input.serverId, input.serverName);
 
   if (!server) {
-    return createMCPErrorToolResult(
-      `Server not found: ${input.serverId || input.serverName}`,
-    ) as MCPResult<ConnectServerOutput>;
+    const searchTerm = input.serverId || input.serverName || '';
+    const suggestions: string[] = [
+      'Use search_server to find servers by name',
+      'Use list_servers to see all available servers',
+      'Check spelling and try exact server name',
+    ];
+
+    return new MCPResponseBuilder({
+      requestedId: input.serverId,
+      requestedName: input.serverName,
+      suggestions,
+    })
+      .withMessage(`Server not found: "${searchTerm}".`)
+      .withSuggestions(suggestions)
+      .asError(WebMCPErrorCodes.MCP_MANAGER.SERVER_NOT_FOUND);
   }
 
   if (input.scope === 'assistant') {
@@ -753,19 +863,46 @@ async function disconnectServer(
     assistant.mcpServerIds = serverIds.filter((id) => id !== server.id);
     await assistantService.save(assistant);
 
-    return createMCPStructuredToolResult(
-      `✅ Server "${server.name}" disconnected from assistant "${assistant.name}"`,
-      { success: true, server, scope: 'assistant' },
-    );
+    const nextActions = [
+      'Tools from this server are no longer available to this assistant',
+      'Other assistants are not affected',
+      'Use connect_server to reconnect anytime',
+    ];
+
+    return new MCPResponseBuilder({
+      success: true,
+      server,
+      scope: 'assistant' as const,
+      impactScope: 'single_assistant' as const,
+    })
+      .withMessage(
+        `Server "${server.name}" disconnected from assistant "${assistant.name}".\n` +
+          `Impact: Current assistant only`,
+      )
+      .withNextActions(nextActions)
+      .asSuccess();
   } else {
     server.isActive = false;
     server.updatedAt = new Date();
     await mcpService.save(server);
 
-    return createMCPStructuredToolResult(
-      `✅ Server "${server.name}" disabled globally`,
-      { success: true, server, scope: 'global' },
-    );
+    const nextActions = [
+      'Tools from this server are no longer available',
+      'Impact: All assistants system-wide',
+      'Server configuration preserved (reconnect anytime with connect_server)',
+    ];
+
+    return new MCPResponseBuilder({
+      success: true,
+      server,
+      scope: 'global' as const,
+      impactScope: 'global' as const,
+    })
+      .withMessage(
+        `Server "${server.name}" disabled globally.\n` + `Impact: System-wide`,
+      )
+      .withNextActions(nextActions)
+      .asSuccess();
   }
 }
 
