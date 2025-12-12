@@ -108,7 +108,10 @@ const planningServer: WebMCPServer = {
       case 'clear_session':
         return await stateManager.clear();
       case 'add_scratchpad': {
-        return await stateManager.addScratchpad(typedArgs.note as string);
+        return await stateManager.addScratchpad(
+          typedArgs.note as string,
+          typedArgs.source as string | undefined,
+        );
       }
       case 'clear_scratchpad': {
         const id = typedArgs.id as number;
@@ -166,7 +169,12 @@ const planningServer: WebMCPServer = {
 
         const scratchpadText =
           includeScratchpad && scratchpad.length > 0
-            ? scratchpad.map((m) => `- [ID: ${m.id}] ${m.content}`).join('\n')
+            ? scratchpad
+                .map((m) => {
+                  const sourcePart = m.source ? ` (source: ${m.source})` : '';
+                  return `- [ID: ${m.id}] ${m.content}${sourcePart}`;
+                })
+                .join('\n')
             : '(none)';
 
         const goalText = goal ? `- ${goal}` : '(none)';

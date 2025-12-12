@@ -107,7 +107,7 @@ function createMetadata(
 export const extractWebContentTool: StrictBrowserMCPTool = {
   name: 'extractWebContent',
   description:
-    'Convert the webpage into clean, readable markdown format. Returns the first page of content and the total number of pages. Use readWebContent to access subsequent pages. Ideal for content analysis, summarization, and reading.',
+    'Convert the webpage into clean, readable markdown format. Returns the first page of content and the total number of pages. Use readWebContent to access subsequent pages. Ideal for content analysis, summarization, and reading.\n\nOptional autoMerge parameter: When enabled and content is small (≤2 pages OR <5000 chars), automatically returns all content merged in a single response, eliminating the need for subsequent readWebContent calls.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -116,6 +116,11 @@ export const extractWebContentTool: StrictBrowserMCPTool = {
         type: 'boolean',
         description:
           'Save the raw HTML to a file for DOM structure analysis. Default: false',
+      },
+      autoMerge: {
+        type: 'boolean',
+        description:
+          'Automatically merge all content if small (≤2 pages OR <5000 chars). When enabled, returns complete content without pagination. Default: false',
       },
     },
     required: ['sessionId'],
@@ -130,9 +135,12 @@ export const extractWebContentTool: StrictBrowserMCPTool = {
     const sessionId = args.sessionId as string;
     const saveRawHtml =
       typeof args.saveRawHtml === 'boolean' ? args.saveRawHtml : false;
+    const autoMerge =
+      typeof args.autoMerge === 'boolean' ? args.autoMerge : false;
 
     logger.debug('Executing browser_extractWebContent', {
       sessionId,
+      autoMerge,
     });
 
     // executeScript 함수 존재 검증
@@ -143,6 +151,24 @@ export const extractWebContentTool: StrictBrowserMCPTool = {
     }
 
     try {
+      // Extract page title and URL
+      let pageTitle = '';
+      let currentUrl = '';
+
+      try {
+        const titleResult = await executeScript(sessionId, 'document.title');
+        pageTitle = typeof titleResult === 'string' ? titleResult : '';
+      } catch (error) {
+        logger.warn('Failed to extract page title', { error });
+      }
+
+      try {
+        const urlResult = await executeScript(sessionId, 'window.location.href');
+        currentUrl = typeof urlResult === 'string' ? urlResult : '';
+      } catch (error) {
+        logger.warn('Failed to extract current URL', { error });
+      }
+
       // HTML 추출 (body 기준)
       const rawHtml = await extractHtmlFromPage(executeScript, sessionId);
 
@@ -193,24 +219,35 @@ export const extractWebContentTool: StrictBrowserMCPTool = {
         contentText = JSON.stringify(result.content || result.domMap);
       }
 
-      const { totalPages, firstPage } = ContentStore.saveContent(
-        sessionId,
-        contentText,
-      );
+      const { totalPages, firstPage, mergedContent, autoMerged } =
+        ContentStore.saveContent(sessionId, contentText, 6000, autoMerge);
 
       // 메타데이터 추가
       const resultWithMetadata = createMetadata(result, rawHtml, totalPages);
 
+      // Add page title and URL to metadata
+      resultWithMetadata.metadata = {
+        ...resultWithMetadata.metadata,
+        pageTitle,
+        sourceUrl: currentUrl,
+      };
+
       // 응답 텍스트 생성
-      let responseText = `[Page 1/${totalPages}]\n\n${firstPage}`;
+      let responseText = '';
+
+      if (autoMerged && mergedContent) {
+        responseText = `✓ Content extracted and auto-merged\n\nPage Title: ${pageTitle || 'N/A'}\nURL: ${currentUrl || 'N/A'}\n\n${mergedContent}`;
+      } else {
+        responseText = `[Page 1/${totalPages}]\n\nPage Title: ${pageTitle || 'N/A'}\nURL: ${currentUrl || 'N/A'}\n\n${firstPage}`;
+      }
 
       // 빈 페이지 감지 및 경고 메시지 추가
       if (!responseText.trim() || !firstPage.trim()) {
         responseText += `\n\n(Empty Page) The extracted content is empty. This suggests the page might not have loaded correctly or contains no text. Please try calling 'extractWebContent' again to re-capture the page, or use 'extractWebContent' with 'saveRawHtml': true to save the raw HTML for inspection.`;
       }
 
-      if (totalPages > 1) {
-        responseText += `\n\n--- End of Page 1 ---\nThere are ${totalPages} pages in total. Use readWebContent(sessionId, page) to read more.`;
+      if (!autoMerged && totalPages > 1) {
+        responseText += `\n\n--- End of Page 1 ---\nThere are ${totalPages} pages in total. Use readWebContent(sessionId, page) to read more, or use autoMerge: true to get all content at once.`;
       }
 
       // Raw HTML 저장 정보 추가

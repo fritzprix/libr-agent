@@ -36,6 +36,7 @@ export const ContentStore = {
     sessionId: string,
     content: string,
     pageSize: number = 6000,
+    autoMerge: boolean = false,
   ) => {
     const pages: string[] = [];
 
@@ -49,6 +50,11 @@ export const ContentStore = {
       pages.push('');
     }
 
+    // Auto-merge logic: if autoMerge is enabled and content meets criteria
+    const shouldAutoMerge =
+      autoMerge && (pages.length <= 2 || content.length < 5000);
+    const mergedContent = shouldAutoMerge ? content : null;
+
     contentStore.set(sessionId, {
       pages,
       timestamp: Date.now(),
@@ -59,6 +65,8 @@ export const ContentStore = {
     return {
       totalPages: pages.length,
       firstPage: pages[0],
+      mergedContent,
+      autoMerged: shouldAutoMerge,
     };
   },
 

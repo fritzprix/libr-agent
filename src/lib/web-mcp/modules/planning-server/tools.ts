@@ -154,7 +154,7 @@ export const planningTools: MCPTool[] = [
   {
     name: 'add_scratchpad',
     description:
-      'Add a note to your Scratchpad (Working Memory). Content here is ALWAYS visible in your context. Use this for keeping track of important findings, file paths, IDs, or intermediate analysis results that you need to reference frequently during the task.',
+      'Add a note to your Scratchpad (Working Memory). Content here is ALWAYS visible in your context. Use this for keeping track of important findings, file paths, IDs, or intermediate analysis results that you need to reference frequently during the task.\n\nOptional source parameter: Provide the source of information for citation tracking (e.g., URLs, file paths, or tool result IDs like "https://example.com/article" or "file://path/to/doc.txt").',
     inputSchema: {
       type: 'object',
       properties: {
@@ -162,6 +162,11 @@ export const planningTools: MCPTool[] = [
           type: 'string',
           description:
             'The content to add to the scratchpad (e.g., "User requested feature X", "File path: src/main.ts").',
+        },
+        source: {
+          type: 'string',
+          description:
+            'Optional source of the information for citation tracking. Examples: "https://example.com/article", "file://workspace/docs/readme.md", "tool_result_id:abc123"',
         },
       },
       required: ['note'],

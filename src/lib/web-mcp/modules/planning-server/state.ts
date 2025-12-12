@@ -83,6 +83,7 @@ export class PersistentState {
     return items.map((m) => ({
       id: m.id!,
       content: m.content,
+      source: m.source,
     }));
   }
 
@@ -491,11 +492,13 @@ export class PersistentState {
 
   async addScratchpad(
     note: string,
+    source?: string,
   ): Promise<MCPResult<BaseOutput & { scratchpad: ScratchpadItem[] }>> {
     await db.scratchpad.add({
       sessionId: this.sessionId,
       threadId: this.threadId,
       content: note,
+      source,
       createdAt: Date.now(),
     });
 
@@ -516,9 +519,14 @@ export class PersistentState {
     // Get the ID of the newly added item (last one)
     const newItemId = updatedItems[updatedItems.length - 1].id;
 
+    let message = `Scratchpad ID:${newItemId} added\n${capacityWarning}`;
+    if (source) {
+      message += `\nSource: ${source}`;
+    }
+
     return createMCPStructuredToolResult<
       BaseOutput & { scratchpad: ScratchpadItem[] }
-    >(`Scratchpad ID:${newItemId} added\n${capacityWarning}`, {
+    >(message, {
       success: true,
       scratchpad: updatedItems,
     });
@@ -748,8 +756,9 @@ export class SessionStateManager {
 
   async addScratchpad(
     note: string,
+    source?: string,
   ): Promise<MCPResult<BaseOutput & { scratchpad: ScratchpadItem[] }>> {
-    return this.getCurrentState().addScratchpad(note);
+    return this.getCurrentState().addScratchpad(note, source);
   }
 
   async clearScratchpad(
