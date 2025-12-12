@@ -44,6 +44,8 @@ export const WebMCPErrorCodes = {
     CIRCULAR_DEPENDENCY: 'PLANNING.CIRCULAR_DEPENDENCY',
     /** Goal not set */
     NO_GOAL: 'PLANNING.NO_GOAL',
+    /** Duplicate todo content */
+    DUPLICATE_TODO: 'PLANNING.DUPLICATE_TODO',
   },
 
   // ========== Knowledge Server Errors ==========
