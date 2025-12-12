@@ -46,6 +46,78 @@ pub enum SessionStatus {
     Error(String),
 }
 
+// ==================================================================================
+// JavaScript Templates
+// ==================================================================================
+
+/// The initialization script injected into every browser window.
+/// It sets up the `window.__LIBR_AGENT__` global object which handles:
+/// 1. Waiting for Tauri IPC to be ready (critical for Linux/WebKitGTK)
+/// 2. Executing scripts safely
+/// 3. Sending results back to the Rust backend
+const INIT_SCRIPT: &str = r#"
+(function() {
+    if (window.__LIBR_AGENT__) return;
+
+    window.__LIBR_AGENT__ = {
+        // Wait for Tauri IPC to be ready
+        waitForIPC: async function(retries = 50, interval = 100) {
+            if (window.__TAURI__) return true;
+            console.log('[LibrAgent] Waiting for Tauri IPC...');
+            for (let i = 0; i < retries; i++) {
+                await new Promise(r => setTimeout(r, interval));
+                if (window.__TAURI__) {
+                    console.log('[LibrAgent] Tauri IPC is ready');
+                    return true;
+                }
+            }
+            console.error('[LibrAgent] Tauri IPC failed to initialize');
+            return false;
+        },
+
+        // Send result back to Rust
+        sendResult: async function(sessionId, requestId, result, isError = false) {
+            if (!await this.waitForIPC()) {
+                console.error('[LibrAgent] IPC not available, cannot send result');
+                return;
+            }
+            
+            const payload = {
+                sessionId,
+                requestId,
+                result: isError ? `Error: ${result}` : (
+                    typeof result === 'object' ? JSON.stringify(result) : String(result)
+                )
+            };
+            
+            try {
+                await window.__TAURI__.core.invoke('browser_script_result', { payload });
+            } catch (e) {
+                console.error('[LibrAgent] Failed to invoke Tauri command:', e);
+            }
+        },
+
+        // Execute user script safely
+        // Note: This function uses 'new Function' which might be blocked by CSP.
+        // For strict CSP environments, we should inject the script directly from Rust.
+        execute: async function(sessionId, requestId, scriptContent) {
+            console.log(`[LibrAgent] Executing request: ${requestId}`);
+            try {
+                // Use Function constructor to create an async function from the string
+                const asyncFn = new Function('return (async () => { ' + scriptContent + ' })()');
+                const result = await asyncFn();
+                await this.sendResult(sessionId, requestId, result, false);
+            } catch (e) {
+                console.error('[LibrAgent] Script execution error:', e);
+                await this.sendResult(sessionId, requestId, e.message, true);
+            }
+        }
+    };
+    
+    console.log('[LibrAgent] Runtime initialized');
+})();
+"#;
+
 /// Manages multiple interactive browser sessions.
 /// This struct is managed as Tauri state and shared across commands.
 #[derive(Debug, Clone)]
@@ -70,6 +142,20 @@ impl InteractiveBrowserServer {
             app_handle,
             sessions: Arc::new(RwLock::new(HashMap::new())),
             script_results: Arc::new(DashMap::new()),
+        }
+    }
+
+    /// Helper to apply platform-specific window settings (Linux focus fixes)
+    fn apply_platform_window_settings(&self, window: &tauri::WebviewWindow) {
+        #[cfg(target_os = "linux")]
+        {
+            use log::error;
+            if let Err(e) = window.show() {
+                error!("Failed to show window on Linux: {e}");
+            }
+            if let Err(e) = window.set_focus() {
+                error!("Failed to focus window on Linux: {e}");
+            }
         }
     }
 
@@ -113,8 +199,17 @@ impl InteractiveBrowserServer {
         .maximizable(true)
         .minimizable(true)
         .center()
+        .focused(true)
+        .visible(true)
+        .devtools(cfg!(debug_assertions))
+        .initialization_script(INIT_SCRIPT) // Inject robust initialization script
+        .accept_first_mouse(true)
+        .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 LibrAgent Browser")
         .build()
         .map_err(|e| format!("Failed to create browser window: {e}"))?;
+
+        // Apply platform-specific settings (Linux focus, etc.)
+        self.apply_platform_window_settings(&webview_window);
 
         // Register session
 
@@ -196,37 +291,43 @@ impl InteractiveBrowserServer {
             // Generate unique request ID
             let request_id = Uuid::new_v4().to_string();
 
-            // Inject JS that calls window.__TAURI__.core.invoke with request_id
-            let wrapped_script = format!(
+            // Ensure window is focused on Linux before execution
+            self.apply_platform_window_settings(&window);
+
+            // Construct the full script to inject directly
+            // This avoids using 'new Function' inside the browser context, bypassing CSP restrictions
+            let execution_call = format!(
                 r#"
 (async function() {{
+    if (!window.__LIBR_AGENT__) {{
+        console.error('[LibrAgent] Runtime not initialized');
+        return;
+    }}
+    
     try {{
+        // Wait for IPC first
+        if (!await window.__LIBR_AGENT__.waitForIPC()) {{
+            return;
+        }}
+
+        // Execute user script directly here
         const result = await (async () => {{ return {script}; }})();
-        const resultStr = (typeof result === 'undefined' || result === null) 
-            ? 'null' 
-            : (typeof result === 'object' ? JSON.stringify(result) : String(result));
         
-        const payload = {{ sessionId: '{session_id}', requestId: '{request_id}', result: resultStr }};
-
-        console.log('[TAURI INJECTION] Sending to browser_script_result:', payload);
-        window.__TAURI__.core.invoke('browser_script_result', {{ payload }});
-    }} catch (error) {{
-        const errorStr = 'Error: ' + error.message;
-
-        const payload = {{ sessionId: '{session_id}', requestId: '{request_id}', result: errorStr }};
-
-        console.log('[TAURI INJECTION] Sending to browser_script_result (error):', payload);
-        window.__TAURI__.core.invoke('browser_script_result', {{ payload }});
+        // Send result using helper
+        await window.__LIBR_AGENT__.sendResult('{session_id}', '{request_id}', result, false);
+    }} catch (e) {{
+        console.error('[LibrAgent] Script execution error:', e);
+        await window.__LIBR_AGENT__.sendResult('{session_id}', '{request_id}', e.message, true);
     }}
 }})();
 "#
             );
 
-            // Execute the wrapped script
-            match window.eval(&wrapped_script) {
+            // Execute the call
+            match window.eval(&execution_call) {
                 Ok(_) => {
                     debug!(
-                        "Script wrapper executed in session: {session_id}, request_id: {request_id}"
+                        "Script execution initiated in session: {session_id}, request_id: {request_id}"
                     );
                     Ok(request_id) // Return request_id immediately
                 }
