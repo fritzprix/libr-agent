@@ -21,6 +21,18 @@ import { WebMCPErrorCodes } from '@/lib/web-mcp/error-codes';
 const MAX_NOTES = 20;
 
 /**
+ * Formats a list of todos for error messages
+ */
+function formatTodosList(todos: SimpleTodo[]): string {
+  if (todos.length === 0) {
+    return '  (no todos)';
+  }
+  return todos
+    .map((t) => `  - ID: ${t.id} [${t.status}] ${t.name}`)
+    .join('\n');
+}
+
+/**
  * Manages the persistent state for the planning server using Dexie.js.
  * Goals, Todos, and Memos are persisted.
  * Sequential Thinking state remains ephemeral (in-memory) for now.
@@ -208,6 +220,34 @@ export class PersistentState {
     dependsOn?: number[],
   ): Promise<MCPResult<AddToDoOutput>> {
     const todos = await this.getTodosList();
+    
+    // Check for duplicate todos (case-insensitive, trimmed)
+    const normalizedName = name.trim().toLowerCase();
+    const duplicate = todos.find(
+      (t) => t.name.trim().toLowerCase() === normalizedName,
+    );
+    
+    if (duplicate) {
+      return new MCPResponseBuilder({
+        success: false,
+        duplicateId: duplicate.id,
+        existingTodo: duplicate,
+        todos,
+      })
+        .withMessage(
+          `Duplicate todo detected.\n\n` +
+          `A todo with similar content already exists:\n` +
+          `  - ID: ${duplicate.id} [${duplicate.status}] ${duplicate.name}\n\n` +
+          `Current todos:\n${formatTodosList(todos)}`,
+        )
+        .withSuggestions([
+          'Use a different name for the new todo',
+          `Update the existing todo with update_todo(id=${duplicate.id})`,
+          `Mark the existing todo as completed if needed`,
+        ])
+        .asError(WebMCPErrorCodes.PLANNING.DUPLICATE_TODO);
+    }
+
     const order = todos.length;
 
     const id = await db.todos.add({
