@@ -14,7 +14,7 @@ import { useFileAttachment } from '../hooks/useFileAttachment';
 import { toast } from 'sonner';
 import { getLogger } from '@/lib/logger';
 import { AttachmentReference } from '@/models/chat';
-import { stringToMCPContentArray } from '@/lib/utils';
+
 import { createUserMessage } from '@/lib/chat-utils';
 import {
   useDnDContext,
@@ -42,10 +42,10 @@ export function ChatInput({ children }: ChatInputProps) {
   const { subscribe } = useDnDContext();
 
   const { current: currentSession } = useSessionContext();
-  const pendingInputRef = useRef<string>('');
   const { currentAssistant } = useAssistantContext();
-  const { isLoading, isToolExecuting, pendingCancel } = useChatState();
-  const { submit, cancel, addToMessageQueue } = useChatActions();
+  const { isLoading, isToolExecuting, pendingCancel, messages, pendingQueue } =
+    useChatState();
+  const { cancel, addToPendingQueue } = useChatActions();
   const {
     pendingFiles,
     commitPendingFiles,
@@ -59,15 +59,52 @@ export function ChatInput({ children }: ChatInputProps) {
 
   const attachedFiles = pendingFiles;
 
+  // Derive busy state from both loading flags AND message history state
+  // This prevents UI flickering between tool execution and AI response
+  const isBusy = useMemo(() => {
+    // 1. Basic flags
+    if (isLoading || isToolExecuting) return true;
+
+    // 2. Check history for "waiting for response" states
+    const lastMessage = messages[messages.length - 1];
+    if (!lastMessage) return false;
+
+    // Case A: Last message was a tool output -> system must respond
+    if (lastMessage.role === 'tool') return true;
+
+    // Case B: Last message was assistant requesting tool (and not streaming) -> tool execution gap
+    if (
+      lastMessage.role === 'assistant' &&
+      lastMessage.tool_calls &&
+      lastMessage.tool_calls.length > 0 &&
+      !lastMessage.isStreaming
+    ) {
+      return true;
+    }
+
+    return false;
+  }, [isLoading, isToolExecuting, messages]);
+
   const inputPlaceholder = useMemo(() => {
     if (dragState !== 'none') {
       return dragState === 'valid'
         ? 'Drop supported files here...'
         : 'Unsupported file type!';
     }
-    if (isLoading || isAttachmentLoading) return 'Agent busy...';
+    if (isAttachmentLoading) return 'Uploading...';
+
+    if (isBusy) {
+      return pendingQueue.length > 0
+        ? `Agent busy. ${pendingQueue.length} requests queued. Type to add more...`
+        : 'Agent busy. Type to queue request...';
+    }
+
+    if (pendingQueue.length > 0) {
+      return `Query agent... (${pendingQueue.length} pending requests)`;
+    }
+
     return 'Query agent or drop files...';
-  }, [dragState, isLoading, isAttachmentLoading]);
+  }, [dragState, isBusy, isAttachmentLoading, pendingQueue.length]);
 
   const inputClassName = useMemo(() => {
     return `flex-1 min-w-0 transition-colors ${
@@ -89,7 +126,7 @@ export function ChatInput({ children }: ChatInputProps) {
     }`;
   }, [dragState]);
 
-  const handleAgentInputChange = React.useCallback(
+  const handleAgentInputChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       setInput(e.target.value);
     },
@@ -102,9 +139,8 @@ export function ChatInput({ children }: ChatInputProps) {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         if (
-          !isLoading &&
           !isAttachmentLoading &&
-          (input.trim() || attachedFiles.length > 0)
+          (input.trim() || attachedFiles.length > 0 || pendingQueue.length > 0)
         ) {
           chatInputRef.current?.dispatchEvent(
             new Event('submit', { bubbles: true, cancelable: true }),
@@ -112,15 +148,20 @@ export function ChatInput({ children }: ChatInputProps) {
         }
       }
     },
-    [isLoading, isAttachmentLoading, input, attachedFiles.length],
+    [isAttachmentLoading, input, attachedFiles.length, pendingQueue.length],
   );
 
   const handleSubmit = useCallback(
     async (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault();
 
-      if (!input.trim() && pendingFiles.length === 0) {
-        logger.info('Submit ignored: no input and no pending files');
+      const hasInput = input.trim().length > 0 || pendingFiles.length > 0;
+      const hasPending = pendingQueue.length > 0;
+
+      if (!hasInput && !hasPending) {
+        logger.info(
+          'Submit ignored: no input, no pending files, and no pending queue',
+        );
         return;
       }
       if (!currentAssistant || !currentSession) return;
@@ -144,53 +185,33 @@ export function ChatInput({ children }: ChatInputProps) {
         }
       }
 
-      if (isToolExecuting) {
-        // If a tool is running, add the message to the queue
-        addToMessageQueue({
-          content: stringToMCPContentArray(input.trim()),
-          attachments: attachedFiles,
-        });
-        setInput('');
-        clearPendingFiles();
-        logger.info('Message queued during tool execution');
-      } else {
-        // Normal submission
-        const userMessage = createUserMessage(input.trim(), currentSession.id);
-
-        // Add attachments if they exist
+      // Always add to pending queue - ChatContext will handle submission
+      // either immediately (if idle) or after current task (if busy)
+      if (input.trim() || attachedFiles.length > 0) {
+        const msg = createUserMessage(input.trim(), currentSession.id);
         if (attachedFiles.length > 0) {
-          userMessage.attachments = attachedFiles;
+          msg.attachments = attachedFiles;
         }
 
-        try {
-          logger.info('Submitting user message', {
-            hasAttachments: attachedFiles.length > 0,
-            attachmentCount: attachedFiles.length,
-          });
-          pendingInputRef.current = input;
-          setInput('');
-          await submit([userMessage]);
-          logger.info('User message submitted successfully');
-          // Clear input and files only on success
-          clearPendingFiles();
-        } catch (err) {
-          logger.error('Error submitting message:', err);
-          // Keep input value on failure
-          setInput(pendingInputRef.current);
-          pendingInputRef.current = '';
+        addToPendingQueue([msg]);
+        setInput('');
+        clearPendingFiles();
+
+        if (isBusy) {
+          toast.info('Request queued (Agent is busy)');
         }
       }
     },
     [
-      submit,
       input,
       pendingFiles,
+      pendingQueue,
+      isBusy,
       currentAssistant,
       currentSession,
       commitPendingFiles,
       clearPendingFiles,
-      isToolExecuting,
-      addToMessageQueue,
+      addToPendingQueue,
     ],
   );
 
@@ -218,7 +239,7 @@ export function ChatInput({ children }: ChatInputProps) {
     return () => unsub();
   }, [subscribe, processFileDrop, validateFiles]);
 
-  const removeAttachedFile = React.useCallback(
+  const removeAttachedFile = useCallback(
     (filename: string) => {
       const fileToRemove = attachedFiles.find(
         (f: AttachmentReference) => f.filename === filename,
@@ -258,7 +279,7 @@ export function ChatInput({ children }: ChatInputProps) {
           onChange={handleAgentInputChange}
           onKeyDown={handleKeyDown}
           placeholder={inputPlaceholder}
-          disabled={isLoading || isAttachmentLoading}
+          disabled={isAttachmentLoading}
           className={`flex-1 min-w-0 resize-none transition-colors bg-transparent outline-none border-none py-2 px-3 text-base leading-relaxed max-h-24 overflow-y-auto ${inputClassName}`}
           style={textareaStyle}
           autoComplete="off"
@@ -279,16 +300,25 @@ export function ChatInput({ children }: ChatInputProps) {
         <Button
           type="submit"
           disabled={
-            isAttachmentLoading || (!input.trim() && attachedFiles.length === 0)
+            (!input.trim() &&
+              attachedFiles.length === 0 &&
+              pendingQueue.length === 0) ||
+            isAttachmentLoading
           }
           variant="ghost"
           size="icon"
-          title={isToolExecuting ? 'Queue message' : 'Send message'}
+          title="Send message"
+          className="relative"
         >
           <Send className="h-4 w-4" />
+          {pendingQueue.length > 0 && (
+            <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] text-white">
+              {pendingQueue.length}
+            </span>
+          )}
         </Button>
 
-        {isLoading && (
+        {isBusy && (
           <Button
             onClick={handleCancel}
             variant="destructive"

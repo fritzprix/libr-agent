@@ -1,5 +1,6 @@
 import { formatBrowserResultAsMCP } from './helpers';
 import type { StrictBrowserMCPTool } from './types';
+import { validateSessionId, handleBrowserError } from './error-utils';
 
 /**
  * Tool: inject_javascript
@@ -28,9 +29,14 @@ export const injectJavascriptTool: StrictBrowserMCPTool = {
     const sessionId = String(args.sessionId || '');
     const script = String(args.script || '');
 
-    if (!sessionId || !script) {
+    const { isValid, errorResponse } = validateSessionId(sessionId);
+    if (!isValid && errorResponse) {
+      return errorResponse;
+    }
+
+    if (!script) {
       return formatBrowserResultAsMCP(
-        'inject_javascript failed: sessionId and script are required',
+        'inject_javascript failed: script is required',
       );
     }
 
@@ -46,9 +52,10 @@ export const injectJavascriptTool: StrictBrowserMCPTool = {
         `✓ JAVASCRIPT injected and executed successfully in session ${sessionId}\nResult: ${result}`,
       );
     } catch (error) {
-      return formatBrowserResultAsMCP(
-        `✗ JAVASCRIPT injection failed: ${String(error)}`,
-      );
+      return handleBrowserError(error, {
+        toolName: 'inject_javascript',
+        sessionId,
+      });
     }
   },
 };

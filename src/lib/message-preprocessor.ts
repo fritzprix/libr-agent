@@ -71,8 +71,11 @@ To read the full content of this file, use:
 export async function prepareMessagesForLLM(
   messages: Message[],
 ): Promise<Message[]> {
+  // Filter out messages that contain errors (we don't want to send error logs to the LLM)
+  const validMessages = messages.filter((msg) => !msg.error);
+
   const processedMessages = await Promise.all(
-    messages.map((message) => prepareMessageForLLM(message)),
+    validMessages.map((message) => prepareMessageForLLM(message)),
   );
 
   const attachmentCount = messages.reduce(

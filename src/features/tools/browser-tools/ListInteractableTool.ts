@@ -1,10 +1,7 @@
 import { getLogger } from '@/lib/logger';
 import { BROWSER_TOOL_SCHEMAS } from './helpers';
 import { StrictBrowserMCPTool } from './types';
-import {
-  createMCPStructuredResponse,
-  createMCPErrorResponse,
-} from '@/lib/mcp-response-utils';
+import { createMCPStructuredResponse } from '@/lib/mcp-response-utils';
 import { createId } from '@paralleldrive/cuid2';
 import { parseHtmlToInteractables } from '@/lib/html-parser';
 import type {
@@ -12,14 +9,13 @@ import type {
   InteractableResult,
   InteractableElement,
 } from '@/lib/html-parser';
+import {
+  validateSessionId,
+  handleBrowserError,
+  createBrowserErrorResponse,
+} from './error-utils';
 
 const logger = getLogger('ExtractInteractableTool');
-
-interface ValidatedArgs {
-  sessionId: string;
-  includeHidden: boolean;
-  maxElements: number;
-}
 
 // Element purpose estimation for better user experience
 function estimateElementPurpose(el: InteractableElement): string {
@@ -168,49 +164,6 @@ async function extractHtmlFromPage(
   return rawHtml;
 }
 
-function validateListInteractableArgs(
-  args: Record<string, unknown>,
-): ValidatedArgs | null {
-  logger.debug('Validating listInteractable args:', args);
-
-  if (typeof args.sessionId !== 'string') {
-    logger.warn('Invalid sessionId type', {
-      sessionId: args.sessionId,
-      type: typeof args.sessionId,
-    });
-    return null;
-  }
-
-  const includeHidden = args.includeHidden ?? false;
-  if (typeof includeHidden !== 'boolean') {
-    logger.warn('Invalid includeHidden type', {
-      includeHidden: args.includeHidden,
-      type: typeof args.includeHidden,
-    });
-    return null;
-  }
-
-  const maxElements = args.maxElements ?? 100;
-  if (typeof maxElements !== 'number' || maxElements < 1 || maxElements > 500) {
-    logger.warn('Invalid maxElements, using default', {
-      maxElements: args.maxElements,
-    });
-    return null;
-  }
-
-  logger.debug('Validation successful', {
-    sessionId: args.sessionId,
-    includeHidden,
-    maxElements,
-  });
-
-  return {
-    sessionId: args.sessionId,
-    includeHidden,
-    maxElements,
-  };
-}
-
 export const listInteractableTool: StrictBrowserMCPTool = {
   name: 'listInteractable',
   description:
@@ -233,17 +186,17 @@ export const listInteractableTool: StrictBrowserMCPTool = {
     required: ['sessionId'],
   },
   execute: async (args: Record<string, unknown>, executeScript) => {
-    const validatedArgs = validateListInteractableArgs(args);
-    if (!validatedArgs) {
-      return createMCPErrorResponse(
-        'Invalid arguments provided - check sessionId, includeHidden, and maxElements parameter types',
-        -32602,
-        { toolName: 'listInteractable', args },
-        createId(),
-      );
+    // Session validation
+    const { isValid, errorResponse } = validateSessionId(args.sessionId);
+    if (!isValid && errorResponse) {
+      return errorResponse;
     }
 
-    const { sessionId, includeHidden, maxElements } = validatedArgs;
+    const sessionId = args.sessionId as string;
+    const includeHidden =
+      typeof args.includeHidden === 'boolean' ? args.includeHidden : false;
+    const maxElements =
+      typeof args.maxElements === 'number' ? args.maxElements : 100;
 
     logger.debug('Executing listInteractable', {
       sessionId,
@@ -252,11 +205,8 @@ export const listInteractableTool: StrictBrowserMCPTool = {
     });
 
     if (!executeScript) {
-      return createMCPErrorResponse(
-        'executeScript function is required for listInteractable',
-        -32603,
-        { toolName: 'listInteractable', args },
-        createId(),
+      return createBrowserErrorResponse(
+        '✗ List failed: executeScript function is required',
       );
     }
 
@@ -291,19 +241,10 @@ export const listInteractableTool: StrictBrowserMCPTool = {
         createId(),
       );
     } catch (error) {
-      logger.error('Error in listInteractable:', {
-        error,
+      return handleBrowserError(error, {
+        toolName: 'listInteractable',
         sessionId,
-        includeHidden,
-        maxElements,
       });
-
-      return createMCPErrorResponse(
-        `Failed to extract interactive elements: ${error instanceof Error ? error.message : String(error)}`,
-        -32603,
-        { toolName: 'listInteractable', args },
-        createId(),
-      );
     }
   },
 };

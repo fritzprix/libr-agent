@@ -134,7 +134,10 @@ export class GroqService extends BaseAIService {
           groqMessages.push({
             role: 'assistant',
             content: this.processMessageContent(m.content) || null,
-            tool_calls: m.tool_calls,
+            tool_calls: m.tool_calls.map((tc) => ({
+              ...tc,
+              type: 'function',
+            })),
           });
         } else if (m.thinking) {
           groqMessages.push({
@@ -189,7 +192,10 @@ export class GroqService extends BaseAIService {
         return {
           role: 'assistant',
           content: this.processMessageContent(message.content) || null,
-          tool_calls: message.tool_calls,
+          tool_calls: message.tool_calls.map((tc) => ({
+            ...tc,
+            type: 'function',
+          })),
         };
       } else if (message.thinking) {
         return {

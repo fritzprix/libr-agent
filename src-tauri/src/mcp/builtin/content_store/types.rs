@@ -5,6 +5,8 @@ use serde::Deserialize;
 pub(crate) struct AddContentArgs {
     #[serde(rename = "fileUrl", alias = "file_url")]
     pub file_url: Option<String>,
+    #[serde(rename = "srcUrl", alias = "src_url")]
+    pub src_url: Option<String>,
     pub content: Option<String>,
     pub metadata: Option<AddContentMetadata>,
 }

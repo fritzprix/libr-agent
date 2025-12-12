@@ -103,7 +103,7 @@ export const ErrorBubble: React.FC<ErrorBubbleProps> = ({ error, onRetry }) => {
       className={getErrorColor(error?.type || 'UNKNOWN_ERROR')}
     >
       <div className="space-y-3">
-        <p className="text-muted-foreground">
+        <p className="text-muted-foreground break-words whitespace-pre-wrap">
           {error?.displayMessage || 'An unknown error occurred.'}
         </p>
 

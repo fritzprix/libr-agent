@@ -3,6 +3,7 @@ import { getLogger } from '@/lib/logger';
 import { createMCPTextResponse } from '@/lib/mcp-response-utils';
 import { BROWSER_TOOL_SCHEMAS } from './helpers';
 import { StrictLocalMCPTool } from './types';
+import { validateSessionId, handleBrowserError } from './error-utils';
 
 const logger = getLogger('NavigateToUrlTool');
 
@@ -22,9 +23,22 @@ export const navigateToUrlTool: StrictLocalMCPTool = {
       sessionId: string;
       url: string;
     };
+
+    const { isValid, errorResponse } = validateSessionId(sessionId);
+    if (!isValid && errorResponse) {
+      return errorResponse;
+    }
+
     logger.debug('Executing browser_navigateToUrl', { sessionId, url });
 
-    const result = await navigateToUrl(sessionId, url);
-    return createMCPTextResponse(result);
+    try {
+      const result = await navigateToUrl(sessionId, url);
+      return createMCPTextResponse(result);
+    } catch (error) {
+      return handleBrowserError(error, {
+        toolName: 'navigateToUrl',
+        sessionId,
+      });
+    }
   },
 };

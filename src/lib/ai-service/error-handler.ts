@@ -123,6 +123,9 @@ export const classifyAIServiceError = (
     error instanceof Error &&
     (error.message.includes('rate limit') ||
       error.message.includes('429') ||
+      error.message.includes('413') ||
+      error.message.includes('rate_limit_exceeded') ||
+      error.message.includes('tokens per minute') ||
       error.message.includes('quota') ||
       error.message.includes('usage limit'))
   ) {

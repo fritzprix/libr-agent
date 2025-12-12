@@ -56,6 +56,7 @@ interface ChatStateContextValue {
   // Reasoning mode state
   reasoningEnabled: boolean;
   canUseReasoning: boolean; // Computed from model capabilities
+  pendingQueue: Message[];
 }
 
 const ChatStateContext = createContext<ChatStateContextValue | undefined>(
@@ -66,10 +67,10 @@ const ChatStateContext = createContext<ChatStateContextValue | undefined>(
 interface ChatActionsContextValue {
   submit: (messageToAdd?: Message[], agentKey?: string) => Promise<Message>;
   cancel: () => void;
-  addToMessageQueue: (message: Partial<Message>) => void;
-  retryMessage: () => Promise<void>;
+  retryMessage: (messageIdToDelete?: string) => Promise<void>;
   setAgenticMode: (enabled: boolean) => void;
   toggleReasoning: () => void;
+  addToPendingQueue: (messages: Message[]) => void;
 }
 
 const ChatActionsContext = createContext<ChatActionsContextValue | undefined>(
@@ -83,7 +84,12 @@ interface ChatProviderProps {
 const DEFAULT_SYSTEM_PROMPT = 'You are a helpful assistant.';
 
 export function ChatProvider({ children }: ChatProviderProps) {
-  const { messages: history, addMessage, addMessages } = useSessionHistory();
+  const {
+    messages: history,
+    addMessage,
+    addMessages,
+    deleteMessage,
+  } = useSessionHistory();
   const { current: currentSession } = useSessionContext();
   const { value: settingValue } = useSettings();
   const { currentAssistant, availableTools } = useAssistantContext();
@@ -96,7 +102,14 @@ export function ChatProvider({ children }: ChatProviderProps) {
   );
   const [error, setError] = useState<Message['error'] | null>(null);
   const [pendingCancel, setPendingCancel] = useState(false);
-  const [messageQueue, setMessageQueue] = useState<Message[]>([]);
+  const [pendingQueue, setPendingQueue] = useState<Message[]>([]);
+  const pendingQueueRef = useRef<Message[]>([]);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    pendingQueueRef.current = pendingQueue;
+  }, [pendingQueue]);
+
   const [agenticMode, setAgenticMode] = useState(false);
   const [reasoningEnabled, setReasoningEnabled] = useState(false);
   const [canUseReasoning, setCanUseReasoning] = useState(false);
@@ -109,7 +122,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     return () => {
       setStreamingMessage(null);
       setPendingCancel(false);
-      setMessageQueue([]);
+      setPendingQueue([]);
     };
   }, []);
 
@@ -128,32 +141,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
     });
     return combined;
   }, [currentAssistant, getSystemPrompt]);
-
-  // Message queue management function
-  const addToMessageQueue = useCallback(
-    (message: Partial<Message>) => {
-      if (!currentSession?.id) {
-        logger.warn('No current session available for queuing message');
-        return;
-      }
-
-      const queuedMessage: Message = {
-        id: createId(),
-        role: 'user',
-        sessionId: currentSession.id,
-        threadId: currentSession.id, // Default to top thread
-        content: stringToMCPContentArray(''),
-        ...message,
-      };
-
-      setMessageQueue((prev) => [...prev, queuedMessage]);
-      logger.info('Message added to queue', {
-        messageId: queuedMessage.id,
-        queueLength: messageQueue.length + 1,
-      });
-    },
-    [currentSession, messageQueue.length],
-  );
 
   // Pre-compute tool-to-alias mapping for performance
   const toolAliasMap = useMemo(() => {
@@ -254,7 +241,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     // Clear streaming and queue state to avoid stray UI
     setStreamingMessage(null);
     setPendingCancel(false);
-    setMessageQueue([]);
+    setPendingQueue([]);
     // Clear current error when switching sessions
     setError(null);
   }, [currentSession?.id, cancelAIService]); // Run when currentSession?.id changes
@@ -384,22 +371,20 @@ export function ChatProvider({ children }: ChatProviderProps) {
       };
     });
 
-    // If the response contains an error object, expose it as currentError
-    // and clear any transient streaming message so we don't show an empty
-    // assistant bubble in the UI.
+    // If the response contains an error object, we treat it as a normal message
+    // (which happens to have an error field) so it can be streamed/rendered
+    // by the UI and eventually persisted.
     const maybeError = response as unknown as { error?: unknown };
     if (
       maybeError &&
       maybeError.error &&
       isErrorClassification(maybeError.error)
     ) {
-      setError(maybeError.error as Message['error']);
-      // Clear any transient streaming message created from this response
-      // (error responses should not create a visible assistant bubble).
-      setStreamingMessage(null);
+      // We no longer set transient error state for AI service errors.
+      // Instead we allow the message to propagate as a streaming message
+      // so it can be eventually persisted.
+      setError(null);
     } else {
-      // If we received a non-error response that corresponds to the current
-      // error message id, clear the current error.
       setError(null);
     }
   }, [response, currentSession?.id]);
@@ -421,8 +406,12 @@ export function ChatProvider({ children }: ChatProviderProps) {
   }, [history, streamingMessage]);
 
   const submit = useCallback(
-    async (messageToAdd?: Message[], agentKey?: string): Promise<Message> => {
-      logger.info('submit ', { messageToAdd });
+    async (
+      messageToAdd?: Message[],
+      agentKey?: string,
+      messageIdToDelete?: string,
+    ): Promise<Message> => {
+      logger.info('submit ', { messageToAdd, messageIdToDelete });
       if (!currentSession) {
         throw new Error('No active session available for message submission');
       }
@@ -431,11 +420,27 @@ export function ChatProvider({ children }: ChatProviderProps) {
         // Clear any previous streaming state before starting new request
         setStreamingMessage(null);
 
+        // Consuming of queued messages is now handled by the useEffect hook
+        // to prevent circular dependencies and infinite update loops.
+        // We simply process whatever is passed in messageToAdd.
         let messagesToSend = messages;
+        const combinedFilesToAdd = messageToAdd || [];
+
+        // If messageIdToDelete is provided (retry scenario), we should
+        // delete it from history AND exclude it from messagesToSend before submission
+        if (messageIdToDelete && typeof deleteMessage === 'function') {
+          // Optimistically remove from local state for context calculation
+          messagesToSend = messages.filter((m) => m.id !== messageIdToDelete);
+          // Delete from database
+          await deleteMessage(messageIdToDelete);
+          logger.info(
+            `Deleted previous error message ${messageIdToDelete} for retry`,
+          );
+        }
 
         // Process and validate new messages if provided (to prevent loss of tool results)
-        if (messageToAdd?.length) {
-          const messagesWithSession = messageToAdd.map((m) => {
+        if (combinedFilesToAdd.length) {
+          const messagesWithSession = combinedFilesToAdd.map((m) => {
             if (!m.sessionId) {
               throw new Error('Cannot add message: missing sessionId');
             }
@@ -453,6 +458,32 @@ export function ChatProvider({ children }: ChatProviderProps) {
             }
             messagesToSend = [...messages, ...persisted];
           }
+        }
+
+        // Consume pending queue if not retrying
+        if (!messageIdToDelete && pendingQueueRef.current.length > 0) {
+          const pendingMessages = [...pendingQueueRef.current];
+          setPendingQueue([]); // Clear queue immediately
+
+          const messagesWithSession = pendingMessages.map((m) => {
+            if (!m.sessionId) {
+              return { ...m, sessionId: currentSession.id };
+            }
+            return m;
+          });
+
+          if (typeof addMessages === 'function') {
+            await addMessages(messagesWithSession);
+            messagesToSend = [...messagesToSend, ...messagesWithSession];
+          } else {
+            for (const msg of messagesWithSession) {
+              const added = await addMessage(msg);
+              messagesToSend.push(added);
+            }
+          }
+          logger.info('Consumed pending messages', {
+            count: pendingMessages.length,
+          });
         }
 
         // Move cancel check to after message addition (to preserve tool results)
@@ -491,28 +522,19 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
         // Handle AI response persistence
         if (aiResponse) {
-          // If the AI service returned an error object, we should NOT persist
-          // that error as a new assistant message in the session history.
-          // Instead expose it via currentError and let the UI render a
-          // non-persistent ErrorBubble and allow retry against the last
-          // user message.
+          // Handle AI response persistence logic (success or error)
+          // Even if it is an error, we persist it to the history so the user
+          // can see the error state even after a reload.
           if (aiResponse.error) {
             logger.info(
-              'AI response contained an error; exposing as currentError',
+              'AI response contained an error; persisting to history',
               {
                 error: aiResponse.error,
               },
             );
-
-            setError(aiResponse.error);
-            return {
-              ...aiResponse,
-              isStreaming: false,
-              sessionId: currentSession.id,
-            } as Message;
           }
 
-          // Normal successful response: persist as assistant message
+          // Normal successful response (or persisted error): persist as assistant message
           const finalizedMessage: Message = {
             ...aiResponse,
             isStreaming: false,
@@ -522,16 +544,12 @@ export function ChatProvider({ children }: ChatProviderProps) {
           logger.info('Finalizing AI response', {
             messageId: finalizedMessage.id,
             agentKey,
+            hasError: !!finalizedMessage.error,
           });
 
           // Update streaming state and persist to history
           setStreamingMessage(finalizedMessage);
           await addMessage(finalizedMessage);
-
-          // Clear any transient error state on successful response. Errors are
-          // treated as temporary UI-only state and should be removed when a
-          // real assistant response arrives.
-          setError(null);
 
           return finalizedMessage;
         }
@@ -540,16 +558,28 @@ export function ChatProvider({ children }: ChatProviderProps) {
         throw new Error('No response received from AI service');
       } catch (error) {
         logger.error('Message submission failed', { error, agentKey });
-        setError({
-          displayMessage: 'Message submission failed. Please try again.',
-          type: 'AI_SERVICE_ERROR',
-          recoverable: true,
-          details: {
-            originalError: error,
-            errorCode: 'SUBMIT_FAILED',
-            timestamp: new Date().toISOString(),
+        // Create a proper error message and persist it
+        const errorMessage: Message = {
+          id: createId(),
+          role: 'assistant',
+          content: stringToMCPContentArray(''),
+          sessionId: currentSession.id,
+          threadId: currentSession.id,
+          createdAt: new Date(),
+          error: {
+            displayMessage: 'Message submission failed. Please try again.',
+            type: 'AI_SERVICE_ERROR',
+            recoverable: true,
+            details: {
+              originalError: error,
+              errorCode: 'SUBMIT_FAILED',
+              timestamp: new Date().toISOString(),
+            },
           },
-        });
+        };
+
+        await addMessage(errorMessage);
+        setStreamingMessage(errorMessage);
         throw error;
       }
     },
@@ -562,12 +592,17 @@ export function ChatProvider({ children }: ChatProviderProps) {
       addMessages,
       buildSystemPrompt,
       agenticMode,
+      // pendingQueue removed from dependencies to prevent circular updates
+      // messageQueue removed from dependencies to prevent circular updates
     ],
   );
 
-  const retryMessage = useCallback(async (): Promise<void> => {
-    await submit([]);
-  }, [submit]);
+  const retryMessage = useCallback(
+    async (messageIdToDelete?: string): Promise<void> => {
+      await submit([], undefined, messageIdToDelete);
+    },
+    [submit],
+  );
 
   const toggleReasoning = useCallback(() => {
     if (!canUseReasoning) {
@@ -595,23 +630,14 @@ export function ChatProvider({ children }: ChatProviderProps) {
     }, 1000);
   }, [cancelAIService]);
 
+  const addToPendingQueue = useCallback((messages: Message[]) => {
+    setPendingQueue((prev) => [...prev, ...messages]);
+  }, []);
+
   // Tool processor will be initialized after submit is defined
   const { processToolCalls, isProcessing } = useToolProcessor({
     submit,
   });
-  // Process queued messages when tool execution completes
-  useEffect(() => {
-    if (!isProcessing && messageQueue.length > 0) {
-      const nextMessage = messageQueue[0];
-      logger.info('Processing queued message', {
-        messageId: nextMessage.id,
-        remainingInQueue: messageQueue.length - 1,
-      });
-
-      setMessageQueue((prev) => prev.slice(1));
-      submit([nextMessage]);
-    }
-  }, [isProcessing, messageQueue, submit]);
 
   // Process tool calls when messages change
   useEffect(() => {
@@ -624,6 +650,25 @@ export function ChatProvider({ children }: ChatProviderProps) {
   // Combined loading state: AI service loading OR tool execution
   const isLoading = aiServiceLoading || isProcessing;
 
+  // Auto-submit pending messages when agent becomes idle
+  const isLoadingRef = useRef(isLoading);
+  const submitRef = useRef(submit);
+
+  useEffect(() => {
+    isLoadingRef.current = isLoading;
+    submitRef.current = submit;
+  });
+
+  useEffect(() => {
+    // Use refs to avoid dependency on submit function
+    if (!isLoadingRef.current && pendingQueueRef.current.length > 0) {
+      logger.info('Auto-submitting pending messages', {
+        count: pendingQueueRef.current.length,
+      });
+      submitRef.current();
+    }
+  }, [pendingQueue]);
+
   const stateValue: ChatStateContextValue = useMemo(
     () => ({
       isLoading,
@@ -634,6 +679,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       agenticMode,
       reasoningEnabled,
       canUseReasoning,
+      pendingQueue,
     }),
     [
       isLoading,
@@ -644,6 +690,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       agenticMode,
       reasoningEnabled,
       canUseReasoning,
+      pendingQueue,
     ],
   );
 
@@ -651,12 +698,12 @@ export function ChatProvider({ children }: ChatProviderProps) {
     () => ({
       submit,
       cancel: handleCancel,
-      addToMessageQueue,
       retryMessage,
       setAgenticMode,
       toggleReasoning,
+      addToPendingQueue,
     }),
-    [submit, handleCancel, addToMessageQueue, retryMessage, toggleReasoning],
+    [submit, handleCancel, retryMessage, toggleReasoning, addToPendingQueue],
   );
 
   return (

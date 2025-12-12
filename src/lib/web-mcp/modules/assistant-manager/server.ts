@@ -9,6 +9,8 @@ import { AssistantService } from '@/lib/services/assistant-service';
 import { LocalSettingsService } from '@/lib/services/settings-service';
 import { createId } from '@paralleldrive/cuid2';
 import type { Assistant } from '@/models/chat';
+import { MCPResponseBuilder } from '@/lib/web-mcp/response-builder';
+import { WebMCPErrorCodes } from '@/lib/web-mcp/error-codes';
 
 const logger = getLogger('AssistantManagerServer');
 
@@ -78,9 +80,19 @@ export const assistantManagerServer: WebMCPServer = {
           }
           const assistant = await service.getById(id);
           if (!assistant) {
-            return createMCPErrorToolResult(
-              `Assistant with ID ${id} not found`,
-            );
+            const suggestions: string[] = [
+              'Use list_assistants to see all available assistants',
+              'Use search_assistant to find assistants by name',
+              'Check the assistant ID spelling',
+            ];
+
+            return new MCPResponseBuilder({
+              requestedId: id,
+              suggestions,
+            })
+              .withMessage(`Assistant with ID ${id} not found.`)
+              .withSuggestions(suggestions)
+              .asError(WebMCPErrorCodes.ASSISTANT.NOT_FOUND);
           }
           return createMCPStructuredToolResult(
             `Found assistant: ${assistant.name}`,
@@ -115,10 +127,30 @@ export const assistantManagerServer: WebMCPServer = {
             updatedAt: new Date(),
           };
           const saved = await service.save(newAssistant);
-          return createMCPStructuredToolResult(
-            `Created assistant: ${saved.name}`,
-            saved,
-          );
+
+          const nextActions: string[] = [
+            'Use update_assistant to modify settings',
+            'Connect MCP servers with connect_server tool',
+          ];
+          if ((mcpServerIds || []).length === 0) {
+            nextActions.push(
+              'Add MCP server connections to extend capabilities',
+            );
+          }
+
+          let message = `Assistant created: "${saved.name}" (ID: ${saved.id})`;
+          if (description) {
+            message += `\nDescription: ${description}`;
+          }
+          message += `\nMCP servers: ${(mcpServerIds || []).length}`;
+
+          return new MCPResponseBuilder({
+            assistant: saved,
+            id: saved.id,
+          })
+            .withMessage(message)
+            .withNextActions(nextActions)
+            .asSuccess();
         }
 
         case 'update_assistant': {
@@ -129,9 +161,19 @@ export const assistantManagerServer: WebMCPServer = {
 
           const existing = await service.getById(id);
           if (!existing) {
-            return createMCPErrorToolResult(
-              `Assistant with ID ${id} not found`,
-            );
+            const suggestions: string[] = [
+              'Use list_assistants to see all available assistants',
+              'Use search_assistant to find assistants by name',
+              'Check the assistant ID spelling',
+            ];
+
+            return new MCPResponseBuilder({
+              requestedId: id,
+              suggestions,
+            })
+              .withMessage(`Assistant with ID ${id} not found.`)
+              .withSuggestions(suggestions)
+              .asError(WebMCPErrorCodes.ASSISTANT.NOT_FOUND);
           }
           const updated: Assistant = {
             ...existing,
@@ -139,10 +181,43 @@ export const assistantManagerServer: WebMCPServer = {
             updatedAt: new Date(),
           };
           const saved = await service.save(updated);
-          return createMCPStructuredToolResult(
-            `Updated assistant: ${saved.name}`,
-            saved,
-          );
+
+          // Detect what was changed
+          const changes: string[] = [];
+          if (updates.name && updates.name !== existing.name) {
+            changes.push(`name: "${existing.name}" → "${updates.name}"`);
+          }
+          if (
+            updates.systemPrompt &&
+            updates.systemPrompt !== existing.systemPrompt
+          ) {
+            changes.push('system prompt updated');
+          }
+          if (
+            updates.description !== undefined &&
+            updates.description !== existing.description
+          ) {
+            changes.push('description updated');
+          }
+          if (updates.mcpServerIds) {
+            changes.push(
+              `MCP servers: ${existing.mcpServerIds?.length || 0} → ${updates.mcpServerIds.length}`,
+            );
+          }
+
+          let message = `Assistant updated: "${saved.name}" (ID: ${saved.id})`;
+          if (changes.length > 0) {
+            message += `\n\nChanges:\n${changes.map((c) => `  - ${c}`).join('\n')}`;
+          }
+
+          return new MCPResponseBuilder({
+            assistant: saved,
+            id: saved.id,
+            changes,
+          })
+            .withMessage(message)
+            .withNextActions(['Use get_assistant to verify changes'])
+            .asSuccess();
         }
 
         case 'delete_assistant': {
@@ -164,10 +239,43 @@ export const assistantManagerServer: WebMCPServer = {
           }
 
           const results = await service.search(query, limit);
-          return createMCPStructuredToolResult(
-            `Found ${results.length} assistants matching "${query}"`,
+
+          // Handle no results with guidance
+          if (results.length === 0) {
+            const allAssistants = await service.getAll();
+            const totalCount = allAssistants.length;
+
+            const suggestions: string[] = [
+              'Use list_assistants to browse all assistants',
+              'Try different or shorter keywords',
+              'Check spelling of assistant name',
+            ];
+
+            return new MCPResponseBuilder({
+              results: [],
+              query,
+              totalAssistants: totalCount,
+              suggestions,
+            })
+              .withMessage(
+                `No assistants found matching "${query}".\n\n` +
+                  `Total assistants: ${totalCount}`,
+              )
+              .withSuggestions(suggestions)
+              .asSuccess();
+          }
+
+          // Success with results
+          return new MCPResponseBuilder({
             results,
-          );
+            query,
+            count: results.length,
+          })
+            .withMessage(
+              `Found ${results.length} assistant(s) matching "${query}"`,
+            )
+            .withNextActions(['Use get_assistant to view full details'])
+            .asSuccess();
         }
 
         default:

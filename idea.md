@@ -1,26 +1,8 @@
-# Assistants backend as a Tool (including minor improvement over assistant backend)
+# Tool 응답 개선
 
-- Assistant의 CRUD를 MCP Tool로 제공하여 Assistant가 Assistant를 생성할 수 있도록 지원
-- Assistant의 backend를 Local DB를 기본으로 제공하고 선택적으로 (SettingPage에 Server URL을 설정하면) REST API를 통해 원격의 서버(Agent Hub)를 backend로 사용할 수 있도록 지원
-  - 현재 API 명세가 정의되어 있지 않으며 클라이언트 설계 시 정의하고 이것을 나중에 서버 구현에 사용하면 됨
-  - Agent Hub의 URL을 Setting에 입력하면 Local DB는 Backup용으로 사용되며 AgentHub로 부터 사용된 Assistant를 저장하여 서버가 장애가 있을 경우 일종의 Offline Fallback으로 제공될 수 있도록 함
+> 도구 응답은 단순히 도구 실행 결과를 넘어 실패 시 적절하게 취해야 할 행동들 혹은 해당 도구 사용과 연계하면 시너지가 날 수 있는 도구 사용에 대한 팁을 제공하여 도구 AI Agent의 자율적 작업 수행의 효율을 극대화 할 수 있어야함
 
-```pesudocode
-if(AgentHub_URL) {
-    bind_assistant_crud_to_remote_backend();
-} else {
-    bind_assistant_crud_to_local_backend();
-}
+## 고려사항
 
-// loading
-
-if(AgentHub_URL) {
-    const assistants_page = load(AgentHub_URL);
-    sync(assistants_page, local_backend)
-} else {
-    const assistants_page = load(); // load from local backend (indexed db)
-}
-
-
-
-```
+- 도구의 응답에 추가적인 가이드는 도구셋 내에서 완결적이어야 하며 다른 도구셋에 포함된 도구의 의존성을 가져서는 안된다
+- 도구 실패 / 성공 시 충분히 상세한 정보를 제공하여 AI Agent가 현재 환경에 대한 정확한 이해를 할 수 있어야 한다.

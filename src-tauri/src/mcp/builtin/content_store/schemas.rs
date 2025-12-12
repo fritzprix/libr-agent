@@ -10,6 +10,14 @@ pub(crate) fn tool_add_content_schema() -> JSONSchema {
         string_prop(None, None, Some("File URL (file://) to add")),
     );
     props.insert(
+        "src_url".to_string(),
+        string_prop(
+            None,
+            None,
+            Some("Source URL (http://, https://) where content came from"),
+        ),
+    );
+    props.insert(
         "content".to_string(),
         string_prop(None, None, Some("Direct content to add")),
     );

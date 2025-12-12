@@ -3,22 +3,22 @@ import { BROWSER_TOOL_SCHEMAS } from './helpers';
 import { StrictBrowserMCPTool } from './types';
 import {
   createMCPStructuredResponse,
-  createMCPErrorResponse,
+  createMCPTextResponse,
 } from '@/lib/mcp-response-utils';
 import { createId } from '@paralleldrive/cuid2';
 import TurndownService from 'turndown';
 import { cleanMarkdownText } from '@/lib/text-utils';
 import { workspaceWriteFile } from '@/lib/rust-backend-client';
 import { ContentStore } from './content-store';
+import {
+  validateSessionId,
+  handleBrowserError,
+  createBrowserErrorResponse,
+} from './error-utils';
 
 const logger = getLogger('ExtractContentTool');
 
 // 타입 정의
-interface ValidatedArgs {
-  sessionId: string;
-  saveRawHtml: boolean;
-}
-
 interface ConversionResult {
   content?: string | unknown;
   domMap?: unknown;
@@ -27,35 +27,6 @@ interface ConversionResult {
   timestamp?: string;
   format: string;
   [key: string]: unknown;
-}
-
-// 타입 검증 함수
-function validateExtractContentArgs(
-  args: Record<string, unknown>,
-): ValidatedArgs | null {
-  logger.debug('Validating extractWebContent args:', args);
-
-  if (typeof args.sessionId !== 'string') {
-    logger.warn('Invalid sessionId type', {
-      sessionId: args.sessionId,
-      type: typeof args.sessionId,
-    });
-    return null;
-  }
-
-  const saveRawHtml = args.saveRawHtml ?? false;
-  if (typeof saveRawHtml !== 'boolean') {
-    logger.warn('Invalid saveRawHtml type', {
-      saveRawHtml: args.saveRawHtml,
-      type: typeof args.saveRawHtml,
-    });
-    return null;
-  }
-
-  return {
-    sessionId: args.sessionId,
-    saveRawHtml,
-  };
 }
 
 // 마크다운 변환 함수
@@ -136,7 +107,7 @@ function createMetadata(
 export const extractWebContentTool: StrictBrowserMCPTool = {
   name: 'extractWebContent',
   description:
-    'Convert the webpage into clean, readable markdown format. Returns the first page of content and the total number of pages. Use readWebContent to access subsequent pages. Ideal for content analysis, summarization, and reading.',
+    'Convert the webpage into clean, readable markdown format. Returns the first page of content and the total number of pages. Use readWebContent to access subsequent pages. Ideal for content analysis, summarization, and reading.\n\nOptional autoMerge parameter: When enabled and content is small (≤2 pages OR <5000 chars), automatically returns all content merged in a single response, eliminating the need for subsequent readWebContent calls.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -146,38 +117,61 @@ export const extractWebContentTool: StrictBrowserMCPTool = {
         description:
           'Save the raw HTML to a file for DOM structure analysis. Default: false',
       },
+      autoMerge: {
+        type: 'boolean',
+        description:
+          'Automatically merge all content if small (≤2 pages OR <5000 chars). When enabled, returns complete content without pagination. Default: false',
+      },
     },
     required: ['sessionId'],
   },
   execute: async (args: Record<string, unknown>, executeScript) => {
-    // 인자 검증
-    const validatedArgs = validateExtractContentArgs(args);
-    if (!validatedArgs) {
-      return createMCPErrorResponse(
-        'Invalid arguments provided - check sessionId type and other parameter types',
-        -32602,
-        { toolName: 'extractWebContent', args },
-        createId(),
-      );
+    // Session validation
+    const { isValid, errorResponse } = validateSessionId(args.sessionId);
+    if (!isValid && errorResponse) {
+      return errorResponse;
     }
 
-    const { sessionId, saveRawHtml } = validatedArgs;
+    const sessionId = args.sessionId as string;
+    const saveRawHtml =
+      typeof args.saveRawHtml === 'boolean' ? args.saveRawHtml : false;
+    const autoMerge =
+      typeof args.autoMerge === 'boolean' ? args.autoMerge : false;
 
     logger.debug('Executing browser_extractWebContent', {
       sessionId,
+      autoMerge,
     });
 
     // executeScript 함수 존재 검증
     if (!executeScript) {
-      return createMCPErrorResponse(
-        'executeScript function is required for extractWebContent',
-        -32603,
-        { toolName: 'extractWebContent', args },
-        createId(),
+      return createMCPTextResponse(
+        '✗ Extract failed: executeScript function is required',
       );
     }
 
     try {
+      // Extract page title and URL
+      let pageTitle = '';
+      let currentUrl = '';
+
+      try {
+        const titleResult = await executeScript(sessionId, 'document.title');
+        pageTitle = typeof titleResult === 'string' ? titleResult : '';
+      } catch (error) {
+        logger.warn('Failed to extract page title', { error });
+      }
+
+      try {
+        const urlResult = await executeScript(
+          sessionId,
+          'window.location.href',
+        );
+        currentUrl = typeof urlResult === 'string' ? urlResult : '';
+      } catch (error) {
+        logger.warn('Failed to extract current URL', { error });
+      }
+
       // HTML 추출 (body 기준)
       const rawHtml = await extractHtmlFromPage(executeScript, sessionId);
 
@@ -190,11 +184,8 @@ export const extractWebContentTool: StrictBrowserMCPTool = {
           error: conversionError,
           htmlSize: rawHtml.length,
         });
-        return createMCPErrorResponse(
+        return createBrowserErrorResponse(
           `Content conversion failed: ${conversionError instanceof Error ? conversionError.message : String(conversionError)}`,
-          -32603,
-          { toolName: 'extractWebContent', args },
-          createId(),
         );
       }
 
@@ -231,18 +222,37 @@ export const extractWebContentTool: StrictBrowserMCPTool = {
         contentText = JSON.stringify(result.content || result.domMap);
       }
 
-      const { totalPages, firstPage } = ContentStore.saveContent(
-        sessionId,
-        contentText,
-      );
+      const { totalPages, firstPage, mergedContent, autoMerged } =
+        ContentStore.saveContent(sessionId, contentText, 6000, autoMerge);
 
       // 메타데이터 추가
       const resultWithMetadata = createMetadata(result, rawHtml, totalPages);
 
+      // Add page title and URL to metadata
+      const currentMetadata =
+        (resultWithMetadata.metadata as Record<string, unknown>) || {};
+      resultWithMetadata.metadata = {
+        ...currentMetadata,
+        pageTitle,
+        sourceUrl: currentUrl,
+      };
+
       // 응답 텍스트 생성
-      let responseText = `[Page 1/${totalPages}]\n\n${firstPage}`;
-      if (totalPages > 1) {
-        responseText += `\n\n--- End of Page 1 ---\nThere are ${totalPages} pages in total. Use readWebContent(sessionId, page) to read more.`;
+      let responseText = '';
+
+      if (autoMerged && mergedContent) {
+        responseText = `✓ Content extracted and auto-merged\n\nPage Title: ${pageTitle || 'N/A'}\nURL: ${currentUrl || 'N/A'}\n\n${mergedContent}`;
+      } else {
+        responseText = `[Page 1/${totalPages}]\n\nPage Title: ${pageTitle || 'N/A'}\nURL: ${currentUrl || 'N/A'}\n\n${firstPage}`;
+      }
+
+      // 빈 페이지 감지 및 경고 메시지 추가
+      if (!responseText.trim() || !firstPage.trim()) {
+        responseText += `\n\n(Empty Page) The extracted content is empty. This suggests the page might not have loaded correctly or contains no text. Please try calling 'extractWebContent' again to re-capture the page, or use 'extractWebContent' with 'saveRawHtml': true to save the raw HTML for inspection.`;
+      }
+
+      if (!autoMerged && totalPages > 1) {
+        responseText += `\n\n--- End of Page 1 ---\nThere are ${totalPages} pages in total. Use readWebContent(sessionId, page) to read more, or use autoMerge: true to get all content at once.`;
       }
 
       // Raw HTML 저장 정보 추가
@@ -259,16 +269,10 @@ export const extractWebContentTool: StrictBrowserMCPTool = {
         createId(),
       );
     } catch (error) {
-      logger.error('Error in browser_extractWebContent:', {
-        error,
+      return handleBrowserError(error, {
+        toolName: 'extractWebContent',
         sessionId,
       });
-      return createMCPErrorResponse(
-        `Failed to extract page content: ${error instanceof Error ? error.message : String(error)}`,
-        -32603,
-        { toolName: 'extractWebContent', args, error },
-        createId(),
-      );
     }
   },
 };

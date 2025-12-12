@@ -69,37 +69,79 @@ const planningServer: WebMCPServer = {
         );
       }
       case 'update_todo': {
-        const id = typedArgs.id as number;
-        if (!Number.isInteger(id) || id < 1) {
+        const id = typedArgs.id as number | undefined;
+        const index = typedArgs.index as number | undefined;
+
+        // Validate that at least one identifier is provided
+        if (id === undefined && index === undefined) {
           return createMCPErrorToolResult(
-            `Invalid ID: ${id}. ID must be a positive integer.`,
+            'Either "id" or "index" must be provided.',
           );
         }
-        return await stateManager.updateTodo(id, {
-          name: typedArgs.name as string | undefined,
-          status: typedArgs.status as
-            | 'pending'
-            | 'completed'
-            | 'blocked'
-            | undefined,
-          priority: typedArgs.priority as 'low' | 'medium' | 'high' | undefined,
-          dependsOn: typedArgs.dependsOn as number[] | undefined,
-        });
+
+        // Validate id if provided
+        if (id !== undefined && (!Number.isInteger(id) || id < 1)) {
+          return createMCPErrorToolResult(
+            `Invalid id: ${id}. ID must be a positive integer.`,
+          );
+        }
+
+        // Validate index if provided
+        if (index !== undefined && (!Number.isInteger(index) || index < 0)) {
+          return createMCPErrorToolResult(
+            `Invalid index: ${index}. Index must be a non-negative integer.`,
+          );
+        }
+
+        return await stateManager.updateTodo(
+          { id, index },
+          {
+            name: typedArgs.name as string | undefined,
+            status: typedArgs.status as
+              | 'pending'
+              | 'completed'
+              | 'blocked'
+              | undefined,
+            priority: typedArgs.priority as
+              | 'low'
+              | 'medium'
+              | 'high'
+              | undefined,
+            dependsOn: typedArgs.dependsOn as number[] | undefined,
+          },
+        );
       }
       case 'mark_todo': {
-        const id = typedArgs.id as number;
+        const id = typedArgs.id as number | undefined;
+        const index = typedArgs.index as number | undefined;
         const completed =
           typedArgs.completed !== undefined
             ? (typedArgs.completed as boolean)
             : true;
         const summary = typedArgs.summary as string | undefined;
 
-        if (!Number.isInteger(id) || id < 1) {
+        // Validate that at least one identifier is provided
+        if (id === undefined && index === undefined) {
           return createMCPErrorToolResult(
-            `Invalid ID: ${id}. ID must be a positive integer.`,
+            'Either "id" or "index" must be provided.',
           );
         }
-        return await stateManager.checkTodo(id, completed, summary);
+
+        // Validate id if provided
+        if (id !== undefined && (!Number.isInteger(id) || id < 1)) {
+          return createMCPErrorToolResult(
+            `Invalid id: ${id}. ID must be a positive integer.`,
+          );
+        }
+
+        // Validate index if provided
+        if (index !== undefined && (!Number.isInteger(index) || index < 0)) {
+          return createMCPErrorToolResult(
+            `Invalid index: ${index}. Index must be a non-negative integer.`,
+          );
+        }
+
+        return await stateManager.checkTodo({ id, index }, completed, summary);
       }
       case 'clear_todos': {
         const ids = typedArgs.ids as number[] | undefined;
@@ -108,7 +150,10 @@ const planningServer: WebMCPServer = {
       case 'clear_session':
         return await stateManager.clear();
       case 'add_scratchpad': {
-        return await stateManager.addScratchpad(typedArgs.note as string);
+        return await stateManager.addScratchpad(
+          typedArgs.note as string,
+          typedArgs.source as string | undefined,
+        );
       }
       case 'clear_scratchpad': {
         const id = typedArgs.id as number;
@@ -166,7 +211,12 @@ const planningServer: WebMCPServer = {
 
         const scratchpadText =
           includeScratchpad && scratchpad.length > 0
-            ? scratchpad.map((m) => `- [ID: ${m.id}] ${m.content}`).join('\n')
+            ? scratchpad
+                .map((m) => {
+                  const sourcePart = m.source ? ` (source: ${m.source})` : '';
+                  return `- [ID: ${m.id}] ${m.content}${sourcePart}`;
+                })
+                .join('\n')
             : '(none)';
 
         const goalText = goal ? `- ${goal}` : '(none)';

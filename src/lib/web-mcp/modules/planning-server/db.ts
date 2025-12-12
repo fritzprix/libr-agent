@@ -27,6 +27,7 @@ export interface PlanningScratchpadItem {
   sessionId: string;
   threadId: string;
   content: string;
+  source?: string;
   createdAt: number;
 }
 

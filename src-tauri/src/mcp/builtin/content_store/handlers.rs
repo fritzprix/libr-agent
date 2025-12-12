@@ -1,4 +1,3 @@
-// handlers.rs - Tool handler implementations
 use super::server::ContentStoreServer;
 use super::types::*;
 use super::{helpers, parsers, search};
@@ -26,8 +25,8 @@ impl ContentStoreServer {
 
         // Validate input
         let content_text = match (&args.content, &args.file_url) {
-            (Some(content), None) => content.clone(),
-            (None, Some(file_url)) => {
+            (Some(content), Option::None) => content.clone(),
+            (Option::None, Some(file_url)) => {
                 let file_path_str = match helpers::extract_file_path_from_url(file_url) {
                     Ok(path) => path,
                     Err(e) => {
@@ -58,7 +57,7 @@ impl ContentStoreServer {
                     "Cannot provide both content and fileUrl. Choose one.",
                 ));
             }
-            (None, None) => {
+            (Option::None, Option::None) => {
                 return Ok(MCPResult::error(
                     "Either content or fileUrl must be provided.",
                 ));
@@ -84,7 +83,7 @@ impl ContentStoreServer {
         // Determine file path and MIME type for storage
         let (mime_type, final_filename, final_size, _final_uploaded_at) =
             match (&args.content, &args.file_url) {
-                (Some(_), None) => {
+                (Some(_), Option::None) => {
                     // For direct content, use metadata or defaults
                     let filename = filename.unwrap_or_else(|| "direct_content".to_string());
                     let mime_type =
@@ -94,7 +93,7 @@ impl ContentStoreServer {
                         uploaded_at.unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
                     (mime_type, filename, size, uploaded_at)
                 }
-                (None, Some(file_url)) => {
+                (Option::None, Some(file_url)) => {
                     let file_path_str = helpers::extract_file_path_from_url(file_url).unwrap();
                     // Use metadata if provided, otherwise determine from file extension
                     let mime_type = mime_type_from_metadata.unwrap_or_else(|| {
@@ -126,6 +125,7 @@ impl ContentStoreServer {
                 final_size as usize,
                 &content_text,
                 chunks,
+                args.src_url.clone(),
             )
             .await
         {
@@ -192,7 +192,9 @@ impl ContentStoreServer {
 
     pub(crate) async fn handle_list_content(&self, params: Value) -> Result<MCPResult, String> {
         let args: ListContentArgs = if params.is_null() {
-            ListContentArgs { pagination: None }
+            ListContentArgs {
+                pagination: Option::None,
+            }
         } else {
             match serde_json::from_value(params) {
                 Ok(args) => args,
@@ -474,10 +476,11 @@ impl ContentStoreServer {
         };
 
         // Verify the content belongs to the current session
-        let storage = self.storage.lock().await;
-        let content_session_id = match storage.get_content_session_id(&args.content_id) {
-            Some(sid) => sid,
-            None => {
+        let content_session_id = {
+            let storage = self.storage.lock().await;
+            if let Some(sid) = storage.get_content_session_id(&args.content_id) {
+                sid
+            } else {
                 return Ok(MCPResult::error(&format!(
                     "Content '{}' not found",
                     args.content_id
@@ -539,7 +542,7 @@ mod tests {
         server
             .switch_context(ServiceContextOptions {
                 session_id: Some("test-session".to_string()),
-                assistant_id: None,
+                assistant_id: Option::None,
             })
             .await
             .unwrap();
@@ -586,7 +589,7 @@ mod tests {
         server
             .switch_context(ServiceContextOptions {
                 session_id: Some("test-session".to_string()),
-                assistant_id: None,
+                assistant_id: Option::None,
             })
             .await
             .unwrap();
@@ -610,7 +613,7 @@ mod tests {
         server
             .switch_context(ServiceContextOptions {
                 session_id: Some("test-session".to_string()),
-                assistant_id: None,
+                assistant_id: Option::None,
             })
             .await
             .unwrap();
@@ -631,7 +634,7 @@ mod tests {
         server
             .switch_context(ServiceContextOptions {
                 session_id: Some("test-session".to_string()),
-                assistant_id: None,
+                assistant_id: Option::None,
             })
             .await
             .unwrap();
@@ -648,5 +651,49 @@ mod tests {
         assert_eq!(result.is_error, Some(false));
         let structured_content = result.structured_content.unwrap();
         assert_eq!(structured_content["results"].as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_handle_delete_content() {
+        let (server, _temp) = setup_test_server().await;
+
+        server
+            .switch_context(ServiceContextOptions {
+                session_id: Some("test-session".to_string()),
+                assistant_id: Option::None,
+            })
+            .await
+            .unwrap();
+
+        // Add content first
+        let add_params = serde_json::json!({
+            "content": "Test content to delete",
+            "metadata": {
+                "filename": "delete_test.txt"
+            }
+        });
+        let add_result = server.handle_add_content(add_params).await.unwrap();
+        let content_id = add_result.structured_content.unwrap()["contentId"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        // Delete content
+        let delete_params = serde_json::json!({
+            "content_id": content_id
+        });
+
+        // This would hang if deadlock exists
+        let result = server.handle_delete_content(delete_params).await.unwrap();
+
+        assert_eq!(result.is_error, Some(false));
+
+        // Verify deletion
+        let list_params = serde_json::json!({});
+        let list_result = server.handle_list_content(list_params).await.unwrap();
+        let total = list_result.structured_content.unwrap()["total"]
+            .as_u64()
+            .unwrap();
+        assert_eq!(total, 0);
     }
 }
