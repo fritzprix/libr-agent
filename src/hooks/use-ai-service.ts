@@ -12,6 +12,7 @@ import {
 
 import { selectMessagesWithinContext } from '@/lib/token-utils';
 import { stringToMCPContentArray } from '@/lib/utils';
+import { deduplicateToolCallPairs } from '@/lib/message-deduplicator';
 
 const logger = getLogger('useAIService');
 
@@ -185,6 +186,12 @@ export const useAIService = (config?: AIServiceConfig) => {
           validMessages = removeInvalidToolUseAndToolResponse(validMessages);
         }
 
+        // Deduplicate repeated tool call/response pairs (errors AND successes)
+        const deduplicatedMessages = deduplicateToolCallPairs(validMessages, {
+          preserveRecentN: 3,
+          minMessageCount: 10,
+        });
+
         // Context enforcement: Truncate messages to fit the context window
         const maxTokens = config?.maxTokens ?? 4096;
 
@@ -194,7 +201,7 @@ export const useAIService = (config?: AIServiceConfig) => {
           : undefined;
 
         const contextMessages = selectMessagesWithinContext(
-          validMessages,
+          deduplicatedMessages,
           provider,
           model,
           maxTokens,
