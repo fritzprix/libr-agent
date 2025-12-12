@@ -1,5 +1,6 @@
 import { getLogger } from '@/lib/logger';
 import { createMCPTextResponse } from '@/lib/mcp-response-utils';
+import { navigateBack } from '@/lib/backend/browser';
 import { BROWSER_TOOL_SCHEMAS } from './helpers';
 import { StrictBrowserMCPTool } from './types';
 import { validateSessionId, handleBrowserError } from './error-utils';
@@ -16,7 +17,7 @@ export const navigateBackTool: StrictBrowserMCPTool = {
     },
     required: ['sessionId'],
   },
-  execute: async (args: Record<string, unknown>, executeScript) => {
+  execute: async (args: Record<string, unknown>) => {
     const { sessionId } = args as { sessionId: string };
 
     const { isValid, errorResponse } = validateSessionId(sessionId);
@@ -26,17 +27,8 @@ export const navigateBackTool: StrictBrowserMCPTool = {
 
     logger.debug('Executing browser_navigateBack', { sessionId });
 
-    if (!executeScript) {
-      return createMCPTextResponse(
-        '✗ Navigate Back failed: executeScript function is required',
-      );
-    }
-
     try {
-      const result = await executeScript(
-        sessionId,
-        'setTimeout(() => history.back(), 10); "Navigated back"',
-      );
+      const result = await navigateBack(sessionId);
       return createMCPTextResponse(result);
     } catch (error) {
       return handleBrowserError(error, { toolName: 'navigateBack', sessionId });

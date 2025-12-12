@@ -64,6 +64,8 @@ export {
   inputText,
   pollScriptResult,
   navigateToUrl,
+  navigateBack,
+  navigateForward,
 } from './browser';
 
 // File operations

@@ -88,3 +88,21 @@ export async function navigateToUrl(
 ): Promise<string> {
   return safeInvoke<string>('navigate_to_url', { sessionId, url });
 }
+
+/**
+ * Navigates a browser session back in history.
+ * @param sessionId The ID of the browser session.
+ * @returns A promise that resolves with the result of the navigation.
+ */
+export async function navigateBack(sessionId: string): Promise<string> {
+  return safeInvoke<string>('navigate_back', { sessionId });
+}
+
+/**
+ * Navigates a browser session forward in history.
+ * @param sessionId The ID of the browser session.
+ * @returns A promise that resolves with the result of the navigation.
+ */
+export async function navigateForward(sessionId: string): Promise<string> {
+  return safeInvoke<string>('navigate_forward', { sessionId });
+}

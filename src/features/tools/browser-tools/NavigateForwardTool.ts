@@ -1,11 +1,11 @@
 import { getLogger } from '@/lib/logger';
 import { createMCPTextResponse } from '@/lib/mcp-response-utils';
+import { navigateForward } from '@/lib/backend/browser';
 import { BROWSER_TOOL_SCHEMAS } from './helpers';
 import { StrictBrowserMCPTool } from './types';
 import {
   validateSessionId,
   handleBrowserError,
-  createBrowserErrorResponse,
 } from './error-utils';
 
 const logger = getLogger('NavigateForwardTool');
@@ -20,7 +20,7 @@ export const navigateForwardTool: StrictBrowserMCPTool = {
     },
     required: ['sessionId'],
   },
-  execute: async (args: Record<string, unknown>, executeScript) => {
+  execute: async (args: Record<string, unknown>) => {
     const { sessionId } = args as { sessionId: string };
 
     const { isValid, errorResponse } = validateSessionId(sessionId);
@@ -30,17 +30,8 @@ export const navigateForwardTool: StrictBrowserMCPTool = {
 
     logger.debug('Executing browser_navigateForward', { sessionId });
 
-    if (!executeScript) {
-      return createBrowserErrorResponse(
-        '✗ Navigate Forward failed: executeScript function is required',
-      );
-    }
-
     try {
-      const result = await executeScript(
-        sessionId,
-        'setTimeout(() => history.forward(), 10); "Navigated forward"',
-      );
+      const result = await navigateForward(sessionId);
       return createMCPTextResponse(result);
     } catch (error) {
       return handleBrowserError(error, {
