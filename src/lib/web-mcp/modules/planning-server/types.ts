@@ -11,6 +11,7 @@ export interface SimpleTodo {
 export interface ScratchpadItem {
   id: number;
   content: string;
+  source?: string;
 }
 
 /** Represents a single thought in the sequential-thinking tool. @internal */

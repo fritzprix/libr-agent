@@ -71,14 +71,20 @@ export const planningTools: MCPTool[] = [
   {
     name: 'update_todo',
     description:
-      'Update an existing todo item. Use to refine task details, change priority, or update dependencies.',
+      'Update an existing todo item. Use to refine task details, change priority, or update dependencies. You can specify either id (database ID) or index (0-based position in the list).',
     inputSchema: {
       type: 'object',
       properties: {
         id: {
           type: 'number',
           minimum: 1,
-          description: 'The ID of the todo to update.',
+          description: 'The database ID of the todo to update.',
+        },
+        index: {
+          type: 'number',
+          minimum: 0,
+          description:
+            'The 0-based index position of the todo in the current list.',
         },
         name: {
           type: 'string',
@@ -100,20 +106,25 @@ export const planningTools: MCPTool[] = [
           description: 'The new list of dependencies.',
         },
       },
-      required: ['id'],
     },
   },
   {
     name: 'mark_todo',
     description:
-      'Mark a todo item as completed or pending by its ID, optionally with a completion summary.',
+      'Mark a todo item as completed or pending, optionally with a completion summary. You can specify either id (database ID) or index (0-based position in the list).',
     inputSchema: {
       type: 'object',
       properties: {
         id: {
           type: 'number',
           minimum: 1,
-          description: 'The ID of the todo to update',
+          description: 'The database ID of the todo to update',
+        },
+        index: {
+          type: 'number',
+          minimum: 0,
+          description:
+            'The 0-based index position of the todo in the current list',
         },
         completed: {
           type: 'boolean',
@@ -126,7 +137,6 @@ export const planningTools: MCPTool[] = [
             'Optional summary or completion note for the todo (e.g., "Completed with PR #42").',
         },
       },
-      required: ['id'],
     },
   },
   {
@@ -154,7 +164,7 @@ export const planningTools: MCPTool[] = [
   {
     name: 'add_scratchpad',
     description:
-      'Add a note to your Scratchpad (Working Memory). Content here is ALWAYS visible in your context. Use this for keeping track of important findings, file paths, IDs, or intermediate analysis results that you need to reference frequently during the task.',
+      'Add a note to your Scratchpad (Working Memory). Content here is ALWAYS visible in your context. Use this for keeping track of important findings, file paths, IDs, or intermediate analysis results that you need to reference frequently during the task.\n\nOptional source parameter: Provide the source of information for citation tracking (e.g., URLs, file paths, or tool result IDs like "https://example.com/article" or "file://path/to/doc.txt").',
     inputSchema: {
       type: 'object',
       properties: {
@@ -162,6 +172,11 @@ export const planningTools: MCPTool[] = [
           type: 'string',
           description:
             'The content to add to the scratchpad (e.g., "User requested feature X", "File path: src/main.ts").',
+        },
+        source: {
+          type: 'string',
+          description:
+            'Optional source of the information for citation tracking. Examples: "https://example.com/article", "file://workspace/docs/readme.md", "tool_result_id:abc123"',
         },
       },
       required: ['note'],

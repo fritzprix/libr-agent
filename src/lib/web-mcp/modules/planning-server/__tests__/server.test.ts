@@ -124,4 +124,90 @@ describe('Planning Server Persistence', () => {
         const content2 = state2.structuredContent as PlanningState;
         expect(content2.state.goal).toBe('Goal 2');
     });
+
+    it('should support index-based todo updates', async () => {
+        // Reset to test session
+        await planningServer.switchContext!({ sessionId, threadId });
+
+        // Add multiple todos
+        await planningServer.callTool('add_todo', { name: 'First Task' });
+        await planningServer.callTool('add_todo', { name: 'Second Task' });
+        await planningServer.callTool('add_todo', { name: 'Third Task' });
+
+        // Update second todo (index 1) using index
+        const updateResult = await planningServer.callTool('update_todo', {
+            index: 1,
+            name: 'Updated Second Task',
+        });
+        expect(updateResult.isError).toBe(false);
+
+        // Verify the update
+        const state = await planningServer.callTool('get_current_state', {});
+        const structuredState = state.structuredContent as PlanningState;
+        expect(structuredState.state.todos[1].name).toBe('Updated Second Task');
+
+        // Mark first todo (index 0) as completed using index
+        const markResult = await planningServer.callTool('mark_todo', {
+            index: 0,
+            completed: true,
+        });
+        expect(markResult.isError).toBe(false);
+
+        // Verify the status change
+        const state2 = await planningServer.callTool('get_current_state', {});
+        const structuredState2 = state2.structuredContent as PlanningState;
+        expect(structuredState2.state.todos[0].status).toBe('completed');
+    });
+
+    it('should handle invalid index gracefully', async () => {
+        await planningServer.switchContext!({ sessionId, threadId });
+        await planningServer.callTool('add_todo', { name: 'Only Task' });
+
+        // Try to update with invalid index (out of range)
+        const result = await planningServer.callTool('update_todo', {
+            index: 5,
+            name: 'Should fail',
+        });
+
+        expect(result.isError).toBe(true);
+        expect(result.content).toBeDefined();
+        expect(result.content!.length).toBeGreaterThan(0);
+        const firstContent = result.content![0];
+        if (firstContent && firstContent.type === 'text') {
+            const messageText = firstContent.text;
+            expect(messageText).toContain('not found');
+            expect(messageText).toContain('Valid indexes');
+        }
+    });
+
+    it('should require either id or index', async () => {
+        await planningServer.switchContext!({ sessionId, threadId });
+        await planningServer.callTool('add_todo', { name: 'Test Task' });
+
+        // Try to update without id or index
+        const updateResult = await planningServer.callTool('update_todo', {
+            name: 'Should fail',
+        });
+        expect(updateResult.isError).toBe(true);
+        expect(updateResult.content).toBeDefined();
+        expect(updateResult.content!.length).toBeGreaterThan(0);
+        const updateContent = updateResult.content![0];
+        if (updateContent && updateContent.type === 'text') {
+            const updateText = updateContent.text;
+            expect(updateText).toContain('Either "id" or "index" must be provided');
+        }
+
+        // Try to mark without id or index
+        const markResult = await planningServer.callTool('mark_todo', {
+            completed: true,
+        });
+        expect(markResult.isError).toBe(true);
+        expect(markResult.content).toBeDefined();
+        expect(markResult.content!.length).toBeGreaterThan(0);
+        const markContent = markResult.content![0];
+        if (markContent && markContent.type === 'text') {
+            const markText = markContent.text;
+            expect(markText).toContain('Either "id" or "index" must be provided');
+        }
+    });
 });

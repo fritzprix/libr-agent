@@ -75,6 +75,31 @@ export class PersistentState {
     }));
   }
 
+  /**
+   * Helper method to resolve todo ID from either id or index parameter.
+   * @param params Object containing either 'id' or 'index'
+   * @returns Resolved todo ID or undefined if not found
+   */
+  private async resolveTodoId(params: {
+    id?: number;
+    index?: number;
+  }): Promise<{ id: number | undefined; todos: SimpleTodo[] }> {
+    const todos = await this.getTodosList();
+
+    if (params.id !== undefined) {
+      return { id: params.id, todos };
+    }
+
+    if (params.index !== undefined) {
+      if (params.index >= 0 && params.index < todos.length) {
+        return { id: todos[params.index].id, todos };
+      }
+      return { id: undefined, todos };
+    }
+
+    return { id: undefined, todos };
+  }
+
   async getScratchpadList(): Promise<ScratchpadItem[]> {
     const items = await db.scratchpad
       .where({ sessionId: this.sessionId, threadId: this.threadId })
@@ -83,6 +108,7 @@ export class PersistentState {
     return items.map((m) => ({
       id: m.id!,
       content: m.content,
+      source: m.source,
     }));
   }
 
@@ -225,7 +251,7 @@ export class PersistentState {
   }
 
   async updateTodo(
-    id: number,
+    params: { id?: number; index?: number },
     updates: {
       name?: string;
       status?: 'pending' | 'completed' | 'blocked';
@@ -233,35 +259,83 @@ export class PersistentState {
       dependsOn?: number[];
     },
   ): Promise<MCPResult<unknown>> {
-    const todo = await db.todos.get(id);
+    // Resolve id from either id or index
+    const { id: resolvedId, todos: allTodos } =
+      await this.resolveTodoId(params);
+
+    if (resolvedId === undefined) {
+      const validIds = allTodos.map((t) => t.id);
+      const pendingCount = allTodos.filter(
+        (t) => t.status === 'pending',
+      ).length;
+      const completedCount = allTodos.filter(
+        (t) => t.status === 'completed',
+      ).length;
+
+      const identifier =
+        params.id !== undefined
+          ? `ID ${params.id}`
+          : params.index !== undefined
+            ? `index ${params.index}`
+            : 'no identifier';
+
+      const suggestions = [
+        'Use get_current_state to see all todos with their IDs and indexes',
+        'Specify either "id" (database ID) or "index" (0-based position)',
+      ];
+
+      return new MCPResponseBuilder({
+        requestedId: params.id,
+        requestedIndex: params.index,
+        validIds,
+        validIndexRange: `0-${allTodos.length - 1}`,
+        totalCount: allTodos.length,
+        pending: pendingCount,
+        completed: completedCount,
+        todos: allTodos,
+      })
+        .withMessage(
+          `Todo with ${identifier} not found.\n\n` +
+            `Current todos (${allTodos.length} total):\n` +
+            `  - Pending: ${pendingCount}\n` +
+            `  - Completed: ${completedCount}\n` +
+            `  - Valid IDs: [${validIds.join(', ') || 'none'}]\n` +
+            `  - Valid indexes: ${allTodos.length > 0 ? `0-${allTodos.length - 1}` : 'none'}`,
+        )
+        .withSuggestions(suggestions)
+        .asError(WebMCPErrorCodes.PLANNING.TODO_NOT_FOUND);
+    }
+
+    const todo = await db.todos.get(resolvedId);
     // Ensure todo belongs to this session
     if (
       !todo ||
       todo.sessionId !== this.sessionId ||
       todo.threadId !== this.threadId
     ) {
-      const todos = await this.getTodosList();
-      const validIds = todos.map((t) => t.id);
-      const pendingCount = todos.filter((t) => t.status === 'pending').length;
-      const completedCount = todos.filter(
+      const validIds = allTodos.map((t) => t.id);
+      const pendingCount = allTodos.filter(
+        (t) => t.status === 'pending',
+      ).length;
+      const completedCount = allTodos.filter(
         (t) => t.status === 'completed',
       ).length;
 
       const suggestions = [
-        'Use get_current_state to see all todos with their IDs',
+        'Use get_current_state to see all todos with their IDs and indexes',
       ];
 
       return new MCPResponseBuilder({
-        requestedId: id,
+        requestedId: resolvedId,
         validIds,
-        totalCount: todos.length,
+        totalCount: allTodos.length,
         pending: pendingCount,
         completed: completedCount,
-        todos,
+        todos: allTodos,
       })
         .withMessage(
-          `Todo ${id} not found.\n\n` +
-            `Current todos (${todos.length} total):\n` +
+          `Todo ${resolvedId} not found.\n\n` +
+            `Current todos (${allTodos.length} total):\n` +
             `  - Pending: ${pendingCount}\n` +
             `  - Completed: ${completedCount}\n` +
             `  - Valid IDs: [${validIds.join(', ') || 'none'}]`,
@@ -270,8 +344,8 @@ export class PersistentState {
         .asError(WebMCPErrorCodes.PLANNING.TODO_NOT_FOUND);
     }
 
-    await db.todos.update(id, updates);
-    const updatedTodoRecord = await db.todos.get(id);
+    await db.todos.update(resolvedId, updates);
+    const updatedTodoRecord = await db.todos.get(resolvedId);
     const todos = await this.getTodosList();
 
     const simpleTodo: SimpleTodo = {
@@ -283,8 +357,13 @@ export class PersistentState {
       dependsOn: updatedTodoRecord!.dependsOn,
     };
 
+    const identifier =
+      params.index !== undefined
+        ? `index ${params.index} (ID: ${resolvedId})`
+        : `ID ${resolvedId}`;
+
     return createMCPStructuredToolResult<CheckTodoOutput>(
-      `Todo ${id} updated: "${simpleTodo.name}"`,
+      `Todo ${identifier} updated: "${simpleTodo.name}"`,
       {
         success: true,
         todo: simpleTodo,
@@ -294,38 +373,86 @@ export class PersistentState {
   }
 
   async checkTodo(
-    id: number,
+    params: { id?: number; index?: number },
     check: boolean = true,
     summary?: string,
   ): Promise<MCPResult<unknown>> {
-    const todo = await db.todos.get(id);
+    // Resolve id from either id or index
+    const { id: resolvedId, todos: allTodos } =
+      await this.resolveTodoId(params);
+
+    if (resolvedId === undefined) {
+      const validIds = allTodos.map((t) => t.id);
+      const pendingCount = allTodos.filter(
+        (t) => t.status === 'pending',
+      ).length;
+      const completedCount = allTodos.filter(
+        (t) => t.status === 'completed',
+      ).length;
+
+      const identifier =
+        params.id !== undefined
+          ? `ID ${params.id}`
+          : params.index !== undefined
+            ? `index ${params.index}`
+            : 'no identifier';
+
+      const suggestions = [
+        'Use get_current_state to see all todos with their IDs and indexes',
+        'Specify either "id" (database ID) or "index" (0-based position)',
+      ];
+
+      return new MCPResponseBuilder({
+        requestedId: params.id,
+        requestedIndex: params.index,
+        validIds,
+        validIndexRange: `0-${allTodos.length - 1}`,
+        totalCount: allTodos.length,
+        pending: pendingCount,
+        completed: completedCount,
+        todos: allTodos,
+      })
+        .withMessage(
+          `Todo with ${identifier} not found.\n\n` +
+            `Current todos (${allTodos.length} total):\n` +
+            `  - Pending: ${pendingCount}\n` +
+            `  - Completed: ${completedCount}\n` +
+            `  - Valid IDs: [${validIds.join(', ') || 'none'}]\n` +
+            `  - Valid indexes: ${allTodos.length > 0 ? `0-${allTodos.length - 1}` : 'none'}`,
+        )
+        .withSuggestions(suggestions)
+        .asError(WebMCPErrorCodes.PLANNING.TODO_NOT_FOUND);
+    }
+
+    const todo = await db.todos.get(resolvedId);
     if (
       !todo ||
       todo.sessionId !== this.sessionId ||
       todo.threadId !== this.threadId
     ) {
-      const todos = await this.getTodosList();
-      const validIds = todos.map((t) => t.id);
-      const pendingCount = todos.filter((t) => t.status === 'pending').length;
-      const completedCount = todos.filter(
+      const validIds = allTodos.map((t) => t.id);
+      const pendingCount = allTodos.filter(
+        (t) => t.status === 'pending',
+      ).length;
+      const completedCount = allTodos.filter(
         (t) => t.status === 'completed',
       ).length;
 
       const suggestions = [
-        'Use get_current_state to see all todos with their IDs',
+        'Use get_current_state to see all todos with their IDs and indexes',
       ];
 
       return new MCPResponseBuilder({
-        requestedId: id,
+        requestedId: resolvedId,
         validIds,
-        totalCount: todos.length,
+        totalCount: allTodos.length,
         pending: pendingCount,
         completed: completedCount,
-        todos,
+        todos: allTodos,
       })
         .withMessage(
-          `Todo ${id} not found.\n\n` +
-            `Current todos (${todos.length} total):\n` +
+          `Todo ${resolvedId} not found.\n\n` +
+            `Current todos (${allTodos.length} total):\n` +
             `  - Pending: ${pendingCount}\n` +
             `  - Completed: ${completedCount}\n` +
             `  - Valid IDs: [${validIds.join(', ') || 'none'}]`,
@@ -341,8 +468,8 @@ export class PersistentState {
       updates.summary = summary || undefined;
     }
 
-    await db.todos.update(id, updates);
-    const updatedTodoRecord = await db.todos.get(id);
+    await db.todos.update(resolvedId, updates);
+    const updatedTodoRecord = await db.todos.get(resolvedId);
     const todos = await this.getTodosList();
 
     const simpleTodo: SimpleTodo = {
@@ -358,7 +485,11 @@ export class PersistentState {
     const unblockedTodos: SimpleTodo[] = [];
     if (check) {
       for (const t of todos) {
-        if (t.status === 'blocked' && t.dependsOn && t.dependsOn.includes(id)) {
+        if (
+          t.status === 'blocked' &&
+          t.dependsOn &&
+          t.dependsOn.includes(resolvedId)
+        ) {
           // Check if all dependencies are now completed
           const allDepsCompleted = t.dependsOn.every((depId) => {
             const dep = todos.find((d) => d.id === depId);
@@ -375,7 +506,12 @@ export class PersistentState {
     const completedCount = todos.filter((t) => t.status === 'completed').length;
     const progress = Math.round((completedCount / todos.length) * 100);
 
-    let message = `Todo ${id} marked as ${check ? 'completed' : 'pending'}.\n\n`;
+    const identifier =
+      params.index !== undefined
+        ? `index ${params.index} (ID: ${resolvedId})`
+        : `ID ${resolvedId}`;
+
+    let message = `Todo ${identifier} marked as ${check ? 'completed' : 'pending'}.\n\n`;
     message += `Progress: ${completedCount}/${todos.length} (${progress}%)`;
 
     if (simpleTodo.summary) {
@@ -388,7 +524,7 @@ export class PersistentState {
 
     return new MCPResponseBuilder({
       success: true,
-      id,
+      id: resolvedId,
       completed: check,
       todo: simpleTodo,
       todos,
@@ -491,11 +627,13 @@ export class PersistentState {
 
   async addScratchpad(
     note: string,
+    source?: string,
   ): Promise<MCPResult<BaseOutput & { scratchpad: ScratchpadItem[] }>> {
     await db.scratchpad.add({
       sessionId: this.sessionId,
       threadId: this.threadId,
       content: note,
+      source,
       createdAt: Date.now(),
     });
 
@@ -516,9 +654,14 @@ export class PersistentState {
     // Get the ID of the newly added item (last one)
     const newItemId = updatedItems[updatedItems.length - 1].id;
 
+    let message = `Scratchpad ID:${newItemId} added\n${capacityWarning}`;
+    if (source) {
+      message += `\nSource: ${source}`;
+    }
+
     return createMCPStructuredToolResult<
       BaseOutput & { scratchpad: ScratchpadItem[] }
-    >(`Scratchpad ID:${newItemId} added\n${capacityWarning}`, {
+    >(message, {
       success: true,
       scratchpad: updatedItems,
     });
@@ -719,7 +862,7 @@ export class SessionStateManager {
   }
 
   async updateTodo(
-    id: number,
+    params: { id?: number; index?: number },
     updates: {
       name?: string;
       status?: 'pending' | 'completed' | 'blocked';
@@ -727,7 +870,7 @@ export class SessionStateManager {
       dependsOn?: number[];
     },
   ): Promise<MCPResult<unknown>> {
-    return this.getCurrentState().updateTodo(id, updates);
+    return this.getCurrentState().updateTodo(params, updates);
   }
 
   async clearTodos(ids?: number[]): Promise<MCPResult<BaseOutput>> {
@@ -748,8 +891,9 @@ export class SessionStateManager {
 
   async addScratchpad(
     note: string,
+    source?: string,
   ): Promise<MCPResult<BaseOutput & { scratchpad: ScratchpadItem[] }>> {
-    return this.getCurrentState().addScratchpad(note);
+    return this.getCurrentState().addScratchpad(note, source);
   }
 
   async clearScratchpad(
@@ -771,11 +915,11 @@ export class SessionStateManager {
   }
 
   async checkTodo(
-    id: number,
+    params: { id?: number; index?: number },
     check: boolean = true,
     summary?: string,
   ): Promise<MCPResult<unknown>> {
-    return this.getCurrentState().checkTodo(id, check, summary);
+    return this.getCurrentState().checkTodo(params, check, summary);
   }
 
   clearAllSessions(): void {
