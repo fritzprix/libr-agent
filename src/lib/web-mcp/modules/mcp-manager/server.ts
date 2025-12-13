@@ -4,7 +4,6 @@ import {
 } from '@/lib/mcp-response-utils';
 import type { MCPResult, WebMCPServer } from '@/lib/mcp-types';
 import type { ServiceContext, ServiceContextOptions } from '@/features/tools';
-import { getLogger } from '@/lib/logger';
 import { mcpManagerTools } from './tools';
 import { createPage } from '@/lib/db/crud';
 import { dbService } from '@/lib/db/service';
@@ -25,8 +24,6 @@ import {
 } from '@/lib/services/assistant-service';
 import { MCPResponseBuilder } from '@/lib/web-mcp/response-builder';
 import { WebMCPErrorCodes } from '@/lib/web-mcp/error-codes';
-
-const logger = getLogger('MCPManagerServer');
 
 let cachedServices: {
   mcpService: IMcpServerService;
@@ -112,13 +109,13 @@ function validateRecordField(
   if (typeof value === 'string') {
     throw new Error(
       `[Format Error] Invalid type for parameter '${fieldName}'.\n` +
-        `Expected: Object (Record<string, string>)\n` +
-        `Received: String (JSON string)\n\n` +
-        `❌ Common Mistake: You provided a JSON string instead of a raw JSON object.\n` +
-        `✅ Correct Usage:\n` +
-        `   "${fieldName}": { "KEY": "VALUE" }\n\n` +
-        `⛔ Incorrect Usage:\n` +
-        `   "${fieldName}": "{\\"KEY\\": \\"VALUE\\"}"`,
+      `Expected: Object (Record<string, string>)\n` +
+      `Received: String (JSON string)\n\n` +
+      `❌ Common Mistake: You provided a JSON string instead of a raw JSON object.\n` +
+      `✅ Correct Usage:\n` +
+      `   "${fieldName}": { "KEY": "VALUE" }\n\n` +
+      `⛔ Incorrect Usage:\n` +
+      `   "${fieldName}": "{\\"KEY\\": \\"VALUE\\"}"`,
     );
   }
 
@@ -126,9 +123,9 @@ function validateRecordField(
   if (typeof value !== 'object' || Array.isArray(value)) {
     throw new Error(
       `[Format Error] Invalid type for parameter '${fieldName}'.\n` +
-        `Expected: Object\n` +
-        `Received: ${Array.isArray(value) ? 'Array' : typeof value}\n` +
-        `Please provide a key-value object.`,
+      `Expected: Object\n` +
+      `Received: ${Array.isArray(value) ? 'Array' : typeof value}\n` +
+      `Please provide a key-value object.`,
     );
   }
 
@@ -156,10 +153,10 @@ function normalizeTransportConfig(transport: unknown): TransportConfig {
       if (typeof t.args === 'string') {
         throw new Error(
           `[Format Error] Invalid type for parameter 'args'.\n` +
-            `Expected: Array of strings (e.g. ["arg1", "arg2"])\n` +
-            `Received: String\n` +
-            `❌ Common Mistake: You provided a JSON string instead of a raw Array.\n` +
-            `✅ Correct Usage: "args": ["--flag", "value"]`,
+          `Expected: Array of strings (e.g. ["arg1", "arg2"])\n` +
+          `Received: String\n` +
+          `❌ Common Mistake: You provided a JSON string instead of a raw Array.\n` +
+          `✅ Correct Usage: "args": ["--flag", "value"]`,
         );
       }
       if (!Array.isArray(t.args)) {
@@ -191,10 +188,10 @@ function normalizeTransportConfig(transport: unknown): TransportConfig {
       security:
         t.security && typeof t.security === 'object'
           ? (t.security as {
-              enableDnsRebindingProtection?: boolean;
-              allowedOrigins?: string[];
-              allowedHosts?: string[];
-            })
+            enableDnsRebindingProtection?: boolean;
+            allowedOrigins?: string[];
+            allowedHosts?: string[];
+          })
           : undefined,
     } as Extract<TransportConfig, { type: 'http' }>;
   }
@@ -448,7 +445,7 @@ async function searchServer(
       })
         .withMessage(
           `No servers found matching "${input.query}".\n` +
-            `Database has ${activeCount} active servers (${totalCount} total).`,
+          `Database has ${activeCount} active servers (${totalCount} total).`,
         )
         .withSuggestions(suggestions)
         .asSuccess();
@@ -568,7 +565,7 @@ async function searchServer(
     })
       .withMessage(
         `No servers found matching "${input.query}" (BM25 search).\n` +
-          `Database has ${activeCount} active servers (${totalCount} total).`,
+        `Database has ${activeCount} active servers (${totalCount} total).`,
       )
       .withSuggestions(suggestions)
       .asSuccess();
@@ -677,7 +674,6 @@ async function createServer(
       message: `Server "${server.name}" created successfully`,
     });
   } catch (error) {
-    logger.error('Failed to create server', error as Error);
     return createMCPErrorToolResult(
       `Failed to create server: ${error instanceof Error ? error.message : String(error)}`,
     ) as MCPResult<CreateServerOutput>;
@@ -768,10 +764,10 @@ async function connectServer(
     })
       .withMessage(
         `Server "${server.name}" connected to assistant "${assistant.name}".\n` +
-          `Scope: assistant\n` +
-          (input.autoStart
-            ? `Status: Starting...`
-            : `Status: Registered (manual start required)`),
+        `Scope: assistant\n` +
+        (input.autoStart
+          ? `Status: Starting...`
+          : `Status: Registered (manual start required)`),
       )
       .withNextActions(nextActions)
       .asSuccess();
@@ -877,7 +873,7 @@ async function disconnectServer(
     })
       .withMessage(
         `Server "${server.name}" disconnected from assistant "${assistant.name}".\n` +
-          `Impact: Current assistant only`,
+        `Impact: Current assistant only`,
       )
       .withNextActions(nextActions)
       .asSuccess();
@@ -936,7 +932,6 @@ const mcpManagerServer: WebMCPServer = {
           });
       }
     } catch (error) {
-      logger.error(`Error executing tool ${name}`, error as Error);
       return createMCPErrorToolResult(
         `Error executing tool ${name}: ${error instanceof Error ? error.message : String(error)}`,
       );
@@ -946,10 +941,6 @@ const mcpManagerServer: WebMCPServer = {
   async switchContext(options: ServiceContextOptions): Promise<void> {
     assistantId = options.assistantId || null;
     sessionId = options.sessionId || null;
-    logger.debug('Context switched', {
-      assistantId,
-      sessionId,
-    });
   },
 
   async getServiceContext(

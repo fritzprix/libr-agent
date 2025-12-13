@@ -1,0 +1,14 @@
+# makepkg artifacts
+/src/
+/pkg/
+/*.pkg.tar.zst
+/*.pkg.tar.xz
+/*.src.tar.gz
+/*.log
+/*.log.*
+
+# Debug symbols
+/*-debug-*.pkg.tar.zst
+
+# Potential stray directories
+/libragent/

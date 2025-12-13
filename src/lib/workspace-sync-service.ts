@@ -1,7 +1,4 @@
 import { workspaceWriteFile } from '@/lib/rust-backend-client';
-import { getLogger } from '@/lib/logger';
-
-const logger = getLogger('WorkspaceSync');
 
 /** The maximum file size for the content store (50MB). */
 export const MAX_CONTENT_STORE_SIZE = 50 * 1024 * 1024;
@@ -26,11 +23,6 @@ export const EFFECTIVE_MAX_SIZE = Math.min(
  * @throws An error if the file size exceeds the limit or if the backend operation fails.
  */
 export async function syncFileToWorkspace(file: File): Promise<string> {
-  logger.info('Starting workspace sync', {
-    filename: file.name,
-    fileSize: file.size,
-  });
-
   try {
     // Validate file size before processing
     if (file.size > EFFECTIVE_MAX_SIZE) {
@@ -47,28 +39,12 @@ export async function syncFileToWorkspace(file: File): Promise<string> {
     const uint8Array = new Uint8Array(arrayBuffer);
     const numberArray = Array.from(uint8Array);
 
-    logger.info('Converting file to workspace format', {
-      filename: file.name,
-      workspacePath,
-      originalSize: file.size,
-      convertedSize: numberArray.length,
-    });
-
     // Save file to workspace via Rust backend (session-aware)
     await workspaceWriteFile(workspacePath, numberArray);
 
-    logger.info('File synced to workspace successfully', {
-      filename: file.name,
-      workspacePath,
-      size: file.size,
-    });
 
     return workspacePath;
   } catch (error) {
-    logger.error('Failed to sync file to workspace', {
-      filename: file.name,
-      error: error instanceof Error ? error.message : String(error),
-    });
     throw error;
   }
 }

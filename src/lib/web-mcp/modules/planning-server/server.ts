@@ -5,7 +5,6 @@ import {
 import type { MCPResult, WebMCPServer } from '@/lib/mcp-types';
 import type { WebMCPServerProxy } from '@/context/WebMCPContext';
 import type { ServiceContext, ServiceContextOptions } from '@/features/tools';
-import { getLogger } from '@/lib/logger';
 import { planningTools as tools } from './tools.ts';
 import { SessionStateManager } from './state';
 import type {
@@ -17,8 +16,6 @@ import type {
   BaseOutput,
   ScratchpadItem,
 } from './types';
-
-const logger = getLogger('PlanningServer');
 
 const stateManager = new SessionStateManager();
 
@@ -193,30 +190,30 @@ const planningServer: WebMCPServer = {
 
         const todosText = paginatedTodos.length
           ? paginatedTodos
-              .map((t) => {
-                let checkbox = '[ ]';
-                if (t.status === 'completed') checkbox = '[x]';
-                else if (t.status === 'blocked') checkbox = '[!]';
+            .map((t) => {
+              let checkbox = '[ ]';
+              if (t.status === 'completed') checkbox = '[x]';
+              else if (t.status === 'blocked') checkbox = '[!]';
 
-                const summaryPart = t.summary ? ` - ${t.summary}` : '';
-                const priorityPart = t.priority ? ` [${t.priority}]` : '';
-                const dependsPart =
-                  t.dependsOn && t.dependsOn.length > 0
-                    ? ` (depends on: ${t.dependsOn.join(', ')})`
-                    : '';
-                return `- ID:${t.id} ${checkbox} ${t.name}${priorityPart}${summaryPart}${dependsPart}`;
-              })
-              .join('\n')
+              const summaryPart = t.summary ? ` - ${t.summary}` : '';
+              const priorityPart = t.priority ? ` [${t.priority}]` : '';
+              const dependsPart =
+                t.dependsOn && t.dependsOn.length > 0
+                  ? ` (depends on: ${t.dependsOn.join(', ')})`
+                  : '';
+              return `- ID:${t.id} ${checkbox} ${t.name}${priorityPart}${summaryPart}${dependsPart}`;
+            })
+            .join('\n')
           : '(none)';
 
         const scratchpadText =
           includeScratchpad && scratchpad.length > 0
             ? scratchpad
-                .map((m) => {
-                  const sourcePart = m.source ? ` (source: ${m.source})` : '';
-                  return `- [ID: ${m.id}] ${m.content}${sourcePart}`;
-                })
-                .join('\n')
+              .map((m) => {
+                const sourcePart = m.source ? ` (source: ${m.source})` : '';
+                return `- [ID: ${m.id}] ${m.content}${sourcePart}`;
+              })
+              .join('\n')
             : '(none)';
 
         const goalText = goal ? `- ${goal}` : '(none)';
@@ -313,9 +310,6 @@ ${scratchpadText}`;
     const sessionId = options.sessionId || 'default';
     const threadId = options.threadId || sessionId;
     stateManager.setSession(sessionId, threadId);
-    logger.info(
-      `Switched planning context to session: ${sessionId}, thread: ${threadId}`,
-    );
   },
 };
 
