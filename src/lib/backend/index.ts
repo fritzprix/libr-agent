@@ -60,8 +60,6 @@ export {
   createBrowserSession,
   closeBrowserSession,
   listBrowserSessions,
-  clickElement,
-  inputText,
   pollScriptResult,
   navigateToUrl,
 } from './browser';

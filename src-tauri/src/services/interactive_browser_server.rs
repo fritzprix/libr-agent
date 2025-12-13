@@ -127,7 +127,8 @@ pub struct InteractiveBrowserServer {
     /// A thread-safe map of active browser sessions, keyed by session ID.
     sessions: Arc<RwLock<HashMap<String, BrowserSession>>>,
     /// A thread-safe map to store the results of asynchronous script executions, keyed by request ID.
-    script_results: Arc<DashMap<String, String>>,
+    /// Value is (session_id, result_string).
+    script_results: Arc<DashMap<String, (String, String)>>,
 }
 
 impl InteractiveBrowserServer {
@@ -236,20 +237,23 @@ impl InteractiveBrowserServer {
 
         // Register window event listeners
 
+        // Clone additional state for cleanup in the event handler
         let sessions_clone = self.sessions.clone();
-
+        let script_results_clone = self.script_results.clone();
         let session_id_clone = session_id.clone();
 
         webview_window.once("tauri://close-requested", move |_| {
             debug!("Browser window close requested for session: {session_id_clone}");
 
+            // Full cleanup: Remove session from map
             if let Ok(mut sessions) = sessions_clone.write() {
-                if let Some(session) = sessions.get_mut(&session_id_clone) {
-                    session.status = SessionStatus::Closed;
-
-                    info!("Session {session_id_clone} marked as closed");
+                if sessions.remove(&session_id_clone).is_some() {
+                    info!("Session {session_id_clone} removed (manual close)");
                 }
             }
+
+            // Cleanup script results to prevent memory leaks
+            script_results_clone.retain(|_, (sid, _)| sid != &session_id_clone);
         });
 
         info!("Browser session created successfully: {session_id}");
@@ -402,7 +406,6 @@ impl InteractiveBrowserServer {
         }
 
         // Remove from sessions map
-
         {
             let mut sessions = self
                 .sessions
@@ -411,6 +414,9 @@ impl InteractiveBrowserServer {
 
             sessions.remove(session_id);
         }
+
+        // Cleanup pending script results for this session to prevent memory leaks
+        self.script_results.retain(|_, (sid, _)| sid != session_id);
 
         info!("Session {session_id} closed successfully");
 
@@ -522,7 +528,7 @@ impl InteractiveBrowserServer {
     /// A `Result` containing an `Option<String>`. `Some(result)` if the result is available,
     /// `None` if it is not yet available.
     pub async fn poll_script_result(&self, request_id: &str) -> Result<Option<String>, String> {
-        if let Some((_key, result)) = self.script_results.remove(request_id) {
+        if let Some((_key, (_session_id, result))) = self.script_results.remove(request_id) {
             debug!("Retrieved script result for request_id: {request_id}");
             Ok(Some(result))
         } else {
@@ -549,7 +555,8 @@ impl InteractiveBrowserServer {
         result: String,
     ) -> Result<(), String> {
         debug!("Storing script result for session: {session_id}, request_id: {request_id}");
-        self.script_results.insert(request_id, result);
+        self.script_results
+            .insert(request_id, (session_id.to_string(), result));
         Ok(())
     }
 }

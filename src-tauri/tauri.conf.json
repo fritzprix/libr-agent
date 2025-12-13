@@ -51,6 +51,27 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "linux": {
+      "deb": {
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0",
+          "libayatana-appindicator3-1",
+          "librsvg2-2",
+          "libssl-dev",
+          "libgstreamer1.0-0",
+          "gstreamer1.0-plugins-base",
+          "gstreamer1.0-plugins-good",
+          "gstreamer1.0-plugins-bad",
+          "gstreamer1.0-plugins-ugly",
+          "gstreamer1.0-libav",
+          "gstreamer1.0-alsa",
+          "gstreamer1.0-gl",
+          "gstreamer1.0-gtk3",
+          "gstreamer1.0-pulseaudio"
+        ]
+      }
+    }
   }
 }
