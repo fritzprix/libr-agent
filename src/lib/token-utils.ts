@@ -92,8 +92,13 @@ export function selectMessagesWithinContext(
     const tokens = estimateTokensBPE(msg);
 
     if (totalTokens + tokens > tokenLimit) {
-      // Anthropic providers require tool chain boundary checking
-      if (providerId === AIServiceProvider.Anthropic) {
+      // Providers that require strict tool chain boundary checking (no orphaned calls/results)
+      if (
+        providerId === AIServiceProvider.Anthropic ||
+        providerId === AIServiceProvider.Gemini ||
+        providerId === AIServiceProvider.OpenAI ||
+        providerId === AIServiceProvider.Groq
+      ) {
         const hasIncompleteToolChain = checkIncompleteToolChain(selected, msg);
         if (hasIncompleteToolChain) {
           logger.info(

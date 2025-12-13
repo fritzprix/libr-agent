@@ -1,7 +1,11 @@
 import { Message, ToolCall } from '@/models/chat';
 import { createId } from '@paralleldrive/cuid2';
 import { useCallback, useMemo, useState } from 'react';
-import { AIServiceConfig, AIServiceFactory } from '../lib/ai-service';
+import {
+  AIServiceConfig,
+  AIServiceFactory,
+  AIServiceProvider,
+} from '../lib/ai-service';
 import { getLogger } from '../lib/logger';
 import { useSettings } from './use-settings';
 import { prepareMessagesForLLM } from '../lib/message-preprocessor';
@@ -13,10 +17,26 @@ import {
 import { selectMessagesWithinContext } from '@/lib/token-utils';
 import { stringToMCPContentArray } from '@/lib/utils';
 import { deduplicateToolCallPairs } from '@/lib/message-deduplicator';
+import { MessageNormalizer } from '@/lib/ai-service/message-normalizer';
 
 const logger = getLogger('useAIService');
 
 const DEFAULT_SYSTEM_PROMPT = 'You are a helpful assistant.';
+
+// Throttling constants
+const MIN_REQUEST_INTERVAL = 500; // 0.5s minimum interval between requests
+let lastRequestTime = 0;
+
+const throttleRequest = async () => {
+  const now = Date.now();
+  const timeSinceLastRequest = now - lastRequestTime;
+  if (timeSinceLastRequest < MIN_REQUEST_INTERVAL) {
+    const waitTime = MIN_REQUEST_INTERVAL - timeSinceLastRequest;
+    logger.debug(`Throttling request for ${waitTime}ms`);
+    await new Promise((resolve) => setTimeout(resolve, waitTime));
+  }
+  lastRequestTime = Date.now();
+};
 
 // Types for completeText - simple one-shot text generation
 type CompleteTextOptions = {
@@ -158,6 +178,9 @@ export const useAIService = (config?: AIServiceConfig) => {
         );
       }
 
+      // Apply client-side throttling
+      await throttleRequest();
+
       let currentResponseId = createId();
       let fullContent = '';
       let thinking = '';
@@ -211,8 +234,11 @@ export const useAIService = (config?: AIServiceConfig) => {
           },
         );
 
-        // Sanitize messages to prevent malformed JSON
-        const safeMessages = contextMessages.map(sanitizeMessage);
+        // Sanitize messages to prevent malformed JSON and ensure provider compatibility
+        const safeMessages = MessageNormalizer.sanitizeMessagesForProvider(
+          contextMessages.map(sanitizeMessage),
+          provider as unknown as AIServiceProvider,
+        );
 
         logger.info('Submitting messages to AI service', {
           model,
@@ -416,6 +442,9 @@ export const useAIService = (config?: AIServiceConfig) => {
           model: options?.model ?? model,
           promptLength: prompt.length,
         });
+
+        // Apply client-side throttling
+        await throttleRequest();
 
         // Call streamChat with no tools
         const stream = serviceInstance.streamChat(safeMessages, {

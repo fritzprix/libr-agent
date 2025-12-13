@@ -12,6 +12,8 @@ use tauri::{AppHandle, Listener, Manager, WebviewUrl, WebviewWindowBuilder};
 
 use dashmap::DashMap;
 
+use tokio::sync::Notify;
+use tokio::time::{timeout, Duration};
 use uuid::Uuid;
 
 use super::browser_error::BrowserError;
@@ -29,6 +31,9 @@ pub struct BrowserSession {
     pub created_at: DateTime<Utc>,
     /// The current status of the session.
     pub status: SessionStatus,
+    /// Notification for page load completion (Navigation Blocking)
+    #[serde(skip)]
+    pub page_load_notify: Arc<Notify>,
 }
 
 /// Represents the status of a `BrowserSession`.
@@ -75,6 +80,30 @@ const INIT_SCRIPT: &str = r#"
             return false;
         },
 
+        // Helper: Send page load signal
+        sendPageLoaded: async function() {
+            if (!await this.waitForIPC()) return;
+            try {
+                // Get window label/session id from somewhere?
+                // Actually the Rust side knows the session by the window that emits the command
+                // But our protocol expects sessionId.
+                // We don't easily have sessionId here unless we inject it.
+                // However, 'create_browser_session' is what creates the window.
+                // We can't easily inject sessionId into INIT_SCRIPT constant because it's static.
+                // BUT, we can make the command `browser_page_loaded` work without sessionId if it infers from window label?
+                // OR we can inject the session ID when we build the window?
+                // `initialization_script` takes a string.
+                // Wait, if we use `eval` later we can set it.
+                // Ideally `browser_page_loaded` should rely on the window that called it.
+                // The backend can map window -> session.
+                await window.__TAURI__.core.invoke('browser_page_loaded', {}); 
+            } catch (e) {
+                console.error('[LibrAgent] Failed to send page load signal:', e);
+            }
+        },
+
+        // Send result back to Rust
+
         // Send result back to Rust
         sendResult: async function(sessionId, requestId, result, isError = false) {
             if (!await this.waitForIPC()) {
@@ -115,6 +144,28 @@ const INIT_SCRIPT: &str = r#"
     };
     
     console.log('[LibrAgent] Runtime initialized');
+    
+    // Explicitly signal that the page has loaded and runtime is ready
+    // We wait for window.onload to ensure resources are loaded (better for CSR)
+    if (document.readyState === 'complete') {
+        window.__LIBR_AGENT__.sendPageLoaded();
+    } else {
+        window.addEventListener('load', () => {
+             window.__LIBR_AGENT__.sendPageLoaded();
+        }, { once: true });
+        
+        // Fallback: if load doesn't fire (already happened?), check periodically?
+        // Actually, if we missed it, readyState would be complete.
+        // But for safety, let's also set a max wait or check interactive state?
+        // No, 'load' plus 'complete' check is standard. 
+        // We'll add a safety timeout just in case generic load hangs on some resource.
+        setTimeout(() => {
+             if (document.readyState === 'interactive' || document.readyState === 'complete') {
+                 console.log('[LibrAgent] Load event fallback trigger');
+                 window.__LIBR_AGENT__.sendPageLoaded();
+             }
+        }, 10000); // 10s fallback
+    }
 })();
 "#;
 
@@ -226,6 +277,8 @@ impl InteractiveBrowserServer {
             created_at: Utc::now(),
 
             status: SessionStatus::Active,
+
+            page_load_notify: Arc::new(Notify::new()),
         };
 
         {
@@ -431,44 +484,84 @@ impl InteractiveBrowserServer {
     pub async fn navigate_to_url(&self, session_id: &str, url: &str) -> Result<String, String> {
         info!("Navigating session {session_id} to {url}");
 
-        let session = {
-            let sessions = self.sessions.read().map_err(|e| {
-                String::from(BrowserError::LockFailed {
-                    reason: format!("Failed to acquire read lock: {e}"),
-                })
-            })?;
+        let (window_label, notify) = {
+            let mut sessions = self
+                .sessions
+                .write()
+                .map_err(|e| format!("Failed to acquire write lock: {e}"))?;
 
-            sessions.get(session_id).cloned().ok_or_else(|| {
+            let session = sessions.get_mut(session_id).ok_or_else(|| {
                 String::from(BrowserError::SessionNotFound {
                     session_id: session_id.to_string(),
                 })
-            })?
+            })?;
+
+            // Reset notification state for new navigation
+            session.page_load_notify = Arc::new(Notify::new());
+
+            // Update URL immediately? Or after?
+            // Usually update after success, but here we want to reflect intent.
+            session.url = url.to_string();
+
+            (
+                session.window_label.clone(),
+                session.page_load_notify.clone(),
+            )
         };
 
-        if let Some(window) = self.app_handle.get_webview_window(&session.window_label) {
+        if let Some(window) = self.app_handle.get_webview_window(&window_label) {
             // Use eval to set window.location.href
-            // We use eval instead of window.navigate to ensure consistent behavior with legacy implementation
-            // and because we might want to inject specific JS logic later.
             let script = format!("window.location.href = '{}'", url.replace('\'', "\\'"));
-            // Fire and forget, don't wait for result context
+
             window
                 .eval(&script)
                 .map_err(|e| format!("Failed to navigate: {e}"))?;
 
-            // Update session URL in the store
-            {
-                let mut sessions = self
-                    .sessions
-                    .write()
-                    .map_err(|e| format!("Failed to acquire write lock: {e}"))?;
-                if let Some(session) = sessions.get_mut(session_id) {
-                    session.url = url.to_string();
+            // BLOCKING WAIT for page load signal
+            info!("Waiting for page load signal...");
+            match timeout(Duration::from_secs(15), notify.notified()).await {
+                Ok(_) => {
+                    info!("Page load signal received for {}", url);
+                    Ok(format!("Navigated to {}", url))
+                }
+                Err(_) => {
+                    // Timeout occurred
+                    error!("Timeout waiting for page load signal: {}", url);
+                    // We return OK because navigation *did* happen, just timed out waiting for load.
+                    // This allows the agent to try extracting anyway (which has its own checks).
+                    Ok(format!(
+                        "Navigated to {} (timeout waiting for load signal)",
+                        url
+                    ))
                 }
             }
-
-            Ok(format!("Navigating to {url}"))
         } else {
             Err("Browser window not found".to_string())
+        }
+    }
+
+    /// Handles the page loaded signal from the frontend.
+    pub fn handle_page_loaded(&self, session_id: &str) {
+        if let Ok(sessions) = self.sessions.read() {
+            if let Some(session) = sessions.get(session_id) {
+                session.page_load_notify.notify_one();
+                debug!(
+                    "Page loaded signal received/processed for session {}",
+                    session_id
+                );
+            }
+        }
+    }
+
+    /// Finds session ID by window label (helper for command)
+    pub fn get_session_id_by_label(&self, label: &str) -> Option<String> {
+        if let Ok(sessions) = self.sessions.read() {
+            sessions
+                .values()
+                .find(|s| s.window_label == label)
+                .map(|s| s.id.clone())
+        } else {
+            None
         }
     }
 

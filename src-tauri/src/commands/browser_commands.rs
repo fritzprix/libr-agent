@@ -137,6 +137,31 @@ pub async fn browser_script_result(
     server.handle_script_result(&payload.session_id, payload.request_id, payload.result)
 }
 
+/// Signals that a page has finished loading in a browser session.
+///
+/// # Arguments
+/// * `window` - The Tauri window instance that emitted the command.
+/// * `server` - The `InteractiveBrowserServer` state.
+///
+/// # Returns
+/// An empty `Result` on success.
+#[tauri::command]
+pub async fn browser_page_loaded(
+    window: tauri::Window,
+    server: State<'_, InteractiveBrowserServer>,
+) -> Result<(), String> {
+    let label = window.label();
+    debug!("Command: browser_page_loaded called for window: {label}");
+
+    if let Some(session_id) = server.get_session_id_by_label(label) {
+        server.handle_page_loaded(&session_id);
+        info!("Page load signal processed for session: {session_id}");
+    } else {
+        debug!("Ignored page load signal from unknown/untracked window: {label}");
+    }
+    Ok(())
+}
+
 /// Executes JavaScript in a browser session and returns a request ID for polling the result.
 ///
 /// # Arguments

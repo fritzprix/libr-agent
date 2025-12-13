@@ -348,7 +348,17 @@ export class GeminiService extends BaseAIService {
         } else if (chunk.text) {
           yield JSON.stringify({ content: chunk.text });
         } else {
-          logger.warn('Gemini chunk has no text or functionCalls', { chunk });
+          const candidate = chunk.candidates?.[0];
+          const finishReason = candidate?.finishReason;
+
+          if (finishReason === 'UNEXPECTED_TOOL_CALL') {
+            logger.warn(
+              'Gemini stream ended with UNEXPECTED_TOOL_CALL. The model attempted to call a tool that was not properly defined or permitted in this context.',
+              { chunk, finishReason },
+            );
+          } else {
+            logger.warn('Gemini chunk has no text or functionCalls', { chunk });
+          }
         }
       }
     } catch (error) {

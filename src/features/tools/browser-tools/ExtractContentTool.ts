@@ -66,10 +66,28 @@ async function extractHtmlFromPage(
   executeScript: (sessionId: string, script: string) => Promise<unknown>,
   sessionId: string,
 ): Promise<string> {
-  const rawHtml = await executeScript(
-    sessionId,
-    `document.body ? document.body.outerHTML : ""`,
-  );
+  // Extract HTML with explicit wait for page load
+  const script = `
+    (async () => {
+      // Helper to wait for event or timeout
+      const wait = (ms) => new Promise(r => setTimeout(r, ms));
+      
+      // Wait for complete state
+      if (document.readyState !== 'complete') {
+        await new Promise(resolve => {
+            window.addEventListener('load', resolve, { once: true });
+            setTimeout(resolve, 5000); // 5s fallback
+        });
+      }
+      
+      // Additional small buffer for dynamic content
+      await wait(500);
+      
+      return document.body ? document.body.outerHTML : "";
+    })()
+  `;
+
+  const rawHtml = await executeScript(sessionId, script);
 
   if (typeof rawHtml !== 'string') {
     throw new Error(
