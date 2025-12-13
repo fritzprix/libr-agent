@@ -3,9 +3,9 @@ use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct AddContentArgs {
-    #[serde(rename = "fileUrl", alias = "file_url")]
+    #[serde(rename = "fileUrl")]
     pub file_url: Option<String>,
-    #[serde(rename = "srcUrl", alias = "src_url")]
+    #[serde(rename = "srcUrl")]
     pub src_url: Option<String>,
     pub content: Option<String>,
     pub metadata: Option<AddContentMetadata>,
@@ -14,10 +14,10 @@ pub(crate) struct AddContentArgs {
 #[derive(Debug, Deserialize)]
 pub(crate) struct AddContentMetadata {
     pub filename: Option<String>,
-    #[serde(rename = "mimeType", alias = "mime_type")]
+    #[serde(rename = "mimeType")]
     pub mime_type: Option<String>,
     pub size: Option<u64>,
-    #[serde(rename = "uploadedAt", alias = "uploaded_at")]
+    #[serde(rename = "uploadedAt")]
     pub uploaded_at: Option<String>,
 }
 
@@ -37,14 +37,17 @@ pub(crate) struct ListContentArgs {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct ReadContentArgs {
+    #[serde(rename = "contentId")]
     pub content_id: String,
+    #[serde(rename = "fromLine")]
     pub from_line: Option<usize>,
+    #[serde(rename = "toLine")]
     pub to_line: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct SearchOptions {
-    #[serde(rename = "topN", alias = "top_n")]
+    #[serde(rename = "topN")]
     #[serde(default)]
     pub top_n: Option<usize>,
     #[serde(default)]
@@ -60,5 +63,6 @@ pub(crate) struct KeywordSearchArgs {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct DeleteContentArgs {
+    #[serde(rename = "contentId")]
     pub content_id: String,
 }

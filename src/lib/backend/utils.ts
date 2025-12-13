@@ -1,5 +1,5 @@
 import { safeInvoke } from './core';
-import type { ServiceContext, ServiceContextOptions } from '@/features/tools';
+import type { ServiceContext, ServiceContextOptions } from '@/features/tools/types';
 
 // ========================================
 // Log Management
