@@ -276,7 +276,7 @@ class KnowledgeManager {
     })
       .withMessage(
         `Knowledge item deleted: "${item.title}" (ID: ${id})\n\n` +
-        `Remaining knowledge items: ${remainingItems}`,
+          `Remaining knowledge items: ${remainingItems}`,
       )
       .asSuccess();
   }

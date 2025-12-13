@@ -256,7 +256,7 @@ export const assistantManagerServer: WebMCPServer = {
             })
               .withMessage(
                 `No assistants found matching "${query}".\n\n` +
-                `Total assistants: ${totalCount}`,
+                  `Total assistants: ${totalCount}`,
               )
               .withSuggestions(suggestions)
               .asSuccess();

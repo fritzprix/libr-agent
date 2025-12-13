@@ -246,7 +246,7 @@ impl InteractiveBrowserServer {
         .focused(true)
         .visible(true)
         .devtools(cfg!(debug_assertions))
-        .initialization_script(&format!(
+        .initialization_script(format!(
             "window.__LIBR_AGENT_SESSION_ID__ = '{}';\n{}",
             session_id, INIT_SCRIPT
         ))

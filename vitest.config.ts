@@ -1,5 +1,5 @@
 /// <reference types="vitest" />
-import { defineConfig, mergeConfig } from 'vitest/config';
+import { defineConfig, mergeConfig, configDefaults } from 'vitest/config';
 import viteConfig from './vite.config';
 
 // Call the function to get the config object
@@ -13,6 +13,7 @@ export default mergeConfig(
       environment: 'jsdom',
       setupFiles: './src/test/setup.ts',
       css: true,
+      exclude: [...configDefaults.exclude, 'aur/**'],
     },
   }),
 );

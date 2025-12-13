@@ -109,13 +109,13 @@ function validateRecordField(
   if (typeof value === 'string') {
     throw new Error(
       `[Format Error] Invalid type for parameter '${fieldName}'.\n` +
-      `Expected: Object (Record<string, string>)\n` +
-      `Received: String (JSON string)\n\n` +
-      `❌ Common Mistake: You provided a JSON string instead of a raw JSON object.\n` +
-      `✅ Correct Usage:\n` +
-      `   "${fieldName}": { "KEY": "VALUE" }\n\n` +
-      `⛔ Incorrect Usage:\n` +
-      `   "${fieldName}": "{\\"KEY\\": \\"VALUE\\"}"`,
+        `Expected: Object (Record<string, string>)\n` +
+        `Received: String (JSON string)\n\n` +
+        `❌ Common Mistake: You provided a JSON string instead of a raw JSON object.\n` +
+        `✅ Correct Usage:\n` +
+        `   "${fieldName}": { "KEY": "VALUE" }\n\n` +
+        `⛔ Incorrect Usage:\n` +
+        `   "${fieldName}": "{\\"KEY\\": \\"VALUE\\"}"`,
     );
   }
 
@@ -123,9 +123,9 @@ function validateRecordField(
   if (typeof value !== 'object' || Array.isArray(value)) {
     throw new Error(
       `[Format Error] Invalid type for parameter '${fieldName}'.\n` +
-      `Expected: Object\n` +
-      `Received: ${Array.isArray(value) ? 'Array' : typeof value}\n` +
-      `Please provide a key-value object.`,
+        `Expected: Object\n` +
+        `Received: ${Array.isArray(value) ? 'Array' : typeof value}\n` +
+        `Please provide a key-value object.`,
     );
   }
 
@@ -153,10 +153,10 @@ function normalizeTransportConfig(transport: unknown): TransportConfig {
       if (typeof t.args === 'string') {
         throw new Error(
           `[Format Error] Invalid type for parameter 'args'.\n` +
-          `Expected: Array of strings (e.g. ["arg1", "arg2"])\n` +
-          `Received: String\n` +
-          `❌ Common Mistake: You provided a JSON string instead of a raw Array.\n` +
-          `✅ Correct Usage: "args": ["--flag", "value"]`,
+            `Expected: Array of strings (e.g. ["arg1", "arg2"])\n` +
+            `Received: String\n` +
+            `❌ Common Mistake: You provided a JSON string instead of a raw Array.\n` +
+            `✅ Correct Usage: "args": ["--flag", "value"]`,
         );
       }
       if (!Array.isArray(t.args)) {
@@ -188,10 +188,10 @@ function normalizeTransportConfig(transport: unknown): TransportConfig {
       security:
         t.security && typeof t.security === 'object'
           ? (t.security as {
-            enableDnsRebindingProtection?: boolean;
-            allowedOrigins?: string[];
-            allowedHosts?: string[];
-          })
+              enableDnsRebindingProtection?: boolean;
+              allowedOrigins?: string[];
+              allowedHosts?: string[];
+            })
           : undefined,
     } as Extract<TransportConfig, { type: 'http' }>;
   }
@@ -445,7 +445,7 @@ async function searchServer(
       })
         .withMessage(
           `No servers found matching "${input.query}".\n` +
-          `Database has ${activeCount} active servers (${totalCount} total).`,
+            `Database has ${activeCount} active servers (${totalCount} total).`,
         )
         .withSuggestions(suggestions)
         .asSuccess();
@@ -565,7 +565,7 @@ async function searchServer(
     })
       .withMessage(
         `No servers found matching "${input.query}" (BM25 search).\n` +
-        `Database has ${activeCount} active servers (${totalCount} total).`,
+          `Database has ${activeCount} active servers (${totalCount} total).`,
       )
       .withSuggestions(suggestions)
       .asSuccess();
@@ -764,10 +764,10 @@ async function connectServer(
     })
       .withMessage(
         `Server "${server.name}" connected to assistant "${assistant.name}".\n` +
-        `Scope: assistant\n` +
-        (input.autoStart
-          ? `Status: Starting...`
-          : `Status: Registered (manual start required)`),
+          `Scope: assistant\n` +
+          (input.autoStart
+            ? `Status: Starting...`
+            : `Status: Registered (manual start required)`),
       )
       .withNextActions(nextActions)
       .asSuccess();
@@ -873,7 +873,7 @@ async function disconnectServer(
     })
       .withMessage(
         `Server "${server.name}" disconnected from assistant "${assistant.name}".\n` +
-        `Impact: Current assistant only`,
+          `Impact: Current assistant only`,
       )
       .withNextActions(nextActions)
       .asSuccess();

@@ -30,7 +30,6 @@ export type {
 
 import {
   ServiceContextOptions,
-  ServiceContext,
   ServiceMetadata,
   BuiltInService,
 } from './types';

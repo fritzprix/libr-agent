@@ -23,30 +23,25 @@ export const EFFECTIVE_MAX_SIZE = Math.min(
  * @throws An error if the file size exceeds the limit or if the backend operation fails.
  */
 export async function syncFileToWorkspace(file: File): Promise<string> {
-  try {
-    // Validate file size before processing
-    if (file.size > EFFECTIVE_MAX_SIZE) {
-      throw new Error(
-        `File size ${file.size} bytes exceeds maximum allowed size ${EFFECTIVE_MAX_SIZE} bytes`,
-      );
-    }
-
-    // Generate workspace path
-    const workspacePath = generateWorkspacePath(file.name);
-
-    // Convert File object to number array for Rust backend
-    const arrayBuffer = await file.arrayBuffer();
-    const uint8Array = new Uint8Array(arrayBuffer);
-    const numberArray = Array.from(uint8Array);
-
-    // Save file to workspace via Rust backend (session-aware)
-    await workspaceWriteFile(workspacePath, numberArray);
-
-
-    return workspacePath;
-  } catch (error) {
-    throw error;
+  // Validate file size before processing
+  if (file.size > EFFECTIVE_MAX_SIZE) {
+    throw new Error(
+      `File size ${file.size} bytes exceeds maximum allowed size ${EFFECTIVE_MAX_SIZE} bytes`,
+    );
   }
+
+  // Generate workspace path
+  const workspacePath = generateWorkspacePath(file.name);
+
+  // Convert File object to number array for Rust backend
+  const arrayBuffer = await file.arrayBuffer();
+  const uint8Array = new Uint8Array(arrayBuffer);
+  const numberArray = Array.from(uint8Array);
+
+  // Save file to workspace via Rust backend (session-aware)
+  await workspaceWriteFile(workspacePath, numberArray);
+
+  return workspacePath;
 }
 
 /**

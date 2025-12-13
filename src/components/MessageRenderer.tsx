@@ -151,7 +151,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
               if (
                 strippedCommand &&
                 typeof tauriCommands[
-                strippedCommand as keyof typeof tauriCommands
+                  strippedCommand as keyof typeof tauriCommands
                 ] === 'function'
               ) {
                 // Tauri 명령어도 완전한 tool chain으로 처리
@@ -428,7 +428,16 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
                         {children}
                       </p>
                     ),
-                    code: ({ children, className, ...props }) => {
+                    code: ({
+                      children,
+                      className,
+                      node: _node, // eslint-disable-line @typescript-eslint/no-unused-vars
+                      inline: _inline, // eslint-disable-line @typescript-eslint/no-unused-vars
+                      ...props
+                    }: React.ComponentPropsWithoutRef<'code'> & {
+                      inline?: boolean;
+                      node?: unknown;
+                    }) => {
                       // Distinguish inline code vs block code
                       // ReactMarkdown passes className="language-xxx" for code blocks
                       const match = /language-(\w+)/.exec(className || '');
@@ -551,8 +560,15 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
                         {children}
                       </h3>
                     ),
-                    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-                    ul: ({ children, node, ...props }) => (
+                    ul: ({
+                      children,
+                      node: _node, // eslint-disable-line @typescript-eslint/no-unused-vars
+                      ordered: _ordered, // eslint-disable-line @typescript-eslint/no-unused-vars
+                      ...props
+                    }: React.ComponentPropsWithoutRef<'ul'> & {
+                      ordered?: boolean;
+                      node?: unknown;
+                    }) => (
                       <ul
                         className="list-disc list-inside mb-2 space-y-1"
                         {...props}

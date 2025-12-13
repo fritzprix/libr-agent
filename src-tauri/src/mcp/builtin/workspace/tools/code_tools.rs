@@ -286,7 +286,7 @@ mod tests {
                 let props = properties.as_ref().unwrap();
                 assert!(props.contains_key("command"));
                 assert!(props.contains_key("timeout"));
-                assert!(props.contains_key("runMode"));
+                assert!(props.contains_key("run_mode"));
             }
             _ => panic!("Expected Object schema type"),
         }
