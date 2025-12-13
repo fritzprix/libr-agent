@@ -92,18 +92,18 @@ export function selectMessagesWithinContext(
     const tokens = estimateTokensBPE(msg);
 
     if (totalTokens + tokens > tokenLimit) {
-      // Anthropic providers require tool chain boundary checking
-      if (providerId === AIServiceProvider.Anthropic) {
+      // Providers that require strict tool chain boundary checking (no orphaned calls/results)
+      if (
+        providerId === AIServiceProvider.Anthropic ||
+        providerId === AIServiceProvider.Gemini ||
+        providerId === AIServiceProvider.OpenAI ||
+        providerId === AIServiceProvider.Groq
+      ) {
         const hasIncompleteToolChain = checkIncompleteToolChain(selected, msg);
         if (hasIncompleteToolChain) {
-          logger.info(
-            'Adjusting context window to preserve tool chain integrity',
-            {
-              originalSelected: selected.length,
-              contextWindow: tokenLimit,
-              totalTokens,
-            },
-          );
+          logger.info('Skipping message that would break tool chain boundary', {
+            messageId: msg.id,
+          });
           // Remove incomplete tool chains to maintain integrity
           const adjustedSelected = removeIncompleteToolChains(selected);
           return adjustedSelected;

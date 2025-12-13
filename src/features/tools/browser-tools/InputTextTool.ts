@@ -7,6 +7,7 @@ import {
   handleBrowserError,
   createBrowserErrorResponse,
 } from './error-utils';
+import { FailureTracker } from './failure-tracker';
 
 const logger = getLogger('InputTextTool');
 
@@ -61,14 +62,19 @@ export const inputTextTool: StrictBrowserMCPTool = {
       const result = await executeScript(sessionId as string, script);
 
       logger.debug('Input completed', { selector, result });
+
+      FailureTracker.resetFailure(sessionId as string);
+
       return createMCPTextResponse(
         `✓ Input ${result.startsWith('Input successful') ? 'successful' : 'failed'} (selector: ${selector})\nResult: ${result}`,
       );
     } catch (error) {
+      const failureCount = FailureTracker.recordFailure(sessionId as string);
       return handleBrowserError(error, {
         toolName: 'inputText',
         sessionId: sessionId as string,
         selector: selector as string,
+        failureCount,
       });
     }
   },

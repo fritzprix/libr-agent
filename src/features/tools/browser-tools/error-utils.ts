@@ -43,9 +43,14 @@ export function validateSessionId(sessionId: unknown): {
  */
 export function handleBrowserError(
   error: unknown,
-  context: { toolName: string; sessionId?: string; selector?: string },
+  context: {
+    toolName: string;
+    sessionId?: string;
+    selector?: string;
+    failureCount?: number;
+  },
 ): MCPResponse<unknown> {
-  const { toolName, selector } = context;
+  const { toolName, selector, failureCount } = context;
 
   logger.error(`Error in ${toolName}`, { error, context });
 
@@ -65,6 +70,12 @@ export function handleBrowserError(
     errorMessage =
       typeof parsedError === 'string' ? parsedError : String(error);
     guidance = getLegacyGuidance(errorMessage, selector);
+  }
+
+  // Add suggestion for repeated failures
+  if (failureCount && failureCount >= 3) {
+    guidance +=
+      '\n\n(suggestion: You have failed to interact with the page 3 consecutive times. You might want to consider using `navigateToUrl` to reload the page or go to a different URL.)';
   }
 
   const finalMessage = `✗ ${toolName} failed: ${errorMessage}\n\nGuidance: ${guidance || 'Please check the tool parameters and try again.'}`;

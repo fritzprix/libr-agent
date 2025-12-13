@@ -77,7 +77,7 @@ export class PersistentState {
 
     return todos.map((t) => ({
       id: t.id!,
-      name: t.name,
+      name: typeof t.name === 'string' && t.name ? t.name : '(Untitled)',
       status: t.status,
       summary: t.summary,
       priority: t.priority,
@@ -219,6 +219,29 @@ export class PersistentState {
   ): Promise<MCPResult<AddToDoOutput>> {
     const todos = await this.getTodosList();
 
+    // Check for corrupted todos (missing name)
+    const corruptedTodos = todos.filter(
+      (t) => !t.name || typeof t.name !== 'string',
+    );
+
+    if (corruptedTodos.length > 0) {
+      return new MCPResponseBuilder({
+        success: false,
+        corruptedTodos,
+      })
+        .withMessage(
+          `Data Corruption Detected.\n\n` +
+          `The following todo items are missing a 'name' property and must be fixed or removed:\n` +
+          corruptedTodos
+            .map((t) => `  - ID: ${t.id} (Status: ${t.status})`)
+            .join('\n') +
+          `\n\nPlease use 'clear_todos' with these IDs to remove them.`,
+        )
+        .asError(
+          WebMCPErrorCodes.INTERNAL_ERROR,
+        ) as unknown as MCPResult<AddToDoOutput>;
+    }
+
     // Check for duplicate todos (case-insensitive, trimmed)
     const normalizedName = name.trim().toLowerCase();
     const duplicate = todos.find(
@@ -234,9 +257,9 @@ export class PersistentState {
       })
         .withMessage(
           `Duplicate todo detected.\n\n` +
-            `A todo with similar content already exists:\n` +
-            `  - ID: ${duplicate.id} [${duplicate.status}] ${duplicate.name}\n\n` +
-            `Current todos:\n${formatTodosList(todos)}`,
+          `A todo with similar content already exists:\n` +
+          `  - ID: ${duplicate.id} [${duplicate.status}] ${duplicate.name}\n\n` +
+          `Current todos:\n${formatTodosList(todos)}`,
         )
         .withSuggestions([
           'Use a different name for the new todo',
@@ -334,11 +357,11 @@ export class PersistentState {
       })
         .withMessage(
           `Todo with ${identifier} not found.\n\n` +
-            `Current todos (${allTodos.length} total):\n` +
-            `  - Pending: ${pendingCount}\n` +
-            `  - Completed: ${completedCount}\n` +
-            `  - Valid IDs: [${validIds.join(', ') || 'none'}]\n` +
-            `  - Valid indexes: ${allTodos.length > 0 ? `0-${allTodos.length - 1}` : 'none'}`,
+          `Current todos (${allTodos.length} total):\n` +
+          `  - Pending: ${pendingCount}\n` +
+          `  - Completed: ${completedCount}\n` +
+          `  - Valid IDs: [${validIds.join(', ') || 'none'}]\n` +
+          `  - Valid indexes: ${allTodos.length > 0 ? `0-${allTodos.length - 1}` : 'none'}`,
         )
         .withSuggestions(suggestions)
         .asError(WebMCPErrorCodes.PLANNING.TODO_NOT_FOUND);
@@ -373,8 +396,8 @@ export class PersistentState {
       })
         .withMessage(
           `Todo ${resolvedId} not found.\n\n` +
-            `Current todos (${allTodos.length} total):\n` +
-            formatTodosList(allTodos),
+          `Current todos (${allTodos.length} total):\n` +
+          formatTodosList(allTodos),
         )
         .withSuggestions(suggestions)
         .asError(WebMCPErrorCodes.PLANNING.TODO_NOT_FOUND);
@@ -450,11 +473,11 @@ export class PersistentState {
       })
         .withMessage(
           `Todo with ${identifier} not found.\n\n` +
-            `Current todos (${allTodos.length} total):\n` +
-            `  - Pending: ${pendingCount}\n` +
-            `  - Completed: ${completedCount}\n` +
-            `  - Valid IDs: [${validIds.join(', ') || 'none'}]\n` +
-            `  - Valid indexes: ${allTodos.length > 0 ? `0-${allTodos.length - 1}` : 'none'}`,
+          `Current todos (${allTodos.length} total):\n` +
+          `  - Pending: ${pendingCount}\n` +
+          `  - Completed: ${completedCount}\n` +
+          `  - Valid IDs: [${validIds.join(', ') || 'none'}]\n` +
+          `  - Valid indexes: ${allTodos.length > 0 ? `0-${allTodos.length - 1}` : 'none'}`,
         )
         .withSuggestions(suggestions)
         .asError(WebMCPErrorCodes.PLANNING.TODO_NOT_FOUND);
@@ -488,8 +511,8 @@ export class PersistentState {
       })
         .withMessage(
           `Todo ${resolvedId} not found.\n\n` +
-            `Current todos (${allTodos.length} total):\n` +
-            formatTodosList(allTodos),
+          `Current todos (${allTodos.length} total):\n` +
+          formatTodosList(allTodos),
         )
         .withSuggestions(suggestions)
         .asError(WebMCPErrorCodes.PLANNING.TODO_NOT_FOUND);
@@ -556,7 +579,7 @@ export class PersistentState {
       message += `\n\nUnblocked todos:\n${unblockedTodos.map((t) => `  - [${t.id}] ${t.name}`).join('\n')}`;
     }
 
-    return new MCPResponseBuilder({
+    const builder = new MCPResponseBuilder({
       success: true,
       id: resolvedId,
       completed: check,
@@ -568,9 +591,35 @@ export class PersistentState {
         percentage: progress,
       },
       unblockedTodos: unblockedTodos.map((t) => ({ id: t.id, name: t.name })),
-    })
-      .withMessage(message)
-      .asSuccess();
+    });
+
+    // Identify next action guidance
+    const nextActions: string[] = [];
+
+    if (unblockedTodos.length > 0) {
+      nextActions.push(
+        `Begin work on unblocked todo: "${unblockedTodos[0].name}" (ID: ${unblockedTodos[0].id})`,
+      );
+    } else {
+      const nextPending = todos.find(
+        (t) => t.status === 'pending' && t.id !== resolvedId,
+      );
+      if (nextPending) {
+        nextActions.push(
+          `Proceed to next todo: "${nextPending.name}" (ID: ${nextPending.id})`,
+        );
+      } else if (completedCount === todos.length) {
+        nextActions.push(
+          'All todos completed! Review results and finish execution.',
+        );
+      } else {
+        nextActions.push(
+          'Check the todo list for remaining blocked or satisfied items.',
+        );
+      }
+    }
+
+    return builder.withMessage(message).withNextActions(nextActions).asSuccess();
   }
 
   async clearTodos(ids?: number[]): Promise<MCPResult<BaseOutput>> {
@@ -587,12 +636,21 @@ export class PersistentState {
         clearedCount > 0
           ? `All ${clearedCount} todo(s) cleared`
           : 'No todos to clear.';
-      return createMCPStructuredToolResult<BaseOutput>(
-        `${msg}\nSession todos reset. Current goal: ${activeGoal ? activeGoal.content : '(none)'}`,
-        {
-          success: true,
-        },
-      );
+
+      const nextActions: string[] = [];
+      if (activeGoal) {
+        nextActions.push('Review the current goal and add new todos to proceed.');
+      } else {
+        nextActions.push('Create a new goal to start a new planning session.');
+      }
+
+      return new MCPResponseBuilder({ success: true })
+        .withMessage(
+          `${msg}\nSession todos reset. Current goal: ${activeGoal ? activeGoal.content : '(none)'
+          }`,
+        )
+        .withNextActions(nextActions)
+        .asSuccess();
     }
 
     const initialCount = todos.length;
@@ -602,7 +660,10 @@ export class PersistentState {
 
     if (idsToDelete.length === 0) {
       return createMCPStructuredToolResult<BaseOutput>(
-        `No todos found with the specified IDs: ${ids.join(', ')}\nAvailable IDs: ${initialCount > 0 ? validIds.join(', ') : '(none)'}`,
+        `No todos found with the specified IDs: ${ids.join(
+          ', ',
+        )}\nAvailable IDs: ${initialCount > 0 ? validIds.join(', ') : '(none)'
+        }`,
         { success: false },
       );
     }
@@ -614,10 +675,19 @@ export class PersistentState {
     const removedCount = idsToDelete.length;
     const clearedNames = todosToDelete.map((t) => t.name).join(', ');
 
-    return createMCPStructuredToolResult<BaseOutput>(
-      `Cleared ${removedCount} todo(s): ${clearedNames}\nRemaining todos: ${remainingTodos.length}`,
-      { success: true },
-    );
+    const nextActions: string[] = [];
+    if (remainingTodos.length > 0) {
+      nextActions.push('Review and prioritize the remaining todos.');
+    } else {
+      nextActions.push('All todos cleared. Add new todos to continue.');
+    }
+
+    return new MCPResponseBuilder({ success: true })
+      .withMessage(
+        `Cleared ${removedCount} todo(s): ${clearedNames}\nRemaining todos: ${remainingTodos.length}`,
+      )
+      .withNextActions(nextActions)
+      .asSuccess();
   }
 
   async clear(): Promise<MCPResult<BaseOutput>> {

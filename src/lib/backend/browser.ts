@@ -38,34 +38,6 @@ export async function listBrowserSessions(): Promise<BrowserSession[]> {
 }
 
 /**
- * Simulates a click on an element in a browser session.
- * @param sessionId The ID of the browser session.
- * @param selector The CSS selector of the element to click.
- * @returns A promise that resolves with the result of the script execution.
- */
-export async function clickElement(
-  sessionId: string,
-  selector: string,
-): Promise<string> {
-  return safeInvoke<string>('click_element', { sessionId, selector });
-}
-
-/**
- * Inputs text into an element in a browser session.
- * @param sessionId The ID of the browser session.
- * @param selector The CSS selector of the input element.
- * @param text The text to input.
- * @returns A promise that resolves with the result of the script execution.
- */
-export async function inputText(
-  sessionId: string,
-  selector: string,
-  text: string,
-): Promise<string> {
-  return safeInvoke<string>('input_text', { sessionId, selector, text });
-}
-
-/**
  * Polls for the result of a previously executed asynchronous script.
  * @param requestId The ID of the script execution request to poll.
  * @returns A promise that resolves to the script result, or null if it's not ready.
