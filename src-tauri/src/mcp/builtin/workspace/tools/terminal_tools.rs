@@ -6,7 +6,7 @@ pub fn create_poll_process_tool() -> MCPTool {
     let mut props = HashMap::new();
 
     props.insert(
-        "process_id".to_string(),
+        "processId".to_string(),
         string_prop_required("Process ID returned by execute_shell (async mode)"),
     );
 
@@ -47,7 +47,7 @@ pub fn create_poll_process_tool() -> MCPTool {
                       Optionally retrieve the last N lines of output (max 100 lines). \
                       Only processes from the current session can be queried."
             .to_string(),
-        input_schema: object_schema(props, vec!["process_id".to_string()]),
+        input_schema: object_schema(props, vec!["processId".to_string()]),
         output_schema: None,
         annotations: None,
     }
@@ -57,7 +57,7 @@ pub fn create_poll_process_tool() -> MCPTool {
 pub fn create_read_process_output_tool() -> MCPTool {
     let mut props = HashMap::new();
 
-    props.insert("process_id".to_string(), string_prop_required("Process ID"));
+    props.insert("processId".to_string(), string_prop_required("Process ID"));
 
     props.insert(
         "stream".to_string(),
@@ -90,7 +90,7 @@ pub fn create_read_process_output_tool() -> MCPTool {
                       TEXT OUTPUT ONLY. Maximum 100 lines per request. \
                       Use 'tail' mode for last N lines, 'head' for first N lines."
             .to_string(),
-        input_schema: object_schema(props, vec!["process_id".to_string(), "stream".to_string()]),
+        input_schema: object_schema(props, vec!["processId".to_string(), "stream".to_string()]),
         output_schema: None,
         annotations: None,
     }
@@ -101,7 +101,7 @@ pub fn create_list_processes_tool() -> MCPTool {
     let mut props = HashMap::new();
 
     props.insert(
-        "status_filter".to_string(),
+        "statusFilter".to_string(),
         enum_prop(
             vec!["all", "running", "finished"],
             "all",
@@ -126,7 +126,7 @@ pub fn create_stop_process_tool() -> MCPTool {
     let mut props = HashMap::new();
 
     props.insert(
-        "process_id".to_string(),
+        "processId".to_string(),
         string_prop_required("Process ID to stop"),
     );
 
@@ -136,7 +136,7 @@ pub fn create_stop_process_tool() -> MCPTool {
         description: "Stop a running background process. \
                       Sends a termination signal to the process."
             .to_string(),
-        input_schema: object_schema(props, vec!["process_id".to_string()]),
+        input_schema: object_schema(props, vec!["processId".to_string()]),
         output_schema: None,
         annotations: None,
     }

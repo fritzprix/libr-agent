@@ -137,6 +137,20 @@ pub async fn browser_script_result(
     server.handle_script_result(&payload.session_id, payload.request_id, payload.result)
 }
 
+/// Signals that a page has fully loaded in the browser.
+///
+/// # Arguments
+/// * `session_id` - The ID of the browser session.
+/// * `server` - The InteractiveBrowserServer state.
+#[tauri::command]
+pub async fn browser_page_loaded(
+    server: State<'_, InteractiveBrowserServer>,
+    session_id: String,
+) -> Result<(), String> {
+    info!("Command: browser_page_loaded called for session: {session_id}");
+    server.handle_page_loaded(&session_id)
+}
+
 /// Executes JavaScript in a browser session and returns a request ID for polling the result.
 ///
 /// # Arguments

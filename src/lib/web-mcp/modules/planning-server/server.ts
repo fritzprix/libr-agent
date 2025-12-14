@@ -5,7 +5,6 @@ import {
 import type { MCPResult, WebMCPServer } from '@/lib/mcp-types';
 import type { WebMCPServerProxy } from '@/context/WebMCPContext';
 import type { ServiceContext, ServiceContextOptions } from '@/features/tools';
-import { getLogger } from '@/lib/logger';
 import { planningTools as tools } from './tools.ts';
 import { SessionStateManager } from './state';
 import type {
@@ -17,8 +16,6 @@ import type {
   BaseOutput,
   ScratchpadItem,
 } from './types';
-
-const logger = getLogger('PlanningServer');
 
 const stateManager = new SessionStateManager();
 
@@ -313,9 +310,6 @@ ${scratchpadText}`;
     const sessionId = options.sessionId || 'default';
     const threadId = options.threadId || sessionId;
     stateManager.setSession(sessionId, threadId);
-    logger.info(
-      `Switched planning context to session: ${sessionId}, thread: ${threadId}`,
-    );
   },
 };
 

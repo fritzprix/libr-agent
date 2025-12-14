@@ -262,6 +262,7 @@ pub fn run() {
                 list_browser_sessions,
                 navigate_to_url,
                 browser_script_result,
+                browser_page_loaded,
                 execute_script,
                 poll_script_result,
                 navigate_back,

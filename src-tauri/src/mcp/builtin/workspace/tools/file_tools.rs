@@ -12,7 +12,7 @@ pub fn create_read_file_tool() -> MCPTool {
         string_prop(Some(1), Some(1000), Some("Path to the file to read")),
     );
     props.insert(
-        "start_line".to_string(),
+        "startLine".to_string(),
         integer_prop(
             Some(1),
             None,
@@ -20,7 +20,7 @@ pub fn create_read_file_tool() -> MCPTool {
         ),
     );
     props.insert(
-        "end_line".to_string(),
+        "endLine".to_string(),
         integer_prop(
             Some(1),
             None,
@@ -91,7 +91,7 @@ pub fn create_list_directory_tool() -> MCPTool {
 pub fn create_import_file_tool() -> MCPTool {
     let mut props = HashMap::new();
     props.insert(
-        "src_abs_path".to_string(),
+        "srcAbsPath".to_string(),
         string_prop(
             Some(1),
             Some(1000),
@@ -99,7 +99,7 @@ pub fn create_import_file_tool() -> MCPTool {
         ),
     );
     props.insert(
-        "dest_rel_path".to_string(),
+        "destRelPath".to_string(),
         string_prop(
             Some(1),
             Some(1000),
@@ -113,7 +113,7 @@ pub fn create_import_file_tool() -> MCPTool {
         description: "Import an external file into the workspace".to_string(),
         input_schema: object_schema(
             props,
-            vec!["src_abs_path".to_string(), "dest_rel_path".to_string()],
+            vec!["srcAbsPath".to_string(), "destRelPath".to_string()],
         ),
         output_schema: None,
         annotations: None,
@@ -123,19 +123,19 @@ pub fn create_import_file_tool() -> MCPTool {
 pub fn create_replace_lines_in_file_tool() -> MCPTool {
     let mut item_props = HashMap::new();
     item_props.insert(
-        "start_line".to_string(),
+        "startLine".to_string(),
         integer_prop(Some(1), None, Some("Starting line number (1-based)")),
     );
     item_props.insert(
-        "end_line".to_string(),
+        "endLine".to_string(),
         integer_prop(
             Some(1),
             None,
-            Some("Ending line number (1-based, optional). If not provided, equals start_line"),
+            Some("Ending line number (1-based, optional). If not provided, equals startLine"),
         ),
     );
     item_props.insert(
-        "new_content".to_string(),
+        "newContent".to_string(),
         string_prop(
             None,
             None,
@@ -145,17 +145,17 @@ pub fn create_replace_lines_in_file_tool() -> MCPTool {
 
     // Backward compatibility for existing line_number support
     item_props.insert(
-        "line_number".to_string(),
+        "lineNumber".to_string(),
         integer_prop(
             Some(1),
             None,
-            Some("The 1-based line number to replace (deprecated, use start_line)"),
+            Some("The 1-based line number to replace (deprecated, use startLine)"),
         ),
     );
 
     let replacement_item_schema = object_schema(
         item_props,
-        vec!["start_line".to_string()], // new_content is now optional for line deletion
+        vec!["startLine".to_string()], // newContent is now optional for line deletion
     );
 
     let mut props = HashMap::new();

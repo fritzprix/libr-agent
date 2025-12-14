@@ -596,7 +596,7 @@ mod tests {
 
         let params = serde_json::json!({
             "content": "Test content",
-            "file_url": "file:///test.txt"
+            "fileUrl": "file:///test.txt"
         });
 
         let result = server.handle_add_content(params).await.unwrap();
@@ -680,7 +680,7 @@ mod tests {
 
         // Delete content
         let delete_params = serde_json::json!({
-            "content_id": content_id
+            "contentId": content_id
         });
 
         // This would hang if deadlock exists

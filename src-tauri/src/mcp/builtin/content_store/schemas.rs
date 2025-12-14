@@ -6,11 +6,11 @@ use std::collections::HashMap;
 pub(crate) fn tool_add_content_schema() -> JSONSchema {
     let mut props: HashMap<String, JSONSchema> = HashMap::new();
     props.insert(
-        "file_url".to_string(),
+        "fileUrl".to_string(),
         string_prop(None, None, Some("File URL (file://) to add")),
     );
     props.insert(
-        "src_url".to_string(),
+        "srcUrl".to_string(),
         string_prop(
             None,
             None,
@@ -29,7 +29,7 @@ pub(crate) fn tool_add_content_schema() -> JSONSchema {
         string_prop(None, None, Some("Content filename")),
     );
     meta_props.insert(
-        "mime_type".to_string(),
+        "mimeType".to_string(),
         string_prop(None, None, Some("MIME type")),
     );
     meta_props.insert(
@@ -37,7 +37,7 @@ pub(crate) fn tool_add_content_schema() -> JSONSchema {
         integer_prop(Some(0), None, Some("Content size in bytes")),
     );
     meta_props.insert(
-        "uploaded_at".to_string(),
+        "uploadedAt".to_string(),
         string_prop(None, None, Some("Upload timestamp")),
     );
 
@@ -79,18 +79,18 @@ pub(crate) fn tool_list_content_schema() -> JSONSchema {
 pub(crate) fn tool_read_content_schema() -> JSONSchema {
     let mut props: HashMap<String, JSONSchema> = HashMap::new();
     props.insert(
-        "content_id".to_string(),
+        "contentId".to_string(),
         string_prop(None, None, Some("Content ID to read")),
     );
     props.insert(
-        "from_line".to_string(),
+        "fromLine".to_string(),
         integer_prop(Some(1), None, Some("Starting line number (1-based)")),
     );
     props.insert(
-        "to_line".to_string(),
+        "toLine".to_string(),
         integer_prop(Some(1), None, Some("Ending line number (optional)")),
     );
-    object_schema(props, vec!["content_id".to_string()])
+    object_schema(props, vec!["contentId".to_string()])
 }
 
 pub(crate) fn tool_keyword_search_schema() -> JSONSchema {
@@ -103,7 +103,7 @@ pub(crate) fn tool_keyword_search_schema() -> JSONSchema {
     // Create options object schema with description
     let mut option_props: HashMap<String, JSONSchema> = HashMap::new();
     option_props.insert(
-        "top_n".to_string(),
+        "topN".to_string(),
         integer_prop(
             Some(1),
             Some(100),
@@ -132,10 +132,10 @@ pub(crate) fn tool_keyword_search_schema() -> JSONSchema {
 pub(crate) fn tool_delete_content_schema() -> JSONSchema {
     let mut props: HashMap<String, JSONSchema> = HashMap::new();
     props.insert(
-        "content_id".to_string(),
+        "contentId".to_string(),
         string_prop(None, None, Some("ID of the content to delete")),
     );
-    object_schema(props, vec!["content_id".to_string()])
+    object_schema(props, vec!["contentId".to_string()])
 }
 
 #[cfg(test)]

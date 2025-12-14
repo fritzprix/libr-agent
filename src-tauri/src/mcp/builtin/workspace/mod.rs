@@ -218,11 +218,11 @@ impl WorkspaceServer {
 
     /// Handle poll_process tool call
     pub async fn handle_poll_process(&self, args: Value) -> Result<MCPResult, String> {
-        // Parse process_id
-        let process_id = match args.get("process_id").and_then(|v| v.as_str()) {
+        // Parse processId
+        let process_id = match args.get("processId").and_then(|v| v.as_str()) {
             Some(id) => id,
             None => {
-                return Err("Missing required parameter: process_id".to_string());
+                return Err("Missing required parameter: processId".to_string());
             }
         };
 
@@ -365,10 +365,10 @@ impl WorkspaceServer {
     /// Handle read_process_output tool call
     pub async fn handle_read_process_output(&self, args: Value) -> Result<MCPResult, String> {
         // Parse parameters
-        let process_id = match args.get("process_id").and_then(|v| v.as_str()) {
+        let process_id = match args.get("processId").and_then(|v| v.as_str()) {
             Some(id) => id,
             None => {
-                return Err("Missing required parameter: process_id".to_string());
+                return Err("Missing required parameter: processId".to_string());
             }
         };
 
@@ -441,7 +441,7 @@ impl WorkspaceServer {
     /// Handle list_processes tool call
     pub async fn handle_list_processes(&self, args: Value) -> Result<MCPResult, String> {
         let status_filter = args
-            .get("status_filter")
+            .get("statusFilter")
             .and_then(|v| v.as_str())
             .unwrap_or("all");
 
@@ -520,10 +520,10 @@ impl WorkspaceServer {
 
     /// Handle stop_process tool call
     pub async fn handle_stop_process(&self, args: Value) -> Result<MCPResult, String> {
-        let process_id = match args.get("process_id").and_then(|v| v.as_str()) {
+        let process_id = match args.get("processId").and_then(|v| v.as_str()) {
             Some(id) => id,
             None => {
-                return Err("Missing required parameter: process_id".to_string());
+                return Err("Missing required parameter: processId".to_string());
             }
         };
 

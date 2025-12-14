@@ -231,11 +231,11 @@ export class PersistentState {
       })
         .withMessage(
           `Data Corruption Detected.\n\n` +
-          `The following todo items are missing a 'name' property and must be fixed or removed:\n` +
-          corruptedTodos
-            .map((t) => `  - ID: ${t.id} (Status: ${t.status})`)
-            .join('\n') +
-          `\n\nPlease use 'clear_todos' with these IDs to remove them.`,
+            `The following todo items are missing a 'name' property and must be fixed or removed:\n` +
+            corruptedTodos
+              .map((t) => `  - ID: ${t.id} (Status: ${t.status})`)
+              .join('\n') +
+            `\n\nPlease use 'clear_todos' with these IDs to remove them.`,
         )
         .asError(
           WebMCPErrorCodes.INTERNAL_ERROR,
@@ -257,9 +257,9 @@ export class PersistentState {
       })
         .withMessage(
           `Duplicate todo detected.\n\n` +
-          `A todo with similar content already exists:\n` +
-          `  - ID: ${duplicate.id} [${duplicate.status}] ${duplicate.name}\n\n` +
-          `Current todos:\n${formatTodosList(todos)}`,
+            `A todo with similar content already exists:\n` +
+            `  - ID: ${duplicate.id} [${duplicate.status}] ${duplicate.name}\n\n` +
+            `Current todos:\n${formatTodosList(todos)}`,
         )
         .withSuggestions([
           'Use a different name for the new todo',
@@ -357,11 +357,11 @@ export class PersistentState {
       })
         .withMessage(
           `Todo with ${identifier} not found.\n\n` +
-          `Current todos (${allTodos.length} total):\n` +
-          `  - Pending: ${pendingCount}\n` +
-          `  - Completed: ${completedCount}\n` +
-          `  - Valid IDs: [${validIds.join(', ') || 'none'}]\n` +
-          `  - Valid indexes: ${allTodos.length > 0 ? `0-${allTodos.length - 1}` : 'none'}`,
+            `Current todos (${allTodos.length} total):\n` +
+            `  - Pending: ${pendingCount}\n` +
+            `  - Completed: ${completedCount}\n` +
+            `  - Valid IDs: [${validIds.join(', ') || 'none'}]\n` +
+            `  - Valid indexes: ${allTodos.length > 0 ? `0-${allTodos.length - 1}` : 'none'}`,
         )
         .withSuggestions(suggestions)
         .asError(WebMCPErrorCodes.PLANNING.TODO_NOT_FOUND);
@@ -396,8 +396,8 @@ export class PersistentState {
       })
         .withMessage(
           `Todo ${resolvedId} not found.\n\n` +
-          `Current todos (${allTodos.length} total):\n` +
-          formatTodosList(allTodos),
+            `Current todos (${allTodos.length} total):\n` +
+            formatTodosList(allTodos),
         )
         .withSuggestions(suggestions)
         .asError(WebMCPErrorCodes.PLANNING.TODO_NOT_FOUND);
@@ -473,11 +473,11 @@ export class PersistentState {
       })
         .withMessage(
           `Todo with ${identifier} not found.\n\n` +
-          `Current todos (${allTodos.length} total):\n` +
-          `  - Pending: ${pendingCount}\n` +
-          `  - Completed: ${completedCount}\n` +
-          `  - Valid IDs: [${validIds.join(', ') || 'none'}]\n` +
-          `  - Valid indexes: ${allTodos.length > 0 ? `0-${allTodos.length - 1}` : 'none'}`,
+            `Current todos (${allTodos.length} total):\n` +
+            `  - Pending: ${pendingCount}\n` +
+            `  - Completed: ${completedCount}\n` +
+            `  - Valid IDs: [${validIds.join(', ') || 'none'}]\n` +
+            `  - Valid indexes: ${allTodos.length > 0 ? `0-${allTodos.length - 1}` : 'none'}`,
         )
         .withSuggestions(suggestions)
         .asError(WebMCPErrorCodes.PLANNING.TODO_NOT_FOUND);
@@ -511,8 +511,8 @@ export class PersistentState {
       })
         .withMessage(
           `Todo ${resolvedId} not found.\n\n` +
-          `Current todos (${allTodos.length} total):\n` +
-          formatTodosList(allTodos),
+            `Current todos (${allTodos.length} total):\n` +
+            formatTodosList(allTodos),
         )
         .withSuggestions(suggestions)
         .asError(WebMCPErrorCodes.PLANNING.TODO_NOT_FOUND);
@@ -619,7 +619,10 @@ export class PersistentState {
       }
     }
 
-    return builder.withMessage(message).withNextActions(nextActions).asSuccess();
+    return builder
+      .withMessage(message)
+      .withNextActions(nextActions)
+      .asSuccess();
   }
 
   async clearTodos(ids?: number[]): Promise<MCPResult<BaseOutput>> {
@@ -639,14 +642,17 @@ export class PersistentState {
 
       const nextActions: string[] = [];
       if (activeGoal) {
-        nextActions.push('Review the current goal and add new todos to proceed.');
+        nextActions.push(
+          'Review the current goal and add new todos to proceed.',
+        );
       } else {
         nextActions.push('Create a new goal to start a new planning session.');
       }
 
       return new MCPResponseBuilder({ success: true })
         .withMessage(
-          `${msg}\nSession todos reset. Current goal: ${activeGoal ? activeGoal.content : '(none)'
+          `${msg}\nSession todos reset. Current goal: ${
+            activeGoal ? activeGoal.content : '(none)'
           }`,
         )
         .withNextActions(nextActions)
@@ -662,7 +668,8 @@ export class PersistentState {
       return createMCPStructuredToolResult<BaseOutput>(
         `No todos found with the specified IDs: ${ids.join(
           ', ',
-        )}\nAvailable IDs: ${initialCount > 0 ? validIds.join(', ') : '(none)'
+        )}\nAvailable IDs: ${
+          initialCount > 0 ? validIds.join(', ') : '(none)'
         }`,
         { success: false },
       );

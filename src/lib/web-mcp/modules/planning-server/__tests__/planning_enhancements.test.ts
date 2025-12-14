@@ -23,11 +23,13 @@ describe('Planning Server Enhancements', () => {
         // 1. Add two todos
         await planningServer.callTool('add_todo', { name: 'Task 1' });
         const secondTodo = await planningServer.callTool('add_todo', { name: 'Task 2' });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const secondTodoId = (secondTodo.structuredContent as any).id;
 
         // 2. Mark first todo as completed
         // We need to find the ID of the first todo. Since we just cleared DB, it should be the first one.
         const state = await planningServer.callTool('get_current_state', {});
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const todos = (state.structuredContent as any).state.todos;
         const firstTodoId = todos[0].id;
 
@@ -36,6 +38,7 @@ describe('Planning Server Enhancements', () => {
         // 3. Verify response contains "nextActions" suggesting Task 2
         // Note: The specific format of nextActions depends on implementation
         // But we expect it to contain the name of the second todo
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const structured = result.structuredContent as any;
         expect(structured.nextActions).toBeDefined();
         expect(structured.nextActions.length).toBeGreaterThan(0);
@@ -46,10 +49,12 @@ describe('Planning Server Enhancements', () => {
     it('should suggest completion message when all todos are done', async () => {
         await planningServer.callTool('add_todo', { name: 'Only Task' });
         const state = await planningServer.callTool('get_current_state', {});
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const firstTodoId = (state.structuredContent as any).state.todos[0].id;
 
         const result = await planningServer.callTool('mark_todo', { id: firstTodoId, completed: true });
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const structured = result.structuredContent as any;
         expect(structured.nextActions).toBeDefined();
         expect(structured.nextActions[0]).toContain('All todos completed');
@@ -60,6 +65,7 @@ describe('Planning Server Enhancements', () => {
 
         const result = await planningServer.callTool('clear_todos', {});
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const structured = result.structuredContent as any;
         expect(structured.nextActions).toBeDefined();
         // Since we have no goal, it should suggest creating one
@@ -71,10 +77,12 @@ describe('Planning Server Enhancements', () => {
         await planningServer.callTool('add_todo', { name: 'Task 2' });
 
         const state = await planningServer.callTool('get_current_state', {});
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const firstId = (state.structuredContent as any).state.todos[0].id;
 
         const result = await planningServer.callTool('clear_todos', { ids: [firstId] });
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const structured = result.structuredContent as any;
         expect(structured.nextActions).toBeDefined();
         // Should suggest reviewing remaining todos

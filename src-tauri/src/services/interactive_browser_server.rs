@@ -14,6 +14,9 @@ use dashmap::DashMap;
 
 use uuid::Uuid;
 
+use std::time::Duration;
+use tokio::sync::Notify;
+
 use super::browser_error::BrowserError;
 
 /// Represents an interactive browser session, corresponding to a Tauri window.
@@ -98,8 +101,6 @@ const INIT_SCRIPT: &str = r#"
         },
 
         // Execute user script safely
-        // Note: This function uses 'new Function' which might be blocked by CSP.
-        // For strict CSP environments, we should inject the script directly from Rust.
         execute: async function(sessionId, requestId, scriptContent) {
             console.log(`[LibrAgent] Executing request: ${requestId}`);
             try {
@@ -111,9 +112,43 @@ const INIT_SCRIPT: &str = r#"
                 console.error('[LibrAgent] Script execution error:', e);
                 await this.sendResult(sessionId, requestId, e.message, true);
             }
+        },
+
+        // Notify backend that page has loaded
+        notifyPageLoaded: async function() {
+            if (!this.sessionId) {
+                 // Try to get from global scope if set
+                 if (window.__LIBR_AGENT_SESSION_ID__) {
+                     this.sessionId = window.__LIBR_AGENT_SESSION_ID__;
+                 } else {
+                     console.warn('[LibrAgent] Session ID not set, cannot notify page load');
+                     return;
+                 }
+            }
+
+             if (!await this.waitForIPC()) return;
+
+             try {
+                console.log('[LibrAgent] Notifying page loaded for session:', this.sessionId);
+                await window.__TAURI__.core.invoke('browser_page_loaded', { sessionId: this.sessionId });
+            } catch (e) {
+                console.error('[LibrAgent] Failed to notify page load:', e);
+            }
         }
     };
     
+    // Set up page load listeners
+    if (document.readyState === 'complete') {
+        setTimeout(() => window.__LIBR_AGENT__.notifyPageLoaded(), 100);
+    } else {
+        window.addEventListener('load', () => {
+             window.__LIBR_AGENT__.notifyPageLoaded();
+        });
+    }
+
+    // Also listen for single-page app navigation (hash change, pushState) if possible, 
+    // but for now 'load' covers the main navigate_to_url case.
+
     console.log('[LibrAgent] Runtime initialized');
 })();
 "#;
@@ -129,6 +164,8 @@ pub struct InteractiveBrowserServer {
     /// A thread-safe map to store the results of asynchronous script executions, keyed by request ID.
     /// Value is (session_id, result_string).
     script_results: Arc<DashMap<String, (String, String)>>,
+    /// Map of session IDs to Notify objects for page load events
+    page_load_waiters: Arc<DashMap<String, Arc<Notify>>>,
 }
 
 impl InteractiveBrowserServer {
@@ -143,6 +180,7 @@ impl InteractiveBrowserServer {
             app_handle,
             sessions: Arc::new(RwLock::new(HashMap::new())),
             script_results: Arc::new(DashMap::new()),
+            page_load_waiters: Arc::new(DashMap::new()),
         }
     }
 
@@ -181,6 +219,11 @@ impl InteractiveBrowserServer {
 
         let session_title = title.unwrap_or("Interactive Browser Agent");
 
+        // Initialize page load waiter for this session BEFORE creating window to ensure we don't miss any events (though rare)
+        let notify = Arc::new(Notify::new());
+        self.page_load_waiters
+            .insert(session_id.clone(), notify.clone());
+
         info!("Creating new browser session: {session_id} for URL: {url}");
 
         // Create WebviewWindow (independent browser window)
@@ -203,7 +246,10 @@ impl InteractiveBrowserServer {
         .focused(true)
         .visible(true)
         .devtools(cfg!(debug_assertions))
-        .initialization_script(INIT_SCRIPT) // Inject robust initialization script
+        .initialization_script(format!(
+            "window.__LIBR_AGENT_SESSION_ID__ = '{}';\n{}",
+            session_id, INIT_SCRIPT
+        ))
         .accept_first_mouse(true)
         .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 LibrAgent Browser")
         .build()
@@ -241,6 +287,7 @@ impl InteractiveBrowserServer {
         let sessions_clone = self.sessions.clone();
         let script_results_clone = self.script_results.clone();
         let session_id_clone = session_id.clone();
+        let page_load_waiters_clone = self.page_load_waiters.clone();
 
         webview_window.once("tauri://close-requested", move |_| {
             debug!("Browser window close requested for session: {session_id_clone}");
@@ -254,9 +301,24 @@ impl InteractiveBrowserServer {
 
             // Cleanup script results to prevent memory leaks
             script_results_clone.retain(|_, (sid, _)| sid != &session_id_clone);
+            page_load_waiters_clone.remove(&session_id_clone);
         });
 
         info!("Browser session created successfully: {session_id}");
+
+        // Wait for connection/page load
+        info!("Waiting for initial page load in session {session_id}...");
+        match tokio::time::timeout(Duration::from_secs(30), notify.notified()).await {
+            Ok(_) => {
+                info!("Initial page load completed for session {session_id}");
+            }
+            Err(_) => {
+                // Timeout
+                info!(
+                    "Initial page load timed out (30s) for session {session_id}, proceeding anyway"
+                );
+            }
+        }
 
         Ok(session_id)
     }
@@ -417,20 +479,14 @@ impl InteractiveBrowserServer {
 
         // Cleanup pending script results for this session to prevent memory leaks
         self.script_results.retain(|_, (sid, _)| sid != session_id);
+        self.page_load_waiters.remove(session_id);
 
         info!("Session {session_id} closed successfully");
 
         Ok("Session closed successfully".to_string())
     }
 
-    /// Navigates a browser session to a new URL.
-    ///
-    /// # Arguments
-    /// * `session_id` - The ID of the session to navigate.
-    /// * `url` - The URL to navigate to.
-    ///
-    /// # Returns
-    /// An empty `Result` on success, or an error string on failure.
+    /// Navigates a browser session to a new URL and waits for the page to load.
     pub async fn navigate_to_url(&self, session_id: &str, url: &str) -> Result<String, String> {
         info!("Navigating session {session_id} to {url}");
 
@@ -449,11 +505,25 @@ impl InteractiveBrowserServer {
         };
 
         if let Some(window) = self.app_handle.get_webview_window(&session.window_label) {
+            // Prepare waiter
+            let notify = self
+                .page_load_waiters
+                .entry(session_id.to_string())
+                .or_insert_with(|| Arc::new(Notify::new()))
+                .value()
+                .clone();
+
+            // Clear any previous notification
+            // Notify doesn't have a clear() method, but it's edge-triggered.
+            // If there's a permit sitting there, consume it.
+            // However, since we are initiating a new navigation, previous load events don't matter
+            // as strictly, but avoiding a race where we pick up an old event is good.
+            // Ideally we'd replace the Notify with a fresh one, but that might be racy too.
+            // For now, let's assume standard usage.
+
             // Use eval to set window.location.href
-            // We use eval instead of window.navigate to ensure consistent behavior with legacy implementation
-            // and because we might want to inject specific JS logic later.
             let script = format!("window.location.href = '{}'", url.replace('\'', "\\'"));
-            // Fire and forget, don't wait for result context
+
             window
                 .eval(&script)
                 .map_err(|e| format!("Failed to navigate: {e}"))?;
@@ -469,9 +539,36 @@ impl InteractiveBrowserServer {
                 }
             }
 
-            Ok(format!("Navigating to {url}"))
+            // Wait for page load with timeout
+            info!("Waiting for page load in session {session_id}...");
+            match tokio::time::timeout(Duration::from_secs(30), notify.notified()).await {
+                Ok(_) => {
+                    info!("Page load completed for session {session_id}");
+                    Ok(format!("Navigated to {url} and page loaded"))
+                }
+                Err(_) => {
+                    // Timeout
+                    info!(
+                        "Navigation timed out waiting for page load event in session {session_id}"
+                    );
+                    // We return success anyway because the navigation likely happened, just the event was missed or slow
+                    Ok(format!("Navigated to {url} (load wait timed out)"))
+                }
+            }
         } else {
             Err("Browser window not found".to_string())
+        }
+    }
+
+    /// Handles the page loaded notification from the frontend.
+    pub fn handle_page_loaded(&self, session_id: &str) -> Result<(), String> {
+        debug!("Received page load notification for session: {session_id}");
+        if let Some(notify) = self.page_load_waiters.get(session_id) {
+            notify.notify_one();
+            Ok(())
+        } else {
+            // It's possible the session was closed or never properly initialized
+            Err("Session waiter not found".to_string())
         }
     }
 
