@@ -244,7 +244,6 @@ impl InteractiveBrowserServer {
         // Check URL status
         let parsed_url =
             url::Url::parse(&validated_url).map_err(|e| format!("Invalid URL format: {e}"))?;
-        
         let status_check = Some(self.check_url_status(&validated_url).await);
 
         let session_title = title.unwrap_or("Interactive Browser Agent");
