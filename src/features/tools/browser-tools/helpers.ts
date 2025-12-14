@@ -24,7 +24,8 @@ export const BROWSER_TOOL_SCHEMAS: Record<string, SchemaProperty> = {
   },
   url: {
     type: 'string',
-    description: 'The URL to navigate to.',
+    description:
+      'The URL to navigate to. Supports http:// and https:// protocols.',
   },
   text: {
     type: 'string',
@@ -249,6 +250,26 @@ export async function pollWithTimeout(
 }
 
 /**
+ * Generic polling function for condition checking
+ */
+export async function pollCondition(
+  condition: () => Promise<boolean>,
+  timeoutMs: number = 10000,
+  intervalMs: number = 500,
+): Promise<boolean> {
+  const startTime = Date.now();
+
+  while (Date.now() - startTime < timeoutMs) {
+    if (await condition()) {
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+
+  return false;
+}
+
+/**
  * Common result formatting function
  * Handles JSON envelope responses from browser operations
  */
@@ -303,4 +324,44 @@ export function formatBrowserResult(raw: unknown): string {
 export function formatBrowserResultAsMCP(raw: unknown): MCPResponse<unknown> {
   const textResult = formatBrowserResult(raw);
   return createMCPTextResponse(textResult);
+}
+
+/**
+ * Generates a helpful hint based on the navigation result string from the backend.
+ */
+export function getNavigationHint(result: string): string {
+  // 404 Not Found
+  if (result.includes('(HTTP 404)')) {
+    return '\n\n💡 Warning: 404 Not Found. The page does not exist. Please check the URL.';
+  }
+
+  // 403 Forbidden
+  if (result.includes('(HTTP 403)')) {
+    return '\n\n💡 Warning: 403 Forbidden. Access is denied.';
+  }
+
+  // 5xx Server Errors
+  const serverErrorMatch = result.match(/\(HTTP (5\d{2})\)/);
+  if (serverErrorMatch) {
+    return `\n\n💡 Warning: Server Error (${serverErrorMatch[1]}). The website is experiencing issues.`;
+  }
+
+  // Other HTTP Errors
+  const otherHttpMatch = result.match(/\(HTTP (\d{3})\)/);
+  if (otherHttpMatch) {
+    return `\n\n💡 Warning: The page returned HTTP ${otherHttpMatch[1]}. Content may be missing.`;
+  }
+
+  // Network Error
+  if (result.includes('Network Error')) {
+    return '\n\n💡 Error: Network connection failed. Please check the URL.';
+  }
+
+  // Timeout
+  if (result.includes('load wait timed out')) {
+    return '\n\n💡 Warning: Page load timed out. Content might be incomplete.';
+  }
+
+  // Default Success Case
+  return "\n\n💡 Next Steps: Use 'extractWebContent' to read the page text, or 'listInteractable' to see what elements you can interact with.";
 }

@@ -30,6 +30,13 @@ export interface ThoughtData {
   nextAction?: string;
 }
 
+/** Represents a single reflection entry. @internal */
+export interface ReflectionData {
+  critique: string;
+  reflection: string;
+  nextAction: string;
+}
+
 /**
  * Represents the entire state of the planning server.
  */

@@ -266,6 +266,18 @@
           },
           "description": "Fast and efficient thinking model with 1M context"
         },
+        "gemini-flash-latest": {
+          "name": "Gemini Flash Latest (Alias)",
+          "contextWindow": 1048576,
+          "supportReasoning": true,
+          "supportTools": true,
+          "supportStreaming": true,
+          "cost": {
+            "input": 0.000125,
+            "output": 0.0005
+          },
+          "description": "Alias for Gemini 2.5 Flash"
+        },
         "gemini-2.5-flash-lite": {
           "name": "Gemini 2.5 Flash Lite",
           "contextWindow": 1048576,

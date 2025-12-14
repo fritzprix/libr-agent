@@ -19,11 +19,8 @@ fn main() {
     {
         println!("🐧 Linux detected - setting WebKit compatibility flags...");
 
-        // Disable WebKit hardware acceleration to fix blank screen issues on Arch Linux
+        // // Disable WebKit hardware acceleration to fix blank screen issues on Arch Linux
         std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
-        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
-        std::env::set_var("WEBKIT_DISABLE_WEBGL", "1");
-        std::env::set_var("WEBKIT_FORCE_SOFTWARE_RENDERING", "1");
 
         // Additional compatibility flags
         std::env::set_var("GDK_BACKEND", "x11");

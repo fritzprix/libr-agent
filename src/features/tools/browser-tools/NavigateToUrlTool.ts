@@ -1,7 +1,7 @@
 import { navigateToUrl } from '@/lib/rust-backend-client';
 import { getLogger } from '@/lib/logger';
 import { createMCPTextResponse } from '@/lib/mcp-response-utils';
-import { BROWSER_TOOL_SCHEMAS } from './helpers';
+import { BROWSER_TOOL_SCHEMAS, getNavigationHint } from './helpers';
 import { StrictLocalMCPTool } from './types';
 import { validateSessionId, handleBrowserError } from './error-utils';
 
@@ -33,7 +33,7 @@ export const navigateToUrlTool: StrictLocalMCPTool = {
 
     try {
       const result = await navigateToUrl(sessionId, url);
-      return createMCPTextResponse(result);
+      return createMCPTextResponse(`${result}${getNavigationHint(result)}`);
     } catch (error) {
       return handleBrowserError(error, {
         toolName: 'navigateToUrl',

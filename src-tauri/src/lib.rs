@@ -73,7 +73,17 @@ pub fn run_with_sqlite_sync(db_url: String) {
         // Initialize the SQLite connection pool. If the database file was
         // removed (for example during testing), try to create the file and
         // retry the connection once before failing the startup.
-        let pool = match sqlx::sqlite::SqlitePool::connect(&db_url).await {
+        use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
+        use std::str::FromStr;
+        use std::time::Duration;
+
+        let options = SqliteConnectOptions::from_str(&db_url)
+            .expect("Invalid database URL")
+            .create_if_missing(true)
+            .journal_mode(SqliteJournalMode::Wal)
+            .busy_timeout(Duration::from_secs(5));
+
+        let pool = match SqlitePoolOptions::new().connect_with(options.clone()).await {
             Ok(p) => p,
             Err(e) => {
                 // If this looks like a file-backed sqlite URL, try to create the file
@@ -91,7 +101,8 @@ pub fn run_with_sqlite_sync(db_url: String) {
                     }
 
                     // Retry connection once
-                    sqlx::sqlite::SqlitePool::connect(&db_url)
+                    SqlitePoolOptions::new()
+                        .connect_with(options)
                         .await
                         .unwrap_or_else(|err| {
                             panic!(
@@ -251,6 +262,7 @@ pub fn run() {
                 list_browser_sessions,
                 navigate_to_url,
                 browser_script_result,
+                browser_page_loaded,
                 execute_script,
                 poll_script_result,
                 navigate_back,

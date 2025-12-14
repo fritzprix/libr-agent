@@ -66,72 +66,81 @@ export class LocalDatabase extends Dexie {
       playbooks: '&id, agentId, createdAt, updatedAt, goal',
     });
 
-    // Populate hook: Seed default assistants only on fresh DB creation
-    this.on('populate', async () => {
+    // Populate hook removed to prevent race conditions with AssistantContext
+  }
+
+  /**
+   * Ensures that the default assistants exist in the database.
+   * Checks for existence by name. If not found, creates them.
+   */
+  public async ensureDefaultAssistants(): Promise<void> {
+    await this.transaction('rw', this.assistants, async () => {
       const now = new Date();
 
-      const bootstrapAssistant: Assistant = {
-        id: createId(),
-        name: 'Bootstrap Assistant',
-        systemPrompt:
-          'You are the Bootstrap Assistant for LibrAgent.\n' +
-          'Your job is to help users bootstrap their environment by detecting the platform, checking for installed tools, and guiding them through installation.\n\n' +
-          'Workflow:\n' +
-          '1) Detect Platform: Use "detect_platform" to identify the OS and shell.\n' +
-          '2) Check Tools: Use "check_tool_installed" to get the verification command, then run it with "execute_shell" or "execute_windows_cmd".\n' +
-          '3) Guide Installation: If a tool is missing, use "get_bootstrap_guide" to provide installation instructions.\n' +
-          '4) Configure MCP: If the user provides MCP server config or URL, use "create_server" to register it (transport type "http" for URLs) and "connect_server" to enable it.\n\n' +
-          'Rules:\n' +
-          '- ALWAYS detect the platform first.\n' +
-          '- Verify tool installation before assuming it exists.\n' +
-          '- Use the "bootstrap" tools for guidance and "workspace" tools for execution.\n' +
-          '- Be helpful and guide the user step-by-step.',
-        mcpServerIds: [],
-        deletionProtected: true,
-        localServices: [],
-        allowedBuiltInServiceAliases: [
-          'bootstrap',
-          'mcp_manager',
-          'workspace',
-          'planning',
-          'assistant_manager',
-        ],
-        createdAt: now,
-        updatedAt: now,
-      };
+      const currentAssistants = await this.assistants.toArray();
+      const existingNames = new Set(currentAssistants.map((a) => a.name));
 
-      const librAssistant: Assistant = {
-        id: createId(),
-        name: 'Libr Assistant',
-        systemPrompt:
-          'You are the Libr Assistant: a general-purpose knowledge and automation agent.\n' +
-          'Workflow:\n' +
-          '1) Analyze the request and set/maintain goals via planning tools (create_goal, add_todo, get_current_state).\n' +
-          '2) Prefer local knowledge first: query builtin_content_store__keywordSimilaritySearch and read with readContent.\n' +
-          '3) If missing, use builtin_workspace__read_file to search the workspace; with permission, use browser tools to gather web content, then add to content_store via addContent.\n' +
-          '4) Persist results to the workspace, cite sources (paths/URIs/URLs), and update planning state. Keep answers concise.\n' +
-          'Rules:\n' +
-          '- Ask before web browsing or executing commands.\n' +
-          '- Use minimal changes; confirm write paths.\n' +
-          '- Provide sources and next-step suggestions.',
-        mcpServerIds: [],
-        deletionProtected: true,
-        localServices: [],
-        allowedBuiltInServiceAliases: [
-          'contentstore',
-          'workspace',
-          'browser',
-          'planning',
-          'playbook',
-          'mcp_manager',
-          'ui',
-          'assistant_manager',
-        ],
-        createdAt: now,
-        updatedAt: now,
-      };
+      const assistantsToAdd: Assistant[] = [];
 
-      await this.assistants.bulkAdd([bootstrapAssistant, librAssistant]);
+      if (!existingNames.has('Bootstrap Assistant')) {
+        assistantsToAdd.push({
+          id: createId(),
+          name: 'Bootstrap Assistant',
+          systemPrompt:
+            'You are the Bootstrap Assistant for LibrAgent.\n' +
+            'Your job is to help users bootstrap their environment by detecting the platform, checking for installed tools, and guiding them through installation.\n\n' +
+            'Strategy:\n' +
+            '- Detect Platform: Always identify the OS and shell environment first.\n' +
+            '- Verify Dependencies: Check if necessary tools are installed before attempting to use them.\n' +
+            '- Guide Installation: If a tool is missing, provide clear, step-by-step installation instructions.\n' +
+            '- Configure Integration: Assist the user in configuring and connecting external tools or servers (MCP).',
+          mcpServerIds: [],
+          deletionProtected: true,
+          localServices: [],
+          allowedBuiltInServiceAliases: [
+            'bootstrap',
+            'mcp_manager',
+            'workspace',
+            'planning',
+            'assistant_manager',
+          ],
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+
+      if (!existingNames.has('Libr Assistant')) {
+        assistantsToAdd.push({
+          id: createId(),
+          name: 'Libr Assistant',
+          systemPrompt:
+            'You are the Libr Assistant: a general-purpose knowledge and automation agent.\n\n' +
+            'Strategy:\n' +
+            "- Analyze Intent: Upon receiving a request, deeply analyze the user's intent. Ask clarifying questions only if absolutely necessary.\n" +
+            '- Plan & Execute: Establish clear goals and plans, then execute them systematically.\n' +
+            '- Record Memories: Since memory is limited, periodically record your thoughts and important information.\n' +
+            '- Think Deeper: If a problem becomes difficult, always take a step back and think deeper to find a solution.',
+          mcpServerIds: [],
+          deletionProtected: true,
+          localServices: [],
+          allowedBuiltInServiceAliases: [
+            'contentstore',
+            'workspace',
+            'browser',
+            'planning',
+            'playbook',
+            'mcp_manager',
+            'ui',
+            'assistant_manager',
+          ],
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+
+      if (assistantsToAdd.length > 0) {
+        await this.assistants.bulkAdd(assistantsToAdd);
+      }
     });
   }
 }

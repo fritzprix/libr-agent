@@ -4,13 +4,10 @@ import {
 } from '@/lib/mcp-response-utils';
 import type { MCPResult, WebMCPServer } from '@/lib/mcp-types';
 import type { ServiceContext, ServiceContextOptions } from '@/features/tools';
-import { getLogger } from '@/lib/logger';
 import { db } from './db';
 import { knowledgeTools as tools } from './tools';
 import { MCPResponseBuilder } from '@/lib/web-mcp/response-builder';
 import { WebMCPErrorCodes } from '@/lib/web-mcp/error-codes';
-
-const logger = getLogger('KnowledgeServer');
 
 class KnowledgeManager {
   private assistantId: string | null = null;
@@ -339,7 +336,6 @@ const knowledgeServer: WebMCPServer = {
     // But for now, let's assume the UI/Host always sends it if available.
     const assistantId = options.assistantId || 'default';
     manager.setContext(assistantId);
-    logger.info(`Switched knowledge context to assistant: ${assistantId}`);
   },
 
   async getServiceContext(

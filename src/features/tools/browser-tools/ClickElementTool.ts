@@ -6,6 +6,7 @@ import {
 } from '@/lib/mcp-response-utils';
 import { StrictBrowserMCPTool } from './types';
 import { validateSessionId, handleBrowserError } from './error-utils';
+import { FailureTracker } from './failure-tracker';
 
 const logger = getLogger('ClickElementTool');
 
@@ -53,14 +54,19 @@ export const clickElementTool: StrictBrowserMCPTool = {
       const result = await executeScript(sessionId as string, script);
 
       logger.debug('Click completed', { selector, result });
+
+      FailureTracker.resetFailure(sessionId as string);
+
       return createMCPTextResponse(
         `✓ Click ${result === 'Clicked element' ? 'successful' : 'failed'} (selector: ${selector})\nResult: ${result}`,
       );
     } catch (error) {
+      const failureCount = FailureTracker.recordFailure(sessionId as string);
       return handleBrowserError(error, {
         toolName: 'clickElement',
         sessionId: sessionId as string,
         selector: selector as string,
+        failureCount,
       });
     }
   },

@@ -1,4 +1,5 @@
 import { AIServiceProvider, AIServiceError } from './types';
+import { Message } from '@/models/chat';
 import { BaseAIService } from './base-service';
 
 /**
@@ -26,7 +27,12 @@ export class EmptyAIService extends BaseAIService {
    * @description This implementation immediately throws an error as the empty service
    * does not support chat streaming.
    */
-  async *streamChat(): AsyncGenerator<string, void, void> {
+  protected async *doStreamChat(
+    messages: Message[],
+    options?: unknown,
+  ): AsyncGenerator<string, void, void> {
+    void messages;
+    void options;
     if (this.getAbortSignal().aborted) {
       this.logger.info('EmptyAIService stream cancelled before starting.');
       return;

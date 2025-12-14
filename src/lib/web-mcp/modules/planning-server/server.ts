@@ -5,7 +5,6 @@ import {
 import type { MCPResult, WebMCPServer } from '@/lib/mcp-types';
 import type { WebMCPServerProxy } from '@/context/WebMCPContext';
 import type { ServiceContext, ServiceContextOptions } from '@/features/tools';
-import { getLogger } from '@/lib/logger';
 import { planningTools as tools } from './tools.ts';
 import { SessionStateManager } from './state';
 import type {
@@ -17,8 +16,6 @@ import type {
   BaseOutput,
   ScratchpadItem,
 } from './types';
-
-const logger = getLogger('PlanningServer');
 
 const stateManager = new SessionStateManager();
 
@@ -62,6 +59,11 @@ const planningServer: WebMCPServer = {
         return await stateManager.clearGoal();
       }
       case 'add_todo': {
+        if (!typedArgs.name || typeof typedArgs.name !== 'string') {
+          return createMCPErrorToolResult(
+            'The "name" argument is required and must be a string.',
+          );
+        }
         return await stateManager.addTodo(
           typedArgs.name as string,
           typedArgs.priority as 'low' | 'medium' | 'high' | undefined,
@@ -166,6 +168,9 @@ const planningServer: WebMCPServer = {
       }
       case 'sequentialthinking': {
         return stateManager.processThought(typedArgs);
+      }
+      case 'critiqueAndReflection': {
+        return stateManager.processCritiqueAndReflection(typedArgs);
       }
       case 'get_current_state': {
         const includeCompleted = typedArgs.include_completed !== false; // Default true
@@ -313,9 +318,6 @@ ${scratchpadText}`;
     const sessionId = options.sessionId || 'default';
     const threadId = options.threadId || sessionId;
     stateManager.setSession(sessionId, threadId);
-    logger.info(
-      `Switched planning context to session: ${sessionId}, thread: ${threadId}`,
-    );
   },
 };
 
@@ -353,6 +355,7 @@ export interface PlanningServerProxy extends WebMCPServerProxy {
     include_scratchpad?: boolean;
   }): Promise<MCPResult<unknown>>;
   sequentialthinking(args: unknown): Promise<MCPResult<unknown>>;
+  critiqueAndReflection(args: unknown): Promise<MCPResult<unknown>>;
 }
 
 export default planningServer;

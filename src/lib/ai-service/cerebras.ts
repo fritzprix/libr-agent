@@ -79,7 +79,7 @@ export class CerebrasService extends BaseAIService {
    * @param options Optional parameters for the chat, including model name, system prompt, and tools.
    * @yields A JSON string for each chunk of the response, containing content and/or tool calls.
    */
-  async *streamChat(
+  protected async *doStreamChat(
     messages: Message[],
     options: StreamChatOptions = {},
   ): AsyncGenerator<string, void, void> {
@@ -92,12 +92,6 @@ export class CerebrasService extends BaseAIService {
       );
       const tools = this.prepareTools(options.availableTools);
       const model = options.modelName || config.defaultModel || DEFAULT_MODEL;
-
-      logger.info('Cerebras API call:', {
-        model,
-        messagesCount: cerebrasMessages.length,
-        hasTools: !!tools?.length,
-      });
 
       const stream = await this.withRetry(
         async (): Promise<AsyncIterable<unknown>> => {

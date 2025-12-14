@@ -3,7 +3,6 @@ import {
   createMCPErrorToolResult,
 } from '@/lib/mcp-response-utils';
 import type { MCPResult, WebMCPServer } from '@/lib/mcp-types';
-import { getLogger } from '@/lib/logger';
 import { assistantManagerTools } from './tools';
 import { AssistantService } from '@/lib/services/assistant-service';
 import { LocalSettingsService } from '@/lib/services/settings-service';
@@ -11,8 +10,6 @@ import { createId } from '@paralleldrive/cuid2';
 import type { Assistant } from '@/models/chat';
 import { MCPResponseBuilder } from '@/lib/web-mcp/response-builder';
 import { WebMCPErrorCodes } from '@/lib/web-mcp/error-codes';
-
-const logger = getLogger('AssistantManagerServer');
 
 let cachedService: {
   service: AssistantService;
@@ -282,7 +279,6 @@ export const assistantManagerServer: WebMCPServer = {
           return createMCPErrorToolResult(`Unknown tool: ${name}`);
       }
     } catch (error) {
-      logger.error(`Error executing tool ${name}`, error);
       return createMCPErrorToolResult(
         error instanceof Error ? error.message : String(error),
       );

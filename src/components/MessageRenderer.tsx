@@ -428,7 +428,16 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
                         {children}
                       </p>
                     ),
-                    code: ({ children, className, ...props }) => {
+                    code: ({
+                      children,
+                      className,
+                      node: _node, // eslint-disable-line @typescript-eslint/no-unused-vars
+                      inline: _inline, // eslint-disable-line @typescript-eslint/no-unused-vars
+                      ...props
+                    }: React.ComponentPropsWithoutRef<'code'> & {
+                      inline?: boolean;
+                      node?: unknown;
+                    }) => {
                       // Distinguish inline code vs block code
                       // ReactMarkdown passes className="language-xxx" for code blocks
                       const match = /language-(\w+)/.exec(className || '');
@@ -551,7 +560,15 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
                         {children}
                       </h3>
                     ),
-                    ul: ({ children, ...props }) => (
+                    ul: ({
+                      children,
+                      node: _node, // eslint-disable-line @typescript-eslint/no-unused-vars
+                      ordered: _ordered, // eslint-disable-line @typescript-eslint/no-unused-vars
+                      ...props
+                    }: React.ComponentPropsWithoutRef<'ul'> & {
+                      ordered?: boolean;
+                      node?: unknown;
+                    }) => (
                       <ul
                         className="list-disc list-inside mb-2 space-y-1"
                         {...props}
@@ -559,7 +576,8 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
                         {children}
                       </ul>
                     ),
-                    ol: ({ children, ...props }) => (
+                    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                    ol: ({ children, node, ordered, ...props }) => (
                       <ol
                         className="list-decimal list-inside mb-2 space-y-1"
                         {...props}
@@ -567,7 +585,8 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
                         {children}
                       </ol>
                     ),
-                    li: ({ children, ...props }) => (
+                    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                    li: ({ children, node, ordered, ...props }) => (
                       <li className="ml-2" {...props}>
                         {children}
                       </li>
@@ -617,72 +636,9 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
                   onUIAction={handleUIAction}
                   supportedContentTypes={[...supportedContentTypes]}
                   htmlProps={{
-                    autoResizeIframe: { height: true },
                     style: { height: 'auto', maxHeight: 'unset' },
                     iframeProps: {
                       className: 'h-auto min-h-[50vh] max-h-none',
-                      onLoad: (ev: React.SyntheticEvent<HTMLIFrameElement>) => {
-                        try {
-                          const el =
-                            ev?.currentTarget as HTMLIFrameElement | null;
-                          if (!el) return;
-
-                          // Inject console.log interceptor into iframe
-                          const iframeWindow = el.contentWindow;
-                          if (iframeWindow) {
-                            try {
-                              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                              const win = iframeWindow as any;
-                              const originalConsoleLog = win.console?.log;
-                              if (originalConsoleLog) {
-                                win.console.log = function (
-                                  ...args: unknown[]
-                                ) {
-                                  logger.info('📄 IFrame Console:', args);
-                                  return originalConsoleLog.apply(
-                                    win.console,
-                                    args,
-                                  );
-                                };
-                              }
-
-                              logger.info(
-                                '🔗 IFrame loaded, interceptor installed',
-                                {
-                                  iframeSrc: el.src,
-                                  hasContentWindow: !!iframeWindow,
-                                  hasConsole: !!win.console,
-                                },
-                              );
-                            } catch (consoleError) {
-                              logger.warn(
-                                '⚠️ Could not install console interceptor',
-                                { consoleError },
-                              );
-                            }
-                          }
-
-                          const doc =
-                            el.contentDocument || el.contentWindow?.document;
-                          const height =
-                            doc?.documentElement?.scrollHeight ||
-                            doc?.body?.scrollHeight;
-                          if (height) {
-                            el.style.height = `${height}px`;
-                          }
-                        } catch (error) {
-                          logger.warn('⚠️ IFrame onLoad error', {
-                            error,
-                            errorMessage:
-                              error instanceof Error
-                                ? error.message
-                                : String(error),
-                            errorStack:
-                              error instanceof Error ? error.stack : undefined,
-                          });
-                          // ignore cross-origin or other errors
-                        }
-                      },
                     },
                   }}
                   resource={item.resource}

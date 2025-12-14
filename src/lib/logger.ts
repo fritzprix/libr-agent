@@ -240,8 +240,15 @@ export class Logger {
     // Format the message and remaining arguments
     if (logArgs.length > 0) {
       const formattedArgs = logArgs.map((arg) => {
+        if (arg instanceof Error) {
+          return `${arg.name}: ${arg.message}`;
+        }
         if (typeof arg === 'object' && arg !== null) {
-          return JSON.stringify(arg);
+          try {
+            return JSON.stringify(arg);
+          } catch {
+            return String(arg);
+          }
         }
         return String(arg);
       });

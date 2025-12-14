@@ -16,8 +16,11 @@ import type { BrowserSession } from './types';
 export async function createBrowserSession(params: {
   url: string;
   title?: string | null;
-}): Promise<string> {
-  return safeInvoke<string>('create_browser_session', params);
+}): Promise<{ session_id: string; message: string }> {
+  return safeInvoke<{ session_id: string; message: string }>(
+    'create_browser_session',
+    params,
+  );
 }
 
 /**
@@ -35,34 +38,6 @@ export async function closeBrowserSession(sessionId: string): Promise<void> {
  */
 export async function listBrowserSessions(): Promise<BrowserSession[]> {
   return safeInvoke<BrowserSession[]>('list_browser_sessions');
-}
-
-/**
- * Simulates a click on an element in a browser session.
- * @param sessionId The ID of the browser session.
- * @param selector The CSS selector of the element to click.
- * @returns A promise that resolves with the result of the script execution.
- */
-export async function clickElement(
-  sessionId: string,
-  selector: string,
-): Promise<string> {
-  return safeInvoke<string>('click_element', { sessionId, selector });
-}
-
-/**
- * Inputs text into an element in a browser session.
- * @param sessionId The ID of the browser session.
- * @param selector The CSS selector of the input element.
- * @param text The text to input.
- * @returns A promise that resolves with the result of the script execution.
- */
-export async function inputText(
-  sessionId: string,
-  selector: string,
-  text: string,
-): Promise<string> {
-  return safeInvoke<string>('input_text', { sessionId, selector, text });
 }
 
 /**

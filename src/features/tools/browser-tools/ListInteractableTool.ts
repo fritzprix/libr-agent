@@ -93,20 +93,31 @@ function estimateElementPurpose(el: InteractableElement): string {
 }
 
 // Generate user-friendly text response
-function generateInteractableText(result: InteractableResult): string {
+function generateInteractableText(
+  result: InteractableResult,
+  page: number = 1,
+  pageSize: number = 20,
+): string {
   if (result.metadata.total_count === 0) {
     return 'No interactive elements found on this page.';
   }
 
-  let text = `Found ${result.metadata.total_count} interactive elements:\n\n`;
+  const total = result.metadata.total_count;
+  const totalPages = Math.ceil(total / pageSize);
+  const start = (page - 1) * pageSize;
+  const end = start + pageSize;
+  const displayElements = result.elements.slice(start, end);
 
-  // Show first 20 elements to avoid overwhelming output
-  const displayElements = result.elements.slice(0, 20);
+  let text = `Found ${total} interactive elements (Page ${page}/${totalPages}):\n\n`;
+
+  if (displayElements.length === 0) {
+    return text + 'No elements on this page.';
+  }
 
   displayElements.forEach((el, index) => {
     const purpose = estimateElementPurpose(el);
 
-    text += `${index + 1}. [${el.type.toUpperCase()}] ${purpose}\n`;
+    text += `${start + index + 1}. [${el.type.toUpperCase()}] ${purpose}\n`;
     text += `   Selector: ${el.selector}\n`;
 
     if (el.text && el.text.length <= 100) {
@@ -137,8 +148,8 @@ function generateInteractableText(result: InteractableResult): string {
   });
 
   // Show summary if there are more elements
-  if (result.metadata.total_count > 20) {
-    text += `... and ${result.metadata.total_count - 20} more elements (use maxElements parameter to see more)\n\n`;
+  if (page < totalPages) {
+    text += `... and ${total - end} more elements. Use page=${page + 1} to see more.\n\n`;
   }
 
   text += `Performance: ${result.metadata.performance.execution_time_ms}ms`;
@@ -167,7 +178,7 @@ async function extractHtmlFromPage(
 export const listInteractableTool: StrictBrowserMCPTool = {
   name: 'listInteractable',
   description:
-    'List all interactive elements from the entire web page for automation. Identifies buttons, inputs, links, and other interactive elements with accurate selectors, current state, and metadata. Uses TypeScript parsing for better reliability and debugging.',
+    'List all interactive elements from the entire web page for automation. Identifies buttons, inputs, links, and other interactive elements with accurate selectors, current state, and metadata. Uses TypeScript parsing for better reliability and debugging. Supports pagination for large lists.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -181,6 +192,15 @@ export const listInteractableTool: StrictBrowserMCPTool = {
         type: 'number',
         description:
           'Maximum number of interactive elements to return (1-500). Higher values may impact performance. Default: 100',
+      },
+      page: {
+        type: 'number',
+        description: 'Page number for the text summary (default: 1)',
+      },
+      pageSize: {
+        type: 'number',
+        description:
+          'Number of elements per page for the text summary (default: 20)',
       },
     },
     required: ['sessionId'],
@@ -197,11 +217,15 @@ export const listInteractableTool: StrictBrowserMCPTool = {
       typeof args.includeHidden === 'boolean' ? args.includeHidden : false;
     const maxElements =
       typeof args.maxElements === 'number' ? args.maxElements : 100;
+    const page = typeof args.page === 'number' ? args.page : 1;
+    const pageSize = typeof args.pageSize === 'number' ? args.pageSize : 20;
 
     logger.debug('Executing listInteractable', {
       sessionId,
       includeHidden,
       maxElements,
+      page,
+      pageSize,
     });
 
     if (!executeScript) {

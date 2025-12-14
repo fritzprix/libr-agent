@@ -1,10 +1,11 @@
 import {
   createBrowserSession,
   listBrowserSessions,
+  navigateToUrl,
 } from '@/lib/rust-backend-client';
 import { getLogger } from '@/lib/logger';
 import { createMCPStructuredResponse } from '@/lib/mcp-response-utils';
-import { BROWSER_TOOL_SCHEMAS } from './helpers';
+import { BROWSER_TOOL_SCHEMAS, getNavigationHint } from './helpers';
 import { StrictLocalMCPTool } from './types';
 import { createId } from '@paralleldrive/cuid2';
 
@@ -13,7 +14,7 @@ const logger = getLogger('CreateSessionTool');
 export const createSessionTool: StrictLocalMCPTool = {
   name: 'createSession',
   description:
-    'Creates a new interactive browser session in a separate window. If a session already exists, returns the existing session information instead of creating a duplicate.',
+    'Creates a new interactive browser session in a separate window. NOTE: Only one active session is supported at a time. If a session already exists, this tool will reuse it and navigate to the specified URL if different.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -30,29 +31,49 @@ export const createSessionTool: StrictLocalMCPTool = {
 
     if (existingSessions.length > 0) {
       const session = existingSessions[0];
-      logger.info('Active session already exists, returning existing session', {
+      logger.info('Active session already exists, reusing session', {
         sessionId: session.id,
+        currentUrl: session.url,
+        targetUrl: url,
       });
 
+      let message = `⚠️ Active session already exists (ID: ${session.id})\n`;
+      let navigated = false;
+
+      if (session.url !== url) {
+        try {
+          await navigateToUrl(session.id, url);
+          message += `✓ Navigated to new URL: ${url}\n`;
+          navigated = true;
+        } catch (error) {
+          message += `✗ Failed to navigate to ${url}: ${error}\n`;
+        }
+      } else {
+        message += `✓ Already at requested URL: ${url}\n`;
+      }
+
+      message += `Title: ${session.title || 'N/A'}\n\nUse this session ID for browser operations.`;
+
       return createMCPStructuredResponse(
-        `⚠️ Active session already exists\n\nSession ID: ${session.id}\nCurrent URL: ${session.url}\nTitle: ${session.title || 'N/A'}\n\nUse this session ID for browser operations. If you need to navigate to a different URL, use navigateToUrl.`,
+        message,
         {
           sessionId: session.id,
-          url: session.url,
+          url: url,
           title: session.title,
           wasExisting: true,
+          navigated,
         },
         createId(),
       );
     }
 
-    const sessionId = await createBrowserSession({
+    const { session_id: sessionId, message } = await createBrowserSession({
       url,
       title: title || null,
     });
 
     return createMCPStructuredResponse(
-      `✓ Browser session created successfully\n\nSession ID: ${sessionId}\nURL: ${url}`,
+      `✓ Browser session created successfully\n\nSession ID: ${sessionId}\nURL: ${url}${getNavigationHint(message)}`,
       {
         sessionId,
         url,

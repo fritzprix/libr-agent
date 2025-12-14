@@ -413,12 +413,78 @@ export abstract class BaseAIService implements IAIService {
 
   /**
    * Initiates a streaming chat session with the AI service.
+   * This method wraps the `doStreamChat` method to provide common logging functionality.
    * @param messages An array of messages representing the conversation history.
    * @param options Optional parameters for the chat session, including model name, tools, etc.
    * @returns An async generator that yields chunks of the response as strings.
+   */
+  async *streamChat(
+    messages: Message[],
+    options: {
+      modelName?: string;
+      systemPrompt?: string;
+      availableTools?: MCPTool[];
+      config?: AIServiceConfig;
+      forceToolUse?: boolean;
+    } = {},
+  ): AsyncGenerator<string, void, void> {
+    const provider = this.getProvider();
+    const model =
+      options.modelName || options.config?.defaultModel || 'unknown-model';
+
+    this.logger.info(`[${provider}] streamChat CALL START`, {
+      model,
+      messagesCount: messages.length,
+      toolsCount: options.availableTools?.length || 0,
+      systemPromptLength: options.systemPrompt?.length,
+      reasoningEnabled: options.config?.enableReasoning,
+    });
+
+    // Accumulate the full response for logging
+    let accumulatedResponse = '';
+
+    try {
+      const start = Date.now();
+      const generator = this.doStreamChat(messages, options);
+
+      for await (const chunk of generator) {
+        // Attempt to extract content for valid JSON chunks
+        try {
+          const parsed = JSON.parse(chunk);
+          if (parsed.content) accumulatedResponse += parsed.content;
+          // You might also want to track tool calls or thinking, but content is primary for "result"
+        } catch {
+          // If not JSON, just append raw (though it should be JSON)
+          if (accumulatedResponse.length < 5000) {
+            accumulatedResponse += chunk;
+          }
+        }
+        yield chunk;
+      }
+
+      const duration = Date.now() - start;
+      this.logger.info(`[${provider}] streamChat CALL END`, {
+        model,
+        durationMs: duration,
+        responseLength: accumulatedResponse.length,
+        responsePreview: accumulatedResponse.slice(0, 200),
+      });
+    } catch (error) {
+      this.logger.error(`[${provider}] streamChat CALL ERROR`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Abstract method that performs the actual provider-specific streaming.
+   * Must be implemented by subclasses.
+   * @param messages An array of messages representing the conversation history.
+   * @param options Optional parameters for the chat session.
+   * @returns An async generator that yields chunks of the response as strings.
+   * @protected
    * @abstract
    */
-  abstract streamChat(
+  protected abstract doStreamChat(
     messages: Message[],
     options?: {
       modelName?: string;

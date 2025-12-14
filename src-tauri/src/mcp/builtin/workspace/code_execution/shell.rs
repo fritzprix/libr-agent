@@ -442,9 +442,9 @@ impl WorkspaceServer {
             }
         };
 
-        // Check for require_user_input parameter or auto-detect privilege escalation
+        // Check for requireUserInput parameter or auto-detect privilege escalation
         let require_input = args
-            .get("require_user_input")
+            .get("requireUserInput")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
         let auto_detect = self.detect_privilege_escalation(raw_command);
@@ -454,9 +454,9 @@ impl WorkspaceServer {
             return self.handle_interactive_shell(raw_command, &args).await;
         }
 
-        // Check run_mode parameter
+        // Check runMode parameter
         let run_mode = args
-            .get("run_mode")
+            .get("runMode")
             .and_then(|v| v.as_str())
             .unwrap_or("sync");
 
@@ -478,7 +478,7 @@ impl WorkspaceServer {
 
         // Check persistent shell preference (default: enabled)
         let use_persistent_shell = args
-            .get("use_persistent_shell")
+            .get("usePersistentShell")
             .and_then(|v| v.as_bool())
             .unwrap_or(true); // Default enabled per Q1 decision
 

@@ -234,7 +234,7 @@ export class GeminiService extends BaseAIService {
    * @param options Optional parameters for the chat.
    * @yields A JSON string for each chunk of the response, containing content and/or tool calls.
    */
-  async *streamChat(
+  protected async *doStreamChat(
     messages: Message[],
     options: {
       modelName?: string;
@@ -295,10 +295,6 @@ export class GeminiService extends BaseAIService {
             thinkingBudget,
             includeThoughts: true,
           };
-          logger.info('Gemini thinking mode enabled', {
-            model,
-            thinkingBudget,
-          });
         }
       }
 
@@ -311,23 +307,75 @@ export class GeminiService extends BaseAIService {
       });
 
       if (this.getAbortSignal().aborted) {
-        this.logger.info('Stream aborted before iteration');
+        this.logger.debug('Stream aborted before iteration');
         return;
       }
 
       for await (const chunk of result) {
         if (this.getAbortSignal().aborted) {
-          this.logger.info('Stream aborted during iteration');
+          this.logger.debug('Stream aborted during iteration');
           break;
         }
 
-        logger.info('Gemini chunk received:', {
-          chunk,
-          hasText: !!chunk.text,
-          hasFunctionCalls: !!chunk.functionCalls,
-          hasThoughts: !!(chunk as { thoughts?: unknown }).thoughts,
-          chunkKeys: Object.keys(chunk || {}),
-        });
+        // Type definition for Gemini Experimental Thoughts
+        // See: https://github.com/google/generative-ai-js/issues/186
+        interface GeminiThoughtChunk {
+          candidates?: Array<{
+            content?: {
+              parts?: Array<
+                | {
+                    thought?: boolean; // Sometimes boolean flag?
+                    text?: string;
+                  }
+                | {
+                    // Another possible schema seen in discussions
+                    thought?: string;
+                  }
+              >;
+            };
+          }>;
+          // Possible schema for direct parts
+          parts?: Array<{
+            thought?: string;
+          }>;
+        }
+
+        const thoughtChunk = chunk as unknown as GeminiThoughtChunk;
+        let thoughtContent = '';
+
+        // Attempt to find thoughts in candidates
+        if (thoughtChunk.candidates?.[0]?.content?.parts) {
+          for (const part of thoughtChunk.candidates[0].content.parts) {
+            // Schema 1: part has 'thought' property with string
+            if ('thought' in part && typeof part.thought === 'string') {
+              thoughtContent += part.thought;
+            }
+            // Schema 2: part has 'thoughtSignature'
+            if (
+              'thoughtSignature' in part &&
+              typeof part.thoughtSignature === 'string'
+            ) {
+              // Yield the signature as a separate event or combined with thinking?
+              // Based on Message model, we have `thinkingSignature` field.
+              yield JSON.stringify({
+                thinkingSignature: part.thoughtSignature,
+              });
+            }
+          }
+        }
+
+        // Attempt to find thoughts in top-level parts (sometimes seen in simplified chunks)
+        if (thoughtChunk.parts) {
+          for (const part of thoughtChunk.parts) {
+            if (typeof part.thought === 'string') {
+              thoughtContent += part.thought;
+            }
+          }
+        }
+
+        if (thoughtContent) {
+          yield JSON.stringify({ thinking: thoughtContent });
+        }
 
         if (chunk.functionCalls && chunk.functionCalls.length > 0) {
           const validFunctionCalls = chunk.functionCalls.filter(
@@ -348,7 +396,22 @@ export class GeminiService extends BaseAIService {
         } else if (chunk.text) {
           yield JSON.stringify({ content: chunk.text });
         } else {
-          logger.warn('Gemini chunk has no text or functionCalls', { chunk });
+          const candidates = chunk.candidates || [];
+          const candidate = candidates[0];
+          const finishReason = candidate ? candidate.finishReason : undefined;
+
+          if (finishReason === 'UNEXPECTED_TOOL_CALL') {
+            logger.warn(
+              'Gemini stream ended with UNEXPECTED_TOOL_CALL. The model attempted to call a tool that was not properly defined or permitted in this context.',
+              { chunk, finishReason },
+            );
+          } else if (finishReason === 'STOP') {
+            logger.debug('Gemini stream stopped normally with empty chunk', {
+              chunk,
+            });
+          } else {
+            logger.warn('Gemini chunk has no text or functionCalls', { chunk });
+          }
         }
       }
     } catch (error) {

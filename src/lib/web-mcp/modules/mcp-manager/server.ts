@@ -4,7 +4,6 @@ import {
 } from '@/lib/mcp-response-utils';
 import type { MCPResult, WebMCPServer } from '@/lib/mcp-types';
 import type { ServiceContext, ServiceContextOptions } from '@/features/tools';
-import { getLogger } from '@/lib/logger';
 import { mcpManagerTools } from './tools';
 import { createPage } from '@/lib/db/crud';
 import { dbService } from '@/lib/db/service';
@@ -25,8 +24,6 @@ import {
 } from '@/lib/services/assistant-service';
 import { MCPResponseBuilder } from '@/lib/web-mcp/response-builder';
 import { WebMCPErrorCodes } from '@/lib/web-mcp/error-codes';
-
-const logger = getLogger('MCPManagerServer');
 
 let cachedServices: {
   mcpService: IMcpServerService;
@@ -677,7 +674,6 @@ async function createServer(
       message: `Server "${server.name}" created successfully`,
     });
   } catch (error) {
-    logger.error('Failed to create server', error as Error);
     return createMCPErrorToolResult(
       `Failed to create server: ${error instanceof Error ? error.message : String(error)}`,
     ) as MCPResult<CreateServerOutput>;
@@ -936,7 +932,6 @@ const mcpManagerServer: WebMCPServer = {
           });
       }
     } catch (error) {
-      logger.error(`Error executing tool ${name}`, error as Error);
       return createMCPErrorToolResult(
         `Error executing tool ${name}: ${error instanceof Error ? error.message : String(error)}`,
       );
@@ -946,10 +941,6 @@ const mcpManagerServer: WebMCPServer = {
   async switchContext(options: ServiceContextOptions): Promise<void> {
     assistantId = options.assistantId || null;
     sessionId = options.sessionId || null;
-    logger.debug('Context switched', {
-      assistantId,
-      sessionId,
-    });
   },
 
   async getServiceContext(

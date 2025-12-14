@@ -31,11 +31,11 @@ impl WorkspaceServer {
         };
 
         let start_line = args
-            .get("start_line")
+            .get("startLine")
             .and_then(|v| v.as_u64())
             .map(|n| n as usize);
         let end_line = args
-            .get("end_line")
+            .get("endLine")
             .and_then(|v| v.as_u64())
             .map(|n| n as usize);
 
@@ -409,24 +409,24 @@ impl WorkspaceServer {
         let mut replacements_map: HashMap<String, String> = HashMap::new();
 
         for rep in replacements {
-            let start_line = match rep.get("start_line").and_then(|v| v.as_u64()) {
+            let start_line = match rep.get("startLine").and_then(|v| v.as_u64()) {
                 Some(num) => num as usize,
-                None => match rep.get("line_number").and_then(|v| v.as_u64()) {
+                None => match rep.get("lineNumber").and_then(|v| v.as_u64()) {
                     Some(num) => num as usize,
                     None => {
-                        return Ok(MCPResult::error("Missing start_line or line_number"));
+                        return Ok(MCPResult::error("Missing startLine or lineNumber"));
                     }
                 },
             };
 
             let end_line = rep
-                .get("end_line")
+                .get("endLine")
                 .and_then(|v| v.as_u64())
                 .map(|n| n as usize)
                 .unwrap_or(start_line);
 
             if start_line > end_line {
-                return Ok(MCPResult::error("start_line must be <= end_line"));
+                return Ok(MCPResult::error("startLine must be <= endLine"));
             }
 
             if start_line == 0 || end_line > new_lines.len() {
@@ -438,13 +438,13 @@ impl WorkspaceServer {
                 )));
             }
 
-            let content = match rep.get("new_content") {
+            let content = match rep.get("newContent") {
                 Some(Value::String(s)) => s.to_string(), // Handle string values including empty strings
                 Some(Value::Null) => String::new(), // Handle explicit null as empty string for deletion
                 Some(_) => {
-                    return Ok(MCPResult::error("new_content must be a string"));
+                    return Ok(MCPResult::error("newContent must be a string"));
                 }
-                None => String::new(), // Missing new_content means delete lines
+                None => String::new(), // Missing newContent means delete lines
             };
 
             let range_key = format!("{start_line}-{end_line}");
@@ -490,11 +490,11 @@ impl WorkspaceServer {
         };
 
         let ignore_case = args
-            .get("ignore_case")
+            .get("ignoreCase")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
         let line_numbers = args
-            .get("line_numbers")
+            .get("lineNumbers")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
@@ -550,19 +550,17 @@ impl WorkspaceServer {
     }
 
     pub async fn handle_import_file(&self, args: Value) -> Result<MCPResult, String> {
-        let src_path_str = match args.get("src_abs_path").and_then(|v| v.as_str()) {
+        let src_path_str = match args.get("srcAbsPath").and_then(|v| v.as_str()) {
             Some(path) => path,
             None => {
-                return Ok(MCPResult::error("Missing required parameter: src_abs_path"));
+                return Ok(MCPResult::error("Missing required parameter: srcAbsPath"));
             }
         };
 
-        let dest_rel_path = match args.get("dest_rel_path").and_then(|v| v.as_str()) {
+        let dest_rel_path = match args.get("destRelPath").and_then(|v| v.as_str()) {
             Some(path) => path,
             None => {
-                return Ok(MCPResult::error(
-                    "Missing required parameter: dest_rel_path",
-                ));
+                return Ok(MCPResult::error("Missing required parameter: destRelPath"));
             }
         };
 
