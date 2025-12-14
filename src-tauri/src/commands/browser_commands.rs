@@ -3,6 +3,14 @@ use log::{debug, error, info};
 use serde::Deserialize;
 use tauri::State;
 
+use serde::Serialize;
+
+#[derive(Serialize)]
+pub struct CreateSessionResponse {
+    pub session_id: String,
+    pub message: String,
+}
+
 /// Creates a new interactive browser session.
 ///
 /// # Arguments
@@ -11,19 +19,22 @@ use tauri::State;
 /// * `title` - An optional title for the session.
 ///
 /// # Returns
-/// A `Result` containing the unique session ID on success, or an error string on failure.
+/// A `Result` containing the session response on success, or an error string on failure.
 #[tauri::command]
 pub async fn create_browser_session(
     server: State<'_, InteractiveBrowserServer>,
     url: String,
     title: Option<String>,
-) -> Result<String, String> {
+) -> Result<CreateSessionResponse, String> {
     info!("Command: create_browser_session called with URL: {url}");
 
     match server.create_browser_session(&url, title.as_deref()).await {
-        Ok(session_id) => {
+        Ok((session_id, message)) => {
             info!("Browser session created successfully: {session_id}");
-            Ok(session_id)
+            Ok(CreateSessionResponse {
+                session_id,
+                message,
+            })
         }
         Err(e) => {
             error!("Failed to create browser session: {e}");

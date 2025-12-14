@@ -4,7 +4,7 @@ import {
 } from '@/lib/rust-backend-client';
 import { getLogger } from '@/lib/logger';
 import { createMCPStructuredResponse } from '@/lib/mcp-response-utils';
-import { BROWSER_TOOL_SCHEMAS } from './helpers';
+import { BROWSER_TOOL_SCHEMAS, getNavigationHint } from './helpers';
 import { StrictLocalMCPTool } from './types';
 import { createId } from '@paralleldrive/cuid2';
 
@@ -46,13 +46,13 @@ export const createSessionTool: StrictLocalMCPTool = {
       );
     }
 
-    const sessionId = await createBrowserSession({
+    const { session_id: sessionId, message } = await createBrowserSession({
       url,
       title: title || null,
     });
 
     return createMCPStructuredResponse(
-      `✓ Browser session created successfully\n\nSession ID: ${sessionId}\nURL: ${url}`,
+      `✓ Browser session created successfully\n\nSession ID: ${sessionId}\nURL: ${url}${getNavigationHint(message)}`,
       {
         sessionId,
         url,

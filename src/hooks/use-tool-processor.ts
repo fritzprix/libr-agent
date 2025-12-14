@@ -68,167 +68,164 @@ export const useToolProcessor = ({ submit }: UseToolProcessorConfig) => {
           messageId: tcMessage.id,
         });
 
-        const toolPromises = tcMessage.tool_calls
-          .map(fixInvalidToolCall)
-          .map(async (toolCall) => {
-            const toolName = toolCall.function.name;
-            const executionStartTime = Date.now();
+        const toolResults: { message: Message; hasUi: boolean }[] = [];
 
-            try {
-              // Runtime security validation for built-in tools
-              if (toolName.startsWith('builtin_')) {
-                const alias = extractBuiltInServiceAlias(toolName);
-                const allowedAliases =
-                  currentAssistant?.allowedBuiltInServiceAliases;
+        // Sequential execution of tool calls
+        for (const toolCall of tcMessage.tool_calls.map(fixInvalidToolCall)) {
+          const toolName = toolCall.function.name;
+          const executionStartTime = Date.now();
 
-                // If allowedAliases is defined, enforce the restrictions
-                if (allowedAliases !== undefined) {
-                  const isAllowed = !!alias && allowedAliases.includes(alias);
+          try {
+            // Runtime security validation for built-in tools
+            if (toolName.startsWith('builtin_')) {
+              const alias = extractBuiltInServiceAlias(toolName);
+              const allowedAliases =
+                currentAssistant?.allowedBuiltInServiceAliases;
 
-                  if (!isAllowed) {
-                    const errorMsg = `Tool ${toolName} is not allowed for assistant "${currentAssistant?.name}"`;
-                    logger.warn('Tool execution blocked', {
-                      toolName,
-                      alias,
-                      allowedAliases,
-                      assistant: currentAssistant?.name,
-                    });
-                    throw new Error(errorMsg);
-                  }
+              // If allowedAliases is defined, enforce the restrictions
+              if (allowedAliases !== undefined) {
+                const isAllowed = !!alias && allowedAliases.includes(alias);
+
+                if (!isAllowed) {
+                  const errorMsg = `Tool ${toolName} is not allowed for assistant "${currentAssistant?.name}"`;
+                  logger.warn('Tool execution blocked', {
+                    toolName,
+                    alias,
+                    allowedAliases,
+                    assistant: currentAssistant?.name,
+                  });
+                  throw new Error(errorMsg);
                 }
               }
+            }
 
-              logger.debug('Executing tool', {
-                toolName,
-                toolCallId: toolCall.id,
-              });
+            logger.debug('Executing tool', {
+              toolName,
+              toolCallId: toolCall.id,
+            });
 
-              const mcpResponse = await executeToolCallRef.current(toolCall);
-              const executionTime = Date.now() - executionStartTime;
+            const mcpResponse = await executeToolCallRef.current(toolCall);
+            const executionTime = Date.now() - executionStartTime;
 
-              // Diagnostic logging for debugging readContent tool result loss
-              logger.info('Raw mcpResponse for tool', {
-                toolCallId: toolCall.id,
-                toolName,
-                hasResult: !!mcpResponse.result,
-                hasError: !!mcpResponse.error,
-                contentCount: mcpResponse.result?.content?.length || 0,
-                contentTypes:
-                  mcpResponse.result?.content?.map((c: MCPContent) => c.type) ||
-                  [],
-              });
+            // Diagnostic logging for debugging readContent tool result loss
+            logger.info('Raw mcpResponse for tool', {
+              toolCallId: toolCall.id,
+              toolName,
+              hasResult: !!mcpResponse.result,
+              hasError: !!mcpResponse.error,
+              contentCount: mcpResponse.result?.content?.length || 0,
+              contentTypes:
+                mcpResponse.result?.content?.map((c: MCPContent) => c.type) ||
+                [],
+            });
 
-              // Detect both protocol-level and tool execution errors
-              const hasProtocolError = isMCPError(mcpResponse);
-              const hasToolExecutionError =
-                mcpResponse.result?.isError === true;
-              const hasAnyError = hasProtocolError || hasToolExecutionError;
+            // Detect both protocol-level and tool execution errors
+            const hasProtocolError = isMCPError(mcpResponse);
+            const hasToolExecutionError = mcpResponse.result?.isError === true;
+            const hasAnyError = hasProtocolError || hasToolExecutionError;
 
-              // Extract appropriate error message
-              const errorMessage = hasProtocolError
-                ? `Error: ${mcpResponse.error.message} (Code: ${mcpResponse.error.code})`
-                : hasToolExecutionError
-                  ? ((mcpResponse.result?.content?.[0] as { text?: string })
-                      ?.text ?? 'Unknown error')
-                  : '';
+            // Extract appropriate error message
+            const errorMessage = hasProtocolError
+              ? `Error: ${mcpResponse.error.message} (Code: ${mcpResponse.error.code})`
+              : hasToolExecutionError
+                ? ((mcpResponse.result?.content?.[0] as { text?: string })
+                    ?.text ?? 'Unknown error')
+                : '';
 
-              const toolResultMessage: Message = {
-                id: createId(),
-                assistantId: currentAssistant?.id,
-                role: 'tool',
-                content: hasAnyError
-                  ? buildErrorContent(errorMessage)
-                  : mcpResponse.result?.content || [],
-                tool_call_id: toolCall.id,
-                sessionId: currentSession?.id || '',
-                threadId: currentSession?.id || '', // Default to top thread
-                metadata: {
-                  executionTime,
-                },
-                // Map both protocol errors and tool execution errors to Message.error
-                ...(hasAnyError && {
-                  error: {
-                    displayMessage: hasProtocolError
-                      ? mcpResponse.error.message
-                      : errorMessage,
-                    type: hasProtocolError
-                      ? ('MCP_ERROR' as MessageErrorType)
-                      : ('TOOL_EXECUTION_ERROR' as MessageErrorType),
-                    recoverable: true,
-                    details: {
-                      originalError: hasProtocolError
-                        ? mcpResponse.error
-                        : {
-                            isError: true,
-                            content: mcpResponse.result?.content,
-                          },
-                      errorCode: hasProtocolError
-                        ? `MCP_${mcpResponse.error.code}`
-                        : 'TOOL_ERROR',
-                      timestamp: new Date().toISOString(),
-                      context: {
-                        toolName,
-                        toolCallId: toolCall.id,
-                        isToolExecutionError: hasToolExecutionError,
-                      },
-                    },
-                  },
-                }),
-              };
-
-              const hasUi = hasUIResource(mcpResponse);
-
-              logger.info('Tool execution completed', {
-                toolName,
-                success: !hasAnyError,
-                hasProtocolError,
-                hasToolExecutionError,
+            const toolResultMessage: Message = {
+              id: createId(),
+              assistantId: currentAssistant?.id,
+              role: 'tool',
+              content: hasAnyError
+                ? buildErrorContent(errorMessage)
+                : mcpResponse.result?.content || [],
+              tool_call_id: toolCall.id,
+              sessionId: currentSession?.id || '',
+              threadId: currentSession?.id || '', // Default to top thread
+              metadata: {
                 executionTime,
-              });
-
-              return { message: toolResultMessage, hasUi };
-            } catch (error) {
-              const executionTime = Date.now() - executionStartTime;
-              logger.error('Tool execution failed', { toolName, error });
-
-              const errorMsg =
-                error instanceof Error ? error.message : 'Unknown error';
-
-              const errorMessage: Message = {
-                id: createId(),
-                assistantId: currentAssistant?.id,
-                role: 'tool',
-                content: buildErrorContent(
-                  `Error executing ${toolName}: ${errorMsg}`,
-                ),
-                sessionId: currentSession?.id || '',
-                threadId: currentSession?.id || '', // Default to top thread
-                tool_call_id: toolCall.id,
-                metadata: {
-                  executionTime,
-                },
-                // Structured error for type-safe error detection
+              },
+              // Map both protocol errors and tool execution errors to Message.error
+              ...(hasAnyError && {
                 error: {
-                  displayMessage: `Error executing ${toolName}`,
-                  type: 'TOOL_EXECUTION_ERROR' as MessageErrorType,
+                  displayMessage: hasProtocolError
+                    ? mcpResponse.error.message
+                    : errorMessage,
+                  type: hasProtocolError
+                    ? ('MCP_ERROR' as MessageErrorType)
+                    : ('TOOL_EXECUTION_ERROR' as MessageErrorType),
                   recoverable: true,
                   details: {
-                    originalError: error,
+                    originalError: hasProtocolError
+                      ? mcpResponse.error
+                      : {
+                          isError: true,
+                          content: mcpResponse.result?.content,
+                        },
+                    errorCode: hasProtocolError
+                      ? `MCP_${mcpResponse.error.code}`
+                      : 'TOOL_ERROR',
                     timestamp: new Date().toISOString(),
                     context: {
                       toolName,
                       toolCallId: toolCall.id,
+                      isToolExecutionError: hasToolExecutionError,
                     },
                   },
                 },
-              };
+              }),
+            };
 
-              return { message: errorMessage, hasUi: false };
-            }
-          });
+            const hasUi = hasUIResource(mcpResponse);
 
-        // Wait for all tool calls to complete in parallel
-        const toolResults = await Promise.all(toolPromises);
+            logger.info('Tool execution completed', {
+              toolName,
+              success: !hasAnyError,
+              hasProtocolError,
+              hasToolExecutionError,
+              executionTime,
+            });
+
+            toolResults.push({ message: toolResultMessage, hasUi });
+          } catch (error) {
+            const executionTime = Date.now() - executionStartTime;
+            logger.error('Tool execution failed', { toolName, error });
+
+            const errorMsg =
+              error instanceof Error ? error.message : 'Unknown error';
+
+            const errorMessage: Message = {
+              id: createId(),
+              assistantId: currentAssistant?.id,
+              role: 'tool',
+              content: buildErrorContent(
+                `Error executing ${toolName}: ${errorMsg}`,
+              ),
+              sessionId: currentSession?.id || '',
+              threadId: currentSession?.id || '', // Default to top thread
+              tool_call_id: toolCall.id,
+              metadata: {
+                executionTime,
+              },
+              // Structured error for type-safe error detection
+              error: {
+                displayMessage: `Error executing ${toolName}`,
+                type: 'TOOL_EXECUTION_ERROR' as MessageErrorType,
+                recoverable: true,
+                details: {
+                  originalError: error,
+                  timestamp: new Date().toISOString(),
+                  context: {
+                    toolName,
+                    toolCallId: toolCall.id,
+                  },
+                },
+              },
+            };
+
+            toolResults.push({ message: errorMessage, hasUi: false });
+          }
+        }
         const messages = toolResults.map((result) => result.message);
 
         if (messages.length > 0) {

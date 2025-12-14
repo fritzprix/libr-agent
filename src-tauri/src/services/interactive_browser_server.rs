@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 
 use serde::{Deserialize, Serialize};
 
@@ -18,6 +18,7 @@ use std::time::Duration;
 use tokio::sync::Notify;
 
 use super::browser_error::BrowserError;
+use reqwest;
 
 /// Represents an interactive browser session, corresponding to a Tauri window.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -185,14 +186,14 @@ impl InteractiveBrowserServer {
     }
 
     /// Helper to apply platform-specific window settings (Linux focus fixes)
-    fn apply_platform_window_settings(&self, window: &tauri::WebviewWindow) {
+    fn apply_platform_window_settings(&self, _window: &tauri::WebviewWindow) {
         #[cfg(target_os = "linux")]
         {
             use log::error;
-            if let Err(e) = window.show() {
+            if let Err(e) = _window.show() {
                 error!("Failed to show window on Linux: {e}");
             }
-            if let Err(e) = window.set_focus() {
+            if let Err(e) = _window.set_focus() {
                 error!("Failed to focus window on Linux: {e}");
             }
         }
@@ -212,10 +213,14 @@ impl InteractiveBrowserServer {
         &self,
         url: &str,
         title: Option<&str>,
-    ) -> Result<String, String> {
+    ) -> Result<(String, String), String> {
         let session_id = Uuid::new_v4().to_string();
 
         let window_label = format!("browser-{session_id}");
+
+        let temp_url = url.to_string();
+        // Check URL status first
+        let status_check = self.check_url_status(&temp_url).await;
 
         let session_title = title.unwrap_or("Interactive Browser Agent");
 
@@ -306,21 +311,29 @@ impl InteractiveBrowserServer {
 
         info!("Browser session created successfully: {session_id}");
 
-        // Wait for connection/page load
-        info!("Waiting for initial page load in session {session_id}...");
-        match tokio::time::timeout(Duration::from_secs(30), notify.notified()).await {
-            Ok(_) => {
-                info!("Initial page load completed for session {session_id}");
+        // Check status result for the message
+        let status_msg = match status_check {
+            Ok(status) if status >= 400 => {
+                warn!("URL {url} created session but returned status {status}");
+                format!("Session created for {url} (HTTP {status})")
             }
-            Err(_) => {
-                // Timeout
-                info!(
-                    "Initial page load timed out (30s) for session {session_id}, proceeding anyway"
-                );
+            Err(e) => {
+                warn!("URL {url} session created but check failed: {e}");
+                format!("Session created for {url} (Network Error: {e})")
             }
-        }
+            Ok(_) => match tokio::time::timeout(Duration::from_secs(30), notify.notified()).await {
+                Ok(_) => {
+                    info!("Initial page load completed for session {session_id}");
+                    format!("Session created for {url} and page loaded")
+                }
+                Err(_) => {
+                    info!("Initial page load timed out for session {session_id}");
+                    format!("Session created for {url} (load wait timed out)")
+                }
+            },
+        };
 
-        Ok(session_id)
+        Ok((session_id, status_msg))
     }
 
     /// Executes a given JavaScript snippet in a specific browser session's window.
@@ -488,6 +501,9 @@ impl InteractiveBrowserServer {
 
     /// Navigates a browser session to a new URL and waits for the page to load.
     pub async fn navigate_to_url(&self, session_id: &str, url: &str) -> Result<String, String> {
+        // Check URL status first (before locking session)
+        let status_check = self.check_url_status(url).await;
+
         info!("Navigating session {session_id} to {url}");
 
         let session = {
@@ -513,14 +529,6 @@ impl InteractiveBrowserServer {
                 .value()
                 .clone();
 
-            // Clear any previous notification
-            // Notify doesn't have a clear() method, but it's edge-triggered.
-            // If there's a permit sitting there, consume it.
-            // However, since we are initiating a new navigation, previous load events don't matter
-            // as strictly, but avoiding a race where we pick up an old event is good.
-            // Ideally we'd replace the Notify with a fresh one, but that might be racy too.
-            // For now, let's assume standard usage.
-
             // Use eval to set window.location.href
             let script = format!("window.location.href = '{}'", url.replace('\'', "\\'"));
 
@@ -539,6 +547,20 @@ impl InteractiveBrowserServer {
                 }
             }
 
+            // Handle return based on status_check
+            // If status is received (error code or network error), return immediately without waiting for timeout
+            match status_check {
+                Ok(status) if status >= 400 => {
+                    warn!("URL {url} returned status {status}, returning early");
+                    return Ok(format!("Navigated to {url} (HTTP {status})"));
+                }
+                Err(e) => {
+                    warn!("URL {url} check failed: {e}, returning early");
+                    return Ok(format!("Navigated to {url} (Network Error: {e})"));
+                }
+                _ => {} // Success (200-399), proceed to wait for page load
+            }
+
             // Wait for page load with timeout
             info!("Waiting for page load in session {session_id}...");
             match tokio::time::timeout(Duration::from_secs(30), notify.notified()).await {
@@ -551,13 +573,26 @@ impl InteractiveBrowserServer {
                     info!(
                         "Navigation timed out waiting for page load event in session {session_id}"
                     );
-                    // We return success anyway because the navigation likely happened, just the event was missed or slow
                     Ok(format!("Navigated to {url} (load wait timed out)"))
                 }
             }
         } else {
             Err("Browser window not found".to_string())
         }
+    }
+
+    /// Checks the HTTP status of a URL using reqwest.
+    async fn check_url_status(&self, url: &str) -> Result<u16, String> {
+        let client = reqwest::Client::builder()
+            .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 LibrAgent Browser")
+            .timeout(Duration::from_secs(10))
+            .build()
+            .map_err(|e| e.to_string())?;
+
+        // We use GET instead of HEAD to be more robust against servers that block HEAD or return 405.
+        // reqwest does not download the body unless we consume the stream, so it's efficient.
+        let response = client.get(url).send().await.map_err(|e| e.to_string())?;
+        Ok(response.status().as_u16())
     }
 
     /// Handles the page loaded notification from the frontend.

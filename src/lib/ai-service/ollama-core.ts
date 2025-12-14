@@ -337,7 +337,7 @@ export function processChunk(
 
       if (thinkMatch) {
         // Extract thinking content (without tags)
-        const thinkingContent = thinkMatch[1].trim();
+        const thinkingContent = thinkMatch[1];
         if (thinkingContent) {
           result.thinking = thinkingContent;
           logger.debug('Thinking extracted from content field', {
@@ -346,9 +346,10 @@ export function processChunk(
         }
 
         // Remove <think> block from content and clean up
-        const contentWithoutThink = message.content
-          .replace(/<think[^>]*>[\s\S]*?<\/think>/gi, '')
-          .trim();
+        const contentWithoutThink = message.content.replace(
+          /<think[^>]*>[\s\S]*?<\/think>/gi,
+          '',
+        );
 
         if (contentWithoutThink) {
           result.content = contentWithoutThink;
@@ -370,8 +371,7 @@ export function processChunk(
       // Ollama returns thinking wrapped in <think>...</think> tags
       result.thinking = message.thinking
         .replace(/<think[^>]*>/gi, '') // Remove opening tag (with any attributes)
-        .replace(/<\/think>/gi, '') // Remove closing tag
-        .trim();
+        .replace(/<\/think>/gi, '');
 
       logger.debug('Thinking extracted from chunk', {
         thinkingLength: result.thinking.length,

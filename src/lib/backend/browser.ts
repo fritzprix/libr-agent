@@ -16,8 +16,11 @@ import type { BrowserSession } from './types';
 export async function createBrowserSession(params: {
   url: string;
   title?: string | null;
-}): Promise<string> {
-  return safeInvoke<string>('create_browser_session', params);
+}): Promise<{ session_id: string; message: string }> {
+  return safeInvoke<{ session_id: string; message: string }>(
+    'create_browser_session',
+    params,
+  );
 }
 
 /**
