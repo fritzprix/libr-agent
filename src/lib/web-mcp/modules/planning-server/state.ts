@@ -14,6 +14,7 @@ import type {
   ClearGoalOutput,
   AddToDoOutput,
   CheckTodoOutput,
+  ReflectionData,
 } from './types';
 import { MCPResponseBuilder } from '@/lib/web-mcp/response-builder';
 import { WebMCPErrorCodes } from '@/lib/web-mcp/error-codes';
@@ -42,6 +43,7 @@ export class PersistentState {
 
   // Sequential thinking state (Ephemeral)
   private thoughtHistory: ThoughtData[] = [];
+  private reflectionHistory: ReflectionData[] = [];
   private branches: Record<string, ThoughtData[]> = {};
   private disableThoughtLogging = false;
 
@@ -610,7 +612,7 @@ export class PersistentState {
         );
       } else if (completedCount === todos.length) {
         nextActions.push(
-          'All todos completed! Review results and finish execution.',
+          "All todos completed! Consider using 'critiqueAndReflection' to review your work before finishing.",
         );
       } else {
         nextActions.push(
@@ -719,6 +721,7 @@ export class PersistentState {
 
     // Reset sequential thinking
     this.thoughtHistory = [];
+    this.reflectionHistory = [];
     this.branches = {};
 
     const summaryText = `Session state cleared:\n- Goal: ${clearedGoal ? `"${clearedGoal}"` : '(none)'}\n- Todos cleared: ${clearedTodos}\n- Scratchpad items cleared: ${clearedScratchpad}\n\nSession is now completely reset.`;
@@ -894,6 +897,62 @@ export class PersistentState {
       });
     }
   }
+
+  processCritiqueAndReflection(
+    input: unknown,
+  ): MCPResult<Record<string, unknown>> {
+    try {
+      const data = input as Record<string, unknown>;
+
+      if (typeof data.critique !== 'string') {
+        return createMCPErrorToolResult(
+          'Invalid critique: must be a string',
+        ) as MCPResult<Record<string, unknown>>;
+      }
+      if (typeof data.reflection !== 'string') {
+        return createMCPErrorToolResult(
+          'Invalid reflection: must be a string',
+        ) as MCPResult<Record<string, unknown>>;
+      }
+      if (typeof data.nextAction !== 'string') {
+        return createMCPErrorToolResult(
+          'Invalid nextAction: must be a string',
+        ) as MCPResult<Record<string, unknown>>;
+      }
+
+      const reflectionEntry: ReflectionData = {
+        critique: data.critique,
+        reflection: data.reflection,
+        nextAction: data.nextAction,
+      };
+
+      this.reflectionHistory.push(reflectionEntry);
+
+      console.info(
+        `CRITIQUE & REFLECTION: ${reflectionEntry.critique} | ${reflectionEntry.reflection} -> ${reflectionEntry.nextAction}`,
+      );
+
+      const message =
+        `## Reflection & Critique Analysis\n\n` +
+        `**Critique:**\n${reflectionEntry.critique}\n\n` +
+        `**Reflection:**\n${reflectionEntry.reflection}\n\n` +
+        `**Next Action:**\n${reflectionEntry.nextAction}\n\n` +
+        `> Based on this reflection, please proceed with the "Next Action" carefully. Do not repeat this reflection unless new information surfaces.`;
+
+      return createMCPStructuredToolResult(message, {
+        success: true,
+        reflectionEntry,
+      });
+    } catch (error) {
+      return createMCPStructuredToolResult(
+        'Failed to process critique and reflection',
+        {
+          error: error instanceof Error ? error.message : String(error),
+          status: 'failed',
+        },
+      );
+    }
+  }
 }
 
 /**
@@ -1023,6 +1082,12 @@ export class SessionStateManager {
 
   processThought(input: unknown): MCPResult<Record<string, unknown>> {
     return this.getCurrentState().processThought(input);
+  }
+
+  processCritiqueAndReflection(
+    input: unknown,
+  ): MCPResult<Record<string, unknown>> {
+    return this.getCurrentState().processCritiqueAndReflection(input);
   }
 
   async checkTodo(

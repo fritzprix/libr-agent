@@ -164,6 +164,9 @@ const planningServer: WebMCPServer = {
       case 'sequentialthinking': {
         return stateManager.processThought(typedArgs);
       }
+      case 'critiqueAndReflection': {
+        return stateManager.processCritiqueAndReflection(typedArgs);
+      }
       case 'get_current_state': {
         const includeCompleted = typedArgs.include_completed !== false; // Default true
         const includeScratchpad = typedArgs.include_scratchpad !== false; // Default true
@@ -347,6 +350,7 @@ export interface PlanningServerProxy extends WebMCPServerProxy {
     include_scratchpad?: boolean;
   }): Promise<MCPResult<unknown>>;
   sequentialthinking(args: unknown): Promise<MCPResult<unknown>>;
+  critiqueAndReflection(args: unknown): Promise<MCPResult<unknown>>;
 }
 
 export default planningServer;
