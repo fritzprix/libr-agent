@@ -201,7 +201,7 @@ export class AnthropicService extends BaseAIService {
    * @yields A JSON string for each chunk of the response. The format can be `{ content: string }`
    *         for text, `{ thinking: object }` for thinking state, or `{ tool_calls: [...] }` for tool calls.
    */
-  async *streamChat(
+  protected async *doStreamChat(
     messages: Message[],
     options: {
       modelName?: string;
@@ -230,12 +230,6 @@ export class AnthropicService extends BaseAIService {
         );
         if (modelSupportsThinking) {
           extendedThinking = true;
-          logger.info('Anthropic extended thinking enabled', { model });
-        } else {
-          logger.debug(
-            'Model does not support extended thinking, ignoring enableReasoning flag',
-            { model },
-          );
         }
       }
 
@@ -257,30 +251,20 @@ export class AnthropicService extends BaseAIService {
       const toolCallAccumulators = new Map<number, ToolCallAccumulator>();
 
       if (this.getAbortSignal().aborted) {
-        this.logger.info('Stream aborted before iteration');
+        this.logger.debug('Stream aborted before iteration');
         return;
       }
 
       for await (const chunk of stream) {
         if (this.getAbortSignal().aborted) {
-          this.logger.info('Stream aborted during iteration');
+          this.logger.debug('Stream aborted during iteration');
           break;
         }
-        logger.debug('Received chunk from Anthropic', { chunk });
 
         // Extra logging for delta inspection: helpful to see exact shapes
         if (chunk && chunk.type === 'content_block_delta') {
-          try {
-            logger.info('Anthropic content_block_delta raw', {
-              index: chunk.index,
-              deltaType: chunk.delta?.type,
-              delta: chunk.delta,
-            });
-          } catch (e) {
-            logger.debug('Failed to log content_block_delta safely', {
-              error: e,
-            });
-          }
+          // kept only if really needed, otherwise remove or debug
+          // removing for cleanup as requested
         }
 
         if (
@@ -300,10 +284,6 @@ export class AnthropicService extends BaseAIService {
           yield JSON.stringify({ thinkingSignature: chunk.delta.signature });
         } else if (chunk.type === 'content_block_start') {
           // Initialize accumulator for new tool call
-          logger.info('Anthropic content_block_start', {
-            index: chunk.index,
-            content_block: chunk.content_block,
-          });
           if (chunk.content_block.type === 'tool_use') {
             const initialInput =
               chunk.content_block.input &&

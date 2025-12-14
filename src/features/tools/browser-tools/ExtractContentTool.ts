@@ -107,7 +107,7 @@ function createMetadata(
 export const extractWebContentTool: StrictBrowserMCPTool = {
   name: 'extractWebContent',
   description:
-    'Convert the webpage into clean, readable markdown format. Returns the first page of content and the total number of pages. Use readWebContent to access subsequent pages. Ideal for content analysis, summarization, and reading.\n\nOptional autoMerge parameter: When enabled and content is small (≤2 pages OR <5000 chars), automatically returns all content merged in a single response, eliminating the need for subsequent readWebContent calls.',
+    'Convert the webpage into clean, readable markdown format. Returns the first page of content (approx. 6000 characters) and the total number of pages. Use readWebContent to access subsequent pages. Ideal for content analysis, summarization, and reading.\n\nOptional autoMerge parameter: When enabled and content is small (≤2 pages OR <5000 chars), automatically returns all content merged in a single response, eliminating the need for subsequent readWebContent calls.',
   inputSchema: {
     type: 'object',
     properties: {

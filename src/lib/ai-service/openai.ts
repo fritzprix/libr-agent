@@ -143,7 +143,7 @@ export class OpenAIService extends BaseAIService {
    * @param options Optional parameters for the chat.
    * @yields A JSON string for each chunk of the response.
    */
-  async *streamChat(
+  protected async *doStreamChat(
     messages: Message[],
     options: {
       modelName?: string;
@@ -159,9 +159,6 @@ export class OpenAIService extends BaseAIService {
     );
 
     const provider = this.getProvider();
-    logger.debug('Preparing OpenAI streaming chat', {
-      messages: sanitizedMessages,
-    });
 
     try {
       // Use the sanitized messages prepared for the provider to ensure
@@ -170,10 +167,6 @@ export class OpenAIService extends BaseAIService {
         sanitizedMessages,
         options.systemPrompt,
       );
-
-      logger.debug('OpenAI request payload prepared', {
-        messages: openaiMessages,
-      });
 
       let modelName = options.modelName || config.defaultModel || 'gpt-4-turbo';
 
@@ -196,24 +189,8 @@ export class OpenAIService extends BaseAIService {
         );
         if (modelSupportsThinking) {
           reasoningEffort = config.reasoningEffort;
-          logger.info('OpenAI reasoning mode enabled', {
-            model: modelName,
-            reasoning_effort: reasoningEffort,
-          });
-        } else {
-          logger.debug(
-            'Model does not support reasoning, ignoring enableReasoning flag',
-            { model: modelName },
-          );
         }
       }
-
-      logger.info(`${provider} call : `, {
-        model: modelName,
-        messages: openaiMessages,
-        reasoningEnabled: config.enableReasoning,
-        reasoningEffort: reasoningEffort,
-      });
 
       const completion = await this.withRetry(() =>
         this.openai.chat.completions.create(
@@ -235,7 +212,7 @@ export class OpenAIService extends BaseAIService {
       );
 
       if (this.getAbortSignal().aborted) {
-        this.logger.info('Stream aborted before iteration');
+        this.logger.debug('Stream aborted before iteration');
         return;
       }
 

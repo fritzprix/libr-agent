@@ -259,4 +259,28 @@ export const planningTools: MCPTool[] = [
       ],
     },
   },
+  {
+    name: 'critiqueAndReflection',
+    description:
+      'Reflect on the current state and provide a critique of the progress. Use this tool to pause, analyze what has been done, identify potential issues or missed steps, and plan the next actions carefully.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        critique: {
+          type: 'string',
+          description: 'A critical evaluation of the results achieved so far.',
+        },
+        reflection: {
+          type: 'string',
+          description:
+            'Self-reflection on any shortcomings or areas for improvement in the process.',
+        },
+        nextAction: {
+          type: 'string',
+          description: 'The expected next action based on the reflection.',
+        },
+      },
+      required: ['critique', 'reflection', 'nextAction'],
+    },
+  },
 ];

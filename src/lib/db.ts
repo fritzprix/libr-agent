@@ -11,3 +11,4 @@ export type {
 } from './db/types';
 
 export { dbService, dbUtils } from './db/service';
+export { LocalDatabase } from './db/database';

@@ -82,22 +82,37 @@ impl SecurityValidator {
         );
 
         // Clean the path to resolve . and .. components
-        let clean_path = PathBuf::from(user_path).clean();
+        let mut clean_path = PathBuf::from(user_path).clean();
 
-        // 절대경로 금지 - 보안 강화
+        // 절대경로 처리: base_dir 내부에 있으면 허용하고 상대경로로 변환
         if clean_path.is_absolute() {
-            return Err(SecurityError::PathTraversal(format!(
-                "Absolute paths not allowed: '{user_path}'"
-            )));
-        }
-
-        // Windows 드라이브 경로 금지 (C:, D: 등)
-        if user_path.len() >= 2 && user_path.chars().nth(1) == Some(':') {
-            return Err(SecurityError::PathTraversal(format!(
-                "Absolute paths with drive letters are not allowed for destination paths: '{user_path}'. \
-                 Please use relative paths like 'folder/file.txt'. \
-                 The file will be placed inside the workspace directory."
-            )));
+            if clean_path.starts_with(&self.base_dir) {
+                match clean_path.strip_prefix(&self.base_dir) {
+                    Ok(p) => {
+                        clean_path = p.to_path_buf();
+                        tracing::debug!("Converted absolute path to relative: {:?}", clean_path);
+                    }
+                    Err(e) => {
+                        return Err(SecurityError::PathTraversal(format!(
+                            "Failed to strip prefix from absolute path: {}",
+                            e
+                        )));
+                    }
+                }
+            } else {
+                return Err(SecurityError::PathTraversal(format!(
+                    "Absolute paths not allowed (outside workspace): '{user_path}'"
+                )));
+            }
+        } else {
+            // Windows 드라이브 경로 금지 (C:, D: 등) - 상대경로인 경우에만 체크
+            if user_path.len() >= 2 && user_path.chars().nth(1) == Some(':') {
+                return Err(SecurityError::PathTraversal(format!(
+                    "Absolute paths with drive letters are not allowed for destination paths: '{user_path}'. \
+                     Please use relative paths like 'folder/file.txt'. \
+                     The file will be placed inside the workspace directory."
+                )));
+            }
         }
 
         // 상위 디렉터리 탐색 금지

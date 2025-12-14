@@ -9,7 +9,11 @@ pub fn create_read_file_tool() -> MCPTool {
     let mut props = HashMap::new();
     props.insert(
         "path".to_string(),
-        string_prop(Some(1), Some(1000), Some("Path to the file to read")),
+        string_prop(
+            Some(1),
+            Some(1000),
+            Some("Relative path to the file to read (from workspace root)"),
+        ),
     );
     props.insert(
         "startLine".to_string(),
@@ -42,7 +46,11 @@ pub fn create_write_file_tool() -> MCPTool {
     let mut props = HashMap::new();
     props.insert(
         "path".to_string(),
-        string_prop(Some(1), Some(1000), Some("Path to the file to write")),
+        string_prop(
+            Some(1),
+            Some(1000),
+            Some("Relative path to the file to write (from workspace root)"),
+        ),
     );
     props.insert(
         "content".to_string(),
@@ -75,7 +83,11 @@ pub fn create_list_directory_tool() -> MCPTool {
     let mut props = HashMap::new();
     props.insert(
         "path".to_string(),
-        string_prop(Some(1), Some(1000), Some("Path to the directory to list")),
+        string_prop(
+            Some(1),
+            Some(1000),
+            Some("Relative path to the directory to list (from workspace root)"),
+        ),
     );
 
     MCPTool {
@@ -161,7 +173,11 @@ pub fn create_replace_lines_in_file_tool() -> MCPTool {
     let mut props = HashMap::new();
     props.insert(
         "path".to_string(),
-        string_prop(Some(1), Some(1000), Some("Path to the file to modify")),
+        string_prop(
+            Some(1),
+            Some(1000),
+            Some("Relative path to the file to modify (from workspace root)"),
+        ),
     );
     props.insert(
         "replacements".to_string(),

@@ -59,6 +59,11 @@ const planningServer: WebMCPServer = {
         return await stateManager.clearGoal();
       }
       case 'add_todo': {
+        if (!typedArgs.name || typeof typedArgs.name !== 'string') {
+          return createMCPErrorToolResult(
+            'The "name" argument is required and must be a string.',
+          );
+        }
         return await stateManager.addTodo(
           typedArgs.name as string,
           typedArgs.priority as 'low' | 'medium' | 'high' | undefined,
@@ -163,6 +168,9 @@ const planningServer: WebMCPServer = {
       }
       case 'sequentialthinking': {
         return stateManager.processThought(typedArgs);
+      }
+      case 'critiqueAndReflection': {
+        return stateManager.processCritiqueAndReflection(typedArgs);
       }
       case 'get_current_state': {
         const includeCompleted = typedArgs.include_completed !== false; // Default true
@@ -347,6 +355,7 @@ export interface PlanningServerProxy extends WebMCPServerProxy {
     include_scratchpad?: boolean;
   }): Promise<MCPResult<unknown>>;
   sequentialthinking(args: unknown): Promise<MCPResult<unknown>>;
+  critiqueAndReflection(args: unknown): Promise<MCPResult<unknown>>;
 }
 
 export default planningServer;
