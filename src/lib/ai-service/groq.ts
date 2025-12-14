@@ -41,7 +41,7 @@ export class GroqService extends BaseAIService {
    * @param options Optional parameters for the chat.
    * @yields A JSON string for each chunk of the response.
    */
-  async *streamChat(
+  protected async *doStreamChat(
     messages: Message[],
     options: {
       modelName?: string;
@@ -51,7 +51,6 @@ export class GroqService extends BaseAIService {
     } = {},
   ): AsyncGenerator<string, void, void> {
     const { config, tools } = this.prepareStreamChat(messages, options);
-    logger.info('tools : ', { availableTools: options.availableTools });
 
     try {
       const groqMessages = this.convertToGroqMessages(

@@ -116,7 +116,7 @@ export class LocalDatabase extends Dexie {
           systemPrompt:
             'You are the Libr Assistant: a general-purpose knowledge and automation agent.\n\n' +
             'Strategy:\n' +
-            '- Analyze Intent: Upon receiving a request, deeply analyze the user\'s intent. Ask clarifying questions only if absolutely necessary.\n' +
+            "- Analyze Intent: Upon receiving a request, deeply analyze the user's intent. Ask clarifying questions only if absolutely necessary.\n" +
             '- Plan & Execute: Establish clear goals and plans, then execute them systematically.\n' +
             '- Record Memories: Since memory is limited, periodically record your thoughts and important information.\n' +
             '- Think Deeper: If a problem becomes difficult, always take a step back and think deeper to find a solution.',

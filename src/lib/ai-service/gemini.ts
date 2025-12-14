@@ -234,7 +234,7 @@ export class GeminiService extends BaseAIService {
    * @param options Optional parameters for the chat.
    * @yields A JSON string for each chunk of the response, containing content and/or tool calls.
    */
-  async *streamChat(
+  protected async *doStreamChat(
     messages: Message[],
     options: {
       modelName?: string;
@@ -295,10 +295,6 @@ export class GeminiService extends BaseAIService {
             thinkingBudget,
             includeThoughts: true,
           };
-          logger.info('Gemini thinking mode enabled', {
-            model,
-            thinkingBudget,
-          });
         }
       }
 
@@ -311,13 +307,13 @@ export class GeminiService extends BaseAIService {
       });
 
       if (this.getAbortSignal().aborted) {
-        this.logger.info('Stream aborted before iteration');
+        this.logger.debug('Stream aborted before iteration');
         return;
       }
 
       for await (const chunk of result) {
         if (this.getAbortSignal().aborted) {
-          this.logger.info('Stream aborted during iteration');
+          this.logger.debug('Stream aborted during iteration');
           break;
         }
 
@@ -376,15 +372,6 @@ export class GeminiService extends BaseAIService {
             }
           }
         }
-
-        logger.info('Gemini chunk received:', {
-          chunk,
-          hasText: !!chunk.text,
-          hasFunctionCalls: !!chunk.functionCalls,
-          hasThoughts: !!thoughtContent,
-          thoughtContentLength: thoughtContent.length,
-          chunkKeys: Object.keys(chunk || {}),
-        });
 
         if (thoughtContent) {
           yield JSON.stringify({ thinking: thoughtContent });

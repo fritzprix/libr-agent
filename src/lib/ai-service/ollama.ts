@@ -214,7 +214,7 @@ export class OllamaService extends BaseAIService {
    * @param options Optional parameters for the chat.
    * @yields A JSON string for each chunk of the response.
    */
-  async *streamChat(
+  protected async *doStreamChat(
     messages: Message[],
     options: StreamChatOptions = {},
   ): AsyncGenerator<string, void, void> {
@@ -246,17 +246,6 @@ export class OllamaService extends BaseAIService {
         coreLogger,
       );
 
-      logger.info('Ollama API call:', {
-        model,
-        messagesCount: ollamaMessages.length,
-        ollamaMessages,
-        host: this.host,
-        toolsCount: ollamaTools.length,
-        reasoningEnabled: config.enableReasoning,
-        reasoningEffort: config.reasoningEffort,
-        thinkParam,
-      });
-
       const requestOptions: ChatRequest & { stream: true } = {
         model,
         messages: ollamaMessages as OllamaMessage[],
@@ -269,8 +258,6 @@ export class OllamaService extends BaseAIService {
           num_predict: config.maxTokens || 4096,
         },
       };
-
-      logger.info('Ollama request options:', { requestOptions });
 
       const stream = await this.withRetry(async () => {
         try {
@@ -295,30 +282,25 @@ export class OllamaService extends BaseAIService {
       });
 
       if (this.getAbortSignal().aborted) {
-        this.logger.info('Stream aborted before iteration');
+        this.logger.debug('Stream aborted before iteration');
         return;
       }
 
       for await (const chunk of stream) {
         if (this.getAbortSignal().aborted) {
-          this.logger.info('Stream aborted during iteration');
+          this.logger.debug('Stream aborted during iteration');
           break;
         }
 
-        logger.debug('Received chunk from Ollama', { chunk });
-
         const processedChunk = this.processChunk(chunk);
         if (processedChunk) {
-          logger.debug('Processed chunk successfully', { processedChunk });
           yield processedChunk;
-        } else {
-          logger.debug('processChunk returned null');
         }
       }
     } catch (error: unknown) {
       // AbortError is expected on cancellation, handle it gracefully
       if (error instanceof Error && error.name === 'AbortError') {
-        this.logger.info('Ollama stream was aborted successfully.');
+        this.logger.debug('Ollama stream was aborted successfully.');
         return;
       }
       this.handleStreamingError(error, { messages, options, config });
