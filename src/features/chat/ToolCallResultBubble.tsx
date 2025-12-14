@@ -117,7 +117,7 @@ export const ToolCallResultBubble: React.FC<ToolCallResultBubbleProps> = ({
           <Wrench className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
           <span className="font-medium flex-shrink-0">{toolName}</span>
           {paramSummary && (
-            <span className="text-xs text-muted-foreground truncate font-mono opacity-70">
+            <span className="text-xs text-muted-foreground truncate font-mono opacity-70 min-w-0">
               {paramSummary}
             </span>
           )}
@@ -142,7 +142,7 @@ export const ToolCallResultBubble: React.FC<ToolCallResultBubbleProps> = ({
 
       {/* Expanded state: Details */}
       {isExpanded && (
-        <div className="border-t px-3 pb-3 pt-3">
+        <div className="border-t px-3 pb-3 pt-3 min-w-0">
           <ToolCallDetails
             toolCall={toolCall}
             toolResult={toolResult}

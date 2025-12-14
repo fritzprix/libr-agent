@@ -1,217 +1,54 @@
-import {
-  createMCPStructuredToolResult,
-  createMCPErrorToolResult,
-} from '@/lib/mcp-response-utils';
+import { createMCPStructuredToolResult } from '@/lib/mcp-response-utils';
 import type { MCPResult } from '@/lib/mcp-types';
-import { db, type PlanningGoal, type PlanningTodo } from './db';
 import type {
   SimpleTodo,
   ScratchpadItem,
-  ThoughtData,
   PlanningState,
   BaseOutput,
   CreateGoalOutput,
   ClearGoalOutput,
   AddToDoOutput,
-  CheckTodoOutput,
-  ReflectionData,
 } from './types';
-import { MCPResponseBuilder } from '@/lib/web-mcp/response-builder';
-import { WebMCPErrorCodes } from '@/lib/web-mcp/error-codes';
+import { GoalManager } from './managers/goal-manager';
+import { TodoManager } from './managers/todo-manager';
+import { ScratchpadManager } from './managers/scratchpad-manager';
+import { ThinkingManager } from './managers/thinking-manager';
+import { getLogger } from '@/lib/logger';
 
-const MAX_NOTES = 20;
-
-/**
- * Formats a list of todos for error messages
- */
-function formatTodosList(todos: SimpleTodo[]): string {
-  if (todos.length === 0) {
-    return '  (no todos)';
-  }
-  return todos.map((t) => `  - ID: ${t.id} [${t.status}] ${t.name}`).join('\n');
-}
+const logger = getLogger('PersistentState');
 
 /**
  * Manages the persistent state for the planning server using Dexie.js.
- * Goals, Todos, and Memos are persisted.
- * Sequential Thinking state remains ephemeral (in-memory) for now.
+ * Coordinates between specialized managers for goals, todos, scratchpad, and thinking state.
+ * Goals, Todos, and Scratchpad are persisted.
+ * Sequential Thinking state remains ephemeral (in-memory).
  * @internal
  */
 export class PersistentState {
-  private sessionId: string;
-  private threadId: string;
-
-  // Sequential thinking state (Ephemeral)
-  private thoughtHistory: ThoughtData[] = [];
-  private reflectionHistory: ReflectionData[] = [];
-  private branches: Record<string, ThoughtData[]> = {};
-  private disableThoughtLogging = false;
+  private goalManager: GoalManager;
+  private todoManager: TodoManager;
+  private scratchpadManager: ScratchpadManager;
+  private thinkingManager: ThinkingManager;
 
   constructor(sessionId: string, threadId: string) {
-    this.sessionId = sessionId;
-    this.threadId = threadId;
-  }
-
-  private async getActiveGoal(): Promise<PlanningGoal | undefined> {
-    return db.goals
-      .where({
-        sessionId: this.sessionId,
-        threadId: this.threadId,
-        isActive: 1,
-      })
-      .last();
-  }
-
-  private async getLastClearedGoalRecord(): Promise<PlanningGoal | undefined> {
-    return db.goals
-      .where({
-        sessionId: this.sessionId,
-        threadId: this.threadId,
-        isActive: 0,
-      })
-      .last();
-  }
-
-  private async getTodosList(): Promise<SimpleTodo[]> {
-    const todos = await db.todos
-      .where({ sessionId: this.sessionId, threadId: this.threadId })
-      .sortBy('order');
-
-    return todos.map((t) => ({
-      id: t.id!,
-      name: typeof t.name === 'string' && t.name ? t.name : '(Untitled)',
-      status: t.status,
-      summary: t.summary,
-      priority: t.priority,
-      dependsOn: t.dependsOn,
-    }));
-  }
-
-  /**
-   * Helper method to resolve todo ID from either id or index parameter.
-   * @param params Object containing either 'id' or 'index'
-   * @returns Resolved todo ID or undefined if not found
-   */
-  private async resolveTodoId(params: {
-    id?: number;
-    index?: number;
-  }): Promise<{ id: number | undefined; todos: SimpleTodo[] }> {
-    const todos = await this.getTodosList();
-
-    if (params.id !== undefined) {
-      return { id: params.id, todos };
-    }
-
-    if (params.index !== undefined) {
-      if (params.index >= 0 && params.index < todos.length) {
-        return { id: todos[params.index].id, todos };
-      }
-      return { id: undefined, todos };
-    }
-
-    return { id: undefined, todos };
-  }
-
-  async getScratchpadList(): Promise<ScratchpadItem[]> {
-    const items = await db.scratchpad
-      .where({ sessionId: this.sessionId, threadId: this.threadId })
-      .sortBy('id');
-
-    return items.map((m) => ({
-      id: m.id!,
-      content: m.content,
-      source: m.source,
-    }));
+    this.goalManager = new GoalManager(sessionId, threadId);
+    this.todoManager = new TodoManager(sessionId, threadId);
+    this.scratchpadManager = new ScratchpadManager(sessionId, threadId);
+    this.thinkingManager = new ThinkingManager();
   }
 
   async createGoal(goal: string): Promise<MCPResult<CreateGoalOutput>> {
-    const previousGoal = await this.getActiveGoal();
-
-    // Deactivate previous goal if exists
-    if (previousGoal && previousGoal.id) {
-      await db.goals.update(previousGoal.id, { isActive: 0 });
-    }
-
-    await db.goals.add({
-      sessionId: this.sessionId,
-      threadId: this.threadId,
-      content: goal,
-      isActive: 1,
-      createdAt: Date.now(),
-    });
-
-    const todos = await this.getTodosList();
-
-    const nextActions = [
-      'Break down goal into actionable todos with add_todo',
-      'Set priorities and dependencies if needed',
-      'Track progress with get_current_state',
-    ];
-
-    let message = `Goal set: "${goal}"`;
-    if (previousGoal) {
-      message += `\n\nPrevious goal: "${previousGoal.content}"\nTodos from previous goal: ${todos.length}`;
-    }
-
-    return new MCPResponseBuilder({
-      goal,
-      success: true,
-      previousGoal: previousGoal?.content,
-      existingTodos: todos.length,
-    })
-      .withMessage(message)
-      .withNextActions(nextActions)
-      .withSuggestions([
-        'Start with 3-5 high-level todos, then refine as you go',
-      ])
-      .asSuccess();
+    const existingTodosCount = (await this.todoManager.getTodos()).length;
+    return this.goalManager.createGoal(goal, existingTodosCount);
   }
 
   async updateGoal(goal: string): Promise<MCPResult<CreateGoalOutput>> {
-    const activeGoal = await this.getActiveGoal();
-    if (!activeGoal || !activeGoal.id) {
-      return createMCPStructuredToolResult(
-        'No active goal to update. Use create_goal first.',
-        {
-          success: false,
-          goal: '',
-        },
-      );
-    }
-    const oldGoalContent = activeGoal.content;
-    await db.goals.update(activeGoal.id, { content: goal });
-
-    return createMCPStructuredToolResult<CreateGoalOutput>(
-      `Goal updated from "${oldGoalContent}" to "${goal}"`,
-      {
-        goal,
-        success: true,
-      },
-    );
+    return this.goalManager.updateGoal(goal);
   }
 
   async clearGoal(): Promise<MCPResult<ClearGoalOutput>> {
-    const activeGoal = await this.getActiveGoal();
-    if (activeGoal && activeGoal.id) {
-      const clearedGoalContent = activeGoal.content;
-      await db.goals.update(activeGoal.id, { isActive: 0 });
-
-      const todos = await this.getTodosList();
-      const remainingTodos = todos.length;
-      const todoSummary =
-        remainingTodos > 0
-          ? `Remaining todos: ${remainingTodos}`
-          : 'All todos have been completed or cleared.';
-      return createMCPStructuredToolResult<ClearGoalOutput>(
-        `Goal cleared: "${clearedGoalContent}"\n${todoSummary}\nSession is now ready for a new goal.`,
-        {
-          success: true,
-        },
-      );
-    }
-    return createMCPStructuredToolResult('No active goal to clear', {
-      success: false,
-    });
+    const remainingTodosCount = (await this.todoManager.getTodos()).length;
+    return this.goalManager.clearGoal(remainingTodosCount);
   }
 
   async addTodo(
@@ -219,98 +56,13 @@ export class PersistentState {
     priority?: 'low' | 'medium' | 'high',
     dependsOn?: number[],
   ): Promise<MCPResult<AddToDoOutput>> {
-    const todos = await this.getTodosList();
-
-    // Check for corrupted todos (missing name)
-    const corruptedTodos = todos.filter(
-      (t) => !t.name || typeof t.name !== 'string',
-    );
-
-    if (corruptedTodos.length > 0) {
-      return new MCPResponseBuilder({
-        success: false,
-        corruptedTodos,
-      })
-        .withMessage(
-          `Data Corruption Detected.\n\n` +
-            `The following todo items are missing a 'name' property and must be fixed or removed:\n` +
-            corruptedTodos
-              .map((t) => `  - ID: ${t.id} (Status: ${t.status})`)
-              .join('\n') +
-            `\n\nPlease use 'clear_todos' with these IDs to remove them.`,
-        )
-        .asError(
-          WebMCPErrorCodes.INTERNAL_ERROR,
-        ) as unknown as MCPResult<AddToDoOutput>;
-    }
-
-    // Check for duplicate todos (case-insensitive, trimmed)
-    const normalizedName = name.trim().toLowerCase();
-    const duplicate = todos.find(
-      (t) => t.name.trim().toLowerCase() === normalizedName,
-    );
-
-    if (duplicate) {
-      return new MCPResponseBuilder({
-        success: false,
-        duplicateId: duplicate.id,
-        existingTodo: duplicate,
-        todos,
-      })
-        .withMessage(
-          `Duplicate todo detected.\n\n` +
-            `A todo with similar content already exists:\n` +
-            `  - ID: ${duplicate.id} [${duplicate.status}] ${duplicate.name}\n\n` +
-            `Current todos:\n${formatTodosList(todos)}`,
-        )
-        .withSuggestions([
-          'Use a different name for the new todo',
-          `Update the existing todo with update_todo(id=${duplicate.id})`,
-          `Mark the existing todo as completed if needed`,
-        ])
-        .asError(WebMCPErrorCodes.PLANNING.DUPLICATE_TODO);
-    }
-
-    const order = todos.length;
-
-    const id = await db.todos.add({
-      sessionId: this.sessionId,
-      threadId: this.threadId,
+    const activeGoalContent = await this.goalManager.getGoal();
+    return this.todoManager.addTodo(
       name,
-      status: 'pending',
       priority,
       dependsOn,
-      order,
-      createdAt: Date.now(),
-    });
-
-    const newTodos = await this.getTodosList();
-    const activeGoal = await this.getActiveGoal();
-    const pendingCount = newTodos.filter((t) => t.status === 'pending').length;
-    const completedCount = newTodos.filter(
-      (t) => t.status === 'completed',
-    ).length;
-
-    let message = `Todo added: "${name}" (ID: ${id})`;
-    if (activeGoal) {
-      message += `\n\nGoal: "${activeGoal.content}"`;
-    }
-    message += `\n\nCurrent progress:\n  - Total: ${newTodos.length} todos\n  - Pending: ${pendingCount}\n  - Completed: ${completedCount}`;
-
-    return new MCPResponseBuilder({
-      success: true,
-      id,
-      todo: { id, name, status: 'pending' as const, priority, dependsOn },
-      todos: newTodos,
-      summary: {
-        total: newTodos.length,
-        pending: pendingCount,
-        completed: completedCount,
-      },
-    })
-      .withMessage(message)
-      .withNextActions(['Use mark_todo when this task is done'])
-      .asSuccess();
+      activeGoalContent,
+    );
   }
 
   async updateTodo(
@@ -322,115 +74,7 @@ export class PersistentState {
       dependsOn?: number[];
     },
   ): Promise<MCPResult<unknown>> {
-    // Resolve id from either id or index
-    const { id: resolvedId, todos: allTodos } =
-      await this.resolveTodoId(params);
-
-    if (resolvedId === undefined) {
-      const validIds = allTodos.map((t) => t.id);
-      const pendingCount = allTodos.filter(
-        (t) => t.status === 'pending',
-      ).length;
-      const completedCount = allTodos.filter(
-        (t) => t.status === 'completed',
-      ).length;
-
-      const identifier =
-        params.id !== undefined
-          ? `ID ${params.id}`
-          : params.index !== undefined
-            ? `index ${params.index}`
-            : 'no identifier';
-
-      const suggestions = [
-        'Use get_current_state to see all todos with their IDs and indexes',
-        'Specify either "id" (database ID) or "index" (0-based position)',
-      ];
-
-      return new MCPResponseBuilder({
-        requestedId: params.id,
-        requestedIndex: params.index,
-        validIds,
-        validIndexRange: `0-${allTodos.length - 1}`,
-        totalCount: allTodos.length,
-        pending: pendingCount,
-        completed: completedCount,
-        todos: allTodos,
-      })
-        .withMessage(
-          `Todo with ${identifier} not found.\n\n` +
-            `Current todos (${allTodos.length} total):\n` +
-            `  - Pending: ${pendingCount}\n` +
-            `  - Completed: ${completedCount}\n` +
-            `  - Valid IDs: [${validIds.join(', ') || 'none'}]\n` +
-            `  - Valid indexes: ${allTodos.length > 0 ? `0-${allTodos.length - 1}` : 'none'}`,
-        )
-        .withSuggestions(suggestions)
-        .asError(WebMCPErrorCodes.PLANNING.TODO_NOT_FOUND);
-    }
-
-    const todo = await db.todos.get(resolvedId);
-    // Ensure todo belongs to this session
-    if (
-      !todo ||
-      todo.sessionId !== this.sessionId ||
-      todo.threadId !== this.threadId
-    ) {
-      const validIds = allTodos.map((t) => t.id);
-      const pendingCount = allTodos.filter(
-        (t) => t.status === 'pending',
-      ).length;
-      const completedCount = allTodos.filter(
-        (t) => t.status === 'completed',
-      ).length;
-
-      const suggestions = [
-        'Use get_current_state to see all todos with their IDs and indexes',
-      ];
-
-      return new MCPResponseBuilder({
-        requestedId: resolvedId,
-        validIds,
-        totalCount: allTodos.length,
-        pending: pendingCount,
-        completed: completedCount,
-        todos: allTodos,
-      })
-        .withMessage(
-          `Todo ${resolvedId} not found.\n\n` +
-            `Current todos (${allTodos.length} total):\n` +
-            formatTodosList(allTodos),
-        )
-        .withSuggestions(suggestions)
-        .asError(WebMCPErrorCodes.PLANNING.TODO_NOT_FOUND);
-    }
-
-    await db.todos.update(resolvedId, updates);
-    const updatedTodoRecord = await db.todos.get(resolvedId);
-    const todos = await this.getTodosList();
-
-    const simpleTodo: SimpleTodo = {
-      id: updatedTodoRecord!.id!,
-      name: updatedTodoRecord!.name,
-      status: updatedTodoRecord!.status,
-      summary: updatedTodoRecord!.summary,
-      priority: updatedTodoRecord!.priority,
-      dependsOn: updatedTodoRecord!.dependsOn,
-    };
-
-    const identifier =
-      params.index !== undefined
-        ? `index ${params.index} (ID: ${resolvedId})`
-        : `ID ${resolvedId}`;
-
-    return createMCPStructuredToolResult<CheckTodoOutput>(
-      `Todo ${identifier} updated: "${simpleTodo.name}"`,
-      {
-        success: true,
-        todo: simpleTodo,
-        todos,
-      },
-    );
+    return this.todoManager.updateTodo(params, updates);
   }
 
   async checkTodo(
@@ -438,291 +82,32 @@ export class PersistentState {
     check: boolean = true,
     summary?: string,
   ): Promise<MCPResult<unknown>> {
-    // Resolve id from either id or index
-    const { id: resolvedId, todos: allTodos } =
-      await this.resolveTodoId(params);
-
-    if (resolvedId === undefined) {
-      const validIds = allTodos.map((t) => t.id);
-      const pendingCount = allTodos.filter(
-        (t) => t.status === 'pending',
-      ).length;
-      const completedCount = allTodos.filter(
-        (t) => t.status === 'completed',
-      ).length;
-
-      const identifier =
-        params.id !== undefined
-          ? `ID ${params.id}`
-          : params.index !== undefined
-            ? `index ${params.index}`
-            : 'no identifier';
-
-      const suggestions = [
-        'Use get_current_state to see all todos with their IDs and indexes',
-        'Specify either "id" (database ID) or "index" (0-based position)',
-      ];
-
-      return new MCPResponseBuilder({
-        requestedId: params.id,
-        requestedIndex: params.index,
-        validIds,
-        validIndexRange: `0-${allTodos.length - 1}`,
-        totalCount: allTodos.length,
-        pending: pendingCount,
-        completed: completedCount,
-        todos: allTodos,
-      })
-        .withMessage(
-          `Todo with ${identifier} not found.\n\n` +
-            `Current todos (${allTodos.length} total):\n` +
-            `  - Pending: ${pendingCount}\n` +
-            `  - Completed: ${completedCount}\n` +
-            `  - Valid IDs: [${validIds.join(', ') || 'none'}]\n` +
-            `  - Valid indexes: ${allTodos.length > 0 ? `0-${allTodos.length - 1}` : 'none'}`,
-        )
-        .withSuggestions(suggestions)
-        .asError(WebMCPErrorCodes.PLANNING.TODO_NOT_FOUND);
-    }
-
-    const todo = await db.todos.get(resolvedId);
-    if (
-      !todo ||
-      todo.sessionId !== this.sessionId ||
-      todo.threadId !== this.threadId
-    ) {
-      const validIds = allTodos.map((t) => t.id);
-      const pendingCount = allTodos.filter(
-        (t) => t.status === 'pending',
-      ).length;
-      const completedCount = allTodos.filter(
-        (t) => t.status === 'completed',
-      ).length;
-
-      const suggestions = [
-        'Use get_current_state to see all todos with their IDs and indexes',
-      ];
-
-      return new MCPResponseBuilder({
-        requestedId: resolvedId,
-        validIds,
-        totalCount: allTodos.length,
-        pending: pendingCount,
-        completed: completedCount,
-        todos: allTodos,
-      })
-        .withMessage(
-          `Todo ${resolvedId} not found.\n\n` +
-            `Current todos (${allTodos.length} total):\n` +
-            formatTodosList(allTodos),
-        )
-        .withSuggestions(suggestions)
-        .asError(WebMCPErrorCodes.PLANNING.TODO_NOT_FOUND);
-    }
-
-    const updates: Partial<PlanningTodo> = {
-      status: check ? 'completed' : 'pending',
-    };
-    if (summary !== undefined) {
-      updates.summary = summary || undefined;
-    }
-
-    await db.todos.update(resolvedId, updates);
-    const updatedTodoRecord = await db.todos.get(resolvedId);
-    const todos = await this.getTodosList();
-
-    const simpleTodo: SimpleTodo = {
-      id: updatedTodoRecord!.id!,
-      name: updatedTodoRecord!.name,
-      status: updatedTodoRecord!.status,
-      summary: updatedTodoRecord!.summary,
-      priority: updatedTodoRecord!.priority,
-      dependsOn: updatedTodoRecord!.dependsOn,
-    };
-
-    // Find unblocked todos if this was completed
-    const unblockedTodos: SimpleTodo[] = [];
-    if (check) {
-      for (const t of todos) {
-        if (
-          t.status === 'blocked' &&
-          t.dependsOn &&
-          t.dependsOn.includes(resolvedId)
-        ) {
-          // Check if all dependencies are now completed
-          const allDepsCompleted = t.dependsOn.every((depId) => {
-            const dep = todos.find((d) => d.id === depId);
-            return dep?.status === 'completed';
-          });
-          if (allDepsCompleted) {
-            unblockedTodos.push(t);
-          }
-        }
-      }
-    }
-
-    // Calculate progress
-    const completedCount = todos.filter((t) => t.status === 'completed').length;
-    const progress = Math.round((completedCount / todos.length) * 100);
-
-    const identifier =
-      params.index !== undefined
-        ? `index ${params.index} (ID: ${resolvedId})`
-        : `ID ${resolvedId}`;
-
-    let message = `Todo ${identifier} marked as ${check ? 'completed' : 'pending'}.\n\n`;
-    message += `Progress: ${completedCount}/${todos.length} (${progress}%)`;
-
-    if (simpleTodo.summary) {
-      message += `\n\nSummary: "${simpleTodo.summary}"`;
-    }
-
-    if (unblockedTodos.length > 0) {
-      message += `\n\nUnblocked todos:\n${unblockedTodos.map((t) => `  - [${t.id}] ${t.name}`).join('\n')}`;
-    }
-
-    const builder = new MCPResponseBuilder({
-      success: true,
-      id: resolvedId,
-      completed: check,
-      todo: simpleTodo,
-      todos,
-      progress: {
-        completed: completedCount,
-        total: todos.length,
-        percentage: progress,
-      },
-      unblockedTodos: unblockedTodos.map((t) => ({ id: t.id, name: t.name })),
-    });
-
-    // Identify next action guidance
-    const nextActions: string[] = [];
-
-    if (unblockedTodos.length > 0) {
-      nextActions.push(
-        `Begin work on unblocked todo: "${unblockedTodos[0].name}" (ID: ${unblockedTodos[0].id})`,
-      );
-    } else {
-      const nextPending = todos.find(
-        (t) => t.status === 'pending' && t.id !== resolvedId,
-      );
-      if (nextPending) {
-        nextActions.push(
-          `Proceed to next todo: "${nextPending.name}" (ID: ${nextPending.id})`,
-        );
-      } else if (completedCount === todos.length) {
-        nextActions.push(
-          "All todos completed! Consider using 'critiqueAndReflection' to review your work before finishing.",
-        );
-      } else {
-        nextActions.push(
-          'Check the todo list for remaining blocked or satisfied items.',
-        );
-      }
-    }
-
-    return builder
-      .withMessage(message)
-      .withNextActions(nextActions)
-      .asSuccess();
+    return this.todoManager.checkTodo(params, check, summary);
   }
 
   async clearTodos(ids?: number[]): Promise<MCPResult<BaseOutput>> {
-    const todos = await this.getTodosList();
-
-    if (!ids || ids.length === 0) {
-      const clearedCount = todos.length;
-      await db.todos
-        .where({ sessionId: this.sessionId, threadId: this.threadId })
-        .delete();
-
-      const activeGoal = await this.getActiveGoal();
-      const msg =
-        clearedCount > 0
-          ? `All ${clearedCount} todo(s) cleared`
-          : 'No todos to clear.';
-
-      const nextActions: string[] = [];
-      if (activeGoal) {
-        nextActions.push(
-          'Review the current goal and add new todos to proceed.',
-        );
-      } else {
-        nextActions.push('Create a new goal to start a new planning session.');
-      }
-
-      return new MCPResponseBuilder({ success: true })
-        .withMessage(
-          `${msg}\nSession todos reset. Current goal: ${
-            activeGoal ? activeGoal.content : '(none)'
-          }`,
-        )
-        .withNextActions(nextActions)
-        .asSuccess();
-    }
-
-    const initialCount = todos.length;
-    // Verify IDs belong to session
-    const validIds = todos.map((t) => t.id);
-    const idsToDelete = ids.filter((id) => validIds.includes(id));
-
-    if (idsToDelete.length === 0) {
-      return createMCPStructuredToolResult<BaseOutput>(
-        `No todos found with the specified IDs: ${ids.join(
-          ', ',
-        )}\nAvailable IDs: ${
-          initialCount > 0 ? validIds.join(', ') : '(none)'
-        }`,
-        { success: false },
-      );
-    }
-
-    const todosToDelete = todos.filter((t) => idsToDelete.includes(t.id));
-    await db.todos.bulkDelete(idsToDelete);
-
-    const remainingTodos = await this.getTodosList();
-    const removedCount = idsToDelete.length;
-    const clearedNames = todosToDelete.map((t) => t.name).join(', ');
-
-    const nextActions: string[] = [];
-    if (remainingTodos.length > 0) {
-      nextActions.push('Review and prioritize the remaining todos.');
-    } else {
-      nextActions.push('All todos cleared. Add new todos to continue.');
-    }
-
-    return new MCPResponseBuilder({ success: true })
-      .withMessage(
-        `Cleared ${removedCount} todo(s): ${clearedNames}\nRemaining todos: ${remainingTodos.length}`,
-      )
-      .withNextActions(nextActions)
-      .asSuccess();
+    const activeGoalContent = await this.goalManager.getGoal();
+    return this.todoManager.clearTodos(ids, activeGoalContent);
   }
 
   async clear(): Promise<MCPResult<BaseOutput>> {
-    const activeGoal = await this.getActiveGoal();
-    const todos = await this.getTodosList();
-    const scratchpad = await this.getScratchpadList();
+    const activeGoal = await this.goalManager.getGoal();
+    const todos = await this.todoManager.getTodos();
+    const scratchpad = await this.scratchpadManager.getScratchpadList();
 
-    const clearedGoal = activeGoal ? activeGoal.content : null;
+    const clearedGoal = activeGoal;
     const clearedTodos = todos.length;
     const clearedScratchpad = scratchpad.length;
 
-    // Delete all data for this session/thread
-    await db.goals
-      .where({ sessionId: this.sessionId, threadId: this.threadId })
-      .delete();
-    await db.todos
-      .where({ sessionId: this.sessionId, threadId: this.threadId })
-      .delete();
-    await db.scratchpad
-      .where({ sessionId: this.sessionId, threadId: this.threadId })
-      .delete();
+    // Clear all managers
+    await Promise.all([
+      this.goalManager.clearAllGoals(),
+      this.todoManager.clearAllTodos(),
+      this.scratchpadManager.clearAllScratchpad(),
+    ]);
 
     // Reset sequential thinking
-    this.thoughtHistory = [];
-    this.reflectionHistory = [];
-    this.branches = {};
+    this.thinkingManager.reset();
 
     const summaryText = `Session state cleared:\n- Goal: ${clearedGoal ? `"${clearedGoal}"` : '(none)'}\n- Todos cleared: ${clearedTodos}\n- Scratchpad items cleared: ${clearedScratchpad}\n\nSession is now completely reset.`;
     return createMCPStructuredToolResult(summaryText, {
@@ -731,227 +116,42 @@ export class PersistentState {
   }
 
   async getGoal(): Promise<string | null> {
-    const goal = await this.getActiveGoal();
-    return goal ? goal.content : null;
+    return this.goalManager.getGoal();
   }
 
   async getTodos(): Promise<SimpleTodo[]> {
-    return this.getTodosList();
+    return this.todoManager.getTodos();
   }
 
   async addScratchpad(
     note: string,
     source?: string,
   ): Promise<MCPResult<BaseOutput & { scratchpad: ScratchpadItem[] }>> {
-    await db.scratchpad.add({
-      sessionId: this.sessionId,
-      threadId: this.threadId,
-      content: note,
-      source,
-      createdAt: Date.now(),
-    });
-
-    // Enforce MAX_NOTES
-    const items = await this.getScratchpadList();
-    if (items.length > MAX_NOTES) {
-      // Remove oldest
-      const oldest = items[0]; // Sorted by id (auto-inc)
-      await db.scratchpad.delete(oldest.id);
-    }
-
-    const updatedItems = await this.getScratchpadList();
-    const capacityWarning =
-      updatedItems.length === MAX_NOTES
-        ? `⚠️ At capacity (${MAX_NOTES}/${MAX_NOTES}) - oldest items will be removed`
-        : `Scratchpad: ${updatedItems.length}/${MAX_NOTES}`;
-
-    // Get the ID of the newly added item (last one)
-    const newItemId = updatedItems[updatedItems.length - 1].id;
-
-    let message = `Scratchpad ID:${newItemId} added\n${capacityWarning}`;
-    if (source) {
-      message += `\nSource: ${source}`;
-    }
-
-    return createMCPStructuredToolResult<
-      BaseOutput & { scratchpad: ScratchpadItem[] }
-    >(message, {
-      success: true,
-      scratchpad: updatedItems,
-    });
+    return this.scratchpadManager.addScratchpad(note, source);
   }
 
   async clearScratchpad(
     id: number,
   ): Promise<MCPResult<BaseOutput & { scratchpad: ScratchpadItem[] }>> {
-    const item = await db.scratchpad.get(id);
-    if (
-      !item ||
-      item.sessionId !== this.sessionId ||
-      item.threadId !== this.threadId
-    ) {
-      const scratchpad = await this.getScratchpadList();
-      const validIds = scratchpad.map((m) => m.id);
-      return createMCPStructuredToolResult<
-        BaseOutput & { scratchpad: ScratchpadItem[] }
-      >(
-        `Scratchpad ID:${id} not found.\nValid IDs: ${validIds.length > 0 ? validIds.join(', ') : '(no scratchpad items)'}`,
-        { success: false, scratchpad },
-      );
-    }
+    return this.scratchpadManager.clearScratchpad(id);
+  }
 
-    await db.scratchpad.delete(id);
-    const scratchpad = await this.getScratchpadList();
-
-    return createMCPStructuredToolResult<
-      BaseOutput & { scratchpad: ScratchpadItem[] }
-    >(
-      `Scratchpad ID:${id} cleared: "${item.content}"\nRemaining scratchpad items: ${scratchpad.length}`,
-      { success: true, scratchpad },
-    );
+  async getScratchpadList(): Promise<ScratchpadItem[]> {
+    return this.scratchpadManager.getScratchpadList();
   }
 
   async getLastClearedGoal(): Promise<string | null> {
-    const goal = await this.getLastClearedGoalRecord();
-    return goal ? goal.content : null;
+    return this.goalManager.getLastClearedGoal();
   }
 
   processThought(input: unknown): MCPResult<Record<string, unknown>> {
-    try {
-      const data = input as Record<string, unknown>;
-
-      if (!data.thought || typeof data.thought !== 'string') {
-        return createMCPErrorToolResult(
-          'Invalid thought: must be a string',
-        ) as MCPResult<Record<string, unknown>>;
-      }
-      if (
-        data.thoughtNumber === undefined ||
-        typeof data.thoughtNumber !== 'number'
-      ) {
-        return createMCPErrorToolResult(
-          'Invalid thoughtNumber: must be a number',
-        ) as MCPResult<Record<string, unknown>>;
-      }
-      if (
-        data.totalThoughts === undefined ||
-        typeof data.totalThoughts !== 'number'
-      ) {
-        return createMCPErrorToolResult(
-          'Invalid totalThoughts: must be a number',
-        ) as MCPResult<Record<string, unknown>>;
-      }
-      if (typeof data.nextThoughtNeeded !== 'boolean') {
-        return createMCPErrorToolResult(
-          'Invalid nextThoughtNeeded: must be a boolean',
-        ) as MCPResult<Record<string, unknown>>;
-      }
-
-      const thought: ThoughtData = {
-        thought: data.thought as string,
-        thoughtNumber: data.thoughtNumber as number,
-        totalThoughts: data.totalThoughts as number,
-        nextThoughtNeeded: data.nextThoughtNeeded as boolean,
-        isRevision: data.isRevision as boolean | undefined,
-        revisesThought: data.revisesThought as number | undefined,
-        branchFromThought: data.branchFromThought as number | undefined,
-        branchId: data.branchId as string | undefined,
-        needsMoreThoughts: data.needsMoreThoughts as boolean | undefined,
-        category: data.category as string | undefined,
-        relatedTodoId: data.relatedTodoId as number | undefined,
-        nextAction: data.nextAction as string | undefined,
-      };
-
-      if (thought.thoughtNumber > thought.totalThoughts) {
-        thought.totalThoughts = thought.thoughtNumber;
-      }
-
-      this.thoughtHistory.push(thought);
-
-      if (thought.branchFromThought && thought.branchId) {
-        if (!this.branches[thought.branchId]) {
-          this.branches[thought.branchId] = [];
-        }
-        this.branches[thought.branchId].push(thought);
-      }
-
-      if (!this.disableThoughtLogging) {
-        console.error(
-          `SEQUENTIAL THOUGHT ${thought.thoughtNumber}/${thought.totalThoughts}: ${thought.thought}`,
-        );
-      }
-
-      const summary = {
-        thoughtNumber: thought.thoughtNumber,
-        totalThoughts: thought.totalThoughts,
-        nextThoughtNeeded: thought.nextThoughtNeeded,
-        branches: Object.keys(this.branches),
-        thoughtHistoryLength: this.thoughtHistory.length,
-      } as Record<string, unknown>;
-
-      return createMCPStructuredToolResult('Thought processed', summary);
-    } catch (error) {
-      return createMCPStructuredToolResult('Failed to process thought', {
-        error: error instanceof Error ? error.message : String(error),
-        status: 'failed',
-      });
-    }
+    return this.thinkingManager.processThought(input);
   }
 
   processCritiqueAndReflection(
     input: unknown,
   ): MCPResult<Record<string, unknown>> {
-    try {
-      const data = input as Record<string, unknown>;
-
-      if (typeof data.critique !== 'string') {
-        return createMCPErrorToolResult(
-          'Invalid critique: must be a string',
-        ) as MCPResult<Record<string, unknown>>;
-      }
-      if (typeof data.reflection !== 'string') {
-        return createMCPErrorToolResult(
-          'Invalid reflection: must be a string',
-        ) as MCPResult<Record<string, unknown>>;
-      }
-      if (typeof data.nextAction !== 'string') {
-        return createMCPErrorToolResult(
-          'Invalid nextAction: must be a string',
-        ) as MCPResult<Record<string, unknown>>;
-      }
-
-      const reflectionEntry: ReflectionData = {
-        critique: data.critique,
-        reflection: data.reflection,
-        nextAction: data.nextAction,
-      };
-
-      this.reflectionHistory.push(reflectionEntry);
-
-      console.info(
-        `CRITIQUE & REFLECTION: ${reflectionEntry.critique} | ${reflectionEntry.reflection} -> ${reflectionEntry.nextAction}`,
-      );
-
-      const message =
-        `## Reflection & Critique Analysis\n\n` +
-        `**Critique:**\n${reflectionEntry.critique}\n\n` +
-        `**Reflection:**\n${reflectionEntry.reflection}\n\n` +
-        `**Next Action:**\n${reflectionEntry.nextAction}\n\n` +
-        `> Based on this reflection, please proceed with the "Next Action" carefully. Do not repeat this reflection unless new information surfaces.`;
-
-      return createMCPStructuredToolResult(message, {
-        success: true,
-        reflectionEntry,
-      });
-    } catch (error) {
-      return createMCPStructuredToolResult(
-        'Failed to process critique and reflection',
-        {
-          error: error instanceof Error ? error.message : String(error),
-          status: 'failed',
-        },
-      );
-    }
+    return this.thinkingManager.processCritiqueAndReflection(input);
   }
 }
 
@@ -975,8 +175,8 @@ export class SessionStateManager {
       // we should keep it until explicitly cleared or maybe LRU.
       // For now, we'll keep the same behavior: clear old session from memory.
       this.sessions.delete(this.currentSessionId);
-      console.info(
-        `[PlanningServer] Session cleanup: removed all threads from session "${this.currentSessionId}"`,
+      logger.info(
+        `Session cleanup: removed all threads from session "${this.currentSessionId}"`,
       );
     }
 

@@ -286,7 +286,7 @@ const ToolCallCompactItem: React.FC<ToolCallCompactItemProps> = ({
 
       {/* Expanded details */}
       {isExpanded && (
-        <div className="mt-3 pt-3 border-t border-muted/50">
+        <div className="mt-3 pt-3 border-t border-muted/50 min-w-0">
           <ToolCallDetails
             toolCall={toolCall}
             toolResult={toolResult}

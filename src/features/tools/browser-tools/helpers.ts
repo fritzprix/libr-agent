@@ -24,7 +24,8 @@ export const BROWSER_TOOL_SCHEMAS: Record<string, SchemaProperty> = {
   },
   url: {
     type: 'string',
-    description: 'The URL to navigate to.',
+    description:
+      'The URL to navigate to. Supports http:// and https:// protocols.',
   },
   text: {
     type: 'string',

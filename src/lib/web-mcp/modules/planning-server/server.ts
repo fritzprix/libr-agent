@@ -59,6 +59,11 @@ const planningServer: WebMCPServer = {
         return await stateManager.clearGoal();
       }
       case 'add_todo': {
+        if (!typedArgs.name || typeof typedArgs.name !== 'string') {
+          return createMCPErrorToolResult(
+            'The "name" argument is required and must be a string.',
+          );
+        }
         return await stateManager.addTodo(
           typedArgs.name as string,
           typedArgs.priority as 'low' | 'medium' | 'high' | undefined,

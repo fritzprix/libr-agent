@@ -199,6 +199,26 @@ impl InteractiveBrowserServer {
         }
     }
 
+    /// Validates URL and returns normalized version.
+    /// Supports: http://, https://
+    ///
+    /// # Arguments
+    /// * `url` - The URL to validate
+    ///
+    /// # Returns
+    /// A `Result` containing the normalized URL on success, or an error string on failure.
+    fn validate_and_normalize_url(&self, url: &str) -> Result<String, String> {
+        let parsed = url::Url::parse(url).map_err(|e| format!("Invalid URL format: {e}"))?;
+
+        match parsed.scheme() {
+            "http" | "https" => Ok(url.to_string()),
+            scheme => Err(format!(
+                "Unsupported URL scheme '{}'. Allowed: http://, https://",
+                scheme
+            )),
+        }
+    }
+
     /// Creates a new browser session by opening a new Tauri window.
     ///
     /// Each session is tracked in the `sessions` map and is associated with a unique window.
@@ -214,13 +234,18 @@ impl InteractiveBrowserServer {
         url: &str,
         title: Option<&str>,
     ) -> Result<(String, String), String> {
+        // Validate URL first
+        let validated_url = self.validate_and_normalize_url(url)?;
+
         let session_id = Uuid::new_v4().to_string();
 
         let window_label = format!("browser-{session_id}");
 
-        let temp_url = url.to_string();
-        // Check URL status first
-        let status_check = self.check_url_status(&temp_url).await;
+        // Check URL status
+        let parsed_url =
+            url::Url::parse(&validated_url).map_err(|e| format!("Invalid URL format: {e}"))?;
+        
+        let status_check = Some(self.check_url_status(&validated_url).await);
 
         let session_title = title.unwrap_or("Interactive Browser Agent");
 
@@ -236,7 +261,7 @@ impl InteractiveBrowserServer {
         let webview_window = WebviewWindowBuilder::new(
             &self.app_handle,
             &window_label,
-            WebviewUrl::External(url.parse().map_err(|e| format!("Invalid URL: {e}"))?),
+            WebviewUrl::External(parsed_url),
         )
         .title(format!(
             "{} - {}",
@@ -313,24 +338,30 @@ impl InteractiveBrowserServer {
 
         // Check status result for the message
         let status_msg = match status_check {
-            Ok(status) if status >= 400 => {
+            Some(Ok(status)) if status >= 400 => {
                 warn!("URL {url} created session but returned status {status}");
                 format!("Session created for {url} (HTTP {status})")
             }
-            Err(e) => {
+            Some(Err(e)) => {
                 warn!("URL {url} session created but check failed: {e}");
                 format!("Session created for {url} (Network Error: {e})")
             }
-            Ok(_) => match tokio::time::timeout(Duration::from_secs(30), notify.notified()).await {
-                Ok(_) => {
-                    info!("Initial page load completed for session {session_id}");
-                    format!("Session created for {url} and page loaded")
+            Some(Ok(_)) => {
+                match tokio::time::timeout(Duration::from_secs(30), notify.notified()).await {
+                    Ok(_) => {
+                        info!("Initial page load completed for session {session_id}");
+                        format!("Session created for {url} and page loaded")
+                    }
+                    Err(_) => {
+                        info!("Initial page load timed out for session {session_id}");
+                        format!("Session created for {url} (load wait timed out)")
+                    }
                 }
-                Err(_) => {
-                    info!("Initial page load timed out for session {session_id}");
-                    format!("Session created for {url} (load wait timed out)")
-                }
-            },
+            }
+            None => {
+                // This shouldn't happen since we always set status_check
+                format!("Session created for {url}")
+            }
         };
 
         Ok((session_id, status_msg))
@@ -501,8 +532,11 @@ impl InteractiveBrowserServer {
 
     /// Navigates a browser session to a new URL and waits for the page to load.
     pub async fn navigate_to_url(&self, session_id: &str, url: &str) -> Result<String, String> {
-        // Check URL status first (before locking session)
-        let status_check = self.check_url_status(url).await;
+        // Validate URL first
+        let validated_url = self.validate_and_normalize_url(url)?;
+
+        // Check URL status
+        let status_check = Some(self.check_url_status(&validated_url).await);
 
         info!("Navigating session {session_id} to {url}");
 
@@ -529,8 +563,10 @@ impl InteractiveBrowserServer {
                 .value()
                 .clone();
 
-            // Use eval to set window.location.href
-            let script = format!("window.location.href = '{}'", url.replace('\'', "\\'"));
+            // Use eval to set window.location.href with proper JSON encoding to prevent injection
+            let url_json =
+                serde_json::to_string(url).map_err(|e| format!("Failed to encode URL: {e}"))?;
+            let script = format!("window.location.href = {}", url_json);
 
             window
                 .eval(&script)
@@ -548,20 +584,23 @@ impl InteractiveBrowserServer {
             }
 
             // Handle return based on status_check
-            // If status is received (error code or network error), return immediately without waiting for timeout
             match status_check {
-                Ok(status) if status >= 400 => {
+                Some(Ok(status)) if status >= 400 => {
                     warn!("URL {url} returned status {status}, returning early");
                     return Ok(format!("Navigated to {url} (HTTP {status})"));
                 }
-                Err(e) => {
+                Some(Err(e)) => {
                     warn!("URL {url} check failed: {e}, returning early");
                     return Ok(format!("Navigated to {url} (Network Error: {e})"));
                 }
-                _ => {} // Success (200-399), proceed to wait for page load
+                None => {
+                    // This shouldn't happen since we always set status_check
+                    return Ok(format!("Navigated to {url}"));
+                }
+                Some(Ok(_)) => {} // HTTP/HTTPS success (200-399), proceed to wait for page load
             }
 
-            // Wait for page load with timeout
+            // Wait for page load with timeout (HTTP/HTTPS only)
             info!("Waiting for page load in session {session_id}...");
             match tokio::time::timeout(Duration::from_secs(30), notify.notified()).await {
                 Ok(_) => {

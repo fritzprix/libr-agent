@@ -49,7 +49,7 @@ export const consoleLogger: Logger = {
  * Internal message format for Ollama API
  */
 export interface SimpleOllamaMessage {
-  role: 'user' | 'assistant' | 'system';
+  role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
   tool_calls?: Array<{
     id: string;
@@ -228,7 +228,7 @@ export function convertMessage(
 
     case 'tool':
       return {
-        role: 'user',
+        role: 'tool',
         content: processMessageContent(message.content) || '',
         tool_call_id: message.tool_call_id,
       };

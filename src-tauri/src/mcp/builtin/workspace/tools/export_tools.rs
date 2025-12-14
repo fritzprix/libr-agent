@@ -5,15 +5,23 @@ pub fn create_export_file_tool() -> MCPTool {
     let mut props = HashMap::new();
     props.insert(
         "path".to_string(),
-        string_prop(Some(1), Some(1000), Some("Workspace 내 export할 파일 경로")),
+        string_prop(
+            Some(1),
+            Some(1000),
+            Some("Relative path to the file to export (from workspace root)"),
+        ),
     );
     props.insert(
         "display_name".to_string(),
-        string_prop(None, None, Some("다운로드시 표시할 파일명 (선택적)")),
+        string_prop(
+            None,
+            None,
+            Some("Filename to display for download (optional)"),
+        ),
     );
     props.insert(
         "description".to_string(),
-        string_prop(None, None, Some("파일 설명 (선택적)")),
+        string_prop(None, None, Some("File description (optional)")),
     );
 
     MCPTool {
@@ -33,7 +41,7 @@ pub fn create_export_zip_tool() -> MCPTool {
         "files".to_string(),
         array_schema(
             string_prop(Some(1), Some(1000), None),
-            Some("Export할 파일 경로들의 배열"),
+            Some("Array of relative file paths to export (from workspace root)"),
         ),
     );
     props.insert(
@@ -41,12 +49,12 @@ pub fn create_export_zip_tool() -> MCPTool {
         string_prop(
             None,
             Some(50),
-            Some("ZIP 패키지명 (선택적, 기본값: workspace_export)"),
+            Some("ZIP package name (optional, default: workspace_export)"),
         ),
     );
     props.insert(
         "description".to_string(),
-        string_prop(None, None, Some("패키지 설명 (선택적)")),
+        string_prop(None, None, Some("Package description (optional)")),
     );
 
     MCPTool {
