@@ -249,6 +249,26 @@ export async function pollWithTimeout(
 }
 
 /**
+ * Generic polling function for condition checking
+ */
+export async function pollCondition(
+  condition: () => Promise<boolean>,
+  timeoutMs: number = 10000,
+  intervalMs: number = 500,
+): Promise<boolean> {
+  const startTime = Date.now();
+
+  while (Date.now() - startTime < timeoutMs) {
+    if (await condition()) {
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+
+  return false;
+}
+
+/**
  * Common result formatting function
  * Handles JSON envelope responses from browser operations
  */
