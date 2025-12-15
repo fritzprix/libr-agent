@@ -7,6 +7,10 @@ import type { WebMCPServerProxy } from '@/context/WebMCPContext';
 import type { ServiceContext, ServiceContextOptions } from '@/features/tools';
 import { planningTools as tools } from './tools.ts';
 import { SessionStateManager } from './state';
+import {
+  resolveToolName,
+  logDeprecationWarning,
+} from '@/lib/web-mcp/tool-name-migration';
 import type {
   PlanningState,
   CreateGoalOutput,
@@ -26,7 +30,15 @@ const planningServer: WebMCPServer = {
   version: '2.2.0',
   tools,
   async callTool(name: string, args: unknown): Promise<MCPResult<unknown>> {
-    console.log(`[PlanningServer] callTool invoked: ${name}`, {
+    // Handle tool name migration (backwards compatibility)
+    const { resolvedName, isDeprecated } = resolveToolName(name);
+
+    if (isDeprecated) {
+      logDeprecationWarning(name, resolvedName);
+    }
+
+    console.log(`[PlanningServer] callTool invoked: ${resolvedName}`, {
+      originalName: name !== resolvedName ? name : undefined,
       args,
       currentSessionId: stateManager.getCurrentSessionId(),
       currentThreadId: stateManager.getCurrentThreadId(),
@@ -48,17 +60,17 @@ const planningServer: WebMCPServer = {
         )}") - ignored. Use switchContext/setContext to change threads.`,
       );
     }
-    switch (name) {
-      case 'create_goal': {
+    switch (resolvedName) {
+      case 'createGoal': {
         return await stateManager.createGoal(typedArgs.goal as string);
       }
-      case 'update_goal': {
+      case 'updateGoal': {
         return await stateManager.updateGoal(typedArgs.goal as string);
       }
-      case 'clear_goal': {
+      case 'clearGoal': {
         return await stateManager.clearGoal();
       }
-      case 'add_todo': {
+      case 'addTodo': {
         if (!typedArgs.name || typeof typedArgs.name !== 'string') {
           return createMCPErrorToolResult(
             'The "name" argument is required and must be a string.',
@@ -70,7 +82,7 @@ const planningServer: WebMCPServer = {
           typedArgs.dependsOn as number[] | undefined,
         );
       }
-      case 'update_todo': {
+      case 'updateTodo': {
         const id = typedArgs.id as number | undefined;
         const index = typedArgs.index as number | undefined;
 
@@ -113,7 +125,7 @@ const planningServer: WebMCPServer = {
           },
         );
       }
-      case 'mark_todo': {
+      case 'markTodo': {
         const id = typedArgs.id as number | undefined;
         const index = typedArgs.index as number | undefined;
         const completed =
@@ -145,19 +157,19 @@ const planningServer: WebMCPServer = {
 
         return await stateManager.checkTodo({ id, index }, completed, summary);
       }
-      case 'clear_todos': {
+      case 'clearTodos': {
         const ids = typedArgs.ids as number[] | undefined;
         return await stateManager.clearTodos(ids);
       }
-      case 'clear_session':
+      case 'clearSession':
         return await stateManager.clear();
-      case 'add_scratchpad': {
+      case 'addScratchpad': {
         return await stateManager.addScratchpad(
           typedArgs.note as string,
           typedArgs.source as string | undefined,
         );
       }
-      case 'clear_scratchpad': {
+      case 'clearScratchpad': {
         const id = typedArgs.id as number;
         if (!Number.isInteger(id) || id < 0) {
           return createMCPErrorToolResult(
@@ -166,13 +178,16 @@ const planningServer: WebMCPServer = {
         }
         return await stateManager.clearScratchpad(id);
       }
+      case 'pauseAndThink': {
+        return stateManager.processPauseAndThink(typedArgs);
+      }
       case 'sequentialthinking': {
         return stateManager.processThought(typedArgs);
       }
       case 'critiqueAndReflection': {
         return stateManager.processCritiqueAndReflection(typedArgs);
       }
-      case 'get_current_state': {
+      case 'getCurrentState': {
         const includeCompleted = typedArgs.include_completed !== false; // Default true
         const includeScratchpad = typedArgs.include_scratchpad !== false; // Default true
         const state = await stateManager.getStateForSession(

@@ -18,7 +18,12 @@ import {
   buildTodoNotFoundError,
   buildDuplicateTodoError,
   buildCorruptedTodosError,
+  buildEmptyNameError,
+  buildInvalidDependencyError,
+  buildSelfDependencyError,
+  buildCircularDependencyError,
 } from '../utils/response-builders';
+import { detectCircularDependency } from '../utils/dependency-validator';
 
 /**
  * Manages todo operations including CRUD, validation, dependency tracking, and progress calculation.
@@ -69,6 +74,11 @@ export class TodoManager {
     dependsOn?: number[],
     activeGoalContent?: string | null,
   ): Promise<MCPResult<AddToDoOutput>> {
+    // Validation: Name cannot be empty or whitespace-only
+    if (!name || name.trim() === '') {
+      return buildEmptyNameError('todo') as MCPResult<AddToDoOutput>;
+    }
+
     const todos = await this.getTodosList();
 
     // Check for corrupted todos (missing name)
@@ -86,6 +96,30 @@ export class TodoManager {
         duplicate,
         todos,
       ) as MCPResult<AddToDoOutput>;
+    }
+
+    // Validation: Dependency IDs must exist and not create cycles
+    if (dependsOn && dependsOn.length > 0) {
+      // Check all dependency IDs exist
+      for (const depId of dependsOn) {
+        const exists = todos.some((t) => t.id === depId);
+        if (!exists) {
+          return buildInvalidDependencyError(
+            depId,
+            todos,
+          ) as MCPResult<AddToDoOutput>;
+        }
+      }
+
+      // Check for circular dependencies
+      // Use the next available ID for validation (the ID that will be assigned)
+      const nextId = await this.getNextTodoId();
+      const cycleError = detectCircularDependency(todos, nextId, dependsOn);
+      if (cycleError) {
+        return buildCircularDependencyError(
+          cycleError,
+        ) as MCPResult<AddToDoOutput>;
+      }
     }
 
     const order = todos.length;
@@ -146,6 +180,14 @@ export class TodoManager {
       dependsOn?: number[];
     },
   ): Promise<MCPResult<unknown>> {
+    // Validation: Name cannot be empty or whitespace-only (if updating name)
+    if (
+      updates.name !== undefined &&
+      (!updates.name || updates.name.trim() === '')
+    ) {
+      return buildEmptyNameError('todo');
+    }
+
     // Resolve id from either id or index
     const { id: resolvedId, todos: allTodos } = await resolveTodoId(
       this.sessionId,
@@ -161,6 +203,32 @@ export class TodoManager {
     // Ensure todo belongs to this session
     if (!validateTodoExists(todo, this.sessionId, this.threadId)) {
       return buildTodoNotFoundError(params, allTodos);
+    }
+
+    // Validation: Dependency IDs must exist and not create cycles (if updating dependsOn)
+    if (updates.dependsOn !== undefined) {
+      // Check for self-dependency
+      for (const depId of updates.dependsOn) {
+        if (depId === resolvedId) {
+          return buildSelfDependencyError(resolvedId);
+        }
+
+        // Check all dependency IDs exist
+        const exists = allTodos.some((t) => t.id === depId);
+        if (!exists) {
+          return buildInvalidDependencyError(depId, allTodos);
+        }
+      }
+
+      // Check for circular dependencies
+      const cycleError = detectCircularDependency(
+        allTodos,
+        resolvedId,
+        updates.dependsOn,
+      );
+      if (cycleError) {
+        return buildCircularDependencyError(cycleError);
+      }
     }
 
     await db.todos.update(resolvedId, updates);
@@ -411,6 +479,22 @@ export class TodoManager {
       )
       .withNextActions(nextActions)
       .asSuccess();
+  }
+
+  /**
+   * Gets the next available todo ID by finding the maximum ID + 1.
+   * Used for circular dependency detection before the todo is actually created.
+   *
+   * @returns The next available todo ID
+   * @private
+   */
+  private async getNextTodoId(): Promise<number> {
+    const allTodos = await db.todos.toArray();
+    const maxId = allTodos.reduce(
+      (max, todo) => (todo.id && todo.id > max ? todo.id : max),
+      0,
+    );
+    return maxId + 1;
   }
 
   /**

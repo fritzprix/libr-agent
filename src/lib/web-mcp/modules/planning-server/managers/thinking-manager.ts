@@ -3,7 +3,12 @@ import {
   createMCPErrorToolResult,
 } from '@/lib/mcp-response-utils';
 import type { MCPResult } from '@/lib/mcp-types';
-import type { ThoughtData, ReflectionData } from '../types';
+import type {
+  ThoughtData,
+  ReflectionData,
+  PauseAndThinkInput,
+  PauseAndThinkOutput,
+} from '../types';
 import { getLogger } from '@/lib/logger';
 
 const logger = getLogger('ThinkingManager');
@@ -108,6 +113,122 @@ export class ThinkingManager {
         error: error instanceof Error ? error.message : String(error),
         status: 'failed',
       });
+    }
+  }
+
+  /**
+   * Processes a simplified "pause and think" request.
+   * Records the thought in history and provides context from the previous thought.
+   * This is a simplified alternative to processThought() with fewer parameters.
+   *
+   * @param input - Pause and think input containing thought and optional next action
+   * @returns MCPResult with thought confirmation and guidance message
+   */
+  processPauseAndThink(input: unknown): MCPResult<Record<string, unknown>> {
+    try {
+      // Input validation
+      const data = input as Record<string, unknown>;
+
+      if (!data.thought || typeof data.thought !== 'string') {
+        return createMCPErrorToolResult(
+          'Invalid thought: must be a non-empty string',
+        ) as MCPResult<Record<string, unknown>>;
+      }
+
+      if (data.thought.trim().length === 0) {
+        return createMCPErrorToolResult(
+          'Invalid thought: cannot be empty or whitespace only',
+        ) as MCPResult<Record<string, unknown>>;
+      }
+
+      if (
+        data.nextAction !== undefined &&
+        typeof data.nextAction !== 'string'
+      ) {
+        return createMCPErrorToolResult(
+          'Invalid nextAction: must be a string if provided',
+        ) as MCPResult<Record<string, unknown>>;
+      }
+
+      const validatedInput: PauseAndThinkInput = {
+        thought: data.thought as string,
+        nextAction: data.nextAction as string | undefined,
+      };
+
+      // Store thought in history using existing ThoughtData structure
+      const thoughtNumber = this.thoughtHistory.length + 1;
+      const thoughtData: ThoughtData = {
+        thought: validatedInput.thought,
+        thoughtNumber,
+        totalThoughts: thoughtNumber,
+        nextThoughtNeeded: true,
+        nextAction: validatedInput.nextAction,
+      };
+
+      this.thoughtHistory.push(thoughtData);
+
+      // Get previous thought (n-1) for context
+      const previousThought =
+        this.thoughtHistory.length > 1
+          ? this.thoughtHistory[this.thoughtHistory.length - 2].thought
+          : null;
+
+      // Log the thought
+      if (!this.disableThoughtLogging) {
+        logger.info(
+          `PAUSE AND THINK ${thoughtNumber}: ${validatedInput.thought}${validatedInput.nextAction ? ` -> Next: ${validatedInput.nextAction}` : ''}`,
+        );
+      }
+
+      // Build response message (NO EMOJI per CLAUDE.md guidelines)
+      const messageParts: string[] = [];
+
+      // Confirmation
+      messageParts.push(`Thought ${thoughtNumber} recorded.`);
+
+      // Previous thought context
+      if (previousThought) {
+        const preview =
+          previousThought.length > 100
+            ? `${previousThought.substring(0, 100)}...`
+            : previousThought;
+        messageParts.push(`\nPrevious thought: "${preview}"`);
+      }
+
+      // Next action if provided
+      if (validatedInput.nextAction) {
+        messageParts.push(
+          `\nPlanned next action: ${validatedInput.nextAction}`,
+        );
+      }
+
+      // Guidance message
+      messageParts.push(
+        '\n\nGuide: If you need more thinking, call pauseAndThink again. If you have thought enough, proceed with your planned action.',
+      );
+
+      const message = messageParts.join('');
+
+      // Build structured output
+      const output: PauseAndThinkOutput = {
+        thoughtNumber,
+        thoughtPreview: validatedInput.thought.substring(0, 50),
+        previousThought: previousThought || undefined,
+      };
+
+      return createMCPStructuredToolResult(
+        message,
+        output as unknown as Record<string, unknown>,
+      );
+    } catch (error) {
+      logger.error('Failed to process pause and think', error);
+      return createMCPStructuredToolResult(
+        'Failed to process pause and think',
+        {
+          error: error instanceof Error ? error.message : String(error),
+          status: 'failed',
+        },
+      );
     }
   }
 

@@ -3,6 +3,7 @@ import type { MCPResult } from '@/lib/mcp-types';
 import { MCPResponseBuilder } from '@/lib/web-mcp/response-builder';
 import { db, type PlanningGoal } from '../db';
 import type { CreateGoalOutput, ClearGoalOutput } from '../types';
+import { buildEmptyNameError } from '../utils/response-builders';
 
 /**
  * Manages goal operations including creation, updates, and retrieval.
@@ -58,6 +59,11 @@ export class GoalManager {
     goal: string,
     existingTodosCount: number,
   ): Promise<MCPResult<CreateGoalOutput>> {
+    // Validation: Goal name cannot be empty or whitespace-only
+    if (!goal || goal.trim() === '') {
+      return buildEmptyNameError('goal') as MCPResult<CreateGoalOutput>;
+    }
+
     const previousGoal = await this.getActiveGoal();
 
     // Deactivate previous goal if exists
@@ -105,6 +111,11 @@ export class GoalManager {
    * @returns MCPResult with update status
    */
   async updateGoal(goal: string): Promise<MCPResult<CreateGoalOutput>> {
+    // Validation: Goal name cannot be empty or whitespace-only
+    if (!goal || goal.trim() === '') {
+      return buildEmptyNameError('goal') as MCPResult<CreateGoalOutput>;
+    }
+
     const activeGoal = await this.getActiveGoal();
     if (!activeGoal || !activeGoal.id) {
       return createMCPStructuredToolResult(

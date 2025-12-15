@@ -38,6 +38,25 @@ export interface ReflectionData {
 }
 
 /**
+ * Input parameters for the pauseAndThink tool.
+ * @internal
+ */
+export interface PauseAndThinkInput {
+  thought: string;
+  nextAction?: string;
+}
+
+/**
+ * Output structure for pauseAndThink tool results.
+ * @internal
+ */
+export interface PauseAndThinkOutput {
+  thoughtNumber: number;
+  thoughtPreview: string;
+  previousThought?: string;
+}
+
+/**
  * Represents the entire state of the planning server.
  */
 export interface PlanningState {

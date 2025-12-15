@@ -107,20 +107,14 @@ function createMetadata(
 export const extractWebContentTool: StrictBrowserMCPTool = {
   name: 'extractWebContent',
   description:
-    'Convert the webpage into clean, readable markdown format. Returns the first page of content (approx. 6000 characters) and the total number of pages. Use readWebContent to access subsequent pages. Ideal for content analysis, summarization, and reading.\n\nOptional autoMerge parameter: When enabled and content is small (≤2 pages OR <5000 chars), automatically returns all content merged in a single response, eliminating the need for subsequent readWebContent calls.',
+    'Convert the webpage into clean, readable markdown format. Automatically merges content if small (≤2 pages OR <5000 chars), otherwise returns first page with total page count. Use readWebContent for subsequent pages.',
   inputSchema: {
     type: 'object',
     properties: {
       sessionId: BROWSER_TOOL_SCHEMAS.sessionId,
       saveRawHtml: {
         type: 'boolean',
-        description:
-          'Save the raw HTML to a file for DOM structure analysis. Default: false',
-      },
-      autoMerge: {
-        type: 'boolean',
-        description:
-          'Automatically merge all content if small (≤2 pages OR <5000 chars). When enabled, returns complete content without pagination. Default: false',
+        description: 'Save raw HTML for DOM analysis. Default: false',
       },
     },
     required: ['sessionId'],
@@ -135,8 +129,7 @@ export const extractWebContentTool: StrictBrowserMCPTool = {
     const sessionId = args.sessionId as string;
     const saveRawHtml =
       typeof args.saveRawHtml === 'boolean' ? args.saveRawHtml : false;
-    const autoMerge =
-      typeof args.autoMerge === 'boolean' ? args.autoMerge : false;
+    const autoMerge = true; // Always true by default
 
     logger.debug('Executing browser_extractWebContent', {
       sessionId,

@@ -6,7 +6,7 @@ import type { MCPTool } from '@/lib/mcp-types';
  */
 export const planningTools: MCPTool[] = [
   {
-    name: 'create_goal',
+    name: 'createGoal',
     description:
       'Create a single goal for the session. Use when starting a new or complex task.',
     inputSchema: {
@@ -22,7 +22,7 @@ export const planningTools: MCPTool[] = [
     },
   },
   {
-    name: 'update_goal',
+    name: 'updateGoal',
     description:
       'Update the current goal. Use when the goal needs refinement or correction without clearing context.',
     inputSchema: {
@@ -37,13 +37,13 @@ export const planningTools: MCPTool[] = [
     },
   },
   {
-    name: 'clear_goal',
+    name: 'clearGoal',
     description:
       'Clear the current goal. Use when finishing or abandoning the current goal.',
     inputSchema: { type: 'object', properties: {} },
   },
   {
-    name: 'add_todo',
+    name: 'addTodo',
     description:
       'Add a todo item to the goal. Use to break down a goal into actionable steps.',
     inputSchema: {
@@ -69,7 +69,7 @@ export const planningTools: MCPTool[] = [
     },
   },
   {
-    name: 'update_todo',
+    name: 'updateTodo',
     description:
       'Update an existing todo item. Use to refine task details, change priority, or update dependencies. You can specify either id (database ID) or index (0-based position in the list).',
     inputSchema: {
@@ -109,7 +109,7 @@ export const planningTools: MCPTool[] = [
     },
   },
   {
-    name: 'mark_todo',
+    name: 'markTodo',
     description:
       'Mark a todo item as completed or pending, optionally with a completion summary. You can specify either id (database ID) or index (0-based position in the list).',
     inputSchema: {
@@ -140,7 +140,7 @@ export const planningTools: MCPTool[] = [
     },
   },
   {
-    name: 'clear_todos',
+    name: 'clearTodos',
     description:
       'Clear specific todos by their IDs, or all todos if no IDs are provided. Use to remove completed tasks or reset the todo list.',
     inputSchema: {
@@ -156,13 +156,13 @@ export const planningTools: MCPTool[] = [
     },
   },
   {
-    name: 'clear_session',
+    name: 'clearSession',
     description:
       'Clear all session state (goal, todos, and scratchpad items). Use to reset everything and start fresh.',
     inputSchema: { type: 'object', properties: {} },
   },
   {
-    name: 'add_scratchpad',
+    name: 'addScratchpad',
     description:
       'Add a note to your Scratchpad (Working Memory). Content here is ALWAYS visible in your context. Use this for keeping track of important findings, file paths, IDs, or intermediate analysis results that you need to reference frequently during the task.\n\nOptional source parameter: Provide the source of information for citation tracking (e.g., URLs, file paths, or tool result IDs like "https://example.com/article" or "file://path/to/doc.txt").',
     inputSchema: {
@@ -183,7 +183,7 @@ export const planningTools: MCPTool[] = [
     },
   },
   {
-    name: 'clear_scratchpad',
+    name: 'clearScratchpad',
     description:
       'Remove a note from your Scratchpad. Use this to clear information that is no longer relevant to free up context window space.',
     inputSchema: {
@@ -199,7 +199,7 @@ export const planningTools: MCPTool[] = [
     },
   },
   {
-    name: 'get_current_state',
+    name: 'getCurrentState',
     description:
       'Get current planning state including Goal, Todos, and Scratchpad as structured JSON data for UI visualization',
     inputSchema: {
@@ -219,44 +219,24 @@ export const planningTools: MCPTool[] = [
     },
   },
   {
-    name: 'sequentialthinking',
+    name: 'pauseAndThink',
     description:
-      'Sequential thinking tool for multi-step reflective problem solving. Accepts a thought payload and maintains per-session thought history and branches.',
+      'Pause to think about the problem, plan your approach, or analyze results before taking action. Use this when you need to reason through complex decisions or maintain context. Simpler alternative to sequentialthinking.',
     inputSchema: {
       type: 'object',
       properties: {
-        thought: { type: 'string', description: 'Your current thinking step' },
-        nextThoughtNeeded: {
-          type: 'boolean',
-          description: 'Whether another thought step is needed',
-        },
-        thoughtNumber: { type: 'integer', minimum: 1 },
-        totalThoughts: { type: 'integer', minimum: 1 },
-        isRevision: { type: 'boolean' },
-        revisesThought: { type: 'integer', minimum: 1 },
-        branchFromThought: { type: 'integer', minimum: 1 },
-        branchId: { type: 'string' },
-        needsMoreThoughts: { type: 'boolean' },
-        category: {
+        thought: {
           type: 'string',
           description:
-            'The category of the thought (e.g., "hypothesis", "planning", "reflection").',
-        },
-        relatedTodoId: {
-          type: 'integer',
-          description: 'The ID of the todo item related to this thought.',
+            'Your current thought, analysis, or plan. Be clear and specific about what you are thinking through.',
         },
         nextAction: {
           type: 'string',
-          description: 'The next action to take based on this thought.',
+          description:
+            'Optional: The specific next action you plan to take after this thought. Helps maintain continuity.',
         },
       },
-      required: [
-        'thought',
-        'nextThoughtNeeded',
-        'thoughtNumber',
-        'totalThoughts',
-      ],
+      required: ['thought'],
     },
   },
   {

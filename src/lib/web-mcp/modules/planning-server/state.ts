@@ -153,6 +153,10 @@ export class PersistentState {
   ): MCPResult<Record<string, unknown>> {
     return this.thinkingManager.processCritiqueAndReflection(input);
   }
+
+  processPauseAndThink(input: unknown): MCPResult<Record<string, unknown>> {
+    return this.thinkingManager.processPauseAndThink(input);
+  }
 }
 
 /**
@@ -288,6 +292,10 @@ export class SessionStateManager {
     input: unknown,
   ): MCPResult<Record<string, unknown>> {
     return this.getCurrentState().processCritiqueAndReflection(input);
+  }
+
+  processPauseAndThink(input: unknown): MCPResult<Record<string, unknown>> {
+    return this.getCurrentState().processPauseAndThink(input);
   }
 
   async checkTodo(

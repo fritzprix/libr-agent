@@ -46,6 +46,12 @@ export const WebMCPErrorCodes = {
     NO_GOAL: 'PLANNING.NO_GOAL',
     /** Duplicate todo content */
     DUPLICATE_TODO: 'PLANNING.DUPLICATE_TODO',
+    /** Empty or whitespace-only name for goal or todo */
+    EMPTY_NAME: 'PLANNING.EMPTY_NAME',
+    /** Dependency references non-existent todo ID */
+    INVALID_DEPENDENCY: 'PLANNING.INVALID_DEPENDENCY',
+    /** Todo cannot depend on itself */
+    SELF_DEPENDENCY: 'PLANNING.SELF_DEPENDENCY',
   },
 
   // ========== Knowledge Server Errors ==========
