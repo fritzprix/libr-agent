@@ -2,12 +2,7 @@ import { createMCPStructuredToolResult } from '@/lib/mcp-response-utils';
 import type { MCPResult } from '@/lib/mcp-types';
 import { MCPResponseBuilder } from '@/lib/web-mcp/response-builder';
 import { db } from '../db';
-import type {
-  SimpleTodo,
-  AddToDoOutput,
-  CheckTodoOutput,
-  BaseOutput,
-} from '../types';
+import type { SimpleTodo, AddToDoOutput, BaseOutput } from '../types';
 import { resolveTodoId } from '../utils/todo-resolvers';
 import {
   checkDuplicateTodo,
@@ -20,7 +15,6 @@ import {
   buildCorruptedTodosError,
   buildEmptyNameError,
   buildInvalidDependencyError,
-  buildSelfDependencyError,
   buildCircularDependencyError,
 } from '../utils/response-builders';
 import { detectCircularDependency } from '../utils/dependency-validator';
@@ -51,7 +45,7 @@ export class TodoManager {
     return todos.map((t) => ({
       id: t.id!,
       name: typeof t.name === 'string' && t.name ? t.name : '(Untitled)',
-      status: t.status,
+      checked: t.checked,
       summary: t.summary,
       priority: t.priority,
       dependsOn: t.dependsOn,
@@ -128,7 +122,7 @@ export class TodoManager {
       sessionId: this.sessionId,
       threadId: this.threadId,
       name,
-      status: 'pending',
+      checked: false,
       priority,
       dependsOn,
       order,
@@ -136,141 +130,43 @@ export class TodoManager {
     });
 
     const newTodos = await this.getTodosList();
-    const pendingCount = newTodos.filter((t) => t.status === 'pending').length;
-    const completedCount = newTodos.filter(
-      (t) => t.status === 'completed',
-    ).length;
+    const uncheckedCount = newTodos.filter((t) => !t.checked).length;
+    const checkedCount = newTodos.filter((t) => t.checked).length;
 
     let message = `Todo added: "${name}" (ID: ${id})`;
     if (activeGoalContent) {
       message += `\n\nGoal: "${activeGoalContent}"`;
     }
-    message += `\n\nCurrent progress:\n  - Total: ${newTodos.length} todos\n  - Pending: ${pendingCount}\n  - Completed: ${completedCount}`;
+    message += `\n\nCurrent progress:\n  - Total: ${newTodos.length} todos\n  - Unchecked: ${uncheckedCount}\n  - Checked: ${checkedCount}`;
 
     return new MCPResponseBuilder({
       success: true,
       id,
-      todo: { id, name, status: 'pending' as const, priority, dependsOn },
+      todo: { id, name, checked: false, priority, dependsOn },
       todos: newTodos,
       summary: {
         total: newTodos.length,
-        pending: pendingCount,
-        completed: completedCount,
+        unchecked: uncheckedCount,
+        checked: checkedCount,
       },
     })
       .withMessage(message)
-      .withNextActions(['Use mark_todo when this task is done'])
+      .withNextActions(['Use checkTodo when this task is done'])
       .asSuccess();
   }
 
   /**
-   * Updates a todo's properties (name, status, priority, dependencies).
-   * Supports both ID-based and index-based lookups.
-   *
-   * @param params - Object containing either 'id' or 'index' to identify the todo
-   * @param updates - Object containing the properties to update
-   * @returns MCPResult with the updated todo and full list
-   */
-  async updateTodo(
-    params: { id?: number; index?: number },
-    updates: {
-      name?: string;
-      status?: 'pending' | 'completed' | 'blocked';
-      priority?: 'low' | 'medium' | 'high';
-      dependsOn?: number[];
-    },
-  ): Promise<MCPResult<unknown>> {
-    // Validation: Name cannot be empty or whitespace-only (if updating name)
-    if (
-      updates.name !== undefined &&
-      (!updates.name || updates.name.trim() === '')
-    ) {
-      return buildEmptyNameError('todo');
-    }
-
-    // Resolve id from either id or index
-    const { id: resolvedId, todos: allTodos } = await resolveTodoId(
-      this.sessionId,
-      this.threadId,
-      params,
-    );
-
-    if (resolvedId === undefined) {
-      return buildTodoNotFoundError(params, allTodos);
-    }
-
-    const todo = await db.todos.get(resolvedId);
-    // Ensure todo belongs to this session
-    if (!validateTodoExists(todo, this.sessionId, this.threadId)) {
-      return buildTodoNotFoundError(params, allTodos);
-    }
-
-    // Validation: Dependency IDs must exist and not create cycles (if updating dependsOn)
-    if (updates.dependsOn !== undefined) {
-      // Check for self-dependency
-      for (const depId of updates.dependsOn) {
-        if (depId === resolvedId) {
-          return buildSelfDependencyError(resolvedId);
-        }
-
-        // Check all dependency IDs exist
-        const exists = allTodos.some((t) => t.id === depId);
-        if (!exists) {
-          return buildInvalidDependencyError(depId, allTodos);
-        }
-      }
-
-      // Check for circular dependencies
-      const cycleError = detectCircularDependency(
-        allTodos,
-        resolvedId,
-        updates.dependsOn,
-      );
-      if (cycleError) {
-        return buildCircularDependencyError(cycleError);
-      }
-    }
-
-    await db.todos.update(resolvedId, updates);
-    const updatedTodoRecord = await db.todos.get(resolvedId);
-    const todos = await this.getTodosList();
-
-    const simpleTodo: SimpleTodo = {
-      id: updatedTodoRecord!.id!,
-      name: updatedTodoRecord!.name,
-      status: updatedTodoRecord!.status,
-      summary: updatedTodoRecord!.summary,
-      priority: updatedTodoRecord!.priority,
-      dependsOn: updatedTodoRecord!.dependsOn,
-    };
-
-    const identifier =
-      params.index !== undefined
-        ? `index ${params.index} (ID: ${resolvedId})`
-        : `ID ${resolvedId}`;
-
-    return createMCPStructuredToolResult<CheckTodoOutput>(
-      `Todo ${identifier} updated: "${simpleTodo.name}"`,
-      {
-        success: true,
-        todo: simpleTodo,
-        todos,
-      },
-    );
-  }
-
-  /**
-   * Marks a todo as completed or pending. Automatically detects and reports unblocked todos.
+   * Marks a todo as checked or unchecked. Automatically detects and reports unblocked todos.
    * Calculates progress and suggests next actions.
    *
    * @param params - Object containing either 'id' or 'index' to identify the todo
-   * @param check - true to mark as completed, false to mark as pending
+   * @param checked - true to mark as checked, false to mark as unchecked
    * @param summary - Optional summary of what was accomplished
    * @returns MCPResult with updated todo, progress, and next action suggestions
    */
   async checkTodo(
     params: { id?: number; index?: number },
-    check: boolean = true,
+    checked: boolean = true,
     summary?: string,
   ): Promise<MCPResult<unknown>> {
     // Resolve id from either id or index
@@ -289,8 +185,8 @@ export class TodoManager {
       return buildTodoNotFoundError(params, allTodos);
     }
 
-    const updates: { status: 'completed' | 'pending'; summary?: string } = {
-      status: check ? 'completed' : 'pending',
+    const updates: { checked: boolean; summary?: string } = {
+      checked,
     };
     if (summary !== undefined) {
       updates.summary = summary || undefined;
@@ -303,27 +199,26 @@ export class TodoManager {
     const simpleTodo: SimpleTodo = {
       id: updatedTodoRecord!.id!,
       name: updatedTodoRecord!.name,
-      status: updatedTodoRecord!.status,
+      checked: updatedTodoRecord!.checked,
       summary: updatedTodoRecord!.summary,
       priority: updatedTodoRecord!.priority,
       dependsOn: updatedTodoRecord!.dependsOn,
     };
 
-    // Find unblocked todos if this was completed
+    // Find unblocked todos if this was checked
     const unblockedTodos: SimpleTodo[] = [];
-    if (check) {
+    if (checked) {
       for (const t of todos) {
-        if (
-          t.status === 'blocked' &&
-          t.dependsOn &&
-          t.dependsOn.includes(resolvedId)
-        ) {
-          // Check if all dependencies are now completed
-          const allDepsCompleted = t.dependsOn.every((depId) => {
+        // Check if this todo has dependencies including the one just checked
+        if (t.dependsOn && t.dependsOn.includes(resolvedId)) {
+          // Check if all dependencies are now checked
+          const allDepsChecked = t.dependsOn.every((depId) => {
             const dep = todos.find((d) => d.id === depId);
-            return dep?.status === 'completed';
+            return dep?.checked === true;
           });
-          if (allDepsCompleted) {
+
+          // If all deps are checked and this todo is not checked, it's unblocked
+          if (allDepsChecked && !t.checked) {
             unblockedTodos.push(t);
           }
         }
@@ -331,16 +226,16 @@ export class TodoManager {
     }
 
     // Calculate progress
-    const completedCount = todos.filter((t) => t.status === 'completed').length;
-    const progress = Math.round((completedCount / todos.length) * 100);
+    const checkedCount = todos.filter((t) => t.checked).length;
+    const progress = Math.round((checkedCount / todos.length) * 100);
 
     const identifier =
       params.index !== undefined
         ? `index ${params.index} (ID: ${resolvedId})`
         : `ID ${resolvedId}`;
 
-    let message = `Todo ${identifier} marked as ${check ? 'completed' : 'pending'}.\n\n`;
-    message += `Progress: ${completedCount}/${todos.length} (${progress}%)`;
+    let message = `Todo ${identifier} marked as ${checked ? 'checked' : 'unchecked'}.\n\n`;
+    message += `Progress: ${checkedCount}/${todos.length} (${progress}%)`;
 
     if (simpleTodo.summary) {
       message += `\n\nSummary: "${simpleTodo.summary}"`;
@@ -353,11 +248,11 @@ export class TodoManager {
     const builder = new MCPResponseBuilder({
       success: true,
       id: resolvedId,
-      completed: check,
+      checked,
       todo: simpleTodo,
       todos,
       progress: {
-        completed: completedCount,
+        checked: checkedCount,
         total: todos.length,
         percentage: progress,
       },
@@ -372,20 +267,20 @@ export class TodoManager {
         `Begin work on unblocked todo: "${unblockedTodos[0].name}" (ID: ${unblockedTodos[0].id})`,
       );
     } else {
-      const nextPending = todos.find(
-        (t) => t.status === 'pending' && t.id !== resolvedId,
+      const nextUnchecked = todos.find(
+        (t) => !t.checked && t.id !== resolvedId,
       );
-      if (nextPending) {
+      if (nextUnchecked) {
         nextActions.push(
-          `Proceed to next todo: "${nextPending.name}" (ID: ${nextPending.id})`,
+          `Proceed to next todo: "${nextUnchecked.name}" (ID: ${nextUnchecked.id})`,
         );
-      } else if (completedCount === todos.length) {
+      } else if (checkedCount === todos.length) {
         nextActions.push(
-          "All todos completed! Consider using 'critiqueAndReflection' to review your work before finishing.",
+          "All todos checked! Consider using 'critiqueAndReflection' to review your work before finishing.",
         );
       } else {
         nextActions.push(
-          'Check the todo list for remaining blocked or satisfied items.',
+          'Check the todo list for remaining blocked or available items.',
         );
       }
     }
@@ -463,11 +358,11 @@ export class TodoManager {
     const clearedNames = todosToDelete.map((t) => t.name).join(', ');
 
     const nextActions: string[] = [];
-    const hasPending = remainingTodos.some((t) => t.status === 'pending');
+    const hasUnchecked = remainingTodos.some((t) => !t.checked);
 
-    if (!hasPending) {
+    if (!hasUnchecked) {
       nextActions.push(
-        "No pending todos remain! Consider using 'critiqueAndReflection' to review your work before finishing.",
+        "No unchecked todos remain! Consider using 'critiqueAndReflection' to review your work before finishing.",
       );
     } else {
       nextActions.push('Review and prioritize the remaining todos.');

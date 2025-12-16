@@ -17,10 +17,8 @@ export function buildTodoNotFoundError(
   allTodos: SimpleTodo[],
 ): MCPResult<unknown> {
   const validIds = allTodos.map((t) => t.id);
-  const pendingCount = allTodos.filter((t) => t.status === 'pending').length;
-  const completedCount = allTodos.filter(
-    (t) => t.status === 'completed',
-  ).length;
+  const uncheckedCount = allTodos.filter((t) => !t.checked).length;
+  const checkedCount = allTodos.filter((t) => t.checked).length;
 
   const identifier =
     params.id !== undefined
@@ -40,15 +38,15 @@ export function buildTodoNotFoundError(
     validIds,
     validIndexRange: `0-${allTodos.length - 1}`,
     totalCount: allTodos.length,
-    pending: pendingCount,
-    completed: completedCount,
+    unchecked: uncheckedCount,
+    checked: checkedCount,
     todos: allTodos,
   })
     .withMessage(
       `Todo with ${identifier} not found.\n\n` +
         `Current todos (${allTodos.length} total):\n` +
-        `  - Pending: ${pendingCount}\n` +
-        `  - Completed: ${completedCount}\n` +
+        `  - Unchecked: ${uncheckedCount}\n` +
+        `  - Checked: ${checkedCount}\n` +
         `  - Valid IDs: [${validIds.join(', ') || 'none'}]\n` +
         `  - Valid indexes: ${allTodos.length > 0 ? `0-${allTodos.length - 1}` : 'none'}`,
     )
@@ -76,13 +74,13 @@ export function buildDuplicateTodoError(
     .withMessage(
       `Duplicate todo detected.\n\n` +
         `A todo with similar content already exists:\n` +
-        `  - ID: ${duplicate.id} [${duplicate.status}] ${duplicate.name}\n\n` +
+        `  - ID: ${duplicate.id} [${duplicate.checked ? 'checked' : 'unchecked'}] ${duplicate.name}\n\n` +
         `Current todos:\n${formatTodosList(todos)}`,
     )
     .withSuggestions([
       'Use a different name for the new todo',
-      `Update the existing todo with update_todo(id=${duplicate.id})`,
-      `Mark the existing todo as completed if needed`,
+      `Check the existing todo with checkTodo(id=${duplicate.id})`,
+      `Clear the existing todo if it's truly complete`,
     ])
     .asError(WebMCPErrorCodes.PLANNING.DUPLICATE_TODO);
 }
@@ -104,9 +102,11 @@ export function buildCorruptedTodosError(
       `Data Corruption Detected.\n\n` +
         `The following todo items are missing a 'name' property and must be fixed or removed:\n` +
         corruptedTodos
-          .map((t) => `  - ID: ${t.id} (Status: ${t.status})`)
+          .map(
+            (t) => `  - ID: ${t.id} (${t.checked ? 'Checked' : 'Unchecked'})`,
+          )
           .join('\n') +
-        `\n\nPlease use 'clear_todos' with these IDs to remove them.`,
+        `\n\nPlease use 'clearTodos' with these IDs to remove them.`,
     )
     .asError(WebMCPErrorCodes.INTERNAL_ERROR);
 }
@@ -155,7 +155,8 @@ export function buildInvalidDependencyError(
     .withMessage(
       `Dependency Todo ID ${invalidId} does not exist.\n\n` +
         `Valid todo IDs in this session: [${validIdsStr}]\n` +
-        `Total todos: ${allTodos.length}`,
+        `Total todos: ${allTodos.length}\n` +
+        `Note: dependsOnIds expects database IDs, not list indices.`,
     )
     .withSuggestions([
       'Use get_current_state to see all available todos with their IDs',

@@ -2,10 +2,16 @@
 export interface SimpleTodo {
   id: number;
   name: string;
-  status: 'pending' | 'completed' | 'blocked';
+  checked: boolean;
   summary?: string;
   priority?: 'low' | 'medium' | 'high';
   dependsOn?: number[];
+}
+
+/** Represents a todo with computed blocked/available status. @internal */
+export interface TodoWithComputedState extends SimpleTodo {
+  isBlocked: boolean;
+  canStart: boolean;
 }
 
 export interface ScratchpadItem {

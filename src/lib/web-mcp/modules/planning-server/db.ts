@@ -14,7 +14,7 @@ export interface PlanningTodo {
   sessionId: string;
   threadId: string;
   name: string;
-  status: 'pending' | 'completed' | 'blocked';
+  checked: boolean;
   summary?: string;
   priority?: 'low' | 'medium' | 'high';
   dependsOn?: number[];
@@ -43,6 +43,25 @@ export class PlanningDatabase extends Dexie {
       todos: '++id, [sessionId+threadId], status',
       scratchpad: '++id, [sessionId+threadId]',
     });
+
+    // Version 2: Migrate from status to checked
+    this.version(2)
+      .stores({
+        goals: '++id, [sessionId+threadId], isActive',
+        todos: '++id, [sessionId+threadId], checked',
+        scratchpad: '++id, [sessionId+threadId]',
+      })
+      .upgrade(async (tx) => {
+        const todos = await tx.table('todos').toArray();
+        for (const todo of todos) {
+          const oldTodo = todo as unknown as {
+            status: 'pending' | 'completed' | 'blocked';
+          };
+          await tx.table('todos').update(todo.id!, {
+            checked: oldTodo.status === 'completed',
+          });
+        }
+      });
   }
 }
 

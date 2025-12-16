@@ -42,6 +42,11 @@ export const useToolProcessor = ({ submit }: UseToolProcessorConfig) => {
   const { executeToolCall } = useUnifiedMCP();
   const { addMessages } = useSessionHistory();
 
+  // State for tracking history
+  const toolHistoryRef = useRef<{ signature: string; count: number } | null>(
+    null,
+  );
+
   const lastProcessedMessageId = useRef<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -73,62 +78,106 @@ export const useToolProcessor = ({ submit }: UseToolProcessorConfig) => {
         // Sequential execution of tool calls
         for (const toolCall of tcMessage.tool_calls.map(fixInvalidToolCall)) {
           const toolName = toolCall.function.name;
+          const args = toolCall.function.arguments;
+
+          // Circuit Breaker Logic
+          const currentSignature = `${toolName}:${args}`;
+          let isLooping = false;
+
+          if (toolHistoryRef.current?.signature === currentSignature) {
+            toolHistoryRef.current.count += 1;
+            if (toolHistoryRef.current.count >= 3) {
+              isLooping = true;
+            }
+          } else {
+            toolHistoryRef.current = { signature: currentSignature, count: 1 };
+          }
+
           const executionStartTime = Date.now();
 
           try {
-            // Runtime security validation for built-in tools
-            if (toolName.startsWith('builtin_')) {
-              const alias = extractBuiltInServiceAlias(toolName);
-              const allowedAliases =
-                currentAssistant?.allowedBuiltInServiceAliases;
+            let mcpResponse: MCPResponse<unknown>;
 
-              // If allowedAliases is defined, enforce the restrictions
-              if (allowedAliases !== undefined) {
-                const isAllowed = !!alias && allowedAliases.includes(alias);
+            if (isLooping) {
+              logger.warn('Circuit breaker triggered', {
+                toolName,
+                count: toolHistoryRef.current?.count,
+              });
 
-                if (!isAllowed) {
-                  const errorMsg = `Tool ${toolName} is not allowed for assistant "${currentAssistant?.name}"`;
-                  logger.warn('Tool execution blocked', {
+              const circuitBreakCall = {
+                ...toolCall,
+                function: {
+                  name: 'builtin_ui__circuit_break',
+                  arguments: JSON.stringify({
                     toolName,
-                    alias,
-                    allowedAliases,
-                    assistant: currentAssistant?.name,
-                  });
-                  throw new Error(errorMsg);
+                    repetitionCount: toolHistoryRef.current?.count,
+                    args,
+                  }),
+                },
+              };
+
+              mcpResponse = await executeToolCallRef.current(circuitBreakCall);
+              // Reset history after triggering to avoid infinite blocking if user resumes
+              toolHistoryRef.current = null;
+            } else {
+              // Runtime security validation for built-in tools
+              if (toolName.startsWith('builtin_')) {
+                const alias = extractBuiltInServiceAlias(toolName);
+                const allowedAliases =
+                  currentAssistant?.allowedBuiltInServiceAliases;
+
+                // If allowedAliases is defined, enforce the restrictions
+                if (allowedAliases !== undefined) {
+                  const isAllowed = !!alias && allowedAliases.includes(alias);
+
+                  if (!isAllowed) {
+                    const errorMsg = `Tool ${toolName} is not allowed for assistant "${currentAssistant?.name}"`;
+                    logger.warn('Tool execution blocked', {
+                      toolName,
+                      alias,
+                      allowedAliases,
+                      assistant: currentAssistant?.name,
+                    });
+                    throw new Error(errorMsg);
+                  }
                 }
               }
+
+              logger.debug('Executing tool', {
+                toolName,
+                toolCallId: toolCall.id,
+              });
+
+              mcpResponse = await executeToolCallRef.current(toolCall);
             }
 
-            logger.debug('Executing tool', {
-              toolName,
-              toolCallId: toolCall.id,
-            });
-
-            const mcpResponse = await executeToolCallRef.current(toolCall);
+            const finalMcpResponse = mcpResponse;
             const executionTime = Date.now() - executionStartTime;
 
             // Diagnostic logging for debugging readContent tool result loss
             logger.info('Raw mcpResponse for tool', {
               toolCallId: toolCall.id,
               toolName,
-              hasResult: !!mcpResponse.result,
-              hasError: !!mcpResponse.error,
-              contentCount: mcpResponse.result?.content?.length || 0,
+              hasResult: !!finalMcpResponse.result,
+              hasError: !!finalMcpResponse.error,
+              contentCount: finalMcpResponse.result?.content?.length || 0,
               contentTypes:
-                mcpResponse.result?.content?.map((c: MCPContent) => c.type) ||
-                [],
+                finalMcpResponse.result?.content?.map(
+                  (c: MCPContent) => c.type,
+                ) || [],
             });
 
             // Detect both protocol-level and tool execution errors
-            const hasProtocolError = isMCPError(mcpResponse);
-            const hasToolExecutionError = mcpResponse.result?.isError === true;
+            const hasProtocolError = isMCPError(finalMcpResponse);
+            const hasToolExecutionError =
+              finalMcpResponse.result?.isError === true;
             const hasAnyError = hasProtocolError || hasToolExecutionError;
 
             // Extract appropriate error message
             const errorMessage = hasProtocolError
-              ? `Error: ${mcpResponse.error.message} (Code: ${mcpResponse.error.code})`
+              ? `Error: ${finalMcpResponse.error.message} (Code: ${finalMcpResponse.error.code})`
               : hasToolExecutionError
-                ? ((mcpResponse.result?.content?.[0] as { text?: string })
+                ? ((finalMcpResponse.result?.content?.[0] as { text?: string })
                     ?.text ?? 'Unknown error')
                 : '';
 
@@ -138,7 +187,7 @@ export const useToolProcessor = ({ submit }: UseToolProcessorConfig) => {
               role: 'tool',
               content: hasAnyError
                 ? buildErrorContent(errorMessage)
-                : mcpResponse.result?.content || [],
+                : finalMcpResponse.result?.content || [],
               tool_call_id: toolCall.id,
               sessionId: currentSession?.id || '',
               threadId: currentSession?.id || '', // Default to top thread
@@ -149,7 +198,7 @@ export const useToolProcessor = ({ submit }: UseToolProcessorConfig) => {
               ...(hasAnyError && {
                 error: {
                   displayMessage: hasProtocolError
-                    ? mcpResponse.error.message
+                    ? finalMcpResponse.error.message
                     : errorMessage,
                   type: hasProtocolError
                     ? ('MCP_ERROR' as MessageErrorType)
@@ -157,13 +206,13 @@ export const useToolProcessor = ({ submit }: UseToolProcessorConfig) => {
                   recoverable: true,
                   details: {
                     originalError: hasProtocolError
-                      ? mcpResponse.error
+                      ? finalMcpResponse.error
                       : {
                           isError: true,
-                          content: mcpResponse.result?.content,
+                          content: finalMcpResponse.result?.content,
                         },
                     errorCode: hasProtocolError
-                      ? `MCP_${mcpResponse.error.code}`
+                      ? `MCP_${finalMcpResponse.error.code}`
                       : 'TOOL_ERROR',
                     timestamp: new Date().toISOString(),
                     context: {
@@ -176,7 +225,7 @@ export const useToolProcessor = ({ submit }: UseToolProcessorConfig) => {
               }),
             };
 
-            const hasUi = hasUIResource(mcpResponse);
+            const hasUi = hasUIResource(finalMcpResponse);
 
             logger.info('Tool execution completed', {
               toolName,

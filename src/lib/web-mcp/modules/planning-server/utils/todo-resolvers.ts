@@ -32,7 +32,7 @@ export async function resolveTodoId(
   const simpleTodos: SimpleTodo[] = todos.map((t) => ({
     id: t.id!,
     name: typeof t.name === 'string' && t.name ? t.name : '(Untitled)',
-    status: t.status,
+    checked: t.checked,
     summary: t.summary,
     priority: t.priority,
     dependsOn: t.dependsOn,

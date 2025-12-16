@@ -158,4 +158,45 @@ export const uiToolsSchema: MCPTool[] = [
       required: ['resumeInstruction', 'startedAt'],
     },
   },
+  {
+    name: 'circuit_break',
+    description:
+      'System tool: Displays circuit breaker warning when repetitive calls detected. (Internal use only)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        toolName: {
+          type: 'string',
+          description: 'Name of the tool that triggered the circuit breaker',
+        },
+        repetitionCount: {
+          type: 'number',
+          description: 'Number of consecutive repetitions detected',
+        },
+        args: {
+          type: 'string',
+          description: 'Arguments that were being repeated',
+        },
+      },
+      required: ['toolName', 'repetitionCount'],
+    },
+  },
+  {
+    name: 'resume_circuit_break',
+    description: 'Resume execution after circuit breaker (called by UI button)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        toolName: {
+          type: 'string',
+          description: 'Name of the tool that triggered the circuit breaker',
+        },
+        repetitionCount: {
+          type: 'number',
+          description: 'Number of times the tool was repeated',
+        },
+      },
+      required: ['toolName', 'repetitionCount'],
+    },
+  },
 ];

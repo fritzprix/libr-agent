@@ -65,24 +65,12 @@ export class PersistentState {
     );
   }
 
-  async updateTodo(
-    params: { id?: number; index?: number },
-    updates: {
-      name?: string;
-      status?: 'pending' | 'completed' | 'blocked';
-      priority?: 'low' | 'medium' | 'high';
-      dependsOn?: number[];
-    },
-  ): Promise<MCPResult<unknown>> {
-    return this.todoManager.updateTodo(params, updates);
-  }
-
   async checkTodo(
     params: { id?: number; index?: number },
-    check: boolean = true,
+    checked: boolean = true,
     summary?: string,
   ): Promise<MCPResult<unknown>> {
-    return this.todoManager.checkTodo(params, check, summary);
+    return this.todoManager.checkTodo(params, checked, summary);
   }
 
   async clearTodos(ids?: number[]): Promise<MCPResult<BaseOutput>> {
@@ -235,18 +223,6 @@ export class SessionStateManager {
     return this.getCurrentState().addTodo(name, priority, dependsOn);
   }
 
-  async updateTodo(
-    params: { id?: number; index?: number },
-    updates: {
-      name?: string;
-      status?: 'pending' | 'completed' | 'blocked';
-      priority?: 'low' | 'medium' | 'high';
-      dependsOn?: number[];
-    },
-  ): Promise<MCPResult<unknown>> {
-    return this.getCurrentState().updateTodo(params, updates);
-  }
-
   async clearTodos(ids?: number[]): Promise<MCPResult<BaseOutput>> {
     return this.getCurrentState().clearTodos(ids);
   }
@@ -300,10 +276,10 @@ export class SessionStateManager {
 
   async checkTodo(
     params: { id?: number; index?: number },
-    check: boolean = true,
+    checked: boolean = true,
     summary?: string,
   ): Promise<MCPResult<unknown>> {
-    return this.getCurrentState().checkTodo(params, check, summary);
+    return this.getCurrentState().checkTodo(params, checked, summary);
   }
 
   clearAllSessions(): void {

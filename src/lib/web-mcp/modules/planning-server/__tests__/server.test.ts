@@ -7,7 +7,7 @@ import { ScratchpadItem } from '../types';
 interface TodoItem {
     id: number;
     name: string;
-    status: 'pending' | 'completed';
+    checked: boolean;
 }
 
 interface PlanningState {
@@ -88,19 +88,19 @@ describe('Planning Server Persistence', () => {
         const { scratchpad: remaining } = clearResult.structuredContent as { scratchpad: ScratchpadItem[] };
         expect(remaining).toHaveLength(0);
     });
-    it('should update todo status', async () => {
+    it('should update todo checked status', async () => {
         const addResult = await planningServer.callTool('add_todo', { name: 'Task 1' });
         const { todos } = addResult.structuredContent as AddTodoResult;
         const todoId = todos[0].id;
 
-        await planningServer.callTool('mark_todo', { id: todoId, completed: true });
+        await planningServer.callTool('checkTodo', { id: todoId, checked: true });
 
         const state = await planningServer.callTool('get_current_state', {});
         const structuredState = state.structuredContent as PlanningState;
-        expect(structuredState.state.todos[0].status).toBe('completed');
+        expect(structuredState.state.todos[0].checked).toBe(true);
 
         const dbTodo = await db.todos.get(todoId);
-        expect(dbTodo?.status).toBe('completed');
+        expect(dbTodo?.checked).toBe(true);
     });
 
     it('should isolate sessions', async () => {
@@ -125,7 +125,7 @@ describe('Planning Server Persistence', () => {
         expect(content2.state.goal).toBe('Goal 2');
     });
 
-    it('should support index-based todo updates', async () => {
+    it('should support index-based todo operations', async () => {
         // Reset to test session
         await planningServer.switchContext!({ sessionId, threadId });
 
@@ -134,39 +134,27 @@ describe('Planning Server Persistence', () => {
         await planningServer.callTool('add_todo', { name: 'Second Task' });
         await planningServer.callTool('add_todo', { name: 'Third Task' });
 
-        // Update second todo (index 1) using index
-        const updateResult = await planningServer.callTool('update_todo', {
-            index: 1,
-            name: 'Updated Second Task',
-        });
-        expect(updateResult.isError).toBe(false);
-
-        // Verify the update
-        const state = await planningServer.callTool('get_current_state', {});
-        const structuredState = state.structuredContent as PlanningState;
-        expect(structuredState.state.todos[1].name).toBe('Updated Second Task');
-
-        // Mark first todo (index 0) as completed using index
-        const markResult = await planningServer.callTool('mark_todo', {
+        // Mark first todo (index 0) as checked using index
+        const markResult = await planningServer.callTool('checkTodo', {
             index: 0,
-            completed: true,
+            checked: true,
         });
         expect(markResult.isError).toBe(false);
 
-        // Verify the status change
-        const state2 = await planningServer.callTool('get_current_state', {});
-        const structuredState2 = state2.structuredContent as PlanningState;
-        expect(structuredState2.state.todos[0].status).toBe('completed');
+        // Verify the checked status change
+        const state = await planningServer.callTool('get_current_state', {});
+        const structuredState = state.structuredContent as PlanningState;
+        expect(structuredState.state.todos[0].checked).toBe(true);
     });
 
     it('should handle invalid index gracefully', async () => {
         await planningServer.switchContext!({ sessionId, threadId });
         await planningServer.callTool('add_todo', { name: 'Only Task' });
 
-        // Try to update with invalid index (out of range)
-        const result = await planningServer.callTool('update_todo', {
+        // Try to check with invalid index (out of range)
+        const result = await planningServer.callTool('checkTodo', {
             index: 5,
-            name: 'Should fail',
+            checked: true,
         });
 
         expect(result.isError).toBe(true);
@@ -184,30 +172,18 @@ describe('Planning Server Persistence', () => {
         await planningServer.switchContext!({ sessionId, threadId });
         await planningServer.callTool('add_todo', { name: 'Test Task' });
 
-        // Try to update without id or index
-        const updateResult = await planningServer.callTool('update_todo', {
-            name: 'Should fail',
+        // Try to check without id or index
+        const checkResult = await planningServer.callTool('checkTodo', {
+            checked: true,
         });
-        expect(updateResult.isError).toBe(true);
-        expect(updateResult.content).toBeDefined();
-        expect(updateResult.content!.length).toBeGreaterThan(0);
-        const updateContent = updateResult.content![0];
+        expect(checkResult.isError).toBe(true);
+        expect(checkResult.content).toBeDefined();
+        expect(checkResult.content!.length).toBeGreaterThan(0);
+        const updateContent = checkResult.content![0];
         if (updateContent && updateContent.type === 'text') {
             const updateText = updateContent.text;
             expect(updateText).toContain('Either "id" or "index" must be provided');
         }
 
-        // Try to mark without id or index
-        const markResult = await planningServer.callTool('mark_todo', {
-            completed: true,
-        });
-        expect(markResult.isError).toBe(true);
-        expect(markResult.content).toBeDefined();
-        expect(markResult.content!.length).toBeGreaterThan(0);
-        const markContent = markResult.content![0];
-        if (markContent && markContent.type === 'text') {
-            const markText = markContent.text;
-            expect(markText).toContain('Either "id" or "index" must be provided');
-        }
     });
 });

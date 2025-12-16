@@ -59,59 +59,20 @@ export const planningTools: MCPTool[] = [
           enum: ['low', 'medium', 'high'],
           description: 'The priority of the todo item.',
         },
-        dependsOn: {
+        dependsOnIds: {
           type: 'array',
           items: { type: 'number' },
-          description: 'List of todo IDs that this todo depends on.',
+          description:
+            'List of todo IDs that this todo depends on. Must be valid database IDs, not indices.',
         },
       },
       required: ['name'],
     },
   },
   {
-    name: 'updateTodo',
+    name: 'checkTodo',
     description:
-      'Update an existing todo item. Use to refine task details, change priority, or update dependencies. You can specify either id (database ID) or index (0-based position in the list).',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        id: {
-          type: 'number',
-          minimum: 1,
-          description: 'The database ID of the todo to update.',
-        },
-        index: {
-          type: 'number',
-          minimum: 0,
-          description:
-            'The 0-based index position of the todo in the current list.',
-        },
-        name: {
-          type: 'string',
-          description: 'The new name/description of the todo.',
-        },
-        status: {
-          type: 'string',
-          enum: ['pending', 'completed', 'blocked'],
-          description: 'The new status of the todo.',
-        },
-        priority: {
-          type: 'string',
-          enum: ['low', 'medium', 'high'],
-          description: 'The new priority of the todo.',
-        },
-        dependsOn: {
-          type: 'array',
-          items: { type: 'number' },
-          description: 'The new list of dependencies.',
-        },
-      },
-    },
-  },
-  {
-    name: 'markTodo',
-    description:
-      'Mark a todo item as completed or pending, optionally with a completion summary. You can specify either id (database ID) or index (0-based position in the list).',
+      'Mark a todo item as checked (completed) or unchecked, optionally with a completion summary. You can specify either id (database ID) or index (0-based position in the list).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -126,10 +87,10 @@ export const planningTools: MCPTool[] = [
           description:
             'The 0-based index position of the todo in the current list',
         },
-        completed: {
+        checked: {
           type: 'boolean',
           description:
-            'Whether to mark the todo as completed (true) or pending (false). Defaults to true.',
+            'Whether to mark the todo as checked (true) or unchecked (false). Defaults to true.',
         },
         summary: {
           type: 'string',
@@ -205,10 +166,10 @@ export const planningTools: MCPTool[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        include_completed: {
+        include_checked: {
           type: 'boolean',
           description:
-            'Whether to include completed todos in the output. Defaults to true.',
+            'Whether to include checked todos in the output. Defaults to true.',
         },
         include_scratchpad: {
           type: 'boolean',

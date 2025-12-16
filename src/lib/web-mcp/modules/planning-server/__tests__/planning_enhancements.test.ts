@@ -33,7 +33,7 @@ describe('Planning Server Enhancements', () => {
         const todos = (state.structuredContent as any).state.todos;
         const firstTodoId = todos[0].id;
 
-        const result = await planningServer.callTool('mark_todo', { id: firstTodoId, completed: true });
+        const result = await planningServer.callTool('checkTodo', { id: firstTodoId, checked: true });
 
         // 3. Verify response contains "nextActions" suggesting Task 2
         // Note: The specific format of nextActions depends on implementation
@@ -52,12 +52,12 @@ describe('Planning Server Enhancements', () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const firstTodoId = (state.structuredContent as any).state.todos[0].id;
 
-        const result = await planningServer.callTool('mark_todo', { id: firstTodoId, completed: true });
+        const result = await planningServer.callTool('checkTodo', { id: firstTodoId, checked: true });
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const structured = result.structuredContent as any;
         expect(structured.nextActions).toBeDefined();
-        expect(structured.nextActions[0]).toContain('All todos completed');
+        expect(structured.nextActions[0]).toContain('All todos checked');
     });
 
     it('should suggest next actions when clearing all todos', async () => {

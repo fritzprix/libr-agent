@@ -79,58 +79,15 @@ const planningServer: WebMCPServer = {
         return await stateManager.addTodo(
           typedArgs.name as string,
           typedArgs.priority as 'low' | 'medium' | 'high' | undefined,
-          typedArgs.dependsOn as number[] | undefined,
+          typedArgs.dependsOnIds as number[] | undefined,
         );
       }
-      case 'updateTodo': {
+      case 'checkTodo': {
         const id = typedArgs.id as number | undefined;
         const index = typedArgs.index as number | undefined;
-
-        // Validate that at least one identifier is provided
-        if (id === undefined && index === undefined) {
-          return createMCPErrorToolResult(
-            'Either "id" or "index" must be provided.',
-          );
-        }
-
-        // Validate id if provided
-        if (id !== undefined && (!Number.isInteger(id) || id < 1)) {
-          return createMCPErrorToolResult(
-            `Invalid id: ${id}. ID must be a positive integer.`,
-          );
-        }
-
-        // Validate index if provided
-        if (index !== undefined && (!Number.isInteger(index) || index < 0)) {
-          return createMCPErrorToolResult(
-            `Invalid index: ${index}. Index must be a non-negative integer.`,
-          );
-        }
-
-        return await stateManager.updateTodo(
-          { id, index },
-          {
-            name: typedArgs.name as string | undefined,
-            status: typedArgs.status as
-              | 'pending'
-              | 'completed'
-              | 'blocked'
-              | undefined,
-            priority: typedArgs.priority as
-              | 'low'
-              | 'medium'
-              | 'high'
-              | undefined,
-            dependsOn: typedArgs.dependsOn as number[] | undefined,
-          },
-        );
-      }
-      case 'markTodo': {
-        const id = typedArgs.id as number | undefined;
-        const index = typedArgs.index as number | undefined;
-        const completed =
-          typedArgs.completed !== undefined
-            ? (typedArgs.completed as boolean)
+        const checked =
+          typedArgs.checked !== undefined
+            ? (typedArgs.checked as boolean)
             : true;
         const summary = typedArgs.summary as string | undefined;
 
@@ -155,7 +112,7 @@ const planningServer: WebMCPServer = {
           );
         }
 
-        return await stateManager.checkTodo({ id, index }, completed, summary);
+        return await stateManager.checkTodo({ id, index }, checked, summary);
       }
       case 'clearTodos': {
         const ids = typedArgs.ids as number[] | undefined;
@@ -188,7 +145,7 @@ const planningServer: WebMCPServer = {
         return stateManager.processCritiqueAndReflection(typedArgs);
       }
       case 'getCurrentState': {
-        const includeCompleted = typedArgs.include_completed !== false; // Default true
+        const includeChecked = typedArgs.include_checked !== false; // Default true
         const includeScratchpad = typedArgs.include_scratchpad !== false; // Default true
         const state = await stateManager.getStateForSession(
           stateManager.getCurrentSessionId() || 'default',
@@ -202,9 +159,9 @@ const planningServer: WebMCPServer = {
         }
 
         const { goal, todos, scratchpad } = state;
-        const filteredTodos = includeCompleted
+        const filteredTodos = includeChecked
           ? todos
-          : todos.filter((t) => t.status === 'pending');
+          : todos.filter((t) => !t.checked);
 
         // Pagination logic for todos (optional, keeping simple for now)
         const limit = 50;
@@ -214,9 +171,7 @@ const planningServer: WebMCPServer = {
         const todosText = paginatedTodos.length
           ? paginatedTodos
               .map((t) => {
-                let checkbox = '[ ]';
-                if (t.status === 'completed') checkbox = '[x]';
-                else if (t.status === 'blocked') checkbox = '[!]';
+                const checkbox = t.checked ? '[x]' : '[ ]';
 
                 const summaryPart = t.summary ? ` - ${t.summary}` : '';
                 const priorityPart = t.priority ? ` [${t.priority}]` : '';
@@ -245,8 +200,8 @@ const planningServer: WebMCPServer = {
 
 **Summary**
 - Total Todos: ${todos.length}
-  - Pending: ${todos.filter((t) => t.status === 'pending').length}
-  - Completed: ${todos.filter((t) => t.status === 'completed').length}
+  - Unchecked: ${todos.filter((t) => !t.checked).length}
+  - Checked: ${todos.filter((t) => t.checked).length}
 - Scratchpad Items: ${scratchpad.length}
 
 **Goal**
@@ -298,19 +253,19 @@ ${scratchpadText}`;
     }
 
     const { goal, todos, scratchpad } = state;
-    const pendingTodos = todos.filter((t) => t.status === 'pending');
+    const uncheckedTodos = todos.filter((t) => !t.checked);
 
     const contextParts = [];
     if (goal) {
       contextParts.push(`Current Goal: "${goal}"`);
     }
-    if (pendingTodos.length > 0) {
-      contextParts.push(`Pending Todos (${pendingTodos.length}):`);
-      pendingTodos.slice(0, 5).forEach((t) => {
+    if (uncheckedTodos.length > 0) {
+      contextParts.push(`Unchecked Todos (${uncheckedTodos.length}):`);
+      uncheckedTodos.slice(0, 5).forEach((t) => {
         contextParts.push(`- [ ] ${t.name}`);
       });
-      if (pendingTodos.length > 5) {
-        contextParts.push(`...and ${pendingTodos.length - 5} more`);
+      if (uncheckedTodos.length > 5) {
+        contextParts.push(`...and ${uncheckedTodos.length - 5} more`);
       }
     }
     if (scratchpad.length > 0) {

@@ -56,18 +56,14 @@ export function ChatPlanningPanel() {
               planningState.todos.map((todo, index) => (
                 <div key={index} className="flex items-start gap-2 text-sm">
                   <Badge
-                    variant={
-                      todo.status === 'completed' ? 'default' : 'secondary'
-                    }
+                    variant={todo.checked ? 'default' : 'secondary'}
                     className="mt-0.5"
                   >
-                    {todo.status === 'completed' ? '✓' : '○'}
+                    {todo.checked ? '✓' : '○'}
                   </Badge>
                   <span
                     className={
-                      todo.status === 'completed'
-                        ? 'line-through text-muted-foreground'
-                        : ''
+                      todo.checked ? 'line-through text-muted-foreground' : ''
                     }
                   >
                     {todo.name}
