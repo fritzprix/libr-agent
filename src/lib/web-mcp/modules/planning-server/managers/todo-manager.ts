@@ -1,7 +1,7 @@
 import { createMCPStructuredToolResult } from '@/lib/mcp-response-utils';
 import type { MCPResult } from '@/lib/mcp-types';
 import { MCPResponseBuilder } from '@/lib/web-mcp/response-builder';
-import { db } from '../db';
+import { db, type PlanningTodo } from '../db';
 import type { SimpleTodo, AddToDoOutput, BaseOutput } from '../types';
 import { resolveTodoId } from '../utils/todo-resolvers';
 import {
@@ -13,11 +13,16 @@ import {
   buildTodoNotFoundError,
   buildDuplicateTodoError,
   buildCorruptedTodosError,
-  buildEmptyNameError,
+  buildEmptyTitleError,
   buildInvalidDependencyError,
   buildCircularDependencyError,
 } from '../utils/response-builders';
 import { detectCircularDependency } from '../utils/dependency-validator';
+
+// Helper interface for backward compatibility
+interface LegacyTodo extends PlanningTodo {
+  name?: string;
+}
 
 /**
  * Manages todo operations including CRUD, validation, dependency tracking, and progress calculation.
@@ -44,7 +49,11 @@ export class TodoManager {
 
     return todos.map((t) => ({
       id: t.id!,
-      name: typeof t.name === 'string' && t.name ? t.name : '(Untitled)',
+      title:
+        typeof t.title === 'string' && t.title
+          ? t.title
+          : (t as unknown as LegacyTodo).name || '(Untitled)', // Fallback to name for legacy data
+      description: t.description,
       checked: t.checked,
       summary: t.summary,
       priority: t.priority,
@@ -56,26 +65,28 @@ export class TodoManager {
    * Adds a new todo with duplicate detection and validation.
    * Checks for corrupted todos and duplicate names before adding.
    *
-   * @param name - The name/description of the todo
+   * @param title - The title/summary of the todo
+   * @param description - Optional detailed description
    * @param priority - Optional priority level (low, medium, high)
    * @param dependsOn - Optional array of todo IDs this todo depends on
    * @param activeGoalContent - Optional active goal content for context in response
    * @returns MCPResult with the new todo and updated list
    */
   async addTodo(
-    name: string,
+    title: string,
+    description?: string,
     priority?: 'low' | 'medium' | 'high',
     dependsOn?: number[],
     activeGoalContent?: string | null,
   ): Promise<MCPResult<AddToDoOutput>> {
-    // Validation: Name cannot be empty or whitespace-only
-    if (!name || name.trim() === '') {
-      return buildEmptyNameError('todo') as MCPResult<AddToDoOutput>;
+    // Validation: Title cannot be empty or whitespace-only
+    if (!title || title.trim() === '') {
+      return buildEmptyTitleError('todo') as MCPResult<AddToDoOutput>;
     }
 
     const todos = await this.getTodosList();
 
-    // Check for corrupted todos (missing name)
+    // Check for corrupted todos (missing title)
     const corruptedTodos = checkCorruptedTodos(todos);
     if (corruptedTodos) {
       return buildCorruptedTodosError(
@@ -84,7 +95,7 @@ export class TodoManager {
     }
 
     // Check for duplicate todos (case-insensitive, trimmed)
-    const duplicate = checkDuplicateTodo(todos, name);
+    const duplicate = checkDuplicateTodo(todos, title);
     if (duplicate) {
       return buildDuplicateTodoError(
         duplicate,
@@ -121,7 +132,8 @@ export class TodoManager {
     const id = await db.todos.add({
       sessionId: this.sessionId,
       threadId: this.threadId,
-      name,
+      title,
+      description,
       checked: false,
       priority,
       dependsOn,
@@ -133,7 +145,7 @@ export class TodoManager {
     const uncheckedCount = newTodos.filter((t) => !t.checked).length;
     const checkedCount = newTodos.filter((t) => t.checked).length;
 
-    let message = `Todo added: "${name}" (ID: ${id})`;
+    let message = `Todo added: "${title}" (ID: ${id})`;
     if (activeGoalContent) {
       message += `\n\nGoal: "${activeGoalContent}"`;
     }
@@ -142,7 +154,7 @@ export class TodoManager {
     return new MCPResponseBuilder({
       success: true,
       id,
-      todo: { id, name, checked: false, priority, dependsOn },
+      todo: { id, title, description, checked: false, priority, dependsOn },
       todos: newTodos,
       summary: {
         total: newTodos.length,
@@ -198,7 +210,11 @@ export class TodoManager {
 
     const simpleTodo: SimpleTodo = {
       id: updatedTodoRecord!.id!,
-      name: updatedTodoRecord!.name,
+      title:
+        updatedTodoRecord!.title ||
+        (updatedTodoRecord as unknown as LegacyTodo).name ||
+        '(Untitled)',
+      description: updatedTodoRecord!.description,
       checked: updatedTodoRecord!.checked,
       summary: updatedTodoRecord!.summary,
       priority: updatedTodoRecord!.priority,
@@ -242,7 +258,7 @@ export class TodoManager {
     }
 
     if (unblockedTodos.length > 0) {
-      message += `\n\nUnblocked todos:\n${unblockedTodos.map((t) => `  - [${t.id}] ${t.name}`).join('\n')}`;
+      message += `\n\nUnblocked todos:\n${unblockedTodos.map((t) => `  - [${t.id}] ${t.title}`).join('\n')}`;
     }
 
     const builder = new MCPResponseBuilder({
@@ -256,7 +272,7 @@ export class TodoManager {
         total: todos.length,
         percentage: progress,
       },
-      unblockedTodos: unblockedTodos.map((t) => ({ id: t.id, name: t.name })),
+      unblockedTodos: unblockedTodos.map((t) => ({ id: t.id, title: t.title })),
     });
 
     // Identify next action guidance
@@ -264,7 +280,7 @@ export class TodoManager {
 
     if (unblockedTodos.length > 0) {
       nextActions.push(
-        `Begin work on unblocked todo: "${unblockedTodos[0].name}" (ID: ${unblockedTodos[0].id})`,
+        `Begin work on unblocked todo: "${unblockedTodos[0].title}" (ID: ${unblockedTodos[0].id})`,
       );
     } else {
       const nextUnchecked = todos.find(
@@ -272,7 +288,7 @@ export class TodoManager {
       );
       if (nextUnchecked) {
         nextActions.push(
-          `Proceed to next todo: "${nextUnchecked.name}" (ID: ${nextUnchecked.id})`,
+          `Proceed to next todo: "${nextUnchecked.title}" (ID: ${nextUnchecked.id})`,
         );
       } else if (checkedCount === todos.length) {
         nextActions.push(
@@ -355,7 +371,7 @@ export class TodoManager {
 
     const remainingTodos = await this.getTodosList();
     const removedCount = idsToDelete.length;
-    const clearedNames = todosToDelete.map((t) => t.name).join(', ');
+    const clearedNames = todosToDelete.map((t) => t.title).join(', ');
 
     const nextActions: string[] = [];
     const hasUnchecked = remainingTodos.some((t) => !t.checked);

@@ -65,8 +65,9 @@ export function ChatPlanningPanel() {
                     className={
                       todo.checked ? 'line-through text-muted-foreground' : ''
                     }
+                    title={todo.description}
                   >
-                    {todo.name}
+                    {todo.title}
                   </span>
                 </div>
               ))

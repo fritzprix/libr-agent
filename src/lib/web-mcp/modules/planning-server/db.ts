@@ -13,7 +13,8 @@ export interface PlanningTodo {
   id?: number;
   sessionId: string;
   threadId: string;
-  name: string;
+  title: string;
+  description?: string;
   checked: boolean;
   summary?: string;
   priority?: 'low' | 'medium' | 'high';
@@ -26,7 +27,9 @@ export interface PlanningScratchpadItem {
   id?: number;
   sessionId: string;
   threadId: string;
+  title?: string;
   content: string;
+  tags?: string[];
   source?: string;
   createdAt: number;
 }
@@ -62,6 +65,13 @@ export class PlanningDatabase extends Dexie {
           });
         }
       });
+
+    // Version 3: Add title and tags to scratchpad
+    this.version(3).stores({
+      goals: '++id, [sessionId+threadId], isActive',
+      todos: '++id, [sessionId+threadId], checked',
+      scratchpad: '++id, [sessionId+threadId], *tags',
+    });
   }
 }
 

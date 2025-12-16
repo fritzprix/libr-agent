@@ -49,10 +49,14 @@ export const planningTools: MCPTool[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        name: {
+        title: {
           type: 'string',
           description:
-            'The name or description of the todo item to add (e.g., "Write documentation").',
+            'Short summary of the task (e.g., "Write documentation").',
+        },
+        description: {
+          type: 'string',
+          description: 'Detailed instructions or context for the task.',
         },
         priority: {
           type: 'string',
@@ -61,12 +65,12 @@ export const planningTools: MCPTool[] = [
         },
         dependsOnIds: {
           type: 'array',
-          items: { type: 'number' },
+          items: { type: 'number', minimum: 1 },
           description:
             'List of todo IDs that this todo depends on. Must be valid database IDs, not indices.',
         },
       },
-      required: ['name'],
+      required: ['title'],
     },
   },
   {
@@ -129,10 +133,20 @@ export const planningTools: MCPTool[] = [
     inputSchema: {
       type: 'object',
       properties: {
+        title: {
+          type: 'string',
+          description:
+            'Optional title for the note. Helps in identifying the note in the list.',
+        },
         note: {
           type: 'string',
           description:
             'The content to add to the scratchpad (e.g., "User requested feature X", "File path: src/main.ts").',
+        },
+        tags: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Optional tags for categorization and filtering.',
         },
         source: {
           type: 'string',
@@ -141,6 +155,26 @@ export const planningTools: MCPTool[] = [
         },
       },
       required: ['note'],
+    },
+  },
+  {
+    name: 'readScratchpad',
+    description:
+      'Read specific scratchpad items by their IDs or filter by tags. Use this to retrieve the full content of scratchpad items when they are not fully visible in the context.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ids: {
+          type: 'array',
+          items: { type: 'number', minimum: 0 },
+          description: 'List of scratchpad IDs to read.',
+        },
+        tags: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'List of tags to filter by.',
+        },
+      },
     },
   },
   {

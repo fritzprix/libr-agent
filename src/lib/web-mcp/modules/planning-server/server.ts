@@ -71,13 +71,14 @@ const planningServer: WebMCPServer = {
         return await stateManager.clearGoal();
       }
       case 'addTodo': {
-        if (!typedArgs.name || typeof typedArgs.name !== 'string') {
+        if (!typedArgs.title || typeof typedArgs.title !== 'string') {
           return createMCPErrorToolResult(
-            'The "name" argument is required and must be a string.',
+            'The "title" argument is required and must be a string.',
           );
         }
         return await stateManager.addTodo(
-          typedArgs.name as string,
+          typedArgs.title as string,
+          typedArgs.description as string | undefined,
           typedArgs.priority as 'low' | 'medium' | 'high' | undefined,
           typedArgs.dependsOnIds as number[] | undefined,
         );
@@ -124,6 +125,14 @@ const planningServer: WebMCPServer = {
         return await stateManager.addScratchpad(
           typedArgs.note as string,
           typedArgs.source as string | undefined,
+          typedArgs.title as string | undefined,
+          typedArgs.tags as string[] | undefined,
+        );
+      }
+      case 'readScratchpad': {
+        return await stateManager.readScratchpad(
+          typedArgs.ids as number[] | undefined,
+          typedArgs.tags as string[] | undefined,
         );
       }
       case 'clearScratchpad': {
@@ -179,7 +188,7 @@ const planningServer: WebMCPServer = {
                   t.dependsOn && t.dependsOn.length > 0
                     ? ` (depends on: ${t.dependsOn.join(', ')})`
                     : '';
-                return `- ID:${t.id} ${checkbox} ${t.name}${priorityPart}${summaryPart}${dependsPart}`;
+                return `- ID:${t.id} ${checkbox} ${t.title}${priorityPart}${summaryPart}${dependsPart}`;
               })
               .join('\n')
           : '(none)';
@@ -188,8 +197,17 @@ const planningServer: WebMCPServer = {
           includeScratchpad && scratchpad.length > 0
             ? scratchpad
                 .map((m) => {
-                  const sourcePart = m.source ? ` (source: ${m.source})` : '';
-                  return `- [ID: ${m.id}] ${m.content}${sourcePart}`;
+                  const titlePart = m.title ? ` [${m.title}]` : '';
+                  const tagsPart =
+                    m.tags && m.tags.length > 0
+                      ? ` (tags: ${m.tags.join(', ')})`
+                      : '';
+                  const contentPreview = m.title
+                    ? ''
+                    : ` ${m.content.slice(0, 50)}${
+                        m.content.length > 50 ? '...' : ''
+                      }`;
+                  return `- [ID: ${m.id}]${titlePart}${contentPreview}${tagsPart}`;
                 })
                 .join('\n')
             : '(none)';
@@ -262,7 +280,7 @@ ${scratchpadText}`;
     if (uncheckedTodos.length > 0) {
       contextParts.push(`Unchecked Todos (${uncheckedTodos.length}):`);
       uncheckedTodos.slice(0, 5).forEach((t) => {
-        contextParts.push(`- [ ] ${t.name}`);
+        contextParts.push(`- [ ] ${t.title}`);
       });
       if (uncheckedTodos.length > 5) {
         contextParts.push(`...and ${uncheckedTodos.length - 5} more`);
@@ -270,9 +288,22 @@ ${scratchpadText}`;
     }
     if (scratchpad.length > 0) {
       contextParts.push(`Scratchpad (${scratchpad.length}):`);
-      scratchpad.slice(0, 3).forEach((m) => {
-        contextParts.push(`- ${m.content}`);
+      scratchpad.slice(0, 5).forEach((m) => {
+        const titlePart = m.title ? `[${m.title}] ` : '';
+        const tagsPart =
+          m.tags && m.tags.length > 0 ? ` (tags: ${m.tags.join(', ')})` : '';
+        const contentPreview = m.title ? '' : `${m.content.slice(0, 30)}...`;
+        contextParts.push(
+          `- ID:${m.id} ${titlePart}${contentPreview}${tagsPart}`,
+        );
       });
+      if (scratchpad.length > 5) {
+        contextParts.push(
+          `...and ${
+            scratchpad.length - 5
+          } more. Use readScratchpad to view details.`,
+        );
+      }
     }
 
     return {
@@ -296,13 +327,14 @@ export interface PlanningServerProxy extends WebMCPServerProxy {
   update_goal(args: { goal: string }): Promise<MCPResult<CreateGoalOutput>>;
   clear_goal(): Promise<MCPResult<ClearGoalOutput>>;
   add_todo(args: {
-    name: string;
+    title: string;
+    description?: string;
     priority?: 'low' | 'medium' | 'high';
     dependsOn?: number[];
   }): Promise<MCPResult<AddToDoOutput>>;
   update_todo(args: {
     id: number;
-    name?: string;
+    title?: string;
     status?: 'pending' | 'completed' | 'blocked';
     priority?: 'low' | 'medium' | 'high';
     dependsOn?: number[];
@@ -316,7 +348,13 @@ export interface PlanningServerProxy extends WebMCPServerProxy {
   clear_session(): Promise<MCPResult<BaseOutput>>;
   add_scratchpad(args: {
     note: string;
+    title?: string;
+    tags?: string[];
   }): Promise<MCPResult<BaseOutput & { scratchpad: ScratchpadItem[] }>>;
+  read_scratchpad(args: {
+    ids?: number[];
+    tags?: string[];
+  }): Promise<MCPResult<{ scratchpad: ScratchpadItem[] }>>;
   clear_scratchpad(args: {
     id: number;
   }): Promise<MCPResult<BaseOutput & { scratchpad: ScratchpadItem[] }>>;

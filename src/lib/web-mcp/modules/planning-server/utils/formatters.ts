@@ -27,7 +27,7 @@ export function formatTodosList(todos: SimpleTodo[]): string {
   return todos
     .map(
       (t) =>
-        `  - ID: ${t.id} [${t.checked ? 'checked' : 'unchecked'}] ${t.name}`,
+        `  - ID: ${t.id} [${t.checked ? 'checked' : 'unchecked'}] ${t.title}`,
     )
     .join('\n');
 }

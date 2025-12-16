@@ -74,11 +74,11 @@ export function buildDuplicateTodoError(
     .withMessage(
       `Duplicate todo detected.\n\n` +
         `A todo with similar content already exists:\n` +
-        `  - ID: ${duplicate.id} [${duplicate.checked ? 'checked' : 'unchecked'}] ${duplicate.name}\n\n` +
+        `  - ID: ${duplicate.id} [${duplicate.checked ? 'checked' : 'unchecked'}] ${duplicate.title}\n\n` +
         `Current todos:\n${formatTodosList(todos)}`,
     )
     .withSuggestions([
-      'Use a different name for the new todo',
+      'Use a different title for the new todo',
       `Check the existing todo with checkTodo(id=${duplicate.id})`,
       `Clear the existing todo if it's truly complete`,
     ])
@@ -86,9 +86,9 @@ export function buildDuplicateTodoError(
 }
 
 /**
- * Builds an error response for corrupted todos (missing name property).
+ * Builds an error response for corrupted todos (missing title property).
  *
- * @param corruptedTodos - Array of todos missing the name property
+ * @param corruptedTodos - Array of todos missing the title property
  * @returns MCPResult with error details
  */
 export function buildCorruptedTodosError(
@@ -100,7 +100,7 @@ export function buildCorruptedTodosError(
   })
     .withMessage(
       `Data Corruption Detected.\n\n` +
-        `The following todo items are missing a 'name' property and must be fixed or removed:\n` +
+        `The following todo items are missing a 'title' property and must be fixed or removed:\n` +
         corruptedTodos
           .map(
             (t) => `  - ID: ${t.id} (${t.checked ? 'Checked' : 'Unchecked'})`,
@@ -112,22 +112,24 @@ export function buildCorruptedTodosError(
 }
 
 /**
- * Builds an error response for empty or whitespace-only goal/todo names.
+ * Builds an error response for empty or whitespace-only goal/todo titles.
  *
  * @param type - Whether this is for a 'goal' or 'todo'
  * @returns MCPResult with error details and suggestions
  */
-export function buildEmptyNameError(type: 'goal' | 'todo'): MCPResult<unknown> {
+export function buildEmptyTitleError(
+  type: 'goal' | 'todo',
+): MCPResult<unknown> {
   const entityType = type === 'goal' ? 'Goal' : 'Todo';
 
   return new MCPResponseBuilder({})
     .withMessage(
-      `${entityType} name cannot be empty or whitespace-only.\n\n` +
-        `The provided name must contain at least one non-whitespace character.`,
+      `${entityType} title cannot be empty or whitespace-only.\n\n` +
+        `The provided title must contain at least one non-whitespace character.`,
     )
     .withSuggestions([
-      `Provide a descriptive name that clearly identifies the ${type}`,
-      'Names must contain at least one non-whitespace character',
+      `Provide a descriptive title that clearly identifies the ${type}`,
+      'Titles must contain at least one non-whitespace character',
       `Example: "${type === 'goal' ? 'Implement user authentication' : 'Write unit tests for auth module'}"`,
     ])
     .asError(WebMCPErrorCodes.PLANNING.EMPTY_NAME);

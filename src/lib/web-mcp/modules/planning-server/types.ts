@@ -1,7 +1,8 @@
 /** Represents a single to-do item in the planning state. @internal */
 export interface SimpleTodo {
   id: number;
-  name: string;
+  title: string;
+  description?: string;
   checked: boolean;
   summary?: string;
   priority?: 'low' | 'medium' | 'high';
@@ -16,7 +17,9 @@ export interface TodoWithComputedState extends SimpleTodo {
 
 export interface ScratchpadItem {
   id: number;
+  title?: string;
   content: string;
+  tags?: string[];
   source?: string;
 }
 

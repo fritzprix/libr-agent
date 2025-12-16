@@ -1,5 +1,9 @@
-import { db } from '../db';
+import { db, type PlanningTodo } from '../db';
 import type { SimpleTodo } from '../types';
+
+interface LegacyTodo extends PlanningTodo {
+  name?: string;
+}
 
 /**
  * Resolves a todo ID from either an explicit id or an index parameter.
@@ -31,7 +35,11 @@ export async function resolveTodoId(
 
   const simpleTodos: SimpleTodo[] = todos.map((t) => ({
     id: t.id!,
-    name: typeof t.name === 'string' && t.name ? t.name : '(Untitled)',
+    title:
+      typeof t.title === 'string' && t.title
+        ? t.title
+        : (t as unknown as LegacyTodo).name || '(Untitled)',
+    description: t.description,
     checked: t.checked,
     summary: t.summary,
     priority: t.priority,

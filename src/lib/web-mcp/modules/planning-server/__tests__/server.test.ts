@@ -6,7 +6,7 @@ import { ScratchpadItem } from '../types';
 
 interface TodoItem {
     id: number;
-    name: string;
+    title: string;
     checked: boolean;
 }
 
@@ -58,14 +58,14 @@ describe('Planning Server Persistence', () => {
     });
 
     it('should persist todos', async () => {
-        await planningServer.callTool('add_todo', { name: 'Task 1' });
-        await planningServer.callTool('add_todo', { name: 'Task 2' });
+        await planningServer.callTool('add_todo', { title: 'Task 1' });
+        await planningServer.callTool('add_todo', { title: 'Task 2' });
 
         const state = await planningServer.callTool('get_current_state', {});
         const structuredState = state.structuredContent as PlanningState;
         expect(structuredState.state.todos).toHaveLength(2);
-        expect(structuredState.state.todos[0].name).toBe('Task 1');
-        expect(structuredState.state.todos[1].name).toBe('Task 2');
+        expect(structuredState.state.todos[0].title).toBe('Task 1');
+        expect(structuredState.state.todos[1].title).toBe('Task 2');
 
         // Verify DB directly
         const dbTodos = await db.todos.where({ sessionId, threadId }).toArray();
@@ -89,7 +89,7 @@ describe('Planning Server Persistence', () => {
         expect(remaining).toHaveLength(0);
     });
     it('should update todo checked status', async () => {
-        const addResult = await planningServer.callTool('add_todo', { name: 'Task 1' });
+        const addResult = await planningServer.callTool('add_todo', { title: 'Task 1' });
         const { todos } = addResult.structuredContent as AddTodoResult;
         const todoId = todos[0].id;
 
@@ -130,9 +130,9 @@ describe('Planning Server Persistence', () => {
         await planningServer.switchContext!({ sessionId, threadId });
 
         // Add multiple todos
-        await planningServer.callTool('add_todo', { name: 'First Task' });
-        await planningServer.callTool('add_todo', { name: 'Second Task' });
-        await planningServer.callTool('add_todo', { name: 'Third Task' });
+        await planningServer.callTool('addTodo', { title: 'First Task' });
+        await planningServer.callTool('addTodo', { title: 'Second Task' });
+        await planningServer.callTool('addTodo', { title: 'Third Task' });
 
         // Mark first todo (index 0) as checked using index
         const markResult = await planningServer.callTool('checkTodo', {
@@ -142,7 +142,7 @@ describe('Planning Server Persistence', () => {
         expect(markResult.isError).toBe(false);
 
         // Verify the checked status change
-        const state = await planningServer.callTool('get_current_state', {});
+        const state = await planningServer.callTool('getCurrentState', {});
         const structuredState = state.structuredContent as PlanningState;
         expect(structuredState.state.todos[0].checked).toBe(true);
     });
