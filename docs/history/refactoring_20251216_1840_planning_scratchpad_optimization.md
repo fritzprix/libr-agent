@@ -107,13 +107,13 @@ PlanningDatabase (db.ts - Dexie IndexedDB)
 
 ### 4.2 해결 판정 기준
 
-- [ ] `ScratchpadItem`에 `title`, `tags` 필드 추가 완료
-- [ ] DB 스키마 v3 마이그레이션 적용 (`*tags` 인덱스)
-- [ ] `addScratchpad` 도구가 `title`, `tags` 파라미터 지원
-- [ ] `readScratchpad` 도구가 `ids` 및 `tags` 필터링 지원
-- [ ] `getServiceContext`에서 Scratchpad 요약 표시 (제목, 태그만)
-- [ ] `getCurrentState`에서도 요약 표시 적용
-- [ ] 기존 데이터 호환성 유지 (title, tags 없는 아이템도 정상 작동)
+- [x] `ScratchpadItem`에 `title`, `tags` 필드 추가 완료
+- [x] DB 스키마 v3 마이그레이션 적용 (`*tags` 인덱스)
+- [x] `addScratchpad` 도구가 `title`, `tags` 파라미터 지원
+- [x] `readScratchpad` 도구가 `ids` 및 `tags` 필터링 지원
+- [x] `getServiceContext`에서 Scratchpad 요약 표시 (제목, 태그만)
+- [x] `getCurrentState`에서도 요약 표시 적용
+- [x] 기존 데이터 호환성 유지 (title, tags 없는 아이템도 정상 작동)
 
 ---
 
@@ -654,9 +654,9 @@ tags.every((tag) => item.tags.includes(tag)); // AND 검색
    - [x] Server 핸들러 및 컨텍스트 최적화
 
 2. **Phase 2 - Testing**:
-   - [ ] Unit Test 작성
-   - [ ] Integration Test 업데이트
-   - [ ] 기존 데이터 호환성 테스트
+   - [x] Unit Test 작성
+   - [x] Integration Test 업데이트
+   - [x] 기존 데이터 호환성 테스트
 
 3. **Phase 3 - Documentation**:
    - [ ] API 문서 업데이트
