@@ -108,14 +108,12 @@ export const planningTools: MCPTool[] = [
         ids: {
           type: 'array',
           items: { type: 'number', minimum: 1 },
-          description:
-            'Array of todo IDs to clear.',
+          description: 'Array of todo IDs to clear.',
         },
         indices: {
           type: 'array',
           items: { type: 'number', minimum: 0 },
-          description:
-            'Array of todo indices (0-based) to clear.',
+          description: 'Array of todo indices (0-based) to clear.',
         },
       },
     },
