@@ -8,7 +8,7 @@ import {
 
 export const assistantManagerTools: MCPTool[] = [
   {
-    name: 'list_assistants',
+    name: 'listAssistants',
     description: 'List available assistants with pagination support.',
     inputSchema: createObjectSchema({
       properties: {
@@ -22,7 +22,7 @@ export const assistantManagerTools: MCPTool[] = [
     }),
   },
   {
-    name: 'get_assistant',
+    name: 'getAssistant',
     description: 'Get details of a specific assistant by ID.',
     inputSchema: createObjectSchema({
       properties: {
@@ -32,7 +32,7 @@ export const assistantManagerTools: MCPTool[] = [
     }),
   },
   {
-    name: 'create_assistant',
+    name: 'createAssistant',
     description: 'Create a new assistant.',
     inputSchema: createObjectSchema({
       properties: {
@@ -58,7 +58,7 @@ export const assistantManagerTools: MCPTool[] = [
     }),
   },
   {
-    name: 'update_assistant',
+    name: 'updateAssistant',
     description: 'Update an existing assistant.',
     inputSchema: createObjectSchema({
       properties: {
@@ -87,7 +87,7 @@ export const assistantManagerTools: MCPTool[] = [
     }),
   },
   {
-    name: 'delete_assistant',
+    name: 'deleteAssistant',
     description: 'Delete an assistant.',
     inputSchema: createObjectSchema({
       properties: {
@@ -99,7 +99,7 @@ export const assistantManagerTools: MCPTool[] = [
     }),
   },
   {
-    name: 'search_assistant',
+    name: 'searchAssistant',
     description:
       'Search assistants using BM25 ranking algorithm based on name, description, and system prompt.',
     inputSchema: createObjectSchema({

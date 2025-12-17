@@ -22,9 +22,9 @@ describe('UI Tools - Wait UI Functionality', () => {
     vi.clearAllMocks();
   });
 
-  describe('wait_for_user_resume tool', () => {
+  describe('waitForUserResume tool', () => {
     it('returns multipart response with text and uiResource', async () => {
-      const response = (await uiTools.callTool('wait_for_user_resume', {
+      const response = (await uiTools.callTool('waitForUserResume', {
         message: 'Testing wait',
         resumeInstruction: 'Continue with the next step',
       })) as TestMCPResult;
@@ -48,7 +48,7 @@ describe('UI Tools - Wait UI Functionality', () => {
 
     it('automatically adds startedAt timestamp', async () => {
       const before = new Date().toISOString();
-      const response = (await uiTools.callTool('wait_for_user_resume', {
+      const response = (await uiTools.callTool('waitForUserResume', {
         message: 'Test',
         resumeInstruction: 'Test instruction',
       })) as TestMCPResult;
@@ -63,7 +63,7 @@ describe('UI Tools - Wait UI Functionality', () => {
     });
 
     it('rejects empty message', async () => {
-      const response = (await uiTools.callTool('wait_for_user_resume', {
+      const response = (await uiTools.callTool('waitForUserResume', {
         message: '',
         resumeInstruction: 'Test instruction',
       })) as TestMCPResult;
@@ -75,7 +75,7 @@ describe('UI Tools - Wait UI Functionality', () => {
     });
 
     it('rejects missing resumeInstruction', async () => {
-      const response = (await uiTools.callTool('wait_for_user_resume', {
+      const response = (await uiTools.callTool('waitForUserResume', {
         message: 'Test',
         resumeInstruction: '',
       })) as TestMCPResult;
@@ -86,7 +86,7 @@ describe('UI Tools - Wait UI Functionality', () => {
     });
 
     it('generates valid UIResource', async () => {
-      const response = (await uiTools.callTool('wait_for_user_resume', {
+      const response = (await uiTools.callTool('waitForUserResume', {
         message: 'Test message',
         resumeInstruction: 'Continue with next step',
       })) as TestMCPResult;
@@ -103,10 +103,10 @@ describe('UI Tools - Wait UI Functionality', () => {
     });
   });
 
-  describe('resume_from_wait tool', () => {
+  describe('resumeFromWait tool', () => {
     it('returns formatted agent message', async () => {
       const startedAt = '2025-10-11T17:00:00Z';
-      const response = (await uiTools.callTool('resume_from_wait', {
+      const response = (await uiTools.callTool('resumeFromWait', {
         resumeInstruction: 'Continue deployment',
         startedAt,
       })) as TestMCPResult;
@@ -120,7 +120,7 @@ describe('UI Tools - Wait UI Functionality', () => {
 
     it('calculates duration correctly', async () => {
       const startedAt = new Date(Date.now() - 65000).toISOString(); // 1 minute 5 seconds ago
-      const response = (await uiTools.callTool('resume_from_wait', {
+      const response = (await uiTools.callTool('resumeFromWait', {
         resumeInstruction: 'Test instruction',
         startedAt,
       })) as TestMCPResult;
@@ -136,7 +136,7 @@ describe('UI Tools - Wait UI Functionality', () => {
 
     it('includes proper metadata', async () => {
       const startedAt = '2025-10-11T17:00:00Z';
-      const response = (await uiTools.callTool('resume_from_wait', {
+      const response = (await uiTools.callTool('resumeFromWait', {
         resumeInstruction: 'Test instruction',
         startedAt,
       })) as TestMCPResult;
@@ -152,7 +152,7 @@ describe('UI Tools - Wait UI Functionality', () => {
 
     it('rejects missing resumeInstruction', async () => {
       const response = (await uiTools.callTool(
-        'resume_from_wait',
+        'resumeFromWait',
         {
           startedAt: '2025-10-11T17:00:00Z',
         },
@@ -164,7 +164,7 @@ describe('UI Tools - Wait UI Functionality', () => {
     });
 
     it('rejects missing startedAt', async () => {
-      const response = (await uiTools.callTool('resume_from_wait', {
+      const response = (await uiTools.callTool('resumeFromWait', {
         resumeInstruction: 'Test instruction',
       })) as TestMCPResult;
 
@@ -176,7 +176,7 @@ describe('UI Tools - Wait UI Functionality', () => {
 
   describe('Helper functions', () => {
     it('formatDuration handles seconds correctly', async () => {
-      // We test the internal formatDuration function through the resume_from_wait tool
+      // We test the internal formatDuration function through the resumeFromWait tool
       const testDurations = [
         { ms: 5000, expected: /5s/ },
         { ms: 65000, expected: /1m 5s/ },
@@ -185,7 +185,7 @@ describe('UI Tools - Wait UI Functionality', () => {
 
       for (const { ms, expected } of testDurations) {
         const startedAt = new Date(Date.now() - ms).toISOString();
-        const response = (await uiTools.callTool('resume_from_wait', {
+        const response = (await uiTools.callTool('resumeFromWait', {
           resumeInstruction: 'Test instruction',
           startedAt,
         })) as TestMCPResult;
@@ -200,7 +200,7 @@ describe('UI Tools - Wait UI Functionality', () => {
 
   describe('HTML generation', () => {
     it('generates valid UI structure', async () => {
-      const response = (await uiTools.callTool('wait_for_user_resume', {
+      const response = (await uiTools.callTool('waitForUserResume', {
         message: 'Test message',
         resumeInstruction: 'Continue with next step',
       })) as TestMCPResult;
@@ -213,13 +213,13 @@ describe('UI Tools - Wait UI Functionality', () => {
       // Handlebars uses single quotes for attributes
       expect(htmlContent).toContain("role='dialog'");
       expect(htmlContent).toContain("aria-modal='true'");
-      expect(htmlContent).toContain('resume_from_wait');
+      expect(htmlContent).toContain('resumeFromWait');
       expect(htmlContent).toContain('postMessage');
       expect(htmlContent).toContain('계속'); // Continue button in Korean
     });
 
     it('properly escapes HTML in message', async () => {
-      const response = (await uiTools.callTool('wait_for_user_resume', {
+      const response = (await uiTools.callTool('waitForUserResume', {
         message: '<script>alert("xss")</script>',
         resumeInstruction: 'Test instruction',
       })) as TestMCPResult;
@@ -234,7 +234,7 @@ describe('UI Tools - Wait UI Functionality', () => {
     });
 
     it('includes accessibility features', async () => {
-      const response = (await uiTools.callTool('wait_for_user_resume', {
+      const response = (await uiTools.callTool('waitForUserResume', {
         message: 'Test',
         resumeInstruction: 'Test instruction',
       })) as TestMCPResult;
@@ -251,7 +251,7 @@ describe('UI Tools - Wait UI Functionality', () => {
     });
 
     it('embeds context in JavaScript correctly', async () => {
-      const response = (await uiTools.callTool('wait_for_user_resume', {
+      const response = (await uiTools.callTool('waitForUserResume', {
         message: 'Test',
         resumeInstruction: 'Continue with "quoted" action',
       })) as TestMCPResult;
@@ -276,14 +276,14 @@ describe('UI Tools - Wait UI Functionality', () => {
       expect(response1.content[0].type).toBe('text');
 
       const response2 = (await uiTools.callTool(
-        'resume_from_wait',
+        'resumeFromWait',
         undefined,
       )) as TestMCPResult;
       expect(response2.content[0].type).toBe('text');
     });
 
     it('handles malformed arguments', async () => {
-      const response = (await uiTools.callTool('wait_for_user_resume', {
+      const response = (await uiTools.callTool('waitForUserResume', {
         message: 'Test',
         resumeInstruction: null,
       })) as TestMCPResult;
@@ -296,7 +296,7 @@ describe('UI Tools - Wait UI Functionality', () => {
 
   describe('Integration with existing tools', () => {
     it('does not interfere with existing prompt_user tool', async () => {
-      const response = (await uiTools.callTool('prompt_user', {
+      const response = (await uiTools.callTool('promptUser', {
         prompt: 'Test prompt',
         type: 'text',
       })) as TestMCPResult;
@@ -310,7 +310,7 @@ describe('UI Tools - Wait UI Functionality', () => {
     });
 
     it('does not interfere with existing visualize_data tool', async () => {
-      const response = (await uiTools.callTool('visualize_data', {
+      const response = (await uiTools.callTool('visualizeData', {
         type: 'bar',
         data: [
           { label: 'A', value: 10 },
@@ -329,7 +329,7 @@ describe('UI Tools - Wait UI Functionality', () => {
 
   describe('Tool schema validation', () => {
     it('has correct wait_for_user_resume schema', () => {
-      const waitTool = uiTools.tools.find((t) => t.name === 'wait_for_user_resume');
+      const waitTool = uiTools.tools.find((t) => t.name === 'waitForUserResume');
       expect(waitTool).toBeDefined();
       expect(waitTool!.inputSchema.required).toEqual(['message', 'resumeInstruction']);
 
@@ -337,8 +337,8 @@ describe('UI Tools - Wait UI Functionality', () => {
       expect(waitTool!.inputSchema.properties?.message).toBeDefined();
     });
 
-    it('has correct resume_from_wait schema', () => {
-      const resumeTool = uiTools.tools.find((t) => t.name === 'resume_from_wait');
+    it('has correct resumeFromWait schema', () => {
+      const resumeTool = uiTools.tools.find((t) => t.name === 'resumeFromWait');
       expect(resumeTool).toBeDefined();
       expect(resumeTool!.inputSchema.required).toEqual(['resumeInstruction', 'startedAt']);
 

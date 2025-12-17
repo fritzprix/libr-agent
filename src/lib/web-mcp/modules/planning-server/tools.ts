@@ -101,7 +101,7 @@ export const planningTools: MCPTool[] = [
   {
     name: 'clearTodos',
     description:
-      'Clear specific todos by their IDs, or all todos if no IDs are provided. Use to remove completed tasks or reset the todo list.',
+      'Clear specific todos by their indices (0-based) or IDs. If no indices or IDs are provided, all todos will be cleared. Use to remove completed tasks or reset the todo list.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -109,7 +109,13 @@ export const planningTools: MCPTool[] = [
           type: 'array',
           items: { type: 'number', minimum: 1 },
           description:
-            'Array of todo IDs to clear. If not provided or empty, all todos will be cleared.',
+            'Array of todo IDs to clear.',
+        },
+        indices: {
+          type: 'array',
+          items: { type: 'number', minimum: 0 },
+          description:
+            'Array of todo indices (0-based) to clear.',
         },
       },
     },

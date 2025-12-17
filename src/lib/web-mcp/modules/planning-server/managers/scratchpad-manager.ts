@@ -113,7 +113,8 @@ export class ScratchpadManager {
     } else if (tags && tags.length > 0) {
       items = allItems.filter(
         (item) =>
-          Array.isArray(item.tags) && item.tags.some((tag) => tags.includes(tag)),
+          Array.isArray(item.tags) &&
+          item.tags.some((tag) => tags.includes(tag)),
       );
     } else {
       items = allItems;

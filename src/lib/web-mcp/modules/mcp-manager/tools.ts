@@ -9,7 +9,7 @@ import {
 
 export const mcpManagerTools: MCPTool[] = [
   {
-    name: 'list_servers',
+    name: 'listServers',
     description:
       'List all registered MCP servers with pagination and filtering. Use this when you need to: view all available servers, check which servers are connected to current assistant, review server configurations before connecting/disconnecting, or audit server inventory.',
     inputSchema: createObjectSchema({
@@ -36,7 +36,7 @@ export const mcpManagerTools: MCPTool[] = [
     }),
   },
   {
-    name: 'search_server',
+    name: 'searchServer',
     description:
       'Search MCP servers by name, description, or tags with intelligent ranking. Use this when you need to: find a specific server by partial name or keyword, discover servers with particular capabilities, or quickly locate servers in large inventory. BM25 mode (default) provides relevance-based ranking best for natural language queries. Simple mode offers fast substring matching best for exact name searches.',
     inputSchema: createObjectSchema({
@@ -88,9 +88,9 @@ export const mcpManagerTools: MCPTool[] = [
     }),
   },
   {
-    name: 'create_server',
+    name: 'createServer',
     description:
-      'Register a new MCP server configuration in the system. Use this when you need to: add a new external MCP server to available servers list, configure connection settings for an MCP server (stdio command or HTTP endpoint), or make a server discoverable for assistants. Note: Creating a server only registers it in the database. Use "connect_server" afterwards to enable it for an assistant.',
+      'Register a new MCP server configuration in the system. Use this when you need to: add a new external MCP server to available servers list, configure connection settings for an MCP server (stdio command or HTTP endpoint), or make a server discoverable for assistants. Note: Creating a server only registers it in the database. Use "connectServer" afterwards to enable it for an assistant.',
     inputSchema: createObjectSchema({
       description: 'Server configuration parameters',
       properties: {
@@ -151,7 +151,7 @@ export const mcpManagerTools: MCPTool[] = [
     }),
   },
   {
-    name: 'connect_server',
+    name: 'connectServer',
     description:
       'Enable an MCP server for use by adding it to an assistant or globally. Use this when you need to: add tools from a specific server to current assistant (scope: "assistant"), make a server available to all assistants system-wide (scope: "global"), or activate a previously created/disconnected server. Assistant scope: tools only available to current assistant. Global scope: tools available to all assistants.',
     inputSchema: createObjectSchema({
@@ -178,9 +178,9 @@ export const mcpManagerTools: MCPTool[] = [
     }),
   },
   {
-    name: 'disconnect_server',
+    name: 'disconnectServer',
     description:
-      'Disable an MCP server by removing it from an assistant or globally. Use this when you need to: remove tools from current assistant without deleting the server configuration, disable a server system-wide for all assistants, or deactivate a problematic server. Assistant scope: removes server only from current assistant (other assistants keep access). Global scope: removes server from all assistants. Note: Disconnecting does NOT delete the server configuration - use list_servers or search_server to verify disconnection.',
+      'Disable an MCP server by removing it from an assistant or globally. Use this when you need to: remove tools from current assistant without deleting the server configuration, disable a server system-wide for all assistants, or deactivate a problematic server. Assistant scope: removes server only from current assistant (other assistants keep access). Global scope: removes server from all assistants. Note: Disconnecting does NOT delete the server configuration - use listServers or searchServer to verify disconnection.',
     inputSchema: createObjectSchema({
       description: 'Disconnection options',
       properties: {

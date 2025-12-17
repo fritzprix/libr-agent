@@ -293,7 +293,7 @@ const uiTools: WebMCPServer = {
 
     try {
       switch (name) {
-        case 'prompt_user': {
+        case 'promptUser': {
           // Clean up expired prompts before creating new one
           cleanupExpiredPrompts();
 
@@ -372,7 +372,7 @@ const uiTools: WebMCPServer = {
           });
         }
 
-        case 'reply_prompt': {
+        case 'replyPrompt': {
           const messageId = String(a.messageId || '');
           const answer = a.answer;
           const cancelled = Boolean(a.cancelled);
@@ -433,7 +433,7 @@ const uiTools: WebMCPServer = {
           );
         }
 
-        case 'visualize_data': {
+        case 'visualizeData': {
           const type = String(a.type || 'bar') as 'bar' | 'line';
           const data =
             (a.data as Array<{ label: string; value: number }>) || [];
@@ -524,7 +524,7 @@ const uiTools: WebMCPServer = {
           });
         }
 
-        case 'wait_for_user_resume': {
+        case 'waitForUserResume': {
           const message = String(a.message || '');
           const resumeInstruction = String(a.resumeInstruction || '');
 
@@ -564,7 +564,7 @@ const uiTools: WebMCPServer = {
           });
         }
 
-        case 'resume_from_wait': {
+        case 'resumeFromWait': {
           const resumeInstruction = String(a.resumeInstruction || '');
           const startedAt = String(a.startedAt || '');
 
@@ -610,7 +610,7 @@ const uiTools: WebMCPServer = {
           });
         }
 
-        case 'circuit_break': {
+        case 'circuitBreak': {
           const toolName = String(a.toolName || '');
           const repetitionCount = Number(a.repetitionCount || 0);
           const args = String(a.args || '');
@@ -641,7 +641,7 @@ const uiTools: WebMCPServer = {
           });
         }
 
-        case 'resume_circuit_break': {
+        case 'resumeCircuitBreak': {
           const toolName = String(a.toolName || '');
           const repetitionCount = Number(a.repetitionCount || 0);
 

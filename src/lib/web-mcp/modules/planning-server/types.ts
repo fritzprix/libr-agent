@@ -87,7 +87,7 @@ export interface BaseOutput {
 }
 
 /**
- * The output for the `create_goal` tool call.
+ * The output for the `createGoal` tool call.
  * @internal
  */
 export interface CreateGoalOutput extends BaseOutput {

@@ -13,34 +13,34 @@ describe('Bootstrap Server', () => {
       expect(bootstrapServer.tools).toHaveLength(3);
     });
 
-    it('should have detect_platform tool', () => {
+    it('should have detectPlatform tool', () => {
       const tool = bootstrapServer.tools.find(
-        (t) => t.name === 'detect_platform',
+        (t) => t.name === 'detectPlatform',
       );
       expect(tool).toBeDefined();
       expect(tool?.description).toContain('platform');
     });
 
-    it('should have get_bootstrap_guide tool', () => {
+    it('should have getBootstrapGuide tool', () => {
       const tool = bootstrapServer.tools.find(
-        (t) => t.name === 'get_bootstrap_guide',
+        (t) => t.name === 'getBootstrapGuide',
       );
       expect(tool).toBeDefined();
       expect(tool?.inputSchema.required).toContain('tool');
     });
 
-    it('should have check_tool_installed tool', () => {
+    it('should have checkToolInstalled tool', () => {
       const tool = bootstrapServer.tools.find(
-        (t) => t.name === 'check_tool_installed',
+        (t) => t.name === 'checkToolInstalled',
       );
       expect(tool).toBeDefined();
       expect(tool?.inputSchema.required).toContain('tool');
     });
   });
 
-  describe('detect_platform', () => {
+  describe('detectPlatform', () => {
     it('should detect platform without arguments', async () => {
-      const response = await bootstrapServer.callTool('detect_platform', {});
+      const response = await bootstrapServer.callTool('detectPlatform', {});
 
       expect(response).toBeDefined();
       expect(response.content).toBeDefined();
@@ -61,7 +61,7 @@ describe('Bootstrap Server', () => {
     });
 
     it('should detect OS details', async () => {
-      const response = await bootstrapServer.callTool('detect_platform', {});
+      const response = await bootstrapServer.callTool('detectPlatform', {});
       const structuredData = response.structuredContent as Record<
         string,
         unknown
@@ -74,9 +74,9 @@ describe('Bootstrap Server', () => {
     });
   });
 
-  describe('get_bootstrap_guide', () => {
+  describe('getBootstrapGuide', () => {
     it('should return error for missing tool parameter', async () => {
-      const response = await bootstrapServer.callTool('get_bootstrap_guide', {});
+      const response = await bootstrapServer.callTool('getBootstrapGuide', {});
 
       expect(response.content?.[0].type).toBe('text');
       if (response.content?.[0].type === 'text') {
@@ -85,7 +85,7 @@ describe('Bootstrap Server', () => {
     });
 
     it('should return error for invalid tool', async () => {
-      const response = await bootstrapServer.callTool('get_bootstrap_guide', {
+      const response = await bootstrapServer.callTool('getBootstrapGuide', {
         tool: 'invalid_tool',
       });
 
@@ -95,7 +95,7 @@ describe('Bootstrap Server', () => {
     });
 
     it('should return guide for Node.js with auto platform', async () => {
-      const response = await bootstrapServer.callTool('get_bootstrap_guide', {
+      const response = await bootstrapServer.callTool('getBootstrapGuide', {
         tool: 'node',
         platform: 'auto',
       });
@@ -117,7 +117,7 @@ describe('Bootstrap Server', () => {
     });
 
     it('should return guide for Python on Windows', async () => {
-      const response = await bootstrapServer.callTool('get_bootstrap_guide', {
+      const response = await bootstrapServer.callTool('getBootstrapGuide', {
         tool: 'python',
         platform: 'windows',
       });
@@ -140,7 +140,7 @@ describe('Bootstrap Server', () => {
     });
 
     it('should filter methods by type', async () => {
-      const response = await bootstrapServer.callTool('get_bootstrap_guide', {
+      const response = await bootstrapServer.callTool('getBootstrapGuide', {
         tool: 'node',
         platform: 'windows',
         method: 'package_manager',
@@ -161,7 +161,7 @@ describe('Bootstrap Server', () => {
     });
 
     it('should mark recommended methods', async () => {
-      const response = await bootstrapServer.callTool('get_bootstrap_guide', {
+      const response = await bootstrapServer.callTool('getBootstrapGuide', {
         tool: 'git',
         platform: 'linux',
       });
@@ -179,7 +179,7 @@ describe('Bootstrap Server', () => {
     });
 
     it('should include verification command', async () => {
-      const response = await bootstrapServer.callTool('get_bootstrap_guide', {
+      const response = await bootstrapServer.callTool('getBootstrapGuide', {
         tool: 'docker',
         platform: 'darwin',
       });
@@ -199,10 +199,10 @@ describe('Bootstrap Server', () => {
     });
   });
 
-  describe('check_tool_installed', () => {
+  describe('checkToolInstalled', () => {
     it('should return error for missing tool parameter', async () => {
       const response = await bootstrapServer.callTool(
-        'check_tool_installed',
+        'checkToolInstalled',
         {},
       );
 
@@ -213,7 +213,7 @@ describe('Bootstrap Server', () => {
 
     it('should return check instructions for node', async () => {
       const response = await bootstrapServer.callTool(
-        'check_tool_installed',
+        'checkToolInstalled',
         {
           tool: 'node',
         },
@@ -239,7 +239,7 @@ describe('Bootstrap Server', () => {
 
     it('should use custom version flag', async () => {
       const response = await bootstrapServer.callTool(
-        'check_tool_installed',
+        'checkToolInstalled',
         {
           tool: 'python',
           versionFlag: '-V',
@@ -257,7 +257,7 @@ describe('Bootstrap Server', () => {
 
     it('should provide usage instructions', async () => {
       const response = await bootstrapServer.callTool(
-        'check_tool_installed',
+        'checkToolInstalled',
         {
           tool: 'git',
         },

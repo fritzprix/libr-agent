@@ -8,7 +8,7 @@ import type { MCPTool } from '@/lib/mcp-types';
 
 export const bootstrapToolsSchema: MCPTool[] = [
   {
-    name: 'detect_platform',
+    name: 'detectPlatform',
     description:
       'Detect the current platform, architecture, and shell environment for bootstrap operations',
     inputSchema: {
@@ -19,7 +19,7 @@ export const bootstrapToolsSchema: MCPTool[] = [
     },
   },
   {
-    name: 'get_bootstrap_guide',
+    name: 'getBootstrapGuide',
     description:
       'Get installation guide for development tools (Node.js, Python, uv, Docker, Git)',
     inputSchema: {
@@ -47,7 +47,7 @@ export const bootstrapToolsSchema: MCPTool[] = [
     },
   },
   {
-    name: 'check_tool_installed',
+    name: 'checkToolInstalled',
     description:
       'Get the platform-specific command to check if a development tool is installed and retrieve its version',
     inputSchema: {

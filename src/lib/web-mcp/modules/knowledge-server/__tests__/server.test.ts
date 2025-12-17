@@ -44,7 +44,7 @@ describe('Knowledge Server', () => {
     });
 
     it('should save knowledge', async () => {
-        const result = await knowledgeServer.callTool('save_knowledge', {
+        const result = await knowledgeServer.callTool('saveKnowledge', {
             title: 'Test Title',
             content: 'Test Content',
             tags: ['tag1', 'tag2'],
@@ -61,18 +61,18 @@ describe('Knowledge Server', () => {
     });
 
     it('should search knowledge by tag', async () => {
-        await knowledgeServer.callTool('save_knowledge', {
+        await knowledgeServer.callTool('saveKnowledge', {
             title: 'React Hooks',
             content: 'useEffect is cool',
             tags: ['react', 'hooks'],
         });
-        await knowledgeServer.callTool('save_knowledge', {
+        await knowledgeServer.callTool('saveKnowledge', {
             title: 'Vue Composition',
             content: 'setup is cool',
             tags: ['vue', 'composition'],
         });
 
-        const result = await knowledgeServer.callTool('search_knowledge', {
+        const result = await knowledgeServer.callTool('searchKnowledge', {
             tags: ['react'],
         });
 
@@ -82,13 +82,13 @@ describe('Knowledge Server', () => {
     });
 
     it('should search knowledge by query', async () => {
-        await knowledgeServer.callTool('save_knowledge', {
+        await knowledgeServer.callTool('saveKnowledge', {
             title: 'Rust Macros',
             content: 'macro_rules! is powerful',
             tags: ['rust'],
         });
 
-        const result = await knowledgeServer.callTool('search_knowledge', {
+        const result = await knowledgeServer.callTool('searchKnowledge', {
             query: 'macro',
         });
 
@@ -100,28 +100,28 @@ describe('Knowledge Server', () => {
     it('should isolate knowledge between assistants', async () => {
         // Assistant 1
         await knowledgeServer.switchContext!({ assistantId: 'assistant1' });
-        await knowledgeServer.callTool('save_knowledge', {
+        await knowledgeServer.callTool('saveKnowledge', {
             title: 'Secret 1',
             content: 'Content 1',
         });
 
         // Assistant 2
         await knowledgeServer.switchContext!({ assistantId: 'assistant2' });
-        await knowledgeServer.callTool('save_knowledge', {
+        await knowledgeServer.callTool('saveKnowledge', {
             title: 'Secret 2',
             content: 'Content 2',
         });
 
         // Verify Assistant 1 can't see Secret 2
         await knowledgeServer.switchContext!({ assistantId: 'assistant1' });
-        const result1 = await knowledgeServer.callTool('search_knowledge', {});
+        const result1 = await knowledgeServer.callTool('searchKnowledge', {});
         const { results: items1 } = result1.structuredContent as SearchKnowledgeResult;
         expect(items1).toHaveLength(1);
         expect(items1[0].title).toBe('Secret 1');
 
         // Verify Assistant 2 can't see Secret 1
         await knowledgeServer.switchContext!({ assistantId: 'assistant2' });
-        const result2 = await knowledgeServer.callTool('search_knowledge', {});
+        const result2 = await knowledgeServer.callTool('searchKnowledge', {});
         const { results: items2 } = result2.structuredContent as SearchKnowledgeResult;
         expect(items2).toHaveLength(1);
         expect(items2[0].title).toBe('Secret 2');
@@ -132,14 +132,14 @@ describe('Knowledge Server', () => {
 
         // Create multiple items
         for (let i = 1; i <= 5; i++) {
-            await knowledgeServer.callTool('save_knowledge', {
+            await knowledgeServer.callTool('saveKnowledge', {
                 title: `Item ${i}`,
                 content: `Content ${i}`,
                 tags: ['list-test'],
             });
         }
 
-        const result = await knowledgeServer.callTool('list_knowledge', { limit: 3 });
+        const result = await knowledgeServer.callTool('listKnowledge', { limit: 3 });
         const { results, total } = result.structuredContent as ListKnowledgeResult;
 
         expect(total).toBeGreaterThanOrEqual(5);
@@ -149,13 +149,13 @@ describe('Knowledge Server', () => {
     });
 
     it('should delete knowledge', async () => {
-        const saveResult = await knowledgeServer.callTool('save_knowledge', {
+        const saveResult = await knowledgeServer.callTool('saveKnowledge', {
             title: 'To Delete',
             content: 'Delete me',
         });
         const { id } = saveResult.structuredContent as SaveKnowledgeResult;
 
-        await knowledgeServer.callTool('delete_knowledge', { id });
+        await knowledgeServer.callTool('deleteKnowledge', { id });
 
         const item = await db.knowledge.get(id);
         expect(item).toBeUndefined();

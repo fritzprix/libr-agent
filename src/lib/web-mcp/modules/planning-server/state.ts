@@ -73,9 +73,12 @@ export class PersistentState {
     return this.todoManager.checkTodo(params, checked, summary);
   }
 
-  async clearTodos(ids?: number[]): Promise<MCPResult<BaseOutput>> {
+  async clearTodos(
+    ids?: number[],
+    indices?: number[],
+  ): Promise<MCPResult<BaseOutput>> {
     const activeGoalContent = await this.goalManager.getGoal();
-    return this.todoManager.clearTodos(ids, activeGoalContent);
+    return this.todoManager.clearTodos(ids, indices, activeGoalContent);
   }
 
   async addScratchpad(
@@ -232,8 +235,11 @@ export class SessionStateManager {
     return this.getCurrentState().addTodo(title, description, priority);
   }
 
-  async clearTodos(ids?: number[]): Promise<MCPResult<BaseOutput>> {
-    return this.getCurrentState().clearTodos(ids);
+  async clearTodos(
+    ids?: number[],
+    indices?: number[],
+  ): Promise<MCPResult<BaseOutput>> {
+    return this.getCurrentState().clearTodos(ids, indices);
   }
 
   async clear(): Promise<MCPResult<BaseOutput>> {

@@ -45,14 +45,14 @@ class KnowledgeManager {
       .count();
 
     const nextActions: string[] = [
-      'Use search_knowledge to find this item later',
-      'Use read_knowledge to view full content',
+      'Use searchKnowledge to find this item later',
+      'Use readKnowledge to view full content',
     ];
 
     const suggestions: string[] = [];
     if (tags.length > 0) {
       suggestions.push(
-        `Search by tags: search_knowledge with tags: [${tags.map((t) => `"${t}"`).join(', ')}]`,
+        `Search by tags: searchKnowledge with tags: [${tags.map((t) => `"${t}"`).join(', ')}]`,
       );
     }
     suggestions.push(`Search by title or content keywords from: "${title}"`);
@@ -128,14 +128,14 @@ class KnowledgeManager {
         suggestions.push('Try search with tags only (remove query)');
       } else if (query) {
         suggestions.push('Try shorter or different keywords');
-        suggestions.push('Use list_knowledge to browse all items');
+        suggestions.push('Use listKnowledge to browse all items');
       } else if (tags && tags.length > 0) {
         suggestions.push('Try fewer tags or different tag combinations');
-        suggestions.push('Use list_knowledge to see available items and tags');
+        suggestions.push('Use listKnowledge to see available items and tags');
       }
 
       if (totalItems < 20) {
-        suggestions.push('Use list_knowledge to browse all items');
+        suggestions.push('Use listKnowledge to browse all items');
       }
 
       let message = 'No knowledge items found';
@@ -170,7 +170,7 @@ class KnowledgeManager {
       message += ` with tags [${tags.join(', ')}]`;
     }
 
-    const nextActions: string[] = ['Use read_knowledge to view full content'];
+    const nextActions: string[] = ['Use readKnowledge to view full content'];
     if (results.length > 5) {
       nextActions.push('Refine search with more specific keywords or tags');
     }
@@ -223,8 +223,8 @@ class KnowledgeManager {
 
     if (!item || item.assistantId !== this.assistantId) {
       const suggestions: string[] = [
-        'Use search_knowledge to find items by keywords or tags',
-        'Use list_knowledge to browse all available items',
+        'Use searchKnowledge to find items by keywords or tags',
+        'Use listKnowledge to browse all available items',
       ];
 
       return new MCPResponseBuilder({
@@ -248,8 +248,8 @@ class KnowledgeManager {
 
     if (!item || item.assistantId !== this.assistantId) {
       const suggestions: string[] = [
-        'Use search_knowledge to find items by keywords or tags',
-        'Use list_knowledge to browse all available items',
+        'Use searchKnowledge to find items by keywords or tags',
+        'Use listKnowledge to browse all available items',
       ];
 
       return new MCPResponseBuilder({
@@ -300,25 +300,25 @@ const knowledgeServer: WebMCPServer = {
 
     try {
       switch (name) {
-        case 'save_knowledge':
+        case 'saveKnowledge':
           return await manager.saveKnowledge(
             typedArgs.title as string,
             typedArgs.content as string,
             typedArgs.tags as string[],
           );
-        case 'search_knowledge':
+        case 'searchKnowledge':
           return await manager.searchKnowledge(
             typedArgs.query as string | undefined,
             typedArgs.tags as string[] | undefined,
           );
-        case 'list_knowledge':
+        case 'listKnowledge':
           return await manager.listKnowledge(
             typedArgs.limit as number | undefined,
             typedArgs.offset as number | undefined,
           );
-        case 'read_knowledge':
+        case 'readKnowledge':
           return await manager.readKnowledge(typedArgs.id as number);
-        case 'delete_knowledge':
+        case 'deleteKnowledge':
           return await manager.deleteKnowledge(typedArgs.id as number);
         default:
           return createMCPErrorToolResult(`Unknown tool: ${name}`);
@@ -347,7 +347,7 @@ const knowledgeServer: WebMCPServer = {
     // Maybe return a summary of available knowledge?
     // For now, just a static message.
     return {
-      contextPrompt: `Knowledge Base connected for assistant: ${assistantId}. Use search_knowledge to find information.`,
+      contextPrompt: `Knowledge Base connected for assistant: ${assistantId}. Use searchKnowledge to find information.`,
       structuredState: { assistantId },
     };
   },
