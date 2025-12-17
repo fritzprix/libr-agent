@@ -18,7 +18,6 @@ export interface PlanningTodo {
   checked: boolean;
   summary?: string;
   priority?: 'low' | 'medium' | 'high';
-  dependsOn?: number[];
   order: number;
   createdAt: number;
 }
@@ -72,6 +71,26 @@ export class PlanningDatabase extends Dexie {
       todos: '++id, [sessionId+threadId], checked',
       scratchpad: '++id, [sessionId+threadId], *tags',
     });
+
+    // Version 4: Fix corrupted tags (ensure they are arrays if present)
+    this.version(4)
+      .stores({
+        goals: '++id, [sessionId+threadId], isActive',
+        todos: '++id, [sessionId+threadId], checked',
+        scratchpad: '++id, [sessionId+threadId], *tags',
+      })
+      .upgrade(async (tx) => {
+        const items = await tx.table('scratchpad').toArray();
+        for (const item of items) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const rawItem = item as any;
+          if (rawItem.tags !== undefined && !Array.isArray(rawItem.tags)) {
+            await tx.table('scratchpad').update(item.id!, {
+              tags: [],
+            });
+          }
+        }
+      });
   }
 }
 

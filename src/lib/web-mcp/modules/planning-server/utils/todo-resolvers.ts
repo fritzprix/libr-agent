@@ -43,7 +43,6 @@ export async function resolveTodoId(
     checked: t.checked,
     summary: t.summary,
     priority: t.priority,
-    dependsOn: t.dependsOn,
   }));
 
   if (params.id !== undefined) {

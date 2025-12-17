@@ -6,7 +6,6 @@ export interface SimpleTodo {
   checked: boolean;
   summary?: string;
   priority?: 'low' | 'medium' | 'high';
-  dependsOn?: number[];
 }
 
 /** Represents a todo with computed blocked/available status. @internal */

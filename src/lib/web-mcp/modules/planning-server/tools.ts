@@ -63,12 +63,6 @@ export const planningTools: MCPTool[] = [
           enum: ['low', 'medium', 'high'],
           description: 'The priority of the todo item.',
         },
-        dependsOnIds: {
-          type: 'array',
-          items: { type: 'number', minimum: 1 },
-          description:
-            'List of todo IDs that this todo depends on. Must be valid database IDs, not indices.',
-        },
       },
       required: ['title'],
     },

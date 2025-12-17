@@ -80,7 +80,6 @@ const planningServer: WebMCPServer = {
           typedArgs.title as string,
           typedArgs.description as string | undefined,
           typedArgs.priority as 'low' | 'medium' | 'high' | undefined,
-          typedArgs.dependsOnIds as number[] | undefined,
         );
       }
       case 'checkTodo': {
@@ -184,11 +183,7 @@ const planningServer: WebMCPServer = {
 
                 const summaryPart = t.summary ? ` - ${t.summary}` : '';
                 const priorityPart = t.priority ? ` [${t.priority}]` : '';
-                const dependsPart =
-                  t.dependsOn && t.dependsOn.length > 0
-                    ? ` (depends on: ${t.dependsOn.join(', ')})`
-                    : '';
-                return `- ID:${t.id} ${checkbox} ${t.title}${priorityPart}${summaryPart}${dependsPart}`;
+                return `- ID:${t.id} ${checkbox} ${t.title}${priorityPart}${summaryPart}`;
               })
               .join('\n')
           : '(none)';
@@ -199,7 +194,7 @@ const planningServer: WebMCPServer = {
                 .map((m) => {
                   const titlePart = m.title ? ` [${m.title}]` : '';
                   const tagsPart =
-                    m.tags && m.tags.length > 0
+                    Array.isArray(m.tags) && m.tags.length > 0
                       ? ` (tags: ${m.tags.join(', ')})`
                       : '';
                   const contentPreview = m.title
@@ -291,7 +286,9 @@ ${scratchpadText}`;
       scratchpad.slice(0, 5).forEach((m) => {
         const titlePart = m.title ? `[${m.title}] ` : '';
         const tagsPart =
-          m.tags && m.tags.length > 0 ? ` (tags: ${m.tags.join(', ')})` : '';
+          Array.isArray(m.tags) && m.tags.length > 0
+            ? ` (tags: ${m.tags.join(', ')})`
+            : '';
         const contentPreview = m.title ? '' : `${m.content.slice(0, 30)}...`;
         contextParts.push(
           `- ID:${m.id} ${titlePart}${contentPreview}${tagsPart}`,
@@ -323,42 +320,40 @@ ${scratchpadText}`;
 };
 
 export interface PlanningServerProxy extends WebMCPServerProxy {
-  create_goal(args: { goal: string }): Promise<MCPResult<CreateGoalOutput>>;
-  update_goal(args: { goal: string }): Promise<MCPResult<CreateGoalOutput>>;
-  clear_goal(): Promise<MCPResult<ClearGoalOutput>>;
-  add_todo(args: {
+  createGoal(args: { goal: string }): Promise<MCPResult<CreateGoalOutput>>;
+  updateGoal(args: { goal: string }): Promise<MCPResult<CreateGoalOutput>>;
+  clearGoal(): Promise<MCPResult<ClearGoalOutput>>;
+  addTodo(args: {
     title: string;
     description?: string;
     priority?: 'low' | 'medium' | 'high';
-    dependsOn?: number[];
   }): Promise<MCPResult<AddToDoOutput>>;
-  update_todo(args: {
+  updateTodo(args: {
     id: number;
     title?: string;
     status?: 'pending' | 'completed' | 'blocked';
     priority?: 'low' | 'medium' | 'high';
-    dependsOn?: number[];
   }): Promise<MCPResult<CheckTodoOutput>>;
-  mark_todo(args: {
+  markTodo(args: {
     id: number;
     completed?: boolean;
     summary?: string;
   }): Promise<MCPResult<CheckTodoOutput>>;
-  clear_todos(args: { ids?: number[] }): Promise<MCPResult<BaseOutput>>;
-  clear_session(): Promise<MCPResult<BaseOutput>>;
-  add_scratchpad(args: {
+  clearTodos(args: { ids?: number[] }): Promise<MCPResult<BaseOutput>>;
+  clearSession(): Promise<MCPResult<BaseOutput>>;
+  addScratchpad(args: {
     note: string;
     title?: string;
     tags?: string[];
   }): Promise<MCPResult<BaseOutput & { scratchpad: ScratchpadItem[] }>>;
-  read_scratchpad(args: {
+  readScratchpad(args: {
     ids?: number[];
     tags?: string[];
   }): Promise<MCPResult<{ scratchpad: ScratchpadItem[] }>>;
-  clear_scratchpad(args: {
+  clearScratchpad(args: {
     id: number;
   }): Promise<MCPResult<BaseOutput & { scratchpad: ScratchpadItem[] }>>;
-  get_current_state(args: {
+  getCurrentState(args: {
     include_completed?: boolean;
     include_scratchpad?: boolean;
   }): Promise<MCPResult<unknown>>;

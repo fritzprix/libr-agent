@@ -14,10 +14,7 @@ import {
   buildDuplicateTodoError,
   buildCorruptedTodosError,
   buildEmptyTitleError,
-  buildInvalidDependencyError,
-  buildCircularDependencyError,
 } from '../utils/response-builders';
-import { detectCircularDependency } from '../utils/dependency-validator';
 
 // Helper interface for backward compatibility
 interface LegacyTodo extends PlanningTodo {
@@ -57,7 +54,6 @@ export class TodoManager {
       checked: t.checked,
       summary: t.summary,
       priority: t.priority,
-      dependsOn: t.dependsOn,
     }));
   }
 
@@ -76,7 +72,6 @@ export class TodoManager {
     title: string,
     description?: string,
     priority?: 'low' | 'medium' | 'high',
-    dependsOn?: number[],
     activeGoalContent?: string | null,
   ): Promise<MCPResult<AddToDoOutput>> {
     // Validation: Title cannot be empty or whitespace-only
@@ -103,30 +98,6 @@ export class TodoManager {
       ) as MCPResult<AddToDoOutput>;
     }
 
-    // Validation: Dependency IDs must exist and not create cycles
-    if (dependsOn && dependsOn.length > 0) {
-      // Check all dependency IDs exist
-      for (const depId of dependsOn) {
-        const exists = todos.some((t) => t.id === depId);
-        if (!exists) {
-          return buildInvalidDependencyError(
-            depId,
-            todos,
-          ) as MCPResult<AddToDoOutput>;
-        }
-      }
-
-      // Check for circular dependencies
-      // Use the next available ID for validation (the ID that will be assigned)
-      const nextId = await this.getNextTodoId();
-      const cycleError = detectCircularDependency(todos, nextId, dependsOn);
-      if (cycleError) {
-        return buildCircularDependencyError(
-          cycleError,
-        ) as MCPResult<AddToDoOutput>;
-      }
-    }
-
     const order = todos.length;
 
     const id = await db.todos.add({
@@ -136,7 +107,6 @@ export class TodoManager {
       description,
       checked: false,
       priority,
-      dependsOn,
       order,
       createdAt: Date.now(),
     });
@@ -154,7 +124,7 @@ export class TodoManager {
     return new MCPResponseBuilder({
       success: true,
       id,
-      todo: { id, title, description, checked: false, priority, dependsOn },
+      todo: { id, title, description, checked: false, priority },
       todos: newTodos,
       summary: {
         total: newTodos.length,
@@ -218,28 +188,10 @@ export class TodoManager {
       checked: updatedTodoRecord!.checked,
       summary: updatedTodoRecord!.summary,
       priority: updatedTodoRecord!.priority,
-      dependsOn: updatedTodoRecord!.dependsOn,
     };
 
     // Find unblocked todos if this was checked
     const unblockedTodos: SimpleTodo[] = [];
-    if (checked) {
-      for (const t of todos) {
-        // Check if this todo has dependencies including the one just checked
-        if (t.dependsOn && t.dependsOn.includes(resolvedId)) {
-          // Check if all dependencies are now checked
-          const allDepsChecked = t.dependsOn.every((depId) => {
-            const dep = todos.find((d) => d.id === depId);
-            return dep?.checked === true;
-          });
-
-          // If all deps are checked and this todo is not checked, it's unblocked
-          if (allDepsChecked && !t.checked) {
-            unblockedTodos.push(t);
-          }
-        }
-      }
-    }
 
     // Calculate progress
     const checkedCount = todos.filter((t) => t.checked).length;
@@ -390,22 +342,6 @@ export class TodoManager {
       )
       .withNextActions(nextActions)
       .asSuccess();
-  }
-
-  /**
-   * Gets the next available todo ID by finding the maximum ID + 1.
-   * Used for circular dependency detection before the todo is actually created.
-   *
-   * @returns The next available todo ID
-   * @private
-   */
-  private async getNextTodoId(): Promise<number> {
-    const allTodos = await db.todos.toArray();
-    const maxId = allTodos.reduce(
-      (max, todo) => (todo.id && todo.id > max ? todo.id : max),
-      0,
-    );
-    return maxId + 1;
   }
 
   /**

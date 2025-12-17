@@ -55,15 +55,13 @@ export class PersistentState {
     title: string,
     description?: string,
     priority?: 'low' | 'medium' | 'high',
-    dependsOn?: number[],
   ): Promise<MCPResult<AddToDoOutput>> {
     const activeGoalContent = await this.goalManager.getGoal();
     return this.todoManager.addTodo(
       title,
       description,
       priority,
-      dependsOn,
-      activeGoalContent,
+      activeGoalContent || null,
     );
   }
 
@@ -230,14 +228,8 @@ export class SessionStateManager {
     title: string,
     description?: string,
     priority?: 'low' | 'medium' | 'high',
-    dependsOn?: number[],
   ): Promise<MCPResult<AddToDoOutput>> {
-    return this.getCurrentState().addTodo(
-      title,
-      description,
-      priority,
-      dependsOn,
-    );
+    return this.getCurrentState().addTodo(title, description, priority);
   }
 
   async clearTodos(ids?: number[]): Promise<MCPResult<BaseOutput>> {
