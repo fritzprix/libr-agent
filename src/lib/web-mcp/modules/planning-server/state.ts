@@ -90,7 +90,7 @@ export class PersistentState {
   async readScratchpad(
     ids?: number[],
     tags?: string[],
-  ): Promise<MCPResult<{ scratchpad: ScratchpadItem[] }>> {
+  ): Promise<MCPResult<BaseOutput & { scratchpad: ScratchpadItem[] }>> {
     return this.scratchpadManager.readScratchpad(ids, tags);
   }
 
@@ -260,7 +260,7 @@ export class SessionStateManager {
   async readScratchpad(
     ids?: number[],
     tags?: string[],
-  ): Promise<MCPResult<{ scratchpad: ScratchpadItem[] }>> {
+  ): Promise<MCPResult<BaseOutput & { scratchpad: ScratchpadItem[] }>> {
     return this.getCurrentState().readScratchpad(ids, tags);
   }
 

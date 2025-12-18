@@ -211,10 +211,23 @@ class KnowledgeManager {
       updatedAt: item.updatedAt,
     }));
 
-    return createMCPStructuredToolResult(
-      `Listing ${summary.length} items (Total: ${count})`,
-      { results: summary, total: count, offset, limit },
-    );
+    const textParts = [`Listing ${summary.length} items (Total: ${count})`];
+    if (summary.length > 0) {
+      textParts.push('');
+      summary.forEach((item) => {
+        textParts.push(
+          `- [${item.id}] ${item.title} (tags: ${item.tags.join(', ')})`,
+        );
+        textParts.push(`  Preview: ${item.preview}`);
+      });
+    }
+
+    return createMCPStructuredToolResult(textParts.join('\n'), {
+      results: summary,
+      total: count,
+      offset,
+      limit,
+    });
   }
 
   async readKnowledge(id: number): Promise<MCPResult> {
@@ -236,10 +249,14 @@ class KnowledgeManager {
         .asError(WebMCPErrorCodes.KNOWLEDGE.ITEM_NOT_FOUND);
     }
 
-    return createMCPStructuredToolResult(
-      `Reading knowledge: "${item.title}"`,
-      item,
-    );
+    const textResponse = `Reading knowledge: "${item.title}"
+ID: ${item.id}
+Tags: ${item.tags.join(', ')}
+Updated: ${new Date(item.updatedAt).toLocaleString()}
+
+${item.content}`;
+
+    return createMCPStructuredToolResult(textResponse, item);
   }
 
   async deleteKnowledge(id: number): Promise<MCPResult> {

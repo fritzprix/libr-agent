@@ -107,7 +107,11 @@ export class ThinkingManager {
         thoughtHistoryLength: this.thoughtHistory.length,
       } as Record<string, unknown>;
 
-      return createMCPStructuredToolResult('Thought processed', summary);
+      const textResponse = `Thought ${thought.thoughtNumber} processed.
+Total thoughts: ${thought.totalThoughts}
+Next thought needed: ${thought.nextThoughtNeeded}`;
+
+      return createMCPStructuredToolResult(textResponse, summary);
     } catch (error) {
       return createMCPStructuredToolResult('Failed to process thought', {
         error: error instanceof Error ? error.message : String(error),
@@ -186,25 +190,23 @@ export class ThinkingManager {
       // Confirmation
       messageParts.push(`Thought ${thoughtNumber} recorded.`);
 
-      // Previous thought context
-      if (previousThought) {
-        const preview =
-          previousThought.length > 100
-            ? `${previousThought.substring(0, 100)}...`
-            : previousThought;
-        messageParts.push(`\nPrevious thought: "${preview}"`);
-      }
+      // Current Thought Echo
+      messageParts.push(`\n\n[Current Thought]\n${validatedInput.thought}`);
 
       // Next action if provided
       if (validatedInput.nextAction) {
         messageParts.push(
-          `\nPlanned next action: ${validatedInput.nextAction}`,
+          `\n\n[Planned Next Action]\n${validatedInput.nextAction}`,
         );
       }
 
       // Guidance message
       messageParts.push(
-        '\n\nGuide: If you need more thinking, call pauseAndThink again. If you have thought enough, proceed with your planned action.',
+        '\n\n*** GUIDANCE ***\n' +
+          'Your thinking process has been captured above.\n' +
+          '1. Review your [Current Thought] to ensure your reasoning is sound.\n' +
+          '2. If you are confident, proceed to execute the [Planned Next Action] immediately.\n' +
+          "3. If you need more analysis, use 'pauseAndThink' again.",
       );
 
       const message = messageParts.join('');

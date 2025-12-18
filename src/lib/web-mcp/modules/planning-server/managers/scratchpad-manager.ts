@@ -104,7 +104,7 @@ export class ScratchpadManager {
   async readScratchpad(
     ids?: number[],
     tags?: string[],
-  ): Promise<MCPResult<{ scratchpad: ScratchpadItem[] }>> {
+  ): Promise<MCPResult<BaseOutput & { scratchpad: ScratchpadItem[] }>> {
     let items: ScratchpadItem[] = [];
     const allItems = await this.getScratchpadList();
 
@@ -113,13 +113,53 @@ export class ScratchpadManager {
     } else if (tags && tags.length > 0) {
       items = allItems.filter(
         (item) =>
-          Array.isArray(item.tags) && item.tags.some((tag) => tags.includes(tag)),
+          Array.isArray(item.tags) &&
+          item.tags.some((tag) => tags.includes(tag)),
       );
     } else {
       items = allItems;
     }
 
-    return createMCPStructuredToolResult(`Read ${items.length} items`, {
+    // Format scratchpad items as readable text
+    if (items.length === 0) {
+      const filterDesc = ids
+        ? `IDs: ${ids.join(', ')}`
+        : tags
+          ? `tags: ${tags.join(', ')}`
+          : 'any criteria';
+      return createMCPStructuredToolResult(
+        `No scratchpad items found matching ${filterDesc}`,
+        {
+          success: false,
+          scratchpad: [],
+        },
+      );
+    }
+
+    const textParts: string[] = [
+      `Found ${items.length} scratchpad item(s):`,
+      '',
+    ];
+
+    items.forEach((item) => {
+      const header = item.title
+        ? `[${item.title}]`
+        : `Scratchpad ID:${item.id}`;
+      const tagsPart =
+        Array.isArray(item.tags) && item.tags.length > 0
+          ? ` (tags: ${item.tags.join(', ')})`
+          : '';
+      const sourcePart = item.source ? `\nSource: ${item.source}` : '';
+
+      textParts.push(`## ${header}${tagsPart}`);
+      if (sourcePart) {
+        textParts.push(sourcePart);
+      }
+      textParts.push(item.content);
+      textParts.push(''); // Blank line between items
+    });
+
+    return createMCPStructuredToolResult(textParts.join('\n'), {
       success: true,
       scratchpad: items,
     });

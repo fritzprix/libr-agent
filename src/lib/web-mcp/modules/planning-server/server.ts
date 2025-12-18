@@ -349,7 +349,7 @@ export interface PlanningServerProxy extends WebMCPServerProxy {
   readScratchpad(args: {
     ids?: number[];
     tags?: string[];
-  }): Promise<MCPResult<{ scratchpad: ScratchpadItem[] }>>;
+  }): Promise<MCPResult<BaseOutput & { scratchpad: ScratchpadItem[] }>>;
   clearScratchpad(args: {
     id: number;
   }): Promise<MCPResult<BaseOutput & { scratchpad: ScratchpadItem[] }>>;
