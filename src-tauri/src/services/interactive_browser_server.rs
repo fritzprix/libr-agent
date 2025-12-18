@@ -8,8 +8,9 @@ use std::collections::HashMap;
 
 use std::sync::{Arc, RwLock};
 
-use tauri::{AppHandle, Listener, Manager, WebviewUrl, WebviewWindowBuilder};
-use tauri::webview::PageLoadEvent;
+use tauri::{
+    webview::PageLoadEvent, AppHandle, Listener, Manager, WebviewUrl, WebviewWindowBuilder,
+};
 
 use dashmap::DashMap;
 
