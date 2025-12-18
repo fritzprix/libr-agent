@@ -28,7 +28,7 @@ const bootstrapServer: WebMCPServer = {
 
     try {
       switch (name) {
-        case 'detect_platform': {
+        case 'detectPlatform': {
           const platformInfo = detectPlatform();
 
           return createMCPStructuredToolResult(
@@ -41,7 +41,7 @@ const bootstrapServer: WebMCPServer = {
           );
         }
 
-        case 'get_bootstrap_guide': {
+        case 'getBootstrapGuide': {
           const tool = String(a.tool || '');
           const platformParam = String(a.platform || 'auto');
           const methodFilter = String(a.method || 'all');
@@ -156,7 +156,7 @@ const bootstrapServer: WebMCPServer = {
           return createMCPStructuredToolResult(summary.join('\n'), fullGuide);
         }
 
-        case 'check_tool_installed': {
+        case 'checkToolInstalled': {
           const tool = String(a.tool || '');
           const versionFlag = String(a.versionFlag || '--version');
 

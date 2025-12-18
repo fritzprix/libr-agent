@@ -260,19 +260,24 @@ export class TodoManager {
   }
 
   /**
-   * Clears todos by ID or clears all todos if no IDs provided.
+   * Clears todos by ID or index, or clears all todos if no IDs/indices provided.
    *
-   * @param ids - Optional array of todo IDs to clear. If omitted, clears all todos.
+   * @param ids - Optional array of todo IDs to clear.
+   * @param indices - Optional array of todo indices to clear.
    * @param activeGoalContent - Optional active goal content for context in response
    * @returns MCPResult with clear status and remaining todos count
    */
   async clearTodos(
     ids?: number[],
+    indices?: number[],
     activeGoalContent?: string | null,
   ): Promise<MCPResult<BaseOutput>> {
     const todos = await this.getTodosList();
 
-    if (!ids || ids.length === 0) {
+    const hasIds = ids && ids.length > 0;
+    const hasIndices = indices && indices.length > 0;
+
+    if (!hasIds && !hasIndices) {
       const clearedCount = todos.length;
       await db.todos
         .where({ sessionId: this.sessionId, threadId: this.threadId })
@@ -305,13 +310,26 @@ export class TodoManager {
     const initialCount = todos.length;
     // Verify IDs belong to session
     const validIds = todos.map((t) => t.id);
-    const idsToDelete = ids.filter((id) => validIds.includes(id));
+    let idsToDelete: number[] = [];
+
+    if (hasIds) {
+      idsToDelete = ids!.filter((id) => validIds.includes(id));
+    }
+
+    if (hasIndices) {
+      indices!.forEach((index) => {
+        if (index >= 0 && index < todos.length) {
+          idsToDelete.push(todos[index].id);
+        }
+      });
+    }
+
+    // Deduplicate
+    idsToDelete = [...new Set(idsToDelete)];
 
     if (idsToDelete.length === 0) {
       return createMCPStructuredToolResult<BaseOutput>(
-        `No todos found with the specified IDs: ${ids.join(
-          ', ',
-        )}\nAvailable IDs: ${
+        `No todos found with the specified IDs or indices.\nAvailable IDs: ${
           initialCount > 0 ? validIds.join(', ') : '(none)'
         }`,
         { success: false },

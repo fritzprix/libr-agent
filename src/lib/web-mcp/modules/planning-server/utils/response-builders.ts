@@ -27,7 +27,7 @@ export function buildTodoNotFoundError(
         : 'no identifier';
 
   const suggestions = [
-    'Use get_current_state to see all todos with their IDs and indexes',
+    'Use getCurrentState to see all todos with their IDs and indexes',
     'Specify either "id" (database ID) or "index" (0-based position)',
   ];
 

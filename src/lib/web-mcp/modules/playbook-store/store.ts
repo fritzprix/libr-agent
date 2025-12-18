@@ -75,7 +75,7 @@ function buildUiHtml(listItemsHtml: string, pageInfo: PageResult): string {
   });
 }
 
-function createUiResourceFromHtml(html: string, toolName = 'show_playbooks') {
+function createUiResourceFromHtml(html: string, toolName = 'showPlaybooks') {
   // Use shared helper to construct a UIResource with consistent serviceInfo.
   return createUiResourceWithServiceInfo({
     html,
@@ -90,7 +90,7 @@ function makeListMultipartResponse(
   formattedText: string,
   structured: unknown,
   pageInfo: PageResult,
-  toolName = 'show_playbooks',
+  toolName = 'showPlaybooks',
 ) {
   const textPart: MCPContent = {
     type: 'text',
@@ -203,15 +203,15 @@ function createListTextResponse(
   formattedList: string,
 ): string {
   if (pageResult.totalItems === 0) {
-    return `[list_playbooks] No playbooks found for agent ${agentId}.`;
+    return `[listPlaybooks] No playbooks found for agent ${agentId}.`;
   }
 
-  return `[list_playbooks] Found ${pageResult.totalItems} playbook(s) for agent ${agentId}.
+  return `[listPlaybooks] Found ${pageResult.totalItems} playbook(s) for agent ${agentId}.
 Showing page ${pageResult.page} of ${pageResult.totalPages} (${pageResult.items.length} items on this page):
 
 ${formattedList}
 
-Note: Use 'get_playbook' to view details or 'select_playbook' to execute a playbook.`;
+Note: Use 'getPlaybook' to view details or 'selectPlaybook' to execute a playbook.`;
 }
 
 /**
@@ -329,11 +329,11 @@ const playbookStore: WebMCPServer = {
 
     try {
       switch (name) {
-        case 'create_playbook': {
+        case 'createPlaybook': {
           if (!currentAssistantId) {
             return createMCPErrorToolResult(
               'Assistant ID not set. Please set context first.',
-              { tool: 'create_playbook' },
+              { tool: 'createPlaybook' },
             );
           }
 
@@ -374,7 +374,7 @@ Steps: ${playbook.workflow.length}
 
 ${formatted}
 
-The playbook is now available. Use 'list_playbooks' to see all playbooks, or 'select_playbook' with ID ${id} to execute it.`;
+The playbook is now available. Use 'listPlaybooks' to see all playbooks, or 'selectPlaybook' with ID ${id} to execute it.`;
 
             return createMCPStructuredToolResult(textResponse, {
               success: true,
@@ -392,7 +392,7 @@ Steps: ${playbook.workflow.length}
 
 ${formattedInMemory}
 
-The playbook is now available. Use 'list_playbooks' to see all playbooks, or 'select_playbook' with ID ${id} to execute it.`;
+The playbook is now available. Use 'listPlaybooks' to see all playbooks, or 'selectPlaybook' with ID ${id} to execute it.`;
 
           return createMCPStructuredToolResult(textResponse, {
             success: true,
@@ -400,11 +400,11 @@ The playbook is now available. Use 'list_playbooks' to see all playbooks, or 'se
           });
         }
 
-        case 'list_playbooks': {
+        case 'listPlaybooks': {
           if (!currentAssistantId) {
             return createMCPErrorToolResult(
               'Assistant ID not set. Please set context first.',
-              { tool: 'list_playbooks' },
+              { tool: 'listPlaybooks' },
             );
           }
 
@@ -460,11 +460,11 @@ The playbook is now available. Use 'list_playbooks' to see all playbooks, or 'se
           return createMCPStructuredToolResult(textResponse, structured);
         }
 
-        case 'show_playbooks': {
+        case 'showPlaybooks': {
           if (!currentAssistantId) {
             return createMCPErrorToolResult(
               'Assistant ID not set. Please set context first.',
-              { tool: 'show_playbooks' },
+              { tool: 'showPlaybooks' },
             );
           }
 
@@ -476,16 +476,16 @@ The playbook is now available. Use 'list_playbooks' to see all playbooks, or 'se
             page,
             pageSize,
             hasDB,
-            'show_playbooks',
+            'showPlaybooks',
             false,
           );
         }
 
-        case 'get_playbook_page': {
+        case 'getPlaybookPage': {
           if (!currentAssistantId) {
             return createMCPErrorToolResult(
               'Assistant ID not set. Please set context first.',
-              { tool: 'get_playbook_page' },
+              { tool: 'getPlaybookPage' },
             );
           }
 
@@ -497,18 +497,18 @@ The playbook is now available. Use 'list_playbooks' to see all playbooks, or 'se
             page,
             pageSize,
             hasDB,
-            'get_playbook_page',
+            'getPlaybookPage',
             true,
           );
         }
 
-        case 'delete_playbook': {
+        case 'deletePlaybook': {
           const id = String(a.id);
           if (hasDB && dbService.playbooks) {
             const existing = await dbService.playbooks.read(id);
             if (!existing)
               return createMCPErrorToolResult(`Playbook ${id} not found.`, {
-                tool: 'delete_playbook',
+                tool: 'deletePlaybook',
                 playbookId: id,
               });
             await dbService.playbooks.delete(id);
@@ -519,7 +519,7 @@ The playbook is now available. Use 'list_playbooks' to see all playbooks, or 'se
 Deleted Playbook:
 ${formatted}
 
-This playbook is no longer available. Use 'list_playbooks' to see remaining playbooks.`;
+This playbook is no longer available. Use 'listPlaybooks' to see remaining playbooks.`;
 
             return createMCPStructuredToolResult(textResponse, {
               success: true,
@@ -530,7 +530,7 @@ This playbook is no longer available. Use 'list_playbooks' to see remaining play
           if (idx === -1)
             return createMCPErrorToolResult(
               `Playbook ${id} not found (in-memory).`,
-              { tool: 'delete_playbook', playbookId: id, storage: 'in-memory' },
+              { tool: 'deletePlaybook', playbookId: id, storage: 'in-memory' },
             );
           const removed = inMemory.splice(idx, 1)[0];
           const formattedRemoved = formatPlaybook(removed);
@@ -540,20 +540,20 @@ This playbook is no longer available. Use 'list_playbooks' to see remaining play
 Deleted Playbook:
 ${formattedRemoved}
 
-This playbook is no longer available. Use 'list_playbooks' to see remaining playbooks.`;
+This playbook is no longer available. Use 'listPlaybooks' to see remaining playbooks.`;
 
           return createMCPStructuredToolResult(textResponse, {
             success: true,
             id,
           });
         }
-        case 'get_playbook': {
+        case 'getPlaybook': {
           const id = String(a.id);
           if (hasDB && dbService.playbooks) {
             const existing = await dbService.playbooks.read(id as string);
             if (!existing)
               return createMCPErrorToolResult(`Playbook ${id} not found.`, {
-                tool: 'get_playbook',
+                tool: 'getPlaybook',
                 playbookId: id,
               });
             const rec = existing as PlaybookRecord;
@@ -563,7 +563,7 @@ This playbook is no longer available. Use 'list_playbooks' to see remaining play
 
 ${formatted}
 
-Note: Use 'select_playbook' to execute this playbook, or 'update_playbook' to modify it.`;
+Note: Use 'selectPlaybook' to execute this playbook, or 'update_playbook' to modify it.`;
 
             return createMCPStructuredToolResult(textResponse, {
               playbook: existing,
@@ -575,7 +575,7 @@ Note: Use 'select_playbook' to execute this playbook, or 'update_playbook' to mo
             return createMCPErrorToolResult(
               `Playbook ${String(a.id)} not found (in-memory).`,
               {
-                tool: 'get_playbook',
+                tool: 'getPlaybook',
                 playbookId: String(a.id),
                 storage: 'in-memory',
               },
@@ -586,7 +586,7 @@ Note: Use 'select_playbook' to execute this playbook, or 'update_playbook' to mo
 
 ${formatted}
 
-Note: Use 'select_playbook' to execute this playbook, or 'update_playbook' to modify it.`;
+Note: Use 'selectPlaybook' to execute this playbook, or 'update_playbook' to modify it.`;
 
           return createMCPStructuredToolResult(textResponse, {
             playbook: existing,
@@ -671,7 +671,7 @@ The playbook has been modified. Changes are immediately available.`;
           });
         }
 
-        case 'select_playbook': {
+        case 'selectPlaybook': {
           const id = String(a.id);
           let existing: PlaybookRecord | undefined;
           if (hasDB && dbService.playbooks) {
@@ -684,7 +684,7 @@ The playbook has been modified. Changes are immediately available.`;
 
           if (!existing) {
             return createMCPErrorToolResult(`Playbook ${id} not found.`, {
-              tool: 'select_playbook',
+              tool: 'selectPlaybook',
               playbookId: id,
             });
           }
@@ -694,7 +694,7 @@ The playbook has been modified. Changes are immediately available.`;
             return createMCPErrorToolResult(
               `Playbook ${id} does not belong to the current assistant (${currentAssistantId}).`,
               {
-                tool: 'select_playbook',
+                tool: 'selectPlaybook',
                 playbookId: id,
                 assistantId: currentAssistantId,
               },

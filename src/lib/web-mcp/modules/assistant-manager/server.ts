@@ -59,7 +59,7 @@ export const assistantManagerServer: WebMCPServer = {
       const service = await getService();
 
       switch (name) {
-        case 'list_assistants': {
+        case 'listAssistants': {
           const page = typedArgs.page ?? 1;
           const pageSize = typedArgs.pageSize ?? 20;
           const result = await service.getList({ page, pageSize });
@@ -70,7 +70,7 @@ export const assistantManagerServer: WebMCPServer = {
           );
         }
 
-        case 'get_assistant': {
+        case 'getAssistant': {
           const { id } = typedArgs;
           if (!id) {
             return createMCPErrorToolResult('ID is required');
@@ -78,8 +78,8 @@ export const assistantManagerServer: WebMCPServer = {
           const assistant = await service.getById(id);
           if (!assistant) {
             const suggestions: string[] = [
-              'Use list_assistants to see all available assistants',
-              'Use search_assistant to find assistants by name',
+              'Use listAssistants to see all available assistants',
+              'Use searchAssistant to find assistants by name',
               'Check the assistant ID spelling',
             ];
 
@@ -97,7 +97,7 @@ export const assistantManagerServer: WebMCPServer = {
           );
         }
 
-        case 'create_assistant': {
+        case 'createAssistant': {
           const {
             name,
             systemPrompt,
@@ -126,7 +126,7 @@ export const assistantManagerServer: WebMCPServer = {
           const saved = await service.save(newAssistant);
 
           const nextActions: string[] = [
-            'Use update_assistant to modify settings',
+            'Use updateAssistant to modify settings',
             'Connect MCP servers with connect_server tool',
           ];
           if ((mcpServerIds || []).length === 0) {
@@ -150,7 +150,7 @@ export const assistantManagerServer: WebMCPServer = {
             .asSuccess();
         }
 
-        case 'update_assistant': {
+        case 'updateAssistant': {
           const { id, ...updates } = typedArgs;
           if (!id) {
             return createMCPErrorToolResult('ID is required');
@@ -159,8 +159,8 @@ export const assistantManagerServer: WebMCPServer = {
           const existing = await service.getById(id);
           if (!existing) {
             const suggestions: string[] = [
-              'Use list_assistants to see all available assistants',
-              'Use search_assistant to find assistants by name',
+              'Use listAssistants to see all available assistants',
+              'Use searchAssistant to find assistants by name',
               'Check the assistant ID spelling',
             ];
 
@@ -213,11 +213,11 @@ export const assistantManagerServer: WebMCPServer = {
             changes,
           })
             .withMessage(message)
-            .withNextActions(['Use get_assistant to verify changes'])
+            .withNextActions(['Use getAssistant to verify changes'])
             .asSuccess();
         }
 
-        case 'delete_assistant': {
+        case 'deleteAssistant': {
           const { id } = typedArgs;
           if (!id) {
             return createMCPErrorToolResult('ID is required');
@@ -229,7 +229,7 @@ export const assistantManagerServer: WebMCPServer = {
           );
         }
 
-        case 'search_assistant': {
+        case 'searchAssistant': {
           const { query, limit = 10 } = typedArgs;
           if (!query) {
             return createMCPErrorToolResult('Query is required');
@@ -243,7 +243,7 @@ export const assistantManagerServer: WebMCPServer = {
             const totalCount = allAssistants.length;
 
             const suggestions: string[] = [
-              'Use list_assistants to browse all assistants',
+              'Use listAssistants to browse all assistants',
               'Try different or shorter keywords',
               'Check spelling of assistant name',
             ];
@@ -271,7 +271,7 @@ export const assistantManagerServer: WebMCPServer = {
             .withMessage(
               `Found ${results.length} assistant(s) matching "${query}"`,
             )
-            .withNextActions(['Use get_assistant to view full details'])
+            .withNextActions(['Use getAssistant to view full details'])
             .asSuccess();
         }
 

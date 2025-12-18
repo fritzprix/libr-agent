@@ -116,7 +116,8 @@ const planningServer: WebMCPServer = {
       }
       case 'clearTodos': {
         const ids = typedArgs.ids as number[] | undefined;
-        return await stateManager.clearTodos(ids);
+        const indices = typedArgs.indices as number[] | undefined;
+        return await stateManager.clearTodos(ids, indices);
       }
       case 'clearSession':
         return await stateManager.clear();

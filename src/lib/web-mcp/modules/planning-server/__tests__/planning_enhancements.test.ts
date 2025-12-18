@@ -21,14 +21,14 @@ describe('Planning Server Enhancements', () => {
 
     it('should suggest next pending todo when marking a todo as completed', async () => {
         // 1. Add two todos
-        await planningServer.callTool('add_todo', { title: 'Task 1' });
-        const secondTodo = await planningServer.callTool('add_todo', { title: 'Task 2' });
+        await planningServer.callTool('addTodo', { title: 'Task 1' });
+        const secondTodo = await planningServer.callTool('addTodo', { title: 'Task 2' });
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const secondTodoId = (secondTodo.structuredContent as any).id;
 
         // 2. Mark first todo as completed
         // We need to find the ID of the first todo. Since we just cleared DB, it should be the first one.
-        const state = await planningServer.callTool('get_current_state', {});
+        const state = await planningServer.callTool('getCurrentState', {});
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const todos = (state.structuredContent as any).state.todos;
         const firstTodoId = todos[0].id;
@@ -47,7 +47,7 @@ describe('Planning Server Enhancements', () => {
     });
 
     it('should suggest completion message when all todos are done', async () => {
-        await planningServer.callTool('add_todo', { title: 'Only Task' });
+        await planningServer.callTool('addTodo', { title: 'Only Task' });
         const state = await planningServer.callTool('get_current_state', {});
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const firstTodoId = (state.structuredContent as any).state.todos[0].id;
@@ -61,9 +61,9 @@ describe('Planning Server Enhancements', () => {
     });
 
     it('should suggest next actions when clearing all todos', async () => {
-        await planningServer.callTool('add_todo', { title: 'To be cleared' });
+        await planningServer.callTool('addTodo', { title: 'To be cleared' });
 
-        const result = await planningServer.callTool('clear_todos', {});
+        const result = await planningServer.callTool('clearTodos', {});
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const structured = result.structuredContent as any;
@@ -76,11 +76,11 @@ describe('Planning Server Enhancements', () => {
         await planningServer.callTool('add_todo', { title: 'Task 1' });
         await planningServer.callTool('add_todo', { title: 'Task 2' });
 
-        const state = await planningServer.callTool('get_current_state', {});
+        const state = await planningServer.callTool('getCurrentState', {});
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const firstId = (state.structuredContent as any).state.todos[0].id;
 
-        const result = await planningServer.callTool('clear_todos', { ids: [firstId] });
+        const result = await planningServer.callTool('clearTodos', { ids: [firstId] });
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const structured = result.structuredContent as any;

@@ -16,7 +16,7 @@ The Bootstrap Server helps AI agents automatically detect the current platform a
 
 ## Tools
 
-### 1. `detect_platform`
+### 1. `detectPlatform`
 
 Detects the current platform, architecture, and shell environment.
 
@@ -37,7 +37,7 @@ Detects the current platform, architecture, and shell environment.
 }
 ```
 
-### 2. `get_bootstrap_guide`
+### 2. `getBootstrapGuide`
 
 Get installation guide for a specific development tool.
 
@@ -49,7 +49,7 @@ Get installation guide for a specific development tool.
 
 **Returns**: Complete installation guide with methods, steps, and verification commands
 
-### 3. `check_tool_installed`
+### 3. `checkToolInstalled`
 
 Get instructions for checking if a tool is already installed.
 
@@ -66,11 +66,11 @@ Get instructions for checking if a tool is already installed.
 
 ```typescript
 // 1. Detect platform
-const platform = await callTool('bootstrap', 'detect_platform', {});
+const platform = await callTool('bootstrap', 'detectPlatform', {});
 console.log(platform.platform); // "windows", "linux", or "darwin"
 
 // 2. Check if Node.js is installed
-const checkInstructions = await callTool('bootstrap', 'check_tool_installed', {
+const checkInstructions = await callTool('bootstrap', 'checkToolInstalled', {
   tool: 'node',
 });
 
@@ -84,7 +84,7 @@ const checkResult = await callTool('workspace', shellTool, {
 
 if (checkResult.exit_code !== 0) {
   // 4. Get installation guide
-  const guide = await callTool('bootstrap', 'get_bootstrap_guide', {
+  const guide = await callTool('bootstrap', 'getBootstrapGuide', {
     tool: 'node',
     platform: 'auto',
   });
@@ -116,7 +116,7 @@ if (checkResult.exit_code !== 0) {
 
 ```typescript
 async function checkDependencies(tools: string[]) {
-  const platform = await callTool('bootstrap', 'detect_platform', {});
+  const platform = await callTool('bootstrap', 'detectPlatform', {});
   const shellTool =
     platform.platform === 'windows' ? 'execute_windows_cmd' : 'execute_shell';
 
@@ -125,7 +125,7 @@ async function checkDependencies(tools: string[]) {
   for (const tool of tools) {
     const checkInstructions = await callTool(
       'bootstrap',
-      'check_tool_installed',
+      'checkToolInstalled',
       {
         tool,
       },
@@ -159,7 +159,7 @@ console.log(status);
 
 ```typescript
 async function installTool(tool: string, preferredMethod?: string) {
-  const guide = await callTool('bootstrap', 'get_bootstrap_guide', {
+  const guide = await callTool('bootstrap', 'getBootstrapGuide', {
     tool,
     platform: 'auto',
     method: preferredMethod || 'all',
@@ -265,8 +265,8 @@ Bootstrap server is designed to work seamlessly with:
 
 ## Best Practices
 
-1. **Always detect platform first**: Use `detect_platform` before requesting guides
-2. **Check before installing**: Use `check_tool_installed` to avoid redundant installations
+1. **Always detect platform first**: Use `detectPlatform` before requesting guides
+2. **Check before installing**: Use `checkToolInstalled` to avoid redundant installations
 3. **Use recommended methods**: Prioritize methods marked as `recommended: true`
 4. **Handle manual steps**: Some installations require user interaction (Docker Desktop, etc.)
 5. **Verify after installation**: Always run verification commands

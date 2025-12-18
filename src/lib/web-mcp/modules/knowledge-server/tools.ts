@@ -2,7 +2,7 @@ import type { MCPTool } from '@/lib/mcp-types';
 
 export const knowledgeTools: MCPTool[] = [
   {
-    name: 'save_knowledge',
+    name: 'saveKnowledge',
     description:
       'Save a piece of knowledge (code snippet, rule, preference, etc.) to the long-term memory.',
     inputSchema: {
@@ -26,7 +26,7 @@ export const knowledgeTools: MCPTool[] = [
     },
   },
   {
-    name: 'search_knowledge',
+    name: 'searchKnowledge',
     description:
       'Search for knowledge items by query string (matches title/content) and/or tags.',
     inputSchema: {
@@ -45,7 +45,7 @@ export const knowledgeTools: MCPTool[] = [
     },
   },
   {
-    name: 'read_knowledge',
+    name: 'readKnowledge',
     description: 'Retrieve the full content of a specific knowledge item.',
     inputSchema: {
       type: 'object',
@@ -59,7 +59,7 @@ export const knowledgeTools: MCPTool[] = [
     },
   },
   {
-    name: 'list_knowledge',
+    name: 'listKnowledge',
     description:
       'List all knowledge items for the current assistant, sorted by most recently updated.',
     inputSchema: {
@@ -77,7 +77,7 @@ export const knowledgeTools: MCPTool[] = [
     },
   },
   {
-    name: 'delete_knowledge',
+    name: 'deleteKnowledge',
     description: 'Delete a knowledge item.',
     inputSchema: {
       type: 'object',

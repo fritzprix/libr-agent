@@ -80,9 +80,9 @@ export class GoalManager {
     });
 
     const nextActions = [
-      'Break down goal into actionable todos with add_todo',
+      'Break down goal into actionable todos with addTodo',
       'Set priorities and dependencies if needed',
-      'Track progress with get_current_state',
+      'Track progress with getCurrentState',
     ];
 
     let message = `Goal set: "${goal}"`;
@@ -119,7 +119,7 @@ export class GoalManager {
     const activeGoal = await this.getActiveGoal();
     if (!activeGoal || !activeGoal.id) {
       return createMCPStructuredToolResult(
-        'No active goal to update. Use create_goal first.',
+        'No active goal to update. Use createGoal first.',
         {
           success: false,
           goal: '',
