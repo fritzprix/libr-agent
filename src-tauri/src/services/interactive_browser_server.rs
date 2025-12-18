@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 use tauri::{AppHandle, Listener, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::webview::PageLoadEvent;
 
 use dashmap::DashMap;
 
@@ -113,43 +114,9 @@ const INIT_SCRIPT: &str = r#"
                 console.error('[LibrAgent] Script execution error:', e);
                 await this.sendResult(sessionId, requestId, e.message, true);
             }
-        },
-
-        // Notify backend that page has loaded
-        notifyPageLoaded: async function() {
-            if (!this.sessionId) {
-                 // Try to get from global scope if set
-                 if (window.__LIBR_AGENT_SESSION_ID__) {
-                     this.sessionId = window.__LIBR_AGENT_SESSION_ID__;
-                 } else {
-                     console.warn('[LibrAgent] Session ID not set, cannot notify page load');
-                     return;
-                 }
-            }
-
-             if (!await this.waitForIPC()) return;
-
-             try {
-                console.log('[LibrAgent] Notifying page loaded for session:', this.sessionId);
-                await window.__TAURI__.core.invoke('browser_page_loaded', { sessionId: this.sessionId });
-            } catch (e) {
-                console.error('[LibrAgent] Failed to notify page load:', e);
-            }
         }
     };
     
-    // Set up page load listeners
-    if (document.readyState === 'complete') {
-        setTimeout(() => window.__LIBR_AGENT__.notifyPageLoaded(), 100);
-    } else {
-        window.addEventListener('load', () => {
-             window.__LIBR_AGENT__.notifyPageLoaded();
-        });
-    }
-
-    // Also listen for single-page app navigation (hash change, pushState) if possible, 
-    // but for now 'load' covers the main navigate_to_url case.
-
     console.log('[LibrAgent] Runtime initialized');
 })();
 "#;
@@ -257,6 +224,9 @@ impl InteractiveBrowserServer {
 
         // Create WebviewWindow (independent browser window)
 
+        let session_id_clone = session_id.clone();
+        let page_load_waiters_clone = self.page_load_waiters.clone();
+
         let webview_window = WebviewWindowBuilder::new(
             &self.app_handle,
             &window_label,
@@ -279,6 +249,14 @@ impl InteractiveBrowserServer {
             "window.__LIBR_AGENT_SESSION_ID__ = '{}';\n{}",
             session_id, INIT_SCRIPT
         ))
+        .on_page_load(move |_window, payload| {
+            if let PageLoadEvent::Finished = payload.event() {
+                info!("Page loaded for session {}", session_id_clone);
+                if let Some(notify) = page_load_waiters_clone.get(&session_id_clone) {
+                    notify.notify_waiters();
+                }
+            }
+        })
         .accept_first_mouse(true)
         .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 LibrAgent Browser")
         .build()
@@ -408,14 +386,33 @@ impl InteractiveBrowserServer {
             let execution_call = format!(
                 r#"
 (async function() {{
+    // Wait for runtime initialization (max 5s)
+    let retries = 50;
+    while (!window.__LIBR_AGENT__ && retries > 0) {{
+        await new Promise(r => setTimeout(r, 100));
+        retries--;
+    }}
+
     if (!window.__LIBR_AGENT__) {{
-        console.error('[LibrAgent] Runtime not initialized');
+        console.error('[LibrAgent] Runtime not initialized after waiting');
+        // Try to send error via raw Tauri invoke if possible
+        if (window.__TAURI__) {{
+             try {{
+                const payload = {{
+                    sessionId: '{session_id}',
+                    requestId: '{request_id}',
+                    result: 'Error: Runtime not initialized (timeout waiting for __LIBR_AGENT__)'
+                }};
+                await window.__TAURI__.core.invoke('browser_script_result', {{ payload }});
+             }} catch (e) {{ console.error(e); }}
+        }}
         return;
     }}
     
     try {{
         // Wait for IPC first
         if (!await window.__LIBR_AGENT__.waitForIPC()) {{
+            await window.__LIBR_AGENT__.sendResult('{session_id}', '{request_id}', 'Error: Tauri IPC failed to initialize', true);
             return;
         }}
 

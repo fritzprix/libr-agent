@@ -40,6 +40,7 @@ import { toast } from 'sonner';
 import { MCPServerManagement } from './MCPServerManagement';
 import { getLogger } from '@/lib/logger';
 import { useSessionContext } from '@/context/SessionContext';
+import { dbUtils, LocalDatabase } from '@/lib/db/service';
 
 const logger = getLogger('SettingsPage');
 
@@ -157,6 +158,48 @@ export default function SettingsPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const sessionCtx = useSessionContext();
+
+  const [isResetting, setIsResetting] = useState(false);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+
+  const handleFactoryReset = async () => {
+    setResetConfirmOpen(false);
+    setIsResetting(true);
+    try {
+      // 1. Clear sessions and workspaces
+      await sessionCtx.clearAllSessions();
+
+      // 2. Clear other tables
+      await dbUtils.clearAllAssistants();
+      await dbUtils.clearAllMCPServers();
+      await LocalDatabase.getInstance().playbooks.clear();
+      await LocalDatabase.getInstance().objects.clear();
+
+      // 3. Restore defaults
+      await LocalDatabase.getInstance().ensureDefaultAssistants();
+
+      toast.success(
+        t(
+          'settings.factoryReset.success',
+          'Factory reset complete. The application will reload.',
+        ),
+      );
+
+      // Reload to ensure fresh state
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+    } catch (e) {
+      logger.error('Failed to perform factory reset', e);
+      toast.error(
+        t(
+          'settings.factoryReset.error',
+          'Failed to perform factory reset. See logs for details.',
+        ),
+      );
+      setIsResetting(false);
+    }
+  };
 
   // Local state for window size and language to prevent immediate context updates
   const [localWindowSize, setLocalWindowSize] = useState(windowSize);
@@ -570,6 +613,78 @@ export default function SettingsPage() {
                             }}
                           >
                             {t('common.delete', 'Delete')}
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-background border shadow-sm">
+                <CardHeader className="pb-4">
+                  <CardTitle className="text-foreground text-base font-medium">
+                    {t('settings.factoryReset.title', 'Factory Reset')}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground">
+                    {t(
+                      'settings.factoryReset.description',
+                      'This will perform a complete factory reset. It deletes all sessions, messages, assistants, MCP servers, playbooks, and restores default settings. This action is destructive and cannot be undone.',
+                    )}
+                  </p>
+                  <div className="flex items-center justify-start pt-4 gap-x-2">
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      disabled={isResetting || isDeleting}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setResetConfirmOpen(true);
+                      }}
+                    >
+                      {isResetting && (
+                        <LoadingSpinner size="sm" className="mr-2" />
+                      )}
+                      <span>
+                        {isResetting
+                          ? t('settings.factoryReset.resetting', 'Resetting...')
+                          : t(
+                              'settings.factoryReset.button',
+                              'Reset All Data & Settings',
+                            )}
+                      </span>
+                    </Button>
+                    <AlertDialog
+                      open={resetConfirmOpen}
+                      onOpenChange={setResetConfirmOpen}
+                    >
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>
+                            {t(
+                              'settings.factoryReset.confirmTitle',
+                              'Factory Reset Confirmation',
+                            )}
+                          </AlertDialogTitle>
+                          <AlertDialogDescription>
+                            {t(
+                              'settings.factoryReset.confirmDescription',
+                              'This will permanently delete ALL data including sessions, assistants, MCP servers, and playbooks. The application will be reset to its initial state. Are you sure you want to continue?',
+                            )}
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>
+                            {t('common.cancel', 'Cancel')}
+                          </AlertDialogCancel>
+                          <AlertDialogAction onClick={handleFactoryReset}>
+                            {t(
+                              'settings.factoryReset.confirmButton',
+                              'Reset Everything',
+                            )}
                           </AlertDialogAction>
                         </AlertDialogFooter>
                       </AlertDialogContent>
