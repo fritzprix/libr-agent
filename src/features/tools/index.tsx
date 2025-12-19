@@ -265,17 +265,12 @@ export function BuiltInToolProvider({ children }: BuiltInToolProviderProps) {
     const newServiceContexts: Record<string, unknown> = {};
 
     // 1. Built-in Tools Section
-    const availableToolsCount = availableTools.length;
-    const isLoadingTauriTools = false; // No longer tracked in new API
-
     prompts.push(`# Available Built-in Tools
 
 You have access to built-in tools for file operations, code execution, and web-based processing.
 Tool details and usage instructions are provided separately.
 
-**Available Built-In Tools:** ${availableToolsCount} ${isLoadingTauriTools ? '(Loading...)' : ''}
-
-**Important Instruction:** When calling built-in tools, you MUST use the tool name exactly as it appears in the available tools list. Do not add or remove the "${BUILTIN_PREFIX}" prefix - use it "as is" (e.g., if the tool name is "${BUILTIN_PREFIX}file_read", call it as "${BUILTIN_PREFIX}file_read", not "file_read" or "${BUILTIN_PREFIX}${BUILTIN_PREFIX}file_read").
+**Important Instruction:** When calling built-in tools, you MUST use the tool name exactly as it appears in the available tools list. Do not add or remove the "${BUILTIN_PREFIX}" prefix - use it "as is".
 `);
 
     // 2. Service Contexts Section
