@@ -730,6 +730,7 @@ impl BuiltinMCPServer for WorkspaceServer {
             context_prompt,
             structured_state: Some(json!({
                 "workspace_dir": workspace_dir,
+                "workspace_tree": tree_output,
                 "platform": {
                     "os": os,
                     "arch": arch

@@ -60,7 +60,6 @@ export {
   createBrowserSession,
   closeBrowserSession,
   listBrowserSessions,
-  pollScriptResult,
   navigateToUrl,
 } from './browser';
 

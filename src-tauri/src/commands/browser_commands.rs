@@ -162,7 +162,8 @@ pub async fn browser_page_loaded(
     server.handle_page_loaded(&session_id)
 }
 
-/// Executes JavaScript in a browser session and returns a request ID for polling the result.
+/// Executes JavaScript in a browser session and returns the result directly.
+/// Uses oneshot channel pattern with 30-second timeout. No polling required.
 ///
 /// # Arguments
 /// * `server` - The `InteractiveBrowserServer` state.
@@ -170,7 +171,7 @@ pub async fn browser_page_loaded(
 /// * `script` - The JavaScript code to execute.
 ///
 /// # Returns
-/// A `Result` containing a unique request ID for polling, or an error string on failure.
+/// A `Result` containing the script execution result string, or an error string on failure.
 #[tauri::command]
 pub async fn execute_script(
     server: State<'_, InteractiveBrowserServer>,
@@ -184,34 +185,15 @@ pub async fn execute_script(
     );
 
     match server.execute_script(&session_id, &script).await {
-        Ok(request_id) => {
-            debug!("Script execution initiated, request_id: {request_id}");
-            Ok(request_id)
+        Ok(result) => {
+            debug!("Script execution completed successfully");
+            Ok(result)
         }
         Err(e) => {
             error!("Failed to execute script in session {session_id}: {e}");
             Err(e)
         }
     }
-}
-
-/// Polls for the result of an asynchronous script execution using its request ID.
-///
-/// # Arguments
-/// * `server` - The `InteractiveBrowserServer` state.
-/// * `request_id` - The ID of the script execution request to poll.
-///
-/// # Returns
-/// A `Result` containing an `Option<String>`. `Some(result)` if the script has completed,
-/// `None` if it's still pending, or an error string on failure.
-#[tauri::command]
-pub async fn poll_script_result(
-    server: State<'_, InteractiveBrowserServer>,
-    request_id: String,
-) -> Result<Option<String>, String> {
-    debug!("Polling for script result with request_id: {request_id}");
-
-    server.poll_script_result(&request_id).await
 }
 
 /// Navigates the browser back to the previous page in the history.

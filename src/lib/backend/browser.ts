@@ -41,17 +41,6 @@ export async function listBrowserSessions(): Promise<BrowserSession[]> {
 }
 
 /**
- * Polls for the result of a previously executed asynchronous script.
- * @param requestId The ID of the script execution request to poll.
- * @returns A promise that resolves to the script result, or null if it's not ready.
- */
-export async function pollScriptResult(
-  requestId: string,
-): Promise<string | null> {
-  return safeInvoke<string | null>('poll_script_result', { requestId });
-}
-
-/**
  * Navigates a browser session to a new URL.
  * @param sessionId The ID of the browser session.
  * @param url The URL to navigate to.
