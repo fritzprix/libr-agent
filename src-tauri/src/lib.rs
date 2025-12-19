@@ -264,7 +264,6 @@ pub fn run() {
                 browser_script_result,
                 browser_page_loaded,
                 execute_script,
-                poll_script_result,
                 navigate_back,
                 navigate_forward,
                 get_service_context,

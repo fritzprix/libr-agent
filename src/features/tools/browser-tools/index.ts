@@ -28,6 +28,5 @@ export type {
 export {
   BROWSER_TOOL_SCHEMAS,
   checkElementState,
-  pollWithTimeout,
   formatBrowserResult,
 } from './helpers';
