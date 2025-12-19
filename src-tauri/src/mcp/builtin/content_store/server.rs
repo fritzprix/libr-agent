@@ -134,7 +134,7 @@ impl ContentStoreServer {
         let tools_count = self.tools().len();
 
         // Format minimal context with content summary
-        let mut context = format!("contentstore: Active, {tools_count} tools");
+        let mut context = format!("## Content Store\n\nActive, {tools_count} tools");
 
         // Add session-specific content summary if session ID is available
         if let Some(session_id) = session_id {

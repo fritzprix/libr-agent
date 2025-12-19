@@ -268,38 +268,90 @@ ${scratchpadText}`;
 
     const { goal, todos, scratchpad } = state;
     const uncheckedTodos = todos.filter((t) => !t.checked);
+    const checkedTodos = todos.filter((t) => t.checked);
 
-    const contextParts = [];
+    const contextParts = ['## Planning'];
+    
+    // Goal section - always show, with guidance if not set
     if (goal) {
-      contextParts.push(`Current Goal: "${goal}"`);
+      contextParts.push(`\n**Current Goal:** "${goal}"`);
+      contextParts.push('*Goal is active. Track progress with todos below.*');
+    } else {
+      contextParts.push('\n**No Goal Set**');
+      contextParts.push('*Consider using createGoal to establish a clear objective for this planning session.*');
     }
-    if (uncheckedTodos.length > 0) {
-      contextParts.push(`Unchecked Todos (${uncheckedTodos.length}):`);
-      uncheckedTodos.slice(0, 5).forEach((t) => {
-        contextParts.push(`- [ ] ${t.title}`);
-      });
-      if (uncheckedTodos.length > 5) {
-        contextParts.push(`...and ${uncheckedTodos.length - 5} more`);
+    
+    // Todos section with clear structure
+    if (todos.length > 0) {
+      contextParts.push(
+        `\n**Todos:** ${uncheckedTodos.length} unchecked / ${checkedTodos.length} checked (${todos.length} total)`,
+      );
+      
+      if (uncheckedTodos.length > 0) {
+        contextParts.push('\n**Unchecked Items:**');
+        uncheckedTodos.slice(0, 5).forEach((t, idx) => {
+          // Format: [Index] ID:xxx | Title | Priority | Description
+          const priority = t.priority ? `Priority:${t.priority}` : 'Priority:none';
+          const description = t.description 
+            ? `\n     ${t.description.slice(0, 80)}${t.description.length > 80 ? '...' : ''}`
+            : '';
+          
+          contextParts.push(
+            `  [${idx}] ID:${t.id} | ${t.title} | ${priority}${description}`,
+          );
+        });
+        
+        if (uncheckedTodos.length > 5) {
+          contextParts.push(`  ...and ${uncheckedTodos.length - 5} more (use listTodos to see all)`);
+        }
+        
+        contextParts.push('\n*Use Index or ID when calling checkTodo/updateTodo*');
+      }
+      
+      // Show completed todos for work trace awareness
+      if (checkedTodos.length > 0) {
+        contextParts.push('\n**Checked Items (Completed):**');
+        
+        // Show last 3 completed todos (most recent work)
+        const recentCompleted = checkedTodos.slice(-3).reverse();
+        recentCompleted.forEach((t, idx) => {
+          const priority = t.priority ? `[${t.priority}]` : '';
+          const summary = t.summary ? ` → ${t.summary.slice(0, 60)}${t.summary.length > 60 ? '...' : ''}` : '';
+          
+          contextParts.push(
+            `  [✓] ID:${t.id} | ${t.title} ${priority}${summary}`,
+          );
+        });
+        
+        if (checkedTodos.length > 3) {
+          contextParts.push(`  ...and ${checkedTodos.length - 3} more completed`);
+        }
       }
     }
+    
+    // Scratchpad section with improved formatting
     if (scratchpad.length > 0) {
-      contextParts.push(`Scratchpad (${scratchpad.length}):`);
-      scratchpad.slice(0, 5).forEach((m) => {
-        const titlePart = m.title ? `[${m.title}] ` : '';
+      contextParts.push(`\n**Scratchpad:** ${scratchpad.length} items`);
+      contextParts.push(''); // Empty line for readability
+      
+      scratchpad.slice(0, 5).forEach((m, idx) => {
+        const titlePart = m.title ? `**${m.title}**` : '';
         const tagsPart =
           Array.isArray(m.tags) && m.tags.length > 0
-            ? ` (tags: ${m.tags.join(', ')})`
+            ? ` #${m.tags.join(' #')}`
             : '';
-        const contentPreview = m.title ? '' : `${m.content.slice(0, 30)}...`;
+        const contentPreview = m.title 
+          ? ` - ${m.content.slice(0, 50)}${m.content.length > 50 ? '...' : ''}`
+          : m.content.slice(0, 60) + (m.content.length > 60 ? '...' : '');
+        
         contextParts.push(
-          `- ID:${m.id} ${titlePart}${contentPreview}${tagsPart}`,
+          `  ${idx + 1}. **ID:${m.id}** ${titlePart}${contentPreview}${tagsPart}`,
         );
       });
+      
       if (scratchpad.length > 5) {
         contextParts.push(
-          `...and ${
-            scratchpad.length - 5
-          } more. Use readScratchpad to view details.`,
+          `  ...and ${scratchpad.length - 5} more items. Use readScratchpad to view all.`,
         );
       }
     }

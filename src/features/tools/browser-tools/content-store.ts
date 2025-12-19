@@ -56,7 +56,7 @@ export const ContentStore = {
       if (currentPage.length + lineWithNewline.length <= pageSize) {
         currentPage += lineWithNewline;
       } else {
-        // Doesn't fit. 
+        // Doesn't fit.
 
         // Case A: Current page has content. Push it, start new page with this line.
         if (currentPage.length > 0) {

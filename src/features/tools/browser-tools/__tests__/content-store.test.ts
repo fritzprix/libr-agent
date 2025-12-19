@@ -1,5 +1,4 @@
 import { ContentStore } from '../content-store';
-import { getLogger } from '@/lib/logger';
 import { describe, it, expect, vi } from 'vitest';
 
 // Mock logger

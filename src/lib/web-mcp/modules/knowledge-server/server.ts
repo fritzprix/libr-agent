@@ -361,11 +361,36 @@ const knowledgeServer: WebMCPServer = {
     const assistantId = options?.assistantId || 'default';
     manager.setContext(assistantId);
 
-    // Maybe return a summary of available knowledge?
-    // For now, just a static message.
+    // Get knowledge count for this assistant
+    const knowledgeCount = await db.knowledge
+      .where('assistantId')
+      .equals(assistantId)
+      .count();
+
+    const contextParts = ['## Knowledge Base'];
+    
+    if (knowledgeCount === 0) {
+      contextParts.push(
+        '\n**No knowledge entries yet.**',
+        '*Use saveKnowledge to store important information for future reference.*',
+        '*Tip: Save key facts, decisions, or context that might be useful later.*',
+      );
+    } else {
+      contextParts.push(
+        `\n**${knowledgeCount} knowledge ${knowledgeCount === 1 ? 'entry' : 'entries'} available**`,
+        '',
+        '**Available Operations:**',
+        '• searchKnowledge - Find information by keywords or tags',
+        '• listKnowledge - Browse all entries (sorted by most recent)',
+        '• readKnowledge - View full content by ID',
+        '• saveKnowledge - Store new information',
+        '• deleteKnowledge - Remove entries by ID',
+      );
+    }
+
     return {
-      contextPrompt: `Knowledge Base connected for assistant: ${assistantId}. Use searchKnowledge to find information.`,
-      structuredState: { assistantId },
+      contextPrompt: contextParts.join('\n'),
+      structuredState: { assistantId, knowledgeCount },
     };
   },
 };
