@@ -59,7 +59,7 @@ describe('Scratchpad with Title and Tags', () => {
   it('should display summary in context', async () => {
     await planningServer.callTool('addScratchpad', {
       title: 'Important Finding',
-      note: 'Very long content that should not appear in context preview...',
+      note: 'Very long content that should not appear fully in context preview because it exceeds the character limit and will be truncated',
       tags: ['important'],
     });
 
@@ -73,8 +73,10 @@ describe('Scratchpad with Title and Tags', () => {
     }
 
     expect(context.contextPrompt).toContain('Important Finding');
-    expect(context.contextPrompt).toContain('tags: important');
-    expect(context.contextPrompt).not.toContain('Very long content');
+    expect(context.contextPrompt).toContain('[important]');
+    // Content should be truncated to ~50 chars with "..."
+    expect(context.contextPrompt).toContain('Very long content that should not appear fully');
+    expect(context.contextPrompt).not.toContain('because it exceeds the character limit');
   });
   
   it('should handle capacity limits (MAX_NOTES=20)', async () => {

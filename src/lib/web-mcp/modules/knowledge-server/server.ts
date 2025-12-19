@@ -368,7 +368,7 @@ const knowledgeServer: WebMCPServer = {
       .count();
 
     const contextParts = ['## Knowledge Base'];
-    
+
     if (knowledgeCount === 0) {
       contextParts.push(
         '\n**No knowledge entries yet.**',

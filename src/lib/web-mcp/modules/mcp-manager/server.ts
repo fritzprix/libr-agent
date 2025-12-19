@@ -100,10 +100,10 @@ const mcpManagerServer: WebMCPServer = {
     }
 
     const contextParts = ['## MCP Servers'];
-    
+
     if (totalServers > 0) {
       contextParts.push(`${activeServers}/${totalServers} servers active`);
-      
+
       if (connectedCount > 0) {
         contextParts.push(`${connectedCount} connected to current assistant`);
       }
