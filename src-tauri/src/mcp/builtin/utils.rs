@@ -81,8 +81,9 @@ impl SecurityValidator {
             self.base_dir
         );
 
-        // Clean the path to resolve . and .. components
-        let mut clean_path = PathBuf::from(user_path).clean();
+        // 경로 구분자 정규화 및 정리
+        let normalized_path = user_path.replace('\\', "/");
+        let mut clean_path = PathBuf::from(normalized_path).clean();
 
         // 절대경로 처리: base_dir 내부에 있으면 허용하고 상대경로로 변환
         if clean_path.is_absolute() {

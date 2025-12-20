@@ -3,6 +3,7 @@ import type { MCPResult } from '@/lib/mcp-types';
 import { MCPResponseBuilder } from '@/lib/web-mcp/response-builder';
 import { db, type PlanningGoal } from '../db';
 import type { CreateGoalOutput, ClearGoalOutput } from '../types';
+import { buildEmptyTitleError } from '../utils/response-builders';
 
 /**
  * Manages goal operations including creation, updates, and retrieval.
@@ -58,6 +59,11 @@ export class GoalManager {
     goal: string,
     existingTodosCount: number,
   ): Promise<MCPResult<CreateGoalOutput>> {
+    // Validation: Goal name cannot be empty or whitespace-only
+    if (!goal || goal.trim() === '') {
+      return buildEmptyTitleError('goal') as MCPResult<CreateGoalOutput>;
+    }
+
     const previousGoal = await this.getActiveGoal();
 
     // Deactivate previous goal if exists
@@ -74,9 +80,9 @@ export class GoalManager {
     });
 
     const nextActions = [
-      'Break down goal into actionable todos with add_todo',
+      'Break down goal into actionable todos with addTodo',
       'Set priorities and dependencies if needed',
-      'Track progress with get_current_state',
+      'Track progress with getCurrentState',
     ];
 
     let message = `Goal set: "${goal}"`;
@@ -105,10 +111,15 @@ export class GoalManager {
    * @returns MCPResult with update status
    */
   async updateGoal(goal: string): Promise<MCPResult<CreateGoalOutput>> {
+    // Validation: Goal name cannot be empty or whitespace-only
+    if (!goal || goal.trim() === '') {
+      return buildEmptyTitleError('goal') as MCPResult<CreateGoalOutput>;
+    }
+
     const activeGoal = await this.getActiveGoal();
     if (!activeGoal || !activeGoal.id) {
       return createMCPStructuredToolResult(
-        'No active goal to update. Use create_goal first.',
+        'No active goal to update. Use createGoal first.',
         {
           success: false,
           goal: '',

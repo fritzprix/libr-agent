@@ -163,8 +163,9 @@ export function BrowserToolProvider() {
           const sessions = await listBrowserSessions();
           const contextPrompt =
             sessions.length === 0
-              ? '# Browser Sessions\nNo active browser sessions.'
-              : `# Browser Sessions\n${sessions.map((s) => `Session ${s.id}: ${s.url || 'No URL'} (${s.title || 'Untitled'})`).join('\n')}`;
+              ? '## Browser Sessions\nNo active browser sessions.'
+              : `## Browser Sessions\n${sessions.map((s) => `Session ${s.id}: ${s.url || 'No URL'} (${s.title || 'Untitled'})`).join('\n')}`;
+
           return {
             contextPrompt,
             structuredState: { sessions, count: sessions.length },
@@ -176,7 +177,7 @@ export function BrowserToolProvider() {
           });
           return {
             contextPrompt:
-              '# Browser Sessions\nError loading browser sessions.',
+              '## Browser Sessions\nError loading browser sessions.',
             structuredState: { sessions: [], count: 0 },
           };
         }

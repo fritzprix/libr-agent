@@ -8,14 +8,16 @@ use std::collections::HashMap;
 
 use std::sync::{Arc, RwLock};
 
-use tauri::{AppHandle, Listener, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{
+    webview::PageLoadEvent, AppHandle, Listener, Manager, WebviewUrl, WebviewWindowBuilder,
+};
 
 use dashmap::DashMap;
 
 use uuid::Uuid;
 
 use std::time::Duration;
-use tokio::sync::Notify;
+use tokio::sync::{oneshot, Notify};
 
 use super::browser_error::BrowserError;
 use reqwest;
@@ -113,43 +115,9 @@ const INIT_SCRIPT: &str = r#"
                 console.error('[LibrAgent] Script execution error:', e);
                 await this.sendResult(sessionId, requestId, e.message, true);
             }
-        },
-
-        // Notify backend that page has loaded
-        notifyPageLoaded: async function() {
-            if (!this.sessionId) {
-                 // Try to get from global scope if set
-                 if (window.__LIBR_AGENT_SESSION_ID__) {
-                     this.sessionId = window.__LIBR_AGENT_SESSION_ID__;
-                 } else {
-                     console.warn('[LibrAgent] Session ID not set, cannot notify page load');
-                     return;
-                 }
-            }
-
-             if (!await this.waitForIPC()) return;
-
-             try {
-                console.log('[LibrAgent] Notifying page loaded for session:', this.sessionId);
-                await window.__TAURI__.core.invoke('browser_page_loaded', { sessionId: this.sessionId });
-            } catch (e) {
-                console.error('[LibrAgent] Failed to notify page load:', e);
-            }
         }
     };
     
-    // Set up page load listeners
-    if (document.readyState === 'complete') {
-        setTimeout(() => window.__LIBR_AGENT__.notifyPageLoaded(), 100);
-    } else {
-        window.addEventListener('load', () => {
-             window.__LIBR_AGENT__.notifyPageLoaded();
-        });
-    }
-
-    // Also listen for single-page app navigation (hash change, pushState) if possible, 
-    // but for now 'load' covers the main navigate_to_url case.
-
     console.log('[LibrAgent] Runtime initialized');
 })();
 "#;
@@ -162,9 +130,9 @@ pub struct InteractiveBrowserServer {
     app_handle: AppHandle,
     /// A thread-safe map of active browser sessions, keyed by session ID.
     sessions: Arc<RwLock<HashMap<String, BrowserSession>>>,
-    /// A thread-safe map to store the results of asynchronous script executions, keyed by request ID.
-    /// Value is (session_id, result_string).
-    script_results: Arc<DashMap<String, (String, String)>>,
+    /// A thread-safe map to store oneshot senders for pending script executions, keyed by request ID.
+    /// When a script result arrives, the sender is used to wake up the waiting receiver.
+    result_waiters: Arc<DashMap<String, oneshot::Sender<String>>>,
     /// Map of session IDs to Notify objects for page load events
     page_load_waiters: Arc<DashMap<String, Arc<Notify>>>,
 }
@@ -180,7 +148,7 @@ impl InteractiveBrowserServer {
         Self {
             app_handle,
             sessions: Arc::new(RwLock::new(HashMap::new())),
-            script_results: Arc::new(DashMap::new()),
+            result_waiters: Arc::new(DashMap::new()),
             page_load_waiters: Arc::new(DashMap::new()),
         }
     }
@@ -257,6 +225,9 @@ impl InteractiveBrowserServer {
 
         // Create WebviewWindow (independent browser window)
 
+        let session_id_clone = session_id.clone();
+        let page_load_waiters_clone = self.page_load_waiters.clone();
+
         let webview_window = WebviewWindowBuilder::new(
             &self.app_handle,
             &window_label,
@@ -279,6 +250,14 @@ impl InteractiveBrowserServer {
             "window.__LIBR_AGENT_SESSION_ID__ = '{}';\n{}",
             session_id, INIT_SCRIPT
         ))
+        .on_page_load(move |_window, payload| {
+            if let PageLoadEvent::Finished = payload.event() {
+                info!("Page loaded for session {}", session_id_clone);
+                if let Some(notify) = page_load_waiters_clone.get(&session_id_clone) {
+                    notify.notify_waiters();
+                }
+            }
+        })
         .accept_first_mouse(true)
         .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 LibrAgent Browser")
         .build()
@@ -314,7 +293,6 @@ impl InteractiveBrowserServer {
 
         // Clone additional state for cleanup in the event handler
         let sessions_clone = self.sessions.clone();
-        let script_results_clone = self.script_results.clone();
         let session_id_clone = session_id.clone();
         let page_load_waiters_clone = self.page_load_waiters.clone();
 
@@ -328,8 +306,8 @@ impl InteractiveBrowserServer {
                 }
             }
 
-            // Cleanup script results to prevent memory leaks
-            script_results_clone.retain(|_, (sid, _)| sid != &session_id_clone);
+            // Cleanup pending result waiters (oneshot channels will auto-cleanup when dropped)
+            // The timeout mechanism ensures max 30s lifetime for any pending request
             page_load_waiters_clone.remove(&session_id_clone);
         });
 
@@ -369,16 +347,15 @@ impl InteractiveBrowserServer {
     /// Executes a given JavaScript snippet in a specific browser session's window.
     ///
     /// This method wraps the user-provided script in an async IIFE to handle promises
-    /// and errors gracefully. It then sends the result (or error) back to the backend
-    /// using the `browser_script_result` command, which can be polled by the frontend.
+    /// and errors gracefully. It waits for the result using a oneshot channel pattern
+    /// with a 30-second timeout. The result is delivered directly without polling.
     ///
     /// # Arguments
     /// * `session_id` - The ID of the session in which to execute the script.
     /// * `script` - The JavaScript code to execute.
     ///
     /// # Returns
-    /// A `Result` containing a unique `request_id` which can be used to poll for the
-    /// script's result, or an error string on failure.
+    /// A `Result` containing the script execution result string, or an error string on failure.
     pub async fn execute_script(&self, session_id: &str, script: &str) -> Result<String, String> {
         debug!("Executing script in session {session_id}: {script}");
 
@@ -400,6 +377,10 @@ impl InteractiveBrowserServer {
             // Generate unique request ID
             let request_id = Uuid::new_v4().to_string();
 
+            // Create oneshot channel BEFORE eval to prevent race condition
+            let (tx, rx) = oneshot::channel::<String>();
+            self.result_waiters.insert(request_id.clone(), tx);
+
             // Ensure window is focused on Linux before execution
             self.apply_platform_window_settings(&window);
 
@@ -408,20 +389,39 @@ impl InteractiveBrowserServer {
             let execution_call = format!(
                 r#"
 (async function() {{
+    // Wait for runtime initialization (max 5s)
+    let retries = 50;
+    while (!window.__LIBR_AGENT__ && retries > 0) {{
+        await new Promise(r => setTimeout(r, 100));
+        retries--;
+    }}
+
     if (!window.__LIBR_AGENT__) {{
-        console.error('[LibrAgent] Runtime not initialized');
+        console.error('[LibrAgent] Runtime not initialized after waiting');
+        // Try to send error via raw Tauri invoke if possible
+        if (window.__TAURI__) {{
+             try {{
+                const payload = {{
+                    sessionId: '{session_id}',
+                    requestId: '{request_id}',
+                    result: 'Error: Runtime not initialized (timeout waiting for __LIBR_AGENT__)'
+                }};
+                await window.__TAURI__.core.invoke('browser_script_result', {{ payload }});
+             }} catch (e) {{ console.error(e); }}
+        }}
         return;
     }}
-    
+
     try {{
         // Wait for IPC first
         if (!await window.__LIBR_AGENT__.waitForIPC()) {{
+            await window.__LIBR_AGENT__.sendResult('{session_id}', '{request_id}', 'Error: Tauri IPC failed to initialize', true);
             return;
         }}
 
         // Execute user script directly here
         const result = await (async () => {{ return {script}; }})();
-        
+
         // Send result using helper
         await window.__LIBR_AGENT__.sendResult('{session_id}', '{request_id}', result, false);
     }} catch (e) {{
@@ -432,17 +432,35 @@ impl InteractiveBrowserServer {
 "#
             );
 
-            // Execute the call
-            match window.eval(&execution_call) {
-                Ok(_) => {
-                    debug!(
-                        "Script execution initiated in session: {session_id}, request_id: {request_id}"
-                    );
-                    Ok(request_id) // Return request_id immediately
+            // Execute the script
+            if let Err(e) = window.eval(&execution_call) {
+                // Cleanup on eval failure
+                self.result_waiters.remove(&request_id);
+                error!("Failed to execute script wrapper in session {session_id}: {e}");
+                return Err(format!("Failed to execute script: {e}"));
+            }
+
+            debug!("Script execution initiated, waiting for result: {request_id}");
+
+            // Wait for result with timeout using oneshot channel
+            match tokio::time::timeout(Duration::from_secs(30), rx).await {
+                Ok(Ok(result)) => {
+                    debug!("Script execution completed successfully: {request_id}");
+                    Ok(result)
                 }
-                Err(e) => {
-                    error!("Failed to execute script wrapper in session {session_id}: {e}");
-                    Err(format!("Failed to execute script: {e}"))
+                Ok(Err(_)) => {
+                    // Channel was closed without sending (sender dropped)
+                    self.result_waiters.remove(&request_id);
+                    error!("Script result channel closed unexpectedly: {request_id}");
+                    Err("Script execution failed: channel closed".to_string())
+                }
+                Err(_) => {
+                    // Timeout occurred
+                    self.result_waiters.remove(&request_id);
+                    warn!("Script execution timeout after 30s: {request_id}");
+                    Err(format!(
+                        "Script execution timeout after 30 seconds (request: {request_id})"
+                    ))
                 }
             }
         } else {
@@ -520,8 +538,8 @@ impl InteractiveBrowserServer {
             sessions.remove(session_id);
         }
 
-        // Cleanup pending script results for this session to prevent memory leaks
-        self.script_results.retain(|_, (sid, _)| sid != session_id);
+        // Cleanup pending result waiters (oneshot channels will auto-cleanup when dropped)
+        // The timeout mechanism ensures max 30s lifetime for any pending request
         self.page_load_waiters.remove(session_id);
 
         info!("Session {session_id} closed successfully");
@@ -686,30 +704,11 @@ impl InteractiveBrowserServer {
         }
     }
 
-    /// Polls for the result of a script execution using its request ID.
-    ///
-    /// This method checks the `script_results` map for a result associated with the
-    /// given `request_id`. If found, it returns the result and removes it from the map.
-    ///
-    /// # Arguments
-    /// * `request_id` - The ID of the script execution request.
-    ///
-    /// # Returns
-    /// A `Result` containing an `Option<String>`. `Some(result)` if the result is available,
-    /// `None` if it is not yet available.
-    pub async fn poll_script_result(&self, request_id: &str) -> Result<Option<String>, String> {
-        if let Some((_key, (_session_id, result))) = self.script_results.remove(request_id) {
-            debug!("Retrieved script result for request_id: {request_id}");
-            Ok(Some(result))
-        } else {
-            Ok(None)
-        }
-    }
-
     /// Handles the script result received from the `browser_script_result` command.
     ///
-    /// This method is called internally when the frontend sends back the result of a
-    /// script execution. It stores the result in the `script_results` map.
+    /// This method is called internally when the browser sends back the result of a
+    /// script execution. It removes the oneshot sender from the waiters map and sends
+    /// the result through the channel to wake up the waiting receiver.
     ///
     /// # Arguments
     /// * `session_id` - The ID of the session where the script was executed.
@@ -724,9 +723,28 @@ impl InteractiveBrowserServer {
         request_id: String,
         result: String,
     ) -> Result<(), String> {
-        debug!("Storing script result for session: {session_id}, request_id: {request_id}");
-        self.script_results
-            .insert(request_id, (session_id.to_string(), result));
-        Ok(())
+        debug!("Received script result for session: {session_id}, request_id: {request_id}");
+
+        // Remove sender from waiters and send result
+        if let Some((_, sender)) = self.result_waiters.remove(&request_id) {
+            // Send result through oneshot channel
+            if sender.send(result).is_err() {
+                // Receiver was dropped (timeout or cancelled)
+                warn!(
+                    "Failed to send script result for {request_id}: receiver dropped \
+                     (likely timeout or cancelled request)"
+                );
+            } else {
+                debug!("Script result delivered successfully: {request_id}");
+            }
+            Ok(())
+        } else {
+            // No waiter found - request may have timed out or was cancelled
+            warn!(
+                "No waiter found for script result: {request_id} \
+                 (request may have timed out or been cancelled)"
+            );
+            Ok(()) // Not an error - just late arrival
+        }
     }
 }

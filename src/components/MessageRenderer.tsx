@@ -1,6 +1,9 @@
 import React, { useCallback, useMemo, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 import { Copy, Check } from 'lucide-react';
 import type { MCPContent } from '@/lib/mcp-types';
 import type { Message } from '@/models/chat';
@@ -420,8 +423,10 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
 
                 <ReactMarkdown
                   skipHtml={false}
-                  remarkPlugins={[remarkGfm]}
-                  rehypePlugins={[]}
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  remarkPlugins={[remarkGfm, remarkMath] as any}
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  rehypePlugins={[rehypeKatex] as any}
                   components={{
                     p: ({ children, ...props }) => (
                       <p className="mb-2 last:mb-0" {...props}>
@@ -576,8 +581,8 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
                         {children}
                       </ul>
                     ),
-                    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-                    ol: ({ children, node, ordered, ...props }) => (
+                    // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any
+                    ol: ({ children, node, ordered, ...props }: any) => (
                       <ol
                         className="list-decimal list-inside mb-2 space-y-1"
                         {...props}
@@ -585,8 +590,8 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
                         {children}
                       </ol>
                     ),
-                    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-                    li: ({ children, node, ordered, ...props }) => (
+                    // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any
+                    li: ({ children, node, ordered, ...props }: any) => (
                       <li className="ml-2" {...props}>
                         {children}
                       </li>
@@ -598,6 +603,16 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
                       >
                         {children}
                       </blockquote>
+                    ),
+                    strong: ({ children, ...props }) => (
+                      <strong className="font-bold" {...props}>
+                        {children}
+                      </strong>
+                    ),
+                    em: ({ children, ...props }) => (
+                      <em className="italic" {...props}>
+                        {children}
+                      </em>
                     ),
                     a: ({ children, href, ...props }) => (
                       <a

@@ -52,42 +52,55 @@ export class PersistentState {
   }
 
   async addTodo(
-    name: string,
+    title: string,
+    description?: string,
     priority?: 'low' | 'medium' | 'high',
-    dependsOn?: number[],
   ): Promise<MCPResult<AddToDoOutput>> {
     const activeGoalContent = await this.goalManager.getGoal();
     return this.todoManager.addTodo(
-      name,
+      title,
+      description,
       priority,
-      dependsOn,
-      activeGoalContent,
+      activeGoalContent || null,
     );
-  }
-
-  async updateTodo(
-    params: { id?: number; index?: number },
-    updates: {
-      name?: string;
-      status?: 'pending' | 'completed' | 'blocked';
-      priority?: 'low' | 'medium' | 'high';
-      dependsOn?: number[];
-    },
-  ): Promise<MCPResult<unknown>> {
-    return this.todoManager.updateTodo(params, updates);
   }
 
   async checkTodo(
     params: { id?: number; index?: number },
-    check: boolean = true,
+    checked: boolean = true,
     summary?: string,
   ): Promise<MCPResult<unknown>> {
-    return this.todoManager.checkTodo(params, check, summary);
+    return this.todoManager.checkTodo(params, checked, summary);
   }
 
-  async clearTodos(ids?: number[]): Promise<MCPResult<BaseOutput>> {
+  async clearTodos(
+    ids?: number[],
+    indices?: number[],
+  ): Promise<MCPResult<BaseOutput>> {
     const activeGoalContent = await this.goalManager.getGoal();
-    return this.todoManager.clearTodos(ids, activeGoalContent);
+    return this.todoManager.clearTodos(ids, indices, activeGoalContent);
+  }
+
+  async addScratchpad(
+    note: string,
+    source?: string,
+    title?: string,
+    tags?: string[],
+  ): Promise<MCPResult<BaseOutput & { scratchpad: ScratchpadItem[] }>> {
+    return this.scratchpadManager.addScratchpad(note, source, title, tags);
+  }
+
+  async readScratchpad(
+    ids?: number[],
+    tags?: string[],
+  ): Promise<MCPResult<BaseOutput & { scratchpad: ScratchpadItem[] }>> {
+    return this.scratchpadManager.readScratchpad(ids, tags);
+  }
+
+  async clearScratchpad(
+    id: number,
+  ): Promise<MCPResult<BaseOutput & { scratchpad: ScratchpadItem[] }>> {
+    return this.scratchpadManager.clearScratchpad(id);
   }
 
   async clear(): Promise<MCPResult<BaseOutput>> {
@@ -123,19 +136,6 @@ export class PersistentState {
     return this.todoManager.getTodos();
   }
 
-  async addScratchpad(
-    note: string,
-    source?: string,
-  ): Promise<MCPResult<BaseOutput & { scratchpad: ScratchpadItem[] }>> {
-    return this.scratchpadManager.addScratchpad(note, source);
-  }
-
-  async clearScratchpad(
-    id: number,
-  ): Promise<MCPResult<BaseOutput & { scratchpad: ScratchpadItem[] }>> {
-    return this.scratchpadManager.clearScratchpad(id);
-  }
-
   async getScratchpadList(): Promise<ScratchpadItem[]> {
     return this.scratchpadManager.getScratchpadList();
   }
@@ -152,6 +152,10 @@ export class PersistentState {
     input: unknown,
   ): MCPResult<Record<string, unknown>> {
     return this.thinkingManager.processCritiqueAndReflection(input);
+  }
+
+  processPauseAndThink(input: unknown): MCPResult<Record<string, unknown>> {
+    return this.thinkingManager.processPauseAndThink(input);
   }
 }
 
@@ -224,27 +228,18 @@ export class SessionStateManager {
   }
 
   async addTodo(
-    name: string,
+    title: string,
+    description?: string,
     priority?: 'low' | 'medium' | 'high',
-    dependsOn?: number[],
   ): Promise<MCPResult<AddToDoOutput>> {
-    return this.getCurrentState().addTodo(name, priority, dependsOn);
+    return this.getCurrentState().addTodo(title, description, priority);
   }
 
-  async updateTodo(
-    params: { id?: number; index?: number },
-    updates: {
-      name?: string;
-      status?: 'pending' | 'completed' | 'blocked';
-      priority?: 'low' | 'medium' | 'high';
-      dependsOn?: number[];
-    },
-  ): Promise<MCPResult<unknown>> {
-    return this.getCurrentState().updateTodo(params, updates);
-  }
-
-  async clearTodos(ids?: number[]): Promise<MCPResult<BaseOutput>> {
-    return this.getCurrentState().clearTodos(ids);
+  async clearTodos(
+    ids?: number[],
+    indices?: number[],
+  ): Promise<MCPResult<BaseOutput>> {
+    return this.getCurrentState().clearTodos(ids, indices);
   }
 
   async clear(): Promise<MCPResult<BaseOutput>> {
@@ -262,8 +257,17 @@ export class SessionStateManager {
   async addScratchpad(
     note: string,
     source?: string,
+    title?: string,
+    tags?: string[],
   ): Promise<MCPResult<BaseOutput & { scratchpad: ScratchpadItem[] }>> {
-    return this.getCurrentState().addScratchpad(note, source);
+    return this.getCurrentState().addScratchpad(note, source, title, tags);
+  }
+
+  async readScratchpad(
+    ids?: number[],
+    tags?: string[],
+  ): Promise<MCPResult<BaseOutput & { scratchpad: ScratchpadItem[] }>> {
+    return this.getCurrentState().readScratchpad(ids, tags);
   }
 
   async clearScratchpad(
@@ -290,12 +294,16 @@ export class SessionStateManager {
     return this.getCurrentState().processCritiqueAndReflection(input);
   }
 
+  processPauseAndThink(input: unknown): MCPResult<Record<string, unknown>> {
+    return this.getCurrentState().processPauseAndThink(input);
+  }
+
   async checkTodo(
     params: { id?: number; index?: number },
-    check: boolean = true,
+    checked: boolean = true,
     summary?: string,
   ): Promise<MCPResult<unknown>> {
-    return this.getCurrentState().checkTodo(params, check, summary);
+    return this.getCurrentState().checkTodo(params, checked, summary);
   }
 
   clearAllSessions(): void {

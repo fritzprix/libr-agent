@@ -26,7 +26,7 @@ export const uiToolsSchema: MCPTool[] = [
   // Now simplified to direct resumeInstruction parameter for both tools.
   // Callers should pass resumeInstruction directly instead of wrapping in context object.
   {
-    name: 'prompt_user',
+    name: 'promptUser',
     description:
       'Display an interactive prompt to the user (text input, select, or multiselect). Use this to gather user input interactively.',
     inputSchema: {
@@ -52,7 +52,7 @@ export const uiToolsSchema: MCPTool[] = [
     },
   },
   {
-    name: 'reply_prompt',
+    name: 'replyPrompt',
     description:
       'Receive user response from prompt UI (automatically called by UI action)',
     inputSchema: {
@@ -76,7 +76,7 @@ export const uiToolsSchema: MCPTool[] = [
     },
   },
   {
-    name: 'visualize_data',
+    name: 'visualizeData',
     description:
       'Create a simple data visualization (bar or line chart). Useful for presenting numeric data in a visual format. Maximum 20 data points recommended for readability.',
     inputSchema: {
@@ -118,7 +118,7 @@ export const uiToolsSchema: MCPTool[] = [
     },
   },
   {
-    name: 'wait_for_user_resume',
+    name: 'waitForUserResume',
     description:
       'Display wait UI with continue button for long operations, especially useful when repetitive polling is needed',
     inputSchema: {
@@ -137,7 +137,7 @@ export const uiToolsSchema: MCPTool[] = [
     },
   },
   {
-    name: 'resume_from_wait',
+    name: 'resumeFromWait',
     description: 'Resume from wait (called by UI button click)',
     inputSchema: {
       type: 'object',
@@ -156,6 +156,47 @@ export const uiToolsSchema: MCPTool[] = [
         },
       },
       required: ['resumeInstruction', 'startedAt'],
+    },
+  },
+  {
+    name: 'circuitBreak',
+    description:
+      'System tool: Displays circuit breaker warning when repetitive calls detected. (Internal use only)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        toolName: {
+          type: 'string',
+          description: 'Name of the tool that triggered the circuit breaker',
+        },
+        repetitionCount: {
+          type: 'number',
+          description: 'Number of consecutive repetitions detected',
+        },
+        args: {
+          type: 'string',
+          description: 'Arguments that were being repeated',
+        },
+      },
+      required: ['toolName', 'repetitionCount'],
+    },
+  },
+  {
+    name: 'resumeCircuitBreak',
+    description: 'Resume execution after circuit breaker (called by UI button)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        toolName: {
+          type: 'string',
+          description: 'Name of the tool that triggered the circuit breaker',
+        },
+        repetitionCount: {
+          type: 'number',
+          description: 'Number of times the tool was repeated',
+        },
+      },
+      required: ['toolName', 'repetitionCount'],
     },
   },
 ];

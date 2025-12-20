@@ -7,6 +7,10 @@ import type { WebMCPServerProxy } from '@/context/WebMCPContext';
 import type { ServiceContext, ServiceContextOptions } from '@/features/tools';
 import { planningTools as tools } from './tools.ts';
 import { SessionStateManager } from './state';
+import {
+  resolveToolName,
+  logDeprecationWarning,
+} from '@/lib/web-mcp/tool-name-migration';
 import type {
   PlanningState,
   CreateGoalOutput,
@@ -26,7 +30,15 @@ const planningServer: WebMCPServer = {
   version: '2.2.0',
   tools,
   async callTool(name: string, args: unknown): Promise<MCPResult<unknown>> {
-    console.log(`[PlanningServer] callTool invoked: ${name}`, {
+    // Handle tool name migration (backwards compatibility)
+    const { resolvedName, isDeprecated } = resolveToolName(name);
+
+    if (isDeprecated) {
+      logDeprecationWarning(name, resolvedName);
+    }
+
+    console.log(`[PlanningServer] callTool invoked: ${resolvedName}`, {
+      originalName: name !== resolvedName ? name : undefined,
       args,
       currentSessionId: stateManager.getCurrentSessionId(),
       currentThreadId: stateManager.getCurrentThreadId(),
@@ -48,77 +60,34 @@ const planningServer: WebMCPServer = {
         )}") - ignored. Use switchContext/setContext to change threads.`,
       );
     }
-    switch (name) {
-      case 'create_goal': {
+    switch (resolvedName) {
+      case 'createGoal': {
         return await stateManager.createGoal(typedArgs.goal as string);
       }
-      case 'update_goal': {
+      case 'updateGoal': {
         return await stateManager.updateGoal(typedArgs.goal as string);
       }
-      case 'clear_goal': {
+      case 'clearGoal': {
         return await stateManager.clearGoal();
       }
-      case 'add_todo': {
-        if (!typedArgs.name || typeof typedArgs.name !== 'string') {
+      case 'addTodo': {
+        if (!typedArgs.title || typeof typedArgs.title !== 'string') {
           return createMCPErrorToolResult(
-            'The "name" argument is required and must be a string.',
+            'The "title" argument is required and must be a string.',
           );
         }
         return await stateManager.addTodo(
-          typedArgs.name as string,
+          typedArgs.title as string,
+          typedArgs.description as string | undefined,
           typedArgs.priority as 'low' | 'medium' | 'high' | undefined,
-          typedArgs.dependsOn as number[] | undefined,
         );
       }
-      case 'update_todo': {
+      case 'checkTodo': {
         const id = typedArgs.id as number | undefined;
         const index = typedArgs.index as number | undefined;
-
-        // Validate that at least one identifier is provided
-        if (id === undefined && index === undefined) {
-          return createMCPErrorToolResult(
-            'Either "id" or "index" must be provided.',
-          );
-        }
-
-        // Validate id if provided
-        if (id !== undefined && (!Number.isInteger(id) || id < 1)) {
-          return createMCPErrorToolResult(
-            `Invalid id: ${id}. ID must be a positive integer.`,
-          );
-        }
-
-        // Validate index if provided
-        if (index !== undefined && (!Number.isInteger(index) || index < 0)) {
-          return createMCPErrorToolResult(
-            `Invalid index: ${index}. Index must be a non-negative integer.`,
-          );
-        }
-
-        return await stateManager.updateTodo(
-          { id, index },
-          {
-            name: typedArgs.name as string | undefined,
-            status: typedArgs.status as
-              | 'pending'
-              | 'completed'
-              | 'blocked'
-              | undefined,
-            priority: typedArgs.priority as
-              | 'low'
-              | 'medium'
-              | 'high'
-              | undefined,
-            dependsOn: typedArgs.dependsOn as number[] | undefined,
-          },
-        );
-      }
-      case 'mark_todo': {
-        const id = typedArgs.id as number | undefined;
-        const index = typedArgs.index as number | undefined;
-        const completed =
-          typedArgs.completed !== undefined
-            ? (typedArgs.completed as boolean)
+        const checked =
+          typedArgs.checked !== undefined
+            ? (typedArgs.checked as boolean)
             : true;
         const summary = typedArgs.summary as string | undefined;
 
@@ -143,21 +112,30 @@ const planningServer: WebMCPServer = {
           );
         }
 
-        return await stateManager.checkTodo({ id, index }, completed, summary);
+        return await stateManager.checkTodo({ id, index }, checked, summary);
       }
-      case 'clear_todos': {
+      case 'clearTodos': {
         const ids = typedArgs.ids as number[] | undefined;
-        return await stateManager.clearTodos(ids);
+        const indices = typedArgs.indices as number[] | undefined;
+        return await stateManager.clearTodos(ids, indices);
       }
-      case 'clear_session':
+      case 'clearSession':
         return await stateManager.clear();
-      case 'add_scratchpad': {
+      case 'addScratchpad': {
         return await stateManager.addScratchpad(
           typedArgs.note as string,
           typedArgs.source as string | undefined,
+          typedArgs.title as string | undefined,
+          typedArgs.tags as string[] | undefined,
         );
       }
-      case 'clear_scratchpad': {
+      case 'readScratchpad': {
+        return await stateManager.readScratchpad(
+          typedArgs.ids as number[] | undefined,
+          typedArgs.tags as string[] | undefined,
+        );
+      }
+      case 'clearScratchpad': {
         const id = typedArgs.id as number;
         if (!Number.isInteger(id) || id < 0) {
           return createMCPErrorToolResult(
@@ -166,14 +144,17 @@ const planningServer: WebMCPServer = {
         }
         return await stateManager.clearScratchpad(id);
       }
+      case 'pauseAndThink': {
+        return stateManager.processPauseAndThink(typedArgs);
+      }
       case 'sequentialthinking': {
         return stateManager.processThought(typedArgs);
       }
       case 'critiqueAndReflection': {
         return stateManager.processCritiqueAndReflection(typedArgs);
       }
-      case 'get_current_state': {
-        const includeCompleted = typedArgs.include_completed !== false; // Default true
+      case 'getCurrentState': {
+        const includeChecked = typedArgs.include_checked !== false; // Default true
         const includeScratchpad = typedArgs.include_scratchpad !== false; // Default true
         const state = await stateManager.getStateForSession(
           stateManager.getCurrentSessionId() || 'default',
@@ -187,9 +168,9 @@ const planningServer: WebMCPServer = {
         }
 
         const { goal, todos, scratchpad } = state;
-        const filteredTodos = includeCompleted
+        const filteredTodos = includeChecked
           ? todos
-          : todos.filter((t) => t.status === 'pending');
+          : todos.filter((t) => !t.checked);
 
         // Pagination logic for todos (optional, keeping simple for now)
         const limit = 50;
@@ -199,17 +180,11 @@ const planningServer: WebMCPServer = {
         const todosText = paginatedTodos.length
           ? paginatedTodos
               .map((t) => {
-                let checkbox = '[ ]';
-                if (t.status === 'completed') checkbox = '[x]';
-                else if (t.status === 'blocked') checkbox = '[!]';
+                const checkbox = t.checked ? '[x]' : '[ ]';
 
                 const summaryPart = t.summary ? ` - ${t.summary}` : '';
                 const priorityPart = t.priority ? ` [${t.priority}]` : '';
-                const dependsPart =
-                  t.dependsOn && t.dependsOn.length > 0
-                    ? ` (depends on: ${t.dependsOn.join(', ')})`
-                    : '';
-                return `- ID:${t.id} ${checkbox} ${t.name}${priorityPart}${summaryPart}${dependsPart}`;
+                return `- ID:${t.id} ${checkbox} ${t.title}${priorityPart}${summaryPart}`;
               })
               .join('\n')
           : '(none)';
@@ -218,8 +193,17 @@ const planningServer: WebMCPServer = {
           includeScratchpad && scratchpad.length > 0
             ? scratchpad
                 .map((m) => {
-                  const sourcePart = m.source ? ` (source: ${m.source})` : '';
-                  return `- [ID: ${m.id}] ${m.content}${sourcePart}`;
+                  const titlePart = m.title ? ` [${m.title}]` : '';
+                  const tagsPart =
+                    Array.isArray(m.tags) && m.tags.length > 0
+                      ? ` (tags: ${m.tags.join(', ')})`
+                      : '';
+                  const contentPreview = m.title
+                    ? ''
+                    : ` ${m.content.slice(0, 50)}${
+                        m.content.length > 50 ? '...' : ''
+                      }`;
+                  return `- [ID: ${m.id}]${titlePart}${contentPreview}${tagsPart}`;
                 })
                 .join('\n')
             : '(none)';
@@ -230,8 +214,8 @@ const planningServer: WebMCPServer = {
 
 **Summary**
 - Total Todos: ${todos.length}
-  - Pending: ${todos.filter((t) => t.status === 'pending').length}
-  - Completed: ${todos.filter((t) => t.status === 'completed').length}
+  - Unchecked: ${todos.filter((t) => !t.checked).length}
+  - Checked: ${todos.filter((t) => t.checked).length}
 - Scratchpad Items: ${scratchpad.length}
 
 **Goal**
@@ -283,26 +267,105 @@ ${scratchpadText}`;
     }
 
     const { goal, todos, scratchpad } = state;
-    const pendingTodos = todos.filter((t) => t.status === 'pending');
+    const uncheckedTodos = todos.filter((t) => !t.checked);
+    const checkedTodos = todos.filter((t) => t.checked);
 
-    const contextParts = [];
+    const contextParts = ['## Planning'];
+
+    // Goal section - always show, with guidance if not set
     if (goal) {
-      contextParts.push(`Current Goal: "${goal}"`);
+      contextParts.push(`\n**Current Goal:** "${goal}"`);
+      contextParts.push('*Goal is active. Track progress with todos below.*');
+    } else {
+      contextParts.push('\n**No Goal Set**');
+      contextParts.push(
+        '*Consider using createGoal to establish a clear objective for this planning session.*',
+      );
     }
-    if (pendingTodos.length > 0) {
-      contextParts.push(`Pending Todos (${pendingTodos.length}):`);
-      pendingTodos.slice(0, 5).forEach((t) => {
-        contextParts.push(`- [ ] ${t.name}`);
-      });
-      if (pendingTodos.length > 5) {
-        contextParts.push(`...and ${pendingTodos.length - 5} more`);
+
+    // Todos section with clear structure
+    if (todos.length > 0) {
+      contextParts.push(
+        `\n**Todos:** ${uncheckedTodos.length} unchecked / ${checkedTodos.length} checked (${todos.length} total)`,
+      );
+
+      if (uncheckedTodos.length > 0) {
+        contextParts.push('\n**Unchecked Items:**');
+        uncheckedTodos.slice(0, 5).forEach((t, idx) => {
+          // Format: [Index] ID:xxx | Title | Priority | Description
+          const priority = t.priority
+            ? `Priority:${t.priority}`
+            : 'Priority:none';
+          const description = t.description
+            ? `\n     ${t.description.slice(0, 80)}${t.description.length > 80 ? '...' : ''}`
+            : '';
+
+          contextParts.push(
+            `  [${idx}] ID:${t.id} | ${t.title} | ${priority}${description}`,
+          );
+        });
+
+        if (uncheckedTodos.length > 5) {
+          contextParts.push(
+            `  ...and ${uncheckedTodos.length - 5} more (use listTodos to see all)`,
+          );
+        }
+
+        contextParts.push(
+          '\n*Use Index or ID when calling checkTodo/updateTodo*',
+        );
+      }
+
+      // Show completed todos for work trace awareness
+      if (checkedTodos.length > 0) {
+        contextParts.push('\n**Checked Items (Completed):**');
+
+        // Show last 3 completed todos (most recent work)
+        const recentCompleted = checkedTodos.slice(-3).reverse();
+        recentCompleted.forEach((t) => {
+          const priority = t.priority ? `[${t.priority}]` : '';
+          const summary = t.summary
+            ? ` → ${t.summary.slice(0, 60)}${t.summary.length > 60 ? '...' : ''}`
+            : '';
+
+          contextParts.push(
+            `  [✓] ID:${t.id} | ${t.title} ${priority}${summary}`,
+          );
+        });
+
+        if (checkedTodos.length > 3) {
+          contextParts.push(
+            `  ...and ${checkedTodos.length - 3} more completed`,
+          );
+        }
       }
     }
+
+    // Scratchpad section with improved formatting
     if (scratchpad.length > 0) {
-      contextParts.push(`Scratchpad (${scratchpad.length}):`);
-      scratchpad.slice(0, 3).forEach((m) => {
-        contextParts.push(`- ${m.content}`);
+      contextParts.push(`\n**Scratchpad:** ${scratchpad.length} items`);
+      contextParts.push(''); // Empty line for readability
+
+      scratchpad.slice(0, 5).forEach((m, idx) => {
+        const titlePart = m.title ? `**${m.title}**` : '';
+        const tagsPart =
+          Array.isArray(m.tags) && m.tags.length > 0
+            ? ` [${m.tags.join('] [')}]`
+            : '';
+        const contentPreview = m.title
+          ? ` - ${m.content.slice(0, 50)}${m.content.length > 50 ? '...' : ''}`
+          : m.content.slice(0, 60) + (m.content.length > 60 ? '...' : '');
+
+        contextParts.push(
+          `  ${idx + 1}. **ID:${m.id}** ${titlePart}${contentPreview}${tagsPart}`,
+        );
       });
+
+      if (scratchpad.length > 5) {
+        contextParts.push(
+          `  ...and ${scratchpad.length - 5} more items. Use readScratchpad to view all.`,
+        );
+      }
     }
 
     return {
@@ -322,35 +385,40 @@ ${scratchpadText}`;
 };
 
 export interface PlanningServerProxy extends WebMCPServerProxy {
-  create_goal(args: { goal: string }): Promise<MCPResult<CreateGoalOutput>>;
-  update_goal(args: { goal: string }): Promise<MCPResult<CreateGoalOutput>>;
-  clear_goal(): Promise<MCPResult<ClearGoalOutput>>;
-  add_todo(args: {
-    name: string;
+  createGoal(args: { goal: string }): Promise<MCPResult<CreateGoalOutput>>;
+  updateGoal(args: { goal: string }): Promise<MCPResult<CreateGoalOutput>>;
+  clearGoal(): Promise<MCPResult<ClearGoalOutput>>;
+  addTodo(args: {
+    title: string;
+    description?: string;
     priority?: 'low' | 'medium' | 'high';
-    dependsOn?: number[];
   }): Promise<MCPResult<AddToDoOutput>>;
-  update_todo(args: {
+  updateTodo(args: {
     id: number;
-    name?: string;
+    title?: string;
     status?: 'pending' | 'completed' | 'blocked';
     priority?: 'low' | 'medium' | 'high';
-    dependsOn?: number[];
   }): Promise<MCPResult<CheckTodoOutput>>;
-  mark_todo(args: {
+  markTodo(args: {
     id: number;
     completed?: boolean;
     summary?: string;
   }): Promise<MCPResult<CheckTodoOutput>>;
-  clear_todos(args: { ids?: number[] }): Promise<MCPResult<BaseOutput>>;
-  clear_session(): Promise<MCPResult<BaseOutput>>;
-  add_scratchpad(args: {
+  clearTodos(args: { ids?: number[] }): Promise<MCPResult<BaseOutput>>;
+  clearSession(): Promise<MCPResult<BaseOutput>>;
+  addScratchpad(args: {
     note: string;
+    title?: string;
+    tags?: string[];
   }): Promise<MCPResult<BaseOutput & { scratchpad: ScratchpadItem[] }>>;
-  clear_scratchpad(args: {
+  readScratchpad(args: {
+    ids?: number[];
+    tags?: string[];
+  }): Promise<MCPResult<BaseOutput & { scratchpad: ScratchpadItem[] }>>;
+  clearScratchpad(args: {
     id: number;
   }): Promise<MCPResult<BaseOutput & { scratchpad: ScratchpadItem[] }>>;
-  get_current_state(args: {
+  getCurrentState(args: {
     include_completed?: boolean;
     include_scratchpad?: boolean;
   }): Promise<MCPResult<unknown>>;

@@ -1,4 +1,3 @@
-import { pollScriptResult } from '@/lib/rust-backend-client';
 import { getLogger } from '@/lib/logger';
 import { createMCPTextResponse } from '@/lib/mcp-response-utils';
 import type { MCPResponse } from '@/lib/mcp-types';
@@ -213,40 +212,6 @@ export async function checkElementState(
       error: `Script execution failed: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
-}
-
-/**
- * Common polling function with timeout for script results
- */
-export async function pollWithTimeout(
-  requestId: string,
-  maxAttempts = 30,
-  interval = 100,
-): Promise<string | null> {
-  // Input validation
-  if (!requestId || typeof requestId !== 'string') {
-    throw new Error('Invalid requestId: must be a non-empty string');
-  }
-
-  let attempts = 0;
-
-  while (attempts < maxAttempts) {
-    try {
-      const result = await pollScriptResult(requestId);
-
-      if (result !== null) {
-        return result;
-      }
-    } catch (error) {
-      // Log error but continue polling
-      console.warn(`Poll attempt ${attempts + 1} failed:`, error);
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, interval));
-    attempts++;
-  }
-
-  return null;
 }
 
 /**

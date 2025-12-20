@@ -85,7 +85,7 @@ function Chat({ children }: ChatProps) {
         to: currentSessionId,
       });
 
-      planningServer.clear_session().catch((error: Error) => {
+      planningServer.clearSession().catch((error: Error) => {
         logger.error('Failed to clear planning session', { error });
         toast.error('플래닝 세션 클리어에 실패했습니다');
       });

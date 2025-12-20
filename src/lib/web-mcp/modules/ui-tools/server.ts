@@ -34,6 +34,7 @@ import textPromptTemplate from './templates/text-prompt.hbs?raw';
 import selectPromptTemplate from './templates/select-prompt.hbs?raw';
 import barChartTemplate from './templates/bar-chart.hbs?raw';
 import lineChartTemplate from './templates/line-chart.hbs?raw';
+import circuitBreakTemplate from './templates/circuit-break.hbs?raw';
 
 let nextMessageId = 1;
 
@@ -257,6 +258,29 @@ function buildLineChartHtml(
   });
 }
 
+/**
+ * Build circuit breaker HTML from template
+ * Note: Handlebars automatically escapes {{toolName}} and {{repetitionCount}}
+ */
+function buildCircuitBreakHtml(
+  toolName: string,
+  repetitionCount: number,
+  args: string,
+): string {
+  const context = { toolName, repetitionCount };
+  const serializedContext = JSON.stringify(context).replace(
+    /<\/(script)>/gi,
+    '\\u003C/$1',
+  );
+
+  return renderTemplate(circuitBreakTemplate, {
+    toolName,
+    repetitionCount,
+    args: args.substring(0, 200) + (args.length > 200 ? '...' : ''),
+    contextJson: serializedContext,
+  });
+}
+
 const uiTools: WebMCPServer = {
   name: 'ui',
   displayName: 'UI Tools',
@@ -269,7 +293,7 @@ const uiTools: WebMCPServer = {
 
     try {
       switch (name) {
-        case 'prompt_user': {
+        case 'promptUser': {
           // Clean up expired prompts before creating new one
           cleanupExpiredPrompts();
 
@@ -348,7 +372,7 @@ const uiTools: WebMCPServer = {
           });
         }
 
-        case 'reply_prompt': {
+        case 'replyPrompt': {
           const messageId = String(a.messageId || '');
           const answer = a.answer;
           const cancelled = Boolean(a.cancelled);
@@ -409,7 +433,7 @@ const uiTools: WebMCPServer = {
           );
         }
 
-        case 'visualize_data': {
+        case 'visualizeData': {
           const type = String(a.type || 'bar') as 'bar' | 'line';
           const data =
             (a.data as Array<{ label: string; value: number }>) || [];
@@ -500,7 +524,7 @@ const uiTools: WebMCPServer = {
           });
         }
 
-        case 'wait_for_user_resume': {
+        case 'waitForUserResume': {
           const message = String(a.message || '');
           const resumeInstruction = String(a.resumeInstruction || '');
 
@@ -540,7 +564,7 @@ const uiTools: WebMCPServer = {
           });
         }
 
-        case 'resume_from_wait': {
+        case 'resumeFromWait': {
           const resumeInstruction = String(a.resumeInstruction || '');
           const startedAt = String(a.startedAt || '');
 
@@ -583,6 +607,69 @@ const uiTools: WebMCPServer = {
             resumeInstruction,
             startedAt,
             resumedAt: resumedAt.toISOString(),
+          });
+        }
+
+        case 'circuitBreak': {
+          const toolName = String(a.toolName || '');
+          const repetitionCount = Number(a.repetitionCount || 0);
+          const args = String(a.args || '');
+
+          if (!toolName) {
+            return createMCPErrorToolResult('Tool name is required', {
+              tool: 'circuit_break',
+              missingParam: 'toolName',
+            });
+          }
+
+          // Generate HTML warning UI
+          const html = buildCircuitBreakHtml(toolName, repetitionCount, args);
+          const uiResource = createUiResourceFromHtml(
+            html,
+            `ui://circuit-break/${Date.now()}`,
+          );
+
+          const textContent: MCPContent = {
+            type: 'text',
+            text: `⚠️ Circuit Breaker Triggered\n\nThe tool "${toolName}" has been called ${repetitionCount} times consecutively with identical parameters.\n\nThis usually indicates the agent is stuck in a loop. Please review the situation and click Resume to continue.`,
+          } as MCPContent;
+
+          return createMCPMultipartToolResult([textContent, uiResource], {
+            toolName,
+            repetitionCount,
+            timestamp: new Date().toISOString(),
+          });
+        }
+
+        case 'resumeCircuitBreak': {
+          const toolName = String(a.toolName || '');
+          const repetitionCount = Number(a.repetitionCount || 0);
+
+          if (!toolName) {
+            return createMCPErrorToolResult('Tool name is required', {
+              tool: 'resume_circuit_break',
+              missingParam: 'toolName',
+            });
+          }
+
+          const text = [
+            `🔄 Execution Resumed by User`,
+            '',
+            `⚠️ IMPORTANT: You have called "${toolName}" ${repetitionCount} times with the same parameters.`,
+            '',
+            `This suggests your current approach is not working. Please:`,
+            `1. Analyze why the previous attempts failed`,
+            `2. Try a DIFFERENT approach or tool`,
+            `3. If the error persists, inform the user about the limitation`,
+            '',
+            `Do NOT repeat the same tool call again.`,
+          ].join('\n');
+
+          return createMCPStructuredToolResult(text, {
+            resumed: true,
+            toolName,
+            repetitionCount,
+            timestamp: new Date().toISOString(),
           });
         }
 

@@ -29,7 +29,9 @@ export class ScratchpadManager {
 
     return items.map((m) => ({
       id: m.id!,
+      title: m.title,
       content: m.content,
+      tags: m.tags,
       source: m.source,
     }));
   }
@@ -39,17 +41,23 @@ export class ScratchpadManager {
    *
    * @param note - The content of the scratchpad item
    * @param source - Optional source/origin of the note
+   * @param title - Optional title for the note
+   * @param tags - Optional tags for categorization
    * @returns MCPResult with updated scratchpad list and capacity warning if applicable
    */
   async addScratchpad(
     note: string,
     source?: string,
+    title?: string,
+    tags?: string[],
   ): Promise<MCPResult<BaseOutput & { scratchpad: ScratchpadItem[] }>> {
     await db.scratchpad.add({
       sessionId: this.sessionId,
       threadId: this.threadId,
       content: note,
       source,
+      title,
+      tags,
       createdAt: Date.now(),
     });
 
@@ -71,6 +79,9 @@ export class ScratchpadManager {
     const newItemId = updatedItems[updatedItems.length - 1].id;
 
     let message = `Scratchpad ID:${newItemId} added\n${capacityWarning}`;
+    if (title) {
+      message = `Scratchpad ID:${newItemId} [${title}] added\n${capacityWarning}`;
+    }
     if (source) {
       message += `\nSource: ${source}`;
     }
@@ -80,6 +91,77 @@ export class ScratchpadManager {
     >(message, {
       success: true,
       scratchpad: updatedItems,
+    });
+  }
+
+  /**
+   * Reads scratchpad items by IDs or tags.
+   *
+   * @param ids - List of IDs to read
+   * @param tags - List of tags to filter by
+   * @returns MCPResult with the requested scratchpad items
+   */
+  async readScratchpad(
+    ids?: number[],
+    tags?: string[],
+  ): Promise<MCPResult<BaseOutput & { scratchpad: ScratchpadItem[] }>> {
+    let items: ScratchpadItem[] = [];
+    const allItems = await this.getScratchpadList();
+
+    if (ids && ids.length > 0) {
+      items = allItems.filter((item) => ids.includes(item.id));
+    } else if (tags && tags.length > 0) {
+      items = allItems.filter(
+        (item) =>
+          Array.isArray(item.tags) &&
+          item.tags.some((tag) => tags.includes(tag)),
+      );
+    } else {
+      items = allItems;
+    }
+
+    // Format scratchpad items as readable text
+    if (items.length === 0) {
+      const filterDesc = ids
+        ? `IDs: ${ids.join(', ')}`
+        : tags
+          ? `tags: ${tags.join(', ')}`
+          : 'any criteria';
+      return createMCPStructuredToolResult(
+        `No scratchpad items found matching ${filterDesc}`,
+        {
+          success: false,
+          scratchpad: [],
+        },
+      );
+    }
+
+    const textParts: string[] = [
+      `Found ${items.length} scratchpad item(s):`,
+      '',
+    ];
+
+    items.forEach((item) => {
+      const header = item.title
+        ? `[${item.title}]`
+        : `Scratchpad ID:${item.id}`;
+      const tagsPart =
+        Array.isArray(item.tags) && item.tags.length > 0
+          ? ` (tags: ${item.tags.join(', ')})`
+          : '';
+      const sourcePart = item.source ? `\nSource: ${item.source}` : '';
+
+      textParts.push(`## ${header}${tagsPart}`);
+      if (sourcePart) {
+        textParts.push(sourcePart);
+      }
+      textParts.push(item.content);
+      textParts.push(''); // Blank line between items
+    });
+
+    return createMCPStructuredToolResult(textParts.join('\n'), {
+      success: true,
+      scratchpad: items,
     });
   }
 

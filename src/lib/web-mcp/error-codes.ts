@@ -46,6 +46,8 @@ export const WebMCPErrorCodes = {
     NO_GOAL: 'PLANNING.NO_GOAL',
     /** Duplicate todo content */
     DUPLICATE_TODO: 'PLANNING.DUPLICATE_TODO',
+    /** Empty or whitespace-only name for goal or todo */
+    EMPTY_NAME: 'PLANNING.EMPTY_NAME',
   },
 
   // ========== Knowledge Server Errors ==========

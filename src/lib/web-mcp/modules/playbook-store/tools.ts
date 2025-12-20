@@ -5,7 +5,7 @@ import type { MCPTool } from '@/lib/mcp-types';
 
 export const playbookTools: MCPTool[] = [
   {
-    name: 'create_playbook',
+    name: 'createPlaybook',
     description: 'Create a new playbook (workflow)',
     inputSchema: {
       type: 'object',
@@ -88,7 +88,7 @@ export const playbookTools: MCPTool[] = [
     },
   },
   {
-    name: 'select_playbook',
+    name: 'selectPlaybook',
     description:
       'Select a playbook by id and return detailed formatted text + agent prompt to execute it',
     inputSchema: {
@@ -100,7 +100,7 @@ export const playbookTools: MCPTool[] = [
     },
   },
   {
-    name: 'list_playbooks',
+    name: 'listPlaybooks',
     description:
       'List playbooks with optional paging (text-only, non-interrupting for agent autonomous use)',
     inputSchema: {
@@ -118,7 +118,7 @@ export const playbookTools: MCPTool[] = [
     },
   },
   {
-    name: 'show_playbooks',
+    name: 'showPlaybooks',
     description:
       'Display playbooks with interactive UI (includes HTML UI resource for frontend, pauses agent)',
     inputSchema: {
@@ -136,7 +136,7 @@ export const playbookTools: MCPTool[] = [
     },
   },
   {
-    name: 'get_playbook_page',
+    name: 'getPlaybookPage',
     description:
       'Navigate to a specific page of playbooks with interactive UI (for pagination buttons, pauses agent)',
     inputSchema: {
@@ -156,7 +156,7 @@ export const playbookTools: MCPTool[] = [
     },
   },
   {
-    name: 'delete_playbook',
+    name: 'deletePlaybook',
     description: 'Delete a playbook by id',
     inputSchema: {
       type: 'object',
@@ -165,7 +165,7 @@ export const playbookTools: MCPTool[] = [
     },
   },
   {
-    name: 'get_playbook',
+    name: 'getPlaybook',
     description:
       'Get detailed information for a single playbook by id (formatted text + structured)',
     inputSchema: {
@@ -177,7 +177,7 @@ export const playbookTools: MCPTool[] = [
     },
   },
   {
-    name: 'update_playbook',
+    name: 'updatePlaybook',
     description: 'Update a playbook by id',
     inputSchema: {
       type: 'object',

@@ -1,16 +1,24 @@
 /** Represents a single to-do item in the planning state. @internal */
 export interface SimpleTodo {
   id: number;
-  name: string;
-  status: 'pending' | 'completed' | 'blocked';
+  title: string;
+  description?: string;
+  checked: boolean;
   summary?: string;
   priority?: 'low' | 'medium' | 'high';
-  dependsOn?: number[];
+}
+
+/** Represents a todo with computed blocked/available status. @internal */
+export interface TodoWithComputedState extends SimpleTodo {
+  isBlocked: boolean;
+  canStart: boolean;
 }
 
 export interface ScratchpadItem {
   id: number;
+  title?: string;
   content: string;
+  tags?: string[];
   source?: string;
 }
 
@@ -38,6 +46,25 @@ export interface ReflectionData {
 }
 
 /**
+ * Input parameters for the pauseAndThink tool.
+ * @internal
+ */
+export interface PauseAndThinkInput {
+  thought: string;
+  nextAction?: string;
+}
+
+/**
+ * Output structure for pauseAndThink tool results.
+ * @internal
+ */
+export interface PauseAndThinkOutput {
+  thoughtNumber: number;
+  thoughtPreview: string;
+  previousThought?: string;
+}
+
+/**
  * Represents the entire state of the planning server.
  */
 export interface PlanningState {
@@ -60,7 +87,7 @@ export interface BaseOutput {
 }
 
 /**
- * The output for the `create_goal` tool call.
+ * The output for the `createGoal` tool call.
  * @internal
  */
 export interface CreateGoalOutput extends BaseOutput {
