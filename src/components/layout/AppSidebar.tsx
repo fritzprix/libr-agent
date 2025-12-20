@@ -1,5 +1,6 @@
 import {
   BrainCircuit,
+  Bug,
   History,
   MessageSquare,
   Settings,
@@ -128,6 +129,28 @@ export default function AppSidebar() {
                   >
                     <History size={16} />
                     <span>Search History</span>
+                  </SidebarMenuButton>
+                </Link>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        {/* Development Section */}
+        <SidebarGroup>
+          <SidebarGroupLabel className="text-sm font-semibold uppercase tracking-wide mb-2">
+            Development
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <Link to="/test/browser-deadlock">
+                  <SidebarMenuButton
+                    isActive={location.pathname === '/test/browser-deadlock'}
+                    tooltip="Browser Deadlock Test"
+                  >
+                    <Bug size={16} />
+                    <span>Browser Test</span>
                   </SidebarMenuButton>
                 </Link>
               </SidebarMenuItem>

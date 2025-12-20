@@ -18,6 +18,7 @@ export interface PlanningTodo {
   checked: boolean;
   summary?: string;
   priority?: 'low' | 'medium' | 'high';
+  parentId?: number;
   order: number;
   createdAt: number;
 }
@@ -91,6 +92,13 @@ export class PlanningDatabase extends Dexie {
           }
         }
       });
+
+    // Version 5: Add parentId for 1-level nesting support
+    this.version(5).stores({
+      goals: '++id, [sessionId+threadId], isActive',
+      todos: '++id, [sessionId+threadId], checked, parentId',
+      scratchpad: '++id, [sessionId+threadId], *tags',
+    });
   }
 }
 

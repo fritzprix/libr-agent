@@ -7,21 +7,22 @@ interface LegacyTodo extends PlanningTodo {
 
 /**
  * Resolves a todo ID from either an explicit id or an index parameter.
- * When an index is provided, it looks up the todo at that position (0-based).
+ * When an index is provided, it looks up the todo at that position (0-based) in the top-level list.
  * When an id is provided, it returns that id directly.
+ * Returns hierarchical todos with subtasks nested.
  *
  * @param sessionId - The session ID for scoping the query
  * @param threadId - The thread ID for scoping the query
  * @param params - Object containing either 'id' or 'index'
- * @returns Object containing the resolved todo ID (or undefined if not found) and the full todos list
+ * @returns Object containing the resolved todo ID (or undefined if not found) and the full todos list with hierarchy
  *
  * @example
  * ```typescript
- * // Resolve by index
+ * // Resolve by index (top-level only)
  * const result = await resolveTodoId('session1', 'thread1', { index: 0 });
- * // result.id will be the ID of the first todo
+ * // result.id will be the ID of the first top-level todo
  *
- * // Resolve by ID
+ * // Resolve by ID (can be parent or child)
  * const result = await resolveTodoId('session1', 'thread1', { id: 42 });
  * // result.id will be 42
  * ```
@@ -33,7 +34,7 @@ export async function resolveTodoId(
 ): Promise<{ id: number | undefined; todos: SimpleTodo[] }> {
   const todos = await db.todos.where({ sessionId, threadId }).sortBy('order');
 
-  const simpleTodos: SimpleTodo[] = todos.map((t) => ({
+  const allTodos: SimpleTodo[] = todos.map((t) => ({
     id: t.id!,
     title:
       typeof t.title === 'string' && t.title
@@ -43,18 +44,32 @@ export async function resolveTodoId(
     checked: t.checked,
     summary: t.summary,
     priority: t.priority,
+    parentId: t.parentId,
+  }));
+
+  // Build hierarchy
+  const topLevel = allTodos.filter((t) => !t.parentId);
+  const children = allTodos.filter((t) => t.parentId);
+
+  const hierarchicalTodos: SimpleTodo[] = topLevel.map((parent) => ({
+    ...parent,
+    subtasks: children.filter((c) => c.parentId === parent.id),
   }));
 
   if (params.id !== undefined) {
-    return { id: params.id, todos: simpleTodos };
+    return { id: params.id, todos: hierarchicalTodos };
   }
 
   if (params.index !== undefined) {
-    if (params.index >= 0 && params.index < simpleTodos.length) {
-      return { id: simpleTodos[params.index].id, todos: simpleTodos };
+    // Index refers to top-level todos only
+    if (params.index >= 0 && params.index < hierarchicalTodos.length) {
+      return {
+        id: hierarchicalTodos[params.index].id,
+        todos: hierarchicalTodos,
+      };
     }
-    return { id: undefined, todos: simpleTodos };
+    return { id: undefined, todos: hierarchicalTodos };
   }
 
-  return { id: undefined, todos: simpleTodos };
+  return { id: undefined, todos: hierarchicalTodos };
 }

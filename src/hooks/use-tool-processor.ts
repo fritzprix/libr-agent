@@ -107,7 +107,7 @@ export const useToolProcessor = ({ submit }: UseToolProcessorConfig) => {
               const circuitBreakCall = {
                 ...toolCall,
                 function: {
-                  name: 'builtin_ui__circuit_break',
+                  name: 'builtin_ui__circuitBreak',
                   arguments: JSON.stringify({
                     toolName,
                     repetitionCount: toolHistoryRef.current?.count,
@@ -154,19 +154,6 @@ export const useToolProcessor = ({ submit }: UseToolProcessorConfig) => {
             const finalMcpResponse = mcpResponse;
             const executionTime = Date.now() - executionStartTime;
 
-            // Diagnostic logging for debugging readContent tool result loss
-            logger.info('Raw mcpResponse for tool', {
-              toolCallId: toolCall.id,
-              toolName,
-              hasResult: !!finalMcpResponse.result,
-              hasError: !!finalMcpResponse.error,
-              contentCount: finalMcpResponse.result?.content?.length || 0,
-              contentTypes:
-                finalMcpResponse.result?.content?.map(
-                  (c: MCPContent) => c.type,
-                ) || [],
-            });
-
             // Detect both protocol-level and tool execution errors
             const hasProtocolError = isMCPError(finalMcpResponse);
             const hasToolExecutionError =
@@ -185,9 +172,10 @@ export const useToolProcessor = ({ submit }: UseToolProcessorConfig) => {
               id: createId(),
               assistantId: currentAssistant?.id,
               role: 'tool',
-              content: hasAnyError
-                ? buildErrorContent(errorMessage)
-                : finalMcpResponse.result?.content || [],
+              // Preserve original content even for errors (don't replace)
+              content:
+                finalMcpResponse.result?.content ||
+                buildErrorContent(errorMessage),
               tool_call_id: toolCall.id,
               sessionId: currentSession?.id || '',
               threadId: currentSession?.id || '', // Default to top thread

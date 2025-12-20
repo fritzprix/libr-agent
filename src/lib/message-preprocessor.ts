@@ -71,11 +71,13 @@ To read the full content of this file, use:
 export async function prepareMessagesForLLM(
   messages: Message[],
 ): Promise<Message[]> {
-  // Filter out messages that contain errors (we don't want to send error logs to the LLM)
-  const validMessages = messages.filter((msg) => !msg.error);
-
+  // IMPORTANT: Do NOT filter out error messages!
+  // Tool execution errors (Message.error) contain valuable context for the LLM
+  // to understand what went wrong and how to recover.
+  // The error field is metadata; the content field contains the actual error message
+  // that should be sent to the LLM.
   const processedMessages = await Promise.all(
-    validMessages.map((message) => prepareMessageForLLM(message)),
+    messages.map((message) => prepareMessageForLLM(message)),
   );
 
   const attachmentCount = messages.reduce(
@@ -83,10 +85,13 @@ export async function prepareMessagesForLLM(
     0,
   );
 
-  if (attachmentCount > 0) {
-    logger.info('Processed messages with attachments', {
+  const errorMessageCount = messages.filter((msg) => !!msg.error).length;
+
+  if (attachmentCount > 0 || errorMessageCount > 0) {
+    logger.info('Processed messages for LLM', {
       totalMessages: messages.length,
       totalAttachments: attachmentCount,
+      errorMessages: errorMessageCount,
     });
   }
 
