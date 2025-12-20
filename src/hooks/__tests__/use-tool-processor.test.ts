@@ -84,7 +84,7 @@ describe('useToolProcessor Circuit Breaker', () => {
     // Verify circuit breaker was called on the 3rd call
     await waitFor(() => {
       const lastCall = mockExecuteToolCall.mock.calls[mockExecuteToolCall.mock.calls.length - 1];
-      expect(lastCall[0].function.name).toBe('builtin_ui__circuit_break');
+      expect(lastCall[0].function.name).toBe('builtin_ui__circuitBreak');
       expect(lastCall[0].function.arguments).toContain('test_tool');
     });
   });

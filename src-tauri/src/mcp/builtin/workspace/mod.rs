@@ -841,11 +841,11 @@ impl BuiltinMCPServer for WorkspaceServer {
         info!("Workspace tool called: {} with args: {:?}", tool_name, args);
         match tool_name {
             // File operation tools
-            "read_file" => self.handle_read_file(args).await,
-            "write_file" => self.handle_write_file(args).await,
-            "list_directory" => self.handle_list_directory(args).await,
-            "replace_lines_in_file" => self.handle_replace_lines_in_file(args).await,
-            "import_file" => self.handle_import_file(args).await,
+            "readFile" => self.handle_read_file(args).await,
+            "writeFile" => self.handle_write_file(args).await,
+            "listDirectory" => self.handle_list_directory(args).await,
+            "replaceLinesInFile" => self.handle_replace_lines_in_file(args).await,
+            "importFile" => self.handle_import_file(args).await,
             // Code execution tools
             // Note: Python/TypeScript execution were removed from the public tool
             // interface to avoid external runtime dependencies and to prevent
@@ -853,21 +853,38 @@ impl BuiltinMCPServer for WorkspaceServer {
             // execution remains exposed below.
             // Platform-specific shell execution tools
             #[cfg(unix)]
-            "execute_shell" => self.handle_execute_shell(args).await,
+            "executeShell" => self.handle_execute_shell(args).await,
             #[cfg(windows)]
-            "execute_windows_cmd" => self.handle_execute_shell(args).await,
+            "executeWindowsCmd" => self.handle_execute_shell(args).await,
             // Interactive shell execution (2nd tool for user input)
-            "execute_pending_shell" => self.handle_execute_pending_shell(args).await,
+            "executePendingShell" => self.handle_execute_pending_shell(args).await,
             // Cancel pending execution (UI callback tool)
-            "cancel_pending_execution" => self.handle_cancel_pending_execution(args).await,
+            "cancelPendingExecution" => self.handle_cancel_pending_execution(args).await,
             // Export tools
-            "export_file" => self.handle_export_file(args).await,
-            "export_zip" => self.handle_export_zip(args).await,
+            "exportFile" => self.handle_export_file(args).await,
+            "exportZip" => self.handle_export_zip(args).await,
             // Terminal/Process management tools
-            "poll_process" => self.handle_poll_process(args).await,
-            "read_process_output" => self.handle_read_process_output(args).await,
-            "list_processes" => self.handle_list_processes(args).await,
-            "stop_process" => self.handle_stop_process(args).await,
+            "pollProcess" => self.handle_poll_process(args).await,
+            "readProcessOutput" => self.handle_read_process_output(args).await,
+            "listProcesses" => self.handle_list_processes(args).await,
+            "stopProcess" => self.handle_stop_process(args).await,
+
+            // --- Error Hints for Common Mistakes ---
+            "read_file" | "readContent" => Ok(MCPResult::error(
+                "Tool not found. Did you mean 'readFile'? Please use the exact tool name 'readFile'."
+            )),
+            "write_file" | "writeContent" => Ok(MCPResult::error(
+                "Tool not found. Did you mean 'writeFile'? Please use the exact tool name 'writeFile'."
+            )),
+            "list_directory" | "ls" => Ok(MCPResult::error(
+                "Tool not found. Did you mean 'listDirectory'? Please use the exact tool name 'listDirectory'."
+            )),
+            "execute_shell" | "execute_command" => Ok(MCPResult::error(
+                "Tool not found. Did you mean 'executeShell'? Please use the exact tool name 'executeShell'."
+            )),
+            "execute_windows_cmd" => Ok(MCPResult::error(
+                "Tool not found. Did you mean 'executeWindowsCmd'? Please use the exact tool name 'executeWindowsCmd'."
+            )),
             _ => Err(format!("Tool '{tool_name}' not found")),
         }
     }

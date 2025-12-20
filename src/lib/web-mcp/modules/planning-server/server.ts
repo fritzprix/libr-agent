@@ -76,10 +76,22 @@ const planningServer: WebMCPServer = {
             'The "title" argument is required and must be a string.',
           );
         }
+
+        const parentId = typedArgs.parentId as number | undefined;
+        const subtasks = typedArgs.subtasks as
+          | Array<{
+              title: string;
+              description?: string;
+              priority?: 'low' | 'medium' | 'high';
+            }>
+          | undefined;
+
         return await stateManager.addTodo(
           typedArgs.title as string,
           typedArgs.description as string | undefined,
           typedArgs.priority as 'low' | 'medium' | 'high' | undefined,
+          parentId,
+          subtasks,
         );
       }
       case 'checkTodo': {
@@ -168,9 +180,12 @@ const planningServer: WebMCPServer = {
         }
 
         const { goal, todos, scratchpad } = state;
+
+        // Flatten todos to include subtasks
+        const allTodosFlat = todos.flatMap((t) => [t, ...(t.subtasks || [])]);
         const filteredTodos = includeChecked
-          ? todos
-          : todos.filter((t) => !t.checked);
+          ? allTodosFlat
+          : allTodosFlat.filter((t) => !t.checked);
 
         // Pagination logic for todos (optional, keeping simple for now)
         const limit = 50;
@@ -181,10 +196,10 @@ const planningServer: WebMCPServer = {
           ? paginatedTodos
               .map((t) => {
                 const checkbox = t.checked ? '[x]' : '[ ]';
-
+                const indent = t.parentId ? '  ' : '';
                 const summaryPart = t.summary ? ` - ${t.summary}` : '';
                 const priorityPart = t.priority ? ` [${t.priority}]` : '';
-                return `- ID:${t.id} ${checkbox} ${t.title}${priorityPart}${summaryPart}`;
+                return `${indent}- ID:${t.id} ${checkbox} ${t.title}${priorityPart}${summaryPart}`;
               })
               .join('\n')
           : '(none)';
@@ -213,9 +228,9 @@ const planningServer: WebMCPServer = {
         const outputText = `# Planning State
 
 **Summary**
-- Total Todos: ${todos.length}
-  - Unchecked: ${todos.filter((t) => !t.checked).length}
-  - Checked: ${todos.filter((t) => t.checked).length}
+- Total Todos: ${allTodosFlat.length} (${todos.length} top-level, ${allTodosFlat.length - todos.length} subtasks)
+  - Unchecked: ${allTodosFlat.filter((t) => !t.checked).length}
+  - Checked: ${allTodosFlat.filter((t) => t.checked).length}
 - Scratchpad Items: ${scratchpad.length}
 
 **Goal**

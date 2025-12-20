@@ -528,6 +528,11 @@ impl WorkspaceServer {
         input_type: &str,
         nonce: &str,
     ) -> String {
+        // Use constants to ensure tool names match definition
+        use crate::mcp::builtin::workspace::tools::code_tools::{
+            CANCEL_PENDING_EXECUTION, EXECUTE_PENDING_SHELL,
+        };
+
         format!(
             r#"<!DOCTYPE html>
 <html>
@@ -640,7 +645,7 @@ impl WorkspaceServer {
             {{
               type: 'tool',
               payload: {{
-                toolName: 'execute_pending_shell',
+                toolName: '{}',
                 params: {{
                   execution_id: executionId,
                   user_input: obfuscatedInput,
@@ -664,7 +669,7 @@ impl WorkspaceServer {
           {{
             type: 'tool',
             payload: {{
-              toolName: 'cancel_pending_execution',
+              toolName: '{}',
               params: {{
                 execution_id: executionId,
               }},
@@ -683,7 +688,9 @@ impl WorkspaceServer {
             input_type,
             input_type,
             execution_id,
-            nonce
+            nonce,
+            EXECUTE_PENDING_SHELL,
+            CANCEL_PENDING_EXECUTION
         )
     }
 }

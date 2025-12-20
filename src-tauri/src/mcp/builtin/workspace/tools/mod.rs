@@ -63,9 +63,9 @@ mod tests {
         let tool = &tools[0];
 
         #[cfg(unix)]
-        assert_eq!(tool.name, "execute_shell");
+        assert_eq!(tool.name, "executeShell");
 
         #[cfg(windows)]
-        assert_eq!(tool.name, "execute_windows_cmd");
+        assert_eq!(tool.name, "executeWindowsCmd");
     }
 }

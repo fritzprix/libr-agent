@@ -107,7 +107,7 @@ export const useToolProcessor = ({ submit }: UseToolProcessorConfig) => {
               const circuitBreakCall = {
                 ...toolCall,
                 function: {
-                  name: 'builtin_ui__circuit_break',
+                  name: 'builtin_ui__circuitBreak',
                   arguments: JSON.stringify({
                     toolName,
                     repetitionCount: toolHistoryRef.current?.count,

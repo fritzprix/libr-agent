@@ -7,7 +7,7 @@ pub fn create_poll_process_tool() -> MCPTool {
 
     props.insert(
         "processId".to_string(),
-        string_prop_required("Process ID returned by execute_shell (async mode)"),
+        string_prop_required("Process ID returned by executeShell (async mode)"),
     );
 
     // Optional tail parameter
@@ -41,7 +41,7 @@ pub fn create_poll_process_tool() -> MCPTool {
     );
 
     MCPTool {
-        name: "poll_process".to_string(),
+        name: "pollProcess".to_string(),
         title: Some("Poll Process Status".to_string()),
         description: "Check the status of an asynchronously running process. \
                       Optionally retrieve the last N lines of output (max 100 lines). \
@@ -84,7 +84,7 @@ pub fn create_read_process_output_tool() -> MCPTool {
     );
 
     MCPTool {
-        name: "read_process_output".to_string(),
+        name: "readProcessOutput".to_string(),
         title: Some("Read Process Output".to_string()),
         description: "Read stdout or stderr from a background process. \
                       TEXT OUTPUT ONLY. Maximum 100 lines per request. \
@@ -110,7 +110,7 @@ pub fn create_list_processes_tool() -> MCPTool {
     );
 
     MCPTool {
-        name: "list_processes".to_string(),
+        name: "listProcesses".to_string(),
         title: Some("List Processes".to_string()),
         description: "List all background processes in the current session. \
                       Filter by status: 'all' (default), 'running', or 'finished' (includes failed)."
@@ -131,7 +131,7 @@ pub fn create_stop_process_tool() -> MCPTool {
     );
 
     MCPTool {
-        name: "stop_process".to_string(),
+        name: "stopProcess".to_string(),
         title: Some("Stop Process".to_string()),
         description: "Stop a running background process. \
                       Sends a termination signal to the process."

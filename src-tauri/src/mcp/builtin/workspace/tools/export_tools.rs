@@ -25,7 +25,7 @@ pub fn create_export_file_tool() -> MCPTool {
     );
 
     MCPTool {
-        name: "export_file".to_string(),
+        name: "exportFile".to_string(),
         title: Some("Export Single File".to_string()),
         description: "Export a single file from workspace for download with interactive UI"
             .to_string(),
@@ -58,7 +58,7 @@ pub fn create_export_zip_tool() -> MCPTool {
     );
 
     MCPTool {
-        name: "export_zip".to_string(),
+        name: "exportZip".to_string(),
         title: Some("Export ZIP Package".to_string()),
         description: "Export multiple files as a ZIP package for download with interactive UI"
             .to_string(),
