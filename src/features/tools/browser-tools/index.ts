@@ -17,7 +17,6 @@ export { inputTextTool } from './InputTextTool';
 export { extractWebContentTool } from './ExtractContentTool';
 export { readWebContentTool } from './ReadContentTool';
 export { listInteractableTool } from './ListInteractableTool';
-export { listInteractableSmartTool } from './ListInteractableSmartTool';
 export { injectJavascriptTool } from './InjectJavascriptTool';
 
 // Types and helpers

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { listInteractableSmartTool } from '../ListInteractableSmartTool';
+import { listInteractableTool } from '../ListInteractableTool';
 
 // Mock logger
 vi.mock('@/lib/logger', () => ({
@@ -11,16 +11,16 @@ vi.mock('@/lib/logger', () => ({
   }),
 }));
 
-describe('ListInteractableSmartTool', () => {
+describe('ListInteractableTool', () => {
   it('should have correct tool name and schema', () => {
-    expect(listInteractableSmartTool.name).toBe('listInteractableSmart');
-    expect(listInteractableSmartTool.inputSchema.required).toContain(
+    expect(listInteractableTool.name).toBe('listInteractable');
+    expect(listInteractableTool.inputSchema.required).toContain(
       'sessionId',
     );
   });
 
   it('should return error when sessionId is missing', async () => {
-    const result = await listInteractableSmartTool.execute({}, undefined);
+    const result = await listInteractableTool.execute({}, undefined);
 
     expect(result).toHaveProperty('error');
     expect(result.error?.message).toContain('Invalid sessionId');
@@ -39,7 +39,7 @@ describe('ListInteractableSmartTool', () => {
       ]),
     );
 
-    const result = await listInteractableSmartTool.execute(
+    const result = await listInteractableTool.execute(
       {
         sessionId: 'test-session',
         filterType: 'semantic_clickable',
@@ -67,7 +67,7 @@ describe('ListInteractableSmartTool', () => {
   it('should handle empty results gracefully', async () => {
     const mockExecuteScript = vi.fn().mockResolvedValue(JSON.stringify([]));
 
-    const result = await listInteractableSmartTool.execute(
+    const result = await listInteractableTool.execute(
       { sessionId: 'test-session', filterType: 'semantic_input', scope: 'all' },
       mockExecuteScript,
     );
@@ -86,7 +86,7 @@ describe('ListInteractableSmartTool', () => {
   it('should use default values when parameters are missing', async () => {
     const mockExecuteScript = vi.fn().mockResolvedValue(JSON.stringify([]));
 
-    await listInteractableSmartTool.execute(
+    await listInteractableTool.execute(
       { sessionId: 'test-session' }, // No filterType or scope
       mockExecuteScript,
     );
@@ -99,7 +99,7 @@ describe('ListInteractableSmartTool', () => {
   it('should handle JSON parse errors', async () => {
     const mockExecuteScript = vi.fn().mockResolvedValue('invalid json{{{');
 
-    const result = await listInteractableSmartTool.execute(
+    const result = await listInteractableTool.execute(
       { sessionId: 'test-session' },
       mockExecuteScript,
     );
@@ -111,7 +111,7 @@ describe('ListInteractableSmartTool', () => {
   it('should validate filterType enum', async () => {
     const mockExecuteScript = vi.fn().mockResolvedValue(JSON.stringify([]));
 
-    await listInteractableSmartTool.execute(
+    await listInteractableTool.execute(
       {
         sessionId: 'test-session',
         filterType: 'invalid_type',
@@ -128,7 +128,7 @@ describe('ListInteractableSmartTool', () => {
   it('should validate scope enum', async () => {
     const mockExecuteScript = vi.fn().mockResolvedValue(JSON.stringify([]));
 
-    await listInteractableSmartTool.execute(
+    await listInteractableTool.execute(
       {
         sessionId: 'test-session',
         filterType: 'semantic_clickable',
@@ -146,21 +146,21 @@ describe('ListInteractableSmartTool', () => {
     const mockExecuteScript = vi.fn().mockResolvedValue(JSON.stringify([]));
 
     // Test semantic_clickable
-    await listInteractableSmartTool.execute(
+    await listInteractableTool.execute(
       { sessionId: 'test', filterType: 'semantic_clickable' },
       mockExecuteScript,
     );
     expect(mockExecuteScript.mock.calls[0][1]).toContain('semantic_clickable');
 
     // Test semantic_input
-    await listInteractableSmartTool.execute(
+    await listInteractableTool.execute(
       { sessionId: 'test', filterType: 'semantic_input' },
       mockExecuteScript,
     );
     expect(mockExecuteScript.mock.calls[1][1]).toContain('semantic_input');
 
     // Test all_focusable
-    await listInteractableSmartTool.execute(
+    await listInteractableTool.execute(
       { sessionId: 'test', filterType: 'all_focusable' },
       mockExecuteScript,
     );
@@ -171,14 +171,14 @@ describe('ListInteractableSmartTool', () => {
     const mockExecuteScript = vi.fn().mockResolvedValue(JSON.stringify([]));
 
     // Test viewport scope
-    await listInteractableSmartTool.execute(
+    await listInteractableTool.execute(
       { sessionId: 'test', scope: 'viewport' },
       mockExecuteScript,
     );
     expect(mockExecuteScript.mock.calls[0][1]).toContain("'viewport'");
 
     // Test all scope
-    await listInteractableSmartTool.execute(
+    await listInteractableTool.execute(
       { sessionId: 'test', scope: 'all' },
       mockExecuteScript,
     );
@@ -186,7 +186,7 @@ describe('ListInteractableSmartTool', () => {
   });
 
   it('should return error when executeScript is undefined', async () => {
-    const result = await listInteractableSmartTool.execute(
+    const result = await listInteractableTool.execute(
       { sessionId: 'test-session' },
       undefined,
     );
@@ -217,7 +217,7 @@ describe('ListInteractableSmartTool', () => {
       ]),
     );
 
-    const result = await listInteractableSmartTool.execute(
+    const result = await listInteractableTool.execute(
       { sessionId: 'test-session' },
       mockExecuteScript,
     );
