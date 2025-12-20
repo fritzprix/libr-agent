@@ -243,7 +243,7 @@ export const useAIService = (config?: AIServiceConfig) => {
         logger.info('Submitting messages to AI service', {
           model,
           systemPrompt: resolvedSystemPrompt,
-          messageCount: safeMessages.length, // Log the count of messages being sent
+          messageCount: safeMessages.length,
         });
 
         const stream = serviceInstance.streamChat(safeMessages, {
