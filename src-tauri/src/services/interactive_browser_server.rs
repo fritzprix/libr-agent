@@ -389,22 +389,16 @@ impl InteractiveBrowserServer {
             let execution_call = format!(
                 r#"
 (async function() {{
-    // Wait for runtime initialization (max 5s)
-    let retries = 50;
-    while (!window.__LIBR_AGENT__ && retries > 0) {{
-        await new Promise(r => setTimeout(r, 100));
-        retries--;
-    }}
-
+    // Check for runtime initialization
     if (!window.__LIBR_AGENT__) {{
-        console.error('[LibrAgent] Runtime not initialized after waiting');
+        console.error('[LibrAgent] Runtime not initialized');
         // Try to send error via raw Tauri invoke if possible
         if (window.__TAURI__) {{
              try {{
                 const payload = {{
                     sessionId: '{session_id}',
                     requestId: '{request_id}',
-                    result: 'Error: Runtime not initialized (timeout waiting for __LIBR_AGENT__)'
+                    result: 'Error: Runtime not initialized (window.__LIBR_AGENT__ missing)'
                 }};
                 await window.__TAURI__.core.invoke('browser_script_result', {{ payload }});
              }} catch (e) {{ console.error(e); }}

@@ -102,7 +102,7 @@ export const clickElementTool: StrictBrowserMCPTool = {
 
       if (result.status !== 'Clicked element') {
         return createMCPTextResponse(
-          `✗ Click failed: ${result.status} (selector: ${selector})`,
+          `✗ Click failed: ${result.status} (selector: ${selector})\n\nTip: If the element is difficult to click, try using 'extractWebContent' to analyze the page structure again, or use 'navigateToUrl' to go directly to the target page.`,
         );
       }
 
@@ -122,7 +122,9 @@ export const clickElementTool: StrictBrowserMCPTool = {
         // Auto detection
         if (result.isLink || result.isSubmit) {
           shouldWait = true;
-          detectionReason = result.isLink ? 'Link detected' : 'Submit button detected';
+          detectionReason = result.isLink
+            ? 'Link detected'
+            : 'Submit button detected';
         } else {
           detectionReason = 'No navigation element detected';
         }
@@ -179,12 +181,25 @@ export const clickElementTool: StrictBrowserMCPTool = {
       }
     } catch (error) {
       const failureCount = FailureTracker.recordFailure(sessionId);
-      return handleBrowserError(error, {
+      const errorResponse = handleBrowserError(error, {
         toolName: 'clickElement',
         sessionId,
         selector,
         failureCount,
       });
+
+      // Add guidance to the error message
+      if (
+        errorResponse.result &&
+        errorResponse.result.content &&
+        errorResponse.result.content[0] &&
+        errorResponse.result.content[0].type === 'text'
+      ) {
+        errorResponse.result.content[0].text +=
+          "\n\nTip: If the element is difficult to click, try using 'extractWebContent' to analyze the page structure again, or use 'navigateToUrl' to go directly to the target page.";
+      }
+
+      return errorResponse;
     }
   },
 };
