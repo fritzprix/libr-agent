@@ -67,7 +67,7 @@ pub fn create_execute_shell_tool() -> MCPTool {
     // always execute commands within the session workspace path.
 
     MCPTool {
-        name: "execute_shell".to_string(),
+        name: "executeShell".to_string(),
         title: Some("Execute Shell Command (bash/sh)".to_string()),
         description: "Execute a shell command using bash or sh.\n\n\
                       INTERACTIVE INPUT:\n\
@@ -150,7 +150,7 @@ pub fn create_execute_shell_tool() -> MCPTool {
     // always execute commands within the session workspace path.
 
     MCPTool {
-        name: "execute_windows_cmd".to_string(),
+        name: "executeWindowsCmd".to_string(),
         title: Some("Execute Windows Command (PowerShell)".to_string()),
         description: "Execute a command using Windows PowerShell.\n\n\
                       FEATURES:\n\
@@ -175,86 +175,97 @@ pub fn create_execute_shell_tool() -> MCPTool {
     }
 }
 
-/// Create execute_pending_shell tool (2nd tool in Two-Tool Pattern)
-/// This tool is called automatically by UIResource after user input
-pub fn create_execute_pending_shell_tool() -> MCPTool {
-    let mut props = HashMap::new();
+// Macro to unify tool constant definition and creation function
+macro_rules! define_mcp_tool {
+    (
+        const $const_name:ident = $tool_name:expr;
+        fn $fn_name:ident();
+        title: $title:expr;
+        description: $desc:expr;
+        inputs: $props_ident:ident => $props_block:block;
+        required: $required:expr;
+    ) => {
+        pub const $const_name: &str = $tool_name;
 
-    props.insert(
-        "executionId".to_string(),
-        string_prop(
-            None,
-            None,
-            Some("Execution ID returned from execute_shell with requireUserInput"),
-        ),
-    );
+        pub fn $fn_name() -> MCPTool {
+            let mut $props_ident = HashMap::new();
+            $props_block
 
-    props.insert(
-        "userInput".to_string(),
-        string_prop(
-            None,
-            None,
-            Some("User input (password or text) to inject into command stdin"),
-        ),
-    );
-
-    MCPTool {
-        name: "execute_pending_shell".to_string(),
-        title: Some("Execute Pending Shell Command".to_string()),
-        description: "Execute a pending shell command with user input.\n\n\
-                      This tool is called automatically by the UIResource after user input.\n\
-                      DO NOT call this tool directly - it is triggered by user interaction.\n\n\
-                      FLOW:\n\
-                      1. Agent calls execute_shell with requireUserInput: true\n\
-                      2. Agent receives UIResource with executionId\n\
-                      3. User enters input in UIResource\n\
-                      4. UIResource calls this tool with executionId and userInput\n\
-                      5. Agent receives final stdout/stderr result\n\n\
-                      SECURITY:\n\
-                      - userInput is passed through MCP but NOT logged in agent context\n\
-                      - Commands are sanitized before logging (-S flags removed)\n\
-                      - Passwords are cleared from memory immediately after use"
-            .to_string(),
-        input_schema: object_schema(
-            props,
-            vec!["executionId".to_string(), "userInput".to_string()],
-        ),
-        output_schema: None,
-        annotations: None,
-    }
+            MCPTool {
+                name: $const_name.to_string(),
+                title: Some($title.to_string()),
+                description: $desc.to_string(),
+                input_schema: object_schema($props_ident, $required),
+                output_schema: None,
+                annotations: None,
+            }
+        }
+    };
 }
 
-/// Create cancel_pending_execution tool
-/// This tool is called from UIResource when user cancels the operation
-pub fn create_cancel_pending_execution_tool() -> MCPTool {
-    let mut props = HashMap::new();
+define_mcp_tool! {
+    const EXECUTE_PENDING_SHELL = "executePendingShell";
+    fn create_execute_pending_shell_tool();
+    title: "Execute Pending Shell Command";
+    description: "Execute a pending shell command with user input.\n\n\
+                  This tool is called automatically by the UIResource after user input.\n\
+                  DO NOT call this tool directly - it is triggered by user interaction.\n\n\
+                  FLOW:\n\
+                  1. Agent calls executeShell with requireUserInput: true\n\
+                  2. Agent receives UIResource with executionId\n\
+                  3. User enters input in UIResource\n\
+                  4. UIResource calls this tool with executionId and userInput\n\
+                  5. Agent receives final stdout/stderr result\n\n\
+                  SECURITY:\n\
+                  - userInput is passed through MCP but NOT logged in agent context\n\
+                  - Commands are sanitized before logging (-S flags removed)\n\
+                  - Passwords are cleared from memory immediately after use";
+    inputs: props => {
+        props.insert(
+            "executionId".to_string(),
+            string_prop(
+                None,
+                None,
+                Some("Execution ID returned from executeShell with requireUserInput"),
+            ),
+        );
 
-    props.insert(
-        "executionId".to_string(),
-        string_prop(
-            None,
-            None,
-            Some("Execution ID of the pending shell command to cancel"),
-        ),
-    );
+        props.insert(
+            "userInput".to_string(),
+            string_prop(
+                None,
+                None,
+                Some("User input (password or text) to inject into command stdin"),
+            ),
+        );
+    };
+    required: vec!["executionId".to_string(), "userInput".to_string()];
+}
 
-    MCPTool {
-        name: "cancel_pending_execution".to_string(),
-        title: Some("Cancel Pending Execution".to_string()),
-        description: "Cancel a pending shell execution without executing it.\n\n\
-                      This tool is called automatically when user clicks Cancel in UIResource.\n\
-                      DO NOT call this tool directly - it is triggered by user interaction.\n\n\
-                      FLOW:\n\
-                      1. Agent calls execute_shell with requireUserInput: true\n\
-                      2. Agent receives UIResource with executionId\n\
-                      3. User clicks Cancel button in UIResource\n\
-                      4. UIResource calls this tool with executionId\n\
-                      5. Pending execution is removed from state"
-            .to_string(),
-        input_schema: object_schema(props, vec!["executionId".to_string()]),
-        output_schema: None,
-        annotations: None,
-    }
+define_mcp_tool! {
+    const CANCEL_PENDING_EXECUTION = "cancelPendingExecution";
+    fn create_cancel_pending_execution_tool();
+    title: "Cancel Pending Execution";
+    description: "Cancel a pending shell execution without executing it.\n\n\
+                  This tool is called automatically when user clicks Cancel in UIResource.\n\
+                  DO NOT call this tool directly - it is triggered by user interaction.\n\n\
+                  FLOW:\n\
+                  1. Agent calls executeShell with requireUserInput: true\n\
+                  2. Agent receives UIResource with executionId\n\
+                  3. User clicks Cancel button in UIResource\n\
+                  4. UIResource calls this tool with executionId\n\
+                  5. Pending execution is removed from state";
+    inputs: props => {
+        props.insert(
+            "executionId".to_string(),
+            string_prop(
+                None,
+                None,
+                Some("Execution ID of the pending shell command to cancel"),
+            ),
+        );
+    };
+    required: vec!["executionId".to_string()];
 }
 
 #[cfg(test)]
@@ -266,10 +277,10 @@ mod tests {
         let tool = create_execute_shell_tool();
 
         #[cfg(unix)]
-        assert_eq!(tool.name, "execute_shell");
+        assert_eq!(tool.name, "executeShell");
 
         #[cfg(windows)]
-        assert_eq!(tool.name, "execute_windows_cmd");
+        assert_eq!(tool.name, "executeWindowsCmd");
     }
 
     #[test]

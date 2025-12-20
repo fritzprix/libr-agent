@@ -33,7 +33,7 @@ pub fn create_read_file_tool() -> MCPTool {
     );
 
     MCPTool {
-        name: "read_file".to_string(),
+        name: "readFile".to_string(),
         title: Some("Read File".to_string()),
         description: "Read the contents of a file, optionally specifying line ranges".to_string(),
         input_schema: object_schema(props, vec!["path".to_string()]),
@@ -70,7 +70,7 @@ pub fn create_write_file_tool() -> MCPTool {
     );
 
     MCPTool {
-        name: "write_file".to_string(),
+        name: "writeFile".to_string(),
         title: Some("Write File".to_string()),
         description: "Write content to a file with optional append mode".to_string(),
         input_schema: object_schema(props, vec!["path".to_string(), "content".to_string()]),
@@ -91,7 +91,7 @@ pub fn create_list_directory_tool() -> MCPTool {
     );
 
     MCPTool {
-        name: "list_directory".to_string(),
+        name: "listDirectory".to_string(),
         title: Some("List Directory".to_string()),
         description: "List contents of a directory".to_string(),
         input_schema: object_schema(props, vec!["path".to_string()]),
@@ -120,7 +120,7 @@ pub fn create_import_file_tool() -> MCPTool {
     );
 
     MCPTool {
-        name: "import_file".to_string(),
+        name: "importFile".to_string(),
         title: Some("Import File".to_string()),
         description: "Import an external file into the workspace".to_string(),
         input_schema: object_schema(
@@ -188,7 +188,7 @@ pub fn create_replace_lines_in_file_tool() -> MCPTool {
     );
 
     MCPTool {
-        name: "replace_lines_in_file".to_string(),
+        name: "replaceLinesInFile".to_string(),
         title: Some("Replace Lines in File".to_string()),
         description: "Replace specific lines or line ranges in a file with new content. Use empty content string to delete lines.".to_string(),
         input_schema: object_schema(props, vec!["path".to_string(), "replacements".to_string()]),

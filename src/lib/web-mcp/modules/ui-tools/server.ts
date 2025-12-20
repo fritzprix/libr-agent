@@ -306,7 +306,7 @@ const uiTools: WebMCPServer = {
 
           if (!prompt) {
             return createMCPErrorToolResult('Prompt text is required', {
-              tool: 'prompt_user',
+              tool: 'promptUser',
               missingParam: 'prompt',
             });
           }
@@ -318,7 +318,7 @@ const uiTools: WebMCPServer = {
             return createMCPErrorToolResult(
               `Options are required for ${type} prompts`,
               {
-                tool: 'prompt_user',
+                tool: 'promptUser',
                 missingParam: 'options',
                 type,
               },
@@ -379,7 +379,7 @@ const uiTools: WebMCPServer = {
 
           if (!messageId) {
             return createMCPErrorToolResult('Message ID is required', {
-              tool: 'reply_prompt',
+              tool: 'replyPrompt',
               missingParam: 'messageId',
             });
           }
@@ -390,7 +390,7 @@ const uiTools: WebMCPServer = {
             return createMCPErrorToolResult(
               `Unknown prompt ID: ${messageId}. The prompt may have expired or already been answered.`,
               {
-                tool: 'reply_prompt',
+                tool: 'replyPrompt',
                 messageId,
               },
             );
@@ -443,7 +443,7 @@ const uiTools: WebMCPServer = {
             return createMCPErrorToolResult(
               'Data array is required and cannot be empty',
               {
-                tool: 'visualize_data',
+                tool: 'visualizeData',
                 missingParam: 'data',
               },
             );
@@ -462,7 +462,7 @@ const uiTools: WebMCPServer = {
               return createMCPErrorToolResult(
                 `Data item at index ${i} must have a non-empty "label" (string)`,
                 {
-                  tool: 'visualize_data',
+                  tool: 'visualizeData',
                   invalidData: item,
                   index: i,
                 },
@@ -474,7 +474,7 @@ const uiTools: WebMCPServer = {
               return createMCPErrorToolResult(
                 `Data item at index ${i} must have a "value" (number)`,
                 {
-                  tool: 'visualize_data',
+                  tool: 'visualizeData',
                   invalidData: item,
                   index: i,
                 },
@@ -485,7 +485,7 @@ const uiTools: WebMCPServer = {
               return createMCPErrorToolResult(
                 `Data item at index ${i} has invalid value: ${item.value}. Value must be finite (no NaN, Infinity, or -Infinity)`,
                 {
-                  tool: 'visualize_data',
+                  tool: 'visualizeData',
                   invalidData: item,
                   index: i,
                   value: item.value,
@@ -530,14 +530,14 @@ const uiTools: WebMCPServer = {
 
           if (!message) {
             return createMCPErrorToolResult('Message is required', {
-              tool: 'wait_for_user_resume',
+              tool: 'waitForUserResume',
               missingParam: 'message',
             });
           }
 
           if (!resumeInstruction) {
             return createMCPErrorToolResult('Resume instruction is required', {
-              tool: 'wait_for_user_resume',
+              tool: 'waitForUserResume',
               missingParam: 'resumeInstruction',
             });
           }
@@ -570,7 +570,7 @@ const uiTools: WebMCPServer = {
 
           if (!resumeInstruction) {
             return createMCPErrorToolResult('Resume instruction is required', {
-              tool: 'resume_from_wait',
+              tool: 'resumeFromWait',
               missingParam: 'resumeInstruction',
             });
           }
@@ -579,7 +579,7 @@ const uiTools: WebMCPServer = {
             return createMCPErrorToolResult(
               'Started at timestamp is required',
               {
-                tool: 'resume_from_wait',
+                tool: 'resumeFromWait',
                 missingParam: 'startedAt',
               },
             );
@@ -617,7 +617,7 @@ const uiTools: WebMCPServer = {
 
           if (!toolName) {
             return createMCPErrorToolResult('Tool name is required', {
-              tool: 'circuit_break',
+              tool: 'circuitBreak',
               missingParam: 'toolName',
             });
           }
@@ -647,7 +647,7 @@ const uiTools: WebMCPServer = {
 
           if (!toolName) {
             return createMCPErrorToolResult('Tool name is required', {
-              tool: 'resume_circuit_break',
+              tool: 'resumeCircuitBreak',
               missingParam: 'toolName',
             });
           }

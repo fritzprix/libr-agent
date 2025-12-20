@@ -494,7 +494,7 @@ impl WorkspaceServer {
 
         #[cfg(windows)]
         info!(
-            "execute_windows_cmd invoked: command='{}' run_mode='{}' require_input='{}' timeout={}",
+            "executeWindowsCmd invoked: command='{}' run_mode='{}' require_input='{}' timeout={}",
             raw_command, run_mode, require_input, timeout_secs
         );
         self.execute_shell_with_isolation(raw_command, isolation_level, timeout_secs)
