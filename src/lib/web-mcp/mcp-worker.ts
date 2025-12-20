@@ -338,7 +338,8 @@ async function handleMCPMessage(
           };
         }
         // Fallback for servers without getServiceContext
-        const context = `# MCP Server Context\nServer: ${serverName}\nStatus: Connected\nAvailable Tools: ${server.tools.length} tools`;
+        // Return empty context instead of generic placeholder
+        // Only servers with meaningful state should implement getServiceContext
         return {
           jsonrpc: '2.0',
           id,
@@ -346,11 +347,11 @@ async function handleMCPMessage(
             content: [
               {
                 type: 'text',
-                text: context,
+                text: '', // Empty - no context to provide
               },
             ],
             structuredContent: {
-              contextPrompt: context,
+              contextPrompt: '',
               structuredState: undefined,
             },
           },

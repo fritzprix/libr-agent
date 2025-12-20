@@ -79,29 +79,42 @@ const mcpManagerServer: WebMCPServer = {
     // Use options.assistantId if provided, otherwise use the current context
     const contextAssistantId = options?.assistantId || assistantId;
 
-    let assistantInfo = '';
+    let connectedCount = 0;
     if (contextAssistantId) {
       const assistant = await assistantService.getById(contextAssistantId);
-      const connectedCount = assistant?.mcpServerIds?.length || 0;
-      assistantInfo = `\n**Current Assistant**: ${assistant?.name || 'Unknown'}\n**Connected Servers**: ${connectedCount}`;
+      connectedCount = assistant?.mcpServerIds?.length || 0;
     }
 
-    const contextPrompt = [
-      `# MCP Manager Server Status`,
-      `**Server**: mcp_manager`,
-      `**Status**: Active`,
-      `**Total Servers**: ${totalServers}`,
-      `**Active Servers**: ${activeServers}`,
-      assistantInfo,
-    ]
-      .filter(Boolean)
-      .join('\n');
+    // Only show MCP Manager context if there's meaningful information
+    // (servers exist OR connections exist)
+    if (totalServers === 0 && connectedCount === 0) {
+      return {
+        contextPrompt: '', // Empty - no MCP servers configured
+        structuredState: {
+          totalServers: 0,
+          activeServers: 0,
+          assistantId: contextAssistantId,
+          sessionId: options?.sessionId || sessionId,
+        },
+      };
+    }
+
+    const contextParts = ['## MCP Servers'];
+
+    if (totalServers > 0) {
+      contextParts.push(`${activeServers}/${totalServers} servers active`);
+
+      if (connectedCount > 0) {
+        contextParts.push(`${connectedCount} connected to current assistant`);
+      }
+    }
 
     return {
-      contextPrompt,
+      contextPrompt: contextParts.join('\n'),
       structuredState: {
         totalServers,
         activeServers,
+        connectedCount,
         assistantId: contextAssistantId,
         sessionId: options?.sessionId || sessionId,
       },

@@ -38,12 +38,42 @@ export const ContentStore = {
     pageSize: number = 6000,
     autoMerge: boolean = false,
   ) => {
+    // Strict Line-Based Chunking (Overflow Allowed)
     const pages: string[] = [];
+    const lines = content.split('\n');
+    let currentPage = '';
 
-    // Simple pagination by character count (approx. token count)
-    // 2048 tokens * ~4 chars/token = ~8192 chars. Using 6000 for safety.
-    for (let i = 0; i < content.length; i += pageSize) {
-      pages.push(content.slice(i, i + pageSize));
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const isLastLine = i === lines.length - 1;
+      // Add newline back to line unless it's the very last line of content (split removes them)
+      // Actually, we can just append '\n' when adding to page, or better yet:
+      // constructing the page string from lines.
+
+      const lineWithNewline = isLastLine ? line : line + '\n';
+
+      // If current page + new line fits, add it
+      if (currentPage.length + lineWithNewline.length <= pageSize) {
+        currentPage += lineWithNewline;
+      } else {
+        // Doesn't fit.
+
+        // Case A: Current page has content. Push it, start new page with this line.
+        if (currentPage.length > 0) {
+          pages.push(currentPage);
+          currentPage = lineWithNewline;
+        }
+        // Case B: Current page is empty (this single line is > pageSize).
+        // Push it immediately (Overflow).
+        else {
+          pages.push(lineWithNewline);
+          currentPage = '';
+        }
+      }
+    }
+
+    if (currentPage.length > 0) {
+      pages.push(currentPage);
     }
 
     if (pages.length === 0) {

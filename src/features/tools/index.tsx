@@ -291,10 +291,9 @@ Tool details and usage instructions are provided separately.
             const result =
               await entry.service.getServiceContext(contextOptions);
 
-            // Append every service's context prompt uniformly. No special-case
-            // grouping is necessary because planning and other services already
-            // format their own context for readability.
-            if (result.contextPrompt) {
+            // Only append non-empty context prompts
+            // Servers without meaningful state should return empty string
+            if (result.contextPrompt && result.contextPrompt.trim()) {
               prompts.push(result.contextPrompt);
             }
 
