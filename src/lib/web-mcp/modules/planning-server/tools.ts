@@ -45,7 +45,7 @@ export const planningTools: MCPTool[] = [
   {
     name: 'addTodo',
     description:
-      'Add a todo item to the goal. Use to break down a goal into actionable steps.',
+      'Add a todo item to the goal. Supports 1-level nesting: you can add subtasks inline or specify a parentId to create a child task. Use to break down a goal into actionable steps.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -62,6 +62,34 @@ export const planningTools: MCPTool[] = [
           type: 'string',
           enum: ['low', 'medium', 'high'],
           description: 'The priority of the todo item.',
+        },
+        parentId: {
+          type: 'number',
+          description:
+            'Parent todo ID to create a subtask. Only top-level todos (without parentId) can be parents. Maximum 1-level nesting.',
+        },
+        subtasks: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              title: {
+                type: 'string',
+                description: 'Subtask title',
+              },
+              description: {
+                type: 'string',
+                description: 'Subtask description',
+              },
+              priority: {
+                type: 'string',
+                enum: ['low', 'medium', 'high'],
+              },
+            },
+            required: ['title'],
+          },
+          description:
+            'Array of subtasks to create with this todo. Only allowed when creating a top-level todo (no parentId).',
         },
       },
       required: ['title'],

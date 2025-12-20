@@ -55,12 +55,20 @@ export class PersistentState {
     title: string,
     description?: string,
     priority?: 'low' | 'medium' | 'high',
+    parentId?: number,
+    subtasks?: Array<{
+      title: string;
+      description?: string;
+      priority?: 'low' | 'medium' | 'high';
+    }>,
   ): Promise<MCPResult<AddToDoOutput>> {
     const activeGoalContent = await this.goalManager.getGoal();
     return this.todoManager.addTodo(
       title,
       description,
       priority,
+      parentId,
+      subtasks,
       activeGoalContent || null,
     );
   }
@@ -231,8 +239,20 @@ export class SessionStateManager {
     title: string,
     description?: string,
     priority?: 'low' | 'medium' | 'high',
+    parentId?: number,
+    subtasks?: Array<{
+      title: string;
+      description?: string;
+      priority?: 'low' | 'medium' | 'high';
+    }>,
   ): Promise<MCPResult<AddToDoOutput>> {
-    return this.getCurrentState().addTodo(title, description, priority);
+    return this.getCurrentState().addTodo(
+      title,
+      description,
+      priority,
+      parentId,
+      subtasks,
+    );
   }
 
   async clearTodos(
