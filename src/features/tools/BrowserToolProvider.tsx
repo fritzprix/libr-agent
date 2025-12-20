@@ -21,6 +21,7 @@ import {
   extractWebContentTool,
   readWebContentTool,
   listInteractableTool,
+  listInteractableSmartTool,
   // injectJavascriptTool, // <-- Add import
   // Types
   StrictLocalMCPTool,
@@ -72,6 +73,7 @@ export function BrowserToolProvider() {
       extractWebContentTool,
       readWebContentTool,
       listInteractableTool,
+      listInteractableSmartTool,
       // injectJavascriptTool, // <-- Add to array
     ];
 

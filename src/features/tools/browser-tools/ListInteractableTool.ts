@@ -175,10 +175,19 @@ async function extractHtmlFromPage(
   return rawHtml;
 }
 
+/**
+ * @deprecated Use listInteractableSmart instead for better performance and filtering.
+ * This tool will be removed in a future version.
+ *
+ * Lists all interactable elements on a web page (legacy version).
+ *
+ * ⚠️ Warning: This tool may return 100+ elements with high noise. Consider using
+ * listInteractableSmart with semantic filtering for better results.
+ */
 export const listInteractableTool: StrictBrowserMCPTool = {
   name: 'listInteractable',
   description:
-    'List all interactive elements from the entire web page for automation. Identifies buttons, inputs, links, and other interactive elements with accurate selectors, current state, and metadata. Uses TypeScript parsing for better reliability and debugging. Supports pagination for large lists.',
+    '[DEPRECATED] Use listInteractableSmart instead. Lists all interactive elements from the entire web page for automation (may return 100+ elements with noise). Identifies buttons, inputs, links, and other interactive elements with accurate selectors, current state, and metadata. Uses TypeScript parsing for better reliability and debugging. Supports pagination for large lists.',
   inputSchema: {
     type: 'object',
     properties: {
