@@ -1,6 +1,5 @@
 import {
   BrainCircuit,
-  Bug,
   History,
   MessageSquare,
   Settings,
@@ -58,8 +57,8 @@ export default function AppSidebar() {
           <BrainCircuit size={32} className="flex-shrink-0" />
           <span
             className={`font-medium text-2xl whitespace-nowrap transition-all duration-300 ease-in-out ${isCollapsed
-                ? 'opacity-0 w-0 overflow-hidden'
-                : 'opacity-100 w-auto'
+              ? 'opacity-0 w-0 overflow-hidden'
+              : 'opacity-100 w-auto'
               }`}
           >
             LibrAgent
