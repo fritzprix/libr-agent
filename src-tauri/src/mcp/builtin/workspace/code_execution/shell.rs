@@ -457,6 +457,7 @@ impl WorkspaceServer {
         // Check runMode parameter
         let run_mode = args
             .get("runMode")
+            .or_else(|| args.get("run_mode"))
             .and_then(|v| v.as_str())
             .unwrap_or("sync");
 
@@ -472,7 +473,7 @@ impl WorkspaceServer {
         let sync_max = crate::config::default_execution_timeout();
         if timeout_secs > sync_max {
             return Ok(MCPResult::error(&format!(
-                "Sync mode supports a maximum timeout of {sync_max} seconds.\nFor longer-running commands, set \"run_mode\" to \"async\" so the command runs in background and can be polled.\nYou can adjust the default via the LIBRAGENT_DEFAULT_EXECUTION_TIMEOUT environment variable.",
+                "Sync mode supports a maximum timeout of {sync_max} seconds.\nFor longer-running commands, set \"runMode\" to \"async\" so the command runs in background and can be polled.\nYou can adjust the default via the LIBRAGENT_DEFAULT_EXECUTION_TIMEOUT environment variable.",
             )));
         }
 
@@ -494,7 +495,7 @@ impl WorkspaceServer {
 
         #[cfg(windows)]
         info!(
-            "executeWindowsCmd invoked: command='{}' run_mode='{}' require_input='{}' timeout={}",
+            "executeWindowsCmd invoked: command='{}' runMode='{}' requireUserInput='{}' timeout={}",
             raw_command, run_mode, require_input, timeout_secs
         );
         self.execute_shell_with_isolation(raw_command, isolation_level, timeout_secs)

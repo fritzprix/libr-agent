@@ -15,7 +15,8 @@ impl WorkspaceServer {
             }
         };
         let display_name = args
-            .get("display_name")
+            .get("displayName")
+            .or_else(|| args.get("display_name"))
             .and_then(|v| v.as_str())
             .unwrap_or(path)
             .to_string();
@@ -94,7 +95,8 @@ impl WorkspaceServer {
             }
         };
         let package_name = args
-            .get("package_name")
+            .get("packageName")
+            .or_else(|| args.get("package_name"))
             .and_then(|v| v.as_str())
             .unwrap_or("workspace_export")
             .to_string();

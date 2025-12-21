@@ -411,9 +411,9 @@ impl WorkspaceServer {
         for rep in replacements {
             let start_line = match rep.get("startLine").and_then(|v| v.as_u64()) {
                 Some(num) => num as usize,
-                None => match rep.get("lineNumber").and_then(|v| v.as_u64()) {
+                Option::None => match rep.get("lineNumber").and_then(|v| v.as_u64()) {
                     Some(num) => num as usize,
-                    None => {
+                    Option::None => {
                         return Ok(MCPResult::error("Missing startLine or lineNumber"));
                     }
                 },
@@ -550,14 +550,22 @@ impl WorkspaceServer {
     }
 
     pub async fn handle_import_file(&self, args: Value) -> Result<MCPResult, String> {
-        let src_path_str = match args.get("srcAbsPath").and_then(|v| v.as_str()) {
+        let src_path_str = match args
+            .get("srcAbsPath")
+            .or_else(|| args.get("src_abs_path"))
+            .and_then(|v| v.as_str())
+        {
             Some(path) => path,
             None => {
                 return Ok(MCPResult::error("Missing required parameter: srcAbsPath"));
             }
         };
 
-        let dest_rel_path = match args.get("destRelPath").and_then(|v| v.as_str()) {
+        let dest_rel_path = match args
+            .get("destRelPath")
+            .or_else(|| args.get("dest_rel_path"))
+            .and_then(|v| v.as_str())
+        {
             Some(path) => path,
             None => {
                 return Ok(MCPResult::error("Missing required parameter: destRelPath"));
@@ -566,7 +574,7 @@ impl WorkspaceServer {
 
         // Log import attempt for debugging
         info!(
-            "import_file called: src='{}', dest='{}'",
+            "importFile called: src='{}', dest='{}'",
             src_path_str, dest_rel_path
         );
 

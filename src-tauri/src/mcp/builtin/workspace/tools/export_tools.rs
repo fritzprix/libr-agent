@@ -12,7 +12,7 @@ pub fn create_export_file_tool() -> MCPTool {
         ),
     );
     props.insert(
-        "display_name".to_string(),
+        "displayName".to_string(),
         string_prop(
             None,
             None,
@@ -45,7 +45,7 @@ pub fn create_export_zip_tool() -> MCPTool {
         ),
     );
     props.insert(
-        "package_name".to_string(),
+        "packageName".to_string(),
         string_prop(
             None,
             Some(50),

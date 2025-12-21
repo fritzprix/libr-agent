@@ -237,7 +237,7 @@ export function WorkspaceFilesPanel() {
             : destPath;
 
           // Call builtin workspace tool
-          const response = await callBuiltinTool('workspace', 'import_file', {
+          const response = await callBuiltinTool('workspace', 'importFile', {
             src_abs_path: srcPath,
             dest_rel_path: destRelPath,
           });
@@ -304,7 +304,7 @@ export function WorkspaceFilesPanel() {
               }
             } else {
               // No result or error: fallback message
-              resultText = 'No result returned from import_file';
+              resultText = 'No result returned from importFile';
             }
           } catch (e) {
             resultText = `Failed to parse tool response: ${
@@ -313,7 +313,7 @@ export function WorkspaceFilesPanel() {
           }
 
           const [toolCallMessage, toolResultMessage] = createToolMessagePair(
-            'import_file',
+            'importFile',
             { src_abs_path: srcPath, dest_rel_path: destRelPath },
             stringToMCPContentArray(resultText),
             toolCallId,
