@@ -56,6 +56,7 @@ function DnDContextProvider({ children }: DnDContextProps) {
   const registries = useRef<Map<string, DnDRegistry>>(new Map());
   const currentTarget = useRef<DnDRegistry | null>(null);
   const pathsRef = useRef<string[] | undefined>(undefined);
+  const browserPositionRef = useRef<{ x: number; y: number } | null>(null);
 
   // Helper: find matching registry by position with priority and smallest area tie-breaker
   const findTarget = (x: number, y: number): DnDRegistry | null => {
@@ -88,6 +89,36 @@ function DnDContextProvider({ children }: DnDContextProps) {
 
   useEffect(() => {
     let mounted = true;
+
+    // Browser event handlers for accurate cursor position tracking
+    const handleDragOver = (e: DragEvent) => {
+      e.preventDefault(); // Required to allow drop
+      browserPositionRef.current = { x: e.clientX, y: e.clientY };
+    };
+
+    const handleDragLeave = (e: DragEvent) => {
+      // Clear position when leaving window entirely
+      // Check if we're leaving the document viewport
+      if (
+        e.clientX <= 0 ||
+        e.clientY <= 0 ||
+        e.clientX >= window.innerWidth ||
+        e.clientY >= window.innerHeight
+      ) {
+        browserPositionRef.current = null;
+      }
+    };
+
+    const handleDrop = () => {
+      // Clear browser position after drop completes
+      browserPositionRef.current = null;
+    };
+
+    // Attach browser event listeners
+    document.addEventListener('dragover', handleDragOver);
+    document.addEventListener('dragleave', handleDragLeave);
+    document.addEventListener('drop', handleDrop);
+
     const attach = async () => {
       try {
         const webview = getCurrentWebview();
@@ -105,15 +136,19 @@ function DnDContextProvider({ children }: DnDContextProps) {
             // Clear current target and send leave to all zones
             if (currentTarget.current) {
               currentTarget.current.handler('leave', {
-                position,
+                position: browserPositionRef.current || position,
                 paths: pathsRef.current,
               });
               currentTarget.current = null;
             }
-            if (position) {
-              const tgt = findTarget(position.x, position.y);
+            if (position || browserPositionRef.current) {
+              const pos = browserPositionRef.current || position!;
+              const tgt = findTarget(pos.x, pos.y);
               if (tgt && tgt !== currentTarget.current) {
-                tgt.handler('leave', { position, paths: pathsRef.current });
+                tgt.handler('leave', {
+                  position: pos,
+                  paths: pathsRef.current,
+                });
               }
             } else {
               // Broadcast leave to all zones so UIs can clear hover state
@@ -123,16 +158,33 @@ function DnDContextProvider({ children }: DnDContextProps) {
             }
             // Clear paths when leaving
             pathsRef.current = undefined;
+            browserPositionRef.current = null;
             return;
           }
 
-          // For other events, we need a position to route
-          if (!position) return;
+          // Use browser position if available, fallback to Tauri position
+          const effectivePosition = browserPositionRef.current || position;
 
-          const target = findTarget(position.x, position.y);
+          // For other events, we need a position to route
+          if (!effectivePosition) return;
+
+          // Debug logging to compare coordinate systems
+          if (position && browserPositionRef.current) {
+            const xDiff = Math.abs(browserPositionRef.current.x - position.x);
+            const yDiff = Math.abs(browserPositionRef.current.y - position.y);
+            if (xDiff > 5 || yDiff > 5) {
+              logger.debug('DnD Position Comparison', {
+                browser: browserPositionRef.current,
+                tauri: position,
+                diff: { x: xDiff, y: yDiff },
+              });
+            }
+          }
+
+          const target = findTarget(effectivePosition.x, effectivePosition.y);
 
           const data: DragAndDropPayload = {
-            position,
+            position: effectivePosition,
             paths: pathsRef.current,
           };
           if (type === 'enter' || type === 'over') {
@@ -156,6 +208,8 @@ function DnDContextProvider({ children }: DnDContextProps) {
             currentTarget.current = null;
             // Clear paths after drop
             pathsRef.current = undefined;
+            // Clear browser position after drop
+            browserPositionRef.current = null;
           }
         });
         if (mounted) unlistenRef.current = unlisten;
@@ -167,6 +221,11 @@ function DnDContextProvider({ children }: DnDContextProps) {
 
     return () => {
       mounted = false;
+      // Cleanup browser event listeners
+      document.removeEventListener('dragover', handleDragOver);
+      document.removeEventListener('dragleave', handleDragLeave);
+      document.removeEventListener('drop', handleDrop);
+
       if (unlistenRef.current) {
         try {
           unlistenRef.current();
