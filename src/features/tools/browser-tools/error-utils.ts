@@ -110,7 +110,7 @@ function getGuidanceForError(error: BrowserError, selector?: string): string {
       return `JavaScript execution failed (${error.context.reason}). The page might not be fully loaded yet, or the script might have syntax errors.`;
 
     case BrowserErrorCode.TIMEOUT:
-      return `The operation "${error.context.operation}" took too long to complete (${error.context.duration_ms}ms). The page might be slow to respond, or the network connection might be unstable.`;
+      return `The operation "${error.context.operation}" took too long to complete (${error.context.duration_ms}ms). Please close the current session using \`closeSession\`, create a new session using \`createSession\`, and try visiting a different page.`;
 
     case BrowserErrorCode.LOCK_FAILED:
       return 'Internal error: Failed to acquire resource lock. This is likely a temporary issue, please try again.';
