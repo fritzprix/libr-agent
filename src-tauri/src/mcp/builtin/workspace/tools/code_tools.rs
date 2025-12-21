@@ -29,7 +29,7 @@ pub fn create_execute_shell_tool() -> MCPTool {
         ),
     );
     props.insert(
-        "run_mode".to_string(),
+        "runMode".to_string(),
         enum_prop(
             vec!["sync", "async"],
             "sync",
@@ -53,7 +53,7 @@ pub fn create_execute_shell_tool() -> MCPTool {
         ),
     );
     props.insert(
-        "input_type".to_string(),
+        "inputType".to_string(),
         enum_prop(
             vec!["password", "text"],
             "text",
@@ -116,7 +116,7 @@ pub fn create_execute_shell_tool() -> MCPTool {
         ),
     );
     props.insert(
-        "run_mode".to_string(),
+        "runMode".to_string(),
         enum_prop(
             vec!["sync", "async"],
             "sync",
@@ -136,7 +136,7 @@ pub fn create_execute_shell_tool() -> MCPTool {
         string_prop(None, None, Some("Custom prompt message for user input")),
     );
     props.insert(
-        "input_type".to_string(),
+        "inputType".to_string(),
         enum_prop(
             vec!["password", "text"],
             "text",
@@ -297,7 +297,7 @@ mod tests {
                 let props = properties.as_ref().unwrap();
                 assert!(props.contains_key("command"));
                 assert!(props.contains_key("timeout"));
-                assert!(props.contains_key("run_mode"));
+                assert!(props.contains_key("runMode"));
             }
             _ => panic!("Expected Object schema type"),
         }
