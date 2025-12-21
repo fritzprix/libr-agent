@@ -57,11 +57,10 @@ export default function AppSidebar() {
         <div className="flex flex-row items-center justify-center gap-2 p-4">
           <BrainCircuit size={32} className="flex-shrink-0" />
           <span
-            className={`font-medium text-2xl whitespace-nowrap transition-all duration-300 ease-in-out ${
-              isCollapsed
+            className={`font-medium text-2xl whitespace-nowrap transition-all duration-300 ease-in-out ${isCollapsed
                 ? 'opacity-0 w-0 overflow-hidden'
                 : 'opacity-100 w-auto'
-            }`}
+              }`}
           >
             LibrAgent
           </span>
@@ -129,28 +128,6 @@ export default function AppSidebar() {
                   >
                     <History size={16} />
                     <span>Search History</span>
-                  </SidebarMenuButton>
-                </Link>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        {/* Development Section */}
-        <SidebarGroup>
-          <SidebarGroupLabel className="text-sm font-semibold uppercase tracking-wide mb-2">
-            Development
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <Link to="/test/browser-deadlock">
-                  <SidebarMenuButton
-                    isActive={location.pathname === '/test/browser-deadlock'}
-                    tooltip="Browser Deadlock Test"
-                  >
-                    <Bug size={16} />
-                    <span>Browser Test</span>
                   </SidebarMenuButton>
                 </Link>
               </SidebarMenuItem>
