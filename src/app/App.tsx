@@ -57,7 +57,7 @@ function App() {
                       <SessionHistoryProvider>
                         <ResourceAttachmentProvider>
                           <ModelOptionsProvider>
-                            <SidebarProvider>
+                            <SidebarProvider className="h-full overflow-hidden">
                               <DnDContextProvider>
                                 <AppSidebar />
                                 {/* Main Content Area (children of AppSidebar) */}
