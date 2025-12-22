@@ -22,8 +22,11 @@ export class MessageNormalizer {
     messages: Message[],
     targetProvider: AIServiceProvider,
   ): Message[] {
+    // Zero pass: filter out any messages that contain errors (prevents polluting context)
+    const validMessages = messages.filter((msg) => !msg.error);
+
     // First pass: handle tool call relationships
-    let processedMessages = messages;
+    let processedMessages = validMessages;
 
     // Anthropic: existing validation (unchanged)
     if (targetProvider === AIServiceProvider.Anthropic) {

@@ -143,6 +143,26 @@ export const classifyAIServiceError = (
     };
   }
 
+  // Empty response error (New)
+  if (
+    error instanceof Error &&
+    (error.message.includes('AI_SERVICE_EMPTY_RESPONSE') ||
+      error.message.includes('Empty response from AI service'))
+  ) {
+    return {
+      displayMessage:
+        'The AI service returned an empty response. Please try again.',
+      type: 'AI_SERVICE_ERROR' as MessageErrorType,
+      recoverable: true,
+      details: {
+        originalError: error,
+        errorCode: 'EMPTY_RESPONSE',
+        timestamp,
+        context,
+      },
+    };
+  }
+
   // Other unknown errors
   return {
     displayMessage: 'Something went wrong. Please try again.',

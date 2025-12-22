@@ -4,6 +4,8 @@ import {
   Content,
   FunctionCall,
   createPartFromFunctionResponse,
+  HarmCategory,
+  HarmBlockThreshold,
 } from '@google/genai';
 import { getLogger } from '../logger';
 import { Message } from '@/models/chat';
@@ -31,6 +33,10 @@ interface GeminiServiceConfig {
     thinkingBudget?: number; // -1 (dynamic) | 0 (disabled) | positive number (token count)
     includeThoughts?: boolean; // Include thinking process in response
   };
+  safetySettings?: Array<{
+    category: HarmCategory;
+    threshold: HarmBlockThreshold;
+  }>;
 }
 
 /**
@@ -252,10 +258,10 @@ export class GeminiService extends BaseAIService {
       const geminiMessages = this.convertToGeminiMessages(validatedMessages);
       const geminiTools = tools
         ? [
-            {
-              functionDeclarations: tools as FunctionDeclaration[],
-            },
-          ]
+          {
+            functionDeclarations: tools as FunctionDeclaration[],
+          },
+        ]
         : undefined;
 
       const model =
@@ -298,6 +304,26 @@ export class GeminiService extends BaseAIService {
         }
       }
 
+      // Relax safety settings to avoid false positives (empty responses)
+      geminiConfig.safetySettings = [
+        {
+          category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+          threshold: HarmBlockThreshold.BLOCK_NONE,
+        },
+        {
+          category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+          threshold: HarmBlockThreshold.BLOCK_NONE,
+        },
+        {
+          category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+          threshold: HarmBlockThreshold.BLOCK_NONE,
+        },
+        {
+          category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+          threshold: HarmBlockThreshold.BLOCK_NONE,
+        },
+      ];
+
       const result = await this.withRetry(async () => {
         return this.genAI.models.generateContentStream({
           model: model,
@@ -324,13 +350,13 @@ export class GeminiService extends BaseAIService {
             content?: {
               parts?: Array<
                 | {
-                    thought?: boolean; // Sometimes boolean flag?
-                    text?: string;
-                  }
+                  thought?: boolean; // Sometimes boolean flag?
+                  text?: string;
+                }
                 | {
-                    // Another possible schema seen in discussions
-                    thought?: string;
-                  }
+                  // Another possible schema seen in discussions
+                  thought?: string;
+                }
               >;
             };
           }>;
@@ -410,7 +436,11 @@ export class GeminiService extends BaseAIService {
               chunk,
             });
           } else {
-            logger.warn('Gemini chunk has no text or functionCalls', { chunk });
+            logger.warn('Gemini chunk has no text or functionCalls', {
+              chunk,
+              finishReason: candidate.finishReason, // Log finish reason (e.g., SAFETY)
+              safetyRatings: candidate.safetyRatings, // Log safety ratings
+            });
           }
         }
       }

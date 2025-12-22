@@ -155,7 +155,7 @@ export const useAIService = (config?: AIServiceConfig) => {
     const apiKey = serviceConfigs[provider]?.apiKey || '';
     return AIServiceFactory.getService(provider, apiKey, {
       defaultModel: model,
-      maxRetries: 3,
+      maxRetries: 0, // Disable internal retries in favor of controlled 429 retry
       maxTokens: 4096,
       ...config,
     });
@@ -188,205 +188,236 @@ export const useAIService = (config?: AIServiceConfig) => {
       let toolCalls: ToolCall[] = [];
       let finalMessage: Message | null = null;
 
-      try {
-        // Preprocess messages to include attachment information
-        const processedMessages = await prepareMessagesForLLM(messages);
+      // Retry loop for handling 429 Rate Limit errors
+      let retryCount = 0;
+      const MAX_RETRIES_FOR_429 = 1;
+      const RETRY_DELAY_MS = 5000;
 
-        // Evaluate systemPrompt if it's a function
-        let resolvedSystemPrompt: string;
-        if (typeof systemPrompt === 'function') {
-          resolvedSystemPrompt = await systemPrompt();
-        } else {
-          resolvedSystemPrompt = systemPrompt || DEFAULT_SYSTEM_PROMPT;
-        }
+      while (true) {
+        try {
+          // Preprocess messages to include attachment information
+          const processedMessages = await prepareMessagesForLLM(messages);
 
-        // Validate and clean up tool use pairs
-        let validMessages = processedMessages;
-        if (!allToolUsePairsAreValid(validMessages)) {
-          logger.warn(
-            'Incomplete tool use pairs detected. Cleaning up messages.',
-          );
-          validMessages = removeInvalidToolUseAndToolResponse(validMessages);
-        }
-
-        // Deduplicate repeated tool call/response pairs (errors AND successes)
-        const deduplicatedMessages = deduplicateToolCallPairs(validMessages, {
-          preserveRecentN: 3,
-          minMessageCount: 10,
-        });
-
-        // Context enforcement: Truncate messages to fit the context window
-        const maxTokens = config?.maxTokens ?? 4096;
-
-        // Prepare tools JSON for token estimation
-        const toolsJson = config?.tools?.length
-          ? JSON.stringify(config.tools)
-          : undefined;
-
-        const contextMessages = selectMessagesWithinContext(
-          deduplicatedMessages,
-          provider,
-          model,
-          maxTokens,
-          {
-            systemPrompt: resolvedSystemPrompt,
-            toolsJson,
-          },
-        );
-
-        // Sanitize messages to prevent malformed JSON and ensure provider compatibility
-        const safeMessages = MessageNormalizer.sanitizeMessagesForProvider(
-          contextMessages.map(sanitizeMessage),
-          provider as unknown as AIServiceProvider,
-        );
-
-        logger.info('Submitting messages to AI service', {
-          model,
-          systemPrompt: resolvedSystemPrompt,
-          messageCount: safeMessages.length,
-        });
-
-        const stream = serviceInstance.streamChat(safeMessages, {
-          modelName: model,
-          systemPrompt: resolvedSystemPrompt,
-          availableTools: config?.tools || [],
-          config: config,
-          forceToolUse: forceToolUse,
-        });
-
-        for await (const chunk of stream) {
-          let parsedChunk: Record<string, unknown>;
-
-          try {
-            // Validate and potentially recover the chunk before parsing
-            parsedChunk = JSON.parse(chunk);
-          } catch {
-            parsedChunk = { content: chunk };
+          // Evaluate systemPrompt if it's a function
+          let resolvedSystemPrompt: string;
+          if (typeof systemPrompt === 'function') {
+            resolvedSystemPrompt = await systemPrompt();
+          } else {
+            resolvedSystemPrompt = systemPrompt || DEFAULT_SYSTEM_PROMPT;
           }
 
-          if (parsedChunk.thinking) {
-            thinking += parsedChunk.thinking;
-          }
-          if (parsedChunk.thinkingSignature) {
-            thinkingSignature = parsedChunk.thinkingSignature as string;
-          }
-          if (parsedChunk.tool_calls && Array.isArray(parsedChunk.tool_calls)) {
-            // Handle both complete tool calls (Ollama, Gemini) and incremental chunks (OpenAI, Anthropic)
-            (
-              parsedChunk.tool_calls as (ToolCall & { index?: number })[]
-            ).forEach((toolCallChunk: ToolCall & { index?: number }) => {
-              const { index } = toolCallChunk;
-
-              // If no index provided, treat as a complete tool call (Ollama/Gemini pattern)
-              if (index === undefined) {
-                toolCalls.push(toolCallChunk);
-                return;
-              }
-
-              // Index-based merging for providers that send incremental chunks
-              if (toolCalls[index]) {
-                if (toolCallChunk.function?.arguments) {
-                  toolCalls[index].function.arguments +=
-                    toolCallChunk.function.arguments;
-                }
-                if (toolCallChunk.id) {
-                  toolCalls[index].id = toolCallChunk.id;
-                }
-              } else {
-                toolCalls[index] = toolCallChunk;
-              }
-            });
-            toolCalls = toolCalls.filter(Boolean);
-          }
-          if (parsedChunk.content) {
-            fullContent += parsedChunk.content;
+          // Validate and clean up tool use pairs
+          let validMessages = processedMessages;
+          if (!allToolUsePairsAreValid(validMessages)) {
+            logger.warn(
+              'Incomplete tool use pairs detected. Cleaning up messages.',
+            );
+            validMessages = removeInvalidToolUseAndToolResponse(validMessages);
           }
 
-          finalMessage = {
-            id: currentResponseId,
-            content: stringToMCPContentArray(fullContent),
-            role: 'assistant',
-            isStreaming: true,
-            thinking,
-            thinkingSignature,
-            tool_calls: toolCalls,
-            sessionId: messages[0]?.sessionId,
-            threadId: messages[0]?.threadId || messages[0]?.sessionId,
-          };
+          // Deduplicate repeated tool call/response pairs (errors AND successes)
+          const deduplicatedMessages = deduplicateToolCallPairs(validMessages, {
+            preserveRecentN: 3,
+            minMessageCount: 10,
+          });
 
-          setResponse(finalMessage);
-        }
+          // Context enforcement: Truncate messages to fit the context window
+          const maxTokens = config?.maxTokens ?? 4096;
 
-        // Check if the response is empty to prevent API errors
-        const hasContent = fullContent.trim().length > 0;
-        const hasToolCalls = toolCalls.length > 0;
+          // Prepare tools JSON for token estimation
+          const toolsJson = config?.tools?.length
+            ? JSON.stringify(config.tools)
+            : undefined;
 
-        if (!hasContent && !hasToolCalls && !thinking) {
-          logger.debug('Empty response detected, creating placeholder message');
-          finalMessage = {
-            id: currentResponseId,
-            content: stringToMCPContentArray(
-              'I apologize, but I encountered an issue and cannot provide a response at this time.',
-            ),
-            thinking,
-            thinkingSignature,
-            role: 'assistant',
-            isStreaming: false,
-            tool_calls: [],
-            sessionId: messages[0]?.sessionId,
-            threadId: messages[0]?.threadId || messages[0]?.sessionId,
-          };
-        } else {
-          finalMessage = {
-            id: currentResponseId,
-            content: stringToMCPContentArray(fullContent),
-            thinking,
-            thinkingSignature,
-            role: 'assistant',
-            isStreaming: false,
-            tool_calls: toolCalls,
-            sessionId: messages[0]?.sessionId,
-            threadId: messages[0]?.threadId || messages[0]?.sessionId,
-          };
-        }
-
-        logger.info('Final message:', {
-          finalMessage,
-          hasContent,
-          hasToolCalls,
-          contentLength: fullContent.length,
-          toolCallsCount: toolCalls.length,
-        });
-        setResponse(finalMessage);
-        return finalMessage!;
-      } catch (err) {
-        logger.error('Error in useAIService stream:', err);
-        setError(err as Error);
-
-        // Create error message instead of malformed content
-        const sessionId = messages[0]?.sessionId;
-        if (!sessionId) {
-          throw new Error(
-            'Cannot create error message: missing sessionId in messages',
-          );
-        }
-        const threadId = messages[0]?.threadId || sessionId;
-        const errorMessage = createErrorMessage(
-          currentResponseId,
-          sessionId,
-          threadId,
-          err,
-          {
-            model,
+          const contextMessages = selectMessagesWithinContext(
+            deduplicatedMessages,
             provider,
-            messageCount: messages.length,
-          },
-        );
+            model,
+            maxTokens,
+            {
+              systemPrompt: resolvedSystemPrompt,
+              toolsJson,
+            },
+          );
 
-        setResponse(errorMessage);
-        return errorMessage;
-      } finally {
-        setIsLoading(false);
+          // Sanitize messages to prevent malformed JSON and ensure provider compatibility
+          const safeMessages = MessageNormalizer.sanitizeMessagesForProvider(
+            contextMessages.map(sanitizeMessage),
+            provider as unknown as AIServiceProvider,
+          );
+
+          logger.info('Submitting messages to AI service', {
+            model,
+            systemPrompt: resolvedSystemPrompt,
+            messageCount: safeMessages.length,
+            retryCount,
+          });
+
+          const stream = serviceInstance.streamChat(safeMessages, {
+            modelName: model,
+            systemPrompt: resolvedSystemPrompt,
+            availableTools: config?.tools || [],
+            config: config,
+            forceToolUse: forceToolUse,
+          });
+
+          for await (const chunk of stream) {
+            let parsedChunk: Record<string, unknown>;
+
+            try {
+              // Validate and potentially recover the chunk before parsing
+              parsedChunk = JSON.parse(chunk);
+            } catch {
+              parsedChunk = { content: chunk };
+            }
+
+            if (parsedChunk.thinking) {
+              thinking += parsedChunk.thinking;
+            }
+            if (parsedChunk.thinkingSignature) {
+              thinkingSignature = parsedChunk.thinkingSignature as string;
+            }
+            if (
+              parsedChunk.tool_calls &&
+              Array.isArray(parsedChunk.tool_calls)
+            ) {
+              // Handle both complete tool calls (Ollama, Gemini) and incremental chunks (OpenAI, Anthropic)
+              (
+                parsedChunk.tool_calls as (ToolCall & { index?: number })[]
+              ).forEach((toolCallChunk: ToolCall & { index?: number }) => {
+                const { index } = toolCallChunk;
+
+                // If no index provided, treat as a complete tool call (Ollama/Gemini pattern)
+                if (index === undefined) {
+                  toolCalls.push(toolCallChunk);
+                  return;
+                }
+
+                // Index-based merging for providers that send incremental chunks
+                if (toolCalls[index]) {
+                  if (toolCallChunk.function?.arguments) {
+                    toolCalls[index].function.arguments +=
+                      toolCallChunk.function.arguments;
+                  }
+                  if (toolCallChunk.id) {
+                    toolCalls[index].id = toolCallChunk.id;
+                  }
+                } else {
+                  toolCalls[index] = toolCallChunk;
+                }
+              });
+              toolCalls = toolCalls.filter(Boolean);
+            }
+            if (parsedChunk.content) {
+              fullContent += parsedChunk.content;
+            }
+
+            finalMessage = {
+              id: currentResponseId,
+              content: stringToMCPContentArray(fullContent),
+              role: 'assistant',
+              isStreaming: true,
+              thinking,
+              thinkingSignature,
+              tool_calls: toolCalls,
+              sessionId: messages[0]?.sessionId,
+              threadId: messages[0]?.threadId || messages[0]?.sessionId,
+            };
+
+            setResponse(finalMessage);
+          }
+
+          // Check if the response is empty to prevent API errors
+          const hasContent = fullContent.trim().length > 0;
+          const hasToolCalls = toolCalls.length > 0;
+
+          if (!hasContent && !hasToolCalls && !thinking) {
+            logger.debug('Empty response detected, creating error message');
+            // Create a specific error for empty response so it can be handled by the UI
+            const emptyResponseError = new Error('AI_SERVICE_EMPTY_RESPONSE');
+            const sessionId = messages[0]?.sessionId;
+            const threadId = messages[0]?.threadId || messages[0]?.sessionId;
+
+            finalMessage = createErrorMessage(
+              currentResponseId,
+              sessionId,
+              threadId,
+              emptyResponseError,
+              { model, provider },
+            );
+          } else {
+            finalMessage = {
+              id: currentResponseId,
+              content: stringToMCPContentArray(fullContent),
+              thinking,
+              thinkingSignature,
+              role: 'assistant',
+              isStreaming: false,
+              tool_calls: toolCalls,
+              sessionId: messages[0]?.sessionId,
+              threadId: messages[0]?.threadId || messages[0]?.sessionId,
+            };
+          }
+
+          logger.info('Final message:', {
+            finalMessage,
+            hasContent,
+            hasToolCalls,
+            contentLength: fullContent.length,
+            toolCallsCount: toolCalls.length,
+          });
+          setResponse(finalMessage);
+          return finalMessage!;
+        } catch (err) {
+          logger.error('Error in useAIService stream:', err);
+
+          // Handle 429 Rate Limit Retry
+          const errorClassification = classifyAIServiceError(err);
+          if (
+            errorClassification.type === 'RATE_LIMIT_ERROR' &&
+            retryCount < MAX_RETRIES_FOR_429
+          ) {
+            logger.warn(
+              `Rate limit exceeded. Retrying in ${RETRY_DELAY_MS}ms... (Attempt ${retryCount + 1}/${MAX_RETRIES_FOR_429})`,
+            );
+            retryCount++;
+            await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+            // Reset state for retry
+            fullContent = '';
+            thinking = '';
+            thinkingSignature = '';
+            toolCalls = [];
+            finalMessage = null;
+            continue;
+          }
+
+          setError(err as Error);
+
+          // Create error message instead of malformed content
+          const sessionId = messages[0]?.sessionId;
+          if (!sessionId) {
+            throw new Error(
+              'Cannot create error message: missing sessionId in messages',
+            );
+          }
+          const threadId = messages[0]?.threadId || sessionId;
+          const errorMessage = createErrorMessage(
+            currentResponseId,
+            sessionId,
+            threadId,
+            err,
+            {
+              model,
+              provider,
+              messageCount: messages.length,
+            },
+          );
+
+          setResponse(errorMessage);
+          return errorMessage;
+        } finally {
+          setIsLoading(false);
+        }
       }
     },
     [model, provider, config, serviceInstance],
@@ -405,138 +436,175 @@ export const useAIService = (config?: AIServiceConfig) => {
       setError(null);
       setResponse(null);
 
-      const responseId = createId();
-      const ephemeralSessionId = createId(); // No persistent session needed
-      let fullContent = '';
-      let thinking = '';
-      let thinkingSignature = '';
+      // Retry loop for handling 429 Rate Limit errors
+      let retryCount = 0;
+      const MAX_RETRIES_FOR_429 = 1;
+      const RETRY_DELAY_MS = 5000;
 
-      try {
-        // Default system prompt enforces plain text generation without tools
-        const systemPrompt =
-          options?.systemPrompt ??
-          'Only produce plain text. Do not call or reference any tools or external APIs. Provide the answer directly.';
+      while (true) {
+        const responseId = createId();
+        const ephemeralSessionId = createId(); // No persistent session needed
+        let fullContent = '';
+        let thinking = '';
+        let thinkingSignature = '';
 
-        // Build minimal message array: system + user prompt only (no history)
-        const messages: Message[] = [
-          {
-            id: createId(),
-            role: 'system',
-            content: stringToMCPContentArray(systemPrompt),
-            sessionId: ephemeralSessionId,
-            threadId: ephemeralSessionId, // Use ephemeral session as thread
-          },
-          {
-            id: createId(),
-            role: 'user',
-            content: stringToMCPContentArray(prompt),
-            sessionId: ephemeralSessionId,
-            threadId: ephemeralSessionId, // Use ephemeral session as thread
-          },
-        ];
+        try {
+          // Default system prompt enforces plain text generation without tools
+          const systemPrompt =
+            options?.systemPrompt ??
+            'Only produce plain text. Do not call or reference any tools or external APIs. Provide the answer directly.';
 
-        // Sanitize messages (defensive, though these are newly created)
-        const safeMessages = messages.map(sanitizeMessage);
+          // Build minimal message array: system + user prompt only (no history)
+          const messages: Message[] = [
+            {
+              id: createId(),
+              role: 'system',
+              content: stringToMCPContentArray(systemPrompt),
+              sessionId: ephemeralSessionId,
+              threadId: ephemeralSessionId, // Use ephemeral session as thread
+            },
+            {
+              id: createId(),
+              role: 'user',
+              content: stringToMCPContentArray(prompt),
+              sessionId: ephemeralSessionId,
+              threadId: ephemeralSessionId, // Use ephemeral session as thread
+            },
+          ];
 
-        logger.info('completeText: submitting single-prompt completion', {
-          messages: safeMessages,
-          promptLength: prompt.length,
-        });
+          // Sanitize messages (defensive, though these are newly created)
+          const safeMessages = messages.map(sanitizeMessage);
 
-        // Apply client-side throttling
-        await throttleRequest();
+          logger.info('completeText: submitting single-prompt completion', {
+            messages: safeMessages,
+            promptLength: prompt.length,
+            retryCount,
+          });
 
-        // Call streamChat with no tools
-        const stream = serviceInstance.streamChat(safeMessages, {
-          modelName: options?.model ?? model,
-          systemPrompt,
-          availableTools: [], // Never include tools for text completion
-          config: { ...(config || {}), maxTokens: options?.maxTokens },
-          forceToolUse: false,
-        });
+          // Apply client-side throttling
+          await throttleRequest();
 
-        // Process stream chunks
-        for await (const chunk of stream) {
-          let parsedChunk: Record<string, unknown>;
-          try {
-            parsedChunk = JSON.parse(chunk);
-          } catch {
-            parsedChunk = { content: String(chunk) };
+          // Call streamChat with no tools
+          const stream = serviceInstance.streamChat(safeMessages, {
+            modelName: options?.model ?? model,
+            systemPrompt,
+            availableTools: [], // Never include tools for text completion
+            config: { ...(config || {}), maxTokens: options?.maxTokens },
+            forceToolUse: false,
+          });
+
+          // Process stream chunks
+          for await (const chunk of stream) {
+            let parsedChunk: Record<string, unknown>;
+            try {
+              parsedChunk = JSON.parse(chunk);
+            } catch {
+              parsedChunk = { content: String(chunk) };
+            }
+
+            if (parsedChunk.thinking) {
+              thinking += parsedChunk.thinking as string;
+            }
+            if (parsedChunk.thinkingSignature) {
+              thinkingSignature = parsedChunk.thinkingSignature as string;
+            }
+            // Defensive: ignore tool_calls in completeText mode
+            if (parsedChunk.content) {
+              fullContent += parsedChunk.content as string;
+            }
+
+            // Update progress callback
+            options?.onProgress?.(fullContent, false);
+
+            // Update streaming response state
+            setResponse({
+              id: responseId,
+              role: 'assistant',
+              content: stringToMCPContentArray(fullContent),
+              isStreaming: true,
+              thinking,
+              thinkingSignature,
+              sessionId: ephemeralSessionId,
+              threadId: ephemeralSessionId, // Use ephemeral session as thread
+            });
           }
 
-          if (parsedChunk.thinking) {
-            thinking += parsedChunk.thinking as string;
-          }
-          if (parsedChunk.thinkingSignature) {
-            thinkingSignature = parsedChunk.thinkingSignature as string;
-          }
-          // Defensive: ignore tool_calls in completeText mode
-          if (parsedChunk.content) {
-            fullContent += parsedChunk.content as string;
+          // Finalize response
+          const finalContent = fullContent.trim();
+
+          if (!finalContent && !thinking) {
+            const emptyResponseError = new Error('AI_SERVICE_EMPTY_RESPONSE');
+            const finalMessage = createErrorMessage(
+              responseId,
+              ephemeralSessionId,
+              ephemeralSessionId,
+              emptyResponseError,
+              { model, provider }
+            );
+            setResponse(finalMessage);
+            return finalMessage;
           }
 
-          // Update progress callback
-          options?.onProgress?.(fullContent, false);
-
-          // Update streaming response state
-          setResponse({
+          const finalMessage: Message = {
             id: responseId,
             role: 'assistant',
-            content: stringToMCPContentArray(fullContent),
-            isStreaming: true,
+            content: stringToMCPContentArray(finalContent || ' '), // Fallback for pure thinking response
+            isStreaming: false,
             thinking,
             thinkingSignature,
             sessionId: ephemeralSessionId,
             threadId: ephemeralSessionId, // Use ephemeral session as thread
+          };
+
+          options?.onProgress?.(finalContent, true);
+          setResponse(finalMessage);
+          return finalMessage;
+        } catch (err) {
+          logger.error('Error in completeText:', err);
+
+          // Handle 429 Rate Limit Retry
+          const errorClassification = classifyAIServiceError(err);
+          if (
+            errorClassification.type === 'RATE_LIMIT_ERROR' &&
+            retryCount < MAX_RETRIES_FOR_429
+          ) {
+            logger.warn(
+              `Rate limit exceeded in completeText. Retrying in ${RETRY_DELAY_MS}ms... (Attempt ${retryCount + 1}/${MAX_RETRIES_FOR_429})`,
+            );
+            retryCount++;
+            await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+            continue;
+          }
+
+          setError(err as Error);
+
+          // Create error message with text content for text completion
+          const errorClassificationForMessage = classifyAIServiceError(err, {
+            model: options?.model ?? model,
+            provider,
+            messageCount: 1,
           });
+
+          const errorMessage: Message = {
+            id: responseId,
+            content: stringToMCPContentArray(
+              'I apologize, but I encountered an error while processing your request.',
+            ),
+            role: 'assistant',
+            isStreaming: false,
+            thinking: '',
+            thinkingSignature: '',
+            tool_calls: [],
+            sessionId: ephemeralSessionId,
+            threadId: ephemeralSessionId, // Use ephemeral session as thread
+            error: errorClassificationForMessage,
+          };
+
+          setResponse(errorMessage);
+          return errorMessage;
+        } finally {
+          setIsLoading(false);
         }
-
-        // Finalize response
-        const finalContent = fullContent.trim() || 'No response generated.';
-        const finalMessage: Message = {
-          id: responseId,
-          role: 'assistant',
-          content: stringToMCPContentArray(finalContent),
-          isStreaming: false,
-          thinking,
-          thinkingSignature,
-          sessionId: ephemeralSessionId,
-          threadId: ephemeralSessionId, // Use ephemeral session as thread
-        };
-
-        options?.onProgress?.(finalContent, true);
-        setResponse(finalMessage);
-        return finalMessage;
-      } catch (err) {
-        logger.error('Error in completeText:', err);
-        setError(err as Error);
-
-        // Create error message with text content for text completion
-        const errorClassification = classifyAIServiceError(err, {
-          model: options?.model ?? model,
-          provider,
-          messageCount: 1,
-        });
-
-        const errorMessage: Message = {
-          id: responseId,
-          content: stringToMCPContentArray(
-            'I apologize, but I encountered an error while processing your request.',
-          ),
-          role: 'assistant',
-          isStreaming: false,
-          thinking: '',
-          thinkingSignature: '',
-          tool_calls: [],
-          sessionId: ephemeralSessionId,
-          threadId: ephemeralSessionId, // Use ephemeral session as thread
-          error: errorClassification,
-        };
-
-        setResponse(errorMessage);
-        return errorMessage;
-      } finally {
-        setIsLoading(false);
       }
     },
     [model, provider, config, serviceInstance],
