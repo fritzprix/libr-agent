@@ -258,10 +258,10 @@ export class GeminiService extends BaseAIService {
       const geminiMessages = this.convertToGeminiMessages(validatedMessages);
       const geminiTools = tools
         ? [
-          {
-            functionDeclarations: tools as FunctionDeclaration[],
-          },
-        ]
+            {
+              functionDeclarations: tools as FunctionDeclaration[],
+            },
+          ]
         : undefined;
 
       const model =
@@ -350,13 +350,13 @@ export class GeminiService extends BaseAIService {
             content?: {
               parts?: Array<
                 | {
-                  thought?: boolean; // Sometimes boolean flag?
-                  text?: string;
-                }
+                    thought?: boolean; // Sometimes boolean flag?
+                    text?: string;
+                  }
                 | {
-                  // Another possible schema seen in discussions
-                  thought?: string;
-                }
+                    // Another possible schema seen in discussions
+                    thought?: string;
+                  }
               >;
             };
           }>;

@@ -69,6 +69,65 @@ function generateFilterScript(filterType: string, scope: string): string {
     return true;
   }
 
+  // ===== Unique Selector Logic =====
+  function getUniqueSelector(el) {
+    // 1. ID is preferred if unique
+    if (el.id) {
+      const idSel = '#' + CSS.escape(el.id);
+      if (document.querySelectorAll(idSel).length === 1) return idSel;
+    }
+
+    const tagName = el.tagName.toLowerCase();
+
+    // 2. Try unique attributes
+    const uniqueAttrs = ['name', 'role', 'aria-label', 'placeholder', 'data-testid', 'href'];
+    for (const attr of uniqueAttrs) {
+      if (el.hasAttribute(attr)) {
+        const val = el.getAttribute(attr);
+        if (val) {
+          const attrSel = tagName + '[' + attr + '="' + val.replace(/"/g, '\\\\"') + '"]';
+          if (document.querySelectorAll(attrSel).length === 1) return attrSel;
+        }
+      }
+    }
+
+    // 3. Try class combinations
+    if (el.className && typeof el.className === 'string' && el.className.trim()) {
+      const classes = el.className.trim().split(/\\s+/);
+      const classSel = classes.map(c => '.' + CSS.escape(c)).join('');
+      const fullSel = tagName + classSel;
+      if (document.querySelectorAll(fullSel).length === 1) return fullSel;
+    }
+
+    // 4. Hierarchical fallback with nth-of-type
+    let path = [];
+    let current = el;
+    while (current && current.nodeType === Node.ELEMENT_NODE) {
+      let selector = current.tagName.toLowerCase();
+      if (current.id) {
+        const idSel = '#' + CSS.escape(current.id);
+        if (document.querySelectorAll(idSel).length === 1) {
+          path.unshift(idSel);
+          return path.join(' > ');
+        }
+        selector = idSel;
+      } else {
+        const parent = current.parentElement;
+        if (parent) {
+          const siblings = Array.from(parent.children).filter(c => c.tagName === current.tagName);
+          if (siblings.length > 1) {
+            selector += ':nth-of-type(' + (siblings.indexOf(current) + 1) + ')';
+          }
+        }
+      }
+      path.unshift(selector);
+      const fullPath = path.join(' > ');
+      if (document.querySelectorAll(fullPath).length === 1) return fullPath;
+      current = current.parentElement;
+    }
+    return path.join(' > ');
+  }
+
   // ===== Extract Element Information =====
   function extractElementInfo(el, index) {
     const tagName = el.tagName.toLowerCase();
@@ -81,22 +140,12 @@ function generateFilterScript(filterType: string, scope: string): string {
       if (value) attrs[attr] = value;
     });
 
-    // Generate basic selector (simplified, no special character escaping needed for display)
-    let selector = tagName;
-    if (attrs.id) {
-      selector = '#' + attrs.id;
-    } else if (attrs.name) {
-      selector += '[name="' + attrs.name + '"]';
-    } else if (attrs.class) {
-      selector += '.' + attrs.class.split(' ')[0];
-    }
-
     return {
       index,
       tag: tagName,
       text,
       attributes: attrs,
-      selector
+      selector: getUniqueSelector(el)
     };
   }
 

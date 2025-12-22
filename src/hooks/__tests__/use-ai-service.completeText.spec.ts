@@ -202,10 +202,8 @@ describe('useAIService.completeText', () => {
     // It should now return an error message
     expect(finalMessage?.error).toBeDefined();
     expect(finalMessage?.error?.displayMessage).toContain('empty response');
-    const contentText = finalMessage?.content
-      .map((c) => ('text' in c ? c.text : ''))
-      .join('');
-    // Content might be empty or contain validation error text depending on implementation, 
+
+    // Content might be empty or contain validation error text depending on implementation,
     // but we primarily check for the error object now.
   });
 
