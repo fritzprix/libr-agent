@@ -23,10 +23,10 @@ export class MessageNormalizer {
     targetProvider: AIServiceProvider,
   ): Message[] {
     // Zero pass: filter out any messages that contain errors (prevents polluting context)
-    const validMessages = messages.filter((msg) => !msg.error);
+    // const validMessages = messages.filter((msg) => !msg.error);
 
     // First pass: handle tool call relationships
-    let processedMessages = validMessages;
+    let processedMessages = messages;
 
     // Anthropic: existing validation (unchanged)
     if (targetProvider === AIServiceProvider.Anthropic) {
@@ -42,7 +42,7 @@ export class MessageNormalizer {
         AIServiceProvider.Fireworks,
       ].includes(targetProvider)
     ) {
-      processedMessages = this.ensureToolCallPairing(processedMessages);
+      processedMessages = this.ensureToolCallPairing(messages);
     }
 
     // Second pass: sanitize individual messages

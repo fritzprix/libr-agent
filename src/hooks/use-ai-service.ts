@@ -539,7 +539,7 @@ export const useAIService = (config?: AIServiceConfig) => {
               ephemeralSessionId,
               ephemeralSessionId,
               emptyResponseError,
-              { model, provider }
+              { model, provider },
             );
             setResponse(finalMessage);
             return finalMessage;
