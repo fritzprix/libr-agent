@@ -452,9 +452,11 @@ impl InteractiveBrowserServer {
                     // Timeout occurred
                     self.result_waiters.remove(&request_id);
                     warn!("Script execution timeout after 30s: {request_id}");
-                    Err(format!(
-                        "Script execution timeout after 30 seconds (request: {request_id})"
-                    ))
+                    Err(String::from(BrowserError::Timeout {
+                        operation: "execute_script".to_string(),
+                        duration_ms: 30000,
+                        session_id: session_id.to_string(),
+                    }))
                 }
             }
         } else {
