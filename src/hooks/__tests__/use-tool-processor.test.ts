@@ -4,6 +4,16 @@ import { useToolProcessor } from '../use-tool-processor';
 import { Message } from '@/models/chat';
 
 // Mock dependencies
+vi.mock('@/hooks/use-settings', () => ({
+  useSettings: () => ({
+    value: {
+      advanced: {
+        circuitBreakerThreshold: 3,
+      },
+    },
+  }),
+}));
+
 const mockExecuteToolCall = vi.fn();
 const mockSubmit = vi.fn();
 const mockAddMessages = vi.fn();

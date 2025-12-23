@@ -198,11 +198,12 @@ describe('useAIService.completeText', () => {
     });
 
     expect(finalMessage).toBeDefined();
-    expect(finalMessage?.role).toBe('assistant');
-    const contentText = finalMessage?.content
-      .map((c) => ('text' in c ? c.text : ''))
-      .join('');
-    expect(contentText).toBe('No response generated.');
+    // It should now return an error message
+    expect(finalMessage?.error).toBeDefined();
+    expect(finalMessage?.error?.displayMessage).toContain('empty response');
+
+    // Content might be empty or contain validation error text depending on implementation,
+    // but we primarily check for the error object now.
   });
 
   it('should ignore tool_calls in stream chunks', async () => {

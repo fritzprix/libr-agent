@@ -11,7 +11,10 @@ import { AIServiceProvider } from '@/lib/ai-service';
 import { useSettings } from '@/hooks/use-settings';
 import { useTranslation } from 'react-i18next';
 import i18n from '@/lib/i18n';
-import type { ServiceConfig } from '@/context/SettingsContext';
+import type {
+  ServiceConfig,
+  AdvancedSettings,
+} from '@/context/SettingsContext';
 import {
   Button,
   Card,
@@ -145,6 +148,7 @@ export default function SettingsPage() {
       uiLanguage,
       toolCallGroupVisibleCount,
       agentHubUrl,
+      advanced,
     },
     update,
   } = useSettings();
@@ -207,12 +211,21 @@ export default function SettingsPage() {
   const [localToolCallGroupVisibleCount, setLocalToolCallGroupVisibleCount] =
     useState(toolCallGroupVisibleCount);
   const [localAgentHubUrl, setLocalAgentHubUrl] = useState(agentHubUrl || '');
+  const [localAdvancedSettings, setLocalAdvancedSettings] =
+    useState<AdvancedSettings>(
+      advanced || {
+        maxRetries: 1,
+        retryDelay: 5000,
+        circuitBreakerThreshold: 3,
+      },
+    );
 
   const otherPendingRef = useRef<{
     windowSize?: number;
     uiLanguage?: string;
     toolCallGroupVisibleCount?: number;
     agentHubUrl?: string;
+    advanced?: AdvancedSettings;
   }>({});
 
   // Sync local state with context when context changes (e.g., after Apply or external updates)
@@ -231,6 +244,12 @@ export default function SettingsPage() {
   useEffect(() => {
     setLocalAgentHubUrl(agentHubUrl || '');
   }, [agentHubUrl]);
+
+  useEffect(() => {
+    if (advanced) {
+      setLocalAdvancedSettings(advanced);
+    }
+  }, [advanced]);
 
   const handlePendingChange = useCallback(
     (provider: AIServiceProvider, patch: Partial<ServiceConfig>) => {
@@ -288,6 +307,19 @@ export default function SettingsPage() {
     );
   };
 
+  const handleAdvancedSettingsChange = (
+    key: keyof AdvancedSettings,
+    value: number,
+  ) => {
+    const newSettings = { ...localAdvancedSettings, [key]: value };
+    setLocalAdvancedSettings(newSettings);
+    otherPendingRef.current.advanced = newSettings;
+    setPendingCount(
+      Object.keys(pendingRef.current).length +
+        Object.keys(otherPendingRef.current).length,
+    );
+  };
+
   const flushPending = useCallback(async () => {
     const pending = pendingRef.current;
     const otherPending = otherPendingRef.current;
@@ -304,6 +336,7 @@ export default function SettingsPage() {
         windowSize: number;
         uiLanguage: string;
         toolCallGroupVisibleCount: number;
+        advanced: AdvancedSettings;
       }> = {};
 
       // Merge pending service configs
@@ -333,6 +366,9 @@ export default function SettingsPage() {
       if (otherPending.toolCallGroupVisibleCount !== undefined) {
         updates.toolCallGroupVisibleCount =
           otherPending.toolCallGroupVisibleCount;
+      }
+      if (otherPending.advanced) {
+        updates.advanced = otherPending.advanced;
       }
 
       await update(updates);
@@ -396,6 +432,9 @@ export default function SettingsPage() {
               )}
             </TabsTrigger>
             <TabsTrigger value="agent-hub">Agent Hub</TabsTrigger>
+            <TabsTrigger value="advanced">
+              {t('settings.tabs.advanced', 'Advanced')}
+            </TabsTrigger>
             <TabsTrigger value="data-reset">
               {t('settings.tabs.dataReset', 'Data & Reset')}
             </TabsTrigger>
@@ -519,6 +558,88 @@ export default function SettingsPage() {
                 <p className="text-xs text-muted-foreground mt-1">
                   URL of the remote Agent Hub server. If set, assistants will be
                   synced with this server.
+                </p>
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="advanced">
+            <div className="space-y-6">
+              <div className="min-w-0">
+                <label className="block text-muted-foreground mb-2 font-medium">
+                  {t('settings.advanced.maxRetries', 'Max Retry Attempts')}
+                </label>
+                <Input
+                  type="number"
+                  placeholder="e.g., 1"
+                  min={0}
+                  max={5}
+                  value={localAdvancedSettings.maxRetries}
+                  onChange={(e) =>
+                    handleAdvancedSettingsChange(
+                      'maxRetries',
+                      parseInt(e.target.value, 10) || 0,
+                    )
+                  }
+                  className="bg-background border text-foreground w-full max-w-xs"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  {t(
+                    'settings.advanced.maxRetriesDescription',
+                    'Maximum number of retries for failed AI requests (e.g., rate limits).',
+                  )}
+                </p>
+              </div>
+
+              <div className="min-w-0">
+                <label className="block text-muted-foreground mb-2 font-medium">
+                  {t('settings.advanced.retryDelay', 'Retry Delay (ms)')}
+                </label>
+                <Input
+                  type="number"
+                  placeholder="e.g., 5000"
+                  min={1000}
+                  step={1000}
+                  value={localAdvancedSettings.retryDelay}
+                  onChange={(e) =>
+                    handleAdvancedSettingsChange(
+                      'retryDelay',
+                      parseInt(e.target.value, 10) || 5000,
+                    )
+                  }
+                  className="bg-background border text-foreground w-full max-w-xs"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  {t(
+                    'settings.advanced.retryDelayDescription',
+                    'Delay in milliseconds between retry attempts.',
+                  )}
+                </p>
+              </div>
+
+              <div className="min-w-0">
+                <label className="block text-muted-foreground mb-2 font-medium">
+                  {t('settings.advanced.circuitBreaker', 'Tool Loop Threshold')}
+                </label>
+                <Input
+                  type="number"
+                  placeholder="e.g., 3"
+                  min={1}
+                  max={10}
+                  value={localAdvancedSettings.circuitBreakerThreshold}
+                  onChange={(e) =>
+                    handleAdvancedSettingsChange(
+                      'circuitBreakerThreshold',
+                      parseInt(e.target.value, 10) || 3,
+                    )
+                  }
+                  className="bg-background border text-foreground w-full max-w-xs"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  {t(
+                    'settings.advanced.circuitBreakerDescription',
+                    'Number of repeated errors or tool calls before triggering the circuit breaker.',
+                  )}
                 </p>
               </div>
             </div>

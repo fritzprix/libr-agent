@@ -9,6 +9,7 @@ import { Message, ToolCall, MessageErrorType } from '@/models/chat';
 import { isMCPError, MCPContent, MCPResponse } from '@/lib/mcp-types';
 import { useSessionHistory } from '@/context/SessionHistoryContext';
 import { extractBuiltInServiceAlias } from '@/lib/utils';
+import { useSettings } from './use-settings';
 
 const logger = getLogger('useToolProcessor');
 
@@ -41,9 +42,16 @@ export const useToolProcessor = ({ submit }: UseToolProcessorConfig) => {
   const { currentAssistant } = useAssistantContext();
   const { executeToolCall } = useUnifiedMCP();
   const { addMessages } = useSessionHistory();
+  const {
+    value: { advanced },
+  } = useSettings();
 
   // State for tracking history
   const toolHistoryRef = useRef<{ signature: string; count: number } | null>(
+    null,
+  );
+  // State for tracking error history
+  const errorHistoryRef = useRef<{ signature: string; count: number } | null>(
     null,
   );
 
@@ -86,7 +94,10 @@ export const useToolProcessor = ({ submit }: UseToolProcessorConfig) => {
 
           if (toolHistoryRef.current?.signature === currentSignature) {
             toolHistoryRef.current.count += 1;
-            if (toolHistoryRef.current.count >= 3) {
+            if (
+              toolHistoryRef.current.count >=
+              (advanced?.circuitBreakerThreshold ?? 3)
+            ) {
               isLooping = true;
             }
           } else {
@@ -149,6 +160,64 @@ export const useToolProcessor = ({ submit }: UseToolProcessorConfig) => {
               });
 
               mcpResponse = await executeToolCallRef.current(toolCall);
+            }
+
+            // Error Circuit Breaker Logic
+            if (
+              !isLooping &&
+              (mcpResponse.result?.isError || mcpResponse.error)
+            ) {
+              const rawErrorMessage = mcpResponse.error
+                ? `Error: ${mcpResponse.error.message} (Code: ${mcpResponse.error.code})`
+                : ((mcpResponse.result?.content?.[0] as { text?: string })
+                    ?.text ?? 'Unknown error');
+
+              const normalizedError = rawErrorMessage
+                .replace(/\d+/g, '<NUM>')
+                .replace(
+                  /[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/gi,
+                  '<UUID>',
+                );
+
+              const errorSignature = `${toolName}:${normalizedError}`;
+
+              if (errorHistoryRef.current?.signature === errorSignature) {
+                errorHistoryRef.current.count += 1;
+                if (
+                  errorHistoryRef.current.count >=
+                  (advanced?.circuitBreakerThreshold ?? 3)
+                ) {
+                  logger.warn('Error circuit breaker triggered', {
+                    toolName,
+                    count: errorHistoryRef.current.count,
+                    error: rawErrorMessage,
+                  });
+
+                  const circuitBreakCall = {
+                    ...toolCall,
+                    function: {
+                      name: 'builtin_ui__circuitBreak',
+                      arguments: JSON.stringify({
+                        toolName,
+                        repetitionCount: errorHistoryRef.current.count,
+                        args,
+                        error: rawErrorMessage,
+                      }),
+                    },
+                  };
+
+                  mcpResponse =
+                    await executeToolCallRef.current(circuitBreakCall);
+                  errorHistoryRef.current = null;
+                }
+              } else {
+                errorHistoryRef.current = {
+                  signature: errorSignature,
+                  count: 1,
+                };
+              }
+            } else if (!isLooping) {
+              errorHistoryRef.current = null;
             }
 
             const finalMcpResponse = mcpResponse;

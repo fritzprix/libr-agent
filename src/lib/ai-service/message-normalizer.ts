@@ -7,40 +7,37 @@ const logger = getLogger('MessageNormalizer');
 /**
  * A utility class for normalizing and sanitizing message objects to ensure
  * compatibility with various AI service providers.
+ *
+ * Responsibilities:
+ * 1. Validation: Ensures strict 1:1 pairing between tool calls and tool responses.
+ * 2. Sanitization: Removes unsupported fields (e.g., 'thinking' for OpenAI) and system errors.
+ * 3. Normalization: Converts internal message formats to provider-specific structures.
  */
 export class MessageNormalizer {
   /**
    * Sanitizes an array of messages for a specific AI service provider.
-   * This is the main entry point for message normalization. It applies provider-specific
-   * transformations, such as fixing tool call chains for Anthropic.
+   * This is the main entry point for message normalization. It executes a pipeline of
+   * validation and sanitization steps to prevent API errors (e.g., 400 Bad Request).
+   *
+   * Pipeline:
+   * 1. Filter System Errors: Remove network/API errors but keep tool execution failures.
+   * 2. Validate Tool Pairing: Ensure every tool response has a matching tool call.
+   * 3. Provider Sanitization: Apply specific rules (e.g., removing 'thinking' fields).
    *
    * @param messages The array of messages to sanitize.
    * @param targetProvider The target AI service provider.
-   * @returns A new array of sanitized messages.
+   * @returns A new array of sanitized messages ready for API submission.
    */
   static sanitizeMessagesForProvider(
     messages: Message[],
     targetProvider: AIServiceProvider,
   ): Message[] {
-    // First pass: handle tool call relationships
-    let processedMessages = messages;
+    // Zero pass: filter out system errors (prevents polluting context)
+    // but preserve tool execution errors which are part of the conversation flow
+    const validMessages = this.filterSystemErrors(messages);
 
-    // Anthropic: existing validation (unchanged)
-    if (targetProvider === AIServiceProvider.Anthropic) {
-      processedMessages = this.fixAnthropicToolCallChain(messages);
-    }
-
-    // OpenAI-family: apply tool-call/tool-response pairing validation
-    if (
-      [
-        AIServiceProvider.OpenAI,
-        AIServiceProvider.Groq,
-        AIServiceProvider.Cerebras,
-        AIServiceProvider.Fireworks,
-      ].includes(targetProvider)
-    ) {
-      processedMessages = this.ensureToolCallPairing(processedMessages);
-    }
+    // First pass: handle tool call relationships (Common for all providers)
+    const processedMessages = this.validateToolCallPairing(validMessages);
 
     // Second pass: sanitize individual messages
     return processedMessages
@@ -49,22 +46,52 @@ export class MessageNormalizer {
   }
 
   /**
-   * Ensures tool-call/tool-response pairing for OpenAI-family providers.
-   * Similar to fixAnthropicToolCallChain but tailored for OpenAI API requirements.
+   * Filters out messages containing system-level errors (AI_SERVICE_ERROR)
+   * while preserving tool execution errors (TOOL_EXECUTION_ERROR).
    *
-   * OpenAI API requires that every 'tool' role message must correspond to
-   * a tool_call in a preceding assistant message. This function:
-   * 1. Collects all tool_call ids from assistant messages
-   * 2. Maps tool responses by tool_call_id
-   * 3. Removes orphaned tool messages (no matching tool_call)
-   * 4. Removes unmatched tool_calls from assistant messages
-   * 5. Preserves message ordering and role semantics
+   * - System Errors (Network/API): Filtered to prevent polluting the context with transient failures.
+   * - Tool Execution Errors: Preserved because the AI needs to know a tool failed to attempt self-correction.
+   *
+   * @param messages The array of messages to filter.
+   * @returns A new array of messages without system errors.
+   * @private
+   */
+  private static filterSystemErrors(messages: Message[]): Message[] {
+    return messages.filter((msg) => {
+      if (!msg.error) return true;
+
+      // Keep tool execution errors as they are part of the conversation context
+      // The AI needs to know that a tool failed to execute
+      if (msg.role === 'tool' || msg.error.type === 'TOOL_EXECUTION_ERROR') {
+        return true;
+      }
+
+      // Filter out system errors (network issues, API errors, etc.)
+      // These should not be part of the conversation history sent to the AI
+      logger.debug('Filtering out system error message', {
+        messageId: msg.id,
+        errorType: msg.error.type,
+      });
+      return false;
+    });
+  }
+
+  /**
+   * Ensures strict tool-call/tool-response pairing for all providers.
+   *
+   * Critical for OpenAI and Anthropic, which enforce a strict 1:1 mapping:
+   * - Every 'tool' message MUST have a preceding 'assistant' message with a matching `tool_call_id`.
+   * - Every `tool_call` in an 'assistant' message MUST have a following 'tool' message.
+   *
+   * This function prevents "400 Bad Request" errors by:
+   * 1. Removing orphaned tool responses (no matching call).
+   * 2. Removing incomplete tool calls (no matching response) from assistant messages.
    *
    * @param messages - Array of messages to validate
    * @returns Sanitized array with valid tool-call pairings only
    * @private
    */
-  private static ensureToolCallPairing(messages: Message[]): Message[] {
+  private static validateToolCallPairing(messages: Message[]): Message[] {
     const result: Message[] = [];
     const validToolCallIds = new Set<string>();
     const completedToolCallIds = new Set<string>();
@@ -106,15 +133,12 @@ export class MessageNormalizer {
             .filter((tc) => !completedToolCallIds.has(tc.id))
             .map((tc) => tc.id);
 
-          logger.warn(
-            'Removing incomplete tool_calls from assistant message for OpenAI',
-            {
-              messageId: msg.id,
-              removedToolIds: removedIds,
-              completedCount: completedToolCalls.length,
-              totalCount: msg.tool_calls.length,
-            },
-          );
+          logger.warn('Removing incomplete tool_calls from assistant message', {
+            messageId: msg.id,
+            removedToolIds: removedIds,
+            completedCount: completedToolCalls.length,
+            totalCount: msg.tool_calls.length,
+          });
         }
 
         if (completedToolCalls.length > 0) {
@@ -126,7 +150,7 @@ export class MessageNormalizer {
       } else if (msg.role === 'tool') {
         // Only include tool messages that have matching tool_calls
         if (!msg.tool_call_id || !completedToolCallIds.has(msg.tool_call_id)) {
-          logger.debug('Skipping orphaned tool message for OpenAI', {
+          logger.debug('Skipping orphaned tool message', {
             messageId: msg.id,
             toolCallId: msg.tool_call_id,
           });
@@ -139,129 +163,17 @@ export class MessageNormalizer {
 
     // Remove any tool messages from the beginning of conversation
     while (result.length > 0 && result[0].role === 'tool') {
-      logger.warn(
-        'Removing tool message from beginning of conversation for OpenAI',
-        {
-          messageId: result[0].id,
-        },
-      );
-      result.shift();
-    }
-
-    logger.info('OpenAI tool call pairing validation completed', {
-      originalMessages: messages.length,
-      processedMessages: result.length,
-      validToolCalls: validToolCallIds.size,
-      completedToolCalls: completedToolCallIds.size,
-    });
-
-    return result;
-  }
-
-  /**
-   * Fixes the tool call chain for Anthropic models by ensuring that every `tool_calls`
-   * message from the assistant is followed by a corresponding `tool` result message.
-   * It removes any incomplete tool call chains to maintain API compatibility.
-   *
-   * @param messages The array of messages to process.
-   * @returns A new array of messages with a valid tool call chain for Anthropic.
-   * @private
-   */
-  private static fixAnthropicToolCallChain(messages: Message[]): Message[] {
-    const result: Message[] = [];
-    const pendingToolUseIds = new Set<string>();
-    const completedToolUseIds = new Set<string>();
-
-    // Step 1: Collect all tool_use IDs from assistant messages
-    for (const msg of messages) {
-      if (msg.role === 'assistant' && msg.tool_calls) {
-        msg.tool_calls.forEach((tc) => pendingToolUseIds.add(tc.id));
-      }
-    }
-
-    // Step 2: Identify completed tool_uses by finding matching tool_results
-    for (const msg of messages) {
-      if (
-        msg.role === 'tool' &&
-        msg.tool_call_id &&
-        pendingToolUseIds.has(msg.tool_call_id)
-      ) {
-        completedToolUseIds.add(msg.tool_call_id);
-      }
-    }
-
-    // Step 3: Reconstruct the message list, including only complete chains
-    for (const msg of messages) {
-      const processedMsg = { ...msg };
-
-      if (msg.role === 'assistant' && msg.tool_calls) {
-        // Remove any tool_calls that were not completed
-        const completedToolCalls = msg.tool_calls.filter((tc) =>
-          completedToolUseIds.has(tc.id),
-        );
-
-        if (completedToolCalls.length !== msg.tool_calls.length) {
-          const removedIds = msg.tool_calls
-            .filter((tc) => !completedToolUseIds.has(tc.id))
-            .map((tc) => tc.id);
-
-          logger.warn('Removing incomplete tool_calls from assistant message', {
-            messageId: msg.id,
-            removedToolIds: removedIds,
-            completedCount: completedToolCalls.length,
-            totalCount: msg.tool_calls.length,
-          });
-        }
-
-        if (completedToolCalls.length > 0) {
-          processedMsg.tool_calls = completedToolCalls;
-          // Set the legacy tool_use field for Anthropic (uses the first tool call)
-          const firstToolCall = completedToolCalls[0];
-          try {
-            processedMsg.tool_use = {
-              id: firstToolCall.id,
-              name: firstToolCall.function.name,
-              input: JSON.parse(firstToolCall.function.arguments),
-            };
-          } catch (error) {
-            logger.error('Failed to parse tool_call arguments for tool_use', {
-              messageId: msg.id,
-              toolCallId: firstToolCall.id,
-              error,
-              arguments: firstToolCall.function.arguments,
-            });
-          }
-        } else {
-          delete processedMsg.tool_calls;
-          delete processedMsg.tool_use;
-        }
-      } else if (msg.role === 'tool' && msg.tool_call_id) {
-        // Only include tool_results that correspond to a completed tool_use
-        if (!completedToolUseIds.has(msg.tool_call_id)) {
-          logger.debug('Skipping tool_result for incomplete tool_use', {
-            messageId: msg.id,
-            toolCallId: msg.tool_call_id,
-          });
-          continue;
-        }
-      }
-
-      result.push(processedMsg);
-    }
-
-    // Remove any tool messages from the beginning of the conversation
-    while (result.length > 0 && result[0].role === 'tool') {
       logger.warn('Removing tool message from beginning of conversation', {
         messageId: result[0].id,
       });
       result.shift();
     }
 
-    logger.info('Anthropic tool chain tail management completed', {
+    logger.info('Tool call pairing validation completed', {
       originalMessages: messages.length,
       processedMessages: result.length,
-      pendingToolUses: pendingToolUseIds.size,
-      completedToolUses: completedToolUseIds.size,
+      validToolCalls: validToolCallIds.size,
+      completedToolCalls: completedToolCallIds.size,
     });
 
     return result;
@@ -303,38 +215,13 @@ export class MessageNormalizer {
 
   /**
    * Sanitizes a message for the Anthropic provider.
-   * It converts `tool_calls` to the legacy `tool_use` format and filters out
-   * tool messages that are missing a `tool_call_id`.
+   * It filters out tool messages that are missing a `tool_call_id`.
+   * Note: tool_calls to tool_use conversion is handled by AnthropicService.
    * @param message The message to sanitize.
    * @returns The sanitized message, or null if it should be filtered.
    * @private
    */
   private static sanitizeForAnthropic(message: Message): Message | null {
-    // Convert tool_calls to tool_use for Anthropic
-    if (message.tool_calls && !message.tool_use) {
-      const firstToolCall = message.tool_calls[0];
-      if (firstToolCall) {
-        try {
-          message.tool_use = {
-            id: firstToolCall.id,
-            name: firstToolCall.function.name,
-            input: JSON.parse(firstToolCall.function.arguments),
-          };
-          logger.debug('Converted tool_calls to tool_use for Anthropic', {
-            messageId: message.id,
-            toolName: firstToolCall.function.name,
-          });
-        } catch (error) {
-          logger.error('Failed to parse tool_call arguments', {
-            messageId: message.id,
-            error,
-            arguments: firstToolCall.function.arguments,
-          });
-        }
-      }
-      delete message.tool_calls;
-    }
-
     // Filter out tool messages without tool_call_id
     if (message.role === 'tool' && !message.tool_call_id) {
       logger.debug('Filtering out tool message without tool_call_id', {

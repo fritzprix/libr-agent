@@ -452,9 +452,11 @@ impl InteractiveBrowserServer {
                     // Timeout occurred
                     self.result_waiters.remove(&request_id);
                     warn!("Script execution timeout after 30s: {request_id}");
-                    Err(format!(
-                        "Script execution timeout after 30 seconds (request: {request_id})"
-                    ))
+                    Err(String::from(BrowserError::Timeout {
+                        operation: "execute_script".to_string(),
+                        duration_ms: 30000,
+                        session_id: session_id.to_string(),
+                    }))
                 }
             }
         } else {
@@ -543,29 +545,51 @@ impl InteractiveBrowserServer {
 
     /// Navigates a browser session to a new URL and waits for the page to load.
     pub async fn navigate_to_url(&self, session_id: &str, url: &str) -> Result<String, String> {
-        // Validate URL first
-        let validated_url = self.validate_and_normalize_url(url)?;
-
-        // Check URL status
-        let status_check = Some(self.check_url_status(&validated_url).await);
-
-        info!("Navigating session {session_id} to {url}");
-
-        let session = {
+        // 1. Get session info (read lock)
+        let (window_label, current_url) = {
             let sessions = self.sessions.read().map_err(|e| {
                 String::from(BrowserError::LockFailed {
                     reason: format!("Failed to acquire read lock: {e}"),
                 })
             })?;
 
-            sessions.get(session_id).cloned().ok_or_else(|| {
+            let session = sessions.get(session_id).ok_or_else(|| {
                 String::from(BrowserError::SessionNotFound {
                     session_id: session_id.to_string(),
                 })
-            })?
+            })?;
+            (session.window_label.clone(), session.url.clone())
         };
 
-        if let Some(window) = self.app_handle.get_webview_window(&session.window_label) {
+        // 2. Resolve and Validate URL
+        let target_url = match url::Url::parse(url) {
+            Ok(parsed) => match parsed.scheme() {
+                "http" | "https" => url.to_string(),
+                scheme => {
+                    return Err(format!(
+                        "Unsupported URL scheme '{}'. Allowed: http://, https://",
+                        scheme
+                    ))
+                }
+            },
+            Err(_) => {
+                // Assume relative URL, try to resolve against current_url
+                let base = url::Url::parse(&current_url)
+                    .map_err(|e| format!("Current session URL is invalid: {e}"))?;
+                let joined = base
+                    .join(url)
+                    .map_err(|e| format!("Failed to resolve relative URL: {e}"))?;
+                warn!("Detected relative URL '{}'. Resolved to '{}'", url, joined);
+                joined.to_string()
+            }
+        };
+
+        // 3. Check URL status
+        let status_check = Some(self.check_url_status(&target_url).await);
+
+        info!("Navigating session {session_id} to {target_url}");
+
+        if let Some(window) = self.app_handle.get_webview_window(&window_label) {
             // Prepare waiter
             let notify = self
                 .page_load_waiters
@@ -575,8 +599,8 @@ impl InteractiveBrowserServer {
                 .clone();
 
             // Use eval to set window.location.href with proper JSON encoding to prevent injection
-            let url_json =
-                serde_json::to_string(url).map_err(|e| format!("Failed to encode URL: {e}"))?;
+            let url_json = serde_json::to_string(&target_url)
+                .map_err(|e| format!("Failed to encode URL: {e}"))?;
             let script = format!("window.location.href = {}", url_json);
 
             window
@@ -590,23 +614,23 @@ impl InteractiveBrowserServer {
                     .write()
                     .map_err(|e| format!("Failed to acquire write lock: {e}"))?;
                 if let Some(session) = sessions.get_mut(session_id) {
-                    session.url = url.to_string();
+                    session.url = target_url.clone();
                 }
             }
 
             // Handle return based on status_check
             match status_check {
                 Some(Ok(status)) if status >= 400 => {
-                    warn!("URL {url} returned status {status}, returning early");
-                    return Ok(format!("Navigated to {url} (HTTP {status})"));
+                    warn!("URL {target_url} returned status {status}, returning early");
+                    return Ok(format!("Navigated to {target_url} (HTTP {status})"));
                 }
                 Some(Err(e)) => {
-                    warn!("URL {url} check failed: {e}, returning early");
-                    return Ok(format!("Navigated to {url} (Network Error: {e})"));
+                    warn!("URL {target_url} check failed: {e}, returning early");
+                    return Ok(format!("Navigated to {target_url} (Network Error: {e})"));
                 }
                 None => {
                     // This shouldn't happen since we always set status_check
-                    return Ok(format!("Navigated to {url}"));
+                    return Ok(format!("Navigated to {target_url}"));
                 }
                 Some(Ok(_)) => {} // HTTP/HTTPS success (200-399), proceed to wait for page load
             }
@@ -616,14 +640,14 @@ impl InteractiveBrowserServer {
             match tokio::time::timeout(Duration::from_secs(30), notify.notified()).await {
                 Ok(_) => {
                     info!("Page load completed for session {session_id}");
-                    Ok(format!("Navigated to {url} and page loaded"))
+                    Ok(format!("Navigated to {target_url} and page loaded"))
                 }
                 Err(_) => {
                     // Timeout
                     info!(
                         "Navigation timed out waiting for page load event in session {session_id}"
                     );
-                    Ok(format!("Navigated to {url} (load wait timed out)"))
+                    Ok(format!("Navigated to {target_url} (load wait timed out)"))
                 }
             }
         } else {
