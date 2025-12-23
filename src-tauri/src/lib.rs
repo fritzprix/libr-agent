@@ -18,13 +18,12 @@ use commands::download_commands::{download_workspace_file, export_and_download_z
 use commands::file_commands::{read_dropped_file, read_file, workspace_write_file, write_file};
 use commands::log_commands::{backup_current_log, clear_current_log, list_log_files};
 use commands::mcp_commands::{
-    call_builtin_tool, call_mcp_tool, call_tool_unified, check_all_servers_status,
-    check_server_status, complete_oauth_flow, get_connected_servers, get_oauth_token,
-    get_service_context, get_validated_tools, has_oauth_token, list_all_tools,
-    list_all_tools_unified, list_builtin_servers, list_builtin_servers_with_metadata,
-    list_builtin_tools, list_mcp_tools, list_tools_from_config, revoke_oauth_token,
-    sample_from_mcp_server, start_mcp_server, start_oauth_flow, stop_mcp_server, switch_context,
-    validate_tool_schema,
+    call_builtin_tool, call_mcp_tool, check_all_servers_status, check_server_status,
+    complete_oauth_flow, get_connected_servers, get_oauth_token, get_service_context,
+    get_validated_tools, has_oauth_token, list_all_tools, list_all_tools_unified,
+    list_builtin_servers, list_builtin_servers_with_metadata, list_builtin_tools, list_mcp_tools,
+    list_tools_from_config, revoke_oauth_token, sample_from_mcp_server, start_mcp_server,
+    start_oauth_flow, stop_mcp_server, switch_context, validate_tool_schema,
 };
 use commands::messages_commands::{
     messages_delete, messages_delete_all_for_session, messages_get_page, messages_search,
@@ -41,7 +40,7 @@ use commands::workspace_commands::{
     get_app_data_dir, get_app_logs_dir, greet, list_workspace_files,
 };
 use mcp::MCPServerManager;
-use services::{InteractiveBrowserServer, SecureFileManager};
+use services::{agent_server, InteractiveBrowserServer, SecureFileManager};
 use session::get_session_manager;
 
 // Re-export state management functions
@@ -225,7 +224,8 @@ pub fn run() {
                 list_builtin_servers_with_metadata,
                 call_builtin_tool,
                 list_all_tools_unified,
-                call_tool_unified,
+                agent_server::agent_start,
+                agent_server::agent_llm_response,
                 // Download commands
                 download_workspace_file,
                 export_and_download_zip,
@@ -294,6 +294,13 @@ pub fn run() {
                 let browser_server = InteractiveBrowserServer::new(app.handle().clone());
                 app.manage(browser_server);
                 println!("✅ Interactive Browser Server initialized");
+
+                // Initialize Agent Runtime State
+                app.manage(services::agent_server::AgentRuntimeState::default());
+                app.manage(std::sync::Arc::new(
+                    services::agent_server::PendingLlmRequests::default(),
+                )); // Pending requests manager
+                println!("✅ Agent Runtime State initialized");
 
                 // Built-in servers are now automatically initialized with SessionManager support
                 // via the get_mcp_manager() function when first called.

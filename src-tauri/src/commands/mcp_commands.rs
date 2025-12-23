@@ -306,6 +306,7 @@ pub async fn list_all_tools_unified() -> Result<Vec<MCPTool>, String> {
 
 /// Calls a tool on either a built-in or external MCP server, determined by the server name.
 #[tauri::command]
+#[allow(dead_code)]
 pub async fn call_tool_unified(
     server_name: String,
     tool_name: String,

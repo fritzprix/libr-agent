@@ -2710,7 +2710,7 @@ dependencies = [
 
 [[package]]
 name = "libragent"
-version = "0.3.42"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2750,6 +2750,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tempfile",
  "thiserror 1.0.69",
+ "thronglet",
  "tokio",
  "tokio-util",
  "tracing",
@@ -5887,6 +5888,20 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.106",
+]
+
+[[package]]
+name = "thronglet"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "futures",
+ "log",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]

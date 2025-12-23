@@ -29,6 +29,7 @@ import { WebMCPProvider } from '@/context/WebMCPContext';
 import { WebMCPServiceRegistry } from '@/features/tools/WebMCPServiceRegistry';
 import { BrowserToolProvider } from '@/features/tools/BrowserToolProvider';
 import { RustMCPToolProvider } from '@/features/tools/RustMCPToolProvider';
+import { AgentLLMBridge } from '@/components/agent/AgentLLMBridge';
 
 function App() {
   return (
@@ -57,6 +58,7 @@ function App() {
                       <SessionHistoryProvider>
                         <ResourceAttachmentProvider>
                           <ModelOptionsProvider>
+                            <AgentLLMBridge />
                             <SidebarProvider className="h-full overflow-hidden">
                               <DnDContextProvider>
                                 <AppSidebar />
