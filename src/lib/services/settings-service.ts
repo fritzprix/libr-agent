@@ -5,14 +5,26 @@ import { llmConfigManager } from '@/lib/llm-config-manager';
 
 const logger = getLogger('SettingsService');
 
+export interface SafetySetting {
+  category: string;
+  threshold: string;
+}
+
 export interface ServiceConfig {
   apiKey?: string;
   baseUrl?: string;
+  safetySettings?: SafetySetting[];
 }
 
 export interface ModelChoice {
   provider: AIServiceProvider;
   model: string;
+}
+
+export interface AdvancedSettings {
+  maxRetries: number;
+  retryDelay: number; // in milliseconds
+  circuitBreakerThreshold: number;
 }
 
 export interface Settings {
@@ -22,6 +34,7 @@ export interface Settings {
   uiLanguage: string;
   toolCallGroupVisibleCount: number;
   agentHubUrl?: string;
+  advanced: AdvancedSettings;
 }
 
 const DEFAULT_MODEL = llmConfigManager.recommendModel({});
@@ -42,6 +55,11 @@ export const DEFAULT_SETTING: Settings = {
   uiLanguage: 'en',
   toolCallGroupVisibleCount: 4,
   agentHubUrl: '',
+  advanced: {
+    maxRetries: 1,
+    retryDelay: 5000,
+    circuitBreakerThreshold: 3,
+  },
 };
 
 export interface ISettingsService {
@@ -60,6 +78,7 @@ export class LocalSettingsService implements ISettingsService {
         uiLanguageObject,
         toolCallGroupVisibleCountObject,
         agentHubUrlObject,
+        advancedSettingsObject,
       ] = await Promise.all([
         dbService.objects.read('serviceConfigs'),
         dbService.objects.read('apiKeys'), // for backward compatibility
@@ -68,6 +87,7 @@ export class LocalSettingsService implements ISettingsService {
         dbService.objects.read('uiLanguage'),
         dbService.objects.read('toolCallGroupVisibleCount'),
         dbService.objects.read('agentHubUrl'),
+        dbService.objects.read('advancedSettings'),
       ]);
 
       // Handle migration from old format to new format
@@ -121,6 +141,9 @@ export class LocalSettingsService implements ISettingsService {
           : {}),
         ...(agentHubUrlObject != null
           ? { agentHubUrl: agentHubUrlObject.value as string }
+          : {}),
+        ...(advancedSettingsObject != null
+          ? { advanced: advancedSettingsObject.value as AdvancedSettings }
           : {}),
       };
       return settings;
@@ -192,6 +215,12 @@ export class LocalSettingsService implements ISettingsService {
         await dbService.objects.upsert({
           key: 'agentHubUrl',
           value: settings.agentHubUrl,
+        });
+      }
+      if (settings.advanced) {
+        await dbService.objects.upsert({
+          key: 'advancedSettings',
+          value: settings.advanced,
         });
       }
 

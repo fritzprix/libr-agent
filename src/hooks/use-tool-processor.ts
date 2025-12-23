@@ -9,6 +9,7 @@ import { Message, ToolCall, MessageErrorType } from '@/models/chat';
 import { isMCPError, MCPContent, MCPResponse } from '@/lib/mcp-types';
 import { useSessionHistory } from '@/context/SessionHistoryContext';
 import { extractBuiltInServiceAlias } from '@/lib/utils';
+import { useSettings } from './use-settings';
 
 const logger = getLogger('useToolProcessor');
 
@@ -41,6 +42,9 @@ export const useToolProcessor = ({ submit }: UseToolProcessorConfig) => {
   const { currentAssistant } = useAssistantContext();
   const { executeToolCall } = useUnifiedMCP();
   const { addMessages } = useSessionHistory();
+  const {
+    value: { advanced },
+  } = useSettings();
 
   // State for tracking history
   const toolHistoryRef = useRef<{ signature: string; count: number } | null>(
@@ -90,7 +94,10 @@ export const useToolProcessor = ({ submit }: UseToolProcessorConfig) => {
 
           if (toolHistoryRef.current?.signature === currentSignature) {
             toolHistoryRef.current.count += 1;
-            if (toolHistoryRef.current.count >= 3) {
+            if (
+              toolHistoryRef.current.count >=
+              (advanced?.circuitBreakerThreshold ?? 3)
+            ) {
               isLooping = true;
             }
           } else {
@@ -176,7 +183,10 @@ export const useToolProcessor = ({ submit }: UseToolProcessorConfig) => {
 
               if (errorHistoryRef.current?.signature === errorSignature) {
                 errorHistoryRef.current.count += 1;
-                if (errorHistoryRef.current.count >= 3) {
+                if (
+                  errorHistoryRef.current.count >=
+                  (advanced?.circuitBreakerThreshold ?? 3)
+                ) {
                   logger.warn('Error circuit breaker triggered', {
                     toolName,
                     count: errorHistoryRef.current.count,

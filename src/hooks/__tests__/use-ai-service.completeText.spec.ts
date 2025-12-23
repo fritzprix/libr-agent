@@ -198,7 +198,6 @@ describe('useAIService.completeText', () => {
     });
 
     expect(finalMessage).toBeDefined();
-    expect(finalMessage).toBeDefined();
     // It should now return an error message
     expect(finalMessage?.error).toBeDefined();
     expect(finalMessage?.error?.displayMessage).toContain('empty response');

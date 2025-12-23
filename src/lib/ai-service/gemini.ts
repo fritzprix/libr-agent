@@ -304,25 +304,59 @@ export class GeminiService extends BaseAIService {
         }
       }
 
-      // Relax safety settings to avoid false positives (empty responses)
-      geminiConfig.safetySettings = [
-        {
-          category: HarmCategory.HARM_CATEGORY_HARASSMENT,
-          threshold: HarmBlockThreshold.BLOCK_NONE,
-        },
-        {
-          category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-          threshold: HarmBlockThreshold.BLOCK_NONE,
-        },
-        {
-          category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-          threshold: HarmBlockThreshold.BLOCK_NONE,
-        },
-        {
-          category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-          threshold: HarmBlockThreshold.BLOCK_NONE,
-        },
-      ];
+      // Configure Gemini safety settings.
+      //
+      // By default, Gemini may return empty responses when its safety filters
+      // classify otherwise benign requests or code-related content as
+      // borderline harmful. In LibrAgent this led to confusing UX where the
+      // user saw no answer, while logs showed that the request was blocked
+      // by provider-side safety rather than by our own policies.
+      //
+      // To reduce these false positives for agent-style, tool-using workflows,
+      // we explicitly disable blocking for the main harm categories here
+      // (set to BLOCK_NONE) and instead rely on:
+      //   - Application-level policies and validation.
+      //   - Tool-level safeguards (e.g. SecureFileManager, browser guards).
+      //   - Centralized logging via getLogger('GeminiService') to monitor
+      //     unexpected or abusive usage patterns.
+      //
+      // Trade-offs:
+      //   - More model output is allowed through (including content that
+      //     Gemini might normally suppress), which increases responsibility
+      //     on downstream controls and human review.
+      //   - This configuration is intended for controlled desktop usage in
+      //     LibrAgent, not as a general recommendation for internet-facing
+      //     services.
+      //
+      // If you observe problematic outputs, policy changes from the provider,
+      // or new deployment contexts (e.g. multi-user or hosted environments),
+      // reconsider these thresholds and potentially re-enable stricter
+      // safety settings or add additional server-side enforcement.
+      if (config.safetySettings) {
+        geminiConfig.safetySettings = config.safetySettings as Array<{
+          category: HarmCategory;
+          threshold: HarmBlockThreshold;
+        }>;
+      } else {
+        geminiConfig.safetySettings = [
+          {
+            category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+            threshold: HarmBlockThreshold.BLOCK_NONE,
+          },
+          {
+            category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+            threshold: HarmBlockThreshold.BLOCK_NONE,
+          },
+          {
+            category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+            threshold: HarmBlockThreshold.BLOCK_NONE,
+          },
+          {
+            category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+            threshold: HarmBlockThreshold.BLOCK_NONE,
+          },
+        ];
+      }
 
       const result = await this.withRetry(async () => {
         return this.genAI.models.generateContentStream({

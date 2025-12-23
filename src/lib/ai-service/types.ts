@@ -2,6 +2,11 @@ import type { ModelInfo } from '../llm-config-manager';
 import type { MCPTool, SamplingOptions, SamplingResponse } from '../mcp-types';
 import type { Message } from '@/models/chat';
 
+export interface SafetySetting {
+  category: string;
+  threshold: string;
+}
+
 /**
  * Defines the configuration options for an AI service.
  */
@@ -18,6 +23,8 @@ export interface AIServiceConfig {
   maxTokens?: number;
   /** The sampling temperature for the model. */
   temperature?: number;
+  /** Safety settings for the model (e.g. Gemini). */
+  safetySettings?: SafetySetting[];
   /** An array of tools available to the service. */
   tools?: MCPTool[];
 

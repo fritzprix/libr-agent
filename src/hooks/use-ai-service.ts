@@ -146,6 +146,7 @@ export const useAIService = (config?: AIServiceConfig) => {
     value: {
       preferredModel: { model, provider },
       serviceConfigs,
+      advanced,
     },
   } = useSettings();
   const [response, setResponse] = useState<Message | null>(null);
@@ -189,11 +190,10 @@ export const useAIService = (config?: AIServiceConfig) => {
       let finalMessage: Message | null = null;
 
       // Retry loop for handling 429 Rate Limit errors
-      let retryCount = 0;
-      const MAX_RETRIES_FOR_429 = 1;
-      const RETRY_DELAY_MS = 5000;
+      const maxRetries = advanced?.maxRetries ?? 1;
+      const retryDelay = advanced?.retryDelay ?? 5000;
 
-      while (true) {
+      for (let retryCount = 0; retryCount <= maxRetries; retryCount++) {
         try {
           // Preprocess messages to include attachment information
           const processedMessages = await prepareMessagesForLLM(messages);
@@ -375,13 +375,12 @@ export const useAIService = (config?: AIServiceConfig) => {
           const errorClassification = classifyAIServiceError(err);
           if (
             errorClassification.type === 'RATE_LIMIT_ERROR' &&
-            retryCount < MAX_RETRIES_FOR_429
+            retryCount < maxRetries
           ) {
             logger.warn(
-              `Rate limit exceeded. Retrying in ${RETRY_DELAY_MS}ms... (Attempt ${retryCount + 1}/${MAX_RETRIES_FOR_429})`,
+              `Rate limit exceeded. Retrying in ${retryDelay}ms... (Attempt ${retryCount + 1}/${maxRetries})`,
             );
-            retryCount++;
-            await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+            await new Promise((resolve) => setTimeout(resolve, retryDelay));
             // Reset state for retry
             fullContent = '';
             thinking = '';
@@ -419,6 +418,7 @@ export const useAIService = (config?: AIServiceConfig) => {
           setIsLoading(false);
         }
       }
+      throw new Error('Unexpected end of retry loop');
     },
     [model, provider, config, serviceInstance],
   );
@@ -437,11 +437,10 @@ export const useAIService = (config?: AIServiceConfig) => {
       setResponse(null);
 
       // Retry loop for handling 429 Rate Limit errors
-      let retryCount = 0;
-      const MAX_RETRIES_FOR_429 = 1;
-      const RETRY_DELAY_MS = 5000;
+      const maxRetries = advanced?.maxRetries ?? 1;
+      const retryDelay = advanced?.retryDelay ?? 5000;
 
-      while (true) {
+      for (let retryCount = 0; retryCount <= maxRetries; retryCount++) {
         const responseId = createId();
         const ephemeralSessionId = createId(); // No persistent session needed
         let fullContent = '';
@@ -566,13 +565,12 @@ export const useAIService = (config?: AIServiceConfig) => {
           const errorClassification = classifyAIServiceError(err);
           if (
             errorClassification.type === 'RATE_LIMIT_ERROR' &&
-            retryCount < MAX_RETRIES_FOR_429
+            retryCount < maxRetries
           ) {
             logger.warn(
-              `Rate limit exceeded in completeText. Retrying in ${RETRY_DELAY_MS}ms... (Attempt ${retryCount + 1}/${MAX_RETRIES_FOR_429})`,
+              `Rate limit exceeded in completeText. Retrying in ${retryDelay}ms... (Attempt ${retryCount + 1}/${maxRetries})`,
             );
-            retryCount++;
-            await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+            await new Promise((resolve) => setTimeout(resolve, retryDelay));
             continue;
           }
 
@@ -606,6 +604,7 @@ export const useAIService = (config?: AIServiceConfig) => {
           setIsLoading(false);
         }
       }
+      throw new Error('Unexpected end of retry loop');
     },
     [model, provider, config, serviceInstance],
   );
