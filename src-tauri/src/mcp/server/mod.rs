@@ -6,8 +6,8 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::mcp::types::{
-    BuiltinServerInfo, MCPConnection, MCPResponse, MCPServerConfig, MCPServerConfigV2, MCPTool,
-    SamplingRequest, ServiceContext, ServiceContextOptions,
+    BuiltinServerInfo, MCPConnection, MCPResponse, MCPServerConfig, MCPTool, SamplingRequest,
+    ServiceContext, ServiceContextOptions,
 };
 use crate::session::SessionManager;
 
@@ -74,12 +74,7 @@ impl MCPServerManager {
         server_manager
     }
 
-    /// Starts and connects to an MCP server based on the provided V2 configuration.
-    pub async fn start_server_v2(&self, config: MCPServerConfigV2) -> Result<String> {
-        lifecycle::start_server_v2(self, config).await
-    }
-
-    /// Starts and connects to an MCP server based on the provided legacy configuration.
+    /// Starts and connects to an MCP server based on the provided configuration.
     pub async fn start_server(&self, config: MCPServerConfig) -> Result<String> {
         lifecycle::start_server(self, config).await
     }

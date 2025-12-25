@@ -98,11 +98,18 @@ export class PersistentState {
     return this.scratchpadManager.addScratchpad(note, source, title, tags);
   }
 
-  async readScratchpad(
-    ids?: number[],
+  async listScratchpad(
+    page?: number,
+    pageSize?: number,
     tags?: string[],
+  ): Promise<MCPResult<BaseOutput & { items: ScratchpadItem[] }>> {
+    return this.scratchpadManager.listScratchpad(page, pageSize, tags);
+  }
+
+  async readScratchpad(
+    ids: number[],
   ): Promise<MCPResult<BaseOutput & { scratchpad: ScratchpadItem[] }>> {
-    return this.scratchpadManager.readScratchpad(ids, tags);
+    return this.scratchpadManager.readScratchpad(ids);
   }
 
   async clearScratchpad(
@@ -283,11 +290,18 @@ export class SessionStateManager {
     return this.getCurrentState().addScratchpad(note, source, title, tags);
   }
 
-  async readScratchpad(
-    ids?: number[],
+  async listScratchpad(
+    page?: number,
+    pageSize?: number,
     tags?: string[],
+  ): Promise<MCPResult<BaseOutput & { items: ScratchpadItem[] }>> {
+    return this.getCurrentState().listScratchpad(page, pageSize, tags);
+  }
+
+  async readScratchpad(
+    ids: number[],
   ): Promise<MCPResult<BaseOutput & { scratchpad: ScratchpadItem[] }>> {
-    return this.getCurrentState().readScratchpad(ids, tags);
+    return this.getCurrentState().readScratchpad(ids);
   }
 
   async clearScratchpad(

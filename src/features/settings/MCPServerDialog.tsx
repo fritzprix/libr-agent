@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { MCPServerEntity } from '@/models/chat';
+import type { TransportConfig } from '@/lib/mcp/config/transport';
 import {
   Dialog,
   DialogContent,
@@ -18,11 +19,20 @@ import {
   SelectContent,
   SelectItem,
 } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { Plus, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
+import { createId } from '@paralleldrive/cuid2';
 
 interface MCPServerDialogProps {
   server: MCPServerEntity;
   onSave: (server: MCPServerEntity) => Promise<void>;
   onCancel: () => void;
+}
+
+interface CustomHeader {
+  id: string;
+  key: string;
+  value: string;
 }
 
 export function MCPServerDialog({
@@ -32,6 +42,9 @@ export function MCPServerDialog({
 }: MCPServerDialogProps) {
   const [draft, setDraft] = useState(server);
   const [isSaving, setIsSaving] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
+
+  // Stdio specific state
   const [argsText, setArgsText] = useState(() => {
     if (server.transport.type === 'stdio' && server.transport.args) {
       return server.transport.args.join(' ');
@@ -44,7 +57,56 @@ export function MCPServerDialog({
     }
     return '{}';
   });
-  const [validationError, setValidationError] = useState<string | null>(null);
+
+  // HTTP specific state
+  const [apiKey, setApiKey] = useState(() => {
+    // Type guard/check for HTTP transport which supports headers
+    if (
+      ((server.transport.type as string) === 'http' ||
+        server.transport.type === 'http-sse') &&
+      'headers' in server.transport &&
+      server.transport.headers
+    ) {
+      // Try to extract existing Bearer token
+      const auth = server.transport.headers['Authorization'];
+      if (auth && auth.startsWith('Bearer ')) {
+        return auth.slice(7);
+      }
+    }
+    return '';
+  });
+
+  const [customHeaders, setCustomHeaders] = useState<CustomHeader[]>(() => {
+    if (
+      ((server.transport.type as string) === 'http' ||
+        server.transport.type === 'http-sse') &&
+      'headers' in server.transport &&
+      server.transport.headers
+    ) {
+      return Object.entries(server.transport.headers)
+        .filter(([key]) => key !== 'Authorization') // Exclude auth header managed by apiKey field
+        .map(([key, value]) => ({
+          id: createId(),
+          key,
+          value,
+        }));
+    }
+    return [];
+  });
+
+  const [enableSSE, setEnableSSE] = useState(() => {
+    if (
+      ((server.transport.type as string) === 'http' ||
+        server.transport.type === 'http-sse') &&
+      'enableSSE' in server.transport &&
+      server.transport.enableSSE !== undefined
+    ) {
+      return server.transport.enableSSE;
+    }
+    return true; // Default to true
+  });
+
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const isNewServer = !server.createdAt || draft.name === '';
 
@@ -53,7 +115,10 @@ export function MCPServerDialog({
 
     if (draft.transport.type === 'stdio') {
       return !!draft.transport.command.trim();
-    } else if (draft.transport.type === 'http') {
+    } else if (
+      (draft.transport.type as string) === 'http' ||
+      draft.transport.type === 'http-sse'
+    ) {
       return !!draft.transport.url.trim();
     }
 
@@ -106,52 +171,93 @@ export function MCPServerDialog({
     }
   };
 
+  const handleAddHeader = () => {
+    setCustomHeaders([
+      ...customHeaders,
+      { id: createId(), key: '', value: '' },
+    ]);
+  };
+
+  const handleRemoveHeader = (id: string) => {
+    setCustomHeaders(customHeaders.filter((h) => h.id !== id));
+  };
+
+  const handleUpdateHeader = (
+    id: string,
+    field: 'key' | 'value',
+    value: string,
+  ) => {
+    setCustomHeaders(
+      customHeaders.map((h) => (h.id === id ? { ...h, [field]: value } : h)),
+    );
+  };
+
   const handleSave = async () => {
     if (!isValid()) {
       setValidationError('Please fill in all required fields');
       return;
     }
 
-    // Validate environment variables for stdio transport
-    if (draft.transport.type === 'stdio') {
-      const envValidation = validateEnvJson();
-      if (!envValidation.valid) {
-        setValidationError(
-          envValidation.error || 'Invalid environment variables',
-        );
-        return;
-      }
+    setIsSaving(true);
+    setValidationError(null);
 
-      // Parse arguments from text input
-      const args = argsText.trim()
-        ? argsText.trim().split(/\s+/).filter(Boolean)
-        : [];
+    try {
+      if (draft.transport.type === 'stdio') {
+        // Validate environment variables for stdio transport
+        const envValidation = validateEnvJson();
+        if (!envValidation.valid) {
+          setValidationError(
+            envValidation.error || 'Invalid environment variables',
+          );
+          setIsSaving(false);
+          return;
+        }
 
-      // Update draft with validated env and parsed args before saving
-      const updatedDraft: MCPServerEntity = {
-        ...draft,
-        transport: {
-          ...draft.transport,
-          args,
-          env: envValidation.env,
-        },
-      };
+        // Parse arguments from text input
+        const args = argsText.trim()
+          ? argsText.trim().split(/\s+/).filter(Boolean)
+          : [];
 
-      setIsSaving(true);
-      try {
-        setValidationError(null);
+        // Update draft with validated env and parsed args before saving
+        const updatedDraft: MCPServerEntity = {
+          ...draft,
+          transport: {
+            ...draft.transport,
+            args,
+            env: envValidation.env,
+          },
+        };
         await onSave(updatedDraft);
-      } finally {
-        setIsSaving(false);
+      } else {
+        // HTTP Transport Logic
+        const headers: Record<string, string> = {};
+
+        // Add API Key as Authorization header
+        if (apiKey.trim()) {
+          headers['Authorization'] = `Bearer ${apiKey.trim()}`;
+        }
+
+        // Add Custom Headers
+        customHeaders.forEach((h) => {
+          if (h.key.trim()) {
+            headers[h.key.trim()] = h.value;
+          }
+        });
+
+        const updatedDraft: MCPServerEntity = {
+          ...draft,
+          transport: {
+            ...draft.transport,
+            type: 'http-sse',
+            headers,
+            enableSSE: enableSSE,
+          } as TransportConfig,
+        };
+
+        await onSave(updatedDraft);
       }
-    } else {
-      setIsSaving(true);
-      try {
-        setValidationError(null);
-        await onSave(draft);
-      } finally {
-        setIsSaving(false);
-      }
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -211,7 +317,11 @@ export function MCPServerDialog({
               Transport Type <span className="text-destructive">*</span>
             </Label>
             <Select
-              value={draft.transport.type}
+              value={
+                draft.transport.type === 'http-sse'
+                  ? 'http'
+                  : draft.transport.type
+              }
               onValueChange={(type: 'stdio' | 'http') => {
                 if (type === 'stdio') {
                   setDraft({
@@ -223,7 +333,7 @@ export function MCPServerDialog({
                 } else {
                   setDraft({
                     ...draft,
-                    transport: { type: 'http', url: '' },
+                    transport: { type: 'http-sse', url: '' } as TransportConfig,
                   });
                 }
               }}
@@ -279,10 +389,7 @@ export function MCPServerDialog({
                   value={argsText}
                   onChange={(e) => {
                     setArgsText(e.target.value);
-                    // Clear validation error when user starts editing
-                    if (validationError) {
-                      setValidationError(null);
-                    }
+                    if (validationError) setValidationError(null);
                   }}
                   placeholder="e.g., -y @modelcontextprotocol/server-filesystem /tmp"
                 />
@@ -299,50 +406,178 @@ export function MCPServerDialog({
                   value={envJson}
                   onChange={(e) => {
                     setEnvJson(e.target.value);
-                    // Clear validation error when user starts editing
-                    if (validationError) {
-                      setValidationError(null);
-                    }
+                    if (validationError) setValidationError(null);
                   }}
                   placeholder='{"KEY": "value"}'
                   rows={3}
                   className="font-mono text-sm"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Optional environment variables as JSON object. Will be
-                  validated when saving.
+                  Optional environment variables as JSON object.
                 </p>
               </div>
             </>
           )}
 
           {/* HTTP Transport Fields */}
-          {draft.transport.type === 'http' && (
-            <div className="space-y-2">
-              <Label htmlFor="http-url">
-                URL <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                id="http-url"
-                value={
-                  draft.transport.type === 'http' ? draft.transport.url : ''
-                }
-                onChange={(e) => {
-                  if (draft.transport.type === 'http') {
+          {((draft.transport.type as string) === 'http' ||
+            draft.transport.type === 'http-sse') && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="http-url">
+                  URL <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="http-url"
+                  value={
+                    (draft.transport.type as string) === 'http' ||
+                    draft.transport.type === 'http-sse'
+                      ? (draft.transport as { url: string }).url
+                      : ''
+                  }
+                  onChange={(e) => {
                     setDraft({
                       ...draft,
                       transport: {
-                        type: 'http',
+                        ...draft.transport,
+                        type: 'http-sse',
                         url: e.target.value,
-                      },
+                      } as TransportConfig,
                     });
-                  }
-                }}
-                placeholder="https://api.example.com/mcp"
-              />
-              <p className="text-xs text-muted-foreground">
-                Full URL to the remote MCP server endpoint
-              </p>
+                  }}
+                  placeholder="https://api.example.com/mcp"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Full URL to the remote MCP server endpoint
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="http-api-key">
+                  API Key / Token{' '}
+                  <span className="text-muted-foreground text-xs">
+                    (Optional)
+                  </span>
+                </Label>
+                <Input
+                  id="http-api-key"
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="Secret Token"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Automatically adds &apos;Authorization: Bearer
+                  &lt;token&gt;&apos; header.
+                </p>
+              </div>
+
+              {/* Advanced Settings */}
+              <div className="border rounded-md">
+                <button
+                  type="button"
+                  onClick={() => setShowAdvanced(!showAdvanced)}
+                  className="flex items-center justify-between w-full px-4 py-2 text-sm font-medium hover:bg-muted/50 transition-colors"
+                >
+                  <span>Advanced Settings</span>
+                  {showAdvanced ? (
+                    <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                  )}
+                </button>
+
+                {showAdvanced && (
+                  <div className="p-4 pt-0 space-y-4 border-t">
+                    {/* Custom Headers */}
+                    <div className="space-y-2 mt-4">
+                      <div className="flex items-center justify-between">
+                        <Label>Custom Headers</Label>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleAddHeader}
+                          className="h-7 text-xs"
+                        >
+                          <Plus className="w-3 h-3 mr-1" /> Add Header
+                        </Button>
+                      </div>
+
+                      {customHeaders.length === 0 ? (
+                        <p className="text-xs text-muted-foreground italic py-1">
+                          No custom headers configured.
+                        </p>
+                      ) : (
+                        <div className="space-y-2">
+                          {customHeaders.map((header) => (
+                            <div
+                              key={header.id}
+                              className="flex gap-2 items-start"
+                            >
+                              <div className="flex-1">
+                                <Input
+                                  placeholder="Key (e.g. User-Agent)"
+                                  value={header.key}
+                                  onChange={(e) =>
+                                    handleUpdateHeader(
+                                      header.id,
+                                      'key',
+                                      e.target.value,
+                                    )
+                                  }
+                                  className="h-8 text-sm"
+                                />
+                              </div>
+                              <div className="flex-1">
+                                <Input
+                                  placeholder="Value"
+                                  value={header.value}
+                                  onChange={(e) =>
+                                    handleUpdateHeader(
+                                      header.id,
+                                      'value',
+                                      e.target.value,
+                                    )
+                                  }
+                                  className="h-8 text-sm"
+                                />
+                              </div>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleRemoveHeader(header.id)}
+                                className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* SSE Toggle */}
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <Label htmlFor="enable-sse">
+                          Enable Server-Sent Events (SSE)
+                        </Label>
+                        <p className="text-xs text-muted-foreground">
+                          Keep enabled for streaming responses. Disable for
+                          stateless HTTP.
+                        </p>
+                      </div>
+                      <Switch
+                        id="enable-sse"
+                        checked={enableSSE}
+                        onCheckedChange={setEnableSSE}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>

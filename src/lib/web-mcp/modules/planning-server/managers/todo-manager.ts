@@ -114,6 +114,24 @@ export class TodoManager {
       } as MCPResult<AddToDoOutput>;
     }
 
+    // Validation: Check for empty titles in subtasks
+    if (subtasks && subtasks.length > 0) {
+      for (let i = 0; i < subtasks.length; i++) {
+        const sub = subtasks[i];
+        if (!sub.title || sub.title.trim() === '') {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `Subtask at index ${i} has an empty title. Please provide a valid title for all subtasks.`,
+              },
+            ],
+            isError: true,
+          } as MCPResult<AddToDoOutput>;
+        }
+      }
+    }
+
     // Validation: If parentId is provided, verify it exists and is top-level
     if (parentId) {
       const parent = await db.todos.get(parentId);

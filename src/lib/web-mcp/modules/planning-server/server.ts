@@ -19,6 +19,7 @@ import type {
   CheckTodoOutput,
   BaseOutput,
   ScratchpadItem,
+  ListScratchpadOutput,
 } from './types';
 
 const stateManager = new SessionStateManager();
@@ -141,11 +142,15 @@ const planningServer: WebMCPServer = {
           typedArgs.tags as string[] | undefined,
         );
       }
-      case 'readScratchpad': {
-        return await stateManager.readScratchpad(
-          typedArgs.ids as number[] | undefined,
+      case 'listScratchpad': {
+        return await stateManager.listScratchpad(
+          typedArgs.page as number | undefined,
+          typedArgs.pageSize as number | undefined,
           typedArgs.tags as string[] | undefined,
         );
+      }
+      case 'readScratchpad': {
+        return await stateManager.readScratchpad(typedArgs.ids as number[]);
       }
       case 'clearScratchpad': {
         const id = typedArgs.id as number;
@@ -246,7 +251,16 @@ ${scratchpadText}`;
           success: true,
           state: {
             goal,
-            todos: filteredTodos,
+            todos: includeChecked
+              ? todos
+              : todos
+                  .map((t) => ({
+                    ...t,
+                    subtasks: t.subtasks?.filter((s) => !s.checked) || [],
+                  }))
+                  .filter(
+                    (t) => !t.checked || (t.subtasks && t.subtasks.length > 0),
+                  ),
             scratchpad: includeScratchpad ? scratchpad : [],
           },
         });
@@ -378,7 +392,7 @@ ${scratchpadText}`;
 
       if (scratchpad.length > 5) {
         contextParts.push(
-          `  ...and ${scratchpad.length - 5} more items. Use readScratchpad to view all.`,
+          `  ...and ${scratchpad.length - 5} more items. Use listScratchpad to view all.`,
         );
       }
     }
@@ -426,9 +440,13 @@ export interface PlanningServerProxy extends WebMCPServerProxy {
     title?: string;
     tags?: string[];
   }): Promise<MCPResult<BaseOutput & { scratchpad: ScratchpadItem[] }>>;
-  readScratchpad(args: {
-    ids?: number[];
+  listScratchpad(args: {
+    page?: number;
+    pageSize?: number;
     tags?: string[];
+  }): Promise<MCPResult<ListScratchpadOutput>>;
+  readScratchpad(args: {
+    ids: number[];
   }): Promise<MCPResult<BaseOutput & { scratchpad: ScratchpadItem[] }>>;
   clearScratchpad(args: {
     id: number;

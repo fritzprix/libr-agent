@@ -88,163 +88,15 @@ pub struct ServerMetadata {
     pub version: Option<String>,
 }
 
-/// V2 MCP Server Configuration (MCP 2025-06-18 Spec Compliant)
+/// MCP Server Configuration (MCP 2025-06-18 Spec Compliant)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MCPServerConfigV2 {
+pub struct MCPServerConfig {
     pub name: String,
     pub transport: TransportConfig,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub authentication: Option<OAuthConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<ServerMetadata>,
-}
-
-// ========================================
-// Legacy Type Definition (Backward Compatibility)
-// ========================================
-
-/// Legacy MCP server configuration (stdio-only)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MCPServerConfig {
-    /// The unique name of the server.
-    pub name: String,
-    /// The command to execute to start the server (for stdio transport).
-    pub command: Option<String>,
-    /// An array of arguments to pass to the command.
-    pub args: Option<Vec<String>>,
-    /// Environment variables to set for the server process.
-    pub env: Option<HashMap<String, String>>,
-    /// The transport protocol ("stdio", "http", "websocket"). Defaults to "stdio".
-    #[serde(default = "default_transport")]
-    pub transport: String,
-    /// The URL of the server (for http or websocket transports).
-    pub url: Option<String>,
-    /// The port number of the server (for http or websocket transports).
-    pub port: Option<u16>,
-}
-
-/// Provides the default value for the `transport` field.
-fn default_transport() -> String {
-    "stdio".to_string()
-}
-
-// ========================================
-// Auto-conversion Wrapper
-// ========================================
-
-/// Wrapper for automatic detection and conversion between V1 and V2 configs
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum MCPServerConfigWrapper {
-    V2(Box<MCPServerConfigV2>), // Boxed to reduce enum size
-    Legacy(MCPServerConfig),
-}
-
-/// Automatic conversion from Legacy to V2
-impl From<MCPServerConfig> for MCPServerConfigV2 {
-    fn from(legacy: MCPServerConfig) -> Self {
-        let transport =
-            if let (Some(command), transport_type) = (&legacy.command, &legacy.transport) {
-                if transport_type == "stdio" {
-                    TransportConfig::Stdio {
-                        command: command.clone(),
-                        args: legacy.args.unwrap_or_default(),
-                        env: legacy.env.unwrap_or_default(),
-                    }
-                } else if let Some(url) = legacy.url {
-                    // If transport is http but formatted as legacy config
-                    TransportConfig::Http {
-                        url,
-                        protocol_version: default_protocol_version(),
-                        session_id: None,
-                        headers: None,
-                        enable_sse: None,
-                        security: None,
-                    }
-                } else {
-                    // Fallback to stdio
-                    TransportConfig::Stdio {
-                        command: command.clone(),
-                        args: legacy.args.unwrap_or_default(),
-                        env: legacy.env.unwrap_or_default(),
-                    }
-                }
-            } else {
-                // No command specified, assume HTTP if URL is present
-                if let Some(url) = legacy.url {
-                    TransportConfig::Http {
-                        url,
-                        protocol_version: default_protocol_version(),
-                        session_id: None,
-                        headers: None,
-                        enable_sse: None,
-                        security: None,
-                    }
-                } else {
-                    // Cannot create valid transport without command or URL
-                    // This is an error case, but we'll create a dummy stdio transport
-                    TransportConfig::Stdio {
-                        command: "echo".to_string(),
-                        args: vec!["Error: Invalid legacy config".to_string()],
-                        env: HashMap::new(),
-                    }
-                }
-            };
-
-        MCPServerConfigV2 {
-            name: legacy.name,
-            transport,
-            authentication: None,
-            metadata: None,
-        }
-    }
-}
-
-/// Automatic conversion from Wrapper to V2 (with unboxing)
-impl From<MCPServerConfigWrapper> for MCPServerConfigV2 {
-    fn from(wrapper: MCPServerConfigWrapper) -> Self {
-        match wrapper {
-            MCPServerConfigWrapper::V2(boxed) => *boxed,
-            MCPServerConfigWrapper::Legacy(legacy) => legacy.into(),
-        }
-    }
-}
-
-/// Convert wrapper to Legacy
-impl From<MCPServerConfigWrapper> for MCPServerConfig {
-    fn from(wrapper: MCPServerConfigWrapper) -> Self {
-        match wrapper {
-            MCPServerConfigWrapper::V2(boxed) => (*boxed).into(),
-            MCPServerConfigWrapper::Legacy(legacy) => legacy,
-        }
-    }
-}
-
-/// Temporary conversion from V2 back to Legacy (for backward compatibility)
-/// This is needed until MCPServerManager is updated to handle V2 configs directly
-impl From<MCPServerConfigV2> for MCPServerConfig {
-    fn from(v2: MCPServerConfigV2) -> Self {
-        match v2.transport {
-            TransportConfig::Stdio { command, args, env } => MCPServerConfig {
-                name: v2.name,
-                command: Some(command),
-                args: Some(args),
-                env: Some(env),
-                transport: "stdio".to_string(),
-                url: None,
-                port: None,
-            },
-            TransportConfig::Http { url, .. } => MCPServerConfig {
-                name: v2.name,
-                command: None,
-                args: None,
-                env: None,
-                transport: "http".to_string(),
-                url: Some(url),
-                port: None,
-            },
-        }
-    }
 }
 
 /// Represents metadata annotations for an `MCPTool`.
@@ -516,51 +368,54 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_legacy_stdio_to_v2_conversion() {
-        let legacy = MCPServerConfig {
-            name: "test-server".to_string(),
-            command: Some("node".to_string()),
-            args: Some(vec!["server.js".to_string()]),
-            env: Some(HashMap::from([(
-                "API_KEY".to_string(),
-                "secret".to_string(),
-            )])),
-            transport: "stdio".to_string(),
-            url: None,
-            port: None,
+    fn test_mcp_config_stdio_serialization() {
+        let config = MCPServerConfig {
+            name: "stdio-server".to_string(),
+            transport: TransportConfig::Stdio {
+                command: "npx".to_string(),
+                args: vec![
+                    "-y".to_string(),
+                    "@modelcontextprotocol/server-example".to_string(),
+                ],
+                env: HashMap::new(),
+            },
+            authentication: None,
+            metadata: None,
         };
 
-        let v2: MCPServerConfigV2 = legacy.into();
+        let json = serde_json::to_string_pretty(&config).unwrap();
+        let deserialized: MCPServerConfig = serde_json::from_str(&json).unwrap();
 
-        assert_eq!(v2.name, "test-server");
-        match v2.transport {
-            TransportConfig::Stdio { command, args, env } => {
-                assert_eq!(command, "node");
-                assert_eq!(args, vec!["server.js"]);
-                assert_eq!(env.get("API_KEY"), Some(&"secret".to_string()));
+        assert_eq!(deserialized.name, "stdio-server");
+        match deserialized.transport {
+            TransportConfig::Stdio { command, .. } => {
+                assert_eq!(command, "npx");
             }
             _ => panic!("Expected Stdio transport"),
         }
-        assert!(v2.authentication.is_none());
-        assert!(v2.metadata.is_none());
     }
 
     #[test]
-    fn test_legacy_http_to_v2_conversion() {
-        let legacy = MCPServerConfig {
+    fn test_mcp_config_http_serialization() {
+        let config = MCPServerConfig {
             name: "http-server".to_string(),
-            command: None,
-            args: None,
-            env: None,
-            transport: "http".to_string(),
-            url: Some("https://api.example.com/mcp".to_string()),
-            port: Some(8080),
+            transport: TransportConfig::Http {
+                url: "https://api.example.com/mcp".to_string(),
+                protocol_version: "2025-06-18".to_string(),
+                session_id: None,
+                headers: None,
+                enable_sse: Some(false),
+                security: None,
+            },
+            authentication: None,
+            metadata: None,
         };
 
-        let v2: MCPServerConfigV2 = legacy.into();
+        let json = serde_json::to_string_pretty(&config).unwrap();
+        let deserialized: MCPServerConfig = serde_json::from_str(&json).unwrap();
 
-        assert_eq!(v2.name, "http-server");
-        match v2.transport {
+        assert_eq!(deserialized.name, "http-server");
+        match deserialized.transport {
             TransportConfig::Http {
                 url,
                 protocol_version,
@@ -574,77 +429,8 @@ mod tests {
     }
 
     #[test]
-    fn test_wrapper_deserialize_v2_stdio() {
-        let json = r#"{
-            "name": "stdio-server",
-            "transport": {
-                "type": "stdio",
-                "command": "npx",
-                "args": ["-y", "@modelcontextprotocol/server-example"],
-                "env": {}
-            }
-        }"#;
-
-        let wrapper: MCPServerConfigWrapper = serde_json::from_str(json).unwrap();
-        let v2: MCPServerConfigV2 = wrapper.into();
-
-        assert_eq!(v2.name, "stdio-server");
-        match v2.transport {
-            TransportConfig::Stdio { command, .. } => {
-                assert_eq!(command, "npx");
-            }
-            _ => panic!("Expected Stdio transport"),
-        }
-    }
-
-    #[test]
-    fn test_wrapper_deserialize_v2_http() {
-        let json = r#"{
-            "name": "http-server",
-            "transport": {
-                "type": "http",
-                "url": "https://api.example.com/mcp",
-                "protocol_version": "2025-06-18"
-            }
-        }"#;
-
-        let wrapper: MCPServerConfigWrapper = serde_json::from_str(json).unwrap();
-        let v2: MCPServerConfigV2 = wrapper.into();
-
-        assert_eq!(v2.name, "http-server");
-        match v2.transport {
-            TransportConfig::Http { url, .. } => {
-                assert_eq!(url, "https://api.example.com/mcp");
-            }
-            _ => panic!("Expected Http transport"),
-        }
-    }
-
-    #[test]
-    fn test_wrapper_deserialize_legacy() {
-        let json = r#"{
-            "name": "legacy-server",
-            "command": "npx",
-            "args": ["-y", "@modelcontextprotocol/server-example"],
-            "env": {},
-            "transport": "stdio"
-        }"#;
-
-        let wrapper: MCPServerConfigWrapper = serde_json::from_str(json).unwrap();
-        let v2: MCPServerConfigV2 = wrapper.into();
-
-        assert_eq!(v2.name, "legacy-server");
-        match v2.transport {
-            TransportConfig::Stdio { command, .. } => {
-                assert_eq!(command, "npx");
-            }
-            _ => panic!("Expected Stdio transport"),
-        }
-    }
-
-    #[test]
-    fn test_v2_with_oauth_serialization() {
-        let config = MCPServerConfigV2 {
+    fn test_mcp_config_with_oauth_serialization() {
+        let config = MCPServerConfig {
             name: "oauth-server".to_string(),
             transport: TransportConfig::Http {
                 url: "https://api.example.com/mcp".to_string(),
@@ -676,7 +462,7 @@ mod tests {
         };
 
         let json = serde_json::to_string_pretty(&config).unwrap();
-        let deserialized: MCPServerConfigV2 = serde_json::from_str(&json).unwrap();
+        let deserialized: MCPServerConfig = serde_json::from_str(&json).unwrap();
 
         assert_eq!(deserialized.name, "oauth-server");
         assert!(deserialized.authentication.is_some());

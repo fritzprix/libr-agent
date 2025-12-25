@@ -10,23 +10,23 @@ Thronglet acts as a **Stateful, Event-Driven Control Loop** that manages the lif
 
 ```mermaid
 graph TD
-    Host[Host Application (LibrAgent)] -->|Input/Commands| Agent
+    Host["Host Application (LibrAgent)"] -->|Input/Commands| Agent["Agent Struct"]
     Agent -->|Events/State| Host
     
     subgraph Thronglet ["Thronglet (Crate)"]
-        Agent[Agent Struct]
-        State[Conversation History]
-        Loop[Think-Act-Observe Loop]
+        Agent
+        State["Conversation History"]
+        Loop["Think-Act-Observe Loop"]
         
         Agent -->|Owns| State
         Agent -->|Runs| Loop
         
-        Loop -->|Generate| LLM[LLMProvider Trait]
-        Loop -->|Execute| Tools[ToolProvider Trait]
+        Loop -->|Generate| LLM["LLMProvider Trait"]
+        Loop -->|Execute| Tools["ToolProvider Trait"]
     end
     
-    LLM -.->|Impl| RemoteLLM[RemoteLLMProvider (Host Bridge)]
-    Tools -.->|Impl| MCPManager[WrappedMcpManager (Host Bridge)]
+    LLM -.->|Impl| RemoteLLM["RemoteLLMProvider (Host Bridge)"]
+    Tools -.->|Impl| MCPManager["WrappedMcpManager (Host Bridge)"]
 ```
 
 ## 2. Core Components

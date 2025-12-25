@@ -184,23 +184,44 @@ export const planningTools: MCPTool[] = [
     },
   },
   {
+    name: 'listScratchpad',
+    description:
+      'List scratchpad items with metadata (ID, title, tags) and content preview. Use this to find the IDs of items you want to read fully. Supports pagination and tag filtering.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        page: {
+          type: 'number',
+          minimum: 1,
+          description: 'Page number (default: 1)',
+        },
+        pageSize: {
+          type: 'number',
+          minimum: 1,
+          description: 'Items per page (default: 10)',
+        },
+        tags: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Filter items by tags',
+        },
+      },
+    },
+  },
+  {
     name: 'readScratchpad',
     description:
-      'Read specific scratchpad items by their IDs or filter by tags. Use this to retrieve the full content of scratchpad items when they are not fully visible in the context.',
+      'Read the FULL content of specific scratchpad items by their IDs. You must provide the IDs of the items you want to read. Use listScratchpad first to find IDs.',
     inputSchema: {
       type: 'object',
       properties: {
         ids: {
           type: 'array',
           items: { type: 'number', minimum: 0 },
-          description: 'List of scratchpad IDs to read.',
-        },
-        tags: {
-          type: 'array',
-          items: { type: 'string' },
-          description: 'List of tags to filter by.',
+          description: 'List of scratchpad IDs to read (Required).',
         },
       },
+      required: ['ids'],
     },
   },
   {

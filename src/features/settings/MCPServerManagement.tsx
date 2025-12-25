@@ -158,8 +158,9 @@ export function MCPServerManagement() {
                       Transport: {server.transport.type}
                       {server.transport.type === 'stdio' &&
                         ` • ${server.transport.command}`}
-                      {server.transport.type === 'http' &&
-                        ` • ${server.transport.url}`}
+                      {((server.transport.type as string) === 'http' ||
+                        server.transport.type === 'http-sse') &&
+                        ` • ${(server.transport as { url: string }).url}`}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
