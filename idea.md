@@ -1,20 +1,130 @@
-# Agentic Workflow Backend 검토
+# Agentic Workflow 기능의 Backend 이관 검토
 
 ## 문제점
 
 - 현재 구조에서 Agentic Workflow에 대한 관리를 React Frontend에서 처리하고 있으며 이는 다음과 같은 문제를 발생시킴
   - Frontend에서 세션 전환에 따라 Agentic Flow의 Interruption이 발생되고 이로 인해서 불완전한 상태가 발생함
-  - 따라서 이러한 불완전한 상태가 발생되는 것을 방지하기 위해서는 사용자의 세션 전환을 방지하는 것이 필요한데 이는 사용자 경험을 열화시킴
+  - Frontend 상태에 무관하게 Agentic Workflow가 지속될 수 있어야함
 
 ## 해결 방안
 
-- Agentic Workflow를 처리하기 위한 독립적 별도의 Thread가 필요함
-- LibrAgent는 단순히 Frontend로써 정보의 시각화와 상호작용을 위한 역할만 수행하게됨
+- Agentic Workflow를 처리하기 위한 Logic을 Rust Backend로 이관
+- TS는 Web Native의 강점을 누릴 수 있는 의존성 Layer를 Rust에 제공
+  - LLM Provider 통합
+- Agentic Workflow는 UI 상태와 별도로 독립적인 상태와 실행 환경을 제공받음 (Rust)
 
-## 추가적인 고려사항
+## 기대 효과
 
-- 더 나아가 Single Agent => Multi Agent로 확장할 경우 이러한 Agentic Workflow를 위한 Backend는 추가적인 장점이 있음
-- 이러한 확장성 높은 Generic Agentic Workflow를 개발하기 위해서 다음의 요구사항을 제안
+- Agentic Workflow는 더이상 기존 Frontend 상태에 영향을 받지 않으며 Frontend는 단순히 이 Agentic Workflow와 상호작용 혹은 표시하기 위한 기능만 가지게됨
+- 게다가 이러한 독립적인 Agentic Workflow 환경을 통해 손쉽게 Multi Agent / Background Agent를 지원할 수 있음
+
+## UI/UX 기획
+
+- 배경에서 실행 중인 Agentic Flow 목록을 UI로 표시하며 각 Flow의 상태 변화 Busy / Idle을 App 상단 Bar 알림 메뉴를 통해 확인할 수 있으며 클릭시 다시 해당 세션으로 돌아갈 수 있음.
+- AppSidebar의 Session Item에도 현재 Background에서 Agentic Workflow의 실행 여부 상태를 (Green Dot / Yellow Dot으로 표시함)
+- Agentic Flow가 실행 중인 Session으로 돌아가면 ChatInput에 cancel 버튼이 활성화된 상태로 되어야 하며 이를 통해서 사용자는 필요시 실행중인 Workflow를 중단할 수 있음
+- Agentic Flow 실행이 완료된 Session으로 돌아가면 ChatInput에 send 버튼이 활성화된 상태로 되어있으며 ChatInput의 텍스트와 버튼을 통해 추가적인 요청을 할 수 있음
+
+## Rust <-> React 통합
+
+- TS -> Rust: Tauri Command를 이용
+- Rust -> TS: [Tauri v2의 Emitter & Listener 활용](https://v2.tauri.app/ko/develop/calling-frontend/)
+
+### 통합 시나리오별 Seq Diagram
+
+#### Chat 시작
+
+- 사용자가 StartChatView에서 Agent를 선택하면 해당 Agent와의 Session이 생성됨
+- 이때 TS -> Rust로 createSession이 명령이 호출되며 이를 통해 Rust Backend는 해당 세션을 DB에 생성하고 간소화된 Session 객체를 Return하여 TS에 전달
+- AgentSessionManager는 Session의 CRUD를 직접적으로 담당하고 Active Session의 Life Cycle을 관리함
+- AgentSessionManager는 Agent가 작업을 수행하는데 필요한 환경을 MCPServiceProxy를 통해 활성화함 (외부 MCP Server 실행 혹은 연결, Program 자체적으로 내장된 )
+
+- Seq. Diagram
+
+  ```puml
+  @startuml
+  User -> StartChatView: start chat
+  StartChatView -> useAgentSession: create(agent, llmConfig)
+  useAgentSession -> AgentSessionManager: createSession(agent, llmConfig)
+  AgentSessionManager -> Database: create new session
+  Database --> AgentSessionManager: session: { id, ...}
+  AgentSessionManager -> MCPServiceProxy: connectMCPService(session.id, agent.tools)
+  MCPServiceProxy --> AgentSessionManager: connection results
+  alt connection ok
+  AgentSessionManager --> useAgentSession: { id,... }
+  useAgentSession --> StartChatView: session: { id, ...}
+  StartChatView --> User: redirect to ./chat/
+  else connection nok
+  AgentSessionManager -> useAgentSession: tool connection error
+  end
+  @enduml
+  ```
+
+#### Resume Chat History
+
+- 사용자가 기존 AgentSession으로 복귀할 때 AgentSessionManager는 기존 Session 정보를 Load하게됨
+- 아울러 Agent 설정에 따라 MCPServiceProxy의 연결을 설정하고 사용자의 요청을 대기
+
+- Seq. Diagram
+
+  ```puml
+  @startuml
+  User -> SessionHistory: select session
+  SessionHistory -> useAgentSession: resumeSession(sessionId)
+  useAgentSession -> AgentSessionManager: resumeSession(sessionId)
+  alt !isActiveSession(sessionId)
+  AgentSessionManager -> Database: load session and messages
+  Database --> AgentSessionManager: session {id, messages, agent }
+  end
+  AgentSessionManager -> MCPServiceProxy: connectMCPService(session.id, agent.tools)
+  MCPServiceProxy --> AgentSessionManager: connection results
+  alt connection ok
+  AgentSessionManager --> useAgentSession: { id,... }
+  useAgentSession --> StartChatView: session: { id, ...}
+  StartChatView --> User: redirect to ./chat/
+  else connection nok
+  AgentSessionManager -> useAgentSession: tool connection error
+  end
+  @enduml
+  ```
+
+#### 요청 전달 및 Agentic Flow 시작
+
+- 사용자가 ChatInput에 Message를 작성하여 Send Button을 누르면 trigger 됨
+- 해당 Message는 Rust & TS 호환의 Concrete Message Type의 객체로 Rust에 전달됨
+- Rust에서 전체 Message Stack으로 구성하여 다시 useAIService에 요청을
+
+- Seq. Diagram
+
+  ```puml
+  @startuml
+  User -> ChatInput: click send button
+  ChatInput -> useAgentSession: sendRequest(userMessage)
+  useAgentSession -> AgentSessionManager: pushMessage(userMessage)
+  AgentSessionManager -> Database: upsert(userMessage)
+  AgentSessionManager -> MCPServiceProxy: getServiceContext()
+  AgentSessionManager -> useAgentSession: submit(messages, llmConfig)
+  useAgentSession --> useAgentSession: updateMessage(messages)
+  useAgentSession -> ChatMessages: streaming content
+  ChatMessages -> User: show streaming message
+  ...
+  useAgentSession -> AgentSessionManager: pushMessage(newMessage)
+  AgentSessionManager -> Database: upsert(newMessage)
+  alt hasToolCall(newMessage) === true
+  AgentSessionManager --> AgentSessionManager: extractToolCalls(newMessage)
+  loop toolCalls
+  AgentSessionManager -> MCPServiceProxy: call_tool()
+  note right: whether external MCP or buildin tool API
+  MCPServiceProxy --> AgentSessionManager: toolResult
+  AgentSessionManager --> AgentSessionManager: pushMessage(convertMessage(toolResult))
+  end
+  note right: multiple tool calls will follow
+  end
+  AgentSessionManager -> useAgentSession: submit(messages, llmConfig)
+  useAgentSession --> useAgentSession: updateMessage(messages)
+  ...
+  @enduml
+  ```
 
 ### 요구사항
 
