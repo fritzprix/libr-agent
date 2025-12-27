@@ -153,12 +153,14 @@ export const useAIService = (config?: AIServiceConfig) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const serviceInstance = useMemo(() => {
-    const apiKey = serviceConfigs[provider]?.apiKey || '';
+    const providerConfig = serviceConfigs[provider] || {};
+    const apiKey = providerConfig.apiKey || '';
     return AIServiceFactory.getService(provider, apiKey, {
+      ...providerConfig, // Include baseUrl and other provider-specific settings
       defaultModel: model,
       maxRetries: 0, // Disable internal retries in favor of controlled 429 retry
       maxTokens: 4096,
-      ...config,
+      ...config, // Override with hook-level config if provided
     });
   }, [provider, serviceConfigs, model, config]);
 

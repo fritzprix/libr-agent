@@ -42,47 +42,50 @@ impl ToolProvider for WrappedMcpManager {
             )));
         }
 
-        if let Some(result) = response.result {
-            // Map content from MCP format to thronglet format
-            // thronglet::Content matches our MCPContent mostly, but we need manual mapping
-            // Assuming result structure matches standard MCP ToolResult
+        if let Some(result_enum) = response.result {
+            // Extract ToolCall from enum
+            let mcp_result = match result_enum {
+                crate::mcp::types::MCPResponseResult::ToolCall(result) => result,
+                _ => {
+                    return Err(AgentError::ToolError(
+                        "Expected ToolCall result".to_string(),
+                    ))
+                }
+            };
 
-            let is_error = result
-                .get("isError")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
+            let is_error = mcp_result.is_error.unwrap_or(false);
 
             let mut content_vec = Vec::new();
-            if let Some(content_array) = result.get("content").and_then(|c| c.as_array()) {
-                for item in content_array {
-                    if let Some(text) = item.get("text").and_then(|t| t.as_str()) {
-                        content_vec.push(Content::Text {
-                            text: text.to_string(),
-                        });
-                    } else if let Some(resource) = item.get("resource") {
-                        // Simplify resource mapping for now
-                        let uri = resource
-                            .get("uri")
-                            .and_then(|u| u.as_str())
-                            .unwrap_or("")
-                            .to_string();
-                        let mime = resource
-                            .get("mimeType")
-                            .and_then(|m| m.as_str())
-                            .unwrap_or("application/octet-stream")
-                            .to_string();
-                        let text = resource
-                            .get("text")
-                            .and_then(|t| t.as_str())
-                            .map(|s| s.to_string());
+            if let Some(content_items) = &mcp_result.content {
+                for item in content_items {
+                    match item {
+                        crate::mcp::types::MCPContent::Text { text } => {
+                            content_vec.push(Content::Text { text: text.clone() });
+                        }
+                        crate::mcp::types::MCPContent::Resource { resource } => {
+                            // Extract fields from resource Value
+                            let uri = resource
+                                .get("uri")
+                                .and_then(|u| u.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            let mime = resource
+                                .get("mimeType")
+                                .and_then(|m| m.as_str())
+                                .unwrap_or("application/octet-stream")
+                                .to_string();
+                            let text = resource
+                                .get("text")
+                                .and_then(|t| t.as_str())
+                                .map(|s| s.to_string());
 
-                        content_vec.push(Content::Resource {
-                            uri,
-                            mime_type: mime,
-                            text,
-                        });
+                            content_vec.push(Content::Resource {
+                                uri,
+                                mime_type: mime,
+                                text,
+                            });
+                        }
                     }
-                    // Image mapping if needed
                 }
             }
 

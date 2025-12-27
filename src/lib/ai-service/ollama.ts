@@ -60,9 +60,9 @@ export class OllamaService extends BaseAIService {
    * @param apiKey The API key (not required for local Ollama, but kept for interface consistency).
    * @param config Optional configuration for the service.
    */
-  constructor(apiKey: string, config?: AIServiceConfig & { host?: string }) {
+  constructor(apiKey: string, config?: AIServiceConfig) {
     super(apiKey, config);
-    this.host = config?.host || 'http://127.0.0.1:11434';
+    this.host = config?.baseUrl || 'http://127.0.0.1:11434';
 
     // Strategy:
     // 1. Dev Mode (port 1420): Use Native Fetch.

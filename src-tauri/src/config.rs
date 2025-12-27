@@ -20,6 +20,9 @@
 /// - `LIBRAGENT_POLL_THRESHOLD`: Excessive polling detection threshold (default: 5 consecutive polls)
 /// - `MESSAGE_INDEX_SNIPPET_LENGTH`: Message snippet length for search index (default: 200)
 /// - `LIBRAGENT_DB_PATH`: SQLite database file path (default: user data directory)
+/// - `LIBRAGENT_MCP_IDLE_TIMEOUT_MINUTES`: MCP server idle timeout in minutes (default: 5)
+/// - `LIBRAGENT_MCP_CLEANUP_INTERVAL_MINUTES`: MCP cleanup interval in minutes (default: 5)
+/// - `LIBRAGENT_MCP_STARTUP_TIMEOUT_SECONDS`: MCP server startup timeout in seconds (default: 10)
 use std::env;
 
 /// Default maximum file size (100 MB)
@@ -171,6 +174,66 @@ pub fn poll_threshold() -> u32 {
                 DEFAULT_POLL_THRESHOLD
             );
             DEFAULT_POLL_THRESHOLD
+        })
+}
+
+/// Default MCP server idle timeout (5 minutes)
+const DEFAULT_MCP_IDLE_TIMEOUT_MINUTES: u64 = 5;
+
+/// Get MCP server idle timeout in minutes from environment or use default
+///
+/// Environment variable: LIBRAGENT_MCP_IDLE_TIMEOUT_MINUTES
+/// Default: 5 minutes
+pub fn mcp_idle_timeout_minutes() -> u64 {
+    env::var("LIBRAGENT_MCP_IDLE_TIMEOUT_MINUTES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or_else(|| {
+            tracing::debug!(
+                "Using default MCP idle timeout: {} minutes",
+                DEFAULT_MCP_IDLE_TIMEOUT_MINUTES
+            );
+            DEFAULT_MCP_IDLE_TIMEOUT_MINUTES
+        })
+}
+
+/// Default MCP cleanup interval (5 minutes)
+const DEFAULT_MCP_CLEANUP_INTERVAL_MINUTES: u64 = 5;
+
+/// Get MCP cleanup interval in minutes from environment or use default
+///
+/// Environment variable: LIBRAGENT_MCP_CLEANUP_INTERVAL_MINUTES
+/// Default: 5 minutes
+pub fn mcp_cleanup_interval_minutes() -> u64 {
+    env::var("LIBRAGENT_MCP_CLEANUP_INTERVAL_MINUTES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or_else(|| {
+            tracing::debug!(
+                "Using default MCP cleanup interval: {} minutes",
+                DEFAULT_MCP_CLEANUP_INTERVAL_MINUTES
+            );
+            DEFAULT_MCP_CLEANUP_INTERVAL_MINUTES
+        })
+}
+
+/// Default MCP server startup timeout (10 seconds)
+const DEFAULT_MCP_STARTUP_TIMEOUT_SECONDS: u64 = 10;
+
+/// Get MCP server startup timeout in seconds from environment or use default
+///
+/// Environment variable: LIBRAGENT_MCP_STARTUP_TIMEOUT_SECONDS
+/// Default: 10 seconds
+pub fn mcp_startup_timeout_seconds() -> u64 {
+    env::var("LIBRAGENT_MCP_STARTUP_TIMEOUT_SECONDS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or_else(|| {
+            tracing::debug!(
+                "Using default MCP startup timeout: {} seconds",
+                DEFAULT_MCP_STARTUP_TIMEOUT_SECONDS
+            );
+            DEFAULT_MCP_STARTUP_TIMEOUT_SECONDS
         })
 }
 

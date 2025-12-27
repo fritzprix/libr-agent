@@ -37,7 +37,7 @@
 - 사용자가 StartChatView에서 Agent를 선택하면 해당 Agent와의 Session이 생성됨
 - 이때 TS -> Rust로 createSession이 명령이 호출되며 이를 통해 Rust Backend는 해당 세션을 DB에 생성하고 간소화된 Session 객체를 Return하여 TS에 전달
 - AgentSessionManager는 Session의 CRUD를 직접적으로 담당하고 Active Session의 Life Cycle을 관리함
-- AgentSessionManager는 Agent가 작업을 수행하는데 필요한 환경을 MCPServiceProxy를 통해 활성화함 (외부 MCP Server 실행 혹은 연결, Program 자체적으로 내장된 )
+- AgentSessionManager는 Agent가 작업을 수행하는데 필요한 환경을 MCPServiceProxyManager를 통해 활성화함 (외부 MCP Server 실행 혹은 연결, Program 자체적으로 내장된 )
 
 - Seq. Diagram
 
@@ -48,8 +48,17 @@
   useAgentSession -> AgentSessionManager: createSession(agent, llmConfig)
   AgentSessionManager -> Database: create new session
   Database --> AgentSessionManager: session: { id, ...}
-  AgentSessionManager -> MCPServiceProxy: connectMCPService(session.id, agent.tools)
-  MCPServiceProxy --> AgentSessionManager: connection results
+  AgentSessionManager -> MCPServiceProxyManager: connectMCPService(session.id, agent.tools)
+  MCPServiceProxyManager --> MCPServiceProxyManager: createMCPServiceProxy(sessionId, agent.tools)
+  MCPServiceProxyManager -> MCPServiceProxy: start()
+  MCPServiceProxy -> MCPServiceProxy: init process for stdio MCP servers
+  MCPServiceProxy -> MCPServiceProxy: connect http streamable MCP servers
+  MCPServiceProxy -> MCPServiceProxy: init built-in tools with given sessionId
+  loop for tool in builtInTools
+  MCPServiceProxy -> BuiltIn_N : connect(sessionId)
+  ...
+  end
+  MCPServiceProxyManager --> AgentSessionManager: connection results
   alt connection ok
   AgentSessionManager --> useAgentSession: { id,... }
   useAgentSession --> StartChatView: session: { id, ...}
@@ -63,7 +72,7 @@
 #### Resume Chat History
 
 - 사용자가 기존 AgentSession으로 복귀할 때 AgentSessionManager는 기존 Session 정보를 Load하게됨
-- 아울러 Agent 설정에 따라 MCPServiceProxy의 연결을 설정하고 사용자의 요청을 대기
+- 아울러 Agent 설정에 따라 MCPServiceProxyManager의 연결을 설정하고 사용자의 요청을 대기
 
 - Seq. Diagram
 
@@ -76,8 +85,17 @@
   AgentSessionManager -> Database: load session and messages
   Database --> AgentSessionManager: session {id, messages, agent }
   end
-  AgentSessionManager -> MCPServiceProxy: connectMCPService(session.id, agent.tools)
-  MCPServiceProxy --> AgentSessionManager: connection results
+  AgentSessionManager -> MCPServiceProxyManager: connectMCPService(session.id, agent.tools, session.savedBuiltInContext)
+  MCPServiceProxyManager --> MCPServiceProxyManager: createMCPServiceProxy(sessionId, agent.tools)
+  MCPServiceProxyManager -> MCPServiceProxy: start()
+  MCPServiceProxy -> MCPServiceProxy: init process for stdio MCP servers
+  MCPServiceProxy -> MCPServiceProxy: connect http streamable MCP servers
+  MCPServiceProxy -> MCPServiceProxy: init built-in tools with given sessionId
+  loop for tool in builtInTools
+  MCPServiceProxy -> BuiltIn_N : connect(sessionId, savedBuiltInContext)
+  ...
+  end
+  MCPServiceProxyManager --> AgentSessionManager: connection results
   alt connection ok
   AgentSessionManager --> useAgentSession: { id,... }
   useAgentSession --> StartChatView: session: { id, ...}
@@ -102,7 +120,7 @@
   ChatInput -> useAgentSession: sendRequest(userMessage)
   useAgentSession -> AgentSessionManager: pushMessage(userMessage)
   AgentSessionManager -> Database: upsert(userMessage)
-  AgentSessionManager -> MCPServiceProxy: getServiceContext()
+  AgentSessionManager -> MCPServiceProxyManager: getServiceContext(sessionId)
   AgentSessionManager -> useAgentSession: submit(messages, llmConfig)
   useAgentSession --> useAgentSession: updateMessage(messages)
   useAgentSession -> ChatMessages: streaming content
@@ -113,9 +131,10 @@
   alt hasToolCall(newMessage) === true
   AgentSessionManager --> AgentSessionManager: extractToolCalls(newMessage)
   loop toolCalls
-  AgentSessionManager -> MCPServiceProxy: call_tool()
+  AgentSessionManager -> MCPServiceProxyManager: call_tool()
   note right: whether external MCP or buildin tool API
-  MCPServiceProxy --> AgentSessionManager: toolResult
+  MCPServiceProxyManager -> MCPServiceProxy: call_tool()
+  MCPServiceProxyManager --> AgentSessionManager: toolResult
   AgentSessionManager --> AgentSessionManager: pushMessage(convertMessage(toolResult))
   end
   note right: multiple tool calls will follow

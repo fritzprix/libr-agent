@@ -258,34 +258,130 @@ impl MCPResult {
     }
 }
 
+/// JSON-RPC 2.0 request/response identifier
+/// According to JSON-RPC 2.0 spec, id can be a String, Number, or null
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum JsonRpcId {
+    String(String),
+    Number(i64),
+    Null,
+}
+
 /// Represents a standard MCP response, compliant with JSON-RPC 2.0.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MCPResponse {
     /// The JSON-RPC version string.
     pub jsonrpc: String,
-    /// The request identifier.
-    pub id: Option<serde_json::Value>,
+    /// The request identifier (can be String, Number, or null per JSON-RPC 2.0 spec)
+    pub id: Option<JsonRpcId>,
     /// The result of the operation, if successful.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub result: Option<serde_json::Value>,
+    pub result: Option<MCPResponseResult>,
     /// The error object, if an error occurred.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<MCPError>,
 }
 
+/// Union type for all possible MCP response results based on the method called.
+/// This ensures type safety while supporting the polymorphic nature of JSON-RPC.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum MCPResponseResult {
+    /// Result from tools/call - tool execution result
+    ToolCall(MCPResult),
+    /// Result from tools/list - list of available tools
+    ToolsList { tools: Vec<MCPTool> },
+    /// Result from resources/list - list of available resources
+    ResourcesList { resources: Vec<MCPResource> },
+    /// Result from prompts/list - list of available prompts
+    PromptsList { prompts: Vec<MCPPrompt> },
+    /// Result from initialize - server capabilities
+    Initialize {
+        #[serde(rename = "protocolVersion")]
+        protocol_version: String,
+        capabilities: ServerCapabilities,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(rename = "serverInfo")]
+        server_info: Option<ServerInfo>,
+    },
+    /// Generic fallback for other operations
+    Generic(serde_json::Value),
+}
+
+/// Server capabilities as defined in MCP protocol
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServerCapabilities {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tools: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resources: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompts: Option<serde_json::Value>,
+}
+
+/// Server information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServerInfo {
+    pub name: String,
+    pub version: String,
+}
+
+/// MCP Resource definition
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MCPResource {
+    pub uri: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "mimeType")]
+    pub mime_type: Option<String>,
+}
+
+/// MCP Prompt definition
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MCPPrompt {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arguments: Option<Vec<PromptArgument>>,
+}
+
+/// Prompt argument definition
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PromptArgument {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub required: Option<bool>,
+}
+
 impl MCPResponse {
-    /// Creates a successful `MCPResponse`.
-    pub fn success(id: serde_json::Value, result: serde_json::Value) -> Self {
+    /// Creates a successful `MCPResponse` from a tool call result.
+    pub fn success(id: JsonRpcId, result: MCPResult) -> Self {
         Self {
             jsonrpc: "2.0".to_string(),
             id: Some(id),
-            result: Some(result),
+            result: Some(MCPResponseResult::ToolCall(result)),
+            error: None,
+        }
+    }
+
+    /// Creates a successful `MCPResponse` with generic result.
+    pub fn success_generic(id: JsonRpcId, result: serde_json::Value) -> Self {
+        Self {
+            jsonrpc: "2.0".to_string(),
+            id: Some(id),
+            result: Some(MCPResponseResult::Generic(result)),
             error: None,
         }
     }
 
     /// Creates an error `MCPResponse`.
-    pub fn error(id: serde_json::Value, code: i32, message: &str) -> Self {
+    pub fn error(id: JsonRpcId, code: i32, message: &str) -> Self {
         Self {
             jsonrpc: "2.0".to_string(),
             id: Some(id),
@@ -304,6 +400,8 @@ impl MCPResponse {
 pub struct MCPConnection {
     /// The `rmcp` client instance for communicating with the server.
     pub client: rmcp::service::RunningService<rmcp::service::RoleClient, ()>,
+    /// The server configuration including transport type.
+    pub config: MCPServerConfig,
 }
 
 /// Options for service context operations.

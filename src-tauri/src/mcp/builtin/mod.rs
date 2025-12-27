@@ -6,7 +6,13 @@ use async_trait::async_trait;
 use serde_json::Value;
 use tracing::info;
 
+pub mod assistant;
+pub mod bootstrap;
 pub mod content_store;
+pub mod knowledge;
+pub mod planning;
+pub mod playbook;
+pub mod ui;
 pub mod utils;
 pub mod workspace;
 
@@ -70,7 +76,7 @@ pub trait BuiltinMCPServer: Send + Sync + std::fmt::Debug {
     async fn call_tool(&self, tool_name: &str, args: Value) -> Result<MCPResult, String>;
 
     /// Returns a markdown-formatted string describing the server's current status and context.
-    fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
+    async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
         ServiceContext {
             context_prompt: format!(
                 "# {} Server Status\n\
@@ -453,7 +459,7 @@ impl BuiltinServerRegistry {
     ///
     /// # Returns
     /// A `Result` containing the service context, or an error if the server is not found.
-    pub fn get_server_context(
+    pub async fn get_server_context(
         &self,
         server_name: &str,
         options: Option<Value>,
@@ -466,7 +472,7 @@ impl BuiltinServerRegistry {
         };
 
         if let Some(server) = self.get_server(normalized_server_name) {
-            Ok(server.get_service_context(options.as_ref()))
+            Ok(server.get_service_context(options.as_ref()).await)
         } else {
             Err(format!("Built-in server '{server_name}' not found"))
         }
@@ -527,23 +533,36 @@ impl BuiltinServerRegistry {
             // Call the server's tool - returns Result<MCPResult, String>
             match server.call_tool(tool_name, normalized_args).await {
                 Ok(mcp_result) => {
-                    // Success: wrap MCPResult in MCPResponse
+                    // Success: wrap MCPResult in MCPResponse with proper type
+                    // Convert Value id to JsonRpcId
+                    let json_rpc_id = match id {
+                        serde_json::Value::String(s) => crate::mcp::types::JsonRpcId::String(s),
+                        serde_json::Value::Number(n) => {
+                            crate::mcp::types::JsonRpcId::Number(n.as_i64().unwrap_or(0))
+                        }
+                        serde_json::Value::Null => crate::mcp::types::JsonRpcId::Null,
+                        _ => crate::mcp::types::JsonRpcId::String(id.to_string()),
+                    };
                     MCPResponse {
                         jsonrpc: "2.0".to_string(),
-                        id: Some(id),
-                        result: Some(serde_json::to_value(mcp_result).unwrap_or_else(|e| {
-                            serde_json::json!({
-                                "error": format!("Failed to serialize result: {}", e)
-                            })
-                        })),
+                        id: Some(json_rpc_id),
+                        result: Some(crate::mcp::types::MCPResponseResult::ToolCall(mcp_result)),
                         error: None,
                     }
                 }
                 Err(err_msg) => {
                     // Error from tool execution: return as MCPError
+                    let json_rpc_id = match id {
+                        serde_json::Value::String(s) => crate::mcp::types::JsonRpcId::String(s),
+                        serde_json::Value::Number(n) => {
+                            crate::mcp::types::JsonRpcId::Number(n.as_i64().unwrap_or(0))
+                        }
+                        serde_json::Value::Null => crate::mcp::types::JsonRpcId::Null,
+                        _ => crate::mcp::types::JsonRpcId::String(id.to_string()),
+                    };
                     MCPResponse {
                         jsonrpc: "2.0".to_string(),
-                        id: Some(id),
+                        id: Some(json_rpc_id),
                         result: None,
                         error: Some(crate::mcp::MCPError {
                             code: -32603, // Internal error
@@ -555,9 +574,17 @@ impl BuiltinServerRegistry {
             }
         } else {
             // Server not found
+            let json_rpc_id = match id {
+                serde_json::Value::String(s) => crate::mcp::types::JsonRpcId::String(s),
+                serde_json::Value::Number(n) => {
+                    crate::mcp::types::JsonRpcId::Number(n.as_i64().unwrap_or(0))
+                }
+                serde_json::Value::Null => crate::mcp::types::JsonRpcId::Null,
+                _ => crate::mcp::types::JsonRpcId::String(id.to_string()),
+            };
             MCPResponse {
                 jsonrpc: "2.0".to_string(),
-                id: Some(id),
+                id: Some(json_rpc_id),
                 result: None,
                 error: Some(crate::mcp::MCPError {
                     code: -32601, // Method not found

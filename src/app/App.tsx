@@ -4,6 +4,7 @@ import AppSidebar from '../components/layout/AppSidebar';
 
 // Lazy-load route components to reduce initial bundle and improve first paint
 const ChatContainer = lazy(() => import('@/features/chat/ChatContainer'));
+const AgentContainer = lazy(() => import('@/features/agent'));
 const AssistantList = lazy(() => import('@/features/assistant/List'));
 const History = lazy(() => import('@/features/history/History'));
 const SettingsPage = lazy(() => import('@/features/settings/SettingsPage'));
@@ -29,86 +30,100 @@ import { WebMCPProvider } from '@/context/WebMCPContext';
 import { WebMCPServiceRegistry } from '@/features/tools/WebMCPServiceRegistry';
 import { BrowserToolProvider } from '@/features/tools/BrowserToolProvider';
 import { RustMCPToolProvider } from '@/features/tools/RustMCPToolProvider';
-import { AgentLLMBridge } from '@/components/agent/AgentLLMBridge';
+import { LLMServiceProvider } from '@/context/LLMServiceContext';
+import { ToolBridgeProvider } from '@/context/ToolBridgeContext';
+import { AgentSessionProvider } from '@/context/AgentSessionContext';
+import { AgentChatProvider } from '@/context/AgentChatContext';
 
 function App() {
   return (
     <div className="h-screen w-full">
       <SettingsProvider>
-        <WebMCPProvider>
-          <MCPServerRegistryProvider>
-            <MCPServerProvider>
-              <SystemPromptProvider>
-                <AssistantContextProvider>
-                  <SessionContextProvider>
-                    <BuiltInToolProvider>
-                      <WebMCPServiceRegistry
-                        servers={[
-                          'planning',
-                          'playbook',
-                          'ui',
-                          'bootstrap',
-                          'mcp_manager',
-                          'assistant_manager',
-                          'knowledge',
-                        ]}
-                      />
-                      <BrowserToolProvider />
-                      <RustMCPToolProvider />
-                      <SessionHistoryProvider>
-                        <ResourceAttachmentProvider>
-                          <ModelOptionsProvider>
-                            <AgentLLMBridge />
-                            <SidebarProvider className="h-full overflow-hidden">
-                              <DnDContextProvider>
-                                <AppSidebar />
-                                {/* Main Content Area (children of AppSidebar) */}
-                                <div className="flex flex-1 flex-col min-w-0">
-                                  <AppHeader>
-                                    <ThemeToggle />
-                                  </AppHeader>
-                                  <div className="flex-1 w-full min-h-0">
-                                    <Routes>
-                                      <Route
-                                        path="/"
-                                        element={<ChatContainer />}
-                                      />
-                                      <Route
-                                        path="/chat/single"
-                                        element={<ChatContainer />}
-                                      />
-                                      <Route
-                                        path="/assistants"
-                                        element={<AssistantList />}
-                                      />
-                                      <Route
-                                        path="/history"
-                                        element={<History />}
-                                      />
-                                      <Route
-                                        path="/history/search"
-                                        element={<History />}
-                                      />
-                                      <Route
-                                        path="/settings"
-                                        element={<SettingsPage />}
-                                      />
-                                    </Routes>
-                                  </div>
-                                </div>
-                              </DnDContextProvider>
-                            </SidebarProvider>
-                            <Toaster />
-                          </ModelOptionsProvider>
-                        </ResourceAttachmentProvider>
-                      </SessionHistoryProvider>
-                    </BuiltInToolProvider>
-                  </SessionContextProvider>
-                </AssistantContextProvider>
-              </SystemPromptProvider>
-            </MCPServerProvider>
-          </MCPServerRegistryProvider>
-        </WebMCPProvider>
+        <ModelOptionsProvider>
+          <LLMServiceProvider>
+            <WebMCPProvider>
+              <MCPServerRegistryProvider>
+                <MCPServerProvider>
+                  <SystemPromptProvider>
+                    <AssistantContextProvider>
+                      <SessionContextProvider>
+                        <AgentSessionProvider>
+                          <AgentChatProvider>
+                            <BuiltInToolProvider>
+                              <WebMCPServiceRegistry
+                                servers={[
+                                  'planning',
+                                  'playbook',
+                                  'ui',
+                                  'bootstrap',
+                                  'mcp_manager',
+                                  'assistant_manager',
+                                  'knowledge',
+                                ]}
+                              />
+                              <BrowserToolProvider />
+                              <RustMCPToolProvider />
+                              <ToolBridgeProvider>
+                                <SessionHistoryProvider>
+                                  <ResourceAttachmentProvider>
+                                    <SidebarProvider className="h-full overflow-hidden">
+                                      <DnDContextProvider>
+                                        <AppSidebar />
+                                        {/* Main Content Area (children of AppSidebar) */}
+                                        <div className="flex flex-1 flex-col min-w-0">
+                                          <AppHeader>
+                                            <ThemeToggle />
+                                          </AppHeader>
+                                          <div className="flex-1 w-full min-h-0">
+                                            <Routes>
+                                              <Route
+                                                path="/"
+                                                element={<ChatContainer />}
+                                              />
+                                              <Route
+                                                path="/chat/single"
+                                                element={<ChatContainer />}
+                                              />
+                                              <Route
+                                                path="/agent/*"
+                                                element={<AgentContainer />}
+                                              />
+                                              <Route
+                                                path="/assistants"
+                                                element={<AssistantList />}
+                                              />
+                                              <Route
+                                                path="/history"
+                                                element={<History />}
+                                              />
+                                              <Route
+                                                path="/history/search"
+                                                element={<History />}
+                                              />
+                                              <Route
+                                                path="/settings"
+                                                element={<SettingsPage />}
+                                              />
+                                            </Routes>
+                                          </div>
+                                        </div>
+                                      </DnDContextProvider>
+                                    </SidebarProvider>
+                                    <Toaster />
+                                  </ResourceAttachmentProvider>
+                                </SessionHistoryProvider>
+                              </ToolBridgeProvider>
+                            </BuiltInToolProvider>
+                          </AgentChatProvider>
+                        </AgentSessionProvider>
+                      </SessionContextProvider>
+                    </AssistantContextProvider>
+                  </SystemPromptProvider>
+                </MCPServerProvider>
+              </MCPServerRegistryProvider>
+            </WebMCPProvider>
+          </LLMServiceProvider>
+        </ModelOptionsProvider>
       </SettingsProvider>
     </div>
   );

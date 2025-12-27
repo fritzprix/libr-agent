@@ -11,9 +11,10 @@ use tokio::process::Command;
 
 /// Start an MCP server with the given configuration
 pub async fn start_server(manager: &MCPServerManager, config: MCPServerConfig) -> Result<String> {
-    match &config.transport {
+    // Clone the transport info we need before moving config
+    match config.transport.clone() {
         TransportConfig::Stdio { command, args, env } => {
-            start_stdio_server(manager, config.name.clone(), command, args, env).await
+            start_stdio_server(manager, config, &command, &args, &env).await
         }
         TransportConfig::Http {
             url,
@@ -25,12 +26,12 @@ pub async fn start_server(manager: &MCPServerManager, config: MCPServerConfig) -
         } => {
             start_http_server(
                 manager,
-                config.name.clone(),
-                url.clone(),
-                protocol_version.clone(),
-                session_id.clone(),
-                headers.clone(),
-                *enable_sse,
+                config,
+                url,
+                protocol_version,
+                session_id,
+                headers,
+                enable_sse,
             )
             .await
         }
@@ -39,11 +40,13 @@ pub async fn start_server(manager: &MCPServerManager, config: MCPServerConfig) -
 
 async fn start_stdio_server(
     manager: &MCPServerManager,
-    name: String,
+    config: MCPServerConfig,
     command: &str,
     args: &[String],
     env: &HashMap<String, String>,
 ) -> Result<String> {
+    let name = config.name.clone();
+
     // Create command with rmcp - configure returns the modified command
     let cmd = Command::new(command).configure(|cmd| {
         for arg in args {
@@ -63,7 +66,7 @@ async fn start_stdio_server(
     let client = ().serve(transport).await?;
     info!("Successfully connected to MCP server: {name}");
 
-    let connection = MCPConnection { client };
+    let connection = MCPConnection { client, config };
 
     // Store connection
     {
@@ -79,13 +82,14 @@ use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig
 
 async fn start_http_server(
     manager: &MCPServerManager,
-    name: String,
+    config: MCPServerConfig,
     url: String,
     protocol_version: String,
     session_id: Option<String>,
     headers: Option<HashMap<String, String>>,
     enable_sse: Option<bool>,
 ) -> Result<String> {
+    let name = config.name.clone();
     info!("Starting HTTP MCP server: {name} at {url}");
 
     // prepare headers
@@ -123,7 +127,7 @@ async fn start_http_server(
         .map_err(|e| anyhow::anyhow!("Failed to build HTTP client: {e}"))?;
 
     // Create configuration
-    let mut config = StreamableHttpClientTransportConfig::with_uri(url.clone());
+    let mut transport_config = StreamableHttpClientTransportConfig::with_uri(url.clone());
 
     // Process enable_sse if applicable (mapping to allow_stateless if inverse)
     // If enable_sse is explicitly false, we might want to enable stateless if likely?
@@ -132,11 +136,11 @@ async fn start_http_server(
     // If streaming (SSE) is disabled, it might mean "stateless request/response".
     // Let's assume enable_sse=false -> allow_stateless=true.
     if let Some(sse) = enable_sse {
-        config.allow_stateless = !sse;
+        transport_config.allow_stateless = !sse;
     }
 
     // Create transport with custom client
-    let transport = StreamableHttpClientTransport::with_client(client, config);
+    let transport = StreamableHttpClientTransport::with_client(client, transport_config);
 
     debug!("Created HTTP transport for {name} (protocol: {protocol_version})");
 
@@ -148,7 +152,7 @@ async fn start_http_server(
 
     info!("Successfully connected to HTTP MCP server: {name}");
 
-    let connection = MCPConnection { client };
+    let connection = MCPConnection { client, config };
 
     // Store connection
     {

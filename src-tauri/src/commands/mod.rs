@@ -1,3 +1,4 @@
+pub mod agent_commands;
 pub mod browser_commands;
 pub mod content_store_commands;
 pub mod download_commands;

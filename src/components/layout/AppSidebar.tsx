@@ -1,4 +1,5 @@
 import {
+  Bot,
   BrainCircuit,
   History,
   MessageSquare,
@@ -84,6 +85,17 @@ export default function AppSidebar() {
                   >
                     <MessageSquare size={16} />
                     <span>Start Chat</span>
+                  </SidebarMenuButton>
+                </Link>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <Link to="/agent/start">
+                  <SidebarMenuButton
+                    isActive={location.pathname.startsWith('/agent')}
+                    tooltip="Start Agent"
+                  >
+                    <Bot size={16} />
+                    <span>Start Agent</span>
                   </SidebarMenuButton>
                 </Link>
               </SidebarMenuItem>

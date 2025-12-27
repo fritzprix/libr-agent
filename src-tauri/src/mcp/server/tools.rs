@@ -1,7 +1,7 @@
 use super::MCPServerManager;
 use crate::mcp::schema::JSONSchemaType;
 use crate::mcp::types::{
-    BuiltinServerInfo, MCPError, MCPResponse, MCPTool, SamplingRequest, ServiceContext,
+    BuiltinServerInfo, JsonRpcId, MCPError, MCPResponse, MCPTool, SamplingRequest, ServiceContext,
     ServiceContextOptions,
 };
 use anyhow::Result;
@@ -11,6 +11,17 @@ use serde_json::Value;
 use std::collections::HashMap;
 use uuid::Uuid;
 
+/// Helper function to convert serde_json::Value to JsonRpcId
+fn value_to_json_rpc_id(value: serde_json::Value) -> JsonRpcId {
+    match value {
+        serde_json::Value::String(s) => JsonRpcId::String(s),
+        serde_json::Value::Number(n) => JsonRpcId::Number(n.as_i64().unwrap_or(0)),
+        serde_json::Value::Null => JsonRpcId::Null,
+        // Fallback: convert any other type to string
+        _ => JsonRpcId::String(value.to_string()),
+    }
+}
+
 pub async fn sample_from_model(
     manager: &MCPServerManager,
     server_name: &str,
@@ -18,8 +29,9 @@ pub async fn sample_from_model(
     request_id: Option<serde_json::Value>,
 ) -> MCPResponse {
     let connections = manager.connections.lock().await;
-    let request_id =
-        request_id.unwrap_or_else(|| serde_json::Value::String(Uuid::new_v4().to_string()));
+    let request_id = value_to_json_rpc_id(
+        request_id.unwrap_or_else(|| serde_json::Value::String(Uuid::new_v4().to_string())),
+    );
 
     if let Some(_connection) = connections.get(server_name) {
         // This needs to be implemented once RMCP supports sampling.
@@ -60,9 +72,10 @@ pub async fn call_tool(
 ) -> MCPResponse {
     let connections = manager.connections.lock().await;
 
-    // Use provided request_id or generate a new unique ID
-    let request_id =
-        request_id.unwrap_or_else(|| serde_json::Value::String(Uuid::new_v4().to_string()));
+    // Use provided request_id or generate a new unique ID, then convert to JsonRpcId
+    let request_id = value_to_json_rpc_id(
+        request_id.unwrap_or_else(|| serde_json::Value::String(Uuid::new_v4().to_string())),
+    );
 
     if let Some(connection) = connections.get(server_name) {
         // Use the rmcp API - CallToolRequestParam struct
@@ -89,7 +102,7 @@ pub async fn call_tool(
                         error!("Failed to serialize tool result: {e}");
                         return MCPResponse {
                             jsonrpc: "2.0".to_string(),
-                            id: Some(request_id),
+                            id: Some(request_id.clone()),
                             result: None,
                             error: Some(MCPError {
                                 code: -32603,
@@ -145,7 +158,7 @@ pub async fn call_tool(
                     MCPResponse {
                         jsonrpc: "2.0".to_string(),
                         id: Some(request_id),
-                        result: Some(result_value),
+                        result: Some(crate::mcp::types::MCPResponseResult::Generic(result_value)),
                         error: None,
                     }
                 }
@@ -404,8 +417,9 @@ pub async fn call_builtin_tool(
                 .await
         }
         None => {
-            let request_id =
-                request_id.unwrap_or_else(|| serde_json::Value::String(Uuid::new_v4().to_string()));
+            let request_id = value_to_json_rpc_id(
+                request_id.unwrap_or_else(|| serde_json::Value::String(Uuid::new_v4().to_string())),
+            );
             MCPResponse {
                 jsonrpc: "2.0".to_string(),
                 id: Some(request_id),
@@ -467,10 +481,13 @@ pub async fn get_service_context(
     // Check built-in servers first
     let servers = manager.builtin_servers.lock().await;
     if let Some(registry) = servers.as_ref() {
-        if let Ok(context) = registry.get_server_context(
-            server_name,
-            options.map(|o| serde_json::to_value(o).unwrap_or(Value::Null)),
-        ) {
+        if let Ok(context) = registry
+            .get_server_context(
+                server_name,
+                options.map(|o| serde_json::to_value(o).unwrap_or(Value::Null)),
+            )
+            .await
+        {
             return Ok(context);
         }
     }
