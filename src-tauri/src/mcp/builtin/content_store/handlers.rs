@@ -294,6 +294,33 @@ impl ContentStoreServer {
             }
         };
 
+        // Get current session ID
+        let session_id = match self.require_active_session_result() {
+            Ok(id) => id,
+            Err(e) => return Ok(MCPResult::error(&e)),
+        };
+
+        // Verify content belongs to current session
+        let content_session_id = {
+            let storage = self.storage.lock().await;
+            storage
+                .get_content_session_id(&args.content_id)
+                .ok_or_else(|| format!("Content '{}' not found", args.content_id))
+        };
+
+        let content_session_id = match content_session_id {
+            Ok(id) => id,
+            Err(e) => return Ok(MCPResult::error(&e)),
+        };
+
+        if content_session_id != session_id {
+            return Ok(MCPResult::error(&format!(
+                "Access denied: Content '{}' belongs to a different session",
+                args.content_id
+            )));
+        }
+
+        // Read content (session verification passed)
         let storage = self.storage.lock().await;
         let content = match storage
             .read_content(&args.content_id, args.from_line.unwrap_or(1), args.to_line)
@@ -531,7 +558,8 @@ mod tests {
 
     async fn setup_test_server() -> (ContentStoreServer, TempDir) {
         let temp_dir = TempDir::new().unwrap();
-        let session_manager = Arc::new(SessionManager::new().unwrap());
+        let session_manager =
+            Arc::new(SessionManager::new_with_base_dir(temp_dir.path().to_path_buf()).unwrap());
         let server = ContentStoreServer::new(session_manager);
         (server, temp_dir)
     }

@@ -2,29 +2,34 @@ use log::error;
 use tauri::{Emitter, Listener, Manager};
 use tauri_plugin_log::{Target, TargetKind};
 
+mod agent;
 mod commands;
 mod config;
-mod mcp;
-mod repositories;
+pub mod mcp; // Make public for integration tests
+pub mod repositories; // Make public for integration tests
 mod search;
 mod services;
 mod session;
 mod session_isolation;
 mod state;
 
+use commands::agent_commands::{
+    agent_call_builtin_tool, agent_create_session, agent_get_all_sessions, agent_get_session,
+    agent_handle_llm_error, agent_handle_llm_response, agent_handle_tool_result,
+    agent_pause_workflow, agent_resume_workflow, agent_send_message, agent_terminate_workflow,
+};
 use commands::browser_commands::*;
 use commands::content_store_commands::delete_content_store;
 use commands::download_commands::{download_workspace_file, export_and_download_zip};
 use commands::file_commands::{read_dropped_file, read_file, workspace_write_file, write_file};
 use commands::log_commands::{backup_current_log, clear_current_log, list_log_files};
 use commands::mcp_commands::{
-    call_builtin_tool, call_mcp_tool, call_tool_unified, check_all_servers_status,
-    check_server_status, complete_oauth_flow, get_connected_servers, get_oauth_token,
-    get_service_context, get_validated_tools, has_oauth_token, list_all_tools,
-    list_all_tools_unified, list_builtin_servers, list_builtin_servers_with_metadata,
-    list_builtin_tools, list_mcp_tools, list_tools_from_config, revoke_oauth_token,
-    sample_from_mcp_server, start_mcp_server, start_oauth_flow, stop_mcp_server, switch_context,
-    validate_tool_schema,
+    call_builtin_tool, call_mcp_tool, check_all_servers_status, check_server_status,
+    complete_oauth_flow, get_connected_servers, get_oauth_token, get_service_context,
+    get_validated_tools, has_oauth_token, list_all_tools, list_all_tools_unified,
+    list_builtin_servers, list_builtin_servers_with_metadata, list_builtin_tools, list_mcp_tools,
+    list_tools_from_config, revoke_oauth_token, sample_from_mcp_server, start_mcp_server,
+    start_oauth_flow, stop_mcp_server, switch_context, validate_tool_schema,
 };
 use commands::messages_commands::{
     messages_delete, messages_delete_all_for_session, messages_get_page, messages_search,
@@ -41,13 +46,14 @@ use commands::workspace_commands::{
     get_app_data_dir, get_app_logs_dir, greet, list_workspace_files,
 };
 use mcp::MCPServerManager;
-use services::{InteractiveBrowserServer, SecureFileManager};
+use services::{agent_server, InteractiveBrowserServer, SecureFileManager};
 use session::get_session_manager;
 
 // Re-export state management functions
 pub use state::{
-    get_content_store_repository, get_mcp_manager, get_message_repository, get_session_repository,
-    get_sqlite_db_url, get_sqlite_pool, set_content_store_repository, set_mcp_manager,
+    get_content_store_repository, get_mcp_manager, get_mcp_service_proxy_manager,
+    get_message_repository, get_session_repository, get_sqlite_db_url, get_sqlite_pool,
+    set_content_store_repository, set_mcp_manager, set_mcp_service_proxy_manager,
     set_message_repository, set_session_repository, set_sqlite_db_url, set_sqlite_pool,
 };
 
@@ -117,8 +123,8 @@ pub fn run_with_sqlite_sync(db_url: String) {
 
         // Initialize repository instances
         use repositories::{
-            MessageRepository, SqliteContentStoreRepository, SqliteMessageRepository,
-            SqliteSessionRepository,
+            MessageRepository, SessionRepository, SqliteContentStoreRepository,
+            SqliteMessageRepository, SqliteSessionRepository,
         };
 
         let message_repo = SqliteMessageRepository::new(pool.clone());
@@ -130,6 +136,11 @@ pub fn run_with_sqlite_sync(db_url: String) {
 
         let content_store_repo = SqliteContentStoreRepository::new(pool.clone());
         let session_repo = SqliteSessionRepository::new(pool.clone());
+        session_repo
+            .create_table()
+            .await
+            .expect("Failed to create sessions table");
+        println!("✅ Sessions table initialized");
 
         // Start background indexing worker (checks every 5 minutes)
         let _indexing_worker = search::IndexingWorker::new(std::time::Duration::from_secs(300));
@@ -146,14 +157,27 @@ pub fn run_with_sqlite_sync(db_url: String) {
         println!("✅ Repository instances initialized");
 
         // Initialize the MCP manager asynchronously
-        let mcp_manager =
-            MCPServerManager::new_with_session_manager_and_sqlite(session_manager_arc, db_url)
-                .await;
+        let mcp_manager = MCPServerManager::new_with_session_manager_and_sqlite(
+            session_manager_arc.clone(),
+            db_url.clone(),
+        )
+        .await;
 
         // Set the global MCP manager
         set_mcp_manager(mcp_manager);
 
         println!("✅ SQLite-backed MCP Manager initialized");
+
+        // Initialize the MCP Service Proxy Manager for session-aware builtin tools
+        use mcp::MCPServiceProxyManager;
+
+        // For shared ownership, MCPServiceProxyManager needs Arc-wrapped dependencies
+        // We'll modify the state management to use Arc storage pattern
+        let proxy_manager = MCPServiceProxyManager::new_from_static_refs();
+
+        set_mcp_service_proxy_manager(proxy_manager);
+
+        println!("✅ MCP Service Proxy Manager initialized");
     });
 
     // Call the main run function
@@ -225,7 +249,8 @@ pub fn run() {
                 list_builtin_servers_with_metadata,
                 call_builtin_tool,
                 list_all_tools_unified,
-                call_tool_unified,
+                agent_server::agent_start,
+                agent_server::agent_llm_response,
                 // Download commands
                 download_workspace_file,
                 export_and_download_zip,
@@ -280,7 +305,19 @@ pub fn run() {
                 messages_upsert,
                 messages_delete,
                 messages_delete_all_for_session,
-                messages_search
+                messages_search,
+                // Agent workflow commands
+                agent_create_session,
+                agent_send_message,
+                agent_handle_llm_response,
+                agent_handle_llm_error,
+                agent_handle_tool_result,
+                agent_get_session,
+                agent_get_all_sessions,
+                agent_pause_workflow,
+                agent_resume_workflow,
+                agent_terminate_workflow,
+                agent_call_builtin_tool
             ])
             .setup(|app| {
                 println!("🚀 LibrAgent initializing...");
@@ -294,6 +331,39 @@ pub fn run() {
                 let browser_server = InteractiveBrowserServer::new(app.handle().clone());
                 app.manage(browser_server);
                 println!("✅ Interactive Browser Server initialized");
+
+                // Initialize Agent Runtime State
+                app.manage(services::agent_server::AgentRuntimeState::default());
+                app.manage(std::sync::Arc::new(
+                    services::agent_server::PendingLlmRequests::default(),
+                )); // Pending requests manager
+                println!("✅ Agent Runtime State initialized");
+
+                // Initialize Agent Session Manager with proxy manager
+                // Get static reference and wrap in Arc using the same unsafe pattern
+                let proxy_manager_arc = unsafe {
+                    let ptr = get_mcp_service_proxy_manager() as *const mcp::MCPServiceProxyManager;
+                    let arc: std::sync::Arc<mcp::MCPServiceProxyManager> =
+                        std::sync::Arc::from_raw(ptr);
+                    let cloned = arc.clone();
+                    std::mem::forget(arc);
+                    cloned
+                };
+
+                let agent_session_manager =
+                    agent::AgentSessionManager::new(app.handle().clone(), proxy_manager_arc);
+
+                // Recover sessions on app startup
+                let manager_for_recovery = agent_session_manager.clone_for_task();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) = manager_for_recovery.recover_sessions().await {
+                        log::error!("Failed to recover sessions on startup: {}", e);
+                    }
+                });
+
+                app.manage(agent_session_manager);
+                println!("✅ Agent Session Manager initialized with proxy manager");
+                println!("🔄 Session recovery initiated in background");
 
                 // Built-in servers are now automatically initialized with SessionManager support
                 // via the get_mcp_manager() function when first called.

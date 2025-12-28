@@ -27,6 +27,8 @@ export interface AIServiceConfig {
   safetySettings?: SafetySetting[];
   /** An array of tools available to the service. */
   tools?: MCPTool[];
+  /** The base URL for the service API endpoint. */
+  baseUrl?: string;
 
   /**
    * Enable reasoning mode for supported models.

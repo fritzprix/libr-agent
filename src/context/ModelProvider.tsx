@@ -98,9 +98,14 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
       }
 
       try {
+        // Get provider config including baseUrl
+        const providerConfig =
+          serviceConfigs[provider as AIServiceProvider] || {};
+
         const service = AIServiceFactory.getService(
           provider as AIServiceProvider,
           effectiveApiKey,
+          providerConfig,
         );
         const modelList = await service.listModels();
 
@@ -121,7 +126,7 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
         return {};
       }
     },
-    [],
+    [serviceConfigs],
   );
 
   // SWR for dynamic models

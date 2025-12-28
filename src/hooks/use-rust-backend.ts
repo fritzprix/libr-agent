@@ -1,12 +1,5 @@
 import * as client from '@/lib/rust-backend-client';
 
-// Re-export types for backward compatibility
-export interface MCPServerConfig {
-  name: string;
-  transport: string;
-  [key: string]: unknown;
-}
-
 // Workspace types
 export type { WorkspaceFileItem } from '@/lib/rust-backend-client';
 

@@ -213,25 +213,56 @@ export function convertMessage(
     return null;
   }
 
+  logger.debug(`🔄 Converting message: role=${message.role}, id=${message.id}`);
+
   switch (message.role) {
-    case 'user':
-      return convertUserMessage(message, logger);
+    case 'user': {
+      const userResult = convertUserMessage(message, logger);
+      logger.debug('User message converted', {
+        messageId: message.id,
+        hasResult: !!userResult,
+        contentLength: userResult?.content?.length ?? 0,
+      });
+      return userResult;
+    }
 
-    case 'assistant':
-      return convertAssistantMessage(message, logger);
+    case 'assistant': {
+      const assistantResult = convertAssistantMessage(message, logger);
+      logger.debug('Assistant message converted', {
+        messageId: message.id,
+        hasResult: !!assistantResult,
+        hasToolCalls: !!assistantResult?.tool_calls,
+        toolCallCount: assistantResult?.tool_calls?.length ?? 0,
+      });
+      return assistantResult;
+    }
 
-    case 'system':
+    case 'system': {
+      const systemContent = processMessageContent(message.content) || '';
+      logger.debug('System message converted', {
+        messageId: message.id,
+        contentLength: systemContent.length,
+      });
       return {
         role: 'system',
-        content: processMessageContent(message.content) || '',
+        content: systemContent,
       };
+    }
 
-    case 'tool':
+    case 'tool': {
+      const toolContent = processMessageContent(message.content) || '';
+      logger.debug('🔧 Tool message converted', {
+        messageId: message.id,
+        toolCallId: message.tool_call_id,
+        contentLength: toolContent.length,
+        contentPreview: toolContent.substring(0, 100),
+      });
       return {
         role: 'tool',
-        content: processMessageContent(message.content) || '',
+        content: toolContent,
         tool_call_id: message.tool_call_id,
       };
+    }
 
     default:
       logger.warn(`Unsupported message role: ${message.role}`);
@@ -263,16 +294,28 @@ export function convertToOllamaMessages(
     });
   }
 
+  let skippedCount = 0;
   for (const message of messages) {
     const converted = convertMessage(message, logger);
     if (converted) {
       ollamaMessages.push(converted);
+    } else {
+      skippedCount++;
+      logger.warn('⚠️ Message conversion returned null - SKIPPED', {
+        messageId: message.id,
+        role: message.role,
+        hasContent: !!message.content,
+        contentLength: message.content?.length ?? 0,
+        hasToolCalls: !!message.tool_calls,
+        toolCallId: message.tool_call_id,
+      });
     }
   }
 
   logger.info('Converted messages to Ollama format', {
     inputCount: messages.length,
     outputCount: ollamaMessages.length,
+    skippedCount,
   });
 
   return ollamaMessages;

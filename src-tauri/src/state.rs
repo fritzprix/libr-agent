@@ -1,8 +1,9 @@
 /// Global state management module
 ///
 /// This module provides centralized access to application-wide state including
-/// the MCP server manager, SQLite database URL, SQLite connection pool, and repositories.
-use crate::mcp::MCPServerManager;
+/// the MCP server manager, MCP service proxy manager, SQLite database URL,
+/// SQLite connection pool, and repositories.
+use crate::mcp::{MCPServerManager, MCPServiceProxyManager};
 use crate::repositories::{
     SqliteContentStoreRepository, SqliteMessageRepository, SqliteSessionRepository,
 };
@@ -11,6 +12,9 @@ use std::sync::OnceLock;
 
 /// A global, thread-safe, once-initialized instance of the `MCPServerManager`.
 static MCP_MANAGER: OnceLock<MCPServerManager> = OnceLock::new();
+
+/// A global, thread-safe, once-initialized instance of the `MCPServiceProxyManager`.
+static MCP_SERVICE_PROXY_MANAGER: OnceLock<MCPServiceProxyManager> = OnceLock::new();
 
 /// A global, thread-safe, once-initialized string for the SQLite database URL.
 static SQLITE_DB_URL: OnceLock<String> = OnceLock::new();
@@ -159,4 +163,27 @@ pub fn get_session_repository() -> &'static SqliteSessionRepository {
     SESSION_REPOSITORY
         .get()
         .expect("Session repository not initialized. Call set_session_repository() first.")
+}
+
+/// Sets the global MCP service proxy manager instance.
+///
+/// # Panics
+/// This function will panic if the manager is already set.
+pub fn set_mcp_service_proxy_manager(manager: MCPServiceProxyManager) {
+    MCP_SERVICE_PROXY_MANAGER
+        .set(manager)
+        .expect("MCP Service Proxy Manager already initialized");
+}
+
+/// Gets a reference to the global MCP service proxy manager.
+///
+/// # Returns
+/// A reference to the MCP service proxy manager.
+///
+/// # Panics
+/// Panics if the manager has not been initialized.
+pub fn get_mcp_service_proxy_manager() -> &'static MCPServiceProxyManager {
+    MCP_SERVICE_PROXY_MANAGER.get().expect(
+        "MCP Service Proxy Manager not initialized. Call set_mcp_service_proxy_manager() first.",
+    )
 }

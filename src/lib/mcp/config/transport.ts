@@ -14,9 +14,8 @@ export type TransportConfig =
       env?: Record<string, string>;
     }
   | {
-      type: 'http';
+      type: 'http-sse';
       url: string;
-      protocolVersion?: string; // Default: "2025-06-18"
       sessionId?: string;
       headers?: Record<string, string>;
       enableSSE?: boolean; // For backward compatibility with older servers

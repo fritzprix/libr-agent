@@ -1,5 +1,5 @@
 use super::MCPServerManager;
-use crate::mcp::types::{MCPConnection, MCPServerConfig, MCPServerConfigV2, TransportConfig};
+use crate::mcp::types::{MCPConnection, MCPServerConfig, TransportConfig};
 use anyhow::Result;
 use log::{debug, error, info};
 use rmcp::{
@@ -9,79 +9,43 @@ use rmcp::{
 use std::collections::HashMap;
 use tokio::process::Command;
 
-pub async fn start_server_v2(
-    manager: &MCPServerManager,
-    config: MCPServerConfigV2,
-) -> Result<String> {
-    match &config.transport {
+/// Start an MCP server with the given configuration
+pub async fn start_server(manager: &MCPServerManager, config: MCPServerConfig) -> Result<String> {
+    // Clone the transport info we need before moving config
+    match config.transport.clone() {
         TransportConfig::Stdio { command, args, env } => {
-            // Convert to legacy format for stdio
-            let legacy_config = MCPServerConfig {
-                name: config.name.clone(),
-                command: Some(command.clone()),
-                args: Some(args.clone()),
-                env: Some(env.clone()),
-                transport: "stdio".to_string(),
-                url: None,
-                port: None,
-            };
-            start_stdio_server(manager, legacy_config).await
+            start_stdio_server(manager, config, &command, &args, &env).await
         }
         TransportConfig::Http {
             url,
             protocol_version,
             session_id,
             headers,
+            enable_sse,
             ..
         } => {
             start_http_server(
                 manager,
-                config.name.clone(),
-                url.clone(),
-                protocol_version.clone(),
-                session_id.clone(),
-                headers.clone(),
+                config,
+                url,
+                protocol_version,
+                session_id,
+                headers,
+                enable_sse,
             )
             .await
         }
     }
 }
 
-pub async fn start_server(manager: &MCPServerManager, config: MCPServerConfig) -> Result<String> {
-    match config.transport.as_str() {
-        "stdio" => start_stdio_server(manager, config).await,
-        "http" => {
-            // Convert to V2 and use new HTTP handler
-            if let Some(url) = config.url {
-                start_http_server(
-                    manager,
-                    config.name,
-                    url,
-                    "2025-06-18".to_string(),
-                    None,
-                    None,
-                )
-                .await
-            } else {
-                Err(anyhow::anyhow!("HTTP transport requires URL"))
-            }
-        }
-        "websocket" => Err(anyhow::anyhow!("WebSocket transport not yet implemented")),
-        _ => Err(anyhow::anyhow!(
-            "Unsupported transport: {}",
-            config.transport
-        )),
-    }
-}
-
-async fn start_stdio_server(manager: &MCPServerManager, config: MCPServerConfig) -> Result<String> {
-    let command = config
-        .command
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("Command is required for stdio transport"))?;
-
-    let default_args = vec![];
-    let args = config.args.as_ref().unwrap_or(&default_args);
+async fn start_stdio_server(
+    manager: &MCPServerManager,
+    config: MCPServerConfig,
+    command: &str,
+    args: &[String],
+    env: &HashMap<String, String>,
+) -> Result<String> {
+    let name = config.name.clone();
 
     // Create command with rmcp - configure returns the modified command
     let cmd = Command::new(command).configure(|cmd| {
@@ -89,11 +53,9 @@ async fn start_stdio_server(manager: &MCPServerManager, config: MCPServerConfig)
             cmd.arg(arg);
         }
 
-        // Set environment variables if any
-        if let Some(env) = &config.env {
-            for (key, value) in env {
-                cmd.env(key, value);
-            }
+        // Set environment variables
+        for (key, value) in env {
+            cmd.env(key, value);
         }
     });
 
@@ -102,38 +64,83 @@ async fn start_stdio_server(manager: &MCPServerManager, config: MCPServerConfig)
     debug!("Created transport for command: {command} {args:?}");
 
     let client = ().serve(transport).await?;
-    info!("Successfully connected to MCP server: {}", config.name);
+    info!("Successfully connected to MCP server: {name}");
 
-    let connection = MCPConnection { client };
+    let connection = MCPConnection { client, config };
 
     // Store connection
     {
         let mut connections = manager.connections.lock().await;
-        connections.insert(config.name.clone(), connection);
-        debug!("Stored connection for server: {}", config.name);
+        connections.insert(name.clone(), connection);
+        debug!("Stored connection for server: {name}");
     }
 
-    Ok(format!(
-        "Started and connected to MCP server: {}",
-        config.name
-    ))
+    Ok(format!("Started and connected to MCP server: {name}"))
 }
+
+use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 
 async fn start_http_server(
     manager: &MCPServerManager,
-    name: String,
+    config: MCPServerConfig,
     url: String,
     protocol_version: String,
-    _session_id: Option<String>,
-    _headers: Option<HashMap<String, String>>,
+    session_id: Option<String>,
+    headers: Option<HashMap<String, String>>,
+    enable_sse: Option<bool>,
 ) -> Result<String> {
+    let name = config.name.clone();
     info!("Starting HTTP MCP server: {name} at {url}");
 
-    // Create HTTP transport using RMCP's built-in StreamableHttpClientTransport
-    let transport = StreamableHttpClientTransport::from_uri(url.clone());
+    // prepare headers
+    let mut header_map = reqwest::header::HeaderMap::new();
 
-    // Add MCP protocol version header
-    // Note: RMCP's HTTP client automatically adds required headers
+    // Add custom headers
+    if let Some(headers) = headers {
+        for (k, v) in headers {
+            if let (Ok(k), Ok(v)) = (
+                reqwest::header::HeaderName::from_bytes(k.as_bytes()),
+                reqwest::header::HeaderValue::from_str(&v),
+            ) {
+                header_map.insert(k, v);
+            } else {
+                error!("Invalid header ignored: {}: {}", k, v);
+            }
+        }
+    }
+
+    // Add session ID if provided
+    if let Some(sid) = session_id {
+        if let Ok(v) = reqwest::header::HeaderValue::from_str(&sid) {
+            // Use string key to avoid dependency on internal constants if possible,
+            // but Mcp-Session-Id is standard.
+            if let Ok(k) = reqwest::header::HeaderName::from_bytes(b"Mcp-Session-Id") {
+                header_map.insert(k, v);
+            }
+        }
+    }
+
+    // Build reqwest client
+    let client = reqwest::Client::builder()
+        .default_headers(header_map)
+        .build()
+        .map_err(|e| anyhow::anyhow!("Failed to build HTTP client: {e}"))?;
+
+    // Create configuration
+    let mut transport_config = StreamableHttpClientTransportConfig::with_uri(url.clone());
+
+    // Process enable_sse if applicable (mapping to allow_stateless if inverse)
+    // If enable_sse is explicitly false, we might want to enable stateless if likely?
+    // But for now, let's keep config default unless we know for sure.
+    // The previous error showed allow_stateless is available.
+    // If streaming (SSE) is disabled, it might mean "stateless request/response".
+    // Let's assume enable_sse=false -> allow_stateless=true.
+    if let Some(sse) = enable_sse {
+        transport_config.allow_stateless = !sse;
+    }
+
+    // Create transport with custom client
+    let transport = StreamableHttpClientTransport::with_client(client, transport_config);
 
     debug!("Created HTTP transport for {name} (protocol: {protocol_version})");
 
@@ -145,7 +152,7 @@ async fn start_http_server(
 
     info!("Successfully connected to HTTP MCP server: {name}");
 
-    let connection = MCPConnection { client };
+    let connection = MCPConnection { client, config };
 
     // Store connection
     {

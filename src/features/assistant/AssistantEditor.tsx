@@ -133,8 +133,9 @@ export default function AssistantEditor() {
                           <div className="text-xs text-muted-foreground mt-0.5">
                             {server.transport.type === 'stdio' &&
                               `${t('assistant.mcp.transport.stdio', 'stdio')}: ${server.transport.command}`}
-                            {server.transport.type === 'http' &&
-                              `${t('assistant.mcp.transport.http', 'http')}: ${server.transport.url}`}
+                            {((server.transport.type as string) === 'http' ||
+                              server.transport.type === 'http-sse') &&
+                              `${t('assistant.mcp.transport.http', 'http')}: ${(server.transport as { url: string }).url}`}
                           </div>
                         </label>
                       </div>

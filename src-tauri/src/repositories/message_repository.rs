@@ -144,23 +144,46 @@ impl MessageRepository for SqliteMessageRepository {
 
         let messages: Vec<Message> = rows
             .into_iter()
-            .map(|row| Message {
-                id: row.get("id"),
-                session_id: row.get("session_id"),
-                role: row.get("role"),
-                content: row.get("content"),
-                tool_calls: row.get("tool_calls"),
-                tool_call_id: row.get("tool_call_id"),
-                is_streaming: row.get("is_streaming"),
-                thinking: row.get("thinking"),
-                thinking_signature: row.get("thinking_signature"),
-                assistant_id: row.get("assistant_id"),
-                attachments: row.get("attachments"),
-                tool_use: row.get("tool_use"),
-                created_at: row.get("created_at"),
-                updated_at: row.get("updated_at"),
-                source: row.get("source"),
-                error: row.get("error"),
+            .map(|row| {
+                // Deserialize JSON strings from DB into structured types
+                let content_str: String = row.get("content");
+                let content: Vec<crate::agent::types::MCPContent> =
+                    serde_json::from_str(&content_str).unwrap_or_default();
+
+                let tool_calls: Option<Vec<crate::agent::types::ToolCall>> = row
+                    .get::<Option<String>, _>("tool_calls")
+                    .and_then(|s| serde_json::from_str(&s).ok());
+
+                let attachments: Option<serde_json::Value> = row
+                    .get::<Option<String>, _>("attachments")
+                    .and_then(|s| serde_json::from_str(&s).ok());
+
+                let tool_use: Option<serde_json::Value> = row
+                    .get::<Option<String>, _>("tool_use")
+                    .and_then(|s| serde_json::from_str(&s).ok());
+
+                let error: Option<serde_json::Value> = row
+                    .get::<Option<String>, _>("error")
+                    .and_then(|s| serde_json::from_str(&s).ok());
+
+                Message {
+                    id: row.get("id"),
+                    session_id: row.get("session_id"),
+                    role: row.get("role"),
+                    content,
+                    tool_calls,
+                    tool_call_id: row.get("tool_call_id"),
+                    is_streaming: row.get("is_streaming"),
+                    thinking: row.get("thinking"),
+                    thinking_signature: row.get("thinking_signature"),
+                    assistant_id: row.get("assistant_id"),
+                    attachments,
+                    tool_use,
+                    created_at: row.get("created_at"),
+                    updated_at: row.get("updated_at"),
+                    source: row.get("source"),
+                    error,
+                }
             })
             .collect();
 
@@ -179,6 +202,47 @@ impl MessageRepository for SqliteMessageRepository {
     }
 
     async fn insert(&self, message: &Message) -> Result<(), DbError> {
+        // Serialize structured types to JSON strings for DB storage
+        let content_json = serde_json::to_string(&message.content).map_err(|e| {
+            DbError::SerializationError(format!("Failed to serialize content: {}", e))
+        })?;
+
+        let tool_calls_json = message
+            .tool_calls
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()
+            .map_err(|e| {
+                DbError::SerializationError(format!("Failed to serialize tool_calls: {}", e))
+            })?;
+
+        let attachments_json = message
+            .attachments
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()
+            .map_err(|e| {
+                DbError::SerializationError(format!("Failed to serialize attachments: {}", e))
+            })?;
+
+        let tool_use_json = message
+            .tool_use
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()
+            .map_err(|e| {
+                DbError::SerializationError(format!("Failed to serialize tool_use: {}", e))
+            })?;
+
+        let error_json = message
+            .error
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()
+            .map_err(|e| {
+                DbError::SerializationError(format!("Failed to serialize error: {}", e))
+            })?;
+
         sqlx::query(
             r#"
             INSERT INTO messages (
@@ -206,19 +270,19 @@ impl MessageRepository for SqliteMessageRepository {
         .bind(&message.id)
         .bind(&message.session_id)
         .bind(&message.role)
-        .bind(&message.content)
-        .bind(&message.tool_calls)
+        .bind(content_json)
+        .bind(tool_calls_json)
         .bind(&message.tool_call_id)
         .bind(message.is_streaming)
         .bind(&message.thinking)
         .bind(&message.thinking_signature)
         .bind(&message.assistant_id)
-        .bind(&message.attachments)
-        .bind(&message.tool_use)
+        .bind(attachments_json)
+        .bind(tool_use_json)
         .bind(message.created_at)
         .bind(message.updated_at)
         .bind(&message.source)
-        .bind(&message.error)
+        .bind(error_json)
         .execute(&self.pool)
         .await?;
 
@@ -229,6 +293,47 @@ impl MessageRepository for SqliteMessageRepository {
         let mut tx = self.pool.begin().await?;
 
         for message in messages {
+            // Serialize structured types to JSON strings for DB storage
+            let content_json = serde_json::to_string(&message.content).map_err(|e| {
+                DbError::SerializationError(format!("Failed to serialize content: {}", e))
+            })?;
+
+            let tool_calls_json = message
+                .tool_calls
+                .as_ref()
+                .map(serde_json::to_string)
+                .transpose()
+                .map_err(|e| {
+                    DbError::SerializationError(format!("Failed to serialize tool_calls: {}", e))
+                })?;
+
+            let attachments_json = message
+                .attachments
+                .as_ref()
+                .map(serde_json::to_string)
+                .transpose()
+                .map_err(|e| {
+                    DbError::SerializationError(format!("Failed to serialize attachments: {}", e))
+                })?;
+
+            let tool_use_json = message
+                .tool_use
+                .as_ref()
+                .map(serde_json::to_string)
+                .transpose()
+                .map_err(|e| {
+                    DbError::SerializationError(format!("Failed to serialize tool_use: {}", e))
+                })?;
+
+            let error_json = message
+                .error
+                .as_ref()
+                .map(serde_json::to_string)
+                .transpose()
+                .map_err(|e| {
+                    DbError::SerializationError(format!("Failed to serialize error: {}", e))
+                })?;
+
             sqlx::query(
                 r#"
                 INSERT INTO messages (
@@ -256,19 +361,19 @@ impl MessageRepository for SqliteMessageRepository {
             .bind(&message.id)
             .bind(&message.session_id)
             .bind(&message.role)
-            .bind(&message.content)
-            .bind(&message.tool_calls)
+            .bind(content_json)
+            .bind(tool_calls_json)
             .bind(&message.tool_call_id)
             .bind(message.is_streaming)
             .bind(&message.thinking)
             .bind(&message.thinking_signature)
             .bind(&message.assistant_id)
-            .bind(&message.attachments)
-            .bind(&message.tool_use)
+            .bind(attachments_json)
+            .bind(tool_use_json)
             .bind(message.created_at)
             .bind(message.updated_at)
             .bind(&message.source)
-            .bind(&message.error)
+            .bind(error_json)
             .execute(&mut *tx)
             .await?;
         }

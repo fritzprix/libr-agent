@@ -6,8 +6,8 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::mcp::types::{
-    BuiltinServerInfo, MCPConnection, MCPResponse, MCPServerConfig, MCPServerConfigV2, MCPTool,
-    SamplingRequest, ServiceContext, ServiceContextOptions,
+    BuiltinServerInfo, MCPConnection, MCPResponse, MCPServerConfig, MCPTool, SamplingRequest,
+    ServiceContext, ServiceContextOptions,
 };
 use crate::session::SessionManager;
 
@@ -74,12 +74,7 @@ impl MCPServerManager {
         server_manager
     }
 
-    /// Starts and connects to an MCP server based on the provided V2 configuration.
-    pub async fn start_server_v2(&self, config: MCPServerConfigV2) -> Result<String> {
-        lifecycle::start_server_v2(self, config).await
-    }
-
-    /// Starts and connects to an MCP server based on the provided legacy configuration.
+    /// Starts and connects to an MCP server based on the provided configuration.
     pub async fn start_server(&self, config: MCPServerConfig) -> Result<String> {
         lifecycle::start_server(self, config).await
     }
@@ -215,5 +210,71 @@ impl MCPServerManager {
     /// Returns a reference to the OAuth manager for handling OAuth 2.1 flows.
     pub async fn get_oauth_manager(&self) -> Arc<crate::mcp::oauth::OAuthManager> {
         Arc::clone(&self.oauth_manager)
+    }
+
+    /// Check if a server uses stdio transport.
+    ///
+    /// This is used by the session isolation system to determine if a server
+    /// needs per-session process management.
+    pub async fn is_stdio_server(&self, server_name: &str) -> bool {
+        let connections = self.connections.lock().await;
+        connections
+            .get(server_name)
+            .map(|conn| {
+                matches!(
+                    conn.config.transport,
+                    crate::mcp::types::TransportConfig::Stdio { .. }
+                )
+            })
+            .unwrap_or(false)
+    }
+
+    /// Get all stdio server configurations.
+    ///
+    /// Returns a map of server name to configuration for all servers using stdio transport.
+    /// This is used during session proxy creation to initialize session-specific managers.
+    pub async fn get_stdio_configs(&self) -> HashMap<String, MCPServerConfig> {
+        let connections = self.connections.lock().await;
+        connections
+            .iter()
+            .filter(|(_, conn)| {
+                matches!(
+                    conn.config.transport,
+                    crate::mcp::types::TransportConfig::Stdio { .. }
+                )
+            })
+            .map(|(name, conn)| (name.clone(), conn.config.clone()))
+            .collect()
+    }
+
+    /// Get transport configuration for a specific server.
+    ///
+    /// Returns None if the server is not found.
+    pub async fn get_transport_config(
+        &self,
+        server_name: &str,
+    ) -> Option<crate::mcp::types::TransportConfig> {
+        let connections = self.connections.lock().await;
+        connections
+            .get(server_name)
+            .map(|conn| conn.config.transport.clone())
+    }
+
+    /// Get all HTTP server configurations.
+    ///
+    /// Returns a map of server name to configuration for all servers using HTTP transport.
+    /// This is used during session proxy creation to initialize session-specific HTTP managers.
+    pub async fn get_http_configs(&self) -> HashMap<String, MCPServerConfig> {
+        let connections = self.connections.lock().await;
+        connections
+            .iter()
+            .filter(|(_, conn)| {
+                matches!(
+                    conn.config.transport,
+                    crate::mcp::types::TransportConfig::Http { .. }
+                )
+            })
+            .map(|(name, conn)| (name.clone(), conn.config.clone()))
+            .collect()
     }
 }

@@ -2,7 +2,7 @@
 use crate::mcp::types::{ServiceContext, ServiceContextOptions};
 use crate::mcp::MCPTool;
 use crate::session::SessionManager;
-use log::{error, info};
+use log::error;
 use serde_json::Value;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -121,70 +121,92 @@ impl ContentStoreServer {
             .map(|_| ())
     }
 
-    pub fn get_service_context(&self, options: Option<&Value>) -> ServiceContext {
-        info!("ContentStore get_service_context called with options: {options:?}");
-
-        // Extract session ID from options if provided
-        let session_id = options
-            .and_then(|opts| opts.get("sessionId"))
-            .and_then(|sid| sid.as_str())
-            .filter(|s| !s.is_empty());
-
-        // Get basic server information
-        let tools_count = self.tools().len();
-
-        // Format minimal context with content summary
-        let mut context = format!("## Content Store\n\nActive, {tools_count} tools");
-
-        // Add session-specific content summary if session ID is available
-        if let Some(session_id) = session_id {
-            // Try to get content information for this session (non-blocking)
-            if let Ok(storage) = self.storage.try_lock() {
-                let count = storage.get_content_count(session_id);
-                let summaries = storage.get_content_summary(session_id, 3);
-
-                if count > 0 {
-                    context.push_str(&format!(", {count} files"));
-
-                    if !summaries.is_empty() {
-                        let files_info: Vec<String> = summaries
-                            .iter()
-                            .map(|(filename, size, preview)| {
-                                // Format size in human-readable form
-                                let size_str = if *size < 1024 {
-                                    format!("{size}B")
-                                } else if *size < 1024 * 1024 {
-                                    format!("{}KB", size / 1024)
-                                } else {
-                                    format!("{}MB", size / (1024 * 1024))
-                                };
-
-                                format!("{filename} ({size_str}): {preview}")
-                            })
-                            .collect();
-
-                        context.push_str(&format!("\n  Files: {}", files_info.join("\n  ")));
-
-                        if summaries.len() < count {
-                            context
-                                .push_str(&format!("\n  ...and {} more", count - summaries.len()));
-                        }
-                    }
-                } else {
-                    context.push_str(", no files");
-                }
-            } else {
-                context.push_str(", content info unavailable");
+    pub async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
+        // Get current session ID
+        let session_id = match self.session_manager.get_current_session() {
+            Some(sid) => sid,
+            None => {
+                return ServiceContext {
+                    context_prompt: "## Content Store\n**Status**: No active session".to_string(),
+                    structured_state: None,
+                };
             }
+        };
+
+        // Get content information for this session
+        let (count, summaries) = match self.storage.try_lock() {
+            Ok(storage) => {
+                let count = storage.get_content_count(&session_id);
+                let summaries = storage.get_content_summary(&session_id, 5);
+                (count, summaries)
+            }
+            Err(e) => {
+                log::warn!(
+                    "Failed to lock content storage for session '{}': {}",
+                    session_id,
+                    e
+                );
+                return ServiceContext {
+                    context_prompt: "## Content Store\n**Status**: Error loading state".to_string(),
+                    structured_state: None,
+                };
+            }
+        };
+
+        // Build context prompt
+        let mut parts = vec!["## Content Store".to_string()];
+
+        if count == 0 {
+            parts.push("\n**No content stored yet.**".to_string());
+            parts.push(
+                "*Use addContent to store files, documents, or text for later retrieval.*"
+                    .to_string(),
+            );
         } else {
-            context.push_str(", no session");
+            let file_label = if count == 1 { "file" } else { "files" };
+            parts.push(format!("\n**{} {} stored**", count, file_label));
+
+            // List content items with previews
+            for (idx, (filename, size, preview)) in summaries.iter().enumerate() {
+                // Format size in human-readable form
+                let size_str = if *size < 1024 {
+                    format!("{}B", size)
+                } else if *size < 1024 * 1024 {
+                    format!("{}KB", size / 1024)
+                } else {
+                    format!("{}MB", size / (1024 * 1024))
+                };
+
+                // Truncate preview to 50 chars
+                let preview_short = if preview.len() > 50 {
+                    format!("{}...", &preview[..50])
+                } else {
+                    preview.clone()
+                };
+
+                parts.push(format!(
+                    "  {}. **{}** ({}) - {}",
+                    idx + 1,
+                    filename,
+                    size_str,
+                    preview_short
+                ));
+            }
+
+            if count > 5 {
+                parts.push(format!(
+                    "  ...and {} more files. Use listContent to view all.",
+                    count - 5
+                ));
+            }
         }
 
-        info!("ContentStore service context - detailed format with file summary");
-
         ServiceContext {
-            context_prompt: context,
-            structured_state: session_id.map(|s| Value::String(s.to_string())),
+            context_prompt: parts.join("\n"),
+            structured_state: Some(serde_json::json!({
+                "session_id": session_id,
+                "content_count": count
+            })),
         }
     }
 

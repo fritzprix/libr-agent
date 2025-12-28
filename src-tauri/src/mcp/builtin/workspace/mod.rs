@@ -41,6 +41,12 @@ pub struct PendingShellExecution {
 #[derive(Debug)]
 pub struct PendingExecutions(Mutex<HashMap<String, PendingShellExecution>>);
 
+impl Default for PendingExecutions {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PendingExecutions {
     pub fn new() -> Self {
         Self(Mutex::new(HashMap::new()))
@@ -672,7 +678,7 @@ impl BuiltinMCPServer for WorkspaceServer {
         tools
     }
 
-    fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
+    async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
         // Get session-specific workspace directory
         let workspace_dir_path = self.get_workspace_dir();
         let workspace_dir = workspace_dir_path.to_string_lossy().to_string();

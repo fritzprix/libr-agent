@@ -118,3 +118,17 @@ export interface CheckTodoOutput extends BaseOutput {
   todo: SimpleTodo | null;
   todos: SimpleTodo[];
 }
+
+/**
+ * The output for the `listScratchpad` tool call.
+ * @internal
+ */
+export interface ListScratchpadOutput extends BaseOutput {
+  items: ScratchpadItem[];
+  pagination: {
+    page: number;
+    pageSize: number;
+    totalItems: number;
+    totalPages: number;
+  };
+}

@@ -17,25 +17,19 @@ function deserializeMessage(rustMsg: Record<string, unknown>): Message {
     sessionId: rustMsg.sessionId as string,
     threadId: (rustMsg.threadId as string) || (rustMsg.sessionId as string), // Fallback to sessionId for backward compatibility
     role: rustMsg.role as 'user' | 'assistant' | 'system' | 'tool',
-    content: JSON.parse(rustMsg.content as string),
-    tool_calls: rustMsg.toolCalls
-      ? JSON.parse(rustMsg.toolCalls as string)
-      : undefined,
+    content: rustMsg.content as Message['content'], // Typed correctly in Message interface
+    tool_calls: (rustMsg.toolCalls as Message['tool_calls']) || undefined,
     tool_call_id: rustMsg.toolCallId as string | undefined,
     isStreaming: rustMsg.isStreaming as boolean | undefined,
     thinking: rustMsg.thinking as string | undefined,
     thinkingSignature: rustMsg.thinkingSignature as string | undefined,
     assistantId: rustMsg.assistantId as string | undefined,
-    attachments: rustMsg.attachments
-      ? JSON.parse(rustMsg.attachments as string)
-      : undefined,
-    tool_use: rustMsg.toolUse
-      ? JSON.parse(rustMsg.toolUse as string)
-      : undefined,
+    attachments: (rustMsg.attachments as Message['attachments']) || undefined,
+    tool_use: (rustMsg.toolUse as Message['tool_use']) || undefined,
     createdAt: new Date(rustMsg.createdAt as number),
     updatedAt: new Date(rustMsg.updatedAt as number),
     source: rustMsg.source as 'assistant' | 'ui' | undefined,
-    error: rustMsg.error ? JSON.parse(rustMsg.error as string) : undefined,
+    error: (rustMsg.error as Message['error']) || undefined,
   };
 }
 
@@ -100,19 +94,19 @@ export async function upsertMessages(messages: Message[]): Promise<void> {
     sessionId: msg.sessionId,
     threadId: msg.threadId,
     role: msg.role,
-    content: JSON.stringify(msg.content),
-    toolCalls: msg.tool_calls ? JSON.stringify(msg.tool_calls) : null,
+    content: msg.content,
+    toolCalls: msg.tool_calls || null,
     toolCallId: msg.tool_call_id || null,
     isStreaming: msg.isStreaming || null,
     thinking: msg.thinking || null,
     thinkingSignature: msg.thinkingSignature || null,
     assistantId: msg.assistantId || null,
-    attachments: msg.attachments ? JSON.stringify(msg.attachments) : null,
-    toolUse: msg.tool_use ? JSON.stringify(msg.tool_use) : null,
+    attachments: msg.attachments || null,
+    toolUse: msg.tool_use || null,
     createdAt: msg.createdAt ? msg.createdAt.getTime() : Date.now(),
     updatedAt: msg.updatedAt ? msg.updatedAt.getTime() : Date.now(),
     source: msg.source || null,
-    error: msg.error ? JSON.stringify(msg.error) : null,
+    error: msg.error || null,
   }));
 
   return safeInvoke<void>('messages_upsert_many', { messages: rustMessages });
@@ -135,21 +129,19 @@ export async function upsertMessage(message: Message): Promise<void> {
     id: message.id,
     sessionId: message.sessionId,
     role: message.role,
-    content: JSON.stringify(message.content),
-    toolCalls: message.tool_calls ? JSON.stringify(message.tool_calls) : null,
+    content: message.content,
+    toolCalls: message.tool_calls || null,
     toolCallId: message.tool_call_id || null,
     isStreaming: message.isStreaming || null,
     thinking: message.thinking || null,
     thinkingSignature: message.thinkingSignature || null,
     assistantId: message.assistantId || null,
-    attachments: message.attachments
-      ? JSON.stringify(message.attachments)
-      : null,
-    toolUse: message.tool_use ? JSON.stringify(message.tool_use) : null,
+    attachments: message.attachments || null,
+    toolUse: message.tool_use || null,
     createdAt: message.createdAt ? message.createdAt.getTime() : Date.now(),
     updatedAt: message.updatedAt ? message.updatedAt.getTime() : Date.now(),
     source: message.source || null,
-    error: message.error ? JSON.stringify(message.error) : null,
+    error: message.error || null,
   };
 
   return safeInvoke<void>('messages_upsert', { message: rustMessage });

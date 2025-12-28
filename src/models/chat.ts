@@ -1,8 +1,7 @@
 import {
   MCPTool,
   MCPContent,
-  MCPServerConfigV2,
-  LegacyMCPServerConfig,
+  MCPServerConfig,
   TransportConfig,
   OAuthConfig,
   ServerMetadata,
@@ -133,14 +132,14 @@ export interface ToolCall {
 }
 
 // ========================================
-// V2 MCP Configuration Types (MCP 2025-06-18 Spec)
+// MCP Configuration Types (MCP 2025-06-18 Spec)
 // ========================================
 
 /**
- * Top-level MCP configuration supporting both V1 and V2 formats
+ * Top-level MCP configuration
  */
 export interface MCPConfig {
-  mcpServers?: Record<string, MCPServerConfigV2 | LegacyMCPServerConfig>;
+  mcpServers?: Record<string, MCPServerConfig>;
 }
 
 /**
@@ -154,7 +153,7 @@ export interface MCPServerEntity {
   createdAt: Date;
   updatedAt: Date;
 
-  // MCP Protocol spec (from MCPServerConfigV2)
+  // MCP Protocol spec (from MCPServerConfig)
   name: string;
   transport: TransportConfig;
   authentication?: OAuthConfig;

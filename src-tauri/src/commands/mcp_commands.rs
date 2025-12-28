@@ -3,10 +3,9 @@
 /// This module contains all commands related to managing external and built-in MCP servers,
 /// including server lifecycle, tool listing, and tool execution.
 use crate::mcp::types::{
-    BuiltinServerInfo, MCPServerConfigV2, MCPServerConfigWrapper, OAuthConfig, ServiceContext,
-    ServiceContextOptions,
+    BuiltinServerInfo, MCPServerConfig, OAuthConfig, ServiceContext, ServiceContextOptions,
 };
-use crate::mcp::{MCPResponse, MCPServerConfig, MCPServerManager, MCPTool};
+use crate::mcp::{MCPResponse, MCPServerManager, MCPTool};
 use crate::state::get_mcp_manager;
 use std::collections::HashMap;
 
@@ -118,22 +117,20 @@ pub async fn list_tools_from_config(
                     obj.insert("name".to_string(), serde_json::Value::String(name.clone()));
                 }
 
-                // Try parsing as V2/V1 wrapper (auto-detects format)
-                let wrapper: MCPServerConfigWrapper = serde_json::from_value(server_value)
+                // Parse as MCPServerConfig directly
+                let config: MCPServerConfig = serde_json::from_value(server_value)
                     .map_err(|e| format!("Invalid server config for '{name}': {e}"))?;
-                let v2_config: MCPServerConfigV2 = wrapper.into();
-                server_list.push(v2_config);
+                server_list.push(config);
             }
             server_list
         } else if let Some(servers_array) = config.get("servers").and_then(|v| v.as_array()) {
-            // Legacy format: servers array
-            println!("🚀 [TAURI] Processing legacy servers array format");
+            // Alternative format: servers array
+            println!("🚀 [TAURI] Processing servers array format");
             let mut server_list = Vec::new();
             for server_value in servers_array {
-                let wrapper: MCPServerConfigWrapper = serde_json::from_value(server_value.clone())
+                let config: MCPServerConfig = serde_json::from_value(server_value.clone())
                     .map_err(|e| format!("Invalid server config: {e}"))?;
-                let v2_config: MCPServerConfigV2 = wrapper.into();
-                server_list.push(v2_config);
+                server_list.push(config);
             }
             server_list
         } else {
@@ -154,8 +151,8 @@ pub async fn list_tools_from_config(
         let server_name = server_cfg.name.clone();
         if !manager.is_server_alive(&server_name).await {
             println!("🚀 [TAURI] Starting server: {server_name}");
-            // Use native V2 config support to preserve OAuth, HTTP headers, and security settings
-            if let Err(e) = manager.start_server_v2(server_cfg).await {
+            // Use native config support to preserve OAuth, HTTP headers, and security settings
+            if let Err(e) = manager.start_server(server_cfg).await {
                 eprintln!("❌ [TAURI] Failed to start server {server_name}: {e}");
                 // Insert empty tools array for failed server
                 tools_by_server.insert(server_name, Vec::new());
@@ -306,6 +303,7 @@ pub async fn list_all_tools_unified() -> Result<Vec<MCPTool>, String> {
 
 /// Calls a tool on either a built-in or external MCP server, determined by the server name.
 #[tauri::command]
+#[allow(dead_code)]
 pub async fn call_tool_unified(
     server_name: String,
     tool_name: String,

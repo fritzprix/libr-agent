@@ -42,8 +42,8 @@ impl BuiltinMCPServer for ContentStoreServer {
         self.tools()
     }
 
-    fn get_service_context(&self, options: Option<&Value>) -> ServiceContext {
-        self.get_service_context(options)
+    async fn get_service_context(&self, options: Option<&Value>) -> ServiceContext {
+        self.get_service_context(options).await
     }
 
     async fn switch_context(&self, options: ServiceContextOptions) -> Result<(), String> {
@@ -66,3 +66,5 @@ impl BuiltinMCPServer for ContentStoreServer {
 mod test_functional;
 #[cfg(test)]
 mod test_migration;
+#[cfg(test)]
+mod test_session_isolation;

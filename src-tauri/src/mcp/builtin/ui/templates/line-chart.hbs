@@ -1,0 +1,28 @@
+<html>
+  <head>
+    <meta charset='utf-8' />
+    <meta name='viewport' content='width=device-width,initial-scale=1' />
+    <style>
+      body {
+        margin: 0;
+        padding: 16px;
+        background: #f9fafb;
+      }
+      svg {
+        max-width: 100%;
+        height: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <svg viewBox='0 0 600 {{svgHeight}}' xmlns='http://www.w3.org/2000/svg'>
+      <polyline
+        points='{{points}}'
+        fill='none'
+        stroke='#3b82f6'
+        stroke-width='2'
+      />
+      {{{labelsHtml}}}
+    </svg>
+  </body>
+</html>

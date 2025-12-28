@@ -1,6 +1,6 @@
 name: libragent
 base: core22
-version: '0.3.42'
+version: '0.4.0'
 summary: A desktop app for AI agents with built-in tools
 description: |
   LibrAgent is a next-generation desktop AI agent platform that combines the lightness of Tauri with the intuitiveness of React. Users can automate all daily tasks by giving AI agents their own unique personalities and abilities.

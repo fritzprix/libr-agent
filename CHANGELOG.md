@@ -4,7 +4,50 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-No changes yet.
+### 🚀 Features
+
+- **Rust Agent Core**: Implement initial Rust-based agent core (`thronglet`) with Tauri integration, new frontend components, and packaging configurations.
+
+### 🔧 Refactoring
+
+- **MCP Type System Complete Cleanup** (Phase 2): Removed all legacy MCP configuration types and conversion code. The codebase now uses a single, clean `MCPServerConfig` type throughout.
+  - **Backend (Rust)**:
+    - Removed `LegacyMCPServerConfig` struct and all conversion logic (~140 lines)
+    - Removed `MCPServerConfigWrapper` enum (no longer needed)
+    - Simplified `list_tools_from_config` to parse `MCPServerConfig` directly
+    - Replaced 6 legacy conversion tests with 3 clean serialization tests
+  - **Frontend (TypeScript)**:
+    - Removed `LegacyMCPServerConfig` interface completely
+    - Removed utility functions: `isModernConfig()`, `convertLegacyToModern()`
+    - Updated `MCPConfig` to use only `MCPServerConfig` (no union types)
+    - Updated imports in `chat.ts`, `server-config.ts`
+  - **Validation**:
+    - ✅ TypeScript compilation: 0 errors
+    - ✅ Rust tests: 3/3 passed (stdio, http, oauth serialization)
+    - ✅ All existing modern configs work without changes
+  - **Note**: Early dev stage - no migration needed. Phase 1 (V2 suffix removal) completed earlier.
+
+## [0.3.43] - 2025-12-23
+
+### ✨ Added
+
+#### AI Service & Tools
+
+- **Advanced Settings**: Added advanced settings support for AI service and tool processor.
+- **Smart Tools**: Integrated `listInteractableSmartTool` for improved semantic filtering in browser interactions.
+- **Workspace Tools**: Added built-in workspace tools for file management, code execution, and data export.
+- **Settings**: Implemented factory reset functionality.
+
+#### Workflow & Management
+
+- **Todo Nesting**: Implemented 1-level nesting for todos with parentId and subtasks support.
+- **Enhanced Responses**: Enhanced scratchpad and knowledge management responses with detailed formatting.
+
+### 🛠️ Improvements
+
+- **Reliability**: Implemented error circuit breaker logic in tool processor.
+- **Browser**: Enhanced `clickElement` to wait for page load after navigation.
+- **Performance**: Implemented strict line-based chunking in `content-store`.
 
 ## [0.3.5] - 2025-11-20
 

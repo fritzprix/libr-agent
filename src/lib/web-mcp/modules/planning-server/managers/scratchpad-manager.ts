@@ -95,40 +95,93 @@ export class ScratchpadManager {
   }
 
   /**
-   * Reads scratchpad items by IDs or tags.
-   *
-   * @param ids - List of IDs to read
-   * @param tags - List of tags to filter by
-   * @returns MCPResult with the requested scratchpad items
+   * Lists scratchpad items with pagination and filtering.
+   * Returns metadata and content preview.
    */
-  async readScratchpad(
-    ids?: number[],
+  async listScratchpad(
+    page: number = 1,
+    pageSize: number = 10,
     tags?: string[],
-  ): Promise<MCPResult<BaseOutput & { scratchpad: ScratchpadItem[] }>> {
-    let items: ScratchpadItem[] = [];
-    const allItems = await this.getScratchpadList();
+  ): Promise<MCPResult<BaseOutput & { items: ScratchpadItem[] }>> {
+    let items = await this.getScratchpadList();
 
-    if (ids && ids.length > 0) {
-      items = allItems.filter((item) => ids.includes(item.id));
-    } else if (tags && tags.length > 0) {
-      items = allItems.filter(
+    // Filter by tags if provided
+    if (tags && tags.length > 0) {
+      items = items.filter(
         (item) =>
           Array.isArray(item.tags) &&
           item.tags.some((tag) => tags.includes(tag)),
       );
-    } else {
-      items = allItems;
     }
+
+    const totalItems = items.length;
+    const totalPages = Math.ceil(totalItems / pageSize);
+    const start = (page - 1) * pageSize;
+    const paginatedItems = items.slice(start, start + pageSize);
+
+    if (paginatedItems.length === 0) {
+      return createMCPStructuredToolResult(
+        `No scratchpad items found${tags ? ` matching tags: ${tags.join(', ')}` : ''}.`,
+        {
+          success: true,
+          items: [],
+          pagination: { page, pageSize, totalItems, totalPages },
+        },
+      );
+    }
+
+    const textParts: string[] = [
+      `Scratchpad List (Page ${page}/${totalPages}, Total: ${totalItems})`,
+      '',
+    ];
+
+    paginatedItems.forEach((item) => {
+      const titlePart = item.title ? `[${item.title}]` : '';
+      const tagsPart =
+        Array.isArray(item.tags) && item.tags.length > 0
+          ? ` (tags: ${item.tags.join(', ')})`
+          : '';
+      // Preview content (first 50 chars)
+      const contentPreview =
+        item.content.length > 50
+          ? item.content.slice(0, 50) + '...'
+          : item.content;
+
+      textParts.push(
+        `- ID:${item.id} ${titlePart} ${contentPreview}${tagsPart}`,
+      );
+    });
+
+    return createMCPStructuredToolResult(textParts.join('\n'), {
+      success: true,
+      items: paginatedItems,
+      pagination: { page, pageSize, totalItems, totalPages },
+    });
+  }
+
+  /**
+   * Reads scratchpad items by IDs.
+   *
+   * @param ids - List of IDs to read (Required)
+   * @returns MCPResult with the requested scratchpad items
+   */
+  async readScratchpad(
+    ids: number[],
+  ): Promise<MCPResult<BaseOutput & { scratchpad: ScratchpadItem[] }>> {
+    if (!ids || ids.length === 0) {
+      return createMCPStructuredToolResult(
+        'Error: "ids" parameter is required. Use listScratchpad to find IDs first.',
+        { success: false, scratchpad: [] },
+      );
+    }
+
+    const allItems = await this.getScratchpadList();
+    const items = allItems.filter((item) => ids.includes(item.id));
 
     // Format scratchpad items as readable text
     if (items.length === 0) {
-      const filterDesc = ids
-        ? `IDs: ${ids.join(', ')}`
-        : tags
-          ? `tags: ${tags.join(', ')}`
-          : 'any criteria';
       return createMCPStructuredToolResult(
-        `No scratchpad items found matching ${filterDesc}`,
+        `No scratchpad items found matching IDs: ${ids.join(', ')}`,
         {
           success: false,
           scratchpad: [],

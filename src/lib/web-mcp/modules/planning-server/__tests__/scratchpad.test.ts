@@ -45,15 +45,15 @@ describe('Scratchpad with Title and Tags', () => {
       tags: ['feature'],
     });
 
-    const result = await planningServer.callTool('readScratchpad', {
+    const result = await planningServer.callTool('listScratchpad', {
       tags: ['bug'],
     });
 
     expect(result.isError).toBe(false);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const data = result.structuredContent as any;
-    expect(data.scratchpad).toHaveLength(1);
-    expect(data.scratchpad[0].title).toBe('Note 1');
+    expect(data.items).toHaveLength(1);
+    expect(data.items[0].title).toBe('Note 1');
   });
 
   it('should display summary in context', async () => {

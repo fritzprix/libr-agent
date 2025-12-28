@@ -28,7 +28,7 @@ mod schema_validation_tests {
         for tool in all_tools.iter() {
             // Check tool-level fields
             if tool.name.is_empty() {
-                errors.push(format!("Tool has empty name"));
+                errors.push("Tool has empty name".to_string());
             }
 
             if tool.description.is_empty() {
@@ -134,11 +134,13 @@ mod schema_validation_tests {
         let mut tools_with_empty_required = Vec::new();
 
         for tool in all_tools.iter() {
-            if let JSONSchemaType::Object { required, .. } = &tool.input_schema.schema_type {
-                if let Some(req) = required {
-                    if req.is_empty() {
-                        tools_with_empty_required.push(tool.name.clone());
-                    }
+            if let JSONSchemaType::Object {
+                required: Some(req),
+                ..
+            } = &tool.input_schema.schema_type
+            {
+                if req.is_empty() {
+                    tools_with_empty_required.push(tool.name.clone());
                 }
             }
         }
