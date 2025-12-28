@@ -50,12 +50,25 @@ async fn test_playbook_ui_rendering_integration() {
     // Save sample playbooks
     server
         .call_tool(
-            "savePlaybook",
+            "createPlaybook",
             json!({
-                "id": "workflow-1",
-                "title": "Data Processing Workflow",
-                "description": "Process and analyze data",
-                "template": "1. Load data from {{source}}\n2. Transform with {{method}}\n3. Save to {{destination}}"
+                "goal": "Data Processing Workflow",
+                "initialCommand": "process data",
+                "workflow": [
+                    {
+                        "description": "Load data from source",
+                        "action": { "toolName": "load_data", "purpose": "Load data" },
+                        "outputVariable": "raw_data"
+                    },
+                    {
+                        "description": "Transform data",
+                        "action": { "toolName": "transform_data", "purpose": "Transform" },
+                        "outputVariable": "processed_data"
+                    }
+                ],
+                "successCriteria": {
+                    "description": "Data saved to destination"
+                }
             }),
         )
         .await
@@ -63,12 +76,20 @@ async fn test_playbook_ui_rendering_integration() {
 
     server
         .call_tool(
-            "savePlaybook",
+            "createPlaybook",
             json!({
-                "id": "workflow-2",
-                "title": "API Integration Workflow",
-                "description": "Connect to external API",
-                "template": "1. Authenticate with {{api_key}}\n2. Call endpoint {{endpoint}}\n3. Process response"
+                "goal": "API Integration Workflow",
+                "initialCommand": "connect api",
+                "workflow": [
+                    {
+                        "description": "Authenticate",
+                        "action": { "toolName": "auth", "purpose": "Login" },
+                        "outputVariable": "token"
+                    }
+                ],
+                "successCriteria": {
+                    "description": "Connected successfully"
+                }
             }),
         )
         .await
@@ -76,7 +97,7 @@ async fn test_playbook_ui_rendering_integration() {
 
     // Test listPlaybooks with UI rendering
     let list_result = server
-        .call_tool("listPlaybooks", json!({}))
+        .call_tool("showPlaybooks", json!({}))
         .await
         .expect("Failed to list playbooks");
 
@@ -88,7 +109,8 @@ async fn test_playbook_ui_rendering_integration() {
 
     // Verify text content
     if let MCPContent::Text { text } = &content[0] {
-        assert!(text.contains("Found 2 playbooks"));
+        assert!(text.contains("Data Processing Workflow"));
+        assert!(text.contains("API Integration Workflow"));
     } else {
         panic!("Expected Text content");
     }
@@ -110,12 +132,12 @@ async fn test_playbook_ui_rendering_integration() {
 
         // Verify playbook data is rendered
         assert!(html.contains("Data Processing Workflow"));
-        assert!(html.contains("Process and analyze data"));
-        assert!(html.contains("workflow-1"));
+        // assert!(html.contains("Process and analyze data")); // Removed: Not in view model
+        // assert!(html.contains("workflow-1")); // Removed: Not in view model
 
         assert!(html.contains("API Integration Workflow"));
-        assert!(html.contains("Connect to external API"));
-        assert!(html.contains("workflow-2"));
+        // assert!(html.contains("Connect to external API")); // Removed: Not in view model
+        // assert!(html.contains("workflow-2")); // Removed: Not in view model
 
         // Verify buttons
         assert!(html.contains("btn-select"));
@@ -131,8 +153,8 @@ async fn test_playbook_ui_rendering_integration() {
 
     // Verify structured content
     let structured = list_result.structured_content.unwrap();
-    assert_eq!(structured["count"], 2);
-    assert_eq!(structured["playbooks"].as_array().unwrap().len(), 2);
+    assert_eq!(structured["page"]["totalItems"], 2);
+    assert_eq!(structured["page"]["items"].as_array().unwrap().len(), 2);
 }
 
 #[tokio::test]
@@ -174,7 +196,7 @@ async fn test_playbook_ui_interaction_flow() {
 
     // Step 1: List empty playbooks (should show empty state)
     let empty_list = server
-        .call_tool("listPlaybooks", json!({}))
+        .call_tool("showPlaybooks", json!({}))
         .await
         .expect("Failed to list empty playbooks");
 
@@ -188,22 +210,39 @@ async fn test_playbook_ui_interaction_flow() {
     // Step 2: Save a playbook
     let save_result = server
         .call_tool(
-            "savePlaybook",
+            "createPlaybook",
             json!({
-                "id": "test-flow",
-                "title": "Test Flow",
-                "description": "Test description",
-                "template": "Step 1: {{action1}}\nStep 2: {{action2}}"
+                "goal": "Test Flow",
+                "initialCommand": "start flow",
+                "workflow": [
+                    {
+                        "description": "Step 1",
+                        "action": { "toolName": "action1", "purpose": "Test" },
+                        "outputVariable": "out1"
+                    },
+                    {
+                        "description": "Step 2",
+                        "action": { "toolName": "action2", "purpose": "Test" },
+                        "outputVariable": "out2"
+                    }
+                ],
+                "successCriteria": {
+                    "description": "Flow completed"
+                }
             }),
         )
         .await
         .expect("Failed to save playbook");
 
     assert!(!save_result.is_error.unwrap_or(false));
+    let created_playbook = save_result.structured_content.as_ref().unwrap()["playbook"]
+        .as_object()
+        .unwrap();
+    let playbook_id = created_playbook["id"].as_str().unwrap().to_string();
 
     // Step 3: List again (should show the playbook)
     let list_with_data = server
-        .call_tool("listPlaybooks", json!({}))
+        .call_tool("showPlaybooks", json!({}))
         .await
         .expect("Failed to list playbooks");
 
@@ -211,23 +250,22 @@ async fn test_playbook_ui_interaction_flow() {
     if let MCPContent::Resource { resource } = &content[1] {
         let html = resource["text"].as_str().unwrap();
         assert!(html.contains("Test Flow"));
-        assert!(html.contains("Test description"));
-        assert!(html.contains("test-flow"));
+        assert!(html.contains(&playbook_id));
     }
 
     // Step 4: Get specific playbook (simulating Select button click)
     let get_result = server
-        .call_tool("getPlaybook", json!({"id": "test-flow"}))
+        .call_tool("getPlaybook", json!({"id": playbook_id}))
         .await
         .expect("Failed to get playbook");
 
     assert!(!get_result.is_error.unwrap_or(false));
     let structured = get_result.structured_content.unwrap();
-    assert_eq!(structured["title"], "Test Flow");
+    assert_eq!(structured["playbook"]["goal"], "Test Flow");
 
     // Step 5: Delete playbook (simulating Delete button click)
     let delete_result = server
-        .call_tool("deletePlaybook", json!({"id": "test-flow"}))
+        .call_tool("deletePlaybook", json!({"id": playbook_id}))
         .await
         .expect("Failed to delete playbook");
 
@@ -240,5 +278,5 @@ async fn test_playbook_ui_interaction_flow() {
         .expect("Failed to list playbooks");
 
     let structured = final_list.structured_content.unwrap();
-    assert_eq!(structured["count"], 0);
+    assert_eq!(structured["page"]["totalItems"], 0);
 }

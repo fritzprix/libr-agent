@@ -116,7 +116,11 @@ impl MCPServiceProxy {
                 self.session_id
             );
 
-            let result = server.call_tool(tool_name, args).await?;
+            let result = {
+                let prefix = format!("builtin_{}__", tool_id);
+                let real_tool_name = tool_name.strip_prefix(&prefix).unwrap_or(tool_name);
+                server.call_tool(real_tool_name, args).await?
+            };
 
             // Convert MCPResult to MCPResponse with proper type
             Ok(MCPResponse {
@@ -170,7 +174,19 @@ impl MCPServiceProxy {
     pub fn get_builtin_server_tools(&self, server_id: &str) -> Vec<super::types::MCPTool> {
         self.builtin_servers
             .get(server_id)
-            .map(|server| server.tools())
+            .map(|server| {
+                server
+                    .tools()
+                    .into_iter()
+                    .map(|mut tool| {
+                        // Normalize tool name to include builtin prefix and server ID
+                        // This ensures the orchestrator can correctly route the tool call back to this proxy
+                        // format: builtin_{server_id}__{tool_name}
+                        tool.name = format!("builtin_{}__{}", server_id, tool.name);
+                        tool
+                    })
+                    .collect()
+            })
             .unwrap_or_default()
     }
 

@@ -10,6 +10,7 @@ pub mod assistant;
 pub mod bootstrap;
 pub mod content_store;
 pub mod knowledge;
+pub mod mcp_manager;
 pub mod planning;
 pub mod playbook;
 pub mod ui;
@@ -356,6 +357,9 @@ impl BuiltinServerRegistry {
             crate::mcp::builtin::content_store::ContentStoreServer::new(session_manager.clone()),
         ));
 
+        // Register MCP Manager server
+        registry.register_server(Box::new(mcp_manager::MCPManagerServer::new()));
+
         // Browser Agent server removed to prevent duplicate tools.
         // Browser functionality now provided by frontend BrowserToolProvider.
 
@@ -390,6 +394,9 @@ impl BuiltinServerRegistry {
             .expect("Failed to initialize content store with SQLite");
 
         registry.register_server(Box::new(content_store_server));
+
+        // Register MCP Manager server
+        registry.register_server(Box::new(mcp_manager::MCPManagerServer::new()));
 
         // Browser Agent server removed to prevent duplicate tools.
         // Browser functionality now provided by frontend BrowserToolProvider.

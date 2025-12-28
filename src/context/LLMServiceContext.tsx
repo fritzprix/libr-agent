@@ -120,6 +120,8 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
   const activeServicesRef = useRef<Map<string, IAIService>>(new Map());
   // Track abort controllers for cancellation
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
+  // Track listener setup to prevent duplicate registration in React Strict Mode
+  const listenerSetupRef = useRef(false);
 
   /**
    * Get session status
@@ -175,12 +177,68 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
       maxTokens?: number,
       availableTools?: MCPTool[],
     ): Promise<Message> => {
-      logger.info('Executing completion request', {
+      logger.info('🚀 Executing completion request', {
         sessionId,
         messageCount: messages.length,
         provider,
         model,
+        firstMessageId: messages[0]?.id ?? 'none',
+        lastMessageId: messages[messages.length - 1]?.id ?? 'none',
       });
+
+      logger.debug('📝 Messages being sent to LLM service', {
+        sessionId,
+        messages: messages.map((m, idx) => ({
+          index: idx,
+          id: m.id,
+          role: m.role,
+          contentPreview:
+            m.content?.[0]?.type === 'text'
+              ? m.content[0].text.substring(0, 50) + '...'
+              : `[${m.content?.length ?? 0} items]`,
+          hasToolCalls: !!m.tool_calls,
+          toolCallCount: m.tool_calls?.length ?? 0,
+          toolCallId: m.tool_call_id,
+        })),
+      });
+
+      // 🔍 Log available tools in detail
+      logger.info('🔧 Available Tools Summary', {
+        sessionId,
+        totalToolCount: availableTools?.length ?? 0,
+        toolsByServer: availableTools?.reduce(
+          (acc, tool) => {
+            const serverName = tool.name.split('__')[0] || 'unknown';
+            acc[serverName] = (acc[serverName] || 0) + 1;
+            return acc;
+          },
+          {} as Record<string, number>,
+        ),
+      });
+
+      logger.debug('🔧 Available Tools Detail', {
+        sessionId,
+        tools: availableTools?.map((tool) => ({
+          name: tool.name,
+          description: tool.description?.substring(0, 100),
+          hasInputSchema: !!tool.inputSchema,
+        })),
+      });
+
+      // 🔍 Log system prompt
+      logger.info('📋 System Prompt Configuration', {
+        sessionId,
+        hasSystemPrompt: !!systemPrompt,
+        systemPromptLength: systemPrompt?.length ?? 0,
+        systemPromptPreview: systemPrompt?.substring(0, 200) + '...',
+      });
+
+      if (systemPrompt) {
+        logger.debug('📋 Full System Prompt', {
+          sessionId,
+          systemPrompt,
+        });
+      }
 
       // Update status to streaming
       updateSessionStatus(sessionId, 'streaming');
@@ -372,13 +430,28 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
   /**
    * Listen for completion requests from Rust backend
    */
+  /**
+   * Listen for completion requests from Rust backend
+   */
   useEffect(() => {
+    // Prevent duplicate listener registration in React Strict Mode
+    if (listenerSetupRef.current) {
+      logger.info(
+        '⚠️ LLM listener already set up, skipping duplicate registration',
+      );
+      return;
+    }
+
+    listenerSetupRef.current = true;
+    logger.info('🎧 Initializing LLM completion request listener');
+
+    let isMounted = true;
     let unlisten: (() => void) | undefined;
 
     const setupListener = async () => {
       logger.info('Setting up LLM completion request listener');
 
-      unlisten = await listen<CompletionRequest>(
+      const unlistenFn = await listen<CompletionRequest>(
         'llm:completion-request',
         async (event) => {
           const {
@@ -397,13 +470,28 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
             settingsRef.current.serviceConfigs?.[provider as AIServiceProvider]
               ?.apiKey || '';
 
-          logger.debug('Received LLM completion request', {
+          logger.info('📥 Received LLM completion request from Rust', {
             sessionId,
             messageCount: messages.length,
             toolCount: availableTools?.length ?? 0,
             provider,
             hasApiKey: !!finalApiKey,
-            eventId: event.id, // Track event identity
+            eventId: event.id,
+            firstMessageId: messages[0]?.id ?? 'none',
+            lastMessageId: messages[messages.length - 1]?.id ?? 'none',
+            messageRoles: messages.map((m) => m.role).join(','),
+          });
+
+          logger.debug('📋 Full message list received from Rust', {
+            sessionId,
+            messages: messages.map((m, idx) => ({
+              index: idx,
+              id: m.id,
+              role: m.role,
+              hasContent: !!m.content && m.content.length > 0,
+              hasToolCalls: !!m.tool_calls,
+              toolCallId: m.tool_call_id,
+            })),
           });
 
           try {
@@ -487,12 +575,21 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
         },
       );
 
-      logger.info('LLM completion request listener registered');
+      if (!isMounted) {
+        logger.info(
+          'LLM listener setup completed after unmount, cleaning up immediately',
+        );
+        unlistenFn();
+      } else {
+        unlisten = unlistenFn;
+        logger.info('LLM completion request listener registered');
+      }
     };
 
     setupListener();
 
     return () => {
+      isMounted = false;
       if (unlisten) {
         unlisten();
         logger.info('LLM completion request listener cleaned up');
@@ -505,6 +602,9 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
       // Dispose all active services
       activeServicesRef.current.forEach((service) => service.dispose());
       activeServicesRef.current.clear();
+
+      // Reset listener setup ref on unmount
+      listenerSetupRef.current = false;
     };
   }, []); // ⚠️ CRITICAL: Empty dependency array to prevent re-registering listener
 

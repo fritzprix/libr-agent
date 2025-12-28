@@ -74,13 +74,34 @@ impl AssistantServer {
             .and_then(|v| v.as_str())
             .ok_or_else(|| "Missing 'name' parameter".to_string())?;
 
-        let config = args
-            .get("config")
-            .ok_or_else(|| "Missing 'config' parameter".to_string())?;
+        // Extract config fields
+        let mut config = args.get("config").cloned().unwrap_or(json!({}));
+
+        if let Some(v) = args.get("systemPrompt") {
+            config["systemPrompt"] = v.clone();
+        }
+        if let Some(v) = args.get("modelProvider") {
+            config["modelProvider"] = v.clone();
+        }
+        if let Some(v) = args.get("modelName") {
+            config["modelName"] = v.clone();
+        }
+        if let Some(v) = args.get("temperature") {
+            config["temperature"] = v.clone();
+        }
+        if let Some(v) = args.get("maxTokens") {
+            config["maxTokens"] = v.clone();
+        }
+        if let Some(v) = args.get("tools") {
+            config["tools"] = v.clone();
+        }
+        if let Some(v) = args.get("mcpServers") {
+            config["mcpServers"] = v.clone();
+        }
 
         // Validate config is a valid JSON object
         let config_str =
-            serde_json::to_string(config).map_err(|e| format!("Invalid config JSON: {}", e))?;
+            serde_json::to_string(&config).map_err(|e| format!("Invalid config JSON: {}", e))?;
 
         let now = chrono::Utc::now().timestamp_millis();
 
@@ -106,7 +127,8 @@ impl AssistantServer {
                 structured_content: Some(json!({
                     "success": true,
                     "id": id,
-                    "name": name
+                    "name": name,
+                    "config": config
                 })),
                 is_error: Some(false),
             }),
@@ -139,23 +161,75 @@ impl AssistantServer {
             .and_then(|v| v.as_str())
             .ok_or_else(|| "Missing 'id' parameter".to_string())?;
 
-        let config = args
-            .get("config")
-            .ok_or_else(|| "Missing 'config' parameter".to_string())?;
+        // Fetch existing assistant to merge config
+        let existing = sqlx::query_as::<_, (String, String, String, i64, i64)>(
+            "SELECT id, name, config, created_at, updated_at FROM assistants WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_optional(self.db_pool.as_ref())
+        .await
+        .map_err(|e| format!("Failed to fetch assistant: {}", e))?;
 
-        // Validate config is a valid JSON object
+        let (mut name, mut config) = if let Some((_, n, c, _, _)) = existing {
+            (n, serde_json::from_str::<Value>(&c).unwrap_or(json!({})))
+        } else {
+            return Ok(MCPResult {
+                content: Some(vec![MCPContent::Text {
+                    text: format!("Assistant '{}' not found", id),
+                }]),
+                structured_content: None,
+                is_error: Some(true),
+            });
+        };
+
+        // Update name if provided
+        if let Some(n) = args.get("name").and_then(|v| v.as_str()) {
+            name = n.to_string();
+        }
+
+        // Update config from 'config' object if provided
+        if let Some(c) = args.get("config").and_then(|v| v.as_object()) {
+            for (k, v) in c {
+                config[k] = v.clone();
+            }
+        }
+
+        // Update config fields (individual overrides)
+        if let Some(v) = args.get("systemPrompt") {
+            config["systemPrompt"] = v.clone();
+        }
+        if let Some(v) = args.get("modelProvider") {
+            config["modelProvider"] = v.clone();
+        }
+        if let Some(v) = args.get("modelName") {
+            config["modelName"] = v.clone();
+        }
+        if let Some(v) = args.get("temperature") {
+            config["temperature"] = v.clone();
+        }
+        if let Some(v) = args.get("maxTokens") {
+            config["maxTokens"] = v.clone();
+        }
+        if let Some(v) = args.get("tools") {
+            config["tools"] = v.clone();
+        }
+        if let Some(v) = args.get("mcpServers") {
+            config["mcpServers"] = v.clone();
+        }
+
         let config_str =
-            serde_json::to_string(config).map_err(|e| format!("Invalid config JSON: {}", e))?;
+            serde_json::to_string(&config).map_err(|e| format!("Invalid config JSON: {}", e))?;
 
         let now = chrono::Utc::now().timestamp_millis();
 
         let result = sqlx::query(
             r#"
             UPDATE assistants
-            SET config = ?, updated_at = ?
+            SET name = ?, config = ?, updated_at = ?
             WHERE id = ?
             "#,
         )
+        .bind(&name)
         .bind(&config_str)
         .bind(now)
         .bind(id)
@@ -171,7 +245,9 @@ impl AssistantServer {
                         }]),
                         structured_content: Some(json!({
                             "success": true,
-                            "id": id
+                            "id": id,
+                            "name": name,
+                            "config": config
                         })),
                         is_error: Some(false),
                     })
@@ -327,6 +403,74 @@ impl AssistantServer {
         }
     }
 
+    /// Search assistants
+    async fn search_assistant(&self, args: Value) -> Result<MCPResult, String> {
+        let query = args
+            .get("query")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "Missing 'query' parameter".to_string())?;
+
+        let limit = args
+            .get("limit")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(10)
+            .min(100);
+
+        let search_pattern = format!("%{}%", query);
+
+        let result = sqlx::query_as::<_, (String, String, String, i64, i64)>(
+            r#"
+            SELECT id, name, config, created_at, updated_at
+            FROM assistants
+            WHERE name LIKE ? OR config LIKE ?
+            ORDER BY updated_at DESC
+            LIMIT ?
+            "#,
+        )
+        .bind(&search_pattern)
+        .bind(&search_pattern)
+        .bind(limit)
+        .fetch_all(self.db_pool.as_ref())
+        .await;
+
+        match result {
+            Ok(rows) => {
+                let assistants: Vec<Value> = rows
+                    .into_iter()
+                    .map(|(id, name, config_str, created_at, updated_at)| {
+                        let config =
+                            serde_json::from_str::<Value>(&config_str).unwrap_or(json!({}));
+                        json!({
+                            "id": id,
+                            "name": name,
+                            "config": config,
+                            "created_at": created_at,
+                            "updated_at": updated_at
+                        })
+                    })
+                    .collect();
+
+                Ok(MCPResult {
+                    content: Some(vec![MCPContent::Text {
+                        text: format!("Found {} assistants", assistants.len()),
+                    }]),
+                    structured_content: Some(json!({
+                        "assistants": assistants,
+                        "count": assistants.len()
+                    })),
+                    is_error: Some(false),
+                })
+            }
+            Err(e) => Ok(MCPResult {
+                content: Some(vec![MCPContent::Text {
+                    text: format!("Failed to search assistants: {}", e),
+                }]),
+                structured_content: None,
+                is_error: Some(true),
+            }),
+        }
+    }
+
     /// Get an assistant by ID
     async fn get_assistant(&self, args: Value) -> Result<MCPResult, String> {
         let id = args
@@ -399,6 +543,7 @@ impl BuiltinMCPServer for AssistantServer {
             create_delete_assistant_tool(),
             create_list_assistants_tool(),
             create_get_assistant_tool(),
+            create_search_assistant_tool(),
         ]
     }
 
@@ -421,8 +566,11 @@ impl BuiltinMCPServer for AssistantServer {
             "getAssistant" | "builtin_assistant__getAssistant" => {
                 self.get_assistant(args).await
             }
+            "searchAssistant" | "builtin_assistant__searchAssistant" => {
+                self.search_assistant(args).await
+            }
             _ => Err(format!(
-                "Unknown tool: {}. Available tools: createAssistant, updateAssistant, deleteAssistant, listAssistants, getAssistant",
+                "Unknown tool: {}. Available tools: createAssistant, updateAssistant, deleteAssistant, listAssistants, getAssistant, searchAssistant",
                 tool_name
             )),
         }
@@ -446,25 +594,33 @@ impl BuiltinMCPServer for AssistantServer {
 
 /// Create the createAssistant tool definition
 fn create_create_assistant_tool() -> MCPTool {
-    let mut props = HashMap::new();
-    props.insert(
-        "id".to_string(),
-        string_prop_required("Unique assistant identifier"),
-    );
-    props.insert("name".to_string(), string_prop_required("Assistant name"));
-    props.insert(
-        "config".to_string(),
-        string_prop_required("Assistant configuration (JSON object)"),
-    );
-
     MCPTool {
         name: "builtin_assistant__createAssistant".to_string(),
         title: Some("Create Assistant".to_string()),
         description: "Create a new global assistant configuration".to_string(),
-        input_schema: object_schema(
-            props,
-            vec!["id".to_string(), "name".to_string(), "config".to_string()],
-        ),
+        input_schema: serde_json::from_value(json!({
+            "type": "object",
+            "properties": {
+                "id": { "type": "string", "description": "Unique assistant identifier" },
+                "name": { "type": "string", "description": "Assistant name" },
+                "systemPrompt": { "type": "string", "description": "System prompt for the assistant" },
+                "modelProvider": { "type": "string", "description": "AI model provider (e.g., openai, anthropic)" },
+                "modelName": { "type": "string", "description": "Specific model name (e.g., gpt-4)" },
+                "temperature": { "type": "number", "description": "Model temperature (0.0 to 1.0)" },
+                "maxTokens": { "type": "integer", "description": "Maximum tokens for response" },
+                "tools": { 
+                    "type": "array", 
+                    "items": { "type": "string" },
+                    "description": "List of enabled tool names"
+                },
+                "mcpServers": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "List of enabled MCP server names"
+                }
+            },
+            "required": ["id", "name"]
+        })).unwrap(),
         annotations: None,
         output_schema: None,
     }
@@ -472,21 +628,33 @@ fn create_create_assistant_tool() -> MCPTool {
 
 /// Create the updateAssistant tool definition
 fn create_update_assistant_tool() -> MCPTool {
-    let mut props = HashMap::new();
-    props.insert(
-        "id".to_string(),
-        string_prop_required("Assistant identifier"),
-    );
-    props.insert(
-        "config".to_string(),
-        string_prop_required("Updated configuration (JSON object)"),
-    );
-
     MCPTool {
         name: "builtin_assistant__updateAssistant".to_string(),
         title: Some("Update Assistant".to_string()),
         description: "Update an existing assistant configuration".to_string(),
-        input_schema: object_schema(props, vec!["id".to_string(), "config".to_string()]),
+        input_schema: serde_json::from_value(json!({
+            "type": "object",
+            "properties": {
+                "id": { "type": "string", "description": "Assistant identifier" },
+                "name": { "type": "string", "description": "Assistant name" },
+                "systemPrompt": { "type": "string", "description": "System prompt for the assistant" },
+                "modelProvider": { "type": "string", "description": "AI model provider" },
+                "modelName": { "type": "string", "description": "Specific model name" },
+                "temperature": { "type": "number", "description": "Model temperature" },
+                "maxTokens": { "type": "integer", "description": "Maximum tokens" },
+                "tools": { 
+                    "type": "array", 
+                    "items": { "type": "string" },
+                    "description": "List of enabled tool names"
+                },
+                "mcpServers": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "List of enabled MCP server names"
+                }
+            },
+            "required": ["id"]
+        })).unwrap(),
         annotations: None,
         output_schema: None,
     }
@@ -553,6 +721,26 @@ fn create_get_assistant_tool() -> MCPTool {
         title: Some("Get Assistant".to_string()),
         description: "Get an assistant configuration by ID".to_string(),
         input_schema: object_schema(props, vec!["id".to_string()]),
+        annotations: None,
+        output_schema: None,
+    }
+}
+
+/// Create the searchAssistant tool definition
+fn create_search_assistant_tool() -> MCPTool {
+    MCPTool {
+        name: "builtin_assistant__searchAssistant".to_string(),
+        title: Some("Search Assistant".to_string()),
+        description: "Search assistants by name or configuration content".to_string(),
+        input_schema: serde_json::from_value(json!({
+            "type": "object",
+            "properties": {
+                "query": { "type": "string", "description": "Search query" },
+                "limit": { "type": "integer", "description": "Maximum number of results" }
+            },
+            "required": ["query"]
+        }))
+        .unwrap(),
         annotations: None,
         output_schema: None,
     }

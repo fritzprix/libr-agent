@@ -495,12 +495,20 @@ mod tests {
         let playbook_result = manager
             .call_tool(
                 &session1,
-                "builtin_playbook__savePlaybook",
+                "builtin_playbook__createPlaybook",
                 json!({
-                    "id": "workflow1",
-                    "title": "Test Workflow",
-                    "description": "A test workflow",
-                    "template": "Hello {{name}}!"
+                    "goal": "Test Workflow",
+                    "initialCommand": "test",
+                    "workflow": [
+                        {
+                            "description": "Step 1",
+                            "action": { "toolName": "test", "purpose": "test" },
+                            "outputVariable": "out"
+                        }
+                    ],
+                    "successCriteria": {
+                        "description": "Success"
+                    }
                 }),
             )
             .await
@@ -575,7 +583,7 @@ mod tests {
             _ => panic!("Expected ToolCall result"),
         };
         assert!(
-            text_content.contains("Found 0 playbooks"),
+            text_content.contains("No playbooks found"),
             "Session 2 should have 0 playbooks, got: {}",
             text_content
         );
@@ -617,12 +625,20 @@ mod tests {
         let playbook2_result = manager
             .call_tool(
                 &session2,
-                "builtin_playbook__savePlaybook",
+                "builtin_playbook__createPlaybook",
                 json!({
-                    "id": "workflow1",  // Same ID as session 1
-                    "title": "Session 2 Workflow",
-                    "description": "Different workflow",
-                    "template": "Hi {{user}}!"
+                    "goal": "Session 2 Workflow",
+                    "initialCommand": "test2",
+                    "workflow": [
+                        {
+                            "description": "Step 1",
+                            "action": { "toolName": "test", "purpose": "test" },
+                            "outputVariable": "out"
+                        }
+                    ],
+                    "successCriteria": {
+                        "description": "Success"
+                    }
                 }),
             )
             .await
@@ -634,18 +650,12 @@ mod tests {
         );
 
         // Test 6: Verify each session sees its own playbook
-        let get_playbook1 = manager
-            .call_tool(
-                &session1,
-                "builtin_playbook__getPlaybook",
-                json!({
-                    "id": "workflow1"
-                }),
-            )
+        let list_playbook1 = manager
+            .call_tool(&session1, "builtin_playbook__listPlaybooks", json!({}))
             .await
             .unwrap();
 
-        let playbook1_result = get_playbook1.result.unwrap();
+        let playbook1_result = list_playbook1.result.unwrap();
         let playbook1_text = match playbook1_result {
             crate::mcp::types::MCPResponseResult::ToolCall(ref result) => {
                 if let Some(content) = &result.content {
@@ -665,18 +675,12 @@ mod tests {
             "Session 1 should see its own playbook"
         );
 
-        let get_playbook2 = manager
-            .call_tool(
-                &session2,
-                "builtin_playbook__getPlaybook",
-                json!({
-                    "id": "workflow1"
-                }),
-            )
+        let list_playbook2 = manager
+            .call_tool(&session2, "builtin_playbook__listPlaybooks", json!({}))
             .await
             .unwrap();
 
-        let playbook2_result = get_playbook2.result.unwrap();
+        let playbook2_result = list_playbook2.result.unwrap();
         let playbook2_text = match playbook2_result {
             crate::mcp::types::MCPResponseResult::ToolCall(ref result) => {
                 if let Some(content) = &result.content {
@@ -737,12 +741,20 @@ mod tests {
             let handle = tokio::spawn(async move {
                 mgr.call_tool(
                     &sid,
-                    "builtin_playbook__savePlaybook",
+                    "builtin_playbook__createPlaybook",
                     json!({
-                        "id": format!("playbook-{}", idx),
-                        "title": format!("Playbook {}", idx),
-                        "description": format!("Concurrent test {}", idx),
-                        "template": format!("Template {}", idx)
+                        "goal": format!("Playbook {}", idx),
+                        "initialCommand": format!("test {}", idx),
+                        "workflow": [
+                            {
+                                "description": format!("Step {}", idx),
+                                "action": { "toolName": "test", "purpose": "test" },
+                                "outputVariable": "out"
+                            }
+                        ],
+                        "successCriteria": {
+                            "description": "Success"
+                        }
                     }),
                 )
                 .await
@@ -855,7 +867,7 @@ mod tests {
         let planning_result = manager
             .call_tool(
                 &session_id,
-                "builtin_planning__setGoal",
+                "builtin_planning__createGoal",
                 json!({
                     "goal": "Complete Phase 3 integration"
                 }),
@@ -868,12 +880,20 @@ mod tests {
         let playbook_result = manager
             .call_tool(
                 &session_id,
-                "builtin_playbook__savePlaybook",
+                "builtin_playbook__createPlaybook",
                 json!({
-                    "id": "test-playbook",
-                    "title": "Integration Playbook",
-                    "description": "Full integration test",
-                    "template": "Test {{var}}"
+                    "goal": "Integration Playbook",
+                    "initialCommand": "test",
+                    "workflow": [
+                        {
+                            "description": "Step 1",
+                            "action": { "toolName": "test", "purpose": "test" },
+                            "outputVariable": "out"
+                        }
+                    ],
+                    "successCriteria": {
+                        "description": "Success"
+                    }
                 }),
             )
             .await

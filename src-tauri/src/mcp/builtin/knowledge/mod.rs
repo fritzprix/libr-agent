@@ -130,7 +130,23 @@ impl KnowledgeServer {
             .and_then(|v| v.as_str())
             .ok_or("Missing 'content' parameter")?;
 
-        let tags = args.get("tags").and_then(|v| v.as_str());
+        // Handle tags as array of strings
+        let tags_str = if let Some(tags_val) = args.get("tags") {
+            if let Some(tags_arr) = tags_val.as_array() {
+                // Validate all elements are strings
+                if !tags_arr.iter().all(|t| t.is_string()) {
+                    return Err("Tags must be an array of strings".to_string());
+                }
+                Some(
+                    serde_json::to_string(tags_arr)
+                        .map_err(|e| format!("Failed to serialize tags: {}", e))?,
+                )
+            } else {
+                return Err("Tags must be an array of strings".to_string());
+            }
+        } else {
+            None
+        };
 
         let now = chrono::Utc::now().timestamp_millis();
 
@@ -143,7 +159,7 @@ impl KnowledgeServer {
         .bind(&self.session_id)
         .bind(title)
         .bind(content)
-        .bind(tags)
+        .bind(&tags_str)
         .bind(now)
         .bind(now)
         .execute(self.db_pool.as_ref())
@@ -152,15 +168,36 @@ impl KnowledgeServer {
         match result {
             Ok(query_result) => {
                 let id = query_result.last_insert_rowid();
+
+                // Parse tags back for response
+                let tags_vec: Vec<String> = if let Some(s) = tags_str {
+                    serde_json::from_str(&s).unwrap_or_default()
+                } else {
+                    Vec::new()
+                };
+
+                let knowledge = json!({
+                    "id": id,
+                    "session_id": self.session_id,
+                    "title": title,
+                    "content": content,
+                    "tags": tags_vec,
+                    "created_at": now,
+                    "updated_at": now
+                });
+
                 Ok(MCPResult {
                     content: Some(vec![MCPContent::Text {
-                        text: format!("Knowledge saved successfully with ID: {}", id),
+                        text: format!(
+                            "Knowledge saved successfully.\nID: {}\nTitle: {}\nTags: {}",
+                            id,
+                            title,
+                            tags_vec.join(", ")
+                        ),
                     }]),
                     structured_content: Some(json!({
                         "success": true,
-                        "id": id,
-                        "title": title,
-                        "session_id": self.session_id
+                        "knowledge": knowledge
                     })),
                     is_error: Some(false),
                 })
@@ -175,12 +212,136 @@ impl KnowledgeServer {
         }
     }
 
+    /// Read a knowledge entry by ID
+    async fn read_knowledge(&self, args: Value) -> Result<MCPResult, String> {
+        let id = args
+            .get("id")
+            .and_then(|v| v.as_i64())
+            .ok_or("Missing 'id' parameter")?;
+
+        let result = sqlx::query_as::<_, (i64, String, String, Option<String>, i64, i64)>(
+            r#"
+            SELECT id, title, content, tags, created_at, updated_at
+            FROM knowledge
+            WHERE id = ? AND session_id = ?
+            "#,
+        )
+        .bind(id)
+        .bind(&self.session_id)
+        .fetch_optional(self.db_pool.as_ref())
+        .await;
+
+        match result {
+            Ok(Some((id, title, content, tags_str, created_at, updated_at))) => {
+                let tags_vec: Vec<String> = if let Some(s) = tags_str {
+                    serde_json::from_str(&s).unwrap_or_default()
+                } else {
+                    Vec::new()
+                };
+
+                let knowledge = json!({
+                    "id": id,
+                    "session_id": self.session_id,
+                    "title": title,
+                    "content": content,
+                    "tags": tags_vec,
+                    "created_at": created_at,
+                    "updated_at": updated_at
+                });
+
+                Ok(MCPResult {
+                    content: Some(vec![MCPContent::Text {
+                        text: format!(
+                            "Knowledge Entry:\nID: {}\nTitle: {}\nTags: {}\n\n{}",
+                            id,
+                            title,
+                            tags_vec.join(", "),
+                            content
+                        ),
+                    }]),
+                    structured_content: Some(json!({
+                        "success": true,
+                        "knowledge": knowledge
+                    })),
+                    is_error: Some(false),
+                })
+            }
+            Ok(None) => Ok(MCPResult {
+                content: Some(vec![MCPContent::Text {
+                    text: format!("Knowledge entry with ID {} not found", id),
+                }]),
+                structured_content: None,
+                is_error: Some(true),
+            }),
+            Err(e) => Ok(MCPResult {
+                content: Some(vec![MCPContent::Text {
+                    text: format!("Failed to read knowledge: {}", e),
+                }]),
+                structured_content: None,
+                is_error: Some(true),
+            }),
+        }
+    }
+
+    /// Delete a knowledge entry by ID
+    async fn delete_knowledge(&self, args: Value) -> Result<MCPResult, String> {
+        let id = args
+            .get("id")
+            .and_then(|v| v.as_i64())
+            .ok_or("Missing 'id' parameter")?;
+
+        let result = sqlx::query(
+            r#"
+            DELETE FROM knowledge
+            WHERE id = ? AND session_id = ?
+            "#,
+        )
+        .bind(id)
+        .bind(&self.session_id)
+        .execute(self.db_pool.as_ref())
+        .await;
+
+        match result {
+            Ok(query_result) => {
+                if query_result.rows_affected() > 0 {
+                    Ok(MCPResult {
+                        content: Some(vec![MCPContent::Text {
+                            text: format!("Knowledge entry {} deleted successfully", id),
+                        }]),
+                        structured_content: Some(json!({
+                            "success": true,
+                            "id": id
+                        })),
+                        is_error: Some(false),
+                    })
+                } else {
+                    Ok(MCPResult {
+                        content: Some(vec![MCPContent::Text {
+                            text: format!("Knowledge entry with ID {} not found", id),
+                        }]),
+                        structured_content: None,
+                        is_error: Some(true),
+                    })
+                }
+            }
+            Err(e) => Ok(MCPResult {
+                content: Some(vec![MCPContent::Text {
+                    text: format!("Failed to delete knowledge: {}", e),
+                }]),
+                structured_content: None,
+                is_error: Some(true),
+            }),
+        }
+    }
+
     /// Search knowledge using FTS5 full-text search
     async fn search_knowledge(&self, args: Value) -> Result<MCPResult, String> {
-        let query = args
-            .get("query")
-            .and_then(|v| v.as_str())
-            .ok_or("Missing 'query' parameter")?;
+        let query_param = args.get("query").and_then(|v| v.as_str());
+        let tags_param = args.get("tags").and_then(|v| v.as_array());
+
+        if query_param.is_none() && tags_param.is_none() {
+            return Err("Must provide either 'query' or 'tags'".to_string());
+        }
 
         let limit = args
             .get("limit")
@@ -188,33 +349,72 @@ impl KnowledgeServer {
             .unwrap_or(10)
             .min(100);
 
-        let result = sqlx::query_as::<_, (i64, String, String, Option<String>, i64, i64)>(
-            r#"
-            SELECT k.id, k.title, k.content, k.tags, k.created_at, k.updated_at
-            FROM knowledge k
-            JOIN knowledge_fts f ON k.id = f.rowid
-            WHERE knowledge_fts MATCH ?
-            AND k.session_id = ?
-            ORDER BY rank
-            LIMIT ?
-            "#,
-        )
-        .bind(query)
-        .bind(&self.session_id)
-        .bind(limit)
-        .fetch_all(self.db_pool.as_ref())
-        .await;
+        let mut sql = String::from(
+            "SELECT k.id, k.title, k.content, k.tags, k.created_at, k.updated_at FROM knowledge k",
+        );
+
+        if query_param.is_some() {
+            sql.push_str(" JOIN knowledge_fts f ON k.id = f.rowid");
+        }
+
+        sql.push_str(" WHERE k.session_id = ?");
+
+        if query_param.is_some() {
+            sql.push_str(" AND knowledge_fts MATCH ?");
+        }
+
+        if let Some(tags) = tags_param {
+            for _ in tags {
+                sql.push_str(" AND k.tags LIKE ?");
+            }
+        }
+
+        if query_param.is_some() {
+            sql.push_str(" ORDER BY rank");
+        } else {
+            sql.push_str(" ORDER BY k.updated_at DESC");
+        }
+
+        sql.push_str(" LIMIT ?");
+
+        let mut query = sqlx::query_as::<_, (i64, String, String, Option<String>, i64, i64)>(&sql);
+
+        query = query.bind(&self.session_id);
+
+        if let Some(q) = query_param {
+            query = query.bind(q);
+        }
+
+        if let Some(tags) = tags_param {
+            for tag in tags {
+                if let Some(tag_str) = tag.as_str() {
+                    query = query.bind(format!("%\"{}\"%", tag_str));
+                } else {
+                    query = query.bind("%%");
+                }
+            }
+        }
+
+        query = query.bind(limit);
+
+        let result = query.fetch_all(self.db_pool.as_ref()).await;
 
         match result {
             Ok(rows) => {
                 let results: Vec<Value> = rows
                     .into_iter()
-                    .map(|(id, title, content, tags, created_at, updated_at)| {
+                    .map(|(id, title, content, tags_str, created_at, updated_at)| {
+                        let tags_vec: Vec<String> = if let Some(s) = tags_str {
+                            serde_json::from_str(&s).unwrap_or_default()
+                        } else {
+                            Vec::new()
+                        };
+
                         json!({
                             "id": id,
                             "title": title,
                             "content": content,
-                            "tags": tags,
+                            "tags": tags_vec,
                             "created_at": created_at,
                             "updated_at": updated_at
                         })
@@ -271,12 +471,18 @@ impl KnowledgeServer {
             Ok(rows) => {
                 let items: Vec<Value> = rows
                     .into_iter()
-                    .map(|(id, title, content, tags, created_at, updated_at)| {
+                    .map(|(id, title, content, tags_str, created_at, updated_at)| {
+                        let tags_vec: Vec<String> = if let Some(s) = tags_str {
+                            serde_json::from_str(&s).unwrap_or_default()
+                        } else {
+                            Vec::new()
+                        };
+
                         json!({
                             "id": id,
                             "title": title,
                             "content": content,
-                            "tags": tags,
+                            "tags": tags_vec,
                             "created_at": created_at,
                             "updated_at": updated_at
                         })
@@ -336,6 +542,8 @@ impl BuiltinMCPServer for KnowledgeServer {
     fn tools(&self) -> Vec<MCPTool> {
         vec![
             create_save_knowledge_tool(),
+            create_read_knowledge_tool(),
+            create_delete_knowledge_tool(),
             create_search_knowledge_tool(),
             create_list_knowledge_tool(),
         ]
@@ -396,12 +604,14 @@ impl BuiltinMCPServer for KnowledgeServer {
 
         match tool_name {
             "saveKnowledge" | "builtin_knowledge__saveKnowledge" => self.save_knowledge(args).await,
+            "readKnowledge" | "builtin_knowledge__readKnowledge" => self.read_knowledge(args).await,
+            "deleteKnowledge" | "builtin_knowledge__deleteKnowledge" => self.delete_knowledge(args).await,
             "searchKnowledge" | "builtin_knowledge__searchKnowledge" => {
                 self.search_knowledge(args).await
             }
             "listKnowledge" | "builtin_knowledge__listKnowledge" => self.list_knowledge(args).await,
             _ => Err(format!(
-                "Unknown tool: {}. Available tools: saveKnowledge, searchKnowledge, listKnowledge",
+                "Unknown tool: {}. Available tools: saveKnowledge, readKnowledge, deleteKnowledge, searchKnowledge, listKnowledge",
                 tool_name
             )),
         }
@@ -415,25 +625,68 @@ impl BuiltinMCPServer for KnowledgeServer {
 
 /// Create the saveKnowledge tool definition
 fn create_save_knowledge_tool() -> MCPTool {
-    let mut props = HashMap::new();
-    props.insert(
-        "title".to_string(),
-        string_prop_required("Title of the knowledge entry"),
-    );
-    props.insert(
-        "content".to_string(),
-        string_prop_required("Content/body of the knowledge entry"),
-    );
-    props.insert(
-        "tags".to_string(),
-        string_prop(None, None, Some("Optional comma-separated tags")),
-    );
-
     MCPTool {
         name: "saveKnowledge".to_string(),
         title: Some("Save Knowledge".to_string()),
         description: "Save a knowledge entry to the session-scoped knowledge base".to_string(),
-        input_schema: object_schema(props, vec!["title".to_string(), "content".to_string()]),
+        input_schema: serde_json::from_value(json!({
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "Title of the knowledge entry"
+                },
+                "content": {
+                    "type": "string",
+                    "description": "Content/body of the knowledge entry"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "Optional tags for categorization"
+                }
+            },
+            "required": ["title", "content"]
+        }))
+        .unwrap(),
+        output_schema: None,
+        annotations: None,
+    }
+}
+
+/// Create the readKnowledge tool definition
+fn create_read_knowledge_tool() -> MCPTool {
+    let mut props = HashMap::new();
+    props.insert(
+        "id".to_string(),
+        integer_prop(None, None, Some("ID of the knowledge entry to read")),
+    );
+
+    MCPTool {
+        name: "readKnowledge".to_string(),
+        title: Some("Read Knowledge".to_string()),
+        description: "Read a specific knowledge entry by ID".to_string(),
+        input_schema: object_schema(props, vec!["id".to_string()]),
+        output_schema: None,
+        annotations: None,
+    }
+}
+
+/// Create the deleteKnowledge tool definition
+fn create_delete_knowledge_tool() -> MCPTool {
+    let mut props = HashMap::new();
+    props.insert(
+        "id".to_string(),
+        integer_prop(None, None, Some("ID of the knowledge entry to delete")),
+    );
+
+    MCPTool {
+        name: "deleteKnowledge".to_string(),
+        title: Some("Delete Knowledge".to_string()),
+        description: "Delete a specific knowledge entry by ID".to_string(),
+        input_schema: object_schema(props, vec!["id".to_string()]),
         output_schema: None,
         annotations: None,
     }
@@ -441,21 +694,32 @@ fn create_save_knowledge_tool() -> MCPTool {
 
 /// Create the searchKnowledge tool definition
 fn create_search_knowledge_tool() -> MCPTool {
-    let mut props = HashMap::new();
-    props.insert(
-        "query".to_string(),
-        string_prop_required("Search query (FTS5 full-text search)"),
-    );
-    props.insert(
-        "limit".to_string(),
-        integer_prop_with_default(Some(1), Some(100), 10, Some("Maximum number of results")),
-    );
-
     MCPTool {
         name: "searchKnowledge".to_string(),
         title: Some("Search Knowledge".to_string()),
-        description: "Search the knowledge base using full-text search (FTS5)".to_string(),
-        input_schema: object_schema(props, vec!["query".to_string()]),
+        description: "Search the knowledge base using full-text search (FTS5) and/or tags"
+            .to_string(),
+        input_schema: serde_json::from_value(json!({
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search query (FTS5 full-text search)"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Filter by tags"
+                },
+                "limit": {
+                    "type": "integer",
+                    "default": 10,
+                    "maximum": 100,
+                    "description": "Maximum number of results"
+                }
+            }
+        }))
+        .unwrap(),
         output_schema: None,
         annotations: None,
     }
@@ -549,7 +813,7 @@ mod tests {
                 json!({
                     "title": "Rust Ownership",
                     "content": "Rust uses an ownership system to manage memory safety",
-                    "tags": "rust,programming"
+                    "tags": ["rust", "programming"]
                 }),
             )
             .await

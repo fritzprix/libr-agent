@@ -328,12 +328,20 @@ mod tests {
         proxy_manager
             .call_tool(
                 &session_id,
-                "builtin_playbook__savePlaybook",
+                "builtin_playbook__createPlaybook",
                 json!({
-                    "id": "workflow-1",
-                    "title": "Data Processing Workflow",
-                    "description": "Process and analyze data",
-                    "template": "1. Load data from {{source}}\n2. Transform"
+                    "goal": "Data Processing Workflow",
+                    "initialCommand": "process data",
+                    "workflow": [
+                        {
+                            "description": "Load data",
+                            "action": { "toolName": "load", "purpose": "load" },
+                            "outputVariable": "data"
+                        }
+                    ],
+                    "successCriteria": {
+                        "description": "Data processed"
+                    }
                 }),
             )
             .await
@@ -342,12 +350,20 @@ mod tests {
         proxy_manager
             .call_tool(
                 &session_id,
-                "builtin_playbook__savePlaybook",
+                "builtin_playbook__createPlaybook",
                 json!({
-                    "id": "workflow-2",
-                    "title": "API Integration",
-                    "description": "Connect to API",
-                    "template": "1. Authenticate\n2. Call endpoint"
+                    "goal": "API Integration",
+                    "initialCommand": "connect api",
+                    "workflow": [
+                        {
+                            "description": "Authenticate",
+                            "action": { "toolName": "auth", "purpose": "auth" },
+                            "outputVariable": "token"
+                        }
+                    ],
+                    "successCriteria": {
+                        "description": "Connected"
+                    }
                 }),
             )
             .await
@@ -355,7 +371,7 @@ mod tests {
 
         // Test listPlaybooks with UI rendering
         let response = proxy_manager
-            .call_tool(&session_id, "builtin_playbook__listPlaybooks", json!({}))
+            .call_tool(&session_id, "builtin_playbook__showPlaybooks", json!({}))
             .await
             .expect("Failed to list playbooks");
 
@@ -389,7 +405,7 @@ mod tests {
 
         // Verify structured content
         let structured = result.structured_content.expect("No structured content");
-        assert_eq!(structured["count"], 2);
+        assert_eq!(structured["page"]["totalItems"], 2);
 
         // Cleanup
         proxy_manager.destroy_proxy(&session_id).await;
@@ -451,11 +467,12 @@ mod tests {
         proxy_manager
             .call_tool(
                 "session-ui-1",
-                "builtin_playbook__savePlaybook",
+                "builtin_playbook__createPlaybook",
                 json!({
-                    "id": "shared",
-                    "title": "Session 1 Playbook",
-                    "template": "S1 template"
+                    "goal": "Session 1 Playbook",
+                    "initialCommand": "s1",
+                    "workflow": [],
+                    "successCriteria": { "description": "s1" }
                 }),
             )
             .await
@@ -465,11 +482,12 @@ mod tests {
         proxy_manager
             .call_tool(
                 "session-ui-2",
-                "builtin_playbook__savePlaybook",
+                "builtin_playbook__createPlaybook",
                 json!({
-                    "id": "shared",
-                    "title": "Session 2 Playbook",
-                    "template": "S2 template"
+                    "goal": "Session 2 Playbook",
+                    "initialCommand": "s2",
+                    "workflow": [],
+                    "successCriteria": { "description": "s2" }
                 }),
             )
             .await
@@ -477,7 +495,7 @@ mod tests {
 
         // List from session 1
         let response1 = proxy_manager
-            .call_tool("session-ui-1", "builtin_playbook__listPlaybooks", json!({}))
+            .call_tool("session-ui-1", "builtin_playbook__showPlaybooks", json!({}))
             .await
             .expect("Failed to list from session 1");
 
@@ -496,7 +514,7 @@ mod tests {
 
         // List from session 2
         let response2 = proxy_manager
-            .call_tool("session-ui-2", "builtin_playbook__listPlaybooks", json!({}))
+            .call_tool("session-ui-2", "builtin_playbook__showPlaybooks", json!({}))
             .await
             .expect("Failed to list from session 2");
 

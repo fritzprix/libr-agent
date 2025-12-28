@@ -220,6 +220,13 @@ export class OllamaService extends BaseAIService {
   ): AsyncGenerator<string, void, void> {
     const { config } = this.prepareStreamChat(messages, options);
 
+    logger.info('🔵 Ollama doStreamChat called', {
+      inputMessageCount: messages.length,
+      hasSystemPrompt: !!options.systemPrompt,
+      model: options.modelName || config.defaultModel || DEFAULT_MODEL,
+      availableToolsCount: options.availableTools?.length ?? 0,
+    });
+
     try {
       const ollamaMessages = this.convertToOllamaMessages(
         messages,
@@ -230,6 +237,26 @@ export class OllamaService extends BaseAIService {
         options.availableTools,
         coreLogger,
       );
+
+      logger.info('📨 Converted messages for Ollama', {
+        originalCount: messages.length,
+        convertedCount: ollamaMessages.length,
+        model,
+        toolCount: ollamaTools.length,
+        messageRoles: ollamaMessages.map((m) => m.role).join(','),
+      });
+
+      logger.debug('🔍 Ollama message details', {
+        messages: ollamaMessages.map((m, idx) => ({
+          index: idx,
+          role: m.role,
+          contentPreview:
+            typeof m.content === 'string'
+              ? m.content.substring(0, 50) + '...'
+              : '[non-string content]',
+          hasToolCalls: !!m.tool_calls,
+        })),
+      });
 
       // Prepare reasoning parameter based on config
       // Check if model actually supports thinking (optional, for better UX)

@@ -56,7 +56,7 @@ package "IPC Layer" {
 ' Backend internal flow
 ASM --> MCPM : manages
 MCPM --> MCP : creates per-session
-MCP --> Builtin : routes builtin_* tools
+MCP --> Builtin : lists & routes builtin_* tools
 ASM --> MsgRepo : persists messages
 ASM --> SessRepo : persists metadata
 MsgRepo --> DB
@@ -381,6 +381,13 @@ end note
 !theme plain
 
 start
+
+note right
+  **Symmetric Naming Strategy**:
+  Rust MCP Proxy **prepends** "builtin_"
+  prefix during tool discovery.
+  Frontend passes this name back as-is.
+end note
 
 :Agent receives tool_calls in\nassistant message;
 
@@ -766,6 +773,7 @@ CREATE TABLE sessions (
 #### Event Type Naming (Serde Configuration)
 
 **Rust Side** (`src-tauri/src/agent/events.rs`):
+
 ```rust
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]  // ⚠️ CRITICAL: camelCase conversion
@@ -781,6 +789,7 @@ pub enum AgentEvent {
 ```
 
 **TypeScript Side** (`src/context/AgentChatContext.tsx`):
+
 ```typescript
 // ✅ CORRECT: Use camelCase to match Rust's serde output
 const eventType = payload.type as string;
@@ -797,6 +806,7 @@ if (eventType === 'WorkflowStarted') {  // ❌ Never matches!
 ```
 
 **Common Mistake**: Using PascalCase in TypeScript to match Rust enum variant names.
+
 - Rust enum: `MessageAdded` → JSON: `"messageAdded"` (serde converts)
 - TypeScript check: `'MessageAdded'` → **FAIL** (no match)
 - Correct check: `'messageAdded'` → **SUCCESS**
@@ -804,6 +814,7 @@ if (eventType === 'WorkflowStarted') {  // ❌ Never matches!
 #### Field Name Normalization
 
 **Rust sends** (via serde `rename_all = "camelCase"`):
+
 ```json
 {
   "sessionId": "abc123",
@@ -813,11 +824,14 @@ if (eventType === 'WorkflowStarted') {  // ❌ Never matches!
 ```
 
 **TypeScript receives** (defensive normalization):
+
 ```typescript
 // ✅ BEST PRACTICE: Support both naming conventions
 const newMessage: Message = {
   sessionId: (rawMessage.sessionId || rawMessage.session_id) as string,
-  tool_call_id: (rawMessage.toolCallId || rawMessage.tool_call_id) as string | undefined,
+  tool_call_id: (rawMessage.toolCallId || rawMessage.tool_call_id) as
+    | string
+    | undefined,
   created_at: rawMessage.createdAt || rawMessage.created_at,
   // ... other fields
 };
@@ -834,6 +848,7 @@ const newMessage: Message = {
 #### Forbidden Cross-Dependencies
 
 ❌ **WRONG**: Agent V2 component using Legacy V1 dependency
+
 ```typescript
 // src/features/agent/components/AgentToolCallGroup.tsx
 import { ToolCallDetails } from '@/features/chat/ToolCallDetails'; // ❌ V1 component
@@ -841,6 +856,7 @@ import { ToolCallDetails } from '@/features/chat/ToolCallDetails'; // ❌ V1 com
 ```
 
 ✅ **CORRECT**: Use V2-specific components
+
 ```typescript
 // src/features/agent/components/AgentToolCallGroup.tsx
 import { AgentToolCallDetails } from './AgentToolCallDetails'; // ✅ V2 component
@@ -850,6 +866,7 @@ import { AgentToolCallDetails } from './AgentToolCallDetails'; // ✅ V2 compone
 #### Component Dependency Tree
 
 **Legacy V1 Stack** (do NOT use in Agent V2):
+
 ```
 ChatContainer (V1)
   └─ MessageRenderer
@@ -858,6 +875,7 @@ ChatContainer (V1)
 ```
 
 **Agent V2 Stack** (use these):
+
 ```
 AgentContainer (V2)
   └─ AgentMessageRenderer
@@ -866,6 +884,7 @@ AgentContainer (V2)
 ```
 
 **Checklist for New Components**:
+
 1. Does it import from `@/features/chat/*`? → ❌ Legacy V1
 2. Does it import from `@/components/MessageRenderer`? → ❌ Legacy V1
 3. Does it use `useChatActions()` or `useChatState()`? → ❌ Legacy V1
@@ -935,17 +954,23 @@ const newMessage: Message = {
   ...(rawMessage as unknown as Message),
   sessionId: (rawMessage.sessionId || rawMessage.session_id) as string,
   tool_calls: rawMessage.toolCalls || rawMessage.tool_calls,
-  tool_call_id: (rawMessage.toolCallId || rawMessage.tool_call_id) as string | undefined,
+  tool_call_id: (rawMessage.toolCallId || rawMessage.tool_call_id) as
+    | string
+    | undefined,
   tool_use: rawMessage.toolUse || rawMessage.tool_use,
   is_streaming: rawMessage.isStreaming ?? rawMessage.is_streaming,
-  thinking_signature: (rawMessage.thinkingSignature || rawMessage.thinking_signature) as string | undefined,
-  assistant_id: (rawMessage.assistantId || rawMessage.assistant_id) as string | undefined,
+  thinking_signature: (rawMessage.thinkingSignature ||
+    rawMessage.thinking_signature) as string | undefined,
+  assistant_id: (rawMessage.assistantId || rawMessage.assistant_id) as
+    | string
+    | undefined,
   created_at: rawMessage.createdAt || rawMessage.created_at,
   updated_at: rawMessage.updatedAt || rawMessage.updated_at,
 } as Message;
 ```
 
 **Rust Side Best Practice**:
+
 ```rust
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]  // ⚠️ Always add this for frontend compatibility
@@ -964,6 +989,7 @@ pub struct Message {
 #### Symptom: Events Not Received
 
 **Check 1**: Event type case mismatch
+
 ```bash
 # Rust log: "Emitted event: messageAdded"
 # TypeScript: if (eventType === 'MessageAdded')  ← ❌ MISMATCH
@@ -972,15 +998,20 @@ pub struct Message {
 **Fix**: Use camelCase in TypeScript to match serde output.
 
 **Check 2**: Tauri emit method
+
 ```rust
 // ❌ Only current window: app_handle.emit(...)
 // ✅ All windows: app_handle.emit_to(EventTarget::app(), ...)
 ```
 
 **Check 3**: Session ID filtering
+
 ```typescript
 // Is frontend filtering out events due to session ID mismatch?
-logger.info('Event received BEFORE filter', { eventSessionId, currentSessionId });
+logger.info('Event received BEFORE filter', {
+  eventSessionId,
+  currentSessionId,
+});
 ```
 
 #### Symptom: "useChatActions must be used within ChatProvider"
@@ -988,6 +1019,7 @@ logger.info('Event received BEFORE filter', { eventSessionId, currentSessionId }
 **Root Cause**: Legacy V1 component imported into Agent V2 tree
 
 **Fix**: Create Agent V2-specific version of the component
+
 ```bash
 # Example: ToolCallDetails (V1) → AgentToolCallDetails (V2)
 src/features/chat/ToolCallDetails.tsx          # V1 (uses MessageRenderer + ChatContext)
@@ -1013,14 +1045,14 @@ Before merging any Rust ↔ TypeScript integration changes:
 
 ### 10.8 Common Pitfalls Reference
 
-| Pitfall | Symptom | Fix |
-|---------|---------|-----|
-| PascalCase event check | Events never matched | Use camelCase: `'messageAdded'` |
-| Missing Emitter trait | `emit_to` not found | Add `use tauri::Emitter;` |
-| Legacy V1 import | ChatProvider error | Create V2-specific component |
-| Session ID mismatch | All events filtered | Support both: `sessionId \|\| session_id` |
-| Field name typo | Undefined field access | Use defensive: `field1 \|\| field2` |
-| emit() instead of emit_to() | Single window only | Use `emit_to(EventTarget::app(), ...)` |
+| Pitfall                     | Symptom                | Fix                                       |
+| --------------------------- | ---------------------- | ----------------------------------------- |
+| PascalCase event check      | Events never matched   | Use camelCase: `'messageAdded'`           |
+| Missing Emitter trait       | `emit_to` not found    | Add `use tauri::Emitter;`                 |
+| Legacy V1 import            | ChatProvider error     | Create V2-specific component              |
+| Session ID mismatch         | All events filtered    | Support both: `sessionId \|\| session_id` |
+| Field name typo             | Undefined field access | Use defensive: `field1 \|\| field2`       |
+| emit() instead of emit_to() | Single window only     | Use `emit_to(EventTarget::app(), ...)`    |
 
 ---
 

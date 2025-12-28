@@ -185,6 +185,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
   useEffect(() => {
     if (!currentSession?.id) return;
 
+    let isMounted = true;
     let unlisten: (() => void) | undefined;
 
     const setupListeners = async () => {
@@ -193,7 +194,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
       });
 
       // Listen for workflow status changes and message events
-      unlisten = await listen<Record<string, unknown>>(
+      const unlistenFn = await listen<Record<string, unknown>>(
         'agent:event',
         async (event) => {
           const payload = event.payload;
@@ -337,12 +338,21 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
         },
       );
 
-      logger.info('Agent event listeners registered');
+      if (!isMounted) {
+        logger.info(
+          'Agent listener setup completed after unmount, cleaning up immediately',
+        );
+        unlistenFn();
+      } else {
+        unlisten = unlistenFn;
+        logger.info('Agent event listeners registered');
+      }
     };
 
     setupListeners();
 
     return () => {
+      isMounted = false;
       if (unlisten) {
         unlisten();
         logger.info('Agent event listeners cleaned up');

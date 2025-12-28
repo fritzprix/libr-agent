@@ -189,6 +189,13 @@ impl AgentSessionManager {
                     session_id
                 );
             }
+
+            log::info!(
+                "📝 Message stack after user message: session={}, count={}, latest_message={}",
+                session_id,
+                messages.len(),
+                user_message.id
+            );
         } // Lock released
 
         // 2. Emit UI event (immediate)
@@ -255,6 +262,14 @@ impl AgentSessionManager {
                     let removed = messages.remove(0);
                     log::debug!("Sliding window: evicted message {}", removed.id);
                 }
+
+                log::info!(
+                    "🤖 Message stack after assistant message: session={}, count={}, latest_message={}, has_tool_calls={}",
+                    session_id,
+                    messages.len(),
+                    assistant_message.id,
+                    assistant_message.tool_calls.is_some()
+                );
             }
         }
 
@@ -339,18 +354,7 @@ impl AgentSessionManager {
                 }
             }
 
-            // Dispatch execution requests to frontend
-            // Using tauri::Emitter trait
-            use tauri::Emitter;
-
-            #[derive(Clone, serde::Serialize)]
-            #[serde(rename_all = "camelCase")]
-            struct ToolExecutionRequest {
-                session_id: String,
-                tool_call: crate::agent::types::ToolCall,
-            }
-
-            // Execute tool calls (builtin handled in Rust, external emitted to frontend)
+            // Execute tool calls (all handled in Rust via proxy)
             for tool_call in tool_calls {
                 let tool_name = &tool_call.function.name;
 
@@ -362,167 +366,135 @@ impl AgentSessionManager {
                 crate::agent::events::emit_agent_event(&self.app_handle, event)
                     .map_err(|e| format!("Failed to emit tool execution started event: {}", e))?;
 
-                if tool_name.starts_with("builtin_") {
-                    // Builtin tool - execute directly via proxy_manager
-                    log::info!(
-                        "Executing builtin tool '{}' via proxy_manager for session: {}",
-                        tool_name,
-                        session_id
-                    );
+                // Execute directly via proxy_manager (handles both builtin and external)
+                log::info!(
+                    "Executing tool '{}' via proxy_manager for session: {}",
+                    tool_name,
+                    session_id
+                );
 
-                    // Execute the tool and handle result directly
-                    let tool_call_id = tool_call.id.clone();
-                    let args_str = tool_call.function.arguments.clone();
-                    let session_id_clone = session_id.clone();
-                    let proxy_manager = self.proxy_manager.clone();
-                    let tool_name_owned = tool_name.to_string();
+                // Execute the tool and handle result directly
+                let tool_call_id = tool_call.id.clone();
+                let args_str = tool_call.function.arguments.clone();
+                let session_id_clone = session_id.clone();
+                let proxy_manager = self.proxy_manager.clone();
+                let tool_name_owned = tool_name.to_string();
 
-                    // Spawn async task to execute tool and process result
-                    let manager_ref = self.clone_for_task();
-                    tokio::spawn(async move {
-                        // Parse arguments JSON string to Value
-                        let args = match serde_json::from_str::<serde_json::Value>(&args_str) {
-                            Ok(v) => v,
-                            Err(e) => {
+                // Spawn async task to execute tool and process result
+                let manager_ref = self.clone_for_task();
+                tokio::spawn(async move {
+                    // Parse arguments JSON string to Value
+                    let args = match serde_json::from_str::<serde_json::Value>(&args_str) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            log::error!(
+                                "Failed to parse tool arguments for session {}: {}",
+                                session_id_clone,
+                                e
+                            );
+
+                            let result = crate::commands::agent_commands::ToolExecutionResult {
+                                success: false,
+                                content: String::new(),
+                                error: Some(format!("Failed to parse tool arguments: {}", e)),
+                                is_error: true,
+                            };
+
+                            if let Err(err) = manager_ref
+                                .handle_tool_result(session_id_clone.clone(), tool_call_id, result)
+                                .await
+                            {
                                 log::error!(
-                                    "Failed to parse tool arguments for session {}: {}",
+                                    "Failed to handle argument parse error for session {}: {}",
                                     session_id_clone,
-                                    e
-                                );
-
-                                let result = crate::commands::agent_commands::ToolExecutionResult {
-                                    success: false,
-                                    content: String::new(),
-                                    error: Some(format!("Failed to parse tool arguments: {}", e)),
-                                    is_error: true,
-                                };
-
-                                if let Err(err) = manager_ref
-                                    .handle_tool_result(
-                                        session_id_clone.clone(),
-                                        tool_call_id,
-                                        result,
-                                    )
-                                    .await
-                                {
-                                    log::error!(
-                                        "Failed to handle argument parse error for session {}: {}",
-                                        session_id_clone,
-                                        err
-                                    );
-                                }
-                                return;
-                            }
-                        };
-
-                        match proxy_manager
-                            .call_tool(&session_id_clone, &tool_name_owned, args)
-                            .await
-                        {
-                            Ok(response) => {
-                                // Convert MCPResponse to tool result
-                                let content = response
-                                    .result
-                                    .and_then(|r| serde_json::to_string_pretty(&r).ok())
-                                    .unwrap_or_else(|| "{}".to_string());
-
-                                let is_error = response.error.is_some();
-                                let error_msg = response.error.map(|e| e.message);
-
-                                let result = crate::commands::agent_commands::ToolExecutionResult {
-                                    success: !is_error,
-                                    content,
-                                    error: error_msg,
-                                    is_error,
-                                };
-
-                                if let Err(e) = manager_ref
-                                    .handle_tool_result(
-                                        session_id_clone.clone(),
-                                        tool_call_id,
-                                        result,
-                                    )
-                                    .await
-                                {
-                                    log::error!(
-                                        "Failed to handle builtin tool result for session {}: {}",
-                                        session_id_clone,
-                                        e
-                                    );
-                                }
-
-                                // Emit ToolExecutionCompleted event (success case)
-                                let event =
-                                    crate::agent::events::AgentEvent::ToolExecutionCompleted {
-                                        session_id: session_id_clone.clone(),
-                                        tool_name: tool_name_owned.clone(),
-                                        success: true,
-                                    };
-                                let _ = crate::agent::events::emit_agent_event(
-                                    &manager_ref.app_handle,
-                                    event,
+                                    err
                                 );
                             }
-                            Err(e) => {
-                                log::error!(
-                                    "Builtin tool execution failed for session {}: {}",
-                                    session_id_clone,
-                                    e
-                                );
-
-                                let result = crate::commands::agent_commands::ToolExecutionResult {
-                                    success: false,
-                                    content: String::new(),
-                                    error: Some(e.clone()),
-                                    is_error: true,
-                                };
-
-                                if let Err(err) = manager_ref
-                                    .handle_tool_result(
-                                        session_id_clone.clone(),
-                                        tool_call_id,
-                                        result,
-                                    )
-                                    .await
-                                {
-                                    log::error!(
-                                        "Failed to handle builtin tool error for session {}: {}",
-                                        session_id_clone,
-                                        err
-                                    );
-                                }
-
-                                // Emit ToolExecutionCompleted event (error case)
-                                let event =
-                                    crate::agent::events::AgentEvent::ToolExecutionCompleted {
-                                        session_id: session_id_clone.clone(),
-                                        tool_name: tool_name_owned.clone(),
-                                        success: false,
-                                    };
-                                let _ = crate::agent::events::emit_agent_event(
-                                    &manager_ref.app_handle,
-                                    event,
-                                );
-                            }
+                            return;
                         }
-                    });
-                } else {
-                    // External tool (stdio MCP), emit to frontend for handling
-                    let request = ToolExecutionRequest {
-                        session_id: session_id.clone(),
-                        tool_call: tool_call.clone(),
                     };
 
-                    self.app_handle
-                        .emit("tool:execute-request", request)
-                        .map_err(|e| format!("Failed to emit tool execution request: {}", e))?;
+                    match proxy_manager
+                        .call_tool(&session_id_clone, &tool_name_owned, args)
+                        .await
+                    {
+                        Ok(response) => {
+                            // Convert MCPResponse to tool result
+                            let content = response
+                                .result
+                                .and_then(|r| serde_json::to_string_pretty(&r).ok())
+                                .unwrap_or_else(|| "{}".to_string());
 
-                    log::debug!(
-                        "Emitted external tool execution request: {} for session: {}",
-                        tool_call.function.name,
-                        session_id
-                    );
-                }
+                            let is_error = response.error.is_some();
+                            let error_msg = response.error.map(|e| e.message);
+
+                            let result = crate::commands::agent_commands::ToolExecutionResult {
+                                success: !is_error,
+                                content,
+                                error: error_msg,
+                                is_error,
+                            };
+
+                            if let Err(e) = manager_ref
+                                .handle_tool_result(session_id_clone.clone(), tool_call_id, result)
+                                .await
+                            {
+                                log::error!(
+                                    "Failed to handle tool result for session {}: {}",
+                                    session_id_clone,
+                                    e
+                                );
+                            }
+
+                            // Emit ToolExecutionCompleted event (success case)
+                            let event = crate::agent::events::AgentEvent::ToolExecutionCompleted {
+                                session_id: session_id_clone.clone(),
+                                tool_name: tool_name_owned.clone(),
+                                success: true,
+                            };
+                            let _ = crate::agent::events::emit_agent_event(
+                                &manager_ref.app_handle,
+                                event,
+                            );
+                        }
+                        Err(e) => {
+                            log::error!(
+                                "Tool execution failed for session {}: {}",
+                                session_id_clone,
+                                e
+                            );
+
+                            let result = crate::commands::agent_commands::ToolExecutionResult {
+                                success: false,
+                                content: String::new(),
+                                error: Some(e.clone()),
+                                is_error: true,
+                            };
+
+                            if let Err(err) = manager_ref
+                                .handle_tool_result(session_id_clone.clone(), tool_call_id, result)
+                                .await
+                            {
+                                log::error!(
+                                    "Failed to handle tool error for session {}: {}",
+                                    session_id_clone,
+                                    err
+                                );
+                            }
+
+                            // Emit ToolExecutionCompleted event (error case)
+                            let event = crate::agent::events::AgentEvent::ToolExecutionCompleted {
+                                session_id: session_id_clone.clone(),
+                                tool_name: tool_name_owned.clone(),
+                                success: false,
+                            };
+                            let _ = crate::agent::events::emit_agent_event(
+                                &manager_ref.app_handle,
+                                event,
+                            );
+                        }
+                    }
+                });
             }
         }
 
@@ -1164,10 +1136,12 @@ impl AgentSessionManager {
             messages_lock.clone() // Clone to release lock quickly
         };
 
-        log::debug!(
-            "Requesting LLM completion: session={}, messages_count={} (from cache)",
+        log::info!(
+            "🔄 Message stack for LLM request: session={}, count={}, first_msg_id={}, last_msg_id={}",
             session_id,
-            messages.len()
+            messages.len(),
+            messages.first().map(|m| m.id.as_str()).unwrap_or("none"),
+            messages.last().map(|m| m.id.as_str()).unwrap_or("none")
         );
 
         // Get agent config from session metadata (REQUIRED - no fallback)
