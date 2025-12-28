@@ -49,7 +49,8 @@ pub async fn agent_send_message(
     manager: State<'_, AgentSessionManager>,
     request: SendUserMessageRequest,
 ) -> Result<AgentResponse, String> {
-    let message = request.message.into_message();
+    // Message is already the correct type, no conversion needed
+    let message = request.message;
     manager
         .start_workflow(request.session_id.clone(), message)
         .await?;
@@ -68,7 +69,8 @@ pub async fn agent_handle_llm_response(
     session_id: String,
     assistant_message: AgentMessageDto,
 ) -> Result<AgentResponse, String> {
-    let message = assistant_message.into_message();
+    // AgentMessageDto is now a type alias for Message, no conversion needed
+    let message = assistant_message;
     manager
         .handle_llm_response(session_id.clone(), message)
         .await?;
@@ -118,11 +120,14 @@ pub async fn agent_resume_workflow(
     manager: State<'_, AgentSessionManager>,
     session_id: String,
 ) -> Result<AgentResponse, String> {
+    // Initialize cache from DB before resuming workflow
+    manager.init_session_with_messages(&session_id).await?;
+
     manager.resume_workflow(session_id.clone()).await?;
 
     Ok(AgentResponse {
         success: true,
-        message: format!("Workflow resumed for session: {}", session_id),
+        message: format!("Workflow resumed with cache initialized: {}", session_id),
         data: None,
     })
 }

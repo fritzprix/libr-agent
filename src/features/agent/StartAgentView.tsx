@@ -38,7 +38,8 @@ export default function StartAgentView() {
       const session = await createSession({ assistant });
       logger.info('Agent session created', { sessionId: session.id });
       toast.success('Agent session started');
-      navigate(`/agent/chat/${session.id}`);
+      // Navigate to session-specific route
+      navigate(`/agent/${session.id}`);
     } catch (err) {
       logger.error('Failed to create agent session', err);
       toast.error('Failed to start agent session');

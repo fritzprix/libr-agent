@@ -82,6 +82,9 @@ describe('AgentChatContext', () => {
     // Setup AgentSessionContext mock
     (useAgentSessionState as ReturnType<typeof vi.fn>).mockReturnValue({
       currentSession: { id: 'test-session', name: 'Test Session' },
+      messages: mockMessages,
+      isLoading: false,
+      error: null,
     });
 
     // Setup backend messages mock
@@ -210,7 +213,7 @@ describe('AgentChatContext', () => {
       act(() => {
         eventHandler?.({
           payload: {
-            type: 'StatusChanged',
+            type: 'statusChanged',
             session_id: 'test-session',
             status: 'Busy',
           },
@@ -226,7 +229,7 @@ describe('AgentChatContext', () => {
       act(() => {
         eventHandler?.({
           payload: {
-            type: 'StatusChanged',
+            type: 'statusChanged',
             session_id: 'test-session',
             status: 'Idle',
           },
@@ -265,7 +268,7 @@ describe('AgentChatContext', () => {
       act(() => {
         eventHandler?.({
           payload: {
-            type: 'StatusChanged',
+            type: 'statusChanged',
             session_id: 'other-session',
             status: 'Busy',
           },
@@ -283,23 +286,29 @@ describe('AgentChatContext', () => {
         wrapper: TestWrapper,
       });
 
+      const createdAt = new Date();
       const newMessage: Message = {
         id: 'msg2',
         sessionId: 'test-session',
         threadId: 'test-session',
         role: 'user',
         content: [{ type: 'text', text: 'New message' }],
-        createdAt: new Date(),
+        createdAt,
       };
 
       await act(async () => {
         await result.current.submit(newMessage);
       });
 
+      // Expect Date to be converted to Unix timestamp
       expect(invoke).toHaveBeenCalledWith('agent_send_message', {
         request: {
           sessionId: 'test-session',
-          message: newMessage,
+          message: {
+            ...newMessage,
+            createdAt: createdAt.getTime(),
+            updatedAt: createdAt.getTime(),
+          },
         },
       });
     });
@@ -415,6 +424,14 @@ describe('AgentChatContext', () => {
         },
       ];
 
+      // Update AgentSessionContext mock to return messagesWithError
+      (useAgentSessionState as ReturnType<typeof vi.fn>).mockReturnValue({
+        currentSession: { id: 'test-session', name: 'Test Session' },
+        messages: messagesWithError,
+        isLoading: false,
+        error: null,
+      });
+
       // Mock backend messages
       (getMessagesPageForSession as ReturnType<typeof vi.fn>).mockResolvedValue({
         items: messagesWithError,
@@ -454,12 +471,21 @@ describe('AgentChatContext', () => {
 
     it('should handle retry with no user message', async () => {
       // Mock backend messages
+      // Mock backend messages (not used directly but kept for consistency)
       (getMessagesPageForSession as ReturnType<typeof vi.fn>).mockResolvedValue({
         items: [],
         total: 0,
         page: 1,
         pageSize: 1000,
         totalPages: 0,
+      });
+
+      // Mock session state with no messages
+      (useAgentSessionState as ReturnType<typeof vi.fn>).mockReturnValue({
+        currentSession: { id: 'test-session', name: 'Test Session' },
+        messages: [],
+        isLoading: false,
+        error: null,
       });
 
       const { result } = renderHook(() => useAgentChat(), {

@@ -13,6 +13,7 @@ import { AIServiceFactory } from '@/lib/ai-service/factory';
 import type { AIServiceConfig } from '@/lib/ai-service/types';
 import { AIServiceProvider } from '@/lib/ai-service/types';
 import type { Message, ToolCall } from '@/models/chat';
+import type { MCPTool } from '@/lib/mcp-types';
 import { getLogger } from '@/lib/logger';
 import type { IAIService } from '@/lib/ai-service/types';
 import { useSettings } from './SettingsContext';
@@ -31,6 +32,7 @@ interface CompletionRequest {
   systemPrompt?: string;
   temperature?: number;
   maxTokens?: number;
+  availableTools?: MCPTool[];
 }
 
 /**
@@ -51,6 +53,12 @@ interface LLMServiceContextValue {
    * Get the current status of a session
    */
   getSessionStatus: (sessionId: string) => SessionStatus;
+
+  /**
+   * Clear streaming message for a session
+   * Called by AgentChatContext after persisting to message stack
+   */
+  clearStreamingMessage: (sessionId: string) => void;
 
   /**
    * Execute a completion request for a session
@@ -138,6 +146,20 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
   );
 
   /**
+   * Clear streaming message for a specific session
+   * This is called by AgentChatContext after persisting the message
+   */
+  const clearStreamingMessage = useCallback((sessionId: string) => {
+    logger.debug('Clearing streaming message', { sessionId });
+
+    setStreamingMessages((prev) => {
+      const next = new Map(prev);
+      next.delete(sessionId);
+      return next;
+    });
+  }, []);
+
+  /**
    * Execute a completion request
    * Streams the response and returns the final message
    */
@@ -151,6 +173,7 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
       systemPrompt?: string,
       temperature?: number,
       maxTokens?: number,
+      availableTools?: MCPTool[],
     ): Promise<Message> => {
       logger.info('Executing completion request', {
         sessionId,
@@ -206,7 +229,7 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
         const streamGenerator = service.streamChat(messages, {
           modelName: model,
           systemPrompt,
-          availableTools: [],
+          availableTools: availableTools || [],
           config,
         });
 
@@ -363,35 +386,92 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
             messages,
             model,
             provider,
-            apiKey,
             systemPrompt,
             temperature,
             maxTokens,
+            availableTools,
           } = event.payload;
+
+          // Always get API key from Settings, ignore any apiKey from Rust backend
+          const finalApiKey =
+            settingsRef.current.serviceConfigs?.[provider as AIServiceProvider]
+              ?.apiKey || '';
 
           logger.debug('Received LLM completion request', {
             sessionId,
             messageCount: messages.length,
+            toolCount: availableTools?.length ?? 0,
+            provider,
+            hasApiKey: !!finalApiKey,
             eventId: event.id, // Track event identity
           });
 
           try {
-            // Execute the completion
+            // Execute the completion with API key from Settings
             const result = await executeCompletionRequest(
               sessionId,
               messages,
               model,
               provider,
-              apiKey,
+              finalApiKey,
               systemPrompt,
               temperature,
               maxTokens,
+              availableTools,
             );
 
             // Send result back to Rust
+            logger.debug('Sending LLM response to Rust', {
+              sessionId,
+              hasToolCalls: !!result.tool_calls,
+              toolCallCount: result.tool_calls?.length ?? 0,
+              toolCalls: result.tool_calls,
+            });
+
+            // Convert to Rust Message format with explicit field mapping
+            // Fixes deserialization issue: threadId doesn't exist in Rust schema
+            // Convert timestamps and map camelCase to snake_case
+            const now = Date.now();
+            const messageForRust = {
+              id: result.id,
+              sessionId: result.sessionId,
+              // threadId removed - not in Rust Message schema
+              role: result.role,
+              content: result.content || [],
+              toolCalls: result.tool_calls || undefined,
+              toolCallId: result.tool_call_id || undefined,
+              isStreaming: result.isStreaming || undefined,
+              thinking: result.thinking || undefined,
+              thinkingSignature: result.thinkingSignature || undefined,
+              assistantId: result.assistantId || undefined,
+              attachments: result.attachments || undefined,
+              toolUse: result.tool_use || undefined,
+              createdAt:
+                result.createdAt instanceof Date
+                  ? result.createdAt.getTime()
+                  : result.createdAt || now,
+              updatedAt:
+                result.updatedAt instanceof Date
+                  ? result.updatedAt.getTime()
+                  : result.updatedAt ||
+                    (result.createdAt instanceof Date
+                      ? result.createdAt.getTime()
+                      : result.createdAt) ||
+                    now,
+              source: result.source || undefined,
+              error: result.error || undefined,
+            };
+
+            logger.debug('Message prepared for Rust', {
+              sessionId,
+              hasToolCalls: !!messageForRust.toolCalls,
+              toolCallCount: messageForRust.toolCalls?.length ?? 0,
+              createdAtType: typeof messageForRust.createdAt,
+            });
+
             await invoke('agent_handle_llm_response', {
               sessionId,
-              assistantMessage: result,
+              assistantMessage: messageForRust,
             });
 
             logger.info('LLM response sent back to Rust', { sessionId });
@@ -431,6 +511,7 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
   const value: LLMServiceContextValue = {
     streamingMessages,
     getSessionStatus,
+    clearStreamingMessage,
     executeCompletionRequest,
   };
 

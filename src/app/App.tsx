@@ -85,7 +85,11 @@ function App() {
                                                 element={<ChatContainer />}
                                               />
                                               <Route
-                                                path="/agent/*"
+                                                path="/agent"
+                                                element={<AgentContainer />}
+                                              />
+                                              <Route
+                                                path="/agent/:sessionId"
                                                 element={<AgentContainer />}
                                               />
                                               <Route

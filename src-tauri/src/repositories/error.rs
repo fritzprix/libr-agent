@@ -18,6 +18,10 @@ pub enum DbError {
     /// Transaction commit or rollback failed
     #[error("Transaction failed: {0}")]
     TransactionFailed(String),
+
+    /// JSON serialization/deserialization failed
+    #[error("Serialization error: {0}")]
+    SerializationError(String),
 }
 
 /// Convert DbError to String for Tauri command compatibility

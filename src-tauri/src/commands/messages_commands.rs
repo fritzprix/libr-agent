@@ -1,3 +1,4 @@
+use crate::agent::types::{MCPContent, ToolCall};
 use crate::repositories::MessageRepository;
 use crate::search::index_storage::{get_index_path, write_index_atomic, IndexData, IndexMetadata};
 use crate::search::message_index::{MessageDocument, MessageSearchEngine, SearchResult};
@@ -6,7 +7,16 @@ use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use std::collections::HashMap;
 use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::command;
+
+/// Default timestamp generator for serde deserialization fallback
+fn default_timestamp() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64
+}
 
 /// Generic pagination wrapper for query results.
 /// This type is shared across all paginated responses in the application.
@@ -23,30 +33,33 @@ pub struct Page<T> {
 
 /// Message data model matching the frontend TypeScript Message interface.
 /// Stores chat messages for sessions with support for various content types.
+/// All fields use structured types - JSON serialization handled in Repository layer.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Message {
     pub id: String,
     pub session_id: String,
     pub role: String,
-    /// Stored as JSON string to support complex content structures (MCPContent[])
-    pub content: String,
-    /// Tool calls stored as JSON string
-    pub tool_calls: Option<String>,
+    /// Structured content array (MCPContent[]) - matches TypeScript
+    pub content: Vec<MCPContent>,
+    /// Tool calls as structured array - matches TypeScript
+    pub tool_calls: Option<Vec<ToolCall>>,
     pub tool_call_id: Option<String>,
     pub is_streaming: Option<bool>,
     pub thinking: Option<String>,
     pub thinking_signature: Option<String>,
     pub assistant_id: Option<String>,
-    /// Attachments stored as JSON string (AttachmentReference[])
-    pub attachments: Option<String>,
-    /// Tool use stored as JSON string
-    pub tool_use: Option<String>,
+    /// Attachments as structured value
+    pub attachments: Option<serde_json::Value>,
+    /// Tool use as structured value
+    pub tool_use: Option<serde_json::Value>,
+    #[serde(default = "default_timestamp")]
     pub created_at: i64, // Unix timestamp in milliseconds
+    #[serde(default = "default_timestamp")]
     pub updated_at: i64, // Unix timestamp in milliseconds
     pub source: Option<String>,
-    /// Error information stored as JSON string
-    pub error: Option<String>,
+    /// Error information as structured value
+    pub error: Option<serde_json::Value>,
 }
 
 // The database layer has been migrated to repositories/message_repository.rs

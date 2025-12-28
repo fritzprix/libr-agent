@@ -89,7 +89,7 @@ export default function AppSidebar() {
                 </Link>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <Link to="/agent/start">
+                <Link to="/agent">
                   <SidebarMenuButton
                     isActive={location.pathname.startsWith('/agent')}
                     tooltip="Start Agent"

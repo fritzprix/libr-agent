@@ -166,6 +166,14 @@ impl MCPServiceProxy {
         self.builtin_servers.len()
     }
 
+    /// Get tools from a specific builtin server
+    pub fn get_builtin_server_tools(&self, server_id: &str) -> Vec<super::types::MCPTool> {
+        self.builtin_servers
+            .get(server_id)
+            .map(|server| server.tools())
+            .unwrap_or_default()
+    }
+
     /// Collect service contexts from all builtin servers
     ///
     /// Iterates through all registered builtin servers and collects their

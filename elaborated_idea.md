@@ -65,9 +65,10 @@ We adopt a **"Dual-Track"** model to ensure 100% stability for existing features
 
 ### 3.2. Data Sovereignty
 
-- **SQLite is King**: All messages are stored in Rust's SQLite (`messages` table).
+- **SQLite is King**: All messages are stored in Rust's SQLite (`messages` table). Acts as the source of truth on app restart and session resume.
 - **Session-Scoped Data**: Built-in tools (Knowledge, Planning, Playbook, etc.) store their data in SQLite with `session_id` foreign keys, ensuring complete isolation between sessions.
 - **IndexedDB Deprecation**: IndexedDB is no longer used for chat history or tool state in V2. Web MCP tools are being migrated to Rust Built-in servers with SQLite persistence.
+- **⚠️ Performance Note**: Current implementation queries SQLite on every LLM request to load conversation history. This is a known bottleneck being addressed in the refactoring plan (see `docs/history/refactoring_20241228_2330.md`).
 
 ### 3.3. LLM Integration (The "Wrap First" Strategy)
 
@@ -75,14 +76,22 @@ Instead of rewriting all LLM logic in Rust immediately:
 
 1.  **Rust** decides _when_ to call the LLM.
 2.  **Rust** emits `llm:request` with the conversation history and config.
+    - ⚠️ **Current Issue**: Loads history from DB on every LLM request (performance bottleneck)
+    - 🔜 **Planned**: Use in-memory cache to eliminate redundant DB queries
 3.  **TS** (`LLMServiceProvider`) receives the event, performs token counting/context pruning, and calls the API.
 4.  **TS** streams the response to the UI (for immediate feedback):
     - During streaming: Updates `streamingMessages` with `isStreaming: true`
     - On completion: Sets `isStreaming: false` to trigger `AgentChatContext` effect
     - Effect adds message to local React state (`setMessages`)
-5.  **TS** sends the final result back to Rust for DB persistence (backup only).
+5.  **TS** sends the final result back to Rust for DB persistence.
 
-**Key Principle**: React maintains the authoritative message stack during workflow execution. Rust's DB serves as persistent backup and initial load source, not real-time UI state.
+**State Management Clarification**:
+
+- **React State** (`AgentChatContext.localMessages`): Authoritative for UI rendering during active workflow. Provides optimistic updates and streaming UX.
+- **Rust In-Memory Cache** (`AgentSession.messages`): **Planned** - Will eliminate DB queries during workflow cycles. Currently missing, causing performance issues.
+- **SQLite Database**: Source of truth on app restart and initial session load. Rust persists messages asynchronously for durability.
+
+**Key Principle**: Both Rust (planned cache) and React (UI state) maintain message stacks for different purposes. Rust cache optimizes LLM context building. React state optimizes UI responsiveness. SQLite ensures data persistence.
 
 ### 3.4. Tool Execution Architecture
 
@@ -341,7 +350,8 @@ sequenceDiagram
         Manager->>DB: Save Assistant Message
         Note right of Manager: Rust saves to DB (backup)
 
-        alt Has Tool Calls? (Condition Check)
+        alt Has Tool Calls AND No UI Resources? (Condition Check)
+            Note right of Manager: Check: hasToolCall(lastMsg) && !hasUIResource(lastMsg)
             Manager->>Manager: Parse Tool Calls
             par Execute Tools
                 Manager->>ProxyMgr: call_tool(sessionId, toolName, args)
@@ -371,8 +381,21 @@ sequenceDiagram
             Note right of UI: React adds tool messages to state
             UI->>UI: setMessages([...prev, ...toolResults])
 
-            Manager->>UI: Emit 'llm:request' (Re-enter cycle with tool results)
-            Note right of Manager: ⚡ Recursive re-entry: Cycle continues
+            alt Tool Result Contains UI Resource?
+                Note right of Manager: 🔍 Check: hasUIResource(toolResult)
+                Note right of Manager: MCPContent::Resource with mimeType: "text/html"
+                Manager->>Manager: Skip re-submit (Auto-Pause)
+                Note right of Manager: ⏸️ Workflow pauses - waiting for UI Action
+                Note right of UI: User interacts with UI Resource (button click)
+                UI->>UI: handleUIAction → executeToolCall
+                UI->>Manager: agent_tool_response(uiActionResult)
+                Note right of Manager: New tool result (no UI Resource) added
+                Manager->>UI: Emit 'llm:request' (Auto-Resume)
+                Note right of Manager: ▶️ Workflow resumes automatically
+            else No UI Resource in Tool Result
+                Manager->>UI: Emit 'llm:request' (Re-enter cycle with tool results)
+                Note right of Manager: ⚡ Recursive re-entry: Cycle continues
+            end
         else No Tool Calls (Termination Condition)
             Manager->>Manager: Workflow Complete
             Note right of Manager: ✅ Cycle terminates naturally
@@ -387,6 +410,46 @@ sequenceDiagram
 
 **Implementation Note**:  
 The diagram shows one cycle iteration. The "loop" is **implicit** - each `handle_llm_response` with tool calls emits `llm:request` **and then returns** (function ends, stack freed), causing TypeScript to call `agent_llm_response` again after LLM completion, creating a new independent invocation. No explicit `while` loop or recursion exists - each cycle is a fresh function call with no stack accumulation.
+
+**UI Resource Auto-Pause/Resume Mechanism**:
+
+**Auto-Pause (Natural Wait State)**:
+
+- After tool execution, Rust checks tool result content for UI Resources
+- **Detection Criteria**: `MCPContent::Resource` with `mimeType: "text/html"` exists
+- **Pause Action**: Skip `request_llm_completion()` call - workflow naturally pauses
+- **No Status Change**: Session remains `Busy` but conditionally idle (no explicit `Paused` status)
+- **UI Indicator**: Frontend renders UI Resource via `MessageRenderer` → `UIResourceRenderer`
+
+**Auto-Resume (UI Action Triggers Continuation)**:
+
+- User interacts with UI Resource (e.g., clicks button in Playbook list)
+- `UIResourceRenderer` sends `postMessage` → `handleUIAction` → `useUnifiedMCP.executeToolCall()`
+- Tool execution adds new tool result message **without UI Resource**
+- Rust detects `hasToolCall(lastMsg) && !hasUIResource(lastMsg)` = true
+- **Resume Action**: Automatically emit `llm:request` - workflow continues
+
+**Helper Function Specification**:
+
+```rust
+/// Check if message content contains UI Resource
+fn has_ui_resource(content: &[MCPContent]) -> bool {
+    content.iter().any(|c| {
+        matches!(c, MCPContent::Resource { resource })
+            && resource.get("mimeType")
+                .and_then(|v| v.as_str())
+                .map_or(false, |mime| mime == "text/html")
+    })
+}
+```
+
+**Key Advantages**:
+
+- ✅ No additional IPC commands needed (`agent_resume_workflow` unnecessary)
+- ✅ No status state management complexity (`Paused` state unused)
+- ✅ UI Action naturally serves as resume trigger
+- ✅ Workflow cycle logic remains simple and conditional
+- ✅ Supports multiple sequential UI Resources automatically
 
 **React State Management (Key Principle from idea.md)**:
 

@@ -318,13 +318,15 @@ export function AgentSessionProvider({ children }: AgentSessionProviderProps) {
 
       try {
         const messageId = `msg_${Date.now()}`; // Temporary ID, backend might generate one
+        const now = new Date();
         const message: Message = {
           id: messageId,
           sessionId: currentSession.id,
           threadId: currentSession.id,
           role: 'user',
           content: [{ type: 'text', text: content }],
-          createdAt: new Date(),
+          createdAt: now,
+          updatedAt: now,
         };
 
         await invoke('agent_send_message', {

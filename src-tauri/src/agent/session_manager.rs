@@ -1,11 +1,17 @@
+use crate::agent::types::{MCPContent, ToolCall};
 use crate::commands::messages_commands::Message;
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::{MessageRepository, SessionMetadata, SessionRepository, SessionStatus};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::SystemTime;
 use tauri::AppHandle;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
+
+/// Maximum number of messages to keep in memory cache (sliding window)
+const MAX_CACHED_MESSAGES: usize = 1000;
 
 /// Tracks the state of pending tool executions for a conversational turn
 #[derive(Debug)]
@@ -25,6 +31,16 @@ pub struct AgentSession {
     pub cancellation_token: CancellationToken,
     /// State of current turn's tool execution
     pub pending_execution: Option<PendingToolExecution>,
+
+    /// In-memory message cache (loaded once on init, updated in-place)
+    /// Thread-safe: Arc allows shared ownership, RwLock allows concurrent reads
+    messages: Arc<RwLock<Vec<Message>>>,
+
+    /// Flag indicating if cache has been initialized from DB
+    cache_initialized: Arc<AtomicBool>,
+
+    /// Last DB sync timestamp (for debugging/monitoring)
+    last_synced_at: Arc<RwLock<Option<SystemTime>>>,
 }
 
 /// Manages agent sessions and their workflows
@@ -99,7 +115,7 @@ impl AgentSessionManager {
             session_id
         );
 
-        // Add to active sessions with cancellation token
+        // Add to active sessions with cancellation token and empty cache
         let mut active = self.active_sessions.write().await;
         active.insert(
             session_id.clone(),
@@ -108,6 +124,9 @@ impl AgentSessionManager {
                 is_running: false,
                 cancellation_token: CancellationToken::new(),
                 pending_execution: None,
+                messages: Arc::new(RwLock::new(Vec::new())),
+                cache_initialized: Arc::new(AtomicBool::new(false)),
+                last_synced_at: Arc::new(RwLock::new(None)),
             },
         );
 
@@ -139,15 +158,61 @@ impl AgentSessionManager {
         let event = crate::agent::events::AgentEvent::WorkflowStarted {
             session_id: session_id.clone(),
         };
-        crate::agent::events::emit_agent_event(&self.app_handle, event)
-            .map_err(|e| format!("Failed to emit event: {}", e))?;
+        log::info!("Emitting WorkflowStarted event for session: {}", session_id);
+        match crate::agent::events::emit_agent_event(&self.app_handle, event) {
+            Ok(()) => log::info!("✅ WorkflowStarted event emitted successfully"),
+            Err(e) => {
+                log::error!("❌ Failed to emit WorkflowStarted event: {}", e);
+                return Err(format!("Failed to emit event: {}", e));
+            }
+        }
 
-        // Save user message to database
-        let message_repo = crate::state::get_message_repository();
-        message_repo
-            .insert(&user_message)
-            .await
-            .map_err(|e| format!("Failed to save message: {}", e))?;
+        // Ensure cache is initialized before workflow
+        self.ensure_cache_initialized(&session_id).await?;
+
+        // 1. Add user message to in-memory cache FIRST (immediate, non-blocking)
+        {
+            let sessions = self.active_sessions.read().await;
+            let session = sessions
+                .get(&session_id)
+                .ok_or_else(|| format!("Session not found: {}", session_id))?;
+
+            let mut messages = session.messages.write().await;
+            messages.push(user_message.clone());
+
+            // Apply sliding window policy
+            if messages.len() > MAX_CACHED_MESSAGES {
+                let removed = messages.remove(0);
+                log::debug!(
+                    "Sliding window: evicted oldest message {} from session {}",
+                    removed.id,
+                    session_id
+                );
+            }
+        } // Lock released
+
+        // 2. Emit UI event (immediate)
+        let message_added_event = crate::agent::events::AgentEvent::MessageAdded {
+            session_id: session_id.clone(),
+            message: Box::new(user_message.clone()),
+        };
+        crate::agent::events::emit_agent_event(&self.app_handle, message_added_event)
+            .map_err(|e| format!("Failed to emit MessageAdded event: {}", e))?;
+
+        // 3. Persist to DB asynchronously (fire-and-forget)
+        let msg_for_db = user_message.clone();
+        let sid_for_db = session_id.clone();
+        tokio::spawn(async move {
+            let repo = crate::state::get_message_repository();
+            if let Err(e) = repo.insert(&msg_for_db).await {
+                log::error!(
+                    "Failed to save user message to DB: session={}, msg_id={}, error={}",
+                    sid_for_db,
+                    msg_for_db.id,
+                    e
+                );
+            }
+        });
 
         log::info!(
             "Started workflow for session: {} with message: {}",
@@ -155,8 +220,7 @@ impl AgentSessionManager {
             user_message.id
         );
 
-        // Emit LLM completion request to frontend (LLMServiceProvider)
-        // The frontend will handle the LLM streaming and send back the response via agent_handle_llm_response
+        // 4. Request LLM completion with cached messages (no DB query)
         self.request_llm_completion(session_id.clone()).await?;
 
         Ok(())
@@ -179,21 +243,66 @@ impl AgentSessionManager {
             }
         }
 
-        // Save assistant message to database
-        let message_repo = crate::state::get_message_repository();
-        message_repo
-            .insert(&assistant_message)
-            .await
-            .map_err(|e| format!("Failed to save assistant message: {}", e))?;
+        // 1. Add assistant message to cache
+        {
+            let sessions = self.active_sessions.read().await;
+            if let Some(session) = sessions.get(&session_id) {
+                let mut messages = session.messages.write().await;
+                messages.push(assistant_message.clone());
 
-        // Parse tool calls if present
-        let tool_calls: Vec<crate::agent::types::ToolCall> =
-            if let Some(tool_calls_json) = &assistant_message.tool_calls {
-                serde_json::from_str(tool_calls_json)
-                    .map_err(|e| format!("Failed to parse tool calls: {}", e))?
-            } else {
-                Vec::new()
-            };
+                // Apply sliding window
+                if messages.len() > MAX_CACHED_MESSAGES {
+                    let removed = messages.remove(0);
+                    log::debug!("Sliding window: evicted message {}", removed.id);
+                }
+            }
+        }
+
+        // 2. Emit MessageAdded event
+        let message_added_event = crate::agent::events::AgentEvent::MessageAdded {
+            session_id: session_id.clone(),
+            message: Box::new(assistant_message.clone()),
+        };
+        crate::agent::events::emit_agent_event(&self.app_handle, message_added_event)
+            .map_err(|e| format!("Failed to emit MessageAdded event: {}", e))?;
+
+        // 3. Persist to DB asynchronously
+        let msg_for_db = assistant_message.clone();
+        let sid_for_db = session_id.clone();
+        tokio::spawn(async move {
+            let repo = crate::state::get_message_repository();
+            if let Err(e) = repo.insert(&msg_for_db).await {
+                log::error!(
+                    "Failed to save assistant message to DB: session={}, msg_id={}, error={}",
+                    sid_for_db,
+                    msg_for_db.id,
+                    e
+                );
+            }
+        });
+
+        // Parse tool calls if present (now directly available as Vec<ToolCall>)
+        let tool_calls: Vec<ToolCall> = if let Some(tool_calls_vec) = &assistant_message.tool_calls
+        {
+            log::debug!(
+                "Processing {} tool calls for session {}",
+                tool_calls_vec.len(),
+                session_id
+            );
+            tool_calls_vec.clone()
+        } else {
+            log::info!(
+                "No tool calls in assistant message for session {}",
+                session_id
+            );
+            Vec::new()
+        };
+
+        log::info!(
+            "Tool call processing for session {}: {} tool calls found",
+            session_id,
+            tool_calls.len()
+        );
 
         if tool_calls.is_empty() {
             // No tools to execute, workflow is complete for this turn
@@ -503,6 +612,9 @@ impl AgentSessionManager {
                         is_running: false,
                         cancellation_token: CancellationToken::new(),
                         pending_execution: None,
+                        messages: Arc::new(RwLock::new(Vec::new())),
+                        cache_initialized: Arc::new(AtomicBool::new(false)),
+                        last_synced_at: Arc::new(RwLock::new(None)),
                     },
                 );
                 drop(active); // Release lock early
@@ -548,6 +660,62 @@ impl AgentSessionManager {
         }
 
         log::info!("Resumed workflow for session: {}", session_id);
+        Ok(())
+    }
+
+    /// Load messages from DB into in-memory cache (called once per session)
+    ///
+    /// This method should be called:
+    /// 1. When resuming an existing session
+    /// 2. When starting a workflow for a session with no cached messages
+    ///
+    /// # Performance
+    /// - Single DB query (page size 1000)
+    /// - O(n) memory allocation for Vec<Message>
+    /// - Runs synchronously to ensure cache ready before workflow starts
+    pub async fn init_session_with_messages(&self, session_id: &str) -> Result<(), String> {
+        let message_repo = crate::state::get_message_repository();
+
+        // Load last 1000 messages from DB (one-time operation)
+        let page = message_repo
+            .get_page(session_id, 1, MAX_CACHED_MESSAGES)
+            .await
+            .map_err(|e| format!("Failed to load messages for session {}: {}", session_id, e))?;
+
+        let loaded_count = page.items.len();
+
+        // Populate in-memory cache
+        let sessions = self.active_sessions.read().await;
+        if let Some(session) = sessions.get(session_id) {
+            let mut messages = session.messages.write().await;
+            *messages = page.items; // Replace with DB data
+
+            let mut synced_at = session.last_synced_at.write().await;
+            *synced_at = Some(SystemTime::now());
+
+            session.cache_initialized.store(true, Ordering::Release);
+
+            log::info!(
+                "Initialized session cache: session={}, messages_loaded={}",
+                session_id,
+                loaded_count
+            );
+        } else {
+            return Err(format!("Session not found: {}", session_id));
+        }
+
+        Ok(())
+    }
+
+    /// Ensure cache is initialized before workflow starts (lazy initialization)
+    async fn ensure_cache_initialized(&self, session_id: &str) -> Result<(), String> {
+        let sessions = self.active_sessions.read().await;
+        if let Some(session) = sessions.get(session_id) {
+            if !session.cache_initialized.load(Ordering::Acquire) {
+                drop(sessions); // Release read lock before calling init
+                self.init_session_with_messages(session_id).await?;
+            }
+        }
         Ok(())
     }
 
@@ -686,16 +854,132 @@ impl AgentSessionManager {
                 session_id
             );
 
-            // 1. Save all tool messages to DB
-            let message_repo = crate::state::get_message_repository();
-            for msg in accumulated_messages {
-                message_repo
-                    .insert(&msg)
-                    .await
-                    .map_err(|e| format!("Failed to save tool message: {}", e))?;
+            // 1. Add tool result messages to in-memory cache
+            {
+                let sessions = self.active_sessions.read().await;
+                if let Some(session) = sessions.get(&session_id) {
+                    let mut messages = session.messages.write().await;
+
+                    log::info!(
+                        "Adding {} tool result messages to cache for session {}",
+                        accumulated_messages.len(),
+                        session_id
+                    );
+
+                    for (idx, msg) in accumulated_messages.iter().enumerate() {
+                        log::debug!(
+                            "Tool result {}/{}: id={}, role={}, tool_call_id={:?}",
+                            idx + 1,
+                            accumulated_messages.len(),
+                            msg.id,
+                            msg.role,
+                            msg.tool_call_id
+                        );
+
+                        messages.push(msg.clone());
+
+                        // Apply sliding window per message
+                        if messages.len() > MAX_CACHED_MESSAGES {
+                            let removed = messages.remove(0);
+                            log::debug!(
+                                "Sliding window: evicted message {} from session {}",
+                                removed.id,
+                                session_id
+                            );
+                        }
+                    }
+
+                    log::info!(
+                        "Cache updated: session {} now has {} total messages",
+                        session_id,
+                        messages.len()
+                    );
+                }
             }
 
-            // 2. Recursively call LLM completion
+            // 2. Emit UI events for each tool result
+            log::info!(
+                "Emitting {} MessageAdded events for tool results in session {}",
+                accumulated_messages.len(),
+                session_id
+            );
+
+            for (idx, msg) in accumulated_messages.iter().enumerate() {
+                log::debug!(
+                    "Creating MessageAdded event {}/{}: msg_id={}",
+                    idx + 1,
+                    accumulated_messages.len(),
+                    msg.id
+                );
+
+                let event = crate::agent::events::AgentEvent::MessageAdded {
+                    session_id: session_id.clone(),
+                    message: Box::new(msg.clone()),
+                };
+
+                match crate::agent::events::emit_agent_event(&self.app_handle, event) {
+                    Ok(()) => {
+                        log::info!(
+                            "✅ MessageAdded event emitted successfully: msg_id={}, tool_call_id={:?}",
+                            msg.id,
+                            msg.tool_call_id
+                        );
+                    }
+                    Err(e) => {
+                        log::error!(
+                            "❌ Failed to emit MessageAdded event: msg_id={}, error={}",
+                            msg.id,
+                            e
+                        );
+                    }
+                }
+            }
+
+            // 3. Persist to DB asynchronously (bulk insert)
+            let msgs_for_db = accumulated_messages.clone();
+            let sid_for_db = session_id.clone();
+            log::info!(
+                "Spawning async task to persist {} tool result messages to DB for session {}",
+                msgs_for_db.len(),
+                sid_for_db
+            );
+
+            tokio::spawn(async move {
+                let repo = crate::state::get_message_repository();
+                let mut success_count = 0;
+                let mut error_count = 0;
+
+                for msg in msgs_for_db {
+                    match repo.insert(&msg).await {
+                        Ok(()) => {
+                            success_count += 1;
+                            log::debug!(
+                                "Tool result persisted to DB: session={}, msg_id={}",
+                                sid_for_db,
+                                msg.id
+                            );
+                        }
+                        Err(e) => {
+                            error_count += 1;
+                            log::error!(
+                                "Failed to save tool result to DB: session={}, msg_id={}, error={}",
+                                sid_for_db,
+                                msg.id,
+                                e
+                            );
+                        }
+                    }
+                }
+
+                log::info!(
+                    "DB persistence complete for session {}: {} succeeded, {} failed",
+                    sid_for_db,
+                    success_count,
+                    error_count
+                );
+            });
+
+            // 4. Request next LLM completion with updated cache
             // The LLM will see the assistant's tool calls and the subsequent tool results
             self.request_llm_completion(session_id).await?;
         }
@@ -764,19 +1048,127 @@ impl AgentSessionManager {
         Ok(parts.join("\n"))
     }
 
+    /// Collect available tools for a session based on agent configuration
+    ///
+    /// This method filters tools according to the agent's settings:
+    /// - Builtin tools: filtered by `allowed_built_in_service_aliases`
+    /// - External MCP tools: filtered by `mcp_server_ids`
+    ///
+    /// # Arguments
+    /// * `session_id` - The session identifier
+    /// * `agent_config` - The agent configuration with allowed tools
+    ///
+    /// # Returns
+    /// A vector of MCPTool definitions allowed for this agent
+    async fn collect_available_tools(
+        &self,
+        session_id: &str,
+        agent_config: &crate::agent::AgentConfig,
+    ) -> Result<Vec<crate::mcp::types::MCPTool>, String> {
+        let mut all_tools = Vec::new();
+
+        // Get session proxy
+        if let Some(proxy) = self.proxy_manager.get_proxy(session_id).await {
+            // 1. Collect builtin tools (already filtered by extract_builtin_tool_ids during proxy creation)
+            let builtin_tool_ids = proxy.builtin_tool_ids();
+
+            log::debug!(
+                "Session {} has {} builtin tool IDs configured",
+                session_id,
+                builtin_tool_ids.len()
+            );
+
+            // Get tools from each builtin server via the global MCP manager
+            for tool_id in builtin_tool_ids {
+                let server_tools = proxy.get_builtin_server_tools(&tool_id);
+                log::debug!(
+                    "Builtin server '{}' provides {} tools",
+                    tool_id,
+                    server_tools.len()
+                );
+                all_tools.extend(server_tools);
+            }
+
+            log::info!(
+                "Collected {} builtin tools for session {}",
+                all_tools.len(),
+                session_id
+            );
+        } else {
+            log::warn!(
+                "No proxy found for session {}, cannot collect builtin tools",
+                session_id
+            );
+        }
+
+        // 2. Collect external MCP tools (filtered by agent config)
+        if !agent_config.mcp_server_ids.is_empty() {
+            log::debug!(
+                "Agent config allows {} external MCP servers",
+                agent_config.mcp_server_ids.len()
+            );
+
+            // Get all external tools through public API
+            let external_tools = self
+                .proxy_manager
+                .list_all_external_tools()
+                .await
+                .unwrap_or_default();
+
+            // Filter by allowed server IDs
+            // Tool names from external servers are formatted as: server_name__tool_name
+            let filtered_external_tools: Vec<_> = external_tools
+                .into_iter()
+                .filter(|tool| {
+                    // Extract server name from tool name
+                    if let Some(server_name) = tool.name.split("__").next() {
+                        agent_config
+                            .mcp_server_ids
+                            .contains(&server_name.to_string())
+                    } else {
+                        false
+                    }
+                })
+                .collect();
+
+            log::info!(
+                "Collected {} external MCP tools (filtered by allowed servers) for session {}",
+                filtered_external_tools.len(),
+                session_id
+            );
+
+            all_tools.extend(filtered_external_tools);
+        }
+
+        log::info!(
+            "Total tools available for session {}: {} tools",
+            session_id,
+            all_tools.len()
+        );
+
+        Ok(all_tools)
+    }
+
     /// Request LLM completion from frontend
     async fn request_llm_completion(&self, session_id: String) -> Result<(), String> {
         use tauri::Emitter;
 
-        // Get all messages in the session for context
-        let message_repo = crate::state::get_message_repository();
-        // Get first page with large page size to get all messages
-        let page = message_repo
-            .get_page(&session_id, 1, 1000)
-            .await
-            .map_err(|e| format!("Failed to get session messages: {}", e))?;
+        // ✅ Read messages from in-memory cache (zero DB query)
+        let messages = {
+            let sessions = self.active_sessions.read().await;
+            let session = sessions
+                .get(&session_id)
+                .ok_or_else(|| format!("Session not found: {}", session_id))?;
 
-        let messages = page.items;
+            let messages_lock = session.messages.read().await;
+            messages_lock.clone() // Clone to release lock quickly
+        };
+
+        log::debug!(
+            "Requesting LLM completion: session={}, messages_count={} (from cache)",
+            session_id,
+            messages.len()
+        );
 
         // Get agent config from session metadata (REQUIRED - no fallback)
         let active = self.active_sessions.read().await;
@@ -791,6 +1183,9 @@ impl AgentSessionManager {
             .ok_or_else(|| "Agent configuration is required but not found".to_string())
             .and_then(|json| crate::agent::AgentConfig::from_json(json))?;
 
+        // Clone agent_config BEFORE extracting fields to avoid partial move
+        let agent_config_clone = agent_config.clone();
+
         let model = agent_config.model;
         let provider = agent_config.provider;
         let temperature = Some(agent_config.temperature);
@@ -800,6 +1195,12 @@ impl AgentSessionManager {
 
         // Build complete system prompt (agent base + service contexts)
         let system_prompt = Some(self.build_system_prompt(&session_id).await?);
+
+        // Collect available tools (filtered by agent configuration)
+        let available_tools = self
+            .collect_available_tools(&session_id, &agent_config_clone)
+            .await
+            .ok();
 
         // Emit llm:completion-request event to frontend
         #[derive(Clone, serde::Serialize)]
@@ -812,6 +1213,7 @@ impl AgentSessionManager {
             system_prompt: Option<String>,
             temperature: Option<f32>,
             max_tokens: Option<u32>,
+            available_tools: Option<Vec<crate::mcp::types::MCPTool>>,
         }
 
         let request = CompletionRequest {
@@ -822,6 +1224,7 @@ impl AgentSessionManager {
             system_prompt,
             temperature,
             max_tokens,
+            available_tools,
         };
 
         self.app_handle
@@ -841,12 +1244,15 @@ impl AgentSessionManager {
     ) -> Message {
         let now = chrono::Utc::now().timestamp_millis();
 
+        // Wrap plain string content in MCPContent::Text for type safety
+        let content_array = vec![MCPContent::Text { text: content }];
+
         Message {
             id: uuid::Uuid::new_v4().to_string(),
             session_id: session_id.to_string(),
             role: "tool".to_string(),
             tool_call_id: Some(tool_call_id.to_string()),
-            content,
+            content: content_array,
             tool_calls: None,
             is_streaming: Some(false),
             thinking: None,
@@ -869,12 +1275,17 @@ impl AgentSessionManager {
     ) -> Message {
         let now = chrono::Utc::now().timestamp_millis();
 
+        // Wrap error message in MCPContent::Text for type safety
+        let content_array = vec![MCPContent::Text {
+            text: format!("Error: {}", error_message),
+        }];
+
         Message {
             id: uuid::Uuid::new_v4().to_string(),
             session_id: session_id.to_string(),
             role: "tool".to_string(),
             tool_call_id: Some(tool_call_id.to_string()),
-            content: format!("Error: {}", error_message),
+            content: content_array,
             tool_calls: None,
             is_streaming: Some(false),
             thinking: None,

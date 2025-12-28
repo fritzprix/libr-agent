@@ -128,7 +128,8 @@
   ...
   useAgentSession -> AgentSessionManager: pushMessage(newMessage)
   AgentSessionManager -> Database: upsert(newMessage)
-  alt hasToolCall(newMessage) === true
+  alt hasToolCall(newMessage) && !hasUIResource(newMessage)
+  note right: UI Resource 감지 시 자동 멈춤 (사용자 상호작용 대기)
   AgentSessionManager --> AgentSessionManager: extractToolCalls(newMessage)
   loop toolCalls
   AgentSessionManager -> MCPServiceProxyManager: call_tool()
@@ -136,14 +137,99 @@
   MCPServiceProxyManager -> MCPServiceProxy: call_tool()
   MCPServiceProxyManager --> AgentSessionManager: toolResult
   AgentSessionManager --> AgentSessionManager: pushMessage(convertMessage(toolResult))
+  alt hasUIResource(toolResult)
+  note right: 🔍 Tool Result에 UI Resource 포함 (mimeType: "text/html")
+  AgentSessionManager --> AgentSessionManager: skip re-submit (자동 멈춤)
+  note right: ⏸️ 사용자가 UI에서 버튼 클릭 등 상호작용 대기
+  User -> UI: click button in UI Resource
+  UI -> AgentSessionManager: handleUIAction → executeToolCall
+  note right: UI Action이 새 Tool Result 생성 (UI Resource 없음)
+  AgentSessionManager -> useAgentSession: submit(messages, llmConfig)
+  note right: ▶️ 조건 충족 (hasToolCall && !hasUIResource) → 자동 재개
   end
-  note right: multiple tool calls will follow
+  end
+  note right: Tool Call 완료 후 조건부 re-submit
   end
   AgentSessionManager -> useAgentSession: submit(messages, llmConfig)
   useAgentSession --> useAgentSession: updateMessage(messages)
   ...
   @enduml
   ```
+
+### UI Resource 기반 자동 멈춤/재개 메커니즘
+
+#### 핵심 원리
+
+**조건부 Re-Submit 로직:**
+
+```
+if (hasToolCall(lastMessage) && !hasUIResource(lastMessage)) {
+    request_llm_completion(); // Workflow 계속
+} else {
+    // Workflow 자연스럽게 멈춤 (사용자 상호작용 대기)
+}
+```
+
+#### Auto-Pause (자동 멈춤)
+
+- **감지 조건**: Tool Result 메시지가 UI Resource를 포함
+  - `MCPContent::Resource` 타입
+  - `mimeType: "text/html"` 속성
+- **동작**: `!hasUIResource()` = false → re-submit 건너뜀
+- **상태**: Session은 `Busy` 상태 유지 (조건부 대기)
+- **UI**: MessageRenderer가 UIResourceRenderer를 통해 HTML 렌더링
+
+#### Auto-Resume (자동 재개)
+
+- **트리거**: 사용자가 UI Resource와 상호작용 (버튼 클릭 등)
+- **흐름**:
+  1. `UIResourceRenderer` → `postMessage` 이벤트
+  2. `handleUIAction` → `useUnifiedMCP.executeToolCall()`
+  3. Tool 실행 → Tool Result 메시지 추가 (UI Resource 없음)
+  4. `hasToolCall(lastMsg) && !hasUIResource(lastMsg)` = true
+  5. 자동으로 `request_llm_completion()` 호출
+- **결과**: Workflow 자연스럽게 재개
+
+#### 장점
+
+- ✅ **단순성**: 별도의 IPC 명령 불필요 (`agent_resume_workflow` 없음)
+- ✅ **자연스러움**: UI Action 자체가 resume 트리거
+- ✅ **상태 관리 간소화**: `Paused` 상태 불필요
+- ✅ **다중 UI Resource 지원**: 연속된 UI Resource도 자동 처리
+- ✅ **에러 처리 일관성**: Tool 실행 실패도 동일한 조건 로직으로 처리
+
+#### 구현 예시
+
+**Rust (AgentSessionManager)**:
+
+```rust
+// Tool Result 저장 후 조건 체크
+let last_message = self.get_last_message(&session_id).await?;
+
+if has_tool_calls(&last_message) && !has_ui_resource(&last_message) {
+    // Workflow 계속 - LLM에 Tool Result 전달
+    self.request_llm_completion(session_id).await?;
+} else if has_ui_resource(&last_message) {
+    // 자동 멈춤 - 사용자 상호작용 대기
+    // (아무 작업 안 함 - 조건부 idle)
+} else {
+    // Tool Call 없음 - Workflow 완료
+    self.update_session_status(&session_id, SessionStatus::Idle).await?;
+}
+```
+
+**Helper Function**:
+
+```rust
+fn has_ui_resource(message: &Message) -> bool {
+    message.content.iter().any(|content| {
+        matches!(content, MCPContent::Resource { resource })
+            && resource.get("mimeType")
+                .and_then(|v| v.as_str())
+                .map_or(false, |mime| mime == "text/html")
+    })
+}
+```
 
 ### 요구사항
 

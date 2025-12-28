@@ -390,6 +390,13 @@ impl MCPServiceProxyManager {
         self.proxies.read().await.keys().cloned().collect()
     }
 
+    /// List tools from all external MCP servers
+    ///
+    /// This is a convenience method to access external_mcp_manager functionality
+    pub async fn list_all_external_tools(&self) -> anyhow::Result<Vec<super::types::MCPTool>> {
+        self.external_mcp_manager.list_all_tools().await
+    }
+
     /// Start the background cleanup task for idle process management
     ///
     /// This task runs periodically to clean up idle MCP server processes

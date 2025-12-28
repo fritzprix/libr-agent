@@ -12,10 +12,7 @@ import { useAgentSessionState } from './AgentSessionContext';
 import { useLLMService } from './LLMServiceContext';
 import { getLogger } from '../lib/logger';
 import type { Message } from '@/models/chat';
-import {
-  getMessagesPageForSession,
-  deleteMessage,
-} from '@/lib/backend/messages';
+import { deleteMessage } from '@/lib/backend/messages';
 
 const logger = getLogger('AgentChatContext');
 
@@ -38,6 +35,7 @@ interface AgentChatStateContextValue {
   isLoading: boolean;
   messages: Message[];
   error: string | null;
+  llmError: string | null;
   workflowStatus: 'idle' | 'busy' | 'paused' | 'error';
 }
 
@@ -84,15 +82,39 @@ interface AgentChatProviderProps {
  * - Simple submit → delegate to backend → listen for events
  */
 export function AgentChatProvider({ children }: AgentChatProviderProps) {
-  const { currentSession } = useAgentSessionState();
-  const { streamingMessages } = useLLMService();
+  const { currentSession, messages: sessionMessages } = useAgentSessionState();
+  const { streamingMessages, clearStreamingMessage } = useLLMService();
 
-  const [messages, setMessages] = useState<Message[]>([]);
+  // Local messages state synchronized with session messages
+  // Updated through: 1) sessionMessages sync, 2) optimistic updates, 3) agent:event
+  const [localMessages, setLocalMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [llmError, setLlmError] = useState<string | null>(null);
   const [workflowStatus, setWorkflowStatus] = useState<
     'idle' | 'busy' | 'paused' | 'error'
   >('idle');
+
+  /**
+   * Sync local messages with session messages (from resumeSession)
+   * This happens only when sessionMessages changes (initial load)
+   */
+  useEffect(() => {
+    logger.debug('Syncing local messages with session messages', {
+      sessionId: currentSession?.id,
+      sessionMessageCount: sessionMessages?.length ?? 0,
+    });
+    setLocalMessages(sessionMessages || []);
+  }, [sessionMessages, currentSession?.id]);
+
+  /**
+   * Extract streaming message for current session
+   * Memoized to prevent unnecessary effect re-runs
+   */
+  const currentStreamingMessage = useMemo(() => {
+    if (!currentSession?.id) return undefined;
+    return streamingMessages.get(currentSession.id);
+  }, [currentSession?.id, streamingMessages]);
 
   /**
    * Merge persisted messages with streaming messages from LLMServiceContext
@@ -101,103 +123,61 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
   const displayMessages = useMemo(() => {
     if (!currentSession?.id) return [];
 
-    const streamingMessage = streamingMessages.get(currentSession.id);
-
     // If there's a streaming message that's not yet in persisted messages
-    if (streamingMessage?.id) {
-      const existsInMessages = messages.some(
-        (m) => m.id === streamingMessage.id,
+    if (currentStreamingMessage?.id) {
+      const existsInMessages = localMessages.some(
+        (m) => m.id === currentStreamingMessage.id,
       );
       if (!existsInMessages) {
         // Show streaming message alongside persisted messages
-        return [...messages, streamingMessage as Message];
+        return [...localMessages, currentStreamingMessage as Message];
       }
     }
 
     // Return persisted messages only
-    return messages;
-  }, [messages, streamingMessages, currentSession?.id]);
-
-  /**
-   * When streaming completes (isStreaming: false), add the message to persisted state
-   * This implements idea.md: "useAgentSession -> useAgentSession: updateMessage(messages)"
-   */
-  useEffect(() => {
-    if (!currentSession?.id) return;
-
-    const streamingMessage = streamingMessages.get(currentSession.id);
-
-    // Only add when streaming is explicitly completed (isStreaming: false)
-    if (streamingMessage?.id && streamingMessage.isStreaming === false) {
-      // Check if already in messages
-      const existsInMessages = messages.some(
-        (m) => m.id === streamingMessage.id,
-      );
-
-      if (!existsInMessages) {
-        // Add to messages array (React owns the state per idea.md)
-        logger.info('Adding completed streaming message to persisted state', {
-          messageId: streamingMessage.id,
-          sessionId: currentSession.id,
-          hasToolCalls: !!streamingMessage.tool_calls?.length,
-        });
-
-        setMessages((prev) => [...prev, streamingMessage as Message]);
-      }
-    }
-  }, [streamingMessages, currentSession?.id, messages]);
-
-  /**
-   * Load messages from Rust SQLite when session changes
-   */
-  useEffect(() => {
-    if (!currentSession?.id) {
-      setMessages([]);
-      return;
-    }
-
-    const loadMessages = async () => {
-      try {
-        const page = await getMessagesPageForSession(
-          currentSession.id,
-          currentSession.id, // threadId = sessionId for top-level thread
-          1,
-          1000,
-        );
-        setMessages(page.items);
-      } catch (err) {
-        logger.error('Failed to load messages', err);
-        setError(err instanceof Error ? err.message : String(err));
-      }
-    };
-
-    loadMessages();
-  }, [currentSession?.id]);
+    return localMessages;
+  }, [localMessages, currentStreamingMessage, currentSession?.id]);
 
   /**
    * Detect streaming completion and persist to React state
    * Implements idea.md architecture: "React owns the message stack"
    */
   useEffect(() => {
-    if (!currentSession?.id) return;
+    if (!currentSession?.id || !currentStreamingMessage) return;
 
-    const streamingMsg = streamingMessages.get(currentSession.id);
+    // Only process when streaming explicitly completes
+    if (currentStreamingMessage.isStreaming === false) {
+      const messageId = currentStreamingMessage.id;
 
-    // Check if streaming just completed (isStreaming: false)
-    if (streamingMsg && streamingMsg.isStreaming === false) {
-      logger.debug('Streaming completed, persisting message', {
+      // Guard: Skip if already in messages (race condition protection)
+      const exists = localMessages.some((m) => m.id === messageId);
+      if (exists) {
+        logger.debug('Message already in stack, clearing streaming state', {
+          sessionId: currentSession.id,
+          messageId,
+        });
+        clearStreamingMessage(currentSession.id);
+        return;
+      }
+
+      logger.info('Streaming completed, persisting message', {
         sessionId: currentSession.id,
-        messageId: streamingMsg.id,
+        messageId,
+        hasToolCalls: !!currentStreamingMessage.tool_calls?.length,
       });
 
-      // Add to messages if not already present
-      setMessages((prev) => {
-        const exists = prev.some((m) => m.id === streamingMsg.id);
-        if (exists) return prev;
-        return [...prev, streamingMsg as Message];
-      });
+      // Add to message stack
+      setLocalMessages((prev) => [...prev, currentStreamingMessage as Message]);
+
+      // Clear streaming state to prevent duplicate display
+      clearStreamingMessage(currentSession.id);
     }
-  }, [currentSession?.id, streamingMessages]);
+  }, [
+    currentStreamingMessage,
+    currentSession?.id,
+    clearStreamingMessage,
+    localMessages,
+  ]);
 
   /**
    * Listen for agent events from Rust backend
@@ -218,18 +198,34 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
         async (event) => {
           const payload = event.payload;
           const eventType = payload.type as string;
-          const sessionId = payload.session_id as string;
+          // Rust uses camelCase serialization (serde rename_all = "camelCase")
+          const sessionId = (payload.sessionId || payload.session_id) as string;
+
+          logger.info('🎯 Agent event received (BEFORE session filter)', {
+            eventType,
+            payloadSessionId: sessionId,
+            currentSessionId: currentSession.id,
+            allPayloadKeys: Object.keys(payload),
+          });
 
           // Only process events for current session
-          if (sessionId !== currentSession.id) return;
+          if (sessionId !== currentSession.id) {
+            logger.warn('⚠️ Event session ID mismatch, ignoring event', {
+              eventSessionId: sessionId,
+              currentSessionId: currentSession.id,
+              eventType,
+            });
+            return;
+          }
 
-          logger.debug('Received agent event', {
+          logger.debug('Received agent event (AFTER session filter)', {
             sessionId,
             eventType,
           });
 
           // Handle different event types
-          if (eventType === 'StatusChanged') {
+          // IMPORTANT: Rust serde uses camelCase (StatusChanged → statusChanged)
+          if (eventType === 'statusChanged') {
             const status = payload.status as SessionStatus;
             if (status === 'Idle') {
               setWorkflowStatus('idle');
@@ -241,34 +237,98 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
               setWorkflowStatus('paused');
               setIsLoading(false);
             }
-          } else if (eventType === 'WorkflowError') {
+          } else if (eventType === 'workflowError') {
             setWorkflowStatus('error');
             setIsLoading(false);
-            setError((payload.error as string) ?? 'Unknown error');
-          } else if (eventType === 'MessageAdded') {
-            // ✅ Handle tool result messages from Rust
-            const newMessage = payload.message as Message;
+            const errorMsg = (payload.error as string) ?? 'Unknown error';
 
-            logger.debug('MessageAdded event received', {
+            // Distinguish LLM errors from workflow errors
+            if (
+              errorMsg.includes('invalid type:') ||
+              errorMsg.includes('expected i64') ||
+              errorMsg.includes('LLM')
+            ) {
+              setLlmError(errorMsg);
+              logger.error('LLM error detected', { error: errorMsg });
+            } else {
+              setError(errorMsg);
+            }
+          } else if (eventType === 'messageAdded') {
+            logger.info('📨 MessageAdded event received from Rust', {
+              sessionId: currentSession.id,
+              hasPayload: !!payload.message,
+              payloadKeys: payload.message ? Object.keys(payload.message) : [],
+            });
+
+            // ✅ Handle messages from Rust (includes full message object)
+            const rawMessage = payload.message as Record<string, unknown>;
+
+            if (!rawMessage) {
+              logger.warn('MessageAdded event missing payload', { payload });
+              return;
+            }
+
+            logger.debug('Raw message received', {
+              id: rawMessage.id,
+              role: rawMessage.role,
+              toolCallId: rawMessage.toolCallId || rawMessage.tool_call_id,
+              contentLength: (rawMessage.content as unknown[])?.length,
+            });
+
+            // Normalize field names (defensive, serde should handle camelCase conversion)
+            // Rust's serde(rename_all = "camelCase") should already convert fields
+            const newMessage: Message = {
+              ...(rawMessage as unknown as Message),
+              sessionId: (rawMessage.sessionId ||
+                rawMessage.session_id) as string,
+              tool_calls: rawMessage.toolCalls || rawMessage.tool_calls,
+              tool_call_id: (rawMessage.toolCallId ||
+                rawMessage.tool_call_id) as string | undefined,
+              tool_use: rawMessage.toolUse || rawMessage.tool_use,
+              is_streaming: rawMessage.isStreaming ?? rawMessage.is_streaming,
+              thinking_signature: (rawMessage.thinkingSignature ||
+                rawMessage.thinking_signature) as string | undefined,
+              assistant_id: (rawMessage.assistantId ||
+                rawMessage.assistant_id) as string | undefined,
+              created_at: rawMessage.createdAt || rawMessage.created_at,
+              updated_at: rawMessage.updatedAt || rawMessage.updated_at,
+            } as Message;
+
+            logger.info('Message normalized', {
               sessionId: currentSession.id,
               messageId: newMessage.id,
               role: newMessage.role,
+              toolCallId: newMessage.tool_call_id,
             });
 
-            // Add to messages if not already present
-            setMessages((prev) => {
+            // Add to messages if not already present (deduplication)
+            setLocalMessages((prev) => {
               const exists = prev.some((m) => m.id === newMessage.id);
-              if (exists) return prev;
+              if (exists) {
+                logger.warn('⚠️ Message already in state, skipping', {
+                  messageId: newMessage.id,
+                  existingCount: prev.length,
+                });
+                return prev;
+              }
+
+              logger.info('✅ Adding message to React state', {
+                messageId: newMessage.id,
+                role: newMessage.role,
+                previousCount: prev.length,
+                newCount: prev.length + 1,
+              });
+
               return [...prev, newMessage];
             });
-          } else if (eventType === 'WorkflowCompleted') {
+          } else if (eventType === 'workflowCompleted') {
             // Workflow completed - messages already in React state per idea.md
             setWorkflowStatus('idle');
             setIsLoading(false);
 
             logger.info('Workflow completed', {
               sessionId: currentSession.id,
-              messageCount: messages.length,
+              messageCount: localMessages.length,
             });
 
             // No DB reload needed - React owns message state (idea.md architecture)
@@ -311,13 +371,32 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
         setError(null);
 
         // ✅ Optimistic update - add user message immediately (idea.md pattern)
-        setMessages((prev) => [...prev, message]);
+        setLocalMessages((prev) => [...prev, message]);
+
+        // Convert Date objects to Unix timestamps for Rust backend
+        // Safety net: provide fallback timestamps if missing (prevents Rust deserialization error)
+        const now = Date.now();
+        const messageForRust = {
+          ...message,
+          createdAt:
+            message.createdAt instanceof Date
+              ? message.createdAt.getTime()
+              : message.createdAt || now,
+          updatedAt:
+            message.updatedAt instanceof Date
+              ? message.updatedAt.getTime()
+              : message.updatedAt ||
+                (message.createdAt instanceof Date
+                  ? message.createdAt.getTime()
+                  : message.createdAt) ||
+                now,
+        };
 
         // Delegate to Rust backend (Rust will save the message to DB)
         await invoke('agent_send_message', {
           request: {
             sessionId: currentSession.id,
-            message,
+            message: messageForRust,
           },
         });
 
@@ -331,7 +410,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
         setIsLoading(false);
 
         // ✅ Rollback on error
-        setMessages((prev) => prev.filter((m) => m.id !== message.id));
+        setLocalMessages((prev) => prev.filter((m) => m.id !== message.id));
       }
     },
     [currentSession?.id],
@@ -373,7 +452,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     }
 
     // Find the last user message
-    const lastUserMessage = [...messages]
+    const lastUserMessage = [...localMessages]
       .reverse()
       .find((msg) => msg.role === 'user');
 
@@ -388,18 +467,18 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     });
 
     // Delete any subsequent messages (including failed assistant responses)
-    const messageIndex = messages.findIndex(
+    const messageIndex = localMessages.findIndex(
       (msg) => msg.id === lastUserMessage.id,
     );
-    const messagesToDelete = messages.slice(messageIndex + 1);
+    const messagesToDelete = localMessages.slice(messageIndex + 1);
 
     for (const msg of messagesToDelete) {
       await deleteMessage(msg.id);
     }
 
-    // Re-submit the user message
+    // Re-submit the user message (Date conversion handled by submit function)
     await submit(lastUserMessage);
-  }, [currentSession?.id, messages, submit]);
+  }, [currentSession?.id, localMessages, submit]);
 
   // Combine state values
   const stateValue: AgentChatStateContextValue = useMemo(
@@ -407,9 +486,10 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
       isLoading,
       messages: displayMessages, // Use merged messages with streaming
       error,
+      llmError,
       workflowStatus,
     }),
-    [isLoading, displayMessages, error, workflowStatus],
+    [isLoading, displayMessages, error, llmError, workflowStatus],
   );
 
   // Combine action values

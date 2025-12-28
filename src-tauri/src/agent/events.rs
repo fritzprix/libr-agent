@@ -1,3 +1,4 @@
+use crate::commands::messages_commands::Message;
 use crate::repositories::SessionStatus;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
@@ -21,10 +22,10 @@ pub enum AgentEvent {
         status: SessionStatus,
     },
 
-    /// Message added to session
+    /// Message added to session (includes full message for immediate UI update)
     MessageAdded {
         session_id: String,
-        message_id: String,
+        message: Box<Message>,
     },
 
     /// Tool execution started
@@ -43,7 +44,9 @@ pub enum AgentEvent {
 
 /// Emit an agent event to the frontend
 pub fn emit_agent_event(app_handle: &AppHandle, event: AgentEvent) -> Result<(), String> {
+    // Use emit_to() to broadcast to all windows (Tauri 2.x requirement)
+    // EventTarget::app() sends to all webviews
     app_handle
-        .emit("agent:event", event)
+        .emit_to(tauri::EventTarget::app(), "agent:event", event)
         .map_err(|e| format!("Failed to emit agent event: {}", e))
 }
