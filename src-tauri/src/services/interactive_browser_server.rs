@@ -176,14 +176,28 @@ impl InteractiveBrowserServer {
     /// # Returns
     /// A `Result` containing the normalized URL on success, or an error string on failure.
     fn validate_and_normalize_url(&self, url: &str) -> Result<String, String> {
-        let parsed = url::Url::parse(url).map_err(|e| format!("Invalid URL format: {e}"))?;
+        let parsed_result = url::Url::parse(url);
 
-        match parsed.scheme() {
-            "http" | "https" => Ok(url.to_string()),
-            scheme => Err(format!(
-                "Unsupported URL scheme '{}'. Allowed: http://, https://",
-                scheme
-            )),
+        match parsed_result {
+            Ok(parsed) => {
+                // Determine if we should allow based on scheme
+                match parsed.scheme() {
+                    "http" | "https" | "about" => Ok(url.to_string()),
+                    scheme => Err(format!(
+                        "Unsupported URL scheme '{}'. Allowed: http://, https://, about:",
+                        scheme
+                    )),
+                }
+            }
+            Err(_) => {
+                // Try prepending https://
+                let with_proto = format!("https://{}", url);
+                if let Ok(_parsed) = url::Url::parse(&with_proto) {
+                    return Ok(with_proto);
+                }
+
+                Err(format!("Invalid URL format: {}", url))
+            }
         }
     }
 
@@ -209,10 +223,15 @@ impl InteractiveBrowserServer {
 
         let window_label = format!("browser-{session_id}");
 
-        // Check URL status
+        // Check URL status (skip for about:blank)
         let parsed_url =
             url::Url::parse(&validated_url).map_err(|e| format!("Invalid URL format: {e}"))?;
-        let status_check = Some(self.check_url_status(&validated_url).await);
+
+        let status_check = if parsed_url.scheme() == "about" {
+            None
+        } else {
+            Some(self.check_url_status(&validated_url).await)
+        };
 
         let session_title = title.unwrap_or("Interactive Browser Agent");
 
@@ -335,7 +354,7 @@ impl InteractiveBrowserServer {
                     }
                 }
             }
-            None => {
+            Option::None => {
                 // This shouldn't happen since we always set status_check
                 format!("Session created for {url}")
             }
@@ -564,28 +583,38 @@ impl InteractiveBrowserServer {
         // 2. Resolve and Validate URL
         let target_url = match url::Url::parse(url) {
             Ok(parsed) => match parsed.scheme() {
-                "http" | "https" => url.to_string(),
+                "http" | "https" | "about" => url.to_string(),
                 scheme => {
                     return Err(format!(
-                        "Unsupported URL scheme '{}'. Allowed: http://, https://",
+                        "Unsupported URL scheme '{}'. Allowed: http://, https://, about:",
                         scheme
                     ))
                 }
             },
             Err(_) => {
-                // Assume relative URL, try to resolve against current_url
-                let base = url::Url::parse(&current_url)
-                    .map_err(|e| format!("Current session URL is invalid: {e}"))?;
-                let joined = base
-                    .join(url)
-                    .map_err(|e| format!("Failed to resolve relative URL: {e}"))?;
-                warn!("Detected relative URL '{}'. Resolved to '{}'", url, joined);
-                joined.to_string()
+                // Try prepending https:// first (common user intent for "google.com")
+                let with_proto = format!("https://{}", url);
+                if url::Url::parse(&with_proto).is_ok() {
+                    with_proto
+                } else {
+                    // Assume relative URL, try to resolve against current_url
+                    let base = url::Url::parse(&current_url)
+                        .map_err(|e| format!("Current session URL is invalid: {e}"))?;
+                    let joined = base
+                        .join(url)
+                        .map_err(|e| format!("Failed to resolve relative URL: {e}"))?;
+                    warn!("Detected relative URL '{}'. Resolved to '{}'", url, joined);
+                    joined.to_string()
+                }
             }
         };
 
         // 3. Check URL status
-        let status_check = Some(self.check_url_status(&target_url).await);
+        let status_check = if target_url.starts_with("about:") {
+            None
+        } else {
+            Some(self.check_url_status(&target_url).await)
+        };
 
         info!("Navigating session {session_id} to {target_url}");
 
@@ -628,7 +657,7 @@ impl InteractiveBrowserServer {
                     warn!("URL {target_url} check failed: {e}, returning early");
                     return Ok(format!("Navigated to {target_url} (Network Error: {e})"));
                 }
-                None => {
+                Option::None => {
                     // This shouldn't happen since we always set status_check
                     return Ok(format!("Navigated to {target_url}"));
                 }

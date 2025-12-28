@@ -107,7 +107,7 @@ impl AgentSessionManager {
 
         // Create proxy for this session
         self.proxy_manager
-            .create_proxy(session_id.clone(), tool_ids)
+            .create_proxy(session_id.clone(), tool_ids, Some(self.app_handle.clone()))
             .await?;
 
         log::info!(
@@ -1318,6 +1318,7 @@ fn extract_builtin_tool_ids(agent_config: &crate::agent::AgentConfig) -> Vec<Str
                 "workspace" => tool_ids.push("workspace".to_string()),
                 "content_store" | "contentstore" => tool_ids.push("content_store".to_string()),
                 "ui" => tool_ids.push("ui".to_string()),
+                "browser" => tool_ids.push("browser".to_string()),
                 _ => {
                     log::warn!("Unknown builtin service alias: {}", alias);
                 }
@@ -1334,7 +1335,9 @@ fn extract_builtin_tool_ids(agent_config: &crate::agent::AgentConfig) -> Vec<Str
         // Essential servers
         tool_ids.push("workspace".to_string());
         tool_ids.push("content_store".to_string());
+        tool_ids.push("content_store".to_string());
         tool_ids.push("ui".to_string());
+        tool_ids.push("browser".to_string());
     }
 
     tool_ids

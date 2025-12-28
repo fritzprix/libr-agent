@@ -2,6 +2,7 @@ use serde_json::Value;
 use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::sync::Arc;
+use tauri::AppHandle;
 
 use super::builtin::BuiltinMCPServer;
 use super::server::MCPServerManager;
@@ -49,6 +50,7 @@ impl MCPServiceProxy {
         external_mcp_manager: Arc<MCPServerManager>,
         db_pool: Arc<SqlitePool>,
         session_manager: Arc<SessionManager>,
+        app_handle: Option<AppHandle>,
     ) -> Result<Self, String> {
         let mut builtin_servers = HashMap::new();
 
@@ -58,6 +60,7 @@ impl MCPServiceProxy {
                 session_id.clone(),
                 db_pool.clone(),
                 session_manager.clone(),
+                app_handle.clone(),
             )
             .await?
             {
@@ -239,6 +242,7 @@ async fn create_builtin_server(
     _session_id: String,
     _db_pool: Arc<SqlitePool>,
     _session_manager: Arc<SessionManager>,
+    app_handle: Option<AppHandle>,
 ) -> Result<Option<Box<dyn BuiltinMCPServer>>, String> {
     match tool_id {
         "bootstrap" => Ok(Some(Box::new(
@@ -263,6 +267,16 @@ async fn create_builtin_server(
             crate::mcp::builtin::content_store::ContentStoreServer::new(_session_manager),
         ))),
         "ui" => Ok(Some(Box::new(crate::mcp::builtin::ui::UiServer::new()))),
+        "browser" => {
+            if let Some(handle) = app_handle {
+                Ok(Some(Box::new(
+                    crate::mcp::builtin::browser::BrowserServer::new(handle, _session_id),
+                )))
+            } else {
+                log::warn!("Browser tool requested but no AppHandle provided (skipping)");
+                Ok(None)
+            }
+        }
         _ => Ok(None), // Unknown tool, skip
     }
 }
