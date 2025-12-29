@@ -351,7 +351,7 @@ impl PlanningServer {
                 }
 
                 Ok(MCPResult::success_with_data(
-                    &format!("Todo added: {}", title),
+                    &format!("Todo added with ID {}: {}", id, title),
                     json!({
                         "success": true,
                         "id": id,
@@ -388,7 +388,7 @@ impl PlanningServer {
 
             match row {
                 Some((tid,)) => tid,
-                None => return Ok(MCPResult::error("Todo not found at index")),
+                Option::None => return Ok(MCPResult::error("Todo not found at index")),
             }
         } else {
             return Ok(MCPResult::error("Missing 'id' or 'index' parameter"));
@@ -515,7 +515,7 @@ impl PlanningServer {
 
         match result {
             Ok(r) => Ok(MCPResult::success_with_data(
-                "Note added to scratchpad",
+                &format!("Note added to scratchpad (ID: {})", r.last_insert_rowid()),
                 json!({ "id": r.last_insert_rowid() }),
             )),
             Err(e) => Ok(MCPResult::error(&format!("Failed to add note: {}", e))),
@@ -523,8 +523,17 @@ impl PlanningServer {
     }
 
     /// List scratchpad items (Legacy: listScratchpad)
-    async fn list_scratchpad(&self, _args: Value) -> Result<MCPResult, String> {
-        let items: Vec<ScratchpadItem> = sqlx::query_as(
+    async fn list_scratchpad(&self, args: Value) -> Result<MCPResult, String> {
+        let page = args.get("page").and_then(|v| v.as_u64()).unwrap_or(1);
+        let page_size = args.get("pageSize").and_then(|v| v.as_u64()).unwrap_or(10);
+        let filter_tags = args.get("tags").and_then(|v| v.as_array()).map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect::<Vec<String>>()
+        });
+
+        // Fetch all items for session (optimize later if needed)
+        let all_items: Vec<ScratchpadItem> = sqlx::query_as(
             "SELECT id, content, title, source, tags, created_at, updated_at FROM planning_scratchpad WHERE session_id = ? ORDER BY created_at DESC"
         )
         .bind(&self.session_id)
@@ -532,19 +541,109 @@ impl PlanningServer {
         .await
         .map_err(|e| format!("Failed to list scratchpad: {}", e))?;
 
-        let json_items: Vec<Value> = items.into_iter().map(|item| {
+        // Filter
+        let filtered_items: Vec<&ScratchpadItem> = if let Some(tags) = &filter_tags {
+            if tags.is_empty() {
+                all_items.iter().collect()
+            } else {
+                all_items
+                    .iter()
+                    .filter(|item| {
+                        if let Some(item_tags_json) = &item.tags {
+                            if let Ok(item_tags) =
+                                serde_json::from_str::<Vec<String>>(item_tags_json)
+                            {
+                                // Check if any filter tag is present in item tags
+                                tags.iter().any(|t| item_tags.contains(t))
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        }
+                    })
+                    .collect()
+            }
+        } else {
+            all_items.iter().collect()
+        };
+
+        // Paginate
+        let total_items = filtered_items.len();
+        let skip = ((page - 1) * page_size) as usize;
+        let take = page_size as usize;
+        let paged_items = filtered_items
+            .into_iter()
+            .skip(skip)
+            .take(take)
+            .collect::<Vec<_>>();
+
+        // Format Text Output
+        let mut text_output = String::new();
+        if paged_items.is_empty() {
+            if total_items > 0 {
+                text_output.push_str(&format!(
+                    "No items on page {} (Total: {}).",
+                    page, total_items
+                ));
+            } else {
+                text_output.push_str("No scratchpad notes found.");
+            }
+        } else {
+            text_output.push_str(&format!(
+                "Scratchpad Notes (Page {}/{}):\n",
+                page,
+                (total_items as f64 / page_size as f64).ceil() as u64
+            ));
+            for item in &paged_items {
+                let id = item.id;
+                let title = item.title.clone().unwrap_or_else(|| "Untitled".to_string());
+                let preview = if item.content.len() > 200 {
+                    format!("{}...", &item.content[..200].replace('\n', " "))
+                } else {
+                    item.content.replace('\n', " ")
+                };
+                let tags_str = if let Some(t) = &item.tags {
+                    if let Ok(parsed) = serde_json::from_str::<Vec<String>>(t) {
+                        if !parsed.is_empty() {
+                            format!(" [{}]", parsed.join(", "))
+                        } else {
+                            String::new()
+                        }
+                    } else {
+                        String::new()
+                    }
+                } else {
+                    String::new()
+                };
+
+                text_output.push_str(&format!(
+                    "- **ID: {}** | {} | {}{}\n",
+                    id, title, preview, tags_str
+                ));
+            }
+        }
+
+        let json_items: Vec<Value> = paged_items.into_iter().map(|item| {
             json!({
                 "id": item.id,
                 "title": item.title,
-                "preview": if item.content.len() > 50 { format!("{}...", &item.content[..50]) } else { item.content },
-                "tags": item.tags.and_then(|t| serde_json::from_str::<Vec<String>>(&t).ok()),
+                "preview": if item.content.len() > 200 { format!("{}...", &item.content[..200]) } else { item.content.clone() },
+                "tags": item.tags.clone().and_then(|t| serde_json::from_str::<Vec<String>>(&t).ok()),
                 "created_at": item.created_at
             })
         }).collect();
 
         Ok(MCPResult::success_with_data(
-            &format!("Found {} notes", json_items.len()),
-            json!({ "items": json_items }),
+            &text_output,
+            json!({
+                "items": json_items,
+                "pagination": {
+                    "page": page,
+                    "pageSize": page_size,
+                    "total": total_items
+                }
+            }),
         ))
     }
 
@@ -579,8 +678,25 @@ impl PlanningServer {
             }
         }
 
+        let mut text_output = String::new();
+        if items.is_empty() {
+            text_output.push_str("No items found for the provided IDs.");
+        } else {
+            text_output.push_str("Read Scratchpad Items:\n");
+            for item in &items {
+                let title = item
+                    .get("title")
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("Untitled");
+                let content = item.get("content").and_then(|c| c.as_str()).unwrap_or("");
+                let id = item.get("id").and_then(|i| i.as_i64()).unwrap_or(0);
+
+                text_output.push_str(&format!("## [ID: {}] {}\n{}\n\n", id, title, content));
+            }
+        }
+
         Ok(MCPResult::success_with_data(
-            "Read scratchpad items",
+            &text_output,
             json!({ "items": items }),
         ))
     }
@@ -609,7 +725,7 @@ impl PlanningServer {
         // Reuse get_service_context logic but return as tool result
         let context = self.get_service_context(None).await;
         Ok(MCPResult::success_with_data(
-            "Current planning state",
+            &context.context_prompt,
             context.structured_state.unwrap_or(json!({})),
         ))
     }
@@ -902,12 +1018,203 @@ impl BuiltinMCPServer for PlanningServer {
     }
 
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
-        // Load planning state with error handling
-        // Note: This needs to be updated to match new schema if we want rich context
-        // For now, returning simple context to avoid breaking compilation
+        // 1. Fetch Active Goal
+        let goal: Option<String> = sqlx::query_scalar(
+            "SELECT goal_text FROM planning_goals WHERE session_id = ? AND status = 'active' LIMIT 1",
+        )
+        .bind(&self.session_id)
+        .fetch_optional(self.db_pool.as_ref())
+        .await
+        .unwrap_or_else(|e| {
+            log::error!("Failed to fetch goal: {}", e);
+            None
+        });
+
+        // 2. Fetch Todos (All)
+        // We fetch all to calculate counts and separate checked/unchecked
+        let todos: Vec<TodoItem> = sqlx::query_as(
+            "SELECT * FROM planning_todos WHERE session_id = ? ORDER BY created_at ASC",
+        )
+        .bind(&self.session_id)
+        .fetch_all(self.db_pool.as_ref())
+        .await
+        .unwrap_or_else(|e| {
+            log::error!("Failed to fetch todos: {}", e);
+            Vec::new()
+        });
+
+        // 3. Fetch Scratchpad (Recent)
+        let scratchpad: Vec<ScratchpadItem> = sqlx::query_as(
+            "SELECT * FROM planning_scratchpad WHERE session_id = ? ORDER BY created_at DESC LIMIT 6",
+        )
+        .bind(&self.session_id)
+        .fetch_all(self.db_pool.as_ref())
+        .await
+        .unwrap_or_else(|e| {
+            log::error!("Failed to fetch scratchpad: {}", e);
+            Vec::new()
+        });
+
+        // --- Format Output ---
+
+        let mut parts = vec!["## Planning".to_string()];
+
+        // Goal Section
+        if let Some(g) = &goal {
+            parts.push(format!("\n**Current Goal:** \"{}\"", g));
+            parts.push("*Goal is active. Track progress with todos below.*".to_string());
+        } else {
+            parts.push("\n**No Goal Set**".to_string());
+            parts.push("*Consider using createGoal to establish a clear objective for this planning session.*".to_string());
+        }
+
+        // Todos Section
+        let (checked_todos, unchecked_todos): (Vec<&TodoItem>, Vec<&TodoItem>) =
+            todos.iter().partition(|t| t.is_checked);
+
+        if !todos.is_empty() {
+            parts.push(format!(
+                "\n**Todos:** {} unchecked / {} checked ({} total)",
+                unchecked_todos.len(),
+                checked_todos.len(),
+                todos.len()
+            ));
+
+            // Unchecked Todos (Top 5)
+            if !unchecked_todos.is_empty() {
+                parts.push("\n**Unchecked Items:**".to_string());
+                for (idx, t) in unchecked_todos.iter().take(5).enumerate() {
+                    let priority = if t.priority != "medium" {
+                        format!("Priority:{}", t.priority)
+                    } else {
+                        "Priority:medium".to_string()
+                    };
+
+                    let description = if let Some(desc) = &t.description {
+                        if !desc.is_empty() {
+                            let truncated = if desc.len() > 80 {
+                                format!("{}...", &desc[0..80])
+                            } else {
+                                desc.clone()
+                            };
+                            format!("\n     {}", truncated)
+                        } else {
+                            String::new()
+                        }
+                    } else {
+                        String::new()
+                    };
+
+                    parts.push(format!(
+                        "  [{}] ID:{} | {} | {}{}",
+                        idx, t.id, t.content, priority, description
+                    ));
+                }
+
+                if unchecked_todos.len() > 5 {
+                    parts.push(format!(
+                        "  ...and {} more (use listTodos to see all)",
+                        unchecked_todos.len() - 5
+                    ));
+                }
+                parts.push("\n*Use ID when calling checkTodo/updateTodo*".to_string());
+            }
+
+            // Checked Todos (Top 3 recent)
+            if !checked_todos.is_empty() {
+                parts.push("\n**Checked Items (Completed):**".to_string());
+                // We want the most recently updated/created ones (which are at the end of the list since we ordered by ASC)
+                // So we reverse iteration
+                for t in checked_todos.iter().rev().take(3) {
+                    let priority = if t.priority != "medium" {
+                        format!("[{}]", t.priority)
+                    } else {
+                        String::new()
+                    };
+                    parts.push(format!("  [✓] ID:{} | {} {}", t.id, t.content, priority));
+                }
+
+                if checked_todos.len() > 3 {
+                    parts.push(format!(
+                        "  ...and {} more completed",
+                        checked_todos.len() - 3
+                    ));
+                }
+            }
+        }
+
+        // Scratchpad Section
+        if !scratchpad.is_empty() {
+            // Check if we have more than the limit (we fetched limit 6 to check for 'more')
+            let (visible_scratchpad, has_more_scratchpad) = if scratchpad.len() > 5 {
+                (&scratchpad[0..5], true)
+            } else {
+                (&scratchpad[..], false)
+            };
+
+            parts.push(format!("\n**Scratchpad:** {} items", scratchpad.len()));
+            parts.push("".to_string()); // Spacer
+
+            for (idx, item) in visible_scratchpad.iter().enumerate() {
+                let title_part = if let Some(title) = &item.title {
+                    format!("**{}**", title)
+                } else {
+                    String::new()
+                };
+
+                let tags_part = if let Some(tags_json) = &item.tags {
+                    if let Ok(tags) = serde_json::from_str::<Vec<String>>(tags_json) {
+                        if !tags.is_empty() {
+                            format!(" [{}]", tags.join("] ["))
+                        } else {
+                            String::new()
+                        }
+                    } else {
+                        String::new()
+                    }
+                } else {
+                    String::new()
+                };
+
+                let content_preview = if item.title.is_some() {
+                    if item.content.len() > 50 {
+                        format!(" - {}...", &item.content[0..50])
+                    } else {
+                        format!(" - {}", item.content)
+                    }
+                } else if item.content.len() > 60 {
+                    format!("{}...", &item.content[0..60])
+                } else {
+                    item.content.clone()
+                };
+
+                parts.push(format!(
+                    "  {}. **ID:{}** {}{}{}",
+                    idx + 1,
+                    item.id,
+                    title_part,
+                    content_preview,
+                    tags_part
+                ));
+            }
+
+            if has_more_scratchpad {
+                parts.push(format!(
+                    "  ...and {} more items. Use listScratchpad to view all.",
+                    scratchpad.len() - 5
+                ));
+            }
+        }
+
+        let structured_state = json!({
+             "goal": goal,
+             "todos_count": todos.len(),
+             "scratchpad_count": scratchpad.len()
+        });
+
         ServiceContext {
-            context_prompt: "# Planning\n**Status**: Active".to_string(),
-            structured_state: None,
+            context_prompt: parts.join("\n"),
+            structured_state: Some(structured_state),
         }
     }
 }

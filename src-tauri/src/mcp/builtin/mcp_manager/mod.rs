@@ -148,8 +148,28 @@ impl MCPManagerServer {
             name_a.cmp(name_b)
         });
 
+        let text_output = if servers.is_empty() {
+            "No servers found".to_string()
+        } else {
+            let mut s = format!("MCP Servers List ({} total):\n", servers.len());
+            for server in &servers {
+                let name = server.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+                let status = server.get("status").and_then(|v| v.as_str()).unwrap_or("?");
+                let transport = server
+                    .get("transport")
+                    .and_then(|t| t.get("type"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
+                s.push_str(&format!(
+                    "- **{}** ({}) [Transport: {}]\n",
+                    name, status, transport
+                ));
+            }
+            s
+        };
+
         Ok(MCPResult::success_with_data(
-            "Servers listed",
+            &text_output,
             json!({
                 "servers": servers,
                 "total": servers.len(),
@@ -208,8 +228,20 @@ impl MCPManagerServer {
 
         let results: Vec<Value> = results_map.into_values().collect();
 
+        let text_output = if results.is_empty() {
+            format!("No servers found matching '{}'", query)
+        } else {
+            let mut s = format!("Found {} servers matching '{}':\n", results.len(), query);
+            for server in &results {
+                let name = server.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+                let status = server.get("status").and_then(|v| v.as_str()).unwrap_or("?");
+                s.push_str(&format!("- **{}** ({})\n", name, status));
+            }
+            s
+        };
+
         Ok(MCPResult::success_with_data(
-            &format!("Found {} servers", results.len()),
+            &text_output,
             json!({
                 "results": results,
                 "count": results.len()

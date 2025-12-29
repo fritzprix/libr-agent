@@ -132,6 +132,61 @@ impl BuiltinMCPServer for BrowserServer {
         "Capabilities to control a web browser, navigate to URLs, and extract content."
     }
 
+    async fn get_service_context(
+        &self,
+        _options: Option<&Value>,
+    ) -> crate::mcp::types::ServiceContext {
+        let session_id_opt = {
+            self.browser_session_id
+                .read()
+                .ok()
+                .and_then(|id| id.clone())
+        };
+
+        if let Some(session_id) = session_id_opt {
+            // Try to get service and fetch state
+            if let Ok(service) = self.get_browser_service() {
+                // Fetch URL
+                let url = match service
+                    .execute_script(&session_id, "window.location.href")
+                    .await
+                {
+                    Ok(u) => u.trim_matches('"').to_string(), // Js returns string with quotes often
+                    Err(_) => "Unknown".to_string(),
+                };
+
+                // Fetch Title
+                let title = match service.execute_script(&session_id, "document.title").await {
+                    Ok(t) => t.trim_matches('"').to_string(),
+                    Err(_) => "Unknown".to_string(),
+                };
+
+                return crate::mcp::types::ServiceContext {
+                    context_prompt: format!(
+                        "# Browser Status\n\
+                        **Active Session**: {}\n\
+                        **Current URL**: {}\n\
+                        **Page Title**: {}",
+                        session_id, url, title
+                    ),
+                    structured_state: None,
+                };
+            }
+        }
+
+        // Fallback or when no session is active
+        crate::mcp::types::ServiceContext {
+            context_prompt: format!(
+                "# Browser Status\n\
+                **Status**: Active (No Browser Session Created)\n\
+                **Tools Available**: {}\n\
+                *Use `createSession` to start*",
+                self.tools().len()
+            ),
+            structured_state: None,
+        }
+    }
+
     fn tools(&self) -> Vec<MCPTool> {
         vec![
             MCPTool {

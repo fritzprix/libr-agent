@@ -558,7 +558,7 @@ export class AnthropicService extends BaseAIService {
           });
         }
 
-        // Add tool_use or text content after thinking
+        // Add tool_use content
         if (m.tool_calls) {
           content.push(
             ...m.tool_calls.map((tc) => ({
@@ -583,9 +583,14 @@ export class AnthropicService extends BaseAIService {
               toolName: m.tool_use.name,
             }),
           });
-        } else if (hasContent) {
+        }
+
+        // Always add text content if it exists, regardless of tool use
+        if (hasContent) {
           const processedContent = this.processMessageContent(m.content);
-          content.push({ type: 'text' as const, text: processedContent });
+          if (processedContent && processedContent.length > 0) {
+            content.push({ type: 'text' as const, text: processedContent });
+          }
         }
 
         if (content.length > 0) {
@@ -659,7 +664,7 @@ export class AnthropicService extends BaseAIService {
         });
       }
 
-      // Add tool_use or text content after thinking
+      // Add tool_use content
       if (message.tool_calls) {
         content.push(
           ...message.tool_calls.map((tc) => ({
@@ -684,9 +689,14 @@ export class AnthropicService extends BaseAIService {
             toolName: message.tool_use.name,
           }),
         });
-      } else if (message.content) {
+      }
+
+      // Always add text content if it exists
+      if (message.content) {
         const processedContent = this.processMessageContent(message.content);
-        content.push({ type: 'text' as const, text: processedContent });
+        if (processedContent && processedContent.length > 0) {
+          content.push({ type: 'text' as const, text: processedContent });
+        }
       }
 
       return {

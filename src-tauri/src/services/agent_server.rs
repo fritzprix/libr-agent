@@ -85,6 +85,18 @@ impl ToolProvider for WrappedMcpManager {
                                 text,
                             });
                         }
+                        crate::mcp::types::MCPContent::Image {
+                            data: _,
+                            mime_type: _,
+                        } => {
+                            // TODO: Support Image in thronglet::models::Content
+                            // For now, we skip or add a placeholder text?
+                            // Let's add a text placeholder to be safe and informative
+                            content_vec.push(Content::Text {
+                                text: "[Image Content] (Not yet supported in Agent translation)"
+                                    .to_string(),
+                            });
+                        }
                     }
                 }
             }

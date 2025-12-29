@@ -295,11 +295,20 @@ impl WorkspaceServer {
                 let result_text = if results.is_empty() {
                     format!("No files found matching pattern '{pattern}' in '{search_path}'")
                 } else {
-                    format!(
-                        "Found {} files matching pattern '{}'",
+                    let mut text = format!(
+                        "Found {} files matching pattern '{}':\n",
                         results.len(),
                         pattern
-                    )
+                    );
+                    for item in results.iter().take(50) {
+                        let path = item.get("path").and_then(|v| v.as_str()).unwrap_or("?");
+                        let type_ = item.get("type").and_then(|v| v.as_str()).unwrap_or("?");
+                        text.push_str(&format!("- [{}] {}\n", type_, path));
+                    }
+                    if results.len() > 50 {
+                        text.push_str(&format!("... and {} more items.", results.len() - 50));
+                    }
+                    text
                 };
 
                 Ok(MCPResult::success_with_data(
@@ -543,8 +552,33 @@ impl WorkspaceServer {
             }
         }
 
+        let text_output = if matches.is_empty() {
+            "No matches found".to_string()
+        } else {
+            let mut s = format!("Found {} matches:\n", matches.len());
+            for match_item in matches.iter().take(20) {
+                if let Some(obj) = match_item.as_object() {
+                    if let Some(line_num) = obj.get("line") {
+                        s.push_str(&format!(
+                            "Line {}: {}\n",
+                            line_num,
+                            obj.get("text").and_then(|t| t.as_str()).unwrap_or("")
+                        ));
+                    } else {
+                        s.push_str(&format!("{}\n", match_item.as_str().unwrap_or("")));
+                    }
+                } else if let Some(str_val) = match_item.as_str() {
+                    s.push_str(&format!("{}\n", str_val));
+                }
+            }
+            if matches.len() > 20 {
+                s.push_str(&format!("... and {} more matches.", matches.len() - 20));
+            }
+            s
+        };
+
         Ok(MCPResult::success_with_data(
-            &format!("Found {} matches", matches.len()),
+            &text_output,
             json!({ "matches": matches }),
         ))
     }

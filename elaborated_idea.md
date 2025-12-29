@@ -15,7 +15,7 @@
 ### Goal
 
 Migrate the **Orchestration Logic** (the "Brain" that cycles through Think -> Act -> Observe via event-driven state transitions) to the **Rust Backend**.
-This ensures agents continue running regardless of UI state, enabling true background execution and multi-agent collaboration.
+This ensures agents continue running regardless of UI state, enabling true background execution and multi-agent collaboration. The V2 architecture is purely Rust-driven (`src-tauri/src/mcp/service_proxy_manager.rs`), removing dependency on frontend tool bridges.
 
 **Implementation Pattern**: Not a traditional while loop or recursion, but a **conditional event-driven cycle** where each `handle_llm_response` call completes and returns, then emits an event to trigger the next cycle if tool calls exist. **No call stack accumulation** - each cycle is an independent function invocation.
 
@@ -45,7 +45,7 @@ We adopt a **"Dual-Track"** model to ensure 100% stability for existing features
   - Detects `isStreaming: false` via useEffect and adds completed assistant messages
   - Listens to `agent:event(MessageAdded)` for tool result messages
   - **No DB reload during active workflow** - maintains complete message history in React state
-- **`ToolBridgeProvider`**: **(Transitional)** Exposes Web-based MCP tools during migration phase. As Web MCP tools are migrated to Rust Built-in servers, this bridge will be gradually deprecated and eventually removed.
+- **`ToolBridgeProvider`**: **(Removed)** previously used to expose Web-based MCP tools. With the completion of the backend migration, all essential tools (Browser, Filesystem, Command) are now native Rust services. This bridge has been removed as the architecture is now fully Rust-centric.
 
 #### C. IPC Bridge (The Nervous System)
 
@@ -215,13 +215,18 @@ Web MCP tools are being migrated in phases to eliminate the ToolBridge dependenc
 - `assistant-manager` → `AssistantServer` (Rust + SQLite)
   - Unified with existing assistant repository
 
-**Phase 3: UI Resource Tools**
+**Phase 3: UI & System Resource Tools (Completed)**
 
-- `playbook-store` → `PlaybookServer` (Rust + Handlebars)
-  - HTML templates rendered server-side
-  - Returns UI resources via `MCPResult::with_ui_resource()`
-- `ui-tools` → Integrated into `WorkspaceServer`
-  - Interactive prompts using Handlebars templates
+- `browser-server` → `InteractiveBrowserServer` (Rust + Tauri AppHandle)
+  - Native window manipulation via Tauri
+  - IPC-based control from Rust MCP proxy
+  - Session-isolated browser instances
+  - Full legacy feature parity (element selection, js injection, navigation)
+- `playbook-store` → `PlaybookServer` (Rust + SQLite)
+- `ui` → `UiServer` (Rust)
+  - Interactive prompts
+- `workspace` → `WorkspaceServer` (Rust)
+  - Unified FileSystem and Shell access
 
 **Tool State Isolation Example:**
 
@@ -261,10 +266,14 @@ During migration, `ToolBridgeProvider` handles unmigrated Web MCP tools:
 - TS executes via `useUnifiedMCP().executeToolCall()`
 - TS returns result via `agent_handle_tool_result` command
 
-**Deprecation Timeline:**
+**Deprecation Status:**
 
-- Phase 1-2 complete → Remove 70% of ToolBridge usage
-- Phase 3 complete → Full removal of `ToolBridgeProvider`
+- **Status**: Removed.
+- **Why**: `service_proxy_manager.rs` now handles:
+  - Built-in Rust tools (Browser, Workspace, Knowledge, etc.)
+  - External Stdio MCP servers
+  - External HTTP MCP servers (via shared manager)
+- The frontend now acts purely as a UI renderer and LLM stream handler.
 
 ---
 

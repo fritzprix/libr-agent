@@ -186,6 +186,12 @@ pub struct SamplingRequest {
 pub enum MCPContent {
     #[serde(rename = "text")]
     Text { text: String },
+    #[serde(rename = "image")]
+    Image {
+        data: String,
+        #[serde(rename = "mimeType")]
+        mime_type: String,
+    },
     #[serde(rename = "resource")]
     Resource { resource: serde_json::Value },
 }

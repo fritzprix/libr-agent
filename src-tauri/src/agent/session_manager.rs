@@ -1,4 +1,5 @@
-use crate::agent::types::{MCPContent, ToolCall};
+use crate::agent::state::{AgentSession, PendingToolExecution, MAX_CACHED_MESSAGES};
+use crate::agent::types::ToolCall;
 use crate::commands::messages_commands::Message;
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::{MessageRepository, SessionMetadata, SessionRepository, SessionStatus};
@@ -9,39 +10,6 @@ use std::time::SystemTime;
 use tauri::AppHandle;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
-
-/// Maximum number of messages to keep in memory cache (sliding window)
-const MAX_CACHED_MESSAGES: usize = 1000;
-
-/// Tracks the state of pending tool executions for a conversational turn
-#[derive(Debug)]
-pub struct PendingToolExecution {
-    pub total_expected: usize,
-    pub results: Vec<Message>,
-    /// Maps tool_call_id to tool_name for event emission
-    pub tool_names: HashMap<String, String>,
-}
-
-/// Represents an active agent session with its runtime state
-#[derive(Debug)]
-pub struct AgentSession {
-    pub metadata: SessionMetadata,
-    pub is_running: bool,
-    /// Cancellation token to abort running workflows
-    pub cancellation_token: CancellationToken,
-    /// State of current turn's tool execution
-    pub pending_execution: Option<PendingToolExecution>,
-
-    /// In-memory message cache (loaded once on init, updated in-place)
-    /// Thread-safe: Arc allows shared ownership, RwLock allows concurrent reads
-    messages: Arc<RwLock<Vec<Message>>>,
-
-    /// Flag indicating if cache has been initialized from DB
-    cache_initialized: Arc<AtomicBool>,
-
-    /// Last DB sync timestamp (for debugging/monitoring)
-    last_synced_at: Arc<RwLock<Option<SystemTime>>>,
-}
 
 /// Manages agent sessions and their workflows
 #[derive(Debug)]
@@ -103,7 +71,7 @@ impl AgentSessionManager {
             .map_err(|e| format!("Failed to create session: {}", e))?;
 
         // Extract builtin tool IDs from agent config
-        let tool_ids = extract_builtin_tool_ids(&agent_config);
+        let tool_ids = crate::agent::tools::extract_builtin_tool_ids(&agent_config);
 
         // Create proxy for this session
         self.proxy_manager
@@ -398,6 +366,7 @@ impl AgentSessionManager {
                                 content: String::new(),
                                 error: Some(format!("Failed to parse tool arguments: {}", e)),
                                 is_error: true,
+                                mcp_content: None,
                             };
 
                             if let Err(err) = manager_ref
@@ -422,7 +391,8 @@ impl AgentSessionManager {
                             // Convert MCPResponse to tool result
                             let content = response
                                 .result
-                                .and_then(|r| serde_json::to_string_pretty(&r).ok())
+                                .as_ref()
+                                .and_then(|r| serde_json::to_string_pretty(r).ok())
                                 .unwrap_or_else(|| "{}".to_string());
 
                             let is_error = response.error.is_some();
@@ -433,6 +403,9 @@ impl AgentSessionManager {
                                 content,
                                 error: error_msg,
                                 is_error,
+                                mcp_content: crate::agent::tools::convert_mcp_response_content(
+                                    response.result,
+                                ),
                             };
 
                             if let Err(e) = manager_ref
@@ -469,6 +442,7 @@ impl AgentSessionManager {
                                 content: String::new(),
                                 error: Some(e.clone()),
                                 is_error: true,
+                                mcp_content: None,
                             };
 
                             if let Err(err) = manager_ref
@@ -767,13 +741,19 @@ impl AgentSessionManager {
                 if let Some(pending) = &mut session.pending_execution {
                     // Create Tool Message using helper methods
                     let message = if result.is_error {
-                        Self::create_error_tool_result(
+                        crate::agent::tools::create_error_tool_result(
                             &session_id,
                             &tool_call_id,
                             result.error.as_deref().unwrap_or("Unknown error"),
                         )
+                    } else if let Some(mcp_content) = result.mcp_content {
+                        crate::agent::tools::create_tool_result_message_with_content(
+                            &session_id,
+                            &tool_call_id,
+                            mcp_content,
+                        )
                     } else {
-                        Self::create_tool_result_message(
+                        crate::agent::tools::create_tool_result_message(
                             &session_id,
                             &tool_call_id,
                             result.content.clone(),
@@ -951,9 +931,37 @@ impl AgentSessionManager {
                 );
             });
 
-            // 4. Request next LLM completion with updated cache
-            // The LLM will see the assistant's tool calls and the subsequent tool results
-            self.request_llm_completion(session_id).await?;
+            // 4. Check for UI interaction requests (stop condition)
+            // Optimization: We check only the *newly produced* tool results (accumulated_messages)
+            // rather than iterating the entire session history. If any new result contains a Resource
+            // (which implies a UI component in our protocol), we pause the workflow.
+            let has_ui_interaction = accumulated_messages.iter().any(|msg| {
+                msg.content
+                    .iter()
+                    .any(|c| matches!(c, crate::agent::types::MCPContent::Resource { .. }))
+            });
+
+            if has_ui_interaction {
+                log::info!(
+                    "UI interaction detected for session {}. Stopping recursive LLM loop.",
+                    session_id
+                );
+
+                // Workflow is effectively "paused" or "completed" from the LLM's perspective
+                // The UI will re-trigger the workflow when the user responds (e.g. via reply_prompt)
+                self.update_session_status(&session_id, SessionStatus::Idle)
+                    .await?;
+
+                let event = crate::agent::events::AgentEvent::WorkflowCompleted {
+                    session_id: session_id.clone(),
+                };
+                crate::agent::events::emit_agent_event(&self.app_handle, event)
+                    .map_err(|e| format!("Failed to emit event: {}", e))?;
+            } else {
+                // 5. Request next LLM completion with updated cache
+                // The LLM will see the assistant's tool calls and the subsequent tool results
+                self.request_llm_completion(session_id).await?;
+            }
         }
 
         Ok(())
@@ -979,146 +987,40 @@ impl AgentSessionManager {
     }
 
     /// Build complete system prompt for session
-    ///
-    /// Combines:
-    /// - Agent base prompt (from agent_config.system_prompt)
-    /// - Built-in service contexts (Planning, Knowledge, ContentStore, Workspace)
-    /// - (Future) Extension prompts
     async fn build_system_prompt(&self, session_id: &str) -> Result<String, String> {
-        let mut parts = Vec::new();
-
-        // 1. Load Agent base prompt
+        // 1. Load Agent config
         let active = self.active_sessions.read().await;
         let session = active
             .get(session_id)
             .ok_or_else(|| format!("Session not found: {}", session_id))?;
 
-        if let Some(agent_config) = session.metadata.agent_config.as_ref() {
-            let config = crate::agent::AgentConfig::from_json(agent_config)?;
-            if !config.system_prompt.trim().is_empty() {
-                parts.push(config.system_prompt);
-            }
-        }
+        let agent_config = session
+            .metadata
+            .agent_config
+            .as_ref()
+            .ok_or_else(|| "Agent configuration is required but not found".to_string())
+            .and_then(|json| {
+                crate::agent::AgentConfig::from_json(json).map_err(|e| e.to_string())
+            })?;
 
-        drop(active); // Release read lock before getting service contexts
+        let config_clone = agent_config.clone();
+        drop(active);
 
-        // 2. Get Built-in service contexts (best-effort)
-        if let Some(proxy) = self.proxy_manager.get_proxy(session_id).await {
-            let contexts = proxy.get_service_contexts().await;
+        // 2. Get Service Proxy
+        let proxy = self.proxy_manager.get_proxy(session_id).await;
 
-            if !contexts.is_empty() {
-                parts.push("\n\n## Available Tools & Current State\n".to_string());
-
-                for (_tool_id, context_prompt) in contexts {
-                    if !context_prompt.trim().is_empty() {
-                        parts.push(context_prompt);
-                    }
-                }
-            }
-        }
-
-        Ok(parts.join("\n"))
+        // 3. Build prompt using helper
+        crate::agent::llm::build_system_prompt(&config_clone, proxy).await
     }
 
     /// Collect available tools for a session based on agent configuration
-    ///
-    /// This method filters tools according to the agent's settings:
-    /// - Builtin tools: filtered by `allowed_built_in_service_aliases`
-    /// - External MCP tools: filtered by `mcp_server_ids`
-    ///
-    /// # Arguments
-    /// * `session_id` - The session identifier
-    /// * `agent_config` - The agent configuration with allowed tools
-    ///
-    /// # Returns
-    /// A vector of MCPTool definitions allowed for this agent
     async fn collect_available_tools(
         &self,
         session_id: &str,
         agent_config: &crate::agent::AgentConfig,
     ) -> Result<Vec<crate::mcp::types::MCPTool>, String> {
-        let mut all_tools = Vec::new();
-
-        // Get session proxy
-        if let Some(proxy) = self.proxy_manager.get_proxy(session_id).await {
-            // 1. Collect builtin tools (already filtered by extract_builtin_tool_ids during proxy creation)
-            let builtin_tool_ids = proxy.builtin_tool_ids();
-
-            log::debug!(
-                "Session {} has {} builtin tool IDs configured",
-                session_id,
-                builtin_tool_ids.len()
-            );
-
-            // Get tools from each builtin server via the global MCP manager
-            for tool_id in builtin_tool_ids {
-                let server_tools = proxy.get_builtin_server_tools(&tool_id);
-                log::debug!(
-                    "Builtin server '{}' provides {} tools",
-                    tool_id,
-                    server_tools.len()
-                );
-                all_tools.extend(server_tools);
-            }
-
-            log::info!(
-                "Collected {} builtin tools for session {}",
-                all_tools.len(),
-                session_id
-            );
-        } else {
-            log::warn!(
-                "No proxy found for session {}, cannot collect builtin tools",
-                session_id
-            );
-        }
-
-        // 2. Collect external MCP tools (filtered by agent config)
-        if !agent_config.mcp_server_ids.is_empty() {
-            log::debug!(
-                "Agent config allows {} external MCP servers",
-                agent_config.mcp_server_ids.len()
-            );
-
-            // Get all external tools through public API
-            let external_tools = self
-                .proxy_manager
-                .list_all_external_tools()
-                .await
-                .unwrap_or_default();
-
-            // Filter by allowed server IDs
-            // Tool names from external servers are formatted as: server_name__tool_name
-            let filtered_external_tools: Vec<_> = external_tools
-                .into_iter()
-                .filter(|tool| {
-                    // Extract server name from tool name
-                    if let Some(server_name) = tool.name.split("__").next() {
-                        agent_config
-                            .mcp_server_ids
-                            .contains(&server_name.to_string())
-                    } else {
-                        false
-                    }
-                })
-                .collect();
-
-            log::info!(
-                "Collected {} external MCP tools (filtered by allowed servers) for session {}",
-                filtered_external_tools.len(),
-                session_id
-            );
-
-            all_tools.extend(filtered_external_tools);
-        }
-
-        log::info!(
-            "Total tools available for session {}: {} tools",
-            session_id,
-            all_tools.len()
-        );
-
-        Ok(all_tools)
+        crate::agent::tools::collect_available_tools(session_id, agent_config, &self.proxy_manager)
+            .await
     }
 
     /// Request LLM completion from frontend
@@ -1209,136 +1111,4 @@ impl AgentSessionManager {
 
         Ok(())
     }
-
-    /// Create a tool result message from successful tool execution
-    fn create_tool_result_message(
-        session_id: &str,
-        tool_call_id: &str,
-        content: String,
-    ) -> Message {
-        let now = chrono::Utc::now().timestamp_millis();
-
-        // Wrap plain string content in MCPContent::Text for type safety
-        let content_array = vec![MCPContent::Text { text: content }];
-
-        Message {
-            id: uuid::Uuid::new_v4().to_string(),
-            session_id: session_id.to_string(),
-            role: "tool".to_string(),
-            tool_call_id: Some(tool_call_id.to_string()),
-            content: content_array,
-            tool_calls: None,
-            is_streaming: Some(false),
-            thinking: None,
-            thinking_signature: None,
-            assistant_id: None,
-            attachments: None,
-            tool_use: None,
-            created_at: now,
-            updated_at: now,
-            source: Some("tool".to_string()),
-            error: None,
-        }
-    }
-
-    /// Create an error tool result message from failed tool execution
-    fn create_error_tool_result(
-        session_id: &str,
-        tool_call_id: &str,
-        error_message: &str,
-    ) -> Message {
-        let now = chrono::Utc::now().timestamp_millis();
-
-        // Wrap error message in MCPContent::Text for type safety
-        let content_array = vec![MCPContent::Text {
-            text: format!("Error: {}", error_message),
-        }];
-
-        Message {
-            id: uuid::Uuid::new_v4().to_string(),
-            session_id: session_id.to_string(),
-            role: "tool".to_string(),
-            tool_call_id: Some(tool_call_id.to_string()),
-            content: content_array,
-            tool_calls: None,
-            is_streaming: Some(false),
-            thinking: None,
-            thinking_signature: None,
-            assistant_id: None,
-            attachments: None,
-            tool_use: None,
-            created_at: now,
-            updated_at: now,
-            source: Some("tool".to_string()),
-            error: None,
-        }
-    }
-}
-
-/// Extract builtin tool IDs from agent configuration
-///
-/// This function analyzes the agent config to determine which builtin MCP tools
-/// should be available for the session. Currently, it returns a default set of
-/// builtin tools that all agents can use.
-///
-/// # Arguments
-/// * `agent_config` - The agent configuration
-///
-/// # Returns
-/// A vector of builtin tool IDs to initialize for the session
-fn extract_builtin_tool_ids(agent_config: &crate::agent::AgentConfig) -> Vec<String> {
-    let mut tool_ids = Vec::new();
-
-    // Bootstrap server is always available (platform detection, installation guides)
-    tool_ids.push("bootstrap".to_string());
-
-    // Check if specific builtin services are allowed
-    // None = all allowed, Some([]) = none allowed, Some([...]) = specific ones allowed
-    if let Some(allowed_aliases) = &agent_config.allowed_built_in_service_aliases {
-        // If empty list, no builtin services enabled
-        if allowed_aliases.is_empty() {
-            return tool_ids; // Only bootstrap
-        }
-
-        // Check for specific services
-        // Note: Knowledge, Planning, Playbook, Assistant will be added in Phase 2/3
-        // For now, we only have bootstrap implemented
-        for alias in allowed_aliases {
-            match alias.as_str() {
-                "bootstrap" => {
-                    // Already added above
-                }
-                // Phase 2
-                "knowledge" => tool_ids.push("knowledge".to_string()),
-                "planning" => tool_ids.push("planning".to_string()),
-                // Phase 3
-                "playbook" => tool_ids.push("playbook".to_string()),
-                "assistant" => tool_ids.push("assistant".to_string()),
-                // Essential servers (always enabled if requested)
-                "workspace" => tool_ids.push("workspace".to_string()),
-                "content_store" | "contentstore" => tool_ids.push("content_store".to_string()),
-                "ui" => tool_ids.push("ui".to_string()),
-                "browser" => tool_ids.push("browser".to_string()),
-                _ => {
-                    log::warn!("Unknown builtin service alias: {}", alias);
-                }
-            }
-        }
-    } else {
-        // None = all builtin services allowed
-        // Phase 2
-        tool_ids.push("knowledge".to_string());
-        tool_ids.push("planning".to_string());
-        // Phase 3
-        tool_ids.push("playbook".to_string());
-        tool_ids.push("assistant".to_string());
-        // Essential servers
-        tool_ids.push("workspace".to_string());
-        tool_ids.push("content_store".to_string());
-        tool_ids.push("content_store".to_string());
-        tool_ids.push("ui".to_string());
-        tool_ids.push("browser".to_string());
-    }
-
-    tool_ids
 }

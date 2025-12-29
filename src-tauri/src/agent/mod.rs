@@ -1,6 +1,9 @@
 pub mod config;
 pub mod events;
+pub mod llm;
 pub mod session_manager;
+pub mod state;
+pub mod tools;
 pub mod types;
 
 pub use config::AgentConfig;
