@@ -1,0 +1,244 @@
+use crate::agent::state::{AgentSession, MAX_CACHED_MESSAGES};
+use crate::mcp::MCPServiceProxyManager;
+use crate::repositories::message_repository::MessageRepository as MessageRepositoryTrait;
+use crate::repositories::session_repository::SessionRepository;
+use crate::repositories::{SessionMetadata, SessionStatus};
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::time::SystemTime;
+use tauri::AppHandle;
+use tokio::sync::RwLock;
+use tokio_util::sync::CancellationToken;
+
+/// Create or update a session in the database
+pub async fn create_session(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    proxy_manager: &Arc<MCPServiceProxyManager>,
+    app_handle: &AppHandle,
+    session_id: String,
+    name: Option<String>,
+    agent_config: crate::agent::AgentConfig,
+) -> Result<SessionMetadata, String> {
+    let now = chrono::Utc::now().timestamp_millis();
+
+    // Validate agent config
+    agent_config.validate()?;
+
+    // Serialize config for storage
+    let config_json = agent_config.to_json()?;
+
+    let session = SessionMetadata {
+        id: session_id.clone(),
+        name,
+        status: SessionStatus::Idle,
+        agent_config: Some(config_json),
+        created_at: now,
+        updated_at: now,
+    };
+
+    // Persist to database
+    let session_repo = crate::state::get_session_repository();
+    session_repo
+        .upsert_session(&session)
+        .await
+        .map_err(|e| format!("Failed to create session: {}", e))?;
+
+    // Extract builtin tool IDs from agent config
+    // Note: tools.rs already exists in src-tauri/src/agent/tools.rs
+    let tool_ids = crate::agent::tools::extract_builtin_tool_ids(&agent_config);
+
+    // Create proxy for this session
+    proxy_manager
+        .create_proxy(session_id.clone(), tool_ids, Some(app_handle.clone()))
+        .await?;
+
+    log::info!(
+        "Created MCP proxy for session: {} with builtin tools",
+        session_id
+    );
+
+    // Add to active sessions with cancellation token and empty cache
+    let mut active = active_sessions.write().await;
+    active.insert(
+        session_id.clone(),
+        AgentSession {
+            metadata: session.clone(),
+            is_running: false,
+            cancellation_token: CancellationToken::new(),
+            pending_execution: None,
+            messages: Arc::new(RwLock::new(Vec::new())),
+            cache_initialized: Arc::new(AtomicBool::new(false)),
+            last_synced_at: Arc::new(RwLock::new(None)),
+        },
+    );
+
+    log::info!("Created agent session: {}", session_id);
+    Ok(session)
+}
+
+/// Update session status in database and emit event
+pub async fn update_session_status(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    app_handle: &AppHandle,
+    session_id: &str,
+    status: SessionStatus,
+) -> Result<(), String> {
+    let session_repo = crate::state::get_session_repository();
+    session_repo
+        .update_status(session_id, status.clone())
+        .await
+        .map_err(|e| format!("Failed to update session status: {}", e))?;
+
+    // Update in-memory state
+    let mut active = active_sessions.write().await;
+    if let Some(session) = active.get_mut(session_id) {
+        session.metadata.status = status.clone();
+    }
+
+    // Emit status changed event
+    let event = crate::agent::events::AgentEvent::StatusChanged {
+        session_id: session_id.to_string(),
+        status,
+    };
+    crate::agent::events::emit_agent_event(app_handle, event)
+        .map_err(|e| format!("Failed to emit event: {}", e))?;
+
+    Ok(())
+}
+
+/// Recover sessions stuck in BUSY state after app crash/restart
+pub async fn recover_sessions(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    app_handle: &AppHandle,
+) -> Result<(), String> {
+    log::info!("Starting session recovery process...");
+
+    let session_repo = crate::state::get_session_repository();
+    let all_sessions = session_repo
+        .get_all_sessions()
+        .await
+        .map_err(|e| format!("Failed to query sessions for recovery: {}", e))?;
+
+    let mut recovered_count = 0;
+
+    for session in all_sessions {
+        // Only recover sessions that were BUSY (actively running)
+        if matches!(session.status, SessionStatus::Busy) {
+            log::warn!(
+                "Recovering session '{}' from BUSY state (possible crash)",
+                session.id
+            );
+
+            // Reset to PAUSED (user can manually resume)
+            // Call local update_session_status helper
+            update_session_status(
+                active_sessions,
+                app_handle,
+                &session.id,
+                SessionStatus::Paused,
+            )
+            .await?;
+
+            // Initialize session in active_sessions map with fresh state
+            let mut active = active_sessions.write().await;
+            active.insert(
+                session.id.clone(),
+                AgentSession {
+                    metadata: session.clone(),
+                    is_running: false,
+                    cancellation_token: CancellationToken::new(),
+                    pending_execution: None,
+                    messages: Arc::new(RwLock::new(Vec::new())),
+                    cache_initialized: Arc::new(AtomicBool::new(false)),
+                    last_synced_at: Arc::new(RwLock::new(None)),
+                },
+            );
+            drop(active); // Release lock early
+
+            recovered_count += 1;
+        }
+    }
+
+    if recovered_count > 0 {
+        log::info!(
+            "Session recovery complete: {} session(s) recovered",
+            recovered_count
+        );
+    } else {
+        log::info!("Session recovery complete: No sessions to recover");
+    }
+
+    Ok(())
+}
+
+/// Get session metadata
+pub async fn get_session(session_id: &str) -> Result<Option<SessionMetadata>, String> {
+    let session_repo = crate::state::get_session_repository();
+    session_repo
+        .get_session(session_id)
+        .await
+        .map_err(|e| format!("Failed to get session: {}", e))
+}
+
+/// Get all sessions
+pub async fn get_all_sessions() -> Result<Vec<SessionMetadata>, String> {
+    let session_repo = crate::state::get_session_repository();
+    session_repo
+        .get_all_sessions()
+        .await
+        .map_err(|e| format!("Failed to get all sessions: {}", e))
+}
+
+/// Load messages from DB into in-memory cache (called once per session)
+pub async fn init_session_with_messages(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+) -> Result<(), String> {
+    let message_repo = crate::state::get_message_repository();
+
+    // Load last 1000 messages from DB (one-time operation)
+    let page = message_repo
+        .get_page(session_id, 1, MAX_CACHED_MESSAGES)
+        .await
+        .map_err(|e| format!("Failed to load messages for session {}: {}", session_id, e))?;
+
+    let loaded_count = page.items.len();
+
+    // Populate in-memory cache
+    let sessions = active_sessions.read().await;
+    if let Some(session) = sessions.get(session_id) {
+        let mut messages = session.messages.write().await;
+        *messages = page.items; // Replace with DB data
+
+        let mut synced_at = session.last_synced_at.write().await;
+        *synced_at = Some(SystemTime::now());
+
+        session.cache_initialized.store(true, Ordering::Release);
+
+        log::info!(
+            "Initialized session cache: session={}, messages_loaded={}",
+            session_id,
+            loaded_count
+        );
+    } else {
+        return Err(format!("Session not found: {}", session_id));
+    }
+
+    Ok(())
+}
+
+/// Ensure cache is initialized before workflow starts (lazy initialization)
+pub async fn ensure_cache_initialized(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+) -> Result<(), String> {
+    let sessions = active_sessions.read().await;
+    if let Some(session) = sessions.get(session_id) {
+        if !session.cache_initialized.load(Ordering::Acquire) {
+            drop(sessions); // Release read lock before calling init
+            init_session_with_messages(active_sessions, session_id).await?;
+        }
+    }
+    Ok(())
+}

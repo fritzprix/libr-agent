@@ -19,7 +19,7 @@ const logger = getLogger('AgentChatContext');
 /**
  * Session status from Rust backend
  */
-type SessionStatus = 'Idle' | 'Busy' | 'Paused';
+type SessionStatus = 'idle' | 'busy' | 'paused' | 'error';
 
 /**
  * Agent event from Rust backend (currently using Record<string, unknown> in listeners)
@@ -228,14 +228,17 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
           // IMPORTANT: Rust serde uses camelCase (StatusChanged → statusChanged)
           if (eventType === 'statusChanged') {
             const status = payload.status as SessionStatus;
-            if (status === 'Idle') {
+            if (status === 'idle') {
               setWorkflowStatus('idle');
               setIsLoading(false);
-            } else if (status === 'Busy') {
+            } else if (status === 'busy') {
               setWorkflowStatus('busy');
               setIsLoading(true);
-            } else if (status === 'Paused') {
+            } else if (status === 'paused') {
               setWorkflowStatus('paused');
+              setIsLoading(false);
+            } else if (status === 'error') {
+              setWorkflowStatus('error');
               setIsLoading(false);
             }
           } else if (eventType === 'workflowError') {

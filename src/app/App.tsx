@@ -39,11 +39,11 @@ function App() {
     <div className="h-screen w-full">
       <SettingsProvider>
         <ModelOptionsProvider>
-          <LLMServiceProvider>
-            <WebMCPProvider>
-              <MCPServerRegistryProvider>
-                <MCPServerProvider>
-                  <SystemPromptProvider>
+          <SystemPromptProvider>
+            <LLMServiceProvider>
+              <WebMCPProvider>
+                <MCPServerRegistryProvider>
+                  <MCPServerProvider>
                     <AssistantContextProvider>
                       <SessionContextProvider>
                         <AgentSessionProvider>
@@ -119,11 +119,11 @@ function App() {
                         </AgentSessionProvider>
                       </SessionContextProvider>
                     </AssistantContextProvider>
-                  </SystemPromptProvider>
-                </MCPServerProvider>
-              </MCPServerRegistryProvider>
-            </WebMCPProvider>
-          </LLMServiceProvider>
+                  </MCPServerProvider>
+                </MCPServerRegistryProvider>
+              </WebMCPProvider>
+            </LLMServiceProvider>
+          </SystemPromptProvider>
         </ModelOptionsProvider>
       </SettingsProvider>
     </div>

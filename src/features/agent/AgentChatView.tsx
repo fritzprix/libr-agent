@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import type { Message, ToolCall } from '@/models/chat';
 import { AgentToolCallGroup } from './components/AgentToolCallGroup';
 import { AgentMessageRenderer } from './components/AgentMessageRenderer';
+import { TimeLocationSystemPrompt } from '@/features/prompts/TimeLocationSystemPrompt';
 
 const logger = getLogger('AgentChatView');
 
@@ -130,6 +131,7 @@ export default function AgentChatView() {
 
   return (
     <div className="flex flex-col h-full">
+      <TimeLocationSystemPrompt />
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-border">
         <div>

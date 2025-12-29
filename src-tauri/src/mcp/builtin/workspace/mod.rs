@@ -758,14 +758,21 @@ impl BuiltinMCPServer for WorkspaceServer {
                 .get_current_session()
                 .unwrap_or_else(|| "default".to_string());
 
+            info!(
+                "Checking context switch: old='{}', new='{}'",
+                old_session_id, new_session_id
+            );
+
             // Cancel all processes for the old session
             if old_session_id != new_session_id {
                 info!(
-                    "Cancelling all processes for old session: {}",
-                    old_session_id
+                    "Switching workspace context: {} -> {}",
+                    old_session_id, new_session_id
                 );
 
+                info!("Acquiring process registry lock for cleanup...");
                 let mut reg = self.process_registry.write().await;
+                info!("Process registry lock acquired. Starting cleanup.");
 
                 // Get all process IDs for the old session
                 let old_session_processes: Vec<String> = reg
@@ -823,12 +830,21 @@ impl BuiltinMCPServer for WorkspaceServer {
                 }
 
                 drop(reg);
+                info!("Process registry lock released.");
+            } else {
+                info!("Session context unchanged, skipping process cleanup.");
             }
 
-            // Switch session in session_manager
-            if let Err(e) = self.session_manager.set_session(new_session_id.clone()) {
+            // Switch session in session_manager (use async version to avoid blocking)
+            info!("Updating session manager context to: {}", new_session_id);
+            if let Err(e) = self
+                .session_manager
+                .set_session_async(new_session_id.clone())
+                .await
+            {
                 return Err(format!("Failed to switch session in session_manager: {e}"));
             }
+            info!("Session manager context updated successfully.");
 
             // The session manager handles session-specific workspace directories
             // No additional action needed as get_workspace_dir() uses session context

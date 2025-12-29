@@ -1,7 +1,11 @@
+use crate::agent::state::AgentSession;
 use crate::agent::types::MCPContent;
 use crate::commands::messages_commands::Message;
 use crate::mcp::MCPServiceProxyManager;
+use std::collections::HashMap;
 use std::sync::Arc;
+use tauri::AppHandle;
+use tokio::sync::RwLock;
 
 /// Collect available tools for a session based on agent configuration
 pub async fn collect_available_tools(
@@ -263,4 +267,96 @@ pub fn create_tool_result_message_with_content(
         source: Some("tool".to_string()),
         error: None,
     }
+}
+
+/// Handle tool execution result from frontend or internal execution
+///
+/// Returns `Ok(Some(messages))` if all pending tools for this turn have completed,
+/// containing the accumulated tool results to be processed.
+/// Returns `Ok(None)` if we are still waiting for other tools to complete.
+pub async fn handle_tool_result(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    app_handle: &AppHandle,
+    session_id: String,
+    tool_call_id: String,
+    result: crate::commands::agent_commands::ToolExecutionResult,
+) -> Result<Option<Vec<Message>>, String> {
+    // Check cancellation
+    {
+        let active = active_sessions.read().await;
+        if let Some(session) = active.get(&session_id) {
+            if session.cancellation_token.is_cancelled() {
+                log::info!("Workflow cancelled for session: {}", session_id);
+                return Err("Workflow was cancelled".to_string());
+            }
+        }
+    }
+
+    log::debug!(
+        "Tool result received for session {}, tool_call_id: {}",
+        session_id,
+        tool_call_id
+    );
+
+    // Scope to hold the write lock
+    {
+        let mut active = active_sessions.write().await;
+        if let Some(session) = active.get_mut(&session_id) {
+            if let Some(pending) = &mut session.pending_execution {
+                // Create Tool Message using helper methods
+                let message = if result.is_error {
+                    create_error_tool_result(
+                        &session_id,
+                        &tool_call_id,
+                        result.error.as_deref().unwrap_or("Unknown error"),
+                    )
+                } else if let Some(mcp_content) = result.mcp_content {
+                    create_tool_result_message_with_content(&session_id, &tool_call_id, mcp_content)
+                } else {
+                    create_tool_result_message(&session_id, &tool_call_id, result.content.clone())
+                };
+
+                pending.results.push(message);
+
+                // Emit ToolExecutionCompleted event for external tools (progress tracking)
+                if let Some(tool_name) = pending.tool_names.get(&tool_call_id) {
+                    let event = crate::agent::events::AgentEvent::ToolExecutionCompleted {
+                        session_id: session_id.clone(),
+                        tool_name: tool_name.clone(),
+                        success: !result.is_error,
+                    };
+                    let _ = crate::agent::events::emit_agent_event(app_handle, event);
+                }
+
+                log::debug!(
+                    "Accumulated result {}/{} for session {}",
+                    pending.results.len(),
+                    pending.total_expected,
+                    session_id
+                );
+
+                // Check if all results are in
+                if pending.results.len() >= pending.total_expected {
+                    // Move results out of pending state
+                    let accumulated_messages: Vec<Message> = pending.results.drain(..).collect();
+                    // Clear pending state
+                    session.pending_execution = None;
+
+                    // Return the accumulated messages
+                    return Ok(Some(accumulated_messages));
+                }
+            } else {
+                log::warn!(
+                    "Received tool result for session {} but no pending execution state found",
+                    session_id
+                );
+                return Ok(None); // Ignore or error? Safe to ignore to prevent crashes
+            }
+        } else {
+            return Err(format!("Session not found: {}", session_id));
+        }
+    }
+
+    // If we're here, it means we haven't finished collecting all results yet
+    Ok(None)
 }

@@ -24,6 +24,8 @@ vi.mock('@/lib/ai-service/factory', () => ({
   },
 }));
 
+import { SystemPromptProvider } from '../SystemPromptContext';
+
 // Mock logger
 vi.mock('@/lib/logger', () => ({
   getLogger: () => ({
@@ -38,7 +40,9 @@ vi.mock('@/lib/logger', () => ({
 function TestWrapper({ children }: { children: ReactNode }) {
   return (
     <SettingsProvider>
-      <LLMServiceProvider>{children}</LLMServiceProvider>
+      <SystemPromptProvider>
+        <LLMServiceProvider>{children}</LLMServiceProvider>
+      </SystemPromptProvider>
     </SettingsProvider>
   );
 }
