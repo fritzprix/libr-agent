@@ -40,7 +40,7 @@ tauri-plugin-http = { version = "2", features = ["unsafe-headers"] }
 log = "0.4.29"
 tauri-plugin-dialog = "2"
 path-clean = "1.0"
-tempfile = "3.22"
+tempfile = "3.24"
 thiserror = "1.0"
 tracing = "0.1"
 async-trait = "0.1"
