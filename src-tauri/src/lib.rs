@@ -46,7 +46,7 @@ use commands::workspace_commands::{
     get_app_data_dir, get_app_logs_dir, greet, list_workspace_files,
 };
 use mcp::MCPServerManager;
-use services::{agent_server, InteractiveBrowserServer, SecureFileManager};
+use services::{InteractiveBrowserServer, SecureFileManager};
 use session::get_session_manager;
 
 // Re-export state management functions
@@ -249,8 +249,7 @@ pub fn run() {
                 list_builtin_servers_with_metadata,
                 call_builtin_tool,
                 list_all_tools_unified,
-                agent_server::agent_start,
-                agent_server::agent_llm_response,
+                list_all_tools_unified,
                 // Download commands
                 download_workspace_file,
                 export_and_download_zip,
@@ -333,11 +332,7 @@ pub fn run() {
                 println!("✅ Interactive Browser Server initialized");
 
                 // Initialize Agent Runtime State
-                app.manage(services::agent_server::AgentRuntimeState::default());
-                app.manage(std::sync::Arc::new(
-                    services::agent_server::PendingLlmRequests::default(),
-                )); // Pending requests manager
-                println!("✅ Agent Runtime State initialized");
+                println!("✅ Interactive Browser Server initialized");
 
                 // Initialize Agent Session Manager with proxy manager
                 // Get static reference and wrap in Arc using the same unsafe pattern
