@@ -111,12 +111,8 @@ impl BuiltinMCPServer for BootstrapServer {
 
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
         ServiceContext {
-            context_prompt:
-                "Bootstrap Server: Platform detection and installation guides available".to_string(),
-            structured_state: Some(json!({
-                "platform": platform::detect_current_platform(),
-                "supported_tools": ["node", "python", "uv", "docker", "git"]
-            })),
+            context_prompt: String::new(),
+            structured_state: None,
         }
     }
 

@@ -537,7 +537,14 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
               // threadId removed - not in Rust Message schema
               role: result.role,
               content: result.content || [],
-              toolCalls: result.tool_calls || undefined,
+              // Ensure all tool calls have the required 'type' field
+              toolCalls: result.tool_calls
+                ? result.tool_calls.map((tc) => ({
+                    id: tc.id,
+                    type: tc.type || 'function',
+                    function: tc.function,
+                  }))
+                : undefined,
               toolCallId: result.tool_call_id || undefined,
               isStreaming: result.isStreaming || undefined,
               thinking: result.thinking || undefined,

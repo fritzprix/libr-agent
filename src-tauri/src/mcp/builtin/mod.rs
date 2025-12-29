@@ -81,13 +81,9 @@ pub trait BuiltinMCPServer: Send + Sync + std::fmt::Debug {
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
         ServiceContext {
             context_prompt: format!(
-                "# {} Server Status\n\
-                **Server**: {}\n\
-                **Status**: Active\n\
-                **Tools Available**: {}",
-                self.name(),
-                self.name(),
-                self.tools().len()
+                "## {}\n**Description**: {}",
+                self.display_name(),
+                self.description()
             ),
             structured_state: None,
         }

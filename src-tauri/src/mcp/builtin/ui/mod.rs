@@ -1,5 +1,5 @@
 use crate::mcp::builtin::BuiltinMCPServer;
-use crate::mcp::types::{MCPContent, MCPResult};
+use crate::mcp::types::{MCPContent, MCPResult, ServiceContext};
 use crate::mcp::MCPTool;
 use async_trait::async_trait;
 use handlebars::Handlebars;
@@ -401,6 +401,13 @@ impl BuiltinMCPServer for UiServer {
 
     fn description(&self) -> &str {
         "UI Tools for user interaction"
+    }
+
+    async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
+        ServiceContext {
+            context_prompt: String::new(),
+            structured_state: None,
+        }
     }
 
     fn tools(&self) -> Vec<MCPTool> {

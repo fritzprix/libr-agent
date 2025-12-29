@@ -473,6 +473,9 @@ pub async fn build_system_prompt(
 ) -> Result<String, String> {
     let mut parts = Vec::new();
 
+    // Add time and location context first
+    parts.push(build_time_location_context());
+
     if !agent_config.system_prompt.trim().is_empty() {
         parts.push(agent_config.system_prompt.clone());
     }
@@ -492,4 +495,55 @@ pub async fn build_system_prompt(
     }
 
     Ok(parts.join("\n"))
+}
+
+/// Build time and location context for system prompt
+fn build_time_location_context() -> String {
+    use chrono::{Local, Datelike, Timelike};
+    
+    let now = Local::now();
+    
+    // Format date as "Monday, December 30, 2025"
+    let weekday = match now.weekday() {
+        chrono::Weekday::Mon => "Monday",
+        chrono::Weekday::Tue => "Tuesday",
+        chrono::Weekday::Wed => "Wednesday",
+        chrono::Weekday::Thu => "Thursday",
+        chrono::Weekday::Fri => "Friday",
+        chrono::Weekday::Sat => "Saturday",
+        chrono::Weekday::Sun => "Sunday",
+    };
+    
+    let month = match now.month() {
+        1 => "January", 2 => "February", 3 => "March", 4 => "April",
+        5 => "May", 6 => "June", 7 => "July", 8 => "August",
+        9 => "September", 10 => "October", 11 => "November", 12 => "December",
+        _ => "Unknown",
+    };
+    
+    let current_date = format!("{}, {} {}, {}", weekday, month, now.day(), now.year());
+    
+    // Format time with timezone
+    let current_time = format!(
+        "{:02}:{:02}:{:02} {}",
+        now.hour(),
+        now.minute(),
+        now.second(),
+        now.offset()
+    );
+    
+    // Get timezone name
+    let timezone = format!("{}", now.offset());
+    
+    format!(
+        "# Current Context Information\n\n\
+        ## Date and Time\n\
+        - **Current Date**: {}\n\
+        - **Current Time**: {}\n\
+        - **Timezone**: {}\n\n\
+        *This information is automatically updated to help you understand the user's current temporal context.*",
+        current_date,
+        current_time,
+        timezone
+    )
 }

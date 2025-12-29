@@ -120,6 +120,70 @@ impl BrowserServer {
             scope_check
         )
     }
+
+    /// Format interactive elements list to match TypeScript output format
+    /// Matches formatSmartResults() from ListInteractableTool.ts
+    fn format_interactive_elements(json_result: &str, filter_type: &str, scope: &str) -> Result<String, String> {
+        #[derive(serde::Deserialize)]
+        struct Element {
+            index: usize,
+            tag: String,
+            text: String,
+            attributes: serde_json::Map<String, Value>,
+            selector: String,
+        }
+
+        let elements: Vec<Element> = serde_json::from_str(json_result)
+            .map_err(|e| format!("Failed to parse elements JSON: {}", e))?;
+
+        if elements.is_empty() {
+            let filter_label = filter_type.replace('_', " ");
+            let scope_label = if scope == "viewport" { "current viewport" } else { "page" };
+            return Ok(format!("No {} elements found in {}.", filter_label, scope_label));
+        }
+
+        // Header with metadata
+        let filter_label = filter_type.replace('_', " ");
+        let scope_label = if scope == "viewport" { "viewport" } else { "page" };
+        let mut output = format!("Found {} {} element(s) in {}:\n\n", elements.len(), filter_label, scope_label);
+
+        // Format each element
+        for el in &elements {
+            // Format attributes
+            let attrs: Vec<String> = el.attributes
+                .iter()
+                .filter(|(_, v)| !v.is_null())
+                .map(|(k, v)| {
+                    if let Some(s) = v.as_str() {
+                        format!("{}=\"{}\"", k, s)
+                    } else {
+                        String::new()
+                    }
+                })
+                .filter(|s| !s.is_empty())
+                .collect();
+
+            let attr_str = if !attrs.is_empty() {
+                format!(" {}", attrs.join(" "))
+            } else {
+                String::new()
+            };
+
+            let text_str = if !el.text.is_empty() {
+                format!(" \"{}\"", el.text)
+            } else {
+                String::new()
+            };
+
+            output.push_str(&format!("[{}] <{}{}>{}\n", el.index, el.tag, attr_str, text_str));
+            output.push_str(&format!("    Selector: {}\n\n", el.selector));
+        }
+
+        // Footer with usage hint
+        output.push_str("💡 Use the selector or index to interact with these elements.");
+
+        Ok(output)
+    }
 }
 
 #[async_trait]
@@ -163,7 +227,7 @@ impl BuiltinMCPServer for BrowserServer {
 
                 return crate::mcp::types::ServiceContext {
                     context_prompt: format!(
-                        "# Browser Status\n\
+                        "## Browser\n\
                         **Active Session**: {}\n\
                         **Current URL**: {}\n\
                         **Page Title**: {}",
@@ -176,13 +240,9 @@ impl BuiltinMCPServer for BrowserServer {
 
         // Fallback or when no session is active
         crate::mcp::types::ServiceContext {
-            context_prompt: format!(
-                "# Browser Status\n\
-                **Status**: Active (No Browser Session Created)\n\
-                **Tools Available**: {}\n\
-                *Use `createSession` to start*",
-                self.tools().len()
-            ),
+            context_prompt: "## Browser\n\
+                **Status**: No active session\n\
+                *Use `createSession` to start*".to_string(),
             structured_state: None,
         }
     }
@@ -283,28 +343,6 @@ impl BuiltinMCPServer for BrowserServer {
                         }
                     },
                     "required": ["sessionId"]
-                }))
-                .unwrap(),
-                title: None,
-                output_schema: None,
-                annotations: None,
-            },
-            MCPTool {
-                name: "inject_javascript".to_string(),
-                description: "Execute JavaScript in the browser.".to_string(),
-                input_schema: serde_json::from_value(json!({
-                    "type": "object",
-                    "properties": {
-                        "sessionId": {
-                            "type": "string",
-                            "description": "The ID of the session to use"
-                        },
-                        "script": {
-                            "type": "string",
-                            "description": "The JavaScript code to execute"
-                        }
-                    },
-                    "required": ["sessionId", "script"]
                 }))
                 .unwrap(),
                 title: None,
@@ -714,16 +752,13 @@ impl BuiltinMCPServer for BrowserServer {
                     .unwrap_or("viewport");
 
                 let script = Self::get_filter_script(filter_type, scope);
-                let result = service.execute_script(session_id, &script).await?;
+                let result_json = service.execute_script(session_id, &script).await?;
 
-                // Result is a JSON string of elements, we should format it to be helpful text
-                // The legacy tool formats it heavily. Here we'll return the raw JSON in the text
-                // but ideally we would parse and format it. For now, returning the raw JSON
-                // is functional if the agent can parse it, or we can add formatting logic here.
-                // Given constraints, we'll try to return it as structured content OR text.
+                // Parse and format results to match TypeScript version
+                let formatted_text = BrowserServer::format_interactive_elements(&result_json, filter_type, scope)?;
 
                 Ok(MCPResult {
-                    content: Some(vec![crate::mcp::types::MCPContent::Text { text: result }]),
+                    content: Some(vec![crate::mcp::types::MCPContent::Text { text: formatted_text }]),
                     structured_content: None,
                     is_error: Some(false),
                 })

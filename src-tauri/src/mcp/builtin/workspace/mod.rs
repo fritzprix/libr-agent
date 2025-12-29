@@ -724,8 +724,7 @@ impl BuiltinMCPServer for WorkspaceServer {
         );
 
         let context_prompt = format!(
-            "## Workspace\n\nActive, {} tools, dir: {}, {} running processes, platform: {}/{}",
-            self.tools().len(),
+            "## Workspace\n\n**Directory**: {}\n**Running Processes**: {}\n**Platform**: {}/{}",
             workspace_dir,
             running_count,
             os,
