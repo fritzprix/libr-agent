@@ -5,7 +5,7 @@ import {
   useAgentSessionActions,
 } from '@/context/AgentSessionContext';
 import AgentChatView from './AgentChatView';
-import StartAgentView from './StartAgentView';
+import AgentChatStartView from './AgentChatStartView';
 import { getLogger } from '@/lib/logger';
 
 const logger = getLogger('AgentContainer');
@@ -17,7 +17,7 @@ const logger = getLogger('AgentContainer');
  * based on URL params and agent session state.
  *
  * Routes:
- * - /agent → StartAgentView (select assistant)
+ * - /agent → AgentChatStartView (two-column layout: assistant selection + session history)
  * - /agent/:sessionId → AgentChatView (resume or continue session)
  *
  * Pattern: Mirrors V1's ChatContainer.tsx for consistency
@@ -63,12 +63,19 @@ export default function AgentContainer() {
 
   /**
    * Route decision:
-   * - If sessionId in URL and session loaded → AgentChatView
-   * - Otherwise → StartAgentView
+   * - If sessionId in URL and session loaded → AgentChatView with compound components
+   * - Otherwise → AgentChatStartView (two-column layout)
    */
   return sessionId && currentSession?.id === sessionId ? (
-    <AgentChatView />
+    <AgentChatView>
+      <AgentChatView.Header />
+      <AgentChatView.StatusBar />
+      <AgentChatView.Messages />
+      <AgentChatView.AttachedFiles />
+      <AgentChatView.Input />
+      <AgentChatView.Bottom />
+    </AgentChatView>
   ) : (
-    <StartAgentView />
+    <AgentChatStartView />
   );
 }

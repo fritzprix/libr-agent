@@ -70,7 +70,7 @@ export function NewAgentSession() {
   const navigate = useNavigate();
   const { createSession } = useAgentSessionActions();
   const { assistants } = useAssistants();
-  
+
   const [selectedAssistant, setSelectedAssistant] = useState<string>('');
   const [sessionName, setSessionName] = useState<string>('');
   const [isCreating, setIsCreating] = useState(false);
@@ -86,7 +86,7 @@ export function NewAgentSession() {
     setError(null);
 
     try {
-      const assistant = assistants.find(a => a.id === selectedAssistant);
+      const assistant = assistants.find((a) => a.id === selectedAssistant);
       if (!assistant) throw new Error('Assistant not found');
 
       // Create session with Rust backend
@@ -108,7 +108,7 @@ export function NewAgentSession() {
     <div className="container max-w-2xl mx-auto p-6">
       <Card className="p-6">
         <h1 className="text-2xl font-bold mb-6">Create New Agent Session</h1>
-        
+
         <div className="space-y-4">
           {/* Assistant Selection */}
           <div>
@@ -121,7 +121,7 @@ export function NewAgentSession() {
               disabled={isCreating}
             >
               <option value="">Choose an assistant...</option>
-              {assistants.map(assistant => (
+              {assistants.map((assistant) => (
                 <option key={assistant.id} value={assistant.id}>
                   {assistant.name} - {assistant.description}
                 </option>
@@ -202,7 +202,7 @@ export function SessionList() {
     setIsLoading(true);
     try {
       const allSessions = await invoke<SessionMetadata[]>(
-        'agent_get_all_sessions'
+        'agent_get_all_sessions',
       );
       // Sort by most recent
       allSessions.sort((a, b) => b.created_at - a.created_at);
@@ -222,9 +222,7 @@ export function SessionList() {
     <div className="container max-w-4xl mx-auto p-6">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">Agent Sessions</h1>
-        <Button onClick={() => navigate('/agent/new')}>
-          New Session
-        </Button>
+        <Button onClick={() => navigate('/agent/new')}>New Session</Button>
       </div>
 
       {isLoading ? (
@@ -240,7 +238,7 @@ export function SessionList() {
         </Card>
       ) : (
         <div className="space-y-3">
-          {sessions.map(session => (
+          {sessions.map((session) => (
             <Card
               key={session.id}
               className="p-4 hover:bg-accent/50 transition-colors cursor-pointer"
@@ -252,7 +250,8 @@ export function SessionList() {
                     {session.name || `Session ${session.id.slice(0, 8)}`}
                   </h3>
                   <p className="text-sm text-muted-foreground">
-                    Created {formatDistanceToNow(new Date(session.created_at))} ago
+                    Created {formatDistanceToNow(new Date(session.created_at))}{' '}
+                    ago
                   </p>
                 </div>
                 <div className="flex items-center space-x-3">
@@ -431,10 +430,7 @@ export function AgentChat() {
       )}
 
       {/* Workflow Controls (Pause/Resume) */}
-      <WorkflowControls
-        status={workflowStatus}
-        sessionId={currentSession.id}
-      />
+      <WorkflowControls status={workflowStatus} sessionId={currentSession.id} />
 
       {/* Input Area */}
       <div className="border-t border-border p-4">
@@ -456,7 +452,9 @@ export function AgentChat() {
           </div>
           <Button
             onClick={handleSubmit}
-            disabled={!input.trim() || isSubmitting || workflowStatus === 'busy'}
+            disabled={
+              !input.trim() || isSubmitting || workflowStatus === 'busy'
+            }
             className="h-[60px]"
           >
             {isSubmitting ? 'Sending...' : 'Send'}
@@ -483,7 +481,11 @@ interface SessionHeaderProps {
   onCancel: () => Promise<void>;
 }
 
-export function SessionHeader({ session, status, onCancel }: SessionHeaderProps) {
+export function SessionHeader({
+  session,
+  status,
+  onCancel,
+}: SessionHeaderProps) {
   const handlePause = async () => {
     try {
       await invoke('agent_pause_workflow', { sessionId: session.id });
@@ -538,11 +540,7 @@ export function SessionHeader({ session, status, onCancel }: SessionHeaderProps)
         )}
 
         {status === 'paused' && (
-          <Button
-            size="sm"
-            variant="default"
-            onClick={handleResume}
-          >
+          <Button size="sm" variant="default" onClick={handleResume}>
             Resume
           </Button>
         )}
@@ -583,7 +581,13 @@ function StatusIndicator({ status }: { status: string }) {
 import { useState, useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { Card } from '@/components/ui';
-import { CheckCircle, XCircle, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
+import {
+  CheckCircle,
+  XCircle,
+  Loader2,
+  ChevronDown,
+  ChevronUp,
+} from 'lucide-react';
 import type { ToolCall } from '@/models/chat';
 
 interface ToolExecutionCardProps {
@@ -600,30 +604,40 @@ export function ToolExecutionCard({
   isError,
 }: ToolExecutionCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
-  const [executionState, setExecutionState] = useState<'pending' | 'running' | 'completed' | 'failed'>('pending');
+  const [executionState, setExecutionState] = useState<
+    'pending' | 'running' | 'completed' | 'failed'
+  >('pending');
   const [startTime] = useState(Date.now());
   const [duration, setDuration] = useState<number | null>(null);
 
   useEffect(() => {
     // Listen for tool execution events
-    const unlisten = listen<{ type: string; session_id: string; tool_name: string; success?: boolean }>(
-      'agent:event',
-      (event) => {
-        if (event.payload.session_id !== sessionId) return;
+    const unlisten = listen<{
+      type: string;
+      session_id: string;
+      tool_name: string;
+      success?: boolean;
+    }>('agent:event', (event) => {
+      if (event.payload.session_id !== sessionId) return;
 
-        const toolName = toolCall.function.name;
+      const toolName = toolCall.function.name;
 
-        if (event.payload.type === 'ToolExecutionStarted' && event.payload.tool_name === toolName) {
-          setExecutionState('running');
-        } else if (event.payload.type === 'ToolExecutionCompleted' && event.payload.tool_name === toolName) {
-          setExecutionState(event.payload.success ? 'completed' : 'failed');
-          setDuration(Date.now() - startTime);
-        }
+      if (
+        event.payload.type === 'ToolExecutionStarted' &&
+        event.payload.tool_name === toolName
+      ) {
+        setExecutionState('running');
+      } else if (
+        event.payload.type === 'ToolExecutionCompleted' &&
+        event.payload.tool_name === toolName
+      ) {
+        setExecutionState(event.payload.success ? 'completed' : 'failed');
+        setDuration(Date.now() - startTime);
       }
-    );
+    });
 
     return () => {
-      unlisten.then(fn => fn());
+      unlisten.then((fn) => fn());
     };
   }, [sessionId, toolCall.function.name, startTime]);
 
@@ -654,7 +668,8 @@ export function ToolExecutionCard({
   };
 
   // Parse tool name (remove server prefix)
-  const displayName = toolCall.function.name.split('__').pop() || toolCall.function.name;
+  const displayName =
+    toolCall.function.name.split('__').pop() || toolCall.function.name;
   const serverName = toolCall.function.name.split('__')[0];
 
   return (
@@ -704,9 +719,11 @@ export function ToolExecutionCard({
               <div className="text-xs font-semibold text-muted-foreground mb-1">
                 {isError ? 'Error:' : 'Result:'}
               </div>
-              <pre className={`text-xs p-2 rounded overflow-x-auto ${
-                isError ? 'bg-red-50 text-red-900' : 'bg-muted'
-              }`}>
+              <pre
+                className={`text-xs p-2 rounded overflow-x-auto ${
+                  isError ? 'bg-red-50 text-red-900' : 'bg-muted'
+                }`}
+              >
                 {result}
               </pre>
             </div>
@@ -792,7 +809,8 @@ export class AgentErrorBoundary extends Component<Props, State> {
               <div className="flex-1">
                 <h2 className="text-xl font-bold mb-2">Something went wrong</h2>
                 <p className="text-muted-foreground mb-4">
-                  The agent session encountered an unexpected error. You can try to recover or restart the session.
+                  The agent session encountered an unexpected error. You can try
+                  to recover or restart the session.
                 </p>
 
                 {/* Error Details (Collapsible) */}
@@ -824,15 +842,15 @@ export class AgentErrorBoundary extends Component<Props, State> {
 
                 {/* Actions */}
                 <div className="flex space-x-2">
-                  <Button onClick={this.handleReset} className="flex items-center space-x-2">
+                  <Button
+                    onClick={this.handleReset}
+                    className="flex items-center space-x-2"
+                  >
                     <RefreshCw className="w-4 h-4" />
                     <span>Try Again</span>
                   </Button>
                   {this.props.sessionId && (
-                    <Button
-                      variant="outline"
-                      onClick={this.handleTerminate}
-                    >
+                    <Button variant="outline" onClick={this.handleTerminate}>
                       Terminate & Reset Session
                     </Button>
                   )}
@@ -857,7 +875,7 @@ import { AgentErrorBoundary } from '@/features/agent/components/ErrorBoundary';
 
 function AgentSessionRoute() {
   const { sessionId } = useParams();
-  
+
   return (
     <AgentErrorBoundary sessionId={sessionId}>
       <AgentSessionLayout />
@@ -887,15 +905,19 @@ interface AgentEventHandler {
   onStatusChanged?: (sessionId: string, status: string) => void;
   onMessageAdded?: (sessionId: string, message: unknown) => void;
   onToolExecutionStarted?: (sessionId: string, toolName: string) => void;
-  onToolExecutionCompleted?: (sessionId: string, toolName: string, success: boolean) => void;
+  onToolExecutionCompleted?: (
+    sessionId: string,
+    toolName: string,
+    success: boolean,
+  ) => void;
 }
 
 export function useAgentEvents(
   sessionId: string | undefined,
-  handlers: AgentEventHandler
+  handlers: AgentEventHandler,
 ) {
   const handlersRef = useRef(handlers);
-  
+
   // Update handlers ref on changes
   useEffect(() => {
     handlersRef.current = handlers;
@@ -922,7 +944,11 @@ export function useAgentEvents(
           if (eventSessionId !== sessionId) return;
 
           const eventType = payload.type as string;
-          logger.debug('Received agent event', { sessionId, eventType, payload });
+          logger.debug('Received agent event', {
+            sessionId,
+            eventType,
+            payload,
+          });
 
           // Route to appropriate handler
           const h = handlersRef.current;
@@ -943,19 +969,22 @@ export function useAgentEvents(
               h.onMessageAdded?.(sessionId, payload.message);
               break;
             case 'ToolExecutionStarted':
-              h.onToolExecutionStarted?.(sessionId, payload.tool_name as string);
+              h.onToolExecutionStarted?.(
+                sessionId,
+                payload.tool_name as string,
+              );
               break;
             case 'ToolExecutionCompleted':
               h.onToolExecutionCompleted?.(
                 sessionId,
                 payload.tool_name as string,
-                payload.success as boolean
+                payload.success as boolean,
               );
               break;
             default:
               logger.warn('Unknown agent event type', { eventType, payload });
           }
-        }
+        },
       );
 
       logger.info('Agent event listener setup complete', { sessionId });
@@ -983,7 +1012,9 @@ import { toast } from '@/components/ui/use-toast';
 
 export function AgentChatView() {
   const { currentSession } = useAgentSessionState();
-  const [toolExecutions, setToolExecutions] = useState<Record<string, 'running' | 'completed' | 'failed'>>({});
+  const [toolExecutions, setToolExecutions] = useState<
+    Record<string, 'running' | 'completed' | 'failed'>
+  >({});
 
   useAgentEvents(currentSession?.id, {
     onWorkflowStarted: (sessionId) => {
@@ -1013,13 +1044,13 @@ export function AgentChatView() {
     },
 
     onToolExecutionStarted: (sessionId, toolName) => {
-      setToolExecutions(prev => ({ ...prev, [toolName]: 'running' }));
+      setToolExecutions((prev) => ({ ...prev, [toolName]: 'running' }));
     },
 
     onToolExecutionCompleted: (sessionId, toolName, success) => {
-      setToolExecutions(prev => ({
+      setToolExecutions((prev) => ({
         ...prev,
-        [toolName]: success ? 'completed' : 'failed'
+        [toolName]: success ? 'completed' : 'failed',
       }));
     },
   });
@@ -1053,10 +1084,10 @@ export function useAgentSessionLifecycle(sessionId: string | undefined) {
       try {
         // Initialize cache from DB
         await invoke('agent_init_session_with_messages', { sessionId });
-        
+
         // Resume session context
         await resumeSession(sessionId);
-        
+
         setIsInitialized(true);
       } catch (err) {
         const error = err instanceof Error ? err.message : String(err);
@@ -1102,7 +1133,14 @@ export function useAgentSessionLifecycle(sessionId: string | undefined) {
 // src/features/agent/MultiSessionManager.tsx
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Card, Button, Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui';
+import {
+  Card,
+  Button,
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+} from '@/components/ui';
 import { AgentChatProvider } from '@/context/AgentChatContext';
 import { AgentChat } from './components/AgentChat';
 
@@ -1124,9 +1162,9 @@ export function MultiSessionManager() {
     try {
       const allSessions = await invoke<SessionTab[]>('agent_get_all_sessions');
       // Filter to only active or paused sessions
-      const active = allSessions.filter(s => s.status !== 'idle');
+      const active = allSessions.filter((s) => s.status !== 'idle');
       setSessions(active);
-      
+
       if (active.length > 0 && !activeSessionId) {
         setActiveSessionId(active[0].id);
       }
@@ -1146,7 +1184,7 @@ export function MultiSessionManager() {
         <Tabs value={activeSessionId || ''} onValueChange={setActiveSessionId}>
           <div className="flex items-center justify-between px-4 py-2">
             <TabsList>
-              {sessions.map(session => (
+              {sessions.map((session) => (
                 <TabsTrigger key={session.id} value={session.id}>
                   <div className="flex items-center space-x-2">
                     <StatusDot status={session.status} />
@@ -1160,8 +1198,12 @@ export function MultiSessionManager() {
             </Button>
           </div>
 
-          {sessions.map(session => (
-            <TabsContent key={session.id} value={session.id} className="h-full mt-0">
+          {sessions.map((session) => (
+            <TabsContent
+              key={session.id}
+              value={session.id}
+              className="h-full mt-0"
+            >
               <AgentChatProvider key={session.id}>
                 <AgentChat />
               </AgentChatProvider>
@@ -1174,11 +1216,12 @@ export function MultiSessionManager() {
 }
 
 function StatusDot({ status }: { status: string }) {
-  const color = {
-    idle: 'bg-gray-400',
-    busy: 'bg-yellow-500 animate-pulse',
-    paused: 'bg-blue-500',
-  }[status] || 'bg-gray-400';
+  const color =
+    {
+      idle: 'bg-gray-400',
+      busy: 'bg-yellow-500 animate-pulse',
+      paused: 'bg-blue-500',
+    }[status] || 'bg-gray-400';
 
   return <div className={`w-2 h-2 rounded-full ${color}`} />;
 }

@@ -725,10 +725,7 @@ impl BuiltinMCPServer for WorkspaceServer {
 
         let context_prompt = format!(
             "## Workspace\n\n**Directory**: {}\n**Running Processes**: {}\n**Platform**: {}/{}",
-            workspace_dir,
-            running_count,
-            os,
-            arch
+            workspace_dir, running_count, os, arch
         );
 
         ServiceContext {

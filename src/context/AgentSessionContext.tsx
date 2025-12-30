@@ -23,6 +23,7 @@ interface AgentSession {
   name?: string;
   status: 'idle' | 'busy' | 'paused' | 'error';
   createdAt: Date;
+  updatedAt?: Date;
 }
 
 /**
@@ -44,8 +45,10 @@ interface AgentEventPayload {
 // --- STATE CONTEXT ---
 interface AgentSessionStateContextValue {
   currentSession: AgentSession | null;
+  sessions: AgentSession[];
   messages: Message[];
   isLoading: boolean;
+  isLoadingSessions: boolean;
   error: string | null;
 }
 
@@ -79,6 +82,16 @@ interface AgentSessionActionsContextValue {
    * Clear current session
    */
   clearSession: () => void;
+
+  /**
+   * Load all agent sessions
+   */
+  loadSessions: () => Promise<void>;
+
+  /**
+   * Delete an agent session
+   */
+  deleteSession: (sessionId: string) => Promise<void>;
 }
 
 const AgentSessionActionsContext = createContext<
@@ -102,8 +115,10 @@ export function AgentSessionProvider({ children }: AgentSessionProviderProps) {
   const [currentSession, setCurrentSession] = useState<AgentSession | null>(
     null,
   );
+  const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingSessions, setIsLoadingSessions] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   /**
@@ -112,14 +127,48 @@ export function AgentSessionProvider({ children }: AgentSessionProviderProps) {
   const loadMessages = useCallback(async (sessionId: string) => {
     try {
       // Load first page (large size to get all for now)
-      const page = await invoke<Page<Message>>('messages_get_page', {
-        sessionId,
-        page: 1,
-        pageSize: 1000,
-      });
+      const page = await invoke<Page<Record<string, unknown>>>(
+        'messages_get_page',
+        {
+          sessionId,
+          page: 1,
+          pageSize: 1000,
+        },
+      );
 
-      // Sort by created_at if needed, but backend usually returns sorted
-      setMessages(page.items);
+      // Deserialize messages from Rust backend format to frontend format
+      const deserializedMessages: Message[] = page.items.map((rustMsg) => ({
+        id: rustMsg.id as string,
+        sessionId: rustMsg.sessionId as string,
+        threadId: (rustMsg.threadId as string) || (rustMsg.sessionId as string), // Fallback to sessionId
+        role: rustMsg.role as 'user' | 'assistant' | 'system' | 'tool',
+        content: rustMsg.content as Message['content'],
+        tool_calls: (rustMsg.toolCalls as Message['tool_calls'])
+          ? (rustMsg.toolCalls as Message['tool_calls'])?.map((tc) => ({
+              id: tc.id,
+              type: tc.type || 'function',
+              function: tc.function,
+            }))
+          : undefined,
+        tool_call_id: rustMsg.toolCallId as string | undefined,
+        isStreaming: rustMsg.isStreaming as boolean | undefined,
+        thinking: rustMsg.thinking as string | undefined,
+        thinkingSignature: rustMsg.thinkingSignature as string | undefined,
+        assistantId: rustMsg.assistantId as string | undefined,
+        attachments:
+          (rustMsg.attachments as Message['attachments']) || undefined,
+        tool_use: (rustMsg.toolUse as Message['tool_use']) || undefined,
+        createdAt: rustMsg.createdAt
+          ? new Date(rustMsg.createdAt as number)
+          : new Date(),
+        updatedAt: rustMsg.updatedAt
+          ? new Date(rustMsg.updatedAt as number)
+          : undefined,
+        source: rustMsg.source as 'assistant' | 'ui' | undefined,
+        error: (rustMsg.error as Message['error']) || undefined,
+      }));
+
+      setMessages(deserializedMessages);
     } catch (err) {
       logger.error('Failed to load messages', err);
     }
@@ -217,8 +266,9 @@ export function AgentSessionProvider({ children }: AgentSessionProviderProps) {
         const response = await invoke<{
           id: string;
           name?: string;
-          status: string;
-          created_at: number;
+          status: 'idle' | 'busy' | 'paused' | 'error';
+          createdAt: number;
+          updatedAt?: number;
         }>('agent_create_session', {
           request: {
             sessionId,
@@ -227,11 +277,21 @@ export function AgentSessionProvider({ children }: AgentSessionProviderProps) {
           },
         });
 
+        const respWithDates = response as {
+          createdAt?: number;
+          created_at?: number;
+        };
+        const createdAtMs = respWithDates.createdAt ?? respWithDates.created_at;
+
         const session: AgentSession = {
           id: response.id,
           name: response.name,
-          status: 'idle',
-          createdAt: new Date(response.created_at),
+          status:
+            (response.status as 'idle' | 'busy' | 'paused' | 'error') || 'idle',
+          createdAt: createdAtMs ? new Date(createdAtMs) : new Date(),
+          updatedAt: response.updatedAt
+            ? new Date(response.updatedAt)
+            : undefined,
         };
 
         setCurrentSession(session);
@@ -270,8 +330,9 @@ export function AgentSessionProvider({ children }: AgentSessionProviderProps) {
         const response = await invoke<{
           id: string;
           name?: string;
-          status: string;
-          created_at: number;
+          status: 'idle' | 'busy' | 'paused' | 'error';
+          createdAt: number;
+          updatedAt?: number;
         } | null>('agent_get_session', {
           sessionId,
         });
@@ -280,11 +341,20 @@ export function AgentSessionProvider({ children }: AgentSessionProviderProps) {
           throw new Error(`Session not found: ${sessionId}`);
         }
 
+        const respWithDates = response as {
+          createdAt?: number;
+          created_at?: number;
+        };
+        const createdAtMs = respWithDates.createdAt ?? respWithDates.created_at;
+
         const session: AgentSession = {
           id: response.id,
           name: response.name,
           status: response.status as 'idle' | 'busy' | 'paused' | 'error',
-          createdAt: new Date(response.created_at),
+          createdAt: createdAtMs ? new Date(createdAtMs) : new Date(),
+          updatedAt: response.updatedAt
+            ? new Date(response.updatedAt)
+            : undefined,
         };
 
         setCurrentSession(session);
@@ -372,15 +442,83 @@ export function AgentSessionProvider({ children }: AgentSessionProviderProps) {
     setError(null);
   }, []);
 
+  /**
+   * Load all agent sessions
+   */
+  const loadSessions = useCallback(async () => {
+    logger.info('Loading all agent sessions');
+    setIsLoadingSessions(true);
+
+    try {
+      // Call Rust backend to get all sessions
+      const response = await invoke<
+        Array<{
+          id: string;
+          name?: string;
+          status: 'idle' | 'busy' | 'paused' | 'error';
+          createdAt: number;
+          updatedAt?: number;
+        }>
+      >('agent_get_all_sessions');
+
+      const sessionList: AgentSession[] = response.map((s) => {
+        return {
+          id: s.id,
+          name: s.name,
+          status: s.status,
+          createdAt: new Date(s.createdAt),
+          updatedAt: s.updatedAt ? new Date(s.updatedAt) : undefined,
+        };
+      });
+
+      setSessions(sessionList);
+      logger.info('Loaded sessions', { count: sessionList.length });
+    } catch (err) {
+      logger.error('Failed to load sessions', err);
+      setSessions([]);
+    } finally {
+      setIsLoadingSessions(false);
+    }
+  }, []);
+
+  /**
+   * Delete an agent session
+   */
+  const deleteSession = useCallback(
+    async (sessionId: string) => {
+      logger.info('Deleting agent session', { sessionId });
+
+      try {
+        await invoke('agent_delete_session', { sessionId });
+
+        // Remove from sessions list
+        setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+
+        // Clear current session if it's the one being deleted
+        if (currentSession?.id === sessionId) {
+          clearSession();
+        }
+
+        logger.info('Session deleted successfully', { sessionId });
+      } catch (err) {
+        logger.error('Failed to delete session', err);
+        throw err;
+      }
+    },
+    [currentSession?.id, clearSession],
+  );
+
   // Combine state values
   const stateValue: AgentSessionStateContextValue = useMemo(
     () => ({
       currentSession,
+      sessions,
       messages,
       isLoading,
+      isLoadingSessions,
       error,
     }),
-    [currentSession, messages, isLoading, error],
+    [currentSession, sessions, messages, isLoading, isLoadingSessions, error],
   );
 
   // Combine action values
@@ -391,8 +529,18 @@ export function AgentSessionProvider({ children }: AgentSessionProviderProps) {
       sendMessage,
       stopSession,
       clearSession,
+      loadSessions,
+      deleteSession,
     }),
-    [createSession, resumeSession, sendMessage, stopSession, clearSession],
+    [
+      createSession,
+      resumeSession,
+      sendMessage,
+      stopSession,
+      clearSession,
+      loadSessions,
+      deleteSession,
+    ],
   );
 
   return (

@@ -1,7 +1,9 @@
 use crate::agent::AgentSessionManager;
 
+use crate::mcp::types::ServiceContext;
 use crate::repositories::SessionMetadata;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use tauri::{command, State};
 
 use crate::agent::types::AgentMessageDto;
@@ -210,4 +212,36 @@ pub async fn agent_call_builtin_tool(
 
     // Convert MCPResponse to JSON
     serde_json::to_value(response).map_err(|e| format!("Failed to serialize response: {}", e))
+}
+
+/// Get service contexts for a session
+#[command]
+pub async fn agent_get_service_contexts(
+    session_id: String,
+) -> Result<HashMap<String, ServiceContext>, String> {
+    use crate::state::get_mcp_service_proxy_manager;
+
+    let proxy_manager = get_mcp_service_proxy_manager();
+
+    let proxy = proxy_manager
+        .get_proxy(&session_id)
+        .await
+        .ok_or_else(|| format!("No proxy found for session: {}", session_id))?;
+
+    Ok(proxy.get_service_contexts().await)
+}
+
+/// Delete an agent session and all its data
+#[command]
+pub async fn agent_delete_session(
+    manager: State<'_, AgentSessionManager>,
+    session_id: String,
+) -> Result<AgentResponse, String> {
+    manager.delete_session(session_id.clone()).await?;
+
+    Ok(AgentResponse {
+        success: true,
+        message: format!("Session deleted: {}", session_id),
+        data: None,
+    })
 }

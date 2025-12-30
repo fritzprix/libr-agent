@@ -9,6 +9,7 @@ use tracing::info;
 pub mod assistant;
 pub mod bootstrap;
 pub mod browser;
+pub mod browser_content_store;
 pub mod content_store;
 pub mod knowledge;
 pub mod mcp_manager;

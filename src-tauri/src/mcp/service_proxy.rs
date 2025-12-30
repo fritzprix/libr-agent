@@ -6,7 +6,7 @@ use tauri::AppHandle;
 
 use super::builtin::BuiltinMCPServer;
 use super::server::MCPServerManager;
-use super::types::MCPResponse;
+use super::types::{MCPResponse, ServiceContext};
 use crate::session::SessionManager;
 
 /// Session-specific MCP service proxy
@@ -200,17 +200,15 @@ impl MCPServiceProxy {
     /// prompt with real-time session state information.
     ///
     /// # Returns
-    /// * `HashMap<String, String>` - Map of tool_id -> context_prompt
-    pub async fn get_service_contexts(&self) -> HashMap<String, String> {
+    /// * `HashMap<String, ServiceContext>` - Map of tool_id -> ServiceContext
+    pub async fn get_service_contexts(&self) -> HashMap<String, ServiceContext> {
         let mut contexts = HashMap::new();
 
         for (tool_id, server) in &self.builtin_servers {
             let context = server.get_service_context(None).await;
 
-            // Only include non-empty contexts
-            if !context.context_prompt.trim().is_empty() {
-                contexts.insert(tool_id.clone(), context.context_prompt);
-            }
+            // Always include the context, even if empty, as structured state might be present
+            contexts.insert(tool_id.clone(), context);
         }
 
         log::debug!(

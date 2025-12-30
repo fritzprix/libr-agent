@@ -500,8 +500,12 @@ describe('AgentChatContext', () => {
         await result.current.retryMessage();
       });
 
-      // Should not invoke anything
-      expect(invoke).not.toHaveBeenCalled();
+      // Should only call agent_get_service_contexts (from useEffect initialization)
+      // retryMessage should not trigger any additional calls
+      expect(invoke).toHaveBeenCalledTimes(1);
+      expect(invoke).toHaveBeenCalledWith('agent_get_service_contexts', {
+        sessionId: 'test-session',
+      });
     });
   });
 });

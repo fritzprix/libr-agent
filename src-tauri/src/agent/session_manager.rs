@@ -243,4 +243,51 @@ impl AgentSessionManager {
         )
         .await
     }
+
+    /// Delete an agent session and all its data
+    pub async fn delete_session(&self, session_id: String) -> Result<(), String> {
+        use crate::repositories::message_repository::MessageRepository as MessageRepositoryTrait;
+        use crate::repositories::session_repository::SessionRepository as SessionRepositoryTrait;
+
+        // 1. Terminate workflow if running
+        let _ = self.terminate_session(session_id.clone()).await;
+
+        // 2. Remove from active sessions
+        self.active_sessions.write().await.remove(&session_id);
+
+        // 3. Delete all messages for the session
+        let msg_repo = crate::state::get_message_repository();
+        msg_repo
+            .delete_by_session(&session_id)
+            .await
+            .map_err(|e| format!("Failed to delete messages: {}", e))?;
+
+        // 4. Delete session metadata from database
+        let session_repo = crate::state::get_session_repository();
+        session_repo
+            .delete_session(&session_id)
+            .await
+            .map_err(|e| format!("Failed to delete session metadata: {}", e))?;
+
+        // 5. Delete search index
+        if let Err(e) = crate::search::index_storage::delete_index(&session_id) {
+            log::warn!(
+                "Failed to delete search index for session {}: {}",
+                session_id,
+                e
+            );
+        }
+
+        // 6. Delete index metadata
+        if let Err(e) = session_repo.delete_index_metadata(&session_id).await {
+            log::warn!(
+                "Failed to delete index metadata for session {}: {}",
+                session_id,
+                e
+            );
+        }
+
+        log::info!("✅ Deleted agent session: {}", session_id);
+        Ok(())
+    }
 }

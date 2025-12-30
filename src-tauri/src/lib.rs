@@ -14,9 +14,10 @@ mod session_isolation;
 mod state;
 
 use commands::agent_commands::{
-    agent_call_builtin_tool, agent_create_session, agent_get_all_sessions, agent_get_session,
-    agent_handle_llm_error, agent_handle_llm_response, agent_handle_tool_result,
-    agent_pause_workflow, agent_resume_workflow, agent_send_message, agent_terminate_workflow,
+    agent_call_builtin_tool, agent_create_session, agent_delete_session, agent_get_all_sessions,
+    agent_get_service_contexts, agent_get_session, agent_handle_llm_error,
+    agent_handle_llm_response, agent_handle_tool_result, agent_pause_workflow,
+    agent_resume_workflow, agent_send_message, agent_terminate_workflow,
 };
 use commands::browser_commands::*;
 use commands::content_store_commands::delete_content_store;
@@ -313,10 +314,12 @@ pub fn run() {
                 agent_handle_tool_result,
                 agent_get_session,
                 agent_get_all_sessions,
+                agent_delete_session,
                 agent_pause_workflow,
                 agent_resume_workflow,
                 agent_terminate_workflow,
-                agent_call_builtin_tool
+                agent_call_builtin_tool,
+                agent_get_service_contexts
             ])
             .setup(|app| {
                 println!("🚀 LibrAgent initializing...");

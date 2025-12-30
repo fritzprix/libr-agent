@@ -32,7 +32,6 @@ import { BrowserToolProvider } from '@/features/tools/BrowserToolProvider';
 import { RustMCPToolProvider } from '@/features/tools/RustMCPToolProvider';
 import { LLMServiceProvider } from '@/context/LLMServiceContext';
 import { AgentSessionProvider } from '@/context/AgentSessionContext';
-import { AgentChatProvider } from '@/context/AgentChatContext';
 
 function App() {
   return (
@@ -47,75 +46,73 @@ function App() {
                     <AssistantContextProvider>
                       <SessionContextProvider>
                         <AgentSessionProvider>
-                          <AgentChatProvider>
-                            <BuiltInToolProvider>
-                              <WebMCPServiceRegistry
-                                servers={[
-                                  'planning',
-                                  'playbook',
-                                  'ui',
-                                  'bootstrap',
-                                  'mcp_manager',
-                                  'assistant_manager',
-                                  'knowledge',
-                                ]}
-                              />
-                              <BrowserToolProvider />
-                              <RustMCPToolProvider />
-                              <SessionHistoryProvider>
-                                <ResourceAttachmentProvider>
-                                  <SidebarProvider className="h-full overflow-hidden">
-                                    <DnDContextProvider>
-                                      <AppSidebar />
-                                      {/* Main Content Area (children of AppSidebar) */}
-                                      <div className="flex flex-1 flex-col min-w-0">
-                                        <AppHeader>
-                                          <ThemeToggle />
-                                        </AppHeader>
-                                        <div className="flex-1 w-full min-h-0">
-                                          <Routes>
-                                            <Route
-                                              path="/"
-                                              element={<ChatContainer />}
-                                            />
-                                            <Route
-                                              path="/chat/single"
-                                              element={<ChatContainer />}
-                                            />
-                                            <Route
-                                              path="/agent"
-                                              element={<AgentContainer />}
-                                            />
-                                            <Route
-                                              path="/agent/:sessionId"
-                                              element={<AgentContainer />}
-                                            />
-                                            <Route
-                                              path="/assistants"
-                                              element={<AssistantList />}
-                                            />
-                                            <Route
-                                              path="/history"
-                                              element={<History />}
-                                            />
-                                            <Route
-                                              path="/history/search"
-                                              element={<History />}
-                                            />
-                                            <Route
-                                              path="/settings"
-                                              element={<SettingsPage />}
-                                            />
-                                          </Routes>
-                                        </div>
+                          <BuiltInToolProvider>
+                            <WebMCPServiceRegistry
+                              servers={[
+                                'planning',
+                                'playbook',
+                                'ui',
+                                'bootstrap',
+                                'mcp_manager',
+                                'assistant_manager',
+                                'knowledge',
+                              ]}
+                            />
+                            <BrowserToolProvider />
+                            <RustMCPToolProvider />
+                            <SessionHistoryProvider>
+                              <ResourceAttachmentProvider>
+                                <SidebarProvider className="h-full overflow-hidden">
+                                  <DnDContextProvider>
+                                    <AppSidebar />
+                                    {/* Main Content Area (children of AppSidebar) */}
+                                    <div className="flex flex-1 flex-col min-w-0">
+                                      <AppHeader>
+                                        <ThemeToggle />
+                                      </AppHeader>
+                                      <div className="flex-1 w-full min-h-0">
+                                        <Routes>
+                                          <Route
+                                            path="/"
+                                            element={<ChatContainer />}
+                                          />
+                                          <Route
+                                            path="/chat/single"
+                                            element={<ChatContainer />}
+                                          />
+                                          <Route
+                                            path="/agent"
+                                            element={<AgentContainer />}
+                                          />
+                                          <Route
+                                            path="/agent/:sessionId"
+                                            element={<AgentContainer />}
+                                          />
+                                          <Route
+                                            path="/assistants"
+                                            element={<AssistantList />}
+                                          />
+                                          <Route
+                                            path="/history"
+                                            element={<History />}
+                                          />
+                                          <Route
+                                            path="/history/search"
+                                            element={<History />}
+                                          />
+                                          <Route
+                                            path="/settings"
+                                            element={<SettingsPage />}
+                                          />
+                                        </Routes>
                                       </div>
-                                    </DnDContextProvider>
-                                  </SidebarProvider>
-                                  <Toaster />
-                                </ResourceAttachmentProvider>
-                              </SessionHistoryProvider>
-                            </BuiltInToolProvider>
-                          </AgentChatProvider>
+                                    </div>
+                                  </DnDContextProvider>
+                                </SidebarProvider>
+                                <Toaster />
+                              </ResourceAttachmentProvider>
+                            </SessionHistoryProvider>
+                          </BuiltInToolProvider>
                         </AgentSessionProvider>
                       </SessionContextProvider>
                     </AssistantContextProvider>

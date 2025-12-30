@@ -481,14 +481,14 @@ pub async fn build_system_prompt(
     }
 
     if let Some(p) = proxy {
-        let contexts: HashMap<String, String> = p.get_service_contexts().await;
+        let contexts = p.get_service_contexts().await;
 
         if !contexts.is_empty() {
             parts.push("\n\n## Available Tools & Current State\n".to_string());
 
-            for (_tool_id, context_prompt) in contexts {
-                if !context_prompt.trim().is_empty() {
-                    parts.push(context_prompt);
+            for (_tool_id, service_context) in contexts {
+                if !service_context.context_prompt.trim().is_empty() {
+                    parts.push(service_context.context_prompt);
                 }
             }
         }
@@ -499,10 +499,10 @@ pub async fn build_system_prompt(
 
 /// Build time and location context for system prompt
 fn build_time_location_context() -> String {
-    use chrono::{Local, Datelike, Timelike};
-    
+    use chrono::{Datelike, Local, Timelike};
+
     let now = Local::now();
-    
+
     // Format date as "Monday, December 30, 2025"
     let weekday = match now.weekday() {
         chrono::Weekday::Mon => "Monday",
@@ -513,16 +513,25 @@ fn build_time_location_context() -> String {
         chrono::Weekday::Sat => "Saturday",
         chrono::Weekday::Sun => "Sunday",
     };
-    
+
     let month = match now.month() {
-        1 => "January", 2 => "February", 3 => "March", 4 => "April",
-        5 => "May", 6 => "June", 7 => "July", 8 => "August",
-        9 => "September", 10 => "October", 11 => "November", 12 => "December",
+        1 => "January",
+        2 => "February",
+        3 => "March",
+        4 => "April",
+        5 => "May",
+        6 => "June",
+        7 => "July",
+        8 => "August",
+        9 => "September",
+        10 => "October",
+        11 => "November",
+        12 => "December",
         _ => "Unknown",
     };
-    
+
     let current_date = format!("{}, {} {}, {}", weekday, month, now.day(), now.year());
-    
+
     // Format time with timezone
     let current_time = format!(
         "{:02}:{:02}:{:02} {}",
@@ -531,10 +540,10 @@ fn build_time_location_context() -> String {
         now.second(),
         now.offset()
     );
-    
+
     // Get timezone name
     let timezone = format!("{}", now.offset());
-    
+
     format!(
         "# Current Context Information\n\n\
         ## Date and Time\n\
