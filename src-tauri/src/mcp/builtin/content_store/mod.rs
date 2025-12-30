@@ -52,10 +52,12 @@ impl BuiltinMCPServer for ContentStoreServer {
 
     async fn call_tool(&self, tool_name: &str, args: Value) -> Result<MCPResult, String> {
         match tool_name {
-            "addContent" => self.handle_add_content(args).await,
+            "saveKnowledge" | "addContent" => self.handle_save_knowledge(args).await,
             "listContent" => self.handle_list_content(args).await,
             "readContent" => self.handle_read_content(args).await,
-            "keywordSimilaritySearch" => self.handle_keyword_search(args).await,
+            "searchKnowledge" | "keywordSimilaritySearch" => {
+                self.handle_search_knowledge(args).await
+            }
             "deleteContent" => self.handle_delete_content(args).await,
             _ => Err(format!("Unknown tool: {tool_name}")),
         }

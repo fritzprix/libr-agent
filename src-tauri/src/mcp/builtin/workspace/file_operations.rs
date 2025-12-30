@@ -1,4 +1,8 @@
 use super::WorkspaceServer;
+use crate::mcp::builtin::error_guidance::{
+    missing_param_error, not_found_error, operation_failed_error, permission_denied_error,
+    ErrorCategory, ErrorGuidance, SuccessHint, ToolGroup,
+};
 use crate::mcp::types::MCPResult;
 use regex;
 use serde_json::{json, Value};
@@ -26,7 +30,7 @@ impl WorkspaceServer {
         let path_str = match args.get("path").and_then(|v| v.as_str()) {
             Some(path) => path,
             None => {
-                return Ok(MCPResult::error("Missing required parameter: path"));
+                return Ok(missing_param_error("path", ToolGroup::Workspace));
             }
         };
 
@@ -41,13 +45,41 @@ impl WorkspaceServer {
 
         if let (Some(start), Some(end)) = (start_line, end_line) {
             if start > end {
-                return Ok(MCPResult::error(
-                    "start_line must be less than or equal to end_line",
-                ));
+                return Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::InvalidInput,
+                    format!(
+                        "start_line ({}) must be less than or equal to end_line ({})",
+                        start, end
+                    ),
+                    vec![
+                        "Swap the values: make startLine smaller".to_string(),
+                        format!(
+                            "Example: {{\"startLine\": {}, \"endLine\": {}}}",
+                            end, start
+                        ),
+                        "Omit both parameters to read the entire file".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                )
+                .to_mcp_result());
             }
         }
 
-        let safe_path = self.validate_path_with_error(path_str)?;
+        let safe_path = match self.validate_path_with_error(path_str) {
+            Ok(path) => path,
+            Err(e) => {
+                return Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::PermissionDenied,
+                    format!("Path validation failed: {}", e),
+                    vec![
+                        "Verify the file path is within allowed directories".to_string(),
+                        "Use listDirectory to see available files".to_string(),
+                        "Check that the path doesn't contain '..' or absolute paths outside workspace".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                ).to_mcp_result());
+            }
+        };
 
         let file_manager = self.get_file_manager();
         let content = if start_line.is_some() || end_line.is_some() {
@@ -56,7 +88,17 @@ impl WorkspaceServer {
                 .validate_file_size(&safe_path, crate::config::max_file_size())
             {
                 error!("File size validation failed: {}", e);
-                return Ok(MCPResult::error(&format!("File size error: {e}")));
+                return Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::InvalidInput,
+                    format!("File size error: {}", e),
+                    vec![
+                        "The file is too large to read with line ranges".to_string(),
+                        "Try reading the entire file without startLine/endLine".to_string(),
+                        "Use searchFiles to find specific content instead".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                )
+                .to_mcp_result());
             }
 
             self.read_file_lines_range(&safe_path, start_line, end_line)
@@ -71,11 +113,33 @@ impl WorkspaceServer {
         match content {
             Ok(content) => {
                 info!("Successfully read file: {}", path_str);
-                Ok(MCPResult::success(&content))
+                let hint = SuccessHint::new(
+                    format!("File read successfully ({} bytes)", content.len()),
+                    SuccessHint::for_tool("readFile", ToolGroup::Workspace),
+                );
+                Ok(hint.to_mcp_result_with_data(Some(json!({
+                    "content": content,
+                    "path": path_str,
+                    "size": content.len()
+                }))))
             }
             Err(e) => {
                 error!("Failed to read file {}: {}", path_str, e);
-                Ok(MCPResult::error(&format!("Failed to read file: {e}")))
+                let is_not_found = e.contains("No such file") || e.contains("not found");
+                if is_not_found {
+                    Ok(not_found_error("File", path_str, ToolGroup::Workspace))
+                } else {
+                    Ok(operation_failed_error(
+                        "Read file",
+                        &e,
+                        vec![
+                            "Verify the file exists with listDirectory".to_string(),
+                            "Check file permissions".to_string(),
+                            "Ensure the path is correct".to_string(),
+                        ],
+                        ToolGroup::Workspace,
+                    ))
+                }
             }
         }
     }
@@ -135,14 +199,14 @@ impl WorkspaceServer {
         let path_str = match args.get("path").and_then(|v| v.as_str()) {
             Some(path) => path,
             None => {
-                return Ok(MCPResult::error("Missing required parameter: path"));
+                return Ok(missing_param_error("path", ToolGroup::Workspace));
             }
         };
 
         let content = match args.get("content").and_then(|v| v.as_str()) {
             Some(content) => content,
             None => {
-                return Ok(MCPResult::error("Missing required parameter: content"));
+                return Ok(missing_param_error("content", ToolGroup::Workspace));
             }
         };
 
@@ -153,23 +217,58 @@ impl WorkspaceServer {
             "w" => file_manager.write_file_string(path_str, content).await,
             "a" => file_manager.append_file_string(path_str, content).await,
             _ => {
-                return Ok(MCPResult::error("Invalid mode. Use 'w' or 'a'"));
+                return Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::InvalidInput,
+                    format!("Invalid mode '{}'. Must be 'w' or 'a'", mode),
+                    vec![
+                        "Use 'w' to overwrite the file (default)".to_string(),
+                        "Use 'a' to append to the file".to_string(),
+                        "Example: {\"mode\": \"w\"}".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                )
+                .to_mcp_result());
             }
         };
 
         match result {
             Ok(()) => {
                 info!("Successfully wrote file: {}", path_str);
-                Ok(MCPResult::success(&format!(
-                    "Successfully wrote {} bytes to {} (mode: {})",
-                    content.len(),
-                    path_str,
-                    mode
-                )))
+                let action = if mode == "a" { "appended" } else { "written" };
+                let hint = SuccessHint::new(
+                    format!(
+                        "Successfully {} {} bytes to {} (mode: {})",
+                        action,
+                        content.len(),
+                        path_str,
+                        mode
+                    ),
+                    SuccessHint::for_tool("writeFile", ToolGroup::Workspace),
+                );
+                Ok(hint.to_mcp_result_with_data(Some(json!({
+                    "path": path_str,
+                    "bytes_written": content.len(),
+                    "mode": mode
+                }))))
             }
             Err(e) => {
                 error!("Failed to write file {}: {}", path_str, e);
-                Ok(MCPResult::error(&format!("Failed to write file: {e}")))
+                let is_permission = e.to_string().contains("Permission denied")
+                    || e.to_string().contains("permission");
+                if is_permission {
+                    Ok(permission_denied_error(path_str, ToolGroup::Workspace))
+                } else {
+                    Ok(operation_failed_error(
+                        "Write file",
+                        &e.to_string(),
+                        vec![
+                            "Check that the directory exists with listDirectory".to_string(),
+                            "Verify you have write permissions".to_string(),
+                            "Ensure the path is valid and within allowed directories".to_string(),
+                        ],
+                        ToolGroup::Workspace,
+                    ))
+                }
             }
         }
     }
@@ -177,7 +276,21 @@ impl WorkspaceServer {
     pub async fn handle_list_directory(&self, args: Value) -> Result<MCPResult, String> {
         let path_str = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
 
-        let safe_path = self.validate_path_with_error(path_str)?;
+        let safe_path = match self.validate_path_with_error(path_str) {
+            Ok(path) => path,
+            Err(e) => {
+                return Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::PermissionDenied,
+                    format!("Path validation failed: {}", e),
+                    vec![
+                        "Verify the directory path is within allowed directories".to_string(),
+                        "Check that the path doesn't contain '..' or absolute paths outside workspace".to_string(),
+                        "Try using '.' to list the current directory".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                ).to_mcp_result());
+            }
+        };
 
         match fs::read_dir(&safe_path).await {
             Ok(mut entries) => {
@@ -250,19 +363,39 @@ impl WorkspaceServer {
                     safe_path,
                     items.len()
                 );
-                Ok(MCPResult::success_with_data(
-                    &format!(
+                let hint = SuccessHint::new(
+                    format!(
                         "Directory listing for {} ({} items):\n{}",
                         path_str,
                         items.len(),
                         listing_str
                     ),
-                    json!({ "items": items }),
-                ))
+                    SuccessHint::for_tool("listDirectory", ToolGroup::Workspace),
+                );
+                Ok(hint.to_mcp_result_with_data(Some(json!({
+                    "items": items,
+                    "path": path_str,
+                    "count": items.len()
+                }))))
             }
             Err(e) => {
                 error!("Failed to list directory {:?}: {}", safe_path, e);
-                Ok(MCPResult::error(&format!("Failed to list directory: {e}")))
+                let is_not_found =
+                    e.to_string().contains("No such file") || e.to_string().contains("not found");
+                if is_not_found {
+                    Ok(not_found_error("Directory", path_str, ToolGroup::Workspace))
+                } else {
+                    Ok(operation_failed_error(
+                        "List directory",
+                        &e.to_string(),
+                        vec![
+                            "Verify the directory exists".to_string(),
+                            "Check directory permissions".to_string(),
+                            "Try using '.' to list the current directory".to_string(),
+                        ],
+                        ToolGroup::Workspace,
+                    ))
+                }
             }
         }
     }

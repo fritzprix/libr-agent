@@ -6,6 +6,10 @@ use std::sync::{Arc, Mutex};
 use tracing::info;
 
 use super::BuiltinMCPServer;
+use crate::mcp::builtin::error_guidance::{
+    missing_param_error, not_found_error, operation_failed_error, ErrorGuidance, SuccessHint,
+    ToolGroup,
+};
 use crate::mcp::types::{MCPResult, ServiceContext, ServiceContextOptions};
 use crate::mcp::MCPTool;
 use crate::services::SecureFileManager;
@@ -228,7 +232,7 @@ impl WorkspaceServer {
         let process_id = match args.get("processId").and_then(|v| v.as_str()) {
             Some(id) => id,
             None => {
-                return Err("Missing required parameter: processId".to_string());
+                return Ok(missing_param_error("processId", ToolGroup::Workspace));
             }
         };
 
@@ -246,7 +250,7 @@ impl WorkspaceServer {
                     // Access granted, continue
                 }
                 _ => {
-                    return Err("Process not found or access denied".to_string());
+                    return Ok(not_found_error("Process", process_id, ToolGroup::Workspace));
                 }
             }
         }
@@ -278,7 +282,7 @@ impl WorkspaceServer {
                 let should_guide = is_running && entry.consecutive_running_polls >= threshold;
                 (should_guide, entry.clone())
             } else {
-                return Err("Process not found or access denied".to_string());
+                return Ok(not_found_error("Process", process_id, ToolGroup::Workspace));
             };
 
             // Get streaming handle after releasing entry borrow
@@ -339,33 +343,43 @@ impl WorkspaceServer {
             });
         }
 
-        // Add guidance message if threshold exceeded
-        let response_text = if should_show_guidance {
-            let guidance = format!(
-                "\n\n[POLLING GUIDANCE]\n\
-                Process status: RUNNING\n\
-                Polls detected: {} consecutive checks\n\
-                \n\
-                RECOMMENDED ACTION:\n\
-                - Wait at least 10 seconds before next poll\n\
-                - Process will continue running in background\n\
-                - Status will update automatically when complete\n\
-                \n\
-                ALTERNATIVE: Use async wait patterns instead of active polling.\n\
-                Frequent polling may impact system performance without providing additional value.",
-                entry_for_response.consecutive_running_polls
+        // Add success hint based on process status
+        let status_str = format!("{:?}", entry_for_response.status).to_lowercase();
+        let hint = SuccessHint::new(
+            format!("Process {} status: {}", process_id, status_str),
+            match entry_for_response.status {
+                terminal_manager::ProcessStatus::Running => vec![
+                    "Wait for process to complete before polling again".to_string(),
+                    "Use readProcessOutput to view full command output".to_string(),
+                ],
+                terminal_manager::ProcessStatus::Finished
+                | terminal_manager::ProcessStatus::Failed => vec![
+                    "Use readProcessOutput to view full command output".to_string(),
+                    "Process has completed - no need to poll again".to_string(),
+                ],
+                _ => vec!["Use listProcesses to see all processes".to_string()],
+            },
+        );
+
+        // Add warning if excessive polling detected
+        if should_show_guidance {
+            let warning = ErrorGuidance::with_guidance(
+                crate::mcp::builtin::error_guidance::ErrorCategory::InvalidState,
+                format!(
+                    "Excessive polling detected ({} consecutive polls)",
+                    entry_for_response.consecutive_running_polls
+                ),
+                vec![
+                    "Wait at least 10 seconds before next poll".to_string(),
+                    "Process will continue running in background".to_string(),
+                    "Status updates automatically when complete".to_string(),
+                ],
+                ToolGroup::Workspace,
             );
-
-            format!(
-                "{}\n{}",
-                serde_json::to_string_pretty(&response).unwrap_or_default(),
-                guidance
-            )
+            Ok(warning.to_mcp_result())
         } else {
-            serde_json::to_string_pretty(&response).unwrap_or_default()
-        };
-
-        Ok(MCPResult::success(&response_text))
+            Ok(hint.to_mcp_result_with_data(Some(response)))
+        }
     }
 
     /// Handle read_process_output tool call
@@ -374,14 +388,14 @@ impl WorkspaceServer {
         let process_id = match args.get("processId").and_then(|v| v.as_str()) {
             Some(id) => id,
             None => {
-                return Err("Missing required parameter: processId".to_string());
+                return Ok(missing_param_error("processId", ToolGroup::Workspace));
             }
         };
 
         let stream = match args.get("stream").and_then(|v| v.as_str()) {
             Some(s) => s,
             None => {
-                return Err("Missing required parameter: stream".to_string());
+                return Ok(missing_param_error("stream", ToolGroup::Workspace));
             }
         };
 
@@ -400,13 +414,13 @@ impl WorkspaceServer {
         let entry = match registry.entries.get(process_id) {
             Some(e) => e.clone(),
             None => {
-                return Err("Process not found or access denied".to_string());
+                return Ok(not_found_error("Process", process_id, ToolGroup::Workspace));
             }
         };
 
         // Verify session access
         if entry.session_id != session_id {
-            return Err("Process not found or access denied".to_string());
+            return Ok(not_found_error("Process", process_id, ToolGroup::Workspace));
         }
         drop(registry);
 
@@ -436,11 +450,29 @@ impl WorkspaceServer {
                     "note": "Text output only. Max 100 lines per request.",
                 });
 
-                Ok(MCPResult::success(
-                    &serde_json::to_string_pretty(&response).unwrap_or_default(),
-                ))
+                let hint = SuccessHint::new(
+                    format!("Read {} lines from {} {}", lines_vec.len(), stream, mode),
+                    vec![
+                        "Use pollProcess to check process status".to_string(),
+                        format!(
+                            "Use mode=\"{}\" to read different part of output",
+                            if mode == "head" { "tail" } else { "head" }
+                        ),
+                    ],
+                );
+
+                Ok(hint.to_mcp_result_with_data(Some(response)))
             }
-            Err(e) => Err(format!("Failed to read output: {e}")),
+            Err(e) => Ok(operation_failed_error(
+                "Read process output",
+                &e,
+                vec![
+                    "Verify the process_id is correct".to_string(),
+                    "Use listProcesses to see available processes".to_string(),
+                    "Check if the process has generated output yet".to_string(),
+                ],
+                ToolGroup::Workspace,
+            )),
         }
     }
 
@@ -519,9 +551,30 @@ impl WorkspaceServer {
             "finished": finished,
         });
 
-        Ok(MCPResult::success(
-            &serde_json::to_string_pretty(&response).unwrap_or_default(),
-        ))
+        let hint = SuccessHint::new(
+            format!(
+                "Found {} processes ({} running, {} finished)",
+                total, running, finished
+            ),
+            if running > 0 {
+                vec![
+                    "Use pollProcess to check status of running processes".to_string(),
+                    "Use stopProcess to cancel unnecessary processes".to_string(),
+                ]
+            } else if total > 0 {
+                vec![
+                    "Use readProcessOutput to view output of finished processes".to_string(),
+                    "All processes have completed".to_string(),
+                ]
+            } else {
+                vec![
+                    "Use executeShell with runMode=\"async\" to start background processes"
+                        .to_string(),
+                ]
+            },
+        );
+
+        Ok(hint.to_mcp_result_with_data(Some(response)))
     }
 
     /// Handle stop_process tool call
@@ -529,7 +582,7 @@ impl WorkspaceServer {
         let process_id = match args.get("processId").and_then(|v| v.as_str()) {
             Some(id) => id,
             None => {
-                return Err("Missing required parameter: processId".to_string());
+                return Ok(missing_param_error("processId", ToolGroup::Workspace));
             }
         };
 
@@ -544,10 +597,10 @@ impl WorkspaceServer {
         // Check if process exists and belongs to session
         if let Some(entry) = registry.entries.get(process_id) {
             if entry.session_id != session_id {
-                return Err("Process not found or access denied".to_string());
+                return Ok(not_found_error("Process", process_id, ToolGroup::Workspace));
             }
         } else {
-            return Err("Process not found".to_string());
+            return Ok(not_found_error("Process", process_id, ToolGroup::Workspace));
         }
 
         // Cancel process via token
@@ -592,10 +645,20 @@ impl WorkspaceServer {
         // Remove cancellation token
         registry.cancellation_tokens.remove(process_id);
 
-        Ok(MCPResult::success(&format!(
-            "Process {} stopped",
-            process_id
-        )))
+        let hint = SuccessHint::new(
+            format!("Process {} stopped successfully", process_id),
+            vec![
+                "Use listProcesses to see remaining processes".to_string(),
+                "Use readProcessOutput to view output before termination".to_string(),
+            ],
+        );
+
+        let response = serde_json::json!({
+            "process_id": process_id,
+            "stopped": true
+        });
+
+        Ok(hint.to_mcp_result_with_data(Some(response)))
     }
 
     // Common utility methods

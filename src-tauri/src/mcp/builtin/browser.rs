@@ -1,4 +1,8 @@
 use crate::mcp::builtin::browser_content_store::BrowserContentStore;
+use crate::mcp::builtin::error_guidance::{
+    invalid_input_error, missing_param_error, not_found_error, operation_failed_error,
+    ErrorCategory, ErrorGuidance, SuccessHint, ToolGroup,
+};
 use crate::mcp::types::MCPResult;
 use crate::mcp::MCPTool;
 use crate::services::InteractiveBrowserServer;
@@ -30,6 +34,29 @@ impl BrowserServer {
             agent_session_id,
             browser_session_id: Arc::new(RwLock::new(None)), // Initialize lazily
         }
+    }
+
+    fn handle_browser_op_error(
+        operation: &str,
+        error: String,
+        default_guidance: Vec<&str>,
+    ) -> MCPResult {
+        let error_lower = error.to_lowercase();
+        let is_timeout = error_lower.contains("timeout") || error_lower.contains("timed out");
+
+        let guidance_strs = if is_timeout {
+            vec![
+                "The page load timed out. This often happens with complex sites.",
+                "Try creating a new session with 'createSession' to reset the state.",
+                "If the problem persists, the site might be blocking automated access.",
+            ]
+        } else {
+            default_guidance
+        };
+
+        let guidance: Vec<String> = guidance_strs.iter().map(|s| s.to_string()).collect();
+
+        operation_failed_error(operation, &error, guidance, ToolGroup::Browser)
     }
 
     /// Get the browser service from Tauri state
@@ -235,16 +262,16 @@ impl BrowserServer {
         // Note: We use separate regexes to avoid backreference issues
         let re_script = regex::Regex::new(r"(?is)<script[^>]*>.*?</script>").unwrap();
         let s = re_script.replace_all(raw_html, "");
-        
+
         let re_style = regex::Regex::new(r"(?is)<style[^>]*>.*?</style>").unwrap();
         let s = re_style.replace_all(&s, "");
-        
+
         let re_noscript = regex::Regex::new(r"(?is)<noscript[^>]*>.*?</noscript>").unwrap();
         let s = re_noscript.replace_all(&s, "");
 
         // 2. Flatten tables by transmuting them to divs/spans
         // This keeps the tree balanced (preventing parser crashes) but removes table semantics
-        
+
         // <table...> -> <div>
         let re_table = regex::Regex::new(r"(?i)<table[^>]*>").unwrap();
         let s = re_table.replace_all(&s, "<div>");
@@ -258,7 +285,7 @@ impl BrowserServer {
         // <td...> -> <span> (Cells become inline text)
         // We add a space to ensure separation between cell contents
         let re_td = regex::Regex::new(r"(?i)<(td|th)[^>]*>").unwrap();
-        let s = re_td.replace_all(&s, "<span> "); 
+        let s = re_td.replace_all(&s, "<span> ");
         let re_td_close = regex::Regex::new(r"(?i)</(td|th)>").unwrap();
         let s = re_td_close.replace_all(&s, "</span>");
 
@@ -693,26 +720,37 @@ impl BuiltinMCPServer for BrowserServer {
             };
 
             if let Some(id) = id_opt {
-                service.close_session(&id).await?;
+                match service.close_session(&id).await {
+                    Ok(_) => {}
+                    Err(e) => {
+                        return Ok(operation_failed_error(
+                            "Close browser session",
+                            &e,
+                            vec![
+                                "Verify the browser session is still active".to_string(),
+                                "Use createSession to start a new session if needed".to_string(),
+                            ],
+                            ToolGroup::Browser,
+                        ))
+                    }
+                }
                 {
                     let mut lock = self.browser_session_id.write().map_err(|e| e.to_string())?;
                     *lock = None;
                 }
-                return Ok(MCPResult {
-                    content: Some(vec![crate::mcp::types::MCPContent::Text {
-                        text: "Browser session closed".to_string(),
-                    }]),
-                    structured_content: None,
-                    is_error: Some(false),
-                });
+
+                let hint = SuccessHint::new(
+                    "Browser session closed",
+                    vec!["Use createSession to start a new browser session".to_string()],
+                );
+                return Ok(hint.to_mcp_result());
             } else {
-                return Ok(MCPResult {
-                    content: Some(vec![crate::mcp::types::MCPContent::Text {
-                        text: "No active browser session to close".to_string(),
-                    }]),
-                    structured_content: None,
-                    is_error: Some(false),
-                });
+                let warning = ErrorGuidance::new(
+                    ErrorCategory::InvalidState,
+                    "No active browser session to close",
+                    ToolGroup::Browser,
+                );
+                return Ok(warning.to_mcp_result());
             }
         }
 
@@ -727,107 +765,213 @@ impl BuiltinMCPServer for BrowserServer {
             {
                 let id_lock = self.browser_session_id.read().map_err(|e| e.to_string())?;
                 if let Some(id) = id_lock.as_ref() {
-                    return Ok(MCPResult {
-                        content: Some(vec![crate::mcp::types::MCPContent::Text {
-                            text: format!("Session already exists: {}", id),
-                        }]),
-                        structured_content: None,
-                        is_error: Some(false),
-                    });
+                    let warning = ErrorGuidance::new(
+                        ErrorCategory::DuplicateResource,
+                        format!("Session already exists: {}", id),
+                        ToolGroup::Browser,
+                    );
+                    return Ok(warning.to_mcp_result());
                 }
             }
 
-            let (id, status_msg) = service
+            let (id, status_msg) = match service
                 .create_browser_session(url, Some(&format!("Agent {}", self.agent_session_id)))
-                .await?;
+                .await
+            {
+                Ok(res) => res,
+                Err(e) => {
+                    return Ok(operation_failed_error(
+                        "Create browser session",
+                        &e,
+                        vec![
+                            "Verify the URL format is valid (must include http:// or https://)"
+                                .to_string(),
+                            "Check browser service is available and running".to_string(),
+                        ],
+                        ToolGroup::Browser,
+                    ))
+                }
+            };
 
             {
                 let mut id_lock = self.browser_session_id.write().map_err(|e| e.to_string())?;
                 *id_lock = Some(id.clone());
             }
 
-            return Ok(MCPResult {
-                content: Some(vec![crate::mcp::types::MCPContent::Text {
-                    text: format!("Browser session created: {}. {}", id, status_msg),
-                }]),
-                structured_content: None,
-                is_error: Some(false),
-            });
+            let hint = SuccessHint::new(
+                format!("Browser session created: {}. {}", id, status_msg),
+                vec![
+                    "Use navigateToUrl to load a webpage".to_string(),
+                    "Use extractWebContent to see the initial page".to_string(),
+                ],
+            );
+            return Ok(hint.to_mcp_result());
         }
 
         match tool_name {
             "navigateToUrl" => {
-                let url = args
-                    .get("url")
-                    .and_then(|v| v.as_str())
-                    .ok_or("Missing url argument")?;
-                let session_id = args
-                    .get("sessionId")
-                    .and_then(|v| v.as_str())
-                    .ok_or("Missing sessionId")?;
+                let url = match args.get("url").and_then(|v| v.as_str()) {
+                    Some(u) => u,
+                    None => return Ok(missing_param_error("url", ToolGroup::Browser)),
+                };
+                let session_id = match args.get("sessionId").and_then(|v| v.as_str()) {
+                    Some(id) => id,
+                    None => return Ok(missing_param_error("sessionId", ToolGroup::Browser)),
+                };
 
-                let result = service.navigate_to_url(session_id, url).await?;
-                Ok(MCPResult {
-                    content: Some(vec![crate::mcp::types::MCPContent::Text { text: result }]),
-                    structured_content: None,
-                    is_error: Some(false),
-                })
+                // Proactive URL validation
+                if !url.starts_with("http://")
+                    && !url.starts_with("https://")
+                    && !url.starts_with("about:")
+                {
+                    return Ok(invalid_input_error(
+                        &format!(
+                            "Invalid URL format: '{}'. Must start with http://, https://, or about:",
+                            url
+                        ),
+                        ToolGroup::Browser,
+                    ));
+                }
+
+                let result = match service.navigate_to_url(session_id, url).await {
+                    Ok(res) => res,
+                    Err(e) => {
+                        return Ok(Self::handle_browser_op_error(
+                            "Navigate to URL",
+                            e,
+                            vec![
+                                "Verify the URL format is valid (must include http:// or https://)",
+                                "Use createSession to start a new browser session",
+                                "Check if the session still exists",
+                                "Try checking if the page loaded using getPageTitle",
+                            ],
+                        ))
+                    }
+                };
+
+                let hint = SuccessHint::new(
+                    result,
+                    vec![
+                        "Use extractWebContent to see page content".to_string(),
+                        "Use listInteractable to see clickable elements".to_string(),
+                    ],
+                );
+                Ok(hint.to_mcp_result())
             }
             "navigateBack" => {
-                let session_id = args
-                    .get("sessionId")
-                    .and_then(|v| v.as_str())
-                    .ok_or("Missing sessionId")?;
-                let result = service.navigate_back(session_id).await?;
-                Ok(MCPResult {
-                    content: Some(vec![crate::mcp::types::MCPContent::Text { text: result }]),
-                    structured_content: None,
-                    is_error: Some(false),
-                })
+                let session_id = match args.get("sessionId").and_then(|v| v.as_str()) {
+                    Some(id) => id,
+                    None => return Ok(missing_param_error("sessionId", ToolGroup::Browser)),
+                };
+
+                let result = match service.navigate_back(session_id).await {
+                    Ok(res) => res,
+                    Err(e) => {
+                        return Ok(Self::handle_browser_op_error(
+                            "Navigate back",
+                            e,
+                            vec![
+                                "Ensure there is a previous page in history",
+                                "Use getCurrentUrl to check current page",
+                            ],
+                        ))
+                    }
+                };
+
+                let hint = SuccessHint::new(
+                    result,
+                    vec!["Use extractWebContent to see page content after navigation".to_string()],
+                );
+                Ok(hint.to_mcp_result())
             }
             "navigateForward" => {
-                let session_id = args
-                    .get("sessionId")
-                    .and_then(|v| v.as_str())
-                    .ok_or("Missing sessionId")?;
-                let result = service.navigate_forward(session_id).await?;
-                Ok(MCPResult {
-                    content: Some(vec![crate::mcp::types::MCPContent::Text { text: result }]),
-                    structured_content: None,
-                    is_error: Some(false),
-                })
+                let session_id = match args.get("sessionId").and_then(|v| v.as_str()) {
+                    Some(id) => id,
+                    None => return Ok(missing_param_error("sessionId", ToolGroup::Browser)),
+                };
+
+                let result = match service.navigate_forward(session_id).await {
+                    Ok(res) => res,
+                    Err(e) => {
+                        return Ok(Self::handle_browser_op_error(
+                            "Navigate forward",
+                            e,
+                            vec![
+                                "Ensure there is a next page in history",
+                                "Use getCurrentUrl to check current page",
+                            ],
+                        ))
+                    }
+                };
+
+                let hint = SuccessHint::new(
+                    result,
+                    vec!["Use extractWebContent to see page content after navigation".to_string()],
+                );
+                Ok(hint.to_mcp_result())
             }
             "getCurrentUrl" => {
-                let session_id = args
-                    .get("sessionId")
-                    .and_then(|v| v.as_str())
-                    .ok_or("Missing sessionId")?;
-                let result = service
+                let session_id = match args.get("sessionId").and_then(|v| v.as_str()) {
+                    Some(id) => id,
+                    None => return Ok(missing_param_error("sessionId", ToolGroup::Browser)),
+                };
+
+                let result = match service
                     .execute_script(session_id, "window.location.href")
-                    .await?;
-                Ok(MCPResult {
-                    content: Some(vec![crate::mcp::types::MCPContent::Text { text: result }]),
-                    structured_content: None,
-                    is_error: Some(false),
-                })
+                    .await
+                {
+                    Ok(res) => res,
+                    Err(e) => {
+                        return Ok(operation_failed_error(
+                            "Get current URL",
+                            &e,
+                            vec![
+                                "Verify the browser session is active".to_string(),
+                                "Use createSession to start a new session if needed".to_string(),
+                            ],
+                            ToolGroup::Browser,
+                        ))
+                    }
+                };
+
+                let hint = SuccessHint::new(
+                    result,
+                    vec!["Use navigateToUrl to navigate to a different URL".to_string()],
+                );
+                Ok(hint.to_mcp_result())
             }
             "getPageTitle" => {
-                let session_id = args
-                    .get("sessionId")
-                    .and_then(|v| v.as_str())
-                    .ok_or("Missing sessionId")?;
-                let result = service.execute_script(session_id, "document.title").await?;
-                Ok(MCPResult {
-                    content: Some(vec![crate::mcp::types::MCPContent::Text { text: result }]),
-                    structured_content: None,
-                    is_error: Some(false),
-                })
+                let session_id = match args.get("sessionId").and_then(|v| v.as_str()) {
+                    Some(id) => id,
+                    None => return Ok(missing_param_error("sessionId", ToolGroup::Browser)),
+                };
+
+                let result = match service.execute_script(session_id, "document.title").await {
+                    Ok(res) => res,
+                    Err(e) => {
+                        return Ok(operation_failed_error(
+                            "Get page title",
+                            &e,
+                            vec![
+                                "Verify the browser session is active".to_string(),
+                                "Ensure the page has fully loaded".to_string(),
+                            ],
+                            ToolGroup::Browser,
+                        ))
+                    }
+                };
+
+                let hint = SuccessHint::new(
+                    result,
+                    vec!["Use extractWebContent to see full page content".to_string()],
+                );
+                Ok(hint.to_mcp_result())
             }
             "extractWebContent" => {
-                let session_id = args
-                    .get("sessionId")
-                    .and_then(|v| v.as_str())
-                    .ok_or("Missing sessionId")?;
+                let session_id = match args.get("sessionId").and_then(|v| v.as_str()) {
+                    Some(id) => id,
+                    None => return Ok(missing_param_error("sessionId", ToolGroup::Browser)),
+                };
 
                 let save_raw_html = args
                     .get("saveRawHtml")
@@ -848,7 +992,21 @@ impl BuiltinMCPServer for BrowserServer {
                     .unwrap_or_default();
 
                 // Extract HTML (body.outerHTML)
-                let raw_html = Self::extract_html_from_page(&service, session_id).await?;
+                let raw_html = match Self::extract_html_from_page(&service, session_id).await {
+                    Ok(html) => html,
+                    Err(e) => {
+                        return Ok(Self::handle_browser_op_error(
+                            "Extract HTML from page",
+                            e,
+                            vec![
+                                "Verify the browser session is active",
+                                "Ensure the page has fully loaded before extracting",
+                                "Use navigateToUrl to reload the page",
+                                "Try waiting a moment before retrying",
+                            ],
+                        ))
+                    }
+                };
 
                 // Convert to markdown
                 let markdown_content = Self::convert_to_markdown(&raw_html);
@@ -951,51 +1109,86 @@ impl BuiltinMCPServer for BrowserServer {
                 // Generate unique ID for the response
                 let response_id = cuid2::create_id();
 
-                Ok(MCPResult {
-                    content: Some(vec![crate::mcp::types::MCPContent::Text {
-                        text: response_text,
-                    }]),
-                    structured_content: Some(json!({
-                        "id": response_id,
-                        "content": if auto_merged { merged_content } else { Some(first_page) },
-                        "format": "markdown",
-                        "metadata": metadata,
-                    })),
-                    is_error: Some(false),
-                })
+                let hint = SuccessHint::new(
+                    response_text,
+                    vec![
+                        "Use listInteractable to see interactive elements".to_string(),
+                        "Use clickElement to interact with the page".to_string(),
+                    ],
+                );
+
+                Ok(hint.to_mcp_result_with_data(Some(json!({
+                    "id": response_id,
+                    "content": if auto_merged { merged_content } else { Some(first_page) },
+                    "format": "markdown",
+                    "metadata": metadata,
+                }))))
             }
             "clickElement" => {
-                let session_id = args
-                    .get("sessionId")
-                    .and_then(|v| v.as_str())
-                    .ok_or("Missing sessionId")?;
-                let selector = args
-                    .get("selector")
-                    .and_then(|v| v.as_str())
-                    .ok_or("Missing selector")?;
+                let session_id = match args.get("sessionId").and_then(|v| v.as_str()) {
+                    Some(id) => id,
+                    None => return Ok(missing_param_error("sessionId", ToolGroup::Browser)),
+                };
+                let selector = match args.get("selector").and_then(|v| v.as_str()) {
+                    Some(s) => s,
+                    None => return Ok(missing_param_error("selector", ToolGroup::Browser)),
+                };
+
+                // Proactive CSS selector validation
+                if selector.trim().is_empty() {
+                    return Ok(invalid_input_error(
+                        "CSS selector cannot be empty",
+                        ToolGroup::Browser,
+                    ));
+                }
 
                 let script = Self::get_click_script(selector);
-                let result = service.execute_script(session_id, &script).await?;
+                let result = match service.execute_script(session_id, &script).await {
+                    Ok(res) => res,
+                    Err(e) => {
+                        return Ok(operation_failed_error(
+                            "Click element",
+                            &e,
+                            vec![
+                                "Verify the selector is correct CSS syntax".to_string(),
+                                "Use listInteractable to find valid selectors".to_string(),
+                                "Ensure the element is visible and interactable".to_string(),
+                            ],
+                            ToolGroup::Browser,
+                        ))
+                    }
+                };
 
-                Ok(MCPResult {
-                    content: Some(vec![crate::mcp::types::MCPContent::Text { text: result }]),
-                    structured_content: None,
-                    is_error: Some(false),
-                })
+                let hint = SuccessHint::new(
+                    result,
+                    vec![
+                        "Use extractWebContent to see page changes after click".to_string(),
+                        "Use getCurrentUrl to check if navigation occurred".to_string(),
+                    ],
+                );
+                Ok(hint.to_mcp_result())
             }
             "inputText" => {
-                let session_id = args
-                    .get("sessionId")
-                    .and_then(|v| v.as_str())
-                    .ok_or("Missing sessionId")?;
-                let selector = args
-                    .get("selector")
-                    .and_then(|v| v.as_str())
-                    .ok_or("Missing selector")?;
-                let text = args
-                    .get("text")
-                    .and_then(|v| v.as_str())
-                    .ok_or("Missing text")?;
+                let session_id = match args.get("sessionId").and_then(|v| v.as_str()) {
+                    Some(id) => id,
+                    None => return Ok(missing_param_error("sessionId", ToolGroup::Browser)),
+                };
+                let selector = match args.get("selector").and_then(|v| v.as_str()) {
+                    Some(s) => s,
+                    None => return Ok(missing_param_error("selector", ToolGroup::Browser)),
+                };
+                let text = match args.get("text").and_then(|v| v.as_str()) {
+                    Some(t) => t,
+                    None => return Ok(missing_param_error("text", ToolGroup::Browser)),
+                };
+
+                // Proactive CSS selector validation
+                if selector.trim().is_empty() {
+                    return Ok(invalid_input_error(
+                        "CSS selector cannot be empty",
+                        ToolGroup::Browser,
+                    ));
+                }
 
                 let script = format!(
                     r#"(function() {{
@@ -1012,36 +1205,75 @@ impl BuiltinMCPServer for BrowserServer {
                     serde_json::to_string(text).unwrap()
                 );
 
-                let result = service.execute_script(session_id, &script).await?;
+                let result = match service.execute_script(session_id, &script).await {
+                    Ok(res) => res,
+                    Err(e) => {
+                        return Ok(operation_failed_error(
+                            "Input text",
+                            &e,
+                            vec![
+                                "Verify the selector targets an input/textarea element".to_string(),
+                                "Use listInteractable with filterType='semantic_input'".to_string(),
+                                "Check the element is not disabled or readonly".to_string(),
+                            ],
+                            ToolGroup::Browser,
+                        ))
+                    }
+                };
 
-                Ok(MCPResult {
-                    content: Some(vec![crate::mcp::types::MCPContent::Text { text: result }]),
-                    structured_content: None,
-                    is_error: Some(false),
-                })
+                let hint = SuccessHint::new(
+                    result,
+                    vec![
+                        "Use clickElement to submit the form or click buttons".to_string(),
+                        "Use extractWebContent to verify input changes".to_string(),
+                    ],
+                );
+                Ok(hint.to_mcp_result())
             }
             "scrollPage" => {
-                let session_id = args
-                    .get("sessionId")
-                    .and_then(|v| v.as_str())
-                    .ok_or("Missing sessionId")?;
-                let x = args.get("x").and_then(|v| v.as_f64()).ok_or("Missing x")?;
-                let y = args.get("y").and_then(|v| v.as_f64()).ok_or("Missing y")?;
+                let session_id = match args.get("sessionId").and_then(|v| v.as_str()) {
+                    Some(id) => id,
+                    None => return Ok(missing_param_error("sessionId", ToolGroup::Browser)),
+                };
+                let x = match args.get("x").and_then(|v| v.as_f64()) {
+                    Some(x_val) => x_val,
+                    None => return Ok(missing_param_error("x", ToolGroup::Browser)),
+                };
+                let y = match args.get("y").and_then(|v| v.as_f64()) {
+                    Some(y_val) => y_val,
+                    None => return Ok(missing_param_error("y", ToolGroup::Browser)),
+                };
 
                 let script = format!("window.scrollTo({}, {}); 'Scrolled'", x, y);
-                let result = service.execute_script(session_id, &script).await?;
+                let result = match service.execute_script(session_id, &script).await {
+                    Ok(res) => res,
+                    Err(e) => {
+                        return Ok(operation_failed_error(
+                            "Scroll page",
+                            &e,
+                            vec![
+                                "Verify the browser session is active".to_string(),
+                                "Check if the page has scrollable content".to_string(),
+                            ],
+                            ToolGroup::Browser,
+                        ))
+                    }
+                };
 
-                Ok(MCPResult {
-                    content: Some(vec![crate::mcp::types::MCPContent::Text { text: result }]),
-                    structured_content: None,
-                    is_error: Some(false),
-                })
+                let hint = SuccessHint::new(
+                    result,
+                    vec![
+                        "Use listInteractable to see newly visible elements".to_string(),
+                        "Use extractWebContent to see content after scroll".to_string(),
+                    ],
+                );
+                Ok(hint.to_mcp_result())
             }
             "listInteractable" => {
-                let session_id = args
-                    .get("sessionId")
-                    .and_then(|v| v.as_str())
-                    .ok_or("Missing sessionId")?;
+                let session_id = match args.get("sessionId").and_then(|v| v.as_str()) {
+                    Some(id) => id,
+                    None => return Ok(missing_param_error("sessionId", ToolGroup::Browser)),
+                };
                 let filter_type = args
                     .get("filterType")
                     .and_then(|v| v.as_str())
@@ -1051,60 +1283,119 @@ impl BuiltinMCPServer for BrowserServer {
                     .and_then(|v| v.as_str())
                     .unwrap_or("viewport");
 
+                // Proactive filterType validation
+                let valid_filters = ["semantic_clickable", "semantic_input", "all_focusable"];
+                if !valid_filters.contains(&filter_type) {
+                    return Ok(invalid_input_error(
+                        &format!(
+                            "Invalid filterType: '{}'. Must be one of: {}",
+                            filter_type,
+                            valid_filters.join(", ")
+                        ),
+                        ToolGroup::Browser,
+                    ));
+                }
+
                 let script = Self::get_filter_script(filter_type, scope);
-                let result_json = service.execute_script(session_id, &script).await?;
+                let result_json = match service.execute_script(session_id, &script).await {
+                    Ok(res) => res,
+                    Err(e) => {
+                        return Ok(operation_failed_error(
+                            "List interactable elements",
+                            &e,
+                            vec![
+                                "Verify the browser session is active".to_string(),
+                                "Ensure the page has fully loaded".to_string(),
+                                "Try extractWebContent first to see page structure".to_string(),
+                            ],
+                            ToolGroup::Browser,
+                        ))
+                    }
+                };
 
                 // Parse and format results to match TypeScript version
-                let formatted_text =
-                    BrowserServer::format_interactive_elements(&result_json, filter_type, scope)?;
+                let formatted_text = match BrowserServer::format_interactive_elements(
+                    &result_json,
+                    filter_type,
+                    scope,
+                ) {
+                    Ok(text) => text,
+                    Err(e) => {
+                        return Ok(operation_failed_error(
+                            "Format interactable elements",
+                            &e,
+                            vec![
+                                "The page may have returned unexpected data".to_string(),
+                                "Try refreshing the page with navigateToUrl".to_string(),
+                                "Use extractWebContent to verify page structure".to_string(),
+                            ],
+                            ToolGroup::Browser,
+                        ))
+                    }
+                };
 
-                Ok(MCPResult {
-                    content: Some(vec![crate::mcp::types::MCPContent::Text {
-                        text: formatted_text,
-                    }]),
-                    structured_content: None,
-                    is_error: Some(false),
-                })
+                let hint = SuccessHint::new(
+                    formatted_text,
+                    vec![
+                        "Use clickElement with the selector or index".to_string(),
+                        "Use extractWebContent to see full page content".to_string(),
+                    ],
+                );
+                Ok(hint.to_mcp_result())
             }
             "inject_javascript" => {
-                let script = args
-                    .get("script")
-                    .and_then(|v| v.as_str())
-                    .ok_or("Missing script argument")?;
-                let session_id = args
-                    .get("sessionId")
-                    .and_then(|v| v.as_str())
-                    .ok_or("Missing sessionId")?;
-                let result = service.execute_script(session_id, script).await?;
-                Ok(MCPResult {
-                    content: Some(vec![crate::mcp::types::MCPContent::Text { text: result }]),
-                    structured_content: None,
-                    is_error: Some(false),
-                })
+                let script = match args.get("script").and_then(|v| v.as_str()) {
+                    Some(s) => s,
+                    None => return Ok(missing_param_error("script", ToolGroup::Browser)),
+                };
+                let session_id = match args.get("sessionId").and_then(|v| v.as_str()) {
+                    Some(id) => id,
+                    None => return Ok(missing_param_error("sessionId", ToolGroup::Browser)),
+                };
+
+                let result = match service.execute_script(session_id, script).await {
+                    Ok(res) => res,
+                    Err(e) => {
+                        return Ok(operation_failed_error(
+                            "Execute JavaScript",
+                            &e,
+                            vec![
+                                "Verify the JavaScript syntax is correct".to_string(),
+                                "Check the browser session is active".to_string(),
+                                "Ensure the script returns a serializable value".to_string(),
+                            ],
+                            ToolGroup::Browser,
+                        ))
+                    }
+                };
+
+                let hint = SuccessHint::new(
+                    result,
+                    vec![
+                        "Use extractWebContent to see page changes after script execution"
+                            .to_string(),
+                    ],
+                );
+                Ok(hint.to_mcp_result())
             }
             "readWebContent" => {
-                let session_id = args
-                    .get("sessionId")
-                    .and_then(|v| v.as_str())
-                    .ok_or("Missing sessionId")?;
+                let session_id = match args.get("sessionId").and_then(|v| v.as_str()) {
+                    Some(id) => id,
+                    None => return Ok(missing_param_error("sessionId", ToolGroup::Browser)),
+                };
 
-                let page = args
-                    .get("page")
-                    .and_then(|v| v.as_u64())
-                    .ok_or("Missing or invalid page number")? as usize;
+                let page = match args.get("page").and_then(|v| v.as_u64()) {
+                    Some(p) => p as usize,
+                    None => return Ok(missing_param_error("page", ToolGroup::Browser)),
+                };
 
                 // Check if content exists
                 if !BROWSER_CONTENT_STORE.has_content(session_id) {
-                    return Ok(MCPResult {
-                        content: Some(vec![crate::mcp::types::MCPContent::Text {
-                            text: format!(
-                                "✗ No extracted content found for session: {}. Please run extractWebContent first.",
-                                session_id
-                            ),
-                        }]),
-                        structured_content: None,
-                        is_error: Some(true),
-                    });
+                    return Ok(not_found_error(
+                        "Extracted content",
+                        session_id,
+                        ToolGroup::Browser,
+                    ));
                 }
 
                 // Get the requested page
@@ -1115,28 +1406,37 @@ impl BuiltinMCPServer for BrowserServer {
                             page_data.page_number, page_data.total_pages, page_data.content
                         );
 
-                        Ok(MCPResult {
-                            content: Some(vec![crate::mcp::types::MCPContent::Text {
-                                text: response_text,
-                            }]),
-                            structured_content: Some(json!({
-                                "content": page_data.content,
-                                "page": page_data.page_number,
-                                "totalPages": page_data.total_pages,
-                            })),
-                            is_error: Some(false),
-                        })
+                        let hint = SuccessHint::new(
+                            response_text,
+                            if page_data.page_number < page_data.total_pages {
+                                vec![format!(
+                                    "Read page {} to continue",
+                                    page_data.page_number + 1
+                                )]
+                            } else {
+                                vec!["All pages read. Use extractWebContent to refresh content"
+                                    .to_string()]
+                            },
+                        );
+
+                        Ok(hint.to_mcp_result_with_data(Some(json!({
+                            "content": page_data.content,
+                            "page": page_data.page_number,
+                            "totalPages": page_data.total_pages,
+                        }))))
                     }
-                    None => Ok(MCPResult {
-                        content: Some(vec![crate::mcp::types::MCPContent::Text {
-                            text: format!(
-                                "✗ Invalid page number: {}. Please provide a valid page number.",
-                                page
-                            ),
-                        }]),
-                        structured_content: None,
-                        is_error: Some(true),
-                    }),
+                    None => {
+                        let error = ErrorGuidance::with_guidance(
+                            ErrorCategory::InvalidInput,
+                            format!("Invalid page number: {}", page),
+                            vec![
+                                "Use extractWebContent to see available pages".to_string(),
+                                format!("Page number must be between 1 and total pages"),
+                            ],
+                            ToolGroup::Browser,
+                        );
+                        Ok(error.to_mcp_result())
+                    }
                 }
             }
             _ => Err(format!("Unknown tool: {}", tool_name)),

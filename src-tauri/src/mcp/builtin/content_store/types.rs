@@ -9,6 +9,10 @@ pub(crate) struct AddContentArgs {
     pub src_url: Option<String>,
     pub content: Option<String>,
     pub metadata: Option<AddContentMetadata>,
+    // Legacy support
+    pub title: Option<String>,
+    #[allow(dead_code)]
+    pub tags: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]

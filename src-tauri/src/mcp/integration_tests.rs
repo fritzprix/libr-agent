@@ -487,7 +487,15 @@ mod tests {
                 json!({
                     "goal": "Session 1 Playbook",
                     "initialCommand": "s1",
-                    "workflow": [],
+                    "workflow": [{
+                        "stepId": "step1",
+                        "description": "Test step",
+                        "action": {
+                            "toolName": "testTool",
+                            "purpose": "test"
+                        },
+                        "outputVariable": "result"
+                    }],
                     "successCriteria": { "description": "s1" }
                 }),
             )
@@ -502,7 +510,15 @@ mod tests {
                 json!({
                     "goal": "Session 2 Playbook",
                     "initialCommand": "s2",
-                    "workflow": [],
+                    "workflow": [{
+                        "stepId": "step1",
+                        "description": "Test step",
+                        "action": {
+                            "toolName": "testTool",
+                            "purpose": "test"
+                        },
+                        "outputVariable": "result"
+                    }],
                     "successCriteria": { "description": "s2" }
                 }),
             )

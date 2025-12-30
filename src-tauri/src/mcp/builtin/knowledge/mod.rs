@@ -4,9 +4,13 @@ use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::mcp::builtin::error_guidance::{
+    invalid_input_error, missing_param_error, not_found_error, operation_failed_error, SuccessHint,
+    ToolGroup,
+};
 use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{
-    BuiltinServerMetadata, MCPContent, MCPResult, MCPTool, ServiceContext, ServiceContextOptions,
+    BuiltinServerMetadata, MCPResult, MCPTool, ServiceContext, ServiceContextOptions,
 };
 use crate::mcp::utils::schema_builder::*;
 
@@ -120,29 +124,46 @@ impl KnowledgeServer {
 
     /// Save knowledge to the database
     async fn save_knowledge(&self, args: Value) -> Result<MCPResult, String> {
-        let title = args
-            .get("title")
-            .and_then(|v| v.as_str())
-            .ok_or("Missing 'title' parameter")?;
+        let title = match args.get("title").and_then(|v| v.as_str()) {
+            Some(v) => v,
+            None => return Ok(missing_param_error("title", ToolGroup::Knowledge)),
+        };
 
-        let content = args
-            .get("content")
-            .and_then(|v| v.as_str())
-            .ok_or("Missing 'content' parameter")?;
+        let content = match args.get("content").and_then(|v| v.as_str()) {
+            Some(v) => v,
+            None => return Ok(missing_param_error("content", ToolGroup::Knowledge)),
+        };
 
         // Handle tags as array of strings
         let tags_str = if let Some(tags_val) = args.get("tags") {
             if let Some(tags_arr) = tags_val.as_array() {
                 // Validate all elements are strings
                 if !tags_arr.iter().all(|t| t.is_string()) {
-                    return Err("Tags must be an array of strings".to_string());
+                    return Ok(invalid_input_error(
+                        "Tags must be an array of strings",
+                        ToolGroup::Knowledge,
+                    ));
                 }
-                Some(
-                    serde_json::to_string(tags_arr)
-                        .map_err(|e| format!("Failed to serialize tags: {}", e))?,
-                )
+                match serde_json::to_string(tags_arr) {
+                    Ok(s) => Some(s),
+                    Err(e) => {
+                        return Ok(operation_failed_error(
+                            "Serialize tags",
+                            &e.to_string(),
+                            vec![
+                                "Ensure tags are valid strings".to_string(),
+                                "Check tag format".to_string(),
+                                "Try without tags".to_string(),
+                            ],
+                            ToolGroup::Knowledge,
+                        ))
+                    }
+                }
             } else {
-                return Err("Tags must be an array of strings".to_string());
+                return Ok(invalid_input_error(
+                    "Tags must be an array of strings",
+                    ToolGroup::Knowledge,
+                ));
             }
         } else {
             None
@@ -186,38 +207,38 @@ impl KnowledgeServer {
                     "updated_at": now
                 });
 
-                Ok(MCPResult {
-                    content: Some(vec![MCPContent::Text {
-                        text: format!(
-                            "Knowledge saved successfully.\nID: {}\nTitle: {}\nTags: {}",
-                            id,
-                            title,
-                            tags_vec.join(", ")
-                        ),
-                    }]),
-                    structured_content: Some(json!({
-                        "success": true,
-                        "knowledge": knowledge
-                    })),
-                    is_error: Some(false),
-                })
+                let hint = SuccessHint::new(
+                    format!("Knowledge '{}' saved (ID: {})", title, id),
+                    vec![
+                        "Use searchKnowledge to find this entry later".to_string(),
+                        "Use listKnowledge to see all knowledge entries".to_string(),
+                    ],
+                );
+
+                Ok(hint.to_mcp_result_with_data(Some(json!({
+                    "success": true,
+                    "knowledge": knowledge
+                }))))
             }
-            Err(e) => Ok(MCPResult {
-                content: Some(vec![MCPContent::Text {
-                    text: format!("Failed to save knowledge: {}", e),
-                }]),
-                structured_content: None,
-                is_error: Some(true),
-            }),
+            Err(e) => Ok(operation_failed_error(
+                "Save knowledge",
+                &e.to_string(),
+                vec![
+                    "Check database connectivity".to_string(),
+                    "Verify title and content are valid".to_string(),
+                    "Retry the operation".to_string(),
+                ],
+                ToolGroup::Knowledge,
+            )),
         }
     }
 
     /// Read a knowledge entry by ID
     async fn read_knowledge(&self, args: Value) -> Result<MCPResult, String> {
-        let id = args
-            .get("id")
-            .and_then(|v| v.as_i64())
-            .ok_or("Missing 'id' parameter")?;
+        let id = match args.get("id").and_then(|v| v.as_i64()) {
+            Some(v) => v,
+            None => return Ok(missing_param_error("id", ToolGroup::Knowledge)),
+        };
 
         let result = sqlx::query_as::<_, (i64, String, String, Option<String>, i64, i64)>(
             r#"
@@ -249,46 +270,43 @@ impl KnowledgeServer {
                     "updated_at": updated_at
                 });
 
-                Ok(MCPResult {
-                    content: Some(vec![MCPContent::Text {
-                        text: format!(
-                            "Knowledge Entry:\nID: {}\nTitle: {}\nTags: {}\n\n{}",
-                            id,
-                            title,
-                            tags_vec.join(", "),
-                            content
-                        ),
-                    }]),
-                    structured_content: Some(json!({
-                        "success": true,
-                        "knowledge": knowledge
-                    })),
-                    is_error: Some(false),
-                })
+                let hint = SuccessHint::new(
+                    format!("Knowledge: {}", title),
+                    vec![
+                        "Use searchKnowledge to find related entries".to_string(),
+                        "Use deleteKnowledge to remove this entry".to_string(),
+                    ],
+                );
+
+                Ok(hint.to_mcp_result_with_data(Some(json!({
+                    "success": true,
+                    "knowledge": knowledge
+                }))))
             }
-            Ok(None) => Ok(MCPResult {
-                content: Some(vec![MCPContent::Text {
-                    text: format!("Knowledge entry with ID {} not found", id),
-                }]),
-                structured_content: None,
-                is_error: Some(true),
-            }),
-            Err(e) => Ok(MCPResult {
-                content: Some(vec![MCPContent::Text {
-                    text: format!("Failed to read knowledge: {}", e),
-                }]),
-                structured_content: None,
-                is_error: Some(true),
-            }),
+            Ok(None) => Ok(not_found_error(
+                "Knowledge entry",
+                &id.to_string(),
+                ToolGroup::Knowledge,
+            )),
+            Err(e) => Ok(operation_failed_error(
+                "Read knowledge",
+                &e.to_string(),
+                vec![
+                    "Check database connectivity".to_string(),
+                    "Verify the ID is correct".to_string(),
+                    "Use listKnowledge to see available entries".to_string(),
+                ],
+                ToolGroup::Knowledge,
+            )),
         }
     }
 
     /// Delete a knowledge entry by ID
     async fn delete_knowledge(&self, args: Value) -> Result<MCPResult, String> {
-        let id = args
-            .get("id")
-            .and_then(|v| v.as_i64())
-            .ok_or("Missing 'id' parameter")?;
+        let id = match args.get("id").and_then(|v| v.as_i64()) {
+            Some(v) => v,
+            None => return Ok(missing_param_error("id", ToolGroup::Knowledge)),
+        };
 
         let result = sqlx::query(
             r#"
@@ -304,33 +322,33 @@ impl KnowledgeServer {
         match result {
             Ok(query_result) => {
                 if query_result.rows_affected() > 0 {
-                    Ok(MCPResult {
-                        content: Some(vec![MCPContent::Text {
-                            text: format!("Knowledge entry {} deleted successfully", id),
-                        }]),
-                        structured_content: Some(json!({
-                            "success": true,
-                            "id": id
-                        })),
-                        is_error: Some(false),
-                    })
+                    let hint = SuccessHint::new(
+                        format!("Knowledge entry {} deleted successfully", id),
+                        vec!["Use listKnowledge to see remaining entries".to_string()],
+                    );
+
+                    Ok(hint.to_mcp_result_with_data(Some(json!({
+                        "success": true,
+                        "id": id
+                    }))))
                 } else {
-                    Ok(MCPResult {
-                        content: Some(vec![MCPContent::Text {
-                            text: format!("Knowledge entry with ID {} not found", id),
-                        }]),
-                        structured_content: None,
-                        is_error: Some(true),
-                    })
+                    Ok(not_found_error(
+                        "Knowledge entry",
+                        &id.to_string(),
+                        ToolGroup::Knowledge,
+                    ))
                 }
             }
-            Err(e) => Ok(MCPResult {
-                content: Some(vec![MCPContent::Text {
-                    text: format!("Failed to delete knowledge: {}", e),
-                }]),
-                structured_content: None,
-                is_error: Some(true),
-            }),
+            Err(e) => Ok(operation_failed_error(
+                "Delete knowledge",
+                &e.to_string(),
+                vec![
+                    "Check database connectivity".to_string(),
+                    "Verify the ID is correct".to_string(),
+                    "Use listKnowledge to see available entries".to_string(),
+                ],
+                ToolGroup::Knowledge,
+            )),
         }
     }
 
@@ -340,7 +358,7 @@ impl KnowledgeServer {
         let tags_param = args.get("tags").and_then(|v| v.as_array());
 
         if query_param.is_none() && tags_param.is_none() {
-            return Err("Must provide either 'query' or 'tags'".to_string());
+            return Ok(missing_param_error("query or tags", ToolGroup::Knowledge));
         }
 
         let limit = args
@@ -421,24 +439,33 @@ impl KnowledgeServer {
                     })
                     .collect();
 
-                Ok(MCPResult {
-                    content: Some(vec![MCPContent::Text {
-                        text: format!("Found {} results", results.len()),
-                    }]),
-                    structured_content: Some(json!({
-                        "results": results,
-                        "count": results.len()
-                    })),
-                    is_error: Some(false),
-                })
+                let hint = SuccessHint::new(
+                    format!("Found {} knowledge entries", results.len()),
+                    if results.is_empty() {
+                        vec![
+                            "Try different search terms".to_string(),
+                            "Use listKnowledge to see all entries".to_string(),
+                        ]
+                    } else {
+                        vec!["Use readKnowledge to view full content".to_string()]
+                    },
+                );
+
+                Ok(hint.to_mcp_result_with_data(Some(json!({
+                    "results": results,
+                    "count": results.len()
+                }))))
             }
-            Err(e) => Ok(MCPResult {
-                content: Some(vec![MCPContent::Text {
-                    text: format!("Search failed: {}", e),
-                }]),
-                structured_content: None,
-                is_error: Some(true),
-            }),
+            Err(e) => Ok(operation_failed_error(
+                "Search knowledge",
+                &e.to_string(),
+                vec![
+                    "Check search query format".to_string(),
+                    "Verify database connectivity".to_string(),
+                    "Use listKnowledge to see all entries".to_string(),
+                ],
+                ToolGroup::Knowledge,
+            )),
         }
     }
 
@@ -489,26 +516,34 @@ impl KnowledgeServer {
                     })
                     .collect();
 
-                Ok(MCPResult {
-                    content: Some(vec![MCPContent::Text {
-                        text: format!("Listed {} knowledge entries", items.len()),
-                    }]),
-                    structured_content: Some(json!({
-                        "items": items,
-                        "count": items.len(),
-                        "limit": limit,
-                        "offset": offset
-                    })),
-                    is_error: Some(false),
-                })
+                let hint = SuccessHint::new(
+                    format!("Listed {} knowledge entries", items.len()),
+                    if items.is_empty() {
+                        vec!["Use saveKnowledge to create entries".to_string()]
+                    } else if items.len() as i64 == limit {
+                        vec![format!("Use offset={} to see more entries", offset + limit)]
+                    } else {
+                        vec!["Use readKnowledge to view full content".to_string()]
+                    },
+                );
+
+                Ok(hint.to_mcp_result_with_data(Some(json!({
+                    "items": items,
+                    "count": items.len(),
+                    "limit": limit,
+                    "offset": offset
+                }))))
             }
-            Err(e) => Ok(MCPResult {
-                content: Some(vec![MCPContent::Text {
-                    text: format!("Failed to list knowledge: {}", e),
-                }]),
-                structured_content: None,
-                is_error: Some(true),
-            }),
+            Err(e) => Ok(operation_failed_error(
+                "List knowledge",
+                &e.to_string(),
+                vec![
+                    "Check database connectivity".to_string(),
+                    "Verify pagination parameters".to_string(),
+                    "Retry the operation".to_string(),
+                ],
+                ToolGroup::Knowledge,
+            )),
         }
     }
 }

@@ -1,3 +1,6 @@
+use crate::mcp::builtin::error_guidance::{
+    invalid_input_error, missing_param_error, operation_failed_error, ToolGroup,
+};
 use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{MCPContent, MCPResult, ServiceContext};
 use crate::mcp::MCPTool;
@@ -55,14 +58,25 @@ impl UiServer {
     }
 
     fn prompt_user(&self, args: Value) -> Result<MCPResult, String> {
-        let prompt = args
-            .get("prompt")
-            .and_then(|v| v.as_str())
-            .ok_or("Missing prompt")?;
-        let type_ = args
-            .get("type")
-            .and_then(|v| v.as_str())
-            .ok_or("Missing type")?;
+        let prompt = match args.get("prompt").and_then(|v| v.as_str()) {
+            Some(v) => v,
+            None => return Ok(missing_param_error("prompt", ToolGroup::UI)),
+        };
+        let type_ = match args.get("type").and_then(|v| v.as_str()) {
+            Some(v) => v,
+            None => return Ok(missing_param_error("type", ToolGroup::UI)),
+        };
+
+        // Validate type
+        if !["text", "select", "multiselect"].contains(&type_) {
+            return Ok(invalid_input_error(
+                &format!(
+                    "Invalid type '{}'. Must be one of: text, select, multiselect",
+                    type_
+                ),
+                ToolGroup::UI,
+            ));
+        }
 
         let message_id = uuid::Uuid::new_v4().to_string();
 
@@ -74,15 +88,28 @@ impl UiServer {
         let template_name = match type_ {
             "text" => "text-prompt",
             "select" | "multiselect" => {
-                let options = args
-                    .get("options")
-                    .ok_or("Missing options for select/multiselect")?;
+                let options = match args.get("options") {
+                    Some(v) => v,
+                    None => {
+                        return Ok(missing_param_error("options", ToolGroup::UI));
+                    }
+                };
+
+                let options_array = match options.as_array() {
+                    Some(arr) => arr,
+                    None => {
+                        return Ok(invalid_input_error(
+                            "options must be an array of strings",
+                            ToolGroup::UI,
+                        ));
+                    }
+                };
+
                 data.as_object_mut()
                     .unwrap()
                     .insert("optionsJson".to_string(), json!(options));
 
                 // We also need optionsHtml for the template
-                let options_array = options.as_array().ok_or("Options must be an array")?;
                 let mut options_html = String::new();
                 for (i, opt) in options_array.iter().enumerate() {
                     let opt_str = opt.as_str().unwrap_or_default();
@@ -110,13 +137,32 @@ impl UiServer {
 
                 "select-prompt"
             }
-            _ => return Err(format!("Unknown prompt type: {}", type_)),
+            _ => {
+                return Ok(invalid_input_error(
+                    &format!(
+                        "Invalid type '{}'. Must be one of: text, select, multiselect",
+                        type_
+                    ),
+                    ToolGroup::UI,
+                ))
+            }
         };
 
         let handlebars = self.handlebars.lock().unwrap();
-        let html = handlebars
-            .render(template_name, &data)
-            .map_err(|e| e.to_string())?;
+        let html = match handlebars.render(template_name, &data) {
+            Ok(h) => h,
+            Err(e) => {
+                return Ok(operation_failed_error(
+                    "prompt_user",
+                    &format!("Template rendering failed: {}", e),
+                    vec![
+                        "Verify template data format is correct".to_string(),
+                        "Check that all required template variables are provided".to_string(),
+                    ],
+                    ToolGroup::UI,
+                ));
+            }
+        };
 
         Ok(MCPResult {
             content: Some(vec![MCPContent::Resource {
@@ -132,6 +178,11 @@ impl UiServer {
     }
 
     fn reply_prompt(&self, args: Value) -> Result<MCPResult, String> {
+        let _message_id = match args.get("messageId").and_then(|v| v.as_str()) {
+            Some(v) => v,
+            None => return Ok(missing_param_error("messageId", ToolGroup::UI)),
+        };
+
         let answer = args.get("answer");
         let cancelled = args
             .get("cancelled")
@@ -168,14 +219,14 @@ impl UiServer {
     }
 
     fn wait_for_user_resume(&self, args: Value) -> Result<MCPResult, String> {
-        let message = args
-            .get("message")
-            .and_then(|v| v.as_str())
-            .ok_or("Missing message")?;
-        let resume_instruction = args
-            .get("resumeInstruction")
-            .and_then(|v| v.as_str())
-            .ok_or("Missing resumeInstruction")?;
+        let message = match args.get("message").and_then(|v| v.as_str()) {
+            Some(v) => v,
+            None => return Ok(missing_param_error("message", ToolGroup::UI)),
+        };
+        let resume_instruction = match args.get("resumeInstruction").and_then(|v| v.as_str()) {
+            Some(v) => v,
+            None => return Ok(missing_param_error("resumeInstruction", ToolGroup::UI)),
+        };
 
         let context_json = json!({
             "resumeInstruction": resume_instruction,
@@ -189,9 +240,20 @@ impl UiServer {
         });
 
         let handlebars = self.handlebars.lock().unwrap();
-        let html = handlebars
-            .render("wait", &data)
-            .map_err(|e| e.to_string())?;
+        let html = match handlebars.render("wait", &data) {
+            Ok(h) => h,
+            Err(e) => {
+                return Ok(operation_failed_error(
+                    "wait_for_user_resume",
+                    &format!("Template rendering failed: {}", e),
+                    vec![
+                        "Verify template data format is correct".to_string(),
+                        "Check that message and resumeInstruction are provided".to_string(),
+                    ],
+                    ToolGroup::UI,
+                ));
+            }
+        };
 
         Ok(MCPResult {
             content: Some(vec![MCPContent::Resource {
@@ -206,7 +268,12 @@ impl UiServer {
         })
     }
 
-    fn resume_from_wait(&self, _args: Value) -> Result<MCPResult, String> {
+    fn resume_from_wait(&self, args: Value) -> Result<MCPResult, String> {
+        let _resume_instruction = match args.get("resumeInstruction").and_then(|v| v.as_str()) {
+            Some(v) => v,
+            None => return Ok(missing_param_error("resumeInstruction", ToolGroup::UI)),
+        };
+
         Ok(MCPResult {
             content: Some(vec![MCPContent::Text {
                 text: "User resumed execution.".to_string(),
@@ -217,17 +284,29 @@ impl UiServer {
     }
 
     fn visualize_data(&self, args: Value) -> Result<MCPResult, String> {
-        let type_ = args
-            .get("type")
-            .and_then(|v| v.as_str())
-            .ok_or("Missing type")?;
-        let data_points = args
-            .get("data")
-            .and_then(|v| v.as_array())
-            .ok_or("Missing data")?;
+        let type_ = match args.get("type").and_then(|v| v.as_str()) {
+            Some(v) => v,
+            None => return Ok(missing_param_error("type", ToolGroup::UI)),
+        };
+
+        // Validate type
+        if !["bar", "line"].contains(&type_) {
+            return Ok(invalid_input_error(
+                &format!("Invalid type '{}'. Must be one of: bar, line", type_),
+                ToolGroup::UI,
+            ));
+        }
+
+        let data_points = match args.get("data").and_then(|v| v.as_array()) {
+            Some(arr) => arr,
+            None => return Ok(missing_param_error("data", ToolGroup::UI)),
+        };
 
         if data_points.is_empty() {
-            return Err("Data array cannot be empty".to_string());
+            return Ok(invalid_input_error(
+                "Data array cannot be empty",
+                ToolGroup::UI,
+            ));
         }
 
         let width = 600;
@@ -311,9 +390,20 @@ impl UiServer {
                     .insert("barsHtml".to_string(), json!(bars_html));
 
                 let handlebars = self.handlebars.lock().unwrap();
-                let html = handlebars
-                    .render("bar-chart", &template_data)
-                    .map_err(|e| e.to_string())?;
+                let html = match handlebars.render("bar-chart", &template_data) {
+                    Ok(h) => h,
+                    Err(e) => {
+                        return Ok(operation_failed_error(
+                            "visualize_data",
+                            &format!("Template rendering failed: {}", e),
+                            vec![
+                                "Verify data format is correct".to_string(),
+                                "Ensure all data points have label and value".to_string(),
+                            ],
+                            ToolGroup::UI,
+                        ));
+                    }
+                };
 
                 Ok(MCPResult {
                     content: Some(vec![MCPContent::Resource {
@@ -372,9 +462,20 @@ impl UiServer {
                     .insert("labelsHtml".to_string(), json!(labels_html));
 
                 let handlebars = self.handlebars.lock().unwrap();
-                let html = handlebars
-                    .render("line-chart", &template_data)
-                    .map_err(|e| e.to_string())?;
+                let html = match handlebars.render("line-chart", &template_data) {
+                    Ok(h) => h,
+                    Err(e) => {
+                        return Ok(operation_failed_error(
+                            "visualize_data",
+                            &format!("Template rendering failed: {}", e),
+                            vec![
+                                "Verify data format is correct".to_string(),
+                                "Ensure all data points have label and value".to_string(),
+                            ],
+                            ToolGroup::UI,
+                        ));
+                    }
+                };
 
                 Ok(MCPResult {
                     content: Some(vec![MCPContent::Resource {
@@ -388,7 +489,10 @@ impl UiServer {
                     is_error: Some(false),
                 })
             }
-            _ => Err(format!("Unknown chart type: {}", type_)),
+            _ => Ok(invalid_input_error(
+                &format!("Invalid type '{}'. Must be one of: bar, line", type_),
+                ToolGroup::UI,
+            )),
         }
     }
 }

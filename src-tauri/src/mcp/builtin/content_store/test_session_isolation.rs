@@ -40,7 +40,7 @@ mod tests {
 
         // Add content to session A
         let add_result = server_a
-            .handle_add_content(json!({
+            .handle_save_knowledge(json!({
                 "content": "Secret content from Session A",
                 "metadata": {
                     "title": "Session A Document",
@@ -67,12 +67,10 @@ mod tests {
             .unwrap();
 
         assert_eq!(read_result_a.is_error, Some(false));
-        let content_vec = read_result_a.content.unwrap();
-        let content_text = match &content_vec[0] {
-            crate::mcp::types::MCPContent::Text { text } => text,
-            _ => panic!("Expected text content"),
-        };
-        assert!(content_text.contains("Secret content from Session A"));
+        // Check structured content for actual content
+        let structured = read_result_a.structured_content.as_ref().unwrap();
+        let actual_content = structured.get("content").unwrap().as_str().unwrap();
+        assert!(actual_content.contains("Secret content from Session A"));
 
         // Attempt to read from session B (should fail with access denied)
         let read_result_b = server_b
@@ -103,7 +101,7 @@ mod tests {
 
         // Add content to session A
         server_a
-            .handle_add_content(json!({
+            .handle_save_knowledge(json!({
                 "content": "Session A content",
                 "metadata": {
                     "title": "A Document",
@@ -116,7 +114,7 @@ mod tests {
 
         // Add content to session B
         server_b
-            .handle_add_content(json!({
+            .handle_save_knowledge(json!({
                 "content": "Session B content",
                 "metadata": {
                     "title": "B Document",
@@ -155,7 +153,7 @@ mod tests {
 
         // Add searchable content to session A
         server_a
-            .handle_add_content(json!({
+            .handle_save_knowledge(json!({
                 "content": "This document contains the keyword SEARCHTERM in session A",
                 "metadata": {
                     "title": "Session A Searchable",
@@ -168,7 +166,7 @@ mod tests {
 
         // Add different content to session B
         server_b
-            .handle_add_content(json!({
+            .handle_save_knowledge(json!({
                 "content": "This is a different document without the special keyword",
                 "metadata": {
                     "title": "Session B Document",
@@ -181,7 +179,7 @@ mod tests {
 
         // Search in session A for SEARCHTERM
         let search_a = server_a
-            .handle_keyword_search(json!({
+            .handle_search_knowledge(json!({
                 "query": "SEARCHTERM"
             }))
             .await
@@ -194,7 +192,7 @@ mod tests {
 
         // Search in session B for SEARCHTERM (should find nothing)
         let search_b = server_b
-            .handle_keyword_search(json!({
+            .handle_search_knowledge(json!({
                 "query": "SEARCHTERM"
             }))
             .await
@@ -217,7 +215,7 @@ mod tests {
 
         // Add content to session A
         let add_result = server_a
-            .handle_add_content(json!({
+            .handle_save_knowledge(json!({
                 "content": "Content to be protected from cross-session deletion",
                 "metadata": {
                     "title": "Protected Document",

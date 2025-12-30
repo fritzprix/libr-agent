@@ -5,6 +5,10 @@ use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 use tracing::{info, warn};
 
+use crate::mcp::builtin::error_guidance::{
+    missing_param_error, operation_failed_error, ErrorCategory, ErrorGuidance, SuccessHint,
+    ToolGroup,
+};
 use crate::mcp::types::MCPResult;
 use crate::session_isolation::{IsolatedProcessConfig, IsolationLevel};
 
@@ -142,14 +146,14 @@ impl WorkspaceServer {
         let execution_id = match args.get("execution_id").and_then(|v| v.as_str()) {
             Some(id) => id,
             None => {
-                return Ok(MCPResult::error("Missing required parameter: execution_id"));
+                return Ok(missing_param_error("execution_id", ToolGroup::Workspace));
             }
         };
 
         let obfuscated_input = match args.get("user_input").and_then(|v| v.as_str()) {
             Some(input) => input,
             None => {
-                return Ok(MCPResult::error("Missing required parameter: user_input"));
+                return Ok(missing_param_error("user_input", ToolGroup::Workspace));
             }
         };
 
@@ -157,9 +161,17 @@ impl WorkspaceServer {
         let pending = match self.pending_executions.remove(execution_id) {
             Some(p) => p,
             None => {
-                return Ok(MCPResult::error(&format!(
-                    "Unknown or expired execution_id: {execution_id}"
-                )));
+                return Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::ResourceNotFound,
+                    format!("Execution '{}' not found or expired", execution_id),
+                    vec![
+                        "Execute the original command again to get a new execution_id".to_string(),
+                        format!("Execution requests expire after {} minutes", 5),
+                        "Ensure you're using the execution_id from the UI resource".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                )
+                .to_mcp_result());
             }
         };
 
@@ -168,9 +180,16 @@ impl WorkspaceServer {
         {
             Ok(s) => s,
             Err(e) => {
-                return Ok(MCPResult::error(&format!(
-                    "Failed to de-obfuscate input: {e}"
-                )))
+                return Ok(operation_failed_error(
+                    "De-obfuscate user input",
+                    &e,
+                    vec![
+                        "This is an internal error - the UI should handle obfuscation".to_string(),
+                        "Try executing the command again".to_string(),
+                        "Contact support if this persists".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                ));
             }
         };
         let user_input = user_input.as_str();
@@ -181,7 +200,20 @@ impl WorkspaceServer {
             .signed_duration_since(pending.created_at)
             .num_seconds();
         if elapsed > USER_INPUT_TIMEOUT_SECS {
-            return Ok(MCPResult::error("Execution request expired. Please retry."));
+            return Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::Timeout,
+                format!("Execution request expired after {} seconds", elapsed),
+                vec![
+                    "Execute the original command again to get a new execution_id".to_string(),
+                    format!(
+                        "User input must be submitted within {} minutes",
+                        USER_INPUT_TIMEOUT_SECS / 60
+                    ),
+                    "Respond more quickly to interactive prompts".to_string(),
+                ],
+                ToolGroup::Workspace,
+            )
+            .to_mcp_result());
         }
 
         // Auto-inject -S flag for sudo commands (Agent doesn't know about it)
@@ -301,9 +333,16 @@ impl WorkspaceServer {
         {
             Ok(cmd) => cmd,
             Err(e) => {
-                return Ok(MCPResult::error(&format!(
-                    "Failed to create isolated command: {e}"
-                )));
+                return Ok(operation_failed_error(
+                    "Create isolated command",
+                    &e.to_string(),
+                    vec![
+                        "Verify shell environment is properly configured".to_string(),
+                        "Check if required shell binary exists (bash/sh/PowerShell)".to_string(),
+                        "Ensure workspace isolation level is valid".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                ));
             }
         };
 
@@ -316,7 +355,16 @@ impl WorkspaceServer {
         let mut child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
-                return Ok(MCPResult::error(&format!("Failed to spawn process: {e}")));
+                return Ok(operation_failed_error(
+                    "Spawn process",
+                    &e.to_string(),
+                    vec![
+                        "Verify the command syntax is correct".to_string(),
+                        "Check if required programs are installed".to_string(),
+                        "Ensure the command has execute permissions".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                ));
             }
         };
 
@@ -324,10 +372,28 @@ impl WorkspaceServer {
         if let Some(mut stdin) = child.stdin.take() {
             // CRITICAL: Write password and close stdin
             if let Err(e) = stdin.write_all(user_input.as_bytes()).await {
-                return Ok(MCPResult::error(&format!("Failed to write to stdin: {e}")));
+                return Ok(operation_failed_error(
+                    "Write to stdin",
+                    &e.to_string(),
+                    vec![
+                        "The process may have crashed before accepting input".to_string(),
+                        "Try executing the command again".to_string(),
+                        "Check if the command expects input in a different format".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                ));
             }
             if let Err(e) = stdin.write_all(b"\n").await {
-                return Ok(MCPResult::error(&format!("Failed to write newline: {e}")));
+                return Ok(operation_failed_error(
+                    "Write newline to stdin",
+                    &e.to_string(),
+                    vec![
+                        "The process may have closed stdin unexpectedly".to_string(),
+                        "Try executing the command again".to_string(),
+                        "Verify the command is still running".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                ));
             }
             drop(stdin); // Close stdin to signal EOF
         }
@@ -345,13 +411,31 @@ impl WorkspaceServer {
             {
                 Ok(Ok(output)) => output,
                 Ok(Err(e)) => {
-                    return Ok(MCPResult::error(&format!("Process error: {e}")));
+                    return Ok(operation_failed_error(
+                        "Execute command with user input",
+                        &e.to_string(),
+                        vec![
+                            "The command may have invalid syntax or crashed".to_string(),
+                            "Verify the command works without user input first".to_string(),
+                            "Check system logs for more details".to_string(),
+                        ],
+                        ToolGroup::Workspace,
+                    ));
                 }
                 Err(_) => {
                     let timeout_secs = pending.timeout;
-                    return Ok(MCPResult::error(&format!(
-                        "Command execution timeout after {timeout_secs} seconds"
-                    )));
+                    return Ok(ErrorGuidance::with_guidance(
+                        ErrorCategory::Timeout,
+                        format!("Command execution timeout after {} seconds", timeout_secs),
+                        vec![
+                            format!("Increase timeout parameter (current: {}s)", timeout_secs),
+                            "Use \"runMode\": \"async\" for long-running commands".to_string(),
+                            "Verify the command isn't hanging waiting for additional input"
+                                .to_string(),
+                        ],
+                        ToolGroup::Workspace,
+                    )
+                    .to_mcp_result());
                 }
             };
 
@@ -372,23 +456,21 @@ impl WorkspaceServer {
             let redacted_stdout = Self::redact_sensitive_input(stdout_str.trim(), user_input);
             let redacted_stderr = Self::redact_sensitive_input(stderr_str.trim(), user_input);
 
-            let result_text = if exit_code == 0 {
-                if redacted_stdout.is_empty() && redacted_stderr.is_empty() {
-                    "Command executed successfully (no output)".to_string()
-                } else if redacted_stderr.is_empty() {
-                    format!("Command executed successfully:\n{redacted_stdout}")
-                } else {
-                    format!(
-                        "Command executed successfully:\nSTDOUT:\n{redacted_stdout}\n\nSTDERR:\n{redacted_stderr}"
-                    )
-                }
-            } else {
-                format!(
-                    "Command failed with exit code {exit_code}:\nSTDOUT:\n{redacted_stdout}\n\nSTDERR:\n{redacted_stderr}"
-                )
-            };
+            let success = exit_code == 0;
 
-            Ok(MCPResult::success(&result_text))
+            let hint = SuccessHint::new(
+                format!("Interactive command executed (exit code: {})", exit_code),
+                SuccessHint::for_tool("executePendingShell", ToolGroup::Workspace),
+            );
+
+            let response_data = serde_json::json!({
+                "exit_code": exit_code,
+                "stdout": redacted_stdout,
+                "stderr": redacted_stderr,
+                "status": if success { "success" } else { "failed" }
+            });
+
+            Ok(hint.to_mcp_result_with_data(Some(response_data)))
         } else {
             // Async mode: Return process_id immediately and spawn monitoring task
             let process_id = cuid2::create_id();
@@ -399,9 +481,16 @@ impl WorkspaceServer {
                 .join(format!("process_{process_id}"));
 
             if let Err(e) = tokio::fs::create_dir_all(&process_tmp_dir).await {
-                return Ok(MCPResult::error(&format!(
-                    "Failed to create process directory: {e}"
-                )));
+                return Ok(operation_failed_error(
+                    "Create process directory",
+                    &e.to_string(),
+                    vec![
+                        "Check workspace directory permissions".to_string(),
+                        "Ensure sufficient disk space is available".to_string(),
+                        "Verify tmp directory is writable".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                ));
             }
 
             let stdout_path = process_tmp_dir.join("stdout");
@@ -465,9 +554,26 @@ impl WorkspaceServer {
                 reg.cancellation_tokens.remove(&pid_copy);
             });
 
-            Ok(MCPResult::success(&format!(
-                "Command running in background.\nProcess ID: {process_id}\n\nUse 'poll_process' to check status."
-            )))
+            let hint = SuccessHint::new(
+                format!(
+                    "Interactive command running in background (ID: {})",
+                    process_id
+                ),
+                vec![
+                    format!(
+                        "Use pollProcess with process_id \"{}\" to check status",
+                        process_id
+                    ),
+                    "Use listProcesses to see all running processes".to_string(),
+                ],
+            );
+
+            let response_data = serde_json::json!({
+                "process_id": process_id,
+                "mode": "async"
+            });
+
+            Ok(hint.to_mcp_result_with_data(Some(response_data)))
         }
     }
 
@@ -478,22 +584,37 @@ impl WorkspaceServer {
         let execution_id = match args.get("execution_id").and_then(|v| v.as_str()) {
             Some(id) => id,
             None => {
-                return Ok(MCPResult::error("Missing required parameter: execution_id"));
+                return Ok(missing_param_error("execution_id", ToolGroup::Workspace));
             }
         };
 
         // Remove pending execution
         match self.pending_executions.remove(execution_id) {
             Some(pending) => {
-                let message = format!(
-                    "✅ Cancelled pending command execution\n\nExecution ID: {}\nCommand: {}",
-                    execution_id, pending.display_command
+                let hint = SuccessHint::new(
+                    format!("Cancelled pending execution: {}", pending.display_command),
+                    vec!["Execute the command again if needed".to_string()],
                 );
-                Ok(MCPResult::success(&message))
+
+                let response_data = serde_json::json!({
+                    "execution_id": execution_id,
+                    "command": pending.display_command,
+                    "cancelled": true
+                });
+
+                Ok(hint.to_mcp_result_with_data(Some(response_data)))
             }
-            None => Err(format!(
-                "No pending execution found with ID: {execution_id}"
-            )),
+            None => Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::ResourceNotFound,
+                format!("Pending execution '{}' not found", execution_id),
+                vec![
+                    "The execution may have already been completed or cancelled".to_string(),
+                    "Verify the execution_id is correct".to_string(),
+                    format!("Executions expire after {} minutes", 5),
+                ],
+                ToolGroup::Workspace,
+            )
+            .to_mcp_result()),
         }
     }
 

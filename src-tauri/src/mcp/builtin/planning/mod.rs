@@ -1,10 +1,27 @@
+use crate::mcp::builtin::error_guidance::{
+    duplicate_error, invalid_input_error, missing_param_error, not_found_error, ErrorCategory,
+    ErrorGuidance, SuccessHint, ToolGroup,
+};
 use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{MCPResult, ServiceContext, ServiceContextOptions};
 use crate::mcp::MCPTool;
 use async_trait::async_trait;
+use serde::Serialize;
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
+use std::collections::HashMap;
 use std::sync::Arc;
+
+/// Todo item for frontend display
+#[derive(Debug, Serialize)]
+struct TodoDTO {
+    id: i64,
+    title: String,
+    description: Option<String>,
+    priority: String,
+    checked: bool,
+    subtasks: Vec<TodoDTO>,
+}
 
 /// Todo item from database
 #[derive(Debug, Clone)]
@@ -39,7 +56,7 @@ impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for TodoItem {
 }
 
 /// Scratchpad item from database
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 #[allow(dead_code)]
 struct ScratchpadItem {
     id: i64,
@@ -186,7 +203,9 @@ impl PlanningServer {
         let goal = args
             .get("goal")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| "Missing 'goal' parameter".to_string())?;
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| "Missing or empty 'goal' parameter".to_string())?;
 
         let now = chrono::Utc::now().timestamp_millis();
 
@@ -233,7 +252,9 @@ impl PlanningServer {
         let goal = args
             .get("goal")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| "Missing 'goal' parameter".to_string())?;
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| "Missing or empty 'goal' parameter".to_string())?;
 
         let result = sqlx::query(
             r#"
@@ -289,10 +310,28 @@ impl PlanningServer {
 
     /// Add a new todo (Legacy: addTodo)
     async fn add_todo(&self, args: Value) -> Result<MCPResult, String> {
-        let title = args
+        // Validate title parameter
+        let title = match args
             .get("title")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| "Missing 'title' parameter".to_string())?;
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+        {
+            Some(t) => t,
+            None => {
+                return Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::MissingRequiredParam,
+                    "Missing or empty 'title' parameter",
+                    vec![
+                        "Provide a non-empty title string".to_string(),
+                        "Example: {\"title\": \"Implement feature X\"}".to_string(),
+                        "Use list_todos to see existing todos".to_string(),
+                    ],
+                    ToolGroup::Planning,
+                )
+                .to_mcp_result());
+            }
+        };
 
         let description = args.get("description").and_then(|v| v.as_str());
         let priority = args
@@ -300,6 +339,143 @@ impl PlanningServer {
             .and_then(|v| v.as_str())
             .unwrap_or("medium");
         let parent_id = args.get("parentId").and_then(|v| v.as_i64());
+
+        // 1. Validate priority
+        let valid_priorities = ["low", "medium", "high"];
+        if !valid_priorities.contains(&priority) {
+            return Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::InvalidInput,
+                format!(
+                    "Invalid priority '{}'. Must be one of: low, medium, high",
+                    priority
+                ),
+                vec![
+                    "Use 'low', 'medium', or 'high' for priority".to_string(),
+                    format!(
+                        "Example: {{\"priority\": \"high\"}} (you used: \"{}\")",
+                        priority
+                    ),
+                    "Omit priority parameter to use default 'medium'".to_string(),
+                ],
+                ToolGroup::Planning,
+            )
+            .to_mcp_result());
+        }
+
+        // 2. Validate nesting constraints (cannot have both parentId and subtasks)
+        if parent_id.is_some() && args.get("subtasks").is_some() {
+            return Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::NestingTooDeep,
+                "Cannot add subtasks to a child todo (max 1 level of nesting)",
+                vec![
+                    "Create the todo without subtasks, then add subtasks separately".to_string(),
+                    "Create as top-level todo by omitting parentId".to_string(),
+                    "Use list_todos to see the current hierarchy".to_string(),
+                ],
+                ToolGroup::Planning,
+            )
+            .to_mcp_result());
+        }
+
+        // 3. Check for duplicate title (case-insensitive)
+        let duplicate_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM planning_todos WHERE session_id = ? AND lower(content) = lower(?)",
+        )
+        .bind(&self.session_id)
+        .bind(title)
+        .fetch_one(self.db_pool.as_ref())
+        .await
+        .map_err(|e| format!("Failed to check duplicates: {}", e))?;
+
+        if duplicate_count > 0 {
+            return Ok(duplicate_error("Todo", title, ToolGroup::Planning));
+        }
+
+        // 4. If parent_id is provided, validate parent exists and is top-level
+        if let Some(pid) = parent_id {
+            let parent: Option<(Option<i64>,)> = sqlx::query_as(
+                "SELECT parent_id FROM planning_todos WHERE id = ? AND session_id = ?",
+            )
+            .bind(pid)
+            .bind(&self.session_id)
+            .fetch_optional(self.db_pool.as_ref())
+            .await
+            .map_err(|e| format!("Failed to fetch parent: {}", e))?;
+
+            match parent {
+                Some((grandparent_id,)) => {
+                    if grandparent_id.is_some() {
+                        return Ok(ErrorGuidance::with_guidance(
+                            ErrorCategory::NestingTooDeep,
+                            "Cannot add subtask to a subtask (max 1 level of nesting)",
+                            vec![
+                                "Create as top-level todo instead".to_string(),
+                                "Attach to a different parent that has no parent".to_string(),
+                                "Use list_todos to see the current hierarchy".to_string(),
+                            ],
+                            ToolGroup::Planning,
+                        )
+                        .to_mcp_result());
+                    }
+                }
+                None => {
+                    return Ok(not_found_error(
+                        "Parent todo",
+                        &pid.to_string(),
+                        ToolGroup::Planning,
+                    ));
+                }
+            }
+        }
+
+        // 5. Validate subtasks if present
+        if let Some(subtasks) = args.get("subtasks").and_then(|v| v.as_array()) {
+            for (idx, subtask) in subtasks.iter().enumerate() {
+                // Validate subtask title is non-empty
+                let sub_title = subtask
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty());
+
+                if sub_title.is_none() {
+                    return Ok(ErrorGuidance::with_guidance(
+                        ErrorCategory::InvalidInput,
+                        format!("Subtask at index {} has an empty or missing title", idx),
+                        vec![
+                            format!("Provide a non-empty title for subtask #{}", idx + 1),
+                            "All subtasks must have non-empty titles".to_string(),
+                            "Example: {\"title\": \"Implement X\"}".to_string(),
+                        ],
+                        ToolGroup::Planning,
+                    )
+                    .to_mcp_result());
+                }
+
+                // Validate subtask priority
+                let sub_prio = subtask
+                    .get("priority")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("medium");
+
+                if !valid_priorities.contains(&sub_prio) {
+                    return Ok(ErrorGuidance::with_guidance(
+                        ErrorCategory::InvalidInput,
+                        format!(
+                            "Invalid subtask #{} priority '{}'. Must be one of: low, medium, high",
+                            idx + 1,
+                            sub_prio
+                        ),
+                        vec![
+                            "Use 'low', 'medium', or 'high' for priority".to_string(),
+                            "Omit priority to use default 'medium'".to_string(),
+                        ],
+                        ToolGroup::Planning,
+                    )
+                    .to_mcp_result());
+                }
+            }
+        }
 
         let now = chrono::Utc::now().timestamp_millis();
 
@@ -326,9 +502,11 @@ impl PlanningServer {
                 // Handle subtasks if present
                 if let Some(subtasks) = args.get("subtasks").and_then(|v| v.as_array()) {
                     for subtask in subtasks {
+                        // Title already validated in step 5, safe to unwrap
                         let sub_title = subtask
                             .get("title")
                             .and_then(|v| v.as_str())
+                            .map(|s| s.trim())
                             .unwrap_or("Untitled");
                         let sub_desc = subtask.get("description").and_then(|v| v.as_str());
                         let sub_prio = subtask
@@ -355,17 +533,28 @@ impl PlanningServer {
                 }
 
                 let response_id = cuid2::create_id();
-                Ok(MCPResult::success_with_data(
-                    &format!("✓ Todo added with ID {}: {}", id, title),
-                    json!({
-                        "id": response_id,
-                        "success": true,
-                        "todoId": id,
-                        "todo": title
-                    }),
-                ))
+                let hint = SuccessHint::new(
+                    format!("Todo added with ID {}: {}", id, title),
+                    SuccessHint::for_tool("addTodo", ToolGroup::Planning),
+                );
+                Ok(hint.to_mcp_result_with_data(Some(json!({
+                    "id": response_id,
+                    "success": true,
+                    "todoId": id,
+                    "todo": title
+                }))))
             }
-            Err(e) => Ok(MCPResult::error(&format!("Failed to add todo: {}", e))),
+            Err(e) => Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::DatabaseError,
+                format!("Failed to add todo: {}", e),
+                vec![
+                    "Try again - this may be a transient database error".to_string(),
+                    "Verify the session is active".to_string(),
+                    "Use list_todos to check if the todo was created despite the error".to_string(),
+                ],
+                ToolGroup::Planning,
+            )
+            .to_mcp_result()),
         }
     }
 
@@ -380,8 +569,20 @@ impl PlanningServer {
         let summary = args.get("summary").and_then(|v| v.as_str());
 
         let target_id = if let Some(tid) = id {
+            if tid < 1 {
+                return Ok(invalid_input_error(
+                    "Invalid 'id'. Must be >= 1",
+                    ToolGroup::Planning,
+                ));
+            }
             tid
         } else if let Some(idx) = index {
+            if idx < 0 {
+                return Ok(invalid_input_error(
+                    "Invalid 'index'. Must be >= 0",
+                    ToolGroup::Planning,
+                ));
+            }
             // Find ID by index (ordered by created_at)
             let row: Option<(i64,)> = sqlx::query_as(
                 "SELECT id FROM planning_todos WHERE session_id = ? ORDER BY created_at ASC LIMIT 1 OFFSET ?"
@@ -394,10 +595,22 @@ impl PlanningServer {
 
             match row {
                 Some((tid,)) => tid,
-                Option::None => return Ok(MCPResult::error("Todo not found at index")),
+                Option::None => {
+                    return Ok(ErrorGuidance::with_guidance(
+                        ErrorCategory::ResourceNotFound,
+                        format!("Todo not found at index {}", idx),
+                        vec![
+                            "Use list_todos to see available todos".to_string(),
+                            format!("Index {} may be out of range", idx),
+                            "Indices are 0-based and ordered by creation time".to_string(),
+                        ],
+                        ToolGroup::Planning,
+                    )
+                    .to_mcp_result());
+                }
             }
         } else {
-            return Ok(MCPResult::error("Missing 'id' or 'index' parameter"));
+            return Ok(missing_param_error("'id' or 'index'", ToolGroup::Planning));
         };
 
         let now = chrono::Utc::now().timestamp_millis();
@@ -447,18 +660,29 @@ impl PlanningServer {
                 } else {
                     String::new()
                 };
-                Ok(MCPResult::success_with_data(
-                    &format!("✓ Todo {} (ID: {}){}", action, target_id, summary_text),
-                    json!({
-                        "id": response_id,
-                        "success": true,
-                        "todoId": target_id,
-                        "checked": checked,
-                        "summary": summary
-                    }),
-                ))
+                let hint = SuccessHint::new(
+                    format!("Todo {} (ID: {}){}", action, target_id, summary_text),
+                    SuccessHint::for_tool("checkTodo", ToolGroup::Planning),
+                );
+                Ok(hint.to_mcp_result_with_data(Some(json!({
+                    "id": response_id,
+                    "success": true,
+                    "todoId": target_id,
+                    "checked": checked,
+                    "summary": summary
+                }))))
             }
-            Err(e) => Ok(MCPResult::error(&format!("Failed to update todo: {}", e))),
+            Err(e) => Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::DatabaseError,
+                format!("Failed to update todo: {}", e),
+                vec![
+                    "Try again - this may be a transient error".to_string(),
+                    "Use list_todos to verify the todo exists".to_string(),
+                    "Verify the session is active".to_string(),
+                ],
+                ToolGroup::Planning,
+            )
+            .to_mcp_result()),
         }
     }
 
@@ -489,6 +713,12 @@ impl PlanningServer {
         if let Some(id_list) = ids {
             for id_val in id_list {
                 if let Some(id) = id_val.as_i64() {
+                    if id < 1 {
+                        return Ok(MCPResult::error(&format!(
+                            "Invalid id '{}'. Must be >= 1",
+                            id
+                        )));
+                    }
                     target_ids.push(id);
                 }
             }
@@ -498,7 +728,7 @@ impl PlanningServer {
         if let Some(idx_list) = indices {
             // Fetch all IDs ordered by created_at to map indices
             let all_todos: Vec<(i64,)> = sqlx::query_as(
-                "SELECT id FROM planning_todos WHERE session_id = ? ORDER BY created_at ASC"
+                "SELECT id FROM planning_todos WHERE session_id = ? ORDER BY created_at ASC",
             )
             .bind(&self.session_id)
             .fetch_all(self.db_pool.as_ref())
@@ -506,7 +736,13 @@ impl PlanningServer {
             .map_err(|e| format!("Failed to fetch todos for index mapping: {}", e))?;
 
             for idx_val in idx_list {
-                if let Some(idx) = idx_val.as_u64() {
+                if let Some(idx) = idx_val.as_i64() {
+                    if idx < 0 {
+                        return Ok(MCPResult::error(&format!(
+                            "Invalid index '{}'. Must be >= 0",
+                            idx
+                        )));
+                    }
                     let idx = idx as usize;
                     if idx < all_todos.len() {
                         target_ids.push(all_todos[idx].0);
@@ -516,7 +752,7 @@ impl PlanningServer {
         }
 
         if target_ids.is_empty() {
-             return Ok(MCPResult::success("✓ No todos found to clear"));
+            return Ok(MCPResult::success("✓ No todos found to clear"));
         }
 
         // Remove duplicates
@@ -578,9 +814,14 @@ impl PlanningServer {
         let note = args
             .get("note")
             .and_then(|v| v.as_str())
-            .ok_or("Missing 'note'")?;
-        let title = args.get("title").and_then(|v| v.as_str());
-        let source = args.get("source").and_then(|v| v.as_str());
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .ok_or("Missing or empty 'note'")?;
+        let title = args.get("title").and_then(|v| v.as_str()).map(|s| s.trim());
+        let source = args
+            .get("source")
+            .and_then(|v| v.as_str())
+            .map(|s| s.trim());
         let tags = args.get("tags").map(|v| v.to_string()); // Store as JSON string
 
         let now = chrono::Utc::now().timestamp_millis();
@@ -618,8 +859,16 @@ impl PlanningServer {
 
     /// List scratchpad items (Legacy: listScratchpad)
     async fn list_scratchpad(&self, args: Value) -> Result<MCPResult, String> {
-        let page = args.get("page").and_then(|v| v.as_u64()).unwrap_or(1);
-        let page_size = args.get("pageSize").and_then(|v| v.as_u64()).unwrap_or(10);
+        let page = args.get("page").and_then(|v| v.as_i64()).unwrap_or(1);
+        let page_size = args.get("pageSize").and_then(|v| v.as_i64()).unwrap_or(10);
+
+        if page < 1 {
+            return Ok(MCPResult::error("Invalid 'page'. Must be >= 1"));
+        }
+        if page_size < 1 {
+            return Ok(MCPResult::error("Invalid 'pageSize'. Must be >= 1"));
+        }
+
         let filter_tags = args.get("tags").and_then(|v| v.as_array()).map(|arr| {
             arr.iter()
                 .filter_map(|v| v.as_str().map(|s| s.to_string()))
@@ -751,6 +1000,12 @@ impl PlanningServer {
         let mut items = Vec::new();
         for id_val in ids {
             if let Some(id) = id_val.as_i64() {
+                if id < 0 {
+                    return Ok(MCPResult::error(&format!(
+                        "Invalid id '{}'. Must be >= 0",
+                        id
+                    )));
+                }
                 let item: Option<ScratchpadItem> = sqlx::query_as(
                     "SELECT id, content, title, source, tags, created_at, updated_at FROM planning_scratchpad WHERE id = ? AND session_id = ?"
                 )
@@ -802,6 +1057,10 @@ impl PlanningServer {
             .and_then(|v| v.as_i64())
             .ok_or("Missing 'id'")?;
 
+        if id < 0 {
+            return Ok(MCPResult::error("Invalid 'id'. Must be >= 0"));
+        }
+
         let result = sqlx::query("DELETE FROM planning_scratchpad WHERE id = ? AND session_id = ?")
             .bind(id)
             .bind(&self.session_id)
@@ -831,9 +1090,9 @@ impl PlanningServer {
         // Ephemeral, just echo back
         Ok(MCPResult::success_with_data(
             "✓ Thought recorded",
-            json!({ 
+            json!({
                 "id": response_id,
-                "thought": thought 
+                "thought": thought
             }),
         ))
     }
@@ -843,11 +1102,11 @@ impl PlanningServer {
         let response_id = cuid2::create_id();
         // Ephemeral, just echo back
         Ok(MCPResult::success_with_data(
-            "✓ Reflection recorded", 
+            "✓ Reflection recorded",
             json!({
                 "id": response_id,
                 "args": args
-            })
+            }),
         ))
     }
 }
@@ -1150,6 +1409,46 @@ impl BuiltinMCPServer for PlanningServer {
             Vec::new()
         });
 
+        // Build Todo Tree for structured state
+        let mut todo_map: HashMap<i64, Vec<TodoItem>> = HashMap::new();
+        let mut root_todos: Vec<TodoItem> = Vec::new();
+
+        for todo in &todos {
+            if let Some(parent_id) = todo.parent_id {
+                todo_map.entry(parent_id).or_default().push(todo.clone());
+            } else {
+                root_todos.push(todo.clone());
+            }
+        }
+
+        let structured_todos: Vec<TodoDTO> = root_todos
+            .into_iter()
+            .map(|t| {
+                let subtasks = todo_map
+                    .remove(&t.id)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|st| TodoDTO {
+                        id: st.id,
+                        title: st.content,
+                        description: st.description,
+                        priority: st.priority,
+                        checked: st.is_checked,
+                        subtasks: Vec::new(), // Max 1 level nesting supported
+                    })
+                    .collect();
+
+                TodoDTO {
+                    id: t.id,
+                    title: t.content,
+                    description: t.description,
+                    priority: t.priority,
+                    checked: t.is_checked,
+                    subtasks,
+                }
+            })
+            .collect();
+
         // 3. Fetch Scratchpad (Recent)
         let scratchpad: Vec<ScratchpadItem> = sqlx::query_as(
             "SELECT * FROM planning_scratchpad WHERE session_id = ? ORDER BY created_at DESC LIMIT 6",
@@ -1315,6 +1614,9 @@ impl BuiltinMCPServer for PlanningServer {
 
         let structured_state = json!({
              "goal": goal,
+             "lastClearedGoal": null,
+             "todos": structured_todos,
+             "scratchpad": scratchpad,
              "todos_count": todos.len(),
              "scratchpad_count": scratchpad.len()
         });

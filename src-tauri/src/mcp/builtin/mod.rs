@@ -11,6 +11,7 @@ pub mod bootstrap;
 pub mod browser;
 pub mod browser_content_store;
 pub mod content_store;
+pub mod error_guidance;
 pub mod knowledge;
 pub mod mcp_manager;
 pub mod planning;

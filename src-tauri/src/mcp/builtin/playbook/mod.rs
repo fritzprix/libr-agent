@@ -1,3 +1,6 @@
+use crate::mcp::builtin::error_guidance::{
+    invalid_input_error, missing_param_error, not_found_error, operation_failed_error, ToolGroup,
+};
 use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::schema::JSONSchema;
 use crate::mcp::types::{MCPContent, MCPResult, ServiceContext, ServiceContextOptions};
@@ -295,23 +298,66 @@ impl PlaybookServer {
     // --- Tools Implementation ---
 
     async fn create_playbook(&self, args: Value) -> Result<MCPResult, String> {
-        let goal = args
-            .get("goal")
-            .and_then(|v| v.as_str())
-            .ok_or("Missing 'goal'")?;
+        let goal = match args.get("goal").and_then(|v| v.as_str()) {
+            Some(g) if !g.trim().is_empty() => g,
+            Some(_) => {
+                return Ok(invalid_input_error(
+                    "Goal cannot be empty",
+                    ToolGroup::Playbook,
+                ))
+            }
+            None => return Ok(missing_param_error("goal", ToolGroup::Playbook)),
+        };
+
         let initial_command = args.get("initialCommand").and_then(|v| v.as_str());
-        let workflow = args.get("workflow").ok_or("Missing 'workflow'")?;
+
+        let workflow = match args.get("workflow") {
+            Some(w) if w.is_array() && !w.as_array().unwrap().is_empty() => w,
+            Some(w) if w.is_array() => {
+                return Ok(invalid_input_error(
+                    "Workflow cannot be empty array",
+                    ToolGroup::Playbook,
+                ))
+            }
+            Some(_) => {
+                return Ok(invalid_input_error(
+                    "Workflow must be an array of steps",
+                    ToolGroup::Playbook,
+                ))
+            }
+            None => return Ok(missing_param_error("workflow", ToolGroup::Playbook)),
+        };
+
         let success_criteria = args.get("successCriteria");
 
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().timestamp_millis();
 
-        let workflow_json = serde_json::to_string(workflow).map_err(|e| e.to_string())?;
-        let success_criteria_json = success_criteria
-            .map(|v| serde_json::to_string(v).map_err(|e| e.to_string()))
-            .transpose()?;
+        let workflow_json = match serde_json::to_string(workflow) {
+            Ok(json) => json,
+            Err(e) => {
+                return Ok(invalid_input_error(
+                    &format!("Invalid workflow format: {}", e),
+                    ToolGroup::Playbook,
+                ))
+            }
+        };
 
-        sqlx::query(
+        let success_criteria_json = if let Some(sc) = success_criteria {
+            match serde_json::to_string(sc) {
+                Ok(json) => Some(json),
+                Err(e) => {
+                    return Ok(invalid_input_error(
+                        &format!("Invalid success criteria format: {}", e),
+                        ToolGroup::Playbook,
+                    ))
+                }
+            }
+        } else {
+            None
+        };
+
+        if let Err(e) = sqlx::query(
             r#"
             INSERT INTO playbooks (id, session_id, goal, initial_command, workflow, success_criteria, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -327,15 +373,35 @@ impl PlaybookServer {
         .bind(now)
         .execute(self.db_pool.as_ref())
         .await
-        .map_err(|e| format!("Failed to create playbook: {}", e))?;
+        {
+            return Ok(operation_failed_error(
+                "createPlaybook",
+                &format!("Failed to save playbook to database: {}", e),
+                vec![
+                    "Verify database is accessible".to_string(),
+                    "Check that workflow and success criteria are valid JSON".to_string(),
+                ],
+                ToolGroup::Playbook,
+            ));
+        }
 
         // Re-fetch to get the full object
-        let row = sqlx::query("SELECT * FROM playbooks WHERE id = ? AND session_id = ?")
+        let row = match sqlx::query("SELECT * FROM playbooks WHERE id = ? AND session_id = ?")
             .bind(&id)
             .bind(&self.session_id)
             .fetch_one(self.db_pool.as_ref())
             .await
-            .map_err(|e| format!("Failed to fetch created playbook: {}", e))?;
+        {
+            Ok(row) => row,
+            Err(e) => {
+                return Ok(operation_failed_error(
+                    "createPlaybook",
+                    &format!("Failed to retrieve created playbook: {}", e),
+                    vec!["Database operation failed after creation".to_string()],
+                    ToolGroup::Playbook,
+                ))
+            }
+        };
 
         let playbook = Playbook::from_row(&row);
         let formatted = self.format_playbook_summary(&playbook);
@@ -550,17 +616,33 @@ impl PlaybookServer {
     }
 
     async fn get_playbook(&self, args: Value) -> Result<MCPResult, String> {
-        let id = args
-            .get("id")
-            .and_then(|v| v.as_str())
-            .ok_or("Missing 'id'")?;
+        let id = match args.get("id").and_then(|v| v.as_str()) {
+            Some(id) if !id.trim().is_empty() => id,
+            Some(_) => {
+                return Ok(invalid_input_error(
+                    "Playbook ID cannot be empty",
+                    ToolGroup::Playbook,
+                ))
+            }
+            None => return Ok(missing_param_error("id", ToolGroup::Playbook)),
+        };
 
-        let row = sqlx::query("SELECT * FROM playbooks WHERE id = ? AND session_id = ?")
+        let row = match sqlx::query("SELECT * FROM playbooks WHERE id = ? AND session_id = ?")
             .bind(id)
             .bind(&self.session_id)
             .fetch_optional(self.db_pool.as_ref())
             .await
-            .map_err(|e| format!("DB Error: {}", e))?;
+        {
+            Ok(row) => row,
+            Err(e) => {
+                return Ok(operation_failed_error(
+                    "getPlaybook",
+                    &format!("Database query failed: {}", e),
+                    vec!["Verify database is accessible".to_string()],
+                    ToolGroup::Playbook,
+                ))
+            }
+        };
 
         match row {
             Some(row) => {
@@ -580,28 +662,38 @@ impl PlaybookServer {
                     is_error: Some(false),
                 })
             }
-            None => Ok(MCPResult {
-                content: Some(vec![MCPContent::Text {
-                    text: format!("Playbook '{}' not found", id),
-                }]),
-                structured_content: None,
-                is_error: Some(true),
-            }),
+            None => Ok(not_found_error("playbook", id, ToolGroup::Playbook)),
         }
     }
 
     async fn select_playbook(&self, args: Value) -> Result<MCPResult, String> {
-        let id = args
-            .get("id")
-            .and_then(|v| v.as_str())
-            .ok_or("Missing 'id'")?;
+        let id = match args.get("id").and_then(|v| v.as_str()) {
+            Some(id) if !id.trim().is_empty() => id,
+            Some(_) => {
+                return Ok(invalid_input_error(
+                    "Playbook ID cannot be empty",
+                    ToolGroup::Playbook,
+                ))
+            }
+            None => return Ok(missing_param_error("id", ToolGroup::Playbook)),
+        };
 
-        let row = sqlx::query("SELECT * FROM playbooks WHERE id = ? AND session_id = ?")
+        let row = match sqlx::query("SELECT * FROM playbooks WHERE id = ? AND session_id = ?")
             .bind(id)
             .bind(&self.session_id)
             .fetch_optional(self.db_pool.as_ref())
             .await
-            .map_err(|e| format!("DB Error: {}", e))?;
+        {
+            Ok(row) => row,
+            Err(e) => {
+                return Ok(operation_failed_error(
+                    "selectPlaybook",
+                    &format!("Database query failed: {}", e),
+                    vec!["Verify database is accessible".to_string()],
+                    ToolGroup::Playbook,
+                ))
+            }
+        };
 
         match row {
             Some(row) => {
@@ -618,13 +710,7 @@ impl PlaybookServer {
                     is_error: Some(false),
                 })
             }
-            None => Ok(MCPResult {
-                content: Some(vec![MCPContent::Text {
-                    text: format!("Playbook '{}' not found", id),
-                }]),
-                structured_content: None,
-                is_error: Some(true),
-            }),
+            None => Ok(not_found_error("playbook", id, ToolGroup::Playbook)),
         }
     }
 
@@ -669,17 +755,33 @@ impl PlaybookServer {
     }
 
     async fn delete_playbook(&self, args: Value) -> Result<MCPResult, String> {
-        let id = args
-            .get("id")
-            .and_then(|v| v.as_str())
-            .ok_or("Missing 'id'")?;
+        let id = match args.get("id").and_then(|v| v.as_str()) {
+            Some(id) if !id.trim().is_empty() => id,
+            Some(_) => {
+                return Ok(invalid_input_error(
+                    "Playbook ID cannot be empty",
+                    ToolGroup::Playbook,
+                ))
+            }
+            None => return Ok(missing_param_error("id", ToolGroup::Playbook)),
+        };
 
-        let result = sqlx::query("DELETE FROM playbooks WHERE id = ? AND session_id = ?")
+        let result = match sqlx::query("DELETE FROM playbooks WHERE id = ? AND session_id = ?")
             .bind(id)
             .bind(&self.session_id)
             .execute(self.db_pool.as_ref())
             .await
-            .map_err(|e| format!("DB Error: {}", e))?;
+        {
+            Ok(result) => result,
+            Err(e) => {
+                return Ok(operation_failed_error(
+                    "deletePlaybook",
+                    &format!("Database delete operation failed: {}", e),
+                    vec!["Verify database is accessible".to_string()],
+                    ToolGroup::Playbook,
+                ))
+            }
+        };
 
         if result.rows_affected() > 0 {
             Ok(MCPResult {
@@ -690,67 +792,100 @@ impl PlaybookServer {
                 is_error: Some(false),
             })
         } else {
-            Ok(MCPResult {
-                content: Some(vec![MCPContent::Text {
-                    text: format!("Playbook '{}' not found", id),
-                }]),
-                structured_content: None,
-                is_error: Some(true),
-            })
+            Ok(not_found_error("playbook", id, ToolGroup::Playbook))
         }
     }
 
     async fn update_playbook(&self, args: Value) -> Result<MCPResult, String> {
-        let id = args
-            .get("id")
-            .and_then(|v| v.as_str())
-            .ok_or("Missing 'id'")?;
+        let id = match args.get("id").and_then(|v| v.as_str()) {
+            Some(id) if !id.trim().is_empty() => id,
+            Some(_) => {
+                return Ok(invalid_input_error(
+                    "Playbook ID cannot be empty",
+                    ToolGroup::Playbook,
+                ))
+            }
+            None => return Ok(missing_param_error("id", ToolGroup::Playbook)),
+        };
 
-        let playbook_obj = args.get("playbook").ok_or("Missing 'playbook' object")?;
+        let playbook_obj = match args.get("playbook") {
+            Some(obj) if obj.is_object() => obj,
+            Some(_) => {
+                return Ok(invalid_input_error(
+                    "Playbook parameter must be an object",
+                    ToolGroup::Playbook,
+                ))
+            }
+            None => return Ok(missing_param_error("playbook", ToolGroup::Playbook)),
+        };
 
         // Fetch existing to merge
-        let existing_row = sqlx::query("SELECT * FROM playbooks WHERE id = ? AND session_id = ?")
-            .bind(id)
-            .bind(&self.session_id)
-            .fetch_optional(self.db_pool.as_ref())
-            .await
-            .map_err(|e| format!("DB Error: {}", e))?;
+        let existing_row =
+            match sqlx::query("SELECT * FROM playbooks WHERE id = ? AND session_id = ?")
+                .bind(id)
+                .bind(&self.session_id)
+                .fetch_optional(self.db_pool.as_ref())
+                .await
+            {
+                Ok(row) => row,
+                Err(e) => {
+                    return Ok(operation_failed_error(
+                        "updatePlaybook",
+                        &format!("Database query failed: {}", e),
+                        vec!["Verify database is accessible".to_string()],
+                        ToolGroup::Playbook,
+                    ))
+                }
+            };
 
         let mut existing = match existing_row {
             Some(row) => Playbook::from_row(&row),
-            None => {
-                return Ok(MCPResult {
-                    content: Some(vec![MCPContent::Text {
-                        text: format!("Playbook '{}' not found", id),
-                    }]),
-                    structured_content: None,
-                    is_error: Some(true),
-                })
-            }
+            None => return Ok(not_found_error("playbook", id, ToolGroup::Playbook)),
         };
 
         // Update fields if present
         if let Some(g) = playbook_obj.get("goal").and_then(|v| v.as_str()) {
+            if g.trim().is_empty() {
+                return Ok(invalid_input_error(
+                    "Goal cannot be empty",
+                    ToolGroup::Playbook,
+                ));
+            }
             existing.goal = g.to_string();
         }
         if let Some(c) = playbook_obj.get("initialCommand").and_then(|v| v.as_str()) {
             existing.initial_command = Some(c.to_string());
         }
         if let Some(w) = playbook_obj.get("workflow") {
-            existing.workflow = serde_json::from_value(w.clone()).map_err(|e| e.to_string())?;
+            existing.workflow = match serde_json::from_value(w.clone()) {
+                Ok(wf) => wf,
+                Err(e) => {
+                    return Ok(invalid_input_error(
+                        &format!("Invalid workflow format: {}", e),
+                        ToolGroup::Playbook,
+                    ))
+                }
+            };
         }
         if let Some(s) = playbook_obj.get("successCriteria") {
-            existing.success_criteria =
-                serde_json::from_value(s.clone()).map_err(|e| e.to_string())?;
+            existing.success_criteria = match serde_json::from_value(s.clone()) {
+                Ok(sc) => sc,
+                Err(e) => {
+                    return Ok(invalid_input_error(
+                        &format!("Invalid success criteria format: {}", e),
+                        ToolGroup::Playbook,
+                    ))
+                }
+            };
         }
 
         let now = chrono::Utc::now().timestamp_millis();
         let workflow_json = serde_json::to_string(&existing.workflow).unwrap();
         let success_criteria_json = serde_json::to_string(&existing.success_criteria).unwrap();
 
-        sqlx::query(
+        if let Err(e) = sqlx::query(
             r#"
-            UPDATE playbooks 
+            UPDATE playbooks
             SET goal = ?, initial_command = ?, workflow = ?, success_criteria = ?, updated_at = ?
             WHERE id = ? AND session_id = ?
             "#,
@@ -764,7 +899,14 @@ impl PlaybookServer {
         .bind(&self.session_id)
         .execute(self.db_pool.as_ref())
         .await
-        .map_err(|e| format!("Update failed: {}", e))?;
+        {
+            return Ok(operation_failed_error(
+                "updatePlaybook",
+                &format!("Database update failed: {}", e),
+                vec!["Verify database is accessible".to_string()],
+                ToolGroup::Playbook,
+            ));
+        }
 
         let formatted = self.format_playbook_summary(&existing);
         let text_response = format!(

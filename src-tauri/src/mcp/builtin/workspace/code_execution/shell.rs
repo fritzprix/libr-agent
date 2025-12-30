@@ -4,6 +4,10 @@ use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
+use crate::mcp::builtin::error_guidance::{
+    missing_param_error, operation_failed_error, ErrorCategory, ErrorGuidance, SuccessHint,
+    ToolGroup,
+};
 use crate::mcp::types::MCPResult;
 use crate::session_isolation::{IsolatedProcessConfig, IsolationLevel};
 
@@ -133,9 +137,19 @@ impl WorkspaceServer {
             .join(format!("sync_{process_id}"));
 
         if let Err(e) = tokio::fs::create_dir_all(&process_tmp_dir).await {
-            return Ok(MCPResult::error(&format!(
-                "Failed to create temp directory: {e}"
-            )));
+            return Ok(operation_failed_error(
+                "Create temp directory",
+                &e.to_string(),
+                vec![
+                    "Check workspace directory permissions".to_string(),
+                    "Ensure sufficient disk space is available".to_string(),
+                    format!(
+                        "Verify tmp directory is writable: {}",
+                        workspace_path.join("tmp").display()
+                    ),
+                ],
+                ToolGroup::Workspace,
+            ));
         }
 
         let stdout_path = process_tmp_dir.join("stdout");
@@ -158,9 +172,16 @@ impl WorkspaceServer {
         {
             Ok(cmd) => cmd,
             Err(e) => {
-                return Ok(MCPResult::error(&format!(
-                    "Failed to create isolated shell command: {e}"
-                )));
+                return Ok(operation_failed_error(
+                    "Create isolated shell command",
+                    &e.to_string(),
+                    vec![
+                        "Verify shell environment is properly configured".to_string(),
+                        "Check if required shell binary exists (bash/sh/PowerShell)".to_string(),
+                        "Ensure workspace isolation level is valid".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                ));
             }
         };
 
@@ -246,14 +267,17 @@ impl WorkspaceServer {
                     "stderr": stderr,
                     "status": if success { "finished" } else { "failed" }
                 });
-                let result_text = response.to_string();
 
                 info!(
                     "Isolated shell command executed: {} (session: {}, exit: {:?})",
                     command, session_id, exit_code
                 );
 
-                Ok(MCPResult::success(&result_text))
+                let hint = SuccessHint::new(
+                    format!("Command executed (exit code: {})", exit_code.unwrap_or(-1)),
+                    SuccessHint::for_tool("executeShell", ToolGroup::Workspace),
+                );
+                Ok(hint.to_mcp_result_with_data(Some(response)))
             }
             Ok(Err(e)) => {
                 // Update registry entry to Failed
@@ -271,7 +295,16 @@ impl WorkspaceServer {
                     "Failed to execute isolated shell command '{}': {}",
                     command, e
                 );
-                Ok(MCPResult::error(&format!("Execution error: {e}")))
+                Ok(operation_failed_error(
+                    "Execute shell command",
+                    &e.to_string(),
+                    vec![
+                        "Verify the command syntax is correct".to_string(),
+                        "Check if required programs are installed".to_string(),
+                        "Use listDirectory to verify file paths exist".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                ))
             }
             Err(_) => {
                 // Timeout - cancel the process
@@ -292,9 +325,17 @@ impl WorkspaceServer {
                     "Isolated shell command '{}' timed out after {} seconds",
                     command, timeout_secs
                 );
-                Ok(MCPResult::error(&format!(
-                    "Command timed out after {timeout_secs} seconds"
-                )))
+                Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::Timeout,
+                    format!("Command timed out after {} seconds", timeout_secs),
+                    vec![
+                        format!("Increase timeout parameter (current: {}s)", timeout_secs),
+                        "Use \"runMode\": \"async\" for long-running commands".to_string(),
+                        "Use pollProcess to check status of async commands".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                )
+                .to_mcp_result())
             }
         }
     }
@@ -438,7 +479,7 @@ impl WorkspaceServer {
         let raw_command = match args.get("command").and_then(|v| v.as_str()) {
             Some(cmd) => cmd,
             None => {
-                return Ok(MCPResult::error("Missing required parameter: command"));
+                return Ok(missing_param_error("command", ToolGroup::Workspace));
             }
         };
 
@@ -472,9 +513,20 @@ impl WorkspaceServer {
         // Enforce maximum sync timeout
         let sync_max = crate::config::default_execution_timeout();
         if timeout_secs > sync_max {
-            return Ok(MCPResult::error(&format!(
-                "Sync mode supports a maximum timeout of {sync_max} seconds.\nFor longer-running commands, set \"runMode\" to \"async\" so the command runs in background and can be polled.\nYou can adjust the default via the LIBRAGENT_DEFAULT_EXECUTION_TIMEOUT environment variable.",
-            )));
+            return Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::InvalidInput,
+                format!(
+                    "Sync mode timeout ({} seconds) exceeds maximum ({} seconds)",
+                    timeout_secs, sync_max
+                ),
+                vec![
+                    format!("Use \"runMode\": \"async\" for commands longer than {} seconds", sync_max),
+                    "Use pollProcess to check status of async commands".to_string(),
+                    format!("Adjust LIBRAGENT_DEFAULT_EXECUTION_TIMEOUT environment variable (current: {}s)", sync_max),
+                ],
+                ToolGroup::Workspace,
+            )
+            .to_mcp_result());
         }
 
         // Check persistent shell preference (default: enabled)
@@ -525,9 +577,20 @@ impl WorkspaceServer {
                 .count();
 
             if running_count >= MAX_CONCURRENT_PROCESSES {
-                return Ok(MCPResult::error(&format!(
-                    "Maximum concurrent processes limit reached ({MAX_CONCURRENT_PROCESSES})"
-                )));
+                return Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::InvalidState,
+                    format!(
+                        "Maximum concurrent processes limit reached ({}/{})",
+                        running_count, MAX_CONCURRENT_PROCESSES
+                    ),
+                    vec![
+                        "Use listProcesses to see running processes".to_string(),
+                        "Use stopProcess to cancel unnecessary processes".to_string(),
+                        "Wait for some processes to finish before starting new ones".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                )
+                .to_mcp_result());
             }
         }
 
@@ -540,9 +603,19 @@ impl WorkspaceServer {
             .join(format!("process_{process_id}"));
 
         if let Err(e) = tokio::fs::create_dir_all(&process_tmp_dir).await {
-            return Ok(MCPResult::error(&format!(
-                "Failed to create process directory: {e}"
-            )));
+            return Ok(operation_failed_error(
+                "Create process directory",
+                &e.to_string(),
+                vec![
+                    "Check workspace directory permissions".to_string(),
+                    "Ensure sufficient disk space is available".to_string(),
+                    format!(
+                        "Verify tmp directory is writable: {}",
+                        workspace_path.join("tmp").display()
+                    ),
+                ],
+                ToolGroup::Workspace,
+            ));
         }
 
         let stdout_path = process_tmp_dir.join("stdout");
@@ -572,9 +645,16 @@ impl WorkspaceServer {
         {
             Ok(cmd) => cmd,
             Err(e) => {
-                return Ok(MCPResult::error(&format!(
-                    "Failed to create isolated command: {e}"
-                )));
+                return Ok(operation_failed_error(
+                    "Create isolated command",
+                    &e.to_string(),
+                    vec![
+                        "Verify shell environment is properly configured".to_string(),
+                        "Check if required shell binary exists (bash/sh/PowerShell)".to_string(),
+                        "Ensure workspace isolation level is valid".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                ));
             }
         };
 
@@ -685,27 +765,40 @@ impl WorkspaceServer {
             let registry = self.process_registry.read().await;
             if let Some(entry) = registry.entries.get(&process_id) {
                 if matches!(entry.status, terminal_manager::ProcessStatus::Failed) {
-                    return Ok(MCPResult::error("Process failed to start"));
+                    return Ok(operation_failed_error(
+                        "Start background process",
+                        "Process failed to start",
+                        vec![
+                            "Verify the command syntax is correct".to_string(),
+                            "Check if required programs are installed".to_string(),
+                            "Use listProcesses to see failed process details".to_string(),
+                        ],
+                        ToolGroup::Workspace,
+                    ));
                 }
             }
         }
 
         // Return immediate response with process_id
-        let response_msg = format!(
-            "Process started in background.\n\
-             Process ID: {process_id}\n\
-             Command: {command}\n\
-             \n\
-             Use 'poll_process' to check status and view output:\n\
-             poll_process(process_id: \"{process_id}\", tail: {{src: \"stdout\", n: 20}})"
+        let hint = SuccessHint::new(
+            format!("Background process started (ID: {})", process_id),
+            vec![
+                format!(
+                    "Use pollProcess with process_id \"{}\" to check status",
+                    process_id
+                ),
+                "Use listProcesses to see all running processes".to_string(),
+            ],
         );
 
-        // Clarify that async is intended for long-running commands
-        let response_msg = format!(
-            "{response_msg}\n\nNote: async mode is intended for long-running commands (over 30s)."
-        );
+        let response_data = serde_json::json!({
+            "process_id": process_id,
+            "command": command,
+            "mode": "async",
+            "note": "async mode is intended for long-running commands (over 30s)"
+        });
 
-        Ok(MCPResult::success(&response_msg))
+        Ok(hint.to_mcp_result_with_data(Some(response_data)))
     }
 
     /// Platform-specific privilege detection for Unix systems
