@@ -1,22 +1,30 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAgentChat } from '@/context/AgentChatContext';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
 import { useMessageGrouping } from '@/hooks/useMessageGrouping';
 import { useThrottle } from '@/hooks/useThrottle';
 import { AgentToolCallGroup } from './AgentToolCallGroup';
-import { AgentMessageRenderer } from './AgentMessageRenderer';
+import { AgentMessageBubble } from './AgentMessageBubble';
 import { ErrorBubble } from '@/features/chat/ErrorBubble';
 import { Bot } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import type { Message } from '@/models/chat';
+import { useLLMService } from '@/context/LLMServiceContext';
 
 export function AgentChatMessages() {
-  const { messages, isLoading, error, retryMessage } = useAgentChat();
+  const { messages, error, retryMessage } = useAgentChat();
   const { currentSession } = useAgentSessionState();
+  const { streamingMessages } = useLLMService();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
+
+  const streamingMessage = useMemo(() => {
+    if (!currentSession?.id || !streamingMessages) return undefined;
+    if (currentSession.id) {
+      return streamingMessages.get(currentSession.id);
+    }
+  }, [currentSession, streamingMessages]);
 
   // Group messages for display
   const groupedMessages = useMessageGrouping(messages);
@@ -95,81 +103,13 @@ export function AgentChatMessages() {
 
           // Render regular message
           const msg = groupedMessage.message;
+          if (!msg || msg.content.length === 0) return null;
           return (
-            <div key={msg.id} className="px-4 py-2">
-              <div
-                className={cn(
-                  'flex',
-                  msg.role === 'user' ? 'justify-end' : 'justify-start',
-                )}
-              >
-                <div
-                  className={cn(
-                    'inline-block max-w-[70%] p-3 rounded-lg',
-                    msg.role === 'user'
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-secondary text-secondary-foreground',
-                  )}
-                >
-                  <div className="text-xs font-semibold mb-1 opacity-70">
-                    {msg.role === 'assistant'
-                      ? getAssistantNameForMessage(msg) || 'ASSISTANT'
-                      : msg.role.toUpperCase()}
-                  </div>
-                  <div className="whitespace-pre-wrap">
-                    {(msg.content && msg.content.length > 0) || msg.thinking ? (
-                      <>
-                        {/* Thinking bubble (shown during reasoning phase) */}
-                        {msg.thinking && (
-                          <div className="flex flex-col gap-2 mb-3 p-3 bg-popover rounded-lg border border-border">
-                            <div className="flex items-center gap-2 text-xs font-medium opacity-70">
-                              {msg.isStreaming && (
-                                <span className="flex gap-1">
-                                  <span
-                                    className="animate-bounce"
-                                    style={{ animationDelay: '0ms' }}
-                                  >
-                                    ●
-                                  </span>
-                                  <span
-                                    className="animate-bounce"
-                                    style={{ animationDelay: '150ms' }}
-                                  >
-                                    ●
-                                  </span>
-                                  <span
-                                    className="animate-bounce"
-                                    style={{ animationDelay: '300ms' }}
-                                  >
-                                    ●
-                                  </span>
-                                </span>
-                              )}
-                              <span>Thinking Process</span>
-                            </div>
-                            <div className="text-xs opacity-50 italic whitespace-pre-wrap max-h-32 overflow-y-auto">
-                              {msg.thinking}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Actual content (shown after thinking completes) */}
-                        {msg.content && msg.content.length > 0 && (
-                          <AgentMessageRenderer
-                            content={msg.content}
-                            message={msg}
-                          />
-                        )}
-                      </>
-                    ) : (
-                      <span className="text-muted-foreground italic">
-                        No content
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
+            <AgentMessageBubble
+              key={msg.id}
+              message={msg}
+              getAssistantName={getAssistantNameForMessage}
+            />
           );
         })}
 
@@ -187,7 +127,8 @@ export function AgentChatMessages() {
           </div>
         )}
 
-        {isLoading && (
+        {/* Show streaming indicator or loading state */}
+        {streamingMessage && (
           <div className="flex justify-start mb-8 mt-3">
             <div className="w-full max-w-full bg-secondary/30 rounded-lg px-6 py-5">
               <div className="flex items-center gap-3 mb-2">

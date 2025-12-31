@@ -4,14 +4,18 @@ use tracing::error;
 use zip::write::FileOptions;
 
 use super::{ui_resources, WorkspaceServer};
+use crate::mcp::builtin::error_guidance::{
+    missing_param_error, operation_failed_error, ErrorCategory, ErrorGuidance, ToolGroup,
+};
 use crate::mcp::types::MCPResult;
 
 impl WorkspaceServer {
     pub async fn handle_export_file(&self, args: Value) -> Result<MCPResult, String> {
+        // Layer 1: Parameter existence validation
         let path = match args.get("path").and_then(|v| v.as_str()) {
             Some(path) => path,
             None => {
-                return Err("Missing required parameter: path".to_string());
+                return Ok(missing_param_error("path", ToolGroup::Workspace));
             }
         };
         let display_name = args
@@ -21,14 +25,36 @@ impl WorkspaceServer {
             .unwrap_or(path)
             .to_string();
 
+        // Layer 3: Business logic - file existence validation
         let source_path = self.get_workspace_dir().join(path);
         if !source_path.exists() || !source_path.is_file() {
-            return Err("File not found or is not a regular file".to_string());
+            return Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::ResourceNotFound,
+                "File not found or is not a regular file".to_string(),
+                vec![
+                    "Use listDirectory to verify the file exists".to_string(),
+                    "Ensure the path points to a file, not a directory".to_string(),
+                    "Check the file path is correct".to_string(),
+                ],
+                ToolGroup::Workspace,
+            )
+            .to_mcp_result());
         }
 
         let exports_dir = match self.ensure_exports_directory() {
             Ok(dir) => dir,
-            Err(e) => return Err(e),
+            Err(e) => {
+                return Ok(operation_failed_error(
+                    "Create exports directory",
+                    &e,
+                    vec![
+                        "Check workspace directory permissions".to_string(),
+                        "Ensure sufficient disk space".to_string(),
+                        "Verify workspace path is accessible".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                ));
+            }
         };
 
         let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
@@ -48,7 +74,16 @@ impl WorkspaceServer {
 
         let export_path = exports_dir.join("files").join(&export_filename);
         if let Err(e) = std::fs::copy(&source_path, &export_path) {
-            return Err(format!("Failed to copy file: {e}"));
+            return Ok(operation_failed_error(
+                "Copy file for export",
+                &e.to_string(),
+                vec![
+                    "Check source file permissions".to_string(),
+                    "Ensure sufficient disk space in exports directory".to_string(),
+                    "Verify the file is not locked by another process".to_string(),
+                ],
+                ToolGroup::Workspace,
+            ));
         }
 
         let relative_path = format!("exports/files/{export_filename}");
@@ -78,7 +113,8 @@ impl WorkspaceServer {
         );
 
         let success_message = format!(
-            "파일 '{display_name}'이(가) 성공적으로 export되었습니다. 아래 링크에서 다운로드할 수 있습니다."
+            "✓ File '{}' exported successfully\n\nDownload link available below\n\n💡 Next: Use exportZip to export multiple files at once",
+            display_name
         );
 
         Ok(ui_resources::mcp_result_with_text_and_resource(
@@ -88,10 +124,11 @@ impl WorkspaceServer {
     }
 
     pub async fn handle_export_zip(&self, args: Value) -> Result<MCPResult, String> {
+        // Layer 1: Parameter existence validation
         let files_array = match args.get("files").and_then(|v| v.as_array()) {
             Some(files) => files,
             None => {
-                return Err("Missing required parameter: files (array)".to_string());
+                return Ok(missing_param_error("files", ToolGroup::Workspace));
             }
         };
         let package_name = args
@@ -101,13 +138,35 @@ impl WorkspaceServer {
             .unwrap_or("workspace_export")
             .to_string();
 
+        // Layer 2: Value constraints validation
         if files_array.is_empty() {
-            return Err("Files array cannot be empty".to_string());
+            return Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::InvalidInput,
+                "Files array cannot be empty".to_string(),
+                vec![
+                    "Include at least one file path in the files array".to_string(),
+                    "Use listDirectory to find files to export".to_string(),
+                    "Example: {\"files\": [\"file1.txt\", \"folder/file2.txt\"]}".to_string(),
+                ],
+                ToolGroup::Workspace,
+            )
+            .to_mcp_result());
         }
 
         let exports_dir = match self.ensure_exports_directory() {
             Ok(dir) => dir,
-            Err(e) => return Err(e),
+            Err(e) => {
+                return Ok(operation_failed_error(
+                    "Create exports directory",
+                    &e,
+                    vec![
+                        "Check workspace directory permissions".to_string(),
+                        "Ensure sufficient disk space".to_string(),
+                        "Verify workspace path is accessible".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                ));
+            }
         };
 
         let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
@@ -117,7 +176,16 @@ impl WorkspaceServer {
         let zip_file = match std::fs::File::create(&zip_path) {
             Ok(file) => file,
             Err(e) => {
-                return Err(format!("Failed to create ZIP file: {e}"));
+                return Ok(operation_failed_error(
+                    "Create ZIP file",
+                    &e.to_string(),
+                    vec![
+                        "Check exports directory permissions".to_string(),
+                        "Ensure sufficient disk space".to_string(),
+                        "Verify the path is accessible".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                ));
             }
         };
 
@@ -164,11 +232,30 @@ impl WorkspaceServer {
         }
 
         if let Err(e) = zip.finish() {
-            return Err(format!("Failed to finalize ZIP: {e}"));
+            return Ok(operation_failed_error(
+                "Finalize ZIP file",
+                &e.to_string(),
+                vec![
+                    "Check if the ZIP writer encountered an error".to_string(),
+                    "Verify disk space is sufficient".to_string(),
+                    "Try exporting fewer files".to_string(),
+                ],
+                ToolGroup::Workspace,
+            ));
         }
 
         if processed_files.is_empty() {
-            return Err("No files were successfully added to ZIP".to_string());
+            return Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::OperationFailed,
+                "No files were successfully added to ZIP".to_string(),
+                vec![
+                    "Verify the file paths are correct with listDirectory".to_string(),
+                    "Check that the files exist and are readable".to_string(),
+                    "Ensure files are not directories".to_string(),
+                ],
+                ToolGroup::Workspace,
+            )
+            .to_mcp_result());
         }
 
         let relative_path = format!("exports/packages/{zip_filename}");
@@ -197,7 +284,7 @@ impl WorkspaceServer {
         );
 
         let success_message = format!(
-            "ZIP 패키지 '{}'이(가) 성공적으로 생성되었습니다. {}개 파일이 포함되어 있으며, 아래 링크에서 다운로드할 수 있습니다.",
+            "✓ ZIP package '{}' created successfully\n\nContains {} files\nDownload link available below\n\n💡 Next: Use exportFile to export individual files",
             package_name,
             processed_files.len()
         );

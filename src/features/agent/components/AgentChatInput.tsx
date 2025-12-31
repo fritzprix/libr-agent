@@ -26,7 +26,7 @@ interface AgentChatInputProps {
 
 export function AgentChatInput({ children }: AgentChatInputProps) {
   const { currentSession } = useAgentSessionState();
-  const { submit, isLoading, workflowStatus, messages, cancel } =
+  const { submit, isSessionLoading, workflowStatus, messages, cancel } =
     useAgentChat();
   const [input, setInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -52,7 +52,8 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
 
   // Determine if input should be disabled (busy state detection)
   const isBusy = useMemo(() => {
-    if (isLoading || isSubmitting || workflowStatus === 'busy') return true;
+    if (isSessionLoading || isSubmitting || workflowStatus === 'busy')
+      return true;
 
     const lastMessage = messages[messages.length - 1];
     if (!lastMessage) return false;
@@ -70,7 +71,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     }
 
     return false;
-  }, [isLoading, isSubmitting, workflowStatus, messages]);
+  }, [isSessionLoading, isSubmitting, workflowStatus, messages]);
 
   const inputPlaceholder = useMemo(() => {
     if (dragState !== 'none') {

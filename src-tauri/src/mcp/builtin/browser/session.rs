@@ -59,7 +59,7 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
     let url = args
         .get("url")
         .and_then(|v| v.as_str())
-        .unwrap_or("about:blank");
+        .unwrap_or("https://www.google.com");
 
     // Check if session already exists
     {

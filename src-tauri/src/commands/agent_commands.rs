@@ -73,6 +73,18 @@ pub async fn agent_handle_llm_response(
 ) -> Result<AgentResponse, String> {
     // AgentMessageDto is now a type alias for Message, no conversion needed
     let message = assistant_message;
+
+    log::info!(
+        "📥 Received LLM response from frontend: session={}, message_id={}, has_tool_calls={}, tool_call_count={}, content_len={}",
+        session_id,
+        message.id,
+        message.tool_calls.is_some(),
+        message.tool_calls.as_ref().map(|tc| tc.len()).unwrap_or(0),
+        message.content.len()
+    );
+
+    log::debug!("📥 Full message received: {:#?}", message);
+
     manager
         .handle_llm_response(session_id.clone(), message)
         .await?;

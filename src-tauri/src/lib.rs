@@ -227,7 +227,7 @@ pub fn run() {
                         }),
                         Target::new(TargetKind::Webview),
                     ])
-                    .level(log::LevelFilter::Trace)
+                    .level(log::LevelFilter::Info)
                     .build(),
             )
             .plugin(tauri_plugin_opener::init())

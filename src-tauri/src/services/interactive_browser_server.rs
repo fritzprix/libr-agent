@@ -216,6 +216,11 @@ impl InteractiveBrowserServer {
         url: &str,
         title: Option<&str>,
     ) -> Result<(String, String), String> {
+        // Require URL parameter
+        if url.trim().is_empty() {
+            return Err("The 'url' parameter is required".to_string());
+        }
+
         // Validate URL first
         let validated_url = self.validate_and_normalize_url(url)?;
 

@@ -520,7 +520,7 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
             );
 
             // Send result back to Rust
-            logger.debug('Sending LLM response to Rust', {
+            logger.info('Sending LLM response to Rust', {
               sessionId,
               hasToolCalls: !!result.tool_calls,
               toolCallCount: result.tool_calls?.length ?? 0,
@@ -568,11 +568,12 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
               error: result.error || undefined,
             };
 
-            logger.debug('Message prepared for Rust', {
+            logger.info('Message prepared for Rust', {
               sessionId,
               hasToolCalls: !!messageForRust.toolCalls,
               toolCallCount: messageForRust.toolCalls?.length ?? 0,
               createdAtType: typeof messageForRust.createdAt,
+              fullMessage: messageForRust,
             });
 
             await invoke('agent_handle_llm_response', {

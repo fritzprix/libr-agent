@@ -113,15 +113,22 @@ impl WorkspaceServer {
         match content {
             Ok(content) => {
                 info!("Successfully read file: {}", path_str);
-                let hint = SuccessHint::new(
-                    format!("File read successfully ({} bytes)", content.len()),
-                    SuccessHint::for_tool("readFile", ToolGroup::Workspace),
+
+                // Include actual content in text for AI agent visibility
+                let text_message = format!(
+                    "File read successfully: {}\n\nContent:\n{}\n\n💡 Next: Use writeFile to modify or replaceLines to make targeted edits",
+                    path_str,
+                    content
                 );
-                Ok(hint.to_mcp_result_with_data(Some(json!({
-                    "content": content,
-                    "path": path_str,
-                    "size": content.len()
-                }))))
+
+                Ok(MCPResult::success_with_data(
+                    &text_message,
+                    json!({
+                        "content": content,
+                        "path": path_str,
+                        "size": content.len()
+                    }),
+                ))
             }
             Err(e) => {
                 error!("Failed to read file {}: {}", path_str, e);
@@ -404,7 +411,7 @@ impl WorkspaceServer {
         let pattern = match args.get("pattern").and_then(|v| v.as_str()) {
             Some(pattern) => pattern,
             None => {
-                return Ok(MCPResult::error("Missing required parameter: pattern"));
+                return Ok(missing_param_error("pattern", ToolGroup::Workspace));
             }
         };
 
@@ -451,7 +458,16 @@ impl WorkspaceServer {
             }
             Err(e) => {
                 error!("File search failed: {}", e);
-                Ok(MCPResult::error(&format!("Search failed: {e}")))
+                Ok(operation_failed_error(
+                    "Search files",
+                    &e.to_string(),
+                    vec![
+                        "Verify the pattern syntax is correct (use glob format like '*.txt' or '**/*.rs')".to_string(),
+                        "Check if the directory path exists with listDirectory".to_string(),
+                        "Try a simpler pattern to narrow down the issue".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                ))
             }
         }
     }
@@ -514,49 +530,79 @@ impl WorkspaceServer {
     }
 
     pub async fn handle_replace_lines_in_file(&self, args: Value) -> Result<MCPResult, String> {
+        // Layer 1: Parameter existence validation
         let path_str = match args.get("path").and_then(|v| v.as_str()) {
             Some(path) => path,
             None => {
-                return Ok(MCPResult::error("Missing required parameter: path"));
+                return Ok(missing_param_error("path", ToolGroup::Workspace));
             }
         };
 
         let replacements_val = match args.get("replacements") {
             Some(val) => val,
             None => {
-                return Ok(MCPResult::error("Missing required parameter: replacements"));
+                return Ok(missing_param_error("replacements", ToolGroup::Workspace));
             }
         };
 
-        let replacements: Vec<HashMap<String, Value>> =
-            match serde_json::from_value(replacements_val.clone()) {
-                Ok(r) => r,
-                Err(e) => {
-                    return Ok(MCPResult::error(&format!(
-                        "Invalid replacements format: {e}"
-                    )));
-                }
-            };
+        // Layer 2: Format validation
+        let replacements: Vec<HashMap<String, Value>> = match serde_json::from_value(
+            replacements_val.clone(),
+        ) {
+            Ok(r) => r,
+            Err(e) => {
+                return Ok(ErrorGuidance::with_guidance(
+                        ErrorCategory::InvalidFormat,
+                        format!("Invalid replacements format: {}", e),
+                        vec![
+                            "Replacements must be an array of objects".to_string(),
+                            "Each object needs startLine/lineNumber and newContent".to_string(),
+                            "Example: [{\"startLine\": 1, \"endLine\": 2, \"newContent\": \"new text\"}]".to_string(),
+                        ],
+                        ToolGroup::Workspace,
+                    ).to_mcp_result());
+            }
+        };
 
+        // Layer 3: Business logic - path validation and file reading
         let safe_path = self.validate_path_with_error(path_str)?;
 
         let lines = match self.read_file_lines(&safe_path).await {
             Ok(lines) => lines,
             Err(e) => {
-                return Ok(MCPResult::error(&format!("Failed to read file: {e}")));
+                return Ok(operation_failed_error(
+                    "Read file for replacement",
+                    &e,
+                    vec![
+                        "Verify the file exists with listDirectory".to_string(),
+                        "Check file permissions".to_string(),
+                        "Use readFile to see the current content".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                ));
             }
         };
 
         let mut new_lines = lines.clone();
         let mut replacements_map: HashMap<String, String> = HashMap::new();
 
+        // Layer 2 (continued): Validate each replacement object
         for rep in replacements {
             let start_line = match rep.get("startLine").and_then(|v| v.as_u64()) {
                 Some(num) => num as usize,
                 Option::None => match rep.get("lineNumber").and_then(|v| v.as_u64()) {
                     Some(num) => num as usize,
                     Option::None => {
-                        return Ok(MCPResult::error("Missing startLine or lineNumber"));
+                        return Ok(ErrorGuidance::with_guidance(
+                            ErrorCategory::InvalidInput,
+                            "Missing startLine or lineNumber in replacement".to_string(),
+                            vec![
+                                "Each replacement must have either 'startLine' or 'lineNumber'".to_string(),
+                                "Use 'startLine' and optional 'endLine' for ranges".to_string(),
+                                "Example: {\"startLine\": 5, \"endLine\": 7, \"newContent\": \"text\"}".to_string(),
+                            ],
+                            ToolGroup::Workspace,
+                        ).to_mcp_result());
                     }
                 },
             };
@@ -568,23 +614,64 @@ impl WorkspaceServer {
                 .unwrap_or(start_line);
 
             if start_line > end_line {
-                return Ok(MCPResult::error("startLine must be <= endLine"));
+                return Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::InvalidInput,
+                    format!(
+                        "startLine ({}) must be <= endLine ({})",
+                        start_line, end_line
+                    ),
+                    vec![
+                        "Swap the values if you meant to specify a range".to_string(),
+                        format!(
+                            "Correct range: {{\"startLine\": {}, \"endLine\": {}}}",
+                            end_line, start_line
+                        ),
+                        "Or use a single line replacement".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                )
+                .to_mcp_result());
             }
 
             if start_line == 0 || end_line > new_lines.len() {
-                return Ok(MCPResult::error(&format!(
-                    "Line range {}-{} is out of bounds (file has {} lines)",
-                    start_line,
-                    end_line,
-                    new_lines.len()
-                )));
+                return Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::InvalidInput,
+                    format!(
+                        "Line range {}-{} is out of bounds (file has {} lines)",
+                        start_line,
+                        end_line,
+                        new_lines.len()
+                    ),
+                    vec![
+                        format!(
+                            "File has {} lines, use line numbers 1-{}",
+                            new_lines.len(),
+                            new_lines.len()
+                        ),
+                        "Use readFile to see the file content and line count".to_string(),
+                        "Line numbers start at 1, not 0".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                )
+                .to_mcp_result());
             }
 
             let content = match rep.get("newContent") {
                 Some(Value::String(s)) => s.to_string(), // Handle string values including empty strings
                 Some(Value::Null) => String::new(), // Handle explicit null as empty string for deletion
                 Some(_) => {
-                    return Ok(MCPResult::error("newContent must be a string"));
+                    return Ok(ErrorGuidance::with_guidance(
+                        ErrorCategory::InvalidInput,
+                        "newContent must be a string".to_string(),
+                        vec![
+                            "Use a string value for newContent".to_string(),
+                            "Use empty string \"\" or null to delete lines".to_string(),
+                            "Example: {\"startLine\": 1, \"newContent\": \"new line text\"}"
+                                .to_string(),
+                        ],
+                        ToolGroup::Workspace,
+                    )
+                    .to_mcp_result());
                 }
                 None => String::new(), // Missing newContent means delete lines
             };
@@ -615,20 +702,37 @@ impl WorkspaceServer {
             }
         }
 
+        // Layer 4: Apply replacements and write
         let new_content = new_lines.join("\n");
         let file_manager = self.get_file_manager();
         match file_manager.write_file_string(path_str, &new_content).await {
-            Ok(_) => Ok(MCPResult::success(&format!(
-                "Successfully replaced lines in file {path_str}"
-            ))),
-            Err(e) => Ok(MCPResult::error(&format!("Failed to write file: {e}"))),
+            Ok(_) => {
+                let hint = SuccessHint::new(
+                    format!("Successfully replaced lines in file {}", path_str),
+                    SuccessHint::for_tool("replaceLinesInFile", ToolGroup::Workspace),
+                );
+                Ok(hint.to_mcp_result_with_data(Some(json!({
+                    "path": path_str,
+                    "lines_count": new_lines.len()
+                }))))
+            }
+            Err(e) => Ok(operation_failed_error(
+                "Write file after replacement",
+                &e.to_string(),
+                vec![
+                    "Check file permissions".to_string(),
+                    "Verify the file is not locked by another process".to_string(),
+                    "Ensure sufficient disk space".to_string(),
+                ],
+                ToolGroup::Workspace,
+            )),
         }
     }
 
     pub async fn handle_grep(&self, args: Value) -> Result<MCPResult, String> {
         let pattern = match args.get("pattern").and_then(|v| v.as_str()) {
             Some(p) => p,
-            None => return Ok(MCPResult::error("missing 'pattern' argument")),
+            None => return Ok(missing_param_error("pattern", ToolGroup::Workspace)),
         };
 
         let ignore_case = args
@@ -649,19 +753,45 @@ impl WorkspaceServer {
                 Ok(safe_path) => match tokio::fs::read_to_string(safe_path).await {
                     Ok(s) => s,
                     Err(e) => {
-                        return Ok(MCPResult::error(&format!("failed to read file {path_str}: {e}")));
+                        return Ok(operation_failed_error(
+                            "Read file for grep",
+                            &e.to_string(),
+                            vec![
+                                "Verify the file exists with listDirectory".to_string(),
+                                "Check file permissions".to_string(),
+                                "Ensure the path is correct".to_string(),
+                            ],
+                            ToolGroup::Workspace,
+                        ));
                     }
                 },
                 Err(e) => {
-                    return Ok(MCPResult::error(&format!("Security error: {e}")));
+                    return Ok(ErrorGuidance::with_guidance(
+                        ErrorCategory::PermissionDenied,
+                        format!("Path validation failed: {}", e),
+                        vec![
+                            "Verify the file path is within allowed directories".to_string(),
+                            "Use listDirectory to see available files".to_string(),
+                            "Check that the path doesn't contain '..' or absolute paths outside workspace".to_string(),
+                        ],
+                        ToolGroup::Workspace,
+                    ).to_mcp_result());
                 }
             }
         } else if let Some(s) = args.get("input").and_then(|v| v.as_str()) {
             s.to_string()
         } else {
-            return Ok(MCPResult::error(
-                "either 'path' or 'input' must be provided",
-            ));
+            return Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::MissingRequiredParam,
+                "Either 'path' or 'input' parameter must be provided".to_string(),
+                vec![
+                    "Use 'path' to search within a file".to_string(),
+                    "Use 'input' to search within provided text".to_string(),
+                    "Example: {\"pattern\": \"error\", \"path\": \"logs.txt\"}".to_string(),
+                ],
+                ToolGroup::Workspace,
+            )
+            .to_mcp_result());
         };
 
         let regex = match regex::RegexBuilder::new(pattern)
@@ -670,7 +800,17 @@ impl WorkspaceServer {
         {
             Ok(r) => r,
             Err(e) => {
-                return Ok(MCPResult::error(&format!("invalid pattern: {e}")));
+                return Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::InvalidInput,
+                    format!("Invalid regex pattern: {}", e),
+                    vec![
+                        "Check regex syntax - use basic patterns like 'error|warning'".to_string(),
+                        "Escape special characters with backslash: \\. \\* \\+ \\?".to_string(),
+                        "Test pattern with a simpler string first".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                )
+                .to_mcp_result());
             }
         };
 

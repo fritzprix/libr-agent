@@ -9,7 +9,8 @@ import React, {
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getLogger } from '../lib/logger';
-import type { Assistant, Message } from '@/models/chat';
+import type { Assistant, Message, RustMessage } from '@/models/chat';
+import { rustMessageToMessage } from '@/models/chat';
 import type { Page } from '@/lib/db/types';
 import { useModelOptions } from './ModelProvider';
 
@@ -35,21 +36,52 @@ interface CreateSessionParams {
   // LLM config will be extracted from assistant or global settings
 }
 
-interface AgentEventPayload {
-  type: string;
-  sessionId: string;
-  status?: 'idle' | 'busy' | 'paused' | 'error';
-  [key: string]: unknown;
-}
+type AgentEventPayload =
+  | {
+      type: 'workflowStarted';
+      sessionId: string;
+    }
+  | {
+      type: 'workflowCompleted';
+      sessionId: string;
+    }
+  | {
+      type: 'workflowError';
+      sessionId: string;
+      error: string;
+    }
+  | {
+      type: 'statusChanged';
+      sessionId: string;
+      status: 'idle' | 'busy' | 'paused' | 'error';
+    }
+  | {
+      type: 'messageAdded';
+      sessionId: string;
+      message: RustMessage;
+    }
+  | {
+      type: 'toolExecutionStarted';
+      sessionId: string;
+      toolName: string;
+    }
+  | {
+      type: 'toolExecutionCompleted';
+      sessionId: string;
+      toolName: string;
+      success: boolean;
+    };
 
 // --- STATE CONTEXT ---
 interface AgentSessionStateContextValue {
   currentSession: AgentSession | null;
   sessions: AgentSession[];
   messages: Message[];
-  isLoading: boolean;
-  isLoadingSessions: boolean;
+  isSessionLoading: boolean;
+  isSessionsListLoading: boolean;
   error: string | null;
+  llmError: string | null; // Added
+  workflowStatus: 'idle' | 'busy' | 'paused' | 'error'; // Added for explicit status tracking
 }
 
 const AgentSessionStateContext = createContext<
@@ -92,6 +124,13 @@ interface AgentSessionActionsContextValue {
    * Delete an agent session
    */
   deleteSession: (sessionId: string) => Promise<void>;
+
+  /**
+   * Manually set error state (e.g. for client-side failures)
+   */
+  setError: (error: string | null) => void;
+
+  addMessage: (message: Message) => void;
 }
 
 const AgentSessionActionsContext = createContext<
@@ -117,9 +156,13 @@ export function AgentSessionProvider({ children }: AgentSessionProviderProps) {
   );
   const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isLoadingSessions, setIsLoadingSessions] = useState(false);
+  const [isSessionLoading, setIsSessionLoading] = useState(false);
+  const [isSessionsListLoading, setIsSessionsListLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [llmError, setLlmError] = useState<string | null>(null);
+  const [workflowStatus, setWorkflowStatus] = useState<
+    'idle' | 'busy' | 'paused' | 'error'
+  >('idle');
 
   /**
    * Load messages for the current session
@@ -127,48 +170,25 @@ export function AgentSessionProvider({ children }: AgentSessionProviderProps) {
   const loadMessages = useCallback(async (sessionId: string) => {
     try {
       // Load first page (large size to get all for now)
-      const page = await invoke<Page<Record<string, unknown>>>(
-        'messages_get_page',
+      const page = await invoke<Page<RustMessage>>('messages_get_page', {
+        sessionId,
+        page: 1,
+        pageSize: 1000,
+      });
+
+      // Convert RustMessages to Messages using type-safe converter
+      const messages: Message[] = page.items.map(rustMessageToMessage);
+
+      logger.info(
+        `Loaded ${messages.length} messages for session ${sessionId}`,
         {
-          sessionId,
-          page: 1,
-          pageSize: 1000,
+          messageCount: messages.length,
+          firstMessage: messages[0]?.id,
+          lastMessage: messages[messages.length - 1]?.id,
         },
       );
 
-      // Deserialize messages from Rust backend format to frontend format
-      const deserializedMessages: Message[] = page.items.map((rustMsg) => ({
-        id: rustMsg.id as string,
-        sessionId: rustMsg.sessionId as string,
-        threadId: (rustMsg.threadId as string) || (rustMsg.sessionId as string), // Fallback to sessionId
-        role: rustMsg.role as 'user' | 'assistant' | 'system' | 'tool',
-        content: rustMsg.content as Message['content'],
-        tool_calls: (rustMsg.toolCalls as Message['tool_calls'])
-          ? (rustMsg.toolCalls as Message['tool_calls'])?.map((tc) => ({
-              id: tc.id,
-              type: tc.type || 'function',
-              function: tc.function,
-            }))
-          : undefined,
-        tool_call_id: rustMsg.toolCallId as string | undefined,
-        isStreaming: rustMsg.isStreaming as boolean | undefined,
-        thinking: rustMsg.thinking as string | undefined,
-        thinkingSignature: rustMsg.thinkingSignature as string | undefined,
-        assistantId: rustMsg.assistantId as string | undefined,
-        attachments:
-          (rustMsg.attachments as Message['attachments']) || undefined,
-        tool_use: (rustMsg.toolUse as Message['tool_use']) || undefined,
-        createdAt: rustMsg.createdAt
-          ? new Date(rustMsg.createdAt as number)
-          : new Date(),
-        updatedAt: rustMsg.updatedAt
-          ? new Date(rustMsg.updatedAt as number)
-          : undefined,
-        source: rustMsg.source as 'assistant' | 'ui' | undefined,
-        error: (rustMsg.error as Message['error']) || undefined,
-      }));
-
-      setMessages(deserializedMessages);
+      setMessages(messages);
     } catch (err) {
       logger.error('Failed to load messages', err);
     }
@@ -176,6 +196,7 @@ export function AgentSessionProvider({ children }: AgentSessionProviderProps) {
 
   /**
    * Listen for agent events
+   * Unified event listener for session state management
    */
   useEffect(() => {
     if (!currentSession) return;
@@ -186,34 +207,88 @@ export function AgentSessionProvider({ children }: AgentSessionProviderProps) {
       unlisten = await listen<AgentEventPayload>('agent:event', (event) => {
         const payload = event.payload;
 
-        // Filter events for current session
-        if (payload.sessionId !== currentSession.id) return;
+        logger.info('Agent event received', {
+          event,
+          sessionId: currentSession.id,
+        });
 
-        logger.debug('Received agent event', payload);
+        // Strict Session Isolation: Only process events for current session
+        if (payload.sessionId !== currentSession.id) {
+          // TODO: Potentially update 'sessions' list status for background sessions here
+          return;
+        }
+
+        logger.info('Received agent event', payload);
 
         switch (payload.type) {
-          case 'statusChanged':
-            if (payload.status) {
-              setCurrentSession((prev) =>
-                prev
-                  ? {
-                      ...prev,
-                      status: payload.status as AgentSession['status'],
-                    }
-                  : null,
-              );
+          case 'statusChanged': {
+            const newStatus = payload.status;
+            setWorkflowStatus(newStatus);
+            setCurrentSession((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    status: newStatus,
+                  }
+                : null,
+            );
+
+            // Do not define isSessionInitializing based on busy status
+            // isSessionInitializing is reserved for session initialization only
+            break;
+          }
+
+          case 'workflowError': {
+            setWorkflowStatus('error');
+            setIsSessionLoading(false);
+            const errorMsg = payload.error;
+
+            // Distinguish LLM errors from workflow errors
+            if (
+              errorMsg.includes('invalid type:') ||
+              errorMsg.includes('expected i64') ||
+              errorMsg.includes('LLM')
+            ) {
+              setLlmError(errorMsg);
+              logger.error('LLM error detected', { error: errorMsg });
+            } else {
+              setError(errorMsg);
             }
             break;
-          case 'messageAdded':
-            // Reload messages to get the new one
-            // Optimization: could just fetch the single message if ID provided
-            loadMessages(currentSession.id);
+          }
+
+          case 'messageAdded': {
+            const rustMessage = payload.message;
+
+            logger.info('Raw message from Rust event', {
+              id: rustMessage.id,
+              role: rustMessage.role,
+              hasToolCalls: !!rustMessage.toolCalls,
+              toolCallCount: rustMessage.toolCalls?.length ?? 0,
+              contentLength: rustMessage.content?.length ?? 0,
+            });
+
+            // Convert RustMessage to Message using type-safe converter
+            const newMessage = rustMessageToMessage(rustMessage);
+
+            logger.info('New message added to session', {
+              message: newMessage,
+            });
+
+            setMessages((prev) => {
+              // Deduplicate
+              if (prev.some((m) => m.id === newMessage.id)) return prev;
+              return [...prev, newMessage];
+            });
+
             break;
-          case 'workflowStarted':
-          case 'workflowCompleted':
-          case 'workflowError':
-            // These might imply status changes or other UI updates
+          }
+
+          case 'workflowCompleted': {
+            setWorkflowStatus('idle');
+            setIsSessionLoading(false);
             break;
+          }
         }
       });
     };
@@ -223,6 +298,12 @@ export function AgentSessionProvider({ children }: AgentSessionProviderProps) {
     return () => {
       if (unlisten) unlisten();
     };
+  }, [currentSession?.id, loadMessages]);
+
+  useEffect(() => {
+    if (currentSession) {
+      loadMessages(currentSession.id);
+    }
   }, [currentSession?.id, loadMessages]);
 
   /**
@@ -238,7 +319,7 @@ export function AgentSessionProvider({ children }: AgentSessionProviderProps) {
         sessionName: name,
       });
 
-      setIsLoading(true);
+      setIsSessionLoading(true);
       setError(null);
 
       try {
@@ -296,7 +377,7 @@ export function AgentSessionProvider({ children }: AgentSessionProviderProps) {
 
         setCurrentSession(session);
         setMessages([]); // New session has no messages
-        setIsLoading(false);
+        setIsSessionLoading(false);
 
         logger.info('Agent session created successfully', {
           sessionId: session.id,
@@ -307,7 +388,7 @@ export function AgentSessionProvider({ children }: AgentSessionProviderProps) {
         const errorMessage = err instanceof Error ? err.message : String(err);
         logger.error('Failed to create agent session', err);
         setError(errorMessage);
-        setIsLoading(false);
+        setIsSessionLoading(false);
         throw err;
       }
     },
@@ -322,7 +403,7 @@ export function AgentSessionProvider({ children }: AgentSessionProviderProps) {
     async (sessionId: string): Promise<AgentSession> => {
       logger.info('Resuming agent session', { sessionId });
 
-      setIsLoading(true);
+      setIsSessionLoading(true);
       setError(null);
 
       try {
@@ -358,8 +439,9 @@ export function AgentSessionProvider({ children }: AgentSessionProviderProps) {
         };
 
         setCurrentSession(session);
+        setMessages([]); // Clear previous session messages to prevent stale data
         await loadMessages(sessionId); // Load messages
-        setIsLoading(false);
+        setIsSessionLoading(false);
 
         logger.info('Agent session resumed successfully', {
           sessionId: session.id,
@@ -370,12 +452,20 @@ export function AgentSessionProvider({ children }: AgentSessionProviderProps) {
         const errorMessage = err instanceof Error ? err.message : String(err);
         logger.error('Failed to resume agent session', err);
         setError(errorMessage);
-        setIsLoading(false);
+        setIsSessionLoading(false);
         throw err;
       }
     },
     [loadMessages],
   );
+
+  const addMessage = useCallback((message: Message) => {
+    setMessages((prev) => {
+      // Deduplicate
+      if (prev.some((m) => m.id === message.id)) return prev;
+      return [...prev, message];
+    });
+  }, []);
 
   /**
    * Send a user message to the current session
@@ -399,10 +489,17 @@ export function AgentSessionProvider({ children }: AgentSessionProviderProps) {
           updatedAt: now,
         };
 
+        // Create Rust-compatible message with timestamp numbers
+        const rustMessage = {
+          ...message,
+          createdAt: now.getTime(),
+          updatedAt: now.getTime(),
+        };
+
         await invoke('agent_send_message', {
           request: {
             sessionId: currentSession.id,
-            message,
+            message: rustMessage,
           },
         });
 
@@ -447,7 +544,7 @@ export function AgentSessionProvider({ children }: AgentSessionProviderProps) {
    */
   const loadSessions = useCallback(async () => {
     logger.info('Loading all agent sessions');
-    setIsLoadingSessions(true);
+    setIsSessionsListLoading(true);
 
     try {
       // Call Rust backend to get all sessions
@@ -477,7 +574,7 @@ export function AgentSessionProvider({ children }: AgentSessionProviderProps) {
       logger.error('Failed to load sessions', err);
       setSessions([]);
     } finally {
-      setIsLoadingSessions(false);
+      setIsSessionsListLoading(false);
     }
   }, []);
 
@@ -514,11 +611,22 @@ export function AgentSessionProvider({ children }: AgentSessionProviderProps) {
       currentSession,
       sessions,
       messages,
-      isLoading,
-      isLoadingSessions,
+      isSessionLoading,
+      isSessionsListLoading,
       error,
+      llmError,
+      workflowStatus,
     }),
-    [currentSession, sessions, messages, isLoading, isLoadingSessions, error],
+    [
+      currentSession,
+      sessions,
+      messages,
+      isSessionLoading,
+      isSessionsListLoading,
+      error,
+      llmError,
+      workflowStatus,
+    ],
   );
 
   // Combine action values
@@ -529,8 +637,10 @@ export function AgentSessionProvider({ children }: AgentSessionProviderProps) {
       sendMessage,
       stopSession,
       clearSession,
+      addMessage,
       loadSessions,
       deleteSession,
+      setError,
     }),
     [
       createSession,
@@ -540,6 +650,7 @@ export function AgentSessionProvider({ children }: AgentSessionProviderProps) {
       clearSession,
       loadSessions,
       deleteSession,
+      setError, // Added dependency
     ],
   );
 

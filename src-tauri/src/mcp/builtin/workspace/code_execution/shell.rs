@@ -49,25 +49,56 @@ impl WorkspaceServer {
                 // Success case - format result
                 let success = exit_code == 0;
 
-                // Construct JSON response
-                let response = serde_json::json!({
+                info!(
+                    "Persistent shell command executed: {} (session: {}, exit: {})",
+                    command, session_id, exit_code
+                );
+
+                let structured_data = serde_json::json!({
                     "command": command,
                     "exit_code": exit_code,
                     "stdout": stdout,
                     "stderr": stderr,
                     "status": if success { "finished" } else { "failed" }
                 });
-                let result_text = response.to_string();
-
-                info!(
-                    "Persistent shell command executed: {} (session: {}, exit: {})",
-                    command, session_id, exit_code
-                );
 
                 if success {
-                    Ok(MCPResult::success(&result_text))
+                    // Success - include output in text for agent visibility
+                    let text_message = if !stdout.is_empty() {
+                        format!(
+                            "✓ Command executed successfully (exit code: {})\n\nOutput:\n{}\n\n💡 Next: Use readProcessOutput to check background processes or Use listProcesses to see running processes",
+                            exit_code,
+                            stdout
+                        )
+                    } else {
+                        format!(
+                            "✓ Command executed successfully (exit code: {})\n\n💡 Next: Use readProcessOutput to check background processes or Use listProcesses to see running processes",
+                            exit_code
+                        )
+                    };
+                    Ok(MCPResult::success_with_data(&text_message, structured_data))
                 } else {
-                    Ok(MCPResult::error(&result_text))
+                    // Failure - use ErrorGuidance format
+                    let error_message = if !stderr.is_empty() {
+                        format!(
+                            "Command failed with exit code {}\n\nstderr:\n{}",
+                            exit_code, stderr
+                        )
+                    } else {
+                        format!("Command failed with exit code {}", exit_code)
+                    };
+
+                    Ok(ErrorGuidance::with_guidance(
+                        ErrorCategory::OperationFailed,
+                        error_message,
+                        vec![
+                            "Review the error message in stderr for details".to_string(),
+                            "Check command syntax and file paths".to_string(),
+                            "Use listDirectory to verify paths exist".to_string(),
+                        ],
+                        ToolGroup::Workspace,
+                    )
+                    .to_mcp_result())
                 }
             }
             Ok(Err(e)) => {
@@ -97,16 +128,17 @@ impl WorkspaceServer {
                     );
                 }
 
-                // Return structured JSON error for consistency
-                let response = serde_json::json!({
-                    "command": command,
-                    "exit_code": -1,
-                    "stdout": "",
-                    "stderr": format!("Command execution timeout after {timeout_secs} seconds. The shell session has been reset."),
-                    "status": "timeout"
-                });
-
-                Ok(MCPResult::error(&response.to_string()))
+                // Return ErrorGuidance for timeout
+                Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::Timeout,
+                    format!("Command execution timeout after {} seconds. The shell session has been reset.", timeout_secs),
+                    vec![
+                        "Increase timeout value if the command needs more time".to_string(),
+                        "Check if the command is stuck or waiting for input".to_string(),
+                        "The shell session has been reset - execute the command again".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                ).to_mcp_result())
             }
         }
     }

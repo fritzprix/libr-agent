@@ -34,7 +34,8 @@ const logger = getLogger('AgentChatStartView');
 export default function AgentChatStartView() {
   const navigate = useNavigate();
   const { assistants } = useAssistantContext();
-  const { isLoading, sessions, isLoadingSessions } = useAgentSessionState();
+  const { isSessionLoading, sessions, isSessionsListLoading } =
+    useAgentSessionState();
   const { createSession, loadSessions, deleteSession } =
     useAgentSessionActions();
   const [startingAssistantId, setStartingAssistantId] = useState<string | null>(
@@ -77,7 +78,7 @@ export default function AgentChatStartView() {
 
   const handleAssistantSelect = useCallback(
     async (assistant: Assistant) => {
-      if (isLoading) return; // Prevent duplicate clicks
+      if (isSessionLoading) return; // Prevent duplicate clicks
 
       try {
         setStartingAssistantId(assistant.id || null);
@@ -104,7 +105,7 @@ export default function AgentChatStartView() {
         setStartingAssistantId(null);
       }
     },
-    [createSession, navigate, isLoading, loadSessions],
+    [createSession, navigate, isSessionLoading, loadSessions],
   );
 
   const handleResumeSession = useCallback(
@@ -159,21 +160,23 @@ export default function AgentChatStartView() {
               return (
                 <button
                   key={assistant.id}
-                  onClick={() => !isLoading && handleAssistantSelect(assistant)}
-                  disabled={isLoading}
+                  onClick={() =>
+                    !isSessionLoading && handleAssistantSelect(assistant)
+                  }
+                  disabled={isSessionLoading}
                   aria-label={`Start session with ${assistant.name}`}
                   aria-busy={isThisStarting}
-                  aria-disabled={isLoading}
+                  aria-disabled={isSessionLoading}
                   role="listitem"
                   className={cn(
                     'w-full p-4 text-left border rounded-lg transition-all',
                     'hover:shadow-md hover:scale-[1.01] focus:outline-none focus:ring-2 focus:ring-primary',
-                    isLoading &&
+                    isSessionLoading &&
                       !isThisStarting &&
                       'opacity-50 cursor-not-allowed',
                     isThisStarting &&
                       'border-primary bg-primary/10 animate-pulse',
-                    !isLoading && 'hover:border-muted-foreground',
+                    !isSessionLoading && 'hover:border-muted-foreground',
                   )}
                 >
                   <div className="flex items-start justify-between">
@@ -210,7 +213,11 @@ export default function AgentChatStartView() {
 
         <div className="p-6 border-t">
           <Link to="/assistants">
-            <Button variant="outline" disabled={isLoading} className="w-full">
+            <Button
+              variant="outline"
+              disabled={isSessionLoading}
+              className="w-full"
+            >
               Manage Assistants
             </Button>
           </Link>
@@ -238,11 +245,14 @@ export default function AgentChatStartView() {
               variant="ghost"
               size="icon"
               onClick={handleRefreshSessions}
-              disabled={isLoadingSessions}
+              disabled={isSessionsListLoading}
               aria-label="Refresh sessions"
             >
               <RefreshCw
-                className={cn('h-4 w-4', isLoadingSessions && 'animate-spin')}
+                className={cn(
+                  'h-4 w-4',
+                  isSessionsListLoading && 'animate-spin',
+                )}
               />
             </Button>
           </div>
@@ -262,7 +272,7 @@ export default function AgentChatStartView() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-6">
-          {isLoadingSessions && sessions.length === 0 ? (
+          {isSessionsListLoading && sessions.length === 0 ? (
             <div className="flex items-center justify-center h-full">
               <div className="text-center text-muted-foreground">
                 <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-2" />

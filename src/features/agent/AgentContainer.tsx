@@ -25,7 +25,7 @@ const logger = getLogger('AgentContainer');
 export default function AgentContainer() {
   const { sessionId } = useParams<{ sessionId?: string }>();
   const navigate = useNavigate();
-  const { currentSession, isLoading } = useAgentSessionState();
+  const { currentSession, isSessionLoading } = useAgentSessionState();
   const { resumeSession, clearSession } = useAgentSessionActions();
 
   /**
@@ -53,7 +53,7 @@ export default function AgentContainer() {
   /**
    * Show loading state during session resume
    */
-  if (sessionId && isLoading) {
+  if (sessionId && isSessionLoading) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-muted-foreground">Loading session...</div>
