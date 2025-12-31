@@ -27,7 +27,7 @@ pub async fn add_todo(
                 vec![
                     "Provide a non-empty title string".to_string(),
                     "Example: {\"title\": \"Implement feature X\"}".to_string(),
-                    "Use list_todos to see existing todos".to_string(),
+                    "Use getCurrentState to see existing todos".to_string(),
                 ],
                 ToolGroup::Planning,
             )
@@ -40,7 +40,10 @@ pub async fn add_todo(
         .get("priority")
         .and_then(|v| v.as_str())
         .unwrap_or("medium");
-    let parent_id = args.get("parentId").and_then(|v| v.as_i64());
+    let parent_id = args
+        .get("parentId")
+        .and_then(|v| v.as_i64())
+        .filter(|&id| id > 0);
 
     // 1. Validate priority
     let valid_priorities = ["low", "medium", "high"];
@@ -72,7 +75,7 @@ pub async fn add_todo(
             vec![
                 "Create the todo without subtasks, then add subtasks separately".to_string(),
                 "Create as top-level todo by omitting parentId".to_string(),
-                "Use list_todos to see the current hierarchy".to_string(),
+                "Use getCurrentState to see the current hierarchy".to_string(),
             ],
             ToolGroup::Planning,
         )
@@ -112,7 +115,7 @@ pub async fn add_todo(
                         vec![
                             "Create as top-level todo instead".to_string(),
                             "Attach to a different parent that has no parent".to_string(),
-                            "Use list_todos to see the current hierarchy".to_string(),
+                            "Use getCurrentState to see the current hierarchy".to_string(),
                         ],
                         ToolGroup::Planning,
                     )
@@ -251,7 +254,8 @@ pub async fn add_todo(
             vec![
                 "Try again - this may be a transient database error".to_string(),
                 "Verify the session is active".to_string(),
-                "Use list_todos to check if the todo was created despite the error".to_string(),
+                "Use getCurrentState to check if the todo was created despite the error"
+                    .to_string(),
             ],
             ToolGroup::Planning,
         )
@@ -305,7 +309,7 @@ pub async fn check_todo(
                     ErrorCategory::ResourceNotFound,
                     format!("Todo not found at index {}", idx),
                     vec![
-                        "Use list_todos to see available todos".to_string(),
+                        "Use getCurrentState to see available todos".to_string(),
                         format!("Index {} may be out of range", idx),
                         "Indices are 0-based and ordered by creation time".to_string(),
                     ],
@@ -382,7 +386,7 @@ pub async fn check_todo(
             format!("Failed to update todo: {}", e),
             vec![
                 "Try again - this may be a transient error".to_string(),
-                "Use list_todos to verify the todo exists".to_string(),
+                "Use getCurrentState to verify the todo exists".to_string(),
                 "Verify the session is active".to_string(),
             ],
             ToolGroup::Planning,

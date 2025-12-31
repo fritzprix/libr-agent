@@ -1,5 +1,6 @@
 use crate::mcp::builtin::planning::models::{ScratchpadItem, TodoDTO, TodoItem};
 use crate::mcp::types::ServiceContext;
+use log::info;
 use serde_json::json;
 use sqlx::SqlitePool;
 use std::collections::HashMap;
@@ -34,10 +35,14 @@ pub async fn get_service_context(pool: &SqlitePool, session_id: &str) -> Service
     let mut root_todos: Vec<TodoItem> = Vec::new();
 
     for todo in &todos {
-        if let Some(parent_id) = todo.parent_id {
-            todo_map.entry(parent_id).or_default().push(todo.clone());
-        } else {
-            root_todos.push(todo.clone());
+        // Treat parent_id = 0 as None (root item)
+        match todo.parent_id {
+            Some(pid) if pid > 0 => {
+                todo_map.entry(pid).or_default().push(todo.clone());
+            }
+            _ => {
+                root_todos.push(todo.clone());
+            }
         }
     }
 
@@ -243,6 +248,7 @@ pub async fn get_service_context(pool: &SqlitePool, session_id: &str) -> Service
          "todos_count": todos.len(),
          "scratchpad_count": scratchpad.len()
     });
+    info!("structured_state: {} vs {:?}", structured_state, todos);
 
     ServiceContext {
         context_prompt: parts.join("\n"),

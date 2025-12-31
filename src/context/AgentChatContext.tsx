@@ -131,8 +131,8 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
         { sessionId },
       );
       setServiceContexts(contexts);
-      logger.debug('Service contexts updated', {
-        count: Object.keys(contexts).length,
+      logger.info('Service contexts updated', {
+        contexts,
       });
     } catch (error) {
       logger.error('Failed to update service contexts', error);

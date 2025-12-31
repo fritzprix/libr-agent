@@ -127,23 +127,21 @@ impl ErrorGuidance {
             // Planning tool errors
             (ErrorCategory::DuplicateResource, ToolGroup::Planning) => vec![
                 "Use a different title for the new item".to_string(),
-                "Use update_todo to modify the existing item".to_string(),
-                "Use list_todos to see all existing items".to_string(),
+                "Use checkTodo to modify the existing item".to_string(),
+                "Use getCurrentState to see all existing items".to_string(),
             ],
             (ErrorCategory::ResourceNotFound, ToolGroup::Planning) => vec![
-                "Use list_todos to see available todos".to_string(),
+                "Use getCurrentState to see available todos".to_string(),
                 "Verify the ID is correct and the item exists".to_string(),
                 "Use getCurrentState to see the full planning state".to_string(),
-            ],
-            (ErrorCategory::NestingTooDeep, ToolGroup::Planning) => vec![
                 "Create as top-level todo instead".to_string(),
                 "Attach to a different parent that has no parent".to_string(),
-                "Use list_todos to see the current hierarchy".to_string(),
+                "Use getCurrentState to see the current hierarchy".to_string(),
             ],
             (ErrorCategory::InvalidInput, ToolGroup::Planning) => vec![
                 "Ensure title is a non-empty string".to_string(),
                 "Priority must be 'low', 'medium', or 'high'".to_string(),
-                "Use list_todos to see existing todos for reference".to_string(),
+                "Use getCurrentState to see existing todos for reference".to_string(),
             ],
 
             // Workspace tool errors
@@ -165,14 +163,14 @@ impl ErrorGuidance {
 
             // Assistant tool errors
             (ErrorCategory::ResourceNotFound, ToolGroup::Assistant) => vec![
-                "Use builtin_assistant__listAssistants to see available assistants".to_string(),
+                "Use listAssistants to see available assistants".to_string(),
                 "Verify the assistant ID is correct".to_string(),
-                "Use builtin_assistant__searchAssistant to find assistants by name".to_string(),
+                "Use searchAssistant to find assistants by name".to_string(),
             ],
             (ErrorCategory::DuplicateResource, ToolGroup::Assistant) => vec![
                 "Use a different name for the new assistant".to_string(),
-                "Use builtin_assistant__updateAssistant to modify the existing one".to_string(),
-                "Use builtin_assistant__listAssistants to see all assistants".to_string(),
+                "Use updateAssistant to modify the existing one".to_string(),
+                "Use listAssistants to see all assistants".to_string(),
             ],
 
             // Content Store tool errors
@@ -329,8 +327,8 @@ impl SuccessHint {
 
             // Planning tools
             ("addTodo", ToolGroup::Planning) => vec![
-                "Use list_todos to see all todos".to_string(),
-                "Use update_todo to modify details".to_string(),
+                "Use getCurrentState to see all todos".to_string(),
+                "Use checkTodo to modify details".to_string(),
                 "Use checkTodo to mark as done".to_string(),
             ],
             ("createGoal", ToolGroup::Planning) => vec![
@@ -338,10 +336,10 @@ impl SuccessHint {
                 "Use getCurrentState to see the full planning state".to_string(),
             ],
             ("checkTodo", ToolGroup::Planning) => vec![
-                "Use list_todos to see remaining tasks".to_string(),
+                "Use getCurrentState to see remaining tasks".to_string(),
                 "Use addTodo to create follow-up tasks".to_string(),
             ],
-            ("list_todos", ToolGroup::Planning) => vec![
+            ("getCurrentState", ToolGroup::Planning) => vec![
                 "Use checkTodo to mark items as complete".to_string(),
                 "Use addTodo to create new tasks".to_string(),
             ],
@@ -517,8 +515,8 @@ mod tests {
         let hint = SuccessHint::new(
             "Todo created successfully",
             vec![
-                "Use list_todos to see all todos".to_string(),
-                "Use update_todo to modify".to_string(),
+                "Use getCurrentState to see all todos".to_string(),
+                "Use checkTodo to modify".to_string(),
             ],
         );
 
@@ -545,7 +543,7 @@ mod tests {
 
         // Should suggest browser tools only
         assert!(error.guidance.iter().any(|g| g.contains("createSession")));
-        assert!(!error.guidance.iter().any(|g| g.contains("add_todo"))); // Should not suggest planning tools
+        assert!(!error.guidance.iter().any(|g| g.contains("addTodo"))); // Should not suggest planning tools
     }
 
     #[test]
@@ -557,7 +555,7 @@ mod tests {
         );
 
         // Should suggest planning tools only
-        assert!(error.guidance.iter().any(|g| g.contains("list_todos")));
+        assert!(error.guidance.iter().any(|g| g.contains("getCurrentState")));
         assert!(!error.guidance.iter().any(|g| g.contains("navigateToUrl"))); // Should not suggest browser tools
     }
 }

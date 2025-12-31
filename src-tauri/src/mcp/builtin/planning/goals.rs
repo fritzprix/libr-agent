@@ -44,7 +44,7 @@ pub async fn create_goal(
             let id = query_result.last_insert_rowid();
             let response_id = cuid2::create_id();
             Ok(MCPResult::success_with_data(
-                &format!("✓ Goal created: {}", goal),
+                &format!("✓ Goal created: {}\n\nNow break this down into actionable tasks using addTodo.", goal),
                 json!({
                     "id": response_id,
                     "success": true,
