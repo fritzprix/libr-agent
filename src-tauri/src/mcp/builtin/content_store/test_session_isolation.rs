@@ -16,9 +16,10 @@ mod tests {
         let session_manager = Arc::new(
             SessionManager::new_with_base_dir(base_dir).expect("Failed to create SessionManager"),
         );
-        let server = ContentStoreServer::new_with_sqlite(session_manager, url)
-            .await
-            .expect("Failed to create server");
+        let server =
+            ContentStoreServer::new_with_sqlite("test-session".to_string(), session_manager, url)
+                .await
+                .expect("Failed to create server");
 
         // Set session context before returning
         server

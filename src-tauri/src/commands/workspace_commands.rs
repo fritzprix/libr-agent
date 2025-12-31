@@ -35,15 +35,24 @@ pub fn greet(name: &str) -> String {
 ///
 /// # Arguments
 /// * `path` - An optional relative path within the workspace. Defaults to the root.
+/// * `session_id` - An optional session ID to specify which session's workspace to list.
+///                  If not provided, uses the current session.
 ///
 /// # Returns
 /// A `Result` containing a vector of `WorkspaceFileItem` objects, or an error string on failure.
 #[tauri::command]
-pub async fn list_workspace_files(path: Option<String>) -> Result<Vec<WorkspaceFileItem>, String> {
+pub async fn list_workspace_files(
+    path: Option<String>,
+    session_id: Option<String>,
+) -> Result<Vec<WorkspaceFileItem>, String> {
     // Get the workspace base directory from session manager
     let session_manager =
         get_session_manager().map_err(|e| format!("Session manager error: {e}"))?;
-    let base_dir = session_manager.get_session_workspace_dir();
+    let base_dir = if let Some(ref sid) = session_id {
+        session_manager.get_session_workspace_dir_by_id(sid)
+    } else {
+        session_manager.get_session_workspace_dir()
+    };
 
     // Default to current directory if no path provided
     let target_path = path.unwrap_or_else(|| ".".to_string());

@@ -70,6 +70,7 @@ impl PendingExecutions {
 
 #[derive(Debug)]
 pub struct WorkspaceServer {
+    pub(crate) session_id: String,
     pub(crate) session_manager: Arc<SessionManager>,
     pub(crate) isolation_manager: crate::session_isolation::SessionIsolationManager,
     pub(crate) process_registry: terminal_manager::ProcessRegistry,
@@ -78,14 +79,15 @@ pub struct WorkspaceServer {
 }
 
 impl WorkspaceServer {
-    pub fn new(session_manager: Arc<SessionManager>) -> Self {
-        info!("WorkspaceServer using session-based workspace management");
+    pub fn new(session_id: String, session_manager: Arc<SessionManager>) -> Self {
+        info!("WorkspaceServer created for session: {}", session_id);
         let process_registry = terminal_manager::create_process_registry();
 
         // Start cleanup task for old processes
         Self::start_cleanup_task(process_registry.clone());
 
         Self {
+            session_id,
             session_manager,
             isolation_manager: crate::session_isolation::SessionIsolationManager::new(),
             process_registry,
@@ -663,7 +665,8 @@ impl WorkspaceServer {
 
     // Common utility methods
     pub fn get_workspace_dir(&self) -> std::path::PathBuf {
-        self.session_manager.get_session_workspace_dir()
+        self.session_manager
+            .get_session_workspace_dir_by_id(&self.session_id)
     }
 
     pub fn get_file_manager(&self) -> Arc<SecureFileManager> {

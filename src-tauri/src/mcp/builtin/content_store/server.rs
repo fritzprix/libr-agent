@@ -12,19 +12,22 @@ use super::{schemas, search, storage};
 /// Content-Store built-in MCP server (native backend)
 #[derive(Debug)]
 pub struct ContentStoreServer {
+    #[allow(dead_code)]
+    pub(crate) session_id: String,
     pub(crate) session_manager: Arc<SessionManager>,
     pub(crate) storage: Mutex<storage::ContentStoreStorage>,
     pub(crate) search_engine: Arc<Mutex<search::ContentSearchEngine>>,
 }
 
 impl ContentStoreServer {
-    pub fn new(session_manager: Arc<SessionManager>) -> Self {
-        let session_dir = session_manager.get_session_workspace_dir();
+    pub fn new(session_id: String, session_manager: Arc<SessionManager>) -> Self {
+        let session_dir = session_manager.get_session_workspace_dir_by_id(&session_id);
         let search_index_dir = session_dir.join("content_store_search");
         let search_engine = search::ContentSearchEngine::new(search_index_dir)
             .expect("Failed to initialize search engine");
 
         Self {
+            session_id,
             session_manager,
             storage: Mutex::new(storage::ContentStoreStorage::new()),
             search_engine: Arc::new(Mutex::new(search_engine)),
@@ -32,10 +35,11 @@ impl ContentStoreServer {
     }
 
     pub async fn new_with_sqlite(
+        session_id: String,
         session_manager: Arc<SessionManager>,
         database_url: String,
     ) -> Result<Self, String> {
-        let session_dir = session_manager.get_session_workspace_dir();
+        let session_dir = session_manager.get_session_workspace_dir_by_id(&session_id);
         let search_index_dir = session_dir.join("content_store_search");
         let search_engine = search::ContentSearchEngine::new(search_index_dir)
             .expect("Failed to initialize search engine");
@@ -43,6 +47,7 @@ impl ContentStoreServer {
         let storage = storage::ContentStoreStorage::new_sqlite(database_url).await?;
 
         Ok(Self {
+            session_id,
             session_manager,
             storage: Mutex::new(storage),
             search_engine: Arc::new(Mutex::new(search_engine)),

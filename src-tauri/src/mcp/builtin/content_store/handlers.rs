@@ -631,7 +631,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let session_manager =
             Arc::new(SessionManager::new_with_base_dir(temp_dir.path().to_path_buf()).unwrap());
-        let server = ContentStoreServer::new(session_manager);
+        let server = ContentStoreServer::new("test-session".to_string(), session_manager);
         (server, temp_dir)
     }
     #[tokio::test]

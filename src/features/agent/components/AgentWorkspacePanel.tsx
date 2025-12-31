@@ -83,7 +83,7 @@ export function AgentWorkspacePanel() {
 
       try {
         logger.debug('Loading directory', { path, parentNodeId });
-        const files = await listWorkspaceFiles(path);
+        const files = await listWorkspaceFiles(path, currentSession?.id);
         logger.info('BACKEND RESPONSE', {
           path,
           fileCount: files.length,

@@ -417,6 +417,23 @@ echo "Available tools: python3, typescript/deno, shell commands"
         workspace_dir
     }
 
+    pub fn get_session_workspace_dir_by_id(&self, session_id: &str) -> PathBuf {
+        let workspace_dir = self.base_data_dir.join("workspaces").join(session_id);
+
+        // Ensure directory exists
+        if let Err(e) = fs::create_dir_all(&workspace_dir) {
+            warn!("Failed to create workspace directory {workspace_dir:?}: {e}");
+            // Fallback to default workspace
+            let default_dir = self.base_data_dir.join("workspaces").join("default");
+            if let Err(e) = fs::create_dir_all(&default_dir) {
+                error!("Failed to create default workspace: {e}");
+            }
+            return default_dir;
+        }
+
+        workspace_dir
+    }
+
     pub fn get_base_data_dir(&self) -> &PathBuf {
         &self.base_data_dir
     }

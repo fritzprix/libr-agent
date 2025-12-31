@@ -348,12 +348,16 @@ impl BuiltinServerRegistry {
 
         // Register built-in workspace server with SessionManager
         registry.register_server(Box::new(workspace::WorkspaceServer::new(
+            "default".to_string(),
             session_manager.clone(),
         )));
 
         // Register content-store server (native backend)
         registry.register_server(Box::new(
-            crate::mcp::builtin::content_store::ContentStoreServer::new(session_manager.clone()),
+            crate::mcp::builtin::content_store::ContentStoreServer::new(
+                "default".to_string(),
+                session_manager.clone(),
+            ),
         ));
 
         // Register MCP Manager server
@@ -380,12 +384,14 @@ impl BuiltinServerRegistry {
 
         // Register built-in workspace server with SessionManager
         registry.register_server(Box::new(workspace::WorkspaceServer::new(
+            "default".to_string(),
             session_manager.clone(),
         )));
 
         // Register content-store server with SQLite support
         let content_store_server =
             crate::mcp::builtin::content_store::ContentStoreServer::new_with_sqlite(
+                "default".to_string(),
                 session_manager.clone(),
                 sqlite_db_url,
             )
