@@ -77,6 +77,61 @@ pub async fn create_session(
     Ok(session)
 }
 
+/// Resume an existing session by loading it into active sessions
+#[allow(dead_code)]
+pub async fn resume_session(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    proxy_manager: &Arc<MCPServiceProxyManager>,
+    app_handle: &AppHandle,
+    session_id: &str,
+) -> Result<SessionMetadata, String> {
+    // Get session metadata from database
+    let session_repo = crate::state::get_session_repository();
+    let session = session_repo
+        .get_session(session_id)
+        .await
+        .map_err(|e| format!("Failed to get session: {}", e))?
+        .ok_or_else(|| format!("Session not found: {}", session_id))?;
+
+    // Deserialize agent config
+    let agent_config = if let Some(config_json) = &session.agent_config {
+        crate::agent::AgentConfig::from_json(config_json)?
+    } else {
+        return Err(format!("Session {} has no agent config", session_id));
+    };
+
+    // Extract builtin tool IDs from agent config
+    let tool_ids = crate::agent::tools::extract_builtin_tool_ids(&agent_config);
+
+    // Create proxy for this session
+    proxy_manager
+        .create_proxy(session_id.to_string(), tool_ids, Some(app_handle.clone()))
+        .await?;
+
+    log::info!(
+        "Created MCP proxy for resumed session: {} with builtin tools",
+        session_id
+    );
+
+    // Add to active sessions with cancellation token and empty cache
+    let mut active = active_sessions.write().await;
+    active.insert(
+        session_id.to_string(),
+        AgentSession {
+            metadata: session.clone(),
+            is_running: false,
+            cancellation_token: CancellationToken::new(),
+            pending_execution: None,
+            messages: Arc::new(RwLock::new(Vec::new())),
+            cache_initialized: Arc::new(AtomicBool::new(false)),
+            last_synced_at: Arc::new(RwLock::new(None)),
+        },
+    );
+
+    log::info!("Resumed agent session: {}", session_id);
+    Ok(session)
+}
+
 /// Update session status in database and emit event
 pub async fn update_session_status(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,

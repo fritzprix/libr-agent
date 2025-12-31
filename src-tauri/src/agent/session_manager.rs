@@ -60,6 +60,18 @@ impl AgentSessionManager {
         .await
     }
 
+    /// Resume an existing session by loading it into active sessions
+    #[allow(dead_code)]
+    pub async fn resume_session(&self, session_id: &str) -> Result<SessionMetadata, String> {
+        crate::agent::lifecycle::resume_session(
+            &self.active_sessions,
+            &self.proxy_manager,
+            &self.app_handle,
+            session_id,
+        )
+        .await
+    }
+
     /// Start an agent workflow for a session
     pub async fn start_workflow(
         &self,

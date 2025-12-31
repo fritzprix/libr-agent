@@ -45,6 +45,32 @@ pub async fn agent_create_session(
         .await
 }
 
+/// Resume an existing agent session
+#[command]
+#[allow(dead_code)]
+pub async fn agent_resume_session(
+    manager: State<'_, AgentSessionManager>,
+    session_id: String,
+) -> Result<SessionMetadata, String> {
+    manager.resume_session(&session_id).await
+}
+
+/// Initialize session with messages from database
+#[command]
+#[allow(dead_code)]
+pub async fn agent_init_session_with_messages(
+    manager: State<'_, AgentSessionManager>,
+    session_id: String,
+) -> Result<AgentResponse, String> {
+    manager.init_session_with_messages(&session_id).await?;
+
+    Ok(AgentResponse {
+        success: true,
+        message: format!("Session initialized with messages: {}", session_id),
+        data: None,
+    })
+}
+
 /// Send a user message to start an agent workflow
 #[command]
 pub async fn agent_send_message(

@@ -438,9 +438,15 @@ export function AgentSessionProvider({ children }: AgentSessionProviderProps) {
             : undefined,
         };
 
+        // Resume the session in Rust backend (add to active_sessions)
+        await invoke('agent_resume_session', { sessionId });
+
+        // Initialize session cache with messages in Rust
+        await invoke('agent_init_session_with_messages', { sessionId });
+
         setCurrentSession(session);
         setMessages([]); // Clear previous session messages to prevent stale data
-        await loadMessages(sessionId); // Load messages
+        await loadMessages(sessionId); // Load messages into TS state
         setIsSessionLoading(false);
 
         logger.info('Agent session resumed successfully', {
