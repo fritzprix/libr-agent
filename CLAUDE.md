@@ -326,6 +326,25 @@ The project uses a centralized logging system located at `src/lib/logger.ts` tha
 4. Results flow back through the same layers
 5. UI updates reflect the changes
 
+### Agent V2 Architecture
+
+The system implements a "Dual-Track" architecture to support advanced agentic workflows while maintaining legacy compatibility.
+
+1.  **Dual-Track System:**
+    - **Track 1 (Legacy):** Standard request/response chat handled by `ChatContext` (React).
+    - **Track 2 (Agent V2):** Autonomous, multi-turn workflows orchestrated entirely by the Rust backend.
+
+2.  **Rust-Based Orchestration:**
+    - **`AgentSessionManager`**: The central brain residing in Rust (`src-tauri/src/agent/`). It manages the "Think-Act-Observe" loop independently of the frontend.
+    - **Event-Driven:** Uses an event bus (`agent:event`) to push status updates and messages to the UI. The frontend (`AgentChatContext`) is purely reactive.
+
+3.  **Session Isolation:**
+    - **Session-Per-Proxy**: Each agent session gets its own isolated `MCPServiceProxy`.
+    - **Stateful Tools**: Built-in tools (e.g., Planning, Knowledge) are instantiated per-session, ensuring data isolation (e.g., unique Todo lists per agent).
+
+4.  **Service Context Pattern:**
+    - Tools can dynamically inject context (e.g., browser state, current time) into the system prompt via the `get_service_context` trait method.
+
 ## Dependencies
 
 ### Core Framework

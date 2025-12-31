@@ -102,9 +102,10 @@ pub fn run_with_sqlite_sync(db_url: String) {
                         }
                     }
 
-                    match std::fs::File::create(path) {
-                        Ok(_) => println!("✅ Created new SQLite DB file: {path}"),
-                        Err(err) => eprintln!("Failed to create SQLite DB file: {err}"),
+                    if let Err(err) = std::fs::File::create(path) {
+                        eprintln!("Failed to create SQLite DB file: {err}");
+                    } else {
+                        println!("✅ Created new SQLite DB file: {path}");
                     }
 
                     // Retry connection once
