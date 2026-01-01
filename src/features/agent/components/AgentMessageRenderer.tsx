@@ -158,7 +158,7 @@ export const AgentMessageRenderer: React.FC<AgentMessageRendererProps> = ({
             const { toolName, params = {} } = result.payload;
             logger.info('UI Action Tool Call Received', {
               sessionId,
-              result
+              result,
             });
 
             // prefix 기반 라우팅: tauri: 접두사가 있으면 내부 Tauri 명령어로 처리
