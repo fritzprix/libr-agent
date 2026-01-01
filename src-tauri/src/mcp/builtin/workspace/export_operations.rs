@@ -112,14 +112,16 @@ impl WorkspaceServer {
             html_content,
         );
 
-        let success_message = format!(
-            "✓ File '{}' exported successfully\n\nDownload link available below\n\n💡 Next: Use exportZip to export multiple files at once",
-            display_name
-        );
-
-        Ok(ui_resources::mcp_result_with_text_and_resource(
-            &success_message,
-            ui_resource,
+        Ok(crate::mcp::builtin::utils::create_resource_response(
+            ui_resource["uri"].as_str().unwrap(),
+            "text/html",
+            ui_resource["text"].as_str().unwrap(),
+            "workspace",
+            "exportFile",
+            Some(&format!(
+                "✓ File '{}' exported successfully\n\nDownload link available below\n\n💡 Next: Use exportZip to export multiple files at once",
+                display_name
+            )),
         ))
     }
 
@@ -283,15 +285,17 @@ impl WorkspaceServer {
             html_content,
         );
 
-        let success_message = format!(
-            "✓ ZIP package '{}' created successfully\n\nContains {} files\nDownload link available below\n\n💡 Next: Use exportFile to export individual files",
-            package_name,
-            processed_files.len()
-        );
-
-        Ok(ui_resources::mcp_result_with_text_and_resource(
-            &success_message,
-            ui_resource,
+        Ok(crate::mcp::builtin::utils::create_resource_response(
+            ui_resource["uri"].as_str().unwrap(),
+            "text/html",
+            ui_resource["text"].as_str().unwrap(),
+            "workspace",
+            "exportZip",
+            Some(&format!(
+                "✓ ZIP package '{}' created successfully\n\nContains {} files\nDownload link available below\n\n💡 Next: Use exportFile to export individual files",
+                package_name,
+                processed_files.len()
+            )),
         ))
     }
 

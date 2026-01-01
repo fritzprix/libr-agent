@@ -373,13 +373,13 @@ impl SuccessHint {
 
             // UI tools
             ("prompt_user", ToolGroup::UI) => {
-                vec!["Use reply_prompt to receive user response".to_string()]
+                vec!["Use getUserAnswer to receive user response".to_string()]
             }
             ("visualize_data", ToolGroup::UI) => {
                 vec!["Chart has been rendered and displayed to user".to_string()]
             }
             ("wait_for_user_resume", ToolGroup::UI) => {
-                vec!["Use resume_from_wait when user clicks continue".to_string()]
+                vec!["Use resumeFromWait when user clicks continue".to_string()]
             }
 
             // MCP Manager tools

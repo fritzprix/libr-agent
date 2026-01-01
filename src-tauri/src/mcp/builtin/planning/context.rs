@@ -126,8 +126,10 @@ pub async fn get_service_context(pool: &SqlitePool, session_id: &str) -> Service
 
                 let description = if let Some(desc) = &t.description {
                     if !desc.is_empty() {
-                        let truncated = if desc.len() > 80 {
-                            format!("{}...", &desc[0..80])
+                        let char_count = desc.chars().count();
+                        let truncated = if char_count > 80 {
+                            let s: String = desc.chars().take(80).collect();
+                            format!("{}...", s)
                         } else {
                             desc.clone()
                         };
@@ -175,6 +177,9 @@ pub async fn get_service_context(pool: &SqlitePool, session_id: &str) -> Service
                 ));
             }
         }
+    } else {
+        parts.push("\n**Todos:** 0 items".to_string());
+        parts.push("*Use 'addTodo' to break down your goal into actionable tasks.*".to_string());
     }
 
     // Scratchpad Section
@@ -211,15 +216,21 @@ pub async fn get_service_context(pool: &SqlitePool, session_id: &str) -> Service
             };
 
             let content_preview = if item.title.is_some() {
-                if item.content.len() > 50 {
-                    format!(" - {}...", &item.content[0..50])
+                let char_count = item.content.chars().count();
+                if char_count > 50 {
+                    let s: String = item.content.chars().take(50).collect();
+                    format!(" - {}...", s)
                 } else {
                     format!(" - {}", item.content)
                 }
-            } else if item.content.len() > 60 {
-                format!("{}...", &item.content[0..60])
             } else {
-                item.content.clone()
+                let char_count = item.content.chars().count();
+                if char_count > 60 {
+                    let s: String = item.content.chars().take(60).collect();
+                    format!("{}...", s)
+                } else {
+                    item.content.clone()
+                }
             };
 
             parts.push(format!(
@@ -238,6 +249,9 @@ pub async fn get_service_context(pool: &SqlitePool, session_id: &str) -> Service
                 scratchpad.len() - 5
             ));
         }
+    } else {
+        parts.push("\n**Scratchpad:** Empty".to_string());
+        parts.push("*Use 'addScratchpad' to save important findings, IDs, or file paths for later reference.*".to_string());
     }
 
     let structured_state = json!({
@@ -254,4 +268,38 @@ pub async fn get_service_context(pool: &SqlitePool, session_id: &str) -> Service
         context_prompt: parts.join("\n"),
         structured_state: Some(structured_state),
     }
+}
+
+pub async fn get_planning_summary(pool: &SqlitePool, session_id: &str) -> String {
+    let goal: Option<String> = sqlx::query_scalar(
+        "SELECT goal_text FROM planning_goals WHERE session_id = ? AND status = 'active' LIMIT 1",
+    )
+    .bind(session_id)
+    .fetch_optional(pool)
+    .await
+    .unwrap_or(None);
+
+    let counts: Option<(i64, i64)> = sqlx::query_as(
+        r#"
+        SELECT 
+            COUNT(*) as total,
+            SUM(CASE WHEN is_checked = 0 THEN 1 ELSE 0 END) as unchecked
+        FROM planning_todos 
+        WHERE session_id = ?
+        "#,
+    )
+    .bind(session_id)
+    .fetch_optional(pool)
+    .await
+    .unwrap_or(None);
+
+    let (total, unchecked) = counts.unwrap_or((0, 0));
+    let checked = total - unchecked;
+
+    let goal_text = goal.unwrap_or_else(|| "No active goal".to_string());
+
+    format!(
+        "\n\nGoal: \"{}\"\n\nCurrent progress:\n  - Total: {} todos\n  - Unchecked: {}\n  - Checked: {}",
+        goal_text, total, unchecked, checked
+    )
 }

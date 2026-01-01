@@ -1,7 +1,8 @@
 use crate::agent::state::{AgentSession, MAX_CACHED_MESSAGES};
-use crate::agent::types::{MCPContent, ToolCall};
+use crate::agent::types::ToolCall;
 use crate::commands::messages_commands::Message;
 use crate::mcp::service_proxy::MCPServiceProxy;
+use crate::mcp::types::MCPContent;
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::message_repository::MessageRepository as MessageRepositoryTrait;
 use crate::repositories::SessionStatus;
@@ -217,10 +218,83 @@ pub async fn handle_llm_response(
         for tool_call in tool_calls {
             let tool_name = tool_call.function.name.clone();
 
+            // [Circuit Breaker] Stateless check for tool loops in message history
+            let mut is_looping = false;
+            let mut repetition_count = 0;
+
+            // Check previous messages for identical tool calls
+            {
+                let sessions = active_sessions.read().await;
+                if let Some(session) = sessions.get(&session_id) {
+                    let messages = session.messages.read().await;
+
+                    // Look backwards from the end of message history
+                    // We want to count how many times this EXACT tool call (name + args) has happened consecutively
+                    let current_signature =
+                        format!("{}:{}", tool_name, tool_call.function.arguments);
+
+                    for msg in messages.iter().rev() {
+                        if let Some(tool_calls) = &msg.tool_calls {
+                            let mut found_in_msg = false;
+                            for tc in tool_calls {
+                                let sig = format!("{}:{}", tc.function.name, tc.function.arguments);
+                                if sig == current_signature {
+                                    repetition_count += 1;
+                                    found_in_msg = true;
+                                    break; // Only count once per message to avoid double counting parallel calls if they are identical
+                                }
+                            }
+
+                            if !found_in_msg {
+                                // Break sequence if we encounter a message without this tool call
+                                // unless it's a tool result
+                                if msg.role != "tool" {
+                                    break;
+                                }
+                            }
+                        } else if msg.role != "tool" {
+                            // Non-tool message (e.g. user or assistant text) breaks the chain
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Threshold for circuit breaking (e.g., 3 repetitions)
+            if repetition_count >= 3 {
+                is_looping = true;
+                log::warn!(
+                    "Circuit breaker triggered for session {} tool {} (count {})",
+                    session_id,
+                    tool_name,
+                    repetition_count
+                );
+            }
+
+            let effective_tool_name = if is_looping {
+                "builtin_ui__circuit_break".to_string()
+            } else {
+                tool_name.clone()
+            };
+
+            let effective_tool_call = if is_looping {
+                let mut tc = tool_call.clone();
+                tc.function.name = effective_tool_name.clone();
+                tc.function.arguments = serde_json::json!({
+                    "toolName": tool_name,
+                    "repetitionCount": repetition_count,
+                    "args": tool_call.function.arguments
+                })
+                .to_string();
+                tc
+            } else {
+                tool_call.clone()
+            };
+
             // Emit ToolExecutionStarted
             let event = crate::agent::events::AgentEvent::ToolExecutionStarted {
                 session_id: session_id.clone(),
-                tool_name: tool_name.clone(),
+                tool_name: effective_tool_name.clone(),
             };
             crate::agent::events::emit_agent_event(app_handle, event)
                 .map_err(|e| format!("Failed to emit tool execution started event: {}", e))?;
@@ -230,8 +304,8 @@ pub async fn handle_llm_response(
             let app_handle_clone = app_handle.clone();
             let proxy_manager_clone = proxy_manager.clone();
             let session_id_clone = session_id.clone();
-            let tool_call_clone = tool_call.clone();
-            let tool_name_owned = tool_name.clone();
+            let tool_call_clone = effective_tool_call;
+            let tool_name_owned = effective_tool_name;
 
             tokio::spawn(async move {
                 let tool_call_id = tool_call_clone.id;

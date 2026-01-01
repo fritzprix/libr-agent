@@ -1,4 +1,5 @@
-use crate::agent::types::{MCPContent, ToolCall};
+use crate::agent::types::ToolCall;
+use crate::mcp::types::MCPContent;
 use crate::repositories::MessageRepository;
 use crate::search::index_storage::{get_index_path, write_index_atomic, IndexData, IndexMetadata};
 use crate::search::message_index::{MessageDocument, MessageSearchEngine, SearchResult};

@@ -2,6 +2,7 @@ use crate::mcp::builtin::error_guidance::{
     duplicate_error, invalid_input_error, missing_param_error, not_found_error, ErrorCategory,
     ErrorGuidance, SuccessHint, ToolGroup,
 };
+use crate::mcp::builtin::planning::context::get_planning_summary;
 use crate::mcp::types::MCPResult;
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
@@ -237,9 +238,10 @@ pub async fn add_todo(
             }
 
             let response_id = cuid2::create_id();
+            let summary_text = get_planning_summary(pool, session_id).await;
             let hint = SuccessHint::new(
-                format!("Todo added with ID {}: {}", id, title),
-                SuccessHint::for_tool("addTodo", ToolGroup::Planning),
+                format!("Todo added with ID {}: {}{}", id, title, summary_text),
+                vec!["Use checkTodo when this task is done".to_string()],
             );
             Ok(hint.to_mcp_result_with_data(Some(json!({
                 "id": response_id,
@@ -369,9 +371,39 @@ pub async fn check_todo(
             } else {
                 String::new()
             };
+            let state_summary = get_planning_summary(pool, session_id).await;
+
+            let next_todos: Vec<(i64, String)> = sqlx::query_as(
+                "SELECT id, content FROM planning_todos WHERE session_id = ? AND is_checked = 0 ORDER BY id ASC LIMIT 3"
+            )
+            .bind(session_id)
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
+
+            let next_actions = if next_todos.is_empty() {
+                vec!["All todos checked! Use 'critiqueAndReflection' to review work, or 'createGoal' to start a new objective.".to_string()]
+            } else {
+                let mut actions = Vec::new();
+                for (id, content) in next_todos {
+                    // Truncate content if too long (safe unicode handling)
+                    let safe_content = if content.chars().count() > 40 {
+                        let truncated: String = content.chars().take(40).collect();
+                        format!("{}...", truncated)
+                    } else {
+                        content
+                    };
+                    actions.push(format!("Process next: \"{}\" (ID: {})", safe_content, id));
+                }
+                actions
+            };
+
             let hint = SuccessHint::new(
-                format!("Todo {} (ID: {}){}", action, target_id, summary_text),
-                SuccessHint::for_tool("checkTodo", ToolGroup::Planning),
+                format!(
+                    "Todo {} (ID: {}){}{}",
+                    action, target_id, summary_text, state_summary
+                ),
+                next_actions,
             );
             Ok(hint.to_mcp_result_with_data(Some(json!({
                 "id": response_id,
@@ -412,10 +444,14 @@ pub async fn clear_todos(
             .await;
 
         return match result {
-            Ok(r) => Ok(MCPResult::success(&format!(
-                "✓ Cleared {} todos",
-                r.rows_affected()
-            ))),
+            Ok(r) => {
+                let summary_text = get_planning_summary(pool, session_id).await;
+                let hint = SuccessHint::new(
+                    format!("✓ Cleared {} todos{}", r.rows_affected(), summary_text),
+                    vec!["Use 'addTodo' to replan, or 'updateGoal'/'createGoal' to refine objectives".to_string()],
+                );
+                Ok(hint.to_mcp_result())
+            }
             Err(e) => Ok(MCPResult::error(&format!("Failed to clear todos: {}", e))),
         };
     }
@@ -487,10 +523,39 @@ pub async fn clear_todos(
     let result = query_builder.execute(pool).await;
 
     match result {
-        Ok(r) => Ok(MCPResult::success(&format!(
-            "✓ Cleared {} todos",
-            r.rows_affected()
-        ))),
+        Ok(r) => {
+            let summary_text = get_planning_summary(pool, session_id).await;
+
+            let next_todos: Vec<(i64, String)> = sqlx::query_as(
+                "SELECT id, content FROM planning_todos WHERE session_id = ? AND is_checked = 0 ORDER BY id ASC LIMIT 3"
+            )
+            .bind(session_id)
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
+
+            let next_actions = if next_todos.is_empty() {
+                vec!["All todos cleared/checked! Use 'critiqueAndReflection' to review work, or 'createGoal' to start a new objective.".to_string()]
+            } else {
+                let mut actions = Vec::new();
+                for (id, content) in next_todos {
+                    let safe_content = if content.chars().count() > 40 {
+                        let truncated: String = content.chars().take(40).collect();
+                        format!("{}...", truncated)
+                    } else {
+                        content
+                    };
+                    actions.push(format!("Process next: \"{}\" (ID: {})", safe_content, id));
+                }
+                actions
+            };
+
+            let hint = SuccessHint::new(
+                format!("✓ Cleared {} todos{}", r.rows_affected(), summary_text),
+                next_actions,
+            );
+            Ok(hint.to_mcp_result())
+        }
         Err(e) => Ok(MCPResult::error(&format!("Failed to clear todos: {}", e))),
     }
 }

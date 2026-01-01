@@ -147,7 +147,7 @@ impl MessageRepository for SqliteMessageRepository {
             .map(|row| {
                 // Deserialize JSON strings from DB into structured types
                 let content_str: String = row.get("content");
-                let content: Vec<crate::agent::types::MCPContent> =
+                let content: Vec<crate::mcp::types::MCPContent> =
                     serde_json::from_str(&content_str).unwrap_or_default();
 
                 let tool_calls: Option<Vec<crate::agent::types::ToolCall>> = row

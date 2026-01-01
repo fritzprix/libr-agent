@@ -130,11 +130,15 @@ impl WorkspaceServer {
         });
 
         // Return response with text and resource
-        Ok(super::super::ui_resources::mcp_result_with_text_and_resource(
-            &format!(
+        Ok(crate::mcp::builtin::utils::create_resource_response(
+            &format!("ui://shell-input/{}", execution_id),
+            "text/html",
+            &html,
+            "workspace",
+            "executeShell",
+            Some(&format!(
                 "⏳ Waiting for user input\nExecution ID: {execution_id}\nCommand: {sanitized_command}"
-            ),
-            ui_resource,
+            )),
         ))
     }
 

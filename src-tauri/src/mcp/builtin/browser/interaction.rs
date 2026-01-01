@@ -26,15 +26,41 @@ pub async fn click_element(server: &BrowserServer, args: Value) -> Result<MCPRes
 
     let script = get_click_script(selector);
     let result = match service.execute_script(session_id, &script).await {
-        Ok(res) => res,
+        Ok(res) => {
+            if res.contains("Element not found") {
+                return Ok(operation_failed_error(
+                    "Click element",
+                    &format!("Element with selector '{}' not found", selector),
+                    vec![
+                        "Verify the selector is correct CSS syntax".to_string(),
+                        "The element might be lazy-loaded. Use `scrollPage` to load more content down the page.".to_string(),
+                        "Use listInteractable to find valid selectors".to_string(),
+                    ],
+                    ToolGroup::Browser,
+                ));
+            }
+            if res.contains("Element not visible") {
+                return Ok(operation_failed_error(
+                    "Click element",
+                    &format!("Element with selector '{}' is not visible", selector),
+                    vec![
+                        "The element exists but is hidden. Use `extractWebContent` to analyze the page structure and find a parent container or toggle button.".to_string(),
+                        "The element might be lazy-loaded or off-screen. Use `scrollPage` to potentially trigger its visibility.".to_string(),
+                        "Use `listInteractable` to find visible elements that might reveal this target.".to_string(),
+                    ],
+                    ToolGroup::Browser,
+                ));
+            }
+            res
+        }
         Err(e) => {
             return Ok(operation_failed_error(
                 "Click element",
                 &e,
                 vec![
                     "Verify the selector is correct CSS syntax".to_string(),
+                    "Try using scrollPage to reveal lazy-loaded elements".to_string(),
                     "Use listInteractable to find valid selectors".to_string(),
-                    "Ensure the element is visible and interactable".to_string(),
                 ],
                 ToolGroup::Browser,
             ))
@@ -77,28 +103,58 @@ pub async fn input_text(server: &BrowserServer, args: Value) -> Result<MCPResult
     let script = format!(
         r#"(function() {{
             const el = document.querySelector({});
-            if (el) {{
-                el.value = {};
-                el.dispatchEvent(new Event('input', {{bubbles: true}}));
-                el.dispatchEvent(new Event('change', {{bubbles: true}}));
-                return 'Input successful';
+            if (!el) return 'Element not found';
+            
+            const style = window.getComputedStyle(el);
+            if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {{
+                return 'Element not visible';
             }}
-            return 'Element not found';
+
+            el.value = {};
+            el.dispatchEvent(new Event('input', {{bubbles: true}}));
+            el.dispatchEvent(new Event('change', {{bubbles: true}}));
+            return 'Input successful';
         }})()"#,
         serde_json::to_string(selector).unwrap(),
         serde_json::to_string(text).unwrap()
     );
 
     let result = match service.execute_script(session_id, &script).await {
-        Ok(res) => res,
+        Ok(res) => {
+            if res.contains("Element not found") {
+                return Ok(operation_failed_error(
+                    "Input text",
+                    &format!("Element with selector '{}' not found", selector),
+                    vec![
+                        "Verify the selector targets an input/textarea element".to_string(),
+                        "The element might be lazy-loaded. Use `scrollPage` to load more content down the page.".to_string(),
+                        "Use listInteractable to find valid selectors".to_string(),
+                    ],
+                    ToolGroup::Browser,
+                ));
+            }
+            if res.contains("Element not visible") {
+                return Ok(operation_failed_error(
+                    "Input text",
+                    &format!("Element with selector '{}' is not visible", selector),
+                    vec![
+                        "The input is hidden. Use `extractWebContent` to find the form section or toggle that contains it.".to_string(),
+                        "The element might be lazy-loaded or off-screen. Use `scrollPage` to potentially trigger its visibility.".to_string(),
+                        "Use `clickElement` on the parent container or toggle to reveal the input.".to_string(),
+                    ],
+                    ToolGroup::Browser,
+                ));
+            }
+            res
+        }
         Err(e) => {
             return Ok(operation_failed_error(
                 "Input text",
                 &e,
                 vec![
                     "Verify the selector targets an input/textarea element".to_string(),
+                    "Try using scrollPage to reveal lazy-loaded elements".to_string(),
                     "Use listInteractable with filterType='semantic_input'".to_string(),
-                    "Check the element is not disabled or readonly".to_string(),
                 ],
                 ToolGroup::Browser,
             ))
@@ -149,8 +205,8 @@ pub async fn scroll_page(server: &BrowserServer, args: Value) -> Result<MCPResul
     let hint = SuccessHint::new(
         result,
         vec![
-            "Use listInteractable to see newly visible elements".to_string(),
-            "Use extractWebContent to see content after scroll".to_string(),
+            "Use `listInteractable` to find elements in the new viewport position.".to_string(),
+            "If the page uses lazy loading (infinite scroll), use `extractWebContent` to capture newly loaded content.".to_string(),
         ],
     );
     Ok(hint.to_mcp_result())
@@ -221,8 +277,11 @@ pub async fn list_interactable(server: &BrowserServer, args: Value) -> Result<MC
     let hint = SuccessHint::new(
         formatted_text,
         vec![
-            "Use clickElement with the selector or index".to_string(),
-            "Use extractWebContent to see full page content".to_string(),
+            "Use `clickElement` with the selector or index.".to_string(),
+            "If the target is off-screen, use `scrollPage` to bring it into the viewport."
+                .to_string(),
+            "Use `extractWebContent` to see the full page structure regardless of scroll position."
+                .to_string(),
         ],
     );
     Ok(hint.to_mcp_result())
@@ -267,13 +326,17 @@ fn get_click_script(selector: &str) -> String {
     format!(
         r#"(function() {{
             const el = document.querySelector({});
-            if (el) {{
-                el.scrollIntoView({{block: 'center'}});
-                el.focus();
-                el.click();
-                return 'Clicked element';
+            if (!el) return 'Element not found';
+            
+            const style = window.getComputedStyle(el);
+            if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {{
+                return 'Element not visible';
             }}
-            return 'Element not found';
+
+            el.scrollIntoView({{block: 'center'}});
+            el.focus();
+            el.click();
+            return 'Clicked element';
         }})()"#,
         serde_json::to_string(selector).unwrap()
     )

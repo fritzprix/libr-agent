@@ -14,28 +14,6 @@ pub struct ToolCallFunction {
     pub arguments: String, // JSON string
 }
 
-/// Explicit content type for MCP messages
-/// Matches MCP spec (text, image, resource)
-#[derive(Debug, Deserialize, Serialize, Clone)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum MCPContent {
-    Text {
-        text: String,
-    },
-    Image {
-        data: String,
-        #[serde(rename = "mimeType")]
-        mime_type: String,
-    },
-    Resource {
-        uri: String,
-        #[serde(rename = "mimeType")]
-        mime_type: Option<String>,
-        text: Option<String>,
-        blob: Option<String>,
-    },
-}
-
 /// AgentMessageDto is now deprecated - use Message directly.
 /// Message now has structured types matching TypeScript,
 /// with JSON conversion handled only in Repository layer.

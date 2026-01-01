@@ -1,6 +1,6 @@
 use crate::agent::state::AgentSession;
-use crate::agent::types::MCPContent;
 use crate::commands::messages_commands::Message;
+use crate::mcp::types::MCPContent;
 use crate::mcp::MCPServiceProxyManager;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -202,41 +202,9 @@ pub fn create_error_tool_result(
 /// Convert MCP response result to agent MCPContent
 pub fn convert_mcp_response_content(
     result: Option<crate::mcp::types::MCPResponseResult>,
-) -> Option<Vec<crate::agent::types::MCPContent>> {
+) -> Option<Vec<crate::mcp::types::MCPContent>> {
     match result {
-        Some(crate::mcp::types::MCPResponseResult::ToolCall(tool_result)) => {
-            if let Some(content) = tool_result.content {
-                let converted: Vec<crate::agent::types::MCPContent> = content
-                    .into_iter()
-                    .map(|c| match c {
-                        crate::mcp::types::MCPContent::Text { text } => {
-                            crate::agent::types::MCPContent::Text { text }
-                        }
-                        crate::mcp::types::MCPContent::Resource { resource } => {
-                            crate::agent::types::MCPContent::Resource {
-                                uri: resource
-                                    .get("uri")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string(),
-                                mime_type: resource
-                                    .get("mimeType")
-                                    .and_then(|v| v.as_str())
-                                    .map(|s| s.to_string()),
-                                text: None,
-                                blob: None,
-                            }
-                        }
-                        crate::mcp::types::MCPContent::Image { data, mime_type } => {
-                            crate::agent::types::MCPContent::Image { data, mime_type }
-                        }
-                    })
-                    .collect();
-                Some(converted)
-            } else {
-                None
-            }
-        }
+        Some(crate::mcp::types::MCPResponseResult::ToolCall(tool_result)) => tool_result.content,
         _ => None,
     }
 }

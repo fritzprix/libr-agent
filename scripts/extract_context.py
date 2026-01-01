@@ -51,13 +51,13 @@ def find_match_ranges(lines: List[str], pattern: str, context: int, use_regex: b
     return merged
 
 
-def print_ranges(lines: List[str], ranges: List[Tuple[int,int]]):
+def print_ranges(lines: List[str], ranges: List[Tuple[int,int]], file=sys.stdout):
     for idx, (s, e) in enumerate(ranges, start=1):
-        print(f"=== Match {idx}: lines {s+1}-{e+1} ===")
+        print(f"=== Match {idx}: lines {s+1}-{e+1} ===", file=file)
         for i in range(s, e+1):
             # show line numbers
-            print(f"{i+1:6d}: {lines[i].rstrip()}")
-        print()
+            print(f"{i+1:6d}: {lines[i].rstrip()}", file=file)
+        print(file=file)
 
 
 def main():
@@ -66,6 +66,7 @@ def main():
     p.add_argument("-p", "--pattern", default="[ERROR]", help="Substring or regex to match (default: '[ERROR]')")
     p.add_argument("-c", "--context", type=int, default=5, help="Number of context lines before and after each match (default: 5)")
     p.add_argument("-r", "--regex", action="store_true", help="Treat pattern as a regular expression")
+    p.add_argument("-o", "--output", help="Output file path (default: stdout)")
     args = p.parse_args()
 
     try:
@@ -76,10 +77,22 @@ def main():
         sys.exit(2)
 
     ranges = find_match_ranges(lines, args.pattern, args.context, args.regex)
-    if not ranges:
-        print("No matches found.")
-        return
-    print_ranges(lines, ranges)
+    
+    if args.output:
+        try:
+            with open(args.output, "w", encoding="utf-8") as out_f:
+                if not ranges:
+                    print("No matches found.", file=out_f)
+                else:
+                    print_ranges(lines, ranges, file=out_f)
+        except Exception as e:
+            print(f"Error writing to output file: {e}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        if not ranges:
+            print("No matches found.")
+        else:
+            print_ranges(lines, ranges)
 
 
 if __name__ == "__main__":

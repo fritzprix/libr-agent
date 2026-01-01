@@ -141,8 +141,9 @@ pub async fn list_scratchpad(
         for item in &paged_items {
             let id = item.id;
             let title = item.title.clone().unwrap_or_else(|| "Untitled".to_string());
-            let preview = if item.content.len() > 200 {
-                format!("{}...", &item.content[..200].replace('\n', " "))
+            let preview = if item.content.chars().count() > 200 {
+                let truncated: String = item.content.chars().take(200).collect();
+                format!("{}...", truncated.replace('\n', " "))
             } else {
                 item.content.replace('\n', " ")
             };
@@ -171,7 +172,12 @@ pub async fn list_scratchpad(
         json!({
             "id": item.id,
             "title": item.title,
-            "preview": if item.content.len() > 200 { format!("{}...", &item.content[..200]) } else { item.content.clone() },
+            "preview": if item.content.chars().count() > 200 { 
+                let truncated: String = item.content.chars().take(200).collect();
+                format!("{}...", truncated) 
+            } else {
+                item.content.clone()
+            },
             "tags": item.tags.clone().and_then(|t| serde_json::from_str::<Vec<String>>(&t).ok()),
             "created_at": item.created_at
         })
@@ -284,23 +290,51 @@ pub async fn clear_scratchpad(
 /// Pause and think (Legacy: pauseAndThink)
 pub async fn pause_and_think(args: Value) -> Result<MCPResult, String> {
     let thought = args.get("thought").and_then(|v| v.as_str()).unwrap_or("");
+    let next_action = args.get("nextAction").and_then(|v| v.as_str());
+
     let response_id = cuid2::create_id();
-    // Ephemeral, just echo back
+
+    let mut message = format!("## Thinking Process\n\n**Thought:**\n{}\n", thought);
+
+    if let Some(action) = next_action {
+        message.push_str(&format!("\n**Next Action:**\n{}", action));
+    }
+
     Ok(MCPResult::success_with_data(
-        "✓ Thought recorded",
+        &message,
         json!({
             "id": response_id,
-            "thought": thought
+            "thought": thought,
+            "nextAction": next_action
         }),
     ))
 }
 
 /// Critique and reflection (Legacy: critiqueAndReflection)
+/// Critique and reflection (Legacy: critiqueAndReflection)
 pub async fn critique_and_reflection(args: Value) -> Result<MCPResult, String> {
+    let critique = args
+        .get("critique")
+        .and_then(|v| v.as_str())
+        .ok_or("Missing 'critique'")?;
+    let reflection = args
+        .get("reflection")
+        .and_then(|v| v.as_str())
+        .ok_or("Missing 'reflection'")?;
+    let next_action = args
+        .get("nextAction")
+        .and_then(|v| v.as_str())
+        .ok_or("Missing 'nextAction'")?;
+
     let response_id = cuid2::create_id();
-    // Ephemeral, just echo back
+
+    let message = format!(
+        "## Reflection & Critique Analysis\n\n**Critique:**\n{}\n\n**Reflection:**\n{}\n\n**Next Action:**\n{}\n\n> Based on this reflection, please proceed with the \"Next Action\" carefully. Do not repeat this reflection unless new information surfaces.",
+        critique, reflection, next_action
+    );
+
     Ok(MCPResult::success_with_data(
-        "✓ Reflection recorded",
+        &message,
         json!({
             "id": response_id,
             "args": args

@@ -79,6 +79,8 @@ export async function listAllToolsUnified(): Promise<MCPTool[]> {
 /**
  * Calls a tool from any available source using a unified interface.
  * The backend will resolve the correct server and tool to call.
+ * @deprecated Use `agentCallTool` or `handleUserToolCall` for session-aware execution.
+ * Only use this for legacy non-session contexts.
  * @param serverName The name of the server providing the tool.
  * @param toolName The name of the tool to call.
  * @param args The arguments to pass to the tool.

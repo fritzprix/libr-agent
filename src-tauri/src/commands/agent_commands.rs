@@ -193,7 +193,7 @@ pub async fn agent_terminate_workflow(
 pub struct ToolExecutionResult {
     pub success: bool,
     pub content: String,
-    pub mcp_content: Option<Vec<crate::agent::types::MCPContent>>,
+    pub mcp_content: Option<Vec<crate::mcp::types::MCPContent>>,
     pub error: Option<String>,
     pub is_error: bool,
 }

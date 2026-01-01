@@ -1,3 +1,4 @@
+use crate::mcp::builtin::planning::context::get_planning_summary;
 use crate::mcp::types::MCPResult;
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
@@ -43,8 +44,12 @@ pub async fn create_goal(
         Ok(query_result) => {
             let id = query_result.last_insert_rowid();
             let response_id = cuid2::create_id();
+            // Since we just created a goal, we know the goal text.
+            // We can fetch summary to get todo counts.
+            let summary = get_planning_summary(pool, session_id).await;
+
             Ok(MCPResult::success_with_data(
-                &format!("✓ Goal created: {}\n\nNow break this down into actionable tasks using addTodo.", goal),
+                &format!("✓ Goal created: {}{}\n\nNow break this down into actionable tasks using addTodo.", goal, summary),
                 json!({
                     "id": response_id,
                     "success": true,
@@ -86,8 +91,9 @@ pub async fn update_goal(
         Ok(query_result) => {
             if query_result.rows_affected() > 0 {
                 let response_id = cuid2::create_id();
+                let summary = get_planning_summary(pool, session_id).await;
                 Ok(MCPResult::success_with_data(
-                    &format!("✓ Goal updated: {}", goal),
+                    &format!("✓ Goal updated: {}{}", goal, summary),
                     json!({
                         "id": response_id,
                         "success": true,

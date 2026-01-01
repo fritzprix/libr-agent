@@ -116,7 +116,11 @@ async fn test_playbook_ui_rendering_integration() {
     }
 
     // Verify UI resource content
-    if let MCPContent::Resource { resource } = &content[1] {
+    if let MCPContent::Resource {
+        resource,
+        service_info: _,
+    } = &content[1]
+    {
         let uri = resource["uri"].as_str().unwrap();
         assert!(uri.contains("ui://playbook/list/integration-test"));
 
@@ -201,7 +205,11 @@ async fn test_playbook_ui_interaction_flow() {
         .expect("Failed to list empty playbooks");
 
     let content = empty_list.content.unwrap();
-    if let MCPContent::Resource { resource } = &content[1] {
+    if let MCPContent::Resource {
+        resource,
+        service_info: _,
+    } = &content[1]
+    {
         let html = resource["text"].as_str().unwrap();
         assert!(html.contains("No playbooks found"));
         assert!(html.contains("Create your first playbook"));
@@ -247,7 +255,11 @@ async fn test_playbook_ui_interaction_flow() {
         .expect("Failed to list playbooks");
 
     let content = list_with_data.content.unwrap();
-    if let MCPContent::Resource { resource } = &content[1] {
+    if let MCPContent::Resource {
+        resource,
+        service_info: _,
+    } = &content[1]
+    {
         let html = resource["text"].as_str().unwrap();
         assert!(html.contains("Test Flow"));
         assert!(html.contains(&playbook_id));

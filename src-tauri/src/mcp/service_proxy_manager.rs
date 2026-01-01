@@ -339,10 +339,22 @@ impl MCPServiceProxyManager {
     ) -> Result<MCPResponse, String> {
         // Builtin tools route through proxy
         if tool_name.starts_with("builtin_") {
-            let proxy = self
-                .get_proxy(session_id)
-                .await
-                .ok_or_else(|| format!("No proxy found for session: {}", session_id))?;
+            let proxy = self.get_proxy(session_id).await.ok_or_else(|| {
+                let active_sessions = futures::executor::block_on(async {
+                    self.proxies
+                        .read()
+                        .await
+                        .keys()
+                        .cloned()
+                        .collect::<Vec<_>>()
+                });
+                log::error!(
+                    "No proxy found for session: {}. Active sessions: {:?}",
+                    session_id,
+                    active_sessions
+                );
+                format!("Session context not found or expired (ID: {})", session_id)
+            })?;
             return proxy.call_tool(tool_name, args).await;
         }
 

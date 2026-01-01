@@ -260,6 +260,11 @@ pub async fn list_playbooks(
                         "mimeType": "text/html",
                         "text": html
                     }),
+                    service_info: crate::mcp::types::ServiceInfo {
+                        server_name: "playbook".to_string(),
+                        tool_name: tool_name.to_string(),
+                        backend_type: "BuiltInRust".to_string(),
+                    },
                 },
             ]),
             structured_content: Some(structured),
