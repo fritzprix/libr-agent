@@ -345,14 +345,14 @@ pub fn create_resource_response(
     };
 
     let mut content = Vec::new();
-    
+
     // Add text message if provided (for workspace tools)
     if let Some(msg) = message {
         content.push(MCPContent::Text {
             text: msg.to_string(),
         });
     }
-    
+
     // Add resource content
     content.push(MCPContent::Resource {
         resource: json!({

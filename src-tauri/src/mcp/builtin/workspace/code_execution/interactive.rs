@@ -118,7 +118,7 @@ impl WorkspaceServer {
         let html = self.build_shell_input_ui(&execution_id, prompt, input_type, &encryption_nonce);
 
         // Create UI resource JSON
-        let ui_resource = serde_json::json!({
+        let _ui_resource = serde_json::json!({
             "uri": format!("ui://shell-input/{}", execution_id),
             "mimeType": "text/html",
             "text": html,

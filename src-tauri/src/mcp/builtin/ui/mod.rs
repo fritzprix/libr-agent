@@ -112,8 +112,8 @@ impl UiServer {
                     .collect();
 
                 // Serialize to JSON string for JavaScript consumption
-                let options_json = serde_json::to_string(&options)
-                    .unwrap_or_else(|_| "[]".to_string());
+                let options_json =
+                    serde_json::to_string(&options).unwrap_or_else(|_| "[]".to_string());
 
                 // Insert as string so Handlebars renders it as valid JavaScript array literal
                 data.as_object_mut()
@@ -415,7 +415,9 @@ impl UiServer {
                     "text/html",
                     &html,
                     "ui",
-                    "visualizeData",                    None,                ))
+                    "visualizeData",
+                    None,
+                ))
             }
             "line" => {
                 let step_x = available_width / (parsed_data.len() - 1).max(1) as f64;
@@ -482,7 +484,9 @@ impl UiServer {
                     "text/html",
                     &html,
                     "ui",
-                    "visualizeData",                    None,                ))
+                    "visualizeData",
+                    None,
+                ))
             }
             _ => Ok(invalid_input_error(
                 &format!("Invalid type '{}'. Must be one of: bar, line", type_),
