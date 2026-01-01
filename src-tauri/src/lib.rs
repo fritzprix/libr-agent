@@ -14,9 +14,11 @@ mod session_isolation;
 mod state;
 
 use commands::agent_commands::{
-    agent_call_builtin_tool, agent_create_session, agent_get_all_sessions, agent_get_session,
-    agent_handle_llm_error, agent_handle_llm_response, agent_handle_tool_result,
-    agent_pause_workflow, agent_resume_workflow, agent_send_message, agent_terminate_workflow,
+    agent_call_builtin_tool, agent_create_session, agent_delete_session, agent_get_all_sessions,
+    agent_get_service_contexts, agent_get_session, agent_handle_llm_error,
+    agent_handle_llm_response, agent_handle_tool_result, agent_init_session_with_messages,
+    agent_pause_workflow, agent_resume_session, agent_resume_workflow, agent_send_message,
+    agent_terminate_workflow,
 };
 use commands::browser_commands::*;
 use commands::content_store_commands::delete_content_store;
@@ -46,7 +48,7 @@ use commands::workspace_commands::{
     get_app_data_dir, get_app_logs_dir, greet, list_workspace_files,
 };
 use mcp::MCPServerManager;
-use services::{agent_server, InteractiveBrowserServer, SecureFileManager};
+use services::{InteractiveBrowserServer, SecureFileManager};
 use session::get_session_manager;
 
 // Re-export state management functions
@@ -101,9 +103,10 @@ pub fn run_with_sqlite_sync(db_url: String) {
                         }
                     }
 
-                    match std::fs::File::create(path) {
-                        Ok(_) => println!("✅ Created new SQLite DB file: {path}"),
-                        Err(err) => eprintln!("Failed to create SQLite DB file: {err}"),
+                    if let Err(err) = std::fs::File::create(path) {
+                        eprintln!("Failed to create SQLite DB file: {err}");
+                    } else {
+                        println!("✅ Created new SQLite DB file: {path}");
                     }
 
                     // Retry connection once
@@ -225,7 +228,7 @@ pub fn run() {
                         }),
                         Target::new(TargetKind::Webview),
                     ])
-                    .level(log::LevelFilter::Trace)
+                    .level(log::LevelFilter::Info)
                     .build(),
             )
             .plugin(tauri_plugin_opener::init())
@@ -249,8 +252,7 @@ pub fn run() {
                 list_builtin_servers_with_metadata,
                 call_builtin_tool,
                 list_all_tools_unified,
-                agent_server::agent_start,
-                agent_server::agent_llm_response,
+                list_all_tools_unified,
                 // Download commands
                 download_workspace_file,
                 export_and_download_zip,
@@ -308,16 +310,20 @@ pub fn run() {
                 messages_search,
                 // Agent workflow commands
                 agent_create_session,
+                agent_resume_session,
+                agent_init_session_with_messages,
                 agent_send_message,
                 agent_handle_llm_response,
                 agent_handle_llm_error,
                 agent_handle_tool_result,
                 agent_get_session,
                 agent_get_all_sessions,
+                agent_delete_session,
                 agent_pause_workflow,
                 agent_resume_workflow,
                 agent_terminate_workflow,
-                agent_call_builtin_tool
+                agent_call_builtin_tool,
+                agent_get_service_contexts
             ])
             .setup(|app| {
                 println!("🚀 LibrAgent initializing...");
@@ -333,11 +339,7 @@ pub fn run() {
                 println!("✅ Interactive Browser Server initialized");
 
                 // Initialize Agent Runtime State
-                app.manage(services::agent_server::AgentRuntimeState::default());
-                app.manage(std::sync::Arc::new(
-                    services::agent_server::PendingLlmRequests::default(),
-                )); // Pending requests manager
-                println!("✅ Agent Runtime State initialized");
+                println!("✅ Interactive Browser Server initialized");
 
                 // Initialize Agent Session Manager with proxy manager
                 // Get static reference and wrap in Arc using the same unsafe pattern

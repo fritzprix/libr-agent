@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 
+use crate::mcp::builtin::error_guidance::{invalid_input_error, missing_param_error, ToolGroup};
 use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{
     BuiltinServerMetadata, MCPContent, MCPResult, MCPTool, ServiceContext, ServiceContextOptions,
@@ -39,18 +40,39 @@ impl BootstrapServer {
 
     /// Get installation guide for a development tool
     fn get_bootstrap_guide(&self, args: Value) -> MCPResult {
-        let tool = args.get("tool").and_then(|v| v.as_str()).unwrap_or("");
+        let tool = match args.get("tool").and_then(|v| v.as_str()) {
+            Some(t) if !t.is_empty() => t,
+            _ => return missing_param_error("tool", ToolGroup::Bootstrap),
+        };
+
+        // Validate tool name
+        let valid_tools = ["node", "python", "uv", "docker", "git"];
+        if !valid_tools.contains(&tool) {
+            return invalid_input_error(
+                &format!(
+                    "Invalid tool '{}'. Must be one of: {}",
+                    tool,
+                    valid_tools.join(", ")
+                ),
+                ToolGroup::Bootstrap,
+            );
+        }
 
         let platform = args.get("platform").and_then(|v| v.as_str());
 
-        if tool.is_empty() {
-            return MCPResult {
-                content: Some(vec![MCPContent::Text {
-                    text: "Error: 'tool' parameter is required".to_string(),
-                }]),
-                structured_content: None,
-                is_error: Some(true),
-            };
+        // Validate platform if provided
+        if let Some(p) = platform {
+            let valid_platforms = ["windows", "linux", "darwin", "auto"];
+            if !valid_platforms.contains(&p) {
+                return invalid_input_error(
+                    &format!(
+                        "Invalid platform '{}'. Must be one of: {}",
+                        p,
+                        valid_platforms.join(", ")
+                    ),
+                    ToolGroup::Bootstrap,
+                );
+            }
         }
 
         let guide = guides::get_installation_guide(tool, platform);
@@ -111,12 +133,8 @@ impl BuiltinMCPServer for BootstrapServer {
 
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
         ServiceContext {
-            context_prompt:
-                "Bootstrap Server: Platform detection and installation guides available".to_string(),
-            structured_state: Some(json!({
-                "platform": platform::detect_current_platform(),
-                "supported_tools": ["node", "python", "uv", "docker", "git"]
-            })),
+            context_prompt: String::new(),
+            structured_state: None,
         }
     }
 

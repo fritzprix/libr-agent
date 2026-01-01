@@ -69,7 +69,10 @@ export type MessageErrorType =
   | 'AI_SERVICE_ERROR'
   | 'NETWORK_ERROR'
   | 'VALIDATION_ERROR'
-  | 'RATE_LIMIT_ERROR';
+  | 'RATE_LIMIT_ERROR'
+  | 'MALFORMED_FUNCTION_CALL'
+  | 'JSON_PARSING_ERROR'
+  | 'AUTHENTICATION_ERROR';
 
 export interface Message {
   id: string;
@@ -128,6 +131,78 @@ export interface ToolCall {
   function: {
     name: string;
     arguments: string;
+  };
+}
+
+/**
+ * RustMessage represents the exact structure of messages coming from the Rust backend.
+ * This includes both Tauri command responses and event payloads.
+ *
+ * Note: Rust uses #[serde(rename_all = "camelCase")] so all fields are in camelCase
+ * when serialized to JSON and sent to TypeScript.
+ */
+export interface RustMessage {
+  id: string;
+  sessionId: string;
+  role: 'user' | 'assistant' | 'system' | 'tool';
+  content: MCPContent[];
+
+  // Optional fields - all in camelCase due to serde rename_all
+  toolCalls?: ToolCall[];
+  toolCallId?: string;
+  isStreaming?: boolean;
+  thinking?: string;
+  thinkingSignature?: string;
+  assistantId?: string;
+  attachments?: AttachmentReference[];
+  toolUse?: { id: string; name: string; input: Record<string, unknown> };
+
+  // Timestamps come as Unix milliseconds (i64)
+  createdAt: number;
+  updatedAt: number;
+
+  source?: 'assistant' | 'ui';
+  error?: {
+    displayMessage: string;
+    type: MessageErrorType;
+    recoverable: boolean;
+    details?: {
+      originalError: unknown;
+      errorCode?: string;
+      timestamp: string;
+      context?: Record<string, unknown>;
+    };
+  };
+  metadata?: {
+    executionTime?: number;
+    retryCount?: number;
+    [key: string]: unknown;
+  };
+}
+
+/**
+ * Convert RustMessage (from Rust backend) to Message (frontend format)
+ */
+export function rustMessageToMessage(rustMsg: RustMessage): Message {
+  return {
+    id: rustMsg.id,
+    sessionId: rustMsg.sessionId,
+    threadId: rustMsg.sessionId, // Fallback to sessionId for threadId
+    role: rustMsg.role,
+    content: rustMsg.content,
+    tool_calls: rustMsg.toolCalls,
+    tool_call_id: rustMsg.toolCallId,
+    isStreaming: rustMsg.isStreaming,
+    thinking: rustMsg.thinking,
+    thinkingSignature: rustMsg.thinkingSignature,
+    assistantId: rustMsg.assistantId,
+    attachments: rustMsg.attachments,
+    tool_use: rustMsg.toolUse,
+    createdAt: new Date(rustMsg.createdAt),
+    updatedAt: new Date(rustMsg.updatedAt),
+    source: rustMsg.source,
+    error: rustMsg.error,
+    metadata: rustMsg.metadata,
   };
 }
 

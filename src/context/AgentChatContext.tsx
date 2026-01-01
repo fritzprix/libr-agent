@@ -7,19 +7,26 @@ import React, {
   useState,
 } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
-import { useAgentSessionState } from './AgentSessionContext';
+import {
+  useAgentSessionState,
+  useAgentSessionActions,
+} from './AgentSessionContext';
 import { useLLMService } from './LLMServiceContext';
 import { getLogger } from '../lib/logger';
-import type { Message } from '@/models/chat';
+import type { Message, RustMessage } from '@/models/chat';
 import { deleteMessage } from '@/lib/backend/messages';
+import { useSettings } from '@/hooks/use-settings';
+import { supportsThinking } from '@/lib/ai-service/model-capabilities';
 
 const logger = getLogger('AgentChatContext');
 
 /**
- * Session status from Rust backend
+ * Service Context from Rust backend
  */
-type SessionStatus = 'Idle' | 'Busy' | 'Paused';
+export interface ServiceContext {
+  contextPrompt: string;
+  structuredState?: Record<string, unknown>;
+}
 
 /**
  * Agent event from Rust backend (currently using Record<string, unknown> in listeners)
@@ -32,11 +39,14 @@ type SessionStatus = 'Idle' | 'Busy' | 'Paused';
 
 // --- STATE CONTEXT ---
 interface AgentChatStateContextValue {
-  isLoading: boolean;
+  isSessionLoading: boolean;
   messages: Message[];
   error: string | null;
   llmError: string | null;
   workflowStatus: 'idle' | 'busy' | 'paused' | 'error';
+  reasoningEnabled: boolean;
+  canUseReasoning: boolean;
+  serviceContexts: Record<string, ServiceContext>;
 }
 
 const AgentChatStateContext = createContext<
@@ -60,6 +70,16 @@ interface AgentChatActionsContextValue {
    * Retry the last failed message
    */
   retryMessage: () => Promise<void>;
+
+  /**
+   * Toggle reasoning mode (deep thinking for supported models)
+   */
+  toggleReasoning: () => void;
+
+  /**
+   * Manually update service contexts from backend
+   */
+  updateServiceContexts: () => Promise<void>;
 }
 
 const AgentChatActionsContext = createContext<
@@ -73,292 +93,145 @@ interface AgentChatProviderProps {
 /**
  * AgentChatProvider
  *
- * Simplified chat context that delegates workflow orchestration to Rust backend.
- * This replaces the complex tool execution loop in ChatContext with simple IPC calls.
- *
- * Key differences from ChatContext:
- * - No tool call orchestration (handled by Rust)
- * - No message queue management (handled by Rust)
- * - Simple submit → delegate to backend → listen for events
+ * Simply delegates state from AgentSessionContext and actions to Rust backend.
+ * Now purely reactive, with all message/status state residing in AgentSessionContext.
  */
 export function AgentChatProvider({ children }: AgentChatProviderProps) {
-  const { currentSession, messages: sessionMessages } = useAgentSessionState();
-  const { streamingMessages, clearStreamingMessage } = useLLMService();
+  // Consume state from AgentSessionContext (Single Source of Truth)
+  const {
+    session,
+    messages: sessionMessages, // Messages now come directly from session context
+    isSessionLoading,
+    workflowStatus,
+    error,
+    llmError,
+  } = useAgentSessionState();
 
-  // Local messages state synchronized with session messages
-  // Updated through: 1) sessionMessages sync, 2) optimistic updates, 3) agent:event
-  const [localMessages, setLocalMessages] = useState<Message[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [llmError, setLlmError] = useState<string | null>(null);
-  const [workflowStatus, setWorkflowStatus] = useState<
-    'idle' | 'busy' | 'paused' | 'error'
-  >('idle');
+  const { setError, addMessage } = useAgentSessionActions();
+
+  const { streamingMessages } = useLLMService();
+  const { value: settingValue } = useSettings();
+
+  // Service contexts state (still local to Chat view as it's UI context)
+  const [serviceContexts, setServiceContexts] = useState<
+    Record<string, ServiceContext>
+  >({});
+
+  const [reasoningEnabled, setReasoningEnabled] = useState(false);
+  const [canUseReasoning, setCanUseReasoning] = useState(false);
+
+  // Fetch service contexts from backend
+  const updateServiceContexts = useCallback(async () => {
+    const sessionId = session?.id;
+    if (!sessionId) return;
+
+    try {
+      const contexts = await invoke<Record<string, ServiceContext>>(
+        'agent_get_service_contexts',
+        { sessionId },
+      );
+      setServiceContexts(contexts);
+      logger.info('Service contexts updated', {
+        contexts,
+      });
+    } catch (error) {
+      logger.error('Failed to update service contexts', error);
+    }
+  }, [session?.id]);
+
+  // Initial fetch when session changes
+  useEffect(() => {
+    if (session?.id) {
+      updateServiceContexts();
+    } else {
+      setServiceContexts({});
+    }
+  }, [session?.id, updateServiceContexts]);
+
+  // Reactive Service Context Update:
+  // When messages change, if the last message is from assistant, update service contexts.
+  useEffect(() => {
+    if (sessionMessages.length > 0) {
+      const lastMsg = sessionMessages[sessionMessages.length - 1];
+      if (lastMsg.role === 'assistant') {
+        updateServiceContexts().catch((err) =>
+          logger.error(
+            'Failed to update service contexts on message change',
+            err,
+          ),
+        );
+      }
+    }
+  }, [sessionMessages, updateServiceContexts]);
 
   /**
-   * Sync local messages with session messages (from resumeSession)
-   * This happens only when sessionMessages changes (initial load)
+   * Check if current model supports reasoning (matches ChatContext pattern)
    */
   useEffect(() => {
-    logger.debug('Syncing local messages with session messages', {
-      sessionId: currentSession?.id,
-      sessionMessageCount: sessionMessages?.length ?? 0,
-    });
-    setLocalMessages(sessionMessages || []);
-  }, [sessionMessages, currentSession?.id]);
+    const checkReasoningSupport = async () => {
+      const modelName = settingValue?.preferredModel?.model;
+      const provider = settingValue?.preferredModel?.provider;
+
+      if (!modelName || !provider) {
+        setCanUseReasoning(false);
+        return;
+      }
+
+      try {
+        const supports = await supportsThinking(modelName, provider);
+        setCanUseReasoning(supports);
+
+        // Auto-disable if model doesn't support reasoning
+        if (!supports && reasoningEnabled) {
+          setReasoningEnabled(false);
+          logger.info('Reasoning disabled: model does not support it');
+        }
+      } catch (error) {
+        logger.error('Failed to check reasoning support', error);
+        setCanUseReasoning(false);
+      }
+    };
+
+    checkReasoningSupport();
+  }, [
+    settingValue?.preferredModel?.model,
+    settingValue?.preferredModel?.provider,
+    reasoningEnabled,
+  ]);
 
   /**
    * Extract streaming message for current session
    * Memoized to prevent unnecessary effect re-runs
    */
   const currentStreamingMessage = useMemo(() => {
-    if (!currentSession?.id) return undefined;
-    return streamingMessages.get(currentSession.id);
-  }, [currentSession?.id, streamingMessages]);
+    if (!session?.id) return undefined;
+    return streamingMessages.get(session.id);
+  }, [session?.id, streamingMessages]);
 
   /**
    * Merge persisted messages with streaming messages from LLMServiceContext
-   * Persisted messages are added via useEffect when streaming completes
+   * We use sessionMessages directly now, merging only the streaming tail.
    */
   const displayMessages = useMemo(() => {
-    if (!currentSession?.id) return [];
+    if (!session?.id) return [];
 
     // If there's a streaming message that's not yet in persisted messages
-    if (currentStreamingMessage?.id) {
-      const existsInMessages = localMessages.some(
+    if (
+      currentStreamingMessage?.id &&
+      currentStreamingMessage.isStreaming !== false
+    ) {
+      const existsInMessages = sessionMessages.some(
         (m) => m.id === currentStreamingMessage.id,
       );
       if (!existsInMessages) {
         // Show streaming message alongside persisted messages
-        return [...localMessages, currentStreamingMessage as Message];
+        return [...sessionMessages, currentStreamingMessage as Message];
       }
     }
 
     // Return persisted messages only
-    return localMessages;
-  }, [localMessages, currentStreamingMessage, currentSession?.id]);
-
-  /**
-   * Detect streaming completion and persist to React state
-   * Implements idea.md architecture: "React owns the message stack"
-   */
-  useEffect(() => {
-    if (!currentSession?.id || !currentStreamingMessage) return;
-
-    // Only process when streaming explicitly completes
-    if (currentStreamingMessage.isStreaming === false) {
-      const messageId = currentStreamingMessage.id;
-
-      // Guard: Skip if already in messages (race condition protection)
-      const exists = localMessages.some((m) => m.id === messageId);
-      if (exists) {
-        logger.debug('Message already in stack, clearing streaming state', {
-          sessionId: currentSession.id,
-          messageId,
-        });
-        clearStreamingMessage(currentSession.id);
-        return;
-      }
-
-      logger.info('Streaming completed, persisting message', {
-        sessionId: currentSession.id,
-        messageId,
-        hasToolCalls: !!currentStreamingMessage.tool_calls?.length,
-      });
-
-      // Add to message stack
-      setLocalMessages((prev) => [...prev, currentStreamingMessage as Message]);
-
-      // Clear streaming state to prevent duplicate display
-      clearStreamingMessage(currentSession.id);
-    }
-  }, [
-    currentStreamingMessage,
-    currentSession?.id,
-    clearStreamingMessage,
-    localMessages,
-  ]);
-
-  /**
-   * Listen for agent events from Rust backend
-   */
-  useEffect(() => {
-    if (!currentSession?.id) return;
-
-    let isMounted = true;
-    let unlisten: (() => void) | undefined;
-
-    const setupListeners = async () => {
-      logger.info('Setting up agent event listeners', {
-        sessionId: currentSession.id,
-      });
-
-      // Listen for workflow status changes and message events
-      const unlistenFn = await listen<Record<string, unknown>>(
-        'agent:event',
-        async (event) => {
-          const payload = event.payload;
-          const eventType = payload.type as string;
-          // Rust uses camelCase serialization (serde rename_all = "camelCase")
-          const sessionId = (payload.sessionId || payload.session_id) as string;
-
-          logger.info('🎯 Agent event received (BEFORE session filter)', {
-            eventType,
-            payloadSessionId: sessionId,
-            currentSessionId: currentSession.id,
-            allPayloadKeys: Object.keys(payload),
-          });
-
-          // Only process events for current session
-          if (sessionId !== currentSession.id) {
-            logger.warn('⚠️ Event session ID mismatch, ignoring event', {
-              eventSessionId: sessionId,
-              currentSessionId: currentSession.id,
-              eventType,
-            });
-            return;
-          }
-
-          logger.debug('Received agent event (AFTER session filter)', {
-            sessionId,
-            eventType,
-          });
-
-          // Handle different event types
-          // IMPORTANT: Rust serde uses camelCase (StatusChanged → statusChanged)
-          if (eventType === 'statusChanged') {
-            const status = payload.status as SessionStatus;
-            if (status === 'Idle') {
-              setWorkflowStatus('idle');
-              setIsLoading(false);
-            } else if (status === 'Busy') {
-              setWorkflowStatus('busy');
-              setIsLoading(true);
-            } else if (status === 'Paused') {
-              setWorkflowStatus('paused');
-              setIsLoading(false);
-            }
-          } else if (eventType === 'workflowError') {
-            setWorkflowStatus('error');
-            setIsLoading(false);
-            const errorMsg = (payload.error as string) ?? 'Unknown error';
-
-            // Distinguish LLM errors from workflow errors
-            if (
-              errorMsg.includes('invalid type:') ||
-              errorMsg.includes('expected i64') ||
-              errorMsg.includes('LLM')
-            ) {
-              setLlmError(errorMsg);
-              logger.error('LLM error detected', { error: errorMsg });
-            } else {
-              setError(errorMsg);
-            }
-          } else if (eventType === 'messageAdded') {
-            logger.info('📨 MessageAdded event received from Rust', {
-              sessionId: currentSession.id,
-              hasPayload: !!payload.message,
-              payloadKeys: payload.message ? Object.keys(payload.message) : [],
-            });
-
-            // ✅ Handle messages from Rust (includes full message object)
-            const rawMessage = payload.message as Record<string, unknown>;
-
-            if (!rawMessage) {
-              logger.warn('MessageAdded event missing payload', { payload });
-              return;
-            }
-
-            logger.debug('Raw message received', {
-              id: rawMessage.id,
-              role: rawMessage.role,
-              toolCallId: rawMessage.toolCallId || rawMessage.tool_call_id,
-              contentLength: (rawMessage.content as unknown[])?.length,
-            });
-
-            // Normalize field names (defensive, serde should handle camelCase conversion)
-            // Rust's serde(rename_all = "camelCase") should already convert fields
-            const newMessage: Message = {
-              ...(rawMessage as unknown as Message),
-              sessionId: (rawMessage.sessionId ||
-                rawMessage.session_id) as string,
-              tool_calls: rawMessage.toolCalls || rawMessage.tool_calls,
-              tool_call_id: (rawMessage.toolCallId ||
-                rawMessage.tool_call_id) as string | undefined,
-              tool_use: rawMessage.toolUse || rawMessage.tool_use,
-              is_streaming: rawMessage.isStreaming ?? rawMessage.is_streaming,
-              thinking_signature: (rawMessage.thinkingSignature ||
-                rawMessage.thinking_signature) as string | undefined,
-              assistant_id: (rawMessage.assistantId ||
-                rawMessage.assistant_id) as string | undefined,
-              created_at: rawMessage.createdAt || rawMessage.created_at,
-              updated_at: rawMessage.updatedAt || rawMessage.updated_at,
-            } as Message;
-
-            logger.info('Message normalized', {
-              sessionId: currentSession.id,
-              messageId: newMessage.id,
-              role: newMessage.role,
-              toolCallId: newMessage.tool_call_id,
-            });
-
-            // Add to messages if not already present (deduplication)
-            setLocalMessages((prev) => {
-              const exists = prev.some((m) => m.id === newMessage.id);
-              if (exists) {
-                logger.warn('⚠️ Message already in state, skipping', {
-                  messageId: newMessage.id,
-                  existingCount: prev.length,
-                });
-                return prev;
-              }
-
-              logger.info('✅ Adding message to React state', {
-                messageId: newMessage.id,
-                role: newMessage.role,
-                previousCount: prev.length,
-                newCount: prev.length + 1,
-              });
-
-              return [...prev, newMessage];
-            });
-          } else if (eventType === 'workflowCompleted') {
-            // Workflow completed - messages already in React state per idea.md
-            setWorkflowStatus('idle');
-            setIsLoading(false);
-
-            logger.info('Workflow completed', {
-              sessionId: currentSession.id,
-              messageCount: localMessages.length,
-            });
-
-            // No DB reload needed - React owns message state (idea.md architecture)
-            // Tool results and assistant responses already added via streaming
-          }
-        },
-      );
-
-      if (!isMounted) {
-        logger.info(
-          'Agent listener setup completed after unmount, cleaning up immediately',
-        );
-        unlistenFn();
-      } else {
-        unlisten = unlistenFn;
-        logger.info('Agent event listeners registered');
-      }
-    };
-
-    setupListeners();
-
-    return () => {
-      isMounted = false;
-      if (unlisten) {
-        unlisten();
-        logger.info('Agent event listeners cleaned up');
-      }
-    };
-  }, [currentSession?.id]);
+    return sessionMessages;
+  }, [sessionMessages, currentStreamingMessage, session?.id]);
 
   /**
    * Submit a user message to the agent workflow
@@ -366,27 +239,30 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
    */
   const submit = useCallback(
     async (message: Message) => {
-      if (!currentSession?.id) {
+      if (!session?.id) {
         logger.error('Cannot submit: no active session');
         return;
       }
 
       logger.info('Submitting message to agent workflow', {
-        sessionId: currentSession.id,
+        sessionId: session.id,
         messageId: message.id,
       });
 
       try {
-        setIsLoading(true);
-        setError(null);
-
-        // ✅ Optimistic update - add user message immediately (idea.md pattern)
-        setLocalMessages((prev) => [...prev, message]);
+        /*
+         * Note: We don't need to manually update local state or isLoading here.
+         * The 'agent:event' listener in AgentSessionContext will pick up 'statusChanged'
+         * (busy) and 'messageAdded' events from the backend and update the shared state.
+         *
+         * However, for optimistic UI, we could technically append to messages in SessionContext
+         * but sticking to "event driven" is cleaner.
+         * To keep UI responsive, we rely on the backend sending events immediately.
+         */
 
         // Convert Date objects to Unix timestamps for Rust backend
-        // Safety net: provide fallback timestamps if missing (prevents Rust deserialization error)
         const now = Date.now();
-        const messageForRust = {
+        const messageForRust: RustMessage = {
           ...message,
           createdAt:
             message.createdAt instanceof Date
@@ -405,64 +281,57 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
         // Delegate to Rust backend (Rust will save the message to DB)
         await invoke('agent_send_message', {
           request: {
-            sessionId: currentSession.id,
+            sessionId: session.id,
             message: messageForRust,
           },
         });
 
-        logger.info('Message submitted successfully', {
-          sessionId: currentSession.id,
-          messageId: message.id,
-        });
+        addMessage(message);
       } catch (err) {
         logger.error('Failed to submit message', err);
-        setError(err instanceof Error ? err.message : String(err));
-        setIsLoading(false);
-
-        // ✅ Rollback on error
-        setLocalMessages((prev) => prev.filter((m) => m.id !== message.id));
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        setError(errorMessage);
+        // Error state handled by AgentSessionContext via workflowError event or we could set it locally if needed,
+        // but typically we let the global error handler work.
       }
     },
-    [currentSession?.id],
+    [session?.id],
   );
 
   /**
    * Cancel the current workflow
    */
   const cancel = useCallback(async () => {
-    if (!currentSession?.id) {
+    if (!session?.id) {
       logger.error('Cannot cancel: no active session');
       return;
     }
 
-    logger.info('Cancelling workflow', { sessionId: currentSession.id });
+    logger.info('Cancelling workflow', { sessionId: session.id });
 
     try {
       await invoke('agent_terminate_workflow', {
-        sessionId: currentSession.id,
+        sessionId: session.id,
       });
-
-      setIsLoading(false);
-      setWorkflowStatus('idle');
-
-      logger.info('Workflow cancelled successfully');
+      // Status update will come via event
     } catch (err) {
       logger.error('Failed to cancel workflow', err);
-      setError(err instanceof Error ? err.message : String(err));
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      setError(errorMessage);
     }
-  }, [currentSession?.id]);
+  }, [session?.id]);
 
   /**
    * Retry the last failed message
    */
   const retryMessage = useCallback(async () => {
-    if (!currentSession?.id) {
+    if (!session?.id) {
       logger.error('Cannot retry: no active session');
       return;
     }
 
     // Find the last user message
-    const lastUserMessage = [...localMessages]
+    const lastUserMessage = [...sessionMessages]
       .reverse()
       .find((msg) => msg.role === 'user');
 
@@ -472,34 +341,62 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     }
 
     logger.info('Retrying last message', {
-      sessionId: currentSession.id,
+      sessionId: session.id,
       messageId: lastUserMessage.id,
     });
 
     // Delete any subsequent messages (including failed assistant responses)
-    const messageIndex = localMessages.findIndex(
+    const messageIndex = sessionMessages.findIndex(
       (msg) => msg.id === lastUserMessage.id,
     );
-    const messagesToDelete = localMessages.slice(messageIndex + 1);
+    const messagesToDelete = sessionMessages.slice(messageIndex + 1);
 
     for (const msg of messagesToDelete) {
       await deleteMessage(msg.id);
     }
 
-    // Re-submit the user message (Date conversion handled by submit function)
+    // We rely on backend/session context to refresh messages list via events or reload.
+    // Ideally deleteMessage should probably trigger a reload or be handled by session actions.
+    // For now, re-submitting will trigger new events.
+
+    // Re-submit the user message
     await submit(lastUserMessage);
-  }, [currentSession?.id, localMessages, submit]);
+  }, [session?.id, sessionMessages, submit]);
+
+  /**
+   * Toggle reasoning mode
+   */
+  const toggleReasoning = useCallback(() => {
+    if (!canUseReasoning) {
+      logger.warn('Reasoning mode not supported for current model');
+      return;
+    }
+    setReasoningEnabled((prev) => !prev);
+    logger.info(`Reasoning mode ${!reasoningEnabled ? 'enabled' : 'disabled'}`);
+  }, [canUseReasoning, reasoningEnabled]);
 
   // Combine state values
   const stateValue: AgentChatStateContextValue = useMemo(
     () => ({
-      isLoading,
-      messages: displayMessages, // Use merged messages with streaming
+      isSessionLoading,
+      messages: displayMessages,
       error,
       llmError,
       workflowStatus,
+      reasoningEnabled,
+      canUseReasoning,
+      serviceContexts,
     }),
-    [isLoading, displayMessages, error, llmError, workflowStatus],
+    [
+      isSessionLoading,
+      displayMessages,
+      error,
+      llmError,
+      workflowStatus,
+      reasoningEnabled,
+      canUseReasoning,
+      serviceContexts,
+    ],
   );
 
   // Combine action values
@@ -508,8 +405,10 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
       submit,
       cancel,
       retryMessage,
+      toggleReasoning,
+      updateServiceContexts,
     }),
-    [submit, cancel, retryMessage],
+    [submit, cancel, retryMessage, toggleReasoning, updateServiceContexts],
   );
 
   return (

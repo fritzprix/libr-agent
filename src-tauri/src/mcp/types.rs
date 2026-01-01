@@ -179,6 +179,15 @@ pub struct SamplingRequest {
     pub options: Option<SamplingOptions>,
 }
 
+/// Represents service information for content origin tracking.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServiceInfo {
+    pub server_name: String,
+    pub tool_name: String,
+    pub backend_type: String, // "ExternalMCP" | "BuiltInWeb" | "BuiltInRust"
+}
+
 /// Represents MCP content items (text or resource).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
@@ -186,8 +195,18 @@ pub struct SamplingRequest {
 pub enum MCPContent {
     #[serde(rename = "text")]
     Text { text: String },
+    #[serde(rename = "image")]
+    Image {
+        data: String,
+        #[serde(rename = "mimeType")]
+        mime_type: String,
+    },
     #[serde(rename = "resource")]
-    Resource { resource: serde_json::Value },
+    Resource {
+        resource: serde_json::Value,
+        #[serde(rename = "serviceInfo")]
+        service_info: ServiceInfo,
+    },
 }
 
 /// Represents the pure result of a tool execution (without JSON-RPC wrapper).

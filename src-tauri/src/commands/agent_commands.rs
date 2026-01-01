@@ -1,7 +1,9 @@
 use crate::agent::AgentSessionManager;
 
+use crate::mcp::types::ServiceContext;
 use crate::repositories::SessionMetadata;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use tauri::{command, State};
 
 use crate::agent::types::AgentMessageDto;
@@ -43,6 +45,32 @@ pub async fn agent_create_session(
         .await
 }
 
+/// Resume an existing agent session
+#[command]
+#[allow(dead_code)]
+pub async fn agent_resume_session(
+    manager: State<'_, AgentSessionManager>,
+    session_id: String,
+) -> Result<SessionMetadata, String> {
+    manager.resume_session(&session_id).await
+}
+
+/// Initialize session with messages from database
+#[command]
+#[allow(dead_code)]
+pub async fn agent_init_session_with_messages(
+    manager: State<'_, AgentSessionManager>,
+    session_id: String,
+) -> Result<AgentResponse, String> {
+    manager.init_session_with_messages(&session_id).await?;
+
+    Ok(AgentResponse {
+        success: true,
+        message: format!("Session initialized with messages: {}", session_id),
+        data: None,
+    })
+}
+
 /// Send a user message to start an agent workflow
 #[command]
 pub async fn agent_send_message(
@@ -71,6 +99,18 @@ pub async fn agent_handle_llm_response(
 ) -> Result<AgentResponse, String> {
     // AgentMessageDto is now a type alias for Message, no conversion needed
     let message = assistant_message;
+
+    log::info!(
+        "📥 Received LLM response from frontend: session={}, message_id={}, has_tool_calls={}, tool_call_count={}, content_len={}",
+        session_id,
+        message.id,
+        message.tool_calls.is_some(),
+        message.tool_calls.as_ref().map(|tc| tc.len()).unwrap_or(0),
+        message.content.len()
+    );
+
+    log::debug!("📥 Full message received: {:#?}", message);
+
     manager
         .handle_llm_response(session_id.clone(), message)
         .await?;
@@ -153,6 +193,7 @@ pub async fn agent_terminate_workflow(
 pub struct ToolExecutionResult {
     pub success: bool,
     pub content: String,
+    pub mcp_content: Option<Vec<crate::mcp::types::MCPContent>>,
     pub error: Option<String>,
     pub is_error: bool,
 }
@@ -209,4 +250,36 @@ pub async fn agent_call_builtin_tool(
 
     // Convert MCPResponse to JSON
     serde_json::to_value(response).map_err(|e| format!("Failed to serialize response: {}", e))
+}
+
+/// Get service contexts for a session
+#[command]
+pub async fn agent_get_service_contexts(
+    session_id: String,
+) -> Result<HashMap<String, ServiceContext>, String> {
+    use crate::state::get_mcp_service_proxy_manager;
+
+    let proxy_manager = get_mcp_service_proxy_manager();
+
+    let proxy = proxy_manager
+        .get_proxy(&session_id)
+        .await
+        .ok_or_else(|| format!("No proxy found for session: {}", session_id))?;
+
+    Ok(proxy.get_service_contexts().await)
+}
+
+/// Delete an agent session and all its data
+#[command]
+pub async fn agent_delete_session(
+    manager: State<'_, AgentSessionManager>,
+    session_id: String,
+) -> Result<AgentResponse, String> {
+    manager.delete_session(session_id.clone()).await?;
+
+    Ok(AgentResponse {
+        success: true,
+        message: format!("Session deleted: {}", session_id),
+        data: None,
+    })
 }

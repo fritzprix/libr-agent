@@ -8,7 +8,10 @@ use tracing::info;
 
 pub mod assistant;
 pub mod bootstrap;
+pub mod browser;
+pub mod browser_content_store;
 pub mod content_store;
+pub mod error_guidance;
 pub mod knowledge;
 pub mod mcp_manager;
 pub mod planning;
@@ -80,13 +83,9 @@ pub trait BuiltinMCPServer: Send + Sync + std::fmt::Debug {
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
         ServiceContext {
             context_prompt: format!(
-                "# {} Server Status\n\
-                **Server**: {}\n\
-                **Status**: Active\n\
-                **Tools Available**: {}",
-                self.name(),
-                self.name(),
-                self.tools().len()
+                "## {}\n**Description**: {}",
+                self.display_name(),
+                self.description()
             ),
             structured_state: None,
         }
@@ -349,12 +348,16 @@ impl BuiltinServerRegistry {
 
         // Register built-in workspace server with SessionManager
         registry.register_server(Box::new(workspace::WorkspaceServer::new(
+            "default".to_string(),
             session_manager.clone(),
         )));
 
         // Register content-store server (native backend)
         registry.register_server(Box::new(
-            crate::mcp::builtin::content_store::ContentStoreServer::new(session_manager.clone()),
+            crate::mcp::builtin::content_store::ContentStoreServer::new(
+                "default".to_string(),
+                session_manager.clone(),
+            ),
         ));
 
         // Register MCP Manager server
@@ -381,12 +384,14 @@ impl BuiltinServerRegistry {
 
         // Register built-in workspace server with SessionManager
         registry.register_server(Box::new(workspace::WorkspaceServer::new(
+            "default".to_string(),
             session_manager.clone(),
         )));
 
         // Register content-store server with SQLite support
         let content_store_server =
             crate::mcp::builtin::content_store::ContentStoreServer::new_with_sqlite(
+                "default".to_string(),
                 session_manager.clone(),
                 sqlite_db_url,
             )

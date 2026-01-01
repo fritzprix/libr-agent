@@ -4,15 +4,17 @@ import type { WorkspaceFileItem } from './types';
 /**
  * Lists the files and directories in the specified workspace path.
  * @param path The optional path within the workspace to list. Defaults to the root.
+ * @param sessionId The optional session ID to specify which session's workspace to list.
  * @returns A promise that resolves to an array of `WorkspaceFileItem` objects.
  */
 export async function listWorkspaceFiles(
   path?: string,
+  sessionId?: string,
 ): Promise<WorkspaceFileItem[]> {
-  return safeInvoke<WorkspaceFileItem[]>(
-    'list_workspace_files',
-    path ? { path } : {},
-  );
+  return safeInvoke<WorkspaceFileItem[]>('list_workspace_files', {
+    path: path || null,
+    sessionId: sessionId || null,
+  });
 }
 
 /**

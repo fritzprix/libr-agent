@@ -76,6 +76,9 @@ export {
   searchMessages,
 } from './messages';
 
+// Agent Workflow & Commands
+export { handleLLMResponse, handleUserToolCall } from './agent-commands';
+
 // Session management
 export { removeSession, deleteContentStore, switchSession } from './sessions';
 

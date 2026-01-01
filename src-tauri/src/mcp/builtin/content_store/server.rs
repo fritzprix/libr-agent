@@ -12,19 +12,22 @@ use super::{schemas, search, storage};
 /// Content-Store built-in MCP server (native backend)
 #[derive(Debug)]
 pub struct ContentStoreServer {
+    #[allow(dead_code)]
+    pub(crate) session_id: String,
     pub(crate) session_manager: Arc<SessionManager>,
     pub(crate) storage: Mutex<storage::ContentStoreStorage>,
     pub(crate) search_engine: Arc<Mutex<search::ContentSearchEngine>>,
 }
 
 impl ContentStoreServer {
-    pub fn new(session_manager: Arc<SessionManager>) -> Self {
-        let session_dir = session_manager.get_session_workspace_dir();
+    pub fn new(session_id: String, session_manager: Arc<SessionManager>) -> Self {
+        let session_dir = session_manager.get_session_workspace_dir_by_id(&session_id);
         let search_index_dir = session_dir.join("content_store_search");
         let search_engine = search::ContentSearchEngine::new(search_index_dir)
             .expect("Failed to initialize search engine");
 
         Self {
+            session_id,
             session_manager,
             storage: Mutex::new(storage::ContentStoreStorage::new()),
             search_engine: Arc::new(Mutex::new(search_engine)),
@@ -32,10 +35,11 @@ impl ContentStoreServer {
     }
 
     pub async fn new_with_sqlite(
+        session_id: String,
         session_manager: Arc<SessionManager>,
         database_url: String,
     ) -> Result<Self, String> {
-        let session_dir = session_manager.get_session_workspace_dir();
+        let session_dir = session_manager.get_session_workspace_dir_by_id(&session_id);
         let search_index_dir = session_dir.join("content_store_search");
         let search_engine = search::ContentSearchEngine::new(search_index_dir)
             .expect("Failed to initialize search engine");
@@ -43,6 +47,7 @@ impl ContentStoreServer {
         let storage = storage::ContentStoreStorage::new_sqlite(database_url).await?;
 
         Ok(Self {
+            session_id,
             session_manager,
             storage: Mutex::new(storage),
             search_engine: Arc::new(Mutex::new(search_engine)),
@@ -52,13 +57,23 @@ impl ContentStoreServer {
     pub fn tools(&self) -> Vec<MCPTool> {
         vec![
             MCPTool {
-                name: "addContent".to_string(),
-                title: Option::None,
-                description: "Add and parse file content with chunking and BM25 indexing"
-                    .to_string(),
-                input_schema: schemas::tool_add_content_schema(),
-                output_schema: Option::None,
-                annotations: Option::None,
+                name: "saveKnowledge".to_string(),
+                title: Some("Save Knowledge".to_string()),
+                description: "Save knowledge entry (text or file) to the content store".to_string(),
+                input_schema: serde_json::from_value(serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "title": { "type": "string", "description": "Title of the knowledge entry" },
+                        "content": { "type": "string", "description": "Content to save" },
+                        "tags": { "type": "array", "items": { "type": "string" }, "description": "Tags for the entry" },
+                        "fileUrl": { "type": "string", "description": "File URL (file://) to add" },
+                        "srcUrl": { "type": "string", "description": "Source URL" },
+                        "metadata": { "type": "object", "description": "Additional metadata" }
+                    },
+                    "required": ["content"]
+                })).unwrap(),
+                output_schema: None,
+                annotations: None,
             },
             MCPTool {
                 name: "listContent".to_string(),
@@ -77,12 +92,26 @@ impl ContentStoreServer {
                 annotations: Option::None,
             },
             MCPTool {
-                name: "keywordSimilaritySearch".to_string(),
-                title: Option::None,
-                description: "Perform BM25-based keyword search across stored content".to_string(),
-                input_schema: schemas::tool_keyword_search_schema(),
-                output_schema: Option::None,
-                annotations: Option::None,
+                name: "searchKnowledge".to_string(),
+                title: Some("Search Knowledge".to_string()),
+                description: "Search for knowledge entries using keywords".to_string(),
+                input_schema: serde_json::from_value(serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "query": { "type": "string", "description": "Search query" },
+                        "options": { 
+                            "type": "object",
+                            "description": "Search options",
+                            "properties": {
+                                "topN": { "type": "integer" },
+                                "threshold": { "type": "number" }
+                            }
+                        }
+                    },
+                    "required": ["query"]
+                })).unwrap(),
+                output_schema: None,
+                annotations: None,
             },
             MCPTool {
                 name: "deleteContent".to_string(),

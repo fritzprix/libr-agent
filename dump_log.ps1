@@ -36,7 +36,8 @@ if (-not (Test-Path $SrcLog)) {
         }
         New-Item -ItemType File -Path $SrcLog -Force | Out-Null
         Write-Host "✅ 빈 로그 파일 생성됨: $SrcLog" -ForegroundColor Green
-    } else {
+    }
+    else {
         Write-Host "❌ 로그 덤프를 취소합니다." -ForegroundColor Red
         exit 1
     }
@@ -50,13 +51,15 @@ try {
         Write-Host "✅ 빈 로그 파일에서 빈 출력 생성됨: $OutFile" -ForegroundColor Green
         Write-Host "📊 추출된 라인 수: 0" -ForegroundColor Cyan
         exit 0
-    } else {
+    }
+    else {
         # Extract last N lines (PowerShell equivalent of tail -n)
-        $content = Get-Content $SrcLog -ErrorAction Stop
+        $content = Get-Content $SrcLog -Encoding UTF8 -ErrorAction Stop
         if ($content.Count -le $Lines) {
             $content | Out-File -FilePath $OutFile -Encoding UTF8
             $extractedLines = $content.Count
-        } else {
+        }
+        else {
             $content[($content.Count - $Lines)..($content.Count - 1)] | Out-File -FilePath $OutFile -Encoding UTF8
             $extractedLines = $Lines
         }
@@ -65,7 +68,8 @@ try {
         Write-Host "📊 추출된 라인 수: $extractedLines" -ForegroundColor Cyan
         exit 0
     }
-} catch {
+}
+catch {
     Write-Host "❌ 로그 추출 실패: $_" -ForegroundColor Red
     exit 1
 }

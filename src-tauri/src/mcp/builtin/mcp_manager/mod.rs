@@ -3,6 +3,9 @@ use serde_json::{json, Value};
 use sqlx::Row;
 
 use super::BuiltinMCPServer;
+use crate::mcp::builtin::error_guidance::{
+    invalid_input_error, missing_param_error, not_found_error, operation_failed_error, ToolGroup,
+};
 use crate::mcp::types::{MCPResult, MCPServerConfig, ServiceContext, TransportConfig};
 use crate::mcp::MCPTool;
 use crate::state::{get_mcp_manager, get_sqlite_pool};
@@ -148,8 +151,28 @@ impl MCPManagerServer {
             name_a.cmp(name_b)
         });
 
+        let text_output = if servers.is_empty() {
+            "No servers found".to_string()
+        } else {
+            let mut s = format!("MCP Servers List ({} total):\n", servers.len());
+            for server in &servers {
+                let name = server.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+                let status = server.get("status").and_then(|v| v.as_str()).unwrap_or("?");
+                let transport = server
+                    .get("transport")
+                    .and_then(|t| t.get("type"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
+                s.push_str(&format!(
+                    "- **{}** ({}) [Transport: {}]\n",
+                    name, status, transport
+                ));
+            }
+            s
+        };
+
         Ok(MCPResult::success_with_data(
-            "Servers listed",
+            &text_output,
             json!({
                 "servers": servers,
                 "total": servers.len(),
@@ -160,11 +183,16 @@ impl MCPManagerServer {
     }
 
     async fn search_server(&self, args: Value) -> Result<MCPResult, String> {
-        let query = args
-            .get("query")
-            .and_then(|v| v.as_str())
-            .ok_or("Missing 'query' parameter")?
-            .to_lowercase();
+        let query = match args.get("query").and_then(|v| v.as_str()) {
+            Some(q) if !q.is_empty() => q.to_lowercase(),
+            Some(_) => {
+                return Ok(invalid_input_error(
+                    "Query parameter cannot be empty",
+                    ToolGroup::McpManager,
+                ))
+            }
+            None => return Ok(missing_param_error("query", ToolGroup::McpManager)),
+        };
 
         let manager = get_mcp_manager();
         let connections = manager.connections.lock().await;
@@ -208,8 +236,20 @@ impl MCPManagerServer {
 
         let results: Vec<Value> = results_map.into_values().collect();
 
+        let text_output = if results.is_empty() {
+            format!("No servers found matching '{}'", query)
+        } else {
+            let mut s = format!("Found {} servers matching '{}':\n", results.len(), query);
+            for server in &results {
+                let name = server.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+                let status = server.get("status").and_then(|v| v.as_str()).unwrap_or("?");
+                s.push_str(&format!("- **{}** ({})\n", name, status));
+            }
+            s
+        };
+
         Ok(MCPResult::success_with_data(
-            &format!("Found {} servers", results.len()),
+            &text_output,
             json!({
                 "results": results,
                 "count": results.len()
@@ -218,14 +258,31 @@ impl MCPManagerServer {
     }
 
     async fn create_server(&self, args: Value) -> Result<MCPResult, String> {
-        let name = args
-            .get("name")
-            .and_then(|v| v.as_str())
-            .ok_or("Missing name")?;
-        let transport = args.get("transport").ok_or("Missing transport config")?;
+        let name = match args.get("name").and_then(|v| v.as_str()) {
+            Some(n) if !n.is_empty() => n,
+            Some(_) => {
+                return Ok(invalid_input_error(
+                    "Server name cannot be empty",
+                    ToolGroup::McpManager,
+                ))
+            }
+            None => return Ok(missing_param_error("name", ToolGroup::McpManager)),
+        };
 
-        let transport_config: TransportConfig = serde_json::from_value(transport.clone())
-            .map_err(|e| format!("Invalid transport config: {}", e))?;
+        let transport = match args.get("transport") {
+            Some(t) => t,
+            None => return Ok(missing_param_error("transport", ToolGroup::McpManager)),
+        };
+
+        let transport_config: TransportConfig = match serde_json::from_value(transport.clone()) {
+            Ok(config) => config,
+            Err(e) => {
+                return Ok(invalid_input_error(
+                    &format!("Invalid transport config: {}. Must include 'type' field (stdio or http) and appropriate parameters", e),
+                    ToolGroup::McpManager,
+                ))
+            }
+        };
 
         let config = MCPServerConfig {
             name: name.to_string(),
@@ -235,7 +292,18 @@ impl MCPManagerServer {
         };
 
         // Save config first
-        self.save_server_config(&config).await?;
+        if let Err(e) = self.save_server_config(&config).await {
+            return Ok(operation_failed_error(
+                "createServer",
+                &format!("Failed to save server configuration: {}", e),
+                vec![
+                    "Verify database permissions".to_string(),
+                    "Check if server name already exists".to_string(),
+                    "Use listServers to see existing servers".to_string(),
+                ],
+                ToolGroup::McpManager,
+            ));
+        }
 
         let manager = get_mcp_manager();
         match manager.start_server(config).await {
@@ -243,16 +311,35 @@ impl MCPManagerServer {
                 "Server '{}' started successfully",
                 server_name
             ))),
-            Err(e) => Err(format!("Failed to start server: {}", e)),
+            Err(e) => Ok(operation_failed_error(
+                "createServer",
+                &format!("Failed to start server: {}", e),
+                vec![
+                    "Verify transport configuration is correct".to_string(),
+                    "For stdio: check command path and arguments".to_string(),
+                    "For http: verify URL is accessible".to_string(),
+                    "Use listServers to see server status".to_string(),
+                ],
+                ToolGroup::McpManager,
+            )),
         }
     }
 
     async fn connect_server(&self, args: Value) -> Result<MCPResult, String> {
-        let server_name = args
+        let server_name = match args
             .get("serverName")
             .or_else(|| args.get("serverId"))
             .and_then(|v| v.as_str())
-            .ok_or("Missing serverName")?;
+        {
+            Some(name) if !name.is_empty() => name,
+            Some(_) => {
+                return Ok(invalid_input_error(
+                    "Server name cannot be empty",
+                    ToolGroup::McpManager,
+                ))
+            }
+            None => return Ok(missing_param_error("serverName", ToolGroup::McpManager)),
+        };
 
         // Check if already connected
         let manager = get_mcp_manager();
@@ -267,10 +354,27 @@ impl MCPManagerServer {
         }
 
         // Load config from DB
-        let config = self
-            .get_server_config(server_name)
-            .await?
-            .ok_or_else(|| format!("Server '{}' not found in configuration", server_name))?;
+        let config = match self.get_server_config(server_name).await {
+            Ok(Some(cfg)) => cfg,
+            Ok(None) => {
+                return Ok(not_found_error(
+                    "server configuration",
+                    server_name,
+                    ToolGroup::McpManager,
+                ))
+            }
+            Err(e) => {
+                return Ok(operation_failed_error(
+                    "connectServer",
+                    &format!("Failed to load server configuration: {}", e),
+                    vec![
+                        "Verify database is accessible".to_string(),
+                        "Use listServers to see available servers".to_string(),
+                    ],
+                    ToolGroup::McpManager,
+                ))
+            }
+        };
 
         // Start server
         match manager.start_server(config).await {
@@ -278,16 +382,34 @@ impl MCPManagerServer {
                 "Server '{}' connected successfully",
                 server_name
             ))),
-            Err(e) => Err(format!("Failed to connect server: {}", e)),
+            Err(e) => Ok(operation_failed_error(
+                "connectServer",
+                &format!("Failed to connect server: {}", e),
+                vec![
+                    "Verify server configuration is correct".to_string(),
+                    "Check if the server process is available".to_string(),
+                    "Use listServers to see server status".to_string(),
+                ],
+                ToolGroup::McpManager,
+            )),
         }
     }
 
     async fn disconnect_server(&self, args: Value) -> Result<MCPResult, String> {
-        let server_name = args
+        let server_name = match args
             .get("serverName")
             .or_else(|| args.get("serverId"))
             .and_then(|v| v.as_str())
-            .ok_or("Missing serverName or serverId")?;
+        {
+            Some(name) if !name.is_empty() => name,
+            Some(_) => {
+                return Ok(invalid_input_error(
+                    "Server name cannot be empty",
+                    ToolGroup::McpManager,
+                ))
+            }
+            None => return Ok(missing_param_error("serverName", ToolGroup::McpManager)),
+        };
 
         let manager = get_mcp_manager();
         match manager.stop_server(server_name).await {
@@ -295,7 +417,15 @@ impl MCPManagerServer {
                 "Server '{}' disconnected",
                 server_name
             ))),
-            Err(e) => Err(format!("Failed to disconnect server: {}", e)),
+            Err(e) => Ok(operation_failed_error(
+                "disconnectServer",
+                &format!("Failed to disconnect server: {}", e),
+                vec![
+                    "Verify server is currently connected".to_string(),
+                    "Use listServers to see active servers".to_string(),
+                ],
+                ToolGroup::McpManager,
+            )),
         }
     }
 }
@@ -336,7 +466,16 @@ impl BuiltinMCPServer for MCPManagerServer {
                 input_schema: serde_json::from_value(json!({
                     "type": "object",
                     "properties": {
-                        "query": { "type": "string", "description": "Search query" }
+                        "query": { "type": "string", "description": "Search query" },
+                        "searchMode": { "type": "string", "enum": ["simple", "bm25"], "description": "Search mode (simple or bm25)" },
+                        "weights": { 
+                            "type": "object", 
+                            "properties": {
+                                "name": { "type": "number" },
+                                "description": { "type": "number" }
+                            },
+                            "description": "Search weights for fields"
+                        }
                     },
                     "required": ["query"]
                 }))

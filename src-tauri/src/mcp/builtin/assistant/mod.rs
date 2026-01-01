@@ -1,5 +1,9 @@
+use crate::mcp::builtin::error_guidance::{
+    duplicate_error, missing_param_error, not_found_error, operation_failed_error, SuccessHint,
+    ToolGroup,
+};
 use crate::mcp::builtin::BuiltinMCPServer;
-use crate::mcp::types::{MCPContent, MCPResult, ServiceContext, ServiceContextOptions};
+use crate::mcp::types::{MCPResult, ServiceContext, ServiceContextOptions};
 use crate::mcp::utils::schema_builder::*;
 use crate::mcp::MCPTool;
 use async_trait::async_trait;
@@ -64,21 +68,27 @@ impl AssistantServer {
 
     /// Create a new assistant
     async fn create_assistant(&self, args: Value) -> Result<MCPResult, String> {
+        // Legacy support: generate ID if not provided
         let id = args
             .get("id")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| "Missing 'id' parameter".to_string())?;
+            .map(|s| s.to_string())
+            .unwrap_or_else(cuid2::create_id);
 
-        let name = args
-            .get("name")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| "Missing 'name' parameter".to_string())?;
+        let name = match args.get("name").and_then(|v| v.as_str()) {
+            Some(v) => v,
+            None => return Ok(missing_param_error("name", ToolGroup::Assistant)),
+        };
 
         // Extract config fields
         let mut config = args.get("config").cloned().unwrap_or(json!({}));
 
+        // Map legacy/flat fields to config
         if let Some(v) = args.get("systemPrompt") {
             config["systemPrompt"] = v.clone();
+        }
+        if let Some(v) = args.get("description") {
+            config["description"] = v.clone();
         }
         if let Some(v) = args.get("modelProvider") {
             config["modelProvider"] = v.clone();
@@ -92,11 +102,21 @@ impl AssistantServer {
         if let Some(v) = args.get("maxTokens") {
             config["maxTokens"] = v.clone();
         }
+
+        // Handle tools (v2) -> allowedBuiltInServiceAliases
         if let Some(v) = args.get("tools") {
-            config["tools"] = v.clone();
+            config["allowedBuiltInServiceAliases"] = v.clone();
         }
+        // Handle allowedBuiltInServiceAliases (v1)
+        if let Some(v) = args.get("allowedBuiltInServiceAliases") {
+            config["allowedBuiltInServiceAliases"] = v.clone();
+        }
+
+        // Handle mcpServers (v2) and mcpServerIds (v1)
         if let Some(v) = args.get("mcpServers") {
-            config["mcpServers"] = v.clone();
+            config["mcpServerIds"] = v.clone();
+        } else if let Some(v) = args.get("mcpServerIds") {
+            config["mcpServerIds"] = v.clone();
         }
 
         // Validate config is a valid JSON object
@@ -111,7 +131,7 @@ impl AssistantServer {
             VALUES (?, ?, ?, ?, ?)
             "#,
         )
-        .bind(id)
+        .bind(&id)
         .bind(name)
         .bind(&config_str)
         .bind(now)
@@ -120,35 +140,32 @@ impl AssistantServer {
         .await;
 
         match result {
-            Ok(_) => Ok(MCPResult {
-                content: Some(vec![MCPContent::Text {
-                    text: format!("Assistant '{}' created successfully", name),
-                }]),
-                structured_content: Some(json!({
+            Ok(_) => {
+                let hint = SuccessHint::new(
+                    format!("Assistant '{}' created successfully", name),
+                    vec![
+                        "Use builtin_assistant__listAssistants to see all assistants".to_string(),
+                        "Use builtin_assistant__updateAssistant to modify configuration"
+                            .to_string(),
+                    ],
+                );
+
+                Ok(hint.to_mcp_result_with_data(Some(json!({
                     "success": true,
                     "id": id,
-                    "name": name,
-                    "config": config
-                })),
-                is_error: Some(false),
-            }),
+                    "name": name
+                }))))
+            }
             Err(e) => {
                 if e.to_string().contains("UNIQUE constraint failed") {
-                    Ok(MCPResult {
-                        content: Some(vec![MCPContent::Text {
-                            text: format!("Assistant with id '{}' already exists", id),
-                        }]),
-                        structured_content: None,
-                        is_error: Some(true),
-                    })
+                    Ok(duplicate_error("Assistant", &id, ToolGroup::Assistant))
                 } else {
-                    Ok(MCPResult {
-                        content: Some(vec![MCPContent::Text {
-                            text: format!("Failed to create assistant: {}", e),
-                        }]),
-                        structured_content: None,
-                        is_error: Some(true),
-                    })
+                    Ok(operation_failed_error(
+                        "Create assistant",
+                        &e.to_string(),
+                        vec!["Check database connection".to_string()],
+                        ToolGroup::Assistant,
+                    ))
                 }
             }
         }
@@ -156,10 +173,10 @@ impl AssistantServer {
 
     /// Update an existing assistant
     async fn update_assistant(&self, args: Value) -> Result<MCPResult, String> {
-        let id = args
-            .get("id")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| "Missing 'id' parameter".to_string())?;
+        let id = match args.get("id").and_then(|v| v.as_str()) {
+            Some(v) => v,
+            None => return Ok(missing_param_error("id", ToolGroup::Assistant)),
+        };
 
         // Fetch existing assistant to merge config
         let existing = sqlx::query_as::<_, (String, String, String, i64, i64)>(
@@ -173,13 +190,7 @@ impl AssistantServer {
         let (mut name, mut config) = if let Some((_, n, c, _, _)) = existing {
             (n, serde_json::from_str::<Value>(&c).unwrap_or(json!({})))
         } else {
-            return Ok(MCPResult {
-                content: Some(vec![MCPContent::Text {
-                    text: format!("Assistant '{}' not found", id),
-                }]),
-                structured_content: None,
-                is_error: Some(true),
-            });
+            return Ok(not_found_error("Assistant", id, ToolGroup::Assistant));
         };
 
         // Update name if provided
@@ -210,11 +221,21 @@ impl AssistantServer {
         if let Some(v) = args.get("maxTokens") {
             config["maxTokens"] = v.clone();
         }
+        // Handle tools (v2) -> allowedBuiltInServiceAliases
         if let Some(v) = args.get("tools") {
-            config["tools"] = v.clone();
+            config["allowedBuiltInServiceAliases"] = v.clone();
         }
+        // Handle allowedBuiltInServiceAliases (v1)
+        if let Some(v) = args.get("allowedBuiltInServiceAliases") {
+            config["allowedBuiltInServiceAliases"] = v.clone();
+        }
+
+        // Handle mcpServers (v2) and mcpServerIds (v1)
         if let Some(v) = args.get("mcpServers") {
-            config["mcpServers"] = v.clone();
+            config["mcpServerIds"] = v.clone();
+        }
+        if let Some(v) = args.get("mcpServerIds") {
+            config["mcpServerIds"] = v.clone();
         }
 
         let config_str =
@@ -239,44 +260,41 @@ impl AssistantServer {
         match result {
             Ok(query_result) => {
                 if query_result.rows_affected() > 0 {
-                    Ok(MCPResult {
-                        content: Some(vec![MCPContent::Text {
-                            text: format!("Assistant '{}' updated successfully", id),
-                        }]),
-                        structured_content: Some(json!({
-                            "success": true,
-                            "id": id,
-                            "name": name,
-                            "config": config
-                        })),
-                        is_error: Some(false),
-                    })
+                    let hint = SuccessHint::new(
+                        format!("Assistant '{}' updated successfully", id),
+                        vec!["Use builtin_assistant__getAssistant to verify changes".to_string()],
+                    );
+
+                    Ok(hint.to_mcp_result_with_data(Some(json!({
+                        "success": true,
+                        "id": id,
+                        "name": name,
+                        "config": config
+                    }))))
                 } else {
-                    Ok(MCPResult {
-                        content: Some(vec![MCPContent::Text {
-                            text: format!("Assistant '{}' not found", id),
-                        }]),
-                        structured_content: None,
-                        is_error: Some(true),
-                    })
+                    Ok(not_found_error("Assistant", id, ToolGroup::Assistant))
                 }
             }
-            Err(e) => Ok(MCPResult {
-                content: Some(vec![MCPContent::Text {
-                    text: format!("Failed to update assistant: {}", e),
-                }]),
-                structured_content: None,
-                is_error: Some(true),
-            }),
+            Err(e) => Ok(operation_failed_error(
+                "Update assistant",
+                &e.to_string(),
+                vec![
+                    "Verify the config JSON is valid".to_string(),
+                    "Check database connectivity".to_string(),
+                    "Use builtin_assistant__getAssistant to verify the assistant exists"
+                        .to_string(),
+                ],
+                ToolGroup::Assistant,
+            )),
         }
     }
 
     /// Delete an assistant
     async fn delete_assistant(&self, args: Value) -> Result<MCPResult, String> {
-        let id = args
-            .get("id")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| "Missing 'id' parameter".to_string())?;
+        let id = match args.get("id").and_then(|v| v.as_str()) {
+            Some(v) => v,
+            None => return Ok(missing_param_error("id", ToolGroup::Assistant)),
+        };
 
         let result = sqlx::query(
             r#"
@@ -291,45 +309,59 @@ impl AssistantServer {
         match result {
             Ok(query_result) => {
                 if query_result.rows_affected() > 0 {
-                    Ok(MCPResult {
-                        content: Some(vec![MCPContent::Text {
-                            text: format!("Assistant '{}' deleted successfully", id),
-                        }]),
-                        structured_content: Some(json!({
-                            "success": true,
-                            "id": id
-                        })),
-                        is_error: Some(false),
-                    })
+                    let hint = SuccessHint::new(
+                        format!("Assistant '{}' deleted successfully", id),
+                        vec![
+                            "Use builtin_assistant__listAssistants to see remaining assistants"
+                                .to_string(),
+                        ],
+                    );
+
+                    Ok(hint.to_mcp_result_with_data(Some(json!({
+                        "success": true,
+                        "id": id
+                    }))))
                 } else {
-                    Ok(MCPResult {
-                        content: Some(vec![MCPContent::Text {
-                            text: format!("Assistant '{}' not found", id),
-                        }]),
-                        structured_content: None,
-                        is_error: Some(true),
-                    })
+                    Ok(not_found_error("Assistant", id, ToolGroup::Assistant))
                 }
             }
-            Err(e) => Ok(MCPResult {
-                content: Some(vec![MCPContent::Text {
-                    text: format!("Failed to delete assistant: {}", e),
-                }]),
-                structured_content: None,
-                is_error: Some(true),
-            }),
+            Err(e) => Ok(operation_failed_error(
+                "Delete assistant",
+                &e.to_string(),
+                vec![
+                    "Verify the assistant ID is correct".to_string(),
+                    "Use builtin_assistant__listAssistants to see existing assistants".to_string(),
+                    "Check database connectivity".to_string(),
+                ],
+                ToolGroup::Assistant,
+            )),
         }
     }
 
     /// List all assistants with pagination support
     async fn list_assistants(&self, args: Value) -> Result<MCPResult, String> {
-        // Extract pagination parameters
+        // Legacy support: page/pageSize -> limit/offset
+        let page = args
+            .get("page")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(1)
+            .max(1);
+        let page_size = args
+            .get("pageSize")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(20)
+            .clamp(1, 100);
+
+        // Also support direct limit/offset if provided (v2 native)
         let limit = args
             .get("limit")
             .and_then(|v| v.as_i64())
-            .unwrap_or(50)
-            .min(100) as i32; // Default 50, max 100
-        let offset = args.get("offset").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+            .unwrap_or(page_size)
+            .clamp(1, 100);
+        let offset = args
+            .get("offset")
+            .and_then(|v| v.as_i64())
+            .unwrap_or((page - 1) * page_size);
 
         // Get total count for pagination metadata
         let total_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM assistants")
@@ -370,45 +402,59 @@ impl AssistantServer {
                     })
                     .collect();
 
-                let has_more = (offset + limit) < total_count as i32;
+                let has_more = (offset + limit) < total_count;
 
-                Ok(MCPResult {
-                    content: Some(vec![MCPContent::Text {
-                        text: format!(
-                            "Found {} of {} assistants (showing {} to {})",
-                            total_count,
-                            total_count,
-                            offset + 1,
-                            (offset + assistants.len() as i32).min(total_count as i32)
-                        ),
-                    }]),
-                    structured_content: Some(json!({
-                        "assistants": assistants,
-                        "total": total_count,
-                        "limit": limit,
-                        "offset": offset,
-                        "returned": assistants.len(),
-                        "has_more": has_more
-                    })),
-                    is_error: Some(false),
-                })
+                let hint = SuccessHint::new(
+                    format!(
+                        "Found {} of {} assistants (showing {} to {})",
+                        total_count,
+                        total_count,
+                        offset + 1,
+                        (offset + assistants.len() as i64).min(total_count)
+                    ),
+                    if has_more {
+                        vec![format!(
+                            "Use limit={} offset={} to see more assistants",
+                            limit,
+                            offset + limit
+                        )]
+                    } else if total_count > 0 {
+                        vec!["Use builtin_assistant__getAssistant to view details".to_string()]
+                    } else {
+                        vec![
+                            "Use builtin_assistant__createAssistant to create an assistant"
+                                .to_string(),
+                        ]
+                    },
+                );
+
+                Ok(hint.to_mcp_result_with_data(Some(json!({
+                    "assistants": assistants,
+                    "total": total_count,
+                    "limit": limit,
+                    "offset": offset,
+                    "returned": assistants.len(),
+                    "has_more": has_more
+                }))))
             }
-            Err(e) => Ok(MCPResult {
-                content: Some(vec![MCPContent::Text {
-                    text: format!("Failed to list assistants: {}", e),
-                }]),
-                structured_content: None,
-                is_error: Some(true),
-            }),
+            Err(e) => Ok(operation_failed_error(
+                "List assistants",
+                &e.to_string(),
+                vec![
+                    "Check database connectivity".to_string(),
+                    "Verify pagination parameters are valid integers".to_string(),
+                ],
+                ToolGroup::Assistant,
+            )),
         }
     }
 
     /// Search assistants
     async fn search_assistant(&self, args: Value) -> Result<MCPResult, String> {
-        let query = args
-            .get("query")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| "Missing 'query' parameter".to_string())?;
+        let query = match args.get("query").and_then(|v| v.as_str()) {
+            Some(v) => v,
+            None => return Ok(missing_param_error("query", ToolGroup::Assistant)),
+        };
 
         let limit = args
             .get("limit")
@@ -450,33 +496,42 @@ impl AssistantServer {
                     })
                     .collect();
 
-                Ok(MCPResult {
-                    content: Some(vec![MCPContent::Text {
-                        text: format!("Found {} assistants", assistants.len()),
-                    }]),
-                    structured_content: Some(json!({
-                        "assistants": assistants,
-                        "count": assistants.len()
-                    })),
-                    is_error: Some(false),
-                })
+                let hint = SuccessHint::new(
+                    format!("Found {} assistants", assistants.len()),
+                    if assistants.is_empty() {
+                        vec![
+                            format!("No assistants match '{}'", query),
+                            "Use builtin_assistant__listAssistants to see all assistants"
+                                .to_string(),
+                        ]
+                    } else {
+                        vec!["Use builtin_assistant__getAssistant to view details".to_string()]
+                    },
+                );
+
+                Ok(hint.to_mcp_result_with_data(Some(json!({
+                    "assistants": assistants,
+                    "count": assistants.len()
+                }))))
             }
-            Err(e) => Ok(MCPResult {
-                content: Some(vec![MCPContent::Text {
-                    text: format!("Failed to search assistants: {}", e),
-                }]),
-                structured_content: None,
-                is_error: Some(true),
-            }),
+            Err(e) => Ok(operation_failed_error(
+                "Search assistants",
+                &e.to_string(),
+                vec![
+                    "Check database connectivity".to_string(),
+                    "Verify query parameter is a valid string".to_string(),
+                ],
+                ToolGroup::Assistant,
+            )),
         }
     }
 
     /// Get an assistant by ID
     async fn get_assistant(&self, args: Value) -> Result<MCPResult, String> {
-        let id = args
-            .get("id")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| "Missing 'id' parameter".to_string())?;
+        let id = match args.get("id").and_then(|v| v.as_str()) {
+            Some(v) => v,
+            None => return Ok(missing_param_error("id", ToolGroup::Assistant)),
+        };
 
         let result = sqlx::query_as::<_, (String, String, String, i64, i64)>(
             r#"
@@ -494,34 +549,35 @@ impl AssistantServer {
                 // Parse config JSON
                 let config = serde_json::from_str::<Value>(&config_str).unwrap_or(json!({}));
 
-                Ok(MCPResult {
-                    content: Some(vec![MCPContent::Text {
-                        text: format!("Assistant: {}", name),
-                    }]),
-                    structured_content: Some(json!({
-                        "id": id,
-                        "name": name,
-                        "config": config,
-                        "created_at": created_at,
-                        "updated_at": updated_at
-                    })),
-                    is_error: Some(false),
-                })
+                let hint = SuccessHint::new(
+                    format!("Assistant: {}", name),
+                    vec![
+                        "Use builtin_assistant__updateAssistant to modify configuration"
+                            .to_string(),
+                        "Use builtin_assistant__deleteAssistant to remove this assistant"
+                            .to_string(),
+                    ],
+                );
+
+                Ok(hint.to_mcp_result_with_data(Some(json!({
+                    "id": id,
+                    "name": name,
+                    "config": config,
+                    "created_at": created_at,
+                    "updated_at": updated_at
+                }))))
             }
-            Ok(None) => Ok(MCPResult {
-                content: Some(vec![MCPContent::Text {
-                    text: format!("Assistant '{}' not found", id),
-                }]),
-                structured_content: None,
-                is_error: Some(true),
-            }),
-            Err(e) => Ok(MCPResult {
-                content: Some(vec![MCPContent::Text {
-                    text: format!("Failed to get assistant: {}", e),
-                }]),
-                structured_content: None,
-                is_error: Some(true),
-            }),
+            Ok(None) => Ok(not_found_error("Assistant", id, ToolGroup::Assistant)),
+            Err(e) => Ok(operation_failed_error(
+                "Get assistant",
+                &e.to_string(),
+                vec![
+                    "Verify the assistant ID is correct".to_string(),
+                    "Use builtin_assistant__listAssistants to see existing assistants".to_string(),
+                    "Check database connectivity".to_string(),
+                ],
+                ToolGroup::Assistant,
+            )),
         }
     }
 }
@@ -608,15 +664,15 @@ fn create_create_assistant_tool() -> MCPTool {
                 "modelName": { "type": "string", "description": "Specific model name (e.g., gpt-4)" },
                 "temperature": { "type": "number", "description": "Model temperature (0.0 to 1.0)" },
                 "maxTokens": { "type": "integer", "description": "Maximum tokens for response" },
-                "tools": { 
+                "allowedBuiltInServiceAliases": { 
                     "type": "array", 
                     "items": { "type": "string" },
-                    "description": "List of enabled tool names"
+                    "description": "List of allowed built-in service aliases"
                 },
-                "mcpServers": {
+                "mcpServerIds": {
                     "type": "array",
                     "items": { "type": "string" },
-                    "description": "List of enabled MCP server names"
+                    "description": "List of enabled MCP server IDs"
                 }
             },
             "required": ["id", "name"]
@@ -642,15 +698,15 @@ fn create_update_assistant_tool() -> MCPTool {
                 "modelName": { "type": "string", "description": "Specific model name" },
                 "temperature": { "type": "number", "description": "Model temperature" },
                 "maxTokens": { "type": "integer", "description": "Maximum tokens" },
-                "tools": { 
+                "allowedBuiltInServiceAliases": { 
                     "type": "array", 
                     "items": { "type": "string" },
-                    "description": "List of enabled tool names"
+                    "description": "List of allowed built-in service aliases"
                 },
-                "mcpServers": {
+                "mcpServerIds": {
                     "type": "array",
                     "items": { "type": "string" },
-                    "description": "List of enabled MCP server names"
+                    "description": "List of enabled MCP server IDs"
                 }
             },
             "required": ["id"]
@@ -680,29 +736,18 @@ fn create_delete_assistant_tool() -> MCPTool {
 
 /// Create the listAssistants tool definition
 fn create_list_assistants_tool() -> MCPTool {
-    let mut props = HashMap::new();
-    props.insert(
-        "limit".to_string(),
-        integer_prop(
-            Some(1),
-            Some(100),
-            Some("Maximum number of assistants to return (default: 50, max: 100)"),
-        ),
-    );
-    props.insert(
-        "offset".to_string(),
-        integer_prop(
-            Some(0),
-            None,
-            Some("Number of assistants to skip (default: 0)"),
-        ),
-    );
-
     MCPTool {
         name: "builtin_assistant__listAssistants".to_string(),
         title: Some("List Assistants".to_string()),
-        description: "List all global assistant configurations with pagination support".to_string(),
-        input_schema: object_schema(props, vec![]), // Both parameters are optional
+        description: "List available assistants with pagination".to_string(),
+        input_schema: serde_json::from_value(json!({
+            "type": "object",
+            "properties": {
+                "page": { "type": "integer", "description": "Page number (1-based)", "default": 1 },
+                "pageSize": { "type": "integer", "description": "Items per page", "default": 20 },
+                "search": { "type": "string", "description": "Search term for filtering assistants" }
+            }
+        })).unwrap(),
         annotations: None,
         output_schema: None,
     }
@@ -1006,10 +1051,10 @@ mod tests {
 
         let structured_default = default_page.structured_content.unwrap();
         assert_eq!(structured_default["total"], 25);
-        assert_eq!(structured_default["limit"], 50); // Default limit
+        assert_eq!(structured_default["limit"], 20); // Default limit
         assert_eq!(structured_default["offset"], 0); // Default offset
-        assert_eq!(structured_default["returned"], 25);
-        assert_eq!(structured_default["has_more"], false);
+        assert_eq!(structured_default["returned"], 20);
+        assert_eq!(structured_default["has_more"], true);
 
         // Test limit exceeding max (should cap at 100)
         let capped = server

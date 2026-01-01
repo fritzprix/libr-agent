@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+use tauri::AppHandle;
 use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
 
@@ -192,6 +193,7 @@ impl MCPServiceProxyManager {
         &self,
         session_id: String,
         tool_ids: Vec<String>,
+        app_handle: Option<AppHandle>,
     ) -> Result<Arc<MCPServiceProxy>, String> {
         // CRITICAL: Check if already exists (prevent race conditions)
         {
@@ -223,6 +225,7 @@ impl MCPServiceProxyManager {
             self.external_mcp_manager.clone(),
             self.db_pool.clone(),
             self.session_manager.clone(),
+            app_handle,
         )
         .await?;
 
@@ -336,10 +339,22 @@ impl MCPServiceProxyManager {
     ) -> Result<MCPResponse, String> {
         // Builtin tools route through proxy
         if tool_name.starts_with("builtin_") {
-            let proxy = self
-                .get_proxy(session_id)
-                .await
-                .ok_or_else(|| format!("No proxy found for session: {}", session_id))?;
+            let proxy = self.get_proxy(session_id).await.ok_or_else(|| {
+                let active_sessions = futures::executor::block_on(async {
+                    self.proxies
+                        .read()
+                        .await
+                        .keys()
+                        .cloned()
+                        .collect::<Vec<_>>()
+                });
+                log::error!(
+                    "No proxy found for session: {}. Active sessions: {:?}",
+                    session_id,
+                    active_sessions
+                );
+                format!("Session context not found or expired (ID: {})", session_id)
+            })?;
             return proxy.call_tool(tool_name, args).await;
         }
 
@@ -438,7 +453,7 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    async fn create_test_manager() -> Arc<MCPServiceProxyManager> {
+    async fn create_test_manager() -> (Arc<MCPServiceProxyManager>, tempfile::NamedTempFile) {
         let temp_db = tempfile::NamedTempFile::new().unwrap();
         let db_url = format!("sqlite://{}", temp_db.path().display());
 
@@ -463,16 +478,19 @@ mod tests {
             session_manager.clone(),
         ));
 
-        Arc::new(MCPServiceProxyManager::new(
-            external_mcp_manager,
-            Arc::new(pool),
-            session_manager,
-        ))
+        (
+            Arc::new(MCPServiceProxyManager::new(
+                external_mcp_manager,
+                Arc::new(pool),
+                session_manager,
+            )),
+            temp_db,
+        )
     }
 
     #[tokio::test]
     async fn test_phase3_playbook_and_assistant_integration() {
-        let manager = create_test_manager().await;
+        let (manager, _db_guard) = create_test_manager().await;
 
         // Create session 1 with all Phase 3 tools
         let session1 = "test-session-1".to_string();
@@ -487,7 +505,7 @@ mod tests {
             .unwrap();
 
         manager
-            .create_proxy(session1.clone(), tool_ids1)
+            .create_proxy(session1.clone(), tool_ids1, None)
             .await
             .unwrap();
 
@@ -554,7 +572,7 @@ mod tests {
             .unwrap();
 
         manager
-            .create_proxy(session2.clone(), tool_ids2)
+            .create_proxy(session2.clone(), tool_ids2, None)
             .await
             .unwrap();
 
@@ -707,7 +725,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_phase3_concurrent_operations() {
-        let manager = create_test_manager().await;
+        let (manager, _db_guard) = create_test_manager().await;
 
         // Create 3 concurrent sessions
         let sessions = vec![
@@ -727,7 +745,7 @@ mod tests {
 
             let tool_ids = vec!["playbook".to_string(), "assistant".to_string()];
             manager
-                .create_proxy(session_id.clone(), tool_ids)
+                .create_proxy(session_id.clone(), tool_ids, None)
                 .await
                 .unwrap();
         }
@@ -812,7 +830,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_phase3_all_servers_integration() {
-        let manager = create_test_manager().await;
+        let (manager, _db_guard) = create_test_manager().await;
 
         let session_id = "integration-test".to_string();
 
@@ -834,7 +852,7 @@ mod tests {
         ];
 
         manager
-            .create_proxy(session_id.clone(), all_tools)
+            .create_proxy(session_id.clone(), all_tools, None)
             .await
             .unwrap();
 

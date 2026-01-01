@@ -1,55 +1,7 @@
 // schemas.rs - Tool schema definitions
 use crate::mcp::schema::JSONSchema;
-use crate::mcp::utils::schema_builder::{integer_prop, number_prop, object_schema, string_prop};
+use crate::mcp::utils::schema_builder::{integer_prop, object_schema, string_prop};
 use std::collections::HashMap;
-
-pub(crate) fn tool_add_content_schema() -> JSONSchema {
-    let mut props: HashMap<String, JSONSchema> = HashMap::new();
-    props.insert(
-        "fileUrl".to_string(),
-        string_prop(None, None, Some("File URL (file://) to add")),
-    );
-    props.insert(
-        "srcUrl".to_string(),
-        string_prop(
-            None,
-            None,
-            Some("Source URL (http://, https://) where content came from"),
-        ),
-    );
-    props.insert(
-        "content".to_string(),
-        string_prop(None, None, Some("Direct content to add")),
-    );
-
-    // Create metadata object schema with description
-    let mut meta_props: HashMap<String, JSONSchema> = HashMap::new();
-    meta_props.insert(
-        "filename".to_string(),
-        string_prop(None, None, Some("Content filename")),
-    );
-    meta_props.insert(
-        "mimeType".to_string(),
-        string_prop(None, None, Some("MIME type")),
-    );
-    meta_props.insert(
-        "size".to_string(),
-        integer_prop(Some(0), None, Some("Content size in bytes")),
-    );
-    meta_props.insert(
-        "uploadedAt".to_string(),
-        string_prop(None, None, Some("Upload timestamp")),
-    );
-
-    let mut metadata_schema = object_schema(meta_props, vec![]);
-    // Add description to the metadata object itself
-    metadata_schema.description = Some("Optional metadata about the content".to_string());
-
-    props.insert("metadata".to_string(), metadata_schema);
-
-    // Use None instead of empty vec![] for required
-    object_schema(props, vec![])
-}
 
 pub(crate) fn tool_list_content_schema() -> JSONSchema {
     let mut props: HashMap<String, JSONSchema> = HashMap::new();
@@ -93,42 +45,6 @@ pub(crate) fn tool_read_content_schema() -> JSONSchema {
     object_schema(props, vec!["contentId".to_string()])
 }
 
-pub(crate) fn tool_keyword_search_schema() -> JSONSchema {
-    let mut props: HashMap<String, JSONSchema> = HashMap::new();
-    props.insert(
-        "query".to_string(),
-        string_prop(None, None, Some("Search query string")),
-    );
-
-    // Create options object schema with description
-    let mut option_props: HashMap<String, JSONSchema> = HashMap::new();
-    option_props.insert(
-        "topN".to_string(),
-        integer_prop(
-            Some(1),
-            Some(100),
-            Some("Maximum number of results to return"),
-        ),
-    );
-    option_props.insert(
-        "threshold".to_string(),
-        number_prop(
-            Some(0.0),
-            Some(1.0),
-            Some("Minimum relevance score (0-1 float)"),
-        ),
-    );
-
-    let mut options_schema = object_schema(option_props, vec![]);
-    // Add description to the options object itself
-    options_schema.description =
-        Some("Optional search parameters for fine-tuning results".to_string());
-
-    props.insert("options".to_string(), options_schema);
-
-    object_schema(props, vec!["query".to_string()])
-}
-
 pub(crate) fn tool_delete_content_schema() -> JSONSchema {
     let mut props: HashMap<String, JSONSchema> = HashMap::new();
     props.insert(
@@ -143,18 +59,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_tool_add_content_schema_has_required_fields() {
-        let schema = tool_add_content_schema();
-        // Verify schema structure
-        assert!(matches!(
-            schema.schema_type,
-            crate::mcp::schema::JSONSchemaType::Object { .. }
-        ));
-        // Verify properties exist
-        // (Add specific assertions based on JSONSchema structure)
-    }
-
-    #[test]
     fn test_tool_list_content_schema_pagination() {
         let _schema = tool_list_content_schema();
         // Verify pagination properties
@@ -164,11 +68,5 @@ mod tests {
     fn test_tool_read_content_schema_required_content_id() {
         let _schema = tool_read_content_schema();
         // Verify content_id is required
-    }
-
-    #[test]
-    fn test_tool_keyword_search_schema_query_required() {
-        let _schema = tool_keyword_search_schema();
-        // Verify query is required, options is optional
     }
 }

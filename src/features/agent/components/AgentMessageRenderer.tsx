@@ -22,11 +22,11 @@ import {
   remoteImageDefinition,
   remoteStackDefinition,
 } from '@mcp-ui/client';
-import { useUnifiedMCP } from '@/hooks/use-unified-mcp';
-import { createId } from '@paralleldrive/cuid2';
+// import { createId } from '@paralleldrive/cuid2'; // Removed as it's not used directly anymore (handled in backend wrapper)
 import { useAgentChatActions } from '@/context/AgentChatContext';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
 import { createSystemMessage, createUserMessage } from '@/lib/chat-utils';
+import { handleUserToolCall } from '@/lib/backend'; // Import type-safe wrapper
 
 const logger = getLogger('AgentMessageRenderer');
 
@@ -56,10 +56,9 @@ export const AgentMessageRenderer: React.FC<AgentMessageRendererProps> = ({
   expandResources = false,
 }) => {
   const { copied, copyToClipboard } = useClipboard();
-  const { openExternalUrl } = useRustBackend();
-  const { executeToolCall } = useUnifiedMCP();
+  const { openExternalUrl } = useRustBackend(); // Removed callToolUnified
   const { submit } = useAgentChatActions();
-  const { currentSession } = useAgentSessionState();
+  const { session } = useAgentSessionState();
   const tauriCommands = useRustBackend();
 
   // content 결정: message가 있으면 message.content 사용, 없으면 props.content 사용
@@ -146,7 +145,7 @@ export const AgentMessageRenderer: React.FC<AgentMessageRendererProps> = ({
    */
   const handleUIAction = useCallback(
     async (result: UIActionResult) => {
-      const sessionId = currentSession?.id;
+      const sessionId = session?.id;
 
       if (!sessionId) {
         logger.warn('No active session for UI action', { type: result.type });
@@ -157,6 +156,10 @@ export const AgentMessageRenderer: React.FC<AgentMessageRendererProps> = ({
         switch (result.type) {
           case 'tool': {
             const { toolName, params = {} } = result.payload;
+            logger.info('UI Action Tool Call Received', {
+              sessionId,
+              result,
+            });
 
             // prefix 기반 라우팅: tauri: 접두사가 있으면 내부 Tauri 명령어로 처리
             if (toolName.startsWith('tauri:')) {
@@ -215,6 +218,7 @@ export const AgentMessageRenderer: React.FC<AgentMessageRendererProps> = ({
                   availableMethods: Object.keys(tauriCommands),
                 });
               }
+              return { status: 'tauri-processed' };
             } else {
               // MCP 도구 호출: latest content에서 service info 추출
               const serviceInfo = extractServiceInfoFromContent(
@@ -234,8 +238,11 @@ export const AgentMessageRenderer: React.FC<AgentMessageRendererProps> = ({
                 });
 
                 if (isBaseName) {
-                  // Web MCP (BuiltInWeb) 도구는 builtin_ prefix 필요
-                  if (serviceInfo.backendType === 'BuiltInWeb') {
+                  // Web MCP (BuiltInWeb) & Native (BuiltInRust) 도구는 builtin_ prefix 필요
+                  if (
+                    serviceInfo.backendType === 'BuiltInWeb' ||
+                    serviceInfo.backendType === 'BuiltInRust'
+                  ) {
                     finalToolName = `builtin_${serviceInfo.serverName}__${toolName}`;
                   } else {
                     finalToolName = `${serviceInfo.serverName}__${toolName}`;
@@ -250,43 +257,21 @@ export const AgentMessageRenderer: React.FC<AgentMessageRendererProps> = ({
                 );
               }
 
-              // 통합된 MCP 도구 호출 (V2: Rust에 전달만)
-              const toolCallId = createId();
-
-              logger.info('Executing tool for Agent V2', {
-                sessionId,
-                toolName: finalToolName,
-                toolCallId,
-              });
-
-              // 실제 도구 실행
-              const response = await executeToolCall({
-                id: toolCallId,
-                type: 'function',
-                function: {
-                  name: finalToolName,
-                  arguments: JSON.stringify(params),
+              // 통합된 MCP 도구 호출 (V2: Rust Single Backend)
+              logger.info(
+                'Injecting Tool Call via Rust Backend (Assistant Role)',
+                {
+                  sessionId,
+                  toolName: finalToolName,
                 },
-              });
+              );
 
-              // V2: 도구 실행 결과를 Rust에 전달 (message 생성은 Rust가 담당)
-              // Rust가 자동으로:
-              // 1. Tool call message + Tool result message 생성
-              // 2. hasUIResource() 체크
-              // 3. 조건부 re-submit (hasToolCall && !hasUIResource)
-              if (response && response.result) {
-                logger.info('Tool executed successfully', {
-                  toolName: finalToolName,
-                  hasContent: !!response.result.content?.length,
-                });
-              } else if (response && response.error) {
-                logger.error('Tool execution failed', {
-                  toolName: finalToolName,
-                  error: response.error.message,
-                });
-              }
+              // Use type-safe wrapper to handle the tool call as an Assistant message
+              // This triggers the Rust backend to execute the tool and resume the workflow automatically
+              await handleUserToolCall(sessionId, finalToolName, params);
+
+              return { status: 'tool-submitted', tool: finalToolName };
             }
-            return { status: 'tool-submitted', tool: toolName };
           }
 
           case 'intent': {
@@ -359,13 +344,7 @@ export const AgentMessageRenderer: React.FC<AgentMessageRendererProps> = ({
         };
       }
     },
-    [
-      currentSession?.id,
-      executeToolCall,
-      submit,
-      openExternalUrl,
-      tauriCommands,
-    ],
+    [session?.id, submit, openExternalUrl, tauriCommands],
   );
 
   if (!finalContent.length) {

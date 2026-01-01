@@ -1,24 +1,33 @@
 use super::server::ContentStoreServer;
 use super::types::*;
 use super::{helpers, parsers, search};
+use crate::mcp::builtin::error_guidance::{
+    invalid_input_error, missing_param_error, not_found_error, operation_failed_error, SuccessHint,
+    ToolGroup,
+};
 use crate::mcp::types::MCPResult;
 use log::error;
 use serde_json::Value;
 
 impl ContentStoreServer {
-    pub(crate) async fn handle_add_content(&self, params: Value) -> Result<MCPResult, String> {
+    pub(crate) async fn handle_save_knowledge(&self, params: Value) -> Result<MCPResult, String> {
         let args: AddContentArgs = match serde_json::from_value(params) {
             Ok(args) => args,
             Err(e) => {
-                return Ok(MCPResult::error(&format!(
-                    "Invalid add_content parameters: {e}"
-                )));
+                return Ok(invalid_input_error(
+                    &format!("Invalid save_knowledge parameters: {e}"),
+                    ToolGroup::ContentStore,
+                ));
             }
         };
 
         // Extract metadata
         let metadata = args.metadata.as_ref();
-        let filename = metadata.and_then(|m| m.filename.clone());
+        // Map title to filename if filename is missing
+        let filename = metadata
+            .and_then(|m| m.filename.clone())
+            .or(args.title.clone());
+
         let mime_type_from_metadata = metadata.and_then(|m| m.mime_type.clone());
         let size_from_metadata = metadata.and_then(|m| m.size);
         let uploaded_at = metadata.and_then(|m| m.uploaded_at.clone());
@@ -30,7 +39,10 @@ impl ContentStoreServer {
                 let file_path_str = match helpers::extract_file_path_from_url(file_url) {
                     Ok(path) => path,
                     Err(e) => {
-                        return Ok(MCPResult::error(&format!("Invalid file URL: {e}")));
+                        return Ok(invalid_input_error(
+                            &format!("Invalid file URL: {e}"),
+                            ToolGroup::ContentStore,
+                        ));
                     }
                 };
 
@@ -46,20 +58,30 @@ impl ContentStoreServer {
                 {
                     parsers::ParseResult::Text(content) => content,
                     parsers::ParseResult::Error(e) => {
-                        return Ok(MCPResult::error(&format!(
-                            "Failed to parse file {file_path_str}: {e}"
-                        )));
+                        return Ok(operation_failed_error(
+                            "Parse file",
+                            &format!("{file_path_str}: {e}"),
+                            vec![
+                                "Ensure the file format is supported (PDF, HTML, markdown, code)"
+                                    .to_string(),
+                                "Check the file is not corrupted".to_string(),
+                                "Try providing content directly instead of fileUrl".to_string(),
+                            ],
+                            ToolGroup::ContentStore,
+                        ));
                     }
                 }
             }
             (Some(_), Some(_)) => {
-                return Ok(MCPResult::error(
+                return Ok(invalid_input_error(
                     "Cannot provide both content and fileUrl. Choose one.",
+                    ToolGroup::ContentStore,
                 ));
             }
             (Option::None, Option::None) => {
-                return Ok(MCPResult::error(
-                    "Either content or fileUrl must be provided.",
+                return Ok(missing_param_error(
+                    "content or fileUrl",
+                    ToolGroup::ContentStore,
                 ));
             }
         };
@@ -71,9 +93,16 @@ impl ContentStoreServer {
 
         if let Err(e) = self.ensure_session_store(&session_id).await {
             error!("Failed to ensure content store for session {session_id}: {e}");
-            return Ok(MCPResult::error(&format!(
-                "Failed to prepare content store for session {session_id}: {e}"
-            )));
+            return Ok(operation_failed_error(
+                "Prepare content store",
+                &format!("session {session_id}: {e}"),
+                vec![
+                    "Check database connectivity".to_string(),
+                    "Ensure session is active".to_string(),
+                    "Retry the operation".to_string(),
+                ],
+                ToolGroup::ContentStore,
+            ));
         }
 
         // Create chunks from content (simple line-based chunking)
@@ -131,7 +160,16 @@ impl ContentStoreServer {
         {
             Ok(item) => item,
             Err(e) => {
-                return Ok(MCPResult::error(&format!("Failed to store content: {e}")));
+                return Ok(operation_failed_error(
+                    "Store content",
+                    &e.to_string(),
+                    vec![
+                        "Check database connectivity".to_string(),
+                        "Verify content format is valid".to_string(),
+                        "Try with smaller content size".to_string(),
+                    ],
+                    ToolGroup::ContentStore,
+                ));
             }
         };
 
@@ -160,34 +198,28 @@ impl ContentStoreServer {
             }
         }
 
-        Ok(MCPResult {
-            content: Some(vec![crate::mcp::types::MCPContent::Text {
-                text: format!(
-                    "Content added successfully!\n\nFile: {}\nContent ID: {}\nSession ID: {}\nMIME Type: {}\nSize: {} bytes\nLine Count: {}\nChunks Created: {}\nUploaded: {}\n\nPreview:\n{}",
-                    content_item.filename,
-                    content_item.id,
-                    content_item.session_id,
-                    content_item.mime_type,
-                    content_item.size,
-                    content_item.line_count,
-                    content_item.chunk_count,
-                    content_item.uploaded_at,
-                    content_item.preview
-                ),
-            }]),
-            structured_content: Some(serde_json::json!({
-                "sessionId": content_item.session_id,
-                "contentId": content_item.id,
-                "filename": content_item.filename,
-                "mimeType": content_item.mime_type,
-                "size": content_item.size,
-                "lineCount": content_item.line_count,
-                "preview": content_item.preview,
-                "uploadedAt": content_item.uploaded_at,
-                "chunkCount": content_item.chunk_count
-            })),
-            is_error: Some(false),
-        })
+        let hint = SuccessHint::new(
+            format!(
+                "Content '{}' added successfully ({} bytes, {} lines)",
+                content_item.filename, content_item.size, content_item.line_count
+            ),
+            vec![
+                "Use readContent to view the full content".to_string(),
+                "Use keywordSimilaritySearch to find content by keywords".to_string(),
+            ],
+        );
+
+        Ok(hint.to_mcp_result_with_data(Some(serde_json::json!({
+            "sessionId": content_item.session_id,
+            "contentId": content_item.id,
+            "filename": content_item.filename,
+            "mimeType": content_item.mime_type,
+            "size": content_item.size,
+            "lineCount": content_item.line_count,
+            "preview": content_item.preview,
+            "uploadedAt": content_item.uploaded_at,
+            "chunkCount": content_item.chunk_count
+        }))))
     }
 
     pub(crate) async fn handle_list_content(&self, params: Value) -> Result<MCPResult, String> {
@@ -199,9 +231,10 @@ impl ContentStoreServer {
             match serde_json::from_value(params) {
                 Ok(args) => args,
                 Err(e) => {
-                    return Ok(MCPResult::error(&format!(
-                        "Invalid list_content parameters: {e}"
-                    )));
+                    return Ok(invalid_input_error(
+                        &format!("Invalid list_content parameters: {e}"),
+                        ToolGroup::ContentStore,
+                    ));
                 }
             }
         };
@@ -215,9 +248,16 @@ impl ContentStoreServer {
             error!(
                 "Failed to ensure content store for session {session_id} while listing content: {e}"
             );
-            return Ok(MCPResult::error(&format!(
-                "Failed to prepare content store for session {session_id}: {e}"
-            )));
+            return Ok(operation_failed_error(
+                "Prepare content store",
+                &format!("session {session_id}: {e}"),
+                vec![
+                    "Check database connectivity".to_string(),
+                    "Ensure session is active".to_string(),
+                    "Retry the operation".to_string(),
+                ],
+                ToolGroup::ContentStore,
+            ));
         }
 
         let (offset, limit) = args.pagination.as_ref().map_or((0usize, 100usize), |p| {
@@ -230,7 +270,16 @@ impl ContentStoreServer {
         let (contents, total) = match storage.list_content(&session_id, offset, limit).await {
             Ok((contents, total)) => (contents, total),
             Err(e) => {
-                return Ok(MCPResult::error(&format!("Failed to list content: {e}")));
+                return Ok(operation_failed_error(
+                    "List content",
+                    &e.to_string(),
+                    vec![
+                        "Check database connectivity".to_string(),
+                        "Verify session is active".to_string(),
+                        "Retry the operation".to_string(),
+                    ],
+                    ToolGroup::ContentStore,
+                ));
             }
         };
 
@@ -252,45 +301,37 @@ impl ContentStoreServer {
             })
             .collect();
 
-        Ok(MCPResult {
-            content: Some(vec![crate::mcp::types::MCPContent::Text {
-                text: format!(
-                    "Content listing for store:\n\nTotal items: {}\n\n{}",
-                    total,
-                    content_list
-                        .iter()
-                        .map(|item| format!(
-                            "• {} (ID: {}, {} bytes, {} lines)",
-                            item.get("filename")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("unknown"),
-                            item.get("contentId")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("unknown"),
-                            item.get("size").and_then(|v| v.as_u64()).unwrap_or(0),
-                            item.get("lineCount").and_then(|v| v.as_u64()).unwrap_or(0)
-                        ))
-                        .collect::<Vec<String>>()
-                        .join("\n")
-                ),
-            }]),
-            structured_content: Some(serde_json::json!({
-                "sessionId": session_id,
-                "contents": content_list,
-                "total": total,
-                "hasMore": false
-            })),
-            is_error: Some(false),
-        })
+        let has_more = offset + content_list.len() < total;
+        let hint = SuccessHint::new(
+            format!("Found {} of {} content items", content_list.len(), total),
+            if has_more {
+                vec![format!(
+                    "Use pagination.offset={} to see more items",
+                    offset + limit
+                )]
+            } else if total > 0 {
+                vec!["Use readContent to view a file's contents".to_string()]
+            } else {
+                vec!["Use addContent to add files to the content store".to_string()]
+            },
+        );
+
+        Ok(hint.to_mcp_result_with_data(Some(serde_json::json!({
+            "sessionId": session_id,
+            "contents": content_list,
+            "total": total,
+            "hasMore": has_more
+        }))))
     }
 
     pub(crate) async fn handle_read_content(&self, params: Value) -> Result<MCPResult, String> {
         let args: ReadContentArgs = match serde_json::from_value(params) {
             Ok(args) => args,
             Err(e) => {
-                return Ok(MCPResult::error(&format!(
-                    "Invalid read_content parameters: {e}"
-                )));
+                return Ok(invalid_input_error(
+                    &format!("Invalid read_content parameters: {e}"),
+                    ToolGroup::ContentStore,
+                ));
             }
         };
 
@@ -310,14 +351,29 @@ impl ContentStoreServer {
 
         let content_session_id = match content_session_id {
             Ok(id) => id,
-            Err(e) => return Ok(MCPResult::error(&e)),
+            Err(_) => {
+                return Ok(not_found_error(
+                    "Content",
+                    &args.content_id,
+                    ToolGroup::ContentStore,
+                ))
+            }
         };
 
         if content_session_id != session_id {
-            return Ok(MCPResult::error(&format!(
-                "Access denied: Content '{}' belongs to a different session",
-                args.content_id
-            )));
+            return Ok(operation_failed_error(
+                "Read content",
+                &format!(
+                    "Content '{}' belongs to a different session",
+                    args.content_id
+                ),
+                vec![
+                    "Use listContent to see content in current session".to_string(),
+                    "Switch to the session that owns this content".to_string(),
+                    "Verify the content ID is correct".to_string(),
+                ],
+                ToolGroup::ContentStore,
+            ));
         }
 
         // Read content (session verification passed)
@@ -328,38 +384,48 @@ impl ContentStoreServer {
         {
             Ok(content) => content,
             Err(e) => {
-                return Ok(MCPResult::error(&format!("Failed to read content: {e}")));
+                return Ok(operation_failed_error(
+                    "Read content",
+                    &e.to_string(),
+                    vec![
+                        "Verify the content ID is correct".to_string(),
+                        "Check line range is valid".to_string(),
+                        "Use listContent to see available content".to_string(),
+                    ],
+                    ToolGroup::ContentStore,
+                ));
             }
         };
 
-        Ok(MCPResult {
-            content: Some(vec![crate::mcp::types::MCPContent::Text {
-                text: format!(
-                    "Content read successfully!\n\nContent ID: {}\nFrom Line: {}\nTo Line: {}\n\n--- Content ---\n{}",
-                    args.content_id,
-                    args.from_line.unwrap_or(1),
-                    args.to_line.map(|n| n.to_string()).unwrap_or("end".to_string()),
-                    content
-                ),
-            }]),
-            structured_content: Some(serde_json::json!({
-                "content": content,
-                "lineRange": [
-                    args.from_line.unwrap_or(1),
-                    args.to_line.unwrap_or_else(|| content.lines().count().max(1))
-                ]
-            })),
-            is_error: Some(false),
-        })
+        let from_line = args.from_line.unwrap_or(1);
+        let to_line = args
+            .to_line
+            .unwrap_or_else(|| content.lines().count().max(1));
+        let hint = SuccessHint::new(
+            format!(
+                "Content '{}' read successfully (lines {}-{})",
+                args.content_id, from_line, to_line
+            ),
+            vec![
+                "Use keywordSimilaritySearch to find specific content".to_string(),
+                "Use deleteContent to remove this content".to_string(),
+            ],
+        );
+
+        Ok(hint.to_mcp_result_with_data(Some(serde_json::json!({
+            "content": content,
+            "lineRange": [from_line, to_line]
+        }))))
     }
 
-    pub(crate) async fn handle_keyword_search(&self, params: Value) -> Result<MCPResult, String> {
+    pub(crate) async fn handle_search_knowledge(&self, params: Value) -> Result<MCPResult, String> {
         let args: KeywordSearchArgs = match serde_json::from_value(params) {
             Ok(args) => args,
             Err(e) => {
-                return Ok(MCPResult::error(&format!(
-                    "Invalid keyword_search parameters: {e}"
-                )));
+                return Ok(invalid_input_error(
+                    &format!("Invalid keyword_search parameters: {e}"),
+                    ToolGroup::ContentStore,
+                ));
             }
         };
 
@@ -372,9 +438,16 @@ impl ContentStoreServer {
             error!(
                 "Failed to ensure content store for session {session_id} during keyword search: {e}"
             );
-            return Ok(MCPResult::error(&format!(
-                "Failed to prepare content store for session {session_id}: {e}"
-            )));
+            return Ok(operation_failed_error(
+                "Prepare content store",
+                &format!("session {session_id}: {e}"),
+                vec![
+                    "Check database connectivity".to_string(),
+                    "Ensure session is active".to_string(),
+                    "Retry the operation".to_string(),
+                ],
+                ToolGroup::ContentStore,
+            ));
         }
 
         let top_n = args
@@ -391,7 +464,16 @@ impl ContentStoreServer {
         let all_results = match search_engine.search_bm25(&args.query, ranking_limit).await {
             Ok(results) => results,
             Err(e) => {
-                return Ok(MCPResult::error(&format!("Failed to search content: {e}")));
+                return Ok(operation_failed_error(
+                    "Search content",
+                    &e.to_string(),
+                    vec![
+                        "Verify the search query is valid".to_string(),
+                        "Check if content has been indexed".to_string(),
+                        "Use listContent to see available content".to_string(),
+                    ],
+                    ToolGroup::ContentStore,
+                ));
             }
         };
 
@@ -434,65 +516,36 @@ impl ContentStoreServer {
             })
             .collect();
 
-        Ok(MCPResult {
-            content: Some(vec![crate::mcp::types::MCPContent::Text {
-                text: format!(
-                    "Search completed!\n\nQuery: \"{}\"\nSession ID: {}\nResults found: {}\n\n{}",
-                    args.query,
-                    session_id,
-                    search_results.len(),
-                    if search_results.is_empty() {
-                        "No results found for your search query.".to_string()
-                    } else {
-                        search_results
-                            .iter()
-                            .map(|result| {
-                                format!(
-                                    "📄 Content ID: {} (Score: {:.2})\n   Lines {}-{}: {}",
-                                    result
-                                        .get("contentId")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or("unknown"),
-                                    result.get("score").and_then(|v| v.as_f64()).unwrap_or(0.0),
-                                    result
-                                        .get("lineRange")
-                                        .and_then(|v| v.as_array())
-                                        .and_then(|arr| arr.first())
-                                        .and_then(|v| v.as_u64())
-                                        .unwrap_or(0),
-                                    result
-                                        .get("lineRange")
-                                        .and_then(|v| v.as_array())
-                                        .and_then(|arr| arr.get(1))
-                                        .and_then(|v| v.as_u64())
-                                        .unwrap_or(0),
-                                    result
-                                        .get("matchedText")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or("")
-                                        .trim()
-                                )
-                            })
-                            .collect::<Vec<String>>()
-                            .join("\n\n")
-                    }
-                ),
-            }]),
-            structured_content: Some(serde_json::json!({
-                "sessionId": session_id,
-                "results": search_results
-            })),
-            is_error: Some(false),
-        })
+        let hint = SuccessHint::new(
+            format!(
+                "Search '{}' found {} results",
+                args.query,
+                search_results.len()
+            ),
+            if search_results.is_empty() {
+                vec![
+                    "Try different search keywords".to_string(),
+                    "Use listContent to see all available content".to_string(),
+                ]
+            } else {
+                vec!["Use readContent to view full content".to_string()]
+            },
+        );
+
+        Ok(hint.to_mcp_result_with_data(Some(serde_json::json!({
+            "sessionId": session_id,
+            "results": search_results
+        }))))
     }
 
     pub(crate) async fn handle_delete_content(&self, params: Value) -> Result<MCPResult, String> {
         let args: DeleteContentArgs = match serde_json::from_value(params) {
             Ok(args) => args,
             Err(e) => {
-                return Ok(MCPResult::error(&format!(
-                    "Invalid delete_content parameters: {e}"
-                )));
+                return Ok(invalid_input_error(
+                    &format!("Invalid delete_content parameters: {e}"),
+                    ToolGroup::ContentStore,
+                ));
             }
         };
 
@@ -508,24 +561,43 @@ impl ContentStoreServer {
             if let Some(sid) = storage.get_content_session_id(&args.content_id) {
                 sid
             } else {
-                return Ok(MCPResult::error(&format!(
-                    "Content '{}' not found",
-                    args.content_id
-                )));
+                return Ok(not_found_error(
+                    "Content",
+                    &args.content_id,
+                    ToolGroup::ContentStore,
+                ));
             }
         };
 
         if content_session_id != session_id {
-            return Ok(MCPResult::error(&format!(
-                "Content '{}' does not belong to current session",
-                args.content_id
-            )));
+            return Ok(operation_failed_error(
+                "Delete content",
+                &format!(
+                    "Content '{}' belongs to a different session",
+                    args.content_id
+                ),
+                vec![
+                    "Use listContent to see content in current session".to_string(),
+                    "Switch to the session that owns this content".to_string(),
+                    "Verify the content ID is correct".to_string(),
+                ],
+                ToolGroup::ContentStore,
+            ));
         }
 
         // Delete from storage
         let mut storage = self.storage.lock().await;
         if let Err(e) = storage.delete_content(&args.content_id).await {
-            return Ok(MCPResult::error(&format!("Failed to delete content: {e}")));
+            return Ok(operation_failed_error(
+                "Delete content",
+                &e.to_string(),
+                vec![
+                    "Check database connectivity".to_string(),
+                    "Verify the content ID is correct".to_string(),
+                    "Use listContent to see available content".to_string(),
+                ],
+                ToolGroup::ContentStore,
+            ));
         }
 
         // Remove from search index
@@ -535,16 +607,15 @@ impl ContentStoreServer {
             error!("Failed to remove content from search index: {e}");
         }
 
-        Ok(MCPResult {
-            content: Some(vec![crate::mcp::types::MCPContent::Text {
-                text: format!("Content '{}' deleted successfully", args.content_id),
-            }]),
-            structured_content: Some(serde_json::json!({
-                "contentId": args.content_id,
-                "sessionId": session_id
-            })),
-            is_error: Some(false),
-        })
+        let hint = SuccessHint::new(
+            format!("Content '{}' deleted successfully", args.content_id),
+            vec!["Use listContent to see remaining content".to_string()],
+        );
+
+        Ok(hint.to_mcp_result_with_data(Some(serde_json::json!({
+            "contentId": args.content_id,
+            "sessionId": session_id
+        }))))
     }
 }
 
@@ -560,11 +631,11 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let session_manager =
             Arc::new(SessionManager::new_with_base_dir(temp_dir.path().to_path_buf()).unwrap());
-        let server = ContentStoreServer::new(session_manager);
+        let server = ContentStoreServer::new("test-session".to_string(), session_manager);
         (server, temp_dir)
     }
     #[tokio::test]
-    async fn test_handle_add_content_direct_content() {
+    async fn test_handle_save_knowledge_direct_content() {
         let (server, _temp) = setup_test_server().await;
 
         server
@@ -583,7 +654,7 @@ mod tests {
             }
         });
 
-        let result = server.handle_add_content(params).await.unwrap();
+        let result = server.handle_save_knowledge(params).await.unwrap();
 
         // Verify response
         assert_eq!(result.is_error, Some(false));
@@ -595,7 +666,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_handle_add_content_missing_session() {
+    async fn test_handle_save_knowledge_missing_session() {
         let (server, _temp) = setup_test_server().await;
 
         // Don't setup session context
@@ -603,7 +674,7 @@ mod tests {
             "content": "Test content"
         });
 
-        let result = server.handle_add_content(params).await.unwrap();
+        let result = server.handle_save_knowledge(params).await.unwrap();
 
         // Should return error about missing session
         assert_eq!(result.is_error, Some(true));
@@ -611,7 +682,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_handle_add_content_both_content_and_url() {
+    async fn test_handle_save_knowledge_both_content_and_url() {
         let (server, _temp) = setup_test_server().await;
 
         server
@@ -627,7 +698,7 @@ mod tests {
             "fileUrl": "file:///test.txt"
         });
 
-        let result = server.handle_add_content(params).await.unwrap();
+        let result = server.handle_save_knowledge(params).await.unwrap();
 
         // Should return error about ambiguous input
         assert_eq!(result.is_error, Some(true));
@@ -656,7 +727,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_handle_keyword_search_no_results() {
+    async fn test_handle_search_knowledge_no_results() {
         let (server, _temp) = setup_test_server().await;
 
         server
@@ -674,7 +745,7 @@ mod tests {
             }
         });
 
-        let result = server.handle_keyword_search(params).await.unwrap();
+        let result = server.handle_search_knowledge(params).await.unwrap();
 
         assert_eq!(result.is_error, Some(false));
         let structured_content = result.structured_content.unwrap();
@@ -700,7 +771,7 @@ mod tests {
                 "filename": "delete_test.txt"
             }
         });
-        let add_result = server.handle_add_content(add_params).await.unwrap();
+        let add_result = server.handle_save_knowledge(add_params).await.unwrap();
         let content_id = add_result.structured_content.unwrap()["contentId"]
             .as_str()
             .unwrap()

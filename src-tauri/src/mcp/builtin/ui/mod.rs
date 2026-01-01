@@ -1,5 +1,8 @@
+use crate::mcp::builtin::error_guidance::{
+    invalid_input_error, missing_param_error, operation_failed_error, ToolGroup,
+};
 use crate::mcp::builtin::BuiltinMCPServer;
-use crate::mcp::types::{MCPContent, MCPResult};
+use crate::mcp::types::{MCPContent, MCPResult, ServiceContext};
 use crate::mcp::MCPTool;
 use async_trait::async_trait;
 use handlebars::Handlebars;
@@ -55,14 +58,25 @@ impl UiServer {
     }
 
     fn prompt_user(&self, args: Value) -> Result<MCPResult, String> {
-        let prompt = args
-            .get("prompt")
-            .and_then(|v| v.as_str())
-            .ok_or("Missing prompt")?;
-        let type_ = args
-            .get("type")
-            .and_then(|v| v.as_str())
-            .ok_or("Missing type")?;
+        let prompt = match args.get("prompt").and_then(|v| v.as_str()) {
+            Some(v) => v,
+            None => return Ok(missing_param_error("prompt", ToolGroup::UI)),
+        };
+        let type_ = match args.get("type").and_then(|v| v.as_str()) {
+            Some(v) => v,
+            None => return Ok(missing_param_error("type", ToolGroup::UI)),
+        };
+
+        // Validate type
+        if !["text", "select", "multiselect"].contains(&type_) {
+            return Ok(invalid_input_error(
+                &format!(
+                    "Invalid type '{}'. Must be one of: text, select, multiselect",
+                    type_
+                ),
+                ToolGroup::UI,
+            ));
+        }
 
         let message_id = uuid::Uuid::new_v4().to_string();
 
@@ -74,15 +88,39 @@ impl UiServer {
         let template_name = match type_ {
             "text" => "text-prompt",
             "select" | "multiselect" => {
-                let options = args
-                    .get("options")
-                    .ok_or("Missing options for select/multiselect")?;
+                let options = match args.get("options") {
+                    Some(v) => v,
+                    None => {
+                        return Ok(missing_param_error("options", ToolGroup::UI));
+                    }
+                };
+
+                let options_array = match options.as_array() {
+                    Some(arr) => arr,
+                    None => {
+                        return Ok(invalid_input_error(
+                            "options must be an array of strings",
+                            ToolGroup::UI,
+                        ));
+                    }
+                };
+
+                // Convert options array to Vec<String> for JSON
+                let options: Vec<String> = options_array
+                    .iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect();
+
+                // Serialize to JSON string for JavaScript consumption
+                let options_json =
+                    serde_json::to_string(&options).unwrap_or_else(|_| "[]".to_string());
+
+                // Insert as string so Handlebars renders it as valid JavaScript array literal
                 data.as_object_mut()
                     .unwrap()
-                    .insert("optionsJson".to_string(), json!(options));
+                    .insert("optionsJson".to_string(), json!(options_json));
 
                 // We also need optionsHtml for the template
-                let options_array = options.as_array().ok_or("Options must be an array")?;
                 let mut options_html = String::new();
                 for (i, opt) in options_array.iter().enumerate() {
                     let opt_str = opt.as_str().unwrap_or_default();
@@ -110,28 +148,49 @@ impl UiServer {
 
                 "select-prompt"
             }
-            _ => return Err(format!("Unknown prompt type: {}", type_)),
+            _ => {
+                return Ok(invalid_input_error(
+                    &format!(
+                        "Invalid type '{}'. Must be one of: text, select, multiselect",
+                        type_
+                    ),
+                    ToolGroup::UI,
+                ))
+            }
         };
 
         let handlebars = self.handlebars.lock().unwrap();
-        let html = handlebars
-            .render(template_name, &data)
-            .map_err(|e| e.to_string())?;
+        let html = match handlebars.render(template_name, &data) {
+            Ok(h) => h,
+            Err(e) => {
+                return Ok(operation_failed_error(
+                    "promptUser",
+                    &format!("Template rendering failed: {}", e),
+                    vec![
+                        "Verify template data format is correct".to_string(),
+                        "Check that all required template variables are provided".to_string(),
+                    ],
+                    ToolGroup::UI,
+                ));
+            }
+        };
 
-        Ok(MCPResult {
-            content: Some(vec![MCPContent::Resource {
-                resource: json!({
-                    "uri": format!("ui://prompt/{}", message_id),
-                    "mimeType": "text/html",
-                    "text": html,
-                }),
-            }]),
-            structured_content: None,
-            is_error: Some(false),
-        })
+        Ok(crate::mcp::builtin::utils::create_resource_response(
+            &format!("ui://prompt/{}", message_id),
+            "text/html",
+            &html,
+            "ui",
+            "promptUser",
+            None,
+        ))
     }
 
-    fn reply_prompt(&self, args: Value) -> Result<MCPResult, String> {
+    fn get_user_answer(&self, args: Value) -> Result<MCPResult, String> {
+        let _message_id = match args.get("messageId").and_then(|v| v.as_str()) {
+            Some(v) => v,
+            None => return Ok(missing_param_error("messageId", ToolGroup::UI)),
+        };
+
         let answer = args.get("answer");
         let cancelled = args
             .get("cancelled")
@@ -168,14 +227,14 @@ impl UiServer {
     }
 
     fn wait_for_user_resume(&self, args: Value) -> Result<MCPResult, String> {
-        let message = args
-            .get("message")
-            .and_then(|v| v.as_str())
-            .ok_or("Missing message")?;
-        let resume_instruction = args
-            .get("resumeInstruction")
-            .and_then(|v| v.as_str())
-            .ok_or("Missing resumeInstruction")?;
+        let message = match args.get("message").and_then(|v| v.as_str()) {
+            Some(v) => v,
+            None => return Ok(missing_param_error("message", ToolGroup::UI)),
+        };
+        let resume_instruction = match args.get("resumeInstruction").and_then(|v| v.as_str()) {
+            Some(v) => v,
+            None => return Ok(missing_param_error("resumeInstruction", ToolGroup::UI)),
+        };
 
         let context_json = json!({
             "resumeInstruction": resume_instruction,
@@ -189,24 +248,37 @@ impl UiServer {
         });
 
         let handlebars = self.handlebars.lock().unwrap();
-        let html = handlebars
-            .render("wait", &data)
-            .map_err(|e| e.to_string())?;
+        let html = match handlebars.render("wait", &data) {
+            Ok(h) => h,
+            Err(e) => {
+                return Ok(operation_failed_error(
+                    "waitForUserResume",
+                    &format!("Template rendering failed: {}", e),
+                    vec![
+                        "Verify template data format is correct".to_string(),
+                        "Check that message and resumeInstruction are provided".to_string(),
+                    ],
+                    ToolGroup::UI,
+                ));
+            }
+        };
 
-        Ok(MCPResult {
-            content: Some(vec![MCPContent::Resource {
-                resource: json!({
-                    "uri": format!("ui://wait/{}", chrono::Utc::now().timestamp_millis()),
-                    "mimeType": "text/html",
-                    "text": html,
-                }),
-            }]),
-            structured_content: None,
-            is_error: Some(false),
-        })
+        Ok(crate::mcp::builtin::utils::create_resource_response(
+            &format!("ui://wait/{}", chrono::Utc::now().timestamp_millis()),
+            "text/html",
+            &html,
+            "ui",
+            "waitForUserResume",
+            None,
+        ))
     }
 
-    fn resume_from_wait(&self, _args: Value) -> Result<MCPResult, String> {
+    fn resume_from_wait(&self, args: Value) -> Result<MCPResult, String> {
+        let _resume_instruction = match args.get("resumeInstruction").and_then(|v| v.as_str()) {
+            Some(v) => v,
+            None => return Ok(missing_param_error("resumeInstruction", ToolGroup::UI)),
+        };
+
         Ok(MCPResult {
             content: Some(vec![MCPContent::Text {
                 text: "User resumed execution.".to_string(),
@@ -217,17 +289,29 @@ impl UiServer {
     }
 
     fn visualize_data(&self, args: Value) -> Result<MCPResult, String> {
-        let type_ = args
-            .get("type")
-            .and_then(|v| v.as_str())
-            .ok_or("Missing type")?;
-        let data_points = args
-            .get("data")
-            .and_then(|v| v.as_array())
-            .ok_or("Missing data")?;
+        let type_ = match args.get("type").and_then(|v| v.as_str()) {
+            Some(v) => v,
+            None => return Ok(missing_param_error("type", ToolGroup::UI)),
+        };
+
+        // Validate type
+        if !["bar", "line"].contains(&type_) {
+            return Ok(invalid_input_error(
+                &format!("Invalid type '{}'. Must be one of: bar, line", type_),
+                ToolGroup::UI,
+            ));
+        }
+
+        let data_points = match args.get("data").and_then(|v| v.as_array()) {
+            Some(arr) => arr,
+            None => return Ok(missing_param_error("data", ToolGroup::UI)),
+        };
 
         if data_points.is_empty() {
-            return Err("Data array cannot be empty".to_string());
+            return Ok(invalid_input_error(
+                "Data array cannot be empty",
+                ToolGroup::UI,
+            ));
         }
 
         let width = 600;
@@ -311,21 +395,29 @@ impl UiServer {
                     .insert("barsHtml".to_string(), json!(bars_html));
 
                 let handlebars = self.handlebars.lock().unwrap();
-                let html = handlebars
-                    .render("bar-chart", &template_data)
-                    .map_err(|e| e.to_string())?;
+                let html = match handlebars.render("bar-chart", &template_data) {
+                    Ok(h) => h,
+                    Err(e) => {
+                        return Ok(operation_failed_error(
+                            "visualizeData",
+                            &format!("Template rendering failed: {}", e),
+                            vec![
+                                "Verify data format is correct".to_string(),
+                                "Ensure all data points have label and value".to_string(),
+                            ],
+                            ToolGroup::UI,
+                        ));
+                    }
+                };
 
-                Ok(MCPResult {
-                    content: Some(vec![MCPContent::Resource {
-                        resource: json!({
-                            "uri": format!("ui://chart/{}", uuid::Uuid::new_v4()),
-                            "mimeType": "text/html",
-                            "text": html,
-                        }),
-                    }]),
-                    structured_content: None,
-                    is_error: Some(false),
-                })
+                Ok(crate::mcp::builtin::utils::create_resource_response(
+                    &format!("ui://chart/{}", uuid::Uuid::new_v4()),
+                    "text/html",
+                    &html,
+                    "ui",
+                    "visualizeData",
+                    None,
+                ))
             }
             "line" => {
                 let step_x = available_width / (parsed_data.len() - 1).max(1) as f64;
@@ -372,24 +464,99 @@ impl UiServer {
                     .insert("labelsHtml".to_string(), json!(labels_html));
 
                 let handlebars = self.handlebars.lock().unwrap();
-                let html = handlebars
-                    .render("line-chart", &template_data)
-                    .map_err(|e| e.to_string())?;
+                let html = match handlebars.render("line-chart", &template_data) {
+                    Ok(h) => h,
+                    Err(e) => {
+                        return Ok(operation_failed_error(
+                            "visualizeData",
+                            &format!("Template rendering failed: {}", e),
+                            vec![
+                                "Verify data format is correct".to_string(),
+                                "Ensure all data points have label and value".to_string(),
+                            ],
+                            ToolGroup::UI,
+                        ));
+                    }
+                };
 
-                Ok(MCPResult {
-                    content: Some(vec![MCPContent::Resource {
-                        resource: json!({
-                            "uri": format!("ui://chart/{}", uuid::Uuid::new_v4()),
-                            "mimeType": "text/html",
-                            "text": html,
-                        }),
-                    }]),
-                    structured_content: None,
-                    is_error: Some(false),
-                })
+                Ok(crate::mcp::builtin::utils::create_resource_response(
+                    &format!("ui://chart/{}", uuid::Uuid::new_v4()),
+                    "text/html",
+                    &html,
+                    "ui",
+                    "visualizeData",
+                    None,
+                ))
             }
-            _ => Err(format!("Unknown chart type: {}", type_)),
+            _ => Ok(invalid_input_error(
+                &format!("Invalid type '{}'. Must be one of: bar, line", type_),
+                ToolGroup::UI,
+            )),
         }
+    }
+    fn circuit_break(&self, args: Value) -> Result<MCPResult, String> {
+        let tool_name = match args.get("toolName").and_then(|v| v.as_str()) {
+            Some(v) => v,
+            None => return Ok(missing_param_error("toolName", ToolGroup::UI)),
+        };
+        let repetition_count = args
+            .get("repetitionCount")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let args_str = args.get("args").and_then(|v| v.as_str()).unwrap_or("");
+
+        let context_json = json!({
+            "toolName": tool_name,
+            "repetitionCount": repetition_count,
+            "args": args_str,
+        });
+
+        let data = json!({
+            "toolName": tool_name,
+            "repetitionCount": repetition_count,
+            "args": args_str,
+            "contextJson": context_json.to_string(),
+        });
+
+        let handlebars = self.handlebars.lock().unwrap();
+        let html = match handlebars.render("circuit-break", &data) {
+            Ok(h) => h,
+            Err(e) => {
+                return Ok(operation_failed_error(
+                    "circuitBreak",
+                    &format!("Template rendering failed: {}", e),
+                    vec!["Verify template data".to_string()],
+                    ToolGroup::UI,
+                ));
+            }
+        };
+
+        Ok(crate::mcp::builtin::utils::create_resource_response(
+            &format!("ui://circuit-break/{}", uuid::Uuid::new_v4()),
+            "text/html",
+            &html,
+            "ui",
+            "circuitBreak",
+            None,
+        ))
+    }
+
+    fn resume_circuit_break(&self, args: Value) -> Result<MCPResult, String> {
+        let tool_name = args
+            .get("toolName")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+
+        Ok(MCPResult {
+            content: Some(vec![MCPContent::Text {
+                text: format!(
+                    "Circuit breaker reset for tool '{}'. Execution resumed.",
+                    tool_name
+                ),
+            }]),
+            structured_content: None,
+            is_error: Some(false),
+        })
     }
 }
 
@@ -403,10 +570,17 @@ impl BuiltinMCPServer for UiServer {
         "UI Tools for user interaction"
     }
 
+    async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
+        ServiceContext {
+            context_prompt: String::new(),
+            structured_state: None,
+        }
+    }
+
     fn tools(&self) -> Vec<MCPTool> {
         vec![
             MCPTool {
-                name: "prompt_user".to_string(),
+                name: "promptUser".to_string(),
                 description: "Display an interactive prompt to the user (text input, select, or multiselect). Use this to gather user input interactively.".to_string(),
                 input_schema: serde_json::from_value(json!({
                     "type": "object",
@@ -433,7 +607,7 @@ impl BuiltinMCPServer for UiServer {
                 annotations: None,
             },
             MCPTool {
-                name: "reply_prompt".to_string(),
+                name: "replyPrompt".to_string(),
                 description: "Receive user response from prompt UI (automatically called by UI action)".to_string(),
                 input_schema: serde_json::from_value(json!({
                     "type": "object",
@@ -458,7 +632,7 @@ impl BuiltinMCPServer for UiServer {
                 annotations: None,
             },
             MCPTool {
-                name: "visualize_data".to_string(),
+                name: "visualizeData".to_string(),
                 description: "Create a simple data visualization (bar or line chart).".to_string(),
                 input_schema: serde_json::from_value(json!({
                     "type": "object",
@@ -488,7 +662,7 @@ impl BuiltinMCPServer for UiServer {
                 annotations: None,
             },
             MCPTool {
-                name: "wait_for_user_resume".to_string(),
+                name: "waitForUserResume".to_string(),
                 description: "Display wait UI with continue button".to_string(),
                 input_schema: serde_json::from_value(json!({
                     "type": "object",
@@ -509,7 +683,7 @@ impl BuiltinMCPServer for UiServer {
                 annotations: None,
             },
             MCPTool {
-                name: "resume_from_wait".to_string(),
+                name: "resumeFromWait".to_string(),
                 description: "Resume from wait state".to_string(),
                 input_schema: serde_json::from_value(json!({
                     "type": "object",
@@ -523,18 +697,53 @@ impl BuiltinMCPServer for UiServer {
                 title: Some("Resume From Wait".to_string()),
                 annotations: None,
             },
+            MCPTool {
+                name: "circuitBreak".to_string(),
+                description: "Display circuit breaker UI when agent is looping".to_string(),
+                input_schema: serde_json::from_value(json!({
+                    "type": "object",
+                    "properties": {
+                        "toolName": { "type": "string" },
+                        "repetitionCount": { "type": "number" },
+                        "args": { "type": "string" }
+                    },
+                    "required": ["toolName", "repetitionCount"]
+                })).unwrap(),
+                output_schema: None,
+                title: Some("Circuit Break".to_string()),
+                annotations: None,
+            },
+            MCPTool {
+                name: "resumeCircuitBreak".to_string(),
+                description: "Resume from circuit breaker".to_string(),
+                input_schema: serde_json::from_value(json!({
+                    "type": "object",
+                    "properties": {
+                        "toolName": { "type": "string" },
+                        "repetitionCount": { "type": "number" }
+                    },
+                    "required": ["toolName"]
+                })).unwrap(),
+                output_schema: None,
+                title: Some("Resume Circuit Break".to_string()),
+                annotations: None,
+            },
         ]
     }
 
     async fn call_tool(&self, tool_name: &str, args: Value) -> Result<MCPResult, String> {
         match tool_name {
-            "prompt_user" | "builtin_ui__prompt_user" => self.prompt_user(args),
-            "reply_prompt" | "builtin_ui__reply_prompt" => self.reply_prompt(args),
-            "visualize_data" | "builtin_ui__visualize_data" => self.visualize_data(args),
-            "wait_for_user_resume" | "builtin_ui__wait_for_user_resume" => {
+            "promptUser" | "builtin_ui__promptUser" => self.prompt_user(args),
+            "getUserAnswer" | "builtin_ui__getUserAnswer" => self.get_user_answer(args),
+            "visualizeData" | "builtin_ui__visualizeData" => self.visualize_data(args),
+            "waitForUserResume" | "builtin_ui__waitForUserResume" => {
                 self.wait_for_user_resume(args)
             }
-            "resume_from_wait" | "builtin_ui__resume_from_wait" => self.resume_from_wait(args),
+            "resumeFromWait" | "builtin_ui__resumeFromWait" => self.resume_from_wait(args),
+            "circuitBreak" | "builtin_ui__circuitBreak" => self.circuit_break(args),
+            "resumeCircuitBreak" | "builtin_ui__resumeCircuitBreak" => {
+                self.resume_circuit_break(args)
+            }
             _ => Err(format!("Unknown tool: {}", tool_name)),
         }
     }

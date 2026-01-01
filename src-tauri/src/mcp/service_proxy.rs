@@ -2,10 +2,11 @@ use serde_json::Value;
 use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::sync::Arc;
+use tauri::AppHandle;
 
 use super::builtin::BuiltinMCPServer;
 use super::server::MCPServerManager;
-use super::types::MCPResponse;
+use super::types::{MCPResponse, ServiceContext};
 use crate::session::SessionManager;
 
 /// Session-specific MCP service proxy
@@ -49,6 +50,7 @@ impl MCPServiceProxy {
         external_mcp_manager: Arc<MCPServerManager>,
         db_pool: Arc<SqlitePool>,
         session_manager: Arc<SessionManager>,
+        app_handle: Option<AppHandle>,
     ) -> Result<Self, String> {
         let mut builtin_servers = HashMap::new();
 
@@ -58,6 +60,7 @@ impl MCPServiceProxy {
                 session_id.clone(),
                 db_pool.clone(),
                 session_manager.clone(),
+                app_handle.clone(),
             )
             .await?
             {
@@ -197,17 +200,15 @@ impl MCPServiceProxy {
     /// prompt with real-time session state information.
     ///
     /// # Returns
-    /// * `HashMap<String, String>` - Map of tool_id -> context_prompt
-    pub async fn get_service_contexts(&self) -> HashMap<String, String> {
+    /// * `HashMap<String, ServiceContext>` - Map of tool_id -> ServiceContext
+    pub async fn get_service_contexts(&self) -> HashMap<String, ServiceContext> {
         let mut contexts = HashMap::new();
 
         for (tool_id, server) in &self.builtin_servers {
             let context = server.get_service_context(None).await;
 
-            // Only include non-empty contexts
-            if !context.context_prompt.trim().is_empty() {
-                contexts.insert(tool_id.clone(), context.context_prompt);
-            }
+            // Always include the context, even if empty, as structured state might be present
+            contexts.insert(tool_id.clone(), context);
         }
 
         log::debug!(
@@ -239,6 +240,7 @@ async fn create_builtin_server(
     _session_id: String,
     _db_pool: Arc<SqlitePool>,
     _session_manager: Arc<SessionManager>,
+    app_handle: Option<AppHandle>,
 ) -> Result<Option<Box<dyn BuiltinMCPServer>>, String> {
     match tool_id {
         "bootstrap" => Ok(Some(Box::new(
@@ -257,12 +259,25 @@ async fn create_builtin_server(
             crate::mcp::builtin::assistant::AssistantServer::new(_db_pool).await?,
         ))),
         "workspace" => Ok(Some(Box::new(
-            crate::mcp::builtin::workspace::WorkspaceServer::new(_session_manager),
+            crate::mcp::builtin::workspace::WorkspaceServer::new(_session_id, _session_manager),
         ))),
         "content_store" | "contentstore" => Ok(Some(Box::new(
-            crate::mcp::builtin::content_store::ContentStoreServer::new(_session_manager),
+            crate::mcp::builtin::content_store::ContentStoreServer::new(
+                _session_id,
+                _session_manager,
+            ),
         ))),
         "ui" => Ok(Some(Box::new(crate::mcp::builtin::ui::UiServer::new()))),
+        "browser" => {
+            if let Some(handle) = app_handle {
+                Ok(Some(Box::new(
+                    crate::mcp::builtin::browser::BrowserServer::new(handle, _session_id),
+                )))
+            } else {
+                log::warn!("Browser tool requested but no AppHandle provided (skipping)");
+                Ok(None)
+            }
+        }
         _ => Ok(None), // Unknown tool, skip
     }
 }

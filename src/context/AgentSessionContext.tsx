@@ -9,44 +9,57 @@ import React, {
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getLogger } from '../lib/logger';
-import type { Assistant, Message } from '@/models/chat';
+import type { Message, RustMessage } from '@/models/chat';
+import { rustMessageToMessage } from '@/models/chat';
 import type { Page } from '@/lib/db/types';
-import { useModelOptions } from './ModelProvider';
+import { AgentSession } from '@/models/agent';
 
 const logger = getLogger('AgentSessionContext');
 
-/**
- * Agent session metadata from Rust backend
- */
-interface AgentSession {
-  id: string;
-  name?: string;
-  status: 'idle' | 'busy' | 'paused' | 'error';
-  createdAt: Date;
-}
-
-/**
- * Agent configuration for creating a new session
- */
-interface CreateSessionParams {
-  assistant: Assistant;
-  name?: string;
-  // LLM config will be extracted from assistant or global settings
-}
-
-interface AgentEventPayload {
-  type: string;
-  sessionId: string;
-  status?: 'idle' | 'busy' | 'paused' | 'error';
-  [key: string]: unknown;
-}
+type AgentEventPayload =
+  | {
+      type: 'workflowStarted';
+      sessionId: string;
+    }
+  | {
+      type: 'workflowCompleted';
+      sessionId: string;
+    }
+  | {
+      type: 'workflowError';
+      sessionId: string;
+      error: string;
+    }
+  | {
+      type: 'statusChanged';
+      sessionId: string;
+      status: 'idle' | 'busy' | 'paused' | 'error';
+    }
+  | {
+      type: 'messageAdded';
+      sessionId: string;
+      message: RustMessage;
+    }
+  | {
+      type: 'toolExecutionStarted';
+      sessionId: string;
+      toolName: string;
+    }
+  | {
+      type: 'toolExecutionCompleted';
+      sessionId: string;
+      toolName: string;
+      success: boolean;
+    };
 
 // --- STATE CONTEXT ---
 interface AgentSessionStateContextValue {
-  currentSession: AgentSession | null;
+  session: AgentSession | null;
   messages: Message[];
-  isLoading: boolean;
+  isSessionLoading: boolean;
   error: string | null;
+  llmError: string | null;
+  workflowStatus: 'idle' | 'busy' | 'paused' | 'error';
 }
 
 const AgentSessionStateContext = createContext<
@@ -56,29 +69,21 @@ const AgentSessionStateContext = createContext<
 // --- ACTIONS CONTEXT ---
 interface AgentSessionActionsContextValue {
   /**
-   * Create a new agent session
-   */
-  createSession: (params: CreateSessionParams) => Promise<AgentSession>;
-
-  /**
-   * Resume an existing agent session
-   */
-  resumeSession: (sessionId: string) => Promise<AgentSession>;
-
-  /**
-   * Send a user message to the current session
+   * Send a user message to this session
    */
   sendMessage: (content: string) => Promise<void>;
 
   /**
-   * Stop the current session workflow
+   * Stop this session workflow
    */
   stopSession: () => Promise<void>;
 
   /**
-   * Clear current session
+   * Manually set error state (e.g. for client-side failures)
    */
-  clearSession: () => void;
+  setError: (error: string | null) => void;
+
+  addMessage: (message: Message) => void;
 }
 
 const AgentSessionActionsContext = createContext<
@@ -87,191 +92,75 @@ const AgentSessionActionsContext = createContext<
 
 interface AgentSessionProviderProps {
   children: React.ReactNode;
+  sessionId: string;
 }
 
 /**
  * AgentSessionProvider
  *
- * Manages agent session lifecycle (create, resume, terminate).
- * This is separate from SessionContext (V1/IndexedDB) and handles V2 Rust backend sessions.
- *
- * Reference: idea.md - "Chat 시작" and "Resume Chat History" scenarios
+ * Manages the state for a SINGLE active agent session.
+ * Requires a `sessionId` prop to initialize.
  */
-export function AgentSessionProvider({ children }: AgentSessionProviderProps) {
-  const { modelId, provider } = useModelOptions();
-  const [currentSession, setCurrentSession] = useState<AgentSession | null>(
-    null,
-  );
+export function AgentSessionProvider({
+  children,
+  sessionId,
+}: AgentSessionProviderProps) {
+  const [session, setSession] = useState<AgentSession | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isSessionLoading, setIsSessionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [llmError, setLlmError] = useState<string | null>(null);
+  const [workflowStatus, setWorkflowStatus] = useState<
+    'idle' | 'busy' | 'paused' | 'error'
+  >('idle');
 
   /**
    * Load messages for the current session
    */
-  const loadMessages = useCallback(async (sessionId: string) => {
+  const loadMessages = useCallback(async (sid: string) => {
     try {
       // Load first page (large size to get all for now)
-      const page = await invoke<Page<Message>>('messages_get_page', {
-        sessionId,
+      const page = await invoke<Page<RustMessage>>('messages_get_page', {
+        sessionId: sid,
         page: 1,
         pageSize: 1000,
       });
 
-      // Sort by created_at if needed, but backend usually returns sorted
-      setMessages(page.items);
+      // Convert RustMessages to Messages using type-safe converter
+      const msgs: Message[] = page.items.map(rustMessageToMessage);
+
+      logger.info(`Loaded ${msgs.length} messages for session ${sid}`, {
+        messageCount: msgs.length,
+        firstMessage: msgs[0]?.id,
+        lastMessage: msgs[msgs.length - 1]?.id,
+      });
+
+      setMessages(msgs);
     } catch (err) {
       logger.error('Failed to load messages', err);
     }
   }, []);
 
   /**
-   * Listen for agent events
+   * Initialize session
    */
   useEffect(() => {
-    if (!currentSession) return;
-
     let unlisten: (() => void) | undefined;
+    let isMounted = true;
 
-    const setupListener = async () => {
-      unlisten = await listen<AgentEventPayload>('agent:event', (event) => {
-        const payload = event.payload;
-
-        // Filter events for current session
-        if (payload.sessionId !== currentSession.id) return;
-
-        logger.debug('Received agent event', payload);
-
-        switch (payload.type) {
-          case 'statusChanged':
-            if (payload.status) {
-              setCurrentSession((prev) =>
-                prev
-                  ? {
-                      ...prev,
-                      status: payload.status as AgentSession['status'],
-                    }
-                  : null,
-              );
-            }
-            break;
-          case 'messageAdded':
-            // Reload messages to get the new one
-            // Optimization: could just fetch the single message if ID provided
-            loadMessages(currentSession.id);
-            break;
-          case 'workflowStarted':
-          case 'workflowCompleted':
-          case 'workflowError':
-            // These might imply status changes or other UI updates
-            break;
-        }
-      });
-    };
-
-    setupListener();
-
-    return () => {
-      if (unlisten) unlisten();
-    };
-  }, [currentSession?.id, loadMessages]);
-
-  /**
-   * Create a new agent session
-   * Corresponds to: StartChatView -> useAgentSession -> AgentSessionManager.createSession
-   */
-  const createSession = useCallback(
-    async (params: CreateSessionParams): Promise<AgentSession> => {
-      const { assistant, name } = params;
-
-      logger.info('Creating new agent session', {
-        assistantName: assistant.name,
-        sessionName: name,
-      });
-
-      setIsLoading(true);
+    const initSession = async () => {
+      logger.info('Initializing agent session', { sessionId });
+      setIsSessionLoading(true);
       setError(null);
 
       try {
-        // Build agent config from assistant
-        const agentConfig = {
-          id: assistant.id,
-          name: assistant.name,
-          description: assistant.description,
-          systemPrompt: assistant.systemPrompt,
-          mcpServerIds: assistant.mcpServerIds || [],
-          localServices: assistant.localServices || [],
-          allowedBuiltInServiceAliases: assistant.allowedBuiltInServiceAliases,
-          // Use selected model from ModelProvider
-          model: modelId,
-          provider: provider,
-          temperature: 1.0,
-          maxTokens: 8192,
-        };
-
-        // Generate session ID
-        const { createId } = await import('@paralleldrive/cuid2');
-        const sessionId = createId();
-
-        // Call Rust backend to create session
+        // 1. Get session metadata
         const response = await invoke<{
           id: string;
           name?: string;
-          status: string;
-          created_at: number;
-        }>('agent_create_session', {
-          request: {
-            sessionId,
-            name: name || `Conversation with ${assistant.name}`,
-            agentConfig,
-          },
-        });
-
-        const session: AgentSession = {
-          id: response.id,
-          name: response.name,
-          status: 'idle',
-          createdAt: new Date(response.created_at),
-        };
-
-        setCurrentSession(session);
-        setMessages([]); // New session has no messages
-        setIsLoading(false);
-
-        logger.info('Agent session created successfully', {
-          sessionId: session.id,
-        });
-
-        return session;
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : String(err);
-        logger.error('Failed to create agent session', err);
-        setError(errorMessage);
-        setIsLoading(false);
-        throw err;
-      }
-    },
-    [modelId, provider],
-  );
-
-  /**
-   * Resume an existing agent session
-   * Corresponds to: SessionHistory -> useAgentSession -> AgentSessionManager.resumeSession
-   */
-  const resumeSession = useCallback(
-    async (sessionId: string): Promise<AgentSession> => {
-      logger.info('Resuming agent session', { sessionId });
-
-      setIsLoading(true);
-      setError(null);
-
-      try {
-        // Call Rust backend to get session metadata
-        const response = await invoke<{
-          id: string;
-          name?: string;
-          status: string;
-          created_at: number;
+          status: 'idle' | 'busy' | 'paused' | 'error';
+          createdAt: number;
+          updatedAt?: number;
         } | null>('agent_get_session', {
           sessionId,
         });
@@ -280,119 +169,198 @@ export function AgentSessionProvider({ children }: AgentSessionProviderProps) {
           throw new Error(`Session not found: ${sessionId}`);
         }
 
-        const session: AgentSession = {
+        if (!isMounted) return;
+
+        const sessionData: AgentSession = {
           id: response.id,
           name: response.name,
-          status: response.status as 'idle' | 'busy' | 'paused' | 'error',
-          createdAt: new Date(response.created_at),
+          status: response.status,
+          createdAt: new Date(response.createdAt),
+          updatedAt: response.updatedAt
+            ? new Date(response.updatedAt)
+            : undefined,
         };
 
-        setCurrentSession(session);
-        await loadMessages(sessionId); // Load messages
-        setIsLoading(false);
+        setSession(sessionData);
+        setWorkflowStatus(sessionData.status);
 
-        logger.info('Agent session resumed successfully', {
-          sessionId: session.id,
+        // 2. Resume session in Rust backend (ensure active in memory)
+        await invoke('agent_resume_session', { sessionId });
+
+        // 3. Initialize session cache with messages in Rust
+        await invoke('agent_init_session_with_messages', { sessionId });
+
+        // 4. Load messages
+        await loadMessages(sessionId);
+
+        // 5. Setup Event Listener
+        unlisten = await listen<AgentEventPayload>('agent:event', (event) => {
+          if (!isMounted) return;
+
+          const payload = event.payload;
+
+          // Strict Session Isolation: Only process events for THIS session
+          if (payload.sessionId !== sessionId) {
+            return;
+          }
+
+          logger.debug('Agent session event received', {
+            type: payload.type,
+            sessionId,
+          });
+
+          switch (payload.type) {
+            case 'statusChanged': {
+              const newStatus = payload.status;
+              setWorkflowStatus(newStatus);
+              setSession((prev) =>
+                prev ? { ...prev, status: newStatus } : null,
+              );
+              break;
+            }
+
+            case 'workflowError': {
+              setWorkflowStatus('error');
+              setIsSessionLoading(false);
+              const errorMsg = payload.error;
+
+              if (
+                errorMsg.includes('invalid type:') ||
+                errorMsg.includes('expected i64') ||
+                errorMsg.includes('LLM') ||
+                errorMsg.includes('MALFORMED_FUNCTION_CALL') ||
+                errorMsg.toLowerCase().includes('function call') ||
+                errorMsg.toLowerCase().includes('json')
+              ) {
+                setLlmError(errorMsg);
+              } else {
+                setError(errorMsg);
+              }
+              break;
+            }
+
+            case 'messageAdded': {
+              const rustMessage = payload.message;
+              const newMessage = rustMessageToMessage(rustMessage);
+
+              setMessages((prev) => {
+                if (prev.some((m) => m.id === newMessage.id)) return prev;
+                return [...prev, newMessage];
+              });
+              break;
+            }
+
+            case 'workflowCompleted': {
+              setWorkflowStatus('idle');
+              setIsSessionLoading(false);
+              break;
+            }
+          }
         });
 
-        return session;
+        setIsSessionLoading(false);
       } catch (err) {
+        if (!isMounted) return;
         const errorMessage = err instanceof Error ? err.message : String(err);
-        logger.error('Failed to resume agent session', err);
+        logger.error('Failed to initialize session', err);
         setError(errorMessage);
-        setIsLoading(false);
-        throw err;
+        setIsSessionLoading(false);
       }
-    },
-    [loadMessages],
-  );
+    };
+
+    initSession();
+
+    return () => {
+      isMounted = false;
+      if (unlisten) unlisten();
+    };
+  }, [sessionId, loadMessages]);
+
+  const addMessage = useCallback((message: Message) => {
+    setMessages((prev) => {
+      if (prev.some((m) => m.id === message.id)) return prev;
+      return [...prev, message];
+    });
+  }, []);
 
   /**
    * Send a user message to the current session
    */
   const sendMessage = useCallback(
     async (content: string) => {
-      if (!currentSession) {
-        throw new Error('No active session');
+      if (!session) {
+        throw new Error('No active session initialized');
       }
 
       try {
-        const messageId = `msg_${Date.now()}`; // Temporary ID, backend might generate one
+        const messageId = `msg_${Date.now()}`;
         const now = new Date();
         const message: Message = {
           id: messageId,
-          sessionId: currentSession.id,
-          threadId: currentSession.id,
+          sessionId: session.id,
+          threadId: session.id,
           role: 'user',
           content: [{ type: 'text', text: content }],
           createdAt: now,
           updatedAt: now,
         };
 
+        const rustMessage = {
+          ...message,
+          createdAt: now.getTime(),
+          updatedAt: now.getTime(),
+        };
+
         await invoke('agent_send_message', {
           request: {
-            sessionId: currentSession.id,
-            message,
+            sessionId: session.id,
+            message: rustMessage,
           },
         });
-
-        // Optimistic update? Or wait for event?
-        // Waiting for event is safer for consistency
       } catch (err) {
         logger.error('Failed to send message', err);
         throw err;
       }
     },
-    [currentSession],
+    [session],
   );
 
   /**
    * Stop the current session workflow
    */
   const stopSession = useCallback(async () => {
-    if (!currentSession) return;
+    if (!session) return;
 
     try {
       await invoke('agent_terminate_workflow', {
-        sessionId: currentSession.id,
+        sessionId: session.id,
       });
     } catch (err) {
       logger.error('Failed to stop session', err);
       throw err;
     }
-  }, [currentSession]);
+  }, [session]);
 
-  /**
-   * Clear current session (UI-only, does not terminate backend session)
-   */
-  const clearSession = useCallback(() => {
-    logger.info('Clearing current agent session');
-    setCurrentSession(null);
-    setMessages([]);
-    setError(null);
-  }, []);
-
-  // Combine state values
   const stateValue: AgentSessionStateContextValue = useMemo(
     () => ({
-      currentSession,
+      session,
       messages,
-      isLoading,
+      isSessionLoading,
       error,
+      llmError,
+      workflowStatus,
     }),
-    [currentSession, messages, isLoading, error],
+    [session, messages, isSessionLoading, error, llmError, workflowStatus],
   );
 
-  // Combine action values
   const actionsValue: AgentSessionActionsContextValue = useMemo(
     () => ({
-      createSession,
-      resumeSession,
       sendMessage,
       stopSession,
-      clearSession,
+      addMessage,
+      setError,
     }),
-    [createSession, resumeSession, sendMessage, stopSession, clearSession],
+    [sendMessage, stopSession, addMessage, setError],
   );
 
   return (
@@ -432,7 +400,6 @@ export function useAgentSessionActions(): AgentSessionActionsContextValue {
 
 /**
  * Convenience hook to access both state and actions
- * This matches the useAgentSession mentioned in idea.md
  */
 export function useAgentSession() {
   const state = useAgentSessionState();

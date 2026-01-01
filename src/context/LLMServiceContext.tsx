@@ -17,6 +17,7 @@ import type { MCPTool } from '@/lib/mcp-types';
 import { getLogger } from '@/lib/logger';
 import type { IAIService } from '@/lib/ai-service/types';
 import { useSettings } from './SettingsContext';
+import { useSystemPrompt } from './SystemPromptContext';
 
 const logger = getLogger('LLMServiceContext');
 
@@ -102,6 +103,7 @@ interface LLMServiceProviderProps {
  */
 export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
   const { value: settings } = useSettings();
+  const { getSystemPrompt } = useSystemPrompt();
 
   // Use ref to always access latest settings in event listeners
   const settingsRef = useRef(settings);
@@ -225,18 +227,27 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
         })),
       });
 
+      // Fetch dynamic system prompt extensions (e.g. Time & Location)
+      const dynamicSystemPrompt = await getSystemPrompt();
+
+      // Combine with the provided system prompt (from Rust/Agent Config)
+      const finalSystemPrompt = systemPrompt
+        ? `${systemPrompt}\n\n${dynamicSystemPrompt}`
+        : dynamicSystemPrompt;
+
       // 🔍 Log system prompt
       logger.info('📋 System Prompt Configuration', {
         sessionId,
         hasSystemPrompt: !!systemPrompt,
-        systemPromptLength: systemPrompt?.length ?? 0,
-        systemPromptPreview: systemPrompt?.substring(0, 200) + '...',
+        hasDynamicPrompt: !!dynamicSystemPrompt,
+        finalPromptLength: finalSystemPrompt?.length ?? 0,
+        systemPromptPreview: finalSystemPrompt?.substring(0, 200) + '...',
       });
 
-      if (systemPrompt) {
+      if (finalSystemPrompt) {
         logger.debug('📋 Full System Prompt', {
           sessionId,
-          systemPrompt,
+          systemPrompt: finalSystemPrompt,
         });
       }
 
@@ -286,7 +297,7 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
         // Create async generator for streaming
         const streamGenerator = service.streamChat(messages, {
           modelName: model,
-          systemPrompt,
+          systemPrompt: finalSystemPrompt,
           availableTools: availableTools || [],
           config,
         });
@@ -509,7 +520,7 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
             );
 
             // Send result back to Rust
-            logger.debug('Sending LLM response to Rust', {
+            logger.info('Sending LLM response to Rust', {
               sessionId,
               hasToolCalls: !!result.tool_calls,
               toolCallCount: result.tool_calls?.length ?? 0,
@@ -526,7 +537,14 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
               // threadId removed - not in Rust Message schema
               role: result.role,
               content: result.content || [],
-              toolCalls: result.tool_calls || undefined,
+              // Ensure all tool calls have the required 'type' field
+              toolCalls: result.tool_calls
+                ? result.tool_calls.map((tc) => ({
+                    id: tc.id,
+                    type: tc.type || 'function',
+                    function: tc.function,
+                  }))
+                : undefined,
               toolCallId: result.tool_call_id || undefined,
               isStreaming: result.isStreaming || undefined,
               thinking: result.thinking || undefined,
@@ -550,11 +568,12 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
               error: result.error || undefined,
             };
 
-            logger.debug('Message prepared for Rust', {
+            logger.info('Message prepared for Rust', {
               sessionId,
               hasToolCalls: !!messageForRust.toolCalls,
               toolCallCount: messageForRust.toolCalls?.length ?? 0,
               createdAtType: typeof messageForRust.createdAt,
+              fullMessage: messageForRust,
             });
 
             await invoke('agent_handle_llm_response', {

@@ -8,7 +8,7 @@ import {
 } from '../AgentChatContext';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
-import { useAgentSessionState } from '../AgentSessionContext';
+import { useAgentSessionState, useAgentSessionActions } from '../AgentSessionContext';
 import type { Message } from '@/models/chat';
 import {
   getMessagesPageForSession,
@@ -27,9 +27,12 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }));
 
+import { SystemPromptProvider } from '../SystemPromptContext';
+
 // Mock AgentSessionContext
 vi.mock('../AgentSessionContext', () => ({
   useAgentSessionState: vi.fn(),
+  useAgentSessionActions: vi.fn(),
 }));
 
 // Mock backend messages API
@@ -52,15 +55,18 @@ vi.mock('@/lib/logger', () => ({
 function TestWrapper({ children }: { children: ReactNode }) {
   return (
     <SettingsProvider>
-      <LLMServiceProvider>
-        <AgentChatProvider>{children}</AgentChatProvider>
-      </LLMServiceProvider>
+      <SystemPromptProvider>
+        <LLMServiceProvider>
+          <AgentChatProvider>{children}</AgentChatProvider>
+        </LLMServiceProvider>
+      </SystemPromptProvider>
     </SettingsProvider>
   );
 }
 
 describe('AgentChatContext', () => {
   const mockUnlisten = vi.fn();
+  const mockSetError = vi.fn(); // Added mock
 
   const mockMessages: Message[] = [
     {
@@ -81,10 +87,17 @@ describe('AgentChatContext', () => {
 
     // Setup AgentSessionContext mock
     (useAgentSessionState as ReturnType<typeof vi.fn>).mockReturnValue({
-      currentSession: { id: 'test-session', name: 'Test Session' },
+      session: { id: 'test-session', name: 'Test Session' },
       messages: mockMessages,
-      isLoading: false,
+      isSessionLoading: false,
       error: null,
+      llmError: null,
+      workflowStatus: 'idle',
+    });
+
+    // Setup AgentSessionActions mock
+    (useAgentSessionActions as ReturnType<typeof vi.fn>).mockReturnValue({
+      setError: mockSetError,
     });
 
     // Setup backend messages mock
@@ -113,7 +126,7 @@ describe('AgentChatContext', () => {
       });
 
       expect(result.current).toBeDefined();
-      expect(result.current.isLoading).toBe(false);
+      expect(result.current.isSessionLoading).toBe(false);
       expect(result.current.error).toBeNull();
       expect(result.current.workflowStatus).toBe('idle');
     });
@@ -135,7 +148,7 @@ describe('AgentChatContext', () => {
       });
 
       expect(result.current).toBeDefined();
-      expect(result.current.isLoading).toBe(false);
+      expect(result.current.isSessionLoading).toBe(false);
       expect(typeof result.current.submit).toBe('function');
     });
 
@@ -162,123 +175,7 @@ describe('AgentChatContext', () => {
     });
   });
 
-  describe('Event Listeners', () => {
-    it('should register event listener on mount', async () => {
-      renderHook(() => useAgentChat(), {
-        wrapper: TestWrapper,
-      });
 
-      await waitFor(() => {
-        expect(listen).toHaveBeenCalledWith('agent:event', expect.any(Function));
-      });
-    });
-
-    it('should cleanup on unmount', async () => {
-      const { unmount } = renderHook(() => useAgentChat(), {
-        wrapper: TestWrapper,
-      });
-
-      await waitFor(() => {
-        expect(listen).toHaveBeenCalled();
-      });
-
-      unmount();
-
-      await waitFor(() => {
-        expect(mockUnlisten).toHaveBeenCalled();
-      });
-    });
-
-    it('should update status on agent event', async () => {
-      let eventHandler: ((event: unknown) => void) | undefined;
-
-      (listen as ReturnType<typeof vi.fn>).mockImplementation(
-        async (eventName, handler) => {
-          if (eventName === 'agent:event') {
-            eventHandler = handler as (event: unknown) => void;
-          }
-          return mockUnlisten;
-        },
-      );
-
-      const { result } = renderHook(() => useAgentChat(), {
-        wrapper: TestWrapper,
-      });
-
-      await waitFor(() => {
-        expect(eventHandler).toBeDefined();
-      });
-
-      // Trigger busy status
-      act(() => {
-        eventHandler?.({
-          payload: {
-            type: 'statusChanged',
-            session_id: 'test-session',
-            status: 'Busy',
-          },
-        });
-      });
-
-      await waitFor(() => {
-        expect(result.current.workflowStatus).toBe('busy');
-        expect(result.current.isLoading).toBe(true);
-      });
-
-      // Trigger idle status
-      act(() => {
-        eventHandler?.({
-          payload: {
-            type: 'statusChanged',
-            session_id: 'test-session',
-            status: 'Idle',
-          },
-        });
-      });
-
-      await waitFor(() => {
-        expect(result.current.workflowStatus).toBe('idle');
-        expect(result.current.isLoading).toBe(false);
-      });
-    });
-
-    it('should ignore events for different sessions', async () => {
-      let eventHandler: ((event: unknown) => void) | undefined;
-
-      (listen as ReturnType<typeof vi.fn>).mockImplementation(
-        async (eventName, handler) => {
-          if (eventName === 'agent:event') {
-            eventHandler = handler as (event: unknown) => void;
-          }
-          return mockUnlisten;
-        },
-      );
-
-      const { result } = renderHook(() => useAgentChat(), {
-        wrapper: TestWrapper,
-      });
-
-      await waitFor(() => {
-        expect(eventHandler).toBeDefined();
-      });
-
-      const initialStatus = result.current.workflowStatus;
-
-      // Trigger event for different session
-      act(() => {
-        eventHandler?.({
-          payload: {
-            type: 'statusChanged',
-            session_id: 'other-session',
-            status: 'Busy',
-          },
-        });
-      });
-
-      // Status should remain unchanged
-      expect(result.current.workflowStatus).toBe(initialStatus);
-    });
-  });
 
   describe('Submit Action', () => {
     it('should submit message to backend', async () => {
@@ -335,14 +232,15 @@ describe('AgentChatContext', () => {
         await result.current.submit(newMessage);
       });
 
-      expect(result.current.error).toBe('Submit failed');
+      expect(mockSetError).toHaveBeenCalledWith('Submit failed');
     });
 
     it('should not submit without active session', async () => {
       (useAgentSessionState as ReturnType<typeof vi.fn>).mockReturnValue({
-        currentSession: null,
+        session: null,
+        messages: [],
       });
-
+      console.error = vi.fn(); // Suppress error logs
       const { result } = renderHook(() => useAgentChat(), {
         wrapper: TestWrapper,
       });
@@ -377,7 +275,7 @@ describe('AgentChatContext', () => {
       expect(invoke).toHaveBeenCalledWith('agent_terminate_workflow', {
         sessionId: 'test-session',
       });
-      expect(result.current.isLoading).toBe(false);
+      expect(result.current.isSessionLoading).toBe(false);
       expect(result.current.workflowStatus).toBe('idle');
     });
 
@@ -394,7 +292,7 @@ describe('AgentChatContext', () => {
         await result.current.cancel();
       });
 
-      expect(result.current.error).toBe('Cancel failed');
+      expect(mockSetError).toHaveBeenCalledWith('Cancel failed');
     });
   });
 
@@ -426,10 +324,12 @@ describe('AgentChatContext', () => {
 
       // Update AgentSessionContext mock to return messagesWithError
       (useAgentSessionState as ReturnType<typeof vi.fn>).mockReturnValue({
-        currentSession: { id: 'test-session', name: 'Test Session' },
+        session: { id: 'test-session', name: 'Test Session' },
         messages: messagesWithError,
-        isLoading: false,
+        isSessionLoading: false,
         error: null,
+        llmError: null,
+        workflowStatus: 'idle',
       });
 
       // Mock backend messages
@@ -482,10 +382,12 @@ describe('AgentChatContext', () => {
 
       // Mock session state with no messages
       (useAgentSessionState as ReturnType<typeof vi.fn>).mockReturnValue({
-        currentSession: { id: 'test-session', name: 'Test Session' },
+        session: { id: 'test-session', name: 'Test Session' },
         messages: [],
-        isLoading: false,
+        isSessionLoading: false,
         error: null,
+        llmError: null,
+        workflowStatus: 'idle',
       });
 
       const { result } = renderHook(() => useAgentChat(), {
@@ -496,8 +398,12 @@ describe('AgentChatContext', () => {
         await result.current.retryMessage();
       });
 
-      // Should not invoke anything
-      expect(invoke).not.toHaveBeenCalled();
+      // Should only call agent_get_service_contexts (from useEffect initialization)
+      // retryMessage should not trigger any additional calls
+      expect(invoke).toHaveBeenCalledTimes(1);
+      expect(invoke).toHaveBeenCalledWith('agent_get_service_contexts', {
+        sessionId: 'test-session',
+      });
     });
   });
 });

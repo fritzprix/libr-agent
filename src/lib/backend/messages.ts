@@ -18,7 +18,14 @@ function deserializeMessage(rustMsg: Record<string, unknown>): Message {
     threadId: (rustMsg.threadId as string) || (rustMsg.sessionId as string), // Fallback to sessionId for backward compatibility
     role: rustMsg.role as 'user' | 'assistant' | 'system' | 'tool',
     content: rustMsg.content as Message['content'], // Typed correctly in Message interface
-    tool_calls: (rustMsg.toolCalls as Message['tool_calls']) || undefined,
+    // Deserialize tool calls and ensure they have the type field
+    tool_calls: (rustMsg.toolCalls as Message['tool_calls'])
+      ? (rustMsg.toolCalls as Message['tool_calls'])?.map((tc) => ({
+          id: tc.id,
+          type: tc.type || 'function',
+          function: tc.function,
+        }))
+      : undefined,
     tool_call_id: rustMsg.toolCallId as string | undefined,
     isStreaming: rustMsg.isStreaming as boolean | undefined,
     thinking: rustMsg.thinking as string | undefined,
@@ -92,10 +99,16 @@ export async function upsertMessages(messages: Message[]): Promise<void> {
   const rustMessages = messages.map((msg) => ({
     id: msg.id,
     sessionId: msg.sessionId,
-    threadId: msg.threadId,
     role: msg.role,
     content: msg.content,
-    toolCalls: msg.tool_calls || null,
+    // Ensure all tool calls have the required 'type' field
+    toolCalls: msg.tool_calls
+      ? msg.tool_calls.map((tc) => ({
+          id: tc.id,
+          type: tc.type || 'function',
+          function: tc.function,
+        }))
+      : null,
     toolCallId: msg.tool_call_id || null,
     isStreaming: msg.isStreaming || null,
     thinking: msg.thinking || null,
@@ -130,7 +143,14 @@ export async function upsertMessage(message: Message): Promise<void> {
     sessionId: message.sessionId,
     role: message.role,
     content: message.content,
-    toolCalls: message.tool_calls || null,
+    // Ensure all tool calls have the required 'type' field
+    toolCalls: message.tool_calls
+      ? message.tool_calls.map((tc) => ({
+          id: tc.id,
+          type: tc.type || 'function',
+          function: tc.function,
+        }))
+      : null,
     toolCallId: message.tool_call_id || null,
     isStreaming: message.isStreaming || null,
     thinking: message.thinking || null,

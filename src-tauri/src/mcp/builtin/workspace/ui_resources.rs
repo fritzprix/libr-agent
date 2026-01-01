@@ -1,22 +1,5 @@
 use serde_json::{json, Value};
 
-use crate::mcp::types::MCPResult;
-
-pub fn mcp_result_with_text_and_resource(message: &str, ui_resource: Value) -> MCPResult {
-    MCPResult {
-        content: Some(vec![
-            crate::mcp::types::MCPContent::Text {
-                text: message.to_string(),
-            },
-            crate::mcp::types::MCPContent::Resource {
-                resource: ui_resource,
-            },
-        ]),
-        structured_content: None,
-        is_error: Some(false),
-    }
-}
-
 pub fn create_export_ui_resource(
     request_id: u64,
     title: &str,
