@@ -58,7 +58,7 @@ export const AgentMessageRenderer: React.FC<AgentMessageRendererProps> = ({
   const { copied, copyToClipboard } = useClipboard();
   const { openExternalUrl } = useRustBackend(); // Removed callToolUnified
   const { submit } = useAgentChatActions();
-  const { currentSession } = useAgentSessionState();
+  const { session } = useAgentSessionState();
   const tauriCommands = useRustBackend();
 
   // content 결정: message가 있으면 message.content 사용, 없으면 props.content 사용
@@ -145,7 +145,7 @@ export const AgentMessageRenderer: React.FC<AgentMessageRendererProps> = ({
    */
   const handleUIAction = useCallback(
     async (result: UIActionResult) => {
-      const sessionId = currentSession?.id;
+      const sessionId = session?.id;
 
       if (!sessionId) {
         logger.warn('No active session for UI action', { type: result.type });
@@ -169,7 +169,7 @@ export const AgentMessageRenderer: React.FC<AgentMessageRendererProps> = ({
               if (
                 strippedCommand &&
                 typeof tauriCommands[
-                  strippedCommand as keyof typeof tauriCommands
+                strippedCommand as keyof typeof tauriCommands
                 ] === 'function'
               ) {
                 try {
@@ -344,7 +344,7 @@ export const AgentMessageRenderer: React.FC<AgentMessageRendererProps> = ({
         };
       }
     },
-    [currentSession?.id, submit, openExternalUrl, tauriCommands],
+    [session?.id, submit, openExternalUrl, tauriCommands],
   );
 
   if (!finalContent.length) {

@@ -69,7 +69,10 @@ export type MessageErrorType =
   | 'AI_SERVICE_ERROR'
   | 'NETWORK_ERROR'
   | 'VALIDATION_ERROR'
-  | 'RATE_LIMIT_ERROR';
+  | 'RATE_LIMIT_ERROR'
+  | 'MALFORMED_FUNCTION_CALL'
+  | 'JSON_PARSING_ERROR'
+  | 'AUTHENTICATION_ERROR';
 
 export interface Message {
   id: string;

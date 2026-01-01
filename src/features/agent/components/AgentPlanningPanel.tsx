@@ -13,7 +13,7 @@ import type {
 const logger = getLogger('AgentPlanningPanel');
 
 export function AgentPlanningPanel() {
-  const { currentSession } = useAgentSessionState();
+  const { session } = useAgentSessionState();
   const { serviceContexts, updateServiceContexts } = useAgentChat();
 
   // Component lifecycle logging
@@ -41,7 +41,7 @@ export function AgentPlanningPanel() {
     | PlanningState
     | undefined;
 
-  if (!currentSession) return null;
+  if (!session) return null;
 
   return (
     <Card className="w-80 h-full flex flex-col bg-background/95 backdrop-blur border-border/50">
@@ -156,7 +156,7 @@ export function AgentPlanningPanel() {
           </h4>
           <div className="max-h-32 overflow-y-auto space-y-1">
             {planningState?.scratchpad &&
-            planningState.scratchpad.length > 0 ? (
+              planningState.scratchpad.length > 0 ? (
               planningState.scratchpad.map((m: ScratchpadItem) => (
                 <div
                   key={m.id}

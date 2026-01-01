@@ -11,8 +11,8 @@ import type { Message } from '@/models/chat';
 import { useLLMService } from '@/context/LLMServiceContext';
 
 export function AgentChatMessages() {
-  const { messages, error, retryMessage } = useAgentChat();
-  const { currentSession } = useAgentSessionState();
+  const { messages, error, llmError, retryMessage } = useAgentChat();
+  const { session } = useAgentSessionState();
   const { streamingMessages } = useLLMService();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -20,11 +20,11 @@ export function AgentChatMessages() {
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
 
   const streamingMessage = useMemo(() => {
-    if (!currentSession?.id || !streamingMessages) return undefined;
-    if (currentSession.id) {
-      return streamingMessages.get(currentSession.id);
+    if (!session?.id || !streamingMessages) return undefined;
+    if (session.id) {
+      return streamingMessages.get(session.id);
     }
-  }, [currentSession, streamingMessages]);
+  }, [session, streamingMessages]);
 
   // Group messages for display
   const groupedMessages = useMessageGrouping(messages);
@@ -127,6 +127,20 @@ export function AgentChatMessages() {
           </div>
         )}
 
+        {/* LLM specific error (e.g. malformed function call) */}
+        {llmError && (
+          <div className="self-start mt-2">
+            <ErrorBubble
+              error={{
+                type: 'MALFORMED_FUNCTION_CALL',
+                displayMessage: llmError,
+                recoverable: true,
+              }}
+              onRetry={handleRetry}
+            />
+          </div>
+        )}
+
         {/* Show streaming indicator or loading state */}
         {streamingMessage && (
           <div className="flex justify-start mb-8 mt-3">
@@ -136,7 +150,7 @@ export function AgentChatMessages() {
                   <Bot size={16} className="text-primary-foreground" />
                 </div>
                 <span className="text-xs font-medium">
-                  Agent {currentSession?.name && `(${currentSession.name})`}
+                  Agent {session?.name && `(${session.name})`}
                 </span>
               </div>
               <div className="flex items-center gap-2 text-sm text-muted-foreground">

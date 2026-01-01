@@ -44,7 +44,7 @@ interface FileNode {
 export function AgentWorkspacePanel() {
   const { listWorkspaceFiles, downloadWorkspaceFile, callBuiltinTool } =
     useRustBackend();
-  const { currentSession } = useAgentSessionState();
+  const { session } = useAgentSessionState();
   const { submit } = useAgentChatActions();
   const [rootPath, setRootPath] = useState<string>('./');
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
@@ -83,7 +83,7 @@ export function AgentWorkspacePanel() {
 
       try {
         logger.debug('Loading directory', { path, parentNodeId });
-        const files = await listWorkspaceFiles(path, currentSession?.id);
+        const files = await listWorkspaceFiles(path, session?.id);
         logger.info('BACKEND RESPONSE', {
           path,
           fileCount: files.length,
@@ -220,7 +220,7 @@ export function AgentWorkspacePanel() {
   // Handle external file drops from DnDContext
   const handleWorkspaceFileDrop = useCallback(
     async (paths: string[]) => {
-      if (!currentSession?.id) return;
+      if (!session?.id) return;
 
       logger.info('External files dropped on workspace', {
         fileCount: paths.length,
@@ -264,7 +264,7 @@ export function AgentWorkspacePanel() {
                     if (
                       'text' in (item as Record<string, unknown>) &&
                       typeof (item as Record<string, unknown>)['text'] ===
-                        'string'
+                      'string'
                     ) {
                       texts.push(
                         (item as Record<string, unknown>)['text'] as string,
@@ -295,9 +295,8 @@ export function AgentWorkspacePanel() {
               resultText = 'No result returned from importFile';
             }
           } catch (e) {
-            resultText = `Failed to parse tool response: ${
-              e instanceof Error ? e.message : String(e)
-            }`;
+            resultText = `Failed to parse tool response: ${e instanceof Error ? e.message : String(e)
+              }`;
           }
 
           const [toolCallMessage, toolResultMessage] = createToolMessagePair(
@@ -305,7 +304,7 @@ export function AgentWorkspacePanel() {
             { src_abs_path: srcPath, dest_rel_path: destRelPath },
             stringToMCPContentArray(resultText),
             toolCallId,
-            currentSession.id,
+            session.id,
           );
 
           // Submit messages sequentially
@@ -324,7 +323,7 @@ export function AgentWorkspacePanel() {
         });
       }
     },
-    [callBuiltinTool, submit, currentSession, rootPath, loadDirectory],
+    [callBuiltinTool, submit, session, rootPath, loadDirectory],
   );
 
   // Subscribe to DnD events
@@ -460,19 +459,17 @@ export function AgentWorkspacePanel() {
     );
   };
 
-  if (!currentSession) return null;
+  if (!session) return null;
 
   return (
     <div
       ref={panelRef}
-      className={`w-80 h-full ${
-        dragState.isOver ? 'ring-2 ring-green-500' : ''
-      }`}
+      className={`w-80 h-full ${dragState.isOver ? 'ring-2 ring-green-500' : ''
+        }`}
     >
       <Card
-        className={`w-full h-full flex flex-col bg-background/95 backdrop-blur border-border/50 ${
-          dragState.isOver ? 'border-green-500 bg-green-500/10' : ''
-        }`}
+        className={`w-full h-full flex flex-col bg-background/95 backdrop-blur border-border/50 ${dragState.isOver ? 'border-green-500 bg-green-500/10' : ''
+          }`}
       >
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">

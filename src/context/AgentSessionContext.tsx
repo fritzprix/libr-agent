@@ -227,7 +227,10 @@ export function AgentSessionProvider({
               if (
                 errorMsg.includes('invalid type:') ||
                 errorMsg.includes('expected i64') ||
-                errorMsg.includes('LLM')
+                errorMsg.includes('LLM') ||
+                errorMsg.includes('MALFORMED_FUNCTION_CALL') ||
+                errorMsg.toLowerCase().includes('function call') ||
+                errorMsg.toLowerCase().includes('json')
               ) {
                 setLlmError(errorMsg);
               } else {
