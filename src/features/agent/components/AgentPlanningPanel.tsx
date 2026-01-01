@@ -156,7 +156,7 @@ export function AgentPlanningPanel() {
           </h4>
           <div className="max-h-32 overflow-y-auto space-y-1">
             {planningState?.scratchpad &&
-              planningState.scratchpad.length > 0 ? (
+            planningState.scratchpad.length > 0 ? (
               planningState.scratchpad.map((m: ScratchpadItem) => (
                 <div
                   key={m.id}
