@@ -670,7 +670,12 @@ impl WorkspaceServer {
     }
 
     pub fn get_file_manager(&self) -> Arc<SecureFileManager> {
-        self.session_manager.get_file_manager()
+        // CRITICAL FIX: Use this server's session_id instead of current_session
+        // to ensure correct workspace isolation in concurrent sessions
+        let workspace_dir = self
+            .session_manager
+            .get_session_workspace_dir_by_id(&self.session_id);
+        Arc::new(SecureFileManager::new_with_base_dir(workspace_dir))
     }
 
     fn get_workspace_tree(&self, path: &str, max_depth: usize) -> String {
