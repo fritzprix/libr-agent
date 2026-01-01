@@ -25,7 +25,7 @@ interface AgentChatInputProps {
 }
 
 export function AgentChatInput({ children }: AgentChatInputProps) {
-  const { currentSession } = useAgentSessionState();
+  const { session } = useAgentSessionState();
   const { submit, isSessionLoading, workflowStatus, messages, cancel } =
     useAgentChat();
   const [input, setInput] = useState('');
@@ -122,7 +122,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
         logger.info('Submit ignored: no input and no pending files');
         return;
       }
-      if (!currentSession?.id) {
+      if (!session?.id) {
         logger.info('Submit ignored: no session');
         return;
       }
@@ -147,8 +147,8 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
 
       const userMessage: Message = {
         id: createId(),
-        sessionId: currentSession.id,
-        threadId: currentSession.id,
+        sessionId: session.id,
+        threadId: session.id,
         role: 'user',
         content: [{ type: 'text', text: input.trim() }],
         createdAt: new Date(),
@@ -178,7 +178,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     [
       input,
       pendingFiles,
-      currentSession?.id,
+      session?.id,
       commitPendingFiles,
       clearPendingFiles,
       submit,

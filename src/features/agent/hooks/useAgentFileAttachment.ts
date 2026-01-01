@@ -18,7 +18,7 @@ const logger = getLogger('AgentFileAttachment');
  * Provides the same interface as useFileAttachment from Chat V1.
  */
 export function useAgentFileAttachment() {
-  const { currentSession } = useAgentSessionState();
+  const { session } = useAgentSessionState();
   const {
     pendingFiles,
     addPendingFiles,
@@ -54,11 +54,11 @@ export function useAgentFileAttachment() {
     async (filePaths: string[]) => {
       logger.info('processFileDrop called:', {
         filePaths,
-        currentSession: currentSession?.id,
-        sessionAvailable: !!currentSession,
+        currentSession: session?.id,
+        sessionAvailable: !!session,
       });
 
-      if (!currentSession) {
+      if (!session) {
         logger.error('Cannot attach file: session not available.');
         alert('Cannot attach file: session not available.');
         return;
@@ -101,7 +101,7 @@ export function useAgentFileAttachment() {
           logger.info(`Preparing dropped file`, {
             filePath,
             filename,
-            sessionId: currentSession?.id,
+            sessionId: session?.id,
           });
 
           logger.info('Calling rustBackend.readDroppedFile...', { filePath });
@@ -141,7 +141,7 @@ export function useAgentFileAttachment() {
         } catch (error) {
           logger.error(`Error preparing dropped file ${filePath}:`, {
             filePath,
-            sessionId: currentSession?.id,
+            sessionId: session?.id,
             error:
               error instanceof Error
                 ? {
@@ -194,13 +194,13 @@ export function useAgentFileAttachment() {
         }
       }
     },
-    [currentSession, addPendingFiles, getMimeType, rustBackend],
+    [session, addPendingFiles, getMimeType, rustBackend],
   );
 
   const handleFileAttachment = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files;
-      if (!files || !currentSession) {
+      if (!files || !session) {
         alert('Cannot attach file: session not available.');
         return;
       }
@@ -222,7 +222,7 @@ export function useAgentFileAttachment() {
             filename: file.name,
             fileSize: file.size,
             fileType: file.type,
-            sessionId: currentSession?.id,
+            sessionId: session?.id,
           });
 
           addPendingFiles([
@@ -244,7 +244,7 @@ export function useAgentFileAttachment() {
             filename: file.name,
             fileSize: file.size,
             fileType: file.type,
-            sessionId: currentSession?.id,
+            sessionId: session?.id,
             error:
               error instanceof Error
                 ? {
@@ -263,7 +263,7 @@ export function useAgentFileAttachment() {
 
       e.target.value = '';
     },
-    [currentSession, addPendingFiles],
+    [session, addPendingFiles],
   );
 
   const validateFiles = useCallback((paths: string[]): boolean => {

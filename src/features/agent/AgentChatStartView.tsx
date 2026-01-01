@@ -4,9 +4,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAssistantContext } from '@/context/AssistantContext';
 import {
-  useAgentSessionState,
-  useAgentSessionActions,
-} from '@/context/AgentSessionContext';
+  useAgentSessionListState,
+  useAgentSessionListActions,
+} from '@/context/AgentSessionListContext';
 import { SessionCard } from './components/SessionCard';
 import { getLogger } from '@/lib/logger';
 import { toast } from 'sonner';
@@ -34,10 +34,10 @@ const logger = getLogger('AgentChatStartView');
 export default function AgentChatStartView() {
   const navigate = useNavigate();
   const { assistants } = useAssistantContext();
-  const { isSessionLoading, sessions, isSessionsListLoading } =
-    useAgentSessionState();
+  const { sessions, isSessionsListLoading } = useAgentSessionListState();
   const { createSession, loadSessions, deleteSession } =
-    useAgentSessionActions();
+    useAgentSessionListActions();
+  const [isCreating, setIsCreating] = useState(false);
   const [startingAssistantId, setStartingAssistantId] = useState<string | null>(
     null,
   );
@@ -78,7 +78,7 @@ export default function AgentChatStartView() {
 
   const handleAssistantSelect = useCallback(
     async (assistant: Assistant) => {
-      if (isSessionLoading) return; // Prevent duplicate clicks
+      if (isCreating) return; // Prevent duplicate clicks
 
       try {
         setStartingAssistantId(assistant.id || null);
@@ -103,9 +103,10 @@ export default function AgentChatStartView() {
         toast.error('Failed to start agent session');
       } finally {
         setStartingAssistantId(null);
+        setIsCreating(false);
       }
     },
-    [createSession, navigate, isSessionLoading, loadSessions],
+    [createSession, navigate, isCreating, loadSessions],
   );
 
   const handleResumeSession = useCallback(
@@ -160,23 +161,24 @@ export default function AgentChatStartView() {
               return (
                 <button
                   key={assistant.id}
-                  onClick={() =>
-                    !isSessionLoading && handleAssistantSelect(assistant)
-                  }
-                  disabled={isSessionLoading}
+                  onClick={() => {
+                    setIsCreating(true);
+                    handleAssistantSelect(assistant);
+                  }}
+                  disabled={isCreating}
                   aria-label={`Start session with ${assistant.name}`}
                   aria-busy={isThisStarting}
-                  aria-disabled={isSessionLoading}
+                  aria-disabled={isCreating}
                   role="listitem"
                   className={cn(
                     'w-full p-4 text-left border rounded-lg transition-all',
                     'hover:shadow-md hover:scale-[1.01] focus:outline-none focus:ring-2 focus:ring-primary',
-                    isSessionLoading &&
+                    isCreating &&
                       !isThisStarting &&
                       'opacity-50 cursor-not-allowed',
                     isThisStarting &&
                       'border-primary bg-primary/10 animate-pulse',
-                    !isSessionLoading && 'hover:border-muted-foreground',
+                    !isCreating && 'hover:border-muted-foreground',
                   )}
                 >
                   <div className="flex items-start justify-between">
@@ -213,11 +215,7 @@ export default function AgentChatStartView() {
 
         <div className="p-6 border-t">
           <Link to="/assistants">
-            <Button
-              variant="outline"
-              disabled={isSessionLoading}
-              className="w-full"
-            >
+            <Button variant="outline" disabled={isCreating} className="w-full">
               Manage Assistants
             </Button>
           </Link>

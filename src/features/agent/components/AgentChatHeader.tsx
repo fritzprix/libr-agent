@@ -18,7 +18,7 @@ export function AgentChatHeader({
   children,
   assistantName,
 }: AgentChatHeaderProps) {
-  const { currentSession } = useAgentSessionState();
+  const { session } = useAgentSessionState();
   const { showPlanningPanel, togglePlanningPanel } = useAgentPlanning();
   const { showWorkspacePanel, toggleWorkspacePanel } = useAgentWorkspace();
   const { reasoningEnabled, canUseReasoning, messages, toggleReasoning } =
@@ -112,9 +112,7 @@ export function AgentChatHeader({
             />
           </Button>
 
-          {currentSession?.id && (
-            <SessionFilesPopover sessionId={currentSession.id} />
-          )}
+          {session?.id && <SessionFilesPopover sessionId={session.id} />}
         </div>
       </div>
     </TerminalHeader>

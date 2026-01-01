@@ -72,11 +72,26 @@ interface AgentChatViewProps {
 }
 
 export default function AgentChatView({ children }: AgentChatViewProps) {
-  const { currentSession } = useAgentSessionState();
+  const { session, isSessionLoading } = useAgentSessionState();
 
-  if (!currentSession) {
-    throw new Error(
-      'AgentChatView component should only be rendered when currentSession exists',
+  if (isSessionLoading) {
+    return (
+      <div className="flex h-full items-center justify-center p-4">
+        {/* Placeholder for loading state, could be a spinner */}
+        <div className="text-muted-foreground animate-pulse">
+          Loading session...
+        </div>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <div className="flex h-full items-center justify-center p-4">
+        <div className="text-destructive">
+          Session not found or failed to load.
+        </div>
+      </div>
     );
   }
 

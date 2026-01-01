@@ -1,81 +1,36 @@
-import { useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import {
-  useAgentSessionState,
-  useAgentSessionActions,
-} from '@/context/AgentSessionContext';
+import { useParams } from 'react-router-dom';
+import { AgentSessionProvider } from '@/context/AgentSessionContext';
 import AgentChatView from './AgentChatView';
 import AgentChatStartView from './AgentChatStartView';
-import { getLogger } from '@/lib/logger';
-
-const logger = getLogger('AgentContainer');
 
 /**
  * Agent V2 Container
  *
- * Smart container that routes between start view and chat view
- * based on URL params and agent session state.
+ * Parallel Session Support:
+ * - /agent → AgentChatStartView (Global List Context)
+ * - /agent/:sessionId → AgentChatView (Local Session Context)
  *
- * Routes:
- * - /agent → AgentChatStartView (two-column layout: assistant selection + session history)
- * - /agent/:sessionId → AgentChatView (resume or continue session)
- *
- * Pattern: Mirrors V1's ChatContainer.tsx for consistency
+ * Each session has its own AgentSessionProvider instance.
  */
 export default function AgentContainer() {
   const { sessionId } = useParams<{ sessionId?: string }>();
-  const navigate = useNavigate();
-  const { currentSession, isSessionLoading } = useAgentSessionState();
-  const { resumeSession, clearSession } = useAgentSessionActions();
 
-  /**
-   * Resume session when sessionId is in URL
-   */
-  useEffect(() => {
-    // If URL has sessionId but no current session, try to resume
-    if (sessionId && (!currentSession || currentSession.id !== sessionId)) {
-      logger.info('Resuming session from URL', { sessionId });
-
-      resumeSession(sessionId).catch((err) => {
-        logger.error('Failed to resume session', err);
-        // Navigate back to start view on error
-        navigate('/agent', { replace: true });
-      });
-    }
-
-    // If no sessionId in URL but we have a current session, clear it
-    if (!sessionId && currentSession) {
-      logger.info('No sessionId in URL, clearing current session');
-      clearSession();
-    }
-  }, [sessionId, currentSession?.id, resumeSession, clearSession, navigate]);
-
-  /**
-   * Show loading state during session resume
-   */
-  if (sessionId && isSessionLoading) {
+  if (sessionId) {
+    // Session View: Isolated provider for this session
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-muted-foreground">Loading session...</div>
-      </div>
+      <AgentSessionProvider sessionId={sessionId} key={sessionId}>
+        <AgentChatView>
+          <AgentChatView.Header />
+          <AgentChatView.StatusBar />
+          <AgentChatView.Messages />
+          <AgentChatView.AttachedFiles />
+          <AgentChatView.Input />
+          <AgentChatView.Bottom />
+        </AgentChatView>
+      </AgentSessionProvider>
     );
   }
 
-  /**
-   * Route decision:
-   * - If sessionId in URL and session loaded → AgentChatView with compound components
-   * - Otherwise → AgentChatStartView (two-column layout)
-   */
-  return sessionId && currentSession?.id === sessionId ? (
-    <AgentChatView>
-      <AgentChatView.Header />
-      <AgentChatView.StatusBar />
-      <AgentChatView.Messages />
-      <AgentChatView.AttachedFiles />
-      <AgentChatView.Input />
-      <AgentChatView.Bottom />
-    </AgentChatView>
-  ) : (
-    <AgentChatStartView />
-  );
+  // Start View: Uses global list context
+  return <AgentChatStartView />;
 }

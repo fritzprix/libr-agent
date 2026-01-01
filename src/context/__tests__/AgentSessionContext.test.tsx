@@ -3,23 +3,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
     AgentSessionProvider,
     useAgentSessionState,
-    useAgentSessionActions,
 } from '../AgentSessionContext';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import * as messagesBackend from '@/lib/backend/messages';
-import type { Assistant } from '@/models/chat';
 import type { Message } from '@/models/chat';
-
-// Mock Assistant for creating sessions
-const mockAssistant: Assistant = {
-    id: 'asst-1',
-    name: 'Assistant',
-    systemPrompt: 'sys prompt',
-    deletionProtected: false,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-};
 
 // Mock Tauri APIs
 vi.mock('@tauri-apps/api/event', () => ({
@@ -40,12 +28,6 @@ vi.mock('@/lib/logger', () => ({
     }),
 }));
 
-// Mock backend session API (if called by provider on mount)
-vi.mock('@/lib/backend/session', () => ({
-    listSessions: vi.fn(),
-    createSession: vi.fn(),
-}));
-
 // Mock backend messages API
 vi.mock('@/lib/backend/messages', () => ({
     getMessagesPageForSession: vi.fn(),
@@ -59,11 +41,14 @@ vi.mock('../ModelProvider', () => ({
     }),
 }));
 
+const TEST_SESSION_ID = 'session-1';
+
 function TestWrapper({ children }: { children: React.ReactNode }) {
-    return <AgentSessionProvider>{children}</AgentSessionProvider>;
+    // Provide a mocked sessionId prop
+    return <AgentSessionProvider sessionId={TEST_SESSION_ID}>{children}</AgentSessionProvider>;
 }
 
-describe('AgentSessionContext', () => {
+describe('AgentSessionContext (Local)', () => {
     const mockUnlisten = vi.fn();
 
     beforeEach(() => {
@@ -77,41 +62,41 @@ describe('AgentSessionContext', () => {
             pageSize: 50,
             totalPages: 0,
         });
-    });
 
-    it('should provide initial state', () => {
-        const { result } = renderHook(() => useAgentSessionState(), {
-            wrapper: TestWrapper,
-        });
-
-        expect(result.current.currentSession).toBeNull();
-        expect(result.current.workflowStatus).toBe('idle');
-        expect(result.current.messages).toEqual([]);
-    });
-
-    it('should register event listener when session is active', async () => {
-        const { result } = renderHook(
-            () => ({ state: useAgentSessionState(), actions: useAgentSessionActions() }),
-            { wrapper: TestWrapper }
-        );
-
-        // Create a session to make it active
+        // Mock get_session interaction for initialization
         (invoke as ReturnType<typeof vi.fn>).mockResolvedValue({
-            id: 'session-1',
+            id: TEST_SESSION_ID,
             name: 'Test Session',
             status: 'idle',
             created_at: Date.now(),
             updated_at: Date.now(),
         });
+    });
 
-        await act(async () => {
-            await result.current.actions.createSession({
-                name: 'Test Session',
-                assistant: mockAssistant,
-            });
+    it('should initialize with session state', async () => {
+        const { result } = renderHook(() => useAgentSessionState(), {
+            wrapper: TestWrapper,
         });
 
-        expect(result.current.state.currentSession?.id).toBe('session-1');
+        // Initially loading
+        expect(result.current.isSessionLoading).toBe(true);
+
+        // Wait for load
+        await waitFor(() => {
+            expect(result.current.isSessionLoading).toBe(false);
+        });
+
+        expect(result.current.session?.id).toBe(TEST_SESSION_ID);
+        expect(result.current.workflowStatus).toBe('idle');
+        expect(result.current.messages).toEqual([]);
+
+        expect(invoke).toHaveBeenCalledWith('agent_get_session', { sessionId: TEST_SESSION_ID });
+    });
+
+    it('should register event listener for the session', async () => {
+        renderHook(() => useAgentSessionState(), {
+            wrapper: TestWrapper,
+        });
 
         await waitFor(() => {
             expect(listen).toHaveBeenCalledWith('agent:event', expect.any(Function));
@@ -131,25 +116,12 @@ describe('AgentSessionContext', () => {
             );
 
             const { result } = renderHook(
-                () => ({ state: useAgentSessionState(), actions: useAgentSessionActions() }),
+                () => useAgentSessionState(),
                 { wrapper: TestWrapper }
             );
 
-            // Setup active session
-            (invoke as ReturnType<typeof vi.fn>).mockResolvedValue({
-                id: 'session-1',
-                name: 'Test Session',
-                status: 'idle',
-            });
-
-            await act(async () => {
-                await result.current.actions.createSession({
-                    name: 'Test Session',
-                    assistant: mockAssistant,
-                });
-            });
-
             await waitFor(() => {
+                expect(result.current.isSessionLoading).toBe(false);
                 expect(eventHandler).toBeDefined();
             });
 
@@ -158,15 +130,14 @@ describe('AgentSessionContext', () => {
                 eventHandler?.({
                     payload: {
                         type: 'statusChanged',
-                        sessionId: 'session-1',
+                        sessionId: TEST_SESSION_ID,
                         status: 'busy',
                     },
                 });
             });
 
             await waitFor(() => {
-                expect(result.current.state.workflowStatus).toBe('busy');
-                // expect(result.current.state.isSessionLoading).toBe(true);
+                expect(result.current.workflowStatus).toBe('busy');
             });
         });
 
@@ -182,51 +153,36 @@ describe('AgentSessionContext', () => {
             );
 
             const { result } = renderHook(
-                () => ({ state: useAgentSessionState(), actions: useAgentSessionActions() }),
+                () => useAgentSessionState(),
                 { wrapper: TestWrapper }
             );
-
-            // Setup active session
-            (invoke as ReturnType<typeof vi.fn>).mockResolvedValue({
-                id: 'session-1',
-                name: 'Test Session',
-                status: 'idle',
-            });
-            await act(async () => {
-                await result.current.actions.createSession({
-                    name: 'Test Session',
-                    assistant: mockAssistant,
-                });
-            });
 
             await waitFor(() => {
                 expect(eventHandler).toBeDefined();
             });
 
-            // Emit messageAdded event
             const newMessage: Message = {
                 id: 'msg-1',
-                sessionId: 'session-1',
-                threadId: 'session-1',
+                sessionId: TEST_SESSION_ID,
+                threadId: TEST_SESSION_ID,
                 role: 'user',
                 content: [{ type: 'text', text: 'Hello' }],
                 createdAt: new Date(),
-            } as unknown as Message; // Using any to bypass potential minor type mismatches if Model Message vs Chat Message types differ slightly, but imports are from same file so should be ok.
-            // But let's check imports. Message is from '@/models/chat'.
+            } as unknown as Message;
 
             act(() => {
                 eventHandler?.({
                     payload: {
                         type: 'messageAdded',
-                        sessionId: 'session-1',
+                        sessionId: TEST_SESSION_ID,
                         message: newMessage,
                     },
                 });
             });
 
             await waitFor(() => {
-                expect(result.current.state.messages).toHaveLength(1);
-                expect(result.current.state.messages[0].id).toBe('msg-1');
+                expect(result.current.messages).toHaveLength(1);
+                expect(result.current.messages[0].id).toBe('msg-1');
             });
         });
 
@@ -242,22 +198,9 @@ describe('AgentSessionContext', () => {
             );
 
             const { result } = renderHook(
-                () => ({ state: useAgentSessionState(), actions: useAgentSessionActions() }),
+                () => useAgentSessionState(),
                 { wrapper: TestWrapper }
             );
-
-            // Setup active session
-            (invoke as ReturnType<typeof vi.fn>).mockResolvedValue({
-                id: 'session-1',
-                name: 'Test Session',
-                status: 'idle',
-            });
-            await act(async () => {
-                await result.current.actions.createSession({
-                    name: 'Test Session',
-                    assistant: mockAssistant,
-                });
-            });
 
             await waitFor(() => {
                 expect(eventHandler).toBeDefined();
@@ -268,14 +211,14 @@ describe('AgentSessionContext', () => {
                 eventHandler?.({
                     payload: {
                         type: 'statusChanged',
-                        sessionId: 'other-session',
+                        sessionId: 'OTHER-SESSION',
                         status: 'busy',
                     },
                 });
             });
 
-            // Status should remain idle
-            expect(result.current.state.workflowStatus).toBe('idle');
+            // Status should remain idle (default mock status)
+            expect(result.current.workflowStatus).toBe('idle');
         });
 
         it('should handle workflowError event', async () => {
@@ -290,22 +233,9 @@ describe('AgentSessionContext', () => {
             );
 
             const { result } = renderHook(
-                () => ({ state: useAgentSessionState(), actions: useAgentSessionActions() }),
+                () => useAgentSessionState(),
                 { wrapper: TestWrapper }
             );
-
-            // Setup active session
-            (invoke as ReturnType<typeof vi.fn>).mockResolvedValue({
-                id: 'session-1',
-                name: 'Test Session',
-                status: 'idle',
-            });
-            await act(async () => {
-                await result.current.actions.createSession({
-                    name: 'Test Session',
-                    assistant: mockAssistant,
-                });
-            });
 
             await waitFor(() => {
                 expect(eventHandler).toBeDefined();
@@ -316,15 +246,15 @@ describe('AgentSessionContext', () => {
                 eventHandler?.({
                     payload: {
                         type: 'workflowError',
-                        sessionId: 'session-1',
+                        sessionId: TEST_SESSION_ID,
                         error: 'Something went wrong',
                     },
                 });
             });
 
             await waitFor(() => {
-                expect(result.current.state.workflowStatus).toBe('error');
-                expect(result.current.state.error).toBe('Something went wrong');
+                expect(result.current.workflowStatus).toBe('error');
+                expect(result.current.error).toBe('Something went wrong');
             });
         });
     });

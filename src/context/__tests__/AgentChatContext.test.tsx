@@ -87,7 +87,7 @@ describe('AgentChatContext', () => {
 
     // Setup AgentSessionContext mock
     (useAgentSessionState as ReturnType<typeof vi.fn>).mockReturnValue({
-      currentSession: { id: 'test-session', name: 'Test Session' },
+      session: { id: 'test-session', name: 'Test Session' },
       messages: mockMessages,
       isSessionLoading: false,
       error: null,
@@ -237,7 +237,7 @@ describe('AgentChatContext', () => {
 
     it('should not submit without active session', async () => {
       (useAgentSessionState as ReturnType<typeof vi.fn>).mockReturnValue({
-        currentSession: null,
+        session: null,
         messages: [],
       });
       console.error = vi.fn(); // Suppress error logs
@@ -324,10 +324,12 @@ describe('AgentChatContext', () => {
 
       // Update AgentSessionContext mock to return messagesWithError
       (useAgentSessionState as ReturnType<typeof vi.fn>).mockReturnValue({
-        currentSession: { id: 'test-session', name: 'Test Session' },
+        session: { id: 'test-session', name: 'Test Session' },
         messages: messagesWithError,
-        isLoading: false,
+        isSessionLoading: false,
         error: null,
+        llmError: null,
+        workflowStatus: 'idle',
       });
 
       // Mock backend messages
@@ -380,10 +382,12 @@ describe('AgentChatContext', () => {
 
       // Mock session state with no messages
       (useAgentSessionState as ReturnType<typeof vi.fn>).mockReturnValue({
-        currentSession: { id: 'test-session', name: 'Test Session' },
+        session: { id: 'test-session', name: 'Test Session' },
         messages: [],
-        isLoading: false,
+        isSessionLoading: false,
         error: null,
+        llmError: null,
+        workflowStatus: 'idle',
       });
 
       const { result } = renderHook(() => useAgentChat(), {

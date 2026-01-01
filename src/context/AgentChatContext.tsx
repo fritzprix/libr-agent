@@ -99,7 +99,7 @@ interface AgentChatProviderProps {
 export function AgentChatProvider({ children }: AgentChatProviderProps) {
   // Consume state from AgentSessionContext (Single Source of Truth)
   const {
-    currentSession,
+    session,
     messages: sessionMessages, // Messages now come directly from session context
     isSessionLoading,
     workflowStatus,
@@ -122,7 +122,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
 
   // Fetch service contexts from backend
   const updateServiceContexts = useCallback(async () => {
-    const sessionId = currentSession?.id;
+    const sessionId = session?.id;
     if (!sessionId) return;
 
     try {
@@ -137,16 +137,16 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     } catch (error) {
       logger.error('Failed to update service contexts', error);
     }
-  }, [currentSession?.id]);
+  }, [session?.id]);
 
   // Initial fetch when session changes
   useEffect(() => {
-    if (currentSession?.id) {
+    if (session?.id) {
       updateServiceContexts();
     } else {
       setServiceContexts({});
     }
-  }, [currentSession?.id, updateServiceContexts]);
+  }, [session?.id, updateServiceContexts]);
 
   // Reactive Service Context Update:
   // When messages change, if the last message is from assistant, update service contexts.
@@ -204,16 +204,16 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
    * Memoized to prevent unnecessary effect re-runs
    */
   const currentStreamingMessage = useMemo(() => {
-    if (!currentSession?.id) return undefined;
-    return streamingMessages.get(currentSession.id);
-  }, [currentSession?.id, streamingMessages]);
+    if (!session?.id) return undefined;
+    return streamingMessages.get(session.id);
+  }, [session?.id, streamingMessages]);
 
   /**
    * Merge persisted messages with streaming messages from LLMServiceContext
    * We use sessionMessages directly now, merging only the streaming tail.
    */
   const displayMessages = useMemo(() => {
-    if (!currentSession?.id) return [];
+    if (!session?.id) return [];
 
     // If there's a streaming message that's not yet in persisted messages
     if (
@@ -231,7 +231,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
 
     // Return persisted messages only
     return sessionMessages;
-  }, [sessionMessages, currentStreamingMessage, currentSession?.id]);
+  }, [sessionMessages, currentStreamingMessage, session?.id]);
 
   /**
    * Submit a user message to the agent workflow
@@ -239,13 +239,13 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
    */
   const submit = useCallback(
     async (message: Message) => {
-      if (!currentSession?.id) {
+      if (!session?.id) {
         logger.error('Cannot submit: no active session');
         return;
       }
 
       logger.info('Submitting message to agent workflow', {
-        sessionId: currentSession.id,
+        sessionId: session.id,
         messageId: message.id,
       });
 
@@ -281,7 +281,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
         // Delegate to Rust backend (Rust will save the message to DB)
         await invoke('agent_send_message', {
           request: {
-            sessionId: currentSession.id,
+            sessionId: session.id,
             message: messageForRust,
           },
         });
@@ -295,23 +295,23 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
         // but typically we let the global error handler work.
       }
     },
-    [currentSession?.id],
+    [session?.id],
   );
 
   /**
    * Cancel the current workflow
    */
   const cancel = useCallback(async () => {
-    if (!currentSession?.id) {
+    if (!session?.id) {
       logger.error('Cannot cancel: no active session');
       return;
     }
 
-    logger.info('Cancelling workflow', { sessionId: currentSession.id });
+    logger.info('Cancelling workflow', { sessionId: session.id });
 
     try {
       await invoke('agent_terminate_workflow', {
-        sessionId: currentSession.id,
+        sessionId: session.id,
       });
       // Status update will come via event
     } catch (err) {
@@ -319,13 +319,13 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       setError(errorMessage);
     }
-  }, [currentSession?.id]);
+  }, [session?.id]);
 
   /**
    * Retry the last failed message
    */
   const retryMessage = useCallback(async () => {
-    if (!currentSession?.id) {
+    if (!session?.id) {
       logger.error('Cannot retry: no active session');
       return;
     }
@@ -341,7 +341,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     }
 
     logger.info('Retrying last message', {
-      sessionId: currentSession.id,
+      sessionId: session.id,
       messageId: lastUserMessage.id,
     });
 
@@ -361,7 +361,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
 
     // Re-submit the user message
     await submit(lastUserMessage);
-  }, [currentSession?.id, sessionMessages, submit]);
+  }, [session?.id, sessionMessages, submit]);
 
   /**
    * Toggle reasoning mode

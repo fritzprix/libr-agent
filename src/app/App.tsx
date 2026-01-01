@@ -31,7 +31,7 @@ import { WebMCPServiceRegistry } from '@/features/tools/WebMCPServiceRegistry';
 import { BrowserToolProvider } from '@/features/tools/BrowserToolProvider';
 import { RustMCPToolProvider } from '@/features/tools/RustMCPToolProvider';
 import { LLMServiceProvider } from '@/context/LLMServiceContext';
-import { AgentSessionProvider } from '@/context/AgentSessionContext';
+import { AgentSessionListProvider } from '@/context/AgentSessionListContext';
 
 function App() {
   return (
@@ -45,7 +45,7 @@ function App() {
                   <MCPServerProvider>
                     <AssistantContextProvider>
                       <SessionContextProvider>
-                        <AgentSessionProvider>
+                        <AgentSessionListProvider>
                           <BuiltInToolProvider>
                             <WebMCPServiceRegistry
                               servers={[
@@ -113,7 +113,7 @@ function App() {
                               </ResourceAttachmentProvider>
                             </SessionHistoryProvider>
                           </BuiltInToolProvider>
-                        </AgentSessionProvider>
+                        </AgentSessionListProvider>
                       </SessionContextProvider>
                     </AssistantContextProvider>
                   </MCPServerProvider>
