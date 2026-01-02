@@ -26,7 +26,10 @@ pub async fn extract_web_content(server: &BrowserServer, args: Value) -> Result<
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    let auto_merge = true; // Always true by default
+    let auto_merge = args
+        .get("autoMerge")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true); // Default: true
 
     // Extract page title and URL
     let page_title = service
@@ -59,9 +62,15 @@ pub async fn extract_web_content(server: &BrowserServer, args: Value) -> Result<
     // Convert to markdown
     let markdown_content = convert_to_markdown(&raw_html);
 
-    // Pagination
-    let (total_pages, first_page, merged_content, auto_merged) =
-        BROWSER_CONTENT_STORE.save_content(session_id, markdown_content.clone(), 6000, auto_merge);
+    // Token-based pagination (3000 tokens per page for optimal LLM processing)
+    let target_tokens_per_page = 3000;
+    let (total_pages, first_page, merged_content, auto_merged) = BROWSER_CONTENT_STORE
+        .save_content(
+            session_id,
+            markdown_content.clone(),
+            target_tokens_per_page,
+            auto_merge,
+        );
 
     // Create metadata
     let metadata = create_metadata(
@@ -134,7 +143,8 @@ pub async fn extract_web_content(server: &BrowserServer, args: Value) -> Result<
     // Add pagination footer
     if !auto_merged && total_pages > 1 {
         response_text.push_str(&format!(
-            "\n\n--- End of Page 1 ---\nThere are {} pages in total. Use readWebContent(sessionId, page) to read more, or use autoMerge: true to get all content at once.",
+            "\n\n--- End of Page 1 ---\nThere are {} pages in total. Use readWebContent(sessionId, page) to read pages 2-{}.",
+            total_pages,
             total_pages
         ));
     }

@@ -16,11 +16,15 @@ use dashmap::DashMap;
 
 use uuid::Uuid;
 
+use std::sync::atomic::{AtomicU16, Ordering};
 use std::time::Duration;
 use tokio::sync::{oneshot, Notify};
 
 use super::browser_error::BrowserError;
 use reqwest;
+
+/// Global counter for generating unique session IDs within the same millisecond
+static SESSION_COUNTER: AtomicU16 = AtomicU16::new(0);
 
 /// Represents an interactive browser session, corresponding to a Tauri window.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -224,7 +228,12 @@ impl InteractiveBrowserServer {
         // Validate URL first
         let validated_url = self.validate_and_normalize_url(url)?;
 
-        let session_id = Uuid::new_v4().to_string();
+        // Generate short session ID: timestamp (5 hex) + counter (2 hex) = 7 chars
+        // This supports ~100 sessions per millisecond without collision
+        let now = Utc::now();
+        let timestamp = (now.timestamp_millis() % 100000) as u32; // Last 5 digits
+        let counter = SESSION_COUNTER.fetch_add(1, Ordering::SeqCst) % 100;
+        let session_id = format!("{:05X}{:02X}", timestamp, counter);
 
         let window_label = format!("browser-{session_id}");
 
@@ -257,11 +266,7 @@ impl InteractiveBrowserServer {
             &window_label,
             WebviewUrl::External(parsed_url),
         )
-        .title(format!(
-            "{} - {}",
-            session_title,
-            session_id[..8].to_uppercase()
-        ))
+        .title(format!("{} - {}", session_title, session_id.to_uppercase()))
         .inner_size(1200.0, 800.0)
         .resizable(true)
         .maximizable(true)
@@ -674,7 +679,9 @@ impl InteractiveBrowserServer {
             match tokio::time::timeout(Duration::from_secs(30), notify.notified()).await {
                 Ok(_) => {
                     info!("Page load completed for session {session_id}");
-                    Ok(format!("Navigated to {target_url} - ready to extract content"))
+                    Ok(format!(
+                        "Navigated to {target_url} - ready to extract content"
+                    ))
                 }
                 Err(_) => {
                     // Timeout

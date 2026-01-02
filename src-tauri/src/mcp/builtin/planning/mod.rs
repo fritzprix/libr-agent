@@ -222,7 +222,7 @@ impl BuiltinMCPServer for PlanningServer {
             MCPTool {
                 name: "getCurrentState".to_string(),
                 title: Some("Get Current State".to_string()),
-                description: "Get current planning state including Goal, Todos, and Scratchpad as structured JSON data for UI visualization".to_string(),
+                description: "Get current planning state including Goal, Todos, and Scratchpad. Returns human-readable text summary for context awareness. Note: This tool's output is primarily designed for backend/UI consumption; AI agents should rely on the planning context_prompt in the system prompt for decision-making.".to_string(),
                 input_schema: serde_json::from_value(json!({
                     "type": "object",
                     "properties": {

@@ -55,7 +55,7 @@ impl BrowserServer {
             app_handle,
             agent_session_id,
             browser_session_id: Arc::new(RwLock::new(None)), // Initialize lazily
-            state_cache: Arc::new(RwLock::new(None)), // Initialize cache as empty
+            state_cache: Arc::new(RwLock::new(None)),        // Initialize cache as empty
         }
     }
 
@@ -113,16 +113,10 @@ impl BuiltinMCPServer for BrowserServer {
             if let Some((cached_url, cached_title, last_update)) = cache_guard.as_ref() {
                 let elapsed = last_update.elapsed();
                 if elapsed.as_secs() < CACHE_TTL_SECS {
-                    // Use cached data
-                    let short_id = if session_id.len() > 8 {
-                        &session_id[..8]
-                    } else {
-                        &session_id
-                    };
-
+                    // Use cached data with full session_id
                     let context_prompt = format!(
                         "## Browser\n\nSession {}: {} ({})",
-                        short_id, cached_url, cached_title
+                        session_id, cached_url, cached_title
                     );
 
                     return crate::mcp::types::ServiceContext {
@@ -173,18 +167,8 @@ impl BuiltinMCPServer for BrowserServer {
             *cache_guard = Some((url.clone(), title.clone(), std::time::Instant::now()));
         }
 
-        // Format: Session {short_id}: {url} ({title})
-        // Legacy style: concise, single-line
-        let short_id = if session_id.len() > 8 {
-            &session_id[..8]
-        } else {
-            &session_id
-        };
-
-        let context_prompt = format!(
-            "## Browser\n\nSession {}: {} ({})",
-            short_id, url, title
-        );
+        // Use full session_id so AI can call browser tools with correct ID
+        let context_prompt = format!("## Browser\n\nSession {}: {} ({})", session_id, url, title);
 
         crate::mcp::types::ServiceContext {
             context_prompt,
@@ -313,13 +297,17 @@ impl BuiltinMCPServer for BrowserServer {
             },
             MCPTool {
                 name: "extractWebContent".to_string(),
-                description: "Extract the content of the current page as markdown.".to_string(),
+                description: "Extract the content of the current page as markdown. Large pages are automatically paginated.".to_string(),
                 input_schema: serde_json::from_value(json!({
                     "type": "object",
                     "properties": {
                          "sessionId": {
                             "type": "string",
                             "description": "The ID of the browser session"
+                        },
+                        "autoMerge": {
+                            "type": "boolean",
+                            "description": "Attempt to merge all pages into one response. Only works for content ≤2 pages or <5000 chars. For larger pages, use readWebContent(sessionId, page) to access individual pages. (default: true)"
                         },
                         "saveRawHtml": {
                             "type": "boolean",
@@ -459,16 +447,10 @@ impl BuiltinMCPServer for BrowserServer {
             },
             MCPTool {
                 name: "closeSession".to_string(),
-                description: "Close the browser session.".to_string(),
+                description: "Close the currently active browser session for this agent.".to_string(),
                 input_schema: serde_json::from_value(json!({
                     "type": "object",
-                    "properties": {
-                         "sessionId": {
-                            "type": "string",
-                            "description": "The ID of the session to use"
-                        }
-                    },
-                    "required": ["sessionId"]
+                    "properties": {}
                 }))
                 .unwrap(),
                 title: None,

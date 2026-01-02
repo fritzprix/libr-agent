@@ -28,9 +28,7 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
 
   // 카테고리별 분류 (builtin vs external MCP)
   const { builtinTools, mcpTools } = useMemo(() => {
-    const builtin = availableTools.filter((t) =>
-      t.name.startsWith('builtin_'),
-    );
+    const builtin = availableTools.filter((t) => t.name.startsWith('builtin_'));
     const mcp = availableTools.filter((t) => !t.name.startsWith('builtin_'));
     return { builtinTools: builtin, mcpTools: mcp };
   }, [availableTools]);
@@ -108,9 +106,7 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
                           }
                           aria-hidden
                         >
-                          {tool.name.startsWith('builtin_')
-                            ? 'builtin'
-                            : 'mcp'}
+                          {tool.name.startsWith('builtin_') ? 'builtin' : 'mcp'}
                         </span>
                       </div>
                     </div>

@@ -321,6 +321,99 @@ The project uses a centralized logging system located at `src/lib/logger.ts` tha
 4. Results flow back through the same layers
 5. UI updates reflect the changes
 
+### Service Context System
+
+**⚠️ CRITICAL: Understanding Service Context Data Flow**
+
+The `ServiceContext` struct has two fields, but **only one is actually used by AI Agents**:
+
+```rust
+pub struct ServiceContext {
+    pub context_prompt: String,        // ✅ USED: AI sees this as text in system prompt
+    pub structured_state: Option<T>,   // ❌ UNUSED: Currently ignored, NOT sent to AI
+}
+```
+
+**How it works:**
+
+1. **Backend (Rust)** - Builtin servers implement `get_service_context()`:
+
+   ```rust
+   // Example: browser/mod.rs
+   async fn get_service_context(&self) -> ServiceContext {
+       ServiceContext {
+           context_prompt: "## Browser\n\nSession abc123: https://example.com",
+           structured_state: Some(json!({
+               "session_id": "full-uuid-here",  // NOT SEEN BY AI
+               "url": "https://example.com"      // NOT SEEN BY AI
+           })),
+       }
+   }
+   ```
+
+2. **Backend (Rust)** - System prompt builder extracts **ONLY** `context_prompt`:
+
+   ```rust
+   // agent/llm.rs - build_system_prompt()
+   for (_tool_id, service_context) in contexts {
+       parts.push(service_context.context_prompt);  // ✅ Text only
+       // structured_state is completely ignored
+   }
+   ```
+
+3. **Frontend** - LLM API receives the text-only system prompt:
+   ```typescript
+   // openai.ts - convertToOpenAIMessages()
+   openaiMessages.push({
+     role: 'system',
+     content: systemPrompt, // ✅ Contains context_prompt text
+   });
+   ```
+
+**What AI Actually Sees:**
+
+```
+## Browser
+
+Session abc123: https://example.com (Example Domain)
+
+## Planning
+
+Current task: ...
+```
+
+**What AI DOES NOT See:**
+
+- Any data in `structured_state` (JSON objects, full IDs, metadata)
+- The JSON is never serialized into the system prompt
+- The JSON is never sent to the LLM API
+
+**Design Implications:**
+
+- ✅ **Use `context_prompt` for**: Human-readable status, short IDs, current state descriptions
+- ❌ **DON'T rely on `structured_state` for**: AI decision-making, tool parameter hints, critical IDs
+- ⚠️ **If AI needs data**: Put it in `context_prompt` as plain text, not in `structured_state`
+
+**Common Mistake:**
+
+```rust
+// ❌ WRONG: AI won't see the full session_id
+ServiceContext {
+    context_prompt: "Session abc123: active",  // AI sees short ID
+    structured_state: Some(json!({
+        "session_id": "abc123-full-uuid"  // AI NEVER sees this
+    })),
+}
+
+// ✅ CORRECT: Include full ID in text if AI needs it
+ServiceContext {
+    context_prompt: "Session abc123-full-uuid: active",  // AI sees full ID
+    structured_state: None,  // Or keep for potential UI use
+}
+```
+
+**Remember:** `context_prompt` is the ONLY field that reaches the AI's system prompt. Everything else is discarded during prompt construction.
+
 ## Dependencies
 
 ### Core Framework

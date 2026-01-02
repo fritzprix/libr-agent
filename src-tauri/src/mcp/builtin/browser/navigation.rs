@@ -174,7 +174,10 @@ pub async fn get_page_title(server: &BrowserServer, args: Value) -> Result<MCPRe
 
     let hint = SuccessHint::new(
         result,
-        vec!["Extract full page content with extractWebContent to see what's on this page".to_string()],
+        vec![
+            "Extract full page content with extractWebContent to see what's on this page"
+                .to_string(),
+        ],
     );
     Ok(hint.to_mcp_result())
 }

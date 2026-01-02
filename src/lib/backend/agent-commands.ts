@@ -70,4 +70,3 @@ export async function getAgentAvailableTools(
 ): Promise<unknown[]> {
   return invoke('agent_get_available_tools', { sessionId });
 }
-

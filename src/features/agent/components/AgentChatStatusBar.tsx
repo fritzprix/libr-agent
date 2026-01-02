@@ -31,9 +31,7 @@ export function AgentChatStatusBar() {
 
   // Categorize tools by type
   const { builtinTools, externalTools } = useMemo(() => {
-    const builtin = availableTools.filter((t) =>
-      t.name.startsWith('builtin_'),
-    );
+    const builtin = availableTools.filter((t) => t.name.startsWith('builtin_'));
     const external = availableTools.filter(
       (t) => !t.name.startsWith('builtin_'),
     );

@@ -239,7 +239,12 @@ impl BuiltinMCPServer for PlaybookServer {
                     &playbook.id
                 };
 
-                parts.push(format!("- {} steps: {} ({})", playbook.workflow.len(), goal_display, short_id));
+                parts.push(format!(
+                    "- {} steps: {} ({})",
+                    playbook.workflow.len(),
+                    goal_display,
+                    short_id
+                ));
             }
         }
 
