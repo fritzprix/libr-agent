@@ -1,5 +1,5 @@
 use crate::agent::state::{AgentSession, MAX_CACHED_MESSAGES};
-use crate::agent::types::ToolCall;
+use crate::agent::types::{ToolCall, ToolCallFunction};
 use crate::commands::messages_commands::Message;
 use crate::mcp::service_proxy::MCPServiceProxy;
 use crate::mcp::types::MCPContent;
@@ -111,7 +111,7 @@ pub async fn handle_llm_response(
     proxy_manager: &Arc<MCPServiceProxyManager>,
     app_handle: &AppHandle,
     session_id: String,
-    assistant_message: Message,
+    mut assistant_message: Message,
 ) -> Result<(), String> {
     // Check cancellation
     {
@@ -120,6 +120,99 @@ pub async fn handle_llm_response(
             if session.cancellation_token.is_cancelled() {
                 log::info!("Workflow cancelled for session: {}", session_id);
                 return Err("Workflow was cancelled".to_string());
+            }
+        }
+    }
+
+    // [Circuit Breaker] Pre-process: Check for loops and inject circuit breaker if needed
+    if let Some(tool_calls) = &mut assistant_message.tool_calls {
+        let mut break_index = None;
+        let mut break_info = None;
+
+        {
+            let sessions = active_sessions.read().await;
+            if let Some(session) = sessions.get(&session_id) {
+                let messages = session.messages.read().await;
+
+                for (i, tool_call) in tool_calls.iter().enumerate() {
+                    let tool_name = &tool_call.function.name;
+                    // Skip if it's already a circuit break call
+                    if tool_name == "builtin_ui__circuitBreak" {
+                        continue;
+                    }
+
+                    let args = &tool_call.function.arguments;
+                    let current_signature = format!("{}:{}", tool_name, args);
+
+                    let mut repetition_count = 0;
+                    // 1. Count in history (consecutive messages containing the tool)
+                    for msg in messages.iter().rev() {
+                        if let Some(msg_tool_calls) = &msg.tool_calls {
+                            let mut found_in_msg = false;
+                            for tc in msg_tool_calls {
+                                let sig = format!("{}:{}", tc.function.name, tc.function.arguments);
+                                if sig == current_signature {
+                                    repetition_count += 1;
+                                    found_in_msg = true;
+                                    break;
+                                }
+                            }
+
+                            if !found_in_msg && msg.role != "tool" {
+                                break;
+                            }
+                        } else if msg.role != "tool" {
+                            break;
+                        }
+                    }
+
+                    // 2. Count in current batch (calls before this one)
+                    let batch_count = tool_calls[0..i]
+                        .iter()
+                        .filter(|tc| {
+                            let sig = format!("{}:{}", tc.function.name, tc.function.arguments);
+                            sig == current_signature
+                        })
+                        .count();
+
+                    let total_count = repetition_count + batch_count;
+
+                    // Threshold: 3 (0-based count of previous occurrences: 0, 1 -> 2 means 3rd occurrence)
+                    if total_count >= 2 {
+                        break_index = Some(i);
+                        break_info = Some((tool_name.clone(), total_count + 1, args.clone()));
+                        break;
+                    }
+                }
+            }
+        }
+
+        if let Some(idx) = break_index {
+            if let Some((name, count, args)) = break_info {
+                log::warn!(
+                    "Circuit breaker triggered for session {} tool {} (count {})",
+                    session_id,
+                    name,
+                    count
+                );
+
+                let circuit_break_call = ToolCall {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    function: ToolCallFunction {
+                        name: "builtin_ui__circuitBreak".to_string(),
+                        arguments: serde_json::json!({
+                            "toolName": name,
+                            "repetitionCount": count,
+                            "args": args
+                        })
+                        .to_string(),
+                    },
+                    r#type: "function".to_string(),
+                };
+
+                // Replace the triggering tool call and remove subsequent ones
+                tool_calls[idx] = circuit_break_call;
+                tool_calls.truncate(idx + 1);
             }
         }
     }
@@ -218,78 +311,8 @@ pub async fn handle_llm_response(
         for tool_call in tool_calls {
             let tool_name = tool_call.function.name.clone();
 
-            // [Circuit Breaker] Stateless check for tool loops in message history
-            let mut is_looping = false;
-            let mut repetition_count = 0;
-
-            // Check previous messages for identical tool calls
-            {
-                let sessions = active_sessions.read().await;
-                if let Some(session) = sessions.get(&session_id) {
-                    let messages = session.messages.read().await;
-
-                    // Look backwards from the end of message history
-                    // We want to count how many times this EXACT tool call (name + args) has happened consecutively
-                    let current_signature =
-                        format!("{}:{}", tool_name, tool_call.function.arguments);
-
-                    for msg in messages.iter().rev() {
-                        if let Some(tool_calls) = &msg.tool_calls {
-                            let mut found_in_msg = false;
-                            for tc in tool_calls {
-                                let sig = format!("{}:{}", tc.function.name, tc.function.arguments);
-                                if sig == current_signature {
-                                    repetition_count += 1;
-                                    found_in_msg = true;
-                                    break; // Only count once per message to avoid double counting parallel calls if they are identical
-                                }
-                            }
-
-                            if !found_in_msg {
-                                // Break sequence if we encounter a message without this tool call
-                                // unless it's a tool result
-                                if msg.role != "tool" {
-                                    break;
-                                }
-                            }
-                        } else if msg.role != "tool" {
-                            // Non-tool message (e.g. user or assistant text) breaks the chain
-                            break;
-                        }
-                    }
-                }
-            }
-
-            // Threshold for circuit breaking (e.g., 3 repetitions)
-            if repetition_count >= 3 {
-                is_looping = true;
-                log::warn!(
-                    "Circuit breaker triggered for session {} tool {} (count {})",
-                    session_id,
-                    tool_name,
-                    repetition_count
-                );
-            }
-
-            let effective_tool_name = if is_looping {
-                "builtin_ui__circuit_break".to_string()
-            } else {
-                tool_name.clone()
-            };
-
-            let effective_tool_call = if is_looping {
-                let mut tc = tool_call.clone();
-                tc.function.name = effective_tool_name.clone();
-                tc.function.arguments = serde_json::json!({
-                    "toolName": tool_name,
-                    "repetitionCount": repetition_count,
-                    "args": tool_call.function.arguments
-                })
-                .to_string();
-                tc
-            } else {
-                tool_call.clone()
-            };
+            let effective_tool_name = tool_name.clone();
+            let effective_tool_call = tool_call.clone();
 
             // Emit ToolExecutionStarted
             let event = crate::agent::events::AgentEvent::ToolExecutionStarted {
@@ -541,19 +564,23 @@ async fn build_session_system_prompt(
 }
 
 /// Build complete system prompt (Pure logic)
+///
+/// Structure (Legacy-inspired, tool-first approach):
+/// 1. Agent Identity & Strategy (who am I, how do I work)
+/// 2. Service Contexts (tools & current state - immediately actionable)
+/// 3. Time & Location (contextual reference information)
 pub async fn build_system_prompt(
     agent_config: &crate::agent::AgentConfig,
     proxy: Option<Arc<MCPServiceProxy>>,
 ) -> Result<String, String> {
     let mut parts = Vec::new();
 
-    // Add time and location context first
-    parts.push(build_time_location_context());
-
+    // 1. Agent Identity & Strategy (first priority)
     if !agent_config.system_prompt.trim().is_empty() {
         parts.push(agent_config.system_prompt.clone());
     }
 
+    // 2. Service Contexts - immediately actionable information (second priority)
     if let Some(p) = proxy {
         let contexts = p.get_service_contexts().await;
 
@@ -567,6 +594,9 @@ pub async fn build_system_prompt(
             }
         }
     }
+
+    // 3. Time and location context (reference information, last)
+    parts.push(build_time_location_context());
 
     Ok(parts.join("\n"))
 }

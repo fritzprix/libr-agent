@@ -100,9 +100,6 @@ pub async fn collect_available_tools(
 pub fn extract_builtin_tool_ids(agent_config: &crate::agent::AgentConfig) -> Vec<String> {
     let mut tool_ids = Vec::new();
 
-    // Bootstrap server is always available (platform detection, installation guides)
-    tool_ids.push("bootstrap".to_string());
-
     if let Some(allowed_aliases) = &agent_config.allowed_built_in_service_aliases {
         if allowed_aliases.is_empty() {
             return tool_ids;
@@ -110,7 +107,7 @@ pub fn extract_builtin_tool_ids(agent_config: &crate::agent::AgentConfig) -> Vec
 
         for alias in allowed_aliases {
             match alias.as_str() {
-                "bootstrap" => {}
+                "bootstrap" => tool_ids.push("bootstrap".to_string()),
                 "knowledge" => tool_ids.push("knowledge".to_string()),
                 "planning" => tool_ids.push("planning".to_string()),
                 "playbook" => tool_ids.push("playbook".to_string()),
@@ -126,6 +123,7 @@ pub fn extract_builtin_tool_ids(agent_config: &crate::agent::AgentConfig) -> Vec
         }
     } else {
         // None = all builtin services allowed
+        tool_ids.push("bootstrap".to_string());
         tool_ids.push("knowledge".to_string());
         tool_ids.push("planning".to_string());
         tool_ids.push("playbook".to_string());

@@ -1,6 +1,7 @@
 use dashmap::DashMap;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tiktoken_rs::cl100k_base;
 
 #[derive(Clone, Debug)]
 pub struct ContentPage {
@@ -28,20 +29,21 @@ impl BrowserContentStore {
         }
     }
 
-    /// Save content with pagination
+    /// Save content with token-based pagination
     pub fn save_content(
         &self,
         session_id: &str,
         content: String,
-        page_size: usize,
+        target_tokens_per_page: usize,
         auto_merge: bool,
     ) -> (usize, String, Option<String>, bool) {
-        let pages = Self::paginate_content(&content, page_size);
+        let pages = Self::paginate_by_tokens(&content, target_tokens_per_page);
         let total_pages = pages.len();
         let first_page = pages.first().cloned().unwrap_or_default();
 
-        // Auto-merge logic: merge if ≤2 pages OR content < 5000 chars
-        let should_auto_merge = auto_merge && (total_pages <= 2 || content.len() < 5000);
+        // Auto-merge logic: merge if ≤2 pages OR total content < 5000 tokens
+        let total_tokens = Self::count_tokens(&content);
+        let should_auto_merge = auto_merge && (total_pages <= 2 || total_tokens < 5000);
         let merged_content = if should_auto_merge {
             Some(content.clone())
         } else {
@@ -92,8 +94,79 @@ impl BrowserContentStore {
             .retain(|_, session| now.saturating_sub(session.timestamp) < max_age_secs);
     }
 
-    /// Paginate content by line-based chunking with overflow allowed
-    fn paginate_content(content: &str, page_size: usize) -> Vec<String> {
+    /// Count tokens in text using cl100k_base tokenizer (GPT-4, GPT-3.5-turbo)
+    fn count_tokens(text: &str) -> usize {
+        match cl100k_base() {
+            Ok(bpe) => bpe.encode_with_special_tokens(text).len(),
+            Err(_) => {
+                // Fallback: approximate 1 token ≈ 3 chars for mixed content
+                text.chars().count() / 3
+            }
+        }
+    }
+
+    /// Paginate content by token count with line-based chunking
+    fn paginate_by_tokens(content: &str, target_tokens: usize) -> Vec<String> {
+        let bpe = match cl100k_base() {
+            Ok(bpe) => bpe,
+            Err(_) => {
+                // Fallback to character-based pagination
+                return Self::paginate_content_fallback(content, target_tokens * 3);
+            }
+        };
+
+        let mut pages = Vec::new();
+        let lines: Vec<&str> = content.lines().collect();
+        let mut current_page = String::new();
+        let mut current_tokens = 0;
+
+        for (i, line) in lines.iter().enumerate() {
+            let is_last_line = i == lines.len() - 1;
+            let line_with_newline = if is_last_line {
+                line.to_string()
+            } else {
+                format!(
+                    "{}
+",
+                    line
+                )
+            };
+
+            let line_tokens = bpe.encode_with_special_tokens(&line_with_newline).len();
+
+            // If current page + new line fits, add it
+            if current_tokens + line_tokens <= target_tokens {
+                current_page.push_str(&line_with_newline);
+                current_tokens += line_tokens;
+            } else {
+                // Doesn't fit
+                if !current_page.is_empty() {
+                    // Push current page and start new one
+                    pages.push(current_page.clone());
+                    current_page = line_with_newline;
+                    current_tokens = line_tokens;
+                } else {
+                    // Line is too large, push it anyway (overflow)
+                    pages.push(line_with_newline);
+                    current_page.clear();
+                    current_tokens = 0;
+                }
+            }
+        }
+
+        if !current_page.is_empty() {
+            pages.push(current_page);
+        }
+
+        if pages.is_empty() {
+            pages.push(String::new());
+        }
+
+        pages
+    }
+
+    /// Fallback character-based pagination (if tokenizer fails)
+    fn paginate_content_fallback(content: &str, page_size: usize) -> Vec<String> {
         let mut pages = Vec::new();
         let lines: Vec<&str> = content.lines().collect();
         let mut current_page = String::new();

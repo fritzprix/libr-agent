@@ -1,4 +1,5 @@
 import { useAgentChat } from '@/context/AgentChatContext';
+import { useAgentSessionState } from '@/context/AgentSessionContext';
 import { Button } from '@/components/ui/button';
 import {
   AlertCircle,
@@ -9,31 +10,33 @@ import {
   Wrench,
 } from 'lucide-react';
 import { CompactModelPicker } from '@/features/chat/ModelPicker';
-import { useMCPServer } from '@/hooks/use-mcp-server';
-import { useBuiltInTool } from '@/features/tools';
-import { useMemo } from 'react';
+import { useAgentTools } from '@/hooks/use-agent-tools';
+import { useMemo, useState } from 'react';
 import { getLogger } from '@/lib/logger';
+import AgentToolsModal from './AgentToolsModal';
 
 const logger = getLogger('AgentChatStatusBar');
 
 export function AgentChatStatusBar() {
+  const { session } = useAgentSessionState();
   const { workflowStatus, error, llmError, retryMessage } = useAgentChat();
+  const [showToolsModal, setShowToolsModal] = useState(false);
+
+  // ✅ Single Source of Truth: Fetch filtered tools from Rust backend
   const {
     availableTools,
-    isLoading: mcpLoading,
-    error: mcpError,
-  } = useMCPServer();
-  const { availableTools: builtinAvailable } = useBuiltInTool();
+    isLoading: toolsLoading,
+    error: toolsError,
+  } = useAgentTools(session?.id);
 
-  // Tool availability logic (matches ChatStatusBar)
-  const { filteredBuiltin, totalBuiltin } = useMemo(() => {
-    const builtinList = builtinAvailable ?? [];
-    // Agent V2 doesn't filter builtin tools per assistant, show all
-    return {
-      filteredBuiltin: builtinList,
-      totalBuiltin: builtinList.length,
-    };
-  }, [builtinAvailable]);
+  // Categorize tools by type
+  const { builtinTools, externalTools } = useMemo(() => {
+    const builtin = availableTools.filter((t) => t.name.startsWith('builtin_'));
+    const external = availableTools.filter(
+      (t) => !t.name.startsWith('builtin_'),
+    );
+    return { builtinTools: builtin, externalTools: external };
+  }, [availableTools]);
 
   const handleRetry = async () => {
     try {
@@ -67,26 +70,25 @@ export function AgentChatStatusBar() {
   );
 
   const getToolsDisplayText = () => {
-    if (mcpLoading) return 'Loading tools...';
-    if (mcpError) return 'Tools error';
-    const mcpCount = availableTools.length;
-    const totalCount = mcpCount + filteredBuiltin.length;
-    const builtinSummary = totalBuiltin
-      ? ` • builtin ${filteredBuiltin.length}/${totalBuiltin}`
-      : '';
-    return `${totalCount}(${mcpCount}) available${builtinSummary}`;
+    if (toolsLoading) return 'Loading tools...';
+    if (toolsError) return 'Tools error';
+
+    const totalCount = availableTools.length;
+    const mcpCount = externalTools.length;
+    const builtinCount = builtinTools.length;
+
+    return `${totalCount}(${mcpCount}) available • builtin ${builtinCount}`;
   };
 
   const getToolsColor = () => {
-    if (mcpLoading) return 'text-yellow-400';
-    if (mcpError) return 'text-red-400';
-    const totalCount = availableTools.length + filteredBuiltin.length;
-    return totalCount > 0 ? 'text-green-400' : 'text-gray-500';
+    if (toolsLoading) return 'text-yellow-400';
+    if (toolsError) return 'text-red-400';
+    return availableTools.length > 0 ? 'text-green-400' : 'text-gray-500';
   };
 
   const getToolsIcon = () => {
-    if (mcpLoading) return <LoadingSpinner />;
-    if (mcpError) return '⚠️';
+    if (toolsLoading) return <LoadingSpinner />;
+    if (toolsError) return '⚠️';
     return <Wrench size={14} />;
   };
 
@@ -177,14 +179,22 @@ export function AgentChatStatusBar() {
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs">Tools:</span>
-          <div
-            className={`text-xs flex items-center gap-1 ${getToolsColor()}`}
-            title={mcpError ? mcpError : undefined}
+          <button
+            onClick={() => setShowToolsModal(true)}
+            className={`text-xs flex items-center gap-1 cursor-pointer hover:underline transition-colors ${getToolsColor()}`}
+            title={toolsError ? toolsError : 'Click to view available tools'}
+            disabled={toolsLoading}
           >
             {getToolsIcon()} {getToolsDisplayText()}
-          </div>
+          </button>
         </div>
       </div>
+
+      {/* Tools Modal */}
+      <AgentToolsModal
+        isOpen={showToolsModal}
+        onClose={() => setShowToolsModal(false)}
+      />
     </>
   );
 }
