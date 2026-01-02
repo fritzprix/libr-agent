@@ -68,7 +68,8 @@ pub async fn extract_web_content(server: &BrowserServer, args: Value) -> Result<
     let markdown_content = task::spawn_blocking(move || {
         // Safety check: Limit input size to 10MB to prevent OOM/crashes
         if raw_html_clone.len() > 10 * 1024 * 1024 {
-            return "**Error: Page content too large to process (exceeds 10MB limit).**".to_string();
+            return "**Error: Page content too large to process (exceeds 10MB limit).**"
+                .to_string();
         }
         convert_to_markdown(&raw_html_clone)
     })
@@ -97,20 +98,37 @@ pub async fn extract_web_content(server: &BrowserServer, args: Value) -> Result<
     // Build response text
     let mut response_text = if auto_merged {
         if let Some(content) = &merged_content {
-            format!(
-                "✓ Content extracted and auto-merged\n\nPage Title: {}\nURL: {}\n\n{}",
-                if page_title.is_empty() {
-                    "N/A"
-                } else {
-                    &page_title
-                },
-                if current_url.is_empty() {
-                    "N/A"
-                } else {
-                    &current_url
-                },
-                content
-            )
+            if total_pages == 1 {
+                format!(
+                    "[Page 1/1]\n\nPage Title: {}\nURL: {}\n\n{}",
+                    if page_title.is_empty() {
+                        "N/A"
+                    } else {
+                        &page_title
+                    },
+                    if current_url.is_empty() {
+                        "N/A"
+                    } else {
+                        &current_url
+                    },
+                    content
+                )
+            } else {
+                format!(
+                    "✓ Content extracted and auto-merged\n\nPage Title: {}\nURL: {}\n\n{}",
+                    if page_title.is_empty() {
+                        "N/A"
+                    } else {
+                        &page_title
+                    },
+                    if current_url.is_empty() {
+                        "N/A"
+                    } else {
+                        &current_url
+                    },
+                    content
+                )
+            }
         } else {
             format!(
                 "[Page 1/{}]\n\nPage Title: {}\nURL: {}\n\n{}",
