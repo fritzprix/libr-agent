@@ -10,6 +10,7 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
+use tokio::task;
 
 // Global content store for browser extracted content (module-scoped)
 static BROWSER_CONTENT_STORE: Lazy<BrowserContentStore> = Lazy::new(BrowserContentStore::new);
@@ -60,7 +61,19 @@ pub async fn extract_web_content(server: &BrowserServer, args: Value) -> Result<
     };
 
     // Convert to markdown
-    let markdown_content = convert_to_markdown(&raw_html);
+    // CRITICAL: This operation is CPU-intensive and must be offloaded to a blocking thread.
+    // Running it on the main async runtime causes "busy loop" behavior and freezes the agent.
+    // We also enforce a 10MB limit to prevent OOM crashes and stack overflows in html2md.
+    let raw_html_clone = raw_html.clone();
+    let markdown_content = task::spawn_blocking(move || {
+        // Safety check: Limit input size to 10MB to prevent OOM/crashes
+        if raw_html_clone.len() > 10 * 1024 * 1024 {
+            return "**Error: Page content too large to process (exceeds 10MB limit).**".to_string();
+        }
+        convert_to_markdown(&raw_html_clone)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?;
 
     // Token-based pagination (3000 tokens per page for optimal LLM processing)
     let target_tokens_per_page = 3000;
