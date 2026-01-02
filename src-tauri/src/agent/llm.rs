@@ -541,19 +541,23 @@ async fn build_session_system_prompt(
 }
 
 /// Build complete system prompt (Pure logic)
+/// 
+/// Structure (Legacy-inspired, tool-first approach):
+/// 1. Agent Identity & Strategy (who am I, how do I work)
+/// 2. Service Contexts (tools & current state - immediately actionable)
+/// 3. Time & Location (contextual reference information)
 pub async fn build_system_prompt(
     agent_config: &crate::agent::AgentConfig,
     proxy: Option<Arc<MCPServiceProxy>>,
 ) -> Result<String, String> {
     let mut parts = Vec::new();
 
-    // Add time and location context first
-    parts.push(build_time_location_context());
-
+    // 1. Agent Identity & Strategy (first priority)
     if !agent_config.system_prompt.trim().is_empty() {
         parts.push(agent_config.system_prompt.clone());
     }
 
+    // 2. Service Contexts - immediately actionable information (second priority)
     if let Some(p) = proxy {
         let contexts = p.get_service_contexts().await;
 
@@ -567,6 +571,9 @@ pub async fn build_system_prompt(
             }
         }
     }
+
+    // 3. Time and location context (reference information, last)
+    parts.push(build_time_location_context());
 
     Ok(parts.join("\n"))
 }

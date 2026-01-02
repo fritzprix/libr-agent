@@ -16,7 +16,9 @@ pub mod platform;
 ///
 /// This server is stateless and provides:
 /// - Platform detection (OS, architecture, shell)
-/// - Installation guides for common development tools
+/// - Installation guides for common development tools (node, python, uv, docker, git)
+///
+/// Note: This server can be disabled through agent configuration's allowedBuiltInServiceAliases
 #[derive(Debug)]
 pub struct BootstrapServer;
 

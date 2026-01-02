@@ -283,3 +283,14 @@ pub async fn agent_delete_session(
         data: None,
     })
 }
+
+/// Get available tools for a specific agent session
+/// Returns the filtered tool list based on agent configuration
+/// This ensures UI displays the same tools that LLM can actually use
+#[command]
+pub async fn agent_get_available_tools(
+    manager: State<'_, AgentSessionManager>,
+    session_id: String,
+) -> Result<Vec<crate::mcp::types::MCPTool>, String> {
+    manager.get_available_tools(&session_id).await
+}

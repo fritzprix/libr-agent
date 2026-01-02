@@ -302,4 +302,31 @@ impl AgentSessionManager {
         log::info!("✅ Deleted agent session: {}", session_id);
         Ok(())
     }
+
+    /// Get available tools for a session based on agent configuration
+    /// Returns the filtered tool list that matches what the LLM will receive
+    pub async fn get_available_tools(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<crate::mcp::types::MCPTool>, String> {
+        let active = self.active_sessions.read().await;
+        let session = active
+            .get(session_id)
+            .ok_or_else(|| format!("Session not found: {}", session_id))?;
+
+        let agent_config = session
+            .metadata
+            .agent_config
+            .as_ref()
+            .ok_or_else(|| "Agent configuration is required".to_string())
+            .and_then(|json| {
+                crate::agent::AgentConfig::from_json(json).map_err(|e| e.to_string())
+            })?;
+
+        drop(active); // Release the read lock before async call
+
+        // Use existing collect_available_tools function (same as LLM request)
+        crate::agent::tools::collect_available_tools(session_id, &agent_config, &self.proxy_manager)
+            .await
+    }
 }

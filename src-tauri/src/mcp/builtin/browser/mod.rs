@@ -21,6 +21,9 @@ pub struct BrowserServer {
     pub(crate) agent_session_id: String,
     // We keep track of the browser session ID associated with this agent session
     pub(crate) browser_session_id: Arc<RwLock<Option<String>>>,
+    // Cache for browser state to avoid expensive JS injection on every context request
+    // Format: (url, title, last_update_timestamp)
+    pub(crate) state_cache: Arc<RwLock<Option<(String, String, std::time::Instant)>>>,
 }
 
 pub(crate) fn handle_browser_op_error(
@@ -52,6 +55,7 @@ impl BrowserServer {
             app_handle,
             agent_session_id,
             browser_session_id: Arc::new(RwLock::new(None)), // Initialize lazily
+            state_cache: Arc::new(RwLock::new(None)), // Initialize cache as empty
         }
     }
 
@@ -61,6 +65,13 @@ impl BrowserServer {
             .try_state::<InteractiveBrowserServer>()
             .map(|s| s.inner().clone())
             .ok_or_else(|| "InteractiveBrowserServer state not found".to_string())
+    }
+
+    /// Invalidate state cache (call after navigation or page changes)
+    pub(crate) fn invalidate_cache(&self) {
+        if let Ok(mut cache_guard) = self.state_cache.write() {
+            *cache_guard = None;
+        }
     }
 }
 
@@ -78,9 +89,112 @@ impl BuiltinMCPServer for BrowserServer {
         &self,
         _options: Option<&Value>,
     ) -> crate::mcp::types::ServiceContext {
+        // Check if browser session exists
+        let browser_session_id = match self.browser_session_id.read() {
+            Ok(guard) => guard.clone(),
+            Err(_) => None,
+        };
+
+        let session_id = match browser_session_id {
+            Some(id) => id,
+            None => {
+                return crate::mcp::types::ServiceContext {
+                    context_prompt: "## Browser\n\nNo active session".to_string(),
+                    structured_state: Some(json!({
+                        "active": false
+                    })),
+                };
+            }
+        };
+
+        // Check cache first (5 second TTL to avoid expensive JS injection)
+        const CACHE_TTL_SECS: u64 = 5;
+        if let Ok(cache_guard) = self.state_cache.read() {
+            if let Some((cached_url, cached_title, last_update)) = cache_guard.as_ref() {
+                let elapsed = last_update.elapsed();
+                if elapsed.as_secs() < CACHE_TTL_SECS {
+                    // Use cached data
+                    let short_id = if session_id.len() > 8 {
+                        &session_id[..8]
+                    } else {
+                        &session_id
+                    };
+
+                    let context_prompt = format!(
+                        "## Browser\n\nSession {}: {} ({})",
+                        short_id, cached_url, cached_title
+                    );
+
+                    return crate::mcp::types::ServiceContext {
+                        context_prompt,
+                        structured_state: Some(json!({
+                            "active": true,
+                            "session_id": session_id,
+                            "url": cached_url,
+                            "title": cached_title,
+                            "cached": true
+                        })),
+                    };
+                }
+            }
+        }
+
+        // Cache miss or expired - fetch fresh data via JS injection
+        let service = match self.get_browser_service() {
+            Ok(s) => s,
+            Err(_) => {
+                return crate::mcp::types::ServiceContext {
+                    context_prompt: "## Browser\n\nService unavailable".to_string(),
+                    structured_state: Some(json!({
+                        "active": false,
+                        "error": "service_unavailable"
+                    })),
+                };
+            }
+        };
+
+        // Get current URL
+        let url = match service
+            .execute_script(&session_id, "window.location.href")
+            .await
+        {
+            Ok(result) => result.trim_matches('"').to_string(),
+            Err(_) => "unknown".to_string(),
+        };
+
+        // Get page title
+        let title = match service.execute_script(&session_id, "document.title").await {
+            Ok(result) => result.trim_matches('"').to_string(),
+            Err(_) => "unknown".to_string(),
+        };
+
+        // Update cache with fresh data
+        if let Ok(mut cache_guard) = self.state_cache.write() {
+            *cache_guard = Some((url.clone(), title.clone(), std::time::Instant::now()));
+        }
+
+        // Format: Session {short_id}: {url} ({title})
+        // Legacy style: concise, single-line
+        let short_id = if session_id.len() > 8 {
+            &session_id[..8]
+        } else {
+            &session_id
+        };
+
+        let context_prompt = format!(
+            "## Browser\n\nSession {}: {} ({})",
+            short_id, url, title
+        );
+
         crate::mcp::types::ServiceContext {
-            context_prompt: String::new(),
-            structured_state: None,
+            context_prompt,
+            structured_state: Some(json!({
+                "active": true,
+                "session_id": session_id,
+                "url": url,
+                "title": title,
+                "cached": false
+            })),
         }
     }
 
