@@ -19,7 +19,7 @@ import {
   selectMessagesWithinContext,
   estimateTokensBPE,
 } from '@/lib/token-utils';
-import { llmConfigManager } from '@/lib/llm-config-manager';
+import { llmConfigManager, ModelInfo } from '@/lib/llm-config-manager';
 import type { IAIService } from '@/lib/ai-service/types';
 import { useSettings } from './SettingsContext';
 import { useSystemPrompt } from './SystemPromptContext';
@@ -300,7 +300,27 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
         // If maxTokens (max output) is specified, reserve strictly for it + safety buffer
         // Otherwise, fallback to selectMessagesWithinContext's default (90% of context window)
         let safeInputTokenLimit: number | undefined;
-        const modelInfo = llmConfigManager.getModel(provider, model);
+        let modelInfo: ModelInfo | null = (await service.listModels()).find(
+          (m) => m.name === model,
+        ) || null;
+        if (!modelInfo) {
+          modelInfo =
+            llmConfigManager.getModel(provider, model) ??
+            ({
+              contextWindow: 64 * 1024,
+              supportReasoning: false,
+              supportTools: false,
+              cost: { input: 0, output: 0 },
+              name: model,
+            } as ModelInfo);
+        }
+
+        logger.info('Model Info for Token Limit Calculation', {
+          sessionId,
+          provider,
+          model,
+          modelInfo,
+        });
 
         if (modelInfo && maxTokens) {
           // Reserve maxTokens + 100 safety buffer
@@ -352,6 +372,7 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
           systemPrompt: finalSystemPrompt,
           availableTools: availableTools || [],
           config,
+          forceToolUse: false,
         });
 
         // Accumulate chunks
@@ -374,7 +395,6 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
             // If parsing fails, treat it as plain text content
             parsedChunk = { content: chunk };
           }
-
           // Accumulate content
           if (parsedChunk.content && typeof parsedChunk.content === 'string') {
             fullContent += parsedChunk.content;
