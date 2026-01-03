@@ -50,6 +50,7 @@ function TestWrapper({ children }: { children: ReactNode }) {
 describe('LLMServiceContext', () => {
   const mockUnlisten = vi.fn();
   const mockStreamChat = vi.fn();
+  const mockListModels = vi.fn();
   const mockDispose = vi.fn();
 
   beforeEach(() => {
@@ -61,8 +62,22 @@ describe('LLMServiceContext', () => {
     // Setup AIServiceFactory mock
     (AIServiceFactory.getService as ReturnType<typeof vi.fn>).mockReturnValue({
       streamChat: mockStreamChat,
+      listModels: mockListModels,
       dispose: mockDispose,
     });
+
+    // Setup mockListModels to return test models
+    mockListModels.mockResolvedValue([
+      {
+        name: 'test-model',
+        contextWindow: 4096,
+        supportReasoning: false,
+        supportTools: true,
+        supportStreaming: true,
+        cost: { input: 0.001, output: 0.002 },
+        description: 'Test model for unit tests',
+      },
+    ]);
   });
 
   afterEach(() => {
