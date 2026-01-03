@@ -52,7 +52,11 @@ export function selectMessagesWithinContext(
   providerId: string,
   modelId: string,
   maxTokens?: number,
-  options?: { systemPrompt?: string; toolsJson?: string },
+  options?: {
+    systemPrompt?: string;
+    toolsJson?: string;
+    maxMessages?: number;
+  },
 ): Message[] {
   const modelInfo = llmConfigManager.getModel(providerId, modelId);
   if (!modelInfo) {
@@ -91,6 +95,7 @@ export function selectMessagesWithinContext(
     const msg = messages[i];
     const tokens = estimateTokensBPE(msg);
 
+    // Check token limit
     if (totalTokens + tokens > tokenLimit) {
       // Providers that require strict tool chain boundary checking (no orphaned calls/results)
       if (
@@ -113,6 +118,56 @@ export function selectMessagesWithinContext(
       logger.info(
         `Context window limit reached. Total tokens: ${totalTokens}, Token limit: ${tokenLimit}`,
       );
+      break;
+    }
+
+    // Check message count limit
+    if (options?.maxMessages && selected.length >= options.maxMessages) {
+      // Don't break tool chains even when hitting message count limit
+      // If adding this message would complete a tool chain, allow it?
+      // Or strictly cut off?
+      // Strict cut off might break tool chains.
+      // Let's apply the same checkIncompleteToolChain logic if we are about to stop.
+      // But we iterate backwards. We are adding messages.
+      // If we stop here, 'selected' contains the most recent N messages.
+      // We are *omitting* 'msg' and everything before it.
+      // If 'msg' is a Tool Call and the *next* message in 'selected' (which was 'i+1') is a Tool Result, we have an issue?
+      // No, if 'msg' is Tool Call, and we omit it, then the Tool Result in 'selected' becomes orphaned.
+      // So if we break due to Max Messages, we must perform the same tool chain integrity check/cleanup on 'selected'.
+
+      if (
+        providerId === AIServiceProvider.Anthropic ||
+        providerId === AIServiceProvider.Gemini ||
+        providerId === AIServiceProvider.OpenAI ||
+        providerId === AIServiceProvider.Groq
+      ) {
+        // We are about to exclude 'msg'.
+        // Check if the current 'selected' needs cleanup.
+        // Actually, we should check if omitting 'msg' leaves 'selected' in a bad state?
+        // No, 'selected' is accumulated. The danger is that 'selected[0]' (the oldest included message) is a Tool Result,
+        // and its corresponding Tool Call is 'msg' (which we are excluding).
+        // In that case, 'selected[0]' is an orphaned Tool Result.
+        // So we should run removeIncompleteToolChains on 'selected'.
+      }
+
+      logger.info(
+        `Message count limit reached. Count: ${selected.length}, Limit: ${options.maxMessages}`,
+      );
+
+      // Verify integrity of selected messages before returning
+      if (
+        providerId === AIServiceProvider.Anthropic ||
+        providerId === AIServiceProvider.Gemini ||
+        providerId === AIServiceProvider.OpenAI ||
+        providerId === AIServiceProvider.Groq
+      ) {
+        // Check if the *first* message in selected (oldest) is a broken tool chain/result
+        // Easier to just run the cleanup
+        const adjustedSelected = removeIncompleteToolChains(selected);
+        // If cleanup reduced count, maybe we could have added more?
+        // But simplicity first.
+        return adjustedSelected;
+      }
       break;
     }
 

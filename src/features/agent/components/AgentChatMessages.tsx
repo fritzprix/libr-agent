@@ -11,7 +11,8 @@ import type { Message } from '@/models/chat';
 import { useLLMService } from '@/context/LLMServiceContext';
 
 export function AgentChatMessages() {
-  const { messages, error, llmError, retryMessage } = useAgentChat();
+  const { messages, error, llmError, retryMessage, workflowStatus } =
+    useAgentChat();
   const { session } = useAgentSessionState();
   const { streamingMessages } = useLLMService();
 
@@ -142,7 +143,7 @@ export function AgentChatMessages() {
         )}
 
         {/* Show streaming indicator or loading state */}
-        {streamingMessage && (
+        {streamingMessage && workflowStatus === 'busy' && (
           <div className="flex justify-start mb-8 mt-3">
             <div className="w-full max-w-full bg-secondary/30 rounded-lg px-6 py-5">
               <div className="flex items-center gap-3 mb-2">

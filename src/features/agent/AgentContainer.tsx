@@ -25,7 +25,6 @@ export default function AgentContainer() {
           <AgentChatView.Messages />
           <AgentChatView.AttachedFiles />
           <AgentChatView.Input />
-          <AgentChatView.Bottom />
         </AgentChatView>
       </AgentSessionProvider>
     );

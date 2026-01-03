@@ -176,6 +176,23 @@ impl BuiltinMCPServer for PlanningServer {
                 annotations: None,
             },
             MCPTool {
+                name: "updateScratchpad".to_string(),
+                title: Some("Update Scratchpad".to_string()),
+                description: "Update an existing scratchpad note. Use this when you want to modify the content of a note (e.g., adding more findings, correcting information) identified by its title.".to_string(),
+                input_schema: serde_json::from_value(json!({
+                    "type": "object",
+                    "properties": {
+                        "title": { "type": "string", "description": "The title of the scratchpad note to update." },
+                        "note": { "type": "string", "description": "The new content for the note." },
+                        "newTitle": { "type": "string", "description": "Optional: New title for the note if you want to rename it." }
+                    },
+                    "required": ["title", "note"]
+                }))
+                .unwrap(),
+                output_schema: None,
+                annotations: None,
+            },
+            MCPTool {
                 name: "listScratchpad".to_string(),
                 title: Some("List Scratchpad".to_string()),
                 description: "List scratchpad items with metadata (ID, title, tags) and content preview. Use this to find the IDs of items you want to read fully. Supports pagination and tag filtering.".to_string(),
@@ -321,6 +338,9 @@ impl BuiltinMCPServer for PlanningServer {
             }
             "addScratchpad" | "builtin_planning__addScratchpad" => {
                 scratchpad::add_scratchpad(&self.db_pool, &self.session_id, args).await
+            }
+            "updateScratchpad" | "builtin_planning__updateScratchpad" => {
+                scratchpad::update_scratchpad(&self.db_pool, &self.session_id, args).await
             }
             "listScratchpad" | "builtin_planning__listScratchpad" => {
                 scratchpad::list_scratchpad(&self.db_pool, &self.session_id, args).await

@@ -268,7 +268,34 @@ pub async fn handle_llm_response(
     };
 
     if tool_calls.is_empty() {
-        // Workflow completed
+        // Check if content is also empty (abnormal empty response)
+        // Note: A message with tool calls but no content is VALID and normal
+        let has_content = !assistant_message.content.is_empty();
+        if !has_content {
+            // BOTH content AND tool_calls are empty - this is an error
+            log::warn!(
+                "⚠️  Empty LLM response detected for session {}: no content and no tool calls. This may indicate a model inference issue.",
+                session_id
+            );
+            // Set status to error
+            crate::agent::lifecycle::update_session_status(
+                active_sessions,
+                app_handle,
+                &session_id,
+                SessionStatus::Error,
+            )
+            .await?;
+            // Emit workflow error event with specific message
+            let error_event = crate::agent::events::AgentEvent::WorkflowError {
+                session_id: session_id.clone(),
+                error: "EMPTY_LLM_RESPONSE: The AI model returned an empty response with no content or tool calls. This may indicate a model inference issue, context overflow, or generation failure. Please try again.".to_string(),
+            };
+            crate::agent::events::emit_agent_event(app_handle, error_event)
+                .map_err(|e| format!("Failed to emit WorkflowError event: {}", e))?;
+            return Ok(());
+        }
+
+        // Workflow completed normally (has content, no tool calls)
         crate::agent::lifecycle::update_session_status(
             active_sessions,
             app_handle,

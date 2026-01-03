@@ -472,8 +472,8 @@ export class GeminiService extends BaseAIService {
           } else {
             logger.warn('Gemini chunk has no text or functionCalls', {
               chunk,
-              finishReason: candidate.finishReason, // Log finish reason (e.g., SAFETY)
-              safetyRatings: candidate.safetyRatings, // Log safety ratings
+              finishReason: candidate?.finishReason, // ✅ Safe access
+              safetyRatings: candidate?.safetyRatings, // ✅ Safe access
             });
           }
         }

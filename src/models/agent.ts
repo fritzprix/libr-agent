@@ -9,6 +9,7 @@ export interface AgentSession {
   status: 'idle' | 'busy' | 'paused' | 'error';
   createdAt: Date;
   updatedAt?: Date;
+  assistant?: Assistant;
 }
 
 /**

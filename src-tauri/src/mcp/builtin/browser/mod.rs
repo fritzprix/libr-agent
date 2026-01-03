@@ -395,28 +395,7 @@ impl BuiltinMCPServer for BrowserServer {
                 output_schema: None,
                 annotations: None,
             },
-            MCPTool {
-                name: "inject_javascript".to_string(),
-                description: "Execute custom JavaScript on the page.".to_string(),
-                input_schema: serde_json::from_value(json!({
-                    "type": "object",
-                    "properties": {
-                        "script": {
-                            "type": "string",
-                            "description": "JavaScript code to execute"
-                        },
-                         "sessionId": {
-                            "type": "string",
-                            "description": "The browser session ID"
-                        }
-                    },
-                    "required": ["script", "sessionId"]
-                }))
-                .unwrap(),
-                title: None,
-                output_schema: None,
-                annotations: None,
-            },
+
             MCPTool {
                 name: "listInteractable".to_string(),
                 description: "List interactable elements on the page.".to_string(),
@@ -497,7 +476,7 @@ impl BuiltinMCPServer for BrowserServer {
             "inputText" => interaction::input_text(self, args).await,
             "scrollPage" => interaction::scroll_page(self, args).await,
             "listInteractable" => interaction::list_interactable(self, args).await,
-            "inject_javascript" => interaction::inject_javascript(self, args).await,
+
             _ => Err(format!("Unknown tool: {}", tool_name)),
         }
     }

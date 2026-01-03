@@ -56,10 +56,8 @@ pub async fn close_session(server: &BrowserServer, _args: Value) -> Result<MCPRe
 
 pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPResult, String> {
     let service = server.get_browser_service()?;
-    let url = args
-        .get("url")
-        .and_then(|v| v.as_str())
-        .unwrap_or("https://www.google.com");
+    let url_param = args.get("url").and_then(|v| v.as_str());
+    let url = url_param.unwrap_or("https://www.google.com");
 
     // Check if session already exists
     {
@@ -103,12 +101,21 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
         *id_lock = Some(id.clone());
     }
 
-    let hint = SuccessHint::new(
-        format!("Browser session created: {}. {}", id, status_msg),
-        vec![
-            "Use navigateToUrl to load a webpage".to_string(),
-            "Use extractWebContent to see the initial page".to_string(),
-        ],
-    );
+    let (message, suggestions) = if url_param.is_some() {
+        (
+            format!("Browser session created: {}. Page loaded: {}", id, url),
+            vec![
+                "Use extractWebContent to read the page content".to_string(),
+                "Use listInteractable to see interactive elements".to_string(),
+            ],
+        )
+    } else {
+        (
+            format!("Browser session created: {}. {}", id, status_msg),
+            vec!["Use navigateToUrl to load a webpage".to_string()],
+        )
+    };
+
+    let hint = SuccessHint::new(message, suggestions);
     Ok(hint.to_mcp_result())
 }

@@ -9,7 +9,7 @@ import React, {
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getLogger } from '../lib/logger';
-import type { Message, RustMessage } from '@/models/chat';
+import type { Message, RustMessage, Assistant } from '@/models/chat';
 import { rustMessageToMessage } from '@/models/chat';
 import type { Page } from '@/lib/db/types';
 import { AgentSession } from '@/models/agent';
@@ -159,6 +159,7 @@ export function AgentSessionProvider({
           id: string;
           name?: string;
           status: 'idle' | 'busy' | 'paused' | 'error';
+          agentConfig?: string;
           createdAt: number;
           updatedAt?: number;
         } | null>('agent_get_session', {
@@ -171,10 +172,20 @@ export function AgentSessionProvider({
 
         if (!isMounted) return;
 
+        let assistant: Assistant | undefined;
+        if (response.agentConfig) {
+          try {
+            assistant = JSON.parse(response.agentConfig);
+          } catch (e) {
+            logger.error('Failed to parse agent config', e);
+          }
+        }
+
         const sessionData: AgentSession = {
           id: response.id,
           name: response.name,
           status: response.status,
+          assistant,
           createdAt: new Date(response.createdAt),
           updatedAt: response.updatedAt
             ? new Date(response.updatedAt)
@@ -216,6 +227,12 @@ export function AgentSessionProvider({
               setSession((prev) =>
                 prev ? { ...prev, status: newStatus } : null,
               );
+
+              // ✅ Clear errors when status changes to 'busy' (e.g. on retry)
+              if (newStatus === 'busy') {
+                setError(null);
+                setLlmError(null);
+              }
               break;
             }
 
@@ -224,7 +241,14 @@ export function AgentSessionProvider({
               setIsSessionLoading(false);
               const errorMsg = payload.error;
 
-              if (
+              // Specific handling for empty LLM responses
+              if (errorMsg.startsWith('EMPTY_LLM_RESPONSE:')) {
+                const cleanMessage = errorMsg.replace(
+                  'EMPTY_LLM_RESPONSE: ',
+                  '',
+                );
+                setLlmError(cleanMessage);
+              } else if (
                 errorMsg.includes('invalid type:') ||
                 errorMsg.includes('expected i64') ||
                 errorMsg.includes('LLM') ||

@@ -22,6 +22,25 @@ pub async fn add_scratchpad(
         .map(|s| s.trim());
     let tags = args.get("tags").map(|v| v.to_string()); // Store as JSON string
 
+    // Check for duplicate title if title is provided
+    if let Some(t) = title {
+        let existing: Option<(i64,)> =
+            sqlx::query_as("SELECT id FROM planning_scratchpad WHERE session_id = ? AND title = ?")
+                .bind(session_id)
+                .bind(t)
+                .fetch_optional(pool)
+                .await
+                .map_err(|e| format!("Database error checking duplicate: {}", e))?;
+
+        if existing.is_some() {
+            // Return guidance as the error message (text content)
+            return Ok(MCPResult::error(&format!(
+                "Scratchpad item with title '{}' already exists. Please use the `updateScratchpad` tool to modify the existing note or choose a different title.",
+                t
+            )));
+        }
+    }
+
     let now = chrono::Utc::now().timestamp_millis();
 
     let result = sqlx::query(
@@ -52,6 +71,78 @@ pub async fn add_scratchpad(
             ))
         }
         Err(e) => Ok(MCPResult::error(&format!("Failed to add note: {}", e))),
+    }
+}
+
+/// Update scratchpad item
+pub async fn update_scratchpad(
+    pool: &SqlitePool,
+    session_id: &str,
+    args: Value,
+) -> Result<MCPResult, String> {
+    let title = args
+        .get("title")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .ok_or("Missing or empty 'title'")?;
+
+    let note = args
+        .get("note")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .ok_or("Missing or empty 'note'")?;
+
+    // Optional: Allow renaming via newTitle
+    let new_title = args
+        .get("newTitle")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim());
+
+    // Check if item exists
+    let existing: Option<(i64,)> =
+        sqlx::query_as("SELECT id FROM planning_scratchpad WHERE session_id = ? AND title = ?")
+            .bind(session_id)
+            .bind(title)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| format!("Database error checking existence: {}", e))?;
+
+    let id = match existing {
+        Some((id,)) => id,
+        None => {
+            return Ok(MCPResult::error(&format!(
+                "No scratchpad item found with title '{}'. Use `addScratchpad` to create a new note.",
+                title
+            )));
+        }
+    };
+
+    let now = chrono::Utc::now().timestamp_millis();
+    let final_title = new_title.unwrap_or(title);
+
+    // Update
+    let result = sqlx::query(
+        r#"
+        UPDATE planning_scratchpad 
+        SET content = ?, title = ?, updated_at = ?
+        WHERE id = ?
+        "#,
+    )
+    .bind(note)
+    .bind(final_title)
+    .bind(now)
+    .bind(id)
+    .execute(pool)
+    .await;
+
+    match result {
+        Ok(_) => Ok(MCPResult::success(&format!(
+            "✓ Scratchpad note '{}' updated",
+            final_title
+        ))),
+        Err(e) => Ok(MCPResult::error(&format!("Failed to update note: {}", e))),
     }
 }
 
