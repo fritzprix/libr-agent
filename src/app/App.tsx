@@ -1,5 +1,5 @@
 import { Route, Routes } from 'react-router-dom';
-import { lazy } from 'react';
+import { lazy, Suspense } from 'react';
 import AppSidebar from '../components/layout/AppSidebar';
 
 // Lazy-load route components to reduce initial bundle and improve first paint
@@ -71,40 +71,42 @@ function App() {
                                         <ThemeToggle />
                                       </AppHeader>
                                       <div className="flex-1 w-full min-h-0">
-                                        <Routes>
-                                          <Route
-                                            path="/"
-                                            element={<ChatContainer />}
-                                          />
-                                          <Route
-                                            path="/chat/single"
-                                            element={<ChatContainer />}
-                                          />
-                                          <Route
-                                            path="/agent"
-                                            element={<AgentContainer />}
-                                          />
-                                          <Route
-                                            path="/agent/:sessionId"
-                                            element={<AgentContainer />}
-                                          />
-                                          <Route
-                                            path="/assistants"
-                                            element={<AssistantList />}
-                                          />
-                                          <Route
-                                            path="/history"
-                                            element={<History />}
-                                          />
-                                          <Route
-                                            path="/history/search"
-                                            element={<History />}
-                                          />
-                                          <Route
-                                            path="/settings"
-                                            element={<SettingsPage />}
-                                          />
-                                        </Routes>
+                                        <Suspense fallback={<div className="flex items-center justify-center h-full">Loading...</div>}>
+                                          <Routes>
+                                            <Route
+                                              path="/"
+                                              element={<ChatContainer />}
+                                            />
+                                            <Route
+                                              path="/chat/single"
+                                              element={<ChatContainer />}
+                                            />
+                                            <Route
+                                              path="/agent"
+                                              element={<AgentContainer />}
+                                            />
+                                            <Route
+                                              path="/agent/:sessionId"
+                                              element={<AgentContainer />}
+                                            />
+                                            <Route
+                                              path="/assistants"
+                                              element={<AssistantList />}
+                                            />
+                                            <Route
+                                              path="/history"
+                                              element={<History />}
+                                            />
+                                            <Route
+                                              path="/history/search"
+                                              element={<History />}
+                                            />
+                                            <Route
+                                              path="/settings"
+                                              element={<SettingsPage />}
+                                            />
+                                          </Routes>
+                                        </Suspense>
                                       </div>
                                     </div>
                                   </DnDContextProvider>
