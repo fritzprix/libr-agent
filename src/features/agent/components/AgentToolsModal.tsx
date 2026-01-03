@@ -9,13 +9,13 @@ interface AgentToolsModalProps {
 }
 
 /**
- * AgentToolsModal - Agent V2용 도구 목록 모달
+ * AgentToolsModal - Tools list modal for Agent V2
  *
- * Legacy ToolsModal과의 차이점:
- * 1. 데이터 소스: useAgentTools(sessionId) - Rust 백엔드에서 필터링된 도구
+ * Differences from Legacy ToolsModal:
+ * 1. Data source: useAgentTools(sessionId) - Filtered tools from Rust backend
  * 2. Context: AssistantContext → AgentSessionContext
- * 3. Disabled 상태: 백엔드가 이미 필터링하므로 disabled 도구 없음
- * 4. 단일 정보 소스: UI와 LLM이 동일한 도구 리스트 표시
+ * 3. Disabled state: No disabled tools since backend filters
+ * 4. Single source: UI and LLM display same tool list
  */
 export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
   isOpen,
@@ -23,10 +23,10 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
 }) => {
   const { session } = useAgentSessionState();
 
-  // ✅ Single Source of Truth: Rust 백엔드에서 필터링된 도구
+  // ✅ Single Source of Truth: Filtered tools from Rust backend
   const { availableTools, isLoading, error } = useAgentTools(session?.id);
 
-  // 카테고리별 분류 (builtin vs external MCP)
+  // Categorize by type (builtin vs external MCP)
   const { builtinTools, mcpTools } = useMemo(() => {
     const builtin = availableTools.filter((t) => t.name.startsWith('builtin_'));
     const mcp = availableTools.filter((t) => !t.name.startsWith('builtin_'));

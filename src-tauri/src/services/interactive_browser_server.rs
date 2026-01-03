@@ -228,12 +228,12 @@ impl InteractiveBrowserServer {
         // Validate URL first
         let validated_url = self.validate_and_normalize_url(url)?;
 
-        // Generate short session ID: timestamp (5 hex) + counter (2 hex) = 7 chars
-        // This supports ~100 sessions per millisecond without collision
+        // Generate short session ID: timestamp (5 hex) + counter (3 hex) = 8 chars
+        // This supports ~4096 sessions per millisecond without collision
         let now = Utc::now();
         let timestamp = (now.timestamp_millis() % 100000) as u32; // Last 5 digits
-        let counter = SESSION_COUNTER.fetch_add(1, Ordering::SeqCst) % 100;
-        let session_id = format!("{:05X}{:02X}", timestamp, counter);
+        let counter = SESSION_COUNTER.fetch_add(1, Ordering::SeqCst) % 4096;
+        let session_id = format!("{:05X}{:03X}", timestamp, counter);
 
         let window_label = format!("browser-{session_id}");
 

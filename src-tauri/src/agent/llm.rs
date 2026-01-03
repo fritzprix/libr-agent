@@ -177,7 +177,7 @@ pub async fn handle_llm_response(
 
                     let total_count = repetition_count + batch_count;
 
-                    // Threshold: 3 (0-based count of previous occurrences: 0, 1 -> 2 means 3rd occurrence)
+                    // Threshold: Trigger on 3rd occurrence (total_count >= 2 means 2 previous + 1 current = 3 total)
                     if total_count >= 2 {
                         break_index = Some(i);
                         break_info = Some((tool_name.clone(), total_count + 1, args.clone()));

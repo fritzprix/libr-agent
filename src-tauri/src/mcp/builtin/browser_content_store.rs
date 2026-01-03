@@ -125,11 +125,7 @@ impl BrowserContentStore {
             let line_with_newline = if is_last_line {
                 line.to_string()
             } else {
-                format!(
-                    "{}
-",
-                    line
-                )
+                format!("{}\n", line)
             };
 
             let line_tokens = bpe.encode_with_special_tokens(&line_with_newline).len();
