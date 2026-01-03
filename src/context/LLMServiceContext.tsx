@@ -300,9 +300,8 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
         // If maxTokens (max output) is specified, reserve strictly for it + safety buffer
         // Otherwise, fallback to selectMessagesWithinContext's default (90% of context window)
         let safeInputTokenLimit: number | undefined;
-        let modelInfo: ModelInfo | null = (await service.listModels()).find(
-          (m) => m.name === model,
-        ) || null;
+        let modelInfo: ModelInfo | null =
+          (await service.listModels()).find((m) => m.name === model) || null;
         if (!modelInfo) {
           modelInfo =
             llmConfigManager.getModel(provider, model) ??

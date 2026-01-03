@@ -71,7 +71,13 @@ function App() {
                                         <ThemeToggle />
                                       </AppHeader>
                                       <div className="flex-1 w-full min-h-0">
-                                        <Suspense fallback={<div className="flex items-center justify-center h-full">Loading...</div>}>
+                                        <Suspense
+                                          fallback={
+                                            <div className="flex items-center justify-center h-full">
+                                              Loading...
+                                            </div>
+                                          }
+                                        >
                                           <Routes>
                                             <Route
                                               path="/"
