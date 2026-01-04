@@ -47,7 +47,7 @@ type CompleteTextOptions = {
 };
 
 // JSON 필드 안전성 검증 및 escape 처리
-const sanitizeJsonField = (value: string): string => {
+export const sanitizeJsonField = (value: string): string => {
   try {
     JSON.parse(value);
     return value; // 유효한 JSON이면 그대로 반환
@@ -57,7 +57,7 @@ const sanitizeJsonField = (value: string): string => {
 };
 
 // ToolCall 안전성 처리
-const sanitizeToolCall = (toolCall: ToolCall): ToolCall => {
+export const sanitizeToolCall = (toolCall: ToolCall): ToolCall => {
   return {
     ...toolCall,
     function: {
@@ -68,7 +68,7 @@ const sanitizeToolCall = (toolCall: ToolCall): ToolCall => {
 };
 
 // Message 전체 안전성 처리
-const sanitizeMessage = (message: Message): Message => {
+export const sanitizeMessage = (message: Message): Message => {
   const sanitized = { ...message };
 
   // tool_calls 처리
@@ -88,7 +88,7 @@ const sanitizeMessage = (message: Message): Message => {
  * Validates that all tool_calls have a corresponding tool response.
  * A valid pair is an assistant message with tool_calls followed immediately by a tool message.
  */
-function allToolUsePairsAreValid(messages: Message[]): boolean {
+export function allToolUsePairsAreValid(messages: Message[]): boolean {
   for (let i = 0; i < messages.length; i++) {
     const message = messages[i];
     if (
@@ -110,7 +110,9 @@ function allToolUsePairsAreValid(messages: Message[]): boolean {
  * It iterates through the messages and removes any assistant messages with tool_calls
  * that are not immediately followed by a tool response message.
  */
-function removeInvalidToolUseAndToolResponse(messages: Message[]): Message[] {
+export function removeInvalidToolUseAndToolResponse(
+  messages: Message[],
+): Message[] {
   const validMessages: Message[] = [];
   let i = 0;
   while (i < messages.length) {
@@ -208,20 +210,14 @@ export const useAIService = (config?: AIServiceConfig) => {
             resolvedSystemPrompt = systemPrompt || DEFAULT_SYSTEM_PROMPT;
           }
 
-          // Validate and clean up tool use pairs
-          let validMessages = processedMessages;
-          if (!allToolUsePairsAreValid(validMessages)) {
-            logger.warn(
-              'Incomplete tool use pairs detected. Cleaning up messages.',
-            );
-            validMessages = removeInvalidToolUseAndToolResponse(validMessages);
-          }
-
           // Deduplicate repeated tool call/response pairs (errors AND successes)
-          const deduplicatedMessages = deduplicateToolCallPairs(validMessages, {
-            preserveRecentN: 3,
-            minMessageCount: 10,
-          });
+          const deduplicatedMessages = deduplicateToolCallPairs(
+            processedMessages,
+            {
+              preserveRecentN: 3,
+              minMessageCount: 10,
+            },
+          );
 
           // Context enforcement: Truncate messages to fit the context window
           const maxTokens = config?.maxTokens ?? 4096;

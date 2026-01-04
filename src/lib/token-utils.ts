@@ -28,7 +28,19 @@ export function estimateTextTokens(text: string): number {
  * @returns The estimated number of tokens.
  */
 export function estimateTokensBPE(message: Message): number {
-  const text = `${message.role}: ${message.content ?? ''}`;
+  let contentText = '';
+  if (Array.isArray(message.content)) {
+    contentText = message.content
+      .map((c) => {
+        if (c.type === 'text') return c.text;
+        // For resources, we might want to count the text content if available
+        if (c.type === 'resource') return c.resource.text || '';
+        return '';
+      })
+      .join('');
+  }
+
+  const text = `${message.role}: ${contentText}`;
   return estimateTextTokens(text);
 }
 
@@ -94,6 +106,10 @@ export function selectMessagesWithinContext(
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i];
     const tokens = estimateTokensBPE(msg);
+
+    console.log(
+      `Msg ${msg.id}: tokens=${tokens}, total=${totalTokens}, limit=${tokenLimit}`,
+    );
 
     // Check token limit
     if (totalTokens + tokens > tokenLimit) {

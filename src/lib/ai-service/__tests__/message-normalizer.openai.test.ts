@@ -243,8 +243,8 @@ describe('MessageNormalizer - OpenAI Tool Call Pairing', () => {
 
     // Anthropic's fixAnthropicToolCallChain logic should apply
     expect(result).toBeDefined();
-    // The incomplete tool_call should be removed by Anthropic's logic
-    expect(result[0].tool_calls).toBeUndefined();
+    // The incomplete tool_call should be removed, and since content is empty, the message should be removed
+    expect(result).toHaveLength(0);
   });
 
   it('should apply to Groq provider', () => {
@@ -479,9 +479,8 @@ describe('MessageNormalizer - OpenAI Tool Call Pairing', () => {
     );
 
     // The orphaned tool message should be removed
-    expect(result).toHaveLength(1);
-    expect(result[0].role).toBe('assistant');
     // The assistant's tool_call should also be removed since no matching response
-    expect(result[0].tool_calls).toBeUndefined();
+    // Since assistant message has no content, it should be removed too
+    expect(result).toHaveLength(0);
   });
 });

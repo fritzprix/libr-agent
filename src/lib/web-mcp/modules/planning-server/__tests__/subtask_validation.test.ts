@@ -30,15 +30,21 @@ describe('Subtask Validation', () => {
 
         expect(result.isError).toBe(true);
         expect(result.content).toBeDefined();
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const text = (result.content![0] as any).text;
+        interface ContentItem {
+            text: string;
+        }
+        const text = (result.content![0] as ContentItem).text;
         expect(text).toContain('Subtask at index 1 has an empty title');
         expect(text).toContain('Please provide a valid title');
 
         // Verify nothing was added
         const state = await planningServer.callTool('getCurrentState', {});
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const todos = (state.structuredContent as any).state.todos;
+        interface StateStructure {
+            state: {
+                todos: unknown[];
+            };
+        }
+        const todos = (state.structuredContent as StateStructure).state.todos;
         expect(todos.length).toBe(0);
     });
 
@@ -52,8 +58,10 @@ describe('Subtask Validation', () => {
 
         expect(result.isError).toBe(true);
         expect(result.content).toBeDefined();
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const text = (result.content![0] as any).text;
+        interface ContentItem {
+            text: string;
+        }
+        const text = (result.content![0] as ContentItem).text;
         expect(text).toContain('Subtask at index 0 has an empty title');
     });
 
@@ -70,8 +78,18 @@ describe('Subtask Validation', () => {
 
         // Verify added
         const state = await planningServer.callTool('getCurrentState', {});
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const todos = (state.structuredContent as any).state.todos;
+        interface Subtask {
+            title: string;
+        }
+        interface Todo {
+            subtasks: Subtask[];
+        }
+        interface StateStructure {
+            state: {
+                todos: Todo[];
+            };
+        }
+        const todos = (state.structuredContent as StateStructure).state.todos;
         expect(todos.length).toBe(1);
         expect(todos[0].subtasks.length).toBe(2);
         expect(todos[0].subtasks[0].title).toBe('Valid Subtask 1');

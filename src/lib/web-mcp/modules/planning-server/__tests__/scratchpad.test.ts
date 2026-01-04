@@ -50,8 +50,13 @@ describe('Scratchpad with Title and Tags', () => {
     });
 
     expect(result.isError).toBe(false);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const data = result.structuredContent as any;
+    interface ScratchpadItem {
+      title: string;
+    }
+    interface ScratchpadData {
+      items: ScratchpadItem[];
+    }
+    const data = result.structuredContent as ScratchpadData;
     expect(data.items).toHaveLength(1);
     expect(data.items[0].title).toBe('Note 1');
   });

@@ -1,4 +1,9 @@
 import { createId } from '@paralleldrive/cuid2';
+import {
+  type Message,
+  type RustMessage,
+  rustMessageToMessage,
+} from '@/models/chat';
 
 /**
  * Safely parse JSON string into a value or return undefined on failure.
@@ -41,4 +46,26 @@ export function formatToolCall(id: string, name: string, args: unknown) {
  */
 export function generateToolCallId(): string {
   return `tool_${createId()}`;
+}
+
+/**
+ * Normalizes a message from Rust (camelCase) to the internal Message format (snake_case for tool fields).
+ * Rust backend sends messages with camelCase fields (toolCalls, toolCallId) due to serde settings,
+ * but the frontend Message interface expects snake_case (tool_calls, tool_call_id).
+ */
+export function normalizeRustMessage(msg: RustMessage | Message): Message {
+  // Check if it's a RustMessage (has camelCase fields or numeric timestamp)
+  // We check for specific RustMessage characteristics
+  const candidate = msg as RustMessage;
+
+  if (
+    'toolCalls' in candidate ||
+    'toolCallId' in candidate ||
+    typeof candidate.createdAt === 'number'
+  ) {
+    return rustMessageToMessage(candidate);
+  }
+
+  // Already a Message
+  return msg as Message;
 }

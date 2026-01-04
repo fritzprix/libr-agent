@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from '@testing-library/react';
+import { renderHook, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { LLMServiceProvider, useLLMService } from '../LLMServiceContext';
 import { listen } from '@tauri-apps/api/event';
@@ -170,14 +170,20 @@ describe('LLMServiceContext', () => {
         },
       ];
 
-      // Execute completion request
-      const promise = result.current.executeCompletionRequest(
-        'test-session',
-        messages,
-        'gpt-4',
-        'openai',
-        'test-key',
-      );
+      // Execute completion request in act
+      let promise: Promise<Message>;
+      await act(async () => {
+        promise = result.current.executeCompletionRequest(
+          'test-session',
+          messages,
+          'gpt-4',
+          'openai',
+          'test-key',
+        );
+        
+        // Wait a bit for streaming state to be set
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
 
       // Should be streaming during execution
       await waitFor(() => {
@@ -186,7 +192,9 @@ describe('LLMServiceContext', () => {
         );
       });
 
-      await promise;
+      await act(async () => {
+        await promise;
+      });
 
       // Should be idle after completion
       await waitFor(() => {

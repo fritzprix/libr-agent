@@ -60,10 +60,11 @@ export class OpenAIService extends BaseAIService {
 
       const response = await this.withRetry(async () => {
         // The OpenAI JS SDK exposes `models.list()` which returns a paginated result
-        // with a `data` array of model metadata. Use that if available.
-        // Use `any` locally to avoid depending on SDK-specific types here.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const res: any = await (this.openai as any).models.list();
+        // with a `data` array of model metadata
+        const openaiClient = this.openai as unknown as {
+          models: { list: () => Promise<{ data: unknown[] }> };
+        };
+        const res = await openaiClient.models.list();
         return res;
       });
 

@@ -12,8 +12,7 @@ Object.defineProperty(window, '__TAURI_INTERNALS__', {
 
 // Mock CSS.escape if not available
 if (typeof CSS === 'undefined' || !CSS.escape) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (global as any).CSS = {
+  (global as unknown as { CSS: { escape: (str: string) => string } }).CSS = {
     escape: (str: string) =>
       str.replace(/([!"#$%&'()*+,\-./:;<=>?@[\\\]^`{|}~])/g, '\\$1'),
   };

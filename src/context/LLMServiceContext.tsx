@@ -24,6 +24,10 @@ import type { IAIService } from '@/lib/ai-service/types';
 import { useSettings } from './SettingsContext';
 import { useSystemPrompt } from './SystemPromptContext';
 
+import { MessageNormalizer } from '@/lib/ai-service/message-normalizer';
+import { sanitizeMessage } from '@/lib/ai-service/sanitizer';
+import { normalizeRustMessage } from '@/lib/ai-service/utils';
+
 const logger = getLogger('LLMServiceContext');
 
 /**
@@ -342,22 +346,40 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
           },
         );
 
+        // Sanitize messages to prevent malformed JSON and ensure provider compatibility
+        // This includes:
+        // 1. JSON escaping for tool arguments and thinking fields
+        // 2. Tool call pairing validation (removing orphans/incomplete pairs)
+        // 3. Provider-specific sanitization (e.g. removing thinking for OpenAI)
+        const safeMessages = MessageNormalizer.sanitizeMessagesForProvider(
+          contextMessages.map(sanitizeMessage),
+          provider as unknown as AIServiceProvider,
+        );
+        logger.info('✅ Messages sanitized for provider compatibility', {
+          sessionId,
+          originalCount: contextMessages.length,
+          safeCount: safeMessages.length,
+        });
+
         // Measure final token count for logging
-        const totalEstimatedTokens = contextMessages.reduce(
+        const totalEstimatedTokens = safeMessages.reduce(
           (sum, msg) => sum + estimateTokensBPE(msg),
           0,
         );
 
-        if (contextMessages.length < messages.length) {
-          logger.info('Messages truncated to fit context/window size', {
-            originalCount: messages.length,
-            newCount: contextMessages.length,
-            windowSize,
-            provider,
-            model,
-            safeInputTokenLimit,
-            totalEstimatedTokens,
-          });
+        if (safeMessages.length < messages.length) {
+          logger.info(
+            'Messages truncated/sanitized to fit context/window size',
+            {
+              originalCount: messages.length,
+              newCount: safeMessages.length,
+              windowSize,
+              provider,
+              model,
+              safeInputTokenLimit,
+              totalEstimatedTokens,
+            },
+          );
         }
 
         logger.debug('Final Payload Token Estimate', {
@@ -366,7 +388,7 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
         });
 
         // Create async generator for streaming
-        const streamGenerator = service.streamChat(contextMessages, {
+        const streamGenerator = service.streamChat(safeMessages, {
           modelName: model,
           systemPrompt: finalSystemPrompt,
           availableTools: availableTools || [],
@@ -496,6 +518,15 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
           toolCallCount: toolCalls.length,
         });
 
+        // Check for empty message (no content and no tool calls)
+        // This prevents saving invalid messages to the history which would later be rejected by MessageNormalizer
+        if (
+          (!finalMessage.content || finalMessage.content.length === 0) &&
+          (!finalMessage.tool_calls || finalMessage.tool_calls.length === 0)
+        ) {
+          throw new Error('Received empty response from LLM provider');
+        }
+
         // ✅ Set finalMessage to trigger AgentChatContext effect (idea.md architecture)
         setStreamingMessages((prev) => {
           const next = new Map(prev);
@@ -583,7 +614,7 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
         async (event) => {
           const {
             sessionId,
-            messages,
+            messages: rawMessages,
             model,
             provider,
             systemPrompt,
@@ -591,6 +622,9 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
             maxTokens,
             availableTools,
           } = event.payload;
+
+          // Normalize messages from Rust (camelCase -> snake_case)
+          const messages = rawMessages.map(normalizeRustMessage);
 
           // Always get API key from Settings, ignore any apiKey from Rust backend
           const finalApiKey =

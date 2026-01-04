@@ -30,7 +30,7 @@ export async function handleLLMResponse(
 export async function handleUserToolCall(
   sessionId: string,
   toolName: string,
-  args: any, // eslint-disable-line @typescript-eslint/no-explicit-any
+  args: Record<string, unknown>,
 ): Promise<void> {
   const toolCallId = createId();
   const now = Date.now();
