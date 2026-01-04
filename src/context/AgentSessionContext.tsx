@@ -52,6 +52,14 @@ type AgentEventPayload =
       success: boolean;
     };
 
+// Workflow phase within 'busy' status for fine-grained UI feedback
+export type WorkflowPhase =
+  | 'idle' // Not processing
+  | 'thinking' // Waiting for LLM response to start
+  | 'answering' // LLM is streaming response
+  | 'using_tools' // Executing tool calls
+  | 'error'; // Error occurred
+
 // --- STATE CONTEXT ---
 interface AgentSessionStateContextValue {
   session: AgentSession | null;
@@ -60,6 +68,7 @@ interface AgentSessionStateContextValue {
   error: string | null;
   llmError: string | null;
   workflowStatus: 'idle' | 'busy' | 'paused' | 'error';
+  workflowPhase: WorkflowPhase;
 }
 
 const AgentSessionStateContext = createContext<
@@ -113,6 +122,7 @@ export function AgentSessionProvider({
   const [workflowStatus, setWorkflowStatus] = useState<
     'idle' | 'busy' | 'paused' | 'error'
   >('idle');
+  const [workflowPhase, setWorkflowPhase] = useState<WorkflowPhase>('idle');
 
   /**
    * Load messages for the current session
@@ -221,6 +231,15 @@ export function AgentSessionProvider({
           });
 
           switch (payload.type) {
+            case 'workflowStarted': {
+              setWorkflowStatus('busy');
+              setWorkflowPhase('thinking');
+              setError(null);
+              setLlmError(null);
+              logger.info('Workflow phase: thinking');
+              break;
+            }
+
             case 'statusChanged': {
               const newStatus = payload.status;
               setWorkflowStatus(newStatus);
@@ -232,6 +251,11 @@ export function AgentSessionProvider({
               if (newStatus === 'busy') {
                 setError(null);
                 setLlmError(null);
+                setWorkflowPhase('thinking');
+              } else if (newStatus === 'idle') {
+                setWorkflowPhase('idle');
+              } else if (newStatus === 'error') {
+                setWorkflowPhase('error');
               }
               break;
             }
@@ -267,6 +291,16 @@ export function AgentSessionProvider({
               const rustMessage = payload.message;
               const newMessage = rustMessageToMessage(rustMessage);
 
+              // Phase transition: assistant message with streaming indicates answering phase
+              if (
+                newMessage.role === 'assistant' &&
+                newMessage.isStreaming &&
+                workflowPhase === 'thinking'
+              ) {
+                setWorkflowPhase('answering');
+                logger.info('Workflow phase: answering');
+              }
+
               setMessages((prev) => {
                 if (prev.some((m) => m.id === newMessage.id)) return prev;
                 return [...prev, newMessage];
@@ -274,9 +308,19 @@ export function AgentSessionProvider({
               break;
             }
 
+            case 'toolExecutionStarted': {
+              setWorkflowPhase('using_tools');
+              logger.info('Workflow phase: using_tools', {
+                toolName: payload.toolName,
+              });
+              break;
+            }
+
             case 'workflowCompleted': {
               setWorkflowStatus('idle');
+              setWorkflowPhase('idle');
               setIsSessionLoading(false);
+              logger.info('Workflow phase: idle');
               break;
             }
           }
@@ -373,8 +417,17 @@ export function AgentSessionProvider({
       error,
       llmError,
       workflowStatus,
+      workflowPhase,
     }),
-    [session, messages, isSessionLoading, error, llmError, workflowStatus],
+    [
+      session,
+      messages,
+      isSessionLoading,
+      error,
+      llmError,
+      workflowStatus,
+      workflowPhase,
+    ],
   );
 
   const actionsValue: AgentSessionActionsContextValue = useMemo(

@@ -124,12 +124,20 @@ impl ContentStoreServer {
         ]
     }
 
-    /// New Result-based helper for require_active_session
+    /// Get the session ID for this server instance
+    ///
+    /// In the new multi-session architecture, each ContentStoreServer is bound to a specific
+    /// session at construction time. This method returns that session ID.
+    ///
+    /// For legacy compatibility, if session_manager has a current session set via switch_context,
+    /// that takes precedence. Otherwise, returns the constructor-bound session_id.
     pub(crate) fn require_active_session_result(&self) -> Result<String, String> {
+        // For legacy compatibility: check if session_manager has an active session
         if let Some(session_id) = self.session_manager.get_current_session() {
             Ok(session_id)
         } else {
-            Err("No active session context. Call switch_context with a sessionId before invoking this tool.".to_string())
+            // New architecture: use the session_id bound at construction
+            Ok(self.session_id.clone())
         }
     }
 
