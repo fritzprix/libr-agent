@@ -13,6 +13,7 @@
 Finalize the SeaORM migration by integrating all migrated modules, optimizing performance, updating documentation, and cleaning up legacy SQLx dependencies. This phase ensures the application runs seamlessly with SeaORM as the sole ORM solution.
 
 **Success Criteria**:
+
 - Application initializes with SeaORM Database connection
 - All builtin MCP servers use SeaORM DatabaseConnection
 - SQLx dependency removed from Cargo.toml (except for migration crate)
@@ -66,7 +67,7 @@ pub fn run_with_sqlite_sync(db_url: String) {
         // 2. Repository initialization with SqlitePool (Lines 130-150)
         let message_repo = SqliteMessageRepository::new(pool.clone());
         message_repo.create_table().await.expect("...");
-        
+
         let content_store_repo = SqliteContentStoreRepository::new(pool.clone());
         let session_repo = SqliteSessionRepository::new(pool.clone());
         session_repo.create_table().await.expect("...");
@@ -92,6 +93,7 @@ pub fn run_with_sqlite_sync(db_url: String) {
 ```
 
 **Problems**:
+
 1. **SQLite pool initialization**: Uses `SqlitePoolOptions` and `SqlitePool` type
 2. **Manual table creation**: Calls `create_table()` on each repository
 3. **Global pool storage**: Stores `SqlitePool` in static `OnceLock`
@@ -116,6 +118,7 @@ pub fn get_sqlite_pool() -> &'static SqlitePool {
 ```
 
 **Problems**:
+
 1. Hardcoded `SqlitePool` type throughout
 2. All modules import `sqlx::sqlite::SqlitePool`
 3. Static lifetime management with unsafe Arc construction in `MCPServiceProxyManager`
@@ -124,13 +127,14 @@ pub fn get_sqlite_pool() -> &'static SqlitePool {
 
 **Three repositories currently using SQLx**:
 
-| Repository | File | SqlitePool Usage | Table Creation | Complexity |
-|------------|------|------------------|----------------|------------|
-| `SqliteSessionRepository` | session_repository.rs | Lines 4, 85, 90, 237, 240 | `create_table()` Line 97-106 | MEDIUM |
-| `SqliteMessageRepository` | message_repository.rs | Lines 4, 51, 56 | `create_table()` Line 63-92 | MEDIUM |
-| `SqliteContentStoreRepository` | content_store_repository.rs | Lines 3, 16, 21 | None (legacy) | LOW |
+| Repository                     | File                        | SqlitePool Usage          | Table Creation               | Complexity |
+| ------------------------------ | --------------------------- | ------------------------- | ---------------------------- | ---------- |
+| `SqliteSessionRepository`      | session_repository.rs       | Lines 4, 85, 90, 237, 240 | `create_table()` Line 97-106 | MEDIUM     |
+| `SqliteMessageRepository`      | message_repository.rs       | Lines 4, 51, 56           | `create_table()` Line 63-92  | MEDIUM     |
+| `SqliteContentStoreRepository` | content_store_repository.rs | Lines 3, 16, 21           | None (legacy)                | LOW        |
 
 **Sessions Table Schema** (Lines 100-112):
+
 ```sql
 CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
@@ -143,6 +147,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 ```
 
 **Messages Table Schema** (Lines 66-92):
+
 ```sql
 CREATE TABLE IF NOT EXISTS messages (
     id TEXT PRIMARY KEY,
@@ -200,6 +205,7 @@ pub async fn new_with_session_manager_and_sqlite(
 ```
 
 **Problems**:
+
 1. Passes raw `sqlite_db_url` string instead of DatabaseConnection
 2. Each server creates its own connection internally
 3. No shared connection pool across servers
@@ -249,6 +255,7 @@ impl MCPServiceProxyManager {
 ```
 
 **Problems**:
+
 1. `db_pool` field is `Arc<SqlitePool>`, needs to be `Arc<DatabaseConnection>`
 2. Unsafe Arc creation from static reference for SQLite pool
 3. All proxy instances receive SqlitePool reference
@@ -266,6 +273,7 @@ libsqlite3-sys = { version = "0.27", features = ["bundled"] }
 ```
 
 **After Phase 0-3**:
+
 - SeaORM dependencies should be added
 - SQLx should be removed (except for tests if needed)
 - Migration framework included
@@ -555,6 +563,7 @@ enum MessageIndexMeta {
 **Changes Required**:
 
 1. Replace imports (Lines 1-10):
+
 ```rust
 // BEFORE
 use sqlx::{Row, SqlitePool};
@@ -565,6 +574,7 @@ use crate::entity::{session, prelude::Session};
 ```
 
 2. Update struct (Lines 85-90):
+
 ```rust
 // BEFORE
 pub struct SqliteSessionRepository {
@@ -590,6 +600,7 @@ impl SqliteSessionRepository {
 ```
 
 3. Remove `create_table()` method (Lines 97-112):
+
 ```rust
 // BEFORE
 async fn create_table(&self) -> Result<(), DbError> {
@@ -608,6 +619,7 @@ async fn create_table(&self) -> Result<(), DbError> {
 ```
 
 4. Update CRUD operations (Examples):
+
 ```rust
 // BEFORE (upsert_session)
 async fn upsert_session(&self, session: &SessionMetadata) -> Result<(), DbError> {
@@ -659,6 +671,7 @@ async fn upsert_session(&self, session: &SessionMetadata) -> Result<(), DbError>
 **Changes Required**:
 
 1. Update imports and type definitions (Lines 1-25):
+
 ```rust
 // BEFORE
 use sqlx::sqlite::SqlitePool;
@@ -670,6 +683,7 @@ static DB_CONNECTION: OnceLock<DatabaseConnection> = OnceLock::new();
 ```
 
 2. Update setter/getter functions (Lines 80-95):
+
 ```rust
 // BEFORE
 pub fn set_sqlite_pool(pool: SqlitePool) {
@@ -691,6 +705,7 @@ pub fn get_database_connection() -> &'static DatabaseConnection {
 ```
 
 3. Update repository constructors (Lines 100-150):
+
 ```rust
 // BEFORE
 pub fn set_message_repository(repo: SqliteMessageRepository) { ... }
@@ -717,7 +732,7 @@ pub fn run_with_sqlite_sync(db_url: String) {
         // Initialize repositories
         let message_repo = SqliteMessageRepository::new(pool.clone());
         message_repo.create_table().await.expect("...");
-        
+
         let session_repo = SqliteSessionRepository::new(pool.clone());
         session_repo.create_table().await.expect("...");
 
@@ -812,7 +827,7 @@ pub async fn new_with_session_manager_and_sqlite(
             session_manager.clone(),
             sqlite_db_url,  // ⚠️ Raw URL string
         ).await.expect("...");
-    
+
     registry.register_server(Box::new(content_store_server));
     registry
 }
@@ -856,6 +871,7 @@ pub async fn new_with_session_manager_and_db(
 **Changes Required**:
 
 1. Update imports and struct (Lines 1-45):
+
 ```rust
 // BEFORE
 use sqlx::SqlitePool;
@@ -875,6 +891,7 @@ pub struct MCPServiceProxyManager {
 ```
 
 2. Update constructor (Lines 90-110):
+
 ```rust
 // BEFORE
 pub fn new(
@@ -896,6 +913,7 @@ pub fn new(
 ```
 
 3. Update unsafe Arc construction (Lines 150-175):
+
 ```rust
 // BEFORE
 pub fn new_from_static_refs() -> Self {
@@ -925,6 +943,7 @@ pub fn new_from_static_refs() -> Self {
 ```
 
 4. Update proxy creation to pass DatabaseConnection (Lines 200-250):
+
 ```rust
 // Pass db: Arc<DatabaseConnection> to builtin server constructors
 // Planning, Playbook, Content Store servers now receive DatabaseConnection
@@ -1122,12 +1141,14 @@ pub async fn initialize_repositories(
 ### 5.1 Unit Tests
 
 **New Tests to Add**:
+
 - [ ] Test entity conversions (`From` trait implementations)
 - [ ] Test repository operations with in-memory SQLite (`:memory:`)
 - [ ] Test migration up/down operations
 - [ ] Test DatabaseConnection cloning and sharing
 
 **Existing Tests to Update**:
+
 - [ ] Update all tests using `SqlitePool` to use `DatabaseConnection`
 - [ ] Replace `create_table()` calls with migration runs
 - [ ] Update test fixtures to use SeaORM entities
@@ -1135,6 +1156,7 @@ pub async fn initialize_repositories(
 ### 5.2 Integration Tests
 
 **Test Scenarios**:
+
 1. **Fresh Database**: Start app with empty database, run migrations, verify tables
 2. **Existing Database**: Start app with SQLx-created database, verify migration works
 3. **Multi-Session**: Create multiple sessions, verify isolation with DatabaseConnection
@@ -1145,13 +1167,13 @@ pub async fn initialize_repositories(
 
 **Baseline vs. SeaORM**:
 
-| Operation | Baseline (SQLx) | Target (SeaORM) | Method |
-|-----------|-----------------|-----------------|--------|
-| Session CRUD | TBD ms | ±5% | Single operations |
-| Message insert (bulk) | TBD ms | ±10% | 100 messages |
-| Session list (100 records) | TBD ms | ±5% | Query with pagination |
-| Migration execution | N/A | < 1 second | First startup |
-| Application startup | TBD ms | +100ms acceptable | Time to ready |
+| Operation                  | Baseline (SQLx) | Target (SeaORM)   | Method                |
+| -------------------------- | --------------- | ----------------- | --------------------- |
+| Session CRUD               | TBD ms          | ±5%               | Single operations     |
+| Message insert (bulk)      | TBD ms          | ±10%              | 100 messages          |
+| Session list (100 records) | TBD ms          | ±5%               | Query with pagination |
+| Migration execution        | N/A             | < 1 second        | First startup         |
+| Application startup        | TBD ms          | +100ms acceptable | Time to ready         |
 
 **Benchmark Tool**: Use `criterion` crate for micro-benchmarks
 
@@ -1172,6 +1194,7 @@ pub async fn initialize_repositories(
 ## 6. Migration Rollback Plan
 
 ### 6.1 Rollback Triggers
+
 - Critical bug in repository layer
 - Performance degradation > 20%
 - Data corruption detected
@@ -1183,16 +1206,19 @@ pub async fn initialize_repositories(
 **Step 1**: Stop deployment immediately
 
 **Step 2**: Code rollback
+
 ```bash
 git checkout dev/0.4.0-pre-phase4
 pnpm tauri build
 ```
 
 **Step 3**: Database rollback
+
 - If migrations were applied, run `Migrator::down()` to revert schema
 - Or restore from pre-migration backup
 
 **Step 4**: Verify functionality
+
 - Run full test suite
 - Manual testing of all features
 
@@ -1203,12 +1229,14 @@ pnpm tauri build
 ### 7.1 Phase Dependencies
 
 **Required**:
+
 - [x] Phase 0: SeaORM infrastructure setup
 - [x] Phase 1: Planning module migrated
 - [x] Phase 2: Playbook module migrated
 - [x] Phase 3: Content Store module migrated
 
 **Optional** (can proceed without):
+
 - [ ] Performance benchmarks from Phases 1-3
 - [ ] Documentation from Phases 1-3
 
@@ -1230,19 +1258,19 @@ sea-orm-migration = "1.1"
 
 ## 8. Timeline & Milestones
 
-| Task | Duration | Dependencies | Deliverables |
-|------|----------|--------------|--------------|
-| **8.1** Create Session/Message Entities | 0.5 days | Phase 0 | 3 entity files |
-| **8.2** Create Migration Files | 0.5 days | 8.1 complete | 2 migration files |
-| **8.3** Update Repositories | 1 day | 8.2 complete | Updated session_repository.rs, message_repository.rs |
-| **8.4** Update State Management | 0.5 days | 8.3 complete | Updated state.rs |
-| **8.5** Update Application Init | 1 day | 8.4 complete | Updated lib.rs, mcp/builtin/mod.rs |
-| **8.6** Update Service Proxy Manager | 0.5 days | 8.5 complete | Updated service_proxy_manager.rs |
-| **8.7** Update Builtin Servers | 0.5 days | 8.6 complete | Updated planning, playbook, content_store |
-| **8.8** Remove SQLx Dependencies | 0.5 days | 8.7 complete | Updated Cargo.toml, removed imports |
-| **8.9** Testing & Validation | 1 day | 8.8 complete | All tests passing |
-| **8.10** Documentation | 0.5 days | 8.9 complete | Updated docs |
-| **Total** | **6.5 days** | | **Production ready** |
+| Task                                    | Duration     | Dependencies | Deliverables                                         |
+| --------------------------------------- | ------------ | ------------ | ---------------------------------------------------- |
+| **8.1** Create Session/Message Entities | 0.5 days     | Phase 0      | 3 entity files                                       |
+| **8.2** Create Migration Files          | 0.5 days     | 8.1 complete | 2 migration files                                    |
+| **8.3** Update Repositories             | 1 day        | 8.2 complete | Updated session_repository.rs, message_repository.rs |
+| **8.4** Update State Management         | 0.5 days     | 8.3 complete | Updated state.rs                                     |
+| **8.5** Update Application Init         | 1 day        | 8.4 complete | Updated lib.rs, mcp/builtin/mod.rs                   |
+| **8.6** Update Service Proxy Manager    | 0.5 days     | 8.5 complete | Updated service_proxy_manager.rs                     |
+| **8.7** Update Builtin Servers          | 0.5 days     | 8.6 complete | Updated planning, playbook, content_store            |
+| **8.8** Remove SQLx Dependencies        | 0.5 days     | 8.7 complete | Updated Cargo.toml, removed imports                  |
+| **8.9** Testing & Validation            | 1 day        | 8.8 complete | All tests passing                                    |
+| **8.10** Documentation                  | 0.5 days     | 8.9 complete | Updated docs                                         |
+| **Total**                               | **6.5 days** |              | **Production ready**                                 |
 
 **Buffer**: Add 20% buffer → **8 days total (1.6 weeks)**
 
@@ -1251,6 +1279,7 @@ sea-orm-migration = "1.1"
 ## 9. Success Criteria
 
 ### 9.1 Functional Requirements
+
 - [x] Application starts successfully with SeaORM
 - [x] Migrations run automatically on first startup
 - [x] All repository operations work identically to SQLx version
@@ -1259,12 +1288,14 @@ sea-orm-migration = "1.1"
 - [x] All existing features work unchanged
 
 ### 9.2 Performance Requirements
+
 - [x] Startup time increase < 100ms
 - [x] Query performance within 10% of SQLx baseline
 - [x] Memory usage stable or improved
 - [x] No new bottlenecks introduced
 
 ### 9.3 Code Quality Requirements
+
 - [x] Zero compiler warnings
 - [x] All clippy lints pass
 - [x] 100% test coverage for new code
@@ -1272,6 +1303,7 @@ sea-orm-migration = "1.1"
 - [x] No `any` types or unsafe code (except Arc construction if necessary)
 
 ### 9.4 Documentation Requirements
+
 - [x] Architecture docs updated
 - [x] Migration guide complete
 - [x] API documentation updated
@@ -1282,9 +1314,11 @@ sea-orm-migration = "1.1"
 ## 10. Clarification Q-List
 
 ### Q1: Migration Strategy for Existing Databases
+
 **Question**: How should we handle users with existing SQLx databases?
 
 **Options**:
+
 - A) Auto-migrate on first startup (detect SQLx schema, run migrations)
 - B) Require manual migration with CLI tool
 - C) Preserve SQLx schema, add SeaORM tables alongside (dual mode)
@@ -1292,18 +1326,19 @@ sea-orm-migration = "1.1"
 **Recommendation**: Option A - Auto-migration with backup prompt
 
 **Implementation**:
+
 ```rust
 async fn smart_migration(db_url: &str) -> Result<(), String> {
     let db = Database::connect(db_url).await?;
-    
+
     // Detect if tables exist
     let has_tables = check_existing_tables(&db).await?;
-    
+
     if has_tables {
         println!("🔄 Existing database detected, running migrations...");
         // Backup recommended
     }
-    
+
     Migrator::up(&db, None).await?;
     Ok(())
 }
@@ -1314,9 +1349,11 @@ async fn smart_migration(db_url: &str) -> Result<(), String> {
 ---
 
 ### Q2: DatabaseConnection Cloning Cost
+
 **Question**: Is cloning DatabaseConnection expensive? Should we use Arc everywhere?
 
 **Options**:
+
 - A) Clone DatabaseConnection freely (it's cheap, uses Arc internally)
 - B) Always wrap in Arc<DatabaseConnection>
 - C) Use &DatabaseConnection references everywhere
@@ -1330,9 +1367,11 @@ async fn smart_migration(db_url: &str) -> Result<(), String> {
 ---
 
 ### Q3: create_table() Method Removal
+
 **Question**: Should we keep `create_table()` methods in repositories for backwards compatibility?
 
 **Options**:
+
 - A) Remove immediately (migration handles schema)
 - B) Keep as no-op for backwards compatibility
 - C) Deprecate with warning, remove in next major version
@@ -1354,9 +1393,11 @@ async fn create_table(&self) -> Result<(), DbError> {
 ---
 
 ### Q4: Error Type Consistency
+
 **Question**: Should we standardize error types across repositories?
 
 **Options**:
+
 - A) Keep current `DbError` enum, adapt for SeaORM errors
 - B) Create new `SeaOrmError` type
 - C) Use `anyhow::Error` throughout
@@ -1378,9 +1419,11 @@ impl From<sea_orm::DbErr> for DbError {
 ---
 
 ### Q5: Performance Monitoring
+
 **Question**: How should we monitor performance degradation after migration?
 
 **Options**:
+
 - A) Add telemetry to repository methods (log timing)
 - B) Manual benchmarking before/after
 - C) Use profiling tools (flamegraphs)
@@ -1388,6 +1431,7 @@ impl From<sea_orm::DbErr> for DbError {
 **Recommendation**: Option A + Option B - Combined approach
 
 **Implementation**:
+
 ```rust
 async fn upsert_session(&self, session: &SessionMetadata) -> Result<(), DbError> {
     let start = std::time::Instant::now();
@@ -1402,9 +1446,11 @@ async fn upsert_session(&self, session: &SessionMetadata) -> Result<(), DbError>
 ---
 
 ### Q6: Unsafe Arc Construction Safety
+
 **Question**: Is the unsafe Arc construction in `new_from_static_refs()` safe long-term?
 
 **Options**:
+
 - A) Keep current unsafe pattern (works, well-documented)
 - B) Refactor to use `once_cell::sync::Lazy` instead
 - C) Pass DatabaseConnection explicitly instead of static ref
@@ -1436,6 +1482,7 @@ pub fn new_from_static_refs() -> Self {
 ## 11. References
 
 ### 11.1 Related Documentation
+
 - [SeaORM Migration Master Plan](../planning/seaorm-migration-master-plan.md)
 - [Refactoring Plan Submission Guide](../../refactoring_plan_submission_guide.md)
 - [SeaORM Book](https://www.sea-ql.org/SeaORM/)
@@ -1445,6 +1492,7 @@ pub fn new_from_static_refs() -> Self {
 ### 11.2 Related Code Files
 
 **Primary Targets**:
+
 - `src-tauri/src/lib.rs` (Lines 80-180)
 - `src-tauri/src/state.rs` (Lines 1-100)
 - `src-tauri/src/repositories/session_repository.rs`
@@ -1453,15 +1501,18 @@ pub fn new_from_static_refs() -> Self {
 - `src-tauri/src/mcp/builtin/mod.rs` (Lines 350-410)
 
 **Entity Files**:
+
 - `src-tauri/entity/session.rs` (to create)
 - `src-tauri/entity/message.rs` (to create)
 - `src-tauri/entity/message_index_meta.rs` (to create)
 
 **Migration Files**:
+
 - `src-tauri/migration/m20260105_000002_create_sessions_table.rs` (to create)
 - `src-tauri/migration/m20260105_000003_create_messages_tables.rs` (to create)
 
 ### 11.3 Related Issues & PRs
+
 - GitHub PR: dev/0.4.0 (#272)
 - Master Plan: SeaORM Migration Phases 0-3 (prerequisites)
 

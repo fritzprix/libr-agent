@@ -11,12 +11,14 @@
 ## 1. Objective
 
 Migrate the Content Store module from raw SQLx queries to SeaORM ORM, improving:
+
 - Type safety and compile-time query validation
 - Code maintainability and readability
 - Schema evolution capability via migrations
 - Transaction handling consistency
 
 **Success Criteria**:
+
 - All Content Store operations work identically to pre-migration
 - No data loss during migration from existing databases
 - All unit and integration tests pass
@@ -96,12 +98,14 @@ CREATE INDEX idx_contents_session_id ON contents(session_id);
 ```
 
 **Schema Evolution History**:
+
 - `src_url` column was added via `ALTER TABLE` migration (line 154 in storage.rs)
 - Migration uses error suppression for "duplicate column name" (backwards compatibility)
 
 ### 2.3 Current Implementation: storage.rs (517 lines)
 
 **Data Structures** (Lines 1-36):
+
 ```rust
 // Rust structs for deserialization
 pub struct ContentStore { session_id, name, description, created_at, updated_at }
@@ -110,6 +114,7 @@ pub struct ContentChunk { id, content_id, chunk_index, text, line_range: (usize,
 ```
 
 **Storage Layer** (Lines 37-517):
+
 ```rust
 pub struct ContentStoreStorage {
     stores: HashMap<String, ContentStore>,     // In-memory cache
@@ -121,22 +126,23 @@ pub struct ContentStoreStorage {
 
 **Key Methods and SQLx Usage**:
 
-| Method | Lines | SQLx Operations | Complexity |
-|--------|-------|-----------------|------------|
-| `new_sqlite()` | 66-102 | 1 CREATE TABLES | MEDIUM |
-| `create_tables()` | 104-163 | 1 CREATE + ALTER TABLE | MEDIUM |
-| `create_store()` | 165-214 | 1 INSERT | LOW |
-| `get_or_create_store()` | 260-302 | 1 SELECT (fetch_optional) | LOW |
-| `add_content()` | 304-409 | 1 INSERT (content) + N INSERTs (chunks) | HIGH |
-| `list_content()` | 411-437 | None (in-memory only) | LOW |
-| `read_content()` | 453-485 | None (in-memory only) | LOW |
-| `delete_content()` | 487-517 | 2 DELETEs (cascading) | MEDIUM |
+| Method                  | Lines   | SQLx Operations                         | Complexity |
+| ----------------------- | ------- | --------------------------------------- | ---------- |
+| `new_sqlite()`          | 66-102  | 1 CREATE TABLES                         | MEDIUM     |
+| `create_tables()`       | 104-163 | 1 CREATE + ALTER TABLE                  | MEDIUM     |
+| `create_store()`        | 165-214 | 1 INSERT                                | LOW        |
+| `get_or_create_store()` | 260-302 | 1 SELECT (fetch_optional)               | LOW        |
+| `add_content()`         | 304-409 | 1 INSERT (content) + N INSERTs (chunks) | HIGH       |
+| `list_content()`        | 411-437 | None (in-memory only)                   | LOW        |
+| `read_content()`        | 453-485 | None (in-memory only)                   | LOW        |
+| `delete_content()`      | 487-517 | 2 DELETEs (cascading)                   | MEDIUM     |
 
 **Total SQLx Query Calls**: 10 query sites across 5 methods
 
 ### 2.4 Key Challenges
 
 **1. Bulk Chunk Insertion** (Line 389-404):
+
 ```rust
 // Current: Individual INSERT per chunk
 for chunk in &content_chunks {
@@ -147,9 +153,11 @@ for chunk in &content_chunks {
         .execute(pool).await?;
 }
 ```
+
 **SeaORM Solution**: Use `insert_many()` with `Vec<chunks::ActiveModel>`
 
 **2. Schema Migration with ALTER TABLE** (Line 154-162):
+
 ```rust
 // Current: Error suppression for idempotency
 if let Err(e) = sqlx::query("ALTER TABLE contents ADD COLUMN src_url TEXT").execute(pool).await {
@@ -158,25 +166,31 @@ if let Err(e) = sqlx::query("ALTER TABLE contents ADD COLUMN src_url TEXT").exec
     }
 }
 ```
+
 **SeaORM Solution**: Use SeaORM migration framework with `add_column()` and `ColumnDef::new()`
 
 **3. Cascading Deletes** (Line 500-515):
+
 ```rust
 // Current: Manual cascade (chunks first, then content)
 sqlx::query("DELETE FROM chunks WHERE content_id = ?").execute(pool).await?;
 sqlx::query("DELETE FROM contents WHERE id = ?").execute(pool).await?;
 ```
+
 **SeaORM Solution**: Rely on foreign key `ON DELETE CASCADE` in schema + use `delete_by_id()`
 
 **4. Tuple Line Range Field** (Lines 34, 346-347):
+
 ```rust
 pub struct ContentChunk {
     pub line_range: (usize, usize),  // Stored as two separate columns in DB
 }
 ```
+
 **SeaORM Solution**: Entity will have `start_line` and `end_line` as separate fields; transform in conversion logic
 
 **5. In-Memory Cache + SQLite Dual Mode** (Lines 42-47):
+
 - Storage maintains HashMap cache regardless of backend
 - SQLite is optional (`sqlite_pool: Option<SqlitePool>`)
 - All operations update cache first, then persist to SQLite if present
@@ -192,6 +206,7 @@ pub struct ContentChunk {
 **Target Location**: `src-tauri/src/entity/`
 
 **Entity 1: `content_store.rs`**
+
 ```rust
 use sea_orm::entity::prelude::*;
 
@@ -222,6 +237,7 @@ impl ActiveModelBehavior for ActiveModel {}
 ```
 
 **Entity 2: `content.rs`**
+
 ```rust
 use sea_orm::entity::prelude::*;
 
@@ -273,6 +289,7 @@ impl ActiveModelBehavior for ActiveModel {}
 ```
 
 **Entity 3: `content_chunk.rs`**
+
 ```rust
 use sea_orm::entity::prelude::*;
 
@@ -495,9 +512,9 @@ pub async fn new_sqlite(database_url: String) -> Result<Self, String> {
     // Database file creation
     let pool = SqlitePool::connect(&db_path).await
         .map_err(|e| format!("Failed to connect to SQLite: {e}"))?;
-    
+
     Self::create_tables(&pool).await?;
-    
+
     Ok(Self {
         stores: HashMap::new(),
         contents: HashMap::new(),
@@ -547,7 +564,7 @@ pub async fn new_sqlite(database_url: String) -> Result<Self, String> {
 // BEFORE
 pub async fn create_store(&mut self, session_id: String, name: Option<String>, description: Option<String>) -> Result<ContentStore, String> {
     // ... validation ...
-    
+
     if let Some(pool) = &self.sqlite_pool {
         sqlx::query("INSERT INTO stores (session_id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
             .bind(&session_id)
@@ -558,7 +575,7 @@ pub async fn create_store(&mut self, session_id: String, name: Option<String>, d
             .execute(pool).await
             .map_err(|e| format!("Failed to create store in SQLite: {e}"))?;
     }
-    
+
     self.stores.insert(session_id.clone(), store.clone());
     Ok(store)
 }
@@ -613,7 +630,7 @@ if let Some(pool) = &self.sqlite_pool {
     .bind(&session_id)
     .fetch_optional(pool).await
     .map_err(|e| format!("Failed to check store existence in SQLite: {e}"))?;
-    
+
     if let Some((session_id, name, description, created_at, updated_at)) = result {
         let store = ContentStore { /* ... */ };
         self.stores.insert(session_id.clone(), store.clone());
@@ -627,7 +644,7 @@ if let Some(db) = &self.db {
         .one(db)
         .await
         .map_err(|e| format!("Failed to check store existence: {e}"))?;
-    
+
     if let Some(model) = result {
         let store = ContentStore {
             session_id: model.session_id.clone(),
@@ -748,17 +765,20 @@ if let Some(db) = &self.db {
 **File**: `src-tauri/src/mcp/builtin/content_store/test_migration.rs` (100 lines)
 
 **Current Test Purpose** (Lines 1-76):
+
 - Tests that `src_url` column migration works
 - Creates old schema WITHOUT `src_url`
 - Initializes ContentStoreStorage (triggers migration)
 - Verifies column exists by attempting UPDATE
 
 **SeaORM Approach**:
+
 - Replace with SeaORM migration testing utilities
 - Test that migration from old schema to new schema works
 - Verify all columns and indexes are created correctly
 
 **New Test Structure**:
+
 ```rust
 #[cfg(test)]
 mod tests {
@@ -770,16 +790,16 @@ mod tests {
     #[tokio::test]
     async fn test_migration_creates_all_tables() {
         let db = Database::connect("sqlite::memory:").await.unwrap();
-        
+
         // Run migrations
         Migrator::up(&db, None).await.unwrap();
-        
+
         // Verify tables exist
         let schema = Schema::new(sea_orm::DbBackend::Sqlite);
         let store_stmt = schema.create_table_from_entity(content_store::Entity);
         let content_stmt = schema.create_table_from_entity(content::Entity);
         let chunk_stmt = schema.create_table_from_entity(content_chunk::Entity);
-        
+
         // Verify we can insert and query
         // ... test data operations ...
     }
@@ -884,20 +904,23 @@ entity::Entity::operation()
 ### 5.1 Unit Tests
 
 **New Tests to Add**:
+
 - [ ] Test entity conversion (`From` trait implementations)
 - [ ] Test bulk chunk insertion with 0, 1, 10, 100, 1000 chunks
 - [ ] Test cascading delete (verify chunks are deleted with content)
 - [ ] Test `get_or_create_store()` with existing and non-existing stores
 
 **Existing Tests to Maintain**:
+
 - [ ] All tests in `test_functional.rs` must pass unchanged
 - [ ] All tests in `test_session_isolation.rs` must pass unchanged
 
 ### 5.2 Integration Tests
 
 **Test Scenarios**:
+
 1. **Empty Database**: Create new store, add content, list, read, delete
-2. **Migration from Old Schema**: 
+2. **Migration from Old Schema**:
    - Create database with old schema (no `src_url`)
    - Run migration
    - Verify all data preserved
@@ -910,13 +933,13 @@ entity::Entity::operation()
 
 **Baseline (SQLx) vs. SeaORM**:
 
-| Operation | Baseline (ms) | Target (ms) | Method |
-|-----------|---------------|-------------|--------|
-| Create Store | TBD | ±10% | Single INSERT |
-| Add Content (100 chunks) | TBD | ±10% | 1 INSERT + bulk INSERT |
-| Add Content (1000 chunks) | TBD | ±10% | Bulk INSERT efficiency test |
-| List Content (paginated) | TBD | ±10% | In-memory only |
-| Delete Content | TBD | ±10% | Single DELETE with cascade |
+| Operation                 | Baseline (ms) | Target (ms) | Method                      |
+| ------------------------- | ------------- | ----------- | --------------------------- |
+| Create Store              | TBD           | ±10%        | Single INSERT               |
+| Add Content (100 chunks)  | TBD           | ±10%        | 1 INSERT + bulk INSERT      |
+| Add Content (1000 chunks) | TBD           | ±10%        | Bulk INSERT efficiency test |
+| List Content (paginated)  | TBD           | ±10%        | In-memory only              |
+| Delete Content            | TBD           | ±10%        | Single DELETE with cascade  |
 
 **Benchmark Tool**: Use `criterion` crate for micro-benchmarks
 
@@ -925,6 +948,7 @@ entity::Entity::operation()
 ## 6. Migration Rollback Plan
 
 ### 6.1 Rollback Triggers
+
 - Critical bug discovered in SeaORM implementation
 - Performance degradation > 30%
 - Data corruption detected
@@ -935,16 +959,19 @@ entity::Entity::operation()
 **Step 1**: Stop deployment and notify team
 
 **Step 2**: Code rollback
+
 ```bash
 git checkout dev/0.4.0-pre-seaorm-contentstore
 pnpm tauri build
 ```
 
 **Step 3**: Database rollback
+
 - Restore from pre-migration backup
 - Or run migration down: `Migrator::down(&db, None).await`
 
 **Step 4**: Verify functionality
+
 - Run full test suite
 - Manual testing of all Content Store features
 
@@ -967,6 +994,7 @@ sea-orm-migration = "1.1"
 ### 7.2 Migration Infrastructure
 
 **Prerequisite**: Phase 0 must be complete
+
 - Migration framework setup in `src-tauri/migration/`
 - Migrator integrated into application startup
 - Entity generation tooling configured
@@ -979,16 +1007,16 @@ sea-orm-migration = "1.1"
 
 ## 8. Estimated Timeline
 
-| Task | Duration | Dependencies |
-|------|----------|--------------|
-| **8.1** Entity Generation | 0.5 days | Phase 0 complete |
-| **8.2** Migration File Creation | 0.5 days | Entities generated |
-| **8.3** storage.rs Refactoring | 2 days | Migration file ready |
-| **8.4** Test Migration Refactoring | 0.5 days | storage.rs complete |
-| **8.5** Unit Test Updates | 1 day | Code refactoring complete |
-| **8.6** Integration Testing | 1 day | Unit tests passing |
-| **8.7** Performance Benchmarking | 0.5 days | Integration tests passing |
-| **Total** | **6 days (1.2 weeks)** | |
+| Task                               | Duration               | Dependencies              |
+| ---------------------------------- | ---------------------- | ------------------------- |
+| **8.1** Entity Generation          | 0.5 days               | Phase 0 complete          |
+| **8.2** Migration File Creation    | 0.5 days               | Entities generated        |
+| **8.3** storage.rs Refactoring     | 2 days                 | Migration file ready      |
+| **8.4** Test Migration Refactoring | 0.5 days               | storage.rs complete       |
+| **8.5** Unit Test Updates          | 1 day                  | Code refactoring complete |
+| **8.6** Integration Testing        | 1 day                  | Unit tests passing        |
+| **8.7** Performance Benchmarking   | 0.5 days               | Integration tests passing |
+| **Total**                          | **6 days (1.2 weeks)** |                           |
 
 **Buffer**: Add 20% buffer for unexpected issues → **1.5 weeks total**
 
@@ -997,6 +1025,7 @@ sea-orm-migration = "1.1"
 ## 9. Success Criteria Summary
 
 ### 9.1 Functional Requirements
+
 - [x] All Content Store tools work identically to pre-migration
 - [x] No data loss during migration from existing databases
 - [x] Session isolation maintained (different sessions can't access each other's data)
@@ -1004,12 +1033,14 @@ sea-orm-migration = "1.1"
 - [x] Bulk chunk insertion works efficiently (no N+1 queries)
 
 ### 9.2 Performance Requirements
+
 - [x] Query performance within 10% of SQLx baseline
 - [x] Memory usage stable or improved
 - [x] Startup time unchanged
 - [x] No new bottlenecks introduced
 
 ### 9.3 Code Quality Requirements
+
 - [x] 100% test coverage for new SeaORM code
 - [x] Zero compiler warnings
 - [x] All clippy lints pass
@@ -1017,6 +1048,7 @@ sea-orm-migration = "1.1"
 - [x] Documentation updated
 
 ### 9.4 Migration Requirements
+
 - [x] Migration runs successfully on empty database
 - [x] Migration preserves data from old schema
 - [x] Rollback procedure tested and documented
@@ -1027,9 +1059,11 @@ sea-orm-migration = "1.1"
 ## 10. Clarification Q-List
 
 ### Q1: In-Memory Cache Strategy
+
 **Question**: Should we maintain the current dual-mode design (in-memory cache + optional SQLite backend)?
 
 **Options**:
+
 - A) Keep current design (cache always populated, SQLite optional)
 - B) Remove cache, use SeaORM as single source of truth
 - C) Make cache optional (populate only for hot paths)
@@ -1041,11 +1075,13 @@ sea-orm-migration = "1.1"
 ---
 
 ### Q2: Transaction Boundaries
+
 **Question**: Should we wrap multi-table operations (add_content with chunks) in explicit transactions?
 
 **Current**: No explicit transactions, relies on sequential operations
 
 **Options**:
+
 - A) No transactions (rely on operation atomicity)
 - B) Use SeaORM transactions for multi-table writes
 - C) Add transaction support as optional feature
@@ -1053,6 +1089,7 @@ sea-orm-migration = "1.1"
 **Recommendation**: Option B - Add explicit transactions for data integrity
 
 **Code Example**:
+
 ```rust
 let txn = db.begin().await?;
 
@@ -1067,9 +1104,11 @@ txn.commit().await?;
 ---
 
 ### Q3: Schema Evolution Strategy
+
 **Question**: How should we handle future schema changes after migration?
 
 **Options**:
+
 - A) Always use SeaORM migrations (create new migration files)
 - B) Allow ALTER TABLE for backwards-compatible changes
 - C) Require database recreation for schema changes
@@ -1081,11 +1120,13 @@ txn.commit().await?;
 ---
 
 ### Q4: Load Cache from Database on Startup
+
 **Question**: Should we load existing data from database into cache on initialization?
 
 **Current**: Cache is populated lazily (on first access)
 
 **Options**:
+
 - A) Keep lazy loading (current behavior)
 - B) Load all stores/contents into cache on startup
 - C) Make it configurable (lazy vs. eager loading)
@@ -1097,11 +1138,13 @@ txn.commit().await?;
 ---
 
 ### Q5: Error Type Standardization
+
 **Question**: Should we create custom error types instead of `String` errors?
 
 **Current**: All methods return `Result<T, String>`
 
 **Options**:
+
 - A) Keep `String` errors (simple, backwards compatible)
 - B) Create `ContentStoreError` enum with structured error types
 - C) Use `anyhow::Error` for flexibility
@@ -1113,9 +1156,11 @@ txn.commit().await?;
 ---
 
 ### Q6: Deprecation of `create_tables()`
+
 **Question**: Should we immediately remove `create_tables()` or mark it deprecated first?
 
 **Options**:
+
 - A) Remove immediately (migration handles schema)
 - B) Mark deprecated, remove in next major version
 - C) Keep as fallback for non-migrated databases
@@ -1129,17 +1174,20 @@ txn.commit().await?;
 ## 11. References
 
 ### 11.1 Related Documentation
+
 - [SeaORM Migration Master Plan](../planning/seaorm-migration-master-plan.md)
 - [Refactoring Plan Submission Guide](../../refactoring_plan_submission_guide.md)
 - [SeaORM Book](https://www.sea-ql.org/SeaORM/)
 - [SeaORM Migration Guide](https://www.sea-ql.org/SeaORM/docs/migration/setting-up-migration/)
 
 ### 11.2 Related Code Files
+
 - `src-tauri/src/mcp/builtin/content_store/storage.rs` (Primary target)
 - `src-tauri/src/mcp/builtin/content_store/test_migration.rs` (Secondary target)
 - `src-tauri/src/mcp/builtin/planning/` (Reference for patterns)
 
 ### 11.3 Related Issues & PRs
+
 - GitHub PR: dev/0.4.0 (#272)
 - Master Plan: SeaORM Migration Phase 3
 
