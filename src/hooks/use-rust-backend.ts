@@ -21,6 +21,7 @@ export const useRustBackend = () => {
   return {
     // Workspace Management
     listWorkspaceFiles: client.listWorkspaceFiles,
+    openWorkspaceFileWithDefaultApp: client.openWorkspaceFileWithDefaultApp,
 
     // MCP Server Management
     startMCPServer: client.startServer,

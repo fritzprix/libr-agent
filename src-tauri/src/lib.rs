@@ -46,6 +46,7 @@ use commands::session_commands::{
 use commands::url_commands::open_external_url;
 use commands::workspace_commands::{
     get_app_data_dir, get_app_logs_dir, greet, list_workspace_files,
+    open_workspace_file_with_default_app,
 };
 use mcp::MCPServerManager;
 use services::{InteractiveBrowserServer, SecureFileManager};
@@ -283,6 +284,7 @@ pub fn run() {
                 write_file,
                 workspace_write_file,
                 open_external_url,
+                open_workspace_file_with_default_app,
                 // Interactive Browser commands
                 create_browser_session,
                 close_browser_session,

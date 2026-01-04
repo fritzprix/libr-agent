@@ -22,7 +22,11 @@ export type {
 } from './types';
 
 // Workspace management
-export { listWorkspaceFiles, workspaceWriteFile } from './workspace';
+export {
+  listWorkspaceFiles,
+  workspaceWriteFile,
+  openWorkspaceFileWithDefaultApp,
+} from './workspace';
 
 // MCP server management
 export {

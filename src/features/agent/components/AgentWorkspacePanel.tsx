@@ -42,8 +42,11 @@ interface FileNode {
 }
 
 export function AgentWorkspacePanel() {
-  const { listWorkspaceFiles, downloadWorkspaceFile, callBuiltinTool } =
-    useRustBackend();
+  const {
+    listWorkspaceFiles,
+    openWorkspaceFileWithDefaultApp,
+    callBuiltinTool,
+  } = useRustBackend();
   const { session } = useAgentSessionState();
   const { submit } = useAgentChatActions();
   const [rootPath, setRootPath] = useState<string>('./');
@@ -366,11 +369,11 @@ export function AgentWorkspacePanel() {
     [loadDirectory],
   );
 
-  // Download file
-  const handleDownloadFile = useCallback(
+  // Open file with system default app
+  const handleOpenFile = useCallback(
     async (node: FileNode) => {
       if (node.isDirectory) {
-        logger.warn('Attempted to download a directory, ignoring', {
+        logger.warn('Attempted to open a directory, ignoring', {
           path: node.path,
           isDirectory: node.isDirectory,
         });
@@ -378,14 +381,22 @@ export function AgentWorkspacePanel() {
       }
 
       try {
-        logger.debug('Downloading file', { path: node.path });
-        await downloadWorkspaceFile(node.path);
-        logger.info('File download initiated', { path: node.path });
+        logger.debug('Opening file with default app', { path: node.path });
+        await openWorkspaceFileWithDefaultApp(node.path, session?.id);
+        logger.info('File opened successfully', { path: node.path });
+        toast.success('File opened', {
+          description: `Opened ${node.name} with system default app`,
+        });
       } catch (error) {
-        logger.error('Failed to download file', { path: node.path, error });
+        logger.error('Failed to open file', { path: node.path, error });
+        const message =
+          error instanceof Error ? error.message : 'Unknown error occurred';
+        toast.error('Failed to open file', {
+          description: message,
+        });
       }
     },
-    [downloadWorkspaceFile],
+    [openWorkspaceFileWithDefaultApp, session?.id],
   );
 
   // Render file tree node
@@ -402,18 +413,18 @@ export function AgentWorkspacePanel() {
           className="flex items-center gap-1 px-2 py-1 hover:bg-muted/50 cursor-pointer group"
           style={{ paddingLeft: `${8 + depth * 16}px` }}
           onClick={() => {
-            logger.info('DIRECTORY CLICK ANALYSIS', {
+            logger.info('FILE/DIRECTORY CLICK', {
               path: node.path,
               name: node.name,
               isDirectory: node.isDirectory,
             });
 
             if (node.isDirectory) {
-              logger.info('CALLING toggleDirectory', { path: node.path });
+              logger.info('Toggling directory', { path: node.path });
               toggleDirectory(node);
             } else {
-              logger.info('CALLING handleDownloadFile', { path: node.path });
-              handleDownloadFile(node);
+              logger.info('Opening file with default app', { path: node.path });
+              handleOpenFile(node);
             }
           }}
         >
