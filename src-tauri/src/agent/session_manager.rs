@@ -147,6 +147,96 @@ impl AgentSessionManager {
         .await
     }
 
+    /// Inject messages into the session and optionally trigger the workflow
+    pub async fn inject_messages(
+        &self,
+        session_id: String,
+        messages: Vec<Message>,
+        trigger_workflow: bool,
+    ) -> Result<(), String> {
+        // 1. Ensure cache is initialized
+        crate::agent::lifecycle::ensure_cache_initialized(&self.active_sessions, &session_id)
+            .await?;
+
+        // 2. Add messages to in-memory cache
+        {
+            let sessions = self.active_sessions.read().await;
+            if let Some(session) = sessions.get(&session_id) {
+                let mut session_messages = session.messages.write().await;
+                for msg in &messages {
+                    session_messages.push(msg.clone());
+                    if session_messages.len() > crate::agent::state::MAX_CACHED_MESSAGES {
+                        session_messages.remove(0);
+                    }
+                }
+            } else {
+                return Err(format!("Session not found: {}", session_id));
+            }
+        }
+
+        // 3. Emit MessageAdded events
+        for msg in &messages {
+            let event = crate::agent::events::AgentEvent::MessageAdded {
+                session_id: session_id.clone(),
+                message: Box::new(msg.clone()),
+            };
+            crate::agent::events::emit_agent_event(&self.app_handle, event)
+                .map_err(|e| format!("Failed to emit MessageAdded event: {}", e))?;
+        }
+
+        // 4. Persist to DB asynchronously
+        let msgs_for_db = messages.clone();
+        tokio::spawn(async move {
+            let repo = crate::state::get_message_repository();
+            for msg in msgs_for_db {
+                if let Err(e) = repo.insert(&msg).await {
+                    log::error!("Failed to inject message to DB: {}", e);
+                }
+            }
+        });
+
+        // 5. Trigger workflow if requested
+        if trigger_workflow {
+            log::info!(
+                "Triggering workflow after message injection for session: {}",
+                session_id
+            );
+
+            // [Fix Option 1] Inline status update to ensure UI reflects 'Busy' state
+            // 1. Update status to Busy
+            crate::agent::lifecycle::update_session_status(
+                &self.active_sessions,
+                &self.app_handle,
+                &session_id,
+                crate::repositories::SessionStatus::Busy,
+            )
+            .await?;
+
+            // 2. Emit workflow started event
+            let event = crate::agent::events::AgentEvent::WorkflowStarted {
+                session_id: session_id.clone(),
+            };
+            if let Err(e) = crate::agent::events::emit_agent_event(&self.app_handle, event) {
+                log::error!(
+                    "Failed to emit WorkflowStarted event during injection: {}",
+                    e
+                );
+            }
+
+            // We use request_llm_completion directly here as we don't need the full start_workflow logic
+            // (which assumes a User message as input)
+            crate::agent::llm::request_llm_completion(
+                &self.active_sessions,
+                &self.proxy_manager,
+                &self.app_handle,
+                session_id,
+            )
+            .await?;
+        }
+
+        Ok(())
+    }
+
     /// Handle tool execution result from frontend
     pub async fn handle_tool_result(
         &self,

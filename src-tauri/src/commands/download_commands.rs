@@ -18,11 +18,12 @@ use zip::{write::FileOptions, ZipWriter};
 #[tauri::command]
 pub async fn download_workspace_file(
     app_handle: tauri::AppHandle,
+    session_id: String,
     file_path: String,
 ) -> Result<String, String> {
     // Get workspace directory via SessionManager
     let session_manager = get_session_manager().map_err(|e| e.to_string())?;
-    let workspace_dir = session_manager.get_session_workspace_dir();
+    let workspace_dir = session_manager.get_session_workspace_dir_by_id(&session_id);
 
     // Construct the full path of the requested file
     let full_path = workspace_dir.join(&file_path);
@@ -90,16 +91,18 @@ pub async fn download_workspace_file(
 ///
 /// # Arguments
 /// * `app_handle` - The Tauri application handle.
+/// * `session_id` - The ID of the session to export from.
 /// * `files` - A vector of relative file paths within the workspace to include in the ZIP.
 /// * `package_name` - A base name to use for the generated ZIP file.
 #[tauri::command]
 pub async fn export_and_download_zip(
     app_handle: tauri::AppHandle,
+    session_id: String,
     files: Vec<String>,
     package_name: String,
 ) -> Result<String, String> {
     let session_manager = get_session_manager().map_err(|e| e.to_string())?;
-    let workspace_dir = session_manager.get_session_workspace_dir();
+    let workspace_dir = session_manager.get_session_workspace_dir_by_id(&session_id);
 
     if files.is_empty() {
         return Err("Files array cannot be empty".to_string());

@@ -388,15 +388,20 @@ export function WorkspaceFilesPanel() {
         return;
       }
 
+      if (!session?.id) {
+        logger.error('No active session for file download');
+        return;
+      }
+
       try {
         logger.debug('Downloading file', { path: node.path });
-        await downloadWorkspaceFile(node.path);
+        await downloadWorkspaceFile(node.path, session.id);
         logger.info('File download initiated', { path: node.path });
       } catch (error) {
         logger.error('Failed to download file', { path: node.path, error });
       }
     },
-    [downloadWorkspaceFile],
+    [downloadWorkspaceFile, session?.id],
   );
 
   // Render file tree node

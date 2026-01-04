@@ -168,6 +168,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
                     case 'downloadWorkspaceFile': {
                       result = await tauriCommands.downloadWorkspaceFile(
                         params.filePath as string,
+                        sessionId,
                       );
                       break;
                     }
@@ -175,6 +176,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
                       result = await tauriCommands.exportAndDownloadZip(
                         params.files as string[],
                         params.packageName as string,
+                        sessionId,
                       );
                       break;
                     }
