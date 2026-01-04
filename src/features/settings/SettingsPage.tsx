@@ -43,7 +43,7 @@ import { toast } from 'sonner';
 import { MCPServerManagement } from './MCPServerManagement';
 import { getLogger } from '@/lib/logger';
 import { useSessionContext } from '@/context/SessionContext';
-import { dbUtils, LocalDatabase } from '@/lib/db/service';
+import { LocalDatabase } from '@/lib/db/service';
 
 const logger = getLogger('SettingsPage');
 
@@ -170,14 +170,12 @@ export default function SettingsPage() {
     setResetConfirmOpen(false);
     setIsResetting(true);
     try {
-      // 1. Clear sessions and workspaces
-      await sessionCtx.clearAllSessions();
+      // 1. Perform factory reset via context (handles backend + frontend cleanup)
+      await sessionCtx.factoryReset();
 
-      // 2. Clear other tables
-      await dbUtils.clearAllAssistants();
-      await dbUtils.clearAllMCPServers();
-      await LocalDatabase.getInstance().playbooks.clear();
-      await LocalDatabase.getInstance().objects.clear();
+      // 2. Restore defaults (optional, backend might have cleared them but ensuring defaults exist is good)
+      // Actually, factoryReset in service clears Objects store, so we might need to re-seed if we want to stay slightly functional before reload
+      // But reloading immediately is safer.
 
       // 3. Restore defaults
       await LocalDatabase.getInstance().ensureDefaultAssistants();

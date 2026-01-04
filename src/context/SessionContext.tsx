@@ -42,6 +42,7 @@ interface SessionContextType {
   retryLastOperation: () => Promise<void>;
   hasNextPage: boolean;
   clearAllSessions: () => Promise<void>;
+  factoryReset: () => Promise<void>;
 
   /**
    * NEW: Session's top-level thread metadata (read-only).
@@ -493,6 +494,21 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
     }
   }, [data, mutate, sessionService]);
 
+  /**
+   * Performs a full factory reset.
+   */
+  const handleFactoryReset = useCallback(async () => {
+    try {
+      await sessionService.factoryReset();
+      // No need to update UI as app will reload
+    } catch (error) {
+      const errorObj = toError(error);
+      logger.error('Failed to perform factory reset', errorObj);
+      setOperationError(errorObj);
+      throw errorObj;
+    }
+  }, [sessionService]);
+
   // Derive sessionThread from current session
   const sessionThread = useMemo(
     () => current?.sessionThread ?? null,
@@ -512,6 +528,7 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
       delete: handleDelete,
       updateSession: handleUpdateSession,
       clearAllSessions: handleClearAllSessions,
+      factoryReset: handleFactoryReset,
       isLoading,
       isValidating,
       error,
@@ -531,6 +548,7 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
       handleDelete,
       handleUpdateSession,
       handleClearAllSessions,
+      handleFactoryReset,
       isLoading,
       isValidating,
       error,

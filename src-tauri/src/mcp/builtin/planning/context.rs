@@ -74,9 +74,9 @@ pub async fn get_service_context(pool: &SqlitePool, session_id: &str) -> Service
         })
         .collect();
 
-    // 3. Fetch Scratchpad (Recent)
+    // 3. Fetch Scratchpad (All - max 10 enforced by addScratchpad)
     let scratchpad: Vec<ScratchpadItem> = sqlx::query_as(
-        "SELECT * FROM planning_scratchpad WHERE session_id = ? ORDER BY created_at DESC LIMIT 6",
+        "SELECT * FROM planning_scratchpad WHERE session_id = ? ORDER BY created_at DESC",
     )
     .bind(session_id)
     .fetch_all(pool)
@@ -192,17 +192,10 @@ pub async fn get_service_context(pool: &SqlitePool, session_id: &str) -> Service
 
     // Scratchpad Section
     if !scratchpad.is_empty() {
-        // Check if we have more than the limit (we fetched limit 6 to check for 'more')
-        let (visible_scratchpad, has_more_scratchpad) = if scratchpad.len() > 5 {
-            (&scratchpad[0..5], true)
-        } else {
-            (&scratchpad[..], false)
-        };
-
         parts.push(format!("\n**Scratchpad:** {} items", scratchpad.len()));
         parts.push("".to_string()); // Spacer
 
-        for (idx, item) in visible_scratchpad.iter().enumerate() {
+        for (idx, item) in scratchpad.iter().enumerate() {
             let title_part = if let Some(title) = &item.title {
                 format!("**{}**", title)
             } else {
@@ -223,22 +216,11 @@ pub async fn get_service_context(pool: &SqlitePool, session_id: &str) -> Service
                 String::new()
             };
 
-            let content_preview = if item.title.is_some() {
-                let char_count = item.content.chars().count();
-                if char_count > 50 {
-                    let s: String = item.content.chars().take(50).collect();
-                    format!(" - {}...", s)
-                } else {
-                    format!(" - {}", item.content)
-                }
+            // Full content, no truncation
+            let content_part = if item.title.is_some() {
+                format!(" - {}", item.content)
             } else {
-                let char_count = item.content.chars().count();
-                if char_count > 60 {
-                    let s: String = item.content.chars().take(60).collect();
-                    format!("{}...", s)
-                } else {
-                    item.content.clone()
-                }
+                item.content.clone()
             };
 
             parts.push(format!(
@@ -246,15 +228,8 @@ pub async fn get_service_context(pool: &SqlitePool, session_id: &str) -> Service
                 idx + 1,
                 item.id,
                 title_part,
-                content_preview,
+                content_part,
                 tags_part
-            ));
-        }
-
-        if has_more_scratchpad {
-            parts.push(format!(
-                "  ...and {} more items. Use listScratchpad to view all.",
-                scratchpad.len() - 5
             ));
         }
     } else {

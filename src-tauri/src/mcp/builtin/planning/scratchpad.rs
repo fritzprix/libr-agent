@@ -22,7 +22,7 @@ pub async fn add_scratchpad(
         .map(|s| s.trim());
     let tags = args.get("tags").map(|v| v.to_string()); // Store as JSON string
 
-    // Check for duplicate title if title is provided
+    // 1. Optional: Quick read-only duplicate check (optimization to avoid write attempt if obvious)
     if let Some(t) = title {
         let existing: Option<(i64,)> =
             sqlx::query_as("SELECT id FROM planning_scratchpad WHERE session_id = ? AND title = ?")
@@ -33,7 +33,6 @@ pub async fn add_scratchpad(
                 .map_err(|e| format!("Database error checking duplicate: {}", e))?;
 
         if existing.is_some() {
-            // Return guidance as the error message (text content)
             return Ok(MCPResult::error(&format!(
                 "Scratchpad item with title '{}' already exists. Please use the `updateScratchpad` tool to modify the existing note or choose a different title.",
                 t
@@ -43,32 +42,90 @@ pub async fn add_scratchpad(
 
     let now = chrono::Utc::now().timestamp_millis();
 
-    let result = sqlx::query(
-        r#"
+    // 2. Atomic INSERT with LIMIT check
+    // We use INSERT ... SELECT ... WHERE (...) < 10 to ensure atomicity without explicit transaction locks
+    let query = r#"
         INSERT INTO planning_scratchpad (session_id, content, title, source, tags, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        "#,
-    )
-    .bind(session_id)
-    .bind(note)
-    .bind(title)
-    .bind(source)
-    .bind(tags)
-    .bind(now)
-    .bind(now)
-    .execute(pool)
-    .await;
+        SELECT ?, ?, ?, ?, ?, ?, ?
+        WHERE (SELECT COUNT(*) FROM planning_scratchpad WHERE session_id = ?) < 10
+    "#;
+
+    let result = sqlx::query(query)
+        .bind(session_id)
+        .bind(note)
+        .bind(title)
+        .bind(source)
+        .bind(tags)
+        .bind(now)
+        .bind(now)
+        .bind(session_id) // For the subquery
+        .execute(pool)
+        .await;
 
     match result {
         Ok(r) => {
-            let response_id = cuid2::create_id();
-            Ok(MCPResult::success_with_data(
-                &format!("✓ Note added to scratchpad (ID: {})", r.last_insert_rowid()),
-                json!({
-                    "id": response_id,
-                    "scratchpadId": r.last_insert_rowid()
-                }),
-            ))
+            if r.rows_affected() > 0 {
+                // Success
+                let last_id = r.last_insert_rowid();
+
+                // Get new count for display
+                let count: Option<(i64,)> =
+                    sqlx::query_as("SELECT COUNT(*) FROM planning_scratchpad WHERE session_id = ?")
+                        .bind(session_id)
+                        .fetch_optional(pool)
+                        .await
+                        .unwrap_or(None);
+                let current_count = count.map(|c| c.0).unwrap_or(0);
+
+                let response_id = cuid2::create_id();
+                Ok(MCPResult::success_with_data(
+                    &format!(
+                        "✓ Note added to scratchpad (ID: {})\nScratchpad: {}/10",
+                        last_id, current_count
+                    ),
+                    json!({
+                        "id": response_id,
+                        "scratchpadId": last_id
+                    }),
+                ))
+            } else {
+                // Insertion failed (0 rows affected) - Determine why
+                // Check limit
+                let count: Option<(i64,)> =
+                    sqlx::query_as("SELECT COUNT(*) FROM planning_scratchpad WHERE session_id = ?")
+                        .bind(session_id)
+                        .fetch_optional(pool)
+                        .await
+                        .map_err(|e| format!("Database error checking count: {}", e))?;
+
+                let current_count = count.map(|c| c.0).unwrap_or(0);
+                if current_count >= 10 {
+                    return Ok(MCPResult::error(
+                        "Scratchpad limit reached (10 items). Please use `updateScratchpad` to modify existing notes or `clearScratchpad` to remove old ones before adding more.",
+                    ));
+                }
+
+                // Check duplicate (if we didn't catch it earlier, or race condition)
+                if let Some(t) = title {
+                    let existing: Option<(i64,)> = sqlx::query_as(
+                        "SELECT id FROM planning_scratchpad WHERE session_id = ? AND title = ?",
+                    )
+                    .bind(session_id)
+                    .bind(t)
+                    .fetch_optional(pool)
+                    .await
+                    .map_err(|e| format!("Database error checking duplicate: {}", e))?;
+
+                    if existing.is_some() {
+                        return Ok(MCPResult::error(&format!(
+                            "Scratchpad item with title '{}' already exists. Please use the `updateScratchpad` tool to modify the existing note or choose a different title.",
+                            t
+                        )));
+                    }
+                }
+
+                Ok(MCPResult::error("Failed to add scratchpad item: Unknown error (possibly concurrent modification). Please try again."))
+            }
         }
         Err(e) => Ok(MCPResult::error(&format!("Failed to add note: {}", e))),
     }

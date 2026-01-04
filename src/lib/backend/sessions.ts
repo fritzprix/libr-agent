@@ -22,6 +22,21 @@ export async function deleteContentStore(sessionId: string): Promise<void> {
 }
 
 /**
+ * Clear all agent sessions including data and workspaces (backend command).
+ */
+export async function clearAllSessions(): Promise<void> {
+  return safeInvoke<void>('agent_clear_all_sessions');
+}
+
+/**
+ * Factory reset the agent system (backend command).
+ * Deletes all sessions, assistants, playbooks, mcp servers, and logs.
+ */
+export async function factoryReset(): Promise<void> {
+  return safeInvoke<void>('agent_factory_reset');
+}
+
+/**
  * Switches to a specific session with optional async behavior.
  * @param sessionId The ID of the session to switch to
  * @param useAsync Whether to use async switching (default: true)

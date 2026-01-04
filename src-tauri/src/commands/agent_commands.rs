@@ -7,6 +7,9 @@ use std::collections::HashMap;
 use tauri::{command, State};
 
 use crate::agent::types::AgentMessageDto;
+use crate::commands::workspace_commands::get_app_logs_dir;
+use crate::state::get_sqlite_pool;
+use std::fs;
 
 /// Request to create a new agent session
 #[derive(Debug, Serialize, Deserialize)]
@@ -326,4 +329,89 @@ pub async fn agent_get_available_tools(
     session_id: String,
 ) -> Result<Vec<crate::mcp::types::MCPTool>, String> {
     manager.get_available_tools(&session_id).await
+}
+
+/// Clear all agent sessions (used for "Clear All Sessions" feature)
+#[command]
+pub async fn agent_clear_all_sessions(
+    manager: State<'_, AgentSessionManager>,
+) -> Result<AgentResponse, String> {
+    // 1. Get all sessions
+    let sessions = manager.get_all_sessions().await?;
+    let count = sessions.len();
+
+    // 2. Delete each session
+    for session in sessions {
+        if let Err(e) = manager.delete_session(session.id.clone()).await {
+            log::error!(
+                "Failed to delete session {} during clear all: {}",
+                session.id,
+                e
+            );
+        }
+    }
+
+    Ok(AgentResponse {
+        success: true,
+        message: format!("Cleared {} sessions", count),
+        data: None,
+    })
+}
+
+/// Factory reset the agent system (used for "Reset All Data & Settings" feature)
+/// Deletes all sessions, assistants, playbooks, mcp servers, and logs.
+#[command]
+pub async fn agent_factory_reset(
+    manager: State<'_, AgentSessionManager>,
+) -> Result<AgentResponse, String> {
+    // 1. Clear all sessions first
+    agent_clear_all_sessions(manager).await?;
+
+    let pool = get_sqlite_pool();
+
+    // 2. Delete all Assistants
+    sqlx::query("DELETE FROM assistants")
+        .execute(pool)
+        .await
+        .map_err(|e| format!("Failed to clear assistants: {}", e))?;
+
+    // 3. Delete all Playbooks
+    sqlx::query("DELETE FROM playbooks")
+        .execute(pool)
+        .await
+        .map_err(|e| format!("Failed to clear playbooks: {}", e))?;
+
+    // 4. Delete all MCP Servers
+    sqlx::query("DELETE FROM mcp_servers")
+        .execute(pool)
+        .await
+        .map_err(|e| format!("Failed to clear MCP servers: {}", e))?;
+
+    // 5. Clear application logs
+    // We do this last to preserve logging of the reset process as much as possible
+    if let Ok(log_dir_str) = get_app_logs_dir().await {
+        let log_dir = std::path::PathBuf::from(log_dir_str);
+        if log_dir.exists() {
+            if let Ok(entries) = fs::read_dir(&log_dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_file() {
+                        if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
+                            if filename.ends_with(".log") || filename.ends_with(".log.bak") {
+                                if let Err(e) = fs::remove_file(&path) {
+                                    log::warn!("Failed to delete log file {:?}: {}", path, e);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(AgentResponse {
+        success: true,
+        message: "Factory reset completed successfully".to_string(),
+        data: None,
+    })
 }
