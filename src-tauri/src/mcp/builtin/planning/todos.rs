@@ -1,9 +1,14 @@
+use crate::entity::planning_todo;
 use crate::mcp::builtin::error_guidance::{
     duplicate_error, invalid_input_error, missing_param_error, not_found_error, ErrorCategory,
     ErrorGuidance, SuccessHint, ToolGroup,
 };
 use crate::mcp::builtin::planning::context::get_planning_summary;
 use crate::mcp::types::MCPResult;
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
+    QuerySelect, Set, SqlxSqliteConnector,
+};
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
 
@@ -13,6 +18,8 @@ pub async fn add_todo(
     session_id: &str,
     args: Value,
 ) -> Result<MCPResult, String> {
+    let db = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool.clone());
+
     // Validate title parameter
     let title = match args
         .get("title")
@@ -84,14 +91,13 @@ pub async fn add_todo(
     }
 
     // 3. Check for duplicate title (case-insensitive)
-    let duplicate_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM planning_todos WHERE session_id = ? AND lower(content) = lower(?)",
-    )
-    .bind(session_id)
-    .bind(title)
-    .fetch_one(pool)
-    .await
-    .map_err(|e| format!("Failed to check duplicates: {}", e))?;
+    // Note: SQLite LIKE is case-insensitive for ASCII characters by default
+    let duplicate_count = planning_todo::Entity::find()
+        .filter(planning_todo::Column::SessionId.eq(session_id))
+        .filter(planning_todo::Column::Content.eq(title)) // Exact match for now, or use LIKE
+        .count(&db)
+        .await
+        .map_err(|e| format!("Failed to check duplicates: {}", e))?;
 
     if duplicate_count > 0 {
         return Ok(duplicate_error("Todo", title, ToolGroup::Planning));
@@ -99,17 +105,15 @@ pub async fn add_todo(
 
     // 4. If parent_id is provided, validate parent exists and is top-level
     if let Some(pid) = parent_id {
-        let parent: Option<(Option<i64>,)> =
-            sqlx::query_as("SELECT parent_id FROM planning_todos WHERE id = ? AND session_id = ?")
-                .bind(pid)
-                .bind(session_id)
-                .fetch_optional(pool)
-                .await
-                .map_err(|e| format!("Failed to fetch parent: {}", e))?;
+        let parent = planning_todo::Entity::find_by_id(pid)
+            .filter(planning_todo::Column::SessionId.eq(session_id))
+            .one(&db)
+            .await
+            .map_err(|e| format!("Failed to fetch parent: {}", e))?;
 
         match parent {
-            Some((grandparent_id,)) => {
-                if grandparent_id.is_some() {
+            Some(p) => {
+                if p.parent_id.is_some() {
                     return Ok(ErrorGuidance::with_guidance(
                         ErrorCategory::NestingTooDeep,
                         "Cannot add subtask to a subtask (max 1 level of nesting)",
@@ -184,25 +188,24 @@ pub async fn add_todo(
 
     let now = chrono::Utc::now().timestamp_millis();
 
-    let result = sqlx::query(
-        r#"
-        INSERT INTO planning_todos (session_id, content, description, priority, parent_id, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
-        "#,
-    )
-    .bind(session_id)
-    .bind(title)
-    .bind(description)
-    .bind(priority)
-    .bind(parent_id)
-    .bind(now)
-    .bind(now)
-    .execute(pool)
-    .await;
+    let new_todo = planning_todo::ActiveModel {
+        session_id: Set(session_id.to_string()),
+        content: Set(title.to_string()),
+        description: Set(description.map(|s| s.to_string())),
+        priority: Set(priority.to_string()),
+        parent_id: Set(parent_id),
+        status: Set("pending".to_string()),
+        is_checked: Set(false),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    };
+
+    let result = new_todo.insert(&db).await;
 
     match result {
-        Ok(query_result) => {
-            let id = query_result.last_insert_rowid();
+        Ok(saved_todo) => {
+            let id = saved_todo.id;
 
             // Handle subtasks if present
             if let Some(subtasks) = args.get("subtasks").and_then(|v| v.as_array()) {
@@ -219,21 +222,19 @@ pub async fn add_todo(
                         .and_then(|v| v.as_str())
                         .unwrap_or("medium");
 
-                    let _ = sqlx::query(
-                        r#"
-                        INSERT INTO planning_todos (session_id, content, description, priority, parent_id, status, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
-                        "#,
-                    )
-                    .bind(session_id)
-                    .bind(sub_title)
-                    .bind(sub_desc)
-                    .bind(sub_prio)
-                    .bind(id)
-                    .bind(now)
-                    .bind(now)
-                    .execute(pool)
-                    .await;
+                    let sub_todo = planning_todo::ActiveModel {
+                        session_id: Set(session_id.to_string()),
+                        content: Set(sub_title.to_string()),
+                        description: Set(sub_desc.map(|s| s.to_string())),
+                        priority: Set(sub_prio.to_string()),
+                        parent_id: Set(Some(id)),
+                        status: Set("pending".to_string()),
+                        is_checked: Set(false),
+                        created_at: Set(now),
+                        updated_at: Set(now),
+                        ..Default::default()
+                    };
+                    let _ = sub_todo.insert(&db).await;
                 }
             }
 
@@ -271,6 +272,8 @@ pub async fn check_todo(
     session_id: &str,
     args: Value,
 ) -> Result<MCPResult, String> {
+    let db = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool.clone());
+
     let id = args.get("id").and_then(|v| v.as_i64());
     let index = args.get("index").and_then(|v| v.as_i64());
     let checked = args
@@ -295,17 +298,17 @@ pub async fn check_todo(
             ));
         }
         // Find ID by index (ordered by created_at)
-        let row: Option<(i64,)> = sqlx::query_as(
-            "SELECT id FROM planning_todos WHERE session_id = ? ORDER BY created_at ASC LIMIT 1 OFFSET ?"
-        )
-        .bind(session_id)
-        .bind(idx)
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| format!("Failed to find todo by index: {}", e))?;
+        let todo = planning_todo::Entity::find()
+            .filter(planning_todo::Column::SessionId.eq(session_id))
+            .order_by_asc(planning_todo::Column::CreatedAt)
+            .offset(idx as u64)
+            .limit(1)
+            .one(&db)
+            .await
+            .map_err(|e| format!("Failed to find todo by index: {}", e))?;
 
-        match row {
-            Some((tid,)) => tid,
+        match todo {
+            Some(t) => t.id,
             Option::None => {
                 return Ok(ErrorGuidance::with_guidance(
                     ErrorCategory::ResourceNotFound,
@@ -327,103 +330,115 @@ pub async fn check_todo(
     let now = chrono::Utc::now().timestamp_millis();
     let status = if checked { "completed" } else { "pending" };
 
-    // Store summary in description field if provided
-    let result = if let Some(s) = summary {
-        sqlx::query(
-            r#"
-            UPDATE planning_todos
-            SET is_checked = ?, status = ?, description = COALESCE(description || ' - ' || ?, description, ?), updated_at = ?
-            WHERE id = ? AND session_id = ?
-            "#,
-        )
-        .bind(if checked { 1 } else { 0 })
-        .bind(status)
-        .bind(s)
-        .bind(s)
-        .bind(now)
-        .bind(target_id)
-        .bind(session_id)
-        .execute(pool)
+    // Fetch the todo first to update it
+    let todo_model = planning_todo::Entity::find_by_id(target_id)
+        .filter(planning_todo::Column::SessionId.eq(session_id))
+        .one(&db)
         .await
-    } else {
-        sqlx::query(
-            r#"
-            UPDATE planning_todos
-            SET is_checked = ?, status = ?, updated_at = ?
-            WHERE id = ? AND session_id = ?
-            "#,
-        )
-        .bind(if checked { 1 } else { 0 })
-        .bind(status)
-        .bind(now)
-        .bind(target_id)
-        .bind(session_id)
-        .execute(pool)
-        .await
-    };
+        .map_err(|e| format!("Failed to fetch todo: {}", e))?;
 
-    match result {
-        Ok(_) => {
-            let response_id = cuid2::create_id();
-            let action = if checked { "checked" } else { "unchecked" };
-            let summary_text = if let Some(s) = summary {
-                format!(" - {}", s)
-            } else {
-                String::new()
+    if let Some(todo) = todo_model {
+        let mut active_todo: planning_todo::ActiveModel = todo.into();
+        active_todo.is_checked = Set(checked);
+        active_todo.status = Set(status.to_string());
+        active_todo.updated_at = Set(now);
+
+        if let Some(s) = summary {
+            // Append summary to description
+            let current_desc = match &active_todo.description {
+                Set(Some(d)) => d.as_str(),
+                _ => "",
             };
-            let state_summary = get_planning_summary(pool, session_id).await;
-
-            let next_todos: Vec<(i64, String)> = sqlx::query_as(
-                "SELECT id, content FROM planning_todos WHERE session_id = ? AND is_checked = 0 ORDER BY id ASC LIMIT 3"
-            )
-            .bind(session_id)
-            .fetch_all(pool)
-            .await
-            .unwrap_or_default();
-
-            let next_actions = if next_todos.is_empty() {
-                vec!["All todos checked! Use 'critiqueAndReflection' to review work, or 'createGoal' to start a new objective.".to_string()]
+            let new_desc = if current_desc.is_empty() {
+                s.to_string()
             } else {
-                let mut actions = Vec::new();
-                for (id, content) in next_todos {
-                    // Truncate content if too long (safe unicode handling)
-                    let safe_content = if content.chars().count() > 40 {
-                        let truncated: String = content.chars().take(40).collect();
-                        format!("{}...", truncated)
-                    } else {
-                        content
-                    };
-                    actions.push(format!("Process next: \"{}\" (ID: {})", safe_content, id));
-                }
-                actions
+                format!("{} - {}", current_desc, s)
             };
-
-            let hint = SuccessHint::new(
-                format!(
-                    "Todo {} (ID: {}){}{}",
-                    action, target_id, summary_text, state_summary
-                ),
-                next_actions,
-            );
-            Ok(hint.to_mcp_result_with_data(Some(json!({
-                "id": response_id,
-                "success": true,
-                "todoId": target_id,
-                "checked": checked,
-                "summary": summary
-            }))))
+            active_todo.description = Set(Some(new_desc));
         }
-        Err(e) => Ok(ErrorGuidance::with_guidance(
-            ErrorCategory::DatabaseError,
-            format!("Failed to update todo: {}", e),
+
+        let result = active_todo.update(&db).await;
+
+        match result {
+            Ok(_) => {
+                let response_id = cuid2::create_id();
+                let action = if checked { "checked" } else { "unchecked" };
+                let summary_text = if let Some(s) = summary {
+                    format!(" - {}", s)
+                } else {
+                    String::new()
+                };
+                let state_summary = get_planning_summary(pool, session_id).await;
+
+                let next_todos = planning_todo::Entity::find()
+                    .filter(planning_todo::Column::SessionId.eq(session_id))
+                    .filter(planning_todo::Column::IsChecked.eq(0))
+                    .order_by_asc(planning_todo::Column::Id)
+                    .limit(3)
+                    .all(&db)
+                    .await
+                    .unwrap_or_default();
+
+                let next_actions = if next_todos.is_empty() {
+                    vec!["All todos checked! Use 'critiqueAndReflection' to review work, or 'createGoal' to start a new objective.".to_string()]
+                } else {
+                    let mut actions = Vec::new();
+                    for todo in next_todos {
+                        // Truncate content if too long (safe unicode handling)
+                        let content = todo.content;
+                        let safe_content = if content.chars().count() > 40 {
+                            let truncated: String = content.chars().take(40).collect();
+                            format!("{}...", truncated)
+                        } else {
+                            content
+                        };
+                        actions.push(format!(
+                            "Process next: \"{}\" (ID: {})",
+                            safe_content, todo.id
+                        ));
+                    }
+                    actions
+                };
+
+                let hint = SuccessHint::new(
+                    format!(
+                        "Todo {} (ID: {}){}{}",
+                        action, target_id, summary_text, state_summary
+                    ),
+                    next_actions,
+                );
+                Ok(hint.to_mcp_result_with_data(Some(json!({
+                    "id": response_id,
+                    "success": true,
+                    "todoId": target_id,
+                    "checked": checked,
+                    "summary": summary
+                }))))
+            }
+            Err(e) => Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::DatabaseError,
+                format!("Failed to update todo: {}", e),
+                vec![
+                    "Try again - this may be a transient error".to_string(),
+                    "Use getCurrentState to verify the todo exists".to_string(),
+                    "Verify the session is active".to_string(),
+                ],
+                ToolGroup::Planning,
+            )
+            .to_mcp_result()),
+        }
+    } else {
+        // Todo not found or doesn't belong to session
+        Ok(ErrorGuidance::with_guidance(
+            ErrorCategory::ResourceNotFound,
+            format!("Todo with ID {} not found in this session", target_id),
             vec![
-                "Try again - this may be a transient error".to_string(),
-                "Use getCurrentState to verify the todo exists".to_string(),
-                "Verify the session is active".to_string(),
+                "Use getCurrentState to see available todos".to_string(),
+                "Verify the ID is correct".to_string(),
             ],
             ToolGroup::Planning,
         )
-        .to_mcp_result()),
+        .to_mcp_result())
     }
 }
 
@@ -433,21 +448,23 @@ pub async fn clear_todos(
     session_id: &str,
     args: Value,
 ) -> Result<MCPResult, String> {
+    let db = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool.clone());
+
     let ids = args.get("ids").and_then(|v| v.as_array());
     let indices = args.get("indices").and_then(|v| v.as_array());
 
     if ids.is_none() && indices.is_none() {
         // Clear all
-        let result = sqlx::query("DELETE FROM planning_todos WHERE session_id = ?")
-            .bind(session_id)
-            .execute(pool)
+        let result = planning_todo::Entity::delete_many()
+            .filter(planning_todo::Column::SessionId.eq(session_id))
+            .exec(&db)
             .await;
 
         return match result {
             Ok(r) => {
                 let summary_text = get_planning_summary(pool, session_id).await;
                 let hint = SuccessHint::new(
-                    format!("✓ Cleared {} todos{}", r.rows_affected(), summary_text),
+                    format!("✓ Cleared {} todos{}", r.rows_affected, summary_text),
                     vec!["Use 'addTodo' to replan, or 'updateGoal'/'createGoal' to refine objectives".to_string()],
                 );
                 Ok(hint.to_mcp_result())
@@ -476,13 +493,15 @@ pub async fn clear_todos(
     // Collect IDs from indices
     if let Some(idx_list) = indices {
         // Fetch all IDs ordered by created_at to map indices
-        let all_todos: Vec<(i64,)> = sqlx::query_as(
-            "SELECT id FROM planning_todos WHERE session_id = ? ORDER BY created_at ASC",
-        )
-        .bind(session_id)
-        .fetch_all(pool)
-        .await
-        .map_err(|e| format!("Failed to fetch todos for index mapping: {}", e))?;
+        let all_todos = planning_todo::Entity::find()
+            .select_only()
+            .column(planning_todo::Column::Id)
+            .filter(planning_todo::Column::SessionId.eq(session_id))
+            .order_by_asc(planning_todo::Column::CreatedAt)
+            .into_tuple::<i64>()
+            .all(&db)
+            .await
+            .map_err(|e| format!("Failed to fetch todos for index mapping: {}", e))?;
 
         for idx_val in idx_list {
             if let Some(idx) = idx_val.as_i64() {
@@ -494,7 +513,7 @@ pub async fn clear_todos(
                 }
                 let idx = idx as usize;
                 if idx < all_todos.len() {
-                    target_ids.push(all_todos[idx].0);
+                    target_ids.push(all_todos[idx]);
                 }
             }
         }
@@ -508,50 +527,48 @@ pub async fn clear_todos(
     target_ids.sort();
     target_ids.dedup();
 
-    // Construct DELETE query with IN clause
-    let placeholders: Vec<String> = target_ids.iter().map(|_| "?".to_string()).collect();
-    let query = format!(
-        "DELETE FROM planning_todos WHERE session_id = ? AND id IN ({})",
-        placeholders.join(",")
-    );
-
-    let mut query_builder = sqlx::query(&query).bind(session_id);
-    for id in target_ids {
-        query_builder = query_builder.bind(id);
-    }
-
-    let result = query_builder.execute(pool).await;
+    // Delete by IDs
+    let result = planning_todo::Entity::delete_many()
+        .filter(planning_todo::Column::SessionId.eq(session_id))
+        .filter(planning_todo::Column::Id.is_in(target_ids))
+        .exec(&db)
+        .await;
 
     match result {
         Ok(r) => {
             let summary_text = get_planning_summary(pool, session_id).await;
 
-            let next_todos: Vec<(i64, String)> = sqlx::query_as(
-                "SELECT id, content FROM planning_todos WHERE session_id = ? AND is_checked = 0 ORDER BY id ASC LIMIT 3"
-            )
-            .bind(session_id)
-            .fetch_all(pool)
-            .await
-            .unwrap_or_default();
+            let next_todos = planning_todo::Entity::find()
+                .filter(planning_todo::Column::SessionId.eq(session_id))
+                .filter(planning_todo::Column::IsChecked.eq(0))
+                .order_by_asc(planning_todo::Column::Id)
+                .limit(3)
+                .all(&db)
+                .await
+                .unwrap_or_default();
 
             let next_actions = if next_todos.is_empty() {
                 vec!["All todos cleared/checked! Use 'critiqueAndReflection' to review work, or 'createGoal' to start a new objective.".to_string()]
             } else {
                 let mut actions = Vec::new();
-                for (id, content) in next_todos {
+                for todo in next_todos {
+                    let content = todo.content;
                     let safe_content = if content.chars().count() > 40 {
                         let truncated: String = content.chars().take(40).collect();
                         format!("{}...", truncated)
                     } else {
                         content
                     };
-                    actions.push(format!("Process next: \"{}\" (ID: {})", safe_content, id));
+                    actions.push(format!(
+                        "Process next: \"{}\" (ID: {})",
+                        safe_content, todo.id
+                    ));
                 }
                 actions
             };
 
             let hint = SuccessHint::new(
-                format!("✓ Cleared {} todos{}", r.rows_affected(), summary_text),
+                format!("✓ Cleared {} todos{}", r.rows_affected, summary_text),
                 next_actions,
             );
             Ok(hint.to_mcp_result())

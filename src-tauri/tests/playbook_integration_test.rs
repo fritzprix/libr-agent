@@ -35,6 +35,26 @@ async fn test_playbook_ui_rendering_integration() {
     .await
     .expect("Failed to create sessions table");
 
+    // Create playbooks table (from migration schema)
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS playbooks (
+            id INTEGER NOT NULL,
+            session_id TEXT NOT NULL,
+            goal TEXT NOT NULL,
+            initial_command TEXT,
+            workflow TEXT NOT NULL,
+            success_criteria TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY (id, session_id)
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await
+    .expect("Failed to create playbooks table");
+
     sqlx::query("INSERT INTO sessions (id, name, status, created_at, updated_at) VALUES ('integration-test', 'Integration Test', 'idle', 0, 0)")
         .execute(&pool)
         .await
@@ -188,6 +208,26 @@ async fn test_playbook_ui_interaction_flow() {
     .execute(&pool)
     .await
     .expect("Failed to create sessions table");
+
+    // Create playbooks table (from migration schema)
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS playbooks (
+            id INTEGER NOT NULL,
+            session_id TEXT NOT NULL,
+            goal TEXT NOT NULL,
+            initial_command TEXT,
+            workflow TEXT NOT NULL,
+            success_criteria TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY (id, session_id)
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await
+    .expect("Failed to create playbooks table");
 
     sqlx::query("INSERT INTO sessions (id, name, status, created_at, updated_at) VALUES ('flow-test', 'Flow Test', 'idle', 0, 0)")
         .execute(&pool)

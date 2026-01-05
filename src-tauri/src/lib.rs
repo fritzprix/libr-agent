@@ -5,6 +5,7 @@ use tauri_plugin_log::{Target, TargetKind};
 mod agent;
 mod commands;
 mod config;
+pub mod entity; // SeaORM entity definitions
 pub mod mcp; // Make public for integration tests
 pub mod repositories; // Make public for integration tests
 mod search;
@@ -12,6 +13,9 @@ mod services;
 mod session;
 mod session_isolation;
 mod state;
+
+// Re-export migration for use in MCP modules
+pub use migration;
 
 use commands::agent_commands::{
     agent_call_builtin_tool, agent_clear_all_sessions, agent_create_session, agent_delete_session,
@@ -91,7 +95,8 @@ pub fn run_with_sqlite_sync(db_url: String) {
             .expect("Invalid database URL")
             .create_if_missing(true)
             .journal_mode(SqliteJournalMode::Wal)
-            .busy_timeout(Duration::from_secs(5));
+            .busy_timeout(Duration::from_secs(5))
+            .foreign_keys(true); // Enable foreign key constraints for CASCADE operations
 
         let pool = match SqlitePoolOptions::new().connect_with(options.clone()).await {
             Ok(p) => p,

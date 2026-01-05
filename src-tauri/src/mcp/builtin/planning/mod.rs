@@ -9,6 +9,7 @@ use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{MCPResult, ServiceContext, ServiceContextOptions};
 use crate::mcp::MCPTool;
 use async_trait::async_trait;
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, SqlxSqliteConnector, TransactionTrait};
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
 use std::sync::Arc;
@@ -160,7 +161,7 @@ impl BuiltinMCPServer for PlanningServer {
             MCPTool {
                 name: "addScratchpad".to_string(),
                 title: Some("Add Scratchpad".to_string()),
-                description: "Add a note to your Scratchpad (Working Memory). Content here is ALWAYS visible in your context. Use this for keeping track of important findings, file paths, IDs, or intermediate analysis results that you need to reference frequently during the task.\n\nNOTE: The scratchpad has a strict limit of 10 items. If you reach this limit, you must use `updateScratchpad` to modify existing items or `clearScratchpad` to remove old ones before adding more.\n\nOptional source parameter: Provide the source of information for citation tracking (e.g., URLs, file paths, or tool result IDs like \"https://example.com/article\" or \"file://path/to/doc.txt\").".to_string(),
+                description: "Add a note to your Scratchpad (Working Memory). Content here is ALWAYS visible in your context. Use this for keeping track of important findings, file paths, IDs, or intermediate analysis results that you need to reference frequently during the task.\n\nNOTE: The scratchpad has a strict limit of 10 items. If you reach this limit, you must use  to modify existing items or  to remove old ones before adding more.\n\nOptional source parameter: Provide the source of information for citation tracking (e.g., URLs, file paths, or tool result IDs like \"https://example.com/article\" or \"file://path/to/doc.txt\").".to_string(),
                 input_schema: serde_json::from_value(json!({
                     "type": "object",
                     "properties": {
@@ -314,26 +315,35 @@ impl BuiltinMCPServer for PlanningServer {
                 todos::clear_todos(&self.db_pool, &self.session_id, args).await
             }
             "clearSession" | "builtin_planning__clearSession" => {
-                // Clear everything - logic can be here or in db.rs/context specific
-                // For now, let's keep it here or call submodules.
-                // Reimplementing logic from original:
-                let mut tx = self.db_pool.begin().await.map_err(|e| e.to_string())?;
-                sqlx::query("DELETE FROM planning_goals WHERE session_id = ?")
-                    .bind(&self.session_id)
-                    .execute(&mut *tx)
+                let db = SqlxSqliteConnector::from_sqlx_sqlite_pool((*self.db_pool).clone());
+                let txn = db
+                    .begin()
+                    .await
+                    .map_err(|e: sea_orm::DbErr| e.to_string())?;
+
+                crate::entity::planning_goal::Entity::delete_many()
+                    .filter(crate::entity::planning_goal::Column::SessionId.eq(&self.session_id))
+                    .exec(&txn)
                     .await
                     .map_err(|e| e.to_string())?;
-                sqlx::query("DELETE FROM planning_todos WHERE session_id = ?")
-                    .bind(&self.session_id)
-                    .execute(&mut *tx)
+
+                crate::entity::planning_todo::Entity::delete_many()
+                    .filter(crate::entity::planning_todo::Column::SessionId.eq(&self.session_id))
+                    .exec(&txn)
                     .await
                     .map_err(|e| e.to_string())?;
-                sqlx::query("DELETE FROM planning_scratchpad WHERE session_id = ?")
-                    .bind(&self.session_id)
-                    .execute(&mut *tx)
+
+                crate::entity::planning_scratchpad::Entity::delete_many()
+                    .filter(
+                        crate::entity::planning_scratchpad::Column::SessionId.eq(&self.session_id),
+                    )
+                    .exec(&txn)
                     .await
                     .map_err(|e| e.to_string())?;
-                tx.commit().await.map_err(|e| e.to_string())?;
+
+                txn.commit()
+                    .await
+                    .map_err(|e: sea_orm::DbErr| e.to_string())?;
                 Ok(MCPResult::success("✓ Session planning state cleared"))
             }
             "addScratchpad" | "builtin_planning__addScratchpad" => {

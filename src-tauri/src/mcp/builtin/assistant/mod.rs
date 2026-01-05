@@ -1,3 +1,4 @@
+use crate::entity::{assistant, assistant::Entity as AssistantEntity};
 use crate::mcp::builtin::error_guidance::{
     duplicate_error, missing_param_error, not_found_error, operation_failed_error, SuccessHint,
     ToolGroup,
@@ -7,6 +8,7 @@ use crate::mcp::types::{MCPResult, ServiceContext, ServiceContextOptions};
 use crate::mcp::utils::schema_builder::*;
 use crate::mcp::MCPTool;
 use async_trait::async_trait;
+use sea_orm::*;
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
 use std::collections::HashMap;
@@ -19,6 +21,7 @@ use std::sync::Arc;
 #[derive(Debug)]
 pub struct AssistantServer {
     db_pool: Arc<SqlitePool>,
+    db_conn: DatabaseConnection,
 }
 
 impl AssistantServer {
@@ -27,47 +30,19 @@ impl AssistantServer {
     /// Note: Unlike other servers, this is NOT session-bound.
     /// Assistants are global and can be reused across multiple sessions.
     pub async fn new(db_pool: Arc<SqlitePool>) -> Result<Self, String> {
-        let server = Self { db_pool };
-
-        // Initialize database tables
-        server.init_tables().await?;
-
+        let db_conn = SqlxSqliteConnector::from_sqlx_sqlite_pool((*db_pool).clone());
+        let server = Self { db_pool, db_conn };
         Ok(server)
     }
 
-    /// Initialize database tables and indexes
-    async fn init_tables(&self) -> Result<(), String> {
-        // Create assistants table (global scope - no session_id FK)
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS assistants (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                config TEXT NOT NULL,
-                created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL
-            )
-            "#,
-        )
-        .execute(self.db_pool.as_ref())
-        .await
-        .map_err(|e| format!("Failed to create assistants table: {}", e))?;
-
-        // Create indexes
-        sqlx::query(
-            "CREATE INDEX IF NOT EXISTS idx_assistants_updated ON assistants(updated_at DESC)",
-        )
-        .execute(self.db_pool.as_ref())
-        .await
-        .map_err(|e| format!("Failed to create index: {}", e))?;
-
-        log::debug!("Assistant server tables initialized");
-
-        Ok(())
+    fn get_db(&self) -> &DatabaseConnection {
+        &self.db_conn
     }
 
     /// Create a new assistant
     async fn create_assistant(&self, args: Value) -> Result<MCPResult, String> {
+        let db = self.get_db();
+
         // Legacy support: generate ID if not provided
         let id = args
             .get("id")
@@ -125,19 +100,15 @@ impl AssistantServer {
 
         let now = chrono::Utc::now().timestamp_millis();
 
-        let result = sqlx::query(
-            r#"
-            INSERT INTO assistants (id, name, config, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?)
-            "#,
-        )
-        .bind(&id)
-        .bind(name)
-        .bind(&config_str)
-        .bind(now)
-        .bind(now)
-        .execute(self.db_pool.as_ref())
-        .await;
+        let model = assistant::ActiveModel {
+            id: Set(id.clone()),
+            name: Set(name.to_string()),
+            config: Set(config_str),
+            created_at: Set(now),
+            updated_at: Set(now),
+        };
+
+        let result = AssistantEntity::insert(model).exec(db).await;
 
         match result {
             Ok(_) => {
@@ -242,38 +213,41 @@ impl AssistantServer {
             serde_json::to_string(&config).map_err(|e| format!("Invalid config JSON: {}", e))?;
 
         let now = chrono::Utc::now().timestamp_millis();
+        let db = self.get_db();
 
-        let result = sqlx::query(
-            r#"
-            UPDATE assistants
-            SET name = ?, config = ?, updated_at = ?
-            WHERE id = ?
-            "#,
-        )
-        .bind(&name)
-        .bind(&config_str)
-        .bind(now)
-        .bind(id)
-        .execute(self.db_pool.as_ref())
-        .await;
+        // Check if exists first
+        let existing = AssistantEntity::find_by_id(id.to_string())
+            .one(db)
+            .await
+            .map_err(|e| format!("Database query failed: {}", e))?;
+
+        if existing.is_none() {
+            return Ok(not_found_error("Assistant", id, ToolGroup::Assistant));
+        }
+
+        let model = assistant::ActiveModel {
+            id: Set(id.to_string()),
+            name: Set(name.to_string()),
+            config: Set(config_str),
+            created_at: NotSet,
+            updated_at: Set(now),
+        };
+
+        let result = AssistantEntity::update(model).exec(db).await;
 
         match result {
-            Ok(query_result) => {
-                if query_result.rows_affected() > 0 {
-                    let hint = SuccessHint::new(
-                        format!("Assistant '{}' updated successfully", id),
-                        vec!["Use builtin_assistant__getAssistant to verify changes".to_string()],
-                    );
+            Ok(_) => {
+                let hint = SuccessHint::new(
+                    format!("Assistant '{}' updated successfully", id),
+                    vec!["Use builtin_assistant__getAssistant to verify changes".to_string()],
+                );
 
-                    Ok(hint.to_mcp_result_with_data(Some(json!({
-                        "success": true,
-                        "id": id,
-                        "name": name,
-                        "config": config
-                    }))))
-                } else {
-                    Ok(not_found_error("Assistant", id, ToolGroup::Assistant))
-                }
+                Ok(hint.to_mcp_result_with_data(Some(json!({
+                    "success": true,
+                    "id": id,
+                    "name": name,
+                    "config": config
+                }))))
             }
             Err(e) => Ok(operation_failed_error(
                 "Update assistant",
@@ -291,24 +265,18 @@ impl AssistantServer {
 
     /// Delete an assistant
     async fn delete_assistant(&self, args: Value) -> Result<MCPResult, String> {
+        let db = self.get_db();
+
         let id = match args.get("id").and_then(|v| v.as_str()) {
             Some(v) => v,
             None => return Ok(missing_param_error("id", ToolGroup::Assistant)),
         };
 
-        let result = sqlx::query(
-            r#"
-            DELETE FROM assistants
-            WHERE id = ?
-            "#,
-        )
-        .bind(id)
-        .execute(self.db_pool.as_ref())
-        .await;
+        let result = AssistantEntity::delete_by_id(id.to_string()).exec(db).await;
 
         match result {
-            Ok(query_result) => {
-                if query_result.rows_affected() > 0 {
+            Ok(delete_result) => {
+                if delete_result.rows_affected > 0 {
                     let hint = SuccessHint::new(
                         format!("Assistant '{}' deleted successfully", id),
                         vec![
@@ -340,6 +308,8 @@ impl AssistantServer {
 
     /// List all assistants with pagination support
     async fn list_assistants(&self, args: Value) -> Result<MCPResult, String> {
+        let db = self.get_db();
+
         // Legacy support: page/pageSize -> limit/offset
         let page = args
             .get("page")
@@ -364,40 +334,31 @@ impl AssistantServer {
             .unwrap_or((page - 1) * page_size);
 
         // Get total count for pagination metadata
-        let total_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM assistants")
-            .fetch_one(self.db_pool.as_ref())
-            .await
-            .unwrap_or(0);
+        let total_count = AssistantEntity::find().count(db).await.unwrap_or(0) as i64;
 
         // Fetch paginated results
-        let result = sqlx::query_as::<_, (String, String, String, i64, i64)>(
-            r#"
-            SELECT id, name, config, created_at, updated_at
-            FROM assistants
-            ORDER BY updated_at DESC
-            LIMIT ? OFFSET ?
-            "#,
-        )
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(self.db_pool.as_ref())
-        .await;
+        let result = AssistantEntity::find()
+            .order_by_desc(assistant::Column::UpdatedAt)
+            .limit(limit as u64)
+            .offset(offset as u64)
+            .all(db)
+            .await;
 
         match result {
-            Ok(rows) => {
-                let assistants: Vec<Value> = rows
+            Ok(models) => {
+                let assistants: Vec<Value> = models
                     .into_iter()
-                    .map(|(id, name, config_str, created_at, updated_at)| {
+                    .map(|model| {
                         // Parse config JSON
                         let config =
-                            serde_json::from_str::<Value>(&config_str).unwrap_or(json!({}));
+                            serde_json::from_str::<Value>(&model.config).unwrap_or(json!({}));
 
                         json!({
-                            "id": id,
-                            "name": name,
+                            "id": model.id,
+                            "name": model.name,
                             "config": config,
-                            "created_at": created_at,
-                            "updated_at": updated_at
+                            "created_at": model.created_at,
+                            "updated_at": model.updated_at
                         })
                     })
                     .collect();

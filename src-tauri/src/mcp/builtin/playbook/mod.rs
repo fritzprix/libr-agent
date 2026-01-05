@@ -3,6 +3,7 @@ use crate::mcp::schema::JSONSchema;
 use crate::mcp::types::{MCPResult, MCPTool};
 use crate::mcp::utils::schema_builder::*;
 use async_trait::async_trait;
+use sea_orm::*;
 use serde_json::Value; // JSON interaction still needed for tool args
 use sqlx::SqlitePool;
 use std::sync::Arc;
@@ -19,52 +20,25 @@ mod types;
 pub struct PlaybookServer {
     session_id: String,
     db_pool: Arc<SqlitePool>,
+    db_conn: DatabaseConnection,
 }
 
 impl PlaybookServer {
     pub async fn new(session_id: String, db_pool: Arc<SqlitePool>) -> Result<Self, String> {
+        // Dereference Arc to get SqlitePool
+        let db_conn = SqlxSqliteConnector::from_sqlx_sqlite_pool((*db_pool).clone());
         let server = Self {
             session_id,
             db_pool,
+            db_conn,
         };
-        server.init_tables().await?;
         Ok(server)
     }
 
-    async fn init_tables(&self) -> Result<(), String> {
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS playbooks (
-                id TEXT NOT NULL,
-                session_id TEXT NOT NULL,
-                goal TEXT NOT NULL,
-                initial_command TEXT,
-                workflow JSON NOT NULL,
-                success_criteria JSON,
-                created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL,
-                PRIMARY KEY (id, session_id),
-                FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
-            )
-            "#,
-        )
-        .execute(self.db_pool.as_ref())
-        .await
-        .map_err(|e| format!("Failed to create playbooks table: {}", e))?;
-
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_playbooks_session ON playbooks(session_id)")
-            .execute(self.db_pool.as_ref())
-            .await
-            .map_err(|e| format!("Failed to create index: {}", e))?;
-
-        sqlx::query(
-            "CREATE INDEX IF NOT EXISTS idx_playbooks_updated ON playbooks(updated_at DESC)",
-        )
-        .execute(self.db_pool.as_ref())
-        .await
-        .map_err(|e| format!("Failed to create index: {}", e))?;
-
-        Ok(())
+    /// Get database connection (helper method for future operations)
+    #[allow(dead_code)]
+    fn get_db(&self) -> &DatabaseConnection {
+        &self.db_conn
     }
 }
 
@@ -404,25 +378,25 @@ impl BuiltinMCPServer for PlaybookServer {
     async fn call_tool(&self, tool_name: &str, args: Value) -> Result<MCPResult, String> {
         match tool_name {
             "createPlaybook" | "builtin_playbook__createPlaybook" => {
-                operations::create_playbook(&self.db_pool, &self.session_id, args).await
+                operations::create_playbook(&self.db_conn, &self.session_id, args).await
             }
             "selectPlaybook" | "builtin_playbook__selectPlaybook" => {
-                operations::select_playbook(&self.db_pool, &self.session_id, args).await
+                operations::select_playbook(&self.db_conn, &self.session_id, args).await
             }
             "listPlaybooks" | "builtin_playbook__listPlaybooks" => {
-                operations::list_playbooks(&self.db_pool, &self.session_id, args, false).await
+                operations::list_playbooks(&self.db_conn, &self.session_id, args, false).await
             }
             "showPlaybooks" | "builtin_playbook__showPlaybooks" => {
-                operations::list_playbooks(&self.db_pool, &self.session_id, args, true).await
+                operations::list_playbooks(&self.db_conn, &self.session_id, args, true).await
             }
             "getPlaybookPage" | "builtin_playbook__getPlaybookPage" => {
-                operations::list_playbooks(&self.db_pool, &self.session_id, args, true).await
+                operations::list_playbooks(&self.db_conn, &self.session_id, args, true).await
             }
             "deletePlaybook" | "builtin_playbook__deletePlaybook" => {
                 operations::delete_playbook(&self.db_pool, &self.session_id, args).await
             }
             "getPlaybook" | "builtin_playbook__getPlaybook" => {
-                operations::get_playbook(&self.db_pool, &self.session_id, args).await
+                operations::get_playbook(&self.db_conn, &self.session_id, args).await
             }
             "updatePlaybook" | "builtin_playbook__updatePlaybook" => {
                 operations::update_playbook(&self.db_pool, &self.session_id, args).await

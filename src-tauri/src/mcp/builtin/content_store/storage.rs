@@ -1,3 +1,12 @@
+// SeaORM imports (unused in current implementation, kept for future migration)
+#[allow(unused_imports)]
+use crate::entity::{chunk, content, store};
+#[allow(unused_imports)]
+use crate::entity::{
+    chunk::Entity as ChunkEntity, content::Entity as ContentEntity, store::Entity as StoreEntity,
+};
+#[allow(unused_imports)]
+use sea_orm::*;
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::SqlitePool;
 use std::collections::HashMap;
@@ -47,6 +56,9 @@ pub struct ContentStoreStorage {
     chunks: HashMap<String, Vec<ContentChunk>>,
     // SQLite connection (when using SQLite backend)
     sqlite_pool: Option<SqlitePool>,
+    /// Database connection (future-proofing for SeaORM migration)
+    #[allow(dead_code)]
+    db_conn: Option<DatabaseConnection>,
 }
 
 impl Default for ContentStoreStorage {
@@ -63,6 +75,7 @@ impl ContentStoreStorage {
             contents: HashMap::new(),
             chunks: HashMap::new(),
             sqlite_pool: Option::None,
+            db_conn: Option::None,
         }
     }
 
@@ -92,18 +105,28 @@ impl ContentStoreStorage {
             .await
             .map_err(|e| format!("Failed to connect to SQLite: {e}"))?;
 
-        // Create tables if they don't exist
-        Self::create_tables(&pool).await?;
+        let db_conn = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool.clone());
 
         Ok(Self {
             stores: HashMap::new(), // Keep in-memory cache for performance
             contents: HashMap::new(),
             chunks: HashMap::new(),
             sqlite_pool: Some(pool),
+            db_conn: Some(db_conn),
         })
     }
 
-    /// Create database tables
+    /// Get database connection (future-proofing for SeaORM operations)
+    #[allow(dead_code)]
+    fn get_db(&self) -> Result<&DatabaseConnection, String> {
+        self.db_conn.as_ref().ok_or_else(|| {
+            "Database not initialized. Use new_sqlite() to create SQLite-backed storage."
+                .to_string()
+        })
+    }
+
+    /// Create database tables (deprecated - now handled by migrations)
+    #[allow(dead_code)]
     async fn create_tables(pool: &SqlitePool) -> Result<(), String> {
         sqlx::query(
             r#"

@@ -1,41 +1,46 @@
-use crate::mcp::builtin::planning::models::{ScratchpadItem, TodoDTO, TodoItem};
+use crate::entity::{planning_goal, planning_scratchpad, planning_todo};
+use crate::mcp::builtin::planning::models::TodoDTO;
 use crate::mcp::types::ServiceContext;
 use log::info;
+use sea_orm::{
+    ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, SqlxSqliteConnector,
+};
 use serde_json::json;
 use sqlx::SqlitePool;
 use std::collections::HashMap;
 
 pub async fn get_service_context(pool: &SqlitePool, session_id: &str) -> ServiceContext {
+    let db = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool.clone());
+
     // 1. Fetch Active Goal
-    let goal: Option<String> = sqlx::query_scalar(
-        "SELECT goal_text FROM planning_goals WHERE session_id = ? AND status = 'active' LIMIT 1",
-    )
-    .bind(session_id)
-    .fetch_optional(pool)
-    .await
-    .unwrap_or_else(|e| {
-        log::error!("Failed to fetch goal: {}", e);
-        None
-    });
+    let goal_model = planning_goal::Entity::find()
+        .filter(planning_goal::Column::SessionId.eq(session_id))
+        .filter(planning_goal::Column::Status.eq("active"))
+        .one(&db)
+        .await
+        .unwrap_or_else(|e| {
+            log::error!("Failed to fetch goal: {}", e);
+            None
+        });
+
+    let goal = goal_model.map(|g| g.goal_text);
 
     // 2. Fetch Todos (All)
-    // We fetch all to calculate counts and separate checked/unchecked
-    let todos: Vec<TodoItem> =
-        sqlx::query_as("SELECT * FROM planning_todos WHERE session_id = ? ORDER BY created_at ASC")
-            .bind(session_id)
-            .fetch_all(pool)
-            .await
-            .unwrap_or_else(|e| {
-                log::error!("Failed to fetch todos: {}", e);
-                Vec::new()
-            });
+    let todos = planning_todo::Entity::find()
+        .filter(planning_todo::Column::SessionId.eq(session_id))
+        .order_by_asc(planning_todo::Column::CreatedAt)
+        .all(&db)
+        .await
+        .unwrap_or_else(|e| {
+            log::error!("Failed to fetch todos: {}", e);
+            Vec::new()
+        });
 
     // Build Todo Tree for structured state
-    let mut todo_map: HashMap<i64, Vec<TodoItem>> = HashMap::new();
-    let mut root_todos: Vec<TodoItem> = Vec::new();
+    let mut todo_map: HashMap<i64, Vec<planning_todo::Model>> = HashMap::new();
+    let mut root_todos: Vec<planning_todo::Model> = Vec::new();
 
     for todo in &todos {
-        // Treat parent_id = 0 as None (root item)
         match todo.parent_id {
             Some(pid) if pid > 0 => {
                 todo_map.entry(pid).or_default().push(todo.clone());
@@ -59,7 +64,7 @@ pub async fn get_service_context(pool: &SqlitePool, session_id: &str) -> Service
                     description: st.description,
                     priority: st.priority,
                     checked: st.is_checked,
-                    subtasks: Vec::new(), // Max 1 level nesting supported
+                    subtasks: Vec::new(),
                 })
                 .collect();
 
@@ -74,17 +79,16 @@ pub async fn get_service_context(pool: &SqlitePool, session_id: &str) -> Service
         })
         .collect();
 
-    // 3. Fetch Scratchpad (All - max 10 enforced by addScratchpad)
-    let scratchpad: Vec<ScratchpadItem> = sqlx::query_as(
-        "SELECT * FROM planning_scratchpad WHERE session_id = ? ORDER BY created_at DESC",
-    )
-    .bind(session_id)
-    .fetch_all(pool)
-    .await
-    .unwrap_or_else(|e| {
-        log::error!("Failed to fetch scratchpad: {}", e);
-        Vec::new()
-    });
+    // 3. Fetch Scratchpad
+    let scratchpad = planning_scratchpad::Entity::find()
+        .filter(planning_scratchpad::Column::SessionId.eq(session_id))
+        .order_by_desc(planning_scratchpad::Column::CreatedAt)
+        .all(&db)
+        .await
+        .unwrap_or_else(|e| {
+            log::error!("Failed to fetch scratchpad: {}", e);
+            Vec::new()
+        });
 
     // --- Format Output ---
 
@@ -103,7 +107,7 @@ pub async fn get_service_context(pool: &SqlitePool, session_id: &str) -> Service
     }
 
     // Todos Section
-    let (checked_todos, unchecked_todos): (Vec<&TodoItem>, Vec<&TodoItem>) =
+    let (checked_todos, unchecked_todos): (Vec<&planning_todo::Model>, Vec<&planning_todo::Model>) =
         todos.iter().partition(|t| t.is_checked);
 
     if !todos.is_empty() {
@@ -145,9 +149,8 @@ pub async fn get_service_context(pool: &SqlitePool, session_id: &str) -> Service
                     "-".to_string()
                 };
 
-                // Sanitize pipe characters in content to avoid breaking table
-                let safe_content = t.content.replace('|', "\\|");
-                let safe_desc = description.replace('|', "\\|");
+                let safe_content = t.content.replace('|', r"\|");
+                let safe_desc = description.replace('|', r"\|");
 
                 parts.push(format!(
                     "| {} | {} | {} | {} |",
@@ -170,11 +173,8 @@ pub async fn get_service_context(pool: &SqlitePool, session_id: &str) -> Service
             parts.push("| ID | Status | Task |".to_string());
             parts.push("| :--- | :--- | :--- |".to_string());
 
-            // We want the most recently updated/created ones (which are at the end of the list since we ordered by ASC)
-            // So we reverse iteration
             for t in checked_todos.iter().rev().take(3) {
-                // Sanitize pipes
-                let safe_content = t.content.replace('|', "\\|");
+                let safe_content = t.content.replace('|', r"\|");
                 parts.push(format!("| {} | ✓ Done | {} |", t.id, safe_content));
             }
 
@@ -193,7 +193,7 @@ pub async fn get_service_context(pool: &SqlitePool, session_id: &str) -> Service
     // Scratchpad Section
     if !scratchpad.is_empty() {
         parts.push(format!("\n**Scratchpad:** {} items", scratchpad.len()));
-        parts.push("".to_string()); // Spacer
+        parts.push("".to_string());
 
         for (idx, item) in scratchpad.iter().enumerate() {
             let title_part = if let Some(title) = &item.title {
@@ -216,7 +216,6 @@ pub async fn get_service_context(pool: &SqlitePool, session_id: &str) -> Service
                 String::new()
             };
 
-            // Full content, no truncation
             let content_part = if item.title.is_some() {
                 format!(" - {}", item.content)
             } else {
@@ -254,32 +253,33 @@ pub async fn get_service_context(pool: &SqlitePool, session_id: &str) -> Service
 }
 
 pub async fn get_planning_summary(pool: &SqlitePool, session_id: &str) -> String {
-    let goal: Option<String> = sqlx::query_scalar(
-        "SELECT goal_text FROM planning_goals WHERE session_id = ? AND status = 'active' LIMIT 1",
-    )
-    .bind(session_id)
-    .fetch_optional(pool)
-    .await
-    .unwrap_or(None);
+    let db = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool.clone());
 
-    let counts: Option<(i64, i64)> = sqlx::query_as(
-        r#"
-        SELECT 
-            COUNT(*) as total,
-            SUM(CASE WHEN is_checked = 0 THEN 1 ELSE 0 END) as unchecked
-        FROM planning_todos 
-        WHERE session_id = ?
-        "#,
-    )
-    .bind(session_id)
-    .fetch_optional(pool)
-    .await
-    .unwrap_or(None);
+    let goal_model = planning_goal::Entity::find()
+        .filter(planning_goal::Column::SessionId.eq(session_id))
+        .filter(planning_goal::Column::Status.eq("active"))
+        .one(&db)
+        .await
+        .unwrap_or(None);
 
-    let (total, unchecked) = counts.unwrap_or((0, 0));
+    let goal_text = goal_model
+        .map(|g| g.goal_text)
+        .unwrap_or_else(|| "No active goal".to_string());
+
+    let total = planning_todo::Entity::find()
+        .filter(planning_todo::Column::SessionId.eq(session_id))
+        .count(&db)
+        .await
+        .unwrap_or(0);
+
+    let unchecked = planning_todo::Entity::find()
+        .filter(planning_todo::Column::SessionId.eq(session_id))
+        .filter(planning_todo::Column::IsChecked.eq(false))
+        .count(&db)
+        .await
+        .unwrap_or(0);
+
     let checked = total - unchecked;
-
-    let goal_text = goal.unwrap_or_else(|| "No active goal".to_string());
 
     format!(
         "\n\nGoal: \"{}\"\n\nCurrent progress:\n  - Total: {} todos\n  - Unchecked: {}\n  - Checked: {}",
