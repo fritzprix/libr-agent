@@ -25,8 +25,13 @@ import {
 // import { createId } from '@paralleldrive/cuid2'; // Removed as it's not used directly anymore (handled in backend wrapper)
 import { useAgentChatActions } from '@/context/AgentChatContext';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
-import { createSystemMessage, createUserMessage } from '@/lib/chat-utils';
+import {
+  createSystemMessage,
+  createUserMessage,
+  createToolMessagePair,
+} from '@/lib/chat-utils';
 import { handleUserToolCall } from '@/lib/backend'; // Import type-safe wrapper
+import { createId } from '@paralleldrive/cuid2';
 
 const logger = getLogger('AgentMessageRenderer');
 
@@ -57,7 +62,7 @@ export const AgentMessageRenderer: React.FC<AgentMessageRendererProps> = ({
 }) => {
   const { copied, copyToClipboard } = useClipboard();
   const { openExternalUrl } = useRustBackend(); // Removed callToolUnified
-  const { submit } = useAgentChatActions();
+  const { submit, injectMessages } = useAgentChatActions();
   const { session } = useAgentSessionState();
   const tauriCommands = useRustBackend();
 
@@ -180,6 +185,7 @@ export const AgentMessageRenderer: React.FC<AgentMessageRendererProps> = ({
                     case 'downloadWorkspaceFile': {
                       resultText = await tauriCommands.downloadWorkspaceFile(
                         params.filePath as string,
+                        sessionId,
                       );
                       break;
                     }
@@ -187,6 +193,7 @@ export const AgentMessageRenderer: React.FC<AgentMessageRendererProps> = ({
                       resultText = await tauriCommands.exportAndDownloadZip(
                         params.files as string[],
                         params.packageName as string,
+                        sessionId,
                       );
                       break;
                     }
@@ -206,11 +213,53 @@ export const AgentMessageRenderer: React.FC<AgentMessageRendererProps> = ({
                     command: strippedCommand,
                     result: resultText,
                   });
+
+                  // --- V2 Result Handling Fix ---
+                  // Manually inject ToolCall and ToolResult to history and TRIGGER the workflow.
+                  // This allows the Agent to see the file action and respond (recursion).
+
+                  // 1. Create a unique tool call ID
+                  const toolCallId = createId();
+
+                  // 2. Create the message pair (Call + Result)
+                  const [toolCallMsg, toolResultMsg] = createToolMessagePair(
+                    toolName, // Use full name e.g. "tauri:downloadWorkspaceFile"
+                    params,
+                    [{ type: 'text', text: resultText }],
+                    toolCallId,
+                    sessionId,
+                    undefined,
+                    session.assistant?.id, // assistantId
+                    'ui',
+                  );
+
+                  // 3. Inject both and trigger workflow
+                  // "triggerWorkflow: true" manually calls request_llm_completion
+                  await injectMessages([toolCallMsg, toolResultMsg], true);
                 } catch (error) {
                   logger.error('Tauri command failed', {
                     command: strippedCommand,
                     error,
                   });
+
+                  // Optional: Inject failure message if needed, or just toast
+                  // For now, let's inject a failure result to keep history consistent
+                  const toolCallId = createId();
+                  const errorMsg =
+                    error instanceof Error ? error.message : String(error);
+                  const [toolCallMsg, toolResultMsg] = createToolMessagePair(
+                    toolName,
+                    params,
+                    [{ type: 'text', text: `Error: ${errorMsg}` }],
+                    toolCallId,
+                    sessionId,
+                    undefined,
+                    session.assistant?.id,
+                    'ui',
+                  );
+                  // Still trigger workflow so agent knows it failed? Or maybe not?
+                  // Agentic philosophy: Agent should know it failed.
+                  await injectMessages([toolCallMsg, toolResultMsg], true);
                 }
               } else {
                 logger.warn('Tauri command not found', {
@@ -383,10 +432,8 @@ export const AgentMessageRenderer: React.FC<AgentMessageRendererProps> = ({
 
                 <ReactMarkdown
                   skipHtml={false}
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  remarkPlugins={[remarkGfm, remarkMath] as any}
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  rehypePlugins={[rehypeKatex] as any}
+                  remarkPlugins={[remarkGfm, remarkMath]}
+                  rehypePlugins={[rehypeKatex]}
                   components={{
                     p: ({ children, ...props }) => (
                       <p className="mb-2 last:mb-0" {...props}>
@@ -396,8 +443,6 @@ export const AgentMessageRenderer: React.FC<AgentMessageRendererProps> = ({
                     code: ({
                       children,
                       className,
-                      node: _node, // eslint-disable-line @typescript-eslint/no-unused-vars
-                      inline: _inline, // eslint-disable-line @typescript-eslint/no-unused-vars
                       ...props
                     }: React.ComponentPropsWithoutRef<'code'> & {
                       inline?: boolean;
@@ -527,8 +572,6 @@ export const AgentMessageRenderer: React.FC<AgentMessageRendererProps> = ({
                     ),
                     ul: ({
                       children,
-                      node: _node, // eslint-disable-line @typescript-eslint/no-unused-vars
-                      ordered: _ordered, // eslint-disable-line @typescript-eslint/no-unused-vars
                       ...props
                     }: React.ComponentPropsWithoutRef<'ul'> & {
                       ordered?: boolean;
@@ -541,8 +584,13 @@ export const AgentMessageRenderer: React.FC<AgentMessageRendererProps> = ({
                         {children}
                       </ul>
                     ),
-                    // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any
-                    ol: ({ children, node, ordered, ...props }: any) => (
+                    ol: ({
+                      children,
+                      ...props
+                    }: React.ComponentPropsWithoutRef<'ol'> & {
+                      node?: unknown;
+                      ordered?: boolean;
+                    }) => (
                       <ol
                         className="list-decimal list-inside mb-2 space-y-1"
                         {...props}
@@ -550,8 +598,13 @@ export const AgentMessageRenderer: React.FC<AgentMessageRendererProps> = ({
                         {children}
                       </ol>
                     ),
-                    // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any
-                    li: ({ children, node, ordered, ...props }: any) => (
+                    li: ({
+                      children,
+                      ...props
+                    }: React.ComponentPropsWithoutRef<'li'> & {
+                      node?: unknown;
+                      ordered?: boolean;
+                    }) => (
                       <li className="ml-2" {...props}>
                         {children}
                       </li>

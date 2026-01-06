@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from '@testing-library/react';
+import { renderHook, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { LLMServiceProvider, useLLMService } from '../LLMServiceContext';
 import { listen } from '@tauri-apps/api/event';
@@ -50,6 +50,7 @@ function TestWrapper({ children }: { children: ReactNode }) {
 describe('LLMServiceContext', () => {
   const mockUnlisten = vi.fn();
   const mockStreamChat = vi.fn();
+  const mockListModels = vi.fn();
   const mockDispose = vi.fn();
 
   beforeEach(() => {
@@ -61,8 +62,22 @@ describe('LLMServiceContext', () => {
     // Setup AIServiceFactory mock
     (AIServiceFactory.getService as ReturnType<typeof vi.fn>).mockReturnValue({
       streamChat: mockStreamChat,
+      listModels: mockListModels,
       dispose: mockDispose,
     });
+
+    // Setup mockListModels to return test models
+    mockListModels.mockResolvedValue([
+      {
+        name: 'test-model',
+        contextWindow: 4096,
+        supportReasoning: false,
+        supportTools: true,
+        supportStreaming: true,
+        cost: { input: 0.001, output: 0.002 },
+        description: 'Test model for unit tests',
+      },
+    ]);
   });
 
   afterEach(() => {
@@ -155,14 +170,20 @@ describe('LLMServiceContext', () => {
         },
       ];
 
-      // Execute completion request
-      const promise = result.current.executeCompletionRequest(
-        'test-session',
-        messages,
-        'gpt-4',
-        'openai',
-        'test-key',
-      );
+      // Execute completion request in act
+      let promise: Promise<Message>;
+      await act(async () => {
+        promise = result.current.executeCompletionRequest(
+          'test-session',
+          messages,
+          'gpt-4',
+          'openai',
+          'test-key',
+        );
+        
+        // Wait a bit for streaming state to be set
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
 
       // Should be streaming during execution
       await waitFor(() => {
@@ -171,7 +192,9 @@ describe('LLMServiceContext', () => {
         );
       });
 
-      await promise;
+      await act(async () => {
+        await promise;
+      });
 
       // Should be idle after completion
       await waitFor(() => {

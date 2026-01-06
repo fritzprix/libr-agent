@@ -10,6 +10,7 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
+use tokio::task;
 
 // Global content store for browser extracted content (module-scoped)
 static BROWSER_CONTENT_STORE: Lazy<BrowserContentStore> = Lazy::new(BrowserContentStore::new);
@@ -26,7 +27,10 @@ pub async fn extract_web_content(server: &BrowserServer, args: Value) -> Result<
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    let auto_merge = true; // Always true by default
+    let auto_merge = args
+        .get("autoMerge")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true); // Default: true
 
     // Extract page title and URL
     let page_title = service
@@ -57,11 +61,30 @@ pub async fn extract_web_content(server: &BrowserServer, args: Value) -> Result<
     };
 
     // Convert to markdown
-    let markdown_content = convert_to_markdown(&raw_html);
+    // CRITICAL: This operation is CPU-intensive and must be offloaded to a blocking thread.
+    // Running it on the main async runtime causes "busy loop" behavior and freezes the agent.
+    // We also enforce a 10MB limit to prevent OOM crashes and stack overflows in html2md.
+    let raw_html_clone = raw_html.clone();
+    let markdown_content = task::spawn_blocking(move || {
+        // Safety check: Limit input size to 10MB to prevent OOM/crashes
+        if raw_html_clone.len() > 10 * 1024 * 1024 {
+            return "**Error: Page content too large to process (exceeds 10MB limit).**"
+                .to_string();
+        }
+        convert_to_markdown(&raw_html_clone)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?;
 
-    // Pagination
-    let (total_pages, first_page, merged_content, auto_merged) =
-        BROWSER_CONTENT_STORE.save_content(session_id, markdown_content.clone(), 6000, auto_merge);
+    // Token-based pagination (3000 tokens per page for optimal LLM processing)
+    let target_tokens_per_page = 3000;
+    let (total_pages, first_page, merged_content, auto_merged) = BROWSER_CONTENT_STORE
+        .save_content(
+            session_id,
+            markdown_content.clone(),
+            target_tokens_per_page,
+            auto_merge,
+        );
 
     // Create metadata
     let metadata = create_metadata(
@@ -75,20 +98,37 @@ pub async fn extract_web_content(server: &BrowserServer, args: Value) -> Result<
     // Build response text
     let mut response_text = if auto_merged {
         if let Some(content) = &merged_content {
-            format!(
-                "✓ Content extracted and auto-merged\n\nPage Title: {}\nURL: {}\n\n{}",
-                if page_title.is_empty() {
-                    "N/A"
-                } else {
-                    &page_title
-                },
-                if current_url.is_empty() {
-                    "N/A"
-                } else {
-                    &current_url
-                },
-                content
-            )
+            if total_pages == 1 {
+                format!(
+                    "[Page 1/1]\n\nPage Title: {}\nURL: {}\n\n{}",
+                    if page_title.is_empty() {
+                        "N/A"
+                    } else {
+                        &page_title
+                    },
+                    if current_url.is_empty() {
+                        "N/A"
+                    } else {
+                        &current_url
+                    },
+                    content
+                )
+            } else {
+                format!(
+                    "✓ Content extracted and auto-merged\n\nPage Title: {}\nURL: {}\n\n{}",
+                    if page_title.is_empty() {
+                        "N/A"
+                    } else {
+                        &page_title
+                    },
+                    if current_url.is_empty() {
+                        "N/A"
+                    } else {
+                        &current_url
+                    },
+                    content
+                )
+            }
         } else {
             format!(
                 "[Page 1/{}]\n\nPage Title: {}\nURL: {}\n\n{}",
@@ -134,7 +174,8 @@ pub async fn extract_web_content(server: &BrowserServer, args: Value) -> Result<
     // Add pagination footer
     if !auto_merged && total_pages > 1 {
         response_text.push_str(&format!(
-            "\n\n--- End of Page 1 ---\nThere are {} pages in total. Use readWebContent(sessionId, page) to read more, or use autoMerge: true to get all content at once.",
+            "\n\n--- End of Page 1 ---\nThere are {} pages in total. Use readWebContent(sessionId, page) to read pages 2-{}.",
+            total_pages,
             total_pages
         ));
     }

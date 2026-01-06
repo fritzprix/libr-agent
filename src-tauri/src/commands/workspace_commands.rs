@@ -145,3 +145,56 @@ pub async fn get_app_logs_dir() -> Result<String, String> {
     let path = get_session_manager()?.get_logs_dir();
     Ok(path.to_string_lossy().to_string())
 }
+
+/// Opens a workspace file with the system's default application.
+///
+/// This command resolves the file path within the workspace, performs security
+/// validation, and uses the system's default application to open the file.
+///
+/// # Arguments
+/// * `file_path` - The relative path of the file within the workspace to open.
+///
+/// # Returns
+/// A `Result` indicating success or an error string on failure.
+#[tauri::command]
+pub async fn open_workspace_file_with_default_app(
+    file_path: String,
+    session_id: Option<String>,
+) -> Result<(), String> {
+    // Get workspace directory via SessionManager
+    let session_manager = get_session_manager().map_err(|e| e.to_string())?;
+    let workspace_dir = if let Some(ref sid) = session_id {
+        session_manager.get_session_workspace_dir_by_id(sid)
+    } else {
+        session_manager.get_session_workspace_dir()
+    };
+
+    // Construct the full path of the requested file
+    let full_path = workspace_dir.join(&file_path);
+
+    // Security validation: verify file exists
+    if !full_path.exists() {
+        return Err(format!("File not found: {}", file_path));
+    }
+
+    // Security validation: ensure path is within workspace
+    if !full_path.starts_with(&workspace_dir) {
+        return Err("Access denied: Path outside workspace".to_string());
+    }
+
+    // Security validation: ensure it's a file, not a directory
+    if !full_path.is_file() {
+        return Err("Cannot open directories with default app".to_string());
+    }
+
+    // Convert to absolute path string
+    let abs_path_str = full_path
+        .to_str()
+        .ok_or_else(|| "Invalid path encoding".to_string())?;
+
+    // Use tauri-plugin-opener to open file with system default app
+    tauri_plugin_opener::open_path(abs_path_str, None::<&str>)
+        .map_err(|e| format!("Failed to open file: {}", e))?;
+
+    Ok(())
+}

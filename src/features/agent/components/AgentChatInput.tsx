@@ -26,8 +26,7 @@ interface AgentChatInputProps {
 
 export function AgentChatInput({ children }: AgentChatInputProps) {
   const { session } = useAgentSessionState();
-  const { submit, isSessionLoading, workflowStatus, messages, cancel } =
-    useAgentChat();
+  const { submit, isSessionLoading, workflowStatus, cancel } = useAgentChat();
   const [input, setInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pendingCancel, setPendingCancel] = useState(false);
@@ -51,27 +50,15 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
   const attachedFiles = pendingFiles;
 
   // Determine if input should be disabled (busy state detection)
+  // Trust backend workflowStatus as single source of truth
   const isBusy = useMemo(() => {
-    if (isSessionLoading || isSubmitting || workflowStatus === 'busy')
-      return true;
-
-    const lastMessage = messages[messages.length - 1];
-    if (!lastMessage) return false;
-
-    // Tool results require response
-    if (lastMessage.role === 'tool') return true;
-
-    // Tool call request without streaming (gap period)
-    if (
-      lastMessage.role === 'assistant' &&
-      lastMessage.tool_calls?.length &&
-      !lastMessage.isStreaming
-    ) {
-      return true;
-    }
-
-    return false;
-  }, [isSessionLoading, isSubmitting, workflowStatus, messages]);
+    return (
+      isSessionLoading ||
+      isSubmitting ||
+      workflowStatus === 'busy' ||
+      workflowStatus === 'paused'
+    );
+  }, [isSessionLoading, isSubmitting, workflowStatus]);
 
   const inputPlaceholder = useMemo(() => {
     if (dragState !== 'none') {

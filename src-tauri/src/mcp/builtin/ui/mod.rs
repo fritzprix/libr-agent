@@ -531,13 +531,18 @@ impl UiServer {
             }
         };
 
+        let warning_message = format!(
+            "⚠️ Circuit Breaker Triggered\n\nThe tool \"{}\" has been called {} times consecutively with identical parameters.\n\nThis usually indicates the agent is stuck in a loop. Please review the situation and click Resume to continue.",
+            tool_name, repetition_count
+        );
+
         Ok(crate::mcp::builtin::utils::create_resource_response(
             &format!("ui://circuit-break/{}", uuid::Uuid::new_v4()),
             "text/html",
             &html,
             "ui",
             "circuitBreak",
-            None,
+            Some(&warning_message),
         ))
     }
 
@@ -546,14 +551,18 @@ impl UiServer {
             .get("toolName")
             .and_then(|v| v.as_str())
             .unwrap_or("unknown");
+        let repetition_count = args
+            .get("repetitionCount")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+
+        let text = format!(
+            "🔄 Execution Resumed by User\n\n⚠️ IMPORTANT: You have called \"{}\" {} times with the same parameters.\n\nThis suggests your current approach is not working. Please:\n1. Analyze why the previous attempts failed\n2. Try a DIFFERENT approach or tool\n3. If the error persists, inform the user about the limitation\n\nDo NOT repeat the same tool call again.",
+            tool_name, repetition_count
+        );
 
         Ok(MCPResult {
-            content: Some(vec![MCPContent::Text {
-                text: format!(
-                    "Circuit breaker reset for tool '{}'. Execution resumed.",
-                    tool_name
-                ),
-            }]),
+            content: Some(vec![MCPContent::Text { text }]),
             structured_content: None,
             is_error: Some(false),
         })

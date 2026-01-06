@@ -43,11 +43,14 @@ pub async fn navigate_to_url(server: &BrowserServer, args: Value) -> Result<MCPR
         }
     };
 
+    // Invalidate cache after navigation
+    server.invalidate_cache();
+
     let hint = SuccessHint::new(
         result,
         vec![
-            "Use extractWebContent to see page content".to_string(),
-            "Use listInteractable to see clickable elements".to_string(),
+            "Extract page content with extractWebContent to see what's on the page".to_string(),
+            "List interactive elements with listInteractable".to_string(),
         ],
     );
     Ok(hint.to_mcp_result())
@@ -74,9 +77,12 @@ pub async fn navigate_back(server: &BrowserServer, args: Value) -> Result<MCPRes
         }
     };
 
+    // Invalidate cache after navigation
+    server.invalidate_cache();
+
     let hint = SuccessHint::new(
         result,
-        vec!["Use extractWebContent to see page content after navigation".to_string()],
+        vec!["Extract content with extractWebContent to see the previous page".to_string()],
     );
     Ok(hint.to_mcp_result())
 }
@@ -102,9 +108,12 @@ pub async fn navigate_forward(server: &BrowserServer, args: Value) -> Result<MCP
         }
     };
 
+    // Invalidate cache after navigation
+    server.invalidate_cache();
+
     let hint = SuccessHint::new(
         result,
-        vec!["Use extractWebContent to see page content after navigation".to_string()],
+        vec!["Extract content with extractWebContent to see the next page".to_string()],
     );
     Ok(hint.to_mcp_result())
 }
@@ -136,7 +145,7 @@ pub async fn get_current_url(server: &BrowserServer, args: Value) -> Result<MCPR
 
     let hint = SuccessHint::new(
         result,
-        vec!["Use navigateToUrl to navigate to a different URL".to_string()],
+        vec!["Navigate to a different URL with navigateToUrl if needed".to_string()],
     );
     Ok(hint.to_mcp_result())
 }
@@ -165,7 +174,10 @@ pub async fn get_page_title(server: &BrowserServer, args: Value) -> Result<MCPRe
 
     let hint = SuccessHint::new(
         result,
-        vec!["Use extractWebContent to see full page content".to_string()],
+        vec![
+            "Extract full page content with extractWebContent to see what's on this page"
+                .to_string(),
+        ],
     );
     Ok(hint.to_mcp_result())
 }

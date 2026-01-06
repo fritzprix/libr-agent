@@ -124,12 +124,20 @@ impl ContentStoreServer {
         ]
     }
 
-    /// New Result-based helper for require_active_session
+    /// Get the session ID for this server instance
+    ///
+    /// In the new multi-session architecture, each ContentStoreServer is bound to a specific
+    /// session at construction time. This method returns that session ID.
+    ///
+    /// For legacy compatibility, if session_manager has a current session set via switch_context,
+    /// that takes precedence. Otherwise, returns the constructor-bound session_id.
     pub(crate) fn require_active_session_result(&self) -> Result<String, String> {
+        // For legacy compatibility: check if session_manager has an active session
         if let Some(session_id) = self.session_manager.get_current_session() {
             Ok(session_id)
         } else {
-            Err("No active session context. Call switch_context with a sessionId before invoking this tool.".to_string())
+            // New architecture: use the session_id bound at construction
+            Ok(self.session_id.clone())
         }
     }
 
@@ -151,24 +159,13 @@ impl ContentStoreServer {
     }
 
     pub async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
-        // Get current session ID
-        let session_id = match self.session_manager.get_current_session() {
-            Some(sid) => sid,
-            None => {
-                return ServiceContext {
-                    context_prompt: "## Content Store\n**Status**: No active session".to_string(),
-                    structured_state: None,
-                };
-            }
-        };
+        // Use session_id from constructor (already bound to this session)
+        // This is consistent with Planning/Workspace pattern
+        let session_id = &self.session_id;
 
         // Get content information for this session
-        let (count, summaries) = match self.storage.try_lock() {
-            Ok(storage) => {
-                let count = storage.get_content_count(&session_id);
-                let summaries = storage.get_content_summary(&session_id, 5);
-                (count, summaries)
-            }
+        let count = match self.storage.try_lock() {
+            Ok(storage) => storage.get_content_count(session_id),
             Err(e) => {
                 log::warn!(
                     "Failed to lock content storage for session '{}': {}",
@@ -176,65 +173,36 @@ impl ContentStoreServer {
                     e
                 );
                 return ServiceContext {
-                    context_prompt: "## Content Store\n**Status**: Error loading state".to_string(),
+                    context_prompt: "## Content Store\n\nError loading state".to_string(),
                     structured_state: None,
                 };
             }
         };
 
-        // Build context prompt
-        let mut parts = vec!["## Content Store".to_string()];
-
-        if count == 0 {
-            parts.push("\n**No content stored yet.**".to_string());
-            parts.push(
-                "*Use addContent to store files, documents, or text for later retrieval.*"
-                    .to_string(),
-            );
+        // Build context prompt (Legacy style: concise, token-efficient)
+        let file_status = if count == 0 {
+            "no files".to_string()
+        } else if count == 1 {
+            "1 file".to_string()
         } else {
-            let file_label = if count == 1 { "file" } else { "files" };
-            parts.push(format!("\n**{} {} stored**", count, file_label));
+            format!("{} files", count)
+        };
 
-            // List content items with previews
-            for (idx, (filename, size, preview)) in summaries.iter().enumerate() {
-                // Format size in human-readable form
-                let size_str = if *size < 1024 {
-                    format!("{}B", size)
-                } else if *size < 1024 * 1024 {
-                    format!("{}KB", size / 1024)
-                } else {
-                    format!("{}MB", size / (1024 * 1024))
-                };
+        // Tool count (fixed: saveKnowledge, listContent, readContent, searchKnowledge, deleteContent)
+        let tool_count = 5;
 
-                // Truncate preview to 50 chars
-                let preview_short = if preview.len() > 50 {
-                    format!("{}...", &preview[..50])
-                } else {
-                    preview.clone()
-                };
-
-                parts.push(format!(
-                    "  {}. **{}** ({}) - {}",
-                    idx + 1,
-                    filename,
-                    size_str,
-                    preview_short
-                ));
-            }
-
-            if count > 5 {
-                parts.push(format!(
-                    "  ...and {} more files. Use listContent to view all.",
-                    count - 5
-                ));
-            }
-        }
+        let context_prompt = format!(
+            "## Content Store\n\nActive, {} tools, {}",
+            tool_count, file_status
+        );
 
         ServiceContext {
-            context_prompt: parts.join("\n"),
+            context_prompt,
             structured_state: Some(serde_json::json!({
-                "session_id": session_id,
-                "content_count": count
+                "active": true,
+                "tool_count": tool_count,
+                "file_count": count,
+                "session_id": session_id
             })),
         }
     }

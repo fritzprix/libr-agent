@@ -200,11 +200,19 @@ impl ContentStoreServer {
 
         let hint = SuccessHint::new(
             format!(
-                "Content '{}' added successfully ({} bytes, {} lines)",
-                content_item.filename, content_item.size, content_item.line_count
+                "Content saved successfully\n  ID: {}\n  Title: {}\n  Size: {} bytes, {} lines\n  Preview: {}",
+                content_item.id,
+                content_item.filename,
+                content_item.size,
+                content_item.line_count,
+                if content_item.preview.len() > 100 {
+                    format!("{}...", &content_item.preview[..100])
+                } else {
+                    content_item.preview.clone()
+                }
             ),
             vec![
-                "Use readContent to view the full content".to_string(),
+                format!("Use readContent with contentId='{}' to view the full content", content_item.id),
                 "Use keywordSimilaritySearch to find content by keywords".to_string(),
             ],
         );
@@ -283,6 +291,28 @@ impl ContentStoreServer {
             }
         };
 
+        // Build detailed content list for agent visibility FIRST (before consuming contents)
+        let content_details: Vec<String> = contents
+            .iter()
+            .enumerate()
+            .map(|(idx, item)| {
+                let preview_text = if item.preview.len() > 80 {
+                    format!("{}...", &item.preview[..80])
+                } else {
+                    item.preview.clone()
+                };
+                format!(
+                    "[{}] ID: {}\n    Title: {}\n    Size: {} bytes\n    Preview: {}\n    Created: {}",
+                    idx + 1,
+                    item.id,
+                    item.filename,
+                    item.size,
+                    preview_text,
+                    item.uploaded_at
+                )
+            })
+            .collect();
+
         let content_list: Vec<serde_json::Value> = contents
             .into_iter()
             .map(|item| {
@@ -302,15 +332,29 @@ impl ContentStoreServer {
             .collect();
 
         let has_more = offset + content_list.len() < total;
+
+        let items_text = if content_details.is_empty() {
+            String::new()
+        } else {
+            format!("\n\n{}", content_details.join("\n\n"))
+        };
+
         let hint = SuccessHint::new(
-            format!("Found {} of {} content items", content_list.len(), total),
+            format!(
+                "Found {} of {} content items{}",
+                content_list.len(),
+                total,
+                items_text
+            ),
             if has_more {
                 vec![format!(
                     "Use pagination.offset={} to see more items",
                     offset + limit
                 )]
             } else if total > 0 {
-                vec!["Use readContent to view a file's contents".to_string()]
+                vec![
+                    "Use readContent with a contentId from above to view full contents".to_string(),
+                ]
             } else {
                 vec!["Use addContent to add files to the content store".to_string()]
             },
@@ -401,14 +445,29 @@ impl ContentStoreServer {
         let to_line = args
             .to_line
             .unwrap_or_else(|| content.lines().count().max(1));
+
+        // Truncate content if too long, but show preview
+        let content_preview = if content.len() > 2000 {
+            format!(
+                "{}\n... (truncated, {} bytes total)",
+                &content[..2000],
+                content.len()
+            )
+        } else {
+            content.clone()
+        };
+
         let hint = SuccessHint::new(
             format!(
-                "Content '{}' read successfully (lines {}-{})",
-                args.content_id, from_line, to_line
+                "Content '{}' (lines {}-{}):\n\n{}",
+                args.content_id, from_line, to_line, content_preview
             ),
             vec![
                 "Use keywordSimilaritySearch to find specific content".to_string(),
-                "Use deleteContent to remove this content".to_string(),
+                format!(
+                    "Use deleteContent with contentId='{}' to remove this content",
+                    args.content_id
+                ),
             ],
         );
 
@@ -516,11 +575,33 @@ impl ContentStoreServer {
             })
             .collect();
 
+        // Build detailed results for agent visibility
+        let results_text = if search_results.is_empty() {
+            String::new()
+        } else {
+            let details: Vec<String> = search_results
+                .iter()
+                .enumerate()
+                .map(|(idx, result)| {
+                    format!(
+                        "[{}] Content ID: {}\n    Score: {:.2}\n    Lines: {:?}\n    Match: {}",
+                        idx + 1,
+                        result["contentId"].as_str().unwrap_or("unknown"),
+                        result["score"].as_f64().unwrap_or(0.0),
+                        result["lineRange"],
+                        result["matchedText"].as_str().unwrap_or("")
+                    )
+                })
+                .collect();
+            format!("\n\n{}", details.join("\n\n"))
+        };
+
         let hint = SuccessHint::new(
             format!(
-                "Search '{}' found {} results",
+                "Search '{}' found {} results{}",
                 args.query,
-                search_results.len()
+                search_results.len(),
+                results_text
             ),
             if search_results.is_empty() {
                 vec![
@@ -528,7 +609,7 @@ impl ContentStoreServer {
                     "Use listContent to see all available content".to_string(),
                 ]
             } else {
-                vec!["Use readContent to view full content".to_string()]
+                vec!["Use readContent with a contentId from above to view full content".to_string()]
             },
         );
 

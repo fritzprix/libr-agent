@@ -81,10 +81,13 @@ export class PlanningDatabase extends Dexie {
         scratchpad: '++id, [sessionId+threadId], *tags',
       })
       .upgrade(async (tx) => {
+        interface RawItem {
+          id?: number;
+          tags: unknown;
+        }
         const items = await tx.table('scratchpad').toArray();
         for (const item of items) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const rawItem = item as any;
+          const rawItem = item as RawItem;
           if (rawItem.tags !== undefined && !Array.isArray(rawItem.tags)) {
             await tx.table('scratchpad').update(item.id!, {
               tags: [],

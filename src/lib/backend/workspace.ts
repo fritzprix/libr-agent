@@ -32,3 +32,19 @@ export async function workspaceWriteFile(
     content,
   });
 }
+
+/**
+ * Opens a workspace file with the system's default application.
+ * @param filePath The relative path within the workspace to open.
+ * @param sessionId The optional session ID to specify which session's workspace to use.
+ * @returns A promise that resolves when the file is opened.
+ */
+export async function openWorkspaceFileWithDefaultApp(
+  filePath: string,
+  sessionId?: string,
+): Promise<void> {
+  return safeInvoke<void>('open_workspace_file_with_default_app', {
+    filePath,
+    sessionId,
+  });
+}

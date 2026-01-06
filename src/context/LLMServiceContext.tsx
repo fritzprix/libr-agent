@@ -15,9 +15,18 @@ import { AIServiceProvider } from '@/lib/ai-service/types';
 import type { Message, ToolCall } from '@/models/chat';
 import type { MCPTool } from '@/lib/mcp-types';
 import { getLogger } from '@/lib/logger';
+import {
+  selectMessagesWithinContext,
+  estimateTokensBPE,
+} from '@/lib/token-utils';
+import { llmConfigManager, ModelInfo } from '@/lib/llm-config-manager';
 import type { IAIService } from '@/lib/ai-service/types';
 import { useSettings } from './SettingsContext';
 import { useSystemPrompt } from './SystemPromptContext';
+
+import { MessageNormalizer } from '@/lib/ai-service/message-normalizer';
+import { sanitizeMessage } from '@/lib/ai-service/sanitizer';
+import { normalizeRustMessage } from '@/lib/ai-service/utils';
 
 const logger = getLogger('LLMServiceContext');
 
@@ -122,6 +131,8 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
   const activeServicesRef = useRef<Map<string, IAIService>>(new Map());
   // Track abort controllers for cancellation
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
+  // Track timeout IDs for cleanup - using number for browser compatibility
+  const timeoutsRef = useRef<Map<string, number>>(new Map());
   // Track listener setup to prevent duplicate registration in React Strict Mode
   const listenerSetupRef = useRef(false);
 
@@ -272,21 +283,16 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
         );
         activeServicesRef.current.set(sessionId, service);
 
-        // Initialize streaming message
-        const streamingMessage: Partial<Message> = {
+        // Get existing streaming message (already set by event listener)
+        const existingStreamingMessage = streamingMessages.get(sessionId);
+        const streamingMessage: Partial<Message> = existingStreamingMessage || {
           id: `msg_${Date.now()}`,
           sessionId,
-          threadId: sessionId, // For top-level thread: threadId === sessionId
+          threadId: sessionId,
           role: 'assistant',
           content: [],
           createdAt: new Date(),
         };
-
-        setStreamingMessages((prev) => {
-          const next = new Map(prev);
-          next.set(sessionId, streamingMessage);
-          return next;
-        });
 
         // Build config
         const config: AIServiceConfig = {
@@ -294,12 +300,100 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
           maxTokens,
         };
 
+        // Calculate safe input token limit
+        // If maxTokens (max output) is specified, reserve strictly for it + safety buffer
+        // Otherwise, fallback to selectMessagesWithinContext's default (90% of context window)
+        let safeInputTokenLimit: number | undefined;
+        let modelInfo: ModelInfo | null =
+          (await service.listModels()).find((m) => m.name === model) || null;
+        if (!modelInfo) {
+          modelInfo =
+            llmConfigManager.getModel(provider, model) ??
+            ({
+              contextWindow: 64 * 1024,
+              supportReasoning: false,
+              supportTools: false,
+              cost: { input: 0, output: 0 },
+              name: model,
+            } as ModelInfo);
+        }
+
+        logger.info('Model Info for Token Limit Calculation', {
+          sessionId,
+          provider,
+          model,
+          modelInfo,
+        });
+
+        if (modelInfo && maxTokens) {
+          // Reserve maxTokens + 100 safety buffer
+          const reserved = maxTokens + 100;
+          if (reserved < modelInfo.contextWindow) {
+            safeInputTokenLimit = modelInfo.contextWindow - reserved;
+          }
+        }
+
+        // Select messages within context window and message count limit
+        const { windowSize } = settingsRef.current;
+        const contextMessages = selectMessagesWithinContext(
+          messages,
+          provider,
+          model,
+          safeInputTokenLimit,
+          {
+            systemPrompt: finalSystemPrompt,
+            maxMessages: windowSize,
+          },
+        );
+
+        // Sanitize messages to prevent malformed JSON and ensure provider compatibility
+        // This includes:
+        // 1. JSON escaping for tool arguments and thinking fields
+        // 2. Tool call pairing validation (removing orphans/incomplete pairs)
+        // 3. Provider-specific sanitization (e.g. removing thinking for OpenAI)
+        const safeMessages = MessageNormalizer.sanitizeMessagesForProvider(
+          contextMessages.map(sanitizeMessage),
+          provider as unknown as AIServiceProvider,
+        );
+        logger.info('✅ Messages sanitized for provider compatibility', {
+          sessionId,
+          originalCount: contextMessages.length,
+          safeCount: safeMessages.length,
+        });
+
+        // Measure final token count for logging
+        const totalEstimatedTokens = safeMessages.reduce(
+          (sum, msg) => sum + estimateTokensBPE(msg),
+          0,
+        );
+
+        if (safeMessages.length < messages.length) {
+          logger.info(
+            'Messages truncated/sanitized to fit context/window size',
+            {
+              originalCount: messages.length,
+              newCount: safeMessages.length,
+              windowSize,
+              provider,
+              model,
+              safeInputTokenLimit,
+              totalEstimatedTokens,
+            },
+          );
+        }
+
+        logger.debug('Final Payload Token Estimate', {
+          count: totalEstimatedTokens,
+          limit: safeInputTokenLimit || 'auto(90%)',
+        });
+
         // Create async generator for streaming
-        const streamGenerator = service.streamChat(messages, {
+        const streamGenerator = service.streamChat(safeMessages, {
           modelName: model,
           systemPrompt: finalSystemPrompt,
           availableTools: availableTools || [],
           config,
+          forceToolUse: false,
         });
 
         // Accumulate chunks
@@ -322,7 +416,6 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
             // If parsing fails, treat it as plain text content
             parsedChunk = { content: chunk };
           }
-
           // Accumulate content
           if (parsedChunk.content && typeof parsedChunk.content === 'string') {
             fullContent += parsedChunk.content;
@@ -343,12 +436,39 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
 
               // Index-based merging for incremental chunks
               if (toolCalls[index]) {
-                if (toolCallChunk.function?.arguments) {
-                  toolCalls[index].function.arguments +=
-                    toolCallChunk.function.arguments;
+                // ✅ Merge all fields, not just arguments
+                if (toolCallChunk.id && !toolCalls[index].id) {
+                  toolCalls[index].id = toolCallChunk.id;
+                }
+                if (toolCallChunk.type && !toolCalls[index].type) {
+                  toolCalls[index].type = toolCallChunk.type;
+                }
+                if (toolCallChunk.function) {
+                  if (!toolCalls[index].function) {
+                    toolCalls[index].function = { name: '', arguments: '' };
+                  }
+                  if (
+                    toolCallChunk.function.name &&
+                    !toolCalls[index].function.name
+                  ) {
+                    toolCalls[index].function.name =
+                      toolCallChunk.function.name;
+                  }
+                  if (toolCallChunk.function.arguments) {
+                    toolCalls[index].function.arguments +=
+                      toolCallChunk.function.arguments;
+                  }
                 }
               } else {
-                toolCalls[index] = toolCallChunk;
+                // Initialize tool call at index
+                toolCalls[index] = {
+                  id: toolCallChunk.id || '',
+                  type: toolCallChunk.type || 'function',
+                  function: {
+                    name: toolCallChunk.function?.name || '',
+                    arguments: toolCallChunk.function?.arguments || '',
+                  },
+                };
               }
             });
           }
@@ -361,7 +481,8 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
             thinkingContent += parsedChunk.thinking;
           }
 
-          // Update streaming message state (throttled to reduce renders)
+          // Update streaming message state (no throttling - update on every chunk for responsiveness)
+          // Note: React batching already reduces render overhead
           setStreamingMessages((prev) => {
             const next = new Map(prev);
             next.set(sessionId, {
@@ -397,6 +518,15 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
           toolCallCount: toolCalls.length,
         });
 
+        // Check for empty message (no content and no tool calls)
+        // This prevents saving invalid messages to the history which would later be rejected by MessageNormalizer
+        if (
+          (!finalMessage.content || finalMessage.content.length === 0) &&
+          (!finalMessage.tool_calls || finalMessage.tool_calls.length === 0)
+        ) {
+          throw new Error('Received empty response from LLM provider');
+        }
+
         // ✅ Set finalMessage to trigger AgentChatContext effect (idea.md architecture)
         setStreamingMessages((prev) => {
           const next = new Map(prev);
@@ -404,8 +534,18 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
           return next;
         });
 
-        // AgentChatContext will add to messages array and handle cleanup
-        // No setTimeout needed - effect-based persistence is more reliable
+        // ⏰ Clear after a brief delay to allow UI to process the final message
+        // This fixes the bug where "Thinking..." indicator persists in idle state
+        const timeoutId = window.setTimeout(() => {
+          setStreamingMessages((prev) => {
+            const next = new Map(prev);
+            next.delete(sessionId);
+            return next;
+          });
+          // Clean up timeout ID after execution
+          timeoutsRef.current.delete(sessionId);
+        }, 100);
+        timeoutsRef.current.set(sessionId, timeoutId);
 
         // Update status to idle
         updateSessionStatus(sessionId, 'idle');
@@ -427,6 +567,13 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
           next.delete(sessionId);
           return next;
         });
+
+        // Clear any pending timeouts
+        const timeoutId = timeoutsRef.current.get(sessionId);
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutsRef.current.delete(sessionId);
+        }
 
         // Cleanup
         abortControllersRef.current.delete(sessionId);
@@ -467,7 +614,7 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
         async (event) => {
           const {
             sessionId,
-            messages,
+            messages: rawMessages,
             model,
             provider,
             systemPrompt,
@@ -475,6 +622,9 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
             maxTokens,
             availableTools,
           } = event.payload;
+
+          // Normalize messages from Rust (camelCase -> snake_case)
+          const messages = rawMessages.map(normalizeRustMessage);
 
           // Always get API key from Settings, ignore any apiKey from Rust backend
           const finalApiKey =
@@ -503,6 +653,21 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
               hasToolCalls: !!m.tool_calls,
               toolCallId: m.tool_call_id,
             })),
+          });
+
+          // ✅ Set streaming message IMMEDIATELY when request is received
+          // This provides instant visual feedback (~50-200ms earlier than setting it inside executeCompletionRequest)
+          setStreamingMessages((prev) => {
+            const next = new Map(prev);
+            next.set(sessionId, {
+              id: `msg_${Date.now()}`,
+              sessionId,
+              threadId: sessionId,
+              role: 'assistant',
+              content: [],
+              createdAt: new Date(),
+            });
+            return next;
           });
 
           try {
@@ -617,6 +782,12 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
       // Cancel all active requests
       abortControllersRef.current.forEach((controller) => controller.abort());
       abortControllersRef.current.clear();
+
+      // Clear all pending timeouts
+      timeoutsRef.current.forEach((timeoutId) =>
+        window.clearTimeout(timeoutId),
+      );
+      timeoutsRef.current.clear();
 
       // Dispose all active services
       activeServicesRef.current.forEach((service) => service.dispose());

@@ -109,12 +109,19 @@ export class MessageNormalizer {
 
     // Step 2: Identify completed tool_calls by finding matching tool responses
     for (const msg of messages) {
-      if (
-        msg.role === 'tool' &&
-        msg.tool_call_id &&
-        validToolCallIds.has(msg.tool_call_id)
-      ) {
-        completedToolCallIds.add(msg.tool_call_id);
+      if (msg.role === 'tool') {
+        if (msg.tool_call_id && validToolCallIds.has(msg.tool_call_id)) {
+          completedToolCallIds.add(msg.tool_call_id);
+        } else {
+          logger.warn('Tool message validation failed', {
+            messageId: msg.id,
+            toolCallId: msg.tool_call_id,
+            reason: !msg.tool_call_id
+              ? 'Missing tool_call_id'
+              : 'tool_call_id not found in assistant messages',
+            knownToolCallIds: Array.from(validToolCallIds),
+          });
+        }
       }
     }
 
@@ -156,6 +163,24 @@ export class MessageNormalizer {
           });
           continue;
         }
+      }
+
+      // Check if message is now empty (no content, no tool_calls)
+      // This prevents sending invalid messages to the API (e.g. 400 Bad Request)
+      const hasContent =
+        processedMsg.content && processedMsg.content.length > 0;
+      const hasToolCalls =
+        processedMsg.tool_calls && processedMsg.tool_calls.length > 0;
+
+      if (!hasContent && !hasToolCalls) {
+        logger.warn('Removing empty message after sanitization', {
+          messageId: msg.id,
+          role: msg.role,
+          originalContent: msg.content,
+          originalToolCallsCount: msg.tool_calls?.length ?? 0,
+          fullMessage: msg,
+        });
+        continue;
       }
 
       result.push(processedMsg);

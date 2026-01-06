@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAgentChat } from '@/context/AgentChatContext';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
 import { useMessageGrouping } from '@/hooks/useMessageGrouping';
@@ -8,23 +8,15 @@ import { AgentMessageBubble } from './AgentMessageBubble';
 import { ErrorBubble } from '@/features/chat/ErrorBubble';
 import { Bot } from 'lucide-react';
 import type { Message } from '@/models/chat';
-import { useLLMService } from '@/context/LLMServiceContext';
 
 export function AgentChatMessages() {
-  const { messages, error, llmError, retryMessage } = useAgentChat();
-  const { session } = useAgentSessionState();
-  const { streamingMessages } = useLLMService();
+  const { messages, error, llmError, retryMessage, workflowStatus } =
+    useAgentChat();
+  const { session, workflowPhase } = useAgentSessionState();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
-
-  const streamingMessage = useMemo(() => {
-    if (!session?.id || !streamingMessages) return undefined;
-    if (session.id) {
-      return streamingMessages.get(session.id);
-    }
-  }, [session, streamingMessages]);
 
   // Group messages for display
   const groupedMessages = useMessageGrouping(messages);
@@ -141,8 +133,8 @@ export function AgentChatMessages() {
           </div>
         )}
 
-        {/* Show streaming indicator or loading state */}
-        {streamingMessage && (
+        {/* Show persistent thinking indicator when workflow is busy */}
+        {workflowStatus === 'busy' && (
           <div className="flex justify-start mb-8 mt-3">
             <div className="w-full max-w-full bg-secondary/30 rounded-lg px-6 py-5">
               <div className="flex items-center gap-3 mb-2">
@@ -174,7 +166,16 @@ export function AgentChatMessages() {
                     ●
                   </span>
                 </div>
-                <span className="animate-pulse">Thinking and analyzing...</span>
+                <span className="animate-pulse">
+                  {workflowPhase === 'thinking' && 'Thinking...'}
+                  {workflowPhase === 'answering' && 'Answering...'}
+                  {workflowPhase === 'using_tools' &&
+                    'Using tools and processing...'}
+                  {workflowPhase !== 'thinking' &&
+                    workflowPhase !== 'answering' &&
+                    workflowPhase !== 'using_tools' &&
+                    'Processing...'}
+                </span>
               </div>
             </div>
           </div>

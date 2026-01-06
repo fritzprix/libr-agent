@@ -160,7 +160,7 @@ impl BuiltinMCPServer for PlanningServer {
             MCPTool {
                 name: "addScratchpad".to_string(),
                 title: Some("Add Scratchpad".to_string()),
-                description: "Add a note to your Scratchpad (Working Memory). Content here is ALWAYS visible in your context. Use this for keeping track of important findings, file paths, IDs, or intermediate analysis results that you need to reference frequently during the task.\n\nOptional source parameter: Provide the source of information for citation tracking (e.g., URLs, file paths, or tool result IDs like \"https://example.com/article\" or \"file://path/to/doc.txt\").".to_string(),
+                description: "Add a note to your Scratchpad (Working Memory). Content here is ALWAYS visible in your context. Use this for keeping track of important findings, file paths, IDs, or intermediate analysis results that you need to reference frequently during the task.\n\nNOTE: The scratchpad has a strict limit of 10 items. If you reach this limit, you must use `updateScratchpad` to modify existing items or `clearScratchpad` to remove old ones before adding more.\n\nOptional source parameter: Provide the source of information for citation tracking (e.g., URLs, file paths, or tool result IDs like \"https://example.com/article\" or \"file://path/to/doc.txt\").".to_string(),
                 input_schema: serde_json::from_value(json!({
                     "type": "object",
                     "properties": {
@@ -170,6 +170,23 @@ impl BuiltinMCPServer for PlanningServer {
                         "tags": { "type": "array", "items": { "type": "string" }, "description": "Optional tags for categorization and filtering." }
                     },
                     "required": ["note"]
+                }))
+                .unwrap(),
+                output_schema: None,
+                annotations: None,
+            },
+            MCPTool {
+                name: "updateScratchpad".to_string(),
+                title: Some("Update Scratchpad".to_string()),
+                description: "Update an existing scratchpad note. Use this when you want to modify the content of a note (e.g., adding more findings, correcting information) identified by its title.".to_string(),
+                input_schema: serde_json::from_value(json!({
+                    "type": "object",
+                    "properties": {
+                        "title": { "type": "string", "description": "The title of the scratchpad note to update." },
+                        "note": { "type": "string", "description": "The new content for the note." },
+                        "newTitle": { "type": "string", "description": "Optional: New title for the note if you want to rename it." }
+                    },
+                    "required": ["title", "note"]
                 }))
                 .unwrap(),
                 output_schema: None,
@@ -222,7 +239,7 @@ impl BuiltinMCPServer for PlanningServer {
             MCPTool {
                 name: "getCurrentState".to_string(),
                 title: Some("Get Current State".to_string()),
-                description: "Get current planning state including Goal, Todos, and Scratchpad as structured JSON data for UI visualization".to_string(),
+                description: "Get current planning state including Goal, Todos, and Scratchpad as human-readable text. Use when you need detailed visibility into current planning state beyond what's shown in the system context.".to_string(),
                 input_schema: serde_json::from_value(json!({
                     "type": "object",
                     "properties": {
@@ -321,6 +338,9 @@ impl BuiltinMCPServer for PlanningServer {
             }
             "addScratchpad" | "builtin_planning__addScratchpad" => {
                 scratchpad::add_scratchpad(&self.db_pool, &self.session_id, args).await
+            }
+            "updateScratchpad" | "builtin_planning__updateScratchpad" => {
+                scratchpad::update_scratchpad(&self.db_pool, &self.session_id, args).await
             }
             "listScratchpad" | "builtin_planning__listScratchpad" => {
                 scratchpad::list_scratchpad(&self.db_pool, &self.session_id, args).await

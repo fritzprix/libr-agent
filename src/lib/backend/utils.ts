@@ -60,23 +60,36 @@ export async function openExternalUrl(url: string): Promise<void> {
 /**
  * Initiates a download of a file from the workspace.
  * @param filePath The path of the file within the workspace to download.
+ * @param sessionId The ID of the session to download from.
  * @returns A promise that resolves to a string indicating the download status or path.
  */
-export async function downloadWorkspaceFile(filePath: string): Promise<string> {
-  return safeInvoke<string>('download_workspace_file', { filePath });
+export async function downloadWorkspaceFile(
+  filePath: string,
+  sessionId: string,
+): Promise<string> {
+  return safeInvoke<string>('download_workspace_file', {
+    filePath,
+    sessionId,
+  });
 }
 
 /**
  * Exports a selection of files as a zip archive and initiates a download.
  * @param files An array of file paths to include in the zip archive.
  * @param packageName The name for the zip package.
+ * @param sessionId The ID of the session to export from.
  * @returns A promise that resolves to a string indicating the download status or path.
  */
 export async function exportAndDownloadZip(
   files: string[],
   packageName: string,
+  sessionId: string,
 ): Promise<string> {
-  return safeInvoke<string>('export_and_download_zip', { files, packageName });
+  return safeInvoke<string>('export_and_download_zip', {
+    files,
+    packageName,
+    sessionId,
+  });
 }
 
 // ========================================

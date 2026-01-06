@@ -1,4 +1,3 @@
-import React from 'react';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
 import { AgentChatProvider } from '@/context/AgentChatContext';
 import {
@@ -14,7 +13,6 @@ import { AgentChatHeader } from './components/AgentChatHeader';
 import { AgentChatStatusBar } from './components/AgentChatStatusBar';
 import { AgentChatMessages } from './components/AgentChatMessages';
 import { AgentChatInput } from './components/AgentChatInput';
-import { AgentChatBottom } from './components/AgentChatBottom';
 import { AgentChatAttachedFiles } from './components/AgentChatAttachedFiles';
 import { AgentWorkspacePanel } from './components/AgentWorkspacePanel';
 import { AgentPlanningPanel } from './components/AgentPlanningPanel';
@@ -40,11 +38,7 @@ const logger = getLogger('AgentChatView');
  * - Workflow status display
  */
 
-interface AgentChatInnerProps {
-  children?: React.ReactNode;
-}
-
-function AgentChatInner({ children }: AgentChatInnerProps) {
+function AgentChatInner() {
   const { showWorkspacePanel } = useAgentWorkspace();
   const { showPlanningPanel } = useAgentPlanning();
 
@@ -54,24 +48,29 @@ function AgentChatInner({ children }: AgentChatInnerProps) {
   });
 
   return (
-    <div className="h-full w-full max-h-[100vh] font-mono flex rounded-lg overflow-hidden shadow-2xl">
-      {/* Workspace side panel */}
-      {showWorkspacePanel && <AgentWorkspacePanel />}
+    <>
+      <TimeLocationSystemPrompt />
+      <div className="h-full w-full max-h-[100vh] font-mono flex rounded-lg overflow-hidden shadow-2xl">
+        {/* Workspace side panel */}
+        {showWorkspacePanel && <AgentWorkspacePanel />}
 
-      {/* Main chat area */}
-      <div className="flex-1 flex flex-col min-h-0 min-w-0">{children}</div>
+        {/* Main chat area - components rendered directly inside provider scope */}
+        <div className="flex-1 flex flex-col min-h-0 min-w-0">
+          <AgentChatHeader />
+          <AgentChatStatusBar />
+          <AgentChatMessages />
+          <AgentChatAttachedFiles />
+          <AgentChatInput />
+        </div>
 
-      {/* Planning side panel */}
-      {showPlanningPanel && <AgentPlanningPanel />}
-    </div>
+        {/* Planning side panel */}
+        {showPlanningPanel && <AgentPlanningPanel />}
+      </div>
+    </>
   );
 }
 
-interface AgentChatViewProps {
-  children?: React.ReactNode;
-}
-
-export default function AgentChatView({ children }: AgentChatViewProps) {
+export default function AgentChatView() {
   const { session, isSessionLoading } = useAgentSessionState();
 
   if (isSessionLoading) {
@@ -100,8 +99,7 @@ export default function AgentChatView({ children }: AgentChatViewProps) {
       <AgentChatProvider>
         <AgentPlanningProvider>
           <AgentWorkspaceProvider>
-            <TimeLocationSystemPrompt />
-            <AgentChatInner>{children}</AgentChatInner>
+            <AgentChatInner />
           </AgentWorkspaceProvider>
         </AgentPlanningProvider>
       </AgentChatProvider>
@@ -114,7 +112,6 @@ AgentChatView.Header = AgentChatHeader;
 AgentChatView.StatusBar = AgentChatStatusBar;
 AgentChatView.Messages = AgentChatMessages;
 AgentChatView.Input = AgentChatInput;
-AgentChatView.Bottom = AgentChatBottom;
 AgentChatView.AttachedFiles = AgentChatAttachedFiles;
 AgentChatView.WorkspacePanel = AgentWorkspacePanel;
 AgentChatView.PlanningPanel = AgentPlanningPanel;

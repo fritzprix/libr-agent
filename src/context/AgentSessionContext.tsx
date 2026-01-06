@@ -9,7 +9,7 @@ import React, {
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getLogger } from '../lib/logger';
-import type { Message, RustMessage } from '@/models/chat';
+import type { Message, RustMessage, Assistant } from '@/models/chat';
 import { rustMessageToMessage } from '@/models/chat';
 import type { Page } from '@/lib/db/types';
 import { AgentSession } from '@/models/agent';
@@ -52,6 +52,14 @@ type AgentEventPayload =
       success: boolean;
     };
 
+// Workflow phase within 'busy' status for fine-grained UI feedback
+export type WorkflowPhase =
+  | 'idle' // Not processing
+  | 'thinking' // Waiting for LLM response to start
+  | 'answering' // LLM is streaming response
+  | 'using_tools' // Executing tool calls
+  | 'error'; // Error occurred
+
 // --- STATE CONTEXT ---
 interface AgentSessionStateContextValue {
   session: AgentSession | null;
@@ -60,6 +68,7 @@ interface AgentSessionStateContextValue {
   error: string | null;
   llmError: string | null;
   workflowStatus: 'idle' | 'busy' | 'paused' | 'error';
+  workflowPhase: WorkflowPhase;
 }
 
 const AgentSessionStateContext = createContext<
@@ -113,6 +122,7 @@ export function AgentSessionProvider({
   const [workflowStatus, setWorkflowStatus] = useState<
     'idle' | 'busy' | 'paused' | 'error'
   >('idle');
+  const [workflowPhase, setWorkflowPhase] = useState<WorkflowPhase>('idle');
 
   /**
    * Load messages for the current session
@@ -159,6 +169,7 @@ export function AgentSessionProvider({
           id: string;
           name?: string;
           status: 'idle' | 'busy' | 'paused' | 'error';
+          agentConfig?: string;
           createdAt: number;
           updatedAt?: number;
         } | null>('agent_get_session', {
@@ -171,10 +182,20 @@ export function AgentSessionProvider({
 
         if (!isMounted) return;
 
+        let assistant: Assistant | undefined;
+        if (response.agentConfig) {
+          try {
+            assistant = JSON.parse(response.agentConfig);
+          } catch (e) {
+            logger.error('Failed to parse agent config', e);
+          }
+        }
+
         const sessionData: AgentSession = {
           id: response.id,
           name: response.name,
           status: response.status,
+          assistant,
           createdAt: new Date(response.createdAt),
           updatedAt: response.updatedAt
             ? new Date(response.updatedAt)
@@ -210,12 +231,32 @@ export function AgentSessionProvider({
           });
 
           switch (payload.type) {
+            case 'workflowStarted': {
+              setWorkflowStatus('busy');
+              setWorkflowPhase('thinking');
+              setError(null);
+              setLlmError(null);
+              logger.info('Workflow phase: thinking');
+              break;
+            }
+
             case 'statusChanged': {
               const newStatus = payload.status;
               setWorkflowStatus(newStatus);
               setSession((prev) =>
                 prev ? { ...prev, status: newStatus } : null,
               );
+
+              // ✅ Clear errors when status changes to 'busy' (e.g. on retry)
+              if (newStatus === 'busy') {
+                setError(null);
+                setLlmError(null);
+                setWorkflowPhase('thinking');
+              } else if (newStatus === 'idle') {
+                setWorkflowPhase('idle');
+              } else if (newStatus === 'error') {
+                setWorkflowPhase('error');
+              }
               break;
             }
 
@@ -224,7 +265,14 @@ export function AgentSessionProvider({
               setIsSessionLoading(false);
               const errorMsg = payload.error;
 
-              if (
+              // Specific handling for empty LLM responses
+              if (errorMsg.startsWith('EMPTY_LLM_RESPONSE:')) {
+                const cleanMessage = errorMsg.replace(
+                  'EMPTY_LLM_RESPONSE: ',
+                  '',
+                );
+                setLlmError(cleanMessage);
+              } else if (
                 errorMsg.includes('invalid type:') ||
                 errorMsg.includes('expected i64') ||
                 errorMsg.includes('LLM') ||
@@ -243,6 +291,16 @@ export function AgentSessionProvider({
               const rustMessage = payload.message;
               const newMessage = rustMessageToMessage(rustMessage);
 
+              // Phase transition: assistant message with streaming indicates answering phase
+              if (
+                newMessage.role === 'assistant' &&
+                newMessage.isStreaming &&
+                workflowPhase === 'thinking'
+              ) {
+                setWorkflowPhase('answering');
+                logger.info('Workflow phase: answering');
+              }
+
               setMessages((prev) => {
                 if (prev.some((m) => m.id === newMessage.id)) return prev;
                 return [...prev, newMessage];
@@ -250,9 +308,19 @@ export function AgentSessionProvider({
               break;
             }
 
+            case 'toolExecutionStarted': {
+              setWorkflowPhase('using_tools');
+              logger.info('Workflow phase: using_tools', {
+                toolName: payload.toolName,
+              });
+              break;
+            }
+
             case 'workflowCompleted': {
               setWorkflowStatus('idle');
+              setWorkflowPhase('idle');
               setIsSessionLoading(false);
+              logger.info('Workflow phase: idle');
               break;
             }
           }
@@ -349,8 +417,17 @@ export function AgentSessionProvider({
       error,
       llmError,
       workflowStatus,
+      workflowPhase,
     }),
-    [session, messages, isSessionLoading, error, llmError, workflowStatus],
+    [
+      session,
+      messages,
+      isSessionLoading,
+      error,
+      llmError,
+      workflowStatus,
+      workflowPhase,
+    ],
   );
 
   const actionsValue: AgentSessionActionsContextValue = useMemo(

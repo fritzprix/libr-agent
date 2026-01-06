@@ -51,6 +51,7 @@ glob = "0.3"
 sha2 = "0.10"
 html-escape = "0.2"
 html2md = "0.2"           # HTML to Markdown conversion
+tiktoken-rs = "0.5"       # OpenAI tokenizer for accurate token-based pagination
 warp = "0.3"
 dashmap = "5.5"
 regex = "1"

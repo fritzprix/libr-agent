@@ -30,7 +30,7 @@ export async function handleLLMResponse(
 export async function handleUserToolCall(
   sessionId: string,
   toolName: string,
-  args: any, // eslint-disable-line @typescript-eslint/no-explicit-any
+  args: Record<string, unknown>,
 ): Promise<void> {
   const toolCallId = createId();
   const now = Date.now();
@@ -55,4 +55,18 @@ export async function handleUserToolCall(
   };
 
   await handleLLMResponse(sessionId, message);
+}
+
+/**
+ * Get available tools for a specific agent session
+ * Returns the filtered tool list based on agent configuration
+ * This ensures UI displays the same tools that LLM can actually use
+ *
+ * @param sessionId - The active session ID
+ * @returns Array of MCPTool objects that are available for this session
+ */
+export async function getAgentAvailableTools(
+  sessionId: string,
+): Promise<unknown[]> {
+  return invoke('agent_get_available_tools', { sessionId });
 }

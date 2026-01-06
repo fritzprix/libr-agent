@@ -22,7 +22,11 @@ export type {
 } from './types';
 
 // Workspace management
-export { listWorkspaceFiles, workspaceWriteFile } from './workspace';
+export {
+  listWorkspaceFiles,
+  workspaceWriteFile,
+  openWorkspaceFileWithDefaultApp,
+} from './workspace';
 
 // MCP server management
 export {
@@ -77,7 +81,11 @@ export {
 } from './messages';
 
 // Agent Workflow & Commands
-export { handleLLMResponse, handleUserToolCall } from './agent-commands';
+export {
+  handleLLMResponse,
+  handleUserToolCall,
+  getAgentAvailableTools,
+} from './agent-commands';
 
 // Session management
 export { removeSession, deleteContentStore, switchSession } from './sessions';

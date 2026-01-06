@@ -19,14 +19,7 @@ export default function AgentContainer() {
     // Session View: Isolated provider for this session
     return (
       <AgentSessionProvider sessionId={sessionId} key={sessionId}>
-        <AgentChatView>
-          <AgentChatView.Header />
-          <AgentChatView.StatusBar />
-          <AgentChatView.Messages />
-          <AgentChatView.AttachedFiles />
-          <AgentChatView.Input />
-          <AgentChatView.Bottom />
-        </AgentChatView>
+        <AgentChatView />
       </AgentSessionProvider>
     );
   }

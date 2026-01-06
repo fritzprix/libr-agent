@@ -1,5 +1,5 @@
 import React from 'react';
-import TerminalHeader from '@/components/TerminalHeader';
+import AgentTerminalHeader from './AgentTerminalHeader';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
 import { useAgentPlanning } from '@/context/AgentPlanningContext';
 import { useAgentWorkspace } from '@/context/AgentWorkspaceContext';
@@ -52,7 +52,7 @@ export function AgentChatHeader({
   };
 
   return (
-    <TerminalHeader>
+    <AgentTerminalHeader>
       <div className="flex items-center justify-between w-full">
         <div className="flex items-center">
           {children}
@@ -115,6 +115,6 @@ export function AgentChatHeader({
           {session?.id && <SessionFilesPopover sessionId={session.id} />}
         </div>
       </div>
-    </TerminalHeader>
+    </AgentTerminalHeader>
   );
 }

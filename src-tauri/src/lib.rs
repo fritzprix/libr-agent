@@ -14,11 +14,12 @@ mod session_isolation;
 mod state;
 
 use commands::agent_commands::{
-    agent_call_builtin_tool, agent_create_session, agent_delete_session, agent_get_all_sessions,
+    agent_call_builtin_tool, agent_clear_all_sessions, agent_create_session, agent_delete_session,
+    agent_factory_reset, agent_get_all_sessions, agent_get_available_tools,
     agent_get_service_contexts, agent_get_session, agent_handle_llm_error,
     agent_handle_llm_response, agent_handle_tool_result, agent_init_session_with_messages,
-    agent_pause_workflow, agent_resume_session, agent_resume_workflow, agent_send_message,
-    agent_terminate_workflow,
+    agent_inject_messages, agent_pause_workflow, agent_resume_session, agent_resume_workflow,
+    agent_send_message, agent_terminate_workflow,
 };
 use commands::browser_commands::*;
 use commands::content_store_commands::delete_content_store;
@@ -46,6 +47,7 @@ use commands::session_commands::{
 use commands::url_commands::open_external_url;
 use commands::workspace_commands::{
     get_app_data_dir, get_app_logs_dir, greet, list_workspace_files,
+    open_workspace_file_with_default_app,
 };
 use mcp::MCPServerManager;
 use services::{InteractiveBrowserServer, SecureFileManager};
@@ -283,6 +285,7 @@ pub fn run() {
                 write_file,
                 workspace_write_file,
                 open_external_url,
+                open_workspace_file_with_default_app,
                 // Interactive Browser commands
                 create_browser_session,
                 close_browser_session,
@@ -319,11 +322,16 @@ pub fn run() {
                 agent_get_session,
                 agent_get_all_sessions,
                 agent_delete_session,
+                agent_get_available_tools,
                 agent_pause_workflow,
                 agent_resume_workflow,
                 agent_terminate_workflow,
                 agent_call_builtin_tool,
-                agent_get_service_contexts
+                agent_call_builtin_tool,
+                agent_get_service_contexts,
+                agent_inject_messages,
+                agent_clear_all_sessions,
+                agent_factory_reset
             ])
             .setup(|app| {
                 println!("🚀 LibrAgent initializing...");

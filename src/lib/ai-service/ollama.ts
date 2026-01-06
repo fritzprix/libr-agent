@@ -61,7 +61,12 @@ export class OllamaService extends BaseAIService {
    * @param config Optional configuration for the service.
    */
   constructor(apiKey: string, config?: AIServiceConfig) {
-    super(apiKey, config);
+    // Local models can be slow, especially for initial loading or large context.
+    // We increase the default timeout to 5 minutes (300000ms) if not explicitly provided.
+    super(apiKey, {
+      timeout: 300_000,
+      ...config,
+    });
     this.host = config?.baseUrl || 'http://127.0.0.1:11434';
 
     // Strategy:

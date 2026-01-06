@@ -287,40 +287,6 @@ pub async fn list_interactable(server: &BrowserServer, args: Value) -> Result<MC
     Ok(hint.to_mcp_result())
 }
 
-pub async fn inject_javascript(server: &BrowserServer, args: Value) -> Result<MCPResult, String> {
-    let service = server.get_browser_service()?;
-    let script = match args.get("script").and_then(|v| v.as_str()) {
-        Some(s) => s,
-        Option::None => return Ok(missing_param_error("script", ToolGroup::Browser)),
-    };
-    let session_id = match args.get("sessionId").and_then(|v| v.as_str()) {
-        Some(id) => id,
-        Option::None => return Ok(missing_param_error("sessionId", ToolGroup::Browser)),
-    };
-
-    let result = match service.execute_script(session_id, script).await {
-        Ok(res) => res,
-        Err(e) => {
-            return Ok(operation_failed_error(
-                "Execute JavaScript",
-                &e,
-                vec![
-                    "Verify the JavaScript syntax is correct".to_string(),
-                    "Check the browser session is active".to_string(),
-                    "Ensure the script returns a serializable value".to_string(),
-                ],
-                ToolGroup::Browser,
-            ))
-        }
-    };
-
-    let hint = SuccessHint::new(
-        result,
-        vec!["Use extractWebContent to see page changes after script execution".to_string()],
-    );
-    Ok(hint.to_mcp_result())
-}
-
 /// Helper to inline the clickElement script
 fn get_click_script(selector: &str) -> String {
     format!(

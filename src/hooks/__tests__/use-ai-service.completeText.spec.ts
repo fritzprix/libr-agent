@@ -2,6 +2,7 @@ import { renderHook, act } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { useAIService } from '../use-ai-service';
 import { AIServiceFactory } from '@/lib/ai-service';
+import type { IAIService } from '@/lib/ai-service';
 import type { Message } from '@/models/chat';
 
 // Mock useSettings
@@ -14,9 +15,12 @@ vi.mock('../use-settings', () => ({
   }),
 }));
 
-type MockAIService = {
+type MockAIService = Pick<IAIService, 'streamChat' | 'cancel'> & {
   streamChat: ReturnType<typeof vi.fn>;
   cancel: ReturnType<typeof vi.fn>;
+  sampleText?: ReturnType<typeof vi.fn>;
+  listModels?: ReturnType<typeof vi.fn>;
+  dispose?: ReturnType<typeof vi.fn>;
 };
 
 // Helper: async generator that yields chunks
@@ -50,7 +54,7 @@ describe('useAIService.completeText', () => {
       cancel: vi.fn(),
     };
     vi.spyOn(AIServiceFactory, 'getService').mockReturnValue(
-      fakeService as unknown as ReturnType<typeof AIServiceFactory.getService>,
+      fakeService as IAIService,
     );
 
     const { result } = renderHook(() => useAIService());
@@ -78,7 +82,7 @@ describe('useAIService.completeText', () => {
       cancel: vi.fn(),
     };
     vi.spyOn(AIServiceFactory, 'getService').mockReturnValue(
-      fakeService as unknown as ReturnType<typeof AIServiceFactory.getService>,
+      fakeService as IAIService,
     );
 
     const { result } = renderHook(() => useAIService());
@@ -104,7 +108,7 @@ describe('useAIService.completeText', () => {
       cancel: vi.fn(),
     };
     vi.spyOn(AIServiceFactory, 'getService').mockReturnValue(
-      fakeService as unknown as ReturnType<typeof AIServiceFactory.getService>,
+      fakeService as IAIService,
     );
 
     const { result } = renderHook(() => useAIService());
@@ -130,7 +134,7 @@ describe('useAIService.completeText', () => {
       cancel: vi.fn(),
     };
     vi.spyOn(AIServiceFactory, 'getService').mockReturnValue(
-      fakeService as unknown as ReturnType<typeof AIServiceFactory.getService>,
+      fakeService as IAIService,
     );
 
     const { result } = renderHook(() => useAIService());
@@ -159,7 +163,7 @@ describe('useAIService.completeText', () => {
       cancel: vi.fn(),
     };
     vi.spyOn(AIServiceFactory, 'getService').mockReturnValue(
-      fakeService as unknown as ReturnType<typeof AIServiceFactory.getService>,
+      fakeService as IAIService,
     );
 
     const { result } = renderHook(() => useAIService());
@@ -187,7 +191,7 @@ describe('useAIService.completeText', () => {
       cancel: vi.fn(),
     };
     vi.spyOn(AIServiceFactory, 'getService').mockReturnValue(
-      fakeService as unknown as ReturnType<typeof AIServiceFactory.getService>,
+      fakeService as IAIService,
     );
 
     const { result } = renderHook(() => useAIService());
@@ -220,7 +224,7 @@ describe('useAIService.completeText', () => {
       cancel: vi.fn(),
     };
     vi.spyOn(AIServiceFactory, 'getService').mockReturnValue(
-      fakeService as unknown as ReturnType<typeof AIServiceFactory.getService>,
+      fakeService as IAIService,
     );
 
     const { result } = renderHook(() => useAIService());

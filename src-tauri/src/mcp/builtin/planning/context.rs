@@ -74,9 +74,9 @@ pub async fn get_service_context(pool: &SqlitePool, session_id: &str) -> Service
         })
         .collect();
 
-    // 3. Fetch Scratchpad (Recent)
+    // 3. Fetch Scratchpad (All - max 10 enforced by addScratchpad)
     let scratchpad: Vec<ScratchpadItem> = sqlx::query_as(
-        "SELECT * FROM planning_scratchpad WHERE session_id = ? ORDER BY created_at DESC LIMIT 6",
+        "SELECT * FROM planning_scratchpad WHERE session_id = ? ORDER BY created_at DESC",
     )
     .bind(session_id)
     .fetch_all(pool)
@@ -117,39 +117,47 @@ pub async fn get_service_context(pool: &SqlitePool, session_id: &str) -> Service
         // Unchecked Todos (Top 5)
         if !unchecked_todos.is_empty() {
             parts.push("\n**Unchecked Items:**".to_string());
-            for (idx, t) in unchecked_todos.iter().take(5).enumerate() {
-                let priority = if t.priority != "medium" {
-                    format!("Priority:{}", t.priority)
+            parts.push("| ID | Prio | Task | Description |".to_string());
+            parts.push("| :--- | :--- | :--- | :--- |".to_string());
+
+            for t in unchecked_todos.iter().take(5) {
+                let priority = if t.priority == "high" {
+                    "🔴 High"
+                } else if t.priority == "low" {
+                    "🟢 Low"
                 } else {
-                    "Priority:medium".to_string()
+                    "🟡 Med"
                 };
 
                 let description = if let Some(desc) = &t.description {
                     if !desc.is_empty() {
                         let char_count = desc.chars().count();
-                        let truncated = if char_count > 80 {
-                            let s: String = desc.chars().take(80).collect();
+                        if char_count > 50 {
+                            let s: String = desc.chars().take(50).collect();
                             format!("{}...", s)
                         } else {
                             desc.clone()
-                        };
-                        format!("\n     {}", truncated)
+                        }
                     } else {
-                        String::new()
+                        "-".to_string()
                     }
                 } else {
-                    String::new()
+                    "-".to_string()
                 };
 
+                // Sanitize pipe characters in content to avoid breaking table
+                let safe_content = t.content.replace('|', "\\|");
+                let safe_desc = description.replace('|', "\\|");
+
                 parts.push(format!(
-                    "  [{}] ID:{} | {} | {}{}",
-                    idx, t.id, t.content, priority, description
+                    "| {} | {} | {} | {} |",
+                    t.id, priority, safe_content, safe_desc
                 ));
             }
 
             if unchecked_todos.len() > 5 {
                 parts.push(format!(
-                    "  ...and {} more (use listTodos to see all)",
+                    "\n*...and {} more (use listTodos to see all)*",
                     unchecked_todos.len() - 5
                 ));
             }
@@ -158,21 +166,21 @@ pub async fn get_service_context(pool: &SqlitePool, session_id: &str) -> Service
 
         // Checked Todos (Top 3 recent)
         if !checked_todos.is_empty() {
-            parts.push("\n**Checked Items (Completed):**".to_string());
+            parts.push("\n**Checked Items (Recently Completed):**".to_string());
+            parts.push("| ID | Status | Task |".to_string());
+            parts.push("| :--- | :--- | :--- |".to_string());
+
             // We want the most recently updated/created ones (which are at the end of the list since we ordered by ASC)
             // So we reverse iteration
             for t in checked_todos.iter().rev().take(3) {
-                let priority = if t.priority != "medium" {
-                    format!("[{}]", t.priority)
-                } else {
-                    String::new()
-                };
-                parts.push(format!("  [✓] ID:{} | {} {}", t.id, t.content, priority));
+                // Sanitize pipes
+                let safe_content = t.content.replace('|', "\\|");
+                parts.push(format!("| {} | ✓ Done | {} |", t.id, safe_content));
             }
 
             if checked_todos.len() > 3 {
                 parts.push(format!(
-                    "  ...and {} more completed",
+                    "\n*...and {} more completed*",
                     checked_todos.len() - 3
                 ));
             }
@@ -184,17 +192,10 @@ pub async fn get_service_context(pool: &SqlitePool, session_id: &str) -> Service
 
     // Scratchpad Section
     if !scratchpad.is_empty() {
-        // Check if we have more than the limit (we fetched limit 6 to check for 'more')
-        let (visible_scratchpad, has_more_scratchpad) = if scratchpad.len() > 5 {
-            (&scratchpad[0..5], true)
-        } else {
-            (&scratchpad[..], false)
-        };
-
         parts.push(format!("\n**Scratchpad:** {} items", scratchpad.len()));
         parts.push("".to_string()); // Spacer
 
-        for (idx, item) in visible_scratchpad.iter().enumerate() {
+        for (idx, item) in scratchpad.iter().enumerate() {
             let title_part = if let Some(title) = &item.title {
                 format!("**{}**", title)
             } else {
@@ -215,22 +216,11 @@ pub async fn get_service_context(pool: &SqlitePool, session_id: &str) -> Service
                 String::new()
             };
 
-            let content_preview = if item.title.is_some() {
-                let char_count = item.content.chars().count();
-                if char_count > 50 {
-                    let s: String = item.content.chars().take(50).collect();
-                    format!(" - {}...", s)
-                } else {
-                    format!(" - {}", item.content)
-                }
+            // Full content, no truncation
+            let content_part = if item.title.is_some() {
+                format!(" - {}", item.content)
             } else {
-                let char_count = item.content.chars().count();
-                if char_count > 60 {
-                    let s: String = item.content.chars().take(60).collect();
-                    format!("{}...", s)
-                } else {
-                    item.content.clone()
-                }
+                item.content.clone()
             };
 
             parts.push(format!(
@@ -238,15 +228,8 @@ pub async fn get_service_context(pool: &SqlitePool, session_id: &str) -> Service
                 idx + 1,
                 item.id,
                 title_part,
-                content_preview,
+                content_part,
                 tags_part
-            ));
-        }
-
-        if has_more_scratchpad {
-            parts.push(format!(
-                "  ...and {} more items. Use listScratchpad to view all.",
-                scratchpad.len() - 5
             ));
         }
     } else {

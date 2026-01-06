@@ -395,7 +395,7 @@ mod tests {
         assert_eq!(content.len(), 2, "Expected text and resource content");
 
         // Verify UI resource
-        if let crate::mcp::types::MCPContent::Resource { resource } = &content[1] {
+        if let crate::mcp::types::MCPContent::Resource { resource, .. } = &content[1] {
             let uri = resource["uri"].as_str().unwrap();
             assert!(uri.contains("ui://playbook/list/"));
 
@@ -536,7 +536,7 @@ mod tests {
             _ => panic!("Expected ToolCall result"),
         };
 
-        if let crate::mcp::types::MCPContent::Resource { resource } =
+        if let crate::mcp::types::MCPContent::Resource { resource, .. } =
             &result1.content.expect("No content")[1]
         {
             let html = resource["text"].as_str().unwrap();
@@ -555,7 +555,7 @@ mod tests {
             _ => panic!("Expected ToolCall result"),
         };
 
-        if let crate::mcp::types::MCPContent::Resource { resource } =
+        if let crate::mcp::types::MCPContent::Resource { resource, .. } =
             &result2.content.expect("No content")[1]
         {
             let html = resource["text"].as_str().unwrap();

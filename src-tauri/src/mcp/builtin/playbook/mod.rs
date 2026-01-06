@@ -159,6 +159,109 @@ impl BuiltinMCPServer for PlaybookServer {
         "Playbook management for reusable workflows"
     }
 
+    async fn get_service_context(
+        &self,
+        _options: Option<&Value>,
+    ) -> crate::mcp::types::ServiceContext {
+        // Query playbook count for this session
+        let total_count: i64 =
+            match sqlx::query_scalar("SELECT COUNT(*) FROM playbooks WHERE session_id = ?")
+                .bind(&self.session_id)
+                .fetch_one(self.db_pool.as_ref())
+                .await
+            {
+                Ok(count) => count,
+                Err(e) => {
+                    log::warn!("Failed to count playbooks: {}", e);
+                    return crate::mcp::types::ServiceContext {
+                        context_prompt: "## Playbooks\n\nError loading state".to_string(),
+                        structured_state: None,
+                    };
+                }
+            };
+
+        // If no playbooks, return minimal context
+        if total_count == 0 {
+            return crate::mcp::types::ServiceContext {
+                context_prompt: "## Playbooks\n\nNo playbooks yet".to_string(),
+                structured_state: Some(serde_json::json!({
+                    "total_count": 0,
+                    "recent_playbooks": []
+                })),
+            };
+        }
+
+        // Fetch recent 3 playbooks (Planning-style detail)
+        let rows = match sqlx::query(
+            "SELECT * FROM playbooks WHERE session_id = ? ORDER BY updated_at DESC LIMIT 3",
+        )
+        .bind(&self.session_id)
+        .fetch_all(self.db_pool.as_ref())
+        .await
+        {
+            Ok(rows) => rows,
+            Err(e) => {
+                log::warn!("Failed to fetch recent playbooks: {}", e);
+                return crate::mcp::types::ServiceContext {
+                    context_prompt: format!("## Playbooks\n\n{} total", total_count),
+                    structured_state: Some(serde_json::json!({
+                        "total_count": total_count,
+                        "recent_playbooks": []
+                    })),
+                };
+            }
+        };
+
+        let playbooks: Vec<types::Playbook> = rows.iter().map(types::Playbook::from_row).collect();
+
+        // Build context prompt (Planning style: list with details)
+        let mut parts = vec![
+            "## Playbooks".to_string(),
+            String::new(),
+            format!("{} total", total_count),
+        ];
+
+        if !playbooks.is_empty() {
+            parts.push(String::new());
+            parts.push("Recent:".to_string());
+            for playbook in &playbooks {
+                // Truncate goal to 50 chars for token efficiency
+                let goal_display = if playbook.goal.len() > 50 {
+                    format!("{}...", &playbook.goal[..50])
+                } else {
+                    playbook.goal.clone()
+                };
+
+                // Get short ID (first 8 chars)
+                let short_id = if playbook.id.len() > 8 {
+                    &playbook.id[..8]
+                } else {
+                    &playbook.id
+                };
+
+                parts.push(format!(
+                    "- {} steps: {} ({})",
+                    playbook.workflow.len(),
+                    goal_display,
+                    short_id
+                ));
+            }
+        }
+
+        crate::mcp::types::ServiceContext {
+            context_prompt: parts.join("\n"),
+            structured_state: Some(serde_json::json!({
+                "total_count": total_count,
+                "recent_playbooks": playbooks.iter().map(|p| serde_json::json!({
+                    "id": p.id,
+                    "goal": p.goal,
+                    "step_count": p.workflow.len(),
+                    "updated_at": p.updated_at
+                })).collect::<Vec<_>>()
+            })),
+        }
+    }
+
     fn tools(&self) -> Vec<MCPTool> {
         vec![
             create_tool_def(

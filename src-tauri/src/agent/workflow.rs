@@ -1,6 +1,7 @@
 use crate::agent::state::{AgentSession, MAX_CACHED_MESSAGES};
 use crate::commands::messages_commands::Message;
 use crate::mcp::MCPServiceProxyManager;
+use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::{MessageRepository, SessionStatus};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -108,7 +109,54 @@ pub async fn start_workflow(
         user_message.id
     );
 
-    // 4. Request LLM completion with cached messages (no DB query)
+    // 4. Ensure Proxy Exists (Critical for System Prompt)
+    // If the session was previously terminated, the proxy might have been destroyed.
+    // We must recreate it to ensure the LLM gets the full context (tools, etc).
+    if proxy_manager.get_proxy(&session_id).await.is_none() {
+        log::warn!(
+            "MCP proxy missing for session {} during workflow start. Recreating...",
+            session_id
+        );
+
+        // 4.1 Get session metadata to retrieve config
+        let session_repo = crate::state::get_session_repository();
+        if let Some(session) = session_repo
+            .get_session(&session_id)
+            .await
+            .map_err(|e| format!("Failed to get session for proxy recreation: {}", e))?
+        {
+            // 4.2 Parse agent config
+            if let Some(config_json) = session.agent_config {
+                let agent_config = crate::agent::AgentConfig::from_json(&config_json)
+                    .map_err(|e| format!("Failed to parse agent config: {}", e))?;
+
+                // 4.3 Extract tool IDs
+                let tool_ids = crate::agent::tools::extract_builtin_tool_ids(&agent_config);
+
+                // 4.4 Recreate proxy
+                proxy_manager
+                    .create_proxy(session_id.clone(), tool_ids, Some(app_handle.clone()))
+                    .await?;
+
+                log::info!(
+                    "✅ Successfully recreated MCP proxy for session: {}",
+                    session_id
+                );
+            } else {
+                log::error!(
+                    "Cannot recreate proxy: Session {} has no agent config",
+                    session_id
+                );
+            }
+        } else {
+            log::error!(
+                "Cannot recreate proxy: Session {} not found in DB",
+                session_id
+            );
+        }
+    }
+
+    // 5. Request LLM completion with cached messages (no DB query)
     crate::agent::llm::request_llm_completion(
         active_sessions,
         proxy_manager,

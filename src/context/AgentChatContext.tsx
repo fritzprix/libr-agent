@@ -80,6 +80,15 @@ interface AgentChatActionsContextValue {
    * Manually update service contexts from backend
    */
   updateServiceContexts: () => Promise<void>;
+
+  /**
+   * Inject messages into the session directly
+   * Optionally triggers the workflow based on the updated history
+   */
+  injectMessages: (
+    messages: Message[],
+    triggerWorkflow?: boolean,
+  ) => Promise<void>;
 }
 
 const AgentChatActionsContext = createContext<
@@ -299,6 +308,57 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
   );
 
   /**
+   * Inject messages into the session
+   */
+  const injectMessages = useCallback(
+    async (messages: Message[], triggerWorkflow = false) => {
+      if (!session?.id) {
+        logger.error('Cannot inject messages: no active session');
+        return;
+      }
+
+      logger.info('Injecting messages', {
+        sessionId: session.id,
+        count: messages.length,
+        triggerWorkflow,
+      });
+
+      try {
+        const now = Date.now();
+        const messagesForRust: RustMessage[] = messages.map((msg) => ({
+          ...msg,
+          createdAt:
+            msg.createdAt instanceof Date
+              ? msg.createdAt.getTime()
+              : msg.createdAt || now,
+          updatedAt:
+            msg.updatedAt instanceof Date
+              ? msg.updatedAt.getTime()
+              : msg.updatedAt ||
+                (msg.createdAt instanceof Date
+                  ? msg.createdAt.getTime()
+                  : msg.createdAt) ||
+                now,
+        }));
+
+        await invoke('agent_inject_messages', {
+          request: {
+            sessionId: session.id,
+            messages: messagesForRust,
+            triggerWorkflow,
+          },
+        });
+        // Events will update the UI
+      } catch (err) {
+        logger.error('Failed to inject messages', err);
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        setError(errorMessage);
+      }
+    },
+    [session?.id],
+  );
+
+  /**
    * Cancel the current workflow
    */
   const cancel = useCallback(async () => {
@@ -407,8 +467,16 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
       retryMessage,
       toggleReasoning,
       updateServiceContexts,
+      injectMessages,
     }),
-    [submit, cancel, retryMessage, toggleReasoning, updateServiceContexts],
+    [
+      submit,
+      cancel,
+      retryMessage,
+      toggleReasoning,
+      updateServiceContexts,
+      injectMessages,
+    ],
   );
 
   return (
