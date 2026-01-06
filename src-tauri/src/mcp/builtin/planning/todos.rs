@@ -360,6 +360,7 @@ pub async fn check_todo(
         .map_err(|e| format!("Failed to fetch todo: {}", e))?;
 
     if let Some(todo) = todo_model {
+        let parent_id = todo.parent_id;
         let mut active_todo: planning_todo::ActiveModel = todo.into();
         active_todo.is_checked = Set(checked);
         active_todo.status = Set(status.to_string());
@@ -390,6 +391,43 @@ pub async fn check_todo(
                 } else {
                     String::new()
                 };
+
+                let mut parent_update_msg = String::new();
+                if let Some(pid) = parent_id {
+                    let should_check_parent = if !checked {
+                        false
+                    } else {
+                        planning_todo::Entity::find()
+                            .filter(planning_todo::Column::ParentId.eq(pid))
+                            .filter(planning_todo::Column::IsChecked.eq(false))
+                            .count(db)
+                            .await
+                            .map(|c| c == 0)
+                            .unwrap_or(false)
+                    };
+
+                    if let Ok(Some(p)) = planning_todo::Entity::find_by_id(pid).one(db).await {
+                        if p.is_checked != should_check_parent {
+                            let mut active_parent: planning_todo::ActiveModel = p.into();
+                            active_parent.is_checked = Set(should_check_parent);
+                            active_parent.status = Set(if should_check_parent {
+                                "completed".to_string()
+                            } else {
+                                "pending".to_string()
+                            });
+                            active_parent.updated_at = Set(now);
+
+                            if active_parent.update(db).await.is_ok() {
+                                parent_update_msg = if should_check_parent {
+                                    " (Parent auto-completed)".to_string()
+                                } else {
+                                    " (Parent auto-reopened)".to_string()
+                                };
+                            }
+                        }
+                    }
+                }
+
                 let state_summary = get_planning_summary(db, session_id).await;
 
                 let next_todos = planning_todo::Entity::find()
@@ -424,8 +462,8 @@ pub async fn check_todo(
 
                 let hint = SuccessHint::new(
                     format!(
-                        "Todo {} (ID: {}){}{}",
-                        action, target_id, summary_text, state_summary
+                        "Todo {} (ID: {}){}{}{}",
+                        action, target_id, summary_text, parent_update_msg, state_summary
                     ),
                     next_actions,
                 );
