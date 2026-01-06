@@ -1,8 +1,10 @@
 use super::error::DbError;
 use async_trait::async_trait;
+use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, Set};
 use serde::{Deserialize, Serialize};
-use sqlx::{Row, SqlitePool};
 use std::str::FromStr;
+
+use crate::entity::{prelude::*, session};
 
 /// Session status enum representing the agent workflow state
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -79,88 +81,68 @@ pub trait SessionRepository: Send + Sync {
     async fn delete_index_metadata(&self, session_id: &str) -> Result<(), DbError>;
 }
 
-/// SQLite implementation of SessionRepository
+/// SQLite implementation of SessionRepository using SeaORM
 #[derive(Debug)]
 pub struct SqliteSessionRepository {
-    pool: SqlitePool,
+    db: DatabaseConnection,
 }
 
 impl SqliteSessionRepository {
-    /// Create a new SQLite session repository with the given pool
-    pub fn new(pool: SqlitePool) -> Self {
-        Self { pool }
+    /// Create a new SQLite session repository with the given database connection
+    pub fn new(db: DatabaseConnection) -> Self {
+        Self { db }
     }
 }
 
 #[async_trait]
 impl SessionRepository for SqliteSessionRepository {
     async fn create_table(&self) -> Result<(), DbError> {
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS sessions (
-                id TEXT PRIMARY KEY,
-                name TEXT,
-                status TEXT NOT NULL DEFAULT 'idle',
-                agent_config TEXT,
-                created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
-            CREATE INDEX IF NOT EXISTS idx_sessions_created_at ON sessions(created_at);
-            "#,
-        )
-        .execute(&self.pool)
-        .await?;
-
+        // No-op: Schema is now managed by SeaORM migrations
+        log::debug!("create_table() called but schema is now managed by migrations");
         Ok(())
     }
 
     async fn upsert_session(&self, session: &SessionMetadata) -> Result<(), DbError> {
-        sqlx::query(
-            r#"
-            INSERT INTO sessions (id, name, status, agent_config, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-                name = excluded.name,
-                status = excluded.status,
-                agent_config = excluded.agent_config,
-                updated_at = excluded.updated_at
-            "#,
-        )
-        .bind(&session.id)
-        .bind(&session.name)
-        .bind(session.status.as_str())
-        .bind(&session.agent_config)
-        .bind(session.created_at)
-        .bind(session.updated_at)
-        .execute(&self.pool)
-        .await?;
+        use sea_orm::sea_query::OnConflict;
+
+        let model = session::ActiveModel {
+            id: Set(session.id.clone()),
+            name: Set(session.name.clone()),
+            status: Set(session.status.as_str().to_string()),
+            agent_config: Set(session.agent_config.clone()),
+            created_at: Set(session.created_at),
+            updated_at: Set(session.updated_at),
+        };
+
+        Session::insert(model)
+            .on_conflict(
+                OnConflict::column(session::Column::Id)
+                    .update_columns([
+                        session::Column::Name,
+                        session::Column::Status,
+                        session::Column::AgentConfig,
+                        session::Column::UpdatedAt,
+                    ])
+                    .to_owned(),
+            )
+            .exec(&self.db)
+            .await?;
 
         Ok(())
     }
 
     async fn get_session(&self, session_id: &str) -> Result<Option<SessionMetadata>, DbError> {
-        let result = sqlx::query(
-            r#"
-            SELECT id, name, status, agent_config, created_at, updated_at
-            FROM sessions
-            WHERE id = ?
-            "#,
-        )
-        .bind(session_id)
-        .fetch_optional(&self.pool)
-        .await?;
+        let result = Session::find_by_id(session_id).one(&self.db).await?;
 
-        if let Some(row) = result {
-            let status_str: String = row.get("status");
+        if let Some(model) = result {
+            let status_str = model.status;
             Ok(Some(SessionMetadata {
-                id: row.get("id"),
-                name: row.get("name"),
+                id: model.id,
+                name: model.name,
                 status: SessionStatus::from_str(&status_str)?,
-                agent_config: row.get("agent_config"),
-                created_at: row.get("created_at"),
-                updated_at: row.get("updated_at"),
+                agent_config: model.agent_config,
+                created_at: model.created_at,
+                updated_at: model.updated_at,
             }))
         } else {
             Ok(None)
@@ -169,44 +151,38 @@ impl SessionRepository for SqliteSessionRepository {
 
     async fn update_status(&self, session_id: &str, status: SessionStatus) -> Result<(), DbError> {
         let now = chrono::Utc::now().timestamp_millis();
-        sqlx::query(
-            r#"
-            UPDATE sessions
-            SET status = ?, updated_at = ?
-            WHERE id = ?
-            "#,
-        )
-        .bind(status.as_str())
-        .bind(now)
-        .bind(session_id)
-        .execute(&self.pool)
+
+        session::ActiveModel {
+            id: Set(session_id.to_string()),
+            status: Set(status.as_str().to_string()),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .update(&self.db)
         .await?;
 
         Ok(())
     }
 
     async fn get_all_sessions(&self) -> Result<Vec<SessionMetadata>, DbError> {
-        let rows = sqlx::query(
-            r#"
-            SELECT id, name, status, agent_config, created_at, updated_at
-            FROM sessions
-            ORDER BY updated_at DESC
-            "#,
-        )
-        .fetch_all(&self.pool)
-        .await?;
+        use sea_orm::QueryOrder;
 
-        let sessions: Result<Vec<SessionMetadata>, DbError> = rows
+        let models = Session::find()
+            .order_by_desc(session::Column::UpdatedAt)
+            .all(&self.db)
+            .await?;
+
+        let sessions: Result<Vec<SessionMetadata>, DbError> = models
             .into_iter()
-            .map(|row| {
-                let status_str: String = row.get("status");
+            .map(|model| {
+                let status_str = model.status;
                 Ok(SessionMetadata {
-                    id: row.get("id"),
-                    name: row.get("name"),
+                    id: model.id,
+                    name: model.name,
                     status: SessionStatus::from_str(&status_str)?,
-                    agent_config: row.get("agent_config"),
-                    created_at: row.get("created_at"),
-                    updated_at: row.get("updated_at"),
+                    agent_config: model.agent_config,
+                    created_at: model.created_at,
+                    updated_at: model.updated_at,
                 })
             })
             .collect();
@@ -215,17 +191,15 @@ impl SessionRepository for SqliteSessionRepository {
     }
 
     async fn delete_session(&self, session_id: &str) -> Result<(), DbError> {
-        sqlx::query("DELETE FROM sessions WHERE id = ?")
-            .bind(session_id)
-            .execute(&self.pool)
-            .await?;
+        Session::delete_by_id(session_id).exec(&self.db).await?;
         Ok(())
     }
 
     async fn delete_index_metadata(&self, session_id: &str) -> Result<(), DbError> {
-        sqlx::query("DELETE FROM message_index_meta WHERE session_id = ?")
-            .bind(session_id)
-            .execute(&self.pool)
+        use crate::entity::prelude::MessageIndexMeta;
+
+        MessageIndexMeta::delete_by_id(session_id)
+            .exec(&self.db)
             .await?;
         Ok(())
     }
@@ -234,20 +208,19 @@ impl SessionRepository for SqliteSessionRepository {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqlx::sqlite::SqlitePoolOptions;
 
     async fn setup_test_db() -> SqliteSessionRepository {
-        let pool = SqlitePoolOptions::new()
-            .connect("sqlite::memory:")
+        let db = sea_orm::Database::connect("sqlite::memory:")
             .await
             .expect("Failed to create in-memory database");
 
-        let repo = SqliteSessionRepository::new(pool);
-        repo.create_table()
+        // Run migrations
+        use migration::{Migrator, MigratorTrait};
+        Migrator::up(&db, None)
             .await
-            .expect("Failed to create sessions table");
+            .expect("Failed to run migrations");
 
-        repo
+        SqliteSessionRepository::new(db)
     }
 
     #[tokio::test]

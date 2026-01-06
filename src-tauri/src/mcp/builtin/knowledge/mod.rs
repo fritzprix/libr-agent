@@ -1,7 +1,6 @@
 use async_trait::async_trait;
 use sea_orm::*;
 use serde_json::{json, Value};
-use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -23,25 +22,19 @@ use crate::mcp::utils::schema_builder::*;
 #[derive(Debug)]
 pub struct KnowledgeServer {
     session_id: String,
-    db_pool: Arc<SqlitePool>,
-    db_conn: DatabaseConnection,
+    db: Arc<DatabaseConnection>,
 }
 
 impl KnowledgeServer {
     /// Create a new KnowledgeServer instance for a specific session
-    pub async fn new(session_id: String, db_pool: Arc<SqlitePool>) -> Result<Self, String> {
-        let db_conn = SqlxSqliteConnector::from_sqlx_sqlite_pool((*db_pool).clone());
-        let server = Self {
-            session_id,
-            db_pool,
-            db_conn,
-        };
+    pub async fn new(session_id: String, db: Arc<DatabaseConnection>) -> Result<Self, String> {
+        let server = Self { session_id, db };
 
         Ok(server)
     }
 
     fn get_db(&self) -> &DatabaseConnection {
-        &self.db_conn
+        &self.db
     }
 
     /// Save knowledge to the database
@@ -312,33 +305,41 @@ impl KnowledgeServer {
 
         sql.push_str(" LIMIT ?");
 
-        let mut query = sqlx::query_as::<_, (i64, String, String, Option<String>, i64, i64)>(&sql);
-
-        query = query.bind(&self.session_id);
+        let mut values = vec![self.session_id.clone().into()];
 
         if let Some(q) = query_param {
-            query = query.bind(q);
+            values.push(q.into());
         }
 
         if let Some(tags) = tags_param {
             for tag in tags {
                 if let Some(tag_str) = tag.as_str() {
-                    query = query.bind(format!("%\"{}\"%", tag_str));
+                    values.push(format!("%\"{}\"%", tag_str).into());
                 } else {
-                    query = query.bind("%%");
+                    values.push("%%".into());
                 }
             }
         }
 
-        query = query.bind(limit);
+        values.push(limit.into());
 
-        let result = query.fetch_all(self.db_pool.as_ref()).await;
+        let stmt = Statement::from_sql_and_values(DbBackend::Sqlite, &sql, values);
+
+        let db = self.get_db();
+        let result = db.query_all(stmt).await;
 
         match result {
             Ok(rows) => {
                 let results: Vec<Value> = rows
                     .into_iter()
-                    .map(|(id, title, content, tags_str, created_at, updated_at)| {
+                    .map(|row| {
+                        let id: i64 = row.try_get("", "id").unwrap_or_default();
+                        let title: String = row.try_get("", "title").unwrap_or_default();
+                        let content: String = row.try_get("", "content").unwrap_or_default();
+                        let tags_str: Option<String> = row.try_get("", "tags").ok();
+                        let created_at: i64 = row.try_get("", "created_at").unwrap_or_default();
+                        let updated_at: i64 = row.try_get("", "updated_at").unwrap_or_default();
+
                         let tags_vec: Vec<String> = if let Some(s) = tags_str {
                             serde_json::from_str(&s).unwrap_or_default()
                         } else {
@@ -696,59 +697,69 @@ fn create_list_knowledge_tool() -> MCPTool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
-    use std::str::FromStr;
+    use crate::entity::{knowledge, session};
+    use sea_orm::{
+        ActiveModelTrait, ConnectionTrait, Database, DatabaseConnection, DbBackend, EntityTrait,
+        Schema, Set, Statement,
+    };
+    use std::sync::Arc;
 
-    async fn create_test_pool() -> SqlitePool {
-        let options = SqliteConnectOptions::from_str("sqlite::memory:")
-            .expect("Invalid database URL")
-            .create_if_missing(true);
-
-        let pool = SqlitePoolOptions::new()
-            .connect_with(options)
+    async fn create_test_db() -> Arc<DatabaseConnection> {
+        let db = Database::connect("sqlite::memory:")
             .await
-            .expect("Failed to create test pool");
+            .expect("Failed to connect to in-memory database");
 
-        // Create sessions table for FOREIGN KEY constraint (not currently used but good practice)
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS sessions (
-                id TEXT PRIMARY KEY,
-                name TEXT,
-                status TEXT DEFAULT 'idle',
-                agent_config TEXT,
-                created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL
-            )
-            "#,
-        )
-        .execute(&pool)
+        let schema = Schema::new(db.get_database_backend());
+
+        // Create sessions table
+        let stmt = schema.create_table_from_entity(session::Entity);
+        db.execute(db.get_database_backend().build(&stmt))
+            .await
+            .expect("Failed to create sessions table");
+
+        // Create knowledge table
+        let stmt = schema.create_table_from_entity(knowledge::Entity);
+        db.execute(db.get_database_backend().build(&stmt))
+            .await
+            .expect("Failed to create knowledge table");
+
+        // Create FTS table manually for testing search
+        db.execute(Statement::from_string(
+            DbBackend::Sqlite,
+            "CREATE VIRTUAL TABLE knowledge_fts USING fts5(title, content, tags, content='knowledge', content_rowid='id');".to_owned(),
+        ))
         .await
-        .expect("Failed to create sessions table");
+        .expect("Failed to create FTS table");
+
+        // Triggers for FTS sync
+        db.execute(Statement::from_string(
+            DbBackend::Sqlite,
+            "CREATE TRIGGER knowledge_ai AFTER INSERT ON knowledge BEGIN
+              INSERT INTO knowledge_fts(rowid, title, content, tags) VALUES (new.id, new.title, new.content, new.tags);
+            END;".to_owned(),
+        )).await.expect("Failed to create insert trigger");
 
         // Insert test sessions
-        sqlx::query("INSERT OR IGNORE INTO sessions (id, name, status, created_at, updated_at) VALUES ('test-session', 'Test', 'idle', 0, 0)")
-            .execute(&pool)
-            .await
-            .expect("Failed to insert test session");
+        let sessions = vec!["test-session", "session-1", "session-2"];
+        for id in sessions {
+            let new_session = session::ActiveModel {
+                id: Set(id.to_string()),
+                created_at: Set(0),
+                ..Default::default()
+            };
+            session::Entity::insert(new_session)
+                .exec(&db)
+                .await
+                .expect("Failed to insert session");
+        }
 
-        sqlx::query("INSERT OR IGNORE INTO sessions (id, name, status, created_at, updated_at) VALUES ('session-1', 'Session 1', 'idle', 0, 0)")
-            .execute(&pool)
-            .await
-            .expect("Failed to insert session 1");
-
-        sqlx::query("INSERT OR IGNORE INTO sessions (id, name, status, created_at, updated_at) VALUES ('session-2', 'Session 2', 'idle', 0, 0)")
-            .execute(&pool)
-            .await
-            .expect("Failed to insert session 2");
-
-        pool
+        Arc::new(db)
     }
 
     #[tokio::test]
     async fn test_save_and_search_knowledge() {
-        let pool = Arc::new(create_test_pool().await);
-        let server = KnowledgeServer::new("test-session".to_string(), pool)
+        let db = create_test_db().await;
+        let server = KnowledgeServer::new("test-session".to_string(), db)
             .await
             .expect("Failed to create server");
 
@@ -780,8 +791,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_knowledge() {
-        let pool = Arc::new(create_test_pool().await);
-        let server = KnowledgeServer::new("test-session".to_string(), pool)
+        let db = create_test_db().await;
+        let server = KnowledgeServer::new("test-session".to_string(), db)
             .await
             .expect("Failed to create server");
 
@@ -812,13 +823,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_session_isolation() {
-        let pool = Arc::new(create_test_pool().await);
+        let db = create_test_db().await;
 
-        let server1 = KnowledgeServer::new("session-1".to_string(), pool.clone())
+        let server1 = KnowledgeServer::new("session-1".to_string(), db.clone())
             .await
             .expect("Failed to create server1");
 
-        let server2 = KnowledgeServer::new("session-2".to_string(), pool)
+        let server2 = KnowledgeServer::new("session-2".to_string(), db)
             .await
             .expect("Failed to create server2");
 

@@ -409,6 +409,46 @@ impl BuiltinServerRegistry {
         registry
     }
 
+    /// Creates a new `BuiltinServerRegistry` with SeaORM DatabaseConnection.
+    ///
+    /// # Arguments
+    /// * `session_manager` - A shared reference to the `SessionManager`.
+    /// * `db` - The SeaORM DatabaseConnection instance.
+    pub async fn new_with_session_manager_and_db(
+        session_manager: std::sync::Arc<SessionManager>,
+        db: sea_orm::DatabaseConnection,
+    ) -> Self {
+        let mut registry = Self {
+            servers: std::collections::HashMap::new(),
+        };
+
+        // Register built-in workspace server with SessionManager
+        registry.register_server(Box::new(workspace::WorkspaceServer::new(
+            "default".to_string(),
+            session_manager.clone(),
+        )));
+
+        // Register content-store server with DatabaseConnection support
+        let content_store_server =
+            crate::mcp::builtin::content_store::ContentStoreServer::new_with_db(
+                "default".to_string(),
+                session_manager.clone(),
+                db,
+            )
+            .await
+            .expect("Failed to initialize content store with DatabaseConnection");
+
+        registry.register_server(Box::new(content_store_server));
+
+        // Register MCP Manager server
+        registry.register_server(Box::new(mcp_manager::MCPManagerServer::new()));
+
+        // Browser Agent server removed to prevent duplicate tools.
+        // Browser functionality now provided by frontend BrowserToolProvider.
+
+        registry
+    }
+
     /// Registers a new built-in server with the registry.
     ///
     /// # Arguments

@@ -1,7 +1,5 @@
 mod context;
-mod db;
 mod goals;
-mod models;
 mod scratchpad;
 mod todos;
 
@@ -9,9 +7,8 @@ use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{MCPResult, ServiceContext, ServiceContextOptions};
 use crate::mcp::MCPTool;
 use async_trait::async_trait;
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, SqlxSqliteConnector, TransactionTrait};
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, TransactionTrait};
 use serde_json::{json, Value};
-use sqlx::SqlitePool;
 use std::sync::Arc;
 
 /// Planning MCP Server
@@ -21,19 +18,16 @@ use std::sync::Arc;
 #[derive(Debug)]
 pub struct PlanningServer {
     session_id: String,
-    db_pool: Arc<SqlitePool>,
+    db: Arc<DatabaseConnection>,
 }
 
 impl PlanningServer {
     /// Create a new PlanningServer for the given session
-    pub async fn new(session_id: String, db_pool: Arc<SqlitePool>) -> Result<Self, String> {
+    pub async fn new(session_id: String, db: Arc<DatabaseConnection>) -> Result<Self, String> {
         let server = Self {
             session_id: session_id.clone(),
-            db_pool: db_pool.clone(),
+            db,
         };
-
-        // Initialize database tables
-        db::init_tables(&db_pool, &session_id).await?;
 
         Ok(server)
     }
@@ -93,8 +87,7 @@ impl BuiltinMCPServer for PlanningServer {
                 input_schema: serde_json::from_value(json!({
                     "type": "object",
                     "properties": {
-                        "title": { "type": "string", "description": "Short summary of the task (e.g., \"Write documentation\")." },
-                        "description": { "type": "string", "description": "Detailed instructions or context for the task." },
+                        "description": { "type": "string", "description": "The task to be done." },
                         "priority": { "type": "string", "enum": ["low", "medium", "high"], "description": "The priority of the todo item." },
                         "parentId": { "type": "number", "description": "Parent todo ID to create a subtask. Only top-level todos (without parentId) can be parents. Maximum 1-level nesting." },
                         "subtasks": {
@@ -102,16 +95,15 @@ impl BuiltinMCPServer for PlanningServer {
                             "items": {
                                 "type": "object",
                                 "properties": {
-                                    "title": { "type": "string", "description": "Subtask title" },
                                     "description": { "type": "string", "description": "Subtask description" },
                                     "priority": { "type": "string", "enum": ["low", "medium", "high"] }
                                 },
-                                "required": ["title"]
+                                "required": ["description"]
                             },
                             "description": "Array of subtasks to create with this todo. Only allowed when creating a top-level todo (no parentId)."
                         }
                     },
-                    "required": ["title"]
+                    "required": ["description"]
                 }))
                 .unwrap(),
                 output_schema: None,
@@ -297,26 +289,26 @@ impl BuiltinMCPServer for PlanningServer {
 
         match tool_name {
             "createGoal" | "builtin_planning__createGoal" => {
-                goals::create_goal(&self.db_pool, &self.session_id, args).await
+                goals::create_goal(self.db.as_ref(), &self.session_id, args).await
             }
             "updateGoal" | "builtin_planning__updateGoal" => {
-                goals::update_goal(&self.db_pool, &self.session_id, args).await
+                goals::update_goal(self.db.as_ref(), &self.session_id, args).await
             }
             "clearGoal" | "builtin_planning__clearGoal" => {
-                goals::clear_goal(&self.db_pool, &self.session_id, args).await
+                goals::clear_goal(self.db.as_ref(), &self.session_id, args).await
             }
             "addTodo" | "builtin_planning__addTodo" => {
-                todos::add_todo(&self.db_pool, &self.session_id, args).await
+                todos::add_todo(self.db.as_ref(), &self.session_id, args).await
             }
             "checkTodo" | "builtin_planning__checkTodo" => {
-                todos::check_todo(&self.db_pool, &self.session_id, args).await
+                todos::check_todo(self.db.as_ref(), &self.session_id, args).await
             }
             "clearTodos" | "builtin_planning__clearTodos" => {
-                todos::clear_todos(&self.db_pool, &self.session_id, args).await
+                todos::clear_todos(self.db.as_ref(), &self.session_id, args).await
             }
             "clearSession" | "builtin_planning__clearSession" => {
-                let db = SqlxSqliteConnector::from_sqlx_sqlite_pool((*self.db_pool).clone());
-                let txn = db
+                let txn = self
+                    .db
                     .begin()
                     .await
                     .map_err(|e: sea_orm::DbErr| e.to_string())?;
@@ -347,26 +339,27 @@ impl BuiltinMCPServer for PlanningServer {
                 Ok(MCPResult::success("✓ Session planning state cleared"))
             }
             "addScratchpad" | "builtin_planning__addScratchpad" => {
-                scratchpad::add_scratchpad(&self.db_pool, &self.session_id, args).await
+                scratchpad::add_scratchpad(self.db.as_ref(), &self.session_id, args).await
             }
             "updateScratchpad" | "builtin_planning__updateScratchpad" => {
-                scratchpad::update_scratchpad(&self.db_pool, &self.session_id, args).await
+                scratchpad::update_scratchpad(self.db.as_ref(), &self.session_id, args).await
             }
             "listScratchpad" | "builtin_planning__listScratchpad" => {
-                scratchpad::list_scratchpad(&self.db_pool, &self.session_id, args).await
+                scratchpad::list_scratchpad(self.db.as_ref(), &self.session_id, args).await
             }
             "readScratchpad" | "builtin_planning__readScratchpad" => {
-                scratchpad::read_scratchpad(&self.db_pool, &self.session_id, args).await
+                scratchpad::read_scratchpad(self.db.as_ref(), &self.session_id, args).await
             }
             "clearScratchpad" | "builtin_planning__clearScratchpad" => {
-                scratchpad::clear_scratchpad(&self.db_pool, &self.session_id, args).await
+                scratchpad::clear_scratchpad(self.db.as_ref(), &self.session_id, args).await
             }
             "getCurrentState" | "builtin_planning__getCurrentState" => {
                 // Reuse get_service_context but return as tool result
-                let context = context::get_service_context(&self.db_pool, &self.session_id).await;
+                let context =
+                    context::get_service_context(self.db.as_ref(), &self.session_id).await;
                 Ok(MCPResult::success_with_data(
                     &context.context_prompt,
-                    context.structured_state.unwrap_or(json!({})),
+                    context.structured_state.clone().unwrap_or(json!({})),
                 ))
             }
             "pauseAndThink" | "builtin_planning__pauseAndThink" => {
@@ -384,6 +377,6 @@ impl BuiltinMCPServer for PlanningServer {
     }
 
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
-        context::get_service_context(&self.db_pool, &self.session_id).await
+        context::get_service_context(self.db.as_ref(), &self.session_id).await
     }
 }

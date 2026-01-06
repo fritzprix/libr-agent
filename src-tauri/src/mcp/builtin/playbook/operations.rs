@@ -6,7 +6,6 @@ use crate::mcp::types::{MCPContent, MCPResult};
 use handlebars::Handlebars;
 use sea_orm::*;
 use serde_json::{json, Value};
-use sqlx::SqlitePool;
 
 use super::templates::PLAYBOOK_LIST_TEMPLATE;
 use super::types::Playbook;
@@ -488,7 +487,7 @@ pub fn format_playbook_detailed(p: &Playbook) -> String {
 }
 
 pub async fn delete_playbook(
-    pool: &SqlitePool,
+    db: &DatabaseConnection,
     session_id: &str,
     args: Value,
 ) -> Result<MCPResult, String> {
@@ -503,10 +502,10 @@ pub async fn delete_playbook(
         None => return Ok(missing_param_error("id", ToolGroup::Playbook)),
     };
 
-    let result = match sqlx::query("DELETE FROM playbooks WHERE id = ? AND session_id = ?")
-        .bind(id)
-        .bind(session_id)
-        .execute(pool)
+    let delete_result = match PlaybookEntity::delete_many()
+        .filter(playbook::Column::Id.eq(id))
+        .filter(playbook::Column::SessionId.eq(session_id))
+        .exec(db)
         .await
     {
         Ok(result) => result,
@@ -520,7 +519,7 @@ pub async fn delete_playbook(
         }
     };
 
-    if result.rows_affected() > 0 {
+    if delete_result.rows_affected > 0 {
         Ok(MCPResult {
             content: Some(vec![MCPContent::Text {
                 text: format!("Playbook '{}' deleted", id),
@@ -534,7 +533,7 @@ pub async fn delete_playbook(
 }
 
 pub async fn update_playbook(
-    pool: &SqlitePool,
+    db: &DatabaseConnection,
     session_id: &str,
     args: Value,
 ) -> Result<MCPResult, String> {
@@ -561,13 +560,14 @@ pub async fn update_playbook(
     };
 
     // Fetch existing to merge
-    let existing_row = match sqlx::query("SELECT * FROM playbooks WHERE id = ? AND session_id = ?")
-        .bind(id)
-        .bind(session_id)
-        .fetch_optional(pool)
+    let existing_model = match PlaybookEntity::find()
+        .filter(playbook::Column::Id.eq(id))
+        .filter(playbook::Column::SessionId.eq(session_id))
+        .one(db)
         .await
     {
-        Ok(row) => row,
+        Ok(Some(model)) => model,
+        Ok(None) => return Ok(not_found_error("playbook", id, ToolGroup::Playbook)),
         Err(e) => {
             return Ok(operation_failed_error(
                 "updatePlaybook",
@@ -578,10 +578,7 @@ pub async fn update_playbook(
         }
     };
 
-    let mut existing = match existing_row {
-        Some(row) => Playbook::from_row(&row),
-        None => return Ok(not_found_error("playbook", id, ToolGroup::Playbook)),
-    };
+    let mut existing = Playbook::from_model(&existing_model);
 
     // Update fields if present
     if let Some(g) = playbook_obj.get("goal").and_then(|v| v.as_str()) {
@@ -620,34 +617,58 @@ pub async fn update_playbook(
     }
 
     let now = chrono::Utc::now().timestamp_millis();
-    let workflow_json = serde_json::to_string(&existing.workflow).unwrap();
-    let success_criteria_json = serde_json::to_string(&existing.success_criteria).unwrap();
 
-    if let Err(e) = sqlx::query(
-        r#"
-        UPDATE playbooks
-        SET goal = ?, initial_command = ?, workflow = ?, success_criteria = ?, updated_at = ?
-        WHERE id = ? AND session_id = ?
-        "#,
-    )
-    .bind(&existing.goal)
-    .bind(&existing.initial_command)
-    .bind(workflow_json)
-    .bind(success_criteria_json)
-    .bind(now)
-    .bind(id)
-    .bind(session_id)
-    .execute(pool)
-    .await
-    {
-        return Ok(operation_failed_error(
-            "updatePlaybook",
-            &format!("Database update failed: {}", e),
-            vec!["Verify database is accessible".to_string()],
-            ToolGroup::Playbook,
-        ));
-    }
+    // Convert to ActiveModel for update
+    let mut active_model: playbook::ActiveModel = existing_model.into();
 
+    // Apply updates from `existing` Playbook struct
+    active_model.goal = Set(existing.goal.clone());
+    active_model.initial_command = Set(existing.initial_command.clone());
+
+    let workflow_json = match serde_json::to_string(&existing.workflow) {
+        Ok(json) => json,
+        Err(e) => {
+            return Ok(operation_failed_error(
+                "updatePlaybook",
+                &format!("Failed to serialize workflow: {}", e),
+                vec!["Verify workflow structure is valid".to_string()],
+                ToolGroup::Playbook,
+            ))
+        }
+    };
+    active_model.workflow = Set(workflow_json);
+
+    let success_criteria_json = match existing.success_criteria.as_ref() {
+        Some(sc) => match serde_json::to_string(sc) {
+            Ok(json) => Some(json),
+            Err(e) => {
+                return Ok(operation_failed_error(
+                    "updatePlaybook",
+                    &format!("Failed to serialize success criteria: {}", e),
+                    vec!["Verify success criteria structure is valid".to_string()],
+                    ToolGroup::Playbook,
+                ))
+            }
+        },
+        None => None,
+    };
+    active_model.success_criteria = Set(success_criteria_json);
+    active_model.updated_at = Set(now);
+
+    // Execute update
+    let updated_model = match active_model.update(db).await {
+        Ok(model) => model,
+        Err(e) => {
+            return Ok(operation_failed_error(
+                "updatePlaybook",
+                &format!("Database update failed: {}", e),
+                vec!["Verify database is accessible".to_string()],
+                ToolGroup::Playbook,
+            ))
+        }
+    };
+
+    let existing = Playbook::from_model(&updated_model);
     let formatted = format_playbook_summary(&existing);
     let text_response = format!(
         "Successfully updated playbook ID: {}\n\nUpdated Details:\n{}\n\nThe playbook has been modified. Changes are immediately available.",

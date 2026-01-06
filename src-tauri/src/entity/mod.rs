@@ -2,6 +2,11 @@
 //!
 //! This module contains all entity definitions for the LibrAgent database.
 
+// Core entities (sessions and messages)
+pub mod message;
+pub mod message_index_meta;
+pub mod session;
+
 // Planning module entities
 pub mod planning_goal;
 pub mod planning_scratchpad;
@@ -17,6 +22,11 @@ pub mod playbook;
 pub mod store;
 
 pub mod prelude {
+    // Core entities
+    pub use super::message::Entity as Message;
+    pub use super::message_index_meta::Entity as MessageIndexMeta;
+    pub use super::session::Entity as Session;
+
     // Planning entities
     pub use super::planning_goal::Entity as PlanningGoal;
     pub use super::planning_scratchpad::Entity as PlanningScratchpad;

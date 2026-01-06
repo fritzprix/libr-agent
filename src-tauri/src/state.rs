@@ -2,12 +2,12 @@
 ///
 /// This module provides centralized access to application-wide state including
 /// the MCP server manager, MCP service proxy manager, SQLite database URL,
-/// SQLite connection pool, and repositories.
+/// database connection, and repositories.
 use crate::mcp::{MCPServerManager, MCPServiceProxyManager};
 use crate::repositories::{
     SqliteContentStoreRepository, SqliteMessageRepository, SqliteSessionRepository,
 };
-use sqlx::sqlite::SqlitePool;
+use sea_orm::DatabaseConnection;
 use std::sync::OnceLock;
 
 /// A global, thread-safe, once-initialized instance of the `MCPServerManager`.
@@ -19,8 +19,8 @@ static MCP_SERVICE_PROXY_MANAGER: OnceLock<MCPServiceProxyManager> = OnceLock::n
 /// A global, thread-safe, once-initialized string for the SQLite database URL.
 static SQLITE_DB_URL: OnceLock<String> = OnceLock::new();
 
-/// A global, thread-safe, once-initialized SQLite connection pool.
-static SQLITE_POOL: OnceLock<SqlitePool> = OnceLock::new();
+/// A global, thread-safe, once-initialized database connection.
+static DATABASE_CONNECTION: OnceLock<DatabaseConnection> = OnceLock::new();
 
 /// A global, thread-safe, once-initialized message repository.
 static MESSAGE_REPOSITORY: OnceLock<SqliteMessageRepository> = OnceLock::new();
@@ -73,27 +73,27 @@ pub fn get_mcp_manager() -> &'static MCPServerManager {
     })
 }
 
-/// Sets the global SQLite connection pool.
+/// Sets the global database connection.
 ///
 /// # Panics
-/// This function will panic if the pool is already set.
-pub fn set_sqlite_pool(pool: SqlitePool) {
-    SQLITE_POOL
-        .set(pool)
-        .expect("SQLite pool already initialized");
+/// This function will panic if the connection is already set.
+pub fn set_database_connection(db: DatabaseConnection) {
+    DATABASE_CONNECTION
+        .set(db)
+        .expect("Database connection already initialized");
 }
 
-/// Gets a reference to the global SQLite connection pool.
+/// Gets a reference to the global database connection.
 ///
 /// # Returns
-/// A reference to the SQLite connection pool.
+/// A reference to the database connection.
 ///
 /// # Panics
-/// Panics if the pool has not been initialized.
-pub fn get_sqlite_pool() -> &'static SqlitePool {
-    SQLITE_POOL
+/// Panics if the connection has not been initialized.
+pub fn get_database_connection() -> &'static DatabaseConnection {
+    DATABASE_CONNECTION
         .get()
-        .expect("SQLite pool not initialized. Call set_sqlite_pool() first.")
+        .expect("Database connection not initialized. Call set_database_connection() first.")
 }
 
 /// Sets the global message repository instance.

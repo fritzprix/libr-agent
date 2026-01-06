@@ -10,7 +10,7 @@ pub mod mcp; // Make public for integration tests
 pub mod repositories; // Make public for integration tests
 mod search;
 mod services;
-mod session;
+pub mod session;
 mod session_isolation;
 mod state;
 
@@ -59,10 +59,11 @@ use session::get_session_manager;
 
 // Re-export state management functions
 pub use state::{
-    get_content_store_repository, get_mcp_manager, get_mcp_service_proxy_manager,
-    get_message_repository, get_session_repository, get_sqlite_db_url, get_sqlite_pool,
-    set_content_store_repository, set_mcp_manager, set_mcp_service_proxy_manager,
-    set_message_repository, set_session_repository, set_sqlite_db_url, set_sqlite_pool,
+    get_content_store_repository, get_database_connection, get_mcp_manager,
+    get_mcp_service_proxy_manager, get_message_repository, get_session_repository,
+    get_sqlite_db_url, set_content_store_repository, set_database_connection, set_mcp_manager,
+    set_mcp_service_proxy_manager, set_message_repository, set_session_repository,
+    set_sqlite_db_url,
 };
 
 /// A synchronous wrapper to initialize and run the application with SQLite support.
@@ -84,26 +85,13 @@ pub fn run_with_sqlite_sync(db_url: String) {
         let session_manager = get_session_manager().expect("SessionManager not initialized");
         let session_manager_arc = std::sync::Arc::new(session_manager.clone());
 
-        // Initialize the SQLite connection pool. If the database file was
-        // removed (for example during testing), try to create the file and
-        // retry the connection once before failing the startup.
-        use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
-        use std::str::FromStr;
-        use std::time::Duration;
-
-        let options = SqliteConnectOptions::from_str(&db_url)
-            .expect("Invalid database URL")
-            .create_if_missing(true)
-            .journal_mode(SqliteJournalMode::Wal)
-            .busy_timeout(Duration::from_secs(5))
-            .foreign_keys(true); // Enable foreign key constraints for CASCADE operations
-
-        let pool = match SqlitePoolOptions::new().connect_with(options.clone()).await {
-            Ok(p) => p,
-            Err(e) => {
+        // Connect to database using SeaORM
+        let db = sea_orm::Database::connect(&db_url)
+            .await
+            .unwrap_or_else(|e| {
                 // If this looks like a file-backed sqlite URL, try to create the file
                 if let Some(path) = db_url.strip_prefix("sqlite://") {
-                    println!("⚙️ SQLite connect failed, attempting to create DB file: {path}");
+                    println!("⚙️ Database connect failed, attempting to create DB file: {path}");
                     if let Some(parent) = std::path::Path::new(path).parent() {
                         if let Err(err) = std::fs::create_dir_all(parent) {
                             eprintln!("Failed to create parent directory for DB: {err}");
@@ -117,48 +105,47 @@ pub fn run_with_sqlite_sync(db_url: String) {
                     }
 
                     // Retry connection once
-                    SqlitePoolOptions::new()
-                        .connect_with(options)
-                        .await
-                        .unwrap_or_else(|err| {
-                            panic!(
-                                "Failed to connect to SQLite database after creating file: {err}"
-                            )
-                        })
+                    futures::executor::block_on(async {
+                        sea_orm::Database::connect(&db_url)
+                            .await
+                            .unwrap_or_else(|err| {
+                                panic!("Failed to connect to database after creating file: {err}")
+                            })
+                    })
                 } else {
-                    panic!("Failed to connect to SQLite database: {e}");
+                    panic!("Failed to connect to database: {e}");
                 }
-            }
-        };
+            });
+        println!("✅ Database connected: {db_url}");
+
+        // Run migrations
+        use migration::{Migrator, MigratorTrait};
+        Migrator::up(&db, None)
+            .await
+            .expect("Failed to run database migrations");
+        println!("✅ Database migrations applied");
 
         // Initialize repository instances
         use repositories::{
-            MessageRepository, SessionRepository, SqliteContentStoreRepository,
-            SqliteMessageRepository, SqliteSessionRepository,
+            SqliteContentStoreRepository, SqliteMessageRepository, SqliteSessionRepository,
         };
 
-        let message_repo = SqliteMessageRepository::new(pool.clone());
-        message_repo
-            .create_table()
-            .await
-            .expect("Failed to create messages table");
-        println!("✅ Messages table initialized");
+        let message_repo = SqliteMessageRepository::new(db.clone());
+        println!("✅ Message repository initialized");
 
-        let content_store_repo = SqliteContentStoreRepository::new(pool.clone());
-        let session_repo = SqliteSessionRepository::new(pool.clone());
-        session_repo
-            .create_table()
-            .await
-            .expect("Failed to create sessions table");
-        println!("✅ Sessions table initialized");
+        let content_store_repo = SqliteContentStoreRepository::new(db.clone());
+        println!("✅ Content store repository initialized");
+
+        let session_repo = SqliteSessionRepository::new(db.clone());
+        println!("✅ Session repository initialized");
 
         // Start background indexing worker (checks every 5 minutes)
         let _indexing_worker = search::IndexingWorker::new(std::time::Duration::from_secs(300));
         println!("✅ Background message indexing worker started");
 
-        // Set the global SQLite pool
-        set_sqlite_pool(pool);
-        println!("✅ SQLite connection pool initialized");
+        // Set the global database connection
+        set_database_connection(db.clone());
+        println!("✅ Database connection initialized");
 
         // Set the global repository instances
         set_message_repository(message_repo);
@@ -166,17 +153,17 @@ pub fn run_with_sqlite_sync(db_url: String) {
         set_session_repository(session_repo);
         println!("✅ Repository instances initialized");
 
-        // Initialize the MCP manager asynchronously
-        let mcp_manager = MCPServerManager::new_with_session_manager_and_sqlite(
+        // Initialize the MCP manager with database connection
+        let mcp_manager = MCPServerManager::new_with_session_manager_and_db(
             session_manager_arc.clone(),
-            db_url.clone(),
+            db.clone(),
         )
         .await;
 
         // Set the global MCP manager
         set_mcp_manager(mcp_manager);
 
-        println!("✅ SQLite-backed MCP Manager initialized");
+        println!("✅ SeaORM-backed MCP Manager initialized");
 
         // Initialize the MCP Service Proxy Manager for session-aware builtin tools
         use mcp::MCPServiceProxyManager;

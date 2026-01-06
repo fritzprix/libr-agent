@@ -1,20 +1,17 @@
 use crate::entity::planning_scratchpad;
 use crate::mcp::types::MCPResult;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, Set,
-    SqlxSqliteConnector, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
+    QueryOrder, Set, TransactionTrait,
 };
 use serde_json::{json, Value};
-use sqlx::SqlitePool;
 
 /// Add scratchpad item (Legacy: addScratchpad)
 pub async fn add_scratchpad(
-    pool: &SqlitePool,
+    db: &DatabaseConnection,
     session_id: &str,
     args: Value,
 ) -> Result<MCPResult, String> {
-    let db = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool.clone());
-
     let note = args
         .get("note")
         .and_then(|v| v.as_str())
@@ -119,12 +116,10 @@ pub async fn add_scratchpad(
 
 /// Update scratchpad item
 pub async fn update_scratchpad(
-    pool: &SqlitePool,
+    db: &DatabaseConnection,
     session_id: &str,
     args: Value,
 ) -> Result<MCPResult, String> {
-    let db = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool.clone());
-
     let title = args
         .get("title")
         .and_then(|v| v.as_str())
@@ -148,7 +143,7 @@ pub async fn update_scratchpad(
     let existing = planning_scratchpad::Entity::find()
         .filter(planning_scratchpad::Column::SessionId.eq(session_id))
         .filter(planning_scratchpad::Column::Title.eq(title))
-        .one(&db)
+        .one(db)
         .await
         .map_err(|e| format!("Database error: {}", e))?;
 
@@ -170,7 +165,7 @@ pub async fn update_scratchpad(
     active_item.title = Set(Some(final_title.to_string()));
     active_item.updated_at = Set(now);
 
-    match active_item.update(&db).await {
+    match active_item.update(db).await {
         Ok(_) => Ok(MCPResult::success(&format!(
             "✓ Scratchpad note '{}' updated",
             final_title
@@ -181,12 +176,10 @@ pub async fn update_scratchpad(
 
 /// List scratchpad items (Legacy: listScratchpad)
 pub async fn list_scratchpad(
-    pool: &SqlitePool,
+    db: &DatabaseConnection,
     session_id: &str,
     args: Value,
 ) -> Result<MCPResult, String> {
-    let db = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool.clone());
-
     let page = args.get("page").and_then(|v| v.as_i64()).unwrap_or(1);
     let page_size = args.get("pageSize").and_then(|v| v.as_i64()).unwrap_or(10);
 
@@ -207,7 +200,7 @@ pub async fn list_scratchpad(
     let all_items = planning_scratchpad::Entity::find()
         .filter(planning_scratchpad::Column::SessionId.eq(session_id))
         .order_by_desc(planning_scratchpad::Column::CreatedAt)
-        .all(&db)
+        .all(db)
         .await
         .map_err(|e| format!("Failed to list scratchpad: {}", e))?;
 
@@ -322,12 +315,10 @@ pub async fn list_scratchpad(
 
 /// Read scratchpad item (Legacy: readScratchpad)
 pub async fn read_scratchpad(
-    pool: &SqlitePool,
+    db: &DatabaseConnection,
     session_id: &str,
     args: Value,
 ) -> Result<MCPResult, String> {
-    let db = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool.clone());
-
     let ids = args
         .get("ids")
         .and_then(|v| v.as_array())
@@ -345,7 +336,7 @@ pub async fn read_scratchpad(
 
             let item = planning_scratchpad::Entity::find_by_id(id)
                 .filter(planning_scratchpad::Column::SessionId.eq(session_id))
-                .one(&db)
+                .one(db)
                 .await
                 .map_err(|e| format!("Failed to read item {}: {}", id, e))?;
 
@@ -386,12 +377,10 @@ pub async fn read_scratchpad(
 
 /// Clear scratchpad item (Legacy: clearScratchpad)
 pub async fn clear_scratchpad(
-    pool: &SqlitePool,
+    db: &DatabaseConnection,
     session_id: &str,
     args: Value,
 ) -> Result<MCPResult, String> {
-    let db = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool.clone());
-
     let id = args
         .get("id")
         .and_then(|v| v.as_i64())
@@ -403,7 +392,7 @@ pub async fn clear_scratchpad(
 
     let result = planning_scratchpad::Entity::delete_by_id(id)
         .filter(planning_scratchpad::Column::SessionId.eq(session_id))
-        .exec(&db)
+        .exec(db)
         .await;
 
     match result {

@@ -6,44 +6,38 @@ use crate::mcp::builtin::error_guidance::{
 use crate::mcp::builtin::planning::context::get_planning_summary;
 use crate::mcp::types::MCPResult;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
-    QuerySelect, Set, SqlxSqliteConnector,
+    sea_query::{Expr, Func},
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
+    QueryOrder, QuerySelect, Set,
 };
 use serde_json::{json, Value};
-use sqlx::SqlitePool;
 
 /// Add a new todo (Legacy: addTodo)
 pub async fn add_todo(
-    pool: &SqlitePool,
+    db: &DatabaseConnection,
     session_id: &str,
     args: Value,
 ) -> Result<MCPResult, String> {
-    let db = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool.clone());
-
-    // Validate title parameter
-    let title = match args
-        .get("title")
-        .and_then(|v| v.as_str())
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-    {
-        Some(t) => t,
-        Option::None => {
-            return Ok(ErrorGuidance::with_guidance(
-                ErrorCategory::MissingRequiredParam,
-                "Missing or empty 'title' parameter",
-                vec![
-                    "Provide a non-empty title string".to_string(),
-                    "Example: {\"title\": \"Implement feature X\"}".to_string(),
-                    "Use getCurrentState to see existing todos".to_string(),
-                ],
-                ToolGroup::Planning,
-            )
-            .to_mcp_result());
-        }
-    };
-
     let description = args.get("description").and_then(|v| v.as_str());
+
+    // Title is no longer part of the API schema.
+    // We strictly derive it from the description.
+    let title = if let Some(desc) = description {
+        let trimmed = desc.trim();
+        if !trimmed.is_empty() {
+            // Truncate description to 50 chars for title
+            if trimmed.chars().count() > 50 {
+                let s: String = trimmed.chars().take(50).collect();
+                format!("{}...", s)
+            } else {
+                trimmed.to_string()
+            }
+        } else {
+            "Untitled Task".to_string()
+        }
+    } else {
+        "Untitled Task".to_string()
+    };
     let priority = args
         .get("priority")
         .and_then(|v| v.as_str())
@@ -91,23 +85,25 @@ pub async fn add_todo(
     }
 
     // 3. Check for duplicate title (case-insensitive)
-    // Note: SQLite LIKE is case-insensitive for ASCII characters by default
     let duplicate_count = planning_todo::Entity::find()
         .filter(planning_todo::Column::SessionId.eq(session_id))
-        .filter(planning_todo::Column::Content.eq(title)) // Exact match for now, or use LIKE
-        .count(&db)
+        .filter(
+            Expr::expr(Func::lower(Expr::col(planning_todo::Column::Content)))
+                .eq(title.to_lowercase()),
+        )
+        .count(db)
         .await
         .map_err(|e| format!("Failed to check duplicates: {}", e))?;
 
     if duplicate_count > 0 {
-        return Ok(duplicate_error("Todo", title, ToolGroup::Planning));
+        return Ok(duplicate_error("Todo", &title, ToolGroup::Planning));
     }
 
     // 4. If parent_id is provided, validate parent exists and is top-level
     if let Some(pid) = parent_id {
         let parent = planning_todo::Entity::find_by_id(pid)
             .filter(planning_todo::Column::SessionId.eq(session_id))
-            .one(&db)
+            .one(db)
             .await
             .map_err(|e| format!("Failed to fetch parent: {}", e))?;
 
@@ -140,21 +136,37 @@ pub async fn add_todo(
     // 5. Validate subtasks if present
     if let Some(subtasks) = args.get("subtasks").and_then(|v| v.as_array()) {
         for (idx, subtask) in subtasks.iter().enumerate() {
-            // Validate subtask title is non-empty
-            let sub_title = subtask
-                .get("title")
-                .and_then(|v| v.as_str())
-                .map(|s| s.trim())
-                .filter(|s| !s.is_empty());
+            // Relaxed subtask title validation
+            let sub_desc = subtask.get("description").and_then(|v| v.as_str());
+            // Subtask title is no longer part of the API schema.
+            // We strictly derive it from the description.
+            let _sub_title = if let Some(desc) = sub_desc {
+                let trimmed = desc.trim();
+                if !trimmed.is_empty() {
+                    if trimmed.chars().count() > 50 {
+                        let s: String = trimmed.chars().take(50).collect();
+                        format!("{}...", s)
+                    } else {
+                        trimmed.to_string()
+                    }
+                } else {
+                    "Untitled Subtask".to_string()
+                }
+            } else {
+                "Untitled Subtask".to_string()
+            };
 
-            if sub_title.is_none() {
+            // Validation: Ensure at least title or description is present
+            if _sub_title == "Untitled Subtask" && sub_desc.is_none() {
                 return Ok(ErrorGuidance::with_guidance(
                     ErrorCategory::InvalidInput,
-                    format!("Subtask at index {} has an empty or missing title", idx),
+                    format!(
+                        "Subtask #{} is missing both title and description.",
+                        idx + 1
+                    ),
                     vec![
-                        format!("Provide a non-empty title for subtask #{}", idx + 1),
-                        "All subtasks must have non-empty titles".to_string(),
-                        "Example: {\"title\": \"Implement X\"}".to_string(),
+                        "Provide a 'title' for the subtask".to_string(),
+                        "OR provide a 'description' (title will be auto-generated)".to_string(),
                     ],
                     ToolGroup::Planning,
                 )
@@ -201,7 +213,7 @@ pub async fn add_todo(
         ..Default::default()
     };
 
-    let result = new_todo.insert(&db).await;
+    let result = new_todo.insert(db).await;
 
     match result {
         Ok(saved_todo) => {
@@ -210,13 +222,25 @@ pub async fn add_todo(
             // Handle subtasks if present
             if let Some(subtasks) = args.get("subtasks").and_then(|v| v.as_array()) {
                 for subtask in subtasks {
-                    // Title already validated in step 5, safe to unwrap
-                    let sub_title = subtask
-                        .get("title")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.trim())
-                        .unwrap_or("Untitled");
                     let sub_desc = subtask.get("description").and_then(|v| v.as_str());
+
+                    // Re-derive title using same logic (or we could have stored it, but this is cleaner for now)
+                    // Re-derive title from description
+                    let sub_title = if let Some(desc) = sub_desc {
+                        let trimmed = desc.trim();
+                        if !trimmed.is_empty() {
+                            if trimmed.chars().count() > 50 {
+                                let s: String = trimmed.chars().take(50).collect();
+                                format!("{}...", s)
+                            } else {
+                                trimmed.to_string()
+                            }
+                        } else {
+                            "Untitled Subtask".to_string()
+                        }
+                    } else {
+                        "Untitled Subtask".to_string()
+                    };
                     let sub_prio = subtask
                         .get("priority")
                         .and_then(|v| v.as_str())
@@ -234,12 +258,12 @@ pub async fn add_todo(
                         updated_at: Set(now),
                         ..Default::default()
                     };
-                    let _ = sub_todo.insert(&db).await;
+                    let _ = sub_todo.insert(db).await;
                 }
             }
 
             let response_id = cuid2::create_id();
-            let summary_text = get_planning_summary(pool, session_id).await;
+            let summary_text = get_planning_summary(db, session_id).await;
             let hint = SuccessHint::new(
                 format!("Todo added with ID {}: {}{}", id, title, summary_text),
                 vec!["Use checkTodo when this task is done".to_string()],
@@ -268,12 +292,10 @@ pub async fn add_todo(
 
 /// Check/Uncheck todo (Legacy: checkTodo)
 pub async fn check_todo(
-    pool: &SqlitePool,
+    db: &DatabaseConnection,
     session_id: &str,
     args: Value,
 ) -> Result<MCPResult, String> {
-    let db = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool.clone());
-
     let id = args.get("id").and_then(|v| v.as_i64());
     let index = args.get("index").and_then(|v| v.as_i64());
     let checked = args
@@ -303,7 +325,7 @@ pub async fn check_todo(
             .order_by_asc(planning_todo::Column::CreatedAt)
             .offset(idx as u64)
             .limit(1)
-            .one(&db)
+            .one(db)
             .await
             .map_err(|e| format!("Failed to find todo by index: {}", e))?;
 
@@ -333,7 +355,7 @@ pub async fn check_todo(
     // Fetch the todo first to update it
     let todo_model = planning_todo::Entity::find_by_id(target_id)
         .filter(planning_todo::Column::SessionId.eq(session_id))
-        .one(&db)
+        .one(db)
         .await
         .map_err(|e| format!("Failed to fetch todo: {}", e))?;
 
@@ -357,7 +379,7 @@ pub async fn check_todo(
             active_todo.description = Set(Some(new_desc));
         }
 
-        let result = active_todo.update(&db).await;
+        let result = active_todo.update(db).await;
 
         match result {
             Ok(_) => {
@@ -368,14 +390,14 @@ pub async fn check_todo(
                 } else {
                     String::new()
                 };
-                let state_summary = get_planning_summary(pool, session_id).await;
+                let state_summary = get_planning_summary(db, session_id).await;
 
                 let next_todos = planning_todo::Entity::find()
                     .filter(planning_todo::Column::SessionId.eq(session_id))
                     .filter(planning_todo::Column::IsChecked.eq(0))
                     .order_by_asc(planning_todo::Column::Id)
                     .limit(3)
-                    .all(&db)
+                    .all(db)
                     .await
                     .unwrap_or_default();
 
@@ -444,12 +466,10 @@ pub async fn check_todo(
 
 /// Clear todos (Legacy: clearTodos)
 pub async fn clear_todos(
-    pool: &SqlitePool,
+    db: &DatabaseConnection,
     session_id: &str,
     args: Value,
 ) -> Result<MCPResult, String> {
-    let db = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool.clone());
-
     let ids = args.get("ids").and_then(|v| v.as_array());
     let indices = args.get("indices").and_then(|v| v.as_array());
 
@@ -457,12 +477,12 @@ pub async fn clear_todos(
         // Clear all
         let result = planning_todo::Entity::delete_many()
             .filter(planning_todo::Column::SessionId.eq(session_id))
-            .exec(&db)
+            .exec(db)
             .await;
 
         return match result {
             Ok(r) => {
-                let summary_text = get_planning_summary(pool, session_id).await;
+                let summary_text = get_planning_summary(db, session_id).await;
                 let hint = SuccessHint::new(
                     format!("✓ Cleared {} todos{}", r.rows_affected, summary_text),
                     vec!["Use 'addTodo' to replan, or 'updateGoal'/'createGoal' to refine objectives".to_string()],
@@ -499,7 +519,7 @@ pub async fn clear_todos(
             .filter(planning_todo::Column::SessionId.eq(session_id))
             .order_by_asc(planning_todo::Column::CreatedAt)
             .into_tuple::<i64>()
-            .all(&db)
+            .all(db)
             .await
             .map_err(|e| format!("Failed to fetch todos for index mapping: {}", e))?;
 
@@ -531,19 +551,19 @@ pub async fn clear_todos(
     let result = planning_todo::Entity::delete_many()
         .filter(planning_todo::Column::SessionId.eq(session_id))
         .filter(planning_todo::Column::Id.is_in(target_ids))
-        .exec(&db)
+        .exec(db)
         .await;
 
     match result {
         Ok(r) => {
-            let summary_text = get_planning_summary(pool, session_id).await;
+            let summary_text = get_planning_summary(db, session_id).await;
 
             let next_todos = planning_todo::Entity::find()
                 .filter(planning_todo::Column::SessionId.eq(session_id))
                 .filter(planning_todo::Column::IsChecked.eq(0))
                 .order_by_asc(planning_todo::Column::Id)
                 .limit(3)
-                .all(&db)
+                .all(db)
                 .await
                 .unwrap_or_default();
 

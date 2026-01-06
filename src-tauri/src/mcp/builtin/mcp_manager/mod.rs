@@ -9,7 +9,7 @@ use crate::mcp::builtin::error_guidance::{
 };
 use crate::mcp::types::{MCPResult, MCPServerConfig, ServiceContext, TransportConfig};
 use crate::mcp::MCPTool;
-use crate::state::{get_mcp_manager, get_sqlite_pool};
+use crate::state::{get_database_connection, get_mcp_manager};
 
 #[derive(Debug, Default, Clone)]
 pub struct MCPManagerServer;
@@ -20,8 +20,8 @@ impl MCPManagerServer {
     }
 
     fn get_db(&self) -> DatabaseConnection {
-        let pool = get_sqlite_pool();
-        SqlxSqliteConnector::from_sqlx_sqlite_pool(pool.clone())
+        let db = get_database_connection();
+        db.clone()
     }
 
     async fn save_server_config(&self, config: &MCPServerConfig) -> Result<(), String> {

@@ -1,22 +1,29 @@
 use crate::entity::{planning_goal, planning_scratchpad, planning_todo};
-use crate::mcp::builtin::planning::models::TodoDTO;
 use crate::mcp::types::ServiceContext;
 use log::info;
 use sea_orm::{
-    ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, SqlxSqliteConnector,
+    ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
 };
+use serde::Serialize;
 use serde_json::json;
-use sqlx::SqlitePool;
 use std::collections::HashMap;
 
-pub async fn get_service_context(pool: &SqlitePool, session_id: &str) -> ServiceContext {
-    let db = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool.clone());
+#[derive(Debug, Serialize)]
+pub struct TodoDTO {
+    pub id: i64,
+    pub title: String,
+    pub description: Option<String>,
+    pub priority: String,
+    pub checked: bool,
+    pub subtasks: Vec<TodoDTO>,
+}
 
+pub async fn get_service_context(db: &DatabaseConnection, session_id: &str) -> ServiceContext {
     // 1. Fetch Active Goal
     let goal_model = planning_goal::Entity::find()
         .filter(planning_goal::Column::SessionId.eq(session_id))
         .filter(planning_goal::Column::Status.eq("active"))
-        .one(&db)
+        .one(db)
         .await
         .unwrap_or_else(|e| {
             log::error!("Failed to fetch goal: {}", e);
@@ -29,7 +36,7 @@ pub async fn get_service_context(pool: &SqlitePool, session_id: &str) -> Service
     let todos = planning_todo::Entity::find()
         .filter(planning_todo::Column::SessionId.eq(session_id))
         .order_by_asc(planning_todo::Column::CreatedAt)
-        .all(&db)
+        .all(db)
         .await
         .unwrap_or_else(|e| {
             log::error!("Failed to fetch todos: {}", e);
@@ -83,7 +90,7 @@ pub async fn get_service_context(pool: &SqlitePool, session_id: &str) -> Service
     let scratchpad = planning_scratchpad::Entity::find()
         .filter(planning_scratchpad::Column::SessionId.eq(session_id))
         .order_by_desc(planning_scratchpad::Column::CreatedAt)
-        .all(&db)
+        .all(db)
         .await
         .unwrap_or_else(|e| {
             log::error!("Failed to fetch scratchpad: {}", e);
@@ -124,7 +131,8 @@ pub async fn get_service_context(pool: &SqlitePool, session_id: &str) -> Service
             parts.push("| ID | Prio | Task | Description |".to_string());
             parts.push("| :--- | :--- | :--- | :--- |".to_string());
 
-            for t in unchecked_todos.iter().take(5) {
+            // Iterate over structured_todos (roots) to preserve hierarchy
+            for t in structured_todos.iter().filter(|t| !t.checked).take(5) {
                 let priority = if t.priority == "high" {
                     "🔴 High"
                 } else if t.priority == "low" {
@@ -149,13 +157,63 @@ pub async fn get_service_context(pool: &SqlitePool, session_id: &str) -> Service
                     "-".to_string()
                 };
 
-                let safe_content = t.content.replace('|', r"\|");
+                let safe_content = t.title.replace('|', r"\|");
                 let safe_desc = description.replace('|', r"\|");
+
+                // Optimization: If description is identical to content (e.g. derived title),
+                // or if content is just a truncated version of description and we're showing the same truncation,
+                // don't show description to save tokens.
+                let final_desc = if safe_content == safe_desc || safe_desc == "-" {
+                    "-".to_string()
+                } else {
+                    safe_desc
+                };
 
                 parts.push(format!(
                     "| {} | {} | {} | {} |",
-                    t.id, priority, safe_content, safe_desc
+                    t.id, priority, safe_content, final_desc
                 ));
+
+                // Display subtasks
+                for st in t.subtasks.iter().filter(|st| !st.checked) {
+                    let st_priority = if st.priority == "high" {
+                        "🔴"
+                    } else if st.priority == "low" {
+                        "🟢"
+                    } else {
+                        "🟡"
+                    };
+
+                    let st_desc = if let Some(desc) = &st.description {
+                        if !desc.is_empty() {
+                            let char_count = desc.chars().count();
+                            if char_count > 50 {
+                                let s: String = desc.chars().take(50).collect();
+                                format!("{}...", s)
+                            } else {
+                                desc.clone()
+                            }
+                        } else {
+                            "-".to_string()
+                        }
+                    } else {
+                        "-".to_string()
+                    };
+
+                    let safe_st_content = st.title.replace('|', r"\|");
+                    let safe_st_desc = st_desc.replace('|', r"\|");
+
+                    let final_st_desc = if safe_st_content == safe_st_desc || safe_st_desc == "-" {
+                        "-".to_string()
+                    } else {
+                        safe_st_desc
+                    };
+
+                    parts.push(format!(
+                        "| {} | {} | └─ {} | {} |",
+                        st.id, st_priority, safe_st_content, final_st_desc
+                    ));
+                }
             }
 
             if unchecked_todos.len() > 5 {
@@ -252,13 +310,11 @@ pub async fn get_service_context(pool: &SqlitePool, session_id: &str) -> Service
     }
 }
 
-pub async fn get_planning_summary(pool: &SqlitePool, session_id: &str) -> String {
-    let db = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool.clone());
-
+pub async fn get_planning_summary(db: &DatabaseConnection, session_id: &str) -> String {
     let goal_model = planning_goal::Entity::find()
         .filter(planning_goal::Column::SessionId.eq(session_id))
         .filter(planning_goal::Column::Status.eq("active"))
-        .one(&db)
+        .one(db)
         .await
         .unwrap_or(None);
 
@@ -268,18 +324,23 @@ pub async fn get_planning_summary(pool: &SqlitePool, session_id: &str) -> String
 
     let total = planning_todo::Entity::find()
         .filter(planning_todo::Column::SessionId.eq(session_id))
-        .count(&db)
+        .count(db)
         .await
         .unwrap_or(0);
 
     let unchecked = planning_todo::Entity::find()
         .filter(planning_todo::Column::SessionId.eq(session_id))
         .filter(planning_todo::Column::IsChecked.eq(false))
-        .count(&db)
+        .count(db)
         .await
         .unwrap_or(0);
 
-    let checked = total - unchecked;
+    let checked = planning_todo::Entity::find()
+        .filter(planning_todo::Column::SessionId.eq(session_id))
+        .filter(planning_todo::Column::IsChecked.eq(true))
+        .count(db)
+        .await
+        .unwrap_or(0);
 
     format!(
         "\n\nGoal: \"{}\"\n\nCurrent progress:\n  - Total: {} todos\n  - Unchecked: {}\n  - Checked: {}",

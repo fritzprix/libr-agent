@@ -1,69 +1,54 @@
+use sea_orm::{ConnectionTrait, Database, DatabaseConnection, EntityTrait, Schema, Set};
 use serde_json::json;
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
-use std::str::FromStr;
 use std::sync::Arc;
+use tauri_mcp_agent_lib::entity::{playbook, session};
 use tauri_mcp_agent_lib::mcp::builtin::playbook::PlaybookServer;
 use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
 
+async fn create_test_db() -> Arc<DatabaseConnection> {
+    let db = Database::connect("sqlite::memory:")
+        .await
+        .expect("Failed to connect to in-memory database");
+
+    let schema = Schema::new(db.get_database_backend());
+
+    // Create sessions table
+    let stmt = schema.create_table_from_entity(session::Entity);
+    db.execute(db.get_database_backend().build(&stmt))
+        .await
+        .expect("Failed to create sessions table");
+
+    // Create playbooks table
+    let stmt = schema.create_table_from_entity(playbook::Entity);
+    db.execute(db.get_database_backend().build(&stmt))
+        .await
+        .expect("Failed to create playbooks table");
+
+    Arc::new(db)
+}
+
 #[tokio::test]
 async fn test_playbook_ui_rendering_integration() {
     // Setup in-memory database
-    let options = SqliteConnectOptions::from_str("sqlite::memory:")
-        .expect("Invalid database URL")
-        .create_if_missing(true);
+    let db = create_test_db().await;
 
-    let pool = SqlitePoolOptions::new()
-        .connect_with(options)
-        .await
-        .expect("Failed to create test pool");
-
-    // Create sessions table
-    sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS sessions (
-            id TEXT PRIMARY KEY,
-            name TEXT,
-            status TEXT DEFAULT 'idle',
-            agent_config TEXT,
-            created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL
-        )
-        "#,
-    )
-    .execute(&pool)
-    .await
-    .expect("Failed to create sessions table");
-
-    // Create playbooks table (from migration schema)
-    sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS playbooks (
-            id INTEGER NOT NULL,
-            session_id TEXT NOT NULL,
-            goal TEXT NOT NULL,
-            initial_command TEXT,
-            workflow TEXT NOT NULL,
-            success_criteria TEXT,
-            created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL,
-            PRIMARY KEY (id, session_id)
-        )
-        "#,
-    )
-    .execute(&pool)
-    .await
-    .expect("Failed to create playbooks table");
-
-    sqlx::query("INSERT INTO sessions (id, name, status, created_at, updated_at) VALUES ('integration-test', 'Integration Test', 'idle', 0, 0)")
-        .execute(&pool)
+    // Insert test session
+    let new_session = session::ActiveModel {
+        id: Set("integration-test".to_string()),
+        name: Set(Some("Integration Test".to_string())),
+        status: Set("idle".to_string()),
+        created_at: Set(0),
+        updated_at: Set(0),
+        ..Default::default()
+    };
+    session::Entity::insert(new_session)
+        .exec(db.as_ref())
         .await
         .expect("Failed to insert test session");
 
-    let pool_arc = Arc::new(pool);
-
     // Create PlaybookServer
-    let server = PlaybookServer::new("integration-test".to_string(), pool_arc)
+    let server = PlaybookServer::new("integration-test".to_string(), db)
         .await
         .expect("Failed to create PlaybookServer");
 
@@ -184,57 +169,23 @@ async fn test_playbook_ui_rendering_integration() {
 #[tokio::test]
 async fn test_playbook_ui_interaction_flow() {
     // Setup
-    let options = SqliteConnectOptions::from_str("sqlite::memory:")
-        .expect("Invalid database URL")
-        .create_if_missing(true);
+    let db = create_test_db().await;
 
-    let pool = SqlitePoolOptions::new()
-        .connect_with(options)
-        .await
-        .expect("Failed to create test pool");
-
-    sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS sessions (
-            id TEXT PRIMARY KEY,
-            name TEXT,
-            status TEXT DEFAULT 'idle',
-            agent_config TEXT,
-            created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL
-        )
-        "#,
-    )
-    .execute(&pool)
-    .await
-    .expect("Failed to create sessions table");
-
-    // Create playbooks table (from migration schema)
-    sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS playbooks (
-            id INTEGER NOT NULL,
-            session_id TEXT NOT NULL,
-            goal TEXT NOT NULL,
-            initial_command TEXT,
-            workflow TEXT NOT NULL,
-            success_criteria TEXT,
-            created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL,
-            PRIMARY KEY (id, session_id)
-        )
-        "#,
-    )
-    .execute(&pool)
-    .await
-    .expect("Failed to create playbooks table");
-
-    sqlx::query("INSERT INTO sessions (id, name, status, created_at, updated_at) VALUES ('flow-test', 'Flow Test', 'idle', 0, 0)")
-        .execute(&pool)
+    // Insert test session
+    let new_session = session::ActiveModel {
+        id: Set("flow-test".to_string()),
+        name: Set(Some("Flow Test".to_string())),
+        status: Set("idle".to_string()),
+        created_at: Set(0),
+        updated_at: Set(0),
+        ..Default::default()
+    };
+    session::Entity::insert(new_session)
+        .exec(db.as_ref())
         .await
         .expect("Failed to insert test session");
 
-    let server = PlaybookServer::new("flow-test".to_string(), Arc::new(pool))
+    let server = PlaybookServer::new("flow-test".to_string(), db)
         .await
         .expect("Failed to create PlaybookServer");
 

@@ -1,8 +1,7 @@
 /// SeaORM Migration Verification Test
-/// 
+///
 /// This test verifies that all Phase 2 SeaORM migrations run correctly
 /// and that the refactored modules can interact with the database.
-
 use sea_orm::*;
 use sea_orm_migration::MigratorTrait;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
@@ -27,10 +26,14 @@ async fn test_all_migrations_run_successfully() {
 
     // Run all migrations
     let result = Migrator::up(&db, None).await;
-    assert!(result.is_ok(), "Migrations should run successfully: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "Migrations should run successfully: {:?}",
+        result
+    );
 
     // Verify all tables exist by trying to query them
-    
+
     // 1. Store table
     let store_count = store::Entity::find().count(&db).await;
     assert!(store_count.is_ok(), "Store table should be queryable");
@@ -45,11 +48,17 @@ async fn test_all_migrations_run_successfully() {
 
     // 4. Knowledge table
     let knowledge_count = knowledge::Entity::find().count(&db).await;
-    assert!(knowledge_count.is_ok(), "Knowledge table should be queryable");
+    assert!(
+        knowledge_count.is_ok(),
+        "Knowledge table should be queryable"
+    );
 
     // 5. Assistant table
     let assistant_count = assistant::Entity::find().count(&db).await;
-    assert!(assistant_count.is_ok(), "Assistant table should be queryable");
+    assert!(
+        assistant_count.is_ok(),
+        "Assistant table should be queryable"
+    );
 
     // 6. Playbook table
     let playbook_count = playbook::Entity::find().count(&db).await;
@@ -57,7 +66,10 @@ async fn test_all_migrations_run_successfully() {
 
     // 7. MCP Server table
     let mcp_server_count = mcp_server::Entity::find().count(&db).await;
-    assert!(mcp_server_count.is_ok(), "MCP Server table should be queryable");
+    assert!(
+        mcp_server_count.is_ok(),
+        "MCP Server table should be queryable"
+    );
 
     println!("✅ All 7 tables created and queryable via SeaORM");
 }
@@ -74,7 +86,9 @@ async fn test_knowledge_crud_operations() {
         .expect("Failed to create test pool");
 
     let db = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool.clone());
-    Migrator::up(&db, None).await.expect("Migrations should run");
+    Migrator::up(&db, None)
+        .await
+        .expect("Migrations should run");
 
     // Insert knowledge
     let knowledge = knowledge::ActiveModel {
@@ -104,13 +118,17 @@ async fn test_knowledge_crud_operations() {
     let mut updated: knowledge::ActiveModel = inserted_model.into();
     updated.content = Set("Updated content".to_string());
     let update_result = updated.update(&db).await;
-    assert!(update_result.is_ok(), "Should update knowledge successfully");
+    assert!(
+        update_result.is_ok(),
+        "Should update knowledge successfully"
+    );
 
     // Delete knowledge
-    let delete_result = knowledge::Entity::delete_by_id(1)
-        .exec(&db)
-        .await;
-    assert!(delete_result.is_ok(), "Should delete knowledge successfully");
+    let delete_result = knowledge::Entity::delete_by_id(1).exec(&db).await;
+    assert!(
+        delete_result.is_ok(),
+        "Should delete knowledge successfully"
+    );
 
     println!("✅ Knowledge CRUD operations work correctly");
 }
@@ -127,7 +145,9 @@ async fn test_playbook_crud_operations() {
         .expect("Failed to create test pool");
 
     let db = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool.clone());
-    Migrator::up(&db, None).await.expect("Migrations should run");
+    Migrator::up(&db, None)
+        .await
+        .expect("Migrations should run");
 
     // Insert playbook (ID must be provided, it's a String, not auto-increment)
     let playbook = playbook::ActiveModel {
@@ -145,7 +165,11 @@ async fn test_playbook_crud_operations() {
     if let Err(e) = &inserted {
         eprintln!("Playbook insert error: {:?}", e);
     }
-    assert!(inserted.is_ok(), "Should insert playbook successfully: {:?}", inserted.err());
+    assert!(
+        inserted.is_ok(),
+        "Should insert playbook successfully: {:?}",
+        inserted.err()
+    );
 
     // Read playbook (composite key query)
     let found = playbook::Entity::find()
@@ -153,9 +177,12 @@ async fn test_playbook_crud_operations() {
         .filter(playbook::Column::SessionId.eq("test-session"))
         .one(&db)
         .await;
-    
+
     assert!(found.is_ok() && found.as_ref().unwrap().is_some());
-    assert_eq!(found.unwrap().unwrap().initial_command, Some("test command".to_string()));
+    assert_eq!(
+        found.unwrap().unwrap().initial_command,
+        Some("test command".to_string())
+    );
 
     println!("✅ Playbook CRUD operations work correctly");
 }
@@ -172,7 +199,9 @@ async fn test_mcp_server_crud_operations() {
         .expect("Failed to create test pool");
 
     let db = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool.clone());
-    Migrator::up(&db, None).await.expect("Migrations should run");
+    Migrator::up(&db, None)
+        .await
+        .expect("Migrations should run");
 
     // Insert MCP server with config field (JSON)
     let server = mcp_server::ActiveModel {
@@ -186,9 +215,7 @@ async fn test_mcp_server_crud_operations() {
     assert!(inserted.is_ok(), "Should insert MCP server successfully");
 
     // Read MCP server
-    let found = mcp_server::Entity::find_by_id("test-server")
-        .one(&db)
-        .await;
+    let found = mcp_server::Entity::find_by_id("test-server").one(&db).await;
     assert!(found.is_ok() && found.as_ref().unwrap().is_some());
     assert!(found.unwrap().unwrap().config.contains("node"));
 
@@ -203,15 +230,12 @@ async fn test_mcp_server_crud_operations() {
     let upsert_result = mcp_server::Entity::insert(upsert)
         .on_conflict(
             sea_orm::sea_query::OnConflict::column(mcp_server::Column::Name)
-                .update_columns([
-                    mcp_server::Column::Config,
-                    mcp_server::Column::UpdatedAt,
-                ])
+                .update_columns([mcp_server::Column::Config, mcp_server::Column::UpdatedAt])
                 .to_owned(),
         )
         .exec(&db)
         .await;
-    
+
     assert!(upsert_result.is_ok(), "UPSERT should work correctly");
 
     // Verify update
@@ -226,7 +250,10 @@ async fn test_mcp_server_crud_operations() {
     let delete_result = mcp_server::Entity::delete_by_id("test-server")
         .exec(&db)
         .await;
-    assert!(delete_result.is_ok(), "Should delete MCP server successfully");
+    assert!(
+        delete_result.is_ok(),
+        "Should delete MCP server successfully"
+    );
 
     println!("✅ MCP Server CRUD operations work correctly");
 }
@@ -243,7 +270,9 @@ async fn test_assistant_crud_operations() {
         .expect("Failed to create test pool");
 
     let db = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool.clone());
-    Migrator::up(&db, None).await.expect("Migrations should run");
+    Migrator::up(&db, None)
+        .await
+        .expect("Migrations should run");
 
     // Insert assistant with config field (JSON) - ID must be provided as String
     let assistant = assistant::ActiveModel {
@@ -258,15 +287,17 @@ async fn test_assistant_crud_operations() {
     if let Err(e) = &inserted {
         eprintln!("Assistant insert error: {:?}", e);
     }
-    assert!(inserted.is_ok(), "Should insert assistant successfully: {:?}", inserted.err());
+    assert!(
+        inserted.is_ok(),
+        "Should insert assistant successfully: {:?}",
+        inserted.err()
+    );
 
     let inserted_model = inserted.unwrap();
     assert_eq!(inserted_model.name, "Test Assistant");
 
     // Read assistant (use explicit String ID)
-    let found = assistant::Entity::find_by_id("assistant-1")
-        .one(&db)
-        .await;
+    let found = assistant::Entity::find_by_id("assistant-1").one(&db).await;
     assert!(found.is_ok() && found.as_ref().unwrap().is_some());
 
     // List assistants
@@ -289,7 +320,9 @@ async fn test_content_store_schema() {
         .expect("Failed to create test pool");
 
     let db = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool.clone());
-    Migrator::up(&db, None).await.expect("Migrations should run");
+    Migrator::up(&db, None)
+        .await
+        .expect("Migrations should run");
 
     // Insert store
     let store = store::ActiveModel {
@@ -320,7 +353,10 @@ async fn test_content_store_schema() {
     };
 
     let inserted_content = content.insert(&db).await;
-    assert!(inserted_content.is_ok(), "Should insert content successfully");
+    assert!(
+        inserted_content.is_ok(),
+        "Should insert content successfully"
+    );
 
     // Insert chunk
     let chunk = chunk::ActiveModel {
@@ -340,7 +376,7 @@ async fn test_content_store_schema() {
         .filter(content::Column::Id.eq("content-1"))
         .one(&db)
         .await;
-    
+
     assert!(content_with_chunks.is_ok() && content_with_chunks.unwrap().is_some());
 
     println!("✅ Content Store schema and relationships work correctly");
