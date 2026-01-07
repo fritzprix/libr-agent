@@ -119,6 +119,50 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
                     "The site might be blocking automated access or is too slow".to_string(),
                 ],
             )
+        } else if status_msg.contains("(HTTP 403)") || status_msg.contains("(HTTP 401)") {
+            (
+                format!("Browser session created: {}. {}", id, status_msg),
+                vec![
+                    "The page is blocking access (Forbidden/Unauthorized). Abandon this page."
+                        .to_string(),
+                    "Do NOT try to login or bypass checks.".to_string(),
+                    "Search for the information on a different, public website.".to_string(),
+                ],
+            )
+        } else if status_msg.contains("(HTTP 404)") {
+            (
+                format!("Browser session created: {}. {}", id, status_msg),
+                vec![
+                    "The page was not found (404). Check the URL.".to_string(),
+                    "Search for the content on the site's homepage or use a search engine."
+                        .to_string(),
+                ],
+            )
+        } else if status_msg.contains("(HTTP 5") {
+            (
+                format!("Browser session created: {}. {}", id, status_msg),
+                vec![
+                    "The website is experiencing server errors (5xx). Abandon this page."
+                        .to_string(),
+                    "Try finding the information on a different website.".to_string(),
+                ],
+            )
+        } else if status_msg.contains("Network Error") {
+            (
+                format!("Browser session created: {}. {}", id, status_msg),
+                vec![
+                    "A network error occurred. Check the URL and internet connection.".to_string(),
+                    "The site may be down or unreachable.".to_string(),
+                ],
+            )
+        } else if status_msg.contains("(HTTP ") {
+            (
+                format!("Browser session created: {}. {}", id, status_msg),
+                vec![
+                    "The site returned an error. Consider finding an alternative source."
+                        .to_string(),
+                ],
+            )
         } else {
             (
                 format!("Browser session created: {}. Page loaded: {}", id, url),

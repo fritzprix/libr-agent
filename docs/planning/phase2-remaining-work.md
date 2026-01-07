@@ -14,11 +14,9 @@ Phase 2 SeaORM migration is **functionally complete and production-ready**. All 
 
 1. **Entity Definitions** (7 entities)
    - store, content, chunk, knowledge, assistant, playbook, mcp_server
-   
 2. **Migration Infrastructure**
    - m20260105_000001_create_remaining_tables.rs
    - All tables, indexes, foreign keys, and FTS5 triggers
-   
 3. **Module Refactoring**
    - MCP Manager: 100% SeaORM
    - Planning: 100% SeaORM
@@ -45,6 +43,7 @@ Phase 2 SeaORM migration is **functionally complete and production-ready**. All 
 **Priority**: P3 (Nice to have)
 
 **Operations still using sqlx:**
+
 ```rust
 // src-tauri/src/mcp/builtin/playbook/mod.rs
 - get_service_context() - Count and fetch recent playbooks
@@ -57,6 +56,7 @@ Phase 2 SeaORM migration is **functionally complete and production-ready**. All 
 ```
 
 **Migration Approach:**
+
 ```rust
 // Example: Convert listPlaybooks to SeaORM
 let playbooks = playbook::Entity::find()
@@ -69,12 +69,14 @@ let playbooks = playbook::Entity::find()
 ```
 
 **Rationale for Keeping sqlx:**
+
 - ✅ Production-stable, no bugs
 - ✅ Complex pagination already working
 - ✅ Low maintenance burden
 - ⚠️ Migration would require extensive testing
 
 **When to Migrate:**
+
 - If pagination logic needs changes
 - If query performance becomes an issue
 - If planning major playbook refactor
@@ -89,6 +91,7 @@ let playbooks = playbook::Entity::find()
 **Priority**: P3 (Nice to have)
 
 **Operations still using sqlx:**
+
 ```rust
 // src-tauri/src/mcp/builtin/assistant/mod.rs
 - update_assistant() - Fetch existing, merge config, update
@@ -97,6 +100,7 @@ let playbooks = playbook::Entity::find()
 ```
 
 **Migration Approach:**
+
 ```rust
 // Example: Convert update_assistant to SeaORM
 let existing = assistant::Entity::find_by_id(id)
@@ -112,11 +116,13 @@ active.update(&db).await?;
 ```
 
 **Rationale for Keeping sqlx:**
+
 - ✅ Complex JSON merge logic working correctly
 - ✅ LIKE queries for name search are simple
 - ✅ Low usage frequency (admin operations)
 
 **When to Migrate:**
+
 - If assistant config structure changes significantly
 - If adding complex queries/filters
 - If refactoring assistant management
@@ -131,6 +137,7 @@ active.update(&db).await?;
 **Priority**: P4 (Do not pursue unless necessary)
 
 **Current Architecture:**
+
 ```
 ContentStoreStorage
 ├── HashMap<ContentId, ContentItem> (in-memory cache)
@@ -140,6 +147,7 @@ ContentStoreStorage
 ```
 
 **Why NOT to migrate:**
+
 1. **Hybrid Architecture**: In-memory cache + SQLite + Tantivy
 2. **3 Related Tables**: store, contents, chunks with complex FK relationships
 3. **Migration Code**: Schema upgrade logic needs raw SQL
@@ -148,6 +156,7 @@ ContentStoreStorage
 6. **Infrastructure Ready**: `db_conn` field added if needed later
 
 **If Migration Becomes Necessary:**
+
 - Break into sub-tasks (store, contents, chunks separately)
 - Extensive integration testing required
 - Keep cache/search logic separate from DB operations
@@ -169,16 +178,16 @@ The current sqlx + SeaORM approach provides:
 
 ## Migration Decision Matrix
 
-| Operation Type | Recommended Approach | Rationale |
-|----------------|---------------------|-----------|
-| **Simple CRUD** | SeaORM | Type safety, maintainability |
-| **Complex Queries** | Raw SQL | Performance, readability |
-| **Pagination** | Either (case-by-case) | Both work well |
-| **FTS5 Search** | Raw SQL | SQLite-specific, ORM incompatible |
-| **Bulk Operations** | Raw SQL | Better performance |
-| **Schema Migrations** | SeaORM Migrations | Standard approach |
-| **JSON Operations** | Raw SQL | SQLite JSON functions |
-| **Transactions** | Either | Both support transactions |
+| Operation Type        | Recommended Approach  | Rationale                         |
+| --------------------- | --------------------- | --------------------------------- |
+| **Simple CRUD**       | SeaORM                | Type safety, maintainability      |
+| **Complex Queries**   | Raw SQL               | Performance, readability          |
+| **Pagination**        | Either (case-by-case) | Both work well                    |
+| **FTS5 Search**       | Raw SQL               | SQLite-specific, ORM incompatible |
+| **Bulk Operations**   | Raw SQL               | Better performance                |
+| **Schema Migrations** | SeaORM Migrations     | Standard approach                 |
+| **JSON Operations**   | Raw SQL               | SQLite JSON functions             |
+| **Transactions**      | Either                | Both support transactions         |
 
 ---
 
@@ -224,6 +233,7 @@ The current sqlx + SeaORM approach provides:
 **SHIP IT AS-IS** ✅
 
 The Phase 2 migration achieved its primary goals:
+
 - ✅ Type-safe entity management
 - ✅ Consistent schema via migrations
 - ✅ Modern ORM patterns established
@@ -232,6 +242,7 @@ The Phase 2 migration achieved its primary goals:
 Completing the remaining operations provides **minimal value** for the **time investment**. The hybrid approach is a **best practice** in the Rust ecosystem.
 
 **Only pursue remaining work if:**
+
 1. Specific bugs arise in sqlx operations
 2. Major refactoring planned for those modules
 3. Performance profiling reveals issues
