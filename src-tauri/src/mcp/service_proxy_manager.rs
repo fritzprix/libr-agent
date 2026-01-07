@@ -839,7 +839,7 @@ mod tests {
 
         // Insert session into database
         use crate::entity::session;
-        use sea_orm::{ActiveModelTrait, Set};
+        use sea_orm::Set;
 
         let new_session = session::ActiveModel {
             id: Set(session_id.clone()),

@@ -6,7 +6,19 @@ import type { Message } from '@/models/chat';
  */
 export function hasToolCallError(toolResult?: Message): boolean {
   // Type-safe error detection using Message.error property
-  return !!toolResult?.error;
+  if (toolResult?.error) return true;
+
+  // Fallback: Check if any content item has isError property
+  // This handles cases where backend might preserve MCP result structure in content
+  if (
+    toolResult?.content?.some(
+      (c) => (c as Record<string, unknown>).isError === true,
+    )
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 /**

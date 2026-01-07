@@ -23,7 +23,7 @@ use commands::agent_commands::{
     agent_get_service_contexts, agent_get_session, agent_handle_llm_error,
     agent_handle_llm_response, agent_handle_tool_result, agent_init_session_with_messages,
     agent_inject_messages, agent_pause_workflow, agent_resume_session, agent_resume_workflow,
-    agent_send_message, agent_terminate_workflow,
+    agent_send_message, agent_terminate_workflow, agent_update_session_config,
 };
 use commands::browser_commands::*;
 use commands::content_store_commands::delete_content_store;
@@ -323,7 +323,8 @@ pub fn run() {
                 agent_get_service_contexts,
                 agent_inject_messages,
                 agent_clear_all_sessions,
-                agent_factory_reset
+                agent_factory_reset,
+                agent_update_session_config
             ])
             .setup(|app| {
                 println!("🚀 LibrAgent initializing...");

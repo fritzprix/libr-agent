@@ -71,6 +71,13 @@ pub trait SessionRepository: Send + Sync {
     /// Update session status
     async fn update_status(&self, session_id: &str, status: SessionStatus) -> Result<(), DbError>;
 
+    /// Update agent configuration
+    async fn update_agent_config(
+        &self,
+        session_id: &str,
+        agent_config: String,
+    ) -> Result<(), DbError>;
+
     /// Get all sessions
     async fn get_all_sessions(&self) -> Result<Vec<SessionMetadata>, DbError>;
 
@@ -155,6 +162,25 @@ impl SessionRepository for SqliteSessionRepository {
         session::ActiveModel {
             id: Set(session_id.to_string()),
             status: Set(status.as_str().to_string()),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .update(&self.db)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn update_agent_config(
+        &self,
+        session_id: &str,
+        agent_config: String,
+    ) -> Result<(), DbError> {
+        let now = chrono::Utc::now().timestamp_millis();
+
+        session::ActiveModel {
+            id: Set(session_id.to_string()),
+            agent_config: Set(Some(agent_config)),
             updated_at: Set(now),
             ..Default::default()
         }

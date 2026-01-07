@@ -41,12 +41,12 @@ impl KnowledgeServer {
     async fn save_knowledge(&self, args: Value) -> Result<MCPResult, String> {
         let title = match args.get("title").and_then(|v| v.as_str()) {
             Some(v) => v,
-            None => return Ok(missing_param_error("title", ToolGroup::Knowledge)),
+            Option::None => return Ok(missing_param_error("title", ToolGroup::Knowledge)),
         };
 
         let content = match args.get("content").and_then(|v| v.as_str()) {
             Some(v) => v,
-            None => return Ok(missing_param_error("content", ToolGroup::Knowledge)),
+            Option::None => return Ok(missing_param_error("content", ToolGroup::Knowledge)),
         };
 
         // Handle tags as array of strings
@@ -150,7 +150,7 @@ impl KnowledgeServer {
     async fn read_knowledge(&self, args: Value) -> Result<MCPResult, String> {
         let id = match args.get("id").and_then(|v| v.as_i64()) {
             Some(v) => v,
-            None => return Ok(missing_param_error("id", ToolGroup::Knowledge)),
+            Option::None => return Ok(missing_param_error("id", ToolGroup::Knowledge)),
         };
 
         let db = self.get_db();
@@ -197,7 +197,7 @@ impl KnowledgeServer {
                     "knowledge": knowledge
                 }))))
             }
-            Ok(None) => Ok(not_found_error(
+            Ok(Option::None) => Ok(not_found_error(
                 "Knowledge entry",
                 &id.to_string(),
                 ToolGroup::Knowledge,
@@ -219,7 +219,7 @@ impl KnowledgeServer {
     async fn delete_knowledge(&self, args: Value) -> Result<MCPResult, String> {
         let id = match args.get("id").and_then(|v| v.as_i64()) {
             Some(v) => v,
-            None => return Ok(missing_param_error("id", ToolGroup::Knowledge)),
+            Option::None => return Ok(missing_param_error("id", ToolGroup::Knowledge)),
         };
 
         let db = self.get_db();
@@ -699,8 +699,8 @@ mod tests {
     use super::*;
     use crate::entity::{knowledge, session};
     use sea_orm::{
-        ActiveModelTrait, ConnectionTrait, Database, DatabaseConnection, DbBackend, EntityTrait,
-        Schema, Set, Statement,
+        ConnectionTrait, Database, DatabaseConnection, DbBackend, EntityTrait, Schema, Set,
+        Statement,
     };
     use std::sync::Arc;
 

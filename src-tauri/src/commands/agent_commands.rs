@@ -37,6 +37,14 @@ pub struct InjectMessagesRequest {
     pub trigger_workflow: bool,
 }
 
+/// Request to update agent configuration for a session
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateAgentConfigRequest {
+    pub session_id: String,
+    pub agent_config: crate::agent::AgentConfig,
+}
+
 /// Response for agent operations
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -98,6 +106,23 @@ pub async fn agent_send_message(
     Ok(AgentResponse {
         success: true,
         message: format!("Workflow started for session: {}", request.session_id),
+        data: None,
+    })
+}
+
+/// Update agent configuration for a session
+#[command]
+pub async fn agent_update_session_config(
+    manager: State<'_, AgentSessionManager>,
+    request: UpdateAgentConfigRequest,
+) -> Result<AgentResponse, String> {
+    manager
+        .update_session_config(request.session_id.clone(), request.agent_config)
+        .await?;
+
+    Ok(AgentResponse {
+        success: true,
+        message: format!("Agent config updated for session: {}", request.session_id),
         data: None,
     })
 }

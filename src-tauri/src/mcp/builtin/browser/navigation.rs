@@ -46,13 +46,19 @@ pub async fn navigate_to_url(server: &BrowserServer, args: Value) -> Result<MCPR
     // Invalidate cache after navigation
     server.invalidate_cache();
 
-    let hint = SuccessHint::new(
-        result,
+    let suggestions = if result.contains("load wait timed out") {
+        vec![
+            "Try creating a new session with 'createSession' to reset the state".to_string(),
+            "The site might be blocking automated access or is too slow".to_string(),
+        ]
+    } else {
         vec![
             "Extract page content with extractWebContent to see what's on the page".to_string(),
             "List interactive elements with listInteractable".to_string(),
-        ],
-    );
+        ]
+    };
+
+    let hint = SuccessHint::new(result, suggestions);
     Ok(hint.to_mcp_result())
 }
 

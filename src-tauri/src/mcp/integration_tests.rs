@@ -9,9 +9,7 @@ mod tests {
     use crate::entity::{playbook, session};
     use crate::mcp::server::MCPServerManager;
     use crate::mcp::service_proxy_manager::MCPServiceProxyManager;
-    use sea_orm::{
-        ActiveModelTrait, ConnectionTrait, Database, DatabaseConnection, EntityTrait, Schema, Set,
-    };
+    use sea_orm::{ConnectionTrait, Database, DatabaseConnection, EntityTrait, Schema, Set};
     use serde_json::json;
     use std::sync::Arc;
 
