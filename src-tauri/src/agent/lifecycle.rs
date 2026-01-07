@@ -132,6 +132,53 @@ pub async fn resume_session(
     Ok(session)
 }
 
+/// Update agent configuration for an existing session
+pub async fn update_session_config(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    _app_handle: &AppHandle,
+    session_id: &str,
+    agent_config: crate::agent::AgentConfig,
+) -> Result<(), String> {
+    // 1. Validate new config
+    agent_config.validate()?;
+
+    // 2. Serialize config
+    let config_json = agent_config.to_json()?;
+
+    // 3. Update in database
+    let session_repo = crate::state::get_session_repository();
+    session_repo
+        .update_agent_config(session_id, config_json.clone())
+        .await
+        .map_err(|e| format!("Failed to update session config: {}", e))?;
+
+    // 4. Update active session in memory
+    let mut active = active_sessions.write().await;
+    if let Some(session) = active.get_mut(session_id) {
+        session.metadata.agent_config = Some(config_json);
+        session.metadata.updated_at = chrono::Utc::now().timestamp_millis();
+    }
+
+    log::info!(
+        "Updated agent config for session: {} (model: {}, provider: {})",
+        session_id,
+        agent_config.model,
+        agent_config.provider
+    );
+
+    // 5. Emit event to notify frontend of config change
+    // We reuse StatusChanged or create a new event.
+    // Ideally we should have a `ConfigChanged` event, but `StatusChanged` might force a refresh if the frontend re-fetches.
+    // However, to be explicit, let's just log for now. The frontend will update its local state optimistically or re-fetch.
+    // Or we can emit `AgentEvent::StatusChanged` if we want to force some side-effects, but that's hacky.
+
+    // Let's rely on the command response for the immediate update,
+    // and if we need broadcast, we'd add `ConfigChanged` to `AgentEvent`.
+    // For now, simple DB update is enough as the frontend driving this change will know it happened.
+
+    Ok(())
+}
+
 /// Update session status in database and emit event
 pub async fn update_session_status(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,

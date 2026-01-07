@@ -1,11 +1,12 @@
+use crate::entity::planning_goal;
 use crate::mcp::builtin::planning::context::get_planning_summary;
 use crate::mcp::types::MCPResult;
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 use serde_json::{json, Value};
-use sqlx::SqlitePool;
 
 /// Create a new goal (Legacy: createGoal)
 pub async fn create_goal(
-    pool: &SqlitePool,
+    db: &DatabaseConnection,
     session_id: &str,
     args: Value,
 ) -> Result<MCPResult, String> {
@@ -19,34 +20,33 @@ pub async fn create_goal(
     let now = chrono::Utc::now().timestamp_millis();
 
     // Deactivate existing active goals
-    sqlx::query(
-        "UPDATE planning_goals SET status = 'archived' WHERE session_id = ? AND status = 'active'",
-    )
-    .bind(session_id)
-    .execute(pool)
-    .await
-    .map_err(|e| format!("Failed to archive old goals: {}", e))?;
+    planning_goal::Entity::update_many()
+        .col_expr(
+            planning_goal::Column::Status,
+            sea_orm::sea_query::Expr::value("archived"),
+        )
+        .filter(planning_goal::Column::SessionId.eq(session_id))
+        .filter(planning_goal::Column::Status.eq("active"))
+        .exec(db)
+        .await
+        .map_err(|e| format!("Failed to archive old goals: {}", e))?;
 
     // Insert new goal
-    let result = sqlx::query(
-        r#"
-        INSERT INTO planning_goals (session_id, goal_text, status, created_at)
-        VALUES (?, ?, 'active', ?)
-        "#,
-    )
-    .bind(session_id)
-    .bind(goal)
-    .bind(now)
-    .execute(pool)
-    .await;
+    let new_goal = planning_goal::ActiveModel {
+        session_id: Set(session_id.to_string()),
+        goal_text: Set(goal.to_string()),
+        status: Set("active".to_string()),
+        created_at: Set(now),
+        ..Default::default()
+    };
 
-    match result {
-        Ok(query_result) => {
-            let id = query_result.last_insert_rowid();
+    match new_goal.insert(db).await {
+        Ok(model) => {
+            let id = model.id;
             let response_id = cuid2::create_id();
             // Since we just created a goal, we know the goal text.
             // We can fetch summary to get todo counts.
-            let summary = get_planning_summary(pool, session_id).await;
+            let summary = get_planning_summary(db, session_id).await;
 
             Ok(MCPResult::success_with_data(
                 &format!("✓ Goal created: {}{}\n\nNow break this down into actionable tasks using addTodo.", goal, summary),
@@ -64,7 +64,7 @@ pub async fn create_goal(
 
 /// Update current goal (Legacy: updateGoal)
 pub async fn update_goal(
-    pool: &SqlitePool,
+    db: &DatabaseConnection,
     session_id: &str,
     args: Value,
 ) -> Result<MCPResult, String> {
@@ -75,23 +75,21 @@ pub async fn update_goal(
         .filter(|s| !s.is_empty())
         .ok_or_else(|| "Missing or empty 'goal' parameter".to_string())?;
 
-    let result = sqlx::query(
-        r#"
-        UPDATE planning_goals 
-        SET goal_text = ? 
-        WHERE session_id = ? AND status = 'active'
-        "#,
-    )
-    .bind(goal)
-    .bind(session_id)
-    .execute(pool)
-    .await;
+    let result = planning_goal::Entity::update_many()
+        .col_expr(
+            planning_goal::Column::GoalText,
+            sea_orm::sea_query::Expr::value(goal),
+        )
+        .filter(planning_goal::Column::SessionId.eq(session_id))
+        .filter(planning_goal::Column::Status.eq("active"))
+        .exec(db)
+        .await;
 
     match result {
-        Ok(query_result) => {
-            if query_result.rows_affected() > 0 {
+        Ok(update_result) => {
+            if update_result.rows_affected > 0 {
                 let response_id = cuid2::create_id();
-                let summary = get_planning_summary(pool, session_id).await;
+                let summary = get_planning_summary(db, session_id).await;
                 Ok(MCPResult::success_with_data(
                     &format!("✓ Goal updated: {}{}", goal, summary),
                     json!({
@@ -102,7 +100,7 @@ pub async fn update_goal(
                 ))
             } else {
                 // If no active goal, create one
-                create_goal(pool, session_id, args).await
+                create_goal(db, session_id, args).await
             }
         }
         Err(e) => Ok(MCPResult::error(&format!("Failed to update goal: {}", e))),
@@ -111,20 +109,19 @@ pub async fn update_goal(
 
 /// Clear current goal (Legacy: clearGoal)
 pub async fn clear_goal(
-    pool: &SqlitePool,
+    db: &DatabaseConnection,
     session_id: &str,
     _args: Value,
 ) -> Result<MCPResult, String> {
-    let result = sqlx::query(
-        r#"
-        UPDATE planning_goals 
-        SET status = 'cleared' 
-        WHERE session_id = ? AND status = 'active'
-        "#,
-    )
-    .bind(session_id)
-    .execute(pool)
-    .await;
+    let result = planning_goal::Entity::update_many()
+        .col_expr(
+            planning_goal::Column::Status,
+            sea_orm::sea_query::Expr::value("cleared"),
+        )
+        .filter(planning_goal::Column::SessionId.eq(session_id))
+        .filter(planning_goal::Column::Status.eq("active"))
+        .exec(db)
+        .await;
 
     match result {
         Ok(_) => Ok(MCPResult::success("✓ Goal cleared")),

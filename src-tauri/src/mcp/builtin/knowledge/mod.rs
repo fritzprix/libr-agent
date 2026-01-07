@@ -1,9 +1,10 @@
 use async_trait::async_trait;
+use sea_orm::*;
 use serde_json::{json, Value};
-use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::entity::{knowledge, knowledge::Entity as KnowledgeEntity};
 use crate::mcp::builtin::error_guidance::{
     invalid_input_error, missing_param_error, not_found_error, operation_failed_error, SuccessHint,
     ToolGroup,
@@ -21,117 +22,31 @@ use crate::mcp::utils::schema_builder::*;
 #[derive(Debug)]
 pub struct KnowledgeServer {
     session_id: String,
-    db_pool: Arc<SqlitePool>,
+    db: Arc<DatabaseConnection>,
 }
 
 impl KnowledgeServer {
     /// Create a new KnowledgeServer instance for a specific session
-    pub async fn new(session_id: String, db_pool: Arc<SqlitePool>) -> Result<Self, String> {
-        let server = Self {
-            session_id,
-            db_pool,
-        };
-
-        // Initialize database tables
-        server.init_tables().await?;
+    pub async fn new(session_id: String, db: Arc<DatabaseConnection>) -> Result<Self, String> {
+        let server = Self { session_id, db };
 
         Ok(server)
     }
 
-    /// Initialize database tables for knowledge storage
-    async fn init_tables(&self) -> Result<(), String> {
-        // Main knowledge table
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS knowledge (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_id TEXT NOT NULL,
-                title TEXT NOT NULL,
-                content TEXT NOT NULL,
-                tags TEXT,
-                created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL
-            )
-            "#,
-        )
-        .execute(self.db_pool.as_ref())
-        .await
-        .map_err(|e| format!("Failed to create knowledge table: {}", e))?;
-
-        // Create index on session_id for fast filtering
-        sqlx::query(
-            r#"
-            CREATE INDEX IF NOT EXISTS idx_knowledge_session
-            ON knowledge(session_id)
-            "#,
-        )
-        .execute(self.db_pool.as_ref())
-        .await
-        .map_err(|e| format!("Failed to create session index: {}", e))?;
-
-        // Create FTS5 virtual table for full-text search
-        sqlx::query(
-            r#"
-            CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts
-            USING fts5(title, content, content=knowledge, content_rowid=id)
-            "#,
-        )
-        .execute(self.db_pool.as_ref())
-        .await
-        .map_err(|e| format!("Failed to create FTS5 table: {}", e))?;
-
-        // Create triggers to keep FTS5 in sync
-        sqlx::query(
-            r#"
-            CREATE TRIGGER IF NOT EXISTS knowledge_ai AFTER INSERT ON knowledge BEGIN
-                INSERT INTO knowledge_fts(rowid, title, content)
-                VALUES (new.id, new.title, new.content);
-            END
-            "#,
-        )
-        .execute(self.db_pool.as_ref())
-        .await
-        .map_err(|e| format!("Failed to create insert trigger: {}", e))?;
-
-        sqlx::query(
-            r#"
-            CREATE TRIGGER IF NOT EXISTS knowledge_ad AFTER DELETE ON knowledge BEGIN
-                INSERT INTO knowledge_fts(knowledge_fts, rowid, title, content)
-                VALUES('delete', old.id, old.title, old.content);
-            END
-            "#,
-        )
-        .execute(self.db_pool.as_ref())
-        .await
-        .map_err(|e| format!("Failed to create delete trigger: {}", e))?;
-
-        sqlx::query(
-            r#"
-            CREATE TRIGGER IF NOT EXISTS knowledge_au AFTER UPDATE ON knowledge BEGIN
-                INSERT INTO knowledge_fts(knowledge_fts, rowid, title, content)
-                VALUES('delete', old.id, old.title, old.content);
-                INSERT INTO knowledge_fts(rowid, title, content)
-                VALUES (new.id, new.title, new.content);
-            END
-            "#,
-        )
-        .execute(self.db_pool.as_ref())
-        .await
-        .map_err(|e| format!("Failed to create update trigger: {}", e))?;
-
-        Ok(())
+    fn get_db(&self) -> &DatabaseConnection {
+        &self.db
     }
 
     /// Save knowledge to the database
     async fn save_knowledge(&self, args: Value) -> Result<MCPResult, String> {
         let title = match args.get("title").and_then(|v| v.as_str()) {
             Some(v) => v,
-            None => return Ok(missing_param_error("title", ToolGroup::Knowledge)),
+            Option::None => return Ok(missing_param_error("title", ToolGroup::Knowledge)),
         };
 
         let content = match args.get("content").and_then(|v| v.as_str()) {
             Some(v) => v,
-            None => return Ok(missing_param_error("content", ToolGroup::Knowledge)),
+            Option::None => return Ok(missing_param_error("content", ToolGroup::Knowledge)),
         };
 
         // Handle tags as array of strings
@@ -170,25 +85,23 @@ impl KnowledgeServer {
         };
 
         let now = chrono::Utc::now().timestamp_millis();
+        let db = self.get_db();
 
-        let result = sqlx::query(
-            r#"
-            INSERT INTO knowledge (session_id, title, content, tags, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-            "#,
-        )
-        .bind(&self.session_id)
-        .bind(title)
-        .bind(content)
-        .bind(&tags_str)
-        .bind(now)
-        .bind(now)
-        .execute(self.db_pool.as_ref())
-        .await;
+        let model = knowledge::ActiveModel {
+            id: NotSet,
+            session_id: Set(self.session_id.clone()),
+            title: Set(title.to_string()),
+            content: Set(content.to_string()),
+            tags: Set(tags_str.clone()),
+            created_at: Set(now),
+            updated_at: Set(now),
+        };
+
+        let result = KnowledgeEntity::insert(model).exec(db).await;
 
         match result {
-            Ok(query_result) => {
-                let id = query_result.last_insert_rowid();
+            Ok(insert_result) => {
+                let id = insert_result.last_insert_id;
 
                 // Parse tags back for response
                 let tags_vec: Vec<String> = if let Some(s) = tags_str {
@@ -237,23 +150,24 @@ impl KnowledgeServer {
     async fn read_knowledge(&self, args: Value) -> Result<MCPResult, String> {
         let id = match args.get("id").and_then(|v| v.as_i64()) {
             Some(v) => v,
-            None => return Ok(missing_param_error("id", ToolGroup::Knowledge)),
+            Option::None => return Ok(missing_param_error("id", ToolGroup::Knowledge)),
         };
 
-        let result = sqlx::query_as::<_, (i64, String, String, Option<String>, i64, i64)>(
-            r#"
-            SELECT id, title, content, tags, created_at, updated_at
-            FROM knowledge
-            WHERE id = ? AND session_id = ?
-            "#,
-        )
-        .bind(id)
-        .bind(&self.session_id)
-        .fetch_optional(self.db_pool.as_ref())
-        .await;
+        let db = self.get_db();
+        let result = KnowledgeEntity::find()
+            .filter(knowledge::Column::Id.eq(id))
+            .filter(knowledge::Column::SessionId.eq(&self.session_id))
+            .one(db)
+            .await;
 
         match result {
-            Ok(Some((id, title, content, tags_str, created_at, updated_at))) => {
+            Ok(Some(model)) => {
+                let id = model.id;
+                let title = model.title.clone();
+                let content = model.content.clone();
+                let tags_str = model.tags.clone();
+                let created_at = model.created_at;
+                let updated_at = model.updated_at;
                 let tags_vec: Vec<String> = if let Some(s) = tags_str {
                     serde_json::from_str(&s).unwrap_or_default()
                 } else {
@@ -283,7 +197,7 @@ impl KnowledgeServer {
                     "knowledge": knowledge
                 }))))
             }
-            Ok(None) => Ok(not_found_error(
+            Ok(Option::None) => Ok(not_found_error(
                 "Knowledge entry",
                 &id.to_string(),
                 ToolGroup::Knowledge,
@@ -305,23 +219,19 @@ impl KnowledgeServer {
     async fn delete_knowledge(&self, args: Value) -> Result<MCPResult, String> {
         let id = match args.get("id").and_then(|v| v.as_i64()) {
             Some(v) => v,
-            None => return Ok(missing_param_error("id", ToolGroup::Knowledge)),
+            Option::None => return Ok(missing_param_error("id", ToolGroup::Knowledge)),
         };
 
-        let result = sqlx::query(
-            r#"
-            DELETE FROM knowledge
-            WHERE id = ? AND session_id = ?
-            "#,
-        )
-        .bind(id)
-        .bind(&self.session_id)
-        .execute(self.db_pool.as_ref())
-        .await;
+        let db = self.get_db();
+        let result = KnowledgeEntity::delete_many()
+            .filter(knowledge::Column::Id.eq(id))
+            .filter(knowledge::Column::SessionId.eq(&self.session_id))
+            .exec(db)
+            .await;
 
         match result {
-            Ok(query_result) => {
-                if query_result.rows_affected() > 0 {
+            Ok(delete_result) => {
+                if delete_result.rows_affected > 0 {
                     let hint = SuccessHint::new(
                         format!("Knowledge entry {} deleted successfully", id),
                         vec!["Use listKnowledge to see remaining entries".to_string()],
@@ -395,33 +305,41 @@ impl KnowledgeServer {
 
         sql.push_str(" LIMIT ?");
 
-        let mut query = sqlx::query_as::<_, (i64, String, String, Option<String>, i64, i64)>(&sql);
-
-        query = query.bind(&self.session_id);
+        let mut values = vec![self.session_id.clone().into()];
 
         if let Some(q) = query_param {
-            query = query.bind(q);
+            values.push(q.into());
         }
 
         if let Some(tags) = tags_param {
             for tag in tags {
                 if let Some(tag_str) = tag.as_str() {
-                    query = query.bind(format!("%\"{}\"%", tag_str));
+                    values.push(format!("%\"{}\"%", tag_str).into());
                 } else {
-                    query = query.bind("%%");
+                    values.push("%%".into());
                 }
             }
         }
 
-        query = query.bind(limit);
+        values.push(limit.into());
 
-        let result = query.fetch_all(self.db_pool.as_ref()).await;
+        let stmt = Statement::from_sql_and_values(DbBackend::Sqlite, &sql, values);
+
+        let db = self.get_db();
+        let result = db.query_all(stmt).await;
 
         match result {
             Ok(rows) => {
                 let results: Vec<Value> = rows
                     .into_iter()
-                    .map(|(id, title, content, tags_str, created_at, updated_at)| {
+                    .map(|row| {
+                        let id: i64 = row.try_get("", "id").unwrap_or_default();
+                        let title: String = row.try_get("", "title").unwrap_or_default();
+                        let content: String = row.try_get("", "content").unwrap_or_default();
+                        let tags_str: Option<String> = row.try_get("", "tags").ok();
+                        let created_at: i64 = row.try_get("", "created_at").unwrap_or_default();
+                        let updated_at: i64 = row.try_get("", "updated_at").unwrap_or_default();
+
                         let tags_vec: Vec<String> = if let Some(s) = tags_str {
                             serde_json::from_str(&s).unwrap_or_default()
                         } else {
@@ -475,43 +393,37 @@ impl KnowledgeServer {
             .get("limit")
             .and_then(|v| v.as_i64())
             .unwrap_or(20)
-            .min(100);
+            .min(100) as u64;
 
-        let offset = args.get("offset").and_then(|v| v.as_i64()).unwrap_or(0);
+        let offset = args.get("offset").and_then(|v| v.as_i64()).unwrap_or(0) as u64;
 
-        let result = sqlx::query_as::<_, (i64, String, String, Option<String>, i64, i64)>(
-            r#"
-            SELECT id, title, content, tags, created_at, updated_at
-            FROM knowledge
-            WHERE session_id = ?
-            ORDER BY updated_at DESC
-            LIMIT ? OFFSET ?
-            "#,
-        )
-        .bind(&self.session_id)
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(self.db_pool.as_ref())
-        .await;
+        let db = self.get_db();
+        let result = KnowledgeEntity::find()
+            .filter(knowledge::Column::SessionId.eq(&self.session_id))
+            .order_by_desc(knowledge::Column::UpdatedAt)
+            .limit(limit)
+            .offset(offset)
+            .all(db)
+            .await;
 
         match result {
-            Ok(rows) => {
-                let items: Vec<Value> = rows
+            Ok(models) => {
+                let items: Vec<Value> = models
                     .into_iter()
-                    .map(|(id, title, content, tags_str, created_at, updated_at)| {
-                        let tags_vec: Vec<String> = if let Some(s) = tags_str {
-                            serde_json::from_str(&s).unwrap_or_default()
+                    .map(|model| {
+                        let tags_vec: Vec<String> = if let Some(s) = &model.tags {
+                            serde_json::from_str(s).unwrap_or_default()
                         } else {
                             Vec::new()
                         };
 
                         json!({
-                            "id": id,
-                            "title": title,
-                            "content": content,
+                            "id": model.id,
+                            "title": model.title,
+                            "content": model.content,
                             "tags": tags_vec,
-                            "created_at": created_at,
-                            "updated_at": updated_at
+                            "created_at": model.created_at,
+                            "updated_at": model.updated_at
                         })
                     })
                     .collect();
@@ -520,7 +432,7 @@ impl KnowledgeServer {
                     format!("Listed {} knowledge entries", items.len()),
                     if items.is_empty() {
                         vec!["Use saveKnowledge to create entries".to_string()]
-                    } else if items.len() as i64 == limit {
+                    } else if items.len() as i64 == limit as i64 {
                         vec![format!("Use offset={} to see more entries", offset + limit)]
                     } else {
                         vec!["Use readKnowledge to view full content".to_string()]
@@ -585,20 +497,20 @@ impl BuiltinMCPServer for KnowledgeServer {
     }
 
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
-        // Query knowledge count with error handling
-        let count =
-            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM knowledge WHERE session_id = ?")
-                .bind(&self.session_id)
-                .fetch_one(self.db_pool.as_ref())
-                .await
-                .unwrap_or_else(|e| {
-                    log::warn!(
-                        "Failed to query knowledge count for session '{}': {}",
-                        self.session_id,
-                        e
-                    );
-                    0
-                });
+        // Query knowledge count with error handling using SeaORM
+        let db = self.get_db();
+        let count: u64 = KnowledgeEntity::find()
+            .filter(knowledge::Column::SessionId.eq(&self.session_id))
+            .count(db)
+            .await
+            .unwrap_or_else(|e| {
+                log::warn!(
+                    "Failed to query knowledge count for session '{}': {}",
+                    self.session_id,
+                    e
+                );
+                0
+            });
 
         // Build context prompt
         let mut parts = vec!["## Knowledge Base".to_string()];
@@ -785,59 +697,69 @@ fn create_list_knowledge_tool() -> MCPTool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
-    use std::str::FromStr;
+    use crate::entity::{knowledge, session};
+    use sea_orm::{
+        ConnectionTrait, Database, DatabaseConnection, DbBackend, EntityTrait, Schema, Set,
+        Statement,
+    };
+    use std::sync::Arc;
 
-    async fn create_test_pool() -> SqlitePool {
-        let options = SqliteConnectOptions::from_str("sqlite::memory:")
-            .expect("Invalid database URL")
-            .create_if_missing(true);
-
-        let pool = SqlitePoolOptions::new()
-            .connect_with(options)
+    async fn create_test_db() -> Arc<DatabaseConnection> {
+        let db = Database::connect("sqlite::memory:")
             .await
-            .expect("Failed to create test pool");
+            .expect("Failed to connect to in-memory database");
 
-        // Create sessions table for FOREIGN KEY constraint (not currently used but good practice)
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS sessions (
-                id TEXT PRIMARY KEY,
-                name TEXT,
-                status TEXT DEFAULT 'idle',
-                agent_config TEXT,
-                created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL
-            )
-            "#,
-        )
-        .execute(&pool)
+        let schema = Schema::new(db.get_database_backend());
+
+        // Create sessions table
+        let stmt = schema.create_table_from_entity(session::Entity);
+        db.execute(db.get_database_backend().build(&stmt))
+            .await
+            .expect("Failed to create sessions table");
+
+        // Create knowledge table
+        let stmt = schema.create_table_from_entity(knowledge::Entity);
+        db.execute(db.get_database_backend().build(&stmt))
+            .await
+            .expect("Failed to create knowledge table");
+
+        // Create FTS table manually for testing search
+        db.execute(Statement::from_string(
+            DbBackend::Sqlite,
+            "CREATE VIRTUAL TABLE knowledge_fts USING fts5(title, content, tags, content='knowledge', content_rowid='id');".to_owned(),
+        ))
         .await
-        .expect("Failed to create sessions table");
+        .expect("Failed to create FTS table");
+
+        // Triggers for FTS sync
+        db.execute(Statement::from_string(
+            DbBackend::Sqlite,
+            "CREATE TRIGGER knowledge_ai AFTER INSERT ON knowledge BEGIN
+              INSERT INTO knowledge_fts(rowid, title, content, tags) VALUES (new.id, new.title, new.content, new.tags);
+            END;".to_owned(),
+        )).await.expect("Failed to create insert trigger");
 
         // Insert test sessions
-        sqlx::query("INSERT OR IGNORE INTO sessions (id, name, status, created_at, updated_at) VALUES ('test-session', 'Test', 'idle', 0, 0)")
-            .execute(&pool)
-            .await
-            .expect("Failed to insert test session");
+        let sessions = vec!["test-session", "session-1", "session-2"];
+        for id in sessions {
+            let new_session = session::ActiveModel {
+                id: Set(id.to_string()),
+                created_at: Set(0),
+                ..Default::default()
+            };
+            session::Entity::insert(new_session)
+                .exec(&db)
+                .await
+                .expect("Failed to insert session");
+        }
 
-        sqlx::query("INSERT OR IGNORE INTO sessions (id, name, status, created_at, updated_at) VALUES ('session-1', 'Session 1', 'idle', 0, 0)")
-            .execute(&pool)
-            .await
-            .expect("Failed to insert session 1");
-
-        sqlx::query("INSERT OR IGNORE INTO sessions (id, name, status, created_at, updated_at) VALUES ('session-2', 'Session 2', 'idle', 0, 0)")
-            .execute(&pool)
-            .await
-            .expect("Failed to insert session 2");
-
-        pool
+        Arc::new(db)
     }
 
     #[tokio::test]
     async fn test_save_and_search_knowledge() {
-        let pool = Arc::new(create_test_pool().await);
-        let server = KnowledgeServer::new("test-session".to_string(), pool)
+        let db = create_test_db().await;
+        let server = KnowledgeServer::new("test-session".to_string(), db)
             .await
             .expect("Failed to create server");
 
@@ -869,8 +791,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_knowledge() {
-        let pool = Arc::new(create_test_pool().await);
-        let server = KnowledgeServer::new("test-session".to_string(), pool)
+        let db = create_test_db().await;
+        let server = KnowledgeServer::new("test-session".to_string(), db)
             .await
             .expect("Failed to create server");
 
@@ -901,13 +823,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_session_isolation() {
-        let pool = Arc::new(create_test_pool().await);
+        let db = create_test_db().await;
 
-        let server1 = KnowledgeServer::new("session-1".to_string(), pool.clone())
+        let server1 = KnowledgeServer::new("session-1".to_string(), db.clone())
             .await
             .expect("Failed to create server1");
 
-        let server2 = KnowledgeServer::new("session-2".to_string(), pool)
+        let server2 = KnowledgeServer::new("session-2".to_string(), db)
             .await
             .expect("Failed to create server2");
 

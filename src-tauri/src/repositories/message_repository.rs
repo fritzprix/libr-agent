@@ -1,7 +1,13 @@
 use super::error::DbError;
 use crate::commands::messages_commands::{Message, Page};
 use async_trait::async_trait;
-use sqlx::{Row, SqlitePool};
+use sea_orm::{
+    ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
+    QuerySelect, Set,
+};
+
+use crate::entity::prelude::{Message as MessageEntity, MessageIndexMeta};
+use crate::entity::{message, message_index_meta};
 
 /// Message repository trait for abstraction and testability
 #[async_trait]
@@ -45,62 +51,62 @@ pub trait MessageRepository: Send + Sync {
     async fn is_index_dirty(&self, session_id: &str) -> Result<bool, DbError>;
 }
 
-/// SQLite implementation of MessageRepository
+/// SQLite implementation of MessageRepository using SeaORM
 #[derive(Debug)]
 pub struct SqliteMessageRepository {
-    pool: SqlitePool,
+    db: DatabaseConnection,
 }
 
 impl SqliteMessageRepository {
-    /// Create a new SQLite message repository with the given pool
-    pub fn new(pool: SqlitePool) -> Self {
-        Self { pool }
+    /// Create a new SQLite message repository with the given database connection
+    pub fn new(db: DatabaseConnection) -> Self {
+        Self { db }
+    }
+
+    /// Convert SeaORM message model to Message type
+    fn model_to_message(model: message::Model) -> Message {
+        let content: Vec<crate::mcp::types::MCPContent> =
+            serde_json::from_str(&model.content).unwrap_or_default();
+
+        let tool_calls: Option<Vec<crate::agent::types::ToolCall>> =
+            model.tool_calls.and_then(|s| serde_json::from_str(&s).ok());
+
+        let attachments: Option<serde_json::Value> = model
+            .attachments
+            .and_then(|s| serde_json::from_str(&s).ok());
+
+        let tool_use: Option<serde_json::Value> =
+            model.tool_use.and_then(|s| serde_json::from_str(&s).ok());
+
+        let error: Option<serde_json::Value> =
+            model.error.and_then(|s| serde_json::from_str(&s).ok());
+
+        Message {
+            id: model.id,
+            session_id: model.session_id,
+            role: model.role,
+            content,
+            tool_calls,
+            tool_call_id: model.tool_call_id,
+            is_streaming: model.is_streaming.map(|v| v != 0),
+            thinking: model.thinking,
+            thinking_signature: model.thinking_signature,
+            assistant_id: model.assistant_id,
+            attachments,
+            tool_use,
+            created_at: model.created_at,
+            updated_at: model.updated_at,
+            source: model.source,
+            error,
+        }
     }
 }
 
 #[async_trait]
 impl MessageRepository for SqliteMessageRepository {
     async fn create_table(&self) -> Result<(), DbError> {
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS messages (
-                id TEXT PRIMARY KEY,
-                session_id TEXT NOT NULL CHECK(session_id <> ''),
-                role TEXT NOT NULL,
-                content TEXT NOT NULL,
-                tool_calls TEXT,
-                tool_call_id TEXT,
-                is_streaming INTEGER,
-                thinking TEXT,
-                thinking_signature TEXT,
-                assistant_id TEXT,
-                attachments TEXT,
-                tool_use TEXT,
-                created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL,
-                source TEXT,
-                error TEXT
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_messages_session_created
-            ON messages(session_id, created_at);
-
-            CREATE INDEX IF NOT EXISTS idx_messages_session_id
-            ON messages(session_id);
-
-            CREATE TABLE IF NOT EXISTS message_index_meta (
-                session_id TEXT PRIMARY KEY,
-                index_path TEXT,
-                last_indexed_at INTEGER DEFAULT 0,
-                doc_count INTEGER DEFAULT 0,
-                index_version INTEGER DEFAULT 1,
-                last_rebuild_duration_ms INTEGER
-            );
-            "#,
-        )
-        .execute(&self.pool)
-        .await?;
-
+        // No-op: Schema is now managed by SeaORM migrations
+        log::debug!("create_table() called but schema is now managed by migrations");
         Ok(())
     }
 
@@ -114,78 +120,25 @@ impl MessageRepository for SqliteMessageRepository {
             return Err(DbError::InvalidInput("page_size must be > 0".into()));
         }
 
-        let offset = (page.saturating_sub(1)) as i64 * page_size as i64;
-
-        // Get total count
-        let row = sqlx::query("SELECT COUNT(1) as count FROM messages WHERE session_id = ?")
-            .bind(session_id)
-            .fetch_one(&self.pool)
+        // Get total count using SeaORM
+        let total = MessageEntity::find()
+            .filter(message::Column::SessionId.eq(session_id))
+            .count(&self.db)
             .await?;
-        let total: i64 = row.get("count");
+
+        // Calculate offset
+        let offset = (page.saturating_sub(1)) as u64 * page_size as u64;
 
         // Fetch paginated messages
-        let rows = sqlx::query(
-            r#"
-            SELECT
-                id, session_id, role, content, tool_calls, tool_call_id,
-                is_streaming, thinking, thinking_signature, assistant_id,
-                attachments, tool_use, created_at, updated_at, source, error
-            FROM messages
-            WHERE session_id = ?
-            ORDER BY created_at ASC
-            LIMIT ? OFFSET ?
-            "#,
-        )
-        .bind(session_id)
-        .bind(page_size as i64)
-        .bind(offset)
-        .fetch_all(&self.pool)
-        .await?;
+        let models = MessageEntity::find()
+            .filter(message::Column::SessionId.eq(session_id))
+            .order_by_asc(message::Column::CreatedAt)
+            .offset(offset)
+            .limit(page_size as u64)
+            .all(&self.db)
+            .await?;
 
-        let messages: Vec<Message> = rows
-            .into_iter()
-            .map(|row| {
-                // Deserialize JSON strings from DB into structured types
-                let content_str: String = row.get("content");
-                let content: Vec<crate::mcp::types::MCPContent> =
-                    serde_json::from_str(&content_str).unwrap_or_default();
-
-                let tool_calls: Option<Vec<crate::agent::types::ToolCall>> = row
-                    .get::<Option<String>, _>("tool_calls")
-                    .and_then(|s| serde_json::from_str(&s).ok());
-
-                let attachments: Option<serde_json::Value> = row
-                    .get::<Option<String>, _>("attachments")
-                    .and_then(|s| serde_json::from_str(&s).ok());
-
-                let tool_use: Option<serde_json::Value> = row
-                    .get::<Option<String>, _>("tool_use")
-                    .and_then(|s| serde_json::from_str(&s).ok());
-
-                let error: Option<serde_json::Value> = row
-                    .get::<Option<String>, _>("error")
-                    .and_then(|s| serde_json::from_str(&s).ok());
-
-                Message {
-                    id: row.get("id"),
-                    session_id: row.get("session_id"),
-                    role: row.get("role"),
-                    content,
-                    tool_calls,
-                    tool_call_id: row.get("tool_call_id"),
-                    is_streaming: row.get("is_streaming"),
-                    thinking: row.get("thinking"),
-                    thinking_signature: row.get("thinking_signature"),
-                    assistant_id: row.get("assistant_id"),
-                    attachments,
-                    tool_use,
-                    created_at: row.get("created_at"),
-                    updated_at: row.get("updated_at"),
-                    source: row.get("source"),
-                    error,
-                }
-            })
-            .collect();
+        let messages: Vec<Message> = models.into_iter().map(Self::model_to_message).collect();
 
         let total_usize = total as usize;
         let has_prev = page > 1;
@@ -202,6 +155,8 @@ impl MessageRepository for SqliteMessageRepository {
     }
 
     async fn insert(&self, message: &Message) -> Result<(), DbError> {
+        use sea_orm::sea_query::OnConflict;
+
         // Serialize structured types to JSON strings for DB storage
         let content_json = serde_json::to_string(&message.content).map_err(|e| {
             DbError::SerializationError(format!("Failed to serialize content: {}", e))
@@ -243,54 +198,57 @@ impl MessageRepository for SqliteMessageRepository {
                 DbError::SerializationError(format!("Failed to serialize error: {}", e))
             })?;
 
-        sqlx::query(
-            r#"
-            INSERT INTO messages (
-                id, session_id, role, content, tool_calls, tool_call_id,
-                is_streaming, thinking, thinking_signature, assistant_id,
-                attachments, tool_use, created_at, updated_at, source, error
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-                session_id = excluded.session_id,
-                role = excluded.role,
-                content = excluded.content,
-                tool_calls = excluded.tool_calls,
-                tool_call_id = excluded.tool_call_id,
-                is_streaming = excluded.is_streaming,
-                thinking = excluded.thinking,
-                thinking_signature = excluded.thinking_signature,
-                assistant_id = excluded.assistant_id,
-                attachments = excluded.attachments,
-                tool_use = excluded.tool_use,
-                updated_at = excluded.updated_at,
-                source = excluded.source,
-                error = excluded.error
-            "#,
-        )
-        .bind(&message.id)
-        .bind(&message.session_id)
-        .bind(&message.role)
-        .bind(content_json)
-        .bind(tool_calls_json)
-        .bind(&message.tool_call_id)
-        .bind(message.is_streaming)
-        .bind(&message.thinking)
-        .bind(&message.thinking_signature)
-        .bind(&message.assistant_id)
-        .bind(attachments_json)
-        .bind(tool_use_json)
-        .bind(message.created_at)
-        .bind(message.updated_at)
-        .bind(&message.source)
-        .bind(error_json)
-        .execute(&self.pool)
-        .await?;
+        let model = message::ActiveModel {
+            id: Set(message.id.clone()),
+            session_id: Set(message.session_id.clone()),
+            role: Set(message.role.clone()),
+            content: Set(content_json),
+            tool_calls: Set(tool_calls_json),
+            tool_call_id: Set(message.tool_call_id.clone()),
+            is_streaming: Set(message.is_streaming.map(|b| if b { 1 } else { 0 })),
+            thinking: Set(message.thinking.clone()),
+            thinking_signature: Set(message.thinking_signature.clone()),
+            assistant_id: Set(message.assistant_id.clone()),
+            attachments: Set(attachments_json),
+            tool_use: Set(tool_use_json),
+            created_at: Set(message.created_at),
+            updated_at: Set(message.updated_at),
+            source: Set(message.source.clone()),
+            error: Set(error_json),
+        };
+
+        MessageEntity::insert(model)
+            .on_conflict(
+                OnConflict::column(message::Column::Id)
+                    .update_columns([
+                        message::Column::SessionId,
+                        message::Column::Role,
+                        message::Column::Content,
+                        message::Column::ToolCalls,
+                        message::Column::ToolCallId,
+                        message::Column::IsStreaming,
+                        message::Column::Thinking,
+                        message::Column::ThinkingSignature,
+                        message::Column::AssistantId,
+                        message::Column::Attachments,
+                        message::Column::ToolUse,
+                        message::Column::UpdatedAt,
+                        message::Column::Source,
+                        message::Column::Error,
+                    ])
+                    .to_owned(),
+            )
+            .exec(&self.db)
+            .await?;
 
         Ok(())
     }
 
     async fn insert_many(&self, messages: Vec<Message>) -> Result<(), DbError> {
-        let mut tx = self.pool.begin().await?;
+        use sea_orm::sea_query::OnConflict;
+        use sea_orm::TransactionTrait;
+
+        let txn = self.db.begin().await?;
 
         for message in messages {
             // Serialize structured types to JSON strings for DB storage
@@ -334,68 +292,67 @@ impl MessageRepository for SqliteMessageRepository {
                     DbError::SerializationError(format!("Failed to serialize error: {}", e))
                 })?;
 
-            sqlx::query(
-                r#"
-                INSERT INTO messages (
-                    id, session_id, role, content, tool_calls, tool_call_id,
-                    is_streaming, thinking, thinking_signature, assistant_id,
-                    attachments, tool_use, created_at, updated_at, source, error
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET
-                    session_id = excluded.session_id,
-                    role = excluded.role,
-                    content = excluded.content,
-                    tool_calls = excluded.tool_calls,
-                    tool_call_id = excluded.tool_call_id,
-                    is_streaming = excluded.is_streaming,
-                    thinking = excluded.thinking,
-                    thinking_signature = excluded.thinking_signature,
-                    assistant_id = excluded.assistant_id,
-                    attachments = excluded.attachments,
-                    tool_use = excluded.tool_use,
-                    updated_at = excluded.updated_at,
-                    source = excluded.source,
-                    error = excluded.error
-                "#,
-            )
-            .bind(&message.id)
-            .bind(&message.session_id)
-            .bind(&message.role)
-            .bind(content_json)
-            .bind(tool_calls_json)
-            .bind(&message.tool_call_id)
-            .bind(message.is_streaming)
-            .bind(&message.thinking)
-            .bind(&message.thinking_signature)
-            .bind(&message.assistant_id)
-            .bind(attachments_json)
-            .bind(tool_use_json)
-            .bind(message.created_at)
-            .bind(message.updated_at)
-            .bind(&message.source)
-            .bind(error_json)
-            .execute(&mut *tx)
-            .await?;
+            let model = message::ActiveModel {
+                id: Set(message.id.clone()),
+                session_id: Set(message.session_id.clone()),
+                role: Set(message.role.clone()),
+                content: Set(content_json),
+                tool_calls: Set(tool_calls_json),
+                tool_call_id: Set(message.tool_call_id.clone()),
+                is_streaming: Set(message.is_streaming.map(|b| if b { 1 } else { 0 })),
+                thinking: Set(message.thinking.clone()),
+                thinking_signature: Set(message.thinking_signature.clone()),
+                assistant_id: Set(message.assistant_id.clone()),
+                attachments: Set(attachments_json),
+                tool_use: Set(tool_use_json),
+                created_at: Set(message.created_at),
+                updated_at: Set(message.updated_at),
+                source: Set(message.source.clone()),
+                error: Set(error_json),
+            };
+
+            MessageEntity::insert(model)
+                .on_conflict(
+                    OnConflict::column(message::Column::Id)
+                        .update_columns([
+                            message::Column::SessionId,
+                            message::Column::Role,
+                            message::Column::Content,
+                            message::Column::ToolCalls,
+                            message::Column::ToolCallId,
+                            message::Column::IsStreaming,
+                            message::Column::Thinking,
+                            message::Column::ThinkingSignature,
+                            message::Column::AssistantId,
+                            message::Column::Attachments,
+                            message::Column::ToolUse,
+                            message::Column::UpdatedAt,
+                            message::Column::Source,
+                            message::Column::Error,
+                        ])
+                        .to_owned(),
+                )
+                .exec(&txn)
+                .await?;
         }
 
-        tx.commit()
+        txn.commit()
             .await
             .map_err(|e| DbError::TransactionFailed(e.to_string()))?;
         Ok(())
     }
 
     async fn delete_by_id(&self, message_id: &str) -> Result<(), DbError> {
-        sqlx::query("DELETE FROM messages WHERE id = ?")
-            .bind(message_id)
-            .execute(&self.pool)
+        MessageEntity::delete_by_id(message_id)
+            .exec(&self.db)
             .await?;
         Ok(())
     }
 
     async fn delete_by_session(&self, session_id: &str) -> Result<(), DbError> {
-        sqlx::query("DELETE FROM messages WHERE session_id = ?")
-            .bind(session_id)
-            .execute(&self.pool)
+        MessageEntity::delete_many()
+            .filter(message::Column::SessionId.eq(session_id))
+            .exec(&self.db)
             .await?;
         Ok(())
     }
@@ -407,50 +364,56 @@ impl MessageRepository for SqliteMessageRepository {
         doc_count: usize,
         rebuild_duration_ms: i64,
     ) -> Result<(), DbError> {
+        use sea_orm::sea_query::OnConflict;
         let now = chrono::Utc::now().timestamp_millis();
 
-        sqlx::query(
-            r#"
-            INSERT INTO message_index_meta (session_id, index_path, last_indexed_at, doc_count, last_rebuild_duration_ms)
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(session_id) DO UPDATE SET
-                index_path = excluded.index_path,
-                last_indexed_at = excluded.last_indexed_at,
-                doc_count = excluded.doc_count,
-                last_rebuild_duration_ms = excluded.last_rebuild_duration_ms
-            "#,
-        )
-        .bind(session_id)
-        .bind(index_path)
-        .bind(now)
-        .bind(doc_count as i64)
-        .bind(rebuild_duration_ms)
-        .execute(&self.pool)
-        .await?;
+        let model = message_index_meta::ActiveModel {
+            session_id: Set(session_id.to_string()),
+            index_path: Set(Some(index_path.to_string())),
+            last_indexed_at: Set(now),
+            doc_count: Set(doc_count as i32),
+            index_version: Set(1),
+            last_rebuild_duration_ms: Set(Some(rebuild_duration_ms)),
+        };
+
+        MessageIndexMeta::insert(model)
+            .on_conflict(
+                OnConflict::column(message_index_meta::Column::SessionId)
+                    .update_columns([
+                        message_index_meta::Column::IndexPath,
+                        message_index_meta::Column::LastIndexedAt,
+                        message_index_meta::Column::DocCount,
+                        message_index_meta::Column::LastRebuildDurationMs,
+                    ])
+                    .to_owned(),
+            )
+            .exec(&self.db)
+            .await?;
 
         Ok(())
     }
 
     async fn get_last_indexed_at(&self, session_id: &str) -> Result<i64, DbError> {
-        let result =
-            sqlx::query("SELECT last_indexed_at FROM message_index_meta WHERE session_id = ?")
-                .bind(session_id)
-                .fetch_optional(&self.pool)
-                .await?;
+        let result = MessageIndexMeta::find_by_id(session_id)
+            .one(&self.db)
+            .await?;
 
-        Ok(result.map(|row| row.get("last_indexed_at")).unwrap_or(0))
+        Ok(result.map(|m| m.last_indexed_at).unwrap_or(0))
     }
 
     async fn is_index_dirty(&self, session_id: &str) -> Result<bool, DbError> {
+        use sea_orm::sea_query::Expr;
+
         let last_indexed_at = self.get_last_indexed_at(session_id).await?;
 
-        let row =
-            sqlx::query("SELECT MAX(created_at) as max_created FROM messages WHERE session_id = ?")
-                .bind(session_id)
-                .fetch_one(&self.pool)
-                .await?;
+        let max_created: Option<i64> = MessageEntity::find()
+            .filter(message::Column::SessionId.eq(session_id))
+            .select_only()
+            .column_as(Expr::col(message::Column::CreatedAt).max(), "max_created")
+            .into_tuple()
+            .one(&self.db)
+            .await?;
 
-        let max_created: Option<i64> = row.get("max_created");
         Ok(max_created.map(|t| t > last_indexed_at).unwrap_or(false))
     }
 }

@@ -15,7 +15,7 @@ mod lifecycle;
 mod tools;
 
 /// Manages the lifecycle and communication with both external and built-in MCP servers.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MCPServerManager {
     /// A map of active connections to external MCP servers, keyed by server name.
     pub(crate) connections: Arc<Mutex<HashMap<String, MCPConnection>>>,
@@ -70,6 +70,33 @@ impl MCPServerManager {
             .try_lock()
             .expect("Failed to initialize builtin servers") = Some(builtin_registry);
         info!("Initialized MCPServerManager with SessionManager and SQLite support");
+
+        server_manager
+    }
+
+    /// Creates a new `MCPServerManager` with support for both `SessionManager` and SeaORM DatabaseConnection.
+    pub async fn new_with_session_manager_and_db(
+        session_manager: Arc<SessionManager>,
+        db: sea_orm::DatabaseConnection,
+    ) -> Self {
+        let server_manager = Self {
+            connections: Arc::new(Mutex::new(HashMap::new())),
+            builtin_servers: Arc::new(Mutex::new(None)),
+            oauth_manager: Arc::new(crate::mcp::oauth::OAuthManager::new()),
+        };
+
+        // Initialize builtin servers with SessionManager and DatabaseConnection
+        let builtin_registry =
+            crate::mcp::builtin::BuiltinServerRegistry::new_with_session_manager_and_db(
+                session_manager,
+                db,
+            )
+            .await;
+        *server_manager
+            .builtin_servers
+            .try_lock()
+            .expect("Failed to initialize builtin servers") = Some(builtin_registry);
+        info!("Initialized MCPServerManager with SessionManager and SeaORM DatabaseConnection");
 
         server_manager
     }

@@ -46,13 +46,44 @@ pub async fn navigate_to_url(server: &BrowserServer, args: Value) -> Result<MCPR
     // Invalidate cache after navigation
     server.invalidate_cache();
 
-    let hint = SuccessHint::new(
-        result,
+    let suggestions = if result.contains("load wait timed out") {
+        vec![
+            "Try creating a new session with 'createSession' to reset the state".to_string(),
+            "The site might be blocking automated access or is too slow".to_string(),
+        ]
+    } else if result.contains("(HTTP 403)") || result.contains("(HTTP 401)") {
+        vec![
+            "The page is blocking access (Forbidden/Unauthorized). Abandon this page.".to_string(),
+            "Do NOT try to login or bypass checks.".to_string(),
+            "Search for the information on a different, public website.".to_string(),
+        ]
+    } else if result.contains("(HTTP 404)") {
+        vec![
+            "The page was not found (404). Check the URL.".to_string(),
+            "Search for the content on the site's homepage or use a search engine.".to_string(),
+        ]
+    } else if result.contains("(HTTP 5") {
+        // Covers 500, 502, 503, etc.
+        vec![
+            "The website is experiencing server errors (5xx). Abandon this page.".to_string(),
+            "Try finding the information on a different website.".to_string(),
+        ]
+    } else if result.contains("Network Error") {
+        vec![
+            "A network error occurred. Check the URL and internet connection.".to_string(),
+            "The site may be down or unreachable.".to_string(),
+        ]
+    } else if result.contains("(HTTP ") {
+        // Fallback for other HTTP errors (e.g. 418, 429)
+        vec!["The site returned an error. Consider finding an alternative source.".to_string()]
+    } else {
         vec![
             "Extract page content with extractWebContent to see what's on the page".to_string(),
             "List interactive elements with listInteractable".to_string(),
-        ],
-    );
+        ]
+    };
+
+    let hint = SuccessHint::new(result, suggestions);
     Ok(hint.to_mcp_result())
 }
 

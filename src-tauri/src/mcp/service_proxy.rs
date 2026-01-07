@@ -1,5 +1,5 @@
+use sea_orm::DatabaseConnection;
 use serde_json::Value;
-use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::AppHandle;
@@ -38,7 +38,7 @@ impl MCPServiceProxy {
     /// * `session_id` - Unique identifier for the agent session
     /// * `tool_ids` - List of builtin tool IDs to initialize
     /// * `external_mcp_manager` - Shared manager for external MCP servers
-    /// * `db_pool` - Shared SQLite connection pool
+    /// * `db` - Shared SeaORM database connection
     /// * `session_manager` - Shared SessionManager for workspace/content_store
     ///
     /// # Returns
@@ -48,7 +48,7 @@ impl MCPServiceProxy {
         session_id: String,
         tool_ids: Vec<String>,
         external_mcp_manager: Arc<MCPServerManager>,
-        db_pool: Arc<SqlitePool>,
+        db: Arc<DatabaseConnection>,
         session_manager: Arc<SessionManager>,
         app_handle: Option<AppHandle>,
     ) -> Result<Self, String> {
@@ -58,7 +58,7 @@ impl MCPServiceProxy {
             if let Some(server) = create_builtin_server(
                 &tool_id,
                 session_id.clone(),
-                db_pool.clone(),
+                db.clone(),
                 session_manager.clone(),
                 app_handle.clone(),
             )
@@ -229,7 +229,7 @@ impl MCPServiceProxy {
 /// # Arguments
 /// * `tool_id` - The builtin tool identifier (e.g., "knowledge", "planning")
 /// * `session_id` - The session to bind the server to
-/// * `db_pool` - Shared SQLite connection pool
+/// * `db` - Shared SeaORM database connection
 ///
 /// # Returns
 /// * `Ok(Some(Box<dyn BuiltinMCPServer>))` - Server instance
@@ -238,7 +238,7 @@ impl MCPServiceProxy {
 async fn create_builtin_server(
     tool_id: &str,
     _session_id: String,
-    _db_pool: Arc<SqlitePool>,
+    _db: Arc<DatabaseConnection>,
     _session_manager: Arc<SessionManager>,
     app_handle: Option<AppHandle>,
 ) -> Result<Option<Box<dyn BuiltinMCPServer>>, String> {
@@ -247,16 +247,16 @@ async fn create_builtin_server(
             crate::mcp::builtin::bootstrap::BootstrapServer::new(),
         ))),
         "knowledge" => Ok(Some(Box::new(
-            crate::mcp::builtin::knowledge::KnowledgeServer::new(_session_id, _db_pool).await?,
+            crate::mcp::builtin::knowledge::KnowledgeServer::new(_session_id, _db).await?,
         ))),
         "planning" => Ok(Some(Box::new(
-            crate::mcp::builtin::planning::PlanningServer::new(_session_id, _db_pool).await?,
+            crate::mcp::builtin::planning::PlanningServer::new(_session_id, _db).await?,
         ))),
         "playbook" => Ok(Some(Box::new(
-            crate::mcp::builtin::playbook::PlaybookServer::new(_session_id, _db_pool).await?,
+            crate::mcp::builtin::playbook::PlaybookServer::new(_session_id, _db).await?,
         ))),
         "assistant" => Ok(Some(Box::new(
-            crate::mcp::builtin::assistant::AssistantServer::new(_db_pool).await?,
+            crate::mcp::builtin::assistant::AssistantServer::new(_db).await?,
         ))),
         "workspace" => Ok(Some(Box::new(
             crate::mcp::builtin::workspace::WorkspaceServer::new(_session_id, _session_manager),

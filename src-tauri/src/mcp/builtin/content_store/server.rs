@@ -54,6 +54,26 @@ impl ContentStoreServer {
         })
     }
 
+    pub async fn new_with_db(
+        session_id: String,
+        session_manager: Arc<SessionManager>,
+        db: sea_orm::DatabaseConnection,
+    ) -> Result<Self, String> {
+        let session_dir = session_manager.get_session_workspace_dir_by_id(&session_id);
+        let search_index_dir = session_dir.join("content_store_search");
+        let search_engine = search::ContentSearchEngine::new(search_index_dir)
+            .expect("Failed to initialize search engine");
+
+        let storage = storage::ContentStoreStorage::new_with_db(db).await?;
+
+        Ok(Self {
+            session_id,
+            session_manager,
+            storage: Mutex::new(storage),
+            search_engine: Arc::new(Mutex::new(search_engine)),
+        })
+    }
+
     pub fn tools(&self) -> Vec<MCPTool> {
         vec![
             MCPTool {

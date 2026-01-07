@@ -9,7 +9,7 @@ import {
   RefreshCw,
   Wrench,
 } from 'lucide-react';
-import { CompactModelPicker } from '@/features/chat/ModelPicker';
+import { AgentModelPicker } from '@/features/agent/components/AgentModelPicker';
 import { useAgentTools } from '@/hooks/use-agent-tools';
 import { useMemo, useState } from 'react';
 import { getLogger } from '@/lib/logger';
@@ -175,7 +175,14 @@ export function AgentChatStatusBar() {
       {/* Model and tools status bar (matches ChatStatusBar) */}
       <div className="px-4 py-2 border-t flex items-center justify-between">
         <div>
-          <CompactModelPicker />
+          {session && (
+            <AgentModelPicker
+              sessionId={session.id}
+              currentModel={session.assistant?.model}
+              currentProvider={session.assistant?.provider}
+              currentAssistantConfig={session.assistant}
+            />
+          )}
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs">Tools:</span>
