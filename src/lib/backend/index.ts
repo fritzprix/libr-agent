@@ -85,6 +85,7 @@ export {
   handleLLMResponse,
   handleUserToolCall,
   getAgentAvailableTools,
+  agentCallBuiltinTool,
 } from './agent-commands';
 
 // Session management
