@@ -70,6 +70,7 @@ export const useRustBackend = () => {
 
     // Utility
     greet: client.greet,
+    agentCallBuiltinTool: client.agentCallBuiltinTool,
 
     // Additional methods that may be used by legacy code
     sampleFromModel: client.sampleFromModel,

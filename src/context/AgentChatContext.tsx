@@ -282,6 +282,8 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
         const now = Date.now();
         const messageForRust: RustMessage = {
           ...message,
+          toolCalls: message.tool_calls,
+          toolCallId: message.tool_call_id,
           createdAt:
             message.createdAt instanceof Date
               ? message.createdAt.getTime()
@@ -336,6 +338,8 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
         const now = Date.now();
         const messagesForRust: RustMessage[] = messages.map((msg) => ({
           ...msg,
+          toolCalls: msg.tool_calls,
+          toolCallId: msg.tool_call_id,
           createdAt:
             msg.createdAt instanceof Date
               ? msg.createdAt.getTime()

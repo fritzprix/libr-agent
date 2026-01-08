@@ -45,10 +45,10 @@ export function AgentWorkspacePanel() {
   const {
     listWorkspaceFiles,
     openWorkspaceFileWithDefaultApp,
-    callBuiltinTool,
+    agentCallBuiltinTool,
   } = useRustBackend();
   const { session } = useAgentSessionState();
-  const { submit } = useAgentChatActions();
+  const { submit, injectMessages } = useAgentChatActions();
   const [rootPath, setRootPath] = useState<string>('./');
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
   const [loading, setLoading] = useState(false);
@@ -240,10 +240,14 @@ export function AgentWorkspacePanel() {
             : destPath;
 
           // Call builtin workspace tool
-          const response = await callBuiltinTool('workspace', 'importFile', {
-            src_abs_path: srcPath,
-            dest_rel_path: destRelPath,
-          });
+          const response = (await agentCallBuiltinTool(
+            session.id,
+            'builtin_workspace__importFile',
+            {
+              src_abs_path: srcPath,
+              dest_rel_path: destRelPath,
+            },
+          )) as { result?: unknown; error?: { message: string } };
 
           // Create tool messages for chat history
           const toolCallId = createId();
@@ -311,9 +315,8 @@ export function AgentWorkspacePanel() {
             session.id,
           );
 
-          // Submit messages sequentially
-          await submit(toolCallMessage);
-          await submit(toolResultMessage);
+          // Submit messages atomically using injectMessages
+          await injectMessages([toolCallMessage, toolResultMessage], true);
         }
 
         // Refresh directory after import
@@ -327,7 +330,7 @@ export function AgentWorkspacePanel() {
         });
       }
     },
-    [callBuiltinTool, submit, session, rootPath, loadDirectory],
+    [agentCallBuiltinTool, submit, session, rootPath, loadDirectory],
   );
 
   // Subscribe to DnD events
