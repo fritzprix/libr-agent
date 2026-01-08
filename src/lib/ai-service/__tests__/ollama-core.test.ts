@@ -1,4 +1,3 @@
-
 import { describe, it, expect } from 'vitest';
 import { processChunk, noopLogger } from '../ollama-core';
 
@@ -11,11 +10,9 @@ describe('ollama-core processChunk', () => {
             }
         };
 
+        const result = processChunk(chunkWithThinkingIds, noopLogger);
 
-        const resultJson = processChunk(chunkWithThinkingIds, noopLogger);
-        const result = JSON.parse(resultJson!);
-
-        expect(result.thinking).toBe('  thinking with spaces  ');
+        expect(result?.thinking).toBe('  thinking with spaces  ');
     });
 
     it('should not trim whitespace from content mixed with thinking tags', () => {
@@ -26,11 +23,9 @@ describe('ollama-core processChunk', () => {
             }
         };
 
+        const result = processChunk(chunkMixed, noopLogger);
 
-        const resultJson = processChunk(chunkMixed, noopLogger);
-        const result = JSON.parse(resultJson!);
-
-        expect(result.thinking).toBe('  thinking inside tags  ');
+        expect(result?.thinking).toBe('  thinking inside tags  ');
     });
 
     it('should not trim whitespace from content after thinking tags', () => {
@@ -40,10 +35,37 @@ describe('ollama-core processChunk', () => {
             }
         };
 
+        const result = processChunk(chunkMixed, noopLogger);
 
-        const resultJson = processChunk(chunkMixed, noopLogger);
-        const result = JSON.parse(resultJson!);
+        expect(result?.content).toBe('  content with spaces  ');
+    });
 
-        expect(result.content).toBe('  content with spaces  ');
+    it('should extract usage metrics from final chunk', () => {
+      const chunk = {
+        done: true,
+        prompt_eval_count: 127,
+        eval_count: 543,
+        eval_duration: 12847362000,
+        load_duration: 150000000,
+      };
+  
+      const result = processChunk(chunk, noopLogger);
+  
+      expect(result?.usage).toBeDefined();
+      expect(result?.usage?.promptTokens).toBe(127);
+      expect(result?.usage?.completionTokens).toBe(543);
+      expect(result?.usage?.totalTokens).toBe(670);
+      expect(result?.usage?.details?.evalDuration).toBeCloseTo(12847.36, 1);
+    });
+  
+    it('should not include usage in non-final chunks', () => {
+      const chunk = {
+        done: false,
+        message: { content: 'Hello', role: 'assistant' },
+      };
+  
+      const result = processChunk(chunk, noopLogger);
+  
+      expect(result?.usage).toBeUndefined();
     });
 });

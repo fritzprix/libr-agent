@@ -476,6 +476,43 @@ export abstract class BaseAIService implements IAIService {
   }
 
   /**
+   * Wraps a streaming generator with Time-To-First-Token (TTFT) measurement.
+   * Used by providers that don't provide native prefill timing metrics.
+   * @param generator The underlying streaming generator to wrap
+   * @returns A new generator that yields TTFT usage as the first chunk
+   * @protected
+   */
+  protected async *streamChatWithTTFT(
+    generator: AsyncGenerator<string, void, void>,
+  ): AsyncGenerator<string, void, void> {
+    const startTime = performance.now();
+    let firstChunkReceived = false;
+
+    for await (const chunk of generator) {
+      if (!firstChunkReceived) {
+        const ttft = performance.now() - startTime;
+        firstChunkReceived = true;
+
+        // Yield TTFT metric as the first chunk
+        yield JSON.stringify({
+          usage: {
+            promptTokens: 0,
+            completionTokens: 0,
+            totalTokens: 0,
+            details: { timeToFirstToken: ttft },
+          },
+        });
+
+        this.logger.debug('TTFT measured', {
+          provider: this.getProvider(),
+          ttftMs: ttft.toFixed(2),
+        });
+      }
+      yield chunk;
+    }
+  }
+
+  /**
    * Abstract method that performs the actual provider-specific streaming.
    * Must be implemented by subclasses.
    * @param messages An array of messages representing the conversation history.

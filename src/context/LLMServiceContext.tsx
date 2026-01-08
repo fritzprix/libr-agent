@@ -20,7 +20,7 @@ import {
   estimateTokensBPE,
 } from '@/lib/token-utils';
 import { llmConfigManager, ModelInfo } from '@/lib/llm-config-manager';
-import type { IAIService } from '@/lib/ai-service/types';
+import type { IAIService, TokenUsage } from '@/lib/ai-service/types';
 import { useSettings } from './SettingsContext';
 import { useSystemPrompt } from './SystemPromptContext';
 
@@ -387,6 +387,9 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
           limit: safeInputTokenLimit || 'auto(90%)',
         });
 
+        // START TIMING
+        const startTime = performance.now();
+
         // Create async generator for streaming
         const streamGenerator = service.streamChat(safeMessages, {
           modelName: model,
@@ -400,8 +403,15 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
         let fullContent = '';
         let toolCalls: ToolCall[] = [];
         let thinkingContent = '';
+        let finalUsage: TokenUsage | undefined;
+        let firstChunkTime: number | undefined;
 
         for await (const chunk of streamGenerator) {
+          // Capture Time to First Token (TTFT) for detailed metrics
+          if (firstChunkTime === undefined) {
+            firstChunkTime = performance.now();
+          }
+
           // Check if aborted
           if (abortController.signal.aborted) {
             logger.warn('Completion request aborted', { sessionId });
@@ -481,6 +491,26 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
             thinkingContent += parsedChunk.thinking;
           }
 
+          // Accumulate usage metrics (merge instead of replace to preserve TTFT data)
+          if (parsedChunk.usage) {
+            const incomingUsage = parsedChunk.usage as TokenUsage;
+            if (finalUsage) {
+              // Merge usage data, preserving existing fields
+              finalUsage = {
+                promptTokens: incomingUsage.promptTokens || finalUsage.promptTokens,
+                completionTokens: incomingUsage.completionTokens || finalUsage.completionTokens,
+                totalTokens: incomingUsage.totalTokens || finalUsage.totalTokens,
+                details: {
+                  ...finalUsage.details,
+                  ...incomingUsage.details,
+                },
+              };
+            } else {
+              // First usage chunk
+              finalUsage = incomingUsage;
+            }
+          }
+
           // Update streaming message state (no throttling - update on every chunk for responsiveness)
           // Note: React batching already reduces render overhead
           setStreamingMessages((prev) => {
@@ -492,9 +522,37 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
                 : [],
               tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
               thinking: thinkingContent || undefined,
+              usage: finalUsage,
             });
             return next;
           });
+        }
+
+        // Calculate final timing if usage data exists but lacks duration (e.g. OpenAI/Anthropic)
+        const endTime = performance.now();
+        const totalDurationMs = endTime - startTime;
+
+        if (finalUsage && finalUsage.completionTokens > 0) {
+          if (!finalUsage.details) {
+            finalUsage.details = {};
+          }
+          // If provider didn't give duration, use calculated timings
+          if (!finalUsage.details.evalDuration) {
+            if (firstChunkTime) {
+              // Approx: time to first chunk = proper prompt eval time
+              // remaining time = generation time
+              finalUsage.details.promptEvalDuration =
+                firstChunkTime - startTime;
+              finalUsage.details.evalDuration = endTime - firstChunkTime;
+            } else {
+              // Fallback if no chunks (shouldn't happen) or instant
+              finalUsage.details.evalDuration = totalDurationMs;
+            }
+          }
+          // If timeToFirstToken wasn't provided by the service, calculate it
+          if (!finalUsage.details.timeToFirstToken && firstChunkTime) {
+            finalUsage.details.timeToFirstToken = firstChunkTime - startTime;
+          }
         }
 
         // Create final message with isStreaming: false
@@ -509,6 +567,7 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
           createdAt: new Date(),
           tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
           thinking: thinkingContent || undefined,
+          usage: finalUsage,
           isStreaming: false, // ✅ Explicit completion flag to trigger AgentChatContext effect
         };
 
@@ -522,7 +581,8 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
         // This prevents saving invalid messages to the history which would later be rejected by MessageNormalizer
         if (
           (!finalMessage.content || finalMessage.content.length === 0) &&
-          (!finalMessage.tool_calls || finalMessage.tool_calls.length === 0)
+          (!finalMessage.tool_calls || finalMessage.tool_calls.length === 0) &&
+          !finalMessage.thinking
         ) {
           throw new Error('Received empty response from LLM provider');
         }

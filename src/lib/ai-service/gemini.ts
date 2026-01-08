@@ -371,10 +371,28 @@ export class GeminiService extends BaseAIService {
         return;
       }
 
+      // Measure TTFT (Gemini doesn't provide native prefill timing)
+      const startTime = performance.now();
+      let firstChunkReceived = false;
+
       for await (const chunk of result) {
         if (this.getAbortSignal().aborted) {
-          this.logger.debug('Stream aborted during iteration');
+          this.logger.info('Stream aborted during iteration');
           break;
+        }
+
+        // Inject TTFT metric on first chunk
+        if (!firstChunkReceived) {
+          const ttft = performance.now() - startTime;
+          firstChunkReceived = true;
+          yield JSON.stringify({
+            usage: {
+              promptTokens: 0,
+              completionTokens: 0,
+              totalTokens: 0,
+              details: { timeToFirstToken: ttft },
+            },
+          });
         }
 
         // Type definition for Gemini Experimental Thoughts

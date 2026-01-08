@@ -9,6 +9,7 @@
 import type { Tool } from 'ollama';
 import type { Message } from '@/models/chat';
 import type { MCPTool } from '../mcp-types';
+import type { TokenUsage } from './types';
 import { tryParse, formatToolCall, generateToolCallId } from './utils';
 
 /**
@@ -322,135 +323,165 @@ export function convertToOllamaMessages(
 }
 
 /**
+ * Processed chunk result containing content, tool calls, thinking, or usage metrics
+ */
+export interface ProcessedChunk {
+  content?: string;
+  thinking?: string;
+  tool_calls?: Array<{
+    id: string;
+    type: string;
+    function: {
+      name: string;
+      arguments: string;
+    };
+  }>;
+  usage?: TokenUsage;
+  error?: string;
+}
+
+/**
  * Processes a streaming chunk from Ollama API
  */
 export function processChunk(
   chunk: unknown,
   logger: Logger = noopLogger,
-): string | null {
+): ProcessedChunk | null {
   try {
-    if (
-      !chunk ||
-      typeof chunk !== 'object' ||
-      !('message' in chunk) ||
-      !chunk.message ||
-      typeof chunk.message !== 'object'
-    ) {
-      logger.debug('Chunk missing expected structure, skipping', {
-        hasChunk: !!chunk,
-        chunkType: typeof chunk,
-        hasMessage: chunk && typeof chunk === 'object' && 'message' in chunk,
-      });
+    if (!chunk || typeof chunk !== 'object') {
       return null;
     }
 
-    const message = chunk.message as {
-      content?: string;
-      thinking?: string;
-      tool_calls?: Array<{
-        id?: string;
-        type: string;
-        function: {
-          name: string;
-          arguments: Record<string, unknown> | string;
-        };
-      }>;
-    };
+    const c = chunk as Record<string, unknown>;
+    const result: ProcessedChunk = {};
 
-    const result: {
-      content?: string;
-      thinking?: string;
-      tool_calls?: Array<{
-        id: string;
-        type: string;
-        function: {
-          name: string;
-          arguments: string;
-        };
-      }>;
-      error?: string;
-    } = {};
+    // 1. Extract Usage Metrics (Final Chunk)
+    if (c.done === true) {
+      const promptTokens = Number(c.prompt_eval_count) || 0;
+      const completionTokens = Number(c.eval_count) || 0;
 
-    if (message.content && typeof message.content === 'string') {
-      // Ollama may include thinking in content field wrapped in <think> tags
-      // Extract thinking and content separately
-      const thinkMatch = message.content.match(
-        /<think[^>]*>([\s\S]*?)<\/think>/i,
-      );
+      result.usage = {
+        promptTokens,
+        completionTokens,
+        totalTokens: promptTokens + completionTokens,
+        details: {
+          promptEvalDuration: Number(c.prompt_eval_duration) / 1_000_000, // ns to ms
+          evalDuration: Number(c.eval_duration) / 1_000_000, // ns to ms
+          totalDuration: Number(c.total_duration) / 1_000_000, // ns to ms
+          loadDuration: Number(c.load_duration) / 1_000_000, // ns to ms
+        },
+      };
 
-      if (thinkMatch) {
-        // Extract thinking content (without tags)
-        const thinkingContent = thinkMatch[1];
-        if (thinkingContent) {
-          result.thinking = thinkingContent;
-          logger.debug('Thinking extracted from content field', {
-            thinkingLength: thinkingContent.length,
-          });
-        }
+      logger.info('📊 Ollama usage metrics extracted', {
+        inputTokens: result.usage.promptTokens,
+        outputTokens: result.usage.completionTokens,
+        totalTokens: result.usage.totalTokens,
+        evalDurationMs: result.usage.details?.evalDuration?.toFixed(2),
+      });
+    }
 
-        // Remove <think> block from content and clean up
-        const contentWithoutThink = message.content.replace(
-          /<think[^>]*>[\s\S]*?<\/think>/gi,
-          '',
+    // 2. Extract Message Content (Streaming Chunks)
+    if ('message' in c && c.message && typeof c.message === 'object') {
+      const message = c.message as {
+        content?: string;
+        thinking?: string;
+        tool_calls?: Array<{
+          id?: string;
+          type: string;
+          function: {
+            name: string;
+            arguments: Record<string, unknown> | string;
+          };
+        }>;
+      };
+
+      if (message.content && typeof message.content === 'string') {
+        // Ollama may include thinking in content field wrapped in <think> tags
+        // Extract thinking and content separately
+        const thinkMatch = message.content.match(
+          /<think[^>]*>([\s\S]*?)<\/think>/i,
         );
 
-        if (contentWithoutThink) {
-          result.content = contentWithoutThink;
-          logger.debug('Content extracted (thinking removed)', {
-            contentLength: contentWithoutThink.length,
+        if (thinkMatch) {
+          // Extract thinking content (without tags)
+          const thinkingContent = thinkMatch[1];
+          if (thinkingContent) {
+            result.thinking = thinkingContent;
+            logger.debug('Thinking extracted from content field', {
+              thinkingLength: thinkingContent.length,
+            });
+          }
+
+          // Remove <think> block from content and clean up
+          const contentWithoutThink = message.content.replace(
+            /<think[^>]*>[\s\S]*?<\/think>/gi,
+            '',
+          );
+
+          if (contentWithoutThink) {
+            result.content = contentWithoutThink;
+            logger.debug('Content extracted (thinking removed)', {
+              contentLength: contentWithoutThink.length,
+            });
+          }
+        } else {
+          // No thinking tags, use content as-is
+          result.content = message.content;
+          logger.debug('Content extracted from chunk', {
+            contentLength: message.content.length,
           });
         }
-      } else {
-        // No thinking tags, use content as-is
-        result.content = message.content;
-        logger.debug('Content extracted from chunk', {
-          contentLength: message.content.length,
+      }
+
+      if (message.thinking && typeof message.thinking === 'string') {
+        // Remove <think> tags from Ollama's thinking content
+        // Ollama returns thinking wrapped in <think>...</think> tags
+        result.thinking = message.thinking
+          .replace(/<think[^>]*>/gi, '') // Remove opening tag (with any attributes)
+          .replace(/<\/think>/gi, '');
+
+        logger.debug('Thinking extracted from chunk', {
+          thinkingLength: result.thinking.length,
+          hadTags: message.thinking !== result.thinking,
+        });
+      }
+
+      if (message.tool_calls && Array.isArray(message.tool_calls)) {
+        result.tool_calls = message.tool_calls.map((tc) => {
+          const callId = tc.id || generateToolCallId();
+          const args =
+            typeof tc.function.arguments === 'string'
+              ? (tryParse<Record<string, unknown>>(tc.function.arguments) ?? {})
+              : tc.function.arguments;
+
+          const formatted = formatToolCall(callId, tc.function.name, args);
+          return {
+            ...formatted,
+            type: 'function' as const,
+          };
+        });
+
+        logger.debug('Tool calls detected in chunk', {
+          toolCallCount: result.tool_calls.length,
         });
       }
     }
 
-    if (message.thinking && typeof message.thinking === 'string') {
-      // Remove <think> tags from Ollama's thinking content
-      // Ollama returns thinking wrapped in <think>...</think> tags
-      result.thinking = message.thinking
-        .replace(/<think[^>]*>/gi, '') // Remove opening tag (with any attributes)
-        .replace(/<\/think>/gi, '');
-
-      logger.debug('Thinking extracted from chunk', {
-        thinkingLength: result.thinking.length,
-        hadTags: message.thinking !== result.thinking,
-      });
+    if (
+      result.content ||
+      result.thinking ||
+      result.tool_calls ||
+      result.usage
+    ) {
+      return result;
     }
 
-    if (message.tool_calls && Array.isArray(message.tool_calls)) {
-      result.tool_calls = message.tool_calls.map((tc) => {
-        const callId = tc.id || generateToolCallId();
-        const args =
-          typeof tc.function.arguments === 'string'
-            ? (tryParse<Record<string, unknown>>(tc.function.arguments) ?? {})
-            : tc.function.arguments;
-
-        const formatted = formatToolCall(callId, tc.function.name, args);
-        return {
-          ...formatted,
-          type: 'function' as const,
-        };
-      });
-
-      logger.debug('Tool calls detected in chunk', {
-        toolCallCount: result.tool_calls.length,
-      });
-    }
-
-    if (result.content || result.thinking || result.tool_calls) {
-      return JSON.stringify(result);
-    }
-
-    logger.debug('Chunk has no content, thinking, or tool_calls');
+    logger.debug('Chunk has no content, thinking, tool_calls or usage');
     return null;
   } catch (error: unknown) {
     logger.error('Failed to process chunk', { error, chunk });
-    return JSON.stringify({ error: 'Failed to process response chunk' });
+    // For error, we return an object with error property now
+    return { error: 'Failed to process response chunk' };
   }
 }
 

@@ -3,7 +3,7 @@ import { ChatCompletionTool as OpenAIChatCompletionTool } from 'openai/resources
 import { getLogger } from '../logger';
 import { Message } from '@/models/chat';
 import { MCPTool } from '../mcp-types';
-import { AIServiceProvider, AIServiceConfig } from './types';
+import { AIServiceProvider, AIServiceConfig, TokenUsage } from './types';
 import { BaseAIService } from './base-service';
 import { llmConfigManager } from '../llm-config-manager';
 import { supportsThinking, getContextWindow } from './model-capabilities';
@@ -201,6 +201,7 @@ export class OpenAIService extends BaseAIService {
             messages: openaiMessages,
             max_completion_tokens: config.maxTokens,
             stream: true,
+            stream_options: { include_usage: true },
             ...(reasoningEffort && { reasoning_effort: reasoningEffort }),
             tools: tools as OpenAIChatCompletionTool[],
             tool_choice: !options.availableTools?.length
@@ -218,10 +219,41 @@ export class OpenAIService extends BaseAIService {
         return;
       }
 
+      // Wrap with TTFT measurement (OpenAI doesn't provide native prefill timing)
+      const startTime = performance.now();
+      let firstChunkReceived = false;
+
       for await (const chunk of completion) {
         if (this.getAbortSignal().aborted) {
           this.logger.info('Stream aborted during iteration');
           break;
+        }
+
+        // Measure TTFT on first chunk (OpenAI doesn't provide native prefill timing)
+        if (!firstChunkReceived) {
+          const ttft = performance.now() - startTime;
+          firstChunkReceived = true;
+          yield JSON.stringify({
+            usage: {
+              promptTokens: 0,
+              completionTokens: 0,
+              totalTokens: 0,
+              details: { timeToFirstToken: ttft },
+            },
+          });
+        }
+
+        if (chunk.usage) {
+          const usage: TokenUsage = {
+            promptTokens: chunk.usage.prompt_tokens || 0,
+            completionTokens: chunk.usage.completion_tokens || 0,
+            totalTokens: chunk.usage.total_tokens || 0,
+            details: {
+              reasoningTokens:
+                chunk.usage.completion_tokens_details?.reasoning_tokens,
+            },
+          };
+          yield JSON.stringify({ usage });
         }
 
         if (chunk.choices[0]?.delta?.tool_calls) {

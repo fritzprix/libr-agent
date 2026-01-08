@@ -22,6 +22,7 @@ import {
   determineThinkParam,
   type Logger,
   type SimpleOllamaMessage,
+  type ProcessedChunk,
 } from './ollama-core';
 
 const logger = getLogger('OllamaService');
@@ -326,7 +327,25 @@ export class OllamaService extends BaseAIService {
 
         const processedChunk = this.processChunk(chunk);
         if (processedChunk) {
-          yield processedChunk;
+          if (processedChunk.content) {
+            yield JSON.stringify({ content: processedChunk.content });
+          }
+
+          if (processedChunk.thinking) {
+            yield JSON.stringify({ thinking: processedChunk.thinking });
+          }
+
+          if (processedChunk.tool_calls) {
+            yield JSON.stringify({ tool_calls: processedChunk.tool_calls });
+          }
+
+          if (processedChunk.usage) {
+            yield JSON.stringify({ usage: processedChunk.usage });
+          }
+
+          if (processedChunk.error) {
+            logger.error('Error processing chunk', processedChunk.error);
+          }
         }
       }
     } catch (error: unknown) {
@@ -342,10 +361,10 @@ export class OllamaService extends BaseAIService {
   /**
    * Processes a single chunk from the Ollama streaming response.
    * @param chunk The raw chunk from the stream.
-   * @returns A JSON string representing the processed chunk, or null if empty.
+   * @returns A ProcessedChunk object, or null if empty.
    * @private
    */
-  private processChunk(chunk: unknown): string | null {
+  private processChunk(chunk: unknown): ProcessedChunk | null {
     return processChunk(chunk, coreLogger);
   }
 

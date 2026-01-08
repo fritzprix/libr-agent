@@ -7,6 +7,12 @@ All notable changes to this project will be documented in this file.
 ### 🚀 Features
 
 - **Rust Agent Core**: Implement initial Rust-based agent core (`thronglet`) with Tauri integration, new frontend components, and packaging configurations.
+- **Multi-Vendor Prefill Performance Tracking**: Added Time-To-First-Token (TTFT) measurement across all AI service providers for consistent prefill performance monitoring.
+  - **Native Metrics**: Ollama provides `promptEvalDuration`, Anthropic provides cache hit metrics
+  - **Client-Side TTFT**: OpenAI, Groq, Fireworks, Cerebras, and Gemini now measure TTFT using `performance.now()`
+  - **Unified Interface**: All providers report prefill timing via `TokenUsage.details.timeToFirstToken` or `promptEvalDuration`
+  - **UI Display**: Token metrics badge shows prefill timing in tooltip (hover over input token count)
+  - **Usage Merging**: LLMServiceContext properly merges TTFT with final token usage data
 
 ### 🔧 Refactoring
 

@@ -185,7 +185,7 @@ impl KnowledgeServer {
                 });
 
                 let hint = SuccessHint::new(
-                    format!("Knowledge: {}", title),
+                    format!("Knowledge: {}\n\n---\n{}\n---", title, content),
                     vec![
                         "Use searchKnowledge to find related entries".to_string(),
                         "Use deleteKnowledge to remove this entry".to_string(),
@@ -357,8 +357,28 @@ impl KnowledgeServer {
                     })
                     .collect();
 
+                let results_summary = results
+                    .iter()
+                    .map(|v| {
+                        let id = v["id"].as_i64().unwrap_or_default();
+                        let title = v["title"].as_str().unwrap_or("Untitled");
+                        format!("- [{}] {}", id, title)
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+
+                let message = if results.is_empty() {
+                    "Found 0 knowledge entries".to_string()
+                } else {
+                    format!(
+                        "Found {} knowledge entries:\n{}",
+                        results.len(),
+                        results_summary
+                    )
+                };
+
                 let hint = SuccessHint::new(
-                    format!("Found {} knowledge entries", results.len()),
+                    message,
                     if results.is_empty() {
                         vec![
                             "Try different search terms".to_string(),
@@ -428,8 +448,28 @@ impl KnowledgeServer {
                     })
                     .collect();
 
+                let items_summary = items
+                    .iter()
+                    .map(|v| {
+                        let id = v["id"].as_i64().unwrap_or_default();
+                        let title = v["title"].as_str().unwrap_or("Untitled");
+                        format!("- [{}] {}", id, title)
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+
+                let message = if items.is_empty() {
+                    "Listed 0 knowledge entries".to_string()
+                } else {
+                    format!(
+                        "Listed {} knowledge entries:\n{}",
+                        items.len(),
+                        items_summary
+                    )
+                };
+
                 let hint = SuccessHint::new(
-                    format!("Listed {} knowledge entries", items.len()),
+                    message,
                     if items.is_empty() {
                         vec!["Use saveKnowledge to create entries".to_string()]
                     } else if items.len() as i64 == limit as i64 {
