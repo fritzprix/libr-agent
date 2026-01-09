@@ -335,6 +335,14 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
 
         // Select messages within context window and message count limit
         const { windowSize } = settingsRef.current;
+        logger.info('🎯 Applying windowSize constraint from settings', {
+          sessionId,
+          inputMessageCount: messages.length,
+          windowSize,
+          provider,
+          model,
+          safeInputTokenLimit: safeInputTokenLimit || 'auto(90%)',
+        });
         const contextMessages = selectMessagesWithinContext(
           messages,
           provider,

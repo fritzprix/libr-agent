@@ -71,11 +71,39 @@ export function selectMessagesWithinContext(
   },
 ): Message[] {
   const modelInfo = llmConfigManager.getModel(providerId, modelId);
+  
+  // If model info not found, apply message count limit only (no token-based truncation)
   if (!modelInfo) {
     logger.warn(
-      `Could not find model info for provider: ${providerId}, model: ${modelId}. Returning all messages.`,
+      `Could not find model info for provider: ${providerId}, model: ${modelId}. Applying message count limit only.`,
     );
-    return messages;
+    
+    // If no maxMessages specified, return all messages
+    if (!options?.maxMessages) {
+      logger.info('No message count limit specified, returning all messages', {
+        inputMessageCount: messages.length,
+      });
+      return messages;
+    }
+    
+    // Apply simple message count-based truncation
+    logger.info('📊 Starting message selection (count-based only)', {
+      inputMessageCount: messages.length,
+      maxMessages: options.maxMessages,
+      provider: providerId,
+      model: modelId,
+    });
+    
+    const selected = messages.slice(-options.maxMessages);
+    
+    logger.info('✅ Message selection complete (count-based)', {
+      inputCount: messages.length,
+      selectedCount: selected.length,
+      trimmedCount: messages.length - selected.length,
+      maxMessages: options.maxMessages,
+    });
+    
+    return selected;
   }
 
   const baseTokenLimit = maxTokens ?? Math.floor(modelInfo.contextWindow * 0.9);
@@ -92,6 +120,13 @@ export function selectMessagesWithinContext(
 
   const tokenLimit = Math.max(1024, baseTokenLimit - reservedTokens); // Keep at least 1K for messages
 
+  logger.info('📊 Starting message selection', {
+    inputMessageCount: messages.length,
+    maxMessages: options?.maxMessages || 'unlimited',
+    provider: providerId,
+    model: modelId,
+  });
+
   logger.debug('Token budget allocation', {
     contextWindow: modelInfo.contextWindow,
     baseLimit: baseTokenLimit,
@@ -107,8 +142,8 @@ export function selectMessagesWithinContext(
     const msg = messages[i];
     const tokens = estimateTokensBPE(msg);
 
-    console.log(
-      `Msg ${msg.id}: tokens=${tokens}, total=${totalTokens}, limit=${tokenLimit}`,
+    logger.info(
+      `Processing message: ${msg.id}, tokens=${tokens}, accumulated=${totalTokens}, tokenLimit=${tokenLimit}, selectedCount=${selected.length}`,
     );
 
     // Check token limit
@@ -167,7 +202,13 @@ export function selectMessagesWithinContext(
       }
 
       logger.info(
-        `Message count limit reached. Count: ${selected.length}, Limit: ${options.maxMessages}`,
+        `✂️ Message count limit reached - applying windowSize constraint`,
+        {
+          selectedCount: selected.length,
+          windowSize: options.maxMessages,
+          totalAvailableMessages: messages.length,
+          trimmedMessageCount: messages.length - selected.length,
+        },
       );
 
       // Verify integrity of selected messages before returning
@@ -190,6 +231,15 @@ export function selectMessagesWithinContext(
     selected.unshift(msg);
     totalTokens += tokens;
   }
+
+  logger.info('✅ Message selection complete', {
+    inputCount: messages.length,
+    selectedCount: selected.length,
+    trimmedCount: messages.length - selected.length,
+    totalTokens,
+    tokenLimit,
+    maxMessages: options?.maxMessages || 'unlimited',
+  });
 
   return selected;
 }
