@@ -341,11 +341,31 @@ export interface ProcessedChunk {
 }
 
 /**
- * Processes a streaming chunk from Ollama API
+ * Tool call accumulator for handling partial JSON across multiple chunks
+ * @internal
+ */
+export interface OllamaToolCallAccumulator {
+  id: string;
+  name: string;
+  partialJson: string;
+  index: number;
+  yielded: boolean;
+  lastChunkTime: number;
+}
+
+// Maximum JSON buffer size (200KB)
+const MAX_PARTIAL_TOOL_INPUT_LENGTH = 200_000;
+
+// Accumulator timeout (30 seconds)
+const MAX_ACCUMULATOR_AGE_MS = 30_000;
+
+/**
+ * Processes a streaming chunk from Ollama API with partial JSON accumulation
  */
 export function processChunk(
   chunk: unknown,
   logger: Logger = noopLogger,
+  accumulators?: Map<number, OllamaToolCallAccumulator>,
 ): ProcessedChunk | null {
   try {
     if (!chunk || typeof chunk !== 'object') {
@@ -447,23 +467,127 @@ export function processChunk(
       }
 
       if (message.tool_calls && Array.isArray(message.tool_calls)) {
-        result.tool_calls = message.tool_calls.map((tc) => {
-          const callId = tc.id || generateToolCallId();
-          const args =
-            typeof tc.function.arguments === 'string'
-              ? (tryParse<Record<string, unknown>>(tc.function.arguments) ?? {})
-              : tc.function.arguments;
-
-          const formatted = formatToolCall(callId, tc.function.name, args);
-          return {
-            ...formatted,
-            type: 'function' as const,
+        const processedToolCalls: Array<{
+          id: string;
+          type: 'function';
+          function: {
+            name: string;
+            arguments: string;
           };
-        });
+        }> = [];
 
-        logger.debug('Tool calls detected in chunk', {
-          toolCallCount: result.tool_calls.length,
-        });
+        for (const [idx, tc] of message.tool_calls.entries()) {
+          const callId = tc.id || generateToolCallId();
+
+          // Get or create accumulator for this tool call
+          let accumulator = accumulators?.get(idx);
+          if (!accumulator) {
+            accumulator = {
+              id: callId,
+              name: tc.function.name,
+              partialJson: '',
+              index: idx,
+              yielded: false,
+              lastChunkTime: Date.now(),
+            };
+            accumulators?.set(idx, accumulator);
+          }
+
+          // Check for timeout (stale accumulator)
+          const age = Date.now() - accumulator.lastChunkTime;
+          if (age > MAX_ACCUMULATOR_AGE_MS) {
+            logger.warn('Tool call accumulator timeout, discarding', {
+              id: accumulator.id,
+              name: accumulator.name,
+              ageMs: age,
+            });
+            accumulators?.delete(idx);
+            continue;
+          }
+
+          // Update timestamp
+          accumulator.lastChunkTime = Date.now();
+
+          // Handle string arguments (potential partial JSON)
+          if (typeof tc.function.arguments === 'string') {
+            accumulator.partialJson += tc.function.arguments;
+
+            // Buffer size limit
+            if (accumulator.partialJson.length > MAX_PARTIAL_TOOL_INPUT_LENGTH) {
+              logger.error('Tool call JSON exceeded buffer limit', {
+                id: accumulator.id,
+                name: accumulator.name,
+                length: accumulator.partialJson.length,
+              });
+              accumulators?.delete(idx);
+              continue;
+            }
+
+            // Attempt to parse accumulated JSON
+            const trimmedJson = accumulator.partialJson.trim();
+            if (trimmedJson.length === 0) {
+              logger.debug('No complete JSON fragment yet; waiting', {
+                index: idx,
+                id: accumulator.id,
+              });
+              continue;
+            }
+
+            try {
+              const parsed = JSON.parse(trimmedJson) as Record<
+                string,
+                unknown
+              >;
+
+              // Success! Add the tool call if not already yielded
+              if (!accumulator.yielded) {
+                const formatted = formatToolCall(callId, tc.function.name, parsed);
+                processedToolCalls.push({
+                  ...formatted,
+                  type: 'function' as const,
+                });
+                accumulator.yielded = true;
+                logger.info(
+                  'Tool call successfully parsed from accumulated JSON',
+                  {
+                    id: callId,
+                    name: tc.function.name,
+                    jsonLength: trimmedJson.length,
+                  },
+                );
+              }
+            } catch (parseError) {
+              // JSON still incomplete, continue accumulating
+              logger.debug('JSON incomplete, waiting for more chunks', {
+                id: callId,
+                name: tc.function.name,
+                currentLength: accumulator.partialJson.length,
+              });
+            }
+          } else {
+            // Already parsed object (complete)
+            const formatted = formatToolCall(
+              callId,
+              tc.function.name,
+              tc.function.arguments,
+            );
+            processedToolCalls.push({
+              ...formatted,
+              type: 'function' as const,
+            });
+            logger.debug('Tool call already parsed', {
+              id: callId,
+              name: tc.function.name,
+            });
+          }
+        }
+
+        if (processedToolCalls.length > 0) {
+          result.tool_calls = processedToolCalls;
+          logger.debug('Tool calls detected in chunk', {
+            toolCallCount: processedToolCalls.length,
+          });
+        }
       }
     }
 
