@@ -83,6 +83,11 @@ impl BrowserContentStore {
         self.store.contains_key(session_id)
     }
 
+    /// Get total pages for session
+    pub fn get_total_pages(&self, session_id: &str) -> Option<usize> {
+        self.store.get(session_id).map(|s| s.pages.len())
+    }
+
     /// Clean up old sessions (called periodically)
     pub fn cleanup_old_sessions(&self, max_age_secs: u64) {
         let now = SystemTime::now()

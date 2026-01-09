@@ -12,6 +12,7 @@ pub struct Model {
     pub session_id: String,
     pub title: String,
     pub content: String,
+    pub source: Option<String>,
     pub tags: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,

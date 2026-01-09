@@ -27,6 +27,13 @@ export interface AdvancedSettings {
   circuitBreakerThreshold: number;
 }
 
+export interface DisplaySettings {
+  metricDisplayMode: 'tooltip' | 'inline';
+  prefillDisplayFormat: 'time' | 'tokensPerSecond';
+  showTokenSpeed: boolean;
+  compactMetrics: boolean;
+}
+
 export interface Settings {
   serviceConfigs: Record<AIServiceProvider, ServiceConfig>;
   preferredModel: ModelChoice;
@@ -35,6 +42,7 @@ export interface Settings {
   toolCallGroupVisibleCount: number;
   agentHubUrl?: string;
   advanced: AdvancedSettings;
+  display: DisplaySettings;
 }
 
 const DEFAULT_MODEL = llmConfigManager.recommendModel({});
@@ -60,6 +68,12 @@ export const DEFAULT_SETTING: Settings = {
     retryDelay: 5000,
     circuitBreakerThreshold: 3,
   },
+  display: {
+    metricDisplayMode: 'inline',
+    prefillDisplayFormat: 'time',
+    showTokenSpeed: true,
+    compactMetrics: false,
+  },
 };
 
 export interface ISettingsService {
@@ -79,6 +93,7 @@ export class LocalSettingsService implements ISettingsService {
         toolCallGroupVisibleCountObject,
         agentHubUrlObject,
         advancedSettingsObject,
+        displaySettingsObject,
       ] = await Promise.all([
         dbService.objects.read('serviceConfigs'),
         dbService.objects.read('apiKeys'), // for backward compatibility
@@ -88,6 +103,7 @@ export class LocalSettingsService implements ISettingsService {
         dbService.objects.read('toolCallGroupVisibleCount'),
         dbService.objects.read('agentHubUrl'),
         dbService.objects.read('advancedSettings'),
+        dbService.objects.read('displaySettings'),
       ]);
 
       // Handle migration from old format to new format
@@ -144,6 +160,9 @@ export class LocalSettingsService implements ISettingsService {
           : {}),
         ...(advancedSettingsObject != null
           ? { advanced: advancedSettingsObject.value as AdvancedSettings }
+          : {}),
+        ...(displaySettingsObject != null
+          ? { display: displaySettingsObject.value as DisplaySettings }
           : {}),
       };
       return settings;
@@ -221,6 +240,12 @@ export class LocalSettingsService implements ISettingsService {
         await dbService.objects.upsert({
           key: 'advancedSettings',
           value: settings.advanced,
+        });
+      }
+      if (settings.display) {
+        await dbService.objects.upsert({
+          key: 'displaySettings',
+          value: settings.display,
         });
       }
 

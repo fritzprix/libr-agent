@@ -15,6 +15,7 @@ Implemented comprehensive Time-To-First-Token (TTFT) measurement across all AI s
 ## 🎯 Problem Statement
 
 **Before:** Only Ollama provided native prefill timing metrics (`prompt_eval_duration`). Other providers (OpenAI, Groq, Gemini, Cerebras, Fireworks) had no prefill performance visibility, making it impossible to:
+
 - Compare prompt processing efficiency across providers
 - Debug slow prompt evaluation issues
 - Optimize system prompts based on prefill performance
@@ -29,6 +30,7 @@ Implemented comprehensive Time-To-First-Token (TTFT) measurement across all AI s
 ### **1. Service Layer Changes**
 
 #### **A. TokenUsage Interface Update** ([types.ts](../../src/lib/ai-service/types.ts))
+
 ```typescript
 export interface TokenUsage {
   promptTokens: number;
@@ -36,22 +38,22 @@ export interface TokenUsage {
   totalTokens: number;
   details?: {
     // ... existing fields
-    timeToFirstToken?: number;  // ✅ NEW: Client-side TTFT fallback (ms)
+    timeToFirstToken?: number; // ✅ NEW: Client-side TTFT fallback (ms)
   };
 }
 ```
 
 #### **B. Provider-Specific Implementations**
 
-| Provider | Implementation | Status |
-|----------|---------------|--------|
-| **Ollama** | Native `promptEvalDuration` | ✅ Already complete |
-| **Anthropic** | Native cache metrics | ✅ Already complete |
-| **OpenAI** | Client-side TTFT | ✅ **NEW** |
-| **Groq** | Client-side TTFT | ✅ **NEW** |
-| **Fireworks** | Client-side TTFT (inherited) | ✅ **NEW** |
-| **Cerebras** | Client-side TTFT | ✅ **NEW** |
-| **Gemini** | Client-side TTFT | ✅ **NEW** |
+| Provider      | Implementation               | Status              |
+| ------------- | ---------------------------- | ------------------- |
+| **Ollama**    | Native `promptEvalDuration`  | ✅ Already complete |
+| **Anthropic** | Native cache metrics         | ✅ Already complete |
+| **OpenAI**    | Client-side TTFT             | ✅ **NEW**          |
+| **Groq**      | Client-side TTFT             | ✅ **NEW**          |
+| **Fireworks** | Client-side TTFT (inherited) | ✅ **NEW**          |
+| **Cerebras**  | Client-side TTFT             | ✅ **NEW**          |
+| **Gemini**    | Client-side TTFT             | ✅ **NEW**          |
 
 #### **C. TTFT Measurement Pattern**
 
@@ -67,7 +69,7 @@ for await (const chunk of completion) {
   if (!firstChunkReceived) {
     const ttft = performance.now() - startTime;
     firstChunkReceived = true;
-    
+
     yield JSON.stringify({
       usage: {
         promptTokens: 0,
@@ -77,13 +79,14 @@ for await (const chunk of completion) {
       },
     });
   }
-  
+
   // Yield actual content/tool calls
   yield chunk;
 }
 ```
 
 **Files Modified:**
+
 - [openai.ts](../../src/lib/ai-service/openai.ts#L200-L250)
 - [groq.ts](../../src/lib/ai-service/groq.ts#L80-L100)
 - [cerebras.ts](../../src/lib/ai-service/cerebras.ts#L120)
@@ -109,7 +112,8 @@ if (parsedChunk.usage) {
   if (finalUsage) {
     finalUsage = {
       promptTokens: incomingUsage.promptTokens || finalUsage.promptTokens,
-      completionTokens: incomingUsage.completionTokens || finalUsage.completionTokens,
+      completionTokens:
+        incomingUsage.completionTokens || finalUsage.completionTokens,
       totalTokens: incomingUsage.totalTokens || finalUsage.totalTokens,
       details: { ...finalUsage.details, ...incomingUsage.details },
     };
@@ -147,6 +151,7 @@ const prefillInfo = usage.details?.promptEvalDuration
 ```
 
 **Result:**
+
 - **Ollama**: Shows "Prefill: 234ms" (native metric)
 - **OpenAI/Groq/etc**: Shows "TTFT: 245ms" (client-side measurement)
 - **Users**: See prefill performance for ALL providers on hover
@@ -160,7 +165,7 @@ sequenceDiagram
     participant Service as AI Service
     participant Context as LLMServiceContext
     participant UI as TokenMetricsBadge
-    
+
     Service->>Context: Chunk 1: TTFT usage (0 tokens)
     Context->>Context: Store TTFT in finalUsage
     Service->>Context: Chunk 2-N: Content/tool calls
@@ -190,6 +195,7 @@ sequenceDiagram
 ## 📝 Files Changed
 
 ### **Service Layer (6 files)**
+
 1. `src/lib/ai-service/types.ts` - Added `timeToFirstToken` field
 2. `src/lib/ai-service/base-service.ts` - Added `streamChatWithTTFT()` helper (unused, for future refactoring)
 3. `src/lib/ai-service/openai.ts` - Inline TTFT measurement
@@ -198,12 +204,15 @@ sequenceDiagram
 6. `src/lib/ai-service/gemini.ts` - Inline TTFT measurement
 
 ### **Context Layer (1 file)**
+
 7. `src/context/LLMServiceContext.tsx` - Usage merging + fallback TTFT calculation
 
 ### **UI Layer (1 file)**
+
 8. `src/features/agent/components/TokenMetricsBadge.tsx` - TTFT tooltip display
 
 ### **Documentation (2 files)**
+
 9. `CHANGELOG.md` - Added feature entry under [Unreleased]
 10. `docs/history/refactoring_20260109_multi_vendor_prefill.md` - This document
 

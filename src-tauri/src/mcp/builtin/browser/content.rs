@@ -250,7 +250,11 @@ pub async fn read_web_content(_server: &BrowserServer, args: Value) -> Result<MC
                         page_data.page_number + 1
                     )]
                 } else {
-                    vec!["All pages read. Use extractWebContent to refresh content".to_string()]
+                    vec![
+                        "All pages read. Content reading is complete".to_string(),
+                        "You should now process the gathered information to answer the user's request".to_string(),
+                        "If you truly need further actions on this page, use listInteractable".to_string(),
+                    ]
                 },
             );
 
@@ -261,12 +265,16 @@ pub async fn read_web_content(_server: &BrowserServer, args: Value) -> Result<MC
             }))))
         }
         Option::None => {
+            let total_pages = BROWSER_CONTENT_STORE
+                .get_total_pages(session_id)
+                .unwrap_or(0);
             let error = ErrorGuidance::with_guidance(
                 ErrorCategory::InvalidInput,
-                format!("Invalid page number: {}", page),
+                format!("Invalid page number: {}. Limit is {}.", page, total_pages),
                 vec![
-                    "Use extractWebContent to see available pages".to_string(),
-                    format!("Page number must be between 1 and total pages"),
+                    format!("There are only {} pages available in total", total_pages),
+                    "If you have read the last page, stop requesting more pages".to_string(),
+                    "Process the information you have already gathered".to_string(),
                 ],
                 ToolGroup::Browser,
             );

@@ -497,9 +497,12 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
             if (finalUsage) {
               // Merge usage data, preserving existing fields
               finalUsage = {
-                promptTokens: incomingUsage.promptTokens || finalUsage.promptTokens,
-                completionTokens: incomingUsage.completionTokens || finalUsage.completionTokens,
-                totalTokens: incomingUsage.totalTokens || finalUsage.totalTokens,
+                promptTokens:
+                  incomingUsage.promptTokens || finalUsage.promptTokens,
+                completionTokens:
+                  incomingUsage.completionTokens || finalUsage.completionTokens,
+                totalTokens:
+                  incomingUsage.totalTokens || finalUsage.totalTokens,
                 details: {
                   ...finalUsage.details,
                   ...incomingUsage.details,

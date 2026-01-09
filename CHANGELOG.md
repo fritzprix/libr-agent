@@ -13,6 +13,12 @@ All notable changes to this project will be documented in this file.
   - **Unified Interface**: All providers report prefill timing via `TokenUsage.details.timeToFirstToken` or `promptEvalDuration`
   - **UI Display**: Token metrics badge shows prefill timing in tooltip (hover over input token count)
   - **Usage Merging**: LLMServiceContext properly merges TTFT with final token usage data
+- **User-Configurable Metric Display Settings**: New Display settings tab allowing users to customize how token metrics are shown:
+  - **Metric Display Mode**: Choose between inline display (shown in message) or tooltip display (hover to see)
+  - **Prefill Performance Format**: Display prefill performance as Time to First Token (e.g., 245ms) or as Tokens Per Second (e.g., 520 tok/s)
+  - **Show Token Speed**: Toggle generation speed display (tokens per second)
+  - **Compact Metrics**: Enable compact display format for token metrics
+  - **Settings Persistence**: All display preferences are saved to IndexedDB and persist across sessions
 
 ### 🔧 Refactoring
 

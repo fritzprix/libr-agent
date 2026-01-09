@@ -49,6 +49,11 @@ impl KnowledgeServer {
             Option::None => return Ok(missing_param_error("content", ToolGroup::Knowledge)),
         };
 
+        let source = args
+            .get("source")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
         // Handle tags as array of strings
         let tags_str = if let Some(tags_val) = args.get("tags") {
             if let Some(tags_arr) = tags_val.as_array() {
@@ -92,6 +97,7 @@ impl KnowledgeServer {
             session_id: Set(self.session_id.clone()),
             title: Set(title.to_string()),
             content: Set(content.to_string()),
+            source: Set(source.clone()),
             tags: Set(tags_str.clone()),
             created_at: Set(now),
             updated_at: Set(now),
@@ -165,6 +171,7 @@ impl KnowledgeServer {
                 let id = model.id;
                 let title = model.title.clone();
                 let content = model.content.clone();
+                let source = model.source.clone();
                 let tags_str = model.tags.clone();
                 let created_at = model.created_at;
                 let updated_at = model.updated_at;
@@ -278,7 +285,7 @@ impl KnowledgeServer {
             .min(100);
 
         let mut sql = String::from(
-            "SELECT k.id, k.title, k.content, k.tags, k.created_at, k.updated_at FROM knowledge k",
+            "SELECT k.id, k.title, k.content, k.source, k.tags, k.created_at, k.updated_at FROM knowledge k",
         );
 
         if query_param.is_some() {
@@ -336,6 +343,7 @@ impl KnowledgeServer {
                         let id: i64 = row.try_get("", "id").unwrap_or_default();
                         let title: String = row.try_get("", "title").unwrap_or_default();
                         let content: String = row.try_get("", "content").unwrap_or_default();
+                        let source: Option<String> = row.try_get("", "source").ok();
                         let tags_str: Option<String> = row.try_get("", "tags").ok();
                         let created_at: i64 = row.try_get("", "created_at").unwrap_or_default();
                         let updated_at: i64 = row.try_get("", "updated_at").unwrap_or_default();
@@ -350,6 +358,7 @@ impl KnowledgeServer {
                             "id": id,
                             "title": title,
                             "content": content,
+                            "source": source,
                             "tags": tags_vec,
                             "created_at": created_at,
                             "updated_at": updated_at
@@ -441,6 +450,7 @@ impl KnowledgeServer {
                             "id": model.id,
                             "title": model.title,
                             "content": model.content,
+                            "source": model.source,
                             "tags": tags_vec,
                             "created_at": model.created_at,
                             "updated_at": model.updated_at
@@ -626,6 +636,10 @@ fn create_save_knowledge_tool() -> MCPTool {
                 "content": {
                     "type": "string",
                     "description": "Content/body of the knowledge entry"
+                },
+                "source": {
+                    "type": "string",
+                    "description": "Source origin of the knowledge (e.g. URL, filename, 'user')"
                 },
                 "tags": {
                     "type": "array",
