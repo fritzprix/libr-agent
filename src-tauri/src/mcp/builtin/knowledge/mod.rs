@@ -121,6 +121,7 @@ impl KnowledgeServer {
                     "session_id": self.session_id,
                     "title": title,
                     "content": content,
+                    "source": source,
                     "tags": tags_vec,
                     "created_at": now,
                     "updated_at": now
@@ -186,6 +187,7 @@ impl KnowledgeServer {
                     "session_id": self.session_id,
                     "title": title,
                     "content": content,
+                    "source": source,
                     "tags": tags_vec,
                     "created_at": created_at,
                     "updated_at": updated_at
@@ -273,9 +275,13 @@ impl KnowledgeServer {
     async fn search_knowledge(&self, args: Value) -> Result<MCPResult, String> {
         let query_param = args.get("query").and_then(|v| v.as_str());
         let tags_param = args.get("tags").and_then(|v| v.as_array());
+        let source_param = args.get("source").and_then(|v| v.as_str());
 
-        if query_param.is_none() && tags_param.is_none() {
-            return Ok(missing_param_error("query or tags", ToolGroup::Knowledge));
+        if query_param.is_none() && tags_param.is_none() && source_param.is_none() {
+            return Ok(missing_param_error(
+                "query, tags or source",
+                ToolGroup::Knowledge,
+            ));
         }
 
         let limit = args
@@ -285,8 +291,16 @@ impl KnowledgeServer {
             .min(100);
 
         let mut sql = String::from(
-            "SELECT k.id, k.title, k.content, k.source, k.tags, k.created_at, k.updated_at FROM knowledge k",
+            "SELECT k.id, k.title, k.content, k.source, k.tags, k.created_at, k.updated_at",
         );
+
+        if query_param.is_some() {
+            sql.push_str(", snippet(knowledge_fts, 1, '**', '**', '...', 20) as snippet");
+        } else {
+            sql.push_str(", substr(k.content, 1, 150) as snippet");
+        }
+
+        sql.push_str(" FROM knowledge k");
 
         if query_param.is_some() {
             sql.push_str(" JOIN knowledge_fts f ON k.id = f.rowid");
@@ -296,6 +310,10 @@ impl KnowledgeServer {
 
         if query_param.is_some() {
             sql.push_str(" AND knowledge_fts MATCH ?");
+        }
+
+        if source_param.is_some() {
+            sql.push_str(" AND k.source LIKE ?");
         }
 
         if let Some(tags) = tags_param {
@@ -316,6 +334,10 @@ impl KnowledgeServer {
 
         if let Some(q) = query_param {
             values.push(q.into());
+        }
+
+        if let Some(s) = source_param {
+            values.push(format!("%{}%", s).into());
         }
 
         if let Some(tags) = tags_param {
@@ -344,6 +366,7 @@ impl KnowledgeServer {
                         let title: String = row.try_get("", "title").unwrap_or_default();
                         let content: String = row.try_get("", "content").unwrap_or_default();
                         let source: Option<String> = row.try_get("", "source").ok();
+                        let snippet: String = row.try_get("", "snippet").unwrap_or_default();
                         let tags_str: Option<String> = row.try_get("", "tags").ok();
                         let created_at: i64 = row.try_get("", "created_at").unwrap_or_default();
                         let updated_at: i64 = row.try_get("", "updated_at").unwrap_or_default();
@@ -358,6 +381,7 @@ impl KnowledgeServer {
                             "id": id,
                             "title": title,
                             "content": content,
+                            "snippet": snippet,
                             "source": source,
                             "tags": tags_vec,
                             "created_at": created_at,
@@ -371,7 +395,8 @@ impl KnowledgeServer {
                     .map(|v| {
                         let id = v["id"].as_i64().unwrap_or_default();
                         let title = v["title"].as_str().unwrap_or("Untitled");
-                        format!("- [{}] {}", id, title)
+                        let snippet = v["snippet"].as_str().unwrap_or("");
+                        format!("- [{}] {}\n  > {}", id, title, snippet)
                     })
                     .collect::<Vec<_>>()
                     .join("\n");
@@ -707,6 +732,10 @@ fn create_search_knowledge_tool() -> MCPTool {
                     "type": "string",
                     "description": "Search query (FTS5 full-text search)"
                 },
+                "source": {
+                    "type": "string",
+                    "description": "Filter by source"
+                },
                 "tags": {
                     "type": "array",
                     "items": { "type": "string" },
@@ -780,7 +809,7 @@ mod tests {
         // Create FTS table manually for testing search
         db.execute(Statement::from_string(
             DbBackend::Sqlite,
-            "CREATE VIRTUAL TABLE knowledge_fts USING fts5(title, content, tags, content='knowledge', content_rowid='id');".to_owned(),
+            "CREATE VIRTUAL TABLE knowledge_fts USING fts5(title, content, tags, source, content='knowledge', content_rowid='id');".to_owned(),
         ))
         .await
         .expect("Failed to create FTS table");
@@ -789,7 +818,7 @@ mod tests {
         db.execute(Statement::from_string(
             DbBackend::Sqlite,
             "CREATE TRIGGER knowledge_ai AFTER INSERT ON knowledge BEGIN
-              INSERT INTO knowledge_fts(rowid, title, content, tags) VALUES (new.id, new.title, new.content, new.tags);
+              INSERT INTO knowledge_fts(rowid, title, content, tags, source) VALUES (new.id, new.title, new.content, new.tags, new.source);
             END;".to_owned(),
         )).await.expect("Failed to create insert trigger");
 
@@ -798,7 +827,9 @@ mod tests {
         for id in sessions {
             let new_session = session::ActiveModel {
                 id: Set(id.to_string()),
+                status: Set("active".to_string()),
                 created_at: Set(0),
+                updated_at: Set(0),
                 ..Default::default()
             };
             session::Entity::insert(new_session)
@@ -904,5 +935,84 @@ mod tests {
 
         let structured = result.structured_content.unwrap();
         assert_eq!(structured["count"], 0);
+    }
+
+    #[tokio::test]
+    async fn test_knowledge_source_and_snippet() {
+        let db = create_test_db().await;
+        let server = KnowledgeServer::new("test-session".to_string(), db)
+            .await
+            .expect("Failed to create server");
+
+        // Save knowledge with source
+        let result = server
+            .call_tool(
+                "saveKnowledge",
+                json!({
+                    "title": "Document A",
+                    "content": "This is a very important document content that should be snippeted. It contains specific keywords like pineapple and banana.",
+                    "source": "http://example.com/doc-a",
+                    "tags": ["test"]
+                }),
+            )
+            .await
+            .expect("Save should succeed");
+
+        assert_eq!(result.is_error, Some(false));
+        let structured = result.structured_content.unwrap();
+        let knowledge = &structured["knowledge"];
+        assert_eq!(knowledge["source"], "http://example.com/doc-a");
+
+        // Search for it by keyword
+        let result = server
+            .call_tool("searchKnowledge", json!({"query": "pineapple"}))
+            .await
+            .expect("Search should succeed");
+
+        assert_eq!(result.is_error, Some(false));
+        let structured = result.structured_content.as_ref().unwrap();
+        assert_eq!(structured["count"], 1);
+        let first_result = &structured["results"][0];
+
+        // Check source is returned
+        assert_eq!(first_result["source"], "http://example.com/doc-a");
+
+        // Check snippet is returned and contains the keyword
+        let snippet = first_result["snippet"].as_str().unwrap();
+        assert!(!snippet.is_empty());
+        assert!(snippet.contains("pineapple") || snippet.contains("banana"));
+
+        // Test filtering by source
+        let result = server
+            .call_tool(
+                "searchKnowledge",
+                json!({"source": "http://example.com/doc-a"}),
+            )
+            .await
+            .expect("Source search should succeed");
+
+        let structured = result.structured_content.as_ref().unwrap();
+        assert_eq!(structured["count"], 1);
+
+        // Test filtering by WRONG source
+        let result = server
+            .call_tool(
+                "searchKnowledge",
+                json!({"source": "http://example.com/wrong-doc"}),
+            )
+            .await
+            .expect("Source search should succeed");
+
+        let structured = result.structured_content.as_ref().unwrap();
+        assert_eq!(structured["count"], 0);
+
+        // Verify text response formatting
+        if let Some(content_vec) = result.content {
+            if let Some(crate::mcp::types::MCPContent::Text { text }) = content_vec.first() {
+                println!("Text response: {}", text);
+                // Note: emptiness check depends on search result, but here count is 0 so it should be "Found 0..."
+                assert!(text.contains("Found 0 knowledge entries"));
+            }
+        }
     }
 }

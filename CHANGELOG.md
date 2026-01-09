@@ -20,6 +20,14 @@ All notable changes to this project will be documented in this file.
   - **Compact Metrics**: Enable compact display format for token metrics
   - **Settings Persistence**: All display preferences are saved to IndexedDB and persist across sessions
 
+### 🐛 Fixed
+
+- **Knowledge Tool Fixes (Critical)**:
+  - **Schema Mismatch Resolved**: Fixed a critical bug where `searchKnowledge` failed due to a missing `Source` column in the database schema. Added a migration to introduce the `source` column to the `knowledge` table.
+  - **Search Snippets**: Updated `searchKnowledge` to return relevant text snippets using SQLite FTS5 `snippet()` function (or `substr` fallback), providing immediate context in search results.
+  - **Source Filtering**: Added support for filtering knowledge search results by `source` URL.
+  - **Data Integrity**: Updated `saveKnowledge`, `readKnowledge`, and `listKnowledge` to correctly handle and persist the `source` field.
+
 ### 🔧 Refactoring
 
 - **MCP Type System Complete Cleanup** (Phase 2): Removed all legacy MCP configuration types and conversion code. The codebase now uses a single, clean `MCPServerConfig` type throughout.

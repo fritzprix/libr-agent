@@ -97,6 +97,7 @@ async fn test_knowledge_crud_operations() {
         title: Set("Test Knowledge".to_string()),
         content: Set("This is test content".to_string()),
         tags: Set(Some("tag1,tag2".to_string())),
+        source: Set(Some("test-source".to_string())),
         created_at: Set(1000),
         updated_at: Set(1000),
     };
