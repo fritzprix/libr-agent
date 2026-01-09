@@ -513,7 +513,9 @@ export function processChunk(
             accumulator.partialJson += tc.function.arguments;
 
             // Buffer size limit
-            if (accumulator.partialJson.length > MAX_PARTIAL_TOOL_INPUT_LENGTH) {
+            if (
+              accumulator.partialJson.length > MAX_PARTIAL_TOOL_INPUT_LENGTH
+            ) {
               logger.error('Tool call JSON exceeded buffer limit', {
                 id: accumulator.id,
                 name: accumulator.name,
@@ -534,14 +536,15 @@ export function processChunk(
             }
 
             try {
-              const parsed = JSON.parse(trimmedJson) as Record<
-                string,
-                unknown
-              >;
+              const parsed = JSON.parse(trimmedJson) as Record<string, unknown>;
 
               // Success! Add the tool call if not already yielded
               if (!accumulator.yielded) {
-                const formatted = formatToolCall(callId, tc.function.name, parsed);
+                const formatted = formatToolCall(
+                  callId,
+                  tc.function.name,
+                  parsed,
+                );
                 processedToolCalls.push({
                   ...formatted,
                   type: 'function' as const,
@@ -556,7 +559,7 @@ export function processChunk(
                   },
                 );
               }
-            } catch (parseError) {
+            } catch {
               // JSON still incomplete, continue accumulating
               logger.debug('JSON incomplete, waiting for more chunks', {
                 id: callId,

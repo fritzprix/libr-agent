@@ -86,7 +86,7 @@ export function processChunk(
 
     for (const [idx, tc] of message.tool_calls.entries()) {
       const callId = tc.id || generateToolCallId();
-      
+
       // Get or create accumulator
       let accumulator = accumulators?.get(idx);
       if (!accumulator) {
@@ -135,7 +135,7 @@ export function processChunk(
         const trimmedJson = accumulator.partialJson.trim();
         try {
           const parsed = JSON.parse(trimmedJson) as Record<string, unknown>;
-          
+
           // Success! Yield the tool call
           if (!accumulator.yielded) {
             const formatted = formatToolCall(callId, tc.function.name, parsed);
@@ -160,12 +160,19 @@ export function processChunk(
         }
       } else {
         // Already parsed object (complete)
-        const formatted = formatToolCall(callId, tc.function.name, tc.function.arguments);
+        const formatted = formatToolCall(
+          callId,
+          tc.function.name,
+          tc.function.arguments,
+        );
         processedToolCalls.push({
           ...formatted,
           type: 'function' as const,
         });
-        logger.debug('Tool call already parsed', { id: callId, name: tc.function.name });
+        logger.debug('Tool call already parsed', {
+          id: callId,
+          name: tc.function.name,
+        });
       }
     }
 
@@ -196,7 +203,7 @@ protected async *doStreamChat(
     }
 
     const processedChunk = processChunk(chunk, coreLogger, toolCallAccumulators);
-    
+
     // ... rest of yielding logic ...
   }
 
@@ -274,9 +281,9 @@ function validateOpenAIToolCall(toolCall: unknown): toolCall is {
   function: { name: string; arguments: string };
 } {
   if (!toolCall || typeof toolCall !== 'object') return false;
-  
+
   const tc = toolCall as Record<string, unknown>;
-  
+
   return (
     typeof tc.id === 'string' &&
     tc.id.length > 0 &&
@@ -313,7 +320,8 @@ function sanitizeOpenAIToolCalls(
         validation: {
           hasId: typeof (tc as Record<string, unknown>)?.id === 'string',
           hasType: (tc as Record<string, unknown>)?.type === 'function',
-          hasFunction: typeof (tc as Record<string, unknown>)?.function === 'object',
+          hasFunction:
+            typeof (tc as Record<string, unknown>)?.function === 'object',
         },
       });
       continue;
@@ -331,7 +339,7 @@ function sanitizeOpenAIToolCalls(
         arguments: funcObj.arguments.substring(0, 200),
         error: jsonError,
       });
-      
+
       // Attempt recovery: wrap in empty object
       logger.info('Attempting tool call recovery with empty arguments', {
         id: tc.id,
@@ -433,13 +441,13 @@ export enum StreamingErrorCode {
   STREAM_ABORTED = 'STREAM_ABORTED',
   STREAM_TIMEOUT = 'STREAM_TIMEOUT',
   STREAM_CONNECTION_LOST = 'STREAM_CONNECTION_LOST',
-  
+
   // JSON parsing errors
   JSON_PARSE_FAILED = 'JSON_PARSE_FAILED',
   JSON_INCOMPLETE = 'JSON_INCOMPLETE',
   JSON_BUFFER_OVERFLOW = 'JSON_BUFFER_OVERFLOW',
   JSON_EMPTY = 'JSON_EMPTY',
-  
+
   // Tool call errors
   TOOL_CALL_INVALID_STRUCTURE = 'TOOL_CALL_INVALID_STRUCTURE',
   TOOL_CALL_MISSING_ID = 'TOOL_CALL_MISSING_ID',
@@ -447,7 +455,7 @@ export enum StreamingErrorCode {
   TOOL_CALL_MISSING_ARGUMENTS = 'TOOL_CALL_MISSING_ARGUMENTS',
   TOOL_CALL_ACCUMULATOR_TIMEOUT = 'TOOL_CALL_ACCUMULATOR_TIMEOUT',
   TOOL_CALL_DUPLICATE_YIELD = 'TOOL_CALL_DUPLICATE_YIELD',
-  
+
   // Provider-specific
   OLLAMA_CHUNK_MALFORMED = 'OLLAMA_CHUNK_MALFORMED',
   ANTHROPIC_DELTA_INVALID = 'ANTHROPIC_DELTA_INVALID',
@@ -514,12 +522,12 @@ if (accumulator.partialJson.length > MAX_PARTIAL_TOOL_INPUT_LENGTH) {
     false, // not recoverable
     false, // not retryable
   );
-  
+
   logger.error('Streaming error occurred', error);
-  
+
   // Optional: Emit error metric
   this.emitErrorMetric(error);
-  
+
   toolCallAccumulators.delete(chunk.index);
   continue;
 }
@@ -705,7 +713,7 @@ protected async *doStreamChat(
       });
 
       const processedChunk = processChunk(chunk, streamLogger);
-      
+
       if (processedChunk?.tool_calls) {
         streamLogger.updateMetrics({
           toolCallsDetected: streamingContext.metrics.toolCallsDetected + processedChunk.tool_calls.length,
@@ -752,8 +760,8 @@ Basic retry logic exists in `BaseAIService.withRetry()`, but no **circuit breake
  * Circuit breaker states
  */
 enum CircuitState {
-  CLOSED = 'CLOSED',     // Normal operation
-  OPEN = 'OPEN',         // Blocking requests
+  CLOSED = 'CLOSED', // Normal operation
+  OPEN = 'OPEN', // Blocking requests
   HALF_OPEN = 'HALF_OPEN', // Testing recovery
 }
 
@@ -765,7 +773,7 @@ export class StreamingCircuitBreaker {
   private failureCount = 0;
   private lastFailureTime = 0;
   private successCount = 0;
-  
+
   private readonly failureThreshold = 5;
   private readonly resetTimeout = 60_000; // 1 minute
   private readonly halfOpenSuccessThreshold = 2;
@@ -840,14 +848,17 @@ export class StreamingCircuitBreaker {
 ## Implementation Priority
 
 ### Phase 1: High Priority (Immediate Value)
+
 1. **Standardized Error Codes** - Foundation for monitoring
 2. **Ollama Partial JSON Accumulation** - Fixes potential production issue
 
 ### Phase 2: Medium Priority (Incremental Improvement)
+
 3. **Enhanced Observability** - Better debugging experience
 4. **OpenAI Validation Layer** - Defense in depth
 
 ### Phase 3: Low Priority (Advanced Features)
+
 5. **Circuit Breaker Patterns** - Prevent cascade failures
 
 ---

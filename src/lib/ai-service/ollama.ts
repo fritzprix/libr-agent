@@ -330,7 +330,11 @@ export class OllamaService extends BaseAIService {
           break;
         }
 
-        const processedChunk = processChunk(chunk, coreLogger, toolCallAccumulators);
+        const processedChunk = processChunk(
+          chunk,
+          coreLogger,
+          toolCallAccumulators,
+        );
         if (processedChunk) {
           if (processedChunk.content) {
             yield JSON.stringify({ content: processedChunk.content });

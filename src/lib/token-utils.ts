@@ -71,13 +71,13 @@ export function selectMessagesWithinContext(
   },
 ): Message[] {
   const modelInfo = llmConfigManager.getModel(providerId, modelId);
-  
+
   // If model info not found, apply message count limit only (no token-based truncation)
   if (!modelInfo) {
     logger.warn(
       `Could not find model info for provider: ${providerId}, model: ${modelId}. Applying message count limit only.`,
     );
-    
+
     // If no maxMessages specified, return all messages
     if (!options?.maxMessages) {
       logger.info('No message count limit specified, returning all messages', {
@@ -85,7 +85,7 @@ export function selectMessagesWithinContext(
       });
       return messages;
     }
-    
+
     // Apply simple message count-based truncation
     logger.info('📊 Starting message selection (count-based only)', {
       inputMessageCount: messages.length,
@@ -93,16 +93,16 @@ export function selectMessagesWithinContext(
       provider: providerId,
       model: modelId,
     });
-    
+
     const selected = messages.slice(-options.maxMessages);
-    
+
     logger.info('✅ Message selection complete (count-based)', {
       inputCount: messages.length,
       selectedCount: selected.length,
       trimmedCount: messages.length - selected.length,
       maxMessages: options.maxMessages,
     });
-    
+
     return selected;
   }
 
