@@ -14,6 +14,7 @@ import i18n from '@/lib/i18n';
 import type {
   ServiceConfig,
   AdvancedSettings,
+  DisplaySettings,
 } from '@/context/SettingsContext';
 import {
   Button,
@@ -27,7 +28,7 @@ import {
   TabsList,
   TabsTrigger,
 } from '@/components/ui';
-import { TerminalModelPicker } from '@/features/chat/ModelPicker';
+import { TerminalModelPicker } from './components/TerminalModelPicker';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import {
   AlertDialog,
@@ -149,6 +150,7 @@ export default function SettingsPage() {
       toolCallGroupVisibleCount,
       agentHubUrl,
       advanced,
+      display,
     },
     update,
   } = useSettings();
@@ -217,6 +219,14 @@ export default function SettingsPage() {
         circuitBreakerThreshold: 3,
       },
     );
+  const [localDisplay, setLocalDisplay] = useState<DisplaySettings>(
+    display || {
+      metricDisplayMode: 'inline',
+      prefillDisplayFormat: 'time',
+      showTokenSpeed: true,
+      compactMetrics: false,
+    },
+  );
 
   const otherPendingRef = useRef<{
     windowSize?: number;
@@ -224,6 +234,7 @@ export default function SettingsPage() {
     toolCallGroupVisibleCount?: number;
     agentHubUrl?: string;
     advanced?: AdvancedSettings;
+    display?: DisplaySettings;
   }>({});
 
   // Sync local state with context when context changes (e.g., after Apply or external updates)
@@ -238,6 +249,10 @@ export default function SettingsPage() {
   useEffect(() => {
     setLocalToolCallGroupVisibleCount(toolCallGroupVisibleCount);
   }, [toolCallGroupVisibleCount]);
+
+  useEffect(() => {
+    setLocalDisplay(display);
+  }, [display]);
 
   useEffect(() => {
     setLocalAgentHubUrl(agentHubUrl || '');
@@ -318,6 +333,19 @@ export default function SettingsPage() {
     );
   };
 
+  const handleDisplaySettingsChange = (
+    key: keyof DisplaySettings,
+    value: string | boolean,
+  ) => {
+    const newSettings = { ...localDisplay, [key]: value };
+    setLocalDisplay(newSettings);
+    otherPendingRef.current.display = newSettings;
+    setPendingCount(
+      Object.keys(pendingRef.current).length +
+        Object.keys(otherPendingRef.current).length,
+    );
+  };
+
   const flushPending = useCallback(async () => {
     const pending = pendingRef.current;
     const otherPending = otherPendingRef.current;
@@ -335,6 +363,7 @@ export default function SettingsPage() {
         uiLanguage: string;
         toolCallGroupVisibleCount: number;
         advanced: AdvancedSettings;
+        display: DisplaySettings;
       }> = {};
 
       // Merge pending service configs
@@ -367,6 +396,9 @@ export default function SettingsPage() {
       }
       if (otherPending.advanced) {
         updates.advanced = otherPending.advanced;
+      }
+      if (otherPending.display) {
+        updates.display = otherPending.display;
       }
 
       await update(updates);
@@ -430,6 +462,9 @@ export default function SettingsPage() {
               )}
             </TabsTrigger>
             <TabsTrigger value="agent-hub">Agent Hub</TabsTrigger>
+            <TabsTrigger value="display">
+              {t('settings.tabs.display', 'Display')}
+            </TabsTrigger>
             <TabsTrigger value="advanced">
               {t('settings.tabs.advanced', 'Advanced')}
             </TabsTrigger>
@@ -556,6 +591,130 @@ export default function SettingsPage() {
                 <p className="text-xs text-muted-foreground mt-1">
                   URL of the remote Agent Hub server. If set, assistants will be
                   synced with this server.
+                </p>
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="display">
+            <div className="space-y-6">
+              <div className="min-w-0">
+                <label className="block text-muted-foreground mb-2 font-medium">
+                  {t(
+                    'settings.display.metricDisplayMode',
+                    'Metric Display Mode',
+                  )}
+                </label>
+                <select
+                  className="bg-background border text-foreground rounded px-3 py-2 w-full max-w-xs"
+                  value={localDisplay.metricDisplayMode}
+                  onChange={(e) =>
+                    handleDisplaySettingsChange(
+                      'metricDisplayMode',
+                      e.target.value as 'tooltip' | 'inline',
+                    )
+                  }
+                >
+                  <option value="inline">
+                    {t('settings.display.inline', 'Inline (show in message)')}
+                  </option>
+                  <option value="tooltip">
+                    {t('settings.display.tooltip', 'Tooltip (hover to see)')}
+                  </option>
+                </select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {t(
+                    'settings.display.metricDisplayModeDescription',
+                    'Choose how token metrics are displayed in chat messages',
+                  )}
+                </p>
+              </div>
+
+              <div className="min-w-0">
+                <label className="block text-muted-foreground mb-2 font-medium">
+                  {t(
+                    'settings.display.prefillDisplayFormat',
+                    'Prefill Performance Format',
+                  )}
+                </label>
+                <select
+                  className="bg-background border text-foreground rounded px-3 py-2 w-full max-w-xs"
+                  value={localDisplay.prefillDisplayFormat}
+                  onChange={(e) =>
+                    handleDisplaySettingsChange(
+                      'prefillDisplayFormat',
+                      e.target.value as 'time' | 'tokensPerSecond',
+                    )
+                  }
+                >
+                  <option value="time">
+                    {t(
+                      'settings.display.time',
+                      'Time to First Token (e.g., 245ms)',
+                    )}
+                  </option>
+                  <option value="tokensPerSecond">
+                    {t(
+                      'settings.display.tokensPerSecond',
+                      'Tokens Per Second (e.g., 520 tok/s)',
+                    )}
+                  </option>
+                </select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {t(
+                    'settings.display.prefillDisplayFormatDescription',
+                    'Choose how prefill performance is displayed: as latency (milliseconds) or throughput (tokens/second)',
+                  )}
+                </p>
+              </div>
+
+              <div className="min-w-0">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={localDisplay.showTokenSpeed}
+                    onChange={(e) =>
+                      handleDisplaySettingsChange(
+                        'showTokenSpeed',
+                        e.target.checked,
+                      )
+                    }
+                    className="w-4 h-4"
+                  />
+                  <span className="text-muted-foreground font-medium">
+                    {t('settings.display.showTokenSpeed', 'Show Token Speed')}
+                  </span>
+                </label>
+                <p className="text-xs text-muted-foreground mt-1 ml-6">
+                  {t(
+                    'settings.display.showTokenSpeedDescription',
+                    'Display generation speed (tokens per second) in metrics',
+                  )}
+                </p>
+              </div>
+
+              <div className="min-w-0">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={localDisplay.compactMetrics}
+                    onChange={(e) =>
+                      handleDisplaySettingsChange(
+                        'compactMetrics',
+                        e.target.checked,
+                      )
+                    }
+                    className="w-4 h-4"
+                  />
+                  <span className="text-muted-foreground font-medium">
+                    {t('settings.display.compactMetrics', 'Compact Metrics')}
+                  </span>
+                </label>
+                <p className="text-xs text-muted-foreground mt-1 ml-6">
+                  {t(
+                    'settings.display.compactMetricsDescription',
+                    'Use compact display format for token metrics',
+                  )}
                 </p>
               </div>
             </div>

@@ -97,6 +97,8 @@ export interface Message {
   assistantId?: string; // Optional, used for tracking in multi-agent scenarios
   attachments?: AttachmentReference[]; // Changed to MCP-based file attachment reference
   tool_use?: { id: string; name: string; input: Record<string, unknown> };
+  /** Token usage metrics for this message */
+  usage?: import('../lib/ai-service/types').TokenUsage;
   createdAt?: Date; // Added
   updatedAt?: Date; // Added
   /** Source of the message - 'assistant' for AI-generated, 'ui' for user interface interactions */
@@ -253,6 +255,13 @@ export interface Assistant {
    */
   allowedBuiltInServiceAliases?: string[];
   deletionProtected: boolean;
+
+  // Model configuration
+  model?: string;
+  provider?: string;
+  temperature?: number;
+  maxTokens?: number;
+
   createdAt: Date;
   updatedAt: Date;
 }

@@ -1,11 +1,14 @@
-use crate::mcp::builtin::planning::models::ScratchpadItem;
+use crate::entity::planning_scratchpad;
 use crate::mcp::types::MCPResult;
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
+    QueryOrder, Set, TransactionTrait,
+};
 use serde_json::{json, Value};
-use sqlx::SqlitePool;
 
 /// Add scratchpad item (Legacy: addScratchpad)
 pub async fn add_scratchpad(
-    pool: &SqlitePool,
+    db: &DatabaseConnection,
     session_id: &str,
     args: Value,
 ) -> Result<MCPResult, String> {
@@ -22,118 +25,98 @@ pub async fn add_scratchpad(
         .map(|s| s.trim());
     let tags = args.get("tags").map(|v| v.to_string()); // Store as JSON string
 
-    // 1. Optional: Quick read-only duplicate check (optimization to avoid write attempt if obvious)
-    if let Some(t) = title {
-        let existing: Option<(i64,)> =
-            sqlx::query_as("SELECT id FROM planning_scratchpad WHERE session_id = ? AND title = ?")
-                .bind(session_id)
-                .bind(t)
-                .fetch_optional(pool)
-                .await
-                .map_err(|e| format!("Database error checking duplicate: {}", e))?;
+    // Clone for async move
+    let session_id_owned = session_id.to_string();
+    let note_owned = note.to_string();
+    let title_owned = title.map(|s| s.to_string());
+    let source_owned = source.map(|s| s.to_string());
 
-        if existing.is_some() {
-            return Ok(MCPResult::error(&format!(
-                "Scratchpad item with title '{}' already exists. Please use the `updateScratchpad` tool to modify the existing note or choose a different title.",
-                t
-            )));
-        }
-    }
-
-    let now = chrono::Utc::now().timestamp_millis();
-
-    // 2. Atomic INSERT with LIMIT check
-    // We use INSERT ... SELECT ... WHERE (...) < 10 to ensure atomicity without explicit transaction locks
-    let query = r#"
-        INSERT INTO planning_scratchpad (session_id, content, title, source, tags, created_at, updated_at)
-        SELECT ?, ?, ?, ?, ?, ?, ?
-        WHERE (SELECT COUNT(*) FROM planning_scratchpad WHERE session_id = ?) < 10
-    "#;
-
-    let result = sqlx::query(query)
-        .bind(session_id)
-        .bind(note)
-        .bind(title)
-        .bind(source)
-        .bind(tags)
-        .bind(now)
-        .bind(now)
-        .bind(session_id) // For the subquery
-        .execute(pool)
-        .await;
-
-    match result {
-        Ok(r) => {
-            if r.rows_affected() > 0 {
-                // Success
-                let last_id = r.last_insert_rowid();
-
-                // Get new count for display
-                let count: Option<(i64,)> =
-                    sqlx::query_as("SELECT COUNT(*) FROM planning_scratchpad WHERE session_id = ?")
-                        .bind(session_id)
-                        .fetch_optional(pool)
+    // Transaction for atomic check-and-insert
+    let result: Result<(i64, i64), sea_orm::TransactionError<String>> =
+        db.transaction::<_, (i64, i64), String>(move |txn| {
+            Box::pin(async move {
+                // 1. Check duplicate title
+                if let Some(ref t) = title_owned {
+                    let existing = planning_scratchpad::Entity::find()
+                        .filter(planning_scratchpad::Column::SessionId.eq(&session_id_owned))
+                        .filter(planning_scratchpad::Column::Title.eq(t))
+                        .one(txn)
                         .await
-                        .unwrap_or(None);
-                let current_count = count.map(|c| c.0).unwrap_or(0);
-
-                let response_id = cuid2::create_id();
-                Ok(MCPResult::success_with_data(
-                    &format!(
-                        "✓ Note added to scratchpad (ID: {})\nScratchpad: {}/10",
-                        last_id, current_count
-                    ),
-                    json!({
-                        "id": response_id,
-                        "scratchpadId": last_id
-                    }),
-                ))
-            } else {
-                // Insertion failed (0 rows affected) - Determine why
-                // Check limit
-                let count: Option<(i64,)> =
-                    sqlx::query_as("SELECT COUNT(*) FROM planning_scratchpad WHERE session_id = ?")
-                        .bind(session_id)
-                        .fetch_optional(pool)
-                        .await
-                        .map_err(|e| format!("Database error checking count: {}", e))?;
-
-                let current_count = count.map(|c| c.0).unwrap_or(0);
-                if current_count >= 10 {
-                    return Ok(MCPResult::error(
-                        "Scratchpad limit reached (10 items). Please use `updateScratchpad` to modify existing notes or `clearScratchpad` to remove old ones before adding more.",
-                    ));
-                }
-
-                // Check duplicate (if we didn't catch it earlier, or race condition)
-                if let Some(t) = title {
-                    let existing: Option<(i64,)> = sqlx::query_as(
-                        "SELECT id FROM planning_scratchpad WHERE session_id = ? AND title = ?",
-                    )
-                    .bind(session_id)
-                    .bind(t)
-                    .fetch_optional(pool)
-                    .await
-                    .map_err(|e| format!("Database error checking duplicate: {}", e))?;
+                        .map_err(|e| format!("Database error: {}", e))?;
 
                     if existing.is_some() {
-                        return Ok(MCPResult::error(&format!(
+                        return Err(format!(
                             "Scratchpad item with title '{}' already exists. Please use the `updateScratchpad` tool to modify the existing note or choose a different title.",
                             t
-                        )));
+                        ));
                     }
                 }
 
-                Ok(MCPResult::error("Failed to add scratchpad item: Unknown error (possibly concurrent modification). Please try again."))
-            }
+                // 2. Check limit
+                let count = planning_scratchpad::Entity::find()
+                    .filter(planning_scratchpad::Column::SessionId.eq(&session_id_owned))
+                    .count(txn)
+                    .await
+                    .map_err(|e| format!("Database error: {}", e))?;
+
+                if count >= 10 {
+                    return Err("Scratchpad limit reached (10 items). Please use `updateScratchpad` to modify existing notes or `clearScratchpad` to remove old ones before adding more.".to_string());
+                }
+
+                // 3. Insert
+                let now = chrono::Utc::now().timestamp_millis();
+                let new_item = planning_scratchpad::ActiveModel {
+                    session_id: Set(session_id_owned.clone()),
+                    content: Set(note_owned.clone()),
+                    title: Set(title_owned.clone()),
+                    source: Set(source_owned.clone()),
+                    tags: Set(tags.clone()),
+                    created_at: Set(now),
+                    updated_at: Set(now),
+                    ..Default::default()
+                };
+
+                let inserted = new_item
+                    .insert(txn)
+                    .await
+                    .map_err(|e| format!("Failed to insert: {}", e))?;
+
+                // Get new count
+                let new_count = planning_scratchpad::Entity::find()
+                    .filter(planning_scratchpad::Column::SessionId.eq(&session_id_owned))
+                    .count(txn)
+                    .await
+                    .map_err(|e| format!("Database error: {}", e))?;
+
+                Ok((inserted.id, new_count as i64))
+            })
+        })
+        .await;
+
+    match result {
+        Ok((last_id, current_count)) => {
+            let response_id = cuid2::create_id();
+            Ok(MCPResult::success_with_data(
+                &format!(
+                    "✓ Note added to scratchpad (ID: {})\nScratchpad: {}/10",
+                    last_id, current_count
+                ),
+                json!({
+                    "id": response_id,
+                    "scratchpadId": last_id
+                }),
+            ))
         }
-        Err(e) => Ok(MCPResult::error(&format!("Failed to add note: {}", e))),
+        Err(e) => Ok(MCPResult::error(&match e {
+            sea_orm::TransactionError::Connection(err) => format!("Connection error: {}", err),
+            sea_orm::TransactionError::Transaction(err) => err,
+        })),
     }
 }
 
 /// Update scratchpad item
 pub async fn update_scratchpad(
-    pool: &SqlitePool,
+    db: &DatabaseConnection,
     session_id: &str,
     args: Value,
 ) -> Result<MCPResult, String> {
@@ -151,23 +134,21 @@ pub async fn update_scratchpad(
         .filter(|s| !s.is_empty())
         .ok_or("Missing or empty 'note'")?;
 
-    // Optional: Allow renaming via newTitle
     let new_title = args
         .get("newTitle")
         .and_then(|v| v.as_str())
         .map(|s| s.trim());
 
-    // Check if item exists
-    let existing: Option<(i64,)> =
-        sqlx::query_as("SELECT id FROM planning_scratchpad WHERE session_id = ? AND title = ?")
-            .bind(session_id)
-            .bind(title)
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| format!("Database error checking existence: {}", e))?;
+    // Find item
+    let existing = planning_scratchpad::Entity::find()
+        .filter(planning_scratchpad::Column::SessionId.eq(session_id))
+        .filter(planning_scratchpad::Column::Title.eq(title))
+        .one(db)
+        .await
+        .map_err(|e| format!("Database error: {}", e))?;
 
-    let id = match existing {
-        Some((id,)) => id,
+    let item = match existing {
+        Some(i) => i,
         None => {
             return Ok(MCPResult::error(&format!(
                 "No scratchpad item found with title '{}'. Use `addScratchpad` to create a new note.",
@@ -179,22 +160,12 @@ pub async fn update_scratchpad(
     let now = chrono::Utc::now().timestamp_millis();
     let final_title = new_title.unwrap_or(title);
 
-    // Update
-    let result = sqlx::query(
-        r#"
-        UPDATE planning_scratchpad 
-        SET content = ?, title = ?, updated_at = ?
-        WHERE id = ?
-        "#,
-    )
-    .bind(note)
-    .bind(final_title)
-    .bind(now)
-    .bind(id)
-    .execute(pool)
-    .await;
+    let mut active_item: planning_scratchpad::ActiveModel = item.into();
+    active_item.content = Set(note.to_string());
+    active_item.title = Set(Some(final_title.to_string()));
+    active_item.updated_at = Set(now);
 
-    match result {
+    match active_item.update(db).await {
         Ok(_) => Ok(MCPResult::success(&format!(
             "✓ Scratchpad note '{}' updated",
             final_title
@@ -205,7 +176,7 @@ pub async fn update_scratchpad(
 
 /// List scratchpad items (Legacy: listScratchpad)
 pub async fn list_scratchpad(
-    pool: &SqlitePool,
+    db: &DatabaseConnection,
     session_id: &str,
     args: Value,
 ) -> Result<MCPResult, String> {
@@ -225,17 +196,16 @@ pub async fn list_scratchpad(
             .collect::<Vec<String>>()
     });
 
-    // Fetch all items for session (optimize later if needed)
-    let all_items: Vec<ScratchpadItem> = sqlx::query_as(
-        "SELECT id, content, title, source, tags, created_at, updated_at FROM planning_scratchpad WHERE session_id = ? ORDER BY created_at DESC"
-    )
-    .bind(session_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| format!("Failed to list scratchpad: {}", e))?;
+    // Fetch all items
+    let all_items = planning_scratchpad::Entity::find()
+        .filter(planning_scratchpad::Column::SessionId.eq(session_id))
+        .order_by_desc(planning_scratchpad::Column::CreatedAt)
+        .all(db)
+        .await
+        .map_err(|e| format!("Failed to list scratchpad: {}", e))?;
 
-    // Filter
-    let filtered_items: Vec<&ScratchpadItem> = if let Some(tags) = &filter_tags {
+    // Filter in memory
+    let filtered_items: Vec<&planning_scratchpad::Model> = if let Some(tags) = &filter_tags {
         if tags.is_empty() {
             all_items.iter().collect()
         } else {
@@ -244,7 +214,6 @@ pub async fn list_scratchpad(
                 .filter(|item| {
                     if let Some(item_tags_json) = &item.tags {
                         if let Ok(item_tags) = serde_json::from_str::<Vec<String>>(item_tags_json) {
-                            // Check if any filter tag is present in item tags
                             tags.iter().any(|t| item_tags.contains(t))
                         } else {
                             false
@@ -269,7 +238,7 @@ pub async fn list_scratchpad(
         .take(take)
         .collect::<Vec<_>>();
 
-    // Format Text Output
+    // Format Output (Same as before)
     let mut text_output = String::new();
     if paged_items.is_empty() {
         if total_items > 0 {
@@ -346,7 +315,7 @@ pub async fn list_scratchpad(
 
 /// Read scratchpad item (Legacy: readScratchpad)
 pub async fn read_scratchpad(
-    pool: &SqlitePool,
+    db: &DatabaseConnection,
     session_id: &str,
     args: Value,
 ) -> Result<MCPResult, String> {
@@ -364,14 +333,12 @@ pub async fn read_scratchpad(
                     id
                 )));
             }
-            let item: Option<ScratchpadItem> = sqlx::query_as(
-                "SELECT id, content, title, source, tags, created_at, updated_at FROM planning_scratchpad WHERE id = ? AND session_id = ?"
-            )
-            .bind(id)
-            .bind(session_id)
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| format!("Failed to read item {}: {}", id, e))?;
+
+            let item = planning_scratchpad::Entity::find_by_id(id)
+                .filter(planning_scratchpad::Column::SessionId.eq(session_id))
+                .one(db)
+                .await
+                .map_err(|e| format!("Failed to read item {}: {}", id, e))?;
 
             if let Some(i) = item {
                 items.push(json!({
@@ -410,7 +377,7 @@ pub async fn read_scratchpad(
 
 /// Clear scratchpad item (Legacy: clearScratchpad)
 pub async fn clear_scratchpad(
-    pool: &SqlitePool,
+    db: &DatabaseConnection,
     session_id: &str,
     args: Value,
 ) -> Result<MCPResult, String> {
@@ -423,10 +390,9 @@ pub async fn clear_scratchpad(
         return Ok(MCPResult::error("Invalid 'id'. Must be >= 0"));
     }
 
-    let result = sqlx::query("DELETE FROM planning_scratchpad WHERE id = ? AND session_id = ?")
-        .bind(id)
-        .bind(session_id)
-        .execute(pool)
+    let result = planning_scratchpad::Entity::delete_by_id(id)
+        .filter(planning_scratchpad::Column::SessionId.eq(session_id))
+        .exec(db)
         .await;
 
     match result {
@@ -458,7 +424,6 @@ pub async fn pause_and_think(args: Value) -> Result<MCPResult, String> {
     ))
 }
 
-/// Critique and reflection (Legacy: critiqueAndReflection)
 /// Critique and reflection (Legacy: critiqueAndReflection)
 pub async fn critique_and_reflection(args: Value) -> Result<MCPResult, String> {
     let critique = args

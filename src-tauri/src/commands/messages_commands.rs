@@ -3,9 +3,10 @@ use crate::mcp::types::MCPContent;
 use crate::repositories::MessageRepository;
 use crate::search::index_storage::{get_index_path, write_index_atomic, IndexData, IndexMetadata};
 use crate::search::message_index::{MessageDocument, MessageSearchEngine, SearchResult};
-use crate::state::{get_message_repository, get_sqlite_pool};
+use crate::state::{get_database_connection, get_message_repository};
 use serde::{Deserialize, Serialize};
-use sqlx::Row;
+
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -125,7 +126,8 @@ static INDEX_CACHE: once_cell::sync::Lazy<Mutex<HashMap<String, MessageSearchEng
 
 /// Load or rebuild the search index for a session.
 async fn get_or_build_index(session_id: &str) -> Result<MessageSearchEngine, String> {
-    let pool = get_sqlite_pool();
+    let db = get_database_connection();
+
     let repo = get_message_repository();
     let index_path = get_index_path(session_id)?;
     let max_docs = MessageSearchEngine::max_docs_from_env();
@@ -152,29 +154,23 @@ async fn get_or_build_index(session_id: &str) -> Result<MessageSearchEngine, Str
     let start_time = std::time::Instant::now();
 
     // Fetch messages from database (most recent max_docs)
-    let messages = sqlx::query(
-        r#"
-        SELECT id, session_id, content, created_at
-        FROM messages
-        WHERE session_id = ?
-        ORDER BY created_at DESC
-        LIMIT ?
-        "#,
-    )
-    .bind(session_id)
-    .bind(max_docs as i64)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| format!("Failed to fetch messages for indexing: {e}"))?;
+    // SELECT id, session_id, content, created_at FROM messages WHERE session_id = ? ORDER BY created_at DESC LIMIT ?
+    let messages = crate::entity::message::Entity::find()
+        .filter(crate::entity::message::Column::SessionId.eq(session_id))
+        .order_by_desc(crate::entity::message::Column::CreatedAt)
+        .limit(max_docs as u64)
+        .all(db)
+        .await
+        .map_err(|e| format!("Failed to fetch messages for indexing: {e}"))?;
 
     // Convert to MessageDocument
     let documents: Vec<MessageDocument> = messages
         .into_iter()
-        .map(|row| MessageDocument {
-            id: row.get("id"),
-            session_id: row.get("session_id"),
-            content: row.get("content"),
-            created_at: row.get("created_at"),
+        .map(|model| MessageDocument {
+            id: model.id,
+            session_id: model.session_id,
+            content: model.content,
+            created_at: model.created_at,
         })
         .collect();
 
@@ -254,30 +250,25 @@ pub async fn messages_search(
         engine.search(&query, page * page_size * 2)?
     } else {
         // Global search: build a temporary index from messages across all sessions.
-        let pool = get_sqlite_pool();
+        let db = get_database_connection();
         let max_docs = MessageSearchEngine::max_docs_from_env();
 
         // Fetch recent messages across all sessions up to max_docs
-        let messages = sqlx::query(
-            r#"
-            SELECT id, session_id, content, created_at
-            FROM messages
-            ORDER BY created_at DESC
-            LIMIT ?
-            "#,
-        )
-        .bind(max_docs as i64)
-        .fetch_all(pool)
-        .await
-        .map_err(|e| format!("Failed to fetch messages for global indexing: {e}"))?;
+        // SELECT id, session_id, content, created_at FROM messages ORDER BY created_at DESC LIMIT ?
+        let messages = crate::entity::message::Entity::find()
+            .order_by_desc(crate::entity::message::Column::CreatedAt)
+            .limit(max_docs as u64)
+            .all(db)
+            .await
+            .map_err(|e| format!("Failed to fetch messages for global indexing: {e}"))?;
 
         let documents: Vec<MessageDocument> = messages
             .into_iter()
-            .map(|row| MessageDocument {
-                id: row.get("id"),
-                session_id: row.get("session_id"),
-                content: row.get("content"),
-                created_at: row.get("created_at"),
+            .map(|model| MessageDocument {
+                id: model.id,
+                session_id: model.session_id,
+                content: model.content,
+                created_at: model.created_at,
             })
             .collect();
 

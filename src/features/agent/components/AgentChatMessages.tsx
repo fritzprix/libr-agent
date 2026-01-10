@@ -5,7 +5,7 @@ import { useMessageGrouping } from '@/hooks/useMessageGrouping';
 import { useThrottle } from '@/hooks/useThrottle';
 import { AgentToolCallGroup } from './AgentToolCallGroup';
 import { AgentMessageBubble } from './AgentMessageBubble';
-import { ErrorBubble } from '@/features/chat/ErrorBubble';
+import { ErrorBubble } from '@/components/shared/ErrorBubble';
 import { Bot } from 'lucide-react';
 import type { Message } from '@/models/chat';
 

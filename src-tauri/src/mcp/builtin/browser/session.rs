@@ -59,19 +59,27 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
     let url_param = args.get("url").and_then(|v| v.as_str());
     let url = url_param.unwrap_or("https://www.google.com");
 
-    // Check if session already exists
+    // Check if a session already exists. If so, close it to ensure a fresh session.
+    // This allows "resetting" the session if it gets into a bad state.
     {
-        let id_lock = server
-            .browser_session_id
-            .read()
-            .map_err(|e| e.to_string())?;
-        if let Some(id) = id_lock.as_ref() {
-            let warning = ErrorGuidance::new(
-                ErrorCategory::DuplicateResource,
-                format!("Session already exists: {}", id),
-                ToolGroup::Browser,
-            );
-            return Ok(warning.to_mcp_result());
+        let id_opt = {
+            let lock = server
+                .browser_session_id
+                .read()
+                .map_err(|e| e.to_string())?;
+            lock.clone()
+        };
+
+        if let Some(id) = id_opt {
+            // Attempt to close existing session, ignore errors as we're forcing a new one
+            let _ = service.close_session(&id).await;
+
+            // Clear the ID from state
+            let mut lock = server
+                .browser_session_id
+                .write()
+                .map_err(|e| e.to_string())?;
+            *lock = None;
         }
     }
 
@@ -102,13 +110,68 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
     }
 
     let (message, suggestions) = if url_param.is_some() {
-        (
-            format!("Browser session created: {}. Page loaded: {}", id, url),
-            vec![
-                "Use extractWebContent to read the page content".to_string(),
-                "Use listInteractable to see interactive elements".to_string(),
-            ],
-        )
+        if status_msg.contains("load wait timed out") {
+            (
+                format!("Browser session created: {}. {}", id, status_msg),
+                vec![
+                    "Try creating a new session with 'createSession' to reset the state"
+                        .to_string(),
+                    "The site might be blocking automated access or is too slow".to_string(),
+                ],
+            )
+        } else if status_msg.contains("(HTTP 403)") || status_msg.contains("(HTTP 401)") {
+            (
+                format!("Browser session created: {}. {}", id, status_msg),
+                vec![
+                    "The page is blocking access (Forbidden/Unauthorized). Abandon this page."
+                        .to_string(),
+                    "Do NOT try to login or bypass checks.".to_string(),
+                    "Search for the information on a different, public website.".to_string(),
+                ],
+            )
+        } else if status_msg.contains("(HTTP 404)") {
+            (
+                format!("Browser session created: {}. {}", id, status_msg),
+                vec![
+                    "The page was not found (404). Check the URL.".to_string(),
+                    "Search for the content on the site's homepage or use a search engine."
+                        .to_string(),
+                ],
+            )
+        } else if status_msg.contains("(HTTP 5") {
+            (
+                format!("Browser session created: {}. {}", id, status_msg),
+                vec![
+                    "The website is experiencing server errors (5xx). Abandon this page."
+                        .to_string(),
+                    "Try finding the information on a different website.".to_string(),
+                ],
+            )
+        } else if status_msg.contains("Network Error") {
+            (
+                format!("Browser session created: {}. {}", id, status_msg),
+                vec![
+                    "A network error occurred. Check the URL and internet connection.".to_string(),
+                    "The site may be down or unreachable.".to_string(),
+                ],
+            )
+        } else if status_msg.contains("(HTTP ") {
+            (
+                format!("Browser session created: {}. {}", id, status_msg),
+                vec![
+                    "The site returned an error. Consider finding an alternative source."
+                        .to_string(),
+                ],
+            )
+        } else {
+            (
+                format!("Browser session created: {}. Page loaded: {}", id, url),
+                vec![
+                    "Use extractWebContent to read the page content".to_string(),
+                    "Use listInteractable to see interactive elements".to_string(),
+                ],
+            )
+        }
     } else {
         (
             format!("Browser session created: {}. {}", id, status_msg),

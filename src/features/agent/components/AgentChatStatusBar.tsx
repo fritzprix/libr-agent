@@ -9,11 +9,14 @@ import {
   RefreshCw,
   Wrench,
 } from 'lucide-react';
-import { CompactModelPicker } from '@/features/chat/ModelPicker';
+import { AgentModelPicker } from '@/features/agent/components/AgentModelPicker';
 import { useAgentTools } from '@/hooks/use-agent-tools';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { getLogger } from '@/lib/logger';
 import AgentToolsModal from './AgentToolsModal';
+import { useTokenMetrics } from '@/hooks/use-token-metrics';
+import { TokenMetricsBadge } from './TokenMetricsBadge';
+import { TokenUsage } from '@/lib/ai-service/types';
 
 const logger = getLogger('AgentChatStatusBar');
 
@@ -21,6 +24,26 @@ export function AgentChatStatusBar() {
   const { session } = useAgentSessionState();
   const { workflowStatus, error, llmError, retryMessage } = useAgentChat();
   const [showToolsModal, setShowToolsModal] = useState(false);
+
+  // ✅ Fetch real-time token metrics
+  const { metrics } = useTokenMetrics(session?.id);
+
+  // Persist last metrics to show after streaming ends
+  const [lastMetrics, setLastMetrics] = useState<TokenUsage | null>(null);
+
+  // Reset last metrics when session changes
+  useEffect(() => {
+    setLastMetrics(null);
+  }, [session?.id]);
+
+  // Update last metrics when active metrics are available
+  useEffect(() => {
+    if (metrics) {
+      setLastMetrics(metrics);
+    }
+  }, [metrics]);
+
+  const displayMetrics = metrics || lastMetrics;
 
   // ✅ Single Source of Truth: Fetch filtered tools from Rust backend
   const {
@@ -175,18 +198,34 @@ export function AgentChatStatusBar() {
       {/* Model and tools status bar (matches ChatStatusBar) */}
       <div className="px-4 py-2 border-t flex items-center justify-between">
         <div>
-          <CompactModelPicker />
+          {session && (
+            <AgentModelPicker
+              sessionId={session.id}
+              currentModel={session.assistant?.model}
+              currentProvider={session.assistant?.provider}
+              currentAssistantConfig={session.assistant}
+            />
+          )}
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs">Tools:</span>
-          <button
-            onClick={() => setShowToolsModal(true)}
-            className={`text-xs flex items-center gap-1 cursor-pointer hover:underline transition-colors ${getToolsColor()}`}
-            title={toolsError ? toolsError : 'Click to view available tools'}
-            disabled={toolsLoading}
-          >
-            {getToolsIcon()} {getToolsDisplayText()}
-          </button>
+        <div className="flex items-center gap-4">
+          {/* Token Metrics Badge - Show if metrics exist */}
+          {displayMetrics && (
+            <div className="hidden md:block">
+              <TokenMetricsBadge usage={displayMetrics} />
+            </div>
+          )}
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs">Tools:</span>
+            <button
+              onClick={() => setShowToolsModal(true)}
+              className={`text-xs flex items-center gap-1 cursor-pointer hover:underline transition-colors ${getToolsColor()}`}
+              title={toolsError ? toolsError : 'Click to view available tools'}
+              disabled={toolsLoading}
+            >
+              {getToolsIcon()} {getToolsDisplayText()}
+            </button>
+          </div>
         </div>
       </div>
 

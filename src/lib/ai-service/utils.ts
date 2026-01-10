@@ -69,3 +69,33 @@ export function normalizeRustMessage(msg: RustMessage | Message): Message {
   // Already a Message
   return msg as Message;
 }
+
+/**
+ * Calculate tokens per second from usage metrics
+ */
+export function calculateTokensPerSecond(
+  usage: import('./types').TokenUsage,
+  durationMs: number,
+): number {
+  if (usage.completionTokens === 0 || durationMs === 0) return 0;
+  return (usage.completionTokens / durationMs) * 1000;
+}
+
+/**
+ * Format usage metrics for display
+ */
+export function formatUsageMetrics(usage: import('./types').TokenUsage): {
+  input: string;
+  output: string;
+  total: string;
+  speed?: string;
+} {
+  return {
+    input: usage.promptTokens.toLocaleString(),
+    output: usage.completionTokens.toLocaleString(),
+    total: usage.totalTokens.toLocaleString(),
+    speed: usage.details?.evalDuration
+      ? `${((usage.completionTokens / usage.details.evalDuration) * 1000).toFixed(1)} t/s`
+      : undefined,
+  };
+}

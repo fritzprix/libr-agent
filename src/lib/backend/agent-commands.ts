@@ -70,3 +70,23 @@ export async function getAgentAvailableTools(
 ): Promise<unknown[]> {
   return invoke('agent_get_available_tools', { sessionId });
 }
+
+/**
+ * Call a builtin tool directly via proxy_manager (session-aware)
+ * This ensures the tool runs within the correct session context
+ *
+ * @param sessionId - The active session ID
+ * @param toolName - The name of the tool to execute
+ * @param args - The arguments for the tool
+ */
+export async function agentCallBuiltinTool(
+  sessionId: string,
+  toolName: string,
+  args: Record<string, unknown>,
+): Promise<unknown> {
+  return invoke('agent_call_builtin_tool', {
+    sessionId,
+    toolName,
+    args,
+  });
+}

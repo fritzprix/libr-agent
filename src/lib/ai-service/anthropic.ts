@@ -6,7 +6,7 @@ import {
 import { getLogger } from '../logger';
 import { Message } from '@/models/chat';
 import { MCPTool } from '../mcp-types';
-import { AIServiceProvider, AIServiceConfig } from './types';
+import { AIServiceProvider, AIServiceConfig, TokenUsage } from './types';
 import { BaseAIService } from './base-service';
 import { formatToolCall } from './utils';
 import { ModelInfo, llmConfigManager } from '../llm-config-manager';
@@ -14,6 +14,18 @@ import { supportsThinking, getContextWindow } from './model-capabilities';
 const logger = getLogger('AnthropicService');
 
 const MAX_PARTIAL_TOOL_INPUT_LENGTH = 200_000;
+
+/**
+ * Extended usage interface for Anthropic's response that includes prompt caching fields.
+ * Anthropic SDK types may not include these yet, so we define them explicitly.
+ * @internal
+ */
+interface AnthropicUsageWithCache {
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_input_tokens?: number;
+  cache_read_input_tokens?: number;
+}
 
 /**
  * An internal helper interface to accumulate partial JSON data for a tool call
@@ -250,6 +262,13 @@ export class AnthropicService extends BaseAIService {
       // Tool call accumulator for partial JSON streaming
       const toolCallAccumulators = new Map<number, ToolCallAccumulator>();
 
+      // Track current usage metrics (updated from message_start and message_delta)
+      let currentUsage: TokenUsage = {
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+      };
+
       if (this.getAbortSignal().aborted) {
         this.logger.debug('Stream aborted before iteration');
         return;
@@ -259,6 +278,46 @@ export class AnthropicService extends BaseAIService {
         if (this.getAbortSignal().aborted) {
           this.logger.debug('Stream aborted during iteration');
           break;
+        }
+
+        // Handle message_start for input tokens and cache stats
+        if (chunk.type === 'message_start') {
+          if (chunk.message?.usage) {
+            const u = chunk.message.usage as AnthropicUsageWithCache;
+            currentUsage.promptTokens = u.input_tokens || 0;
+            currentUsage.totalTokens =
+              currentUsage.promptTokens + currentUsage.completionTokens;
+
+            // Extract prompt caching stats if available
+            if (
+              u.cache_creation_input_tokens !== undefined ||
+              u.cache_read_input_tokens !== undefined
+            ) {
+              currentUsage.details = {
+                ...currentUsage.details,
+                cacheCreationInputTokens: u.cache_creation_input_tokens,
+                cacheReadInputTokens: u.cache_read_input_tokens,
+              };
+            }
+            yield JSON.stringify({ usage: currentUsage });
+          }
+        }
+
+        if (chunk.type === 'message_delta') {
+          if (chunk.usage) {
+            // Update completion tokens
+            currentUsage.completionTokens = chunk.usage.output_tokens || 0;
+
+            // Update input tokens if provided (usually in message_start, but just in case)
+            if (chunk.usage.input_tokens) {
+              currentUsage.promptTokens = chunk.usage.input_tokens;
+            }
+
+            currentUsage.totalTokens =
+              currentUsage.promptTokens + currentUsage.completionTokens;
+
+            yield JSON.stringify({ usage: currentUsage });
+          }
         }
 
         // Extra logging for delta inspection: helpful to see exact shapes

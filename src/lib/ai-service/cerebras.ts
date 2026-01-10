@@ -117,11 +117,30 @@ export class CerebrasService extends BaseAIService {
         return;
       }
 
+      // Measure TTFT (Cerebras doesn't provide native prefill timing)
+      const startTime = performance.now();
+      let firstChunkReceived = false;
+
       for await (const chunk of stream) {
         if (this.getAbortSignal().aborted) {
           this.logger.info('Stream aborted during iteration');
           break;
         }
+
+        // Inject TTFT metric on first chunk
+        if (!firstChunkReceived) {
+          const ttft = performance.now() - startTime;
+          firstChunkReceived = true;
+          yield JSON.stringify({
+            usage: {
+              promptTokens: 0,
+              completionTokens: 0,
+              totalTokens: 0,
+              details: { timeToFirstToken: ttft },
+            },
+          });
+        }
+
         const processedChunk = this.processChunk(chunk);
         if (processedChunk) {
           yield processedChunk;

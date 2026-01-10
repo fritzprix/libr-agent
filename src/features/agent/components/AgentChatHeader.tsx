@@ -4,7 +4,7 @@ import { useAgentSessionState } from '@/context/AgentSessionContext';
 import { useAgentPlanning } from '@/context/AgentPlanningContext';
 import { useAgentWorkspace } from '@/context/AgentWorkspaceContext';
 import { useAgentChat } from '@/context/AgentChatContext';
-import { SessionFilesPopover } from '@/features/chat/components/SessionFilesPopover';
+import { SessionFilesPopover } from '@/components/shared/SessionFilesPopover';
 import { Button } from '@/components/ui/button';
 import { PanelRight, FolderOpen, Brain, Copy } from 'lucide-react';
 import { toast } from 'sonner';

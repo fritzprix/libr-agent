@@ -8,7 +8,7 @@ use tauri::{command, State};
 
 use crate::agent::types::AgentMessageDto;
 use crate::commands::workspace_commands::get_app_logs_dir;
-use crate::state::get_sqlite_pool;
+use crate::state::get_database_connection;
 use std::fs;
 
 /// Request to create a new agent session
@@ -35,6 +35,14 @@ pub struct InjectMessagesRequest {
     pub session_id: String,
     pub messages: Vec<AgentMessageDto>,
     pub trigger_workflow: bool,
+}
+
+/// Request to update agent configuration for a session
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateAgentConfigRequest {
+    pub session_id: String,
+    pub agent_config: crate::agent::AgentConfig,
 }
 
 /// Response for agent operations
@@ -98,6 +106,23 @@ pub async fn agent_send_message(
     Ok(AgentResponse {
         success: true,
         message: format!("Workflow started for session: {}", request.session_id),
+        data: None,
+    })
+}
+
+/// Update agent configuration for a session
+#[command]
+pub async fn agent_update_session_config(
+    manager: State<'_, AgentSessionManager>,
+    request: UpdateAgentConfigRequest,
+) -> Result<AgentResponse, String> {
+    manager
+        .update_session_config(request.session_id.clone(), request.agent_config)
+        .await?;
+
+    Ok(AgentResponse {
+        success: true,
+        message: format!("Agent config updated for session: {}", request.session_id),
         data: None,
     })
 }
@@ -364,26 +389,29 @@ pub async fn agent_clear_all_sessions(
 pub async fn agent_factory_reset(
     manager: State<'_, AgentSessionManager>,
 ) -> Result<AgentResponse, String> {
+    use crate::entity::{assistant, mcp_server, playbook};
+    use sea_orm::EntityTrait;
+
     // 1. Clear all sessions first
     agent_clear_all_sessions(manager).await?;
 
-    let pool = get_sqlite_pool();
+    let db = get_database_connection();
 
     // 2. Delete all Assistants
-    sqlx::query("DELETE FROM assistants")
-        .execute(pool)
+    assistant::Entity::delete_many()
+        .exec(db)
         .await
         .map_err(|e| format!("Failed to clear assistants: {}", e))?;
 
     // 3. Delete all Playbooks
-    sqlx::query("DELETE FROM playbooks")
-        .execute(pool)
+    playbook::Entity::delete_many()
+        .exec(db)
         .await
         .map_err(|e| format!("Failed to clear playbooks: {}", e))?;
 
     // 4. Delete all MCP Servers
-    sqlx::query("DELETE FROM mcp_servers")
-        .execute(pool)
+    mcp_server::Entity::delete_many()
+        .exec(db)
         .await
         .map_err(|e| format!("Failed to clear MCP servers: {}", e))?;
 

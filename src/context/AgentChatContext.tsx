@@ -12,6 +12,7 @@ import {
   useAgentSessionActions,
 } from './AgentSessionContext';
 import { useLLMService } from './LLMServiceContext';
+import { AIServiceProvider } from '@/lib/ai-service';
 import { getLogger } from '../lib/logger';
 import type { Message, RustMessage } from '@/models/chat';
 import { deleteMessage } from '@/lib/backend/messages';
@@ -178,8 +179,11 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
    */
   useEffect(() => {
     const checkReasoningSupport = async () => {
-      const modelName = settingValue?.preferredModel?.model;
-      const provider = settingValue?.preferredModel?.provider;
+      // Prioritize session-specific config, fallback to global settings
+      const modelName =
+        session?.assistant?.model || settingValue?.preferredModel?.model;
+      const provider =
+        session?.assistant?.provider || settingValue?.preferredModel?.provider;
 
       if (!modelName || !provider) {
         setCanUseReasoning(false);
@@ -187,7 +191,10 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
       }
 
       try {
-        const supports = await supportsThinking(modelName, provider);
+        const supports = await supportsThinking(
+          modelName,
+          provider as AIServiceProvider,
+        );
         setCanUseReasoning(supports);
 
         // Auto-disable if model doesn't support reasoning
@@ -203,6 +210,8 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
 
     checkReasoningSupport();
   }, [
+    session?.assistant?.model,
+    session?.assistant?.provider,
     settingValue?.preferredModel?.model,
     settingValue?.preferredModel?.provider,
     reasoningEnabled,
@@ -273,6 +282,8 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
         const now = Date.now();
         const messageForRust: RustMessage = {
           ...message,
+          toolCalls: message.tool_calls,
+          toolCallId: message.tool_call_id,
           createdAt:
             message.createdAt instanceof Date
               ? message.createdAt.getTime()
@@ -327,6 +338,8 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
         const now = Date.now();
         const messagesForRust: RustMessage[] = messages.map((msg) => ({
           ...msg,
+          toolCalls: msg.tool_calls,
+          toolCallId: msg.tool_call_id,
           createdAt:
             msg.createdAt instanceof Date
               ? msg.createdAt.getTime()

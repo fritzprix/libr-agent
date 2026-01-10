@@ -60,6 +60,21 @@ impl AgentSessionManager {
         .await
     }
 
+    /// Update agent configuration for an existing session
+    pub async fn update_session_config(
+        &self,
+        session_id: String,
+        agent_config: crate::agent::AgentConfig,
+    ) -> Result<(), String> {
+        crate::agent::lifecycle::update_session_config(
+            &self.active_sessions,
+            &self.app_handle,
+            &session_id,
+            agent_config,
+        )
+        .await
+    }
+
     /// Resume an existing session by loading it into active sessions
     #[allow(dead_code)]
     pub async fn resume_session(&self, session_id: &str) -> Result<SessionMetadata, String> {

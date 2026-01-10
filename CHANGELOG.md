@@ -7,6 +7,26 @@ All notable changes to this project will be documented in this file.
 ### 🚀 Features
 
 - **Rust Agent Core**: Implement initial Rust-based agent core (`thronglet`) with Tauri integration, new frontend components, and packaging configurations.
+- **Multi-Vendor Prefill Performance Tracking**: Added Time-To-First-Token (TTFT) measurement across all AI service providers for consistent prefill performance monitoring.
+  - **Native Metrics**: Ollama provides `promptEvalDuration`, Anthropic provides cache hit metrics
+  - **Client-Side TTFT**: OpenAI, Groq, Fireworks, Cerebras, and Gemini now measure TTFT using `performance.now()`
+  - **Unified Interface**: All providers report prefill timing via `TokenUsage.details.timeToFirstToken` or `promptEvalDuration`
+  - **UI Display**: Token metrics badge shows prefill timing in tooltip (hover over input token count)
+  - **Usage Merging**: LLMServiceContext properly merges TTFT with final token usage data
+- **User-Configurable Metric Display Settings**: New Display settings tab allowing users to customize how token metrics are shown:
+  - **Metric Display Mode**: Choose between inline display (shown in message) or tooltip display (hover to see)
+  - **Prefill Performance Format**: Display prefill performance as Time to First Token (e.g., 245ms) or as Tokens Per Second (e.g., 520 tok/s)
+  - **Show Token Speed**: Toggle generation speed display (tokens per second)
+  - **Compact Metrics**: Enable compact display format for token metrics
+  - **Settings Persistence**: All display preferences are saved to IndexedDB and persist across sessions
+
+### 🐛 Fixed
+
+- **Knowledge Tool Fixes (Critical)**:
+  - **Schema Mismatch Resolved**: Fixed a critical bug where `searchKnowledge` failed due to a missing `Source` column in the database schema. Added a migration to introduce the `source` column to the `knowledge` table.
+  - **Search Snippets**: Updated `searchKnowledge` to return relevant text snippets using SQLite FTS5 `snippet()` function (or `substr` fallback), providing immediate context in search results.
+  - **Source Filtering**: Added support for filtering knowledge search results by `source` URL.
+  - **Data Integrity**: Updated `saveKnowledge`, `readKnowledge`, and `listKnowledge` to correctly handle and persist the `source` field.
 
 ### 🔧 Refactoring
 

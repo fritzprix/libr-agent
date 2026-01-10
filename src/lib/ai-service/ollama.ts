@@ -318,16 +318,58 @@ export class OllamaService extends BaseAIService {
         return;
       }
 
+      // Tool call accumulator for partial JSON handling
+      const toolCallAccumulators = new Map<
+        number,
+        import('./ollama-core').OllamaToolCallAccumulator
+      >();
+
       for await (const chunk of stream) {
         if (this.getAbortSignal().aborted) {
           this.logger.debug('Stream aborted during iteration');
           break;
         }
 
-        const processedChunk = this.processChunk(chunk);
+        const processedChunk = processChunk(
+          chunk,
+          coreLogger,
+          toolCallAccumulators,
+        );
         if (processedChunk) {
-          yield processedChunk;
+          if (processedChunk.content) {
+            yield JSON.stringify({ content: processedChunk.content });
+          }
+
+          if (processedChunk.thinking) {
+            yield JSON.stringify({ thinking: processedChunk.thinking });
+          }
+
+          if (processedChunk.tool_calls) {
+            yield JSON.stringify({ tool_calls: processedChunk.tool_calls });
+          }
+
+          if (processedChunk.usage) {
+            yield JSON.stringify({ usage: processedChunk.usage });
+          }
+
+          if (processedChunk.error) {
+            logger.error('Error processing chunk', processedChunk.error);
+          }
         }
+      }
+
+      // Cleanup: Check for incomplete tool calls
+      if (toolCallAccumulators.size > 0) {
+        for (const accumulator of toolCallAccumulators.values()) {
+          if (!accumulator.yielded) {
+            logger.warn('Incomplete tool call at stream end', {
+              id: accumulator.id,
+              name: accumulator.name,
+              partialJson: accumulator.partialJson.substring(0, 200),
+            });
+          }
+        }
+        toolCallAccumulators.clear();
       }
     } catch (error: unknown) {
       // AbortError is expected on cancellation, handle it gracefully
@@ -337,16 +379,6 @@ export class OllamaService extends BaseAIService {
       }
       this.handleStreamingError(error, { messages, options, config });
     }
-  }
-
-  /**
-   * Processes a single chunk from the Ollama streaming response.
-   * @param chunk The raw chunk from the stream.
-   * @returns A JSON string representing the processed chunk, or null if empty.
-   * @private
-   */
-  private processChunk(chunk: unknown): string | null {
-    return processChunk(chunk, coreLogger);
   }
 
   /**

@@ -6,36 +6,46 @@
 /// 3. Session isolation and cleanup
 #[cfg(test)]
 mod tests {
+    use crate::entity::{playbook, session};
     use crate::mcp::server::MCPServerManager;
     use crate::mcp::service_proxy_manager::MCPServiceProxyManager;
+    use sea_orm::{ConnectionTrait, Database, DatabaseConnection, EntityTrait, Schema, Set};
     use serde_json::json;
-    use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
-    use std::str::FromStr;
     use std::sync::Arc;
 
-    /// Helper to create a test database pool
-    async fn create_test_pool() -> sqlx::SqlitePool {
-        let options = SqliteConnectOptions::from_str("sqlite::memory:")
-            .expect("Invalid database URL")
-            .create_if_missing(true);
-
-        SqlitePoolOptions::new()
-            .connect_with(options)
+    /// Helper to create a test database connection
+    async fn create_test_db() -> Arc<DatabaseConnection> {
+        let db = Database::connect("sqlite::memory:")
             .await
-            .expect("Failed to create test pool")
+            .expect("Failed to connect to in-memory database");
+
+        let schema = Schema::new(db.get_database_backend());
+
+        // Create sessions table
+        let stmt = schema.create_table_from_entity(session::Entity);
+        db.execute(db.get_database_backend().build(&stmt))
+            .await
+            .expect("Failed to create sessions table");
+
+        // Create playbooks table (needed for playbook tests)
+        let stmt = schema.create_table_from_entity(playbook::Entity);
+        db.execute(db.get_database_backend().build(&stmt))
+            .await
+            .expect("Failed to create playbooks table");
+
+        Arc::new(db)
     }
 
     #[tokio::test]
     async fn test_proxy_manager_lifecycle() {
         // Create test dependencies
-        let pool = create_test_pool().await;
+        let db = create_test_db().await;
         let session_manager = Arc::new(
             crate::session::SessionManager::new().expect("Failed to create SessionManager"),
         );
         let mcp_manager = MCPServerManager::new_with_session_manager(session_manager.clone());
 
-        let proxy_manager =
-            MCPServiceProxyManager::new(Arc::new(mcp_manager), Arc::new(pool), session_manager);
+        let proxy_manager = MCPServiceProxyManager::new(Arc::new(mcp_manager), db, session_manager);
 
         // Test 1: Create proxy with bootstrap tool
         let session_id = "test-session-1".to_string();
@@ -121,14 +131,13 @@ mod tests {
     #[tokio::test]
     async fn test_session_isolation() {
         // Create test dependencies
-        let pool = create_test_pool().await;
+        let db = create_test_db().await;
         let session_manager = Arc::new(
             crate::session::SessionManager::new().expect("Failed to create SessionManager"),
         );
         let mcp_manager = MCPServerManager::new_with_session_manager(session_manager.clone());
 
-        let proxy_manager =
-            MCPServiceProxyManager::new(Arc::new(mcp_manager), Arc::new(pool), session_manager);
+        let proxy_manager = MCPServiceProxyManager::new(Arc::new(mcp_manager), db, session_manager);
 
         // Create two sessions
         let session1 = "session-1".to_string();
@@ -178,7 +187,7 @@ mod tests {
     #[tokio::test]
     async fn test_concurrent_tool_calls() {
         // Create test dependencies
-        let pool = create_test_pool().await;
+        let db = create_test_db().await;
         let session_manager = Arc::new(
             crate::session::SessionManager::new().expect("Failed to create SessionManager"),
         );
@@ -186,7 +195,7 @@ mod tests {
 
         let proxy_manager = Arc::new(MCPServiceProxyManager::new(
             Arc::new(mcp_manager),
-            Arc::new(pool),
+            db,
             session_manager,
         ));
 
@@ -248,14 +257,13 @@ mod tests {
     #[tokio::test]
     async fn test_error_handling() {
         // Create test dependencies
-        let pool = create_test_pool().await;
+        let db = create_test_db().await;
         let session_manager = Arc::new(
             crate::session::SessionManager::new().expect("Failed to create SessionManager"),
         );
         let mcp_manager = MCPServerManager::new_with_session_manager(session_manager.clone());
 
-        let proxy_manager =
-            MCPServiceProxyManager::new(Arc::new(mcp_manager), Arc::new(pool), session_manager);
+        let proxy_manager = MCPServiceProxyManager::new(Arc::new(mcp_manager), db, session_manager);
 
         // Test 1: Call tool on non-existent session
         let result = proxy_manager
@@ -293,27 +301,19 @@ mod tests {
     #[tokio::test]
     async fn test_playbook_ui_rendering_integration() {
         // Setup
-        let pool = create_test_pool().await;
+        let db = create_test_db().await;
 
-        // Create sessions table for FK constraint
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS sessions (
-                id TEXT PRIMARY KEY,
-                name TEXT,
-                status TEXT DEFAULT 'idle',
-                agent_config TEXT,
-                created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL
-            )
-            "#,
-        )
-        .execute(&pool)
-        .await
-        .expect("Failed to create sessions table");
-
-        sqlx::query("INSERT INTO sessions (id, name, status, created_at, updated_at) VALUES ('playbook-ui-test', 'Test', 'idle', 0, 0)")
-            .execute(&pool)
+        // Insert test session
+        let new_session = session::ActiveModel {
+            id: Set("playbook-ui-test".to_string()),
+            name: Set(Some("Test".to_string())),
+            status: Set("idle".to_string()),
+            created_at: Set(0),
+            updated_at: Set(0),
+            ..Default::default()
+        };
+        session::Entity::insert(new_session)
+            .exec(db.as_ref())
             .await
             .expect("Failed to insert test session");
 
@@ -322,8 +322,7 @@ mod tests {
         );
         let mcp_manager = MCPServerManager::new_with_session_manager(session_manager.clone());
 
-        let proxy_manager =
-            MCPServiceProxyManager::new(Arc::new(mcp_manager), Arc::new(pool), session_manager);
+        let proxy_manager = MCPServiceProxyManager::new(Arc::new(mcp_manager), db, session_manager);
 
         // Create proxy with playbook tool
         let session_id = "playbook-ui-test".to_string();
@@ -422,43 +421,41 @@ mod tests {
     #[tokio::test]
     async fn test_playbook_session_isolation_with_ui() {
         // Setup
-        let pool = create_test_pool().await;
+        let db = create_test_db().await;
 
-        // Create sessions table
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS sessions (
-                id TEXT PRIMARY KEY,
-                name TEXT,
-                status TEXT DEFAULT 'idle',
-                agent_config TEXT,
-                created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL
-            )
-            "#,
-        )
-        .execute(&pool)
-        .await
-        .expect("Failed to create sessions table");
-
-        sqlx::query("INSERT INTO sessions (id, name, status, created_at, updated_at) VALUES ('session-ui-1', 'S1', 'idle', 0, 0)")
-            .execute(&pool)
+        // Insert test sessions
+        let s1 = session::ActiveModel {
+            id: Set("session-ui-1".to_string()),
+            name: Set(Some("S1".to_string())),
+            status: Set("idle".to_string()),
+            created_at: Set(0),
+            updated_at: Set(0),
+            ..Default::default()
+        };
+        session::Entity::insert(s1)
+            .exec(db.as_ref())
             .await
             .expect("Failed to insert session 1");
 
-        sqlx::query("INSERT INTO sessions (id, name, status, created_at, updated_at) VALUES ('session-ui-2', 'S2', 'idle', 0, 0)")
-            .execute(&pool)
+        let s2 = session::ActiveModel {
+            id: Set("session-ui-2".to_string()),
+            name: Set(Some("S2".to_string())),
+            status: Set("idle".to_string()),
+            created_at: Set(0),
+            updated_at: Set(0),
+            ..Default::default()
+        };
+        session::Entity::insert(s2)
+            .exec(db.as_ref())
             .await
             .expect("Failed to insert session 2");
 
-        let pool_arc = Arc::new(pool);
         let session_manager = Arc::new(
             crate::session::SessionManager::new().expect("Failed to create SessionManager"),
         );
         let mcp_manager = MCPServerManager::new_with_session_manager(session_manager.clone());
 
-        let proxy_manager =
-            MCPServiceProxyManager::new(Arc::new(mcp_manager), pool_arc, session_manager);
+        let proxy_manager = MCPServiceProxyManager::new(Arc::new(mcp_manager), db, session_manager);
 
         // Create two proxies
         proxy_manager

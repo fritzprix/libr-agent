@@ -1,6 +1,10 @@
 use super::error::DbError;
+use crate::entity::{chunk, content, store};
 use async_trait::async_trait;
-use sqlx::SqlitePool;
+use sea_orm::{
+    sea_query::{Expr, Query},
+    ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
+};
 
 /// Content store repository trait for abstraction and testability
 #[async_trait]
@@ -13,13 +17,13 @@ pub trait ContentStoreRepository: Send + Sync {
 /// SQLite implementation of ContentStoreRepository
 #[derive(Debug)]
 pub struct SqliteContentStoreRepository {
-    pool: SqlitePool,
+    db: DatabaseConnection,
 }
 
 impl SqliteContentStoreRepository {
-    /// Create a new SQLite content store repository with the given pool
-    pub fn new(pool: SqlitePool) -> Self {
-        Self { pool }
+    /// Create a new SQLite content store repository with the given database connection
+    pub fn new(db: DatabaseConnection) -> Self {
+        Self { db }
     }
 }
 
@@ -27,23 +31,32 @@ impl SqliteContentStoreRepository {
 impl ContentStoreRepository for SqliteContentStoreRepository {
     async fn delete_by_session(&self, session_id: &str) -> Result<(), DbError> {
         // Delete chunks first (foreign key constraint)
-        sqlx::query(
-            "DELETE FROM chunks WHERE content_id IN (SELECT id FROM contents WHERE session_id = ?)",
-        )
-        .bind(session_id)
-        .execute(&self.pool)
-        .await?;
+        // DELETE FROM chunks WHERE content_id IN (SELECT id FROM contents WHERE session_id = ?)
+        chunk::Entity::delete_many()
+            .filter(
+                chunk::Column::ContentId.in_subquery(
+                    Query::select()
+                        .column(content::Column::Id)
+                        .from(content::Entity)
+                        .and_where(Expr::col(content::Column::SessionId).eq(session_id))
+                        .to_owned(),
+                ),
+            )
+            .exec(&self.db)
+            .await?;
 
         // Delete contents
-        sqlx::query("DELETE FROM contents WHERE session_id = ?")
-            .bind(session_id)
-            .execute(&self.pool)
+        // DELETE FROM contents WHERE session_id = ?
+        content::Entity::delete_many()
+            .filter(content::Column::SessionId.eq(session_id))
+            .exec(&self.db)
             .await?;
 
         // Delete stores
-        sqlx::query("DELETE FROM stores WHERE session_id = ?")
-            .bind(session_id)
-            .execute(&self.pool)
+        // DELETE FROM stores WHERE session_id = ?
+        store::Entity::delete_many()
+            .filter(store::Column::SessionId.eq(session_id))
+            .exec(&self.db)
             .await?;
 
         Ok(())

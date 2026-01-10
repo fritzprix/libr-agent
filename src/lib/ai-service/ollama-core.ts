@@ -9,6 +9,7 @@
 import type { Tool } from 'ollama';
 import type { Message } from '@/models/chat';
 import type { MCPTool } from '../mcp-types';
+import type { TokenUsage } from './types';
 import { tryParse, formatToolCall, generateToolCallId } from './utils';
 
 /**
@@ -322,135 +323,292 @@ export function convertToOllamaMessages(
 }
 
 /**
- * Processes a streaming chunk from Ollama API
+ * Processed chunk result containing content, tool calls, thinking, or usage metrics
+ */
+export interface ProcessedChunk {
+  content?: string;
+  thinking?: string;
+  tool_calls?: Array<{
+    id: string;
+    type: string;
+    function: {
+      name: string;
+      arguments: string;
+    };
+  }>;
+  usage?: TokenUsage;
+  error?: string;
+}
+
+/**
+ * Tool call accumulator for handling partial JSON across multiple chunks
+ * @internal
+ */
+export interface OllamaToolCallAccumulator {
+  id: string;
+  name: string;
+  partialJson: string;
+  index: number;
+  yielded: boolean;
+  lastChunkTime: number;
+}
+
+// Maximum JSON buffer size (200KB)
+const MAX_PARTIAL_TOOL_INPUT_LENGTH = 200_000;
+
+// Accumulator timeout (30 seconds)
+const MAX_ACCUMULATOR_AGE_MS = 30_000;
+
+/**
+ * Processes a streaming chunk from Ollama API with partial JSON accumulation
  */
 export function processChunk(
   chunk: unknown,
   logger: Logger = noopLogger,
-): string | null {
+  accumulators?: Map<number, OllamaToolCallAccumulator>,
+): ProcessedChunk | null {
   try {
-    if (
-      !chunk ||
-      typeof chunk !== 'object' ||
-      !('message' in chunk) ||
-      !chunk.message ||
-      typeof chunk.message !== 'object'
-    ) {
-      logger.debug('Chunk missing expected structure, skipping', {
-        hasChunk: !!chunk,
-        chunkType: typeof chunk,
-        hasMessage: chunk && typeof chunk === 'object' && 'message' in chunk,
-      });
+    if (!chunk || typeof chunk !== 'object') {
       return null;
     }
 
-    const message = chunk.message as {
-      content?: string;
-      thinking?: string;
-      tool_calls?: Array<{
-        id?: string;
-        type: string;
-        function: {
-          name: string;
-          arguments: Record<string, unknown> | string;
-        };
-      }>;
-    };
+    const c = chunk as Record<string, unknown>;
+    const result: ProcessedChunk = {};
 
-    const result: {
-      content?: string;
-      thinking?: string;
-      tool_calls?: Array<{
-        id: string;
-        type: string;
-        function: {
-          name: string;
-          arguments: string;
-        };
-      }>;
-      error?: string;
-    } = {};
+    // 1. Extract Usage Metrics (Final Chunk)
+    if (c.done === true) {
+      const promptTokens = Number(c.prompt_eval_count) || 0;
+      const completionTokens = Number(c.eval_count) || 0;
 
-    if (message.content && typeof message.content === 'string') {
-      // Ollama may include thinking in content field wrapped in <think> tags
-      // Extract thinking and content separately
-      const thinkMatch = message.content.match(
-        /<think[^>]*>([\s\S]*?)<\/think>/i,
-      );
+      result.usage = {
+        promptTokens,
+        completionTokens,
+        totalTokens: promptTokens + completionTokens,
+        details: {
+          promptEvalDuration: Number(c.prompt_eval_duration) / 1_000_000, // ns to ms
+          evalDuration: Number(c.eval_duration) / 1_000_000, // ns to ms
+          totalDuration: Number(c.total_duration) / 1_000_000, // ns to ms
+          loadDuration: Number(c.load_duration) / 1_000_000, // ns to ms
+        },
+      };
 
-      if (thinkMatch) {
-        // Extract thinking content (without tags)
-        const thinkingContent = thinkMatch[1];
-        if (thinkingContent) {
-          result.thinking = thinkingContent;
-          logger.debug('Thinking extracted from content field', {
-            thinkingLength: thinkingContent.length,
-          });
-        }
+      logger.info('📊 Ollama usage metrics extracted', {
+        inputTokens: result.usage.promptTokens,
+        outputTokens: result.usage.completionTokens,
+        totalTokens: result.usage.totalTokens,
+        evalDurationMs: result.usage.details?.evalDuration?.toFixed(2),
+      });
+    }
 
-        // Remove <think> block from content and clean up
-        const contentWithoutThink = message.content.replace(
-          /<think[^>]*>[\s\S]*?<\/think>/gi,
-          '',
+    // 2. Extract Message Content (Streaming Chunks)
+    if ('message' in c && c.message && typeof c.message === 'object') {
+      const message = c.message as {
+        content?: string;
+        thinking?: string;
+        tool_calls?: Array<{
+          id?: string;
+          type: string;
+          function: {
+            name: string;
+            arguments: Record<string, unknown> | string;
+          };
+        }>;
+      };
+
+      if (message.content && typeof message.content === 'string') {
+        // Ollama may include thinking in content field wrapped in <think> tags
+        // Extract thinking and content separately
+        const thinkMatch = message.content.match(
+          /<think[^>]*>([\s\S]*?)<\/think>/i,
         );
 
-        if (contentWithoutThink) {
-          result.content = contentWithoutThink;
-          logger.debug('Content extracted (thinking removed)', {
-            contentLength: contentWithoutThink.length,
+        if (thinkMatch) {
+          // Extract thinking content (without tags)
+          const thinkingContent = thinkMatch[1];
+          if (thinkingContent) {
+            result.thinking = thinkingContent;
+            logger.debug('Thinking extracted from content field', {
+              thinkingLength: thinkingContent.length,
+            });
+          }
+
+          // Remove <think> block from content and clean up
+          const contentWithoutThink = message.content.replace(
+            /<think[^>]*>[\s\S]*?<\/think>/gi,
+            '',
+          );
+
+          if (contentWithoutThink) {
+            result.content = contentWithoutThink;
+            logger.debug('Content extracted (thinking removed)', {
+              contentLength: contentWithoutThink.length,
+            });
+          }
+        } else {
+          // No thinking tags, use content as-is
+          result.content = message.content;
+          logger.debug('Content extracted from chunk', {
+            contentLength: message.content.length,
           });
         }
-      } else {
-        // No thinking tags, use content as-is
-        result.content = message.content;
-        logger.debug('Content extracted from chunk', {
-          contentLength: message.content.length,
+      }
+
+      if (message.thinking && typeof message.thinking === 'string') {
+        // Remove <think> tags from Ollama's thinking content
+        // Ollama returns thinking wrapped in <think>...</think> tags
+        result.thinking = message.thinking
+          .replace(/<think[^>]*>/gi, '') // Remove opening tag (with any attributes)
+          .replace(/<\/think>/gi, '');
+
+        logger.debug('Thinking extracted from chunk', {
+          thinkingLength: result.thinking.length,
+          hadTags: message.thinking !== result.thinking,
         });
+      }
+
+      if (message.tool_calls && Array.isArray(message.tool_calls)) {
+        const processedToolCalls: Array<{
+          id: string;
+          type: 'function';
+          function: {
+            name: string;
+            arguments: string;
+          };
+        }> = [];
+
+        for (const [idx, tc] of message.tool_calls.entries()) {
+          const callId = tc.id || generateToolCallId();
+
+          // Get or create accumulator for this tool call
+          let accumulator = accumulators?.get(idx);
+          if (!accumulator) {
+            accumulator = {
+              id: callId,
+              name: tc.function.name,
+              partialJson: '',
+              index: idx,
+              yielded: false,
+              lastChunkTime: Date.now(),
+            };
+            accumulators?.set(idx, accumulator);
+          }
+
+          // Check for timeout (stale accumulator)
+          const age = Date.now() - accumulator.lastChunkTime;
+          if (age > MAX_ACCUMULATOR_AGE_MS) {
+            logger.warn('Tool call accumulator timeout, discarding', {
+              id: accumulator.id,
+              name: accumulator.name,
+              ageMs: age,
+            });
+            accumulators?.delete(idx);
+            continue;
+          }
+
+          // Update timestamp
+          accumulator.lastChunkTime = Date.now();
+
+          // Handle string arguments (potential partial JSON)
+          if (typeof tc.function.arguments === 'string') {
+            accumulator.partialJson += tc.function.arguments;
+
+            // Buffer size limit
+            if (
+              accumulator.partialJson.length > MAX_PARTIAL_TOOL_INPUT_LENGTH
+            ) {
+              logger.error('Tool call JSON exceeded buffer limit', {
+                id: accumulator.id,
+                name: accumulator.name,
+                length: accumulator.partialJson.length,
+              });
+              accumulators?.delete(idx);
+              continue;
+            }
+
+            // Attempt to parse accumulated JSON
+            const trimmedJson = accumulator.partialJson.trim();
+            if (trimmedJson.length === 0) {
+              logger.debug('No complete JSON fragment yet; waiting', {
+                index: idx,
+                id: accumulator.id,
+              });
+              continue;
+            }
+
+            try {
+              const parsed = JSON.parse(trimmedJson) as Record<string, unknown>;
+
+              // Success! Add the tool call if not already yielded
+              if (!accumulator.yielded) {
+                const formatted = formatToolCall(
+                  callId,
+                  tc.function.name,
+                  parsed,
+                );
+                processedToolCalls.push({
+                  ...formatted,
+                  type: 'function' as const,
+                });
+                accumulator.yielded = true;
+                logger.info(
+                  'Tool call successfully parsed from accumulated JSON',
+                  {
+                    id: callId,
+                    name: tc.function.name,
+                    jsonLength: trimmedJson.length,
+                  },
+                );
+              }
+            } catch {
+              // JSON still incomplete, continue accumulating
+              logger.debug('JSON incomplete, waiting for more chunks', {
+                id: callId,
+                name: tc.function.name,
+                currentLength: accumulator.partialJson.length,
+              });
+            }
+          } else {
+            // Already parsed object (complete)
+            const formatted = formatToolCall(
+              callId,
+              tc.function.name,
+              tc.function.arguments,
+            );
+            processedToolCalls.push({
+              ...formatted,
+              type: 'function' as const,
+            });
+            logger.debug('Tool call already parsed', {
+              id: callId,
+              name: tc.function.name,
+            });
+          }
+        }
+
+        if (processedToolCalls.length > 0) {
+          result.tool_calls = processedToolCalls;
+          logger.debug('Tool calls detected in chunk', {
+            toolCallCount: processedToolCalls.length,
+          });
+        }
       }
     }
 
-    if (message.thinking && typeof message.thinking === 'string') {
-      // Remove <think> tags from Ollama's thinking content
-      // Ollama returns thinking wrapped in <think>...</think> tags
-      result.thinking = message.thinking
-        .replace(/<think[^>]*>/gi, '') // Remove opening tag (with any attributes)
-        .replace(/<\/think>/gi, '');
-
-      logger.debug('Thinking extracted from chunk', {
-        thinkingLength: result.thinking.length,
-        hadTags: message.thinking !== result.thinking,
-      });
+    if (
+      result.content ||
+      result.thinking ||
+      result.tool_calls ||
+      result.usage
+    ) {
+      return result;
     }
 
-    if (message.tool_calls && Array.isArray(message.tool_calls)) {
-      result.tool_calls = message.tool_calls.map((tc) => {
-        const callId = tc.id || generateToolCallId();
-        const args =
-          typeof tc.function.arguments === 'string'
-            ? (tryParse<Record<string, unknown>>(tc.function.arguments) ?? {})
-            : tc.function.arguments;
-
-        const formatted = formatToolCall(callId, tc.function.name, args);
-        return {
-          ...formatted,
-          type: 'function' as const,
-        };
-      });
-
-      logger.debug('Tool calls detected in chunk', {
-        toolCallCount: result.tool_calls.length,
-      });
-    }
-
-    if (result.content || result.thinking || result.tool_calls) {
-      return JSON.stringify(result);
-    }
-
-    logger.debug('Chunk has no content, thinking, or tool_calls');
+    logger.debug('Chunk has no content, thinking, tool_calls or usage');
     return null;
   } catch (error: unknown) {
     logger.error('Failed to process chunk', { error, chunk });
-    return JSON.stringify({ error: 'Failed to process response chunk' });
+    // For error, we return an object with error property now
+    return { error: 'Failed to process response chunk' };
   }
 }
 

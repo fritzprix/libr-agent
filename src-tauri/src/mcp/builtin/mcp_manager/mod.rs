@@ -1,16 +1,17 @@
 use async_trait::async_trait;
+use sea_orm::*;
 use serde_json::{json, Value};
-use sqlx::Row;
 
 use super::BuiltinMCPServer;
+use crate::entity::{mcp_server, mcp_server::Entity as McpServerEntity};
 use crate::mcp::builtin::error_guidance::{
     invalid_input_error, missing_param_error, not_found_error, operation_failed_error, ToolGroup,
 };
 use crate::mcp::types::{MCPResult, MCPServerConfig, ServiceContext, TransportConfig};
 use crate::mcp::MCPTool;
-use crate::state::{get_mcp_manager, get_sqlite_pool};
+use crate::state::{get_database_connection, get_mcp_manager};
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct MCPManagerServer;
 
 impl MCPManagerServer {
@@ -18,62 +19,55 @@ impl MCPManagerServer {
         Self
     }
 
-    async fn ensure_tables(&self) -> Result<(), String> {
-        let pool = get_sqlite_pool();
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS mcp_servers (
-                name TEXT PRIMARY KEY,
-                config JSON NOT NULL,
-                created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL
-            )
-            "#,
-        )
-        .execute(pool)
-        .await
-        .map_err(|e| format!("DB Init Error: {}", e))?;
-        Ok(())
+    fn get_db(&self) -> DatabaseConnection {
+        let db = get_database_connection();
+        db.clone()
     }
 
     async fn save_server_config(&self, config: &MCPServerConfig) -> Result<(), String> {
-        self.ensure_tables().await?;
-        let pool = get_sqlite_pool();
+        let db = self.get_db();
         let now = chrono::Utc::now().timestamp_millis();
         let config_json = serde_json::to_string(config).map_err(|e| e.to_string())?;
 
-        sqlx::query(
-            r#"
-            INSERT INTO mcp_servers (name, config, created_at, updated_at)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(name) DO UPDATE SET
-                config = excluded.config,
-                updated_at = excluded.updated_at
-            "#,
-        )
-        .bind(&config.name)
-        .bind(config_json)
-        .bind(now)
-        .bind(now)
-        .execute(pool)
-        .await
-        .map_err(|e| format!("DB Save Error: {}", e))?;
-        Ok(())
+        // Upsert using SeaORM
+        let model = mcp_server::ActiveModel {
+            name: Set(config.name.clone()),
+            config: Set(config_json.clone()),
+            created_at: Set(now),
+            updated_at: Set(now),
+        };
+
+        // Try to insert, if conflict update
+        match McpServerEntity::insert(model.clone()).exec(&db).await {
+            Ok(_) => Ok(()),
+            Err(DbErr::RecordNotInserted) | Err(DbErr::Exec(_)) => {
+                // Try update instead
+                let update_model = mcp_server::ActiveModel {
+                    name: Set(config.name.clone()),
+                    config: Set(config_json),
+                    created_at: NotSet,
+                    updated_at: Set(now),
+                };
+                McpServerEntity::update(update_model)
+                    .exec(&db)
+                    .await
+                    .map_err(|e| format!("DB Update Error: {}", e))?;
+                Ok(())
+            }
+            Err(e) => Err(format!("DB Save Error: {}", e)),
+        }
     }
 
     async fn get_server_config(&self, name: &str) -> Result<Option<MCPServerConfig>, String> {
-        self.ensure_tables().await?;
-        let pool = get_sqlite_pool();
+        let db = self.get_db();
 
-        let row = sqlx::query("SELECT config FROM mcp_servers WHERE name = ?")
-            .bind(name)
-            .fetch_optional(pool)
+        let model = McpServerEntity::find_by_id(name.to_string())
+            .one(&db)
             .await
             .map_err(|e| format!("DB Fetch Error: {}", e))?;
 
-        if let Some(row) = row {
-            let config_str: String = row.get("config");
-            let config = serde_json::from_str(&config_str).map_err(|e| e.to_string())?;
+        if let Some(model) = model {
+            let config = serde_json::from_str(&model.config).map_err(|e| e.to_string())?;
             Ok(Some(config))
         } else {
             Ok(None)
@@ -81,22 +75,33 @@ impl MCPManagerServer {
     }
 
     async fn list_all_configs(&self) -> Result<Vec<MCPServerConfig>, String> {
-        self.ensure_tables().await?;
-        let pool = get_sqlite_pool();
+        let db = self.get_db();
 
-        let rows = sqlx::query("SELECT config FROM mcp_servers")
-            .fetch_all(pool)
+        let models = McpServerEntity::find()
+            .all(&db)
             .await
             .map_err(|e| format!("DB List Error: {}", e))?;
 
         let mut configs = Vec::new();
-        for row in rows {
-            let config_str: String = row.get("config");
-            if let Ok(config) = serde_json::from_str::<MCPServerConfig>(&config_str) {
+        for model in models {
+            if let Ok(config) = serde_json::from_str::<MCPServerConfig>(&model.config) {
                 configs.push(config);
             }
         }
         Ok(configs)
+    }
+
+    /// Delete server configuration (not currently used, kept for API completeness)
+    #[allow(dead_code)]
+    async fn delete_server_config(&self, name: &str) -> Result<(), String> {
+        let db = self.get_db();
+
+        McpServerEntity::delete_by_id(name.to_string())
+            .exec(&db)
+            .await
+            .map_err(|e| format!("DB Delete Error: {}", e))?;
+
+        Ok(())
     }
 
     async fn list_servers(&self, args: Value) -> Result<MCPResult, String> {

@@ -8,6 +8,37 @@ export interface SafetySetting {
 }
 
 /**
+ * Token usage metrics returned by LLM providers
+ */
+export interface TokenUsage {
+  /** Input tokens (prompt) */
+  promptTokens: number;
+  /** Output tokens (completion) */
+  completionTokens: number;
+  /** Total tokens */
+  totalTokens: number;
+  /** Provider-specific timing details */
+  details?: {
+    /** Reasoning tokens (o1/o3 models) */
+    reasoningTokens?: number;
+    /** Prompt evaluation duration (ms) - Ollama */
+    promptEvalDuration?: number;
+    /** Evaluation duration (ms) - Ollama */
+    evalDuration?: number;
+    /** Total duration (ms) - Ollama */
+    totalDuration?: number;
+    /** Model load duration (ms) - Ollama */
+    loadDuration?: number;
+    /** Cache creation input tokens (Anthropic) */
+    cacheCreationInputTokens?: number;
+    /** Cache read input tokens (Anthropic) */
+    cacheReadInputTokens?: number;
+    /** Time to first token (ms) - Client-side measurement for providers without native metrics */
+    timeToFirstToken?: number;
+  };
+}
+
+/**
  * Defines the configuration options for an AI service.
  */
 export interface AIServiceConfig {

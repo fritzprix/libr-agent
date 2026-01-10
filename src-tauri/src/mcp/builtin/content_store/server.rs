@@ -54,6 +54,26 @@ impl ContentStoreServer {
         })
     }
 
+    pub async fn new_with_db(
+        session_id: String,
+        session_manager: Arc<SessionManager>,
+        db: sea_orm::DatabaseConnection,
+    ) -> Result<Self, String> {
+        let session_dir = session_manager.get_session_workspace_dir_by_id(&session_id);
+        let search_index_dir = session_dir.join("content_store_search");
+        let search_engine = search::ContentSearchEngine::new(search_index_dir)
+            .expect("Failed to initialize search engine");
+
+        let storage = storage::ContentStoreStorage::new_with_db(db).await?;
+
+        Ok(Self {
+            session_id,
+            session_manager,
+            storage: Mutex::new(storage),
+            search_engine: Arc::new(Mutex::new(search_engine)),
+        })
+    }
+
     pub fn tools(&self) -> Vec<MCPTool> {
         vec![
             MCPTool {
@@ -132,11 +152,17 @@ impl ContentStoreServer {
     /// For legacy compatibility, if session_manager has a current session set via switch_context,
     /// that takes precedence. Otherwise, returns the constructor-bound session_id.
     pub(crate) fn require_active_session_result(&self) -> Result<String, String> {
-        // For legacy compatibility: check if session_manager has an active session
+        // New architecture: if this server instance is bound to a specific session (not "default"),
+        // strictly use that session ID, ignoring global state. This ensures Agent V2 isolation.
+        if self.session_id != "default" {
+            return Ok(self.session_id.clone());
+        }
+
+        // Legacy compatibility: check if session_manager has an active session
         if let Some(session_id) = self.session_manager.get_current_session() {
             Ok(session_id)
         } else {
-            // New architecture: use the session_id bound at construction
+            // Default fallback
             Ok(self.session_id.clone())
         }
     }

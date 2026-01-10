@@ -3,9 +3,9 @@ use thiserror::Error;
 /// Database error types for repository operations
 #[derive(Debug, Error)]
 pub enum DbError {
-    /// Database query execution failed
-    #[error("Database query failed: {0}")]
-    QueryFailed(#[from] sqlx::Error),
+    /// SeaORM database query execution failed
+    #[error("SeaORM query failed: {0}")]
+    SeaOrmQueryFailed(#[from] sea_orm::DbErr),
 
     /// Requested record was not found
     #[error("Record not found: {0}")]

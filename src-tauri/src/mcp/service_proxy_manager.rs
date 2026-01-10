@@ -1,4 +1,4 @@
-use sqlx::SqlitePool;
+use sea_orm::DatabaseConnection;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -36,8 +36,8 @@ pub struct MCPServiceProxyManager {
     /// Shared external MCP server manager (for HTTP servers and config)
     external_mcp_manager: Arc<MCPServerManager>,
 
-    /// Shared SQLite connection pool for all sessions
-    db_pool: Arc<SqlitePool>,
+    /// Shared SeaORM database connection for all sessions
+    db: Arc<DatabaseConnection>,
 
     /// Shared SessionManager for workspace/content_store servers
     session_manager: Arc<SessionManager>,
@@ -59,7 +59,7 @@ impl std::fmt::Debug for MCPServiceProxyManager {
             .field("session_stdio_managers", &"<RwLock<HashMap>>")
             .field("session_http_managers", &"<RwLock<HashMap>>")
             .field("external_mcp_manager", &self.external_mcp_manager)
-            .field("db_pool", &"<SqlitePool>")
+            .field("db", &"<DatabaseConnection>")
             .field("session_manager", &self.session_manager)
             .field("cleanup_task", &"<Mutex<Option<JoinHandle>>>")
             .field(
@@ -90,16 +90,16 @@ impl MCPServiceProxyManager {
     ///
     /// # Arguments
     /// * `external_mcp_manager` - Shared manager for external MCP servers
-    /// * `db_pool` - Shared SQLite connection pool
+    /// * `db` - Shared SeaORM database connection
     /// * `session_manager` - Shared SessionManager for workspace/content_store
     pub fn new(
         external_mcp_manager: Arc<MCPServerManager>,
-        db_pool: Arc<SqlitePool>,
+        db: Arc<DatabaseConnection>,
         session_manager: Arc<SessionManager>,
     ) -> Self {
         Self::new_with_config(
             external_mcp_manager,
-            db_pool,
+            db,
             session_manager,
             SessionIsolationConfig::default(),
         )
@@ -109,12 +109,12 @@ impl MCPServiceProxyManager {
     ///
     /// # Arguments
     /// * `external_mcp_manager` - Shared manager for external MCP servers
-    /// * `db_pool` - Shared SQLite connection pool
+    /// * `db` - Shared SeaORM database connection
     /// * `session_manager` - Shared SessionManager for workspace/content_store
     /// * `config` - Session isolation configuration
     pub fn new_with_config(
         external_mcp_manager: Arc<MCPServerManager>,
-        db_pool: Arc<SqlitePool>,
+        db: Arc<DatabaseConnection>,
         session_manager: Arc<SessionManager>,
         config: SessionIsolationConfig,
     ) -> Self {
@@ -123,7 +123,7 @@ impl MCPServiceProxyManager {
             session_stdio_managers: Arc::new(RwLock::new(HashMap::new())),
             session_http_managers: Arc::new(RwLock::new(HashMap::new())),
             external_mcp_manager,
-            db_pool,
+            db,
             session_manager,
             cleanup_task: Arc::new(Mutex::new(None)),
             cleanup_shutdown: Arc::new(AtomicBool::new(false)),
@@ -137,39 +137,30 @@ impl MCPServiceProxyManager {
     /// Create a new proxy manager from static singleton references
     ///
     /// This is a convenience constructor that retrieves the global MCP manager
-    /// and SQLite pool from the application state and creates Arc references.
+    /// and SeaORM database connection from the application state and creates Arc references.
     ///
     /// # Safety
     /// This uses unsafe Arc::from_raw with static references. The Arc is cloned
     /// and the original is forgotten to prevent double-free. This is safe because
     /// the underlying data has 'static lifetime.
     pub fn new_from_static_refs() -> Self {
-        use crate::state::{get_mcp_manager, get_sqlite_pool};
+        use crate::state::{get_database_connection, get_mcp_manager};
 
-        // SAFETY: Creating Arc from 'static references
-        // The Arc is cloned and the original is forgotten to prevent drop
-        let mcp_manager_arc = unsafe {
-            let ptr = get_mcp_manager() as *const MCPServerManager;
-            let arc = Arc::<MCPServerManager>::from_raw(ptr);
-            let cloned = arc.clone();
-            std::mem::forget(arc);
-            cloned
-        };
+        // SAFETY: We now clone the manager and db connection which are safe to share
+        // because they internally use Arc/ref-counting or are designed to be cloned.
+        // This avoids the UB of creating an Arc from a pointer to static memory.
+        let mcp_manager = get_mcp_manager();
+        let mcp_manager_arc = Arc::new(mcp_manager.clone());
 
-        let pool_arc = unsafe {
-            let ptr = get_sqlite_pool() as *const SqlitePool;
-            let arc = Arc::<SqlitePool>::from_raw(ptr);
-            let cloned = arc.clone();
-            std::mem::forget(arc);
-            cloned
-        };
+        let db = get_database_connection();
+        let db_arc = Arc::new(db.clone());
 
         // Get SessionManager from the session module
         let session_manager =
             crate::session::get_session_manager().expect("SessionManager not initialized");
         let session_manager_arc = Arc::new(session_manager.clone());
 
-        Self::new(mcp_manager_arc, pool_arc, session_manager_arc)
+        Self::new(mcp_manager_arc, db_arc, session_manager_arc)
     }
 
     /// Create a new session-specific proxy with dedicated tool instances
@@ -223,7 +214,7 @@ impl MCPServiceProxyManager {
             session_id.clone(),
             tool_ids,
             self.external_mcp_manager.clone(),
-            self.db_pool.clone(),
+            self.db.clone(),
             self.session_manager.clone(),
             app_handle,
         )
@@ -451,26 +442,32 @@ impl MCPServiceProxyManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entity::{assistant, playbook, session};
+    use sea_orm::{ConnectionTrait, Database, EntityTrait, Schema, Set};
     use serde_json::json;
 
-    async fn create_test_manager() -> (Arc<MCPServiceProxyManager>, tempfile::NamedTempFile) {
-        let temp_db = tempfile::NamedTempFile::new().unwrap();
-        let db_url = format!("sqlite://{}", temp_db.path().display());
+    async fn create_test_manager() -> Arc<MCPServiceProxyManager> {
+        let db = Database::connect("sqlite::memory:")
+            .await
+            .expect("Failed to connect to in-memory database");
 
-        let pool = sqlx::SqlitePool::connect(&db_url).await.unwrap();
+        let schema = Schema::new(db.get_database_backend());
 
-        // Initialize sessions table for foreign key constraints
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS sessions (
-                id TEXT PRIMARY KEY,
-                created_at INTEGER NOT NULL
-            )
-            "#,
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
+        // Create tables
+        let stmt = schema.create_table_from_entity(session::Entity);
+        db.execute(db.get_database_backend().build(&stmt))
+            .await
+            .expect("Failed to create session table");
+
+        let stmt = schema.create_table_from_entity(playbook::Entity);
+        db.execute(db.get_database_backend().build(&stmt))
+            .await
+            .expect("Failed to create playbook table");
+
+        let stmt = schema.create_table_from_entity(assistant::Entity);
+        db.execute(db.get_database_backend().build(&stmt))
+            .await
+            .expect("Failed to create assistant table");
 
         // Create a minimal SessionManager for MCPServerManager
         let session_manager = Arc::new(crate::session::SessionManager::new().unwrap());
@@ -478,29 +475,29 @@ mod tests {
             session_manager.clone(),
         ));
 
-        (
-            Arc::new(MCPServiceProxyManager::new(
-                external_mcp_manager,
-                Arc::new(pool),
-                session_manager,
-            )),
-            temp_db,
-        )
+        Arc::new(MCPServiceProxyManager::new(
+            external_mcp_manager,
+            Arc::new(db),
+            session_manager,
+        ))
     }
 
     #[tokio::test]
     async fn test_phase3_playbook_and_assistant_integration() {
-        let (manager, _db_guard) = create_test_manager().await;
+        let manager = create_test_manager().await;
 
         // Create session 1 with all Phase 3 tools
         let session1 = "test-session-1".to_string();
         let tool_ids1 = vec!["playbook".to_string(), "assistant".to_string()];
 
         // Insert session 1 into sessions table
-        sqlx::query("INSERT INTO sessions (id, created_at) VALUES (?, ?)")
-            .bind(&session1)
-            .bind(chrono::Utc::now().timestamp())
-            .execute(&*manager.db_pool)
+        let new_session = session::ActiveModel {
+            id: Set(session1.clone()),
+            created_at: Set(chrono::Utc::now().timestamp()),
+            ..Default::default()
+        };
+        session::Entity::insert(new_session)
+            .exec(&*manager.db)
             .await
             .unwrap();
 
@@ -564,10 +561,13 @@ mod tests {
         let tool_ids2 = vec!["playbook".to_string(), "assistant".to_string()];
 
         // Insert session 2 into sessions table
-        sqlx::query("INSERT INTO sessions (id, created_at) VALUES (?, ?)")
-            .bind(&session2)
-            .bind(chrono::Utc::now().timestamp())
-            .execute(&*manager.db_pool)
+        let new_session = session::ActiveModel {
+            id: Set(session2.clone()),
+            created_at: Set(chrono::Utc::now().timestamp()),
+            ..Default::default()
+        };
+        session::Entity::insert(new_session)
+            .exec(&*manager.db)
             .await
             .unwrap();
 
@@ -725,7 +725,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_phase3_concurrent_operations() {
-        let (manager, _db_guard) = create_test_manager().await;
+        let manager = create_test_manager().await;
 
         // Create 3 concurrent sessions
         let sessions = vec![
@@ -736,10 +736,13 @@ mod tests {
 
         // Insert sessions into database and create proxies
         for session_id in &sessions {
-            sqlx::query("INSERT INTO sessions (id, created_at) VALUES (?, ?)")
-                .bind(session_id)
-                .bind(chrono::Utc::now().timestamp())
-                .execute(&*manager.db_pool)
+            let new_session = session::ActiveModel {
+                id: Set(session_id.clone()),
+                created_at: Set(chrono::Utc::now().timestamp()),
+                ..Default::default()
+            };
+            session::Entity::insert(new_session)
+                .exec(&*manager.db)
                 .await
                 .unwrap();
 
@@ -830,15 +833,21 @@ mod tests {
 
     #[tokio::test]
     async fn test_phase3_all_servers_integration() {
-        let (manager, _db_guard) = create_test_manager().await;
+        let manager = create_test_manager().await;
 
         let session_id = "integration-test".to_string();
 
         // Insert session into database
-        sqlx::query("INSERT INTO sessions (id, created_at) VALUES (?, ?)")
-            .bind(&session_id)
-            .bind(chrono::Utc::now().timestamp())
-            .execute(&*manager.db_pool)
+        use crate::entity::session;
+        use sea_orm::Set;
+
+        let new_session = session::ActiveModel {
+            id: Set(session_id.clone()),
+            created_at: Set(chrono::Utc::now().timestamp()),
+            ..Default::default()
+        };
+        session::Entity::insert(new_session)
+            .exec(&*manager.db)
             .await
             .unwrap();
 

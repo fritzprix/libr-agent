@@ -1,5 +1,8 @@
+// SeaORM imports for database operations
+use crate::entity::{chunk, content, store};
+use crate::entity::{content::Entity as ContentEntity, store::Entity as StoreEntity};
+use sea_orm::*;
 use serde::{Deserialize, Serialize};
-use sqlx::sqlite::SqlitePool;
 use std::collections::HashMap;
 
 /// Data models for content store
@@ -38,6 +41,50 @@ pub struct ContentChunk {
     pub line_range: (usize, usize), // (start_line, end_line)
 }
 
+// Convert SeaORM models to internal structs
+impl From<store::Model> for ContentStore {
+    fn from(model: store::Model) -> Self {
+        Self {
+            session_id: model.session_id,
+            name: model.name,
+            description: model.description,
+            created_at: model.created_at,
+            updated_at: model.updated_at,
+        }
+    }
+}
+
+impl From<content::Model> for ContentItem {
+    fn from(model: content::Model) -> Self {
+        Self {
+            id: model.id,
+            session_id: model.session_id,
+            filename: model.filename,
+            mime_type: model.mime_type,
+            size: model.size as usize,
+            line_count: model.line_count as usize,
+            preview: model.preview,
+            uploaded_at: model.uploaded_at,
+            chunk_count: model.chunk_count as usize,
+            last_accessed_at: model.last_accessed_at,
+            content: model.content,
+            src_url: model.src_url,
+        }
+    }
+}
+
+impl From<chunk::Model> for ContentChunk {
+    fn from(model: chunk::Model) -> Self {
+        Self {
+            id: model.id,
+            content_id: model.content_id,
+            chunk_index: model.chunk_index as usize,
+            text: model.text,
+            line_range: (model.start_line as usize, model.end_line as usize),
+        }
+    }
+}
+
 /// Content store storage implementation
 #[derive(Debug)]
 pub struct ContentStoreStorage {
@@ -45,8 +92,8 @@ pub struct ContentStoreStorage {
     stores: HashMap<String, ContentStore>,
     contents: HashMap<String, ContentItem>,
     chunks: HashMap<String, Vec<ContentChunk>>,
-    // SQLite connection (when using SQLite backend)
-    sqlite_pool: Option<SqlitePool>,
+    // Database connection for persistence
+    db: Option<DatabaseConnection>,
 }
 
 impl Default for ContentStoreStorage {
@@ -62,7 +109,7 @@ impl ContentStoreStorage {
             stores: HashMap::new(),
             contents: HashMap::new(),
             chunks: HashMap::new(),
-            sqlite_pool: Option::None,
+            db: None,
         }
     }
 
@@ -81,88 +128,46 @@ impl ContentStoreStorage {
                 .map_err(|e| format!("Failed to create database directory: {e}"))?;
         }
 
-        // Create the database file if it doesn't exist (required for sqlx)
+        // Create the database file if it doesn't exist
         if !std::path::Path::new(&db_path).exists() {
             std::fs::File::create(&db_path)
                 .map_err(|e| format!("Failed to create database file: {e}"))?;
         }
 
-        // Connect using the file path directly
-        let pool = SqlitePool::connect(&db_path)
+        // Connect using SeaORM Database
+        let db = Database::connect(&format!("sqlite://{}", db_path))
             .await
-            .map_err(|e| format!("Failed to connect to SQLite: {e}"))?;
+            .map_err(|e| format!("Failed to connect to database: {e}"))?;
 
-        // Create tables if they don't exist
-        Self::create_tables(&pool).await?;
+        // Note: Migrations should be run at application startup, not here
 
         Ok(Self {
             stores: HashMap::new(), // Keep in-memory cache for performance
             contents: HashMap::new(),
             chunks: HashMap::new(),
-            sqlite_pool: Some(pool),
+            db: Some(db),
         })
     }
 
-    /// Create database tables
-    async fn create_tables(pool: &SqlitePool) -> Result<(), String> {
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS stores (
-                session_id TEXT PRIMARY KEY,
-                name TEXT,
-                description TEXT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
+    /// Create storage with existing SeaORM DatabaseConnection
+    pub async fn new_with_db(db: sea_orm::DatabaseConnection) -> Result<Self, String> {
+        // Note: Migrations should already be run at application startup
 
-            CREATE TABLE IF NOT EXISTS contents (
-                id TEXT PRIMARY KEY,
-                session_id TEXT NOT NULL,
-                filename TEXT NOT NULL,
-                mime_type TEXT NOT NULL,
-                size INTEGER NOT NULL,
-                line_count INTEGER NOT NULL,
-                preview TEXT NOT NULL,
-                uploaded_at TEXT NOT NULL,
-                chunk_count INTEGER NOT NULL,
-                last_accessed_at TEXT NOT NULL,
-                content TEXT NOT NULL,
-                src_url TEXT,
-                FOREIGN KEY (session_id) REFERENCES stores(session_id) ON DELETE CASCADE
-            );
+        Ok(Self {
+            stores: HashMap::new(), // Keep in-memory cache for performance
+            contents: HashMap::new(),
+            chunks: HashMap::new(),
+            db: Some(db),
+        })
+    }
 
-            CREATE TABLE IF NOT EXISTS chunks (
-                id TEXT PRIMARY KEY,
-                content_id TEXT NOT NULL,
-                chunk_index INTEGER NOT NULL,
-                text TEXT NOT NULL,
-                start_line INTEGER NOT NULL,
-                end_line INTEGER NOT NULL,
-                FOREIGN KEY (content_id) REFERENCES contents(id) ON DELETE CASCADE
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_chunks_content_id ON chunks(content_id);
-            CREATE INDEX IF NOT EXISTS idx_contents_session_id ON contents(session_id);
-            "#,
-        )
-        .execute(pool)
-        .await
-        .map_err(|e| format!("Failed to create tables: {e}"))?;
-
-        // Migration: Ensure src_url column exists
-        // We attempt to add it. If it fails because it exists, we ignore the error.
-        if let Err(e) = sqlx::query("ALTER TABLE contents ADD COLUMN src_url TEXT")
-            .execute(pool)
-            .await
-        {
-            let error_msg = e.to_string();
-            if !error_msg.contains("duplicate column name") {
-                // Only return error if it's NOT about the column already existing
-                return Err(format!("Failed to migrate schema (add src_url): {e}"));
-            }
-        }
-
-        Ok(())
+    /// Get database connection for operations
+    #[allow(dead_code)]
+    fn db(&self) -> Result<&DatabaseConnection, String> {
+        self.db.as_ref().ok_or_else(|| {
+            "Database not initialized. Use new_sqlite() to create SQLite-backed storage."
+                .to_string()
+        })
     }
 
     /// Create a new content store for a session (1:1 relationship)
@@ -189,19 +194,20 @@ impl ContentStoreStorage {
             updated_at: now.clone(),
         };
 
-        // SQLite backend
-        if let Some(pool) = &self.sqlite_pool {
-            sqlx::query(
-                "INSERT INTO stores (session_id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)"
-            )
-            .bind(&session_id)
-            .bind(&name)
-            .bind(&description)
-            .bind(&now)
-            .bind(&now)
-            .execute(pool)
-            .await
-            .map_err(|e| format!("Failed to create store in SQLite: {e}"))?;
+        // Database backend
+        if let Some(db) = &self.db {
+            let active_model = store::ActiveModel {
+                session_id: Set(session_id.clone()),
+                name: Set(name),
+                description: Set(description),
+                created_at: Set(now.clone()),
+                updated_at: Set(now),
+            };
+
+            store::Entity::insert(active_model)
+                .exec(db)
+                .await
+                .map_err(|e| format!("Failed to create store: {e}"))?;
         }
 
         // In-memory cache (always updated for performance)
@@ -272,25 +278,16 @@ impl ContentStoreStorage {
             return Ok(store.clone());
         }
 
-        // If using SQLite, check if store exists in database
-        if let Some(pool) = &self.sqlite_pool {
-            let result = sqlx::query_as::<_, (String, Option<String>, Option<String>, String, String)>(
-                "SELECT session_id, name, description, created_at, updated_at FROM stores WHERE session_id = ?"
-            )
-            .bind(&session_id)
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| format!("Failed to check store existence in SQLite: {e}"))?;
+        // If using database, check if store exists
+        if let Some(db) = &self.db {
+            let result = StoreEntity::find_by_id(session_id.clone())
+                .one(db)
+                .await
+                .map_err(|e| format!("Failed to check store existence: {e}"))?;
 
-            if let Some((session_id, name, description, created_at, updated_at)) = result {
-                // Store exists in database, add to memory cache
-                let store = ContentStore {
-                    session_id: session_id.clone(),
-                    name,
-                    description,
-                    created_at,
-                    updated_at,
-                };
+            if let Some(model) = result {
+                // Store exists in database, convert and add to memory cache
+                let store = ContentStore::from(model);
                 self.stores.insert(session_id.clone(), store.clone());
                 return Ok(store);
             }
@@ -362,42 +359,47 @@ impl ContentStoreStorage {
         self.chunks
             .insert(content_id.clone(), content_chunks.clone());
 
-        // SQLite backend
-        if let Some(pool) = &self.sqlite_pool {
-            // Insert content
-            sqlx::query(
-                "INSERT INTO contents (id, session_id, filename, mime_type, size, line_count, preview, uploaded_at, chunk_count, last_accessed_at, content, src_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-            )
-            .bind(content_id)
-            .bind(session_id)
-            .bind(filename)
-            .bind(mime_type)
-            .bind(size as i64)
-            .bind(line_count as i64)
-            .bind(&content_item.preview)
-            .bind(&content_item.uploaded_at)
-            .bind(chunk_count as i64)
-            .bind(&content_item.last_accessed_at)
-            .bind(content)
-            .bind(src_url)
-            .execute(pool)
-            .await
-            .map_err(|e| format!("Failed to save content to SQLite: {e}"))?;
+        // Database backend
+        if let Some(db) = &self.db {
+            // Insert content (single operation)
+            let content_active_model = content::ActiveModel {
+                id: Set(content_id.clone()),
+                session_id: Set(session_id.to_string()),
+                filename: Set(filename.to_string()),
+                mime_type: Set(mime_type.to_string()),
+                size: Set(size as i32),
+                line_count: Set(line_count as i32),
+                preview: Set(content_item.preview.clone()),
+                uploaded_at: Set(content_item.uploaded_at.clone()),
+                chunk_count: Set(chunk_count as i32),
+                last_accessed_at: Set(content_item.last_accessed_at.clone()),
+                content: Set(content.to_string()),
+                src_url: Set(src_url),
+            };
 
-            // Insert chunks
-            for chunk in &content_chunks {
-                sqlx::query(
-                    "INSERT INTO chunks (id, content_id, chunk_index, text, start_line, end_line) VALUES (?, ?, ?, ?, ?, ?)"
-                )
-                .bind(&chunk.id)
-                .bind(&chunk.content_id)
-                .bind(chunk.chunk_index as i64)
-                .bind(&chunk.text)
-                .bind(chunk.line_range.0 as i64)
-                .bind(chunk.line_range.1 as i64)
-                .execute(pool)
+            content::Entity::insert(content_active_model)
+                .exec(db)
                 .await
-                .map_err(|e| format!("Failed to save chunk to SQLite: {e}"))?;
+                .map_err(|e| format!("Failed to save content: {e}"))?;
+
+            // Bulk insert chunks (single SQL statement with multiple VALUES)
+            if !content_chunks.is_empty() {
+                let chunk_models: Vec<chunk::ActiveModel> = content_chunks
+                    .iter()
+                    .map(|c| chunk::ActiveModel {
+                        id: Set(c.id.clone()),
+                        content_id: Set(c.content_id.clone()),
+                        chunk_index: Set(c.chunk_index as i32),
+                        text: Set(c.text.clone()),
+                        start_line: Set(c.line_range.0 as i32),
+                        end_line: Set(c.line_range.1 as i32),
+                    })
+                    .collect();
+
+                chunk::Entity::insert_many(chunk_models)
+                    .exec(db)
+                    .await
+                    .map_err(|e| format!("Failed to save chunks: {e}"))?;
             }
         }
 
@@ -494,21 +496,12 @@ impl ContentStoreStorage {
         self.contents.remove(content_id);
         self.chunks.remove(content_id);
 
-        // SQLite backend
-        if let Some(pool) = &self.sqlite_pool {
-            // Delete chunks first (due to foreign key constraint)
-            sqlx::query("DELETE FROM chunks WHERE content_id = ?")
-                .bind(content_id)
-                .execute(pool)
+        // Database backend - ON DELETE CASCADE handles chunks automatically
+        if let Some(db) = &self.db {
+            ContentEntity::delete_by_id(content_id.to_string())
+                .exec(db)
                 .await
-                .map_err(|e| format!("Failed to delete chunks from SQLite: {e}"))?;
-
-            // Delete content
-            sqlx::query("DELETE FROM contents WHERE id = ?")
-                .bind(content_id)
-                .execute(pool)
-                .await
-                .map_err(|e| format!("Failed to delete content from SQLite: {e}"))?;
+                .map_err(|e| format!("Failed to delete content: {e}"))?;
         }
 
         Ok(())

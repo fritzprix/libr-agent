@@ -1,4 +1,4 @@
-use sqlx::Row;
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
 /// Background indexing worker for message search.
 ///
 /// Periodically checks for dirty sessions (those with messages newer than
@@ -11,7 +11,7 @@ use tokio::time::sleep;
 use crate::repositories::MessageRepository;
 use crate::search::index_storage::{get_index_path, write_index_atomic, IndexData, IndexMetadata};
 use crate::search::message_index::{MessageDocument, MessageSearchEngine};
-use crate::state::{get_message_repository, get_sqlite_pool};
+use crate::state::{get_database_connection, get_message_repository};
 
 /// Background worker that periodically reindexes dirty sessions.
 #[allow(dead_code)]
@@ -75,19 +75,20 @@ async fn worker_loop(shutdown: Arc<AtomicBool>, check_interval: Duration) {
 
 /// Finds all sessions with dirty indices and rebuilds them.
 async fn reindex_dirty_sessions() -> Result<(), String> {
-    let pool = get_sqlite_pool();
+    let db = get_database_connection();
 
     // Get all unique session IDs
-    let sessions = sqlx::query("SELECT DISTINCT session_id FROM messages")
-        .fetch_all(pool)
+    // SELECT DISTINCT session_id FROM messages
+    let sessions: Vec<String> = crate::entity::message::Entity::find()
+        .select_only()
+        .column(crate::entity::message::Column::SessionId)
+        .distinct()
+        .into_tuple()
+        .all(db)
         .await
         .map_err(|e| format!("Failed to fetch session IDs: {e}"))?;
 
-    for row in sessions {
-        let session_id: String = row
-            .try_get("session_id")
-            .map_err(|e| format!("Failed to get session_id: {e}"))?;
-
+    for session_id in sessions {
         // Check if index is dirty
         let repo = get_message_repository();
         let is_dirty = repo
@@ -112,48 +113,30 @@ async fn reindex_dirty_sessions() -> Result<(), String> {
 
 /// Rebuilds the search index for a specific session.
 async fn rebuild_session_index(session_id: &str) -> Result<(), String> {
-    let pool = get_sqlite_pool();
+    let db = get_database_connection();
     let index_path = get_index_path(session_id)?;
     let max_docs = MessageSearchEngine::max_docs_from_env();
 
     let start_time = std::time::Instant::now();
 
     // Fetch messages from database (most recent max_docs)
-    let messages = sqlx::query(
-        r#"
-        SELECT id, session_id, content, created_at
-        FROM messages
-        WHERE session_id = ?
-        ORDER BY created_at DESC
-        LIMIT ?
-        "#,
-    )
-    .bind(session_id)
-    .bind(max_docs as i64)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| format!("Failed to fetch messages for indexing: {e}"))?;
+    // SELECT id, session_id, content, created_at FROM messages WHERE session_id = ? ORDER BY created_at DESC LIMIT ?
+    let messages = crate::entity::message::Entity::find()
+        .filter(crate::entity::message::Column::SessionId.eq(session_id))
+        .order_by_desc(crate::entity::message::Column::CreatedAt)
+        .limit(max_docs as u64)
+        .all(db)
+        .await
+        .map_err(|e| format!("Failed to fetch messages for indexing: {e}"))?;
 
     // Convert to MessageDocument
     let documents: Vec<MessageDocument> = messages
         .into_iter()
-        .map(|row| MessageDocument {
-            id: row
-                .try_get("id")
-                .map_err(|e| format!("Failed to get id: {e}"))
-                .unwrap(),
-            session_id: row
-                .try_get("session_id")
-                .map_err(|e| format!("Failed to get session_id: {e}"))
-                .unwrap(),
-            content: row
-                .try_get("content")
-                .map_err(|e| format!("Failed to get content: {e}"))
-                .unwrap(),
-            created_at: row
-                .try_get("created_at")
-                .map_err(|e| format!("Failed to get created_at: {e}"))
-                .unwrap(),
+        .map(|model| MessageDocument {
+            id: model.id,
+            session_id: model.session_id,
+            content: model.content,
+            created_at: model.created_at,
         })
         .collect();
 
