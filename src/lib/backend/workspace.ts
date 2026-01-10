@@ -26,10 +26,13 @@ export async function listWorkspaceFiles(
 export async function workspaceWriteFile(
   filePath: string,
   content: number[],
+  sessionId?: string,
 ): Promise<void> {
+  // Pass sessionId to Rust backend for session-aware file writing
   return safeInvoke<void>('workspace_write_file', {
     filePath,
     content,
+    sessionId: sessionId || null,
   });
 }
 

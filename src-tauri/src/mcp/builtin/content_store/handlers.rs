@@ -206,7 +206,8 @@ impl ContentStoreServer {
                 content_item.size,
                 content_item.line_count,
                 if content_item.preview.len() > 100 {
-                    format!("{}...", &content_item.preview[..100])
+                    let truncated: String = content_item.preview.chars().take(100).collect();
+                    format!("{}...", truncated)
                 } else {
                     content_item.preview.clone()
                 }
@@ -297,7 +298,8 @@ impl ContentStoreServer {
             .enumerate()
             .map(|(idx, item)| {
                 let preview_text = if item.preview.len() > 80 {
-                    format!("{}...", &item.preview[..80])
+                    let truncated: String = item.preview.chars().take(80).collect();
+                    format!("{}...", truncated)
                 } else {
                     item.preview.clone()
                 };
@@ -450,7 +452,7 @@ impl ContentStoreServer {
         let content_preview = if content.len() > 2000 {
             format!(
                 "{}\n... (truncated, {} bytes total)",
-                &content[..2000],
+                content.chars().take(2000).collect::<String>(),
                 content.len()
             )
         } else {

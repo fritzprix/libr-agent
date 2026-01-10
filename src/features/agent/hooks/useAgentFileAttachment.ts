@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
-import { useResourceAttachment } from '@/context/ResourceAttachmentContext';
+import { useAgentResourceAttachment } from '@/features/agent/hooks/useAgentResourceAttachment';
 import { useRustBackend } from '@/hooks/use-rust-backend';
 import { getLogger } from '@/lib/logger';
 import {
@@ -26,7 +26,7 @@ export function useAgentFileAttachment() {
     removeFile,
     clearPendingFiles,
     isLoading: isAttachmentLoading,
-  } = useResourceAttachment();
+  } = useAgentResourceAttachment();
 
   const rustBackend = useRustBackend();
 

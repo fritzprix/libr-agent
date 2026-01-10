@@ -1,10 +1,10 @@
 import React from 'react';
 import { Button } from '@/components/ui';
-import { useResourceAttachment } from '@/context/ResourceAttachmentContext';
+import { useAgentResourceAttachment } from '@/features/agent/hooks/useAgentResourceAttachment';
 import { AttachmentReference } from '@/models/chat';
 
 export function AgentChatAttachedFiles() {
-  const { pendingFiles, removeFile } = useResourceAttachment();
+  const { pendingFiles, removeFile } = useAgentResourceAttachment();
 
   const attachedFiles = pendingFiles;
 
