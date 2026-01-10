@@ -47,10 +47,12 @@ function App() {
                         <AgentSessionListProvider>
                           <BuiltInToolProvider>
                             <WebMCPServiceRegistry
-                              servers={[
-                                // All builtin servers migrated to Rust backend
-                                // Agent V2 uses Rust MCPServiceProxy directly
-                              ]}
+                              servers={
+                                [
+                                  // All builtin servers migrated to Rust backend
+                                  // Agent V2 uses Rust MCPServiceProxy directly
+                                ]
+                              }
                             />
                             <BrowserToolProvider />
                             <RustMCPToolProvider />
