@@ -5,10 +5,7 @@ import { useAgentMessageTrigger } from '@/hooks/use-agent-message-trigger';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { getLogger } from '@/lib/logger';
-import type {
-  ScratchpadItem,
-  PlanningState,
-} from '@/lib/web-mcp/modules/planning-server/types';
+import type { ScratchpadItem, PlanningState } from '@/models/planning';
 
 const logger = getLogger('AgentPlanningPanel');
 

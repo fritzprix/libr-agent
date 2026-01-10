@@ -1,144 +1,12 @@
 import { useModelOptions } from '@/context/ModelProvider';
 import { AIServiceProvider } from '@/lib/ai-service';
 import { FC, useCallback, useMemo } from 'react';
-import { Dropdown } from '../../components/ui';
+import { Dropdown } from '@/components/ui';
 
 interface ModelPickerProps {
   className?: string;
 }
 
-const CompactModelPicker: FC<ModelPickerProps> = ({ className = '' }) => {
-  const {
-    modelId,
-    provider,
-    setProvider,
-    setModel,
-    isLoading,
-    apiKeys,
-    selectedModelData,
-    providerOptions,
-    modelOptions,
-    refreshModels,
-    isRefreshingModels,
-    currentProviderInfo,
-  } = useModelOptions();
-
-  const apiKeyStatus = useMemo(() => {
-    // Provider가 API 키를 요구하지 않으면 항상 configured
-    if (currentProviderInfo?.requiresApiKey === false) {
-      return {
-        text: provider,
-        configured: true,
-      };
-    }
-
-    // API 키가 필요한 경우, 키 존재 여부 확인
-    const key = apiKeys[provider];
-    return {
-      text: provider,
-      configured: key && key.length > 0,
-    };
-  }, [provider, apiKeys, currentProviderInfo]);
-
-  const onProviderChange = useCallback(
-    (newProvider: string) => {
-      setProvider(newProvider as AIServiceProvider);
-    },
-    [setProvider],
-  );
-
-  const onModelChange = useCallback(
-    (newModel: string) => {
-      setModel(newModel);
-    },
-    [setModel],
-  );
-
-  if (isLoading) {
-    return (
-      <div
-        className={`flex items-center space-x-2 bg-muted border border-primary/30 rounded-lg px-3 py-1 font-mono text-primary w-full max-w-lg mx-auto ${className}`}
-      >
-        <div className="animate-spin w-4 h-4 border-2 border-primary border-t-transparent rounded-full"></div>
-        <span className="text-sm text-muted-foreground">Loading models...</span>
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className={`flex items-center space-x-2 bg-muted border border-primary/30 rounded-lg px-3 py-1 font-mono text-primary w-full max-w-lg mx-auto ${className}`}
-    >
-      {apiKeyStatus && (
-        <div
-          title={apiKeyStatus.text}
-          className={`w-2 h-2 rounded-full flex-shrink-0 ${apiKeyStatus.configured ? 'bg-primary' : 'bg-yellow-500'}`}
-        ></div>
-      )}
-      <Dropdown
-        options={providerOptions}
-        value={provider}
-        placeholder="provider"
-        onChange={onProviderChange}
-        className="flex-shrink w-28"
-      />
-      <span className="text-muted-foreground">/</span>
-      <Dropdown
-        key={`model-${provider}-${modelOptions.length}`} // 강제 리렌더링을 위한 key
-        options={modelOptions}
-        value={modelOptions.some((opt) => opt.value === modelId) ? modelId : ''}
-        placeholder="model"
-        onChange={onModelChange}
-        disabled={!modelId || modelOptions.length === 0}
-        className="flex-grow min-w-0"
-      />
-
-      {/* Ollama인 경우 새로고침 버튼 표시 */}
-      {provider === AIServiceProvider.Ollama && (
-        <button
-          onClick={refreshModels}
-          disabled={isRefreshingModels}
-          className="flex-shrink-0 p-1 hover:bg-primary/10 rounded text-muted-foreground hover:text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          title="Refresh Ollama models"
-        >
-          <svg
-            className={`w-4 h-4 ${isRefreshingModels ? 'animate-spin' : ''}`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-            />
-          </svg>
-        </button>
-      )}
-
-      {selectedModelData && (
-        <div className="flex items-center space-x-1.5 flex-shrink-0">
-          <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">
-            {selectedModelData.contextWindow / 1000}k
-          </span>
-          {selectedModelData.supportTools && (
-            <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">
-              Tools
-            </span>
-          )}
-          {selectedModelData.supportReasoning && (
-            <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">
-              Reasoning
-            </span>
-          )}
-        </div>
-      )}
-    </div>
-  );
-};
-
-// --- TERMINAL MODEL PICKER (refactored to match CompactModelPicker logic) ---
 const TerminalModelPicker: FC<ModelPickerProps> = ({ className = '' }) => {
   const {
     modelId,
@@ -224,7 +92,7 @@ const TerminalModelPicker: FC<ModelPickerProps> = ({ className = '' }) => {
         <div className="grid grid-cols-[90px_1fr_auto] gap-3 items-center">
           <label className="text-sm text-primary">MODEL:</label>
           <Dropdown
-            key={`terminal-model-${provider}-${modelOptions.length}`} // 강제 리렌더링을 위한 key
+            key={`terminal-model-${provider}-${modelOptions.length}`}
             options={modelOptions}
             value={
               modelOptions.some((opt) => opt.value === modelId) ? modelId : ''
@@ -307,4 +175,4 @@ const TerminalModelPicker: FC<ModelPickerProps> = ({ className = '' }) => {
   );
 };
 
-export { CompactModelPicker, TerminalModelPicker };
+export { TerminalModelPicker };

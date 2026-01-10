@@ -28,7 +28,7 @@ import {
   TabsList,
   TabsTrigger,
 } from '@/components/ui';
-import { TerminalModelPicker } from '@/features/chat/ModelPicker';
+import { TerminalModelPicker } from './components/TerminalModelPicker';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import {
   AlertDialog,

@@ -1,9 +1,8 @@
-import { Route, Routes } from 'react-router-dom';
+import { Route, Routes, Navigate } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
 import AppSidebar from '../components/layout/AppSidebar';
 
 // Lazy-load route components to reduce initial bundle and improve first paint
-const ChatContainer = lazy(() => import('@/features/chat/ChatContainer'));
 const AgentContainer = lazy(() => import('@/features/agent'));
 const AssistantList = lazy(() => import('@/features/assistant/List'));
 const History = lazy(() => import('@/features/history/History'));
@@ -49,13 +48,8 @@ function App() {
                           <BuiltInToolProvider>
                             <WebMCPServiceRegistry
                               servers={[
-                                'planning',
-                                'playbook',
-                                'ui',
-                                'bootstrap',
-                                'mcp_manager',
-                                'assistant_manager',
-                                'knowledge',
+                                // All builtin servers migrated to Rust backend
+                                // Agent V2 uses Rust MCPServiceProxy directly
                               ]}
                             />
                             <BrowserToolProvider />
@@ -81,11 +75,9 @@ function App() {
                                           <Routes>
                                             <Route
                                               path="/"
-                                              element={<ChatContainer />}
-                                            />
-                                            <Route
-                                              path="/chat/single"
-                                              element={<ChatContainer />}
+                                              element={
+                                                <Navigate to="/agent" replace />
+                                              }
                                             />
                                             <Route
                                               path="/agent"
