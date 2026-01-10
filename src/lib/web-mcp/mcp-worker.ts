@@ -60,17 +60,9 @@ import {
 /**
  * Static imports for all Web MCP server modules.
  *
- * Each server module exports a WebMCPServer instance as the default export.
- * Server metadata (displayName, description, category) is included directly
- * as properties on the server instance.
+ * All Web MCP servers have been migrated to Rust backend.
+ * This worker infrastructure is kept for potential future Web Worker-based tools.
  */
-import planningServer from './modules/planning-server/index.ts';
-import playbookStore from './modules/playbook-store/index.ts';
-import uiTools from './modules/ui-tools/index.ts';
-import bootstrapServer from './modules/bootstrap-server/index.ts';
-import mcpManagerServer from './modules/mcp-manager/index.ts';
-import assistantManagerServer from './modules/assistant-manager/index.ts';
-import knowledgeServer from './modules/knowledge-server/index.ts';
 
 /**
  * A simple logger for the worker context, as the main logger is not available here.
@@ -94,23 +86,12 @@ const log = {
 /**
  * Central registry of all Web MCP servers.
  *
- * This registry maps server keys (used as identifiers) to their WebMCPServer instances.
- * Each server instance contains metadata directly as properties (displayName, description, category).
+ * All builtin servers (playbook, ui, bootstrap, mcp_manager, assistant_manager, knowledge)
+ * have been migrated to Rust backend (src-tauri/src/mcp/builtin/).
  *
- * When adding a new server:
- * 1. Import the server above: `import newServer from './modules/new-server'`
- * 2. Add to this registry: `{ key: 'new_server', server: newServer }`
- * 3. The server's metadata will be automatically extracted from its properties
+ * This registry is now empty but kept for potential future Web Worker-based tools.
  */
-const MODULE_REGISTRY = [
-  { key: 'planning', server: planningServer },
-  { key: 'playbook', server: playbookStore },
-  { key: 'ui', server: uiTools },
-  { key: 'bootstrap', server: bootstrapServer },
-  { key: 'mcp_manager', server: mcpManagerServer },
-  { key: 'assistant_manager', server: assistantManagerServer },
-  { key: 'knowledge', server: knowledgeServer },
-] as const;
+const MODULE_REGISTRY: Array<{ key: string; server: WebMCPServer }> = [];
 
 /**
  * Map of server keys to their WebMCPServer instances.
@@ -424,12 +405,17 @@ async function handleMCPMessage(
         /**
          * Build a list of all available servers with their metadata.
          *
-         * For each server in MODULE_REGISTRY, we extract:
-         * - name: Server key/identifier
-         * - metadata: Built from server's flat properties
-         * - toolCount: Number of tools the server provides
+         * Currently returns an empty list as all servers have been migrated to Rust backend.
          */
-        const serverList = MODULE_REGISTRY.map(({ key, server }) => {
+        const serverList: Array<{
+          name: string;
+          metadata: {
+            displayName: string;
+            description: string;
+            icon?: string;
+          };
+          toolCount: number;
+        }> = MODULE_REGISTRY.map(({ key, server }) => {
           return {
             name: key,
             metadata: {

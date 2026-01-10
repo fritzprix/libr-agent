@@ -1,12 +1,5 @@
-import {
-  Bot,
-  BrainCircuit,
-  History,
-  MessageSquare,
-  Settings,
-  Users,
-} from 'lucide-react';
-import React, { useMemo } from 'react';
+import { Bot, BrainCircuit, History, Settings, Users } from 'lucide-react';
+import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   Sidebar,
@@ -21,25 +14,16 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from '../ui/sidebar';
-import { useSessionContext } from '@/context/SessionContext';
-import SessionList from '@/features/session/SessionList';
 import { useNavigate } from 'react-router-dom';
 // Remove modal import; we'll navigate to a dedicated settings route
 
 export default function AppSidebar() {
   const { state } = useSidebar();
   const navigate = useNavigate();
-  const { sessions: sessionPages, select } = useSessionContext();
   const location = useLocation();
   // modal state removed; settings is now a routed page
 
-  const sessions = useMemo(
-    () => (sessionPages ? sessionPages.flatMap((p) => p.items) : []),
-    [sessionPages],
-  );
-
   const isCollapsed = state === 'collapsed';
-  const currentView = location.pathname.substring(1); // Extract current view from path
 
   // Keyboard shortcuts are handled by SidebarProvider's wrapper onKeyDown
 
@@ -69,25 +53,13 @@ export default function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent className={`flex-1 overflow-y-auto  terminal-scrollbar`}>
-        {/* Chat Section */}
+        {/* Agent Section */}
         <SidebarGroup>
           <SidebarGroupLabel className="text-sm font-semibold uppercase tracking-wide mb-2">
-            Chat
+            Agent
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              <SidebarMenuItem>
-                <Link to="/chat/single">
-                  <SidebarMenuButton
-                    onClick={() => select(undefined)}
-                    isActive={location.pathname === '/chat/single'}
-                    tooltip="Start Chat"
-                  >
-                    <MessageSquare size={16} />
-                    <span>Start Chat</span>
-                  </SidebarMenuButton>
-                </Link>
-              </SidebarMenuItem>
               <SidebarMenuItem>
                 <Link to="/agent">
                   <SidebarMenuButton
@@ -146,25 +118,6 @@ export default function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-
-        {/* Recent Sessions - only show if not in history view */}
-        {currentView !== 'history' && sessions.length > 0 && (
-          <SidebarGroup>
-            {!isCollapsed && (
-              <SidebarGroupLabel className="text-xs font-semibold uppercase tracking-wider mb-2">
-                Recent Sessions
-              </SidebarGroupLabel>
-            )}
-            <SidebarGroupContent>
-              <SessionList
-                sessions={sessions.slice(0, 5)}
-                showSearch={false}
-                emptyMessage=""
-                isCollapsed={isCollapsed}
-              />
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
       </SidebarContent>
       <SidebarFooter className="border-t">
         <SidebarMenu>
