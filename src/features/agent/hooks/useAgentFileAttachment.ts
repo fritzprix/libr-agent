@@ -14,8 +14,8 @@ const logger = getLogger('AgentFileAttachment');
 /**
  * Agent V2 file attachment hook
  *
- * Bridges ResourceAttachmentContext (designed for Chat V1) to work with Agent V2.
- * Provides the same interface as useFileAttachment from Chat V1.
+ * Provides file attachment capabilities for Agent V2 using AgentResourceAttachmentContext.
+ * Handles file uploads, MIME type detection, and workspace synchronization.
  */
 export function useAgentFileAttachment() {
   const { session } = useAgentSessionState();

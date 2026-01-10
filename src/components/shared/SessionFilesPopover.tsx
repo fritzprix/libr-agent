@@ -9,7 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui';
-import { useResourceAttachment } from '@/context/ResourceAttachmentContext';
+import { useAgentResourceAttachment } from '@/features/agent/hooks/useAgentResourceAttachment';
 import { getLogger } from '@/lib/logger';
 import { AttachmentReference } from '@/models/chat';
 import { useServiceContext } from '@/features/tools/useServiceContext';
@@ -22,7 +22,7 @@ interface SessionFilesPopoverProps {
 }
 
 export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
-  const { sessionFiles } = useResourceAttachment();
+  const { sessionFiles } = useAgentResourceAttachment();
   // Ensure contentstore service context is loaded (for future structured state)
   useServiceContext('contentstore');
   const { executeTool } = useBuiltInTool();
