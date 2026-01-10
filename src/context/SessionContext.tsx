@@ -136,6 +136,12 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
     },
   );
 
+  // Store data in ref to avoid re-creating handlers when data changes
+  const dataRef = useRef(data);
+  useEffect(() => {
+    dataRef.current = data;
+  }, [data]);
+
   const sessions = useMemo(() => data ?? [], [data]);
 
   // Optimize: Move flatMap to useMemo to avoid repeated computation
@@ -387,7 +393,7 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
         setLastFailedOperation(() => operation);
       }
     },
-    [mutate, data, sessionService],
+    [mutate, sessionService],
   );
 
   /**
@@ -414,7 +420,7 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
 
         // Store original state for rollback
         const originalCurrent = currentRef.current;
-        const originalData = data;
+        const originalData = dataRef.current;
 
         // Optimistic updates
         if (id === currentRef.current?.id) {
@@ -453,7 +459,7 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
         setLastFailedOperation(() => operation);
       }
     },
-    [mutate, data, sessionService],
+    [mutate, sessionService],
   );
 
   /**
@@ -463,7 +469,7 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
   const handleClearAllSessions = useCallback(async () => {
     const operation = async () => {
       // Save original data for rollback
-      const originalData = data;
+      const originalData = dataRef.current;
       const originalCurrent = currentRef.current;
 
       // Optimistic: clear current and sessions in UI
@@ -492,7 +498,7 @@ function SessionContextProvider({ children }: { children: ReactNode }) {
       setLastFailedOperation(() => operation);
       throw errorObj;
     }
-  }, [data, mutate, sessionService]);
+  }, [mutate, sessionService]);
 
   /**
    * Performs a full factory reset.

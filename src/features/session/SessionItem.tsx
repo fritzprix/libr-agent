@@ -1,7 +1,5 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, memo } from 'react';
 import { MessageCircle, Users } from 'lucide-react';
-import { useSessionContext } from '../../context/SessionContext';
-import { useSessionNavigation } from '@/hooks/use-session-navigation';
 import { Session } from '@/models/chat';
 import {
   Button,
@@ -26,24 +24,22 @@ interface SessionItemProps {
   session: Session;
   className?: string;
   isCollapsed?: boolean;
+  isSelected?: boolean;
+  onDelete: (id: string) => Promise<void>;
+  onSelect: (id: string) => void;
 }
 
-export default function SessionItem({
+function SessionItemComponent({
   session,
   className,
   isCollapsed = false,
+  isSelected = false,
+  onDelete,
+  onSelect,
 }: SessionItemProps) {
-  const { current, delete: onDelete } = useSessionContext();
-  const { selectAndNavigate } = useSessionNavigation();
-
   const handleSelect = useCallback(() => {
-    selectAndNavigate(session.id);
-  }, [selectAndNavigate, session.id]);
-
-  const isSelected = useMemo(
-    () => current?.id === session.id,
-    [current, session],
-  );
+    onSelect(session.id);
+  }, [onSelect, session.id]);
 
   const handleDelete = useCallback(
     async (e: React.MouseEvent) => {
@@ -163,3 +159,6 @@ export default function SessionItem({
     </div>
   );
 }
+
+const SessionItem = memo(SessionItemComponent);
+export default SessionItem;

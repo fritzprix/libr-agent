@@ -3,6 +3,8 @@ import SessionItem from './SessionItem';
 import { Input, Badge } from '@/components/ui';
 import { useDebounced } from '@/hooks/useDebounced';
 import type { SessionWithHits } from '@/models/search';
+import { useSessionContext } from '@/context/SessionContext';
+import { useSessionNavigation } from '@/hooks/use-session-navigation';
 
 interface SessionListProps {
   sessions: SessionWithHits[];
@@ -20,6 +22,9 @@ export default function SessionList({
   isCollapsed = false,
 }: SessionListProps) {
   const [searchQuery, setSearchQuery] = useState('');
+  const { current, delete: onDelete } = useSessionContext();
+  const { selectAndNavigate } = useSessionNavigation();
+
   // Debounce search query to reduce filtering operations during typing
   const debouncedQuery = useDebounced(searchQuery, 300);
 
@@ -67,7 +72,13 @@ export default function SessionList({
             )
           : filteredSessions.map((session) => (
               <div key={session.id} className="relative">
-                <SessionItem session={session} isCollapsed={isCollapsed} />
+                <SessionItem
+                  session={session}
+                  isCollapsed={isCollapsed}
+                  isSelected={current?.id === session.id}
+                  onDelete={onDelete}
+                  onSelect={selectAndNavigate}
+                />
                 {/* Display search hit count badge if available */}
                 {session.searchHits !== undefined && session.searchHits > 0 && (
                   <div className="absolute top-2 right-2">
