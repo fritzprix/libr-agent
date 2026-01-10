@@ -104,7 +104,8 @@ function ProviderCardBase({
           />
         </div>
 
-        {provider === AIServiceProvider.Ollama && (
+        {(provider === AIServiceProvider.Ollama ||
+          provider === AIServiceProvider.OpenAI) && (
           <div className="min-w-0">
             <label className="block text-muted-foreground mb-2 text-sm font-medium">
               Base URL
