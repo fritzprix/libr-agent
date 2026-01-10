@@ -81,6 +81,12 @@ export function AgentResourceAttachmentProvider({
       ? ['agent_content_list', currentSession.id]
       : null,
     async () => {
+      logger.info('[AgentResourceAttachmentContext] SWR fetcher called', {
+        hasServer: !!server,
+        currentSessionId: currentSession?.id,
+        serverLoading,
+      });
+
       if (server && currentSession?.id) {
         const sessionId = currentSession.id;
         try {
@@ -90,10 +96,14 @@ export function AgentResourceAttachmentProvider({
           const listContentArgs: ListContentArgs = {
             sessionId,
           };
+          logger.info('[AgentResourceAttachmentContext] Calling listContent', {
+            sessionId,
+          });
           const result = await server.listContent(listContentArgs);
           logger.info('Proxy: server.listContent completed successfully', {
             sessionId,
             contentCount: result?.contents?.length || 0,
+            contents: result?.contents,
           });
           const files =
             result?.contents?.map((content) => ({
@@ -109,6 +119,10 @@ export function AgentResourceAttachmentProvider({
               lastAccessedAt: content.lastAccessedAt,
             })) || [];
 
+          logger.info('[AgentResourceAttachmentContext] Mapped files result', {
+            filesCount: files.length,
+            files,
+          });
           return files;
         } catch (error) {
           logger.warn(
@@ -118,6 +132,10 @@ export function AgentResourceAttachmentProvider({
           return [];
         }
       }
+      logger.warn('[AgentResourceAttachmentContext] SWR fetcher: No server or session', {
+        hasServer: !!server,
+        sessionId: currentSession?.id,
+      });
       return [];
     },
     {
