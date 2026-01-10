@@ -170,6 +170,48 @@ impl ContentStoreStorage {
         })
     }
 
+    /// List contents for a session, sorted by uploaded_at (newest first)
+    pub async fn list_contents_by_session(
+        &self,
+        session_id: &str,
+        limit: Option<usize>,
+    ) -> Result<Vec<ContentItem>, String> {
+        if let Some(db) = &self.db {
+            // Database query with ORDER BY uploaded_at DESC
+            let mut query = content::Entity::find()
+                .filter(content::Column::SessionId.eq(session_id))
+                .order_by_desc(content::Column::UploadedAt);
+
+            if let Some(n) = limit {
+                query = query.limit(n as u64);
+            }
+
+            let models = query
+                .all(db)
+                .await
+                .map_err(|e| format!("Database query failed: {}", e))?;
+
+            Ok(models.into_iter().map(|m| m.into()).collect())
+        } else {
+            // In-memory fallback
+            let mut items: Vec<ContentItem> = self
+                .contents
+                .values()
+                .filter(|c| c.session_id == session_id)
+                .cloned()
+                .collect();
+
+            // Sort by uploaded_at descending (newest first)
+            items.sort_by(|a, b| b.uploaded_at.cmp(&a.uploaded_at));
+
+            if let Some(n) = limit {
+                items.truncate(n);
+            }
+
+            Ok(items)
+        }
+    }
+
     /// Create a new content store for a session (1:1 relationship)
     pub async fn create_store(
         &mut self,
@@ -445,6 +487,11 @@ impl ContentStoreStorage {
             .map(|content| content.session_id.clone())
     }
 
+    /// Get content item by ID (for metadata access without full content retrieval)
+    pub fn get_content_item(&self, content_id: &str) -> Option<&ContentItem> {
+        self.contents.get(content_id)
+    }
+
     /// Read content with line range
     pub async fn read_content(
         &self,
@@ -457,8 +504,28 @@ impl ContentStoreStorage {
             .get(content_id)
             .ok_or_else(|| format!("Content '{content_id}' not found"))?;
 
+        // Calculate file boundaries for better error messages
+        let max_line = chunks.iter().map(|c| c.line_range.1).max().unwrap_or(0);
+        let target_to_line = to_line.unwrap_or(max_line).min(max_line);
+
+        // Validate range BEFORE processing
+        if from_line < 1 {
+            return Err(format!(
+                "Error: Line numbers must start from 1 (requested: {}).",
+                from_line
+            ));
+        }
+
+        if from_line > max_line {
+            return Err(format!(
+                "Error: Requested range [{}-{}] exceeds file length.\n\
+                 File has {} lines. Valid range: [1-{}].\n\
+                 Use listContent to verify file size before reading.",
+                from_line, target_to_line, max_line, max_line
+            ));
+        }
+
         let mut result = String::new();
-        let target_to_line = to_line.unwrap_or(usize::MAX);
 
         for chunk in chunks {
             if chunk.line_range.1 >= from_line && chunk.line_range.0 <= target_to_line {
@@ -480,7 +547,11 @@ impl ContentStoreStorage {
         }
 
         if result.is_empty() {
-            return Err("No content found in specified line range".to_string());
+            // This should rarely happen now due to pre-validation
+            return Err(format!(
+                "No content found in line range [{}-{}]. File has {} lines.",
+                from_line, target_to_line, max_line
+            ));
         }
 
         Ok(result.trim().to_string())

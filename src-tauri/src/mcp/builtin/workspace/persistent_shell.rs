@@ -87,6 +87,22 @@ impl PersistentShell {
         {
             cmd.arg("--norc");
             cmd.arg("--noprofile");
+
+            // Fix: Add ~/.local/bin to PATH as it's often missing in non-interactive shells
+            // This is critical for pip installed binaries
+            if let Ok(home) = std::env::var("HOME") {
+                let local_bin = format!("{}/.local/bin", home);
+                if let Ok(path) = std::env::var("PATH") {
+                    if !path.contains(&local_bin) {
+                        // Prepend to prioritize local binaries
+                        let new_path = format!("{}:{}", local_bin, path);
+                        cmd.env("PATH", new_path);
+                    }
+                } else {
+                    cmd.env("PATH", local_bin);
+                }
+            }
+
             debug!("Creating persistent bash shell for session: {}", session_id);
         }
 
@@ -203,10 +219,13 @@ impl PersistentShell {
         // Send sentinel markers (platform-specific exit code syntax)
         #[cfg(unix)]
         {
+            // Capture exit code BEFORE echoing sentinel (which would reset $?)
             self.stdin
-                .write_all(format!("echo '{sentinel}'\n").as_bytes())
+                .write_all(
+                    format!("__code=$?; echo '{sentinel}'; echo \"EXIT_CODE_$__code\"\n")
+                        .as_bytes(),
+                )
                 .await?;
-            self.stdin.write_all(b"echo \"EXIT_CODE_$?\"\n").await?;
         }
 
         #[cfg(windows)]

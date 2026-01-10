@@ -45,6 +45,7 @@ import { MCPServerManagement } from './MCPServerManagement';
 import { getLogger } from '@/lib/logger';
 import { useSessionContext } from '@/context/SessionContext';
 import { LocalDatabase } from '@/lib/db/service';
+import { useDebounce } from '@/hooks/useDebounce';
 
 const logger = getLogger('SettingsPage');
 
@@ -69,17 +70,12 @@ function ProviderCardBase({
   const [localApiKey, setLocalApiKey] = useState(apiKey || '');
   const [localBaseUrl, setLocalBaseUrl] = useState(baseUrl || '');
 
-  // Debounce local edits into pending changes to avoid frequent context updates
-  const debounceRef = useRef<number | null>(null);
-  const schedulePending = useCallback(
+  // Use debounce hook for pending changes
+  const { debounced: schedulePending } = useDebounce(
     (patch: Partial<ServiceConfig>) => {
-      if (debounceRef.current) window.clearTimeout(debounceRef.current);
-      // small debounce to group typing
-      debounceRef.current = window.setTimeout(() => {
-        onPendingChange(provider, patch);
-      }, 350) as unknown as number;
+      onPendingChange(provider, patch);
     },
-    [onPendingChange, provider],
+    350,
   );
 
   return (

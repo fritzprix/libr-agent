@@ -4,10 +4,22 @@ use crate::mcp::MCPTool;
 use crate::session::SessionManager;
 use log::error;
 use serde_json::Value;
+use std::collections::VecDeque;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use super::{schemas, search, storage};
+
+/// Information about a recently uploaded file for service context
+#[derive(Debug, Clone)]
+pub struct RecentUploadInfo {
+    pub content_id: String,
+    pub filename: String,
+    pub mime_type: String,
+    pub line_count: usize,
+    #[allow(dead_code)]
+    pub uploaded_at: String,
+}
 
 /// Content-Store built-in MCP server (native backend)
 #[derive(Debug)]
@@ -17,6 +29,8 @@ pub struct ContentStoreServer {
     pub(crate) session_manager: Arc<SessionManager>,
     pub(crate) storage: Mutex<storage::ContentStoreStorage>,
     pub(crate) search_engine: Arc<Mutex<search::ContentSearchEngine>>,
+    /// Track recent uploads for service context (FIFO, max 10 items)
+    pub(crate) recent_uploads: Arc<Mutex<VecDeque<RecentUploadInfo>>>,
 }
 
 impl ContentStoreServer {
@@ -31,6 +45,7 @@ impl ContentStoreServer {
             session_manager,
             storage: Mutex::new(storage::ContentStoreStorage::new()),
             search_engine: Arc::new(Mutex::new(search_engine)),
+            recent_uploads: Arc::new(Mutex::new(VecDeque::with_capacity(10))),
         }
     }
 
@@ -51,6 +66,7 @@ impl ContentStoreServer {
             session_manager,
             storage: Mutex::new(storage),
             search_engine: Arc::new(Mutex::new(search_engine)),
+            recent_uploads: Arc::new(Mutex::new(VecDeque::with_capacity(10))),
         })
     }
 
@@ -71,6 +87,7 @@ impl ContentStoreServer {
             session_manager,
             storage: Mutex::new(storage),
             search_engine: Arc::new(Mutex::new(search_engine)),
+            recent_uploads: Arc::new(Mutex::new(VecDeque::with_capacity(10))),
         })
     }
 
@@ -186,11 +203,10 @@ impl ContentStoreServer {
 
     pub async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
         // Use session_id from constructor (already bound to this session)
-        // This is consistent with Planning/Workspace pattern
         let session_id = &self.session_id;
 
-        // Get content information for this session
-        let count = match self.storage.try_lock() {
+        // Get total content count
+        let total_count = match self.storage.try_lock() {
             Ok(storage) => storage.get_content_count(session_id),
             Err(e) => {
                 log::warn!(
@@ -205,31 +221,82 @@ impl ContentStoreServer {
             }
         };
 
-        // Build context prompt (Legacy style: concise, token-efficient)
-        let file_status = if count == 0 {
-            "no files".to_string()
-        } else if count == 1 {
-            "1 file".to_string()
-        } else {
-            format!("{} files", count)
+        // Get recent uploads
+        let recent_files = match self.recent_uploads.try_lock() {
+            Ok(recent) => recent.iter().cloned().collect::<Vec<_>>(),
+            Err(_) => Vec::new(),
         };
 
-        // Tool count (fixed: saveKnowledge, listContent, readContent, searchKnowledge, deleteContent)
-        let tool_count = 5;
+        // Build context prompt with file details
+        let mut prompt_parts = vec![
+            "## Content Store\n".to_string(),
+            format!(
+                "{} available, 5 tools\n",
+                Self::format_file_count(total_count)
+            ),
+        ];
 
-        let context_prompt = format!(
-            "## Content Store\n\nActive, {} tools, {}",
-            tool_count, file_status
-        );
+        if !recent_files.is_empty() {
+            prompt_parts.push("\n**Recent Uploads:**\n".to_string());
+
+            for (i, file) in recent_files.iter().take(10).enumerate() {
+                prompt_parts.push(format!(
+                    "{}. `{}` (ID: `{}`, {} lines, {})\n",
+                    i + 1,
+                    file.filename,
+                    file.content_id,
+                    file.line_count,
+                    Self::format_mime_type(&file.mime_type)
+                ));
+            }
+
+            prompt_parts.push("\n*Use `readContent(contentId=\"content_xxx\", fromLine=1, toLine=100)` to access files.*\n".to_string());
+        } else if total_count == 0 {
+            prompt_parts.push("*No files uploaded yet.*\n".to_string());
+        }
+
+        let context_prompt = prompt_parts.join("");
 
         ServiceContext {
             context_prompt,
             structured_state: Some(serde_json::json!({
                 "active": true,
-                "tool_count": tool_count,
-                "file_count": count,
-                "session_id": session_id
+                "tool_count": 5,
+                "file_count": total_count,
+                "recent_uploads": recent_files.iter().map(|f| serde_json::json!({
+                    "contentId": f.content_id,
+                    "filename": f.filename,
+                    "lineCount": f.line_count,
+                })).collect::<Vec<_>>(),
             })),
+        }
+    }
+
+    // Helper functions for service context formatting
+    pub(crate) fn format_file_count(count: usize) -> String {
+        match count {
+            0 => "No files".to_string(),
+            1 => "1 file".to_string(),
+            n => format!("{} files", n),
+        }
+    }
+
+    pub(crate) fn normalize_content_id(id: &str) -> String {
+        // "add24ru333bbupvroeea53qj" → "content_add24ru333bbupvroeea53qj"
+        if id.starts_with("content_") {
+            id.to_string()
+        } else {
+            format!("content_{}", id)
+        }
+    }
+
+    pub(crate) fn format_mime_type(mime: &str) -> String {
+        match mime {
+            "text/plain" => "text".to_string(),
+            "text/markdown" => "markdown".to_string(),
+            "application/json" => "JSON".to_string(),
+            "application/pdf" => "PDF".to_string(),
+            _ => mime.to_string(),
         }
     }
 
@@ -244,6 +311,12 @@ impl ContentStoreServer {
             {
                 error!("Failed to switch session in session_manager: {e}");
                 return Err(format!("Failed to switch session in session_manager: {e}"));
+            }
+
+            // Clear recent uploads for session switch
+            {
+                let mut recent = self.recent_uploads.lock().await;
+                recent.clear();
             }
 
             let mut storage = self.storage.lock().await;
@@ -262,6 +335,20 @@ impl ContentStoreServer {
                     return Err(format!(
                         "Failed to get or create content store for session {session_id}: {e}"
                     ));
+                }
+            }
+
+            // Pre-populate recent uploads with existing files (up to 10 most recent)
+            if let Ok(contents) = storage.list_contents_by_session(session_id, Some(10)).await {
+                let mut recent = self.recent_uploads.lock().await;
+                for content in contents {
+                    recent.push_back(RecentUploadInfo {
+                        content_id: content.id,
+                        filename: content.filename,
+                        mime_type: content.mime_type,
+                        line_count: content.line_count,
+                        uploaded_at: content.uploaded_at,
+                    });
                 }
             }
         }

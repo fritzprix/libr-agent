@@ -69,4 +69,6 @@ mod test_functional;
 #[cfg(test)]
 mod test_migration;
 #[cfg(test)]
+mod test_recent_uploads;
+#[cfg(test)]
 mod test_session_isolation;

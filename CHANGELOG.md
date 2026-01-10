@@ -20,6 +20,69 @@ All notable changes to this project will be documented in this file.
   - **Compact Metrics**: Enable compact display format for token metrics
   - **Settings Persistence**: All display preferences are saved to IndexedDB and persist across sessions
 
+### 🔧 Enhancements
+
+- **Content Store Context Enhancement**: Improved agent visibility of uploaded files through enhanced service context
+  - **Recent Uploads Tracking**: System prompt now displays last 10 uploaded files with IDs and metadata
+  - **Direct File Access**: Agents can immediately use `contentId` without calling `listContent()`
+  - **Smart Truncation Logic**: Fixed misleading truncation messages - now distinguishes between preview truncation and file-end detection
+  - **Enhanced Error Messages**: Out-of-bounds errors now include actual file size and valid range suggestions
+  - **Content ID Normalization**: Auto-adds `content_` prefix to IDs for flexible usage
+  - **Token Efficiency**: Service context limited to 10 most recent files (~200 tokens max)
+  - **Session Isolation**: Recent uploads reset on session switch
+  - **New Tests**: Added comprehensive test suite for upload tracking and service context generation
+
+- **Workspace Output Visibility Fix**: Enhanced LLM visibility of process execution output
+  - **readProcessOutput**: Now includes actual stdout/stderr content in text field (not just "Read N lines" summary)
+  - **pollProcess with tail**: Appends last N lines of output directly to status message for quick inspection
+  - **Test Coverage**: Added `test_output_visibility.rs` to verify LLM can see command output
+
+- **File Reading Line Number Display**: Improved readability of file content with line number formatting
+  - **Line Numbers**: All file reads now include `Line N:` prefix for each line
+  - **Empty Line Collapsing**: Multiple consecutive empty lines collapsed to `<Empty Lines N-M>` placeholder
+  - **Token Efficiency**: Reduces context size for files with many blank lines
+  - **Test Coverage**: Added comprehensive tests for line formatting logic
+
+- **Persistent Shell PATH Fix**: Fixed missing `~/.local/bin` in non-interactive bash sessions
+  - **Auto PATH Extension**: Automatically adds `~/.local/bin` to PATH if missing (critical for pip-installed binaries)
+  - **Exit Code Capture**: Fixed race condition in bash sentinel - now captures `$?` before echoing sentinel
+  - **No User Impact**: Change is transparent to users, tools work as expected without manual PATH setup
+
+### 🐛 Fixed
+
+- **Knowledge Tool Fixes (Critical)**:
+  - **Schema Mismatch Resolved**: Fixed a critical bug where `searchKnowledge` failed due to a missing `Source` column in the database schema. Added a migration to introduce the `source` column to the `knowledge` table.
+  - **Search Snippets**: Updated `searchKnowledge` to return relevant text snippets using SQLite FTS5 `snippet()` function (or `substr` fallback), providing immediate context in search results.
+  - **Source Filtering**: Added support for filtering knowledge search results by `source` URL.
+  - **Data Integrity**: Updated `saveKnowledge`, `readKnowledge`, and `listKnowledge` to correctly handle and persist the `source` field.
+
+- **LLM Service Empty Response Handling**: Relaxed validation to allow responses with usage but no content
+  - **Reasoning Model Support**: Ollama reasoning models may return empty content but non-zero completion tokens (valid thinking-only responses)
+  - **Diagnostic Logging**: Added detailed logging before throwing empty response error for better debugging
+  - **Graceful Degradation**: Logs warning but allows proceeding when usage indicates model did work
+
+- **Settings Page Debounce Extraction**: Extracted debounce logic into reusable `useDebounce` hook
+  - **Code Reuse**: Consolidated debounce/throttle patterns into single hook
+  - **Type Safety**: Full TypeScript generic support with proper parameter inference
+  - **API Consistency**: Provides `debounced`, `cancel`, and `flush` methods
+  - **Testing Ready**: Hook can be easily unit tested
+
+- **Ollama Chunk Processing Diagnostics**: Added comprehensive logging for empty chunks
+  - **Missing Field Detection**: Warns when chunk has unexpected structure (keys but no known fields)
+  - **Raw Chunk Logging**: Logs full JSON for unrecognized chunks to aid debugging
+  - **Model-Specific Handling**: Better support for edge cases in different Ollama model outputs
+
+- **Tool Argument Validation**: Enhanced type safety for tool call argument parsing
+  - **Zod Schema Validation**: Tool arguments now validated to ensure they're objects (not arrays/primitives)
+  - **Graceful Fallback**: Invalid structures wrapped in `{ value: ... }` instead of throwing errors
+  - **Error Logging**: Detailed debug logs for parse failures with full context
+  - **Type Guards**: Added `isMCPErrorContent` guard for safe error checking
+
+- **Database Singleton Reset**: Fixed potential memory leak in `LocalDatabase`
+  - **Null Type Safety**: Changed `instance` from `LocalDatabase` to `LocalDatabase | null` for proper nullable handling
+  - **Type-Safe Reset**: `resetInstance()` no longer requires `as unknown as` cast
+  - **Test Isolation**: Prevents test pollution by properly cleaning up singleton
+
 ### 🐛 Fixed
 
 - **Knowledge Tool Fixes (Critical)**:

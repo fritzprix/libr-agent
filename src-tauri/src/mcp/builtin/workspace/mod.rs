@@ -26,6 +26,9 @@ pub mod tools;
 pub mod ui_resources;
 pub mod utils;
 
+#[cfg(test)]
+mod test_output_visibility;
+
 /// Pending execution state (server-side only)
 /// Stores metadata for shell commands awaiting user input
 #[derive(Debug, Clone)]
@@ -307,6 +310,8 @@ impl WorkspaceServer {
         });
 
         // Optional tail - check in-memory buffer first, fallback to file
+        let mut tail_output_display = String::new();
+
         if let Some(tail_obj) = args.get("tail").and_then(|v| v.as_object()) {
             let src = tail_obj
                 .get("src")
@@ -338,6 +343,14 @@ impl WorkspaceServer {
                 }
             };
 
+            if !lines.is_empty() {
+                tail_output_display = format!(
+                    "\n\n--- Output (last {} lines) ---\n{}",
+                    lines.len(),
+                    lines.join("\n")
+                );
+            }
+
             response["tail"] = serde_json::json!({
                 "src": src,
                 "lines": lines,
@@ -348,7 +361,10 @@ impl WorkspaceServer {
         // Add success hint based on process status
         let status_str = format!("{:?}", entry_for_response.status).to_lowercase();
         let hint = SuccessHint::new(
-            format!("Process {} status: {}", process_id, status_str),
+            format!(
+                "Process {} status: {}{}",
+                process_id, status_str, tail_output_display
+            ),
             match entry_for_response.status {
                 terminal_manager::ProcessStatus::Running => vec![
                     "Wait for process to complete before polling again".to_string(),
@@ -441,6 +457,7 @@ impl WorkspaceServer {
 
         match content {
             Ok(lines_vec) => {
+                let content_display = lines_vec.join("\n");
                 let response = serde_json::json!({
                     "process_id": process_id,
                     "stream": stream,
@@ -453,7 +470,13 @@ impl WorkspaceServer {
                 });
 
                 let hint = SuccessHint::new(
-                    format!("Read {} lines from {} {}", lines_vec.len(), stream, mode),
+                    format!(
+                        "Read {} lines from {} {}:\n\n{}",
+                        lines_vec.len(),
+                        stream,
+                        mode,
+                        content_display
+                    ),
                     vec![
                         "Use pollProcess to check process status".to_string(),
                         format!(

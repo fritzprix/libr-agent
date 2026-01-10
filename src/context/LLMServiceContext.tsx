@@ -362,7 +362,7 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
         // 3. Provider-specific sanitization (e.g. removing thinking for OpenAI)
         const safeMessages = MessageNormalizer.sanitizeMessagesForProvider(
           contextMessages.map(sanitizeMessage),
-          provider as unknown as AIServiceProvider,
+          provider as AIServiceProvider,
         );
         logger.info('✅ Messages sanitized for provider compatibility', {
           sessionId,
@@ -609,13 +609,35 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
         });
 
         // Check for empty message (no content and no tool calls)
-        // This prevents saving invalid messages to the history which would later be rejected by MessageNormalizer
-        if (
-          (!finalMessage.content || finalMessage.content.length === 0) &&
-          (!finalMessage.tool_calls || finalMessage.tool_calls.length === 0) &&
-          !finalMessage.thinking
-        ) {
+        // Relaxed check: logic allow if usage.completionTokens > 0 (model did work but maybe just thinking or skipped content)
+        const hasContent =
+          (finalMessage.content && finalMessage.content.length > 0) ||
+          (finalMessage.tool_calls && finalMessage.tool_calls.length > 0) ||
+          !!finalMessage.thinking;
+
+        const hasUsage =
+          finalMessage.usage && finalMessage.usage.completionTokens > 0;
+
+        if (!hasContent && !hasUsage) {
+          // Log detailed state for debugging before throwing
+          logger.error('❌ Empty response detected', {
+            sessionId,
+            finalMessage: {
+              ...finalMessage,
+              content: finalMessage.content?.length, // log length only
+            },
+            hasContent,
+            hasUsage,
+          });
           throw new Error('Received empty response from LLM provider');
+        } else if (!hasContent && hasUsage) {
+          logger.warn(
+            '⚠️ Response has usage but no content - allowing to proceed',
+            {
+              sessionId,
+              usage: finalMessage.usage,
+            },
+          );
         }
 
         // ✅ Set finalMessage to trigger AgentChatContext effect (idea.md architecture)

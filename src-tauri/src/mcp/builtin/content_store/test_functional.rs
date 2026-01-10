@@ -6,9 +6,26 @@ mod tests {
     async fn setup_storage() -> (ContentStoreStorage, TempDir, String) {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("test_functional.db");
+
+        // Ensure parent directory exists and create empty database file
+        if let Some(parent) = db_path.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        std::fs::File::create(&db_path).unwrap();
+
         let url = format!("sqlite://{}", db_path.to_string_lossy());
 
-        let mut storage = ContentStoreStorage::new_sqlite(url)
+        // Connect to database and run migrations
+        let db = sea_orm::Database::connect(&url)
+            .await
+            .expect("Failed to connect to database");
+
+        use migration::{Migrator, MigratorTrait};
+        Migrator::up(&db, None)
+            .await
+            .expect("Failed to run migrations");
+
+        let mut storage = ContentStoreStorage::new_with_db(db)
             .await
             .expect("Failed to init storage");
 

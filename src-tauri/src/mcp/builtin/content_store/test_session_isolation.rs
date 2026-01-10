@@ -11,13 +11,28 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let base_dir = temp_dir.path().join(format!("session_{}", session_id));
         let db_path = base_dir.join("content_store.db");
+
+        // Ensure database directory exists and create empty database file
+        std::fs::create_dir_all(&base_dir).unwrap();
+        std::fs::File::create(&db_path).unwrap();
+
         let url = format!("sqlite://{}", db_path.to_string_lossy());
+
+        // Connect to database and run migrations
+        let db = sea_orm::Database::connect(&url)
+            .await
+            .expect("Failed to connect to database");
+
+        use migration::{Migrator, MigratorTrait};
+        Migrator::up(&db, None)
+            .await
+            .expect("Failed to run migrations");
 
         let session_manager = Arc::new(
             SessionManager::new_with_base_dir(base_dir).expect("Failed to create SessionManager"),
         );
         let server =
-            ContentStoreServer::new_with_sqlite("test-session".to_string(), session_manager, url)
+            ContentStoreServer::new_with_db("test-session".to_string(), session_manager, db)
                 .await
                 .expect("Failed to create server");
 

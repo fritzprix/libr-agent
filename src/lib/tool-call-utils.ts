@@ -1,4 +1,15 @@
 import type { Message } from '@/models/chat';
+import { isMCPErrorContent } from '@/lib/mcp/protocol/content';
+import { z } from 'zod';
+import { getLogger } from '@/lib/logger';
+
+const logger = getLogger('tool-call-utils');
+
+/**
+ * Schema for validating tool arguments.
+ * Ensures parsed JSON is an object (not array, null, or primitive).
+ */
+const ToolArgumentsSchema = z.record(z.unknown());
 
 /**
  * Checks if a tool result message contains an error.
@@ -10,11 +21,7 @@ export function hasToolCallError(toolResult?: Message): boolean {
 
   // Fallback: Check if any content item has isError property
   // This handles cases where backend might preserve MCP result structure in content
-  if (
-    toolResult?.content?.some(
-      (c) => (c as Record<string, unknown>).isError === true,
-    )
-  ) {
+  if (toolResult?.content?.some(isMCPErrorContent)) {
     return true;
   }
 
@@ -44,13 +51,40 @@ export function parseToolName(fullToolName: string): string {
 /**
  * Safely parses tool call arguments from JSON string.
  * Returns parsed object or wraps raw string on parse error.
+ * Uses Zod schema validation to ensure runtime type safety.
  */
 export function parseToolArguments(
   argumentsString: string,
 ): Record<string, unknown> {
   try {
-    return JSON.parse(argumentsString) as Record<string, unknown>;
-  } catch {
+    const parsed = JSON.parse(argumentsString);
+
+    // Validate parsed value is a record/object
+    const validated = ToolArgumentsSchema.safeParse(parsed);
+
+    if (validated.success) {
+      return validated.data;
+    } else {
+      // If parsed value is not an object (e.g., array, string, number, null)
+      logger.warn(
+        'Tool arguments are not an object, wrapping in value property',
+        {
+          argumentsString,
+          parsed,
+          error: validated.error.message,
+        },
+      );
+      return { value: parsed };
+    }
+  } catch (error) {
+    // JSON parsing failed
+    logger.debug(
+      'Failed to parse tool arguments as JSON, wrapping in raw property',
+      {
+        argumentsString,
+        error: error instanceof Error ? error.message : String(error),
+      },
+    );
     return { raw: argumentsString };
   }
 }
