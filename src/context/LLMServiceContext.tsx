@@ -27,6 +27,7 @@ import { useSystemPrompt } from './SystemPromptContext';
 import { MessageNormalizer } from '@/lib/ai-service/message-normalizer';
 import { sanitizeMessage } from '@/lib/ai-service/sanitizer';
 import { normalizeRustMessage } from '@/lib/ai-service/utils';
+import { prepareMessagesForLLM } from '@/lib/message-preprocessor';
 
 const logger = getLogger('LLMServiceContext');
 
@@ -369,8 +370,27 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
           safeCount: safeMessages.length,
         });
 
-        // Measure final token count for logging
-        const totalEstimatedTokens = safeMessages.reduce(
+        // Preprocess messages to include attachment information
+        // This enriches messages with attachment metadata and tool usage instructions
+        const enrichedMessages = await prepareMessagesForLLM(safeMessages);
+
+        // Log attachment enrichment
+        const attachmentCount = enrichedMessages.reduce(
+          (total, msg) => total + (msg.attachments?.length || 0),
+          0,
+        );
+        if (attachmentCount > 0) {
+          logger.info('📎 Messages enriched with attachment metadata', {
+            sessionId,
+            attachmentCount,
+            messagesWithAttachments: enrichedMessages.filter(
+              (m) => m.attachments && m.attachments.length > 0,
+            ).length,
+          });
+        }
+
+        // Measure final token count for logging (including attachment enrichment)
+        const totalEstimatedTokens = enrichedMessages.reduce(
           (sum, msg) => sum + estimateTokensBPE(msg),
           0,
         );
@@ -399,7 +419,7 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
         const startTime = performance.now();
 
         // Create async generator for streaming
-        const streamGenerator = service.streamChat(safeMessages, {
+        const streamGenerator = service.streamChat(enrichedMessages, {
           modelName: model,
           systemPrompt: finalSystemPrompt,
           availableTools: availableTools || [],

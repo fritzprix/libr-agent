@@ -16,13 +16,15 @@ import { useSessionContext } from './SessionContext';
 import { syncFileToWorkspace } from '@/lib/workspace-sync-service';
 import {
   ContentStoreServerProxy,
-  PendingFileInput,
-  ExtendedAttachmentReference,
   CreateStoreArgs,
   AddContentArgs,
   ListContentArgs,
   DeleteContentArgs,
 } from '@/models/content-store';
+import {
+  PendingFileInput,
+  ExtendedAttachmentReference,
+} from '@/models/ui/legacy-attachment';
 
 const logger = getLogger('ResourceAttachmentContext');
 
@@ -345,11 +347,12 @@ export const ResourceAttachmentProvider: React.FC<
       const newPending = files.map((file) => ({
         sessionId: currentSession?.id || '',
         contentId: `pending_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
-        filename: file.filename || extractFilenameFromUrl(file.url),
-        mimeType: file.mimeType,
+        filename:
+          file.filename || extractFilenameFromUrl(file.url || '') || 'unknown',
+        mimeType: file.mimeType || 'application/octet-stream',
         size: file.file?.size || 0, // Use File object size if available
         lineCount: 0,
-        preview: file.filename || extractFilenameFromUrl(file.url),
+        preview: file.filename || extractFilenameFromUrl(file.url || '') || '',
         uploadedAt: new Date().toISOString(),
         chunkCount: 0,
         lastAccessedAt: new Date().toISOString(),
@@ -380,7 +383,7 @@ export const ResourceAttachmentProvider: React.FC<
         throw new Error('Content store server or session not available');
       }
 
-      const storeId = await ensureStoreExists(currentSession.id);
+      await ensureStoreExists(currentSession.id);
 
       let fileUrl: string;
       let actualMimeType: string;
@@ -448,7 +451,6 @@ export const ResourceAttachmentProvider: React.FC<
       try {
         // Call the content-store server to add content using file URL
         const addContentArgs: AddContentArgs = {
-          sessionId: storeId,
           fileUrl: fileUrl,
           metadata: {
             filename: actualFilename,

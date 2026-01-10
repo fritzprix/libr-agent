@@ -8,7 +8,7 @@ import {
   AgentPlanningProvider,
   useAgentPlanning,
 } from '@/context/AgentPlanningContext';
-import { ResourceAttachmentProvider } from '@/context/ResourceAttachmentContext';
+import { AgentResourceAttachmentProvider } from './context/AgentResourceAttachmentContext';
 import { AgentChatHeader } from './components/AgentChatHeader';
 import { AgentChatStatusBar } from './components/AgentChatStatusBar';
 import { AgentChatMessages } from './components/AgentChatMessages';
@@ -95,7 +95,7 @@ export default function AgentChatView() {
   }
 
   return (
-    <ResourceAttachmentProvider>
+    <AgentResourceAttachmentProvider>
       <AgentChatProvider>
         <AgentPlanningProvider>
           <AgentWorkspaceProvider>
@@ -103,7 +103,7 @@ export default function AgentChatView() {
           </AgentWorkspaceProvider>
         </AgentPlanningProvider>
       </AgentChatProvider>
-    </ResourceAttachmentProvider>
+    </AgentResourceAttachmentProvider>
   );
 }
 

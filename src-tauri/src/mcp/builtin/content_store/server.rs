@@ -152,11 +152,17 @@ impl ContentStoreServer {
     /// For legacy compatibility, if session_manager has a current session set via switch_context,
     /// that takes precedence. Otherwise, returns the constructor-bound session_id.
     pub(crate) fn require_active_session_result(&self) -> Result<String, String> {
-        // For legacy compatibility: check if session_manager has an active session
+        // New architecture: if this server instance is bound to a specific session (not "default"),
+        // strictly use that session ID, ignoring global state. This ensures Agent V2 isolation.
+        if self.session_id != "default" {
+            return Ok(self.session_id.clone());
+        }
+
+        // Legacy compatibility: check if session_manager has an active session
         if let Some(session_id) = self.session_manager.get_current_session() {
             Ok(session_id)
         } else {
-            // New architecture: use the session_id bound at construction
+            // Default fallback
             Ok(self.session_id.clone())
         }
     }

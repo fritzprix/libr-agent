@@ -31,7 +31,7 @@ export async function prepareMessageForLLM(message: Message): Promise<Message> {
     const attachmentContents = message.attachments.map((attachment, i) => {
       return `<attachment_${i}>
 ${JSON.stringify(attachment, null, 2)}
-<!-- 
+<!--
 To read the full content of this file, use:
 - readContent(sessionId: "${attachment.sessionId}", contentId: "${attachment.contentId}", lineRange: {fromLine: 1, toLine: 200})
 - For keyword-based similarity search: keywordSimilaritySearch(sessionId: "${attachment.sessionId}", query: "your search query")

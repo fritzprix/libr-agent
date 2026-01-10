@@ -45,6 +45,40 @@ export function AgentMessageBubble({
               : msg.role.toUpperCase()}
           </div>
           <div className="whitespace-pre-wrap">
+            {/* File Attachments Display */}
+            {msg.attachments && msg.attachments.length > 0 && (
+              <div className="mb-3 p-3 bg-muted/30 rounded-lg border border-muted/20">
+                <div className="text-sm mb-2 font-medium flex items-center gap-2">
+                  <span>📎</span>
+                  <span>
+                    {msg.attachments.length} file
+                    {msg.attachments.length > 1 ? 's' : ''} attached
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  {msg.attachments.map((attachment) => (
+                    <div
+                      key={attachment.contentId}
+                      className="flex items-center justify-between p-2 bg-background/50 rounded border"
+                    >
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <span className="text-xs">📄</span>
+                        <span className="text-xs font-medium truncate">
+                          {attachment.filename}
+                        </span>
+                        <span className="text-xs opacity-60 whitespace-nowrap">
+                          ({Math.round(attachment.size / 1024)}KB)
+                        </span>
+                      </div>
+                      <div className="text-xs opacity-50 whitespace-nowrap ml-2">
+                        {attachment.lineCount} lines
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {(msg.content && msg.content.length > 0) ||
             msg.thinking ||
             msg.isStreaming ? (
