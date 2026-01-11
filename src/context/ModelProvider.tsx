@@ -7,6 +7,7 @@ import {
   PropsWithChildren,
 } from 'react';
 import useSWR from 'swr';
+import { withTimeout } from '../lib/retry-utils';
 import { AIServiceProvider, AIServiceFactory } from '../lib/ai-service';
 import {
   llmConfigManager,
@@ -27,6 +28,22 @@ const DEFAULT_MODEL_INFO: ModelInfo = {
 };
 
 const logger = getLogger('ModelProvider');
+
+/**
+ * Simple hash function for API keys to avoid exposing raw keys in cache keys.
+ * @param str The string to hash
+ * @returns A short hash string
+ */
+function simpleHash(str: string): string {
+  if (!str) return '';
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash = hash & hash; // Convert to 32-bit integer
+  }
+  return Math.abs(hash).toString(36);
+}
 
 interface ModelOptionsContextType {
   modelId: string;
@@ -71,6 +88,17 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
     );
   }, [serviceConfigs]);
 
+  // Generate stable cache key including baseUrl
+  const swrCacheKey = useMemo(() => {
+    const config = serviceConfigs[provider] || {};
+    return [
+      'models',
+      provider,
+      simpleHash(config.apiKey || ''), // Hash for security
+      config.baseUrl || '', // Include baseUrl
+    ];
+  }, [provider, serviceConfigs]);
+
   // Fetcher for dynamic models
   const fetchDynamicModels = useCallback(
     async ([, provider, apiKey]: [string, string, string]) => {
@@ -107,7 +135,8 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
           effectiveApiKey,
           providerConfig,
         );
-        const modelList = await service.listModels();
+        // Use 5-second timeout for model loading to prevent UI hangs
+        const modelList = await withTimeout(service.listModels(), 5000);
 
         // Convert ModelInfo[] into Record<string, ModelInfo>
         const modelsRecord = modelList.reduce(
@@ -134,7 +163,7 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
     data: dynamicModels = {},
     mutate: mutateModels,
     isValidating: isRefreshingModels,
-  } = useSWR(['models', provider, apiKeys[provider]], fetchDynamicModels, {
+  } = useSWR(swrCacheKey, fetchDynamicModels, {
     revalidateOnFocus: false,
     staleWhileRevalidate: true,
     dedupingInterval: 30000, // 30 seconds
