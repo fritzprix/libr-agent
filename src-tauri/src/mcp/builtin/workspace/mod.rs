@@ -15,6 +15,12 @@ use crate::mcp::MCPTool;
 use crate::services::SecureFileManager;
 use crate::session::SessionManager;
 
+// Platform-specific persistent shell tool name
+#[cfg(unix)]
+pub const PERSISTENT_SHELL_TOOL: &str = "runInPersistentShell";
+#[cfg(windows)]
+pub const PERSISTENT_SHELL_TOOL: &str = "runInPersistentPowerShell";
+
 // Module imports
 pub mod code_execution;
 pub mod export_operations;
@@ -579,26 +585,52 @@ impl WorkspaceServer {
             "finished": finished,
         });
 
+        // Build detailed text output with process IDs and commands
+        let process_list = if processes.is_empty() {
+            "No processes found".to_string()
+        } else {
+            processes
+                .iter()
+                .map(|p| {
+                    let id = p
+                        .get("process_id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown");
+                    let status = p
+                        .get("status")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown");
+                    let command = p.get("command").and_then(|v| v.as_str()).unwrap_or("");
+                    let truncated_cmd = if command.len() > 60 {
+                        format!("{}...", &command[..57])
+                    } else {
+                        command.to_string()
+                    };
+                    format!("• {} [{}]: {}", id, status, truncated_cmd)
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        let summary = format!(
+            "Found {} processes ({} running, {} finished)\n\n{}",
+            total, running, finished, process_list
+        );
+
         let hint = SuccessHint::new(
-            format!(
-                "Found {} processes ({} running, {} finished)",
-                total, running, finished
-            ),
+            summary,
             if running > 0 {
                 vec![
-                    "Use pollProcess to check status of running processes".to_string(),
-                    "Use stopProcess to cancel unnecessary processes".to_string(),
+                    "Use pollProcess(processId) to check status".to_string(),
+                    "Use stopProcess(processId) to cancel".to_string(),
                 ]
             } else if total > 0 {
                 vec![
-                    "Use readProcessOutput to view output of finished processes".to_string(),
+                    "Use readProcessOutput(processId, stream) to view output".to_string(),
                     "All processes have completed".to_string(),
                 ]
             } else {
-                vec![
-                    "Use executeShell with runMode=\"async\" to start background processes"
-                        .to_string(),
-                ]
+                vec!["Use spawnProcess to start background processes".to_string()]
             },
         );
 
@@ -843,8 +875,21 @@ impl BuiltinMCPServer for WorkspaceServer {
         );
 
         let context_prompt = format!(
-            "## Workspace\n\n**Directory**: {}\n**Shell CWD**: {}\n**Running Processes**: {}\n**Platform**: {}/{}",
-            workspace_dir, shell_cwd, running_count, os, arch
+            "## Workspace\\n\\n\\\n            **Workspace Root**: {} (used by: file tools, isolated shell commands)\\n\\\n            **Persistent Shell CWD**: {} (used by: {} only)\\n\\\n            **Running Processes**: {}\\n\\\n            **Platform**: {}/{}\\n\\n\\\n            \u{26a0}\u{fe0f} SHELL TOOL SELECTION:\\n\\\n            - For most commands \u{2192} Use {} (Unix) or {} (Windows)\\n\\\n            - For state preservation (cd, export) \u{2192} Use {}\\n\\\n            - For background tasks \u{2192} Use spawnProcess\\n\\n\\\n            \u{1f50d} WORKING DIRECTORY:\\n\\\n            - {}/{}: Always starts from Workspace Root\\n\\\n            - {}: Maintains persistent CWD (currently: {})\\n\\\n            - File tools (readFile, listDirectory): Always use Workspace Root\\n\\n\\\n            \u{1f4a1} TIP: Use 'cd dir && command' with {} to work in subdirectories.",
+            workspace_dir,
+            shell_cwd,
+            PERSISTENT_SHELL_TOOL,
+            running_count,
+            os,
+            arch,
+            if cfg!(unix) { "runShell" } else { "runPowerShell" },
+            if cfg!(windows) { "runPowerShell" } else { "runShell" },
+            PERSISTENT_SHELL_TOOL,
+            if cfg!(unix) { "runShell" } else { "runPowerShell" },
+            if cfg!(windows) { "runPowerShell" } else { "runShell" },
+            PERSISTENT_SHELL_TOOL,
+            shell_cwd,
+            if cfg!(unix) { "runShell" } else { "runPowerShell" }
         );
 
         ServiceContext {
@@ -994,11 +1039,18 @@ impl BuiltinMCPServer for WorkspaceServer {
             // interface to avoid external runtime dependencies and to prevent
             // agents from controlling isolation/permissions. Only shell
             // execution remains exposed below.
-            // Platform-specific shell execution tools
+            // PRIMARY isolated shell execution tools (recommended)
             #[cfg(unix)]
-            "executeShell" => self.handle_execute_shell(args, &target_session_id).await,
+            "runShell" => self.handle_run_shell(args, &target_session_id).await,
             #[cfg(windows)]
-            "executeWindowsCmd" => self.handle_execute_shell(args, &target_session_id).await,
+            "runPowerShell" => self.handle_run_shell(args, &target_session_id).await,
+            // ADVANCED persistent shell execution tools (for state preservation)
+            #[cfg(unix)]
+            "runInPersistentShell" => self.handle_execute_shell(args, &target_session_id).await,
+            #[cfg(windows)]
+            "runInPersistentPowerShell" => self.handle_execute_shell(args, &target_session_id).await,
+            // Background process execution (platform-agnostic)
+            "spawnProcess" => self.handle_spawn_process(args, &target_session_id).await,
             // Interactive shell execution (2nd tool for user input)
             "executePendingShell" => self.handle_execute_pending_shell(args, &target_session_id).await,
             // Cancel pending execution (UI callback tool)
@@ -1022,11 +1074,14 @@ impl BuiltinMCPServer for WorkspaceServer {
             "list_directory" | "ls" => Ok(MCPResult::error(
                 "Tool not found. Did you mean 'listDirectory'? Please use the exact tool name 'listDirectory'."
             )),
-            "execute_shell" | "execute_command" => Ok(MCPResult::error(
-                "Tool not found. Did you mean 'executeShell'? Please use the exact tool name 'executeShell'."
+            "execute_shell" | "execute_command" | "run_command" => Ok(MCPResult::error(
+                "Tool not found. Use 'runShell' (Unix) or 'runPowerShell' (Windows) for quick commands. Use exact tool names."
             )),
-            "execute_windows_cmd" => Ok(MCPResult::error(
-                "Tool not found. Did you mean 'executeWindowsCmd'? Please use the exact tool name 'executeWindowsCmd'."
+            "execute_windows_cmd" | "executeWindowsCmd" => Ok(MCPResult::error(
+                "Tool not found. Use 'runPowerShell' for quick commands or 'runInPersistentPowerShell' for persistent state. Use exact tool names."
+            )),
+            "executeShellAsync" | "executeWindowsCmdAsync" | "runAsync" | "run_async" => Ok(MCPResult::error(
+                "Tool not found. Use 'spawnProcess' for background execution (works on both Unix and Windows)."
             )),
             _ => Err(format!("Tool '{tool_name}' not found")),
         }

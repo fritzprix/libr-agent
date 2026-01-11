@@ -12,7 +12,9 @@ use crate::mcp::builtin::error_guidance::{
 use crate::mcp::types::MCPResult;
 use crate::session_isolation::{IsolatedProcessConfig, IsolationLevel};
 
-use super::super::{terminal_manager, PendingShellExecution, WorkspaceServer};
+use super::super::{
+    terminal_manager, PendingShellExecution, WorkspaceServer, PERSISTENT_SHELL_TOOL,
+};
 
 impl WorkspaceServer {
     /// Redact sensitive input from output string
@@ -133,7 +135,7 @@ impl WorkspaceServer {
             "text/html",
             &html,
             "workspace",
-            "executeShell",
+            PERSISTENT_SHELL_TOOL,
             Some(&format!(
                 "⏳ Waiting for user input\nExecution ID: {execution_id}\nCommand: {sanitized_command}"
             )),

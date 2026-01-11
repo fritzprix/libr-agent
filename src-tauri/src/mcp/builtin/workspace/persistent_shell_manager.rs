@@ -275,7 +275,7 @@ mod tests {
         std::fs::create_dir_all(&workspace_path)?;
 
         #[cfg(unix)]
-        let (stdout, _, exit_code) = manager
+        let (stdout, _, exit_code, _cwd) = manager
             .execute(
                 session_id.clone(),
                 workspace_path.clone(),
@@ -285,7 +285,7 @@ mod tests {
             .map_err(|e| anyhow::anyhow!(e))?;
 
         #[cfg(windows)]
-        let (stdout, _, exit_code) = manager
+        let (stdout, _, exit_code, _cwd) = manager
             .execute(
                 session_id.clone(),
                 workspace_path.clone(),
@@ -325,7 +325,7 @@ mod tests {
                 .map_err(|e| anyhow::anyhow!(e))?;
 
             // Verify it persists
-            let (stdout, _, exit_code) = manager
+            let (stdout, _, exit_code, _cwd) = manager
                 .execute(session_id.clone(), workspace_path.clone(), "echo $TEST_VAR")
                 .await
                 .map_err(|e| anyhow::anyhow!(e))?;
@@ -347,7 +347,7 @@ mod tests {
                 .map_err(|e| anyhow::anyhow!(e))?;
 
             // Verify it persists
-            let (stdout, _, exit_code) = manager
+            let (stdout, _, exit_code, _cwd) = manager
                 .execute(
                     session_id.clone(),
                     workspace_path.clone(),

@@ -18,10 +18,15 @@ pub fn file_tools() -> Vec<MCPTool> {
 
 pub fn code_tools() -> Vec<MCPTool> {
     vec![
-        // Python/TypeScript execution tools removed from public interface to avoid
-        // pulling external runtime dependencies and to prevent agents from
-        // setting isolation levels. Only shell execution remains exposed.
-        code_tools::create_execute_shell_tool(),
+        // PRIMARY shell execution tool (isolated, no state preservation)
+        #[cfg(unix)]
+        code_tools::create_run_shell_tool(), // Unix: runShell
+        #[cfg(windows)]
+        code_tools::create_run_powershell_tool(), // Windows: runPowerShell
+        // ADVANCED shell execution tool (persistent state)
+        code_tools::create_execute_shell_tool(), // Unix: runInPersistentShell, Windows: runInPersistentPowerShell
+        // Background process execution (platform-agnostic)
+        code_tools::create_spawn_process_tool(), // Async: background processes
         // 2nd tool for interactive shell execution (Two-Tool Pattern)
         code_tools::create_execute_pending_shell_tool(),
         // Cancel tool for interactive shell execution
@@ -57,15 +62,25 @@ mod tests {
     #[test]
     fn test_code_tools_returns_platform_tool() {
         let tools = code_tools();
-        // Updated to expect 3 tools: execute_shell, execute_pending_shell, cancel_pending_execution
-        assert_eq!(tools.len(), 3);
+        // Updated to expect 5 tools: runShell/runPowerShell (primary),
+        // runInPersistentShell/runInPersistentPowerShell (advanced),
+        // spawnProcess, executePendingShell, cancelPendingExecution
+        assert_eq!(tools.len(), 5);
 
-        let tool = &tools[0];
-
+        let primary_tool = &tools[0];
         #[cfg(unix)]
-        assert_eq!(tool.name, "executeShell");
-
+        assert_eq!(primary_tool.name, "runShell");
         #[cfg(windows)]
-        assert_eq!(tool.name, "executeWindowsCmd");
+        assert_eq!(primary_tool.name, "runPowerShell");
+
+        let persistent_tool = &tools[1];
+        #[cfg(unix)]
+        assert_eq!(persistent_tool.name, "runInPersistentShell");
+        #[cfg(windows)]
+        assert_eq!(persistent_tool.name, "runInPersistentPowerShell");
+
+        // Verify async tool exists
+        let async_tool = &tools[2];
+        assert_eq!(async_tool.name, "spawnProcess");
     }
 }

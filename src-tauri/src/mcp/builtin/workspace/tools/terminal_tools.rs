@@ -7,7 +7,7 @@ pub fn create_poll_process_tool() -> MCPTool {
 
     props.insert(
         "processId".to_string(),
-        string_prop_required("Process ID returned by executeShell (async mode)"),
+        string_prop_required("Process ID returned by spawnProcess"),
     );
 
     // Optional tail parameter

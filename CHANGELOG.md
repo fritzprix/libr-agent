@@ -6,6 +6,18 @@ All notable changes to this project will be documented in this file.
 
 ### 🚀 Features
 
+- **Primary Isolated Shell Tools**: Introduced new lightweight shell execution tools for faster standard operations
+  - **New Primary Tools**: `runShell` (Unix) and `runPowerShell` (Windows) for synchronous, isolated execution
+  - **Workspace Anchoring**: Primary tools always execute from workspace root for predictability
+  - **Performance**: Eliminates persistent shell overhead for 90% of common commands (ls, cat, grep)
+  - **Clear Separation**: Renamed `executeShell` to `runInPersistentShell` and `executeWindowsCmd` to `runInPersistentPowerShell`
+  - **Usage Guidance**: Updated service context to guide agents toward correct tool selection
+
+- **Gemini Granular Token Metrics**: Enhanced usage tracking for Gemini models
+  - **Usage Breakdown**: Tracks prompt, completion, and total tokens independently
+  - **Cache Visibility**: Reports `cachedContentTokenCount` for context caching optimization
+  - **Thinking Tokens**: Tracks `thoughtsTokenCount` for reasoning models
+
 - **Rust Agent Core**: Implement initial Rust-based agent core (`thronglet`) with Tauri integration, new frontend components, and packaging configurations.
 - **Multi-Vendor Prefill Performance Tracking**: Added Time-To-First-Token (TTFT) measurement across all AI service providers for consistent prefill performance monitoring.
   - **Native Metrics**: Ollama provides `promptEvalDuration`, Anthropic provides cache hit metrics
@@ -49,6 +61,11 @@ All notable changes to this project will be documented in this file.
   - **No User Impact**: Change is transparent to users, tools work as expected without manual PATH setup
 
 ### 🐛 Fixed
+
+- **Token Estimation Robustness**: Fixed WASM crash in `tiktoken` for non-OpenAI models
+  - **Try-Catch Wrapper**: Added robust error handling around WASM calls in `estimateTextTokens`
+  - **Heuristic Fallback**: Implemented character-based fallback (approx 4 chars/token) when tokenizer fails
+  - **Ollama Stability**: Prevents `RuntimeError: Unreachable code` when using Qwen/Llama via Ollama
 
 - **Knowledge Tool Fixes (Critical)**:
   - **Schema Mismatch Resolved**: Fixed a critical bug where `searchKnowledge` failed due to a missing `Source` column in the database schema. Added a migration to introduce the `source` column to the `knowledge` table.

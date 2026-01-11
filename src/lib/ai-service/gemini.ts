@@ -375,6 +375,14 @@ export class GeminiService extends BaseAIService {
       const startTime = performance.now();
       let firstChunkReceived = false;
 
+      // Track cumulative usage metadata across chunks
+      const currentUsage = {
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+        details: {} as Record<string, unknown>,
+      };
+
       for await (const chunk of result) {
         if (this.getAbortSignal().aborted) {
           this.logger.info('Stream aborted during iteration');
@@ -385,14 +393,43 @@ export class GeminiService extends BaseAIService {
         if (!firstChunkReceived) {
           const ttft = performance.now() - startTime;
           firstChunkReceived = true;
-          yield JSON.stringify({
-            usage: {
-              promptTokens: 0,
-              completionTokens: 0,
-              totalTokens: 0,
-              details: { timeToFirstToken: ttft },
-            },
-          });
+          currentUsage.details.timeToFirstToken = ttft;
+        }
+
+        // Extract usage metadata from chunk if available
+        if (chunk.usageMetadata) {
+          let usageUpdated = false;
+
+          if (chunk.usageMetadata.promptTokenCount !== undefined) {
+            currentUsage.promptTokens = chunk.usageMetadata.promptTokenCount;
+            usageUpdated = true;
+          }
+
+          if (chunk.usageMetadata.candidatesTokenCount !== undefined) {
+            currentUsage.completionTokens =
+              chunk.usageMetadata.candidatesTokenCount;
+            usageUpdated = true;
+          }
+
+          // Add cached content tokens if present
+          if (chunk.usageMetadata.cachedContentTokenCount !== undefined) {
+            currentUsage.details.cachedContentTokenCount =
+              chunk.usageMetadata.cachedContentTokenCount;
+            usageUpdated = true;
+          }
+
+          // Add thinking tokens if present (for reasoning models)
+          if (chunk.usageMetadata.thoughtsTokenCount !== undefined) {
+            currentUsage.details.thoughtsTokenCount =
+              chunk.usageMetadata.thoughtsTokenCount;
+            usageUpdated = true;
+          }
+
+          if (usageUpdated) {
+            currentUsage.totalTokens =
+              currentUsage.promptTokens + currentUsage.completionTokens;
+            yield JSON.stringify({ usage: currentUsage });
+          }
         }
 
         // Type definition for Gemini Experimental Thoughts

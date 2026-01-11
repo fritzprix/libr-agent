@@ -584,11 +584,11 @@ mod tests {
             .await
             .expect("Failed to create proxy");
 
-        // Execute 'pwd' command via executeShell
+        // Execute 'pwd' command via runInPersistentShell
         let response = proxy_manager
             .call_tool(
                 &session_id,
-                "builtin_workspace__executeShell",
+                "builtin_workspace__runInPersistentShell",
                 json!({
                     "command": "pwd",
                     "runMode": "sync"

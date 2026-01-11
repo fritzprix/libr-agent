@@ -11,7 +11,7 @@ use crate::mcp::builtin::error_guidance::{
 use crate::mcp::types::MCPResult;
 use crate::session_isolation::{IsolatedProcessConfig, IsolationLevel};
 
-use super::super::{terminal_manager, utils, WorkspaceServer};
+use super::super::{terminal_manager, utils, WorkspaceServer, PERSISTENT_SHELL_TOOL};
 use super::process;
 
 impl WorkspaceServer {
@@ -96,34 +96,25 @@ impl WorkspaceServer {
                         }
                     };
 
-                    // Success - include output in text for agent visibility
-                    // CRITICAL: Explicitly show duration and status to prevent hallucination
-                    let header = format!(
-                        "✓ Command executed successfully in {}ms (exit code: {})",
-                        duration_ms, exit_code
+                    // Success - format with clear state reporting
+                    let header = format!("✓ Command executed successfully in {}ms", duration_ms);
+
+                    // Clear shell state section with persistence indicator
+                    let shell_state = format!(
+                        "Persistent shell state (maintained for next {} call):\n  Working directory: {}\n  Exit code: {}",
+                        PERSISTENT_SHELL_TOOL, display_cwd, exit_code
                     );
 
-                    let prompt = format!("➜ {} $", display_cwd);
-
-                    let list_hint = if display_cwd == "." {
-                        "Use listDirectory to verify created files".to_string()
-                    } else {
-                        format!(
-                            "Use listDirectory(\"{}\") to verify created files",
-                            display_cwd
-                        )
-                    };
+                    // Warning about file tools
+                    let file_tools_warning = "⚠️  File tools (readFile, listDirectory) always use workspace root (.)\n    To list files in shell's current directory, use shell commands: ls or find";
 
                     let text_message: String = if !stdout.is_empty() {
                         format!(
-                            "{}\n{}\n\nOutput:\n{}\n\n💡 Next: {} or check system state",
-                            header, prompt, stdout, list_hint
+                            "{}\n\nCommand output:\n{}\n\n{}\n\n{}",
+                            header, stdout, shell_state, file_tools_warning
                         )
                     } else {
-                        format!(
-                            "{}\n{}\n\n💡 Next: {} or check system state",
-                            header, prompt, list_hint
-                        )
+                        format!("{}\n\n{}\n\n{}", header, shell_state, file_tools_warning)
                     };
                     Ok(MCPResult::success_with_data(
                         text_message.as_str(),
@@ -390,7 +381,7 @@ impl WorkspaceServer {
 
                 let hint = SuccessHint::new(
                     text_message,
-                    SuccessHint::for_tool("executeShell", ToolGroup::Workspace),
+                    SuccessHint::for_tool(PERSISTENT_SHELL_TOOL, ToolGroup::Workspace),
                 );
                 Ok(hint.to_mcp_result_with_data(Some(response)))
             }
@@ -616,21 +607,7 @@ impl WorkspaceServer {
                 .await;
         }
 
-        // Check runMode parameter
-        let run_mode = args
-            .get("runMode")
-            .or_else(|| args.get("run_mode"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("sync");
-
-        // Async mode: background execution
-        if run_mode == "async" {
-            return self
-                .execute_shell_async(raw_command, &args, session_id)
-                .await;
-        }
-
-        // Sync mode: check persistent shell preference
+        // Sync mode: persistent shell execution
         let timeout_secs = utils::validate_timeout(args.get("timeout").and_then(|v| v.as_u64()));
 
         // Enforce maximum sync timeout
@@ -639,41 +616,122 @@ impl WorkspaceServer {
             return Ok(ErrorGuidance::with_guidance(
                 ErrorCategory::InvalidInput,
                 format!(
-                    "Sync mode timeout ({} seconds) exceeds maximum ({} seconds)",
+                    "Timeout ({} seconds) exceeds maximum ({} seconds)",
                     timeout_secs, sync_max
                 ),
                 vec![
-                    format!("Use \"runMode\": \"async\" for commands longer than {} seconds", sync_max),
-                    "Use pollProcess to check status of async commands".to_string(),
-                    format!("Adjust LIBRAGENT_DEFAULT_EXECUTION_TIMEOUT environment variable (current: {}s)", sync_max),
+                    format!(
+                        "Use spawnProcess for commands longer than {} seconds",
+                        sync_max
+                    ),
+                    "spawnProcess runs in background and returns process_id".to_string(),
+                    format!(
+                        "Current maximum timeout: {}s (LIBRAGENT_DEFAULT_EXECUTION_TIMEOUT)",
+                        sync_max
+                    ),
                 ],
                 ToolGroup::Workspace,
             )
             .to_mcp_result());
         }
 
-        // Check persistent shell preference (default: enabled)
-        let use_persistent_shell = args
-            .get("usePersistentShell")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true); // Default enabled per Q1 decision
+        // Execute with persistent shell (state preservation)
+        self.execute_shell_persistent(raw_command, timeout_secs, session_id)
+            .await
+    }
 
-        if use_persistent_shell {
-            // NEW PATH: Persistent shell execution (state preservation)
-            return self
-                .execute_shell_persistent(raw_command, timeout_secs, session_id)
-                .await;
+    /// Handle primary isolated shell execution (new tool)
+    pub async fn handle_run_shell(
+        &self,
+        args: Value,
+        session_id: &str,
+    ) -> Result<MCPResult, String> {
+        let raw_command = match args.get("command").and_then(|v| v.as_str()) {
+            Some(cmd) => cmd,
+            None => {
+                return Ok(missing_param_error("command", ToolGroup::Workspace));
+            }
+        };
+
+        // Get timeout (use default if not specified)
+        let timeout_secs = utils::validate_timeout(args.get("timeout").and_then(|v| v.as_u64()));
+
+        // Enforce maximum sync timeout
+        let sync_max = crate::config::default_execution_timeout();
+        if timeout_secs > sync_max {
+            return Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::InvalidInput,
+                format!(
+                    "Timeout ({} seconds) exceeds maximum ({} seconds)",
+                    timeout_secs, sync_max
+                ),
+                vec![
+                    format!(
+                        "Use spawnProcess for commands longer than {} seconds",
+                        sync_max
+                    ),
+                    "spawnProcess runs in background and returns process_id".to_string(),
+                    format!(
+                        "Current maximum timeout: {}s (LIBRAGENT_DEFAULT_EXECUTION_TIMEOUT)",
+                        sync_max
+                    ),
+                ],
+                ToolGroup::Workspace,
+            )
+            .to_mcp_result());
         }
 
-        // FALLBACK PATH: One-shot isolation execution
-        let isolation_level = IsolationLevel::Medium;
+        // Execute with Medium isolation (always workspace root anchored)
+        self.execute_shell_with_isolation(
+            raw_command,
+            IsolationLevel::Medium,
+            timeout_secs,
+            session_id,
+        )
+        .await
+    }
 
-        #[cfg(windows)]
-        info!(
-            "executeWindowsCmd invoked: command='{}' runMode='{}' requireUserInput='{}' timeout={}",
-            raw_command, run_mode, require_input, timeout_secs
-        );
-        self.execute_shell_with_isolation(raw_command, isolation_level, timeout_secs, session_id)
+    /// Handle async shell execution (separate tool)
+    pub async fn handle_spawn_process(
+        &self,
+        args: Value,
+        session_id: &str,
+    ) -> Result<MCPResult, String> {
+        let raw_command = match args.get("command").and_then(|v| v.as_str()) {
+            Some(cmd) => cmd,
+            None => {
+                return Ok(missing_param_error("command", ToolGroup::Workspace));
+            }
+        };
+
+        // Async mode does not support interactive input
+        let require_input = args
+            .get("requireUserInput")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        if require_input {
+            return Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::InvalidInput,
+                "Background processes cannot prompt for interactive input".to_string(),
+                vec![
+                    format!(
+                        "Use {} (sync mode) for commands requiring user input",
+                        PERSISTENT_SHELL_TOOL
+                    ),
+                    format!(
+                        "{} supports requireUserInput for sudo/interactive commands",
+                        PERSISTENT_SHELL_TOOL
+                    ),
+                    "Async processes run in the background without user interaction".to_string(),
+                ],
+                ToolGroup::Workspace,
+            )
+            .to_mcp_result());
+        }
+
+        // Execute in background
+        self.execute_shell_async(raw_command, &args, session_id)
             .await
     }
 

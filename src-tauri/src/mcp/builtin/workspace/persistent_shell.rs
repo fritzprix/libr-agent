@@ -696,9 +696,10 @@ mod tests {
         let unicode_str = "안녕하세요 Hello World";
 
         #[cfg(unix)]
-        let (stdout, _, exit_code) = shell.execute(&format!("echo '{}'", unicode_str)).await?;
+        let (stdout, _, exit_code, _cwd) =
+            shell.execute(&format!("echo '{}'", unicode_str)).await?;
         #[cfg(windows)]
-        let (stdout, _, exit_code) = shell
+        let (stdout, _, exit_code, _cwd) = shell
             .execute(&format!("Write-Output '{}'", unicode_str))
             .await?;
 

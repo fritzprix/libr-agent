@@ -492,6 +492,109 @@ ServiceContext {
 
 **Remember:** `context_prompt` is the ONLY field that reaches the AI's system prompt. Everything else is discarded during prompt construction.
 
+### MCP Tool Response Design
+
+**🚨 CRITICAL: structured_content is ONLY for UI Rendering**
+
+When implementing MCP tools, understand that AI agents and UI components see different parts of `MCPResult`:
+
+**Data Flow Architecture (LibrAgent-Specific):**
+
+```rust
+pub struct MCPResult {
+    content: Vec<MCPContent>,           // → Standard MCP: AI agents SEE this
+    structured_content: Option<Value>,  // → LibrAgent extension: UI components only (agents DON'T)
+    is_error: Option<bool>,             // → Standard MCP
+}
+```
+
+**Important:** `structured_content` is a **non-standard LibrAgent internal extension**. The standard MCP protocol only defines `content` (array of MCPContent items) and `isError` (boolean). We added `structured_content` for LibrAgent's UI components to render rich data without parsing text. External MCP servers don't use this field.
+
+**What Goes Where:**
+
+| Information Type | Text Content (agents see) | structured_content (UI only) |
+| ---------------- | ------------------------- | ---------------------------- |
+| Process IDs      | ✅ **MUST include**       | ✅ Optional for UI parsing   |
+| File paths       | ✅ **MUST include**       | ✅ Optional for UI parsing   |
+| Status messages  | ✅ **MUST include**       | ✅ Optional for UI parsing   |
+| Error details    | ✅ **MUST include**       | ✅ Optional for UI parsing   |
+| Metadata         | ❌ Not critical           | ✅ For UI components         |
+| Raw data arrays  | ❌ Summarize in text      | ✅ For UI rendering          |
+
+**Anti-Patterns to Avoid:**
+
+```rust
+// ❌ WRONG: Critical ID only in structured_content
+let result = MCPResult {
+    content: vec![text("Background process started successfully")],
+    structured_content: Some(json!({
+        "process_id": "7573a69b",  // Agents can't see this!
+        "status": "running"
+    })),
+    is_error: Some(false),
+};
+
+// ✅ CORRECT: ID visible in text output
+let result = MCPResult {
+    content: vec![text("Background process started (ID: 7573a69b)\n\nUse pollProcess(\"7573a69b\") to check status")],
+    structured_content: Some(json!({
+        "process_id": "7573a69b",  // Redundant but useful for UI
+        "status": "running"
+    })),
+    is_error: Some(false),
+};
+```
+
+**Listing Multiple Items:**
+
+```rust
+// ❌ WRONG: IDs buried in JSON
+let hint = SuccessHint::new(
+    "Found 3 processes (1 running, 2 finished)",
+    vec!["Use pollProcess to check status"],
+);
+
+// ✅ CORRECT: IDs visible for copy-paste
+let process_list = processes.iter()
+    .map(|p| format!("• {} [{}]: {}", p.id, p.status, p.command))
+    .collect::<Vec<_>>()
+    .join("\n");
+
+let hint = SuccessHint::new(
+    format!("Found 3 processes:\n\n{}", process_list),
+    vec!["Use pollProcess(processId) to check status"],
+);
+```
+
+**State Information:**
+
+```rust
+// ❌ WRONG: Implicit state, only in JSON
+let output = format!("Command executed\n{}", stdout);
+let data = json!({"execution_type": "persistent", "cwd": "/project"});
+
+// ✅ CORRECT: Explicit state in text
+let output = format!(
+    "Command executed\n\n{}\n\nPersistent shell state (maintained for next call):\n  Working directory: {}\n  Exit code: {}",
+    stdout, cwd, exit_code
+);
+let data = json!({"execution_type": "persistent", "cwd": "/project"});
+```
+
+**Testing Your Tool Responses:**
+
+1. **Text-Only Test**: Read only the `content` field - can an agent understand what happened?
+2. **ID Extraction**: Can an agent copy process IDs, file paths, session IDs from the text?
+3. **Follow-up Actions**: Does the text contain enough info for the next tool call?
+4. **State Clarity**: Is execution context (persistent vs isolated) clear from text alone?
+
+**Remember:**
+
+- Agents ONLY see text content - design for text-first readability
+- structured_content is purely for UI components and external tooling
+- If an agent needs to use a value in a follow-up call, it MUST be in text
+- Test by reading only the text field - pretend JSON doesn't exist
+
 ## Dependencies
 
 ### Core Framework

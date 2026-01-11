@@ -652,7 +652,7 @@ Agent: "Would you like me to update the existing todo or use a different title?"
 
 1. **Workspace Tools** (15 tools) - HIGHEST USAGE
    - File operations: readFile, writeFile, listDirectory, replaceLines
-   - Code execution: executeShell, executePendingShell
+   - Code execution: runInPersistentShell, executePendingShell
    - Process management: readProcessOutput, stopProcess
    - **Impact:** 50+ tools with complete error guidance
 

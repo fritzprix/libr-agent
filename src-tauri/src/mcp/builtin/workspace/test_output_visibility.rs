@@ -18,15 +18,13 @@ mod tests {
     async fn test_read_process_output_visibility() {
         let server = create_server().await;
 
-        // Include runMode: "async"
+        // Use handle_spawn_process directly
         let exec_args = json!({
             "command": "echo \"Hello World output line 1\nHello World output line 2\"",
-            "await": false,
-            "runMode": "async"
         });
 
         let result = server
-            .handle_execute_shell(exec_args, "test-session")
+            .handle_spawn_process(exec_args, "test-session")
             .await
             .expect("Execution failed");
         let data = result.structured_content.expect("No data returned");
@@ -77,15 +75,13 @@ mod tests {
     async fn test_poll_process_tail_visibility() {
         let server = create_server().await;
 
-        // Include runMode: "async"
+        // Use handle_spawn_process directly
         let exec_args = json!({
-            "command": "echo \"Tail line 1\nTail line 2\"",
-            "await": false,
-            "runMode": "async"
+            "command": "echo \"Tail line 1\\nTail line 2\"",
         });
 
         let result = server
-            .handle_execute_shell(exec_args, "test-session")
+            .handle_spawn_process(exec_args, "test-session")
             .await
             .expect("Execution failed");
         let process_id = result.structured_content.unwrap()["process_id"]

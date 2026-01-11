@@ -357,7 +357,7 @@ impl SuccessHint {
                 "Use readFile to view file contents".to_string(),
                 "Use writeFile to create new files".to_string(),
             ],
-            ("executeShell", ToolGroup::Workspace) => vec![
+            ("runInPersistentShell", ToolGroup::Workspace) => vec![
                 "Use listDirectory to verify created files".to_string(),
                 "Use readFile to verify file contents".to_string(),
             ],

@@ -307,6 +307,93 @@ The system implements a "Dual-Track" architecture to support advanced agentic wo
 4.  **Service Context Pattern:**
     - Tools can dynamically inject context (e.g., browser state, current time) into the system prompt via the `get_service_context` trait method.
 
+### MCP Tool Response Design
+
+**🚨 CRITICAL: Understanding What AI Agents Actually See**
+
+When designing MCP tool responses, it's essential to understand the data flow:
+
+**MCPResult Structure (LibrAgent-Specific):**
+
+```rust
+pub struct MCPResult {
+    content: Vec<MCPContent>,      // Standard MCP: Text that agents SEE
+    structured_content: Option<Value>,  // LibrAgent extension: JSON for UI only (agents NEVER see)
+    is_error: Option<bool>,        // Standard MCP
+}
+```
+
+**Note:** `structured_content` is a **LibrAgent-specific extension**, not part of the standard MCP protocol. External MCP servers only return `content` arrays. This field exists solely for LibrAgent's UI components to render rich interfaces.
+
+**What AI Agents See:**
+
+- ✅ **Text Content**: All text in `content` field (text messages, resource URIs)
+- ✅ **Tool Descriptions**: Schema definitions before calling tools
+- ✅ **Hints and Guidance**: Success/error messages in text format
+
+**What AI Agents NEVER See:**
+
+- ❌ **structured_content**: The entire JSON object is invisible to agents
+- ❌ **JSON Metadata**: process_id, execution_type, status codes in JSON
+- ❌ **Structured Data**: Arrays, objects, detailed metadata
+
+**Design Implications:**
+
+1. **Critical Information Must Be in Text**
+
+   ```rust
+   // ❌ WRONG: Process ID only in structured_content
+   MCPResult {
+       content: vec![text("Process started successfully")],
+       structured_content: Some(json!({"process_id": "abc123"}))
+   }
+
+   // ✅ CORRECT: Process ID in text output
+   MCPResult {
+       content: vec![text("Process started (ID: abc123)")],
+       structured_content: Some(json!({"process_id": "abc123"}))
+   }
+   ```
+
+2. **List IDs in Text for Follow-up Actions**
+
+   ```rust
+   // ❌ WRONG: IDs only in JSON array
+   "Found 3 processes"
+
+   // ✅ CORRECT: IDs visible in text
+   "Found 3 processes:
+   • abc123 [running]: npm build
+   • def456 [finished]: cargo test"
+   ```
+
+3. **State Information in Explicit Labels**
+
+   ```rust
+   // ❌ WRONG: Ambiguous or only in JSON
+   "Shell state: ~/project $"
+
+   // ✅ CORRECT: Explicit persistence indicator
+   "Persistent shell state (maintained for next runInPersistentShell call):
+     Working directory: ~/project
+     Exit code: 0"
+   ```
+
+**Use Cases for structured_content:**
+
+- UI rendering (frontend components parsing JSON)
+- External tools consuming machine-readable data
+- Debugging and logging purposes
+- **NOT for AI agent decision-making**
+
+**Best Practices:**
+
+- Always include IDs, paths, and critical values in text output
+- Use clear labels: "Process ID:", "Session:", "Working directory:"
+- Avoid relying on JSON structure for agent comprehension
+- Test tool outputs by reading only the text content
+- Remember: If agents can't see it in text, they can't use it
+
 ## Dependencies
 
 ### Core Framework
