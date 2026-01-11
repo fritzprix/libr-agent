@@ -41,7 +41,9 @@ pub fn create_export_zip_tool() -> MCPTool {
         "files".to_string(),
         array_schema(
             string_prop(Some(1), Some(1000), None),
-            Some("Array of relative file paths to export (from workspace root)"),
+            Some(
+                "Array of relative file or directory paths to export (from workspace root). Directories are included recursively",
+            ),
         ),
     );
     props.insert(
@@ -60,8 +62,9 @@ pub fn create_export_zip_tool() -> MCPTool {
     MCPTool {
         name: "exportZip".to_string(),
         title: Some("Export ZIP Package".to_string()),
-        description: "Export multiple files as a ZIP package for download with interactive UI"
-            .to_string(),
+        description:
+            "Export multiple files or directories as a ZIP package for download with interactive UI"
+                .to_string(),
         input_schema: object_schema(props, vec!["files".to_string()]),
         output_schema: None,
         annotations: None,

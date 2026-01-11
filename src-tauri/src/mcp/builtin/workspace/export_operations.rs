@@ -1,6 +1,9 @@
 use serde_json::Value;
+use std::collections::HashSet;
 use std::io::Write;
+use std::path::PathBuf;
 use tracing::error;
+use walkdir::WalkDir;
 use zip::write::FileOptions;
 
 use super::{ui_resources, WorkspaceServer};
@@ -173,6 +176,12 @@ impl WorkspaceServer {
             .clone()
             .unwrap_or_else(|| self.session_id.clone());
 
+        let workspace_dir = self
+            .session_manager
+            .get_session_workspace_dir_by_id(&target_session_id);
+
+        let workspace_dir_canon = std::fs::canonicalize(&workspace_dir).unwrap_or(workspace_dir);
+
         let exports_dir = match self.ensure_exports_directory(&target_session_id) {
             Ok(dir) => dir,
             Err(e) => {
@@ -215,44 +224,66 @@ impl WorkspaceServer {
             .unix_permissions(0o755);
 
         let mut processed_files = Vec::new();
+        let mut added_archive_paths = HashSet::<String>::new();
         for file_value in files_array {
             let file_path = match file_value.as_str() {
                 Some(path) => path,
                 None => continue,
             };
 
-            let target_session_id = session_id
-                .clone()
-                .unwrap_or_else(|| self.session_id.clone());
-            let source_path = self
-                .session_manager
-                .get_session_workspace_dir_by_id(&target_session_id)
-                .join(file_path);
-            if !source_path.exists() || !source_path.is_file() {
+            let source_path = workspace_dir_canon.join(file_path);
+            if !source_path.exists() {
                 continue;
             }
 
-            let archive_path = file_path.replace("\\", "/");
+            let roots: Vec<PathBuf> = if source_path.is_file() {
+                vec![source_path]
+            } else if source_path.is_dir() {
+                WalkDir::new(&source_path)
+                    .into_iter()
+                    .filter_map(Result::ok)
+                    .filter(|e| e.file_type().is_file())
+                    .map(|e| e.into_path())
+                    .collect()
+            } else {
+                continue;
+            };
 
-            match zip.start_file(&archive_path, options) {
-                Ok(_) => {}
-                Err(e) => {
-                    error!("Failed to start file in ZIP: {}", e);
+            for abs_path in roots {
+                let abs_canon = match std::fs::canonicalize(&abs_path) {
+                    Ok(p) => p,
+                    Err(_) => continue,
+                };
+
+                if !abs_canon.starts_with(&workspace_dir_canon) {
                     continue;
                 }
-            }
 
-            match std::fs::read(&source_path) {
-                Ok(content) => {
-                    if let Err(e) = zip.write_all(&content) {
-                        error!("Failed to write file content to ZIP: {}", e);
+                let rel_path = match abs_canon.strip_prefix(&workspace_dir_canon) {
+                    Ok(p) => p,
+                    Err(_) => continue,
+                };
+
+                let archive_path = rel_path.to_string_lossy().replace("\\", "/");
+                if !added_archive_paths.insert(archive_path.clone()) {
+                    continue;
+                }
+
+                if zip.start_file(&archive_path, options).is_err() {
+                    continue;
+                }
+
+                match std::fs::read(&abs_canon) {
+                    Ok(content) => {
+                        if zip.write_all(&content).is_err() {
+                            continue;
+                        }
+                        processed_files.push(archive_path);
+                    }
+                    Err(e) => {
+                        error!("Failed to read file {}: {}", abs_canon.display(), e);
                         continue;
                     }
-                    processed_files.push(file_path.to_string());
-                }
-                Err(e) => {
-                    error!("Failed to read file {}: {}", file_path, e);
-                    continue;
                 }
             }
         }
@@ -277,7 +308,7 @@ impl WorkspaceServer {
                 vec![
                     "Verify the file paths are correct with listDirectory".to_string(),
                     "Check that the files exist and are readable".to_string(),
-                    "Ensure files are not directories".to_string(),
+                    "If you provided a directory, ensure it contains readable files".to_string(),
                 ],
                 ToolGroup::Workspace,
             )

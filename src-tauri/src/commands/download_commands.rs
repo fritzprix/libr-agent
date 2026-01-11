@@ -3,8 +3,11 @@
 /// This module contains commands for downloading files and creating ZIP archives
 /// from the workspace.
 use crate::session::get_session_manager;
+use std::collections::HashSet;
 use std::io::Write;
+use std::path::PathBuf;
 use tauri_plugin_dialog::DialogExt;
+use walkdir::WalkDir;
 use zip::{write::FileOptions, ZipWriter};
 
 /// Downloads a single file from the current session's workspace.
@@ -103,6 +106,7 @@ pub async fn export_and_download_zip(
 ) -> Result<String, String> {
     let session_manager = get_session_manager().map_err(|e| e.to_string())?;
     let workspace_dir = session_manager.get_session_workspace_dir_by_id(&session_id);
+    let workspace_dir_canon = std::fs::canonicalize(&workspace_dir).unwrap_or(workspace_dir);
 
     if files.is_empty() {
         return Err("Files array cannot be empty".to_string());
@@ -123,35 +127,61 @@ pub async fn export_and_download_zip(
 
     // Add files to the ZIP
     let mut processed_files = Vec::new();
+    let mut added_archive_paths = HashSet::<String>::new();
     for file_path in &files {
-        let source_path = workspace_dir.join(file_path);
-
-        if !source_path.exists() || !source_path.is_file() {
-            continue; // Skip non-existent files
+        let source_path = workspace_dir_canon.join(file_path);
+        if !source_path.exists() {
+            continue;
         }
 
-        // Set the path inside the ZIP (preserving directory structure)
-        let archive_path = file_path.replace("\\", "/");
+        let roots: Vec<PathBuf> = if source_path.is_file() {
+            vec![source_path]
+        } else if source_path.is_dir() {
+            WalkDir::new(&source_path)
+                .into_iter()
+                .filter_map(Result::ok)
+                .filter(|e| e.file_type().is_file())
+                .map(|e| e.into_path())
+                .collect()
+        } else {
+            continue;
+        };
 
-        match zip.start_file(&archive_path, options) {
-            Ok(_) => {}
-            Err(e) => {
-                log::error!("Failed to start file in ZIP: {e}");
+        for abs_path in roots {
+            let abs_canon = match std::fs::canonicalize(&abs_path) {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+
+            if !abs_canon.starts_with(&workspace_dir_canon) {
                 continue;
             }
-        }
 
-        match std::fs::read(&source_path) {
-            Ok(content) => {
-                if let Err(e) = zip.write_all(&content) {
-                    log::error!("Failed to write file content to ZIP: {e}");
+            let rel_path = match abs_canon.strip_prefix(&workspace_dir_canon) {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+
+            let archive_path = rel_path.to_string_lossy().replace("\\", "/");
+            if !added_archive_paths.insert(archive_path.clone()) {
+                continue;
+            }
+
+            if zip.start_file(&archive_path, options).is_err() {
+                continue;
+            }
+
+            match std::fs::read(&abs_canon) {
+                Ok(content) => {
+                    if zip.write_all(&content).is_err() {
+                        continue;
+                    }
+                    processed_files.push(archive_path);
+                }
+                Err(e) => {
+                    log::error!("Failed to read file {}: {e}", abs_canon.display());
                     continue;
                 }
-                processed_files.push(file_path.clone());
-            }
-            Err(e) => {
-                log::error!("Failed to read file {file_path}: {e}");
-                continue;
             }
         }
     }
