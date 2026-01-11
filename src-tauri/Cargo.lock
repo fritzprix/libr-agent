@@ -3125,6 +3125,7 @@ dependencies = [
  "uuid",
  "walkdir",
  "warp",
+ "windows-sys 0.59.0",
  "zip",
 ]
 

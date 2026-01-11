@@ -581,6 +581,64 @@ impl WorkspaceServer {
         result
     }
 
+    #[cfg(windows)]
+    fn contains_unquoted_andand(input: &str) -> bool {
+        let mut in_single = false;
+        let mut in_double = false;
+        let chars: Vec<char> = input.chars().collect();
+        let mut i = 0;
+
+        while i < chars.len() {
+            let ch = chars[i];
+
+            if in_single {
+                if ch == '\'' {
+                    // PowerShell single-quote escaping: '' inside single quotes
+                    if i + 1 < chars.len() && chars[i + 1] == '\'' {
+                        i += 2;
+                        continue;
+                    }
+                    in_single = false;
+                }
+                i += 1;
+                continue;
+            }
+
+            if in_double {
+                // PowerShell escape inside double quotes via backtick
+                if ch == '`' {
+                    i += 2;
+                    continue;
+                }
+                if ch == '"' {
+                    in_double = false;
+                }
+                i += 1;
+                continue;
+            }
+
+            if ch == '\'' {
+                in_single = true;
+                i += 1;
+                continue;
+            }
+
+            if ch == '"' {
+                in_double = true;
+                i += 1;
+                continue;
+            }
+
+            if ch == '&' && i + 1 < chars.len() && chars[i + 1] == '&' {
+                return true;
+            }
+
+            i += 1;
+        }
+
+        false
+    }
+
     pub async fn handle_execute_shell(
         &self,
         args: Value,
@@ -592,6 +650,25 @@ impl WorkspaceServer {
                 return Ok(missing_param_error("command", ToolGroup::Workspace));
             }
         };
+
+        #[cfg(windows)]
+        {
+            if Self::contains_unquoted_andand(raw_command) {
+                return Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::InvalidInput,
+                    "Invalid PowerShell syntax: '&&' is not supported by PowerShell 5.1"
+                        .to_string(),
+                    vec![
+                        "Use ';' to chain commands in PowerShell".to_string(),
+                        "Example: cd src; pnpm test".to_string(),
+                        "If you need conditional execution, use 'if ($LASTEXITCODE -eq 0) { ... }'"
+                            .to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                )
+                .to_mcp_result());
+            }
+        }
 
         // Check for requireUserInput parameter or auto-detect privilege escalation
         let require_input = args
@@ -653,6 +730,25 @@ impl WorkspaceServer {
             }
         };
 
+        #[cfg(windows)]
+        {
+            if Self::contains_unquoted_andand(raw_command) {
+                return Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::InvalidInput,
+                    "Invalid PowerShell syntax: '&&' is not supported by PowerShell 5.1"
+                        .to_string(),
+                    vec![
+                        "Use ';' to chain commands in PowerShell".to_string(),
+                        "Example: cd src; pnpm test".to_string(),
+                        "If you need conditional execution, use 'if ($LASTEXITCODE -eq 0) { ... }'"
+                            .to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                )
+                .to_mcp_result());
+            }
+        }
+
         // Get timeout (use default if not specified)
         let timeout_secs = utils::validate_timeout(args.get("timeout").and_then(|v| v.as_u64()));
 
@@ -703,6 +799,25 @@ impl WorkspaceServer {
                 return Ok(missing_param_error("command", ToolGroup::Workspace));
             }
         };
+
+        #[cfg(windows)]
+        {
+            if Self::contains_unquoted_andand(raw_command) {
+                return Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::InvalidInput,
+                    "Invalid PowerShell syntax: '&&' is not supported by PowerShell 5.1"
+                        .to_string(),
+                    vec![
+                        "Use ';' to chain commands in PowerShell".to_string(),
+                        "Example: cd src; pnpm test".to_string(),
+                        "If you need conditional execution, use 'if ($LASTEXITCODE -eq 0) { ... }'"
+                            .to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                )
+                .to_mcp_result());
+            }
+        }
 
         // Async mode does not support interactive input
         let require_input = args

@@ -875,21 +875,12 @@ impl BuiltinMCPServer for WorkspaceServer {
         );
 
         let context_prompt = format!(
-            "## Workspace\\n\\n\\\n            **Workspace Root**: {} (used by: file tools, isolated shell commands)\\n\\\n            **Persistent Shell CWD**: {} (used by: {} only)\\n\\\n            **Running Processes**: {}\\n\\\n            **Platform**: {}/{}\\n\\n\\\n            \u{26a0}\u{fe0f} SHELL TOOL SELECTION:\\n\\\n            - For most commands \u{2192} Use {} (Unix) or {} (Windows)\\n\\\n            - For state preservation (cd, export) \u{2192} Use {}\\n\\\n            - For background tasks \u{2192} Use spawnProcess\\n\\n\\\n            \u{1f50d} WORKING DIRECTORY:\\n\\\n            - {}/{}: Always starts from Workspace Root\\n\\\n            - {}: Maintains persistent CWD (currently: {})\\n\\\n            - File tools (readFile, listDirectory): Always use Workspace Root\\n\\n\\\n            \u{1f4a1} TIP: Use 'cd dir && command' with {} to work in subdirectories.",
+            "## Workspace\\n\\n\\\n            **Workspace Root**: {}\\n\\\n            **Persistent Shell CWD**: {}\\n\\\n            **Running Processes**: {}\\n\\\n            **Platform**: {}/{}",
             workspace_dir,
             shell_cwd,
-            PERSISTENT_SHELL_TOOL,
             running_count,
             os,
-            arch,
-            if cfg!(unix) { "runShell" } else { "runPowerShell" },
-            if cfg!(windows) { "runPowerShell" } else { "runShell" },
-            PERSISTENT_SHELL_TOOL,
-            if cfg!(unix) { "runShell" } else { "runPowerShell" },
-            if cfg!(windows) { "runPowerShell" } else { "runShell" },
-            PERSISTENT_SHELL_TOOL,
-            shell_cwd,
-            if cfg!(unix) { "runShell" } else { "runPowerShell" }
+            arch
         );
 
         ServiceContext {

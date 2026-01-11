@@ -60,6 +60,9 @@ dirs = "5.0"
 zip = { version = "0.6", default-features = false, features = ["deflate"] }
 handlebars = "6.3"
 
+# Windows-only: decode process output captured from stdio pipes using the system ANSI code page
+windows-sys = { version = "0.59", features = ["Win32_Globalization"] }
+
 # File parsing dependencies
 docx-rs = "0.4"           # DOCX parsing
 calamine = { version = "0.24", features = ["dates"] }  # XLSX parsing

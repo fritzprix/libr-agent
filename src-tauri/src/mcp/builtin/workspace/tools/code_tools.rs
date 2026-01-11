@@ -231,6 +231,10 @@ pub fn create_run_powershell_tool() -> MCPTool {
                       - Medium isolation with restricted environment\n\
                       - NO state preservation - each call is independent\n\
                       - Synchronous execution with configurable timeout\n\n\
+                      ⚠️ POWERSHELL SYNTAX (WINDOWS):\n\
+                      - Use semicolons ';' to chain commands on one line\n\
+                      - NEVER use '&&' (bash syntax). Windows PowerShell 5.1 (default) will throw a ParserError\n\
+                      - Example: 'New-Item -ItemType Directory test; Set-Location test; Get-ChildItem'\n\n\
                       🔍 WORKING DIRECTORY:\n\
                       - Commands ALWAYS start from workspace root (project directory)\n\
                       - Use 'Set-Location dir; command' to work in subdirectories\n\
@@ -309,6 +313,10 @@ pub fn create_execute_shell_tool() -> MCPTool {
                       - Working directory (Set-Location) persists between calls\n\
                       - PowerShell environment is maintained\n\
                       - NOT fully sandboxed - inherits host environment\n\n\
+                      ⚠️ POWERSHELL SYNTAX (WINDOWS):\n\
+                      - Use semicolons ';' to chain commands on one line\n\
+                      - NEVER use '&&' (bash syntax). Windows PowerShell 5.1 (default) will throw a ParserError\n\
+                      - Example: 'Set-Location src; Get-ChildItem'\n\n\
                       🔍 WORKING DIRECTORY BEHAVIOR:\n\
                       - Persistent shell tracks its own CWD (use Get-Location)\n\
                       - Set-Location (cd) changes CWD for future commands\n\
