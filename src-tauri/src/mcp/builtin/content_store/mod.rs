@@ -50,15 +50,24 @@ impl BuiltinMCPServer for ContentStoreServer {
         self.switch_context(options).await
     }
 
-    async fn call_tool(&self, tool_name: &str, args: Value) -> Result<MCPResult, String> {
+    async fn call_tool(
+        &self,
+        tool_name: &str,
+        args: Value,
+        _session_id: Option<String>,
+    ) -> Result<MCPResult, String> {
+        let target_session_id = _session_id.unwrap_or_else(|| self.session_id.clone());
+
         match tool_name {
-            "saveKnowledge" | "addContent" => self.handle_save_knowledge(args).await,
-            "listContent" => self.handle_list_content(args).await,
-            "readContent" => self.handle_read_content(args).await,
-            "searchKnowledge" | "keywordSimilaritySearch" => {
-                self.handle_search_knowledge(args).await
+            "saveKnowledge" | "addContent" => {
+                self.handle_save_knowledge(args, &target_session_id).await
             }
-            "deleteContent" => self.handle_delete_content(args).await,
+            "listContent" => self.handle_list_content(args, &target_session_id).await,
+            "readContent" => self.handle_read_content(args, &target_session_id).await,
+            "searchKnowledge" | "keywordSimilaritySearch" => {
+                self.handle_search_knowledge(args, &target_session_id).await
+            }
+            "deleteContent" => self.handle_delete_content(args, &target_session_id).await,
             _ => Err(format!("Unknown tool: {tool_name}")),
         }
     }

@@ -17,7 +17,6 @@ import {
 } from '@/lib/workspace-sync-service';
 import {
   ContentStoreServerProxy,
-  CreateStoreArgs,
   ListContentArgs,
   DeleteContentArgs,
 } from '@/models/content-store';
@@ -132,10 +131,13 @@ export function AgentResourceAttachmentProvider({
           return [];
         }
       }
-      logger.warn('[AgentResourceAttachmentContext] SWR fetcher: No server or session', {
-        hasServer: !!server,
-        sessionId: currentSession?.id,
-      });
+      logger.warn(
+        '[AgentResourceAttachmentContext] SWR fetcher: No server or session',
+        {
+          hasServer: !!server,
+          sessionId: currentSession?.id,
+        },
+      );
       return [];
     },
     {
@@ -148,12 +150,13 @@ export function AgentResourceAttachmentProvider({
     },
   );
 
-  // Track uploaded filenames per session to prevent duplicate uploads within the same session
-  const uploadedFilenamesRef = useRef<Map<string, Set<string>>>(new Map());
-  // Cache the current session ID to avoid race conditions during batch uploads
+  // Track session ID for caching store IDs
+  // NOTE: Content stores are auto-created on first use (saveKnowledge/listContent)
+  // No explicit createStore tool is needed
   const sessionStoreIdRef = useRef<string | undefined>();
   // Reset files when session changes
   const prevSessionIdRef = useRef<string | undefined>();
+  const uploadedFilenamesRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (currentSession?.id !== prevSessionIdRef.current) {
@@ -175,67 +178,6 @@ export function AgentResourceAttachmentProvider({
   useEffect(() => {
     sessionStoreIdRef.current = currentSession?.id;
   }, [currentSession?.id]);
-
-  // Ensure store exists for current session
-  const ensureStoreExists = useCallback(
-    async (sessionId: string): Promise<string> => {
-      if (!server) {
-        throw new Error('Content store server is not initialized.');
-      }
-
-      try {
-        if (
-          sessionStoreIdRef.current &&
-          sessionStoreIdRef.current === sessionId
-        ) {
-          return sessionStoreIdRef.current;
-        }
-
-        sessionStoreIdRef.current = sessionId;
-
-        if (!server) {
-          if (serverLoading) {
-            throw new Error(
-              'Content store server is still loading. Please wait a moment.',
-            );
-          } else {
-            throw new Error('Content store server is not available.');
-          }
-        }
-
-        const createStoreArgs: CreateStoreArgs = {
-          sessionId,
-          metadata: {},
-        };
-        const createResult = await server.createStore(createStoreArgs);
-
-        let storeId: string;
-        if (typeof createResult === 'object' && createResult !== null) {
-          if ('sessionId' in createResult) {
-            storeId = (createResult as { sessionId: string }).sessionId;
-          } else {
-            throw new Error(
-              'Invalid createStore response: missing storeId or id field',
-            );
-          }
-        } else {
-          throw new Error('Invalid createStore response: expected object');
-        }
-
-        sessionStoreIdRef.current = storeId;
-        return storeId;
-      } catch (error) {
-        logger.error('Failed to ensure content store exists', {
-          sessionId,
-          error,
-        });
-        throw new Error(
-          `Failed to ensure content store exists: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
-    },
-    [server, currentSession, serverLoading],
-  );
 
   const extractFilenameFromUrl = useCallback((url: string): string => {
     try {
@@ -330,7 +272,8 @@ export function AgentResourceAttachmentProvider({
         throw new Error('Content store server or session not available');
       }
 
-      const storeId = await ensureStoreExists(currentSession.id);
+      // Store will be auto-created on first saveKnowledge call
+      const storeId = currentSession.id;
 
       let fileUrl: string;
       let actualMimeType: string;
@@ -437,13 +380,7 @@ export function AgentResourceAttachmentProvider({
         }
       }
     },
-    [
-      server,
-      currentSession,
-      extractFilenameFromUrl,
-      convertToBlobUrl,
-      ensureStoreExists,
-    ],
+    [server, currentSession, extractFilenameFromUrl, convertToBlobUrl],
   );
 
   const commitPendingFiles = useCallback(async (): Promise<

@@ -373,7 +373,12 @@ impl BuiltinMCPServer for PlaybookServer {
         ]
     }
 
-    async fn call_tool(&self, tool_name: &str, args: Value) -> Result<MCPResult, String> {
+    async fn call_tool(
+        &self,
+        tool_name: &str,
+        args: Value,
+        _session_id: Option<String>,
+    ) -> Result<MCPResult, String> {
         match tool_name {
             "createPlaybook" | "builtin_playbook__createPlaybook" => {
                 operations::create_playbook(&self.db_conn, &self.session_id, args).await

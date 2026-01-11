@@ -551,7 +551,12 @@ impl BuiltinMCPServer for MCPManagerServer {
         ]
     }
 
-    async fn call_tool(&self, tool_name: &str, args: Value) -> Result<MCPResult, String> {
+    async fn call_tool(
+        &self,
+        tool_name: &str,
+        args: Value,
+        _session_id: Option<String>,
+    ) -> Result<MCPResult, String> {
         match tool_name {
             "listServers" => self.list_servers(args).await,
             "searchServer" => self.search_server(args).await,

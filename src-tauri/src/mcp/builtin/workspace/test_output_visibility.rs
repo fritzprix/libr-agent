@@ -26,7 +26,7 @@ mod tests {
         });
 
         let result = server
-            .handle_execute_shell(exec_args)
+            .handle_execute_shell(exec_args, "test-session")
             .await
             .expect("Execution failed");
         let data = result.structured_content.expect("No data returned");
@@ -39,7 +39,7 @@ mod tests {
         for _ in 0..20 {
             let poll_args = json!({ "processId": process_id });
             let poll_res = server
-                .handle_poll_process(poll_args)
+                .handle_poll_process(poll_args, "test-session")
                 .await
                 .expect("Poll failed");
             let poll_data = poll_res.structured_content.as_ref().unwrap();
@@ -58,7 +58,7 @@ mod tests {
             "stream": "stdout"
         });
         let read_res = server
-            .handle_read_process_output(read_args)
+            .handle_read_process_output(read_args, "test-session")
             .await
             .expect("Read failed");
 
@@ -85,7 +85,7 @@ mod tests {
         });
 
         let result = server
-            .handle_execute_shell(exec_args)
+            .handle_execute_shell(exec_args, "test-session")
             .await
             .expect("Execution failed");
         let process_id = result.structured_content.unwrap()["process_id"]
@@ -98,7 +98,7 @@ mod tests {
         for _ in 0..20 {
             let poll_args = json!({ "processId": process_id });
             let poll_res = server
-                .handle_poll_process(poll_args)
+                .handle_poll_process(poll_args, "test-session")
                 .await
                 .expect("Poll failed");
             let poll_data = poll_res.structured_content.as_ref().unwrap();
@@ -119,7 +119,7 @@ mod tests {
         });
 
         let poll_res = server
-            .handle_poll_process(poll_args)
+            .handle_poll_process(poll_args, "test-session")
             .await
             .expect("Poll failed");
 

@@ -32,15 +32,14 @@ export default function SessionList({
     const query = debouncedQuery.toLowerCase();
     return sessions.filter((session) => {
       const name = session.name?.toLowerCase() || '';
-      const description = session.description?.toLowerCase() || '';
-      const assistantNames = session.assistants
-        .map((a) => a.name.toLowerCase())
-        .join(' ');
+      // AgentSession doesn't have description directly, check assistant
+      const description = session.assistant?.description?.toLowerCase() || '';
+      const assistantName = session.assistant?.name?.toLowerCase() || '';
 
       return (
         name.includes(query) ||
         description.includes(query) ||
-        assistantNames.includes(query)
+        assistantName.includes(query)
       );
     });
   }, [sessions, debouncedQuery]);

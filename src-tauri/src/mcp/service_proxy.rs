@@ -122,7 +122,9 @@ impl MCPServiceProxy {
             let result = {
                 let prefix = format!("builtin_{}__", tool_id);
                 let real_tool_name = tool_name.strip_prefix(&prefix).unwrap_or(tool_name);
-                server.call_tool(real_tool_name, args).await?
+                server
+                    .call_tool(real_tool_name, args, Some(self.session_id.clone()))
+                    .await?
             };
 
             // Convert MCPResult to MCPResponse with proper type

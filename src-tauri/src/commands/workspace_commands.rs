@@ -48,11 +48,8 @@ pub async fn list_workspace_files(
     // Get the workspace base directory from session manager
     let session_manager =
         get_session_manager().map_err(|e| format!("Session manager error: {e}"))?;
-    let base_dir = if let Some(ref sid) = session_id {
-        session_manager.get_session_workspace_dir_by_id(sid)
-    } else {
-        session_manager.get_session_workspace_dir()
-    };
+    let base_dir = session_manager
+        .get_session_workspace_dir_by_id(&session_id.unwrap_or_else(|| "default".to_string()));
 
     // Default to current directory if no path provided
     let target_path = path.unwrap_or_else(|| ".".to_string());
@@ -163,11 +160,8 @@ pub async fn open_workspace_file_with_default_app(
 ) -> Result<(), String> {
     // Get workspace directory via SessionManager
     let session_manager = get_session_manager().map_err(|e| e.to_string())?;
-    let workspace_dir = if let Some(ref sid) = session_id {
-        session_manager.get_session_workspace_dir_by_id(sid)
-    } else {
-        session_manager.get_session_workspace_dir()
-    };
+    let workspace_dir = session_manager
+        .get_session_workspace_dir_by_id(&session_id.unwrap_or_else(|| "default".to_string()));
 
     // Construct the full path of the requested file
     let full_path = workspace_dir.join(&file_path);

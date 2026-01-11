@@ -10,13 +10,6 @@ pub struct SecureFileManager {
 }
 
 impl SecureFileManager {
-    /// Creates a new `SecureFileManager` with the default security settings.
-    pub fn new() -> Self {
-        Self {
-            security: SecurityValidator::new(),
-        }
-    }
-
     /// Creates a new `SecureFileManager` with a specified base directory.
     ///
     /// # Arguments
@@ -260,11 +253,5 @@ impl SecureFileManager {
     /// Returns a reference to the internal `SecurityValidator`.
     pub fn get_security_validator(&self) -> &SecurityValidator {
         &self.security
-    }
-}
-
-impl Default for SecureFileManager {
-    fn default() -> Self {
-        Self::new()
     }
 }

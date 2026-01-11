@@ -442,7 +442,9 @@ impl MCPServiceProxyManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entity::{assistant, playbook, session};
+    use crate::entity::{
+        assistant, knowledge, planning_goal, planning_scratchpad, planning_todo, playbook, session,
+    };
     use sea_orm::{ConnectionTrait, Database, EntityTrait, Schema, Set};
     use serde_json::json;
 
@@ -469,6 +471,26 @@ mod tests {
             .await
             .expect("Failed to create assistant table");
 
+        let stmt = schema.create_table_from_entity(knowledge::Entity);
+        db.execute(db.get_database_backend().build(&stmt))
+            .await
+            .expect("Failed to create knowledge table");
+
+        let stmt = schema.create_table_from_entity(planning_goal::Entity);
+        db.execute(db.get_database_backend().build(&stmt))
+            .await
+            .expect("Failed to create planning_goal table");
+
+        let stmt = schema.create_table_from_entity(planning_todo::Entity);
+        db.execute(db.get_database_backend().build(&stmt))
+            .await
+            .expect("Failed to create planning_todo table");
+
+        let stmt = schema.create_table_from_entity(planning_scratchpad::Entity);
+        db.execute(db.get_database_backend().build(&stmt))
+            .await
+            .expect("Failed to create planning_scratchpad table");
+
         // Create a minimal SessionManager for MCPServerManager
         let session_manager = Arc::new(crate::session::SessionManager::new().unwrap());
         let external_mcp_manager = Arc::new(MCPServerManager::new_with_session_manager(
@@ -494,6 +516,8 @@ mod tests {
         let new_session = session::ActiveModel {
             id: Set(session1.clone()),
             created_at: Set(chrono::Utc::now().timestamp()),
+            updated_at: Set(0),
+            status: Set("idle".to_string()),
             ..Default::default()
         };
         session::Entity::insert(new_session)
@@ -564,6 +588,8 @@ mod tests {
         let new_session = session::ActiveModel {
             id: Set(session2.clone()),
             created_at: Set(chrono::Utc::now().timestamp()),
+            updated_at: Set(0),
+            status: Set("idle".to_string()),
             ..Default::default()
         };
         session::Entity::insert(new_session)
@@ -739,6 +765,8 @@ mod tests {
             let new_session = session::ActiveModel {
                 id: Set(session_id.clone()),
                 created_at: Set(chrono::Utc::now().timestamp()),
+                updated_at: Set(0),
+                status: Set("idle".to_string()),
                 ..Default::default()
             };
             session::Entity::insert(new_session)
@@ -844,6 +872,8 @@ mod tests {
         let new_session = session::ActiveModel {
             id: Set(session_id.clone()),
             created_at: Set(chrono::Utc::now().timestamp()),
+            updated_at: Set(0),
+            status: Set("idle".to_string()),
             ..Default::default()
         };
         session::Entity::insert(new_session)

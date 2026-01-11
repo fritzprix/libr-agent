@@ -622,39 +622,6 @@ impl SessionIsolationManager {
         .to_string()
     }
 
-    /// Validate isolation capabilities on the current platform
-    pub async fn validate_isolation_capabilities(&self) -> IsolationCapabilities {
-        let mut capabilities = IsolationCapabilities::default();
-
-        // Check for unshare (Linux)
-        #[cfg(target_os = "linux")]
-        {
-            capabilities.supports_user_namespaces = self.is_command_available("unshare").await;
-            capabilities.supports_pid_namespaces = capabilities.supports_user_namespaces;
-            capabilities.supports_mount_namespaces = capabilities.supports_user_namespaces;
-        }
-
-        // Check for sandbox-exec (macOS)
-        #[cfg(target_os = "macos")]
-        {
-            capabilities.supports_macos_sandbox = self.is_command_available("sandbox-exec").await;
-        }
-
-        // Windows capabilities
-        #[cfg(target_os = "windows")]
-        {
-            capabilities.supports_job_objects = true; // Always available on Windows
-            capabilities.supports_restricted_tokens = true;
-        }
-
-        // Resource limits
-        capabilities.supports_memory_limits = cfg!(unix);
-        capabilities.supports_cpu_limits = cfg!(unix);
-        capabilities.supports_time_limits = cfg!(unix);
-
-        info!("Isolation capabilities validated: {:?}", capabilities);
-        capabilities
-    }
     /// Detects a valid Python installation on Windows, prioritizing non-Store versions.
     #[cfg(target_os = "windows")]
     async fn detect_python_path(&self) -> Option<PathBuf> {
@@ -721,19 +688,6 @@ impl SessionIsolationManager {
 
         None
     }
-}
-
-#[derive(Debug, Clone, serde::Serialize, Default)]
-pub struct IsolationCapabilities {
-    pub supports_user_namespaces: bool,
-    pub supports_pid_namespaces: bool,
-    pub supports_mount_namespaces: bool,
-    pub supports_macos_sandbox: bool,
-    pub supports_job_objects: bool,
-    pub supports_restricted_tokens: bool,
-    pub supports_memory_limits: bool,
-    pub supports_cpu_limits: bool,
-    pub supports_time_limits: bool,
 }
 
 // Note: AsyncCommand argument manipulation is complex and platform-specific

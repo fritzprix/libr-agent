@@ -358,8 +358,8 @@ impl SuccessHint {
                 "Use writeFile to create new files".to_string(),
             ],
             ("executeShell", ToolGroup::Workspace) => vec![
-                "Use readProcessOutput to check command output".to_string(),
-                "Use listProcesses to see running processes".to_string(),
+                "Use listDirectory to verify created files".to_string(),
+                "Use readFile to verify file contents".to_string(),
             ],
 
             // Assistant tools

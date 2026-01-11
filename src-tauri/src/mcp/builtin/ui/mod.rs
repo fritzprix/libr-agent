@@ -740,7 +740,12 @@ impl BuiltinMCPServer for UiServer {
         ]
     }
 
-    async fn call_tool(&self, tool_name: &str, args: Value) -> Result<MCPResult, String> {
+    async fn call_tool(
+        &self,
+        tool_name: &str,
+        args: Value,
+        _session_id: Option<String>,
+    ) -> Result<MCPResult, String> {
         match tool_name {
             "promptUser" | "builtin_ui__promptUser" => self.prompt_user(args),
             "getUserAnswer" | "builtin_ui__getUserAnswer" => self.get_user_answer(args),

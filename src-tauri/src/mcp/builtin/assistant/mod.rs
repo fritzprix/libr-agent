@@ -539,7 +539,12 @@ impl BuiltinMCPServer for AssistantServer {
         ]
     }
 
-    async fn call_tool(&self, tool_name: &str, args: Value) -> Result<MCPResult, String> {
+    async fn call_tool(
+        &self,
+        tool_name: &str,
+        args: Value,
+        _session_id: Option<String>,
+    ) -> Result<MCPResult, String> {
         log::debug!("Assistant server tool called: {}", tool_name);
 
         match tool_name {

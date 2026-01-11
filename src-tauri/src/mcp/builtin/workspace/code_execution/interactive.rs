@@ -70,14 +70,12 @@ impl WorkspaceServer {
         &self,
         command: &str,
         args: &Value,
+        session_id: &str,
     ) -> Result<MCPResult, String> {
         use super::super::utils::sanitize_command_for_logging;
 
         let execution_id = uuid::Uuid::new_v4().to_string();
-        let session_id = self
-            .session_manager
-            .get_current_session()
-            .unwrap_or_else(|| "default".to_string());
+        let session_id = session_id.to_string();
 
         // Sanitize command for storage/logging
         let sanitized_command = sanitize_command_for_logging(command);
@@ -144,7 +142,11 @@ impl WorkspaceServer {
 
     /// Handle execute_pending_shell tool call (2nd tool call)
     /// Executes pending command with user input via stdin
-    pub async fn handle_execute_pending_shell(&self, args: Value) -> Result<MCPResult, String> {
+    pub async fn handle_execute_pending_shell(
+        &self,
+        args: Value,
+        session_id: &str,
+    ) -> Result<MCPResult, String> {
         use super::super::utils::sanitize_command_for_logging;
 
         let execution_id = match args.get("execution_id").and_then(|v| v.as_str()) {
@@ -178,6 +180,23 @@ impl WorkspaceServer {
                 .to_mcp_result());
             }
         };
+
+        // Validate session ownership
+        if pending.session_id != session_id {
+            return Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::PermissionDenied,
+                format!(
+                    "Pending execution '{}' belongs to a different session",
+                    execution_id
+                ),
+                vec![
+                    "Ensure you are executing the command in the correct session".to_string(),
+                    "Executions are isolated per session".to_string(),
+                ],
+                ToolGroup::Workspace,
+            )
+            .to_mcp_result());
+        }
 
         // De-obfuscate user input
         let user_input = match Self::deobfuscate_input(obfuscated_input, &pending.encryption_nonce)
@@ -238,8 +257,8 @@ impl WorkspaceServer {
         let final_command = pending.executable_command.clone();
 
         // Get workspace and session info
-        let workspace_path = self.get_workspace_dir();
         let session_id = pending.session_id.clone();
+        let workspace_path = self.get_workspace_dir(&session_id);
 
         // Check if persistent shell should be used (default: true)
         let use_persistent_shell = args
@@ -264,7 +283,7 @@ impl WorkspaceServer {
             .await;
 
             match execution_result {
-                Ok(Ok((stdout, stderr, exit_code))) => {
+                Ok(Ok((stdout, stderr, exit_code, _cwd))) => {
                     // Success - format and return result
                     info!(
                         "Interactive persistent shell executed: {} (session: {}, exit: {})",
@@ -583,7 +602,11 @@ impl WorkspaceServer {
 
     /// Cancel a pending shell execution
     /// Removes the pending execution from state without executing it
-    pub async fn handle_cancel_pending_execution(&self, args: Value) -> Result<MCPResult, String> {
+    pub async fn handle_cancel_pending_execution(
+        &self,
+        args: Value,
+        session_id: &str,
+    ) -> Result<MCPResult, String> {
         // Extract execution_id
         let execution_id = match args.get("execution_id").and_then(|v| v.as_str()) {
             Some(id) => id,
@@ -595,6 +618,33 @@ impl WorkspaceServer {
         // Remove pending execution
         match self.pending_executions.remove(execution_id) {
             Some(pending) => {
+                // Validate session ownership
+                if pending.session_id != session_id {
+                    // Restore it if session mismatch (although it's already removed... wait.
+                    // remove() takes it out. Ideally we check first.
+                    // But HashMap only supports remove or get (ref).
+                    // We should use entries or re-insert if invalid.
+                    // Or, simpler: just error out and don't care about restoring it for invalid requester?
+                    // Actually, if an attacker tries to cancel someone else's, implementation details matter.
+                    // Since we already removed it, let's just re-insert it if validation fails.
+                    self.pending_executions.insert(pending);
+
+                    return Ok(ErrorGuidance::with_guidance(
+                        ErrorCategory::PermissionDenied,
+                        format!(
+                            "Pending execution '{}' belongs to a different session",
+                            execution_id
+                        ),
+                        vec![
+                            "Ensure you are executing the command in the correct session"
+                                .to_string(),
+                            "Executions are isolated per session".to_string(),
+                        ],
+                        ToolGroup::Workspace,
+                    )
+                    .to_mcp_result());
+                }
+
                 let hint = SuccessHint::new(
                     format!("Cancelled pending execution: {}", pending.display_command),
                     vec!["Execute the command again if needed".to_string()],

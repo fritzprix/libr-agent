@@ -35,18 +35,7 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
 
   // Filter files for current session and reset state when session changes
   const currentSessionFiles = useMemo(() => {
-    logger.debug('SessionFilesPopover: Filtering session files', {
-      sessionId,
-      totalSessionFiles: sessionFiles.length,
-      sessionFilesData: sessionFiles,
-    });
-    const filtered = sessionFiles.filter((file) => file.sessionId === sessionId);
-    logger.info('SessionFilesPopover: Filtered results', {
-      sessionId,
-      filteredCount: filtered.length,
-      filteredFiles: filtered,
-    });
-    return filtered;
+    return sessionFiles.filter((file) => file.sessionId === sessionId);
   }, [sessionFiles, sessionId]);
 
   // Reset state when session changes

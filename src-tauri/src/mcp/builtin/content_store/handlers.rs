@@ -10,7 +10,11 @@ use log::error;
 use serde_json::Value;
 
 impl ContentStoreServer {
-    pub(crate) async fn handle_save_knowledge(&self, params: Value) -> Result<MCPResult, String> {
+    pub(crate) async fn handle_save_knowledge(
+        &self,
+        params: Value,
+        session_id: &str,
+    ) -> Result<MCPResult, String> {
         let args: AddContentArgs = match serde_json::from_value(params) {
             Ok(args) => args,
             Err(e) => {
@@ -86,12 +90,10 @@ impl ContentStoreServer {
             }
         };
 
-        let session_id = match self.require_active_session_result() {
-            Ok(session_id) => session_id,
-            Err(e) => return Ok(MCPResult::error(&e)),
-        };
+        // Use passed session_id
+        // let session_id = ... (removed)
 
-        if let Err(e) = self.ensure_session_store(&session_id).await {
+        if let Err(e) = self.ensure_session_store(session_id).await {
             error!("Failed to ensure content store for session {session_id}: {e}");
             return Ok(operation_failed_error(
                 "Prepare content store",
@@ -148,7 +150,7 @@ impl ContentStoreServer {
         let mut storage = self.storage.lock().await;
         let content_item = match storage
             .add_content(
-                &session_id,
+                session_id,
                 &final_filename,
                 &mime_type,
                 final_size as usize,
@@ -191,10 +193,17 @@ impl ContentStoreServer {
 
         // Index chunks for search
         {
-            let mut search_engine = self.search_engine.lock().await;
-            if let Err(e) = search_engine.add_chunks(text_chunks).await {
-                // Log error but don't fail the operation
-                eprintln!("Warning: Failed to index content for search: {e}");
+            match self.get_search_engine(session_id).await {
+                Ok(engine_arc) => {
+                    let mut search_engine = engine_arc.lock().await;
+                    if let Err(e) = search_engine.add_chunks(text_chunks).await {
+                        // Log error but don't fail the operation
+                        eprintln!("Warning: Failed to index content for search: {e}");
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Warning: Failed to get search engine for indexing: {e}");
+                }
             }
         }
 
@@ -250,7 +259,11 @@ impl ContentStoreServer {
         }))))
     }
 
-    pub(crate) async fn handle_list_content(&self, params: Value) -> Result<MCPResult, String> {
+    pub(crate) async fn handle_list_content(
+        &self,
+        params: Value,
+        session_id: &str,
+    ) -> Result<MCPResult, String> {
         let args: ListContentArgs = if params.is_null() {
             ListContentArgs {
                 pagination: Option::None,
@@ -267,12 +280,10 @@ impl ContentStoreServer {
             }
         };
 
-        let session_id = match self.require_active_session_result() {
-            Ok(id) => id,
-            Err(e) => return Ok(MCPResult::error(&e)),
-        };
+        // Use passed session_id
+        // let session_id = ... (removed)
 
-        if let Err(e) = self.ensure_session_store(&session_id).await {
+        if let Err(e) = self.ensure_session_store(session_id).await {
             error!(
                 "Failed to ensure content store for session {session_id} while listing content: {e}"
             );
@@ -295,7 +306,7 @@ impl ContentStoreServer {
         });
 
         let storage = self.storage.lock().await;
-        let (contents, total) = match storage.list_content(&session_id, offset, limit).await {
+        let (contents, total) = match storage.list_content(session_id, offset, limit).await {
             Ok((contents, total)) => (contents, total),
             Err(e) => {
                 return Ok(operation_failed_error(
@@ -391,7 +402,11 @@ impl ContentStoreServer {
         }))))
     }
 
-    pub(crate) async fn handle_read_content(&self, params: Value) -> Result<MCPResult, String> {
+    pub(crate) async fn handle_read_content(
+        &self,
+        params: Value,
+        session_id: &str,
+    ) -> Result<MCPResult, String> {
         let args: ReadContentArgs = match serde_json::from_value(params) {
             Ok(args) => args,
             Err(e) => {
@@ -406,10 +421,8 @@ impl ContentStoreServer {
         let normalized_content_id = ContentStoreServer::normalize_content_id(&args.content_id);
 
         // Get current session ID
-        let session_id = match self.require_active_session_result() {
-            Ok(id) => id,
-            Err(e) => return Ok(MCPResult::error(&e)),
-        };
+        // Use passed session_id
+        // let session_id = ... (removed)
 
         // Verify content belongs to current session
         let content_session_id = {
@@ -556,7 +569,11 @@ impl ContentStoreServer {
         }))))
     }
 
-    pub(crate) async fn handle_search_knowledge(&self, params: Value) -> Result<MCPResult, String> {
+    pub(crate) async fn handle_search_knowledge(
+        &self,
+        params: Value,
+        session_id: &str,
+    ) -> Result<MCPResult, String> {
         let args: KeywordSearchArgs = match serde_json::from_value(params) {
             Ok(args) => args,
             Err(e) => {
@@ -567,12 +584,10 @@ impl ContentStoreServer {
             }
         };
 
-        let session_id = match self.require_active_session_result() {
-            Ok(id) => id,
-            Err(e) => return Ok(MCPResult::error(&e)),
-        };
+        // Use passed session_id
+        // let session_id = ... (removed)
 
-        if let Err(e) = self.ensure_session_store(&session_id).await {
+        if let Err(e) = self.ensure_session_store(session_id).await {
             error!(
                 "Failed to ensure content store for session {session_id} during keyword search: {e}"
             );
@@ -598,22 +613,39 @@ impl ContentStoreServer {
         let ranking_limit = std::cmp::max(top_n, 50);
         let score_threshold = args.options.as_ref().and_then(|opts| opts.threshold);
 
-        let search_engine = self.search_engine.lock().await;
-        let all_results = match search_engine.search_bm25(&args.query, ranking_limit).await {
-            Ok(results) => results,
+        let engine_arc = match self.get_search_engine(session_id).await {
+            Ok(engine) => engine,
             Err(e) => {
                 return Ok(operation_failed_error(
                     "Search content",
-                    &e.to_string(),
+                    &format!("Failed to initialize search: {e}"),
                     vec![
-                        "Verify the search query is valid".to_string(),
-                        "Check if content has been indexed".to_string(),
-                        "Use listContent to see available content".to_string(),
+                        "Check filesystem permissions".to_string(),
+                        "Retry the operation".to_string(),
                     ],
                     ToolGroup::ContentStore,
                 ));
             }
         };
+
+        let search_engine = engine_arc.lock().await;
+
+        let all_results: Vec<search::SearchResult> =
+            match search_engine.search_bm25(&args.query, ranking_limit).await {
+                Ok(results) => results,
+                Err(e) => {
+                    return Ok(operation_failed_error(
+                        "Search content",
+                        &e.to_string(),
+                        vec![
+                            "Verify the search query is valid".to_string(),
+                            "Check if content has been indexed".to_string(),
+                            "Use listContent to see available content".to_string(),
+                        ],
+                        ToolGroup::ContentStore,
+                    ));
+                }
+            };
 
         // Filter results by session_id
         let storage = self.storage.lock().await;
@@ -698,7 +730,11 @@ impl ContentStoreServer {
         }))))
     }
 
-    pub(crate) async fn handle_delete_content(&self, params: Value) -> Result<MCPResult, String> {
+    pub(crate) async fn handle_delete_content(
+        &self,
+        params: Value,
+        session_id: &str,
+    ) -> Result<MCPResult, String> {
         let args: DeleteContentArgs = match serde_json::from_value(params) {
             Ok(args) => args,
             Err(e) => {
@@ -713,10 +749,8 @@ impl ContentStoreServer {
         let normalized_content_id = ContentStoreServer::normalize_content_id(&args.content_id);
 
         // Get current session ID from context
-        let session_id = match self.require_active_session_result() {
-            Ok(id) => id,
-            Err(e) => return Ok(MCPResult::error(&e)),
-        };
+        // Use passed session_id
+        // let session_id = ... (removed)
 
         // Verify the content belongs to the current session
         let content_session_id = {
@@ -764,10 +798,17 @@ impl ContentStoreServer {
         }
 
         // Remove from search index
-        let mut search_engine = self.search_engine.lock().await;
-        if let Err(e) = search_engine.remove_chunks(&normalized_content_id).await {
-            // Log error but don't fail the operation since content is already deleted
-            error!("Failed to remove content from search index: {e}");
+        match self.get_search_engine(session_id).await {
+            Ok(engine_arc) => {
+                let mut search_engine = engine_arc.lock().await;
+                if let Err(e) = search_engine.remove_chunks(&normalized_content_id).await {
+                    // Log error but don't fail the operation since content is already deleted
+                    error!("Failed to remove content from search index: {e}");
+                }
+            }
+            Err(e) => {
+                error!("Failed to get search engine for deletion: {e}");
+            }
         }
 
         let hint = SuccessHint::new(
@@ -817,7 +858,10 @@ mod tests {
             }
         });
 
-        let result = server.handle_save_knowledge(params).await.unwrap();
+        let result = server
+            .handle_save_knowledge(params, "test-session")
+            .await
+            .unwrap();
 
         // Verify response
         assert_eq!(result.is_error, Some(false));
@@ -837,7 +881,10 @@ mod tests {
             "content": "Test content"
         });
 
-        let result = server.handle_save_knowledge(params).await.unwrap();
+        let result = server
+            .handle_save_knowledge(params, "test-session")
+            .await
+            .unwrap();
 
         // Should succeed and auto-create store for the session
         assert_eq!(result.is_error, Some(false));
@@ -861,7 +908,10 @@ mod tests {
             "fileUrl": "file:///test.txt"
         });
 
-        let result = server.handle_save_knowledge(params).await.unwrap();
+        let result = server
+            .handle_save_knowledge(params, "test-session")
+            .await
+            .unwrap();
 
         // Should return error about ambiguous input
         assert_eq!(result.is_error, Some(true));
@@ -881,7 +931,10 @@ mod tests {
             .unwrap();
 
         let params = serde_json::json!({});
-        let result = server.handle_list_content(params).await.unwrap();
+        let result = server
+            .handle_list_content(params, "test-session")
+            .await
+            .unwrap();
 
         assert_eq!(result.is_error, Some(false));
         let structured_content = result.structured_content.unwrap();
@@ -908,7 +961,10 @@ mod tests {
             }
         });
 
-        let result = server.handle_search_knowledge(params).await.unwrap();
+        let result = server
+            .handle_search_knowledge(params, "test-session")
+            .await
+            .unwrap();
 
         assert_eq!(result.is_error, Some(false));
         let structured_content = result.structured_content.unwrap();
@@ -934,7 +990,10 @@ mod tests {
                 "filename": "delete_test.txt"
             }
         });
-        let add_result = server.handle_save_knowledge(add_params).await.unwrap();
+        let add_result = server
+            .handle_save_knowledge(add_params, "test-session")
+            .await
+            .unwrap();
         let content_id = add_result.structured_content.unwrap()["contentId"]
             .as_str()
             .unwrap()
@@ -946,13 +1005,19 @@ mod tests {
         });
 
         // This would hang if deadlock exists
-        let result = server.handle_delete_content(delete_params).await.unwrap();
+        let result = server
+            .handle_delete_content(delete_params, "test-session")
+            .await
+            .unwrap();
 
         assert_eq!(result.is_error, Some(false));
 
         // Verify deletion
         let list_params = serde_json::json!({});
-        let list_result = server.handle_list_content(list_params).await.unwrap();
+        let list_result = server
+            .handle_list_content(list_params, "test-session")
+            .await
+            .unwrap();
         let total = list_result.structured_content.unwrap()["total"]
             .as_u64()
             .unwrap();

@@ -74,13 +74,13 @@ impl PersistentShellManager {
     /// Execute command in persistent shell
     ///
     /// Automatically handles shell creation and retries on crash.
-    /// Returns (stdout, stderr, exit_code).
+    /// Returns (stdout, stderr, exit_code, cwd).
     pub async fn execute(
         &self,
         session_id: String,
         workspace_path: std::path::PathBuf,
         command: &str,
-    ) -> Result<(String, String, i32), String> {
+    ) -> Result<(String, String, i32, String), String> {
         // Try to execute with retry on failure
         match self
             .execute_internal(session_id.clone(), workspace_path.clone(), command)
@@ -111,7 +111,7 @@ impl PersistentShellManager {
         session_id: String,
         workspace_path: std::path::PathBuf,
         command: &str,
-    ) -> Result<(String, String, i32), String> {
+    ) -> Result<(String, String, i32, String), String> {
         let shell = self.get_or_create_shell(session_id, workspace_path).await?;
         let mut shell_guard = shell.lock().await;
 
@@ -131,7 +131,7 @@ impl PersistentShellManager {
         workspace_path: std::path::PathBuf,
         command: &str,
         user_input: &str,
-    ) -> Result<(String, String, i32), String> {
+    ) -> Result<(String, String, i32, String), String> {
         // Try with retry on failure
         match self
             .execute_with_input_internal(
@@ -168,7 +168,7 @@ impl PersistentShellManager {
         workspace_path: std::path::PathBuf,
         command: &str,
         user_input: &str,
-    ) -> Result<(String, String, i32), String> {
+    ) -> Result<(String, String, i32, String), String> {
         let shell = self.get_or_create_shell(session_id, workspace_path).await?;
         let mut shell_guard = shell.lock().await;
 
@@ -176,6 +176,17 @@ impl PersistentShellManager {
             .execute_with_input(command, user_input)
             .await
             .map_err(|e| format!("Shell execution with input failed: {e}"))
+    }
+
+    /// Get the current working directory for a session's persistent shell
+    pub async fn get_shell_cwd(&self, session_id: &str) -> Option<String> {
+        let shells = self.shells.lock().await;
+        if let Some(shell) = shells.get(session_id) {
+            let shell = shell.lock().await;
+            Some(shell.get_cwd().to_string())
+        } else {
+            None
+        }
     }
 
     /// Terminate shell for session

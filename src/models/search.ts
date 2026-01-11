@@ -1,4 +1,4 @@
-import type { Session } from './chat';
+import type { AgentSession } from './agent';
 
 /**
  * Aggregated search result for a single session
@@ -13,7 +13,7 @@ export interface SearchAggregation {
 /**
  * Session extended with search hit count
  */
-export interface SessionWithHits extends Session {
+export interface SessionWithHits extends AgentSession {
   searchHits?: number;
 }
 

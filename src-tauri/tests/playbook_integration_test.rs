@@ -75,6 +75,7 @@ async fn test_playbook_ui_rendering_integration() {
                     "description": "Data saved to destination"
                 }
             }),
+            None,
         )
         .await
         .expect("Failed to save playbook 1");
@@ -96,13 +97,14 @@ async fn test_playbook_ui_rendering_integration() {
                     "description": "Connected successfully"
                 }
             }),
+            None,
         )
         .await
         .expect("Failed to save playbook 2");
 
     // Test listPlaybooks with UI rendering
     let list_result = server
-        .call_tool("showPlaybooks", json!({}))
+        .call_tool("showPlaybooks", json!({}), None)
         .await
         .expect("Failed to list playbooks");
 
@@ -191,7 +193,7 @@ async fn test_playbook_ui_interaction_flow() {
 
     // Step 1: List empty playbooks (should show empty state)
     let empty_list = server
-        .call_tool("showPlaybooks", json!({}))
+        .call_tool("showPlaybooks", json!({}), None)
         .await
         .expect("Failed to list empty playbooks");
 
@@ -229,6 +231,7 @@ async fn test_playbook_ui_interaction_flow() {
                     "description": "Flow completed"
                 }
             }),
+            None,
         )
         .await
         .expect("Failed to save playbook");
@@ -241,7 +244,7 @@ async fn test_playbook_ui_interaction_flow() {
 
     // Step 3: List again (should show the playbook)
     let list_with_data = server
-        .call_tool("showPlaybooks", json!({}))
+        .call_tool("showPlaybooks", json!({}), None)
         .await
         .expect("Failed to list playbooks");
 
@@ -258,7 +261,7 @@ async fn test_playbook_ui_interaction_flow() {
 
     // Step 4: Get specific playbook (simulating Select button click)
     let get_result = server
-        .call_tool("getPlaybook", json!({"id": playbook_id}))
+        .call_tool("getPlaybook", json!({"id": playbook_id}), None)
         .await
         .expect("Failed to get playbook");
 
@@ -268,7 +271,7 @@ async fn test_playbook_ui_interaction_flow() {
 
     // Step 5: Delete playbook (simulating Delete button click)
     let delete_result = server
-        .call_tool("deletePlaybook", json!({"id": playbook_id}))
+        .call_tool("deletePlaybook", json!({"id": playbook_id}), None)
         .await
         .expect("Failed to delete playbook");
 
@@ -276,7 +279,7 @@ async fn test_playbook_ui_interaction_flow() {
 
     // Step 6: List again (should be empty)
     let final_list = server
-        .call_tool("listPlaybooks", json!({}))
+        .call_tool("listPlaybooks", json!({}), None)
         .await
         .expect("Failed to list playbooks");
 

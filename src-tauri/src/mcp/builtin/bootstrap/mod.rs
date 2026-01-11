@@ -140,7 +140,12 @@ impl BuiltinMCPServer for BootstrapServer {
         }
     }
 
-    async fn call_tool(&self, tool_name: &str, args: Value) -> Result<MCPResult, String> {
+    async fn call_tool(
+        &self,
+        tool_name: &str,
+        args: Value,
+        _session_id: Option<String>,
+    ) -> Result<MCPResult, String> {
         log::debug!("Bootstrap server tool called: {}", tool_name);
 
         match tool_name {
@@ -212,7 +217,7 @@ mod tests {
     #[tokio::test]
     async fn test_detect_platform() {
         let server = BootstrapServer::new();
-        let result = server.call_tool("detectPlatform", json!({})).await;
+        let result = server.call_tool("detectPlatform", json!({}), None).await;
 
         assert!(result.is_ok());
         let mcp_result = result.unwrap();
@@ -230,6 +235,7 @@ mod tests {
                     "tool": "node",
                     "platform": "windows"
                 }),
+                None,
             )
             .await;
 
@@ -246,7 +252,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_bootstrap_guide_missing_tool() {
         let server = BootstrapServer::new();
-        let result = server.call_tool("getBootstrapGuide", json!({})).await;
+        let result = server.call_tool("getBootstrapGuide", json!({}), None).await;
 
         assert!(result.is_ok());
         let mcp_result = result.unwrap();
@@ -256,7 +262,7 @@ mod tests {
     #[tokio::test]
     async fn test_unknown_tool() {
         let server = BootstrapServer::new();
-        let result = server.call_tool("unknownTool", json!({})).await;
+        let result = server.call_tool("unknownTool", json!({}), None).await;
 
         assert!(result.is_err());
     }

@@ -68,6 +68,7 @@ pub struct PersistentShell {
     stdout: BufReader<ChildStdout>,
     stderr: BufReader<ChildStderr>,
     session_id: String,
+    last_known_cwd: String,
 }
 
 impl PersistentShell {
@@ -118,9 +119,11 @@ impl PersistentShell {
 
         // Set working directory to workspace
         cmd.current_dir(&workspace_path);
+
+        let initial_cwd = workspace_path.to_string_lossy().to_string();
         debug!(
             "Setting persistent shell working directory to: {}",
-            workspace_path.display()
+            initial_cwd
         );
 
         cmd.stdin(Stdio::piped())
@@ -155,6 +158,7 @@ impl PersistentShell {
             stdout,
             stderr,
             session_id,
+            last_known_cwd: initial_cwd,
         };
 
         #[cfg(windows)]
@@ -166,6 +170,11 @@ impl PersistentShell {
         }
 
         Ok(shell)
+    }
+
+    /// Get current working directory of the shell
+    pub fn get_cwd(&self) -> &str {
+        &self.last_known_cwd
     }
 
     /// Execute a command in the persistent shell
@@ -183,7 +192,27 @@ impl PersistentShell {
     /// 4. Read stdout/stderr until sentinel found
     /// 5. Parse exit code from next line
     /// 6. Return collected output
-    pub async fn execute(&mut self, command: &str) -> Result<(String, String, i32)> {
+    ///
+    /// Execute a command in the persistent shell
+    ///
+    /// # Arguments
+    ///
+    /// * `command` - Shell command to execute
+    ///
+    /// # Returns
+    ///
+    /// Tuple of (stdout, stderr, exit_code, cwd)
+    ///
+    /// # Algorithm
+    ///
+    /// 1. Send command + newline
+    /// 2. Send unique sentinel marker
+    /// 3. Send CWD capture command
+    /// 4. Send exit code capture command
+    /// 5. Read stdout/stderr until sentinel found
+    /// 6. Parse exit code and CWD
+    /// 7. Return collected output
+    pub async fn execute(&mut self, command: &str) -> Result<(String, String, i32, String)> {
         let sentinel = generate_sentinel();
 
         debug!(
@@ -222,7 +251,7 @@ impl PersistentShell {
             // Capture exit code BEFORE echoing sentinel (which would reset $?)
             self.stdin
                 .write_all(
-                    format!("__code=$?; echo '{sentinel}'; echo \"EXIT_CODE_$__code\"\n")
+                    format!("__code=$?; echo '{sentinel}'; echo \"__CWD__$(pwd)\"; echo \"EXIT_CODE_$__code\"\n")
                         .as_bytes(),
                 )
                 .await?;
@@ -233,6 +262,12 @@ impl PersistentShell {
             self.stdin
                 .write_all(format!("Write-Output '{}'\n", sentinel).as_bytes())
                 .await?;
+
+            // Capture CWD
+            self.stdin
+                .write_all("Write-Output \"__CWD__$((Get-Location).Path)\"\n".as_bytes())
+                .await?;
+
             // Robust exit code capture for PowerShell (PS 5.1 compatible):
             // If $LASTEXITCODE is non-zero OR $? is false:
             //   If $LASTEXITCODE is 0 (meaning $? was false but LASTEXITCODE wasn't set), return 1.
@@ -249,12 +284,16 @@ impl PersistentShell {
         self.read_until_sentinel(&sentinel).await
     }
 
-    async fn read_until_sentinel(&mut self, sentinel: &str) -> Result<(String, String, i32)> {
+    async fn read_until_sentinel(
+        &mut self,
+        sentinel: &str,
+    ) -> Result<(String, String, i32, String)> {
         // Read output until sentinel found
         let mut stdout_lines = Vec::new();
         let mut stderr_lines = Vec::new();
         let mut found_sentinel = false;
         let mut exit_code = 0;
+        let mut cwd = String::new();
 
         // Raw buffers for cancellation safety
         let mut stdout_raw_buf = Vec::new();
@@ -286,29 +325,44 @@ impl PersistentShell {
                             stdout_lines.push(content.to_string());
                         }
 
-                        // Next line should be exit code
-                        let mut exit_line = String::new();
-                        loop {
-                            exit_line.clear();
-                            // We reuse stdout_raw_buf here, it should be empty after previous read_line_lossy
-                            read_line_lossy(&mut self.stdout, &mut exit_line, &mut stdout_raw_buf).await?;
+                        // Next lines should be CWD and exit code
+                        let mut metadata_line = String::new();
+                        let mut captured_code = false;
 
-                            // Skip prompts in exit code line too
-                            if exit_line.trim_start().starts_with("PS ") {
+                        // We need to loop because sometimes there might be empty lines
+                        loop {
+                            metadata_line.clear();
+                            // We reuse stdout_raw_buf here, it should be empty after previous read_line_lossy
+                            read_line_lossy(&mut self.stdout, &mut metadata_line, &mut stdout_raw_buf).await?;
+
+                            // Skip prompts
+                            if metadata_line.trim_start().starts_with("PS ") {
                                 continue;
                             }
 
-                            if let Some(code_str) = exit_line.trim().strip_prefix("EXIT_CODE_") {
-                                exit_code = code_str.parse().unwrap_or(0);
+                            let clean_line = metadata_line.trim();
+                            if clean_line.is_empty() {
+                                continue;
                             }
-                            break;
+
+                            if let Some(cwd_str) = clean_line.strip_prefix("__CWD__") {
+                                cwd = cwd_str.to_string();
+                            } else if let Some(code_str) = clean_line.strip_prefix("EXIT_CODE_") {
+                                exit_code = code_str.parse().unwrap_or(0);
+                                captured_code = true;
+                            }
+
+                            // Break if we have both (or sufficient attempts made and we found at least exit code)
+                            if captured_code {
+                                break;
+                            }
                         }
 
                         break;
                     }
 
-                    // Skip orphaned exit code markers
-                    if stdout_line.trim().starts_with("EXIT_CODE_") {
+                    // Skip leaked metadata if they appear in wrong order (defensive)
+                    if stdout_line.trim().starts_with("EXIT_CODE_") || stdout_line.trim().starts_with("__CWD__") {
                         continue;
                     }
 
@@ -333,14 +387,18 @@ impl PersistentShell {
         let stdout = stdout_lines.join("");
         let stderr = stderr_lines.join("");
 
+        // Update cached CWD
+        self.last_known_cwd = cwd.clone();
+
         debug!(
-            "Command completed (exit: {}, stdout: {} bytes, stderr: {} bytes)",
+            "Command completed (exit: {}, stdout: {} bytes, stderr: {} bytes, cwd: {})",
             exit_code,
             stdout.len(),
-            stderr.len()
+            stderr.len(),
+            cwd
         );
 
-        Ok((stdout, stderr, exit_code))
+        Ok((stdout, stderr, exit_code, cwd))
     }
 
     /// Execute a command with user input (Two-Tool Pattern)
@@ -353,7 +411,7 @@ impl PersistentShell {
     /// * `user_input` - Input to inject via stdin
     ///
     /// # Returns
-    /// Tuple of (stdout, stderr, exit_code)
+    /// Tuple of (stdout, stderr, exit_code, cwd)
     ///
     /// # Security
     /// Input is passed via stdin pipe, not visible in process command line
@@ -361,7 +419,7 @@ impl PersistentShell {
         &mut self,
         command: &str,
         user_input: &str,
-    ) -> Result<(String, String, i32)> {
+    ) -> Result<(String, String, i32, String)> {
         let sentinel = generate_sentinel();
 
         debug!(
@@ -390,6 +448,7 @@ impl PersistentShell {
             self.stdin
                 .write_all(format!("echo '{sentinel}'\n").as_bytes())
                 .await?;
+            self.stdin.write_all(b"echo \"__CWD__$(pwd)\"\n").await?;
             self.stdin.write_all(b"echo \"EXIT_CODE_$?\"\n").await?;
         }
 
@@ -407,6 +466,12 @@ impl PersistentShell {
             self.stdin
                 .write_all(format!("Write-Output '{}'\n", sentinel).as_bytes())
                 .await?;
+
+            // Capture CWD
+            self.stdin
+                .write_all("Write-Output \"__CWD__$((Get-Location).Path)\"\n".as_bytes())
+                .await?;
+
             // Robust exit code capture for PowerShell (PS 5.1 compatible)
             self.stdin
                 .write_all("Write-Output \"EXIT_CODE_$(if ($LASTEXITCODE -ne 0 -or -not $?) { if ($LASTEXITCODE -eq 0) { 1 } else { $LASTEXITCODE } } else { 0 })\"\n".as_bytes())
@@ -415,7 +480,12 @@ impl PersistentShell {
 
         self.stdin.flush().await?;
 
-        self.read_until_sentinel(&sentinel).await
+        let (stdout, stderr, exit_code, cwd) = self.read_until_sentinel(&sentinel).await?;
+
+        // Update cached CWD
+        self.last_known_cwd = cwd.clone();
+
+        Ok((stdout, stderr, exit_code, cwd))
     }
 
     /// Get the session ID
@@ -465,9 +535,9 @@ mod tests {
         let mut shell = PersistentShell::new("test-basic".to_string(), temp_dir.clone()).await?;
 
         #[cfg(unix)]
-        let (stdout, _, exit_code) = shell.execute("echo 'Hello World'").await?;
+        let (stdout, _, exit_code, _) = shell.execute("echo 'Hello World'").await?;
         #[cfg(windows)]
-        let (stdout, _, exit_code) = shell.execute("Write-Output 'Hello World'").await?;
+        let (stdout, _, exit_code, _) = shell.execute("Write-Output 'Hello World'").await?;
 
         assert_eq!(exit_code, 0);
         assert!(stdout.contains("Hello World"));
@@ -486,17 +556,19 @@ mod tests {
         #[cfg(unix)]
         {
             shell.execute("cd /tmp").await?;
-            let (stdout, _, exit_code) = shell.execute("pwd").await?;
+            let (stdout, _, exit_code, cwd) = shell.execute("pwd").await?;
             assert_eq!(exit_code, 0);
             assert!(stdout.contains("/tmp"));
+            assert_eq!(cwd, "/tmp");
         }
 
         #[cfg(windows)]
         {
             shell.execute("cd C:\\Windows").await?;
-            let (stdout, _, exit_code) = shell.execute("pwd").await?;
+            let (stdout, _, exit_code, cwd) = shell.execute("pwd").await?;
             assert_eq!(exit_code, 0);
             assert!(stdout.contains("C:\\Windows"));
+            assert_eq!(cwd, "C:\\Windows");
         }
 
         shell.terminate().await?;
@@ -513,7 +585,7 @@ mod tests {
         #[cfg(unix)]
         {
             shell.execute("export MY_VAR=TestValue").await?;
-            let (stdout, _, exit_code) = shell.execute("echo $MY_VAR").await?;
+            let (stdout, _, exit_code, _) = shell.execute("echo $MY_VAR").await?;
             assert_eq!(exit_code, 0);
             assert!(stdout.contains("TestValue"));
         }
@@ -521,7 +593,7 @@ mod tests {
         #[cfg(windows)]
         {
             shell.execute("$env:MY_VAR='TestValue'").await?;
-            let (stdout, _, exit_code) = shell.execute("echo $env:MY_VAR").await?;
+            let (stdout, _, exit_code, _) = shell.execute("echo $env:MY_VAR").await?;
             assert_eq!(exit_code, 0);
             assert!(stdout.contains("TestValue"));
         }
@@ -548,7 +620,8 @@ mod tests {
             let command = "echo 'ignoring input'";
             let dangerous_input = "touch injected_file\nexit 1";
 
-            let (stdout, _, exit_code) = shell.execute_with_input(command, dangerous_input).await?;
+            let (stdout, _, exit_code, _) =
+                shell.execute_with_input(command, dangerous_input).await?;
 
             assert_eq!(exit_code, 0);
             assert!(stdout.contains("ignoring input"));
@@ -572,7 +645,7 @@ mod tests {
             // 'cat' without args reads from stdin.
             // If stdin is not isolated, it might hang or consume subsequent commands.
             // With isolation, it should read EOF immediately and exit.
-            let (stdout, _, exit_code) =
+            let (stdout, _, exit_code, _) =
                 tokio::time::timeout(std::time::Duration::from_secs(2), shell.execute("cat"))
                     .await
                     .map_err(|_| anyhow::anyhow!("Timeout"))??;
@@ -594,9 +667,9 @@ mod tests {
             PersistentShell::new("test-no-newline".to_string(), temp_dir.clone()).await?;
 
         #[cfg(unix)]
-        let (stdout, _, exit_code) = shell.execute("printf 'NoNewline'").await?;
+        let (stdout, _, exit_code, _) = shell.execute("printf 'NoNewline'").await?;
         #[cfg(windows)]
-        let (stdout, _, exit_code) = shell.execute("Write-Host -NoNewline 'NoNewline'").await?;
+        let (stdout, _, exit_code, _) = shell.execute("Write-Host -NoNewline 'NoNewline'").await?;
 
         assert_eq!(exit_code, 0);
         #[cfg(unix)]

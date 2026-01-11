@@ -280,31 +280,37 @@ impl BuiltinMCPServer for PlanningServer {
         ]
     }
 
-    async fn call_tool(&self, tool_name: &str, args: Value) -> Result<MCPResult, String> {
+    async fn call_tool(
+        &self,
+        tool_name: &str,
+        args: Value,
+        _session_id: Option<String>,
+    ) -> Result<MCPResult, String> {
+        let target_session_id = _session_id.unwrap_or_else(|| self.session_id.clone());
         log::debug!(
             "Planning server tool called: {} for session: {}",
             tool_name,
-            self.session_id
+            target_session_id
         );
 
         match tool_name {
             "createGoal" | "builtin_planning__createGoal" => {
-                goals::create_goal(self.db.as_ref(), &self.session_id, args).await
+                goals::create_goal(self.db.as_ref(), &target_session_id, args).await
             }
             "updateGoal" | "builtin_planning__updateGoal" => {
-                goals::update_goal(self.db.as_ref(), &self.session_id, args).await
+                goals::update_goal(self.db.as_ref(), &target_session_id, args).await
             }
             "clearGoal" | "builtin_planning__clearGoal" => {
-                goals::clear_goal(self.db.as_ref(), &self.session_id, args).await
+                goals::clear_goal(self.db.as_ref(), &target_session_id, args).await
             }
             "addTodo" | "builtin_planning__addTodo" => {
-                todos::add_todo(self.db.as_ref(), &self.session_id, args).await
+                todos::add_todo(self.db.as_ref(), &target_session_id, args).await
             }
             "checkTodo" | "builtin_planning__checkTodo" => {
-                todos::check_todo(self.db.as_ref(), &self.session_id, args).await
+                todos::check_todo(self.db.as_ref(), &target_session_id, args).await
             }
             "clearTodos" | "builtin_planning__clearTodos" => {
-                todos::clear_todos(self.db.as_ref(), &self.session_id, args).await
+                todos::clear_todos(self.db.as_ref(), &target_session_id, args).await
             }
             "clearSession" | "builtin_planning__clearSession" => {
                 let txn = self
@@ -314,20 +320,21 @@ impl BuiltinMCPServer for PlanningServer {
                     .map_err(|e: sea_orm::DbErr| e.to_string())?;
 
                 crate::entity::planning_goal::Entity::delete_many()
-                    .filter(crate::entity::planning_goal::Column::SessionId.eq(&self.session_id))
+                    .filter(crate::entity::planning_goal::Column::SessionId.eq(&target_session_id))
                     .exec(&txn)
                     .await
                     .map_err(|e| e.to_string())?;
 
                 crate::entity::planning_todo::Entity::delete_many()
-                    .filter(crate::entity::planning_todo::Column::SessionId.eq(&self.session_id))
+                    .filter(crate::entity::planning_todo::Column::SessionId.eq(&target_session_id))
                     .exec(&txn)
                     .await
                     .map_err(|e| e.to_string())?;
 
                 crate::entity::planning_scratchpad::Entity::delete_many()
                     .filter(
-                        crate::entity::planning_scratchpad::Column::SessionId.eq(&self.session_id),
+                        crate::entity::planning_scratchpad::Column::SessionId
+                            .eq(&target_session_id),
                     )
                     .exec(&txn)
                     .await
@@ -339,24 +346,24 @@ impl BuiltinMCPServer for PlanningServer {
                 Ok(MCPResult::success("✓ Session planning state cleared"))
             }
             "addScratchpad" | "builtin_planning__addScratchpad" => {
-                scratchpad::add_scratchpad(self.db.as_ref(), &self.session_id, args).await
+                scratchpad::add_scratchpad(self.db.as_ref(), &target_session_id, args).await
             }
             "updateScratchpad" | "builtin_planning__updateScratchpad" => {
-                scratchpad::update_scratchpad(self.db.as_ref(), &self.session_id, args).await
+                scratchpad::update_scratchpad(self.db.as_ref(), &target_session_id, args).await
             }
             "listScratchpad" | "builtin_planning__listScratchpad" => {
-                scratchpad::list_scratchpad(self.db.as_ref(), &self.session_id, args).await
+                scratchpad::list_scratchpad(self.db.as_ref(), &target_session_id, args).await
             }
             "readScratchpad" | "builtin_planning__readScratchpad" => {
-                scratchpad::read_scratchpad(self.db.as_ref(), &self.session_id, args).await
+                scratchpad::read_scratchpad(self.db.as_ref(), &target_session_id, args).await
             }
             "clearScratchpad" | "builtin_planning__clearScratchpad" => {
-                scratchpad::clear_scratchpad(self.db.as_ref(), &self.session_id, args).await
+                scratchpad::clear_scratchpad(self.db.as_ref(), &target_session_id, args).await
             }
             "getCurrentState" | "builtin_planning__getCurrentState" => {
                 // Reuse get_service_context but return as tool result
                 let context =
-                    context::get_service_context(self.db.as_ref(), &self.session_id).await;
+                    context::get_service_context(self.db.as_ref(), &target_session_id).await;
                 Ok(MCPResult::success_with_data(
                     &context.context_prompt,
                     context.structured_state.clone().unwrap_or(json!({})),

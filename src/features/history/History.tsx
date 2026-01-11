@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import useSWR from 'swr';
 import {
   Button,
@@ -8,7 +8,8 @@ import {
   CardTitle,
   Input,
 } from '../../components/ui';
-import { useSessionContext } from '@/context/SessionContext';
+
+import { useAgentSessionListState } from '@/context/AgentSessionListContext';
 import SessionList from '../session/SessionList';
 import { getLogger } from '@/lib/logger';
 import { searchMessages } from '@/lib/rust-backend-client';
@@ -19,24 +20,16 @@ import { Search, ArrowUp, ArrowDown } from 'lucide-react';
 const logger = getLogger('History');
 
 export default function History() {
-  const {
-    sessions: sessionPages,
-    current: currentSession,
-    loadMore,
-    isLoading,
-    hasNextPage,
-  } = useSessionContext();
+  const { sessions, isSessionsListLoading: isLoading } =
+    useAgentSessionListState();
 
   const [query, setQuery] = useState('');
   const [sortMode, setSortMode] = useState<SortMode>('desc');
   const debouncedQuery = useDebounced(query, 300);
   const pageSize = 200;
 
-  // Flatten the paginated sessions
-  const sessions = useMemo(
-    () => (sessionPages ? sessionPages.flatMap((p) => p.items) : []),
-    [sessionPages],
-  );
+  // sessions is directly available from context as array
+  // No need to flatMap sessionPages
 
   // Build SWR key only when query is non-empty
   const swrKey = debouncedQuery?.trim()
@@ -119,9 +112,7 @@ export default function History() {
     });
   }, [sessionsWithHits, debouncedQuery, sortMode]);
 
-  const handleLoadMore = useCallback(() => {
-    loadMore();
-  }, [loadMore]);
+  // Pagination handling removed for Agent V2 initial migration (full list load)
 
   const searchState = useMemo(
     () => ({
@@ -231,69 +222,13 @@ export default function History() {
                 isCollapsed={false}
               />
 
-              {/* Load more button if there are more pages and no search active */}
-              {hasNextPage && !debouncedQuery?.trim() && (
-                <div className="mt-4 text-center">
-                  <Button
-                    onClick={handleLoadMore}
-                    disabled={isLoading}
-                    variant="outline"
-                    className="text-primary border-primary hover:bg-primary/10 px-4 py-2 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {isLoading ? 'Loading...' : 'Load More'}
-                  </Button>
-                </div>
-              )}
+              {/* Pagination is handled by virtual scroll or full load in Agent V2 currently */}
             </>
           )}
         </CardContent>
       </Card>
 
-      {currentSession && (
-        <div className="mt-4">
-          <Card className="bg-muted border-muted">
-            <CardHeader>
-              <CardTitle className="text-md text-primary">
-                Selected Session
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                <div>
-                  <span className="text-muted-foreground">Name: </span>
-                  <span className="text-foreground">{currentSession.name}</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Type: </span>
-                  <span className="text-foreground capitalize">
-                    {currentSession.type}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Assistants: </span>
-                  <span className="text-foreground">
-                    {currentSession.assistants.map((a) => a.name).join(', ')}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Created: </span>
-                  <span className="text-foreground">
-                    {new Date(currentSession.createdAt).toLocaleString()}
-                  </span>
-                </div>
-                {currentSession.description && (
-                  <div>
-                    <span className="text-muted-foreground">Description: </span>
-                    <span className="text-foreground">
-                      {currentSession.description}
-                    </span>
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+      {/* Selected Session detail view removed - Navigation is direct to session */}
     </div>
   );
 }

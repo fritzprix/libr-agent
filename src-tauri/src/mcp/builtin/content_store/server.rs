@@ -4,7 +4,7 @@ use crate::mcp::MCPTool;
 use crate::session::SessionManager;
 use log::error;
 use serde_json::Value;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -24,11 +24,10 @@ pub struct RecentUploadInfo {
 /// Content-Store built-in MCP server (native backend)
 #[derive(Debug)]
 pub struct ContentStoreServer {
-    #[allow(dead_code)]
     pub(crate) session_id: String,
     pub(crate) session_manager: Arc<SessionManager>,
     pub(crate) storage: Mutex<storage::ContentStoreStorage>,
-    pub(crate) search_engine: Arc<Mutex<search::ContentSearchEngine>>,
+    pub(crate) search_engines: Mutex<HashMap<String, Arc<Mutex<search::ContentSearchEngine>>>>,
     /// Track recent uploads for service context (FIFO, max 10 items)
     pub(crate) recent_uploads: Arc<Mutex<VecDeque<RecentUploadInfo>>>,
 }
@@ -40,11 +39,14 @@ impl ContentStoreServer {
         let search_engine = search::ContentSearchEngine::new(search_index_dir)
             .expect("Failed to initialize search engine");
 
+        let mut search_engines = HashMap::new();
+        search_engines.insert(session_id.clone(), Arc::new(Mutex::new(search_engine)));
+
         Self {
             session_id,
             session_manager,
             storage: Mutex::new(storage::ContentStoreStorage::new()),
-            search_engine: Arc::new(Mutex::new(search_engine)),
+            search_engines: Mutex::new(search_engines),
             recent_uploads: Arc::new(Mutex::new(VecDeque::with_capacity(10))),
         }
     }
@@ -61,11 +63,14 @@ impl ContentStoreServer {
 
         let storage = storage::ContentStoreStorage::new_sqlite(database_url).await?;
 
+        let mut search_engines = HashMap::new();
+        search_engines.insert(session_id.clone(), Arc::new(Mutex::new(search_engine)));
+
         Ok(Self {
             session_id,
             session_manager,
             storage: Mutex::new(storage),
-            search_engine: Arc::new(Mutex::new(search_engine)),
+            search_engines: Mutex::new(search_engines),
             recent_uploads: Arc::new(Mutex::new(VecDeque::with_capacity(10))),
         })
     }
@@ -82,11 +87,14 @@ impl ContentStoreServer {
 
         let storage = storage::ContentStoreStorage::new_with_db(db).await?;
 
+        let mut search_engines = HashMap::new();
+        search_engines.insert(session_id.clone(), Arc::new(Mutex::new(search_engine)));
+
         Ok(Self {
             session_id,
             session_manager,
             storage: Mutex::new(storage),
-            search_engine: Arc::new(Mutex::new(search_engine)),
+            search_engines: Mutex::new(search_engines),
             recent_uploads: Arc::new(Mutex::new(VecDeque::with_capacity(10))),
         })
     }
@@ -161,29 +169,6 @@ impl ContentStoreServer {
         ]
     }
 
-    /// Get the session ID for this server instance
-    ///
-    /// In the new multi-session architecture, each ContentStoreServer is bound to a specific
-    /// session at construction time. This method returns that session ID.
-    ///
-    /// For legacy compatibility, if session_manager has a current session set via switch_context,
-    /// that takes precedence. Otherwise, returns the constructor-bound session_id.
-    pub(crate) fn require_active_session_result(&self) -> Result<String, String> {
-        // New architecture: if this server instance is bound to a specific session (not "default"),
-        // strictly use that session ID, ignoring global state. This ensures Agent V2 isolation.
-        if self.session_id != "default" {
-            return Ok(self.session_id.clone());
-        }
-
-        // Legacy compatibility: check if session_manager has an active session
-        if let Some(session_id) = self.session_manager.get_current_session() {
-            Ok(session_id)
-        } else {
-            // Default fallback
-            Ok(self.session_id.clone())
-        }
-    }
-
     pub(crate) async fn ensure_session_store(&self, session_id: &str) -> Result<(), String> {
         let mut storage = self.storage.lock().await;
 
@@ -199,6 +184,35 @@ impl ContentStoreServer {
             )
             .await
             .map(|_| ())
+    }
+
+    pub(crate) async fn get_search_engine(
+        &self,
+        session_id: &str,
+    ) -> Result<Arc<Mutex<search::ContentSearchEngine>>, String> {
+        let mut engines = self.search_engines.lock().await;
+
+        if let Some(engine) = engines.get(session_id) {
+            return Ok(engine.clone());
+        }
+
+        // Create new search engine instance for this session
+        let session_dir = self
+            .session_manager
+            .get_session_workspace_dir_by_id(session_id);
+        let search_index_dir = session_dir.join("content_store_search");
+
+        let search_engine = search::ContentSearchEngine::new(search_index_dir).map_err(|e| {
+            format!(
+                "Failed to initialize search engine for session {}: {}",
+                session_id, e
+            )
+        })?;
+
+        let engine_arc = Arc::new(Mutex::new(search_engine));
+        engines.insert(session_id.to_string(), engine_arc.clone());
+
+        Ok(engine_arc)
     }
 
     pub async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
@@ -302,15 +316,13 @@ impl ContentStoreServer {
 
     pub async fn switch_context(&self, options: ServiceContextOptions) -> Result<(), String> {
         if let Some(session_id) = &options.session_id {
-            // Use the async session setter to avoid blocking and to allow the caller
-            // to cancel the operation by dropping the awaiting future.
-            if let Err(e) = self
-                .session_manager
-                .set_session_async(session_id.clone())
-                .await
-            {
-                error!("Failed to switch session in session_manager: {e}");
-                return Err(format!("Failed to switch session in session_manager: {e}"));
+            // Note: In V2, we do not update the global session manager state.
+            // This server instance is bound to self.session_id.
+            // If the requested session_id differs, we log a warning but proceed with the requested ID for storage operations
+            // if that was the intent, although typically V2 severs are session-bound.
+
+            if session_id != &self.session_id {
+                log::warn!("ContentStoreServer: switch_context requested session '{}' but server is bound to '{}'", session_id, self.session_id);
             }
 
             // Clear recent uploads for session switch

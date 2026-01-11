@@ -23,35 +23,44 @@ impl WorkspaceServer {
         &self,
         command: &str,
         timeout_secs: u64,
+        session_id: &str,
     ) -> Result<MCPResult, String> {
-        let session_id = self
-            .session_manager
-            .get_current_session()
-            .unwrap_or_else(|| "default".to_string());
+        let session_id = session_id.to_string();
 
-        let workspace_path = self.get_workspace_dir();
+        let workspace_path = self
+            .session_manager
+            .get_session_workspace_dir_by_id(&session_id);
 
         // Normalize command
         let normalized_command = Self::normalize_shell_command(command);
+
+        // Track execution time
+        let execution_start = std::time::Instant::now();
 
         // Execute with timeout
         let timeout_duration = Duration::from_secs(timeout_secs);
 
         let execution_result = tokio::time::timeout(
             timeout_duration,
-            self.shell_manager
-                .execute(session_id.clone(), workspace_path, &normalized_command),
+            self.shell_manager.execute(
+                session_id.clone(),
+                workspace_path.clone(),
+                &normalized_command,
+            ),
         )
         .await;
 
         match execution_result {
-            Ok(Ok((stdout, stderr, exit_code))) => {
+            Ok(Ok((stdout, stderr, exit_code, cwd))) => {
+                // Measure duration
+                let duration_ms = execution_start.elapsed().as_millis() as u64;
+
                 // Success case - format result
                 let success = exit_code == 0;
 
                 info!(
-                    "Persistent shell command executed: {} (session: {}, exit: {})",
-                    command, session_id, exit_code
+                    "Persistent shell command executed: {} (session: {}, exit: {}, duration: {}ms)",
+                    command, session_id, exit_code, duration_ms
                 );
 
                 let structured_data = serde_json::json!({
@@ -59,33 +68,78 @@ impl WorkspaceServer {
                     "exit_code": exit_code,
                     "stdout": stdout,
                     "stderr": stderr,
-                    "status": if success { "finished" } else { "failed" }
+                    "cwd": cwd, // Return raw absolute path in data
+                    "status": if success { "finished" } else { "failed" },
+                    "duration_ms": duration_ms,
+                    "execution_type": "persistent"
                 });
 
                 if success {
+                    // Calculate relative path for display
+                    let path_cwd = std::path::Path::new(&cwd);
+                    let relative_cwd = path_cwd
+                        .strip_prefix(&workspace_path)
+                        .unwrap_or(path_cwd)
+                        .to_string_lossy();
+
+                    let display_cwd = if relative_cwd.is_empty() {
+                        ".".to_string()
+                    } else {
+                        // Ensure it starts with ./ for clarity if it's relative
+                        if relative_cwd.starts_with(".")
+                            || relative_cwd.starts_with("/")
+                            || relative_cwd.contains(":")
+                        {
+                            relative_cwd.to_string()
+                        } else {
+                            format!("./{}", relative_cwd)
+                        }
+                    };
+
                     // Success - include output in text for agent visibility
-                    let text_message = if !stdout.is_empty() {
-                        format!(
-                            "✓ Command executed successfully (exit code: {})\n\nOutput:\n{}\n\n💡 Next: Use readProcessOutput to check background processes or Use listProcesses to see running processes",
-                            exit_code,
-                            stdout
-                        )
+                    // CRITICAL: Explicitly show duration and status to prevent hallucination
+                    let header = format!(
+                        "✓ Command executed successfully in {}ms (exit code: {})",
+                        duration_ms, exit_code
+                    );
+
+                    let prompt = format!("➜ {} $", display_cwd);
+
+                    let list_hint = if display_cwd == "." {
+                        "Use listDirectory to verify created files".to_string()
                     } else {
                         format!(
-                            "✓ Command executed successfully (exit code: {})\n\n💡 Next: Use readProcessOutput to check background processes or Use listProcesses to see running processes",
-                            exit_code
+                            "Use listDirectory(\"{}\") to verify created files",
+                            display_cwd
                         )
                     };
-                    Ok(MCPResult::success_with_data(&text_message, structured_data))
-                } else {
-                    // Failure - use ErrorGuidance format
-                    let error_message = if !stderr.is_empty() {
+
+                    let text_message: String = if !stdout.is_empty() {
                         format!(
-                            "Command failed with exit code {}\n\nstderr:\n{}",
-                            exit_code, stderr
+                            "{}\n{}\n\nOutput:\n{}\n\n💡 Next: {} or check system state",
+                            header, prompt, stdout, list_hint
                         )
                     } else {
-                        format!("Command failed with exit code {}", exit_code)
+                        format!(
+                            "{}\n{}\n\n💡 Next: {} or check system state",
+                            header, prompt, list_hint
+                        )
+                    };
+                    Ok(MCPResult::success_with_data(
+                        text_message.as_str(),
+                        structured_data,
+                    ))
+                } else {
+                    // Failure - use ErrorGuidance format
+                    let header = format!(
+                        "Command failed in {}ms (exit code: {})",
+                        duration_ms, exit_code
+                    );
+
+                    let error_message = if !stderr.is_empty() {
+                        format!("{}\n\nstderr:\n{}", header, stderr)
+                    } else {
+                        header
                     };
 
                     Ok(ErrorGuidance::with_guidance(
@@ -110,8 +164,13 @@ impl WorkspaceServer {
 
                 // Fallback to one-shot execution
                 let isolation_level = IsolationLevel::Medium;
-                self.execute_shell_with_isolation(command, isolation_level, timeout_secs)
-                    .await
+                self.execute_shell_with_isolation(
+                    command,
+                    isolation_level,
+                    timeout_secs,
+                    &session_id,
+                )
+                .await
             }
             Err(_) => {
                 // Timeout
@@ -149,16 +208,19 @@ impl WorkspaceServer {
         command: &str,
         isolation_level: IsolationLevel,
         timeout_secs: u64,
+        session_id: &str,
     ) -> Result<MCPResult, String> {
-        let session_id = self
-            .session_manager
-            .get_current_session()
-            .unwrap_or_else(|| "default".to_string());
+        let session_id = session_id.to_string();
 
-        let workspace_path = self.get_workspace_dir();
+        let workspace_path = self
+            .session_manager
+            .get_session_workspace_dir_by_id(&session_id);
 
         // Normalize shell command
         let normalized_command = Self::normalize_shell_command(command);
+
+        // Track execution time
+        let execution_start = std::time::Instant::now();
 
         // Generate process ID for sync execution
         let process_id = cuid2::create_id();
@@ -268,6 +330,9 @@ impl WorkspaceServer {
 
         match execution_result {
             Ok(Ok((pid, exit_code, stdout, stderr))) => {
+                // Measure duration
+                let duration_ms = execution_start.elapsed().as_millis() as u64;
+
                 // Update registry entry
                 if let Some(entry) = reg.entries.get_mut(&process_id) {
                     entry.pid = pid;
@@ -291,22 +356,40 @@ impl WorkspaceServer {
 
                 let success = exit_code.unwrap_or(-1) == 0;
 
-                // Construct JSON response
+                // Construct JSON response with enhanced metadata
                 let response = serde_json::json!({
                     "command": command,
                     "exit_code": exit_code.unwrap_or(-1),
                     "stdout": stdout,
                     "stderr": stderr,
-                    "status": if success { "finished" } else { "failed" }
+                    "status": if success { "finished" } else { "failed" },
+                    "duration_ms": duration_ms,
+                    "execution_type": "isolated"
                 });
 
                 info!(
-                    "Isolated shell command executed: {} (session: {}, exit: {:?})",
-                    command, session_id, exit_code
+                    "Isolated shell command executed: {} (session: {}, exit: {:?}, duration: {}ms)",
+                    command, session_id, exit_code, duration_ms
                 );
 
+                // Enhanced text response with explicit status and output visibility
+                let header = format!(
+                    "Command executed in {}ms (exit code: {})",
+                    duration_ms,
+                    exit_code.unwrap_or(-1)
+                );
+
+                // Include output in text message if available (CRITICAL FIX for sync visibility)
+                let text_message = if !stdout.is_empty() {
+                    format!("{}\n\nOutput:\n{}", header, stdout)
+                } else if !stderr.is_empty() {
+                    format!("{}\n\nStderr:\n{}", header, stderr)
+                } else {
+                    header
+                };
+
                 let hint = SuccessHint::new(
-                    format!("Command executed (exit code: {})", exit_code.unwrap_or(-1)),
+                    text_message,
                     SuccessHint::for_tool("executeShell", ToolGroup::Workspace),
                 );
                 Ok(hint.to_mcp_result_with_data(Some(response)))
@@ -507,7 +590,11 @@ impl WorkspaceServer {
         result
     }
 
-    pub async fn handle_execute_shell(&self, args: Value) -> Result<MCPResult, String> {
+    pub async fn handle_execute_shell(
+        &self,
+        args: Value,
+        session_id: &str,
+    ) -> Result<MCPResult, String> {
         let raw_command = match args.get("command").and_then(|v| v.as_str()) {
             Some(cmd) => cmd,
             None => {
@@ -524,7 +611,9 @@ impl WorkspaceServer {
 
         // If user input required, return UIResource for interactive execution
         if require_input || auto_detect {
-            return self.handle_interactive_shell(raw_command, &args).await;
+            return self
+                .handle_interactive_shell(raw_command, &args, session_id)
+                .await;
         }
 
         // Check runMode parameter
@@ -536,7 +625,9 @@ impl WorkspaceServer {
 
         // Async mode: background execution
         if run_mode == "async" {
-            return self.execute_shell_async(raw_command, &args).await;
+            return self
+                .execute_shell_async(raw_command, &args, session_id)
+                .await;
         }
 
         // Sync mode: check persistent shell preference
@@ -570,7 +661,7 @@ impl WorkspaceServer {
         if use_persistent_shell {
             // NEW PATH: Persistent shell execution (state preservation)
             return self
-                .execute_shell_persistent(raw_command, timeout_secs)
+                .execute_shell_persistent(raw_command, timeout_secs, session_id)
                 .await;
         }
 
@@ -582,19 +673,23 @@ impl WorkspaceServer {
             "executeWindowsCmd invoked: command='{}' runMode='{}' requireUserInput='{}' timeout={}",
             raw_command, run_mode, require_input, timeout_secs
         );
-        self.execute_shell_with_isolation(raw_command, isolation_level, timeout_secs)
+        self.execute_shell_with_isolation(raw_command, isolation_level, timeout_secs, session_id)
             .await
     }
 
     /// Execute shell command asynchronously in background
-    async fn execute_shell_async(&self, command: &str, _args: &Value) -> Result<MCPResult, String> {
+    async fn execute_shell_async(
+        &self,
+        command: &str,
+        _args: &Value,
+        session_id: &str,
+    ) -> Result<MCPResult, String> {
         // Get session info
-        let session_id = self
-            .session_manager
-            .get_current_session()
-            .unwrap_or_else(|| "default".to_string());
+        let session_id = session_id.to_string();
 
-        let workspace_path = self.get_workspace_dir();
+        let workspace_path = self
+            .session_manager
+            .get_session_workspace_dir_by_id(&session_id);
 
         // Check concurrent process limit (max 20 per session)
         const MAX_CONCURRENT_PROCESSES: usize = 20;

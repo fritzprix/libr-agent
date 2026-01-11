@@ -42,12 +42,7 @@ use commands::messages_commands::{
     messages_delete, messages_delete_all_for_session, messages_get_page, messages_search,
     messages_upsert, messages_upsert_many,
 };
-use commands::session_commands::{
-    cleanup_sessions, create_session, fast_session_switch, get_current_session_info,
-    get_current_session_legacy, get_isolation_capabilities, get_session_stats,
-    get_session_workspace_dir, list_all_sessions, list_sessions_legacy, pre_allocate_sessions,
-    remove_session, set_current_session, switch_session,
-};
+use commands::session_commands::{remove_session, switch_session};
 use commands::url_commands::open_external_url;
 use commands::workspace_commands::{
     get_app_data_dir, get_app_logs_dir, greet, list_workspace_files,
@@ -250,23 +245,10 @@ pub fn run() {
                 // Download commands
                 download_workspace_file,
                 export_and_download_zip,
-                // Session management commands (legacy)
-                set_current_session,
-                get_current_session_legacy,
-                get_session_workspace_dir,
-                list_sessions_legacy,
-                // Enhanced session management commands
+                // Session management commands (still needed for workspace isolation)
                 switch_session,
-                create_session,
-                get_current_session_info,
-                list_all_sessions,
-                get_session_stats,
-                pre_allocate_sessions,
-                cleanup_sessions,
                 remove_session,
                 delete_content_store,
-                get_isolation_capabilities,
-                fast_session_switch,
                 get_app_data_dir,
                 get_app_logs_dir,
                 backup_current_log,
@@ -330,7 +312,9 @@ pub fn run() {
                 println!("🚀 LibrAgent initializing...");
 
                 // Initialize SecureFileManager and add to managed state
-                let file_manager = SecureFileManager::new();
+                // Use a dedicated global directory for the global instance to avoid legacy session dependency
+                let global_file_dir = app.path().app_data_dir().unwrap().join("global_shared");
+                let file_manager = SecureFileManager::new_with_base_dir(global_file_dir);
                 app.manage(file_manager);
                 println!("✅ SecureFileManager initialized");
 

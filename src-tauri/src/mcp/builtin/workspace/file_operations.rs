@@ -12,8 +12,12 @@ use tracing::{error, info};
 
 #[allow(dead_code)]
 impl WorkspaceServer {
-    fn validate_path_with_error(&self, path_str: &str) -> Result<std::path::PathBuf, String> {
-        let file_manager = self.get_file_manager();
+    fn validate_path_with_error(
+        &self,
+        path_str: &str,
+        session_id: Option<String>,
+    ) -> Result<std::path::PathBuf, String> {
+        let file_manager = self.get_file_manager(session_id);
         match file_manager
             .get_security_validator()
             .validate_path(path_str)
@@ -26,7 +30,11 @@ impl WorkspaceServer {
         }
     }
 
-    pub async fn handle_read_file(&self, args: Value) -> Result<MCPResult, String> {
+    pub async fn handle_read_file(
+        &self,
+        args: Value,
+        session_id: Option<String>,
+    ) -> Result<MCPResult, String> {
         let path_str = match args.get("path").and_then(|v| v.as_str()) {
             Some(path) => path,
             None => {
@@ -65,7 +73,7 @@ impl WorkspaceServer {
             }
         }
 
-        let safe_path = match self.validate_path_with_error(path_str) {
+        let safe_path = match self.validate_path_with_error(path_str, session_id.clone()) {
             Ok(path) => path,
             Err(e) => {
                 return Ok(ErrorGuidance::with_guidance(
@@ -81,7 +89,7 @@ impl WorkspaceServer {
             }
         };
 
-        let file_manager = self.get_file_manager();
+        let file_manager = self.get_file_manager(session_id);
         let content = if start_line.is_some() || end_line.is_some() {
             if let Err(e) = file_manager
                 .get_security_validator()
@@ -254,7 +262,11 @@ impl WorkspaceServer {
         result.join("\n")
     }
 
-    pub async fn handle_write_file(&self, args: Value) -> Result<MCPResult, String> {
+    pub async fn handle_write_file(
+        &self,
+        args: Value,
+        session_id: Option<String>,
+    ) -> Result<MCPResult, String> {
         let path_str = match args.get("path").and_then(|v| v.as_str()) {
             Some(path) => path,
             None => {
@@ -271,7 +283,7 @@ impl WorkspaceServer {
 
         let mode = args.get("mode").and_then(|v| v.as_str()).unwrap_or("w");
 
-        let file_manager = self.get_file_manager();
+        let file_manager = self.get_file_manager(session_id.clone());
         let result = match mode {
             "w" => file_manager.write_file_string(path_str, content).await,
             "a" => file_manager.append_file_string(path_str, content).await,
@@ -332,10 +344,14 @@ impl WorkspaceServer {
         }
     }
 
-    pub async fn handle_list_directory(&self, args: Value) -> Result<MCPResult, String> {
+    pub async fn handle_list_directory(
+        &self,
+        args: Value,
+        session_id: Option<String>,
+    ) -> Result<MCPResult, String> {
         let path_str = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
 
-        let safe_path = match self.validate_path_with_error(path_str) {
+        let safe_path = match self.validate_path_with_error(path_str, session_id.clone()) {
             Ok(path) => path,
             Err(e) => {
                 return Ok(ErrorGuidance::with_guidance(
@@ -459,7 +475,11 @@ impl WorkspaceServer {
         }
     }
 
-    pub async fn handle_search_files(&self, args: Value) -> Result<MCPResult, String> {
+    pub async fn handle_search_files(
+        &self,
+        args: Value,
+        session_id: Option<String>,
+    ) -> Result<MCPResult, String> {
         let pattern = match args.get("pattern").and_then(|v| v.as_str()) {
             Some(pattern) => pattern,
             None => {
@@ -477,7 +497,7 @@ impl WorkspaceServer {
             .and_then(|v| v.as_str())
             .unwrap_or("both");
 
-        let safe_path = self.validate_path_with_error(search_path)?;
+        let safe_path = self.validate_path_with_error(search_path, session_id)?;
 
         match self
             .search_files_by_pattern(&safe_path, pattern, max_depth, file_type)
@@ -581,7 +601,11 @@ impl WorkspaceServer {
         Ok(results)
     }
 
-    pub async fn handle_replace_lines_in_file(&self, args: Value) -> Result<MCPResult, String> {
+    pub async fn handle_replace_lines_in_file(
+        &self,
+        args: Value,
+        session_id: Option<String>,
+    ) -> Result<MCPResult, String> {
         // Layer 1: Parameter existence validation
         let path_str = match args.get("path").and_then(|v| v.as_str()) {
             Some(path) => path,
@@ -617,7 +641,7 @@ impl WorkspaceServer {
         };
 
         // Layer 3: Business logic - path validation and file reading
-        let safe_path = self.validate_path_with_error(path_str)?;
+        let safe_path = self.validate_path_with_error(path_str, session_id.clone())?;
 
         let lines = match self.read_file_lines(&safe_path).await {
             Ok(lines) => lines,
@@ -756,7 +780,7 @@ impl WorkspaceServer {
 
         // Layer 4: Apply replacements and write
         let new_content = new_lines.join("\n");
-        let file_manager = self.get_file_manager();
+        let file_manager = self.get_file_manager(session_id);
         match file_manager.write_file_string(path_str, &new_content).await {
             Ok(_) => {
                 let hint = SuccessHint::new(
@@ -781,7 +805,11 @@ impl WorkspaceServer {
         }
     }
 
-    pub async fn handle_grep(&self, args: Value) -> Result<MCPResult, String> {
+    pub async fn handle_grep(
+        &self,
+        args: Value,
+        session_id: Option<String>,
+    ) -> Result<MCPResult, String> {
         let pattern = match args.get("pattern").and_then(|v| v.as_str()) {
             Some(p) => p,
             None => return Ok(missing_param_error("pattern", ToolGroup::Workspace)),
@@ -797,7 +825,7 @@ impl WorkspaceServer {
             .unwrap_or(false);
 
         let input_text = if let Some(path_str) = args.get("path").and_then(|v| v.as_str()) {
-            let file_manager = self.get_file_manager();
+            let file_manager = self.get_file_manager(session_id);
             match file_manager
                 .get_security_validator()
                 .validate_path_for_read(path_str)  // Use validate_path_for_read for read operations
@@ -908,7 +936,11 @@ impl WorkspaceServer {
         ))
     }
 
-    pub async fn handle_import_file(&self, args: Value) -> Result<MCPResult, String> {
+    pub async fn handle_import_file(
+        &self,
+        args: Value,
+        session_id: Option<String>,
+    ) -> Result<MCPResult, String> {
         let src_path_str = match args
             .get("srcAbsPath")
             .or_else(|| args.get("src_abs_path"))
@@ -961,7 +993,7 @@ impl WorkspaceServer {
         }
 
         // Use file manager to handle destination path validation and copying
-        let file_manager = self.get_file_manager();
+        let file_manager = self.get_file_manager(session_id);
         match file_manager
             .copy_file_from_external(&src_path, dest_rel_path)
             .await

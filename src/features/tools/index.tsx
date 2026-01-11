@@ -4,8 +4,8 @@ import { MCPResponse, MCPTool } from '@/lib/mcp-types';
 import { toValidJsName, isValidServiceAlias } from '@/lib/utils';
 import { ToolCall } from '@/models/chat';
 import { useSystemPrompt } from '@/context/SystemPromptContext';
-import { useSessionContext } from '@/context/SessionContext';
-import { useAssistantContext } from '@/context/AssistantContext';
+import { useAgentSessionListState } from '@/context/AgentSessionListContext';
+import { useLocation, matchPath } from 'react-router-dom';
 import {
   createContext,
   ReactNode,
@@ -67,8 +67,25 @@ const BuiltInToolContext = createContext<BuiltInToolContextType | null>(null);
 export function BuiltInToolProvider({ children }: BuiltInToolProviderProps) {
   const { register: registerPrompt, unregister: unregisterPrompt } =
     useSystemPrompt();
-  const { getCurrentSession, current: currentSession } = useSessionContext();
-  const { currentAssistant } = useAssistantContext();
+
+  // Replace references to SessionContext/AssistantContext with Agent V2 logic
+  const { sessions } = useAgentSessionListState();
+  const location = useLocation();
+
+  // Derive current session from URL
+  const currentSession = useMemo(() => {
+    const match = matchPath('/agent/:sessionId', location.pathname);
+    const sessionId = match?.params.sessionId;
+
+    if (sessionId) {
+      return sessions.find((s) => s.id === sessionId) || null;
+    }
+    return null;
+  }, [location.pathname, sessions]);
+
+  // Current assistant is part of the session in Agent V2
+  const currentAssistant = currentSession?.assistant;
+
   // Simplified state: A single map holds the service and its status.
   const [serviceEntries, setServiceEntries] = useState<
     Map<string, ServiceEntry>
@@ -274,11 +291,17 @@ Tool details and usage instructions are provided separately.
 `);
 
     // 2. Service Contexts Section
-    const currentSession = getCurrentSession();
+    // currentSession is now derived from AgentSessionList
     const contextOptions: ServiceContextOptions = {
       sessionId: currentSession?.id,
       assistantId: currentAssistant?.id,
-      threadId: currentSession?.sessionThread.id,
+      // sessionThread is not in AgentSession currently, may need to use id or specific field
+      // AgentSession definition: id, name, status, assistant, createdAt.
+      // Thread ID usually equals Session ID in Agent V2 or handled backend side.
+      // For now passing sessionId as threadId if property missing, or checking if AgentSession has it.
+      // AgentSession from models/agent.ts: id, name, status, assistant...
+      // Let's use sessionId for threadId as fallback
+      threadId: currentSession?.id,
     };
 
     // Collect service context prompts from all ready services
@@ -327,7 +350,7 @@ Tool details and usage instructions are provided separately.
   }, [
     serviceEntries,
     availableTools.length,
-    getCurrentSession,
+    currentSession, // Updated dependency
     currentAssistant,
   ]);
 

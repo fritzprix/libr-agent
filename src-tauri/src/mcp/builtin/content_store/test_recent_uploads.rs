@@ -2,7 +2,7 @@
 mod tests {
     use super::super::server::ContentStoreServer;
     use super::super::storage::ContentStoreStorage;
-    use crate::session::SessionManager;
+
     use std::sync::Arc;
     use tempfile::TempDir;
     use tokio::sync::Mutex;
@@ -45,20 +45,31 @@ mod tests {
             .expect("Failed to create store");
 
         // Create session manager
-        let session_manager =
-            Arc::new(SessionManager::new_with_base_dir(temp_dir.path().to_path_buf()).unwrap());
+
+        // Create session manager
+        let session_manager = Arc::new(
+            crate::session::SessionManager::new_with_base_dir(temp_dir.path().to_path_buf())
+                .unwrap(),
+        );
+
+        // Create initial search engines map
+        let mut search_engines = std::collections::HashMap::new();
+        search_engines.insert(
+            session_id.clone(),
+            Arc::new(Mutex::new(
+                super::super::search::ContentSearchEngine::new(
+                    temp_dir.path().join("search_index"),
+                )
+                .unwrap(),
+            )),
+        );
 
         // Create server with pre-initialized storage
         let server = ContentStoreServer {
             session_id: session_id.clone(),
             session_manager,
             storage: Mutex::new(storage),
-            search_engine: Arc::new(Mutex::new(
-                super::super::search::ContentSearchEngine::new(
-                    temp_dir.path().join("search_index"),
-                )
-                .unwrap(),
-            )),
+            search_engines: Mutex::new(search_engines),
             recent_uploads: Arc::new(Mutex::new(std::collections::VecDeque::with_capacity(10))),
         };
 
@@ -78,7 +89,7 @@ mod tests {
             }
         });
 
-        let result = server.handle_save_knowledge(args).await;
+        let result = server.handle_save_knowledge(args, "test-session").await;
         assert!(result.is_ok(), "Failed to save content");
 
         // Check recent uploads queue
@@ -111,7 +122,10 @@ mod tests {
             }
         });
 
-        server.handle_save_knowledge(args).await.unwrap();
+        server
+            .handle_save_knowledge(args, "test-session")
+            .await
+            .unwrap();
 
         // Check service context now includes file
         let context = server.get_service_context(None).await;
@@ -147,7 +161,10 @@ mod tests {
                 }
             });
 
-            server.handle_save_knowledge(args).await.unwrap();
+            server
+                .handle_save_knowledge(args, "test-session")
+                .await
+                .unwrap();
         }
 
         // Check queue size is limited to 10
