@@ -29,22 +29,6 @@ const DEFAULT_MODEL_INFO: ModelInfo = {
 
 const logger = getLogger('ModelProvider');
 
-/**
- * Simple hash function for API keys to avoid exposing raw keys in cache keys.
- * @param str The string to hash
- * @returns A short hash string
- */
-function simpleHash(str: string): string {
-  if (!str) return '';
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = (hash << 5) - hash + char;
-    hash = hash & hash; // Convert to 32-bit integer
-  }
-  return Math.abs(hash).toString(36);
-}
-
 interface ModelOptionsContextType {
   modelId: string;
   provider: AIServiceProvider;
@@ -94,7 +78,7 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
     return [
       'models',
       provider,
-      simpleHash(config.apiKey || ''), // Hash for security
+      config.apiKey || '', // API key for cache invalidation
       config.baseUrl || '', // Include baseUrl
     ];
   }, [provider, serviceConfigs]);
@@ -120,6 +104,14 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
         } else {
           logger.warn(
             `No API key available for ${provider}, skipping model fetch`,
+            {
+              provider,
+              apiKeyState: {
+                type: typeof apiKey,
+                value: apiKey,
+                length: apiKey?.length || 0,
+              },
+            },
           );
           return {};
         }

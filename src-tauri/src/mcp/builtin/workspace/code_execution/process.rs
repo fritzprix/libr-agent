@@ -13,7 +13,7 @@ use crate::mcp::builtin::workspace::terminal_manager;
 use windows_sys::Win32::Globalization::{GetACP, MultiByteToWideChar};
 
 fn looks_like_utf16le(bytes: &[u8]) -> bool {
-    if bytes.len() < 4 || bytes.len() % 2 != 0 {
+    if bytes.len() < 4 || !bytes.len().is_multiple_of(2) {
         return false;
     }
 
@@ -45,9 +45,9 @@ fn strip_ansi_escapes(input: &str) -> String {
         match chars.next() {
             // CSI: ESC [ ... <final byte>
             Some('[') => {
-                while let Some(next) = chars.next() {
+                for next in chars.by_ref() {
                     let code = next as u32;
-                    if code >= 0x40 && code <= 0x7E {
+                    if (0x40..=0x7E).contains(&code) {
                         break;
                     }
                 }

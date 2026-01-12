@@ -51,7 +51,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const settingsService = useMemo(() => new LocalSettingsService(), []);
 
   const [{ value, loading, error }, load] = useAsyncFn(async () => {
-    return settingsService.getSettings();
+    const settings = await settingsService.getSettings();
+    return settings;
   }, [settingsService]);
 
   useEffect(() => {
@@ -73,8 +74,10 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   );
 
   const contextValue: SettingsContextType = useMemo(() => {
+    const finalValue = value || DEFAULT_SETTING;
+
     return {
-      value: value || DEFAULT_SETTING,
+      value: finalValue,
       isLoading: loading,
       update,
       error: error ?? null,
