@@ -12,6 +12,7 @@ use crate::mcp::builtin::workspace::terminal_manager;
 #[cfg(windows)]
 use windows_sys::Win32::Globalization::{GetACP, MultiByteToWideChar};
 
+#[cfg(windows)]
 fn looks_like_utf16le(bytes: &[u8]) -> bool {
     if bytes.len() < 4 || !bytes.len().is_multiple_of(2) {
         return false;
