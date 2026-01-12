@@ -722,6 +722,98 @@ impl WorkspaceServer {
         Ok(hint.to_mcp_result_with_data(Some(response)))
     }
 
+    // --- Interactive Shell Handlers ---
+
+    pub async fn handle_create_interactive_shell(
+        &self,
+        _args: Value,
+        session_id: &str,
+    ) -> Result<MCPResult, String> {
+        let workspace_path = self.get_workspace_dir(session_id);
+
+        match self.shell_manager.create_interactive(session_id.to_string(), workspace_path).await {
+            Ok(msg) => Ok(MCPResult::success(&msg)),
+            Err(e) => Ok(operation_failed_error(
+                "Create interactive shell",
+                &e,
+                vec![],
+                ToolGroup::Workspace
+            ))
+        }
+    }
+
+    pub async fn handle_write_interactive_shell(
+        &self,
+        args: Value,
+        session_id: &str,
+    ) -> Result<MCPResult, String> {
+        let data = match args.get("data").and_then(|v| v.as_str()) {
+            Some(d) => d,
+            None => return Ok(missing_param_error("data", ToolGroup::Workspace)),
+        };
+
+        let workspace_path = self.get_workspace_dir(session_id);
+
+        match self.shell_manager.write_interactive(session_id.to_string(), workspace_path, data).await {
+            Ok(_) => {
+                let hint = SuccessHint::new(
+                    format!("Wrote {} bytes to shell", data.len()),
+                    vec!["Use readFromInteractiveShell to see output".to_string()]
+                );
+                Ok(hint.to_mcp_result())
+            },
+            Err(e) => Ok(operation_failed_error(
+                "Write to interactive shell",
+                &e,
+                vec!["Check if shell is active".to_string()],
+                ToolGroup::Workspace
+            ))
+        }
+    }
+
+    pub async fn handle_read_interactive_shell(
+        &self,
+        _args: Value,
+        session_id: &str,
+    ) -> Result<MCPResult, String> {
+        match self.shell_manager.read_interactive(session_id.to_string()).await {
+            Ok(output) => {
+                let response = json!({
+                    "output": output
+                });
+
+                let hint = SuccessHint::new(
+                    if output.is_empty() { "No new output" } else { "Read new output" },
+                    vec!["Call again to check for more output".to_string()]
+                );
+
+                Ok(hint.to_mcp_result_with_data(Some(response)))
+            },
+            Err(e) => Ok(operation_failed_error(
+                "Read from interactive shell",
+                &e,
+                vec!["Check if shell is active".to_string()],
+                ToolGroup::Workspace
+            ))
+        }
+    }
+
+    pub async fn handle_kill_interactive_shell(
+        &self,
+        _args: Value,
+        session_id: &str,
+    ) -> Result<MCPResult, String> {
+        match self.shell_manager.kill_interactive(session_id).await {
+            Ok(msg) => Ok(MCPResult::success(&msg)),
+            Err(e) => Ok(operation_failed_error(
+                "Kill interactive shell",
+                &e,
+                vec![],
+                ToolGroup::Workspace
+            ))
+        }
+    }
+
     // Common utility methods
     pub fn get_workspace_dir(&self, session_id: &str) -> std::path::PathBuf {
         self.session_manager
@@ -805,6 +897,11 @@ impl BuiltinMCPServer for WorkspaceServer {
         tools.extend(tools::code_tools());
         tools.extend(tools::export_tools());
         tools.extend(tools::terminal_tools());
+        // Extend new interactive tools
+        tools.push(tools::terminal_tools::create_create_interactive_shell_tool());
+        tools.push(tools::terminal_tools::create_write_to_interactive_shell_tool());
+        tools.push(tools::terminal_tools::create_read_from_interactive_shell_tool());
+        tools.push(tools::terminal_tools::create_kill_interactive_shell_tool());
         tools
     }
 
@@ -1054,6 +1151,12 @@ impl BuiltinMCPServer for WorkspaceServer {
             "readProcessOutput" => self.handle_read_process_output(args, &target_session_id).await,
             "listProcesses" => self.handle_list_processes(args, &target_session_id).await,
             "stopProcess" => self.handle_stop_process(args, &target_session_id).await,
+
+            // New Interactive Shell Tools
+            "createInteractiveShell" => self.handle_create_interactive_shell(args, &target_session_id).await,
+            "writeToInteractiveShell" => self.handle_write_interactive_shell(args, &target_session_id).await,
+            "readFromInteractiveShell" => self.handle_read_interactive_shell(args, &target_session_id).await,
+            "killInteractiveShell" => self.handle_kill_interactive_shell(args, &target_session_id).await,
 
             // --- Error Hints for Common Mistakes ---
             "read_file" | "readContent" => Ok(MCPResult::error(

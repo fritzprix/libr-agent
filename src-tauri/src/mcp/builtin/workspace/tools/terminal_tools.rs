@@ -141,3 +141,76 @@ pub fn create_stop_process_tool() -> MCPTool {
         annotations: None,
     }
 }
+
+// --- New Interactive Shell Tools ---
+
+/// Create create_interactive_shell tool
+pub fn create_create_interactive_shell_tool() -> MCPTool {
+    let mut props = HashMap::new();
+    // No params needed, uses session_id from context, but we allow optional size in future
+    // For now, simple.
+
+    MCPTool {
+        name: "createInteractiveShell".to_string(),
+        title: Some("Create Interactive Shell".to_string()),
+        description: "Create a new interactive shell session (PTY) for the current user session. \
+                      If a shell already exists, it does nothing."
+            .to_string(),
+        input_schema: object_schema(props, vec![]),
+        output_schema: None,
+        annotations: None,
+    }
+}
+
+/// Create write_to_interactive_shell tool
+pub fn create_write_to_interactive_shell_tool() -> MCPTool {
+    let mut props = HashMap::new();
+    props.insert(
+        "data".to_string(),
+        string_prop_required("Data to write to the shell (e.g., command + newline)"),
+    );
+
+    MCPTool {
+        name: "writeToInteractiveShell".to_string(),
+        title: Some("Write to Interactive Shell".to_string()),
+        description: "Write data (input) to the interactive shell PTY. \
+                      Use this to send commands or interact with prompts. \
+                      Automatically creates a shell if one does not exist."
+            .to_string(),
+        input_schema: object_schema(props, vec!["data".to_string()]),
+        output_schema: None,
+        annotations: None,
+    }
+}
+
+/// Create read_from_interactive_shell tool
+pub fn create_read_from_interactive_shell_tool() -> MCPTool {
+    let mut props = HashMap::new();
+
+    MCPTool {
+        name: "readFromInteractiveShell".to_string(),
+        title: Some("Read from Interactive Shell".to_string()),
+        description: "Read pending output from the interactive shell PTY. \
+                      Returns any data buffered since the last read. \
+                      Output contains both stdout and stderr merged."
+            .to_string(),
+        input_schema: object_schema(props, vec![]),
+        output_schema: None,
+        annotations: None,
+    }
+}
+
+/// Create kill_interactive_shell tool
+pub fn create_kill_interactive_shell_tool() -> MCPTool {
+    let mut props = HashMap::new();
+
+    MCPTool {
+        name: "killInteractiveShell".to_string(),
+        title: Some("Kill Interactive Shell".to_string()),
+        description: "Terminate the current interactive shell session."
+            .to_string(),
+        input_schema: object_schema(props, vec![]),
+        output_schema: None,
+        annotations: None,
+    }
+}
