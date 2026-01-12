@@ -9,7 +9,7 @@ import React, {
 import { useAsyncFn } from 'react-use';
 import { getLogger } from '../lib/logger';
 import {
-  LocalSettingsService,
+  settingsService,
   Settings,
   ServiceConfig,
   AdvancedSettings,
@@ -48,7 +48,12 @@ export const SettingsContext = createContext<SettingsContextType | undefined>(
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [openSettingModal, setOpenSettingModal] = useState(false);
 
-  const settingsService = useMemo(() => new LocalSettingsService(), []);
+  // Use the singleton service instance
+  // const settingsService = useMemo(() => new LocalSettingsService(), []);
+  // We can use the imported singleton directly, but to keep the variable name consistent in scope:
+  // const svc = settingsService;
+  // Actually, the useAsyncFn below uses `settingsService` variable.
+  // I will just use the imported one directly in the hook dependency array.
 
   const [{ value, loading, error }, load] = useAsyncFn(async () => {
     const settings = await settingsService.getSettings();

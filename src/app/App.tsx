@@ -60,7 +60,7 @@ function App() {
                                 <AppHeader>
                                   <ThemeToggle />
                                 </AppHeader>
-                                <div className="flex-1 w-full min-h-0">
+                                <div className="flex-1 w-full min-h-0 overflow-y-auto">
                                   <Suspense
                                     fallback={
                                       <div className="flex items-center justify-center h-full">

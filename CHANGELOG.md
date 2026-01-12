@@ -4,7 +4,70 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### 🚀 Features
+### 2026-01-12
+
+#### 🚀 Features
+
+- **Settings Backend Migration to Rust/SeaORM**: Completed Phase 2 migration of settings persistence layer
+  - **New Settings Table**: Added `settings` table with key-value JSON storage (replaces IndexedDB `objects` table)
+  - **SeaORM Entity**: Created `settings` entity with CRUD operations and timestamps
+  - **Rust Service Layer**: Implemented `RustSettingsService` in TypeScript calling Tauri commands
+  - **Singleton Pattern**: Exported `settingsService` singleton for consistent access
+  - **Migration Path**: Settings data automatically migrated from IndexedDB to SQLite on first load
+  - **Type Safety**: Full TypeScript support with existing `Settings` interface
+  - **Test Coverage**: Added comprehensive CRUD tests in `seaorm_migration_verification.rs`
+
+- **CRUD Commands for Content Store Entities**: Added complete Tauri command layer for content store management
+  - **Assistant CRUD**: `create_assistant`, `update_assistant`, `delete_assistant`, `list_assistants`, `get_assistant`
+  - **MCP Server Config CRUD**: `create_mcp_server_config`, `update_mcp_server_config`, `delete_mcp_server_config`, `list_mcp_server_configs`
+  - **Playbook CRUD**: `create_playbook`, `update_playbook`, `delete_playbook`, `list_playbooks` (with optional session filtering)
+  - **Settings CRUD**: `set_setting`, `get_setting`, `delete_setting`, `list_settings` (upsert-style key-value operations)
+  - **Rust Service Implementations**: Added `RustAssistantService` replacing IndexedDB-based `LocalAssistantService`
+  - **Unified Registration**: All CRUD commands registered in `lib.rs` for frontend consumption
+
+- **Default Assistants Initialization**: Automatic creation of default assistants on first launch
+  - **Bootstrap Assistant**: Helps users set up their environment with platform detection and tool installation guidance
+  - **Libr Assistant**: General-purpose knowledge and automation agent with planning and memory capabilities
+  - **Service Layer**: New `assistant_init` module ensures default assistants exist after migrations
+  - **Deletion Protection**: Default assistants marked with `deletionProtected: true` flag
+
+#### 🔧 Enhancements
+
+- **Settings Page Scroll Fix**: Fixed overflow clipping issue preventing users from viewing bottom content
+  - **Root Container Update**: Added `overflow-y-auto` to route container in `App.tsx`
+  - **Tab Content Accessibility**: Users can now scroll through all settings tabs regardless of height
+  - **Layout Preservation**: Maintains flex layout with proper scrolling behavior
+
+- **Assistant Service Refactoring**: Migrated assistant persistence from IndexedDB to Rust backend
+  - **Removed BM25 Index**: Eliminated client-side search index (now handled server-side in future)
+  - **Simplified Search**: Client-side filtering for now, server-side implementation planned
+  - **Service Composition**: `AssistantService` now wraps `RustAssistantService` for local ops
+  - **Remote Sync**: Maintains Agent Hub remote sync capabilities
+  - **Backward Compatibility**: Exported `assistantService` singleton for existing consumers
+
+- **Playbook Type Enhancement**: Added optional `id` field to `Playbook` interface
+  - **Creation Flexibility**: ID can be omitted for creation (backend auto-generates)
+  - **Update Support**: ID required for updates and deletes
+  - **Type Safety**: TypeScript enforces proper ID usage in CRUD operations
+
+#### 🐛 Fixed
+
+- **AgentChatContext Test Fix**: Updated test expectations to account for `SettingsProvider` initialization
+  - **Settings Initialization**: `SettingsProvider` now calls `list_settings` on mount
+  - **Mock Validation**: Tests updated to verify no agent commands called during inactive session
+  - **Retry Test**: Adjusted expected invoke count to include settings initialization call
+
+#### 📦 Dependencies
+
+- **SeaORM Migration**: Added `m20260112_000001_create_settings_table` migration
+- **Chrono**: Utilized for timestamp generation in CRUD operations
+- **UUID**: Used for auto-generating assistant IDs in default initialization
+
+---
+
+### 0.4.0 Milestone (Previous Changes)
+
+#### 🚀 Features
 
 - **Primary Isolated Shell Tools**: Introduced new lightweight shell execution tools for faster standard operations
   - **New Primary Tools**: `runShell` (Unix) and `runPowerShell` (Windows) for synchronous, isolated execution
