@@ -3116,7 +3116,7 @@ dependencies = [
  "tauri-plugin-log",
  "tauri-plugin-opener",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.17",
  "tiktoken-rs",
  "tokio",
  "tokio-util",
