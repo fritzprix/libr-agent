@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, memo } from 'react';
 import SessionItem from './SessionItem';
 import { Input, Badge } from '@/components/ui';
 import { useDebounced } from '@/hooks/useDebounced';
@@ -12,7 +12,7 @@ interface SessionListProps {
   isCollapsed?: boolean;
 }
 
-export default function SessionList({
+function SessionList({
   sessions,
   showSearch = false,
   className = '',
@@ -82,3 +82,5 @@ export default function SessionList({
     </div>
   );
 }
+
+export default memo(SessionList);
