@@ -141,3 +141,119 @@ pub fn create_stop_process_tool() -> MCPTool {
         annotations: None,
     }
 }
+
+/// Create createInteractiveShell tool
+pub fn create_interactive_shell_tool() -> MCPTool {
+    let mut props = HashMap::new();
+
+    props.insert(
+        "shellId".to_string(),
+        string_prop_optional("Custom shell identifier (defaults to session ID)"),
+    );
+
+    MCPTool {
+        name: "createInteractiveShell".to_string(),
+        title: Some("Create Interactive Shell".to_string()),
+        description: "Create a new interactive shell session or reuse existing one. \
+                      Returns shell metadata (CWD, PID, status). Shell persists across tool calls. \
+                      Uses PTY for true interactive behavior (REPLs, TUI)."
+            .to_string(),
+        input_schema: object_schema(props, vec![]),
+        output_schema: None,
+        annotations: None,
+    }
+}
+
+/// Create writeToInteractiveShell tool
+pub fn create_write_interactive_shell_tool() -> MCPTool {
+    let mut props = HashMap::new();
+
+    props.insert(
+        "shellId".to_string(),
+        string_prop_optional("Shell identifier (defaults to session ID)"),
+    );
+
+    props.insert(
+        "input".to_string(),
+        string_prop_required("Input text to send to shell stdin"),
+    );
+
+    props.insert(
+        "sendNewline".to_string(),
+        boolean_prop_with_default(
+            true,
+            Some("Append newline after input (default: true)"),
+        ),
+    );
+
+    MCPTool {
+        name: "writeToInteractiveShell".to_string(),
+        title: Some("Write to Interactive Shell".to_string()),
+        description: "Write input to shell stdin without waiting for output. \
+                      Use for interactive commands that require step-by-step input. \
+                      Follow with readFromInteractiveShell to get response."
+            .to_string(),
+        input_schema: object_schema(props, vec!["input".to_string()]),
+        output_schema: None,
+        annotations: None,
+    }
+}
+
+/// Create readFromInteractiveShell tool
+pub fn create_read_interactive_shell_tool() -> MCPTool {
+    let mut props = HashMap::new();
+
+    props.insert(
+        "shellId".to_string(),
+        string_prop_optional("Shell identifier (defaults to session ID)"),
+    );
+
+    props.insert(
+        "timeoutMs".to_string(),
+        integer_prop_with_default(
+            Some(100),
+            Some(10000),
+            1000,
+            Some("Timeout in milliseconds (default: 1000)"),
+        ),
+    );
+
+    props.insert(
+        "waitForPattern".to_string(),
+        string_prop_optional("Regex pattern to wait for in output (e.g., ':', '>', '[Y/n]')"),
+    );
+
+    MCPTool {
+        name: "readFromInteractiveShell".to_string(),
+        title: Some("Read from Interactive Shell".to_string()),
+        description: "Read available output from shell stdout/stderr. \
+                      Non-blocking: returns after timeout or when pattern found. \
+                      Use waitForPattern to detect interactive prompts. \
+                      Note: PTY merges stdout and stderr."
+            .to_string(),
+        input_schema: object_schema(props, vec![]),
+        output_schema: None,
+        annotations: None,
+    }
+}
+
+/// Create killInteractiveShell tool
+pub fn create_kill_interactive_shell_tool() -> MCPTool {
+    let mut props = HashMap::new();
+
+    props.insert(
+        "shellId".to_string(),
+        string_prop_optional("Shell identifier to terminate (defaults to session ID)"),
+    );
+
+    MCPTool {
+        name: "killInteractiveShell".to_string(),
+        title: Some("Kill Interactive Shell".to_string()),
+        description: "Terminate an interactive shell session and clean up resources. \
+                      Shell state (CWD, env vars) is lost after termination."
+            .to_string(),
+        input_schema: object_schema(props, vec![]),
+        output_schema: None,
+        annotations: None,
+    }
+}

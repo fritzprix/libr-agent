@@ -14,11 +14,230 @@ use crate::session_isolation::{IsolatedProcessConfig, IsolationLevel};
 use super::super::{terminal_manager, utils, WorkspaceServer, PERSISTENT_SHELL_TOOL};
 use super::process;
 
+// We need to implement methods on WorkspaceServer directly in the crate's context
+// This file is included via `mod code_execution { pub mod shell; }` in `mod.rs`.
+// So `impl WorkspaceServer` here adds methods to `WorkspaceServer`.
+
 impl WorkspaceServer {
-    /// Execute command using persistent shell
-    ///
-    /// This method provides state preservation across commands (cd, export, venv)
-    /// by reusing a single shell process per session.
+    /// Handle createInteractiveShell tool
+    pub async fn handle_create_interactive_shell(
+        &self,
+        args: Value,
+        session_id: &str,
+    ) -> Result<MCPResult, String> {
+        // Extract shell ID (default to "default" if not provided, processed in manager)
+        let shell_id = args
+            .get("shellId")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        let workspace_path = self
+            .session_manager
+            .get_session_workspace_dir_by_id(session_id);
+
+        // Create or reuse shell
+        let shell = self
+            .shell_manager
+            .get_or_create_shell(session_id.to_string(), shell_id.clone(), workspace_path.clone())
+            .await
+            .map_err(|e| format!("Failed to create shell: {}", e))?;
+
+        // Lock to get status, then drop immediately
+        let (cwd, pid) = {
+            let mut shell_guard = shell.lock().await;
+            (shell_guard.get_cwd().to_string(), shell_guard.pid())
+        };
+
+        let actual_shell_id = shell_id.unwrap_or_else(|| "default".to_string());
+
+        let text_message = format!(
+            "[CWD: {}]\n[STATUS: Ready]\n[PID: {:?}]\n---\nInteractive shell created for session: {} (ID: {})",
+            cwd, pid, session_id, actual_shell_id
+        );
+
+        let structured_data = serde_json::json!({
+            "shell_id": actual_shell_id,
+            "cwd": cwd,
+            "pid": pid,
+            "status": "ready",
+            "session_id": session_id
+        });
+
+        Ok(MCPResult::success_with_data(&text_message, structured_data))
+    }
+
+    /// Handle writeToInteractiveShell tool
+    pub async fn handle_write_to_interactive_shell(
+        &self,
+        args: Value,
+        session_id: &str,
+    ) -> Result<MCPResult, String> {
+        let shell_id = args
+            .get("shellId")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        let input = match args.get("input").and_then(|v| v.as_str()) {
+            Some(i) => i,
+            None => {
+                return Ok(missing_param_error("input", ToolGroup::Workspace));
+            }
+        };
+
+        let send_newline = args
+            .get("sendNewline")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+
+        let workspace_path = self
+            .session_manager
+            .get_session_workspace_dir_by_id(session_id);
+
+        let shell = self
+            .shell_manager
+            .get_or_create_shell(session_id.to_string(), shell_id.clone(), workspace_path)
+            .await
+            .map_err(|e| format!("Shell not found: {}", e))?;
+
+        let cwd = {
+            let mut shell_guard = shell.lock().await;
+
+            // Write input
+            let full_input = if send_newline {
+                format!("{}\n", input)
+            } else {
+                input.to_string()
+            };
+
+            shell_guard
+                .write_stdin_raw(&full_input, true)
+                .await
+                .map_err(|e| format!("Failed to write to shell: {}", e))?;
+
+            shell_guard.get_cwd().to_string()
+        };
+
+        let actual_shell_id = shell_id.unwrap_or_else(|| "default".to_string());
+
+        let text_message = format!(
+            "[CWD: {}]\n[STATUS: Input sent]\n---\n> {}",
+            cwd, input
+        );
+
+        let structured_data = serde_json::json!({
+            "shell_id": actual_shell_id,
+            "input": input,
+            "cwd": cwd
+        });
+
+        Ok(MCPResult::success_with_data(&text_message, structured_data))
+    }
+
+    /// Handle readFromInteractiveShell tool
+    pub async fn handle_read_from_interactive_shell(
+        &self,
+        args: Value,
+        session_id: &str,
+    ) -> Result<MCPResult, String> {
+        let shell_id = args
+            .get("shellId")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        let timeout_ms = args
+            .get("timeoutMs")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(1000);
+
+        let wait_for_pattern = args.get("waitForPattern").and_then(|v| v.as_str());
+
+        let workspace_path = self
+            .session_manager
+            .get_session_workspace_dir_by_id(session_id);
+
+        let shell = self
+            .shell_manager
+            .get_or_create_shell(session_id.to_string(), shell_id.clone(), workspace_path)
+            .await
+            .map_err(|e| format!("Shell not found: {}", e))?;
+
+        let (stdout, has_more, cwd) = {
+            let mut shell_guard = shell.lock().await;
+
+            // Read output
+            let (stdout, _stderr, has_more) = if let Some(pattern) = wait_for_pattern {
+                // Pattern-based read
+                let timeout_secs = (timeout_ms / 1000).max(1);
+                match shell_guard.read_until_pattern(pattern, timeout_secs).await {
+                    Ok(output) => (output, String::new(), true),
+                    Err(_) => {
+                        shell_guard.read_output_nonblocking(100).await
+                            .map_err(|e| format!("Failed to read after pattern timeout: {}", e))?
+                    }
+                }
+            } else {
+                // Timeout-based read
+                shell_guard
+                    .read_output_nonblocking(timeout_ms)
+                    .await
+                    .map_err(|e| format!("Failed to read output: {}", e))?
+            };
+            (stdout, has_more, shell_guard.get_cwd().to_string())
+        };
+
+        let status = if has_more { "Active" } else { "Finished" }; // PTY is always active unless closed
+
+        let actual_shell_id = shell_id.unwrap_or_else(|| "default".to_string());
+
+        let text_message = format!(
+            "[CWD: {}]\n[STATUS: {}]\n---\n{}",
+            cwd, status, stdout
+        );
+
+        let structured_data = serde_json::json!({
+            "shell_id": actual_shell_id,
+            "stdout": stdout,
+            "stderr": "", // PTY merges streams
+            "cwd": cwd,
+            "status": status.to_lowercase(),
+            "has_more": has_more
+        });
+
+        Ok(MCPResult::success_with_data(&text_message, structured_data))
+    }
+
+    /// Handle killInteractiveShell tool
+    pub async fn handle_kill_interactive_shell(
+        &self,
+        args: Value,
+        session_id: &str,
+    ) -> Result<MCPResult, String> {
+        let shell_id = args
+            .get("shellId")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()); // Keeps Option<String>
+
+        let actual_shell_id = shell_id.clone().unwrap_or_else(|| "default".to_string());
+
+        self.shell_manager
+            .terminate_shell(session_id, shell_id.as_deref())
+            .await
+            .map_err(|e| format!("Failed to terminate shell: {}", e))?;
+
+        let text_message = format!(
+            "[STATUS: Terminated]\n---\nShell session '{}' has been terminated",
+            actual_shell_id
+        );
+
+        let structured_data = serde_json::json!({
+            "shell_id": actual_shell_id,
+            "status": "terminated"
+        });
+
+        Ok(MCPResult::success_with_data(&text_message, structured_data))
+    }
+
+    /// Execute command using persistent shell (Legacy)
     pub(crate) async fn execute_shell_persistent(
         &self,
         command: &str,
@@ -31,13 +250,8 @@ impl WorkspaceServer {
             .session_manager
             .get_session_workspace_dir_by_id(&session_id);
 
-        // Normalize command
         let normalized_command = Self::normalize_shell_command(command);
-
-        // Track execution time
         let execution_start = std::time::Instant::now();
-
-        // Execute with timeout
         let timeout_duration = Duration::from_secs(timeout_secs);
 
         let execution_result = tokio::time::timeout(
@@ -52,10 +266,7 @@ impl WorkspaceServer {
 
         match execution_result {
             Ok(Ok((stdout, stderr, exit_code, cwd))) => {
-                // Measure duration
                 let duration_ms = execution_start.elapsed().as_millis() as u64;
-
-                // Success case - format result
                 let success = exit_code == 0;
 
                 info!(
@@ -68,14 +279,13 @@ impl WorkspaceServer {
                     "exit_code": exit_code,
                     "stdout": stdout,
                     "stderr": stderr,
-                    "cwd": cwd, // Return raw absolute path in data
+                    "cwd": cwd,
                     "status": if success { "finished" } else { "failed" },
                     "duration_ms": duration_ms,
                     "execution_type": "persistent"
                 });
 
                 if success {
-                    // Calculate relative path for display
                     let path_cwd = std::path::Path::new(&cwd);
                     let relative_cwd = path_cwd
                         .strip_prefix(&workspace_path)
@@ -85,7 +295,6 @@ impl WorkspaceServer {
                     let display_cwd = if relative_cwd.is_empty() {
                         ".".to_string()
                     } else {
-                        // Ensure it starts with ./ for clarity if it's relative
                         if relative_cwd.starts_with(".")
                             || relative_cwd.starts_with("/")
                             || relative_cwd.contains(":")
@@ -96,16 +305,13 @@ impl WorkspaceServer {
                         }
                     };
 
-                    // Success - format with clear state reporting
                     let header = format!("✓ Command executed successfully in {}ms", duration_ms);
 
-                    // Clear shell state section with persistence indicator
                     let shell_state = format!(
                         "Persistent shell state (maintained for next {} call):\n  Working directory: {}\n  Exit code: {}",
                         PERSISTENT_SHELL_TOOL, display_cwd, exit_code
                     );
 
-                    // Warning about file tools
                     let file_tools_warning = "⚠️  File tools (readFile, listDirectory) always use workspace root (.)\n    To list files in shell's current directory, use shell commands: ls or find";
 
                     let text_message: String = if !stdout.is_empty() {
@@ -121,14 +327,16 @@ impl WorkspaceServer {
                         structured_data,
                     ))
                 } else {
-                    // Failure - use ErrorGuidance format
                     let header = format!(
                         "Command failed in {}ms (exit code: {})",
                         duration_ms, exit_code
                     );
 
+                    // Note: stderr is likely empty with PTY, so we check stdout as well for error indication context if needed
                     let error_message = if !stderr.is_empty() {
                         format!("{}\n\nstderr:\n{}", header, stderr)
+                    } else if !stdout.is_empty() {
+                         format!("{}\n\nOutput:\n{}", header, stdout)
                     } else {
                         header
                     };
@@ -137,7 +345,7 @@ impl WorkspaceServer {
                         ErrorCategory::OperationFailed,
                         error_message,
                         vec![
-                            "Review the error message in stderr for details".to_string(),
+                            "Review the error message in output for details".to_string(),
                             "Check command syntax and file paths".to_string(),
                             "Use listDirectory to verify paths exist".to_string(),
                         ],
@@ -147,13 +355,11 @@ impl WorkspaceServer {
                 }
             }
             Ok(Err(e)) => {
-                // Execution error - shell crashed or command failed
                 warn!(
                     "Persistent shell execution failed for session {}: {}. Falling back to one-shot.",
                     session_id, e
                 );
 
-                // Fallback to one-shot execution
                 let isolation_level = IsolationLevel::Medium;
                 self.execute_shell_with_isolation(
                     command,
@@ -164,21 +370,18 @@ impl WorkspaceServer {
                 .await
             }
             Err(_) => {
-                // Timeout
                 warn!(
                     "Persistent shell execution timed out for session {}. Terminating shell to cleanup.",
                     session_id
                 );
 
-                // Cleanup: Terminate the stuck shell
-                if let Err(e) = self.shell_manager.terminate_shell(&session_id).await {
+                if let Err(e) = self.shell_manager.terminate_shell(&session_id, None).await {
                     error!(
                         "Failed to terminate stuck shell for session {}: {}",
                         session_id, e
                     );
                 }
 
-                // Return ErrorGuidance for timeout
                 Ok(ErrorGuidance::with_guidance(
                     ErrorCategory::Timeout,
                     format!("Command execution timeout after {} seconds. The shell session has been reset.", timeout_secs),
@@ -207,16 +410,10 @@ impl WorkspaceServer {
             .session_manager
             .get_session_workspace_dir_by_id(&session_id);
 
-        // Normalize shell command
         let normalized_command = Self::normalize_shell_command(command);
-
-        // Track execution time
         let execution_start = std::time::Instant::now();
-
-        // Generate process ID for sync execution
         let process_id = cuid2::create_id();
 
-        // Create temporary directory for output files
         let process_tmp_dir = workspace_path
             .join("tmp")
             .join(format!("sync_{process_id}"));
@@ -249,7 +446,6 @@ impl WorkspaceServer {
             isolation_level,
         };
 
-        // Create isolated command
         let cmd = match self
             .isolation_manager
             .create_isolated_command(isolation_config)
@@ -270,10 +466,8 @@ impl WorkspaceServer {
             }
         };
 
-        // Create cancellation token
         let cancel_token = CancellationToken::new();
 
-        // Register process in registry
         let entry = terminal_manager::ProcessEntry {
             id: process_id.clone(),
             session_id: session_id.clone(),
@@ -287,7 +481,6 @@ impl WorkspaceServer {
             stderr_path: stderr_path.to_string_lossy().to_string(),
             stdout_size: 0,
             stderr_size: 0,
-            // Initialize poll tracking fields
             last_poll_at: None,
             poll_count: 0,
             consecutive_running_polls: 0,
@@ -302,7 +495,6 @@ impl WorkspaceServer {
                 .insert(process_id.clone(), cancel_token.clone());
         }
 
-        // Execute command with timeout using common spawn+stream logic
         let timeout_duration = Duration::from_secs(timeout_secs);
         let execution_result = tokio::time::timeout(
             timeout_duration,
@@ -316,15 +508,12 @@ impl WorkspaceServer {
         )
         .await;
 
-        // Update registry with result
         let mut reg = self.process_registry.write().await;
 
         match execution_result {
             Ok(Ok((pid, exit_code, stdout, stderr))) => {
-                // Measure duration
                 let duration_ms = execution_start.elapsed().as_millis() as u64;
 
-                // Update registry entry
                 if let Some(entry) = reg.entries.get_mut(&process_id) {
                     entry.pid = pid;
                     entry.exit_code = exit_code;
@@ -338,16 +527,13 @@ impl WorkspaceServer {
                     entry.stderr_size = terminal_manager::get_file_size(&stderr_path).await;
                 }
 
-                // Remove cancellation token
                 reg.cancellation_tokens.remove(&process_id);
                 drop(reg);
 
-                // Cleanup temp directory
                 let _ = tokio::fs::remove_dir_all(&process_tmp_dir).await;
 
                 let success = exit_code.unwrap_or(-1) == 0;
 
-                // Construct JSON response with enhanced metadata
                 let response = serde_json::json!({
                     "command": command,
                     "exit_code": exit_code.unwrap_or(-1),
@@ -363,14 +549,12 @@ impl WorkspaceServer {
                     command, session_id, exit_code, duration_ms
                 );
 
-                // Enhanced text response with explicit status and output visibility
                 let header = format!(
                     "Command executed in {}ms (exit code: {})",
                     duration_ms,
                     exit_code.unwrap_or(-1)
                 );
 
-                // Include output in text message if available (CRITICAL FIX for sync visibility)
                 let text_message = if !stdout.is_empty() {
                     format!("{}\n\nOutput:\n{}", header, stdout)
                 } else if !stderr.is_empty() {
@@ -386,7 +570,6 @@ impl WorkspaceServer {
                 Ok(hint.to_mcp_result_with_data(Some(response)))
             }
             Ok(Err(e)) => {
-                // Update registry entry to Failed
                 if let Some(entry) = reg.entries.get_mut(&process_id) {
                     entry.status = terminal_manager::ProcessStatus::Failed;
                     entry.finished_at = Some(chrono::Utc::now());
@@ -394,7 +577,6 @@ impl WorkspaceServer {
                 reg.cancellation_tokens.remove(&process_id);
                 drop(reg);
 
-                // Cleanup temp directory
                 let _ = tokio::fs::remove_dir_all(&process_tmp_dir).await;
 
                 error!(
@@ -413,10 +595,8 @@ impl WorkspaceServer {
                 ))
             }
             Err(_) => {
-                // Timeout - cancel the process
                 cancel_token.cancel();
 
-                // Update registry entry to Killed
                 if let Some(entry) = reg.entries.get_mut(&process_id) {
                     entry.status = terminal_manager::ProcessStatus::Killed;
                     entry.finished_at = Some(chrono::Utc::now());
@@ -424,7 +604,6 @@ impl WorkspaceServer {
                 reg.cancellation_tokens.remove(&process_id);
                 drop(reg);
 
-                // Cleanup temp directory
                 let _ = tokio::fs::remove_dir_all(&process_tmp_dir).await;
 
                 error!(
@@ -447,23 +626,17 @@ impl WorkspaceServer {
     }
 
     /// Normalize shell command for proper execution
-    /// Handles platform-specific quoting and escaping rules
     pub(crate) fn normalize_shell_command(raw_command: &str) -> String {
         #[cfg(windows)]
         {
-            // Windows: PowerShell handles both single and double quotes correctly
-            // No normalization needed - pass command as-is to avoid breaking nested quotes
-            // in Python/Node.js inline commands like: python -c "print('Hello')"
             info!("Windows command (no normalization): {}", raw_command);
             raw_command.to_string()
         }
 
         #[cfg(not(windows))]
         {
-            // Unix shell quoting normalization (existing logic)
             let mut normalized = raw_command.to_string();
 
-            // 1. Detect incomplete quote pairs using a state machine
             let mut double_quote_count = 0;
             let mut single_quote_count = 0;
             let mut in_double_quote = false;
@@ -472,13 +645,11 @@ impl WorkspaceServer {
 
             for c in normalized.chars() {
                 if in_single_quote {
-                    // Inside single quotes, backslash is literal, only single quote escapes
                     if c == '\'' {
                         in_single_quote = false;
                         single_quote_count += 1;
                     }
                 } else if in_double_quote {
-                    // Inside double quotes, backslash escapes next char
                     if escaped {
                         escaped = false;
                         continue;
@@ -492,7 +663,6 @@ impl WorkspaceServer {
                         double_quote_count += 1;
                     }
                 } else {
-                    // Normal state
                     if escaped {
                         escaped = false;
                         continue;
@@ -511,7 +681,6 @@ impl WorkspaceServer {
                 }
             }
 
-            // 2. Add missing closing quotes
             if double_quote_count % 2 != 0 {
                 normalized.push('"');
                 info!("Shell command: Added missing double quote");
@@ -521,7 +690,6 @@ impl WorkspaceServer {
                 info!("Shell command: Added missing single quote");
             }
 
-            // 3. Fix consecutive quote patterns
             if normalized.contains("\"\"") {
                 normalized = Self::fix_consecutive_quotes(&normalized);
             }
@@ -539,9 +707,6 @@ impl WorkspaceServer {
 
         while i < chars.len() {
             if i + 1 < chars.len() && chars[i] == '"' && chars[i + 1] == '"' {
-                // Consecutive quotes found
-
-                // Check if the first quote is escaped (preceded by odd number of backslashes)
                 let mut backslash_count = 0;
                 let mut j = i;
                 while j > 0 && chars[j - 1] == '\\' {
@@ -550,25 +715,21 @@ impl WorkspaceServer {
                 }
 
                 if backslash_count % 2 != 0 {
-                    // It is an escaped quote (e.g. \"), so it's not a start of consecutive quotes
                     result.push(chars[i]);
                     i += 1;
                     continue;
                 }
 
                 if i > 0 && chars[i - 1] != ' ' && chars[i - 1] != '=' {
-                    // If no space or equals before, escape the first one
                     result.push('\\');
                     result.push('"');
-                    i += 1; // Second quote processed in next loop
+                    i += 1;
                 } else if i + 2 < chars.len() && chars[i + 2] != ' ' {
-                    // If no space after, escape the second one
                     result.push('"');
                     result.push('\\');
                     result.push('"');
                     i += 2;
                 } else {
-                    // Default: keep one, remove one
                     result.push('"');
                     i += 2;
                 }
@@ -593,7 +754,6 @@ impl WorkspaceServer {
 
             if in_single {
                 if ch == '\'' {
-                    // PowerShell single-quote escaping: '' inside single quotes
                     if i + 1 < chars.len() && chars[i + 1] == '\'' {
                         i += 2;
                         continue;
@@ -605,7 +765,6 @@ impl WorkspaceServer {
             }
 
             if in_double {
-                // PowerShell escape inside double quotes via backtick
                 if ch == '`' {
                     i += 2;
                     continue;
@@ -670,24 +829,20 @@ impl WorkspaceServer {
             }
         }
 
-        // Check for requireUserInput parameter or auto-detect privilege escalation
         let require_input = args
             .get("requireUserInput")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
         let auto_detect = self.detect_privilege_escalation(raw_command);
 
-        // If user input required, return UIResource for interactive execution
         if require_input || auto_detect {
             return self
                 .handle_interactive_shell(raw_command, &args, session_id)
                 .await;
         }
 
-        // Sync mode: persistent shell execution
         let timeout_secs = utils::validate_timeout(args.get("timeout").and_then(|v| v.as_u64()));
 
-        // Enforce maximum sync timeout
         let sync_max = crate::config::default_execution_timeout();
         if timeout_secs > sync_max {
             return Ok(ErrorGuidance::with_guidance(
@@ -712,12 +867,10 @@ impl WorkspaceServer {
             .to_mcp_result());
         }
 
-        // Execute with persistent shell (state preservation)
         self.execute_shell_persistent(raw_command, timeout_secs, session_id)
             .await
     }
 
-    /// Handle primary isolated shell execution (new tool)
     pub async fn handle_run_shell(
         &self,
         args: Value,
@@ -749,10 +902,8 @@ impl WorkspaceServer {
             }
         }
 
-        // Get timeout (use default if not specified)
         let timeout_secs = utils::validate_timeout(args.get("timeout").and_then(|v| v.as_u64()));
 
-        // Enforce maximum sync timeout
         let sync_max = crate::config::default_execution_timeout();
         if timeout_secs > sync_max {
             return Ok(ErrorGuidance::with_guidance(
@@ -777,7 +928,6 @@ impl WorkspaceServer {
             .to_mcp_result());
         }
 
-        // Execute with Medium isolation (always workspace root anchored)
         self.execute_shell_with_isolation(
             raw_command,
             IsolationLevel::Medium,
@@ -787,7 +937,6 @@ impl WorkspaceServer {
         .await
     }
 
-    /// Handle async shell execution (separate tool)
     pub async fn handle_spawn_process(
         &self,
         args: Value,
@@ -819,7 +968,6 @@ impl WorkspaceServer {
             }
         }
 
-        // Async mode does not support interactive input
         let require_input = args
             .get("requireUserInput")
             .and_then(|v| v.as_bool())
@@ -845,26 +993,22 @@ impl WorkspaceServer {
             .to_mcp_result());
         }
 
-        // Execute in background
         self.execute_shell_async(raw_command, &args, session_id)
             .await
     }
 
-    /// Execute shell command asynchronously in background
     async fn execute_shell_async(
         &self,
         command: &str,
         _args: &Value,
         session_id: &str,
     ) -> Result<MCPResult, String> {
-        // Get session info
         let session_id = session_id.to_string();
 
         let workspace_path = self
             .session_manager
             .get_session_workspace_dir_by_id(&session_id);
 
-        // Check concurrent process limit (max 20 per session)
         const MAX_CONCURRENT_PROCESSES: usize = 20;
 
         {
@@ -894,10 +1038,8 @@ impl WorkspaceServer {
             }
         }
 
-        // Generate process ID
         let process_id = cuid2::create_id();
 
-        // Create process tmp directory
         let process_tmp_dir = workspace_path
             .join("tmp")
             .join(format!("process_{process_id}"));
@@ -921,13 +1063,9 @@ impl WorkspaceServer {
         let stdout_path = process_tmp_dir.join("stdout");
         let stderr_path = process_tmp_dir.join("stderr");
 
-        // Normalize command
         let normalized_command = Self::normalize_shell_command(command);
-
-        // Always use Medium isolation
         let isolation_level = IsolationLevel::Medium;
 
-        // Create isolation config
         let isolation_config = IsolatedProcessConfig {
             session_id: session_id.clone(),
             workspace_path: workspace_path.clone(),
@@ -937,7 +1075,6 @@ impl WorkspaceServer {
             isolation_level,
         };
 
-        // Create isolated command
         let cmd = match self
             .isolation_manager
             .create_isolated_command(isolation_config)
@@ -958,7 +1095,6 @@ impl WorkspaceServer {
             }
         };
 
-        // Register process in registry (Starting status)
         let cancel_token = CancellationToken::new();
 
         let entry = terminal_manager::ProcessEntry {
@@ -974,7 +1110,6 @@ impl WorkspaceServer {
             stderr_path: stderr_path.to_string_lossy().to_string(),
             stdout_size: 0,
             stderr_size: 0,
-            // Initialize poll tracking fields
             last_poll_at: None,
             poll_count: 0,
             consecutive_running_polls: 0,
@@ -989,12 +1124,10 @@ impl WorkspaceServer {
                 .insert(process_id.clone(), cancel_token.clone());
         }
 
-        // Spawn monitoring task using hybrid streaming
         let registry = self.process_registry.clone();
         let pid_copy = process_id.clone();
 
         tokio::spawn(async move {
-            // Update registry: starting -> running
             {
                 let mut reg = registry.write().await;
                 if let Some(entry) = reg.entries.get_mut(&pid_copy) {
@@ -1002,7 +1135,6 @@ impl WorkspaceServer {
                 }
             }
 
-            // Execute using hybrid streaming
             let result = process::spawn_and_stream_hybrid(
                 cmd,
                 stdout_path.clone(),
@@ -1012,7 +1144,6 @@ impl WorkspaceServer {
             )
             .await;
 
-            // Update registry: finished
             let mut reg = registry.write().await;
             if let Some(entry) = reg.entries.get_mut(&pid_copy) {
                 match result {
@@ -1027,11 +1158,9 @@ impl WorkspaceServer {
                         entry.exit_code = exit_code;
                         entry.finished_at = Some(chrono::Utc::now());
 
-                        // Update file sizes
                         entry.stdout_size = terminal_manager::get_file_size(&stdout_path).await;
                         entry.stderr_size = terminal_manager::get_file_size(&stderr_path).await;
 
-                        // Store streaming handle for real-time access (after entry mutations)
                         reg.streaming_handles
                             .insert(pid_copy.clone(), streaming_handle);
                     }
@@ -1040,14 +1169,12 @@ impl WorkspaceServer {
                         entry.finished_at = Some(chrono::Utc::now());
                         error!("Process {} execution error: {}", pid_copy, e);
 
-                        // Update file sizes even on error
                         entry.stdout_size = terminal_manager::get_file_size(&stdout_path).await;
                         entry.stderr_size = terminal_manager::get_file_size(&stderr_path).await;
                     }
                 }
             }
 
-            // Remove cancellation token (keep streaming handle for 5 minutes)
             reg.cancellation_tokens.remove(&pid_copy);
 
             info!(
@@ -1057,10 +1184,8 @@ impl WorkspaceServer {
             );
         });
 
-        // Wait briefly to detect immediate failures
         tokio::time::sleep(Duration::from_millis(100)).await;
 
-        // Check if process failed to start
         {
             let registry = self.process_registry.read().await;
             if let Some(entry) = registry.entries.get(&process_id) {
@@ -1079,7 +1204,6 @@ impl WorkspaceServer {
             }
         }
 
-        // Return immediate response with process_id
         let hint = SuccessHint::new(
             format!("Background process started (ID: {})", process_id),
             vec![
@@ -1101,8 +1225,6 @@ impl WorkspaceServer {
         Ok(hint.to_mcp_result_with_data(Some(response_data)))
     }
 
-    /// Platform-specific privilege detection for Unix systems
-    /// Detects commands that require elevated privileges (sudo, su, doas, pkexec)
     #[cfg(unix)]
     pub(crate) fn detect_privilege_escalation(&self, command: &str) -> bool {
         let trimmed = command.trim_start();
@@ -1110,9 +1232,6 @@ impl WorkspaceServer {
         patterns.iter().any(|p| trimmed.starts_with(p))
     }
 
-    /// Platform-specific privilege detection for Windows
-    /// Windows UAC cannot be detected from command string
-    /// Agent must explicitly set require_user_input=true
     #[cfg(windows)]
     pub(crate) fn detect_privilege_escalation(&self, _command: &str) -> bool {
         false
@@ -1126,7 +1245,6 @@ mod tests {
     #[test]
     #[cfg(not(windows))]
     fn test_normalize_shell_command_unix() {
-        // Basic cases
         assert_eq!(
             WorkspaceServer::normalize_shell_command("echo hello"),
             "echo hello"
@@ -1139,8 +1257,6 @@ mod tests {
             WorkspaceServer::normalize_shell_command("echo \"hello\""),
             "echo \"hello\""
         );
-
-        // Missing quotes
         assert_eq!(
             WorkspaceServer::normalize_shell_command("echo \"hello"),
             "echo \"hello\""
@@ -1149,14 +1265,10 @@ mod tests {
             WorkspaceServer::normalize_shell_command("echo 'hello"),
             "echo 'hello'"
         );
-
-        // Escaped quotes (should NOT be counted as closing quotes)
         assert_eq!(
             WorkspaceServer::normalize_shell_command("echo \"foo\\\"bar\""),
             "echo \"foo\\\"bar\""
         );
-
-        // Nested quotes
         assert_eq!(
             WorkspaceServer::normalize_shell_command("echo '\"hello\"'"),
             "echo '\"hello\"'"
@@ -1165,14 +1277,10 @@ mod tests {
             WorkspaceServer::normalize_shell_command("echo \"'hello'\""),
             "echo \"'hello'\""
         );
-
-        // Complex case with multiple escapes
         assert_eq!(
             WorkspaceServer::normalize_shell_command("echo \"path: \\\"/tmp/foo\\\"\""),
             "echo \"path: \\\"/tmp/foo\\\"\""
         );
-
-        // Trailing backslash (should be preserved)
         assert_eq!(
             WorkspaceServer::normalize_shell_command("echo hello \\"),
             "echo hello \\"
@@ -1182,7 +1290,6 @@ mod tests {
     #[test]
     #[cfg(windows)]
     fn test_normalize_shell_command_windows() {
-        // Windows should pass through everything as-is
         assert_eq!(
             WorkspaceServer::normalize_shell_command("echo hello"),
             "echo hello"
