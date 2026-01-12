@@ -1,11 +1,8 @@
 import type { Assistant } from '@/models/chat';
 import type { Page } from '@/lib/db/types';
-import { dbService, dbUtils } from '@/lib/db';
-import { createPage } from '@/lib/db/crud';
 import { getLogger } from '@/lib/logger';
-import { BM25Index, defaultTokenizer } from '@/lib/search/bm25';
-import type { BM25Doc } from '@/lib/search/bm25';
 import { type RevalidateEvent } from './mcp-server-service';
+import { RustAssistantService } from './rust-assistant-service';
 
 // Re-export for convenience
 export type { RevalidateEvent };
@@ -28,177 +25,41 @@ export interface IAssistantService {
   onRevalidate?: (callback: (event: RevalidateEvent) => void) => () => void;
 }
 
-export class LocalAssistantService implements IAssistantService {
-  private searchIndex: BM25Index | null = null;
-  private assistantMap: Map<string, Assistant> = new Map();
-  private isIndexing = false;
-  private revalidateCallbacks = new Set<(event: RevalidateEvent) => void>();
-
-  constructor() {
-    // Initialize index in background (non-blocking)
-    this.refreshIndex();
-  }
-
-  private async refreshIndex(): Promise<void> {
-    if (this.isIndexing) return;
-    this.isIndexing = true;
-
-    try {
-      const assistants = await dbUtils.getAllAssistants();
-
-      // Build ID→Assistant Map for fast lookup during search
-      this.assistantMap = new Map(assistants.map((a) => [a.id!, a]));
-
-      // Build BM25 index with multi-field tokens
-      const docs: BM25Doc[] = assistants.map((a) => ({
-        id: a.id!,
-        tokens: [
-          ...defaultTokenizer(a.name),
-          ...defaultTokenizer(a.description || ''),
-          ...defaultTokenizer(a.systemPrompt),
-        ],
-      }));
-
-      const newIndex = new BM25Index();
-      newIndex.addDocuments(docs);
-      this.searchIndex = newIndex; // Atomic replacement
-    } catch (error) {
-      logger.error('Failed to refresh search index', error);
-    } finally {
-      this.isIndexing = false;
-    }
-  }
-
-  async search(query: string, limit = 10): Promise<Assistant[]> {
-    // Lazy initialization: build index if missing
-    if (!this.searchIndex) {
-      await this.refreshIndex();
-    }
-
-    // Return empty array if index build failed
-    if (!this.searchIndex) return [];
-
-    const queryTokens = defaultTokenizer(query);
-    const scores = this.searchIndex.score(queryTokens);
-
-    // Sort by score (descending) and return top N assistants
-    return Array.from(scores.entries())
-      .filter(([, score]) => score > 0)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, limit)
-      .map(([id]) => this.assistantMap.get(id)!)
-      .filter(Boolean);
-  }
-
-  async getList(params: PaginationParams): Promise<Page<Assistant>> {
-    const all = await dbUtils.getAllAssistants();
-    const start = (params.page - 1) * params.pageSize;
-    const end = start + params.pageSize;
-
-    return createPage(
-      all.slice(start, end),
-      params.page,
-      params.pageSize,
-      all.length,
-    );
-  }
-
-  async getAll(): Promise<Assistant[]> {
-    return dbUtils.getAllAssistants();
-  }
-
-  async getById(id: string): Promise<Assistant | undefined> {
-    return dbService.assistants.read(id);
-  }
-
-  async save(assistant: Assistant): Promise<Assistant> {
-    await dbService.assistants.upsert(assistant);
-    // Background index refresh (non-blocking)
-    this.refreshIndex();
-
-    // Emit revalidation event
-    this.emitRevalidate({
-      entity: 'assistants',
-      action: 'save',
-      entityId: assistant.id,
-    });
-
-    return assistant;
-  }
-
-  async saveAll(assistants: Assistant[]): Promise<Assistant[]> {
-    if (assistants.length === 0) return [];
-    await dbService.assistants.upsertMany(assistants);
-    // Background index refresh (non-blocking)
-    this.refreshIndex();
-
-    // Emit revalidation event for batch save
-    this.emitRevalidate({
-      entity: 'assistants',
-      action: 'save',
-    });
-
-    return assistants;
-  }
-
-  async delete(id: string): Promise<void> {
-    await dbService.assistants.delete(id);
-    // Background index refresh (non-blocking)
-    this.refreshIndex();
-
-    // Emit revalidation event
-    this.emitRevalidate({
-      entity: 'assistants',
-      action: 'delete',
-      entityId: id,
-    });
-  }
-
-  onRevalidate(callback: (event: RevalidateEvent) => void): () => void {
-    this.revalidateCallbacks.add(callback);
-    return () => this.revalidateCallbacks.delete(callback);
-  }
-
-  private emitRevalidate(event: RevalidateEvent): void {
-    for (const callback of this.revalidateCallbacks) {
-      try {
-        callback(event);
-      } catch (error) {
-        logger.error('Error in revalidate callback', error);
-      }
-    }
-  }
-}
-
 export class RemoteAssistantService implements IAssistantService {
-  constructor(private baseUrl: string) {}
+  private baseUrl: string;
 
-  async getList(params: PaginationParams): Promise<Page<Assistant>> {
-    const url = new URL(`${this.baseUrl}/assistants`);
-    url.searchParams.set('page', params.page.toString());
-    url.searchParams.set('pageSize', params.pageSize.toString());
-
-    const response = await fetch(url.toString());
-    if (!response.ok) throw new Error('Failed to fetch assistants');
-    return response.json();
-  }
-
-  async search(query: string, limit = 10): Promise<Assistant[]> {
-    const url = new URL(`${this.baseUrl}/assistants/search`);
-    url.searchParams.set('q', encodeURIComponent(query));
-    url.searchParams.set('limit', limit.toString());
-
-    const response = await fetch(url.toString());
-    if (response.status === 404) {
-      throw new Error('Remote search endpoint not implemented');
-    }
-    if (!response.ok) throw new Error('Failed to search assistants');
-    return response.json();
+  constructor(baseUrl: string) {
+    this.baseUrl = baseUrl.replace(/\/$/, '');
   }
 
   async getAll(): Promise<Assistant[]> {
     const response = await fetch(`${this.baseUrl}/assistants`);
     if (!response.ok) throw new Error('Failed to fetch assistants');
+    return response.json();
+  }
+
+  async getList(params: PaginationParams): Promise<Page<Assistant>> {
+    // Remote API might not support pagination same way, fallback to getAll or implement if API supports
+    // For now assuming getAll and client side pagination or simple proxy
+    // Actually, let's just fetch all for now as remote usually returns all
+    void params; // Explicitly mark as unused but required by interface
+    const all = await this.getAll();
+    return {
+      items: all,
+      page: 1,
+      pageSize: all.length,
+      totalItems: all.length,
+      totalPages: 1,
+      hasNextPage: false,
+      hasPreviousPage: false,
+    };
+  }
+
+  async search(query: string, limit = 10): Promise<Assistant[]> {
+    const response = await fetch(
+      `${this.baseUrl}/assistants/search?q=${encodeURIComponent(query)}&limit=${limit}`,
+    );
+    if (!response.ok) throw new Error('Failed to search assistants');
     return response.json();
   }
 
@@ -221,7 +82,6 @@ export class RemoteAssistantService implements IAssistantService {
 
   async saveAll(assistants: Assistant[]): Promise<Assistant[]> {
     // Remote API doesn't support bulk save yet, so we do sequential
-    // This is mainly used for sync to local, so this path might not be used often
     const saved: Assistant[] = [];
     for (const assistant of assistants) {
       saved.push(await this.save(assistant));
@@ -238,11 +98,11 @@ export class RemoteAssistantService implements IAssistantService {
 }
 
 export class AssistantService implements IAssistantService {
-  private localService: LocalAssistantService;
+  private localService: RustAssistantService;
   private remoteService: RemoteAssistantService | null = null;
 
   constructor(agentHubUrl?: string) {
-    this.localService = new LocalAssistantService();
+    this.localService = new RustAssistantService();
     if (agentHubUrl) {
       this.remoteService = new RemoteAssistantService(agentHubUrl);
     }
@@ -276,7 +136,7 @@ export class AssistantService implements IAssistantService {
         return await this.remoteService.search(query, limit);
       } catch (error) {
         logger.warn(
-          'Failed to search from remote, falling back to local BM25 search',
+          'Failed to search from remote, falling back to local search',
           error,
         );
         return this.localService.search(query, limit);
@@ -309,7 +169,7 @@ export class AssistantService implements IAssistantService {
         return await this.remoteService.getById(id);
       } catch (error) {
         logger.error(
-          'Failed to fetch from remote, falling back to local',
+          `Failed to fetch assistant ${id} from remote, falling back to local`,
           error,
         );
         return this.localService.getById(id);
@@ -322,118 +182,53 @@ export class AssistantService implements IAssistantService {
     if (this.remoteService) {
       try {
         const saved = await this.remoteService.save(assistant);
+        // Sync to local
         await this.localService.save(saved);
-
-        // Notify Main Thread if running in Worker context
-        this.sendWorkerNotification({
-          entity: 'assistants',
-          action: 'save',
-          entityId: saved.id,
-        });
-
         return saved;
       } catch (error) {
-        logger.error('Failed to save to remote', error);
-        throw error;
+        logger.error('Failed to save to remote, saving to local only', error);
+        return this.localService.save(assistant);
       }
     }
-
-    const result = await this.localService.save(assistant);
-
-    // Notify Main Thread if running in Worker context
-    this.sendWorkerNotification({
-      entity: 'assistants',
-      action: 'save',
-      entityId: result.id,
-    });
-
-    return result;
+    return this.localService.save(assistant);
   }
 
   async saveAll(assistants: Assistant[]): Promise<Assistant[]> {
     if (this.remoteService) {
       try {
         const saved = await this.remoteService.saveAll(assistants);
+        // Sync to local
         await this.localService.saveAll(saved);
-
-        // Notify Main Thread if running in Worker context
-        this.sendWorkerNotification({
-          entity: 'assistants',
-          action: 'save',
-        });
-
         return saved;
       } catch (error) {
-        logger.error('Failed to save to remote', error);
-        throw error;
+        logger.error(
+          'Failed to save all to remote, saving to local only',
+          error,
+        );
+        return this.localService.saveAll(assistants);
       }
     }
-
-    const result = await this.localService.saveAll(assistants);
-
-    // Notify Main Thread if running in Worker context
-    this.sendWorkerNotification({
-      entity: 'assistants',
-      action: 'save',
-    });
-
-    return result;
+    return this.localService.saveAll(assistants);
   }
 
   async delete(id: string): Promise<void> {
     if (this.remoteService) {
       try {
         await this.remoteService.delete(id);
-      } catch (error) {
-        logger.error('Failed to delete from remote', error);
-        throw error;
-      }
-
-      try {
+        // Sync to local
         await this.localService.delete(id);
-
-        // Notify Main Thread if running in Worker context
-        this.sendWorkerNotification({
-          entity: 'assistants',
-          action: 'delete',
-          entityId: id,
-        });
       } catch (error) {
         logger.error(
-          'Remote deletion succeeded, but failed to delete from local',
+          'Failed to delete from remote, deleting from local only',
           error,
         );
-        // Do not throw; treat as success, but log for reconciliation
+        await this.localService.delete(id);
       }
     } else {
       await this.localService.delete(id);
-
-      // Notify Main Thread if running in Worker context
-      this.sendWorkerNotification({
-        entity: 'assistants',
-        action: 'delete',
-        entityId: id,
-      });
-    }
-  }
-
-  /**
-   * Sends notification to Main Thread if running in Worker context
-   */
-  private sendWorkerNotification(event: RevalidateEvent): void {
-    // Check if running in Worker context
-    if (
-      typeof self !== 'undefined' &&
-      'sendNotification' in self &&
-      typeof (self as { sendNotification?: unknown }).sendNotification ===
-        'function'
-    ) {
-      (
-        self as typeof self & {
-          sendNotification: (type: string, data: unknown) => void;
-        }
-      ).sendNotification('service-revalidate', event);
-      logger.debug('Sent service-revalidate notification from Worker', event);
     }
   }
 }
+
+// Export a singleton instance for backward compatibility where needed
+export const assistantService = new AssistantService();

@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, memo } from 'react';
 import { Bot } from 'lucide-react';
 import { useAgentSessionListActions } from '@/context/AgentSessionListContext';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -28,7 +28,7 @@ interface SessionItemProps {
   isCollapsed?: boolean;
 }
 
-export default function SessionItem({
+function SessionItem({
   session,
   className,
   isCollapsed = false,
@@ -160,3 +160,5 @@ export default function SessionItem({
     </div>
   );
 }
+
+export default memo(SessionItem);

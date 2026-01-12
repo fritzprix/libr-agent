@@ -25,6 +25,9 @@ use commands::agent_commands::{
     agent_inject_messages, agent_pause_workflow, agent_resume_session, agent_resume_workflow,
     agent_send_message, agent_terminate_workflow, agent_update_session_config,
 };
+use commands::assistant_crud_commands::{
+    create_assistant, delete_assistant, get_assistant, list_assistants, update_assistant,
+};
 use commands::browser_commands::*;
 use commands::content_store_commands::delete_content_store;
 use commands::download_commands::{download_workspace_file, export_and_download_zip};
@@ -38,11 +41,19 @@ use commands::mcp_commands::{
     list_tools_from_config, revoke_oauth_token, sample_from_mcp_server, start_mcp_server,
     start_oauth_flow, stop_mcp_server, switch_context, validate_tool_schema,
 };
+use commands::mcp_server_config_commands::{
+    create_mcp_server_config, delete_mcp_server_config, list_mcp_server_configs,
+    update_mcp_server_config,
+};
 use commands::messages_commands::{
     messages_delete, messages_delete_all_for_session, messages_get_page, messages_search,
     messages_upsert, messages_upsert_many,
 };
+use commands::playbook_commands::{
+    create_playbook, delete_playbook, list_playbooks, update_playbook,
+};
 use commands::session_commands::{remove_session, switch_session};
+use commands::settings_commands::{delete_setting, get_setting, list_settings, set_setting};
 use commands::url_commands::open_external_url;
 use commands::workspace_commands::{
     get_app_data_dir, get_app_logs_dir, greet, list_workspace_files,
@@ -119,6 +130,13 @@ pub fn run_with_sqlite_sync(db_url: String) {
             .await
             .expect("Failed to run database migrations");
         println!("✅ Database migrations applied");
+
+        // Ensure default assistants exist
+        if let Err(e) = services::assistant_init::ensure_default_assistants(&db).await {
+            eprintln!("❌ Failed to ensure default assistants: {}", e);
+        } else {
+            println!("✅ Default assistants verified");
+        }
 
         // Initialize repository instances
         use repositories::{
@@ -306,7 +324,25 @@ pub fn run() {
                 agent_inject_messages,
                 agent_clear_all_sessions,
                 agent_factory_reset,
-                agent_update_session_config
+                agent_update_session_config,
+                // CRUD Commands
+                create_assistant,
+                update_assistant,
+                delete_assistant,
+                list_assistants,
+                get_assistant,
+                create_mcp_server_config,
+                update_mcp_server_config,
+                delete_mcp_server_config,
+                list_mcp_server_configs,
+                create_playbook,
+                update_playbook,
+                delete_playbook,
+                list_playbooks,
+                set_setting,
+                get_setting,
+                delete_setting,
+                list_settings,
             ])
             .setup(|app| {
                 println!("🚀 LibrAgent initializing...");

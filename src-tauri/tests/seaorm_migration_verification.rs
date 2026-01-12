@@ -71,7 +71,69 @@ async fn test_all_migrations_run_successfully() {
         "MCP Server table should be queryable"
     );
 
-    println!("✅ All 7 tables created and queryable via SeaORM");
+    // 8. Settings table
+    let settings_count = settings::Entity::find().count(&db).await;
+    assert!(settings_count.is_ok(), "Settings table should be queryable");
+
+    println!("✅ All 8 tables created and queryable via SeaORM");
+}
+
+#[tokio::test]
+async fn test_settings_crud_operations() {
+    let options = SqliteConnectOptions::from_str("sqlite::memory:")
+        .expect("Invalid database URL")
+        .create_if_missing(true);
+
+    let pool = SqlitePoolOptions::new()
+        .connect_with(options)
+        .await
+        .expect("Failed to create test pool");
+
+    let db = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool.clone());
+    Migrator::up(&db, None)
+        .await
+        .expect("Migrations should run");
+
+    // Insert settings
+    let setting = settings::ActiveModel {
+        key: Set("test_key".to_string()),
+        value: Set("test_value".to_string()),
+        created_at: Set(1000),
+        updated_at: Set(1000),
+    };
+
+    let inserted = setting.insert(&db).await;
+    assert!(inserted.is_ok(), "Should insert setting successfully");
+
+    // Read settings
+    let found = settings::Entity::find_by_id("test_key").one(&db).await;
+    assert!(found.is_ok() && found.as_ref().unwrap().is_some());
+    assert_eq!(found.unwrap().unwrap().value, "test_value");
+
+    // Update settings
+    let mut updated: settings::ActiveModel = settings::Entity::find_by_id("test_key")
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap()
+        .into();
+    updated.value = Set("updated_value".to_string());
+    let update_result = updated.update(&db).await;
+    assert!(update_result.is_ok(), "Should update setting successfully");
+
+    // Verify update
+    let updated_setting = settings::Entity::find_by_id("test_key")
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(updated_setting.value, "updated_value");
+
+    // Delete settings
+    let delete_result = settings::Entity::delete_by_id("test_key").exec(&db).await;
+    assert!(delete_result.is_ok(), "Should delete setting successfully");
+
+    println!("✅ Settings CRUD operations work correctly");
 }
 
 #[tokio::test]
