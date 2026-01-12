@@ -10,7 +10,11 @@ use crate::mcp::builtin::error_guidance::{
 use crate::mcp::types::MCPResult;
 
 impl WorkspaceServer {
-    pub async fn handle_export_file(&self, args: Value) -> Result<MCPResult, String> {
+    pub async fn handle_export_file(
+        &self,
+        args: Value,
+        session_id: Option<String>,
+    ) -> Result<MCPResult, String> {
         // Layer 1: Parameter existence validation
         let path = match args.get("path").and_then(|v| v.as_str()) {
             Some(path) => path,
@@ -26,7 +30,13 @@ impl WorkspaceServer {
             .to_string();
 
         // Layer 3: Business logic - file existence validation
-        let source_path = self.get_workspace_dir().join(path);
+        let target_session_id = session_id
+            .clone()
+            .unwrap_or_else(|| self.session_id.clone());
+        let source_path = self
+            .session_manager
+            .get_session_workspace_dir_by_id(&target_session_id)
+            .join(path);
         if !source_path.exists() || !source_path.is_file() {
             return Ok(ErrorGuidance::with_guidance(
                 ErrorCategory::ResourceNotFound,
@@ -41,7 +51,7 @@ impl WorkspaceServer {
             .to_mcp_result());
         }
 
-        let exports_dir = match self.ensure_exports_directory() {
+        let exports_dir = match self.ensure_exports_directory(&target_session_id) {
             Ok(dir) => dir,
             Err(e) => {
                 return Ok(operation_failed_error(
@@ -125,7 +135,11 @@ impl WorkspaceServer {
         ))
     }
 
-    pub async fn handle_export_zip(&self, args: Value) -> Result<MCPResult, String> {
+    pub async fn handle_export_zip(
+        &self,
+        args: Value,
+        session_id: Option<String>,
+    ) -> Result<MCPResult, String> {
         // Layer 1: Parameter existence validation
         let files_array = match args.get("files").and_then(|v| v.as_array()) {
             Some(files) => files,
@@ -155,7 +169,11 @@ impl WorkspaceServer {
             .to_mcp_result());
         }
 
-        let exports_dir = match self.ensure_exports_directory() {
+        let target_session_id = session_id
+            .clone()
+            .unwrap_or_else(|| self.session_id.clone());
+
+        let exports_dir = match self.ensure_exports_directory(&target_session_id) {
             Ok(dir) => dir,
             Err(e) => {
                 return Ok(operation_failed_error(
@@ -203,7 +221,13 @@ impl WorkspaceServer {
                 None => continue,
             };
 
-            let source_path = self.get_workspace_dir().join(file_path);
+            let target_session_id = session_id
+                .clone()
+                .unwrap_or_else(|| self.session_id.clone());
+            let source_path = self
+                .session_manager
+                .get_session_workspace_dir_by_id(&target_session_id)
+                .join(file_path);
             if !source_path.exists() || !source_path.is_file() {
                 continue;
             }
@@ -299,8 +323,8 @@ impl WorkspaceServer {
         ))
     }
 
-    fn ensure_exports_directory(&self) -> Result<std::path::PathBuf, String> {
-        let exports_dir = self.get_workspace_dir().join("exports");
+    fn ensure_exports_directory(&self, session_id: &str) -> Result<std::path::PathBuf, String> {
+        let exports_dir = self.get_workspace_dir(session_id).join("exports");
 
         let files_dir = exports_dir.join("files");
         let packages_dir = exports_dir.join("packages");

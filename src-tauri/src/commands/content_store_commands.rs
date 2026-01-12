@@ -31,7 +31,7 @@ pub async fn delete_content_store(session_id: String) -> Result<(), String> {
     // 2) Remove content_store_search index directory in session workspace
     let session_manager =
         get_session_manager().map_err(|e| format!("Session manager error: {e}"))?;
-    let workspace_dir = session_manager.get_session_workspace_dir();
+    let workspace_dir = session_manager.get_session_workspace_dir_by_id(&session_id);
     let search_index_dir = workspace_dir.join("content_store_search");
 
     if search_index_dir.exists() {

@@ -330,6 +330,13 @@ export class OllamaService extends BaseAIService {
           break;
         }
 
+        // DIAGNOSTIC LOGGING: Log raw chunk from generator
+        // This is high volume, so keep it at debug level
+        if (typeof chunk === 'object') {
+          // It's already an object from ollama library
+          // logger.debug('Raw Ollama Chunk', { chunk });
+        }
+
         const processedChunk = processChunk(
           chunk,
           coreLogger,

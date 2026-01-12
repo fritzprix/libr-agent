@@ -15,7 +15,7 @@ import { createId } from '@paralleldrive/cuid2';
  * to the database tables.
  */
 export class LocalDatabase extends Dexie {
-  private static instance: LocalDatabase;
+  private static instance: LocalDatabase | null = null;
 
   /**
    * Gets the singleton instance of the LocalDatabase.
@@ -35,7 +35,7 @@ export class LocalDatabase extends Dexie {
   public static resetInstance(): void {
     if (LocalDatabase.instance) {
       LocalDatabase.instance.close();
-      LocalDatabase.instance = null as unknown as LocalDatabase;
+      LocalDatabase.instance = null;
     }
   }
 

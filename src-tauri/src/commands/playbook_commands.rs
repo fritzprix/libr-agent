@@ -1,0 +1,136 @@
+use crate::entity::playbook;
+use crate::state::get_database_connection;
+use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Set};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use tauri::command;
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaybookDto {
+    pub id: String,
+    pub session_id: String,
+    pub goal: String,
+    pub initial_command: Option<String>,
+    pub workflow: Value,                 // JSON stored as TEXT
+    pub success_criteria: Option<Value>, // JSON stored as TEXT
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+impl From<playbook::Model> for PlaybookDto {
+    fn from(model: playbook::Model) -> Self {
+        Self {
+            id: model.id,
+            session_id: model.session_id,
+            goal: model.goal,
+            initial_command: model.initial_command,
+            workflow: serde_json::from_str(&model.workflow).unwrap_or(Value::Null),
+            success_criteria: model
+                .success_criteria
+                .and_then(|s| serde_json::from_str(&s).ok()),
+            created_at: model.created_at,
+            updated_at: model.updated_at,
+        }
+    }
+}
+
+#[command]
+pub async fn create_playbook(
+    id: String,
+    session_id: String,
+    goal: String,
+    initial_command: Option<String>,
+    workflow: Value,
+    success_criteria: Option<Value>,
+) -> Result<PlaybookDto, String> {
+    let db = get_database_connection();
+    let now = chrono::Utc::now().timestamp_millis();
+
+    let playbook = playbook::ActiveModel {
+        id: Set(id),
+        session_id: Set(session_id),
+        goal: Set(goal),
+        initial_command: Set(initial_command),
+        workflow: Set(workflow.to_string()),
+        success_criteria: Set(success_criteria.map(|s| s.to_string())),
+        created_at: Set(now),
+        updated_at: Set(now),
+    };
+
+    let result = playbook
+        .insert(db)
+        .await
+        .map_err(|e| format!("Failed to create playbook: {}", e))?;
+
+    Ok(result.into())
+}
+
+#[command]
+pub async fn update_playbook(
+    id: String,
+    session_id: String,
+    goal: Option<String>,
+    workflow: Option<Value>,
+    success_criteria: Option<Value>,
+) -> Result<PlaybookDto, String> {
+    let db = get_database_connection();
+    let now = chrono::Utc::now().timestamp_millis();
+
+    // Composite key (id, session_id)
+    let mut playbook: playbook::ActiveModel = playbook::Entity::find_by_id((id, session_id))
+        .one(db)
+        .await
+        .map_err(|e| format!("Failed to find playbook: {}", e))?
+        .ok_or_else(|| "Playbook not found".to_string())?
+        .into();
+
+    if let Some(goal) = goal {
+        playbook.goal = Set(goal);
+    }
+    if let Some(workflow) = workflow {
+        playbook.workflow = Set(workflow.to_string());
+    }
+    if let Some(success_criteria) = success_criteria {
+        playbook.success_criteria = Set(Some(success_criteria.to_string()));
+    }
+    playbook.updated_at = Set(now);
+
+    let result = playbook
+        .update(db)
+        .await
+        .map_err(|e| format!("Failed to update playbook: {}", e))?;
+
+    Ok(result.into())
+}
+
+#[command]
+pub async fn delete_playbook(id: String, session_id: String) -> Result<(), String> {
+    let db = get_database_connection();
+    playbook::Entity::delete_by_id((id, session_id))
+        .exec(db)
+        .await
+        .map_err(|e| format!("Failed to delete playbook: {}", e))?;
+    Ok(())
+}
+
+#[command]
+pub async fn list_playbooks(session_id: Option<String>) -> Result<Vec<PlaybookDto>, String> {
+    let db = get_database_connection();
+
+    let query = playbook::Entity::find();
+
+    let query = if let Some(sid) = session_id {
+        query.filter(playbook::Column::SessionId.eq(sid))
+    } else {
+        query
+    };
+
+    let playbooks = query
+        .order_by_desc(playbook::Column::CreatedAt)
+        .all(db)
+        .await
+        .map_err(|e| format!("Failed to list playbooks: {}", e))?;
+
+    Ok(playbooks.into_iter().map(|p| p.into()).collect())
+}

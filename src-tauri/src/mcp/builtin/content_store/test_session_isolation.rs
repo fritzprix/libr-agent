@@ -11,13 +11,28 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let base_dir = temp_dir.path().join(format!("session_{}", session_id));
         let db_path = base_dir.join("content_store.db");
+
+        // Ensure database directory exists and create empty database file
+        std::fs::create_dir_all(&base_dir).unwrap();
+        std::fs::File::create(&db_path).unwrap();
+
         let url = format!("sqlite://{}", db_path.to_string_lossy());
+
+        // Connect to database and run migrations
+        let db = sea_orm::Database::connect(&url)
+            .await
+            .expect("Failed to connect to database");
+
+        use migration::{Migrator, MigratorTrait};
+        Migrator::up(&db, None)
+            .await
+            .expect("Failed to run migrations");
 
         let session_manager = Arc::new(
             SessionManager::new_with_base_dir(base_dir).expect("Failed to create SessionManager"),
         );
         let server =
-            ContentStoreServer::new_with_sqlite("test-session".to_string(), session_manager, url)
+            ContentStoreServer::new_with_db("test-session".to_string(), session_manager, db)
                 .await
                 .expect("Failed to create server");
 
@@ -41,14 +56,17 @@ mod tests {
 
         // Add content to session A
         let add_result = server_a
-            .handle_save_knowledge(json!({
-                "content": "Secret content from Session A",
-                "metadata": {
-                    "title": "Session A Document",
-                    "filename": "secret.txt",
-                    "mime_type": "text/plain"
-                }
-            }))
+            .handle_save_knowledge(
+                json!({
+                    "content": "Secret content from Session A",
+                    "metadata": {
+                        "title": "Session A Document",
+                        "filename": "secret.txt",
+                        "mime_type": "text/plain"
+                    }
+                }),
+                "session-a",
+            )
             .await
             .unwrap();
 
@@ -61,9 +79,12 @@ mod tests {
 
         // Verify session A can read its own content
         let read_result_a = server_a
-            .handle_read_content(json!({
-                "contentId": content_id.clone()
-            }))
+            .handle_read_content(
+                json!({
+                    "contentId": content_id.clone()
+                }),
+                "session-a",
+            )
             .await
             .unwrap();
 
@@ -75,9 +96,12 @@ mod tests {
 
         // Attempt to read from session B (should fail with access denied)
         let read_result_b = server_b
-            .handle_read_content(json!({
-                "contentId": content_id
-            }))
+            .handle_read_content(
+                json!({
+                    "contentId": content_id
+                }),
+                "session-b",
+            )
             .await
             .unwrap();
 
@@ -102,32 +126,41 @@ mod tests {
 
         // Add content to session A
         server_a
-            .handle_save_knowledge(json!({
-                "content": "Session A content",
-                "metadata": {
-                    "title": "A Document",
-                    "filename": "a.txt",
-                    "mime_type": "text/plain"
-                }
-            }))
+            .handle_save_knowledge(
+                json!({
+                    "content": "Session A content",
+                    "metadata": {
+                        "title": "A Document",
+                        "filename": "a.txt",
+                        "mime_type": "text/plain"
+                    }
+                }),
+                "session-isolation-a",
+            )
             .await
             .unwrap();
 
         // Add content to session B
         server_b
-            .handle_save_knowledge(json!({
-                "content": "Session B content",
-                "metadata": {
-                    "title": "B Document",
-                    "filename": "b.txt",
-                    "mime_type": "text/plain"
-                }
-            }))
+            .handle_save_knowledge(
+                json!({
+                    "content": "Session B content",
+                    "metadata": {
+                        "title": "B Document",
+                        "filename": "b.txt",
+                        "mime_type": "text/plain"
+                    }
+                }),
+                "session-isolation-b",
+            )
             .await
             .unwrap();
 
         // List content in session A
-        let list_a = server_a.handle_list_content(json!({})).await.unwrap();
+        let list_a = server_a
+            .handle_list_content(json!({}), "session-isolation-a")
+            .await
+            .unwrap();
 
         assert_eq!(list_a.is_error, Some(false));
         let structured_a = list_a.structured_content.unwrap();
@@ -137,7 +170,10 @@ mod tests {
         assert_eq!(items_a[0]["filename"], "a.txt");
 
         // List content in session B
-        let list_b = server_b.handle_list_content(json!({})).await.unwrap();
+        let list_b = server_b
+            .handle_list_content(json!({}), "session-isolation-b")
+            .await
+            .unwrap();
 
         assert_eq!(list_b.is_error, Some(false));
         let structured_b = list_b.structured_content.unwrap();
@@ -154,35 +190,44 @@ mod tests {
 
         // Add searchable content to session A
         server_a
-            .handle_save_knowledge(json!({
-                "content": "This document contains the keyword SEARCHTERM in session A",
-                "metadata": {
-                    "title": "Session A Searchable",
-                    "filename": "searchable_a.txt",
-                    "mime_type": "text/plain"
-                }
-            }))
+            .handle_save_knowledge(
+                json!({
+                    "content": "This document contains the keyword SEARCHTERM in session A",
+                    "metadata": {
+                        "title": "Session A Searchable",
+                        "filename": "searchable_a.txt",
+                        "mime_type": "text/plain"
+                    }
+                }),
+                "session-search-a",
+            )
             .await
             .unwrap();
 
         // Add different content to session B
         server_b
-            .handle_save_knowledge(json!({
-                "content": "This is a different document without the special keyword",
-                "metadata": {
-                    "title": "Session B Document",
-                    "filename": "doc_b.txt",
-                    "mime_type": "text/plain"
-                }
-            }))
+            .handle_save_knowledge(
+                json!({
+                    "content": "This is a different document without the special keyword",
+                    "metadata": {
+                        "title": "Session B Document",
+                        "filename": "doc_b.txt",
+                        "mime_type": "text/plain"
+                    }
+                }),
+                "session-search-b",
+            )
             .await
             .unwrap();
 
         // Search in session A for SEARCHTERM
         let search_a = server_a
-            .handle_search_knowledge(json!({
-                "query": "SEARCHTERM"
-            }))
+            .handle_search_knowledge(
+                json!({
+                    "query": "SEARCHTERM"
+                }),
+                "session-search-a",
+            )
             .await
             .unwrap();
 
@@ -193,9 +238,12 @@ mod tests {
 
         // Search in session B for SEARCHTERM (should find nothing)
         let search_b = server_b
-            .handle_search_knowledge(json!({
-                "query": "SEARCHTERM"
-            }))
+            .handle_search_knowledge(
+                json!({
+                    "query": "SEARCHTERM"
+                }),
+                "session-search-b",
+            )
             .await
             .unwrap();
 
@@ -216,14 +264,17 @@ mod tests {
 
         // Add content to session A
         let add_result = server_a
-            .handle_save_knowledge(json!({
-                "content": "Content to be protected from cross-session deletion",
-                "metadata": {
-                    "title": "Protected Document",
-                    "filename": "protected.txt",
-                    "mime_type": "text/plain"
-                }
-            }))
+            .handle_save_knowledge(
+                json!({
+                    "content": "Content to be protected from cross-session deletion",
+                    "metadata": {
+                        "title": "Protected Document",
+                        "filename": "protected.txt",
+                        "mime_type": "text/plain"
+                    }
+                }),
+                "session-delete-a",
+            )
             .await
             .unwrap();
 
@@ -235,9 +286,12 @@ mod tests {
 
         // Attempt to delete from session B (should fail)
         let delete_result_b = server_b
-            .handle_delete_content(json!({
-                "contentId": content_id.clone()
-            }))
+            .handle_delete_content(
+                json!({
+                    "contentId": content_id.clone()
+                }),
+                "session-delete-b",
+            )
             .await
             .unwrap();
 
@@ -255,23 +309,32 @@ mod tests {
         );
 
         // Verify content still exists in session A
-        let list_a = server_a.handle_list_content(json!({})).await.unwrap();
+        let list_a = server_a
+            .handle_list_content(json!({}), "session-delete-a")
+            .await
+            .unwrap();
 
         let structured_a = list_a.structured_content.unwrap();
         assert_eq!(structured_a["total"], 1);
 
         // Verify session A can still delete its own content
         let delete_result_a = server_a
-            .handle_delete_content(json!({
-                "contentId": content_id
-            }))
+            .handle_delete_content(
+                json!({
+                    "contentId": content_id
+                }),
+                "session-delete-a",
+            )
             .await
             .unwrap();
 
         assert_eq!(delete_result_a.is_error, Some(false));
 
         // Verify deletion succeeded
-        let list_after = server_a.handle_list_content(json!({})).await.unwrap();
+        let list_after = server_a
+            .handle_list_content(json!({}), "session-delete-a")
+            .await
+            .unwrap();
 
         let structured_after = list_after.structured_content.unwrap();
         assert_eq!(structured_after["total"], 0);

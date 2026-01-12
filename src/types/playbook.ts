@@ -35,6 +35,9 @@ export interface PlaybookStep {
  * successful agent workflows that can be re-used or replayed.
  */
 export interface Playbook {
+  /** Unique identifier for the playbook (optional for creation) */
+  id?: string;
+
   /** Identifier of the agent suitable for performing this playbook */
   agentId: string;
 

@@ -1,8 +1,8 @@
-import React, { useCallback, useMemo } from 'react';
-import { MessageCircle, Users } from 'lucide-react';
-import { useSessionContext } from '../../context/SessionContext';
-import { useSessionNavigation } from '@/hooks/use-session-navigation';
-import { Session } from '@/models/chat';
+import React, { useCallback, useMemo, memo } from 'react';
+import { Bot } from 'lucide-react';
+import { useAgentSessionListActions } from '@/context/AgentSessionListContext';
+import { useNavigate, useParams } from 'react-router-dom';
+import { AgentSession } from '@/models/agent';
 import {
   Button,
   DropdownMenu,
@@ -23,26 +23,27 @@ import { formatSessionTimestamp } from '@/lib/date-utils';
 const logger = getLogger('SessionItem');
 
 interface SessionItemProps {
-  session: Session;
+  session: AgentSession;
   className?: string;
   isCollapsed?: boolean;
 }
 
-export default function SessionItem({
+function SessionItem({
   session,
   className,
   isCollapsed = false,
 }: SessionItemProps) {
-  const { current, delete: onDelete } = useSessionContext();
-  const { selectAndNavigate } = useSessionNavigation();
+  const { deleteSession } = useAgentSessionListActions();
+  const navigate = useNavigate();
+  const { sessionId } = useParams();
 
   const handleSelect = useCallback(() => {
-    selectAndNavigate(session.id);
-  }, [selectAndNavigate, session.id]);
+    navigate(`/agent/${session.id}`);
+  }, [navigate, session.id]);
 
   const isSelected = useMemo(
-    () => current?.id === session.id,
-    [current, session],
+    () => sessionId === session.id,
+    [sessionId, session.id],
   );
 
   const handleDelete = useCallback(
@@ -56,26 +57,22 @@ export default function SessionItem({
       );
 
       if (userConfirmed) {
-        onDelete(session.id);
+        await deleteSession(session.id);
+        // If deleted current session, navigate away
+        if (isSelected) {
+          navigate('/agent');
+        }
       }
     },
-    [onDelete, session.id, session.name],
+    [deleteSession, session.id, session.name, isSelected, navigate],
   );
 
   const displayName =
-    session.name || session.assistants[0]?.name || 'Untitled Session';
-  const sessionIconComponent =
-    session.type === 'single' ? (
-      <MessageCircle size={16} />
-    ) : (
-      <Users size={16} />
-    );
-  const assistantSummary = useMemo(() => {
-    if (!session.assistants?.length) {
-      return '';
-    }
-    return session.assistants.map((assistant) => assistant.name).join(', ');
-  }, [session.assistants]);
+    session.name || session.assistant?.name || 'Untitled Session';
+
+  const sessionIconComponent = <Bot size={16} />;
+
+  const assistantSummary = session.assistant?.name || '';
 
   const timestampInfo = useMemo(
     () => formatSessionTimestamp(session.createdAt),
@@ -163,3 +160,5 @@ export default function SessionItem({
     </div>
   );
 }
+
+export default memo(SessionItem);

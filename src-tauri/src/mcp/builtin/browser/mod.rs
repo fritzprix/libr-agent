@@ -461,7 +461,12 @@ impl BuiltinMCPServer for BrowserServer {
         ]
     }
 
-    async fn call_tool(&self, tool_name: &str, args: Value) -> Result<MCPResult, String> {
+    async fn call_tool(
+        &self,
+        tool_name: &str,
+        args: Value,
+        _session_id: Option<String>,
+    ) -> Result<MCPResult, String> {
         match tool_name {
             "createSession" => session::create_session(self, args).await,
             "closeSession" => session::close_session(self, args).await,

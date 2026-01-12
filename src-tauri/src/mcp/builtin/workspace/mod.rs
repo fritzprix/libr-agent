@@ -15,6 +15,12 @@ use crate::mcp::MCPTool;
 use crate::services::SecureFileManager;
 use crate::session::SessionManager;
 
+// Platform-specific persistent shell tool name
+#[cfg(unix)]
+pub const PERSISTENT_SHELL_TOOL: &str = "runInPersistentShell";
+#[cfg(windows)]
+pub const PERSISTENT_SHELL_TOOL: &str = "runInPersistentPowerShell";
+
 // Module imports
 pub mod code_execution;
 pub mod export_operations;
@@ -25,6 +31,9 @@ pub mod terminal_manager;
 pub mod tools;
 pub mod ui_resources;
 pub mod utils;
+
+#[cfg(test)]
+mod test_output_visibility;
 
 /// Pending execution state (server-side only)
 /// Stores metadata for shell commands awaiting user input
@@ -229,7 +238,11 @@ impl WorkspaceServer {
     // Terminal Tool Handlers
 
     /// Handle poll_process tool call
-    pub async fn handle_poll_process(&self, args: Value) -> Result<MCPResult, String> {
+    pub async fn handle_poll_process(
+        &self,
+        args: Value,
+        session_id: &str,
+    ) -> Result<MCPResult, String> {
         // Parse processId
         let process_id = match args.get("processId").and_then(|v| v.as_str()) {
             Some(id) => id,
@@ -239,10 +252,7 @@ impl WorkspaceServer {
         };
 
         // Get current session
-        let session_id = self
-            .session_manager
-            .get_current_session()
-            .unwrap_or_else(|| "default".to_string());
+        // let session_id = self.session_id.clone(); // Use passed session_id instead
 
         // Verify session access BEFORE write lock (optimization)
         {
@@ -307,6 +317,8 @@ impl WorkspaceServer {
         });
 
         // Optional tail - check in-memory buffer first, fallback to file
+        let mut tail_output_display = String::new();
+
         if let Some(tail_obj) = args.get("tail").and_then(|v| v.as_object()) {
             let src = tail_obj
                 .get("src")
@@ -338,6 +350,14 @@ impl WorkspaceServer {
                 }
             };
 
+            if !lines.is_empty() {
+                tail_output_display = format!(
+                    "\n\n--- Output (last {} lines) ---\n{}",
+                    lines.len(),
+                    lines.join("\n")
+                );
+            }
+
             response["tail"] = serde_json::json!({
                 "src": src,
                 "lines": lines,
@@ -348,7 +368,10 @@ impl WorkspaceServer {
         // Add success hint based on process status
         let status_str = format!("{:?}", entry_for_response.status).to_lowercase();
         let hint = SuccessHint::new(
-            format!("Process {} status: {}", process_id, status_str),
+            format!(
+                "Process {} status: {}{}",
+                process_id, status_str, tail_output_display
+            ),
             match entry_for_response.status {
                 terminal_manager::ProcessStatus::Running => vec![
                     "Wait for process to complete before polling again".to_string(),
@@ -385,7 +408,11 @@ impl WorkspaceServer {
     }
 
     /// Handle read_process_output tool call
-    pub async fn handle_read_process_output(&self, args: Value) -> Result<MCPResult, String> {
+    pub async fn handle_read_process_output(
+        &self,
+        args: Value,
+        session_id: &str,
+    ) -> Result<MCPResult, String> {
         // Parse parameters
         let process_id = match args.get("processId").and_then(|v| v.as_str()) {
             Some(id) => id,
@@ -406,10 +433,7 @@ impl WorkspaceServer {
         let lines = args.get("lines").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
 
         // Get current session
-        let session_id = self
-            .session_manager
-            .get_current_session()
-            .unwrap_or_else(|| "default".to_string());
+        // let session_id = self.session_id.clone(); // Use passed session_id instead
 
         // Get process entry
         let registry = self.process_registry.read().await;
@@ -441,6 +465,7 @@ impl WorkspaceServer {
 
         match content {
             Ok(lines_vec) => {
+                let content_display = lines_vec.join("\n");
                 let response = serde_json::json!({
                     "process_id": process_id,
                     "stream": stream,
@@ -453,7 +478,13 @@ impl WorkspaceServer {
                 });
 
                 let hint = SuccessHint::new(
-                    format!("Read {} lines from {} {}", lines_vec.len(), stream, mode),
+                    format!(
+                        "Read {} lines from {} {}:\n\n{}",
+                        lines_vec.len(),
+                        stream,
+                        mode,
+                        content_display
+                    ),
                     vec![
                         "Use pollProcess to check process status".to_string(),
                         format!(
@@ -479,17 +510,18 @@ impl WorkspaceServer {
     }
 
     /// Handle list_processes tool call
-    pub async fn handle_list_processes(&self, args: Value) -> Result<MCPResult, String> {
+    pub async fn handle_list_processes(
+        &self,
+        args: Value,
+        session_id: &str,
+    ) -> Result<MCPResult, String> {
         let status_filter = args
             .get("statusFilter")
             .and_then(|v| v.as_str())
             .unwrap_or("all");
 
         // Get current session
-        let session_id = self
-            .session_manager
-            .get_current_session()
-            .unwrap_or_else(|| "default".to_string());
+        // let session_id = self.session_id.clone(); // Use passed session_id instead
 
         // Filter processes by session
         let registry = self.process_registry.read().await;
@@ -553,26 +585,52 @@ impl WorkspaceServer {
             "finished": finished,
         });
 
+        // Build detailed text output with process IDs and commands
+        let process_list = if processes.is_empty() {
+            "No processes found".to_string()
+        } else {
+            processes
+                .iter()
+                .map(|p| {
+                    let id = p
+                        .get("process_id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown");
+                    let status = p
+                        .get("status")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown");
+                    let command = p.get("command").and_then(|v| v.as_str()).unwrap_or("");
+                    let truncated_cmd = if command.len() > 60 {
+                        format!("{}...", &command[..57])
+                    } else {
+                        command.to_string()
+                    };
+                    format!("• {} [{}]: {}", id, status, truncated_cmd)
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        let summary = format!(
+            "Found {} processes ({} running, {} finished)\n\n{}",
+            total, running, finished, process_list
+        );
+
         let hint = SuccessHint::new(
-            format!(
-                "Found {} processes ({} running, {} finished)",
-                total, running, finished
-            ),
+            summary,
             if running > 0 {
                 vec![
-                    "Use pollProcess to check status of running processes".to_string(),
-                    "Use stopProcess to cancel unnecessary processes".to_string(),
+                    "Use pollProcess(processId) to check status".to_string(),
+                    "Use stopProcess(processId) to cancel".to_string(),
                 ]
             } else if total > 0 {
                 vec![
-                    "Use readProcessOutput to view output of finished processes".to_string(),
+                    "Use readProcessOutput(processId, stream) to view output".to_string(),
                     "All processes have completed".to_string(),
                 ]
             } else {
-                vec![
-                    "Use executeShell with runMode=\"async\" to start background processes"
-                        .to_string(),
-                ]
+                vec!["Use spawnProcess to start background processes".to_string()]
             },
         );
 
@@ -580,7 +638,11 @@ impl WorkspaceServer {
     }
 
     /// Handle stop_process tool call
-    pub async fn handle_stop_process(&self, args: Value) -> Result<MCPResult, String> {
+    pub async fn handle_stop_process(
+        &self,
+        args: Value,
+        session_id: &str,
+    ) -> Result<MCPResult, String> {
         let process_id = match args.get("processId").and_then(|v| v.as_str()) {
             Some(id) => id,
             None => {
@@ -589,10 +651,7 @@ impl WorkspaceServer {
         };
 
         // Get current session
-        let session_id = self
-            .session_manager
-            .get_current_session()
-            .unwrap_or_else(|| "default".to_string());
+        // let session_id = self.session_id.clone(); // Use passed session_id instead
 
         let mut registry = self.process_registry.write().await;
 
@@ -664,17 +723,17 @@ impl WorkspaceServer {
     }
 
     // Common utility methods
-    pub fn get_workspace_dir(&self) -> std::path::PathBuf {
+    pub fn get_workspace_dir(&self, session_id: &str) -> std::path::PathBuf {
         self.session_manager
-            .get_session_workspace_dir_by_id(&self.session_id)
+            .get_session_workspace_dir_by_id(session_id)
     }
 
-    pub fn get_file_manager(&self) -> Arc<SecureFileManager> {
-        // CRITICAL FIX: Use this server's session_id instead of current_session
-        // to ensure correct workspace isolation in concurrent sessions
-        let workspace_dir = self
-            .session_manager
-            .get_session_workspace_dir_by_id(&self.session_id);
+    pub fn get_file_manager(&self, session_id: Option<String>) -> Arc<SecureFileManager> {
+        // Use provided session_id or fallback to server's session_id
+        // NOTE: The server's session_id is likely "default" due to singleton initialization
+        let target_session_id = session_id.unwrap_or_else(|| self.session_id.clone());
+
+        let workspace_dir = self.get_workspace_dir(&target_session_id);
         Arc::new(SecureFileManager::new_with_base_dir(workspace_dir))
     }
 
@@ -749,19 +808,24 @@ impl BuiltinMCPServer for WorkspaceServer {
         tools
     }
 
-    async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
+    async fn get_service_context(&self, options: Option<&Value>) -> ServiceContext {
         // Get session-specific workspace directory
-        let workspace_dir_path = self.get_workspace_dir();
+        let session_id = if let Some(opts) = options {
+            opts.get("session_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or(&self.session_id)
+                .to_string()
+        } else {
+            self.session_id.clone()
+        };
+
+        let workspace_dir_path = self.get_workspace_dir(&session_id);
         let workspace_dir = workspace_dir_path.to_string_lossy().to_string();
 
         // Generate directory tree (2 levels deep)
         let tree_output = self.get_workspace_tree(&workspace_dir, 2);
 
         // Get running process count
-        let session_id = self
-            .session_manager
-            .get_current_session()
-            .unwrap_or_else(|| "default".to_string());
 
         // Try to get running count without blocking
         // If we can't acquire the lock immediately, return 0 to avoid blocking
@@ -785,9 +849,25 @@ impl BuiltinMCPServer for WorkspaceServer {
         let os = std::env::consts::OS;
         let arch = std::env::consts::ARCH;
 
+        // Get current shell CWD
+        let shell_cwd = if let Some(cwd) = self.shell_manager.get_shell_cwd(&session_id).await {
+            // Convert to relative path if within workspace for better readability
+            if cwd.starts_with(&workspace_dir) {
+                // +1 to handle the separator if it's there, but be careful
+                // Simplest is to just replace the prefix string
+                // Ensure uniform separators for agent readability if needed, or keep native
+                cwd.replacen(&workspace_dir, ".", 1)
+            } else {
+                cwd
+            }
+        } else {
+            ".".to_string()
+        };
+
         info!(
-            "Workspace service context - workspace_dir: {}, tree_output length: {}, running processes: {}, platform: {}/{}",
+            "Workspace service context - workspace_dir: {}, shell_cwd: {}, tree_output length: {}, running processes: {}, platform: {}/{}",
             workspace_dir,
+            shell_cwd,
             tree_output.len(),
             running_count,
             os,
@@ -795,14 +875,19 @@ impl BuiltinMCPServer for WorkspaceServer {
         );
 
         let context_prompt = format!(
-            "## Workspace\n\n**Directory**: {}\n**Running Processes**: {}\n**Platform**: {}/{}",
-            workspace_dir, running_count, os, arch
+            "## Workspace\\n\\n\\\n            **Workspace Root**: {}\\n\\\n            **Persistent Shell CWD**: {}\\n\\\n            **Running Processes**: {}\\n\\\n            **Platform**: {}/{}",
+            workspace_dir,
+            shell_cwd,
+            running_count,
+            os,
+            arch
         );
 
         ServiceContext {
             context_prompt,
             structured_state: Some(json!({
                 "workspace_dir": workspace_dir,
+                "shell_cwd": shell_cwd,
                 "workspace_tree": tree_output,
                 "platform": {
                     "os": os,
@@ -820,10 +905,7 @@ impl BuiltinMCPServer for WorkspaceServer {
             info!("Switching workspace context to session: {}", new_session_id);
 
             // Get current session before switching
-            let old_session_id = self
-                .session_manager
-                .get_current_session()
-                .unwrap_or_else(|| "default".to_string());
+            let old_session_id = self.session_id.clone();
 
             info!(
                 "Checking context switch: old='{}', new='{}'",
@@ -903,15 +985,12 @@ impl BuiltinMCPServer for WorkspaceServer {
             }
 
             // Switch session in session_manager (use async version to avoid blocking)
-            info!("Updating session manager context to: {}", new_session_id);
-            if let Err(e) = self
-                .session_manager
-                .set_session_async(new_session_id.clone())
-                .await
-            {
-                return Err(format!("Failed to switch session in session_manager: {e}"));
-            }
-            info!("Session manager context updated successfully.");
+            // LEGACY: In Agent V2, we don't update global session state.
+            // This is kept as a log for debugging but no state change occurs.
+            info!(
+                "Context switch requested to: {}. (Global session update skipped)",
+                new_session_id
+            );
 
             // The session manager handles session-specific workspace directories
             // No additional action needed as get_workspace_dir() uses session context
@@ -926,37 +1005,55 @@ impl BuiltinMCPServer for WorkspaceServer {
         Ok(())
     }
 
-    async fn call_tool(&self, tool_name: &str, args: Value) -> Result<MCPResult, String> {
+    async fn call_tool(
+        &self,
+        tool_name: &str,
+        args: Value,
+        session_id: Option<String>,
+    ) -> Result<MCPResult, String> {
         info!("Workspace tool called: {} with args: {:?}", tool_name, args);
+
+        let target_session_id = session_id
+            .clone()
+            .unwrap_or_else(|| self.session_id.clone());
+
         match tool_name {
             // File operation tools
-            "readFile" => self.handle_read_file(args).await,
-            "writeFile" => self.handle_write_file(args).await,
-            "listDirectory" => self.handle_list_directory(args).await,
-            "replaceLinesInFile" => self.handle_replace_lines_in_file(args).await,
-            "importFile" => self.handle_import_file(args).await,
+            "readFile" => self.handle_read_file(args, session_id).await,
+            "writeFile" => self.handle_write_file(args, session_id).await,
+            "listDirectory" => self.handle_list_directory(args, session_id).await,
+            "replaceLinesInFile" => self.handle_replace_lines_in_file(args, session_id).await,
+            "importFile" => self.handle_import_file(args, session_id).await,
+            "grep" => self.handle_grep(args, session_id).await,
             // Code execution tools
             // Note: Python/TypeScript execution were removed from the public tool
             // interface to avoid external runtime dependencies and to prevent
             // agents from controlling isolation/permissions. Only shell
             // execution remains exposed below.
-            // Platform-specific shell execution tools
+            // PRIMARY isolated shell execution tools (recommended)
             #[cfg(unix)]
-            "executeShell" => self.handle_execute_shell(args).await,
+            "runShell" => self.handle_run_shell(args, &target_session_id).await,
             #[cfg(windows)]
-            "executeWindowsCmd" => self.handle_execute_shell(args).await,
+            "runPowerShell" => self.handle_run_shell(args, &target_session_id).await,
+            // ADVANCED persistent shell execution tools (for state preservation)
+            #[cfg(unix)]
+            "runInPersistentShell" => self.handle_execute_shell(args, &target_session_id).await,
+            #[cfg(windows)]
+            "runInPersistentPowerShell" => self.handle_execute_shell(args, &target_session_id).await,
+            // Background process execution (platform-agnostic)
+            "spawnProcess" => self.handle_spawn_process(args, &target_session_id).await,
             // Interactive shell execution (2nd tool for user input)
-            "executePendingShell" => self.handle_execute_pending_shell(args).await,
+            "executePendingShell" => self.handle_execute_pending_shell(args, &target_session_id).await,
             // Cancel pending execution (UI callback tool)
-            "cancelPendingExecution" => self.handle_cancel_pending_execution(args).await,
+            "cancelPendingExecution" => self.handle_cancel_pending_execution(args, &target_session_id).await,
             // Export tools
-            "exportFile" => self.handle_export_file(args).await,
-            "exportZip" => self.handle_export_zip(args).await,
+            "exportFile" => self.handle_export_file(args, session_id).await,
+            "exportZip" => self.handle_export_zip(args, session_id).await,
             // Terminal/Process management tools
-            "pollProcess" => self.handle_poll_process(args).await,
-            "readProcessOutput" => self.handle_read_process_output(args).await,
-            "listProcesses" => self.handle_list_processes(args).await,
-            "stopProcess" => self.handle_stop_process(args).await,
+            "pollProcess" => self.handle_poll_process(args, &target_session_id).await,
+            "readProcessOutput" => self.handle_read_process_output(args, &target_session_id).await,
+            "listProcesses" => self.handle_list_processes(args, &target_session_id).await,
+            "stopProcess" => self.handle_stop_process(args, &target_session_id).await,
 
             // --- Error Hints for Common Mistakes ---
             "read_file" | "readContent" => Ok(MCPResult::error(
@@ -968,11 +1065,14 @@ impl BuiltinMCPServer for WorkspaceServer {
             "list_directory" | "ls" => Ok(MCPResult::error(
                 "Tool not found. Did you mean 'listDirectory'? Please use the exact tool name 'listDirectory'."
             )),
-            "execute_shell" | "execute_command" => Ok(MCPResult::error(
-                "Tool not found. Did you mean 'executeShell'? Please use the exact tool name 'executeShell'."
+            "execute_shell" | "execute_command" | "run_command" => Ok(MCPResult::error(
+                "Tool not found. Use 'runShell' (Unix) or 'runPowerShell' (Windows) for quick commands. Use exact tool names."
             )),
-            "execute_windows_cmd" => Ok(MCPResult::error(
-                "Tool not found. Did you mean 'executeWindowsCmd'? Please use the exact tool name 'executeWindowsCmd'."
+            "execute_windows_cmd" | "executeWindowsCmd" => Ok(MCPResult::error(
+                "Tool not found. Use 'runPowerShell' for quick commands or 'runInPersistentPowerShell' for persistent state. Use exact tool names."
+            )),
+            "executeShellAsync" | "executeWindowsCmdAsync" | "runAsync" | "run_async" => Ok(MCPResult::error(
+                "Tool not found. Use 'spawnProcess' for background execution (works on both Unix and Windows)."
             )),
             _ => Err(format!("Tool '{tool_name}' not found")),
         }

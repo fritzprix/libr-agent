@@ -12,8 +12,12 @@ use tracing::{error, info};
 
 #[allow(dead_code)]
 impl WorkspaceServer {
-    fn validate_path_with_error(&self, path_str: &str) -> Result<std::path::PathBuf, String> {
-        let file_manager = self.get_file_manager();
+    fn validate_path_with_error(
+        &self,
+        path_str: &str,
+        session_id: Option<String>,
+    ) -> Result<std::path::PathBuf, String> {
+        let file_manager = self.get_file_manager(session_id);
         match file_manager
             .get_security_validator()
             .validate_path(path_str)
@@ -26,7 +30,11 @@ impl WorkspaceServer {
         }
     }
 
-    pub async fn handle_read_file(&self, args: Value) -> Result<MCPResult, String> {
+    pub async fn handle_read_file(
+        &self,
+        args: Value,
+        session_id: Option<String>,
+    ) -> Result<MCPResult, String> {
         let path_str = match args.get("path").and_then(|v| v.as_str()) {
             Some(path) => path,
             None => {
@@ -65,7 +73,7 @@ impl WorkspaceServer {
             }
         }
 
-        let safe_path = match self.validate_path_with_error(path_str) {
+        let safe_path = match self.validate_path_with_error(path_str, session_id.clone()) {
             Ok(path) => path,
             Err(e) => {
                 return Ok(ErrorGuidance::with_guidance(
@@ -81,7 +89,7 @@ impl WorkspaceServer {
             }
         };
 
-        let file_manager = self.get_file_manager();
+        let file_manager = self.get_file_manager(session_id);
         let content = if start_line.is_some() || end_line.is_some() {
             if let Err(e) = file_manager
                 .get_security_validator()
@@ -104,10 +112,19 @@ impl WorkspaceServer {
             self.read_file_lines_range(&safe_path, start_line, end_line)
                 .await
         } else {
-            file_manager
+            // Read full file and format with line numbers
+            let raw_content = file_manager
                 .read_file_as_string(path_str)
                 .await
-                .map_err(|e| e.to_string())
+                .map_err(|e| e.to_string())?;
+
+            let lines_with_numbers: Vec<(usize, String)> = raw_content
+                .lines()
+                .enumerate()
+                .map(|(idx, line)| (idx + 1, line.to_string()))
+                .collect();
+
+            Ok(Self::format_lines_with_numbers(&lines_with_numbers))
         };
 
         match content {
@@ -189,7 +206,7 @@ impl WorkspaceServer {
 
         while let Ok(Some(line)) = lines.next_line().await {
             if current_line >= start && current_line <= end {
-                result_lines.push(line);
+                result_lines.push((current_line, line));
             }
 
             if current_line > end {
@@ -199,10 +216,57 @@ impl WorkspaceServer {
             current_line += 1;
         }
 
-        Ok(result_lines.join("\n"))
+        Ok(Self::format_lines_with_numbers(&result_lines))
     }
 
-    pub async fn handle_write_file(&self, args: Value) -> Result<MCPResult, String> {
+    /// Format lines with line numbers and collapse multiple empty lines
+    fn format_lines_with_numbers(lines: &[(usize, String)]) -> String {
+        let mut result = Vec::new();
+        let mut empty_line_count = 0;
+        let mut last_empty_line_num = 0;
+
+        for (line_num, content) in lines {
+            if content.trim().is_empty() {
+                empty_line_count += 1;
+                last_empty_line_num = *line_num;
+            } else {
+                // If we had multiple empty lines, add a placeholder
+                if empty_line_count > 1 {
+                    result.push(format!(
+                        "<Empty Lines {}-{}>",
+                        last_empty_line_num - empty_line_count + 1,
+                        last_empty_line_num
+                    ));
+                } else if empty_line_count == 1 {
+                    // Single empty line, keep it with line number
+                    result.push(format!("Line {}: ", last_empty_line_num));
+                }
+                empty_line_count = 0;
+
+                // Add the current non-empty line
+                result.push(format!("Line {}: {}", line_num, content));
+            }
+        }
+
+        // Handle trailing empty lines
+        if empty_line_count > 1 {
+            result.push(format!(
+                "<Empty Lines {}-{}>",
+                last_empty_line_num - empty_line_count + 1,
+                last_empty_line_num
+            ));
+        } else if empty_line_count == 1 {
+            result.push(format!("Line {}: ", last_empty_line_num));
+        }
+
+        result.join("\n")
+    }
+
+    pub async fn handle_write_file(
+        &self,
+        args: Value,
+        session_id: Option<String>,
+    ) -> Result<MCPResult, String> {
         let path_str = match args.get("path").and_then(|v| v.as_str()) {
             Some(path) => path,
             None => {
@@ -219,7 +283,7 @@ impl WorkspaceServer {
 
         let mode = args.get("mode").and_then(|v| v.as_str()).unwrap_or("w");
 
-        let file_manager = self.get_file_manager();
+        let file_manager = self.get_file_manager(session_id.clone());
         let result = match mode {
             "w" => file_manager.write_file_string(path_str, content).await,
             "a" => file_manager.append_file_string(path_str, content).await,
@@ -280,10 +344,14 @@ impl WorkspaceServer {
         }
     }
 
-    pub async fn handle_list_directory(&self, args: Value) -> Result<MCPResult, String> {
+    pub async fn handle_list_directory(
+        &self,
+        args: Value,
+        session_id: Option<String>,
+    ) -> Result<MCPResult, String> {
         let path_str = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
 
-        let safe_path = match self.validate_path_with_error(path_str) {
+        let safe_path = match self.validate_path_with_error(path_str, session_id.clone()) {
             Ok(path) => path,
             Err(e) => {
                 return Ok(ErrorGuidance::with_guidance(
@@ -407,7 +475,11 @@ impl WorkspaceServer {
         }
     }
 
-    pub async fn handle_search_files(&self, args: Value) -> Result<MCPResult, String> {
+    pub async fn handle_search_files(
+        &self,
+        args: Value,
+        session_id: Option<String>,
+    ) -> Result<MCPResult, String> {
         let pattern = match args.get("pattern").and_then(|v| v.as_str()) {
             Some(pattern) => pattern,
             None => {
@@ -425,7 +497,7 @@ impl WorkspaceServer {
             .and_then(|v| v.as_str())
             .unwrap_or("both");
 
-        let safe_path = self.validate_path_with_error(search_path)?;
+        let safe_path = self.validate_path_with_error(search_path, session_id)?;
 
         match self
             .search_files_by_pattern(&safe_path, pattern, max_depth, file_type)
@@ -529,7 +601,11 @@ impl WorkspaceServer {
         Ok(results)
     }
 
-    pub async fn handle_replace_lines_in_file(&self, args: Value) -> Result<MCPResult, String> {
+    pub async fn handle_replace_lines_in_file(
+        &self,
+        args: Value,
+        session_id: Option<String>,
+    ) -> Result<MCPResult, String> {
         // Layer 1: Parameter existence validation
         let path_str = match args.get("path").and_then(|v| v.as_str()) {
             Some(path) => path,
@@ -565,7 +641,7 @@ impl WorkspaceServer {
         };
 
         // Layer 3: Business logic - path validation and file reading
-        let safe_path = self.validate_path_with_error(path_str)?;
+        let safe_path = self.validate_path_with_error(path_str, session_id.clone())?;
 
         let lines = match self.read_file_lines(&safe_path).await {
             Ok(lines) => lines,
@@ -704,7 +780,7 @@ impl WorkspaceServer {
 
         // Layer 4: Apply replacements and write
         let new_content = new_lines.join("\n");
-        let file_manager = self.get_file_manager();
+        let file_manager = self.get_file_manager(session_id);
         match file_manager.write_file_string(path_str, &new_content).await {
             Ok(_) => {
                 let hint = SuccessHint::new(
@@ -729,7 +805,11 @@ impl WorkspaceServer {
         }
     }
 
-    pub async fn handle_grep(&self, args: Value) -> Result<MCPResult, String> {
+    pub async fn handle_grep(
+        &self,
+        args: Value,
+        session_id: Option<String>,
+    ) -> Result<MCPResult, String> {
         let pattern = match args.get("pattern").and_then(|v| v.as_str()) {
             Some(p) => p,
             None => return Ok(missing_param_error("pattern", ToolGroup::Workspace)),
@@ -745,7 +825,7 @@ impl WorkspaceServer {
             .unwrap_or(false);
 
         let input_text = if let Some(path_str) = args.get("path").and_then(|v| v.as_str()) {
-            let file_manager = self.get_file_manager();
+            let file_manager = self.get_file_manager(session_id);
             match file_manager
                 .get_security_validator()
                 .validate_path_for_read(path_str)  // Use validate_path_for_read for read operations
@@ -856,7 +936,11 @@ impl WorkspaceServer {
         ))
     }
 
-    pub async fn handle_import_file(&self, args: Value) -> Result<MCPResult, String> {
+    pub async fn handle_import_file(
+        &self,
+        args: Value,
+        session_id: Option<String>,
+    ) -> Result<MCPResult, String> {
         let src_path_str = match args
             .get("srcAbsPath")
             .or_else(|| args.get("src_abs_path"))
@@ -909,7 +993,7 @@ impl WorkspaceServer {
         }
 
         // Use file manager to handle destination path validation and copying
-        let file_manager = self.get_file_manager();
+        let file_manager = self.get_file_manager(session_id);
         match file_manager
             .copy_file_from_external(&src_path, dest_rel_path)
             .await
@@ -944,5 +1028,87 @@ impl WorkspaceServer {
                 Ok(MCPResult::error(&format!("Failed to import file: {e}")))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_lines_with_numbers_basic() {
+        let lines = vec![
+            (1, "#include <stdio.h>".to_string()),
+            (2, "".to_string()),
+            (3, "int main() {".to_string()),
+        ];
+
+        let result = WorkspaceServer::format_lines_with_numbers(&lines);
+
+        assert!(result.contains("Line 1: #include <stdio.h>"));
+        assert!(result.contains("Line 2: "));
+        assert!(result.contains("Line 3: int main() {"));
+    }
+
+    #[test]
+    fn test_format_lines_collapses_multiple_empty_lines() {
+        let lines = vec![
+            (1, "#include <stdio.h>".to_string()),
+            (2, "".to_string()),
+            (3, "".to_string()),
+            (4, "".to_string()),
+            (5, "int main() {".to_string()),
+            (6, "".to_string()),
+            (7, "".to_string()),
+            (8, "    printf(\"Hello\");".to_string()),
+            (9, "".to_string()),
+            (10, "    return 0;".to_string()),
+            (11, "}".to_string()),
+        ];
+
+        let result = WorkspaceServer::format_lines_with_numbers(&lines);
+
+        // Should have the first line with number
+        assert!(result.contains("Line 1: #include <stdio.h>"));
+
+        // Multiple empty lines should be collapsed
+        assert!(result.contains("<Empty Lines 2-4>"));
+        assert!(result.contains("<Empty Lines 6-7>"));
+
+        // Content lines should have numbers
+        assert!(result.contains("Line 5: int main() {"));
+        assert!(result.contains("Line 8:     printf(\"Hello\");"));
+
+        // Single empty line should be preserved
+        assert!(result.contains("Line 9: "));
+
+        assert!(result.contains("Line 10:     return 0;"));
+        assert!(result.contains("Line 11: }"));
+    }
+
+    #[test]
+    fn test_format_lines_trailing_empty_lines() {
+        let lines = vec![
+            (1, "int main() {}".to_string()),
+            (2, "".to_string()),
+            (3, "".to_string()),
+            (4, "".to_string()),
+        ];
+
+        let result = WorkspaceServer::format_lines_with_numbers(&lines);
+
+        assert!(result.contains("Line 1: int main() {}"));
+        assert!(result.contains("<Empty Lines 2-4>"));
+    }
+
+    #[test]
+    fn test_format_lines_single_trailing_empty_line() {
+        let lines = vec![(1, "int main() {}".to_string()), (2, "".to_string())];
+
+        let result = WorkspaceServer::format_lines_with_numbers(&lines);
+
+        assert!(result.contains("Line 1: int main() {}"));
+        assert!(result.contains("Line 2: "));
+        assert!(!result.contains("<Empty Lines"));
     }
 }

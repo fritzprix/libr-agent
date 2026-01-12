@@ -4,7 +4,82 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### 🚀 Features
+### 2026-01-12
+
+#### 🚀 Features
+
+- **Settings Backend Migration to Rust/SeaORM**: Completed Phase 2 migration of settings persistence layer
+  - **New Settings Table**: Added `settings` table with key-value JSON storage (replaces IndexedDB `objects` table)
+  - **SeaORM Entity**: Created `settings` entity with CRUD operations and timestamps
+  - **Rust Service Layer**: Implemented `RustSettingsService` in TypeScript calling Tauri commands
+  - **Singleton Pattern**: Exported `settingsService` singleton for consistent access
+  - **Migration Path**: Settings data automatically migrated from IndexedDB to SQLite on first load
+  - **Type Safety**: Full TypeScript support with existing `Settings` interface
+  - **Test Coverage**: Added comprehensive CRUD tests in `seaorm_migration_verification.rs`
+
+- **CRUD Commands for Content Store Entities**: Added complete Tauri command layer for content store management
+  - **Assistant CRUD**: `create_assistant`, `update_assistant`, `delete_assistant`, `list_assistants`, `get_assistant`
+  - **MCP Server Config CRUD**: `create_mcp_server_config`, `update_mcp_server_config`, `delete_mcp_server_config`, `list_mcp_server_configs`
+  - **Playbook CRUD**: `create_playbook`, `update_playbook`, `delete_playbook`, `list_playbooks` (with optional session filtering)
+  - **Settings CRUD**: `set_setting`, `get_setting`, `delete_setting`, `list_settings` (upsert-style key-value operations)
+  - **Rust Service Implementations**: Added `RustAssistantService` replacing IndexedDB-based `LocalAssistantService`
+  - **Unified Registration**: All CRUD commands registered in `lib.rs` for frontend consumption
+
+- **Default Assistants Initialization**: Automatic creation of default assistants on first launch
+  - **Bootstrap Assistant**: Helps users set up their environment with platform detection and tool installation guidance
+  - **Libr Assistant**: General-purpose knowledge and automation agent with planning and memory capabilities
+  - **Service Layer**: New `assistant_init` module ensures default assistants exist after migrations
+  - **Deletion Protection**: Default assistants marked with `deletionProtected: true` flag
+
+#### 🔧 Enhancements
+
+- **Settings Page Scroll Fix**: Fixed overflow clipping issue preventing users from viewing bottom content
+  - **Root Container Update**: Added `overflow-y-auto` to route container in `App.tsx`
+  - **Tab Content Accessibility**: Users can now scroll through all settings tabs regardless of height
+  - **Layout Preservation**: Maintains flex layout with proper scrolling behavior
+
+- **Assistant Service Refactoring**: Migrated assistant persistence from IndexedDB to Rust backend
+  - **Removed BM25 Index**: Eliminated client-side search index (now handled server-side in future)
+  - **Simplified Search**: Client-side filtering for now, server-side implementation planned
+  - **Service Composition**: `AssistantService` now wraps `RustAssistantService` for local ops
+  - **Remote Sync**: Maintains Agent Hub remote sync capabilities
+  - **Backward Compatibility**: Exported `assistantService` singleton for existing consumers
+
+- **Playbook Type Enhancement**: Added optional `id` field to `Playbook` interface
+  - **Creation Flexibility**: ID can be omitted for creation (backend auto-generates)
+  - **Update Support**: ID required for updates and deletes
+  - **Type Safety**: TypeScript enforces proper ID usage in CRUD operations
+
+#### 🐛 Fixed
+
+- **AgentChatContext Test Fix**: Updated test expectations to account for `SettingsProvider` initialization
+  - **Settings Initialization**: `SettingsProvider` now calls `list_settings` on mount
+  - **Mock Validation**: Tests updated to verify no agent commands called during inactive session
+  - **Retry Test**: Adjusted expected invoke count to include settings initialization call
+
+#### 📦 Dependencies
+
+- **SeaORM Migration**: Added `m20260112_000001_create_settings_table` migration
+- **Chrono**: Utilized for timestamp generation in CRUD operations
+- **UUID**: Used for auto-generating assistant IDs in default initialization
+
+---
+
+### 0.4.0 Milestone (Previous Changes)
+
+#### 🚀 Features
+
+- **Primary Isolated Shell Tools**: Introduced new lightweight shell execution tools for faster standard operations
+  - **New Primary Tools**: `runShell` (Unix) and `runPowerShell` (Windows) for synchronous, isolated execution
+  - **Workspace Anchoring**: Primary tools always execute from workspace root for predictability
+  - **Performance**: Eliminates persistent shell overhead for 90% of common commands (ls, cat, grep)
+  - **Clear Separation**: Renamed `executeShell` to `runInPersistentShell` and `executeWindowsCmd` to `runInPersistentPowerShell`
+  - **Usage Guidance**: Updated service context to guide agents toward correct tool selection
+
+- **Gemini Granular Token Metrics**: Enhanced usage tracking for Gemini models
+  - **Usage Breakdown**: Tracks prompt, completion, and total tokens independently
+  - **Cache Visibility**: Reports `cachedContentTokenCount` for context caching optimization
+  - **Thinking Tokens**: Tracks `thoughtsTokenCount` for reasoning models
 
 - **Rust Agent Core**: Implement initial Rust-based agent core (`thronglet`) with Tauri integration, new frontend components, and packaging configurations.
 - **Multi-Vendor Prefill Performance Tracking**: Added Time-To-First-Token (TTFT) measurement across all AI service providers for consistent prefill performance monitoring.
@@ -19,6 +94,74 @@ All notable changes to this project will be documented in this file.
   - **Show Token Speed**: Toggle generation speed display (tokens per second)
   - **Compact Metrics**: Enable compact display format for token metrics
   - **Settings Persistence**: All display preferences are saved to IndexedDB and persist across sessions
+
+### 🔧 Enhancements
+
+- **Content Store Context Enhancement**: Improved agent visibility of uploaded files through enhanced service context
+  - **Recent Uploads Tracking**: System prompt now displays last 10 uploaded files with IDs and metadata
+  - **Direct File Access**: Agents can immediately use `contentId` without calling `listContent()`
+  - **Smart Truncation Logic**: Fixed misleading truncation messages - now distinguishes between preview truncation and file-end detection
+  - **Enhanced Error Messages**: Out-of-bounds errors now include actual file size and valid range suggestions
+  - **Content ID Normalization**: Auto-adds `content_` prefix to IDs for flexible usage
+  - **Token Efficiency**: Service context limited to 10 most recent files (~200 tokens max)
+  - **Session Isolation**: Recent uploads reset on session switch
+  - **New Tests**: Added comprehensive test suite for upload tracking and service context generation
+
+- **Workspace Output Visibility Fix**: Enhanced LLM visibility of process execution output
+  - **readProcessOutput**: Now includes actual stdout/stderr content in text field (not just "Read N lines" summary)
+  - **pollProcess with tail**: Appends last N lines of output directly to status message for quick inspection
+  - **Test Coverage**: Added `test_output_visibility.rs` to verify LLM can see command output
+
+- **File Reading Line Number Display**: Improved readability of file content with line number formatting
+  - **Line Numbers**: All file reads now include `Line N:` prefix for each line
+  - **Empty Line Collapsing**: Multiple consecutive empty lines collapsed to `<Empty Lines N-M>` placeholder
+  - **Token Efficiency**: Reduces context size for files with many blank lines
+  - **Test Coverage**: Added comprehensive tests for line formatting logic
+
+- **Persistent Shell PATH Fix**: Fixed missing `~/.local/bin` in non-interactive bash sessions
+  - **Auto PATH Extension**: Automatically adds `~/.local/bin` to PATH if missing (critical for pip-installed binaries)
+  - **Exit Code Capture**: Fixed race condition in bash sentinel - now captures `$?` before echoing sentinel
+  - **No User Impact**: Change is transparent to users, tools work as expected without manual PATH setup
+
+### 🐛 Fixed
+
+- **Token Estimation Robustness**: Fixed WASM crash in `tiktoken` for non-OpenAI models
+  - **Try-Catch Wrapper**: Added robust error handling around WASM calls in `estimateTextTokens`
+  - **Heuristic Fallback**: Implemented character-based fallback (approx 4 chars/token) when tokenizer fails
+  - **Ollama Stability**: Prevents `RuntimeError: Unreachable code` when using Qwen/Llama via Ollama
+
+- **Knowledge Tool Fixes (Critical)**:
+  - **Schema Mismatch Resolved**: Fixed a critical bug where `searchKnowledge` failed due to a missing `Source` column in the database schema. Added a migration to introduce the `source` column to the `knowledge` table.
+  - **Search Snippets**: Updated `searchKnowledge` to return relevant text snippets using SQLite FTS5 `snippet()` function (or `substr` fallback), providing immediate context in search results.
+  - **Source Filtering**: Added support for filtering knowledge search results by `source` URL.
+  - **Data Integrity**: Updated `saveKnowledge`, `readKnowledge`, and `listKnowledge` to correctly handle and persist the `source` field.
+
+- **LLM Service Empty Response Handling**: Relaxed validation to allow responses with usage but no content
+  - **Reasoning Model Support**: Ollama reasoning models may return empty content but non-zero completion tokens (valid thinking-only responses)
+  - **Diagnostic Logging**: Added detailed logging before throwing empty response error for better debugging
+  - **Graceful Degradation**: Logs warning but allows proceeding when usage indicates model did work
+
+- **Settings Page Debounce Extraction**: Extracted debounce logic into reusable `useDebounce` hook
+  - **Code Reuse**: Consolidated debounce/throttle patterns into single hook
+  - **Type Safety**: Full TypeScript generic support with proper parameter inference
+  - **API Consistency**: Provides `debounced`, `cancel`, and `flush` methods
+  - **Testing Ready**: Hook can be easily unit tested
+
+- **Ollama Chunk Processing Diagnostics**: Added comprehensive logging for empty chunks
+  - **Missing Field Detection**: Warns when chunk has unexpected structure (keys but no known fields)
+  - **Raw Chunk Logging**: Logs full JSON for unrecognized chunks to aid debugging
+  - **Model-Specific Handling**: Better support for edge cases in different Ollama model outputs
+
+- **Tool Argument Validation**: Enhanced type safety for tool call argument parsing
+  - **Zod Schema Validation**: Tool arguments now validated to ensure they're objects (not arrays/primitives)
+  - **Graceful Fallback**: Invalid structures wrapped in `{ value: ... }` instead of throwing errors
+  - **Error Logging**: Detailed debug logs for parse failures with full context
+  - **Type Guards**: Added `isMCPErrorContent` guard for safe error checking
+
+- **Database Singleton Reset**: Fixed potential memory leak in `LocalDatabase`
+  - **Null Type Safety**: Changed `instance` from `LocalDatabase` to `LocalDatabase | null` for proper nullable handling
+  - **Type-Safe Reset**: `resetInstance()` no longer requires `as unknown as` cast
+  - **Test Isolation**: Prevents test pollution by properly cleaning up singleton
 
 ### 🐛 Fixed
 

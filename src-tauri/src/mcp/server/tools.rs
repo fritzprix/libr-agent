@@ -413,7 +413,7 @@ pub async fn call_builtin_tool(
     let result = match servers.as_ref() {
         Some(registry) => {
             registry
-                .call_tool(server_name, tool_name, args, request_id)
+                .call_tool(server_name, tool_name, args, request_id, None)
                 .await
         }
         None => {

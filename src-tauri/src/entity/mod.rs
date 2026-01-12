@@ -19,6 +19,7 @@ pub mod content;
 pub mod knowledge;
 pub mod mcp_server;
 pub mod playbook;
+pub mod settings;
 pub mod store;
 
 pub mod prelude {
@@ -39,5 +40,6 @@ pub mod prelude {
     pub use super::knowledge::Entity as Knowledge;
     pub use super::mcp_server::Entity as McpServer;
     pub use super::playbook::Entity as Playbook;
+    pub use super::settings::Entity as Settings;
     pub use super::store::Entity as Store;
 }

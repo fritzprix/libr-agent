@@ -11,7 +11,7 @@ use crate::mcp::builtin::error_guidance::{
 use crate::mcp::types::MCPResult;
 use crate::session_isolation::{IsolatedProcessConfig, IsolationLevel};
 
-use super::super::{terminal_manager, utils, WorkspaceServer};
+use super::super::{terminal_manager, utils, WorkspaceServer, PERSISTENT_SHELL_TOOL};
 use super::process;
 
 impl WorkspaceServer {
@@ -23,35 +23,44 @@ impl WorkspaceServer {
         &self,
         command: &str,
         timeout_secs: u64,
+        session_id: &str,
     ) -> Result<MCPResult, String> {
-        let session_id = self
-            .session_manager
-            .get_current_session()
-            .unwrap_or_else(|| "default".to_string());
+        let session_id = session_id.to_string();
 
-        let workspace_path = self.get_workspace_dir();
+        let workspace_path = self
+            .session_manager
+            .get_session_workspace_dir_by_id(&session_id);
 
         // Normalize command
         let normalized_command = Self::normalize_shell_command(command);
+
+        // Track execution time
+        let execution_start = std::time::Instant::now();
 
         // Execute with timeout
         let timeout_duration = Duration::from_secs(timeout_secs);
 
         let execution_result = tokio::time::timeout(
             timeout_duration,
-            self.shell_manager
-                .execute(session_id.clone(), workspace_path, &normalized_command),
+            self.shell_manager.execute(
+                session_id.clone(),
+                workspace_path.clone(),
+                &normalized_command,
+            ),
         )
         .await;
 
         match execution_result {
-            Ok(Ok((stdout, stderr, exit_code))) => {
+            Ok(Ok((stdout, stderr, exit_code, cwd))) => {
+                // Measure duration
+                let duration_ms = execution_start.elapsed().as_millis() as u64;
+
                 // Success case - format result
                 let success = exit_code == 0;
 
                 info!(
-                    "Persistent shell command executed: {} (session: {}, exit: {})",
-                    command, session_id, exit_code
+                    "Persistent shell command executed: {} (session: {}, exit: {}, duration: {}ms)",
+                    command, session_id, exit_code, duration_ms
                 );
 
                 let structured_data = serde_json::json!({
@@ -59,33 +68,69 @@ impl WorkspaceServer {
                     "exit_code": exit_code,
                     "stdout": stdout,
                     "stderr": stderr,
-                    "status": if success { "finished" } else { "failed" }
+                    "cwd": cwd, // Return raw absolute path in data
+                    "status": if success { "finished" } else { "failed" },
+                    "duration_ms": duration_ms,
+                    "execution_type": "persistent"
                 });
 
                 if success {
-                    // Success - include output in text for agent visibility
-                    let text_message = if !stdout.is_empty() {
+                    // Calculate relative path for display
+                    let path_cwd = std::path::Path::new(&cwd);
+                    let relative_cwd = path_cwd
+                        .strip_prefix(&workspace_path)
+                        .unwrap_or(path_cwd)
+                        .to_string_lossy();
+
+                    let display_cwd = if relative_cwd.is_empty() {
+                        ".".to_string()
+                    } else {
+                        // Ensure it starts with ./ for clarity if it's relative
+                        if relative_cwd.starts_with(".")
+                            || relative_cwd.starts_with("/")
+                            || relative_cwd.contains(":")
+                        {
+                            relative_cwd.to_string()
+                        } else {
+                            format!("./{}", relative_cwd)
+                        }
+                    };
+
+                    // Success - format with clear state reporting
+                    let header = format!("✓ Command executed successfully in {}ms", duration_ms);
+
+                    // Clear shell state section with persistence indicator
+                    let shell_state = format!(
+                        "Persistent shell state (maintained for next {} call):\n  Working directory: {}\n  Exit code: {}",
+                        PERSISTENT_SHELL_TOOL, display_cwd, exit_code
+                    );
+
+                    // Warning about file tools
+                    let file_tools_warning = "⚠️  File tools (readFile, listDirectory) always use workspace root (.)\n    To list files in shell's current directory, use shell commands: ls or find";
+
+                    let text_message: String = if !stdout.is_empty() {
                         format!(
-                            "✓ Command executed successfully (exit code: {})\n\nOutput:\n{}\n\n💡 Next: Use readProcessOutput to check background processes or Use listProcesses to see running processes",
-                            exit_code,
-                            stdout
+                            "{}\n\nCommand output:\n{}\n\n{}\n\n{}",
+                            header, stdout, shell_state, file_tools_warning
                         )
                     } else {
-                        format!(
-                            "✓ Command executed successfully (exit code: {})\n\n💡 Next: Use readProcessOutput to check background processes or Use listProcesses to see running processes",
-                            exit_code
-                        )
+                        format!("{}\n\n{}\n\n{}", header, shell_state, file_tools_warning)
                     };
-                    Ok(MCPResult::success_with_data(&text_message, structured_data))
+                    Ok(MCPResult::success_with_data(
+                        text_message.as_str(),
+                        structured_data,
+                    ))
                 } else {
                     // Failure - use ErrorGuidance format
+                    let header = format!(
+                        "Command failed in {}ms (exit code: {})",
+                        duration_ms, exit_code
+                    );
+
                     let error_message = if !stderr.is_empty() {
-                        format!(
-                            "Command failed with exit code {}\n\nstderr:\n{}",
-                            exit_code, stderr
-                        )
+                        format!("{}\n\nstderr:\n{}", header, stderr)
                     } else {
-                        format!("Command failed with exit code {}", exit_code)
+                        header
                     };
 
                     Ok(ErrorGuidance::with_guidance(
@@ -110,8 +155,13 @@ impl WorkspaceServer {
 
                 // Fallback to one-shot execution
                 let isolation_level = IsolationLevel::Medium;
-                self.execute_shell_with_isolation(command, isolation_level, timeout_secs)
-                    .await
+                self.execute_shell_with_isolation(
+                    command,
+                    isolation_level,
+                    timeout_secs,
+                    &session_id,
+                )
+                .await
             }
             Err(_) => {
                 // Timeout
@@ -149,16 +199,19 @@ impl WorkspaceServer {
         command: &str,
         isolation_level: IsolationLevel,
         timeout_secs: u64,
+        session_id: &str,
     ) -> Result<MCPResult, String> {
-        let session_id = self
-            .session_manager
-            .get_current_session()
-            .unwrap_or_else(|| "default".to_string());
+        let session_id = session_id.to_string();
 
-        let workspace_path = self.get_workspace_dir();
+        let workspace_path = self
+            .session_manager
+            .get_session_workspace_dir_by_id(&session_id);
 
         // Normalize shell command
         let normalized_command = Self::normalize_shell_command(command);
+
+        // Track execution time
+        let execution_start = std::time::Instant::now();
 
         // Generate process ID for sync execution
         let process_id = cuid2::create_id();
@@ -268,6 +321,9 @@ impl WorkspaceServer {
 
         match execution_result {
             Ok(Ok((pid, exit_code, stdout, stderr))) => {
+                // Measure duration
+                let duration_ms = execution_start.elapsed().as_millis() as u64;
+
                 // Update registry entry
                 if let Some(entry) = reg.entries.get_mut(&process_id) {
                     entry.pid = pid;
@@ -291,23 +347,41 @@ impl WorkspaceServer {
 
                 let success = exit_code.unwrap_or(-1) == 0;
 
-                // Construct JSON response
+                // Construct JSON response with enhanced metadata
                 let response = serde_json::json!({
                     "command": command,
                     "exit_code": exit_code.unwrap_or(-1),
                     "stdout": stdout,
                     "stderr": stderr,
-                    "status": if success { "finished" } else { "failed" }
+                    "status": if success { "finished" } else { "failed" },
+                    "duration_ms": duration_ms,
+                    "execution_type": "isolated"
                 });
 
                 info!(
-                    "Isolated shell command executed: {} (session: {}, exit: {:?})",
-                    command, session_id, exit_code
+                    "Isolated shell command executed: {} (session: {}, exit: {:?}, duration: {}ms)",
+                    command, session_id, exit_code, duration_ms
                 );
 
+                // Enhanced text response with explicit status and output visibility
+                let header = format!(
+                    "Command executed in {}ms (exit code: {})",
+                    duration_ms,
+                    exit_code.unwrap_or(-1)
+                );
+
+                // Include output in text message if available (CRITICAL FIX for sync visibility)
+                let text_message = if !stdout.is_empty() {
+                    format!("{}\n\nOutput:\n{}", header, stdout)
+                } else if !stderr.is_empty() {
+                    format!("{}\n\nStderr:\n{}", header, stderr)
+                } else {
+                    header
+                };
+
                 let hint = SuccessHint::new(
-                    format!("Command executed (exit code: {})", exit_code.unwrap_or(-1)),
-                    SuccessHint::for_tool("executeShell", ToolGroup::Workspace),
+                    text_message,
+                    SuccessHint::for_tool(PERSISTENT_SHELL_TOOL, ToolGroup::Workspace),
                 );
                 Ok(hint.to_mcp_result_with_data(Some(response)))
             }
@@ -507,13 +581,94 @@ impl WorkspaceServer {
         result
     }
 
-    pub async fn handle_execute_shell(&self, args: Value) -> Result<MCPResult, String> {
+    #[cfg(windows)]
+    fn contains_unquoted_andand(input: &str) -> bool {
+        let mut in_single = false;
+        let mut in_double = false;
+        let chars: Vec<char> = input.chars().collect();
+        let mut i = 0;
+
+        while i < chars.len() {
+            let ch = chars[i];
+
+            if in_single {
+                if ch == '\'' {
+                    // PowerShell single-quote escaping: '' inside single quotes
+                    if i + 1 < chars.len() && chars[i + 1] == '\'' {
+                        i += 2;
+                        continue;
+                    }
+                    in_single = false;
+                }
+                i += 1;
+                continue;
+            }
+
+            if in_double {
+                // PowerShell escape inside double quotes via backtick
+                if ch == '`' {
+                    i += 2;
+                    continue;
+                }
+                if ch == '"' {
+                    in_double = false;
+                }
+                i += 1;
+                continue;
+            }
+
+            if ch == '\'' {
+                in_single = true;
+                i += 1;
+                continue;
+            }
+
+            if ch == '"' {
+                in_double = true;
+                i += 1;
+                continue;
+            }
+
+            if ch == '&' && i + 1 < chars.len() && chars[i + 1] == '&' {
+                return true;
+            }
+
+            i += 1;
+        }
+
+        false
+    }
+
+    pub async fn handle_execute_shell(
+        &self,
+        args: Value,
+        session_id: &str,
+    ) -> Result<MCPResult, String> {
         let raw_command = match args.get("command").and_then(|v| v.as_str()) {
             Some(cmd) => cmd,
             None => {
                 return Ok(missing_param_error("command", ToolGroup::Workspace));
             }
         };
+
+        #[cfg(windows)]
+        {
+            if Self::contains_unquoted_andand(raw_command) {
+                return Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::InvalidInput,
+                    "Invalid PowerShell syntax: '&&' is not supported by PowerShell 5.1"
+                        .to_string(),
+                    vec![
+                        "Use ';' to chain commands in PowerShell".to_string(),
+                        "Example: cd src; pnpm test".to_string(),
+                        "If you need conditional execution, use 'if ($LASTEXITCODE -eq 0) { ... }'"
+                            .to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                )
+                .to_mcp_result());
+            }
+        }
 
         // Check for requireUserInput parameter or auto-detect privilege escalation
         let require_input = args
@@ -524,22 +679,12 @@ impl WorkspaceServer {
 
         // If user input required, return UIResource for interactive execution
         if require_input || auto_detect {
-            return self.handle_interactive_shell(raw_command, &args).await;
+            return self
+                .handle_interactive_shell(raw_command, &args, session_id)
+                .await;
         }
 
-        // Check runMode parameter
-        let run_mode = args
-            .get("runMode")
-            .or_else(|| args.get("run_mode"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("sync");
-
-        // Async mode: background execution
-        if run_mode == "async" {
-            return self.execute_shell_async(raw_command, &args).await;
-        }
-
-        // Sync mode: check persistent shell preference
+        // Sync mode: persistent shell execution
         let timeout_secs = utils::validate_timeout(args.get("timeout").and_then(|v| v.as_u64()));
 
         // Enforce maximum sync timeout
@@ -548,53 +693,176 @@ impl WorkspaceServer {
             return Ok(ErrorGuidance::with_guidance(
                 ErrorCategory::InvalidInput,
                 format!(
-                    "Sync mode timeout ({} seconds) exceeds maximum ({} seconds)",
+                    "Timeout ({} seconds) exceeds maximum ({} seconds)",
                     timeout_secs, sync_max
                 ),
                 vec![
-                    format!("Use \"runMode\": \"async\" for commands longer than {} seconds", sync_max),
-                    "Use pollProcess to check status of async commands".to_string(),
-                    format!("Adjust LIBRAGENT_DEFAULT_EXECUTION_TIMEOUT environment variable (current: {}s)", sync_max),
+                    format!(
+                        "Use spawnProcess for commands longer than {} seconds",
+                        sync_max
+                    ),
+                    "spawnProcess runs in background and returns process_id".to_string(),
+                    format!(
+                        "Current maximum timeout: {}s (LIBRAGENT_DEFAULT_EXECUTION_TIMEOUT)",
+                        sync_max
+                    ),
                 ],
                 ToolGroup::Workspace,
             )
             .to_mcp_result());
         }
 
-        // Check persistent shell preference (default: enabled)
-        let use_persistent_shell = args
-            .get("usePersistentShell")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true); // Default enabled per Q1 decision
+        // Execute with persistent shell (state preservation)
+        self.execute_shell_persistent(raw_command, timeout_secs, session_id)
+            .await
+    }
 
-        if use_persistent_shell {
-            // NEW PATH: Persistent shell execution (state preservation)
-            return self
-                .execute_shell_persistent(raw_command, timeout_secs)
-                .await;
-        }
-
-        // FALLBACK PATH: One-shot isolation execution
-        let isolation_level = IsolationLevel::Medium;
+    /// Handle primary isolated shell execution (new tool)
+    pub async fn handle_run_shell(
+        &self,
+        args: Value,
+        session_id: &str,
+    ) -> Result<MCPResult, String> {
+        let raw_command = match args.get("command").and_then(|v| v.as_str()) {
+            Some(cmd) => cmd,
+            None => {
+                return Ok(missing_param_error("command", ToolGroup::Workspace));
+            }
+        };
 
         #[cfg(windows)]
-        info!(
-            "executeWindowsCmd invoked: command='{}' runMode='{}' requireUserInput='{}' timeout={}",
-            raw_command, run_mode, require_input, timeout_secs
-        );
-        self.execute_shell_with_isolation(raw_command, isolation_level, timeout_secs)
+        {
+            if Self::contains_unquoted_andand(raw_command) {
+                return Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::InvalidInput,
+                    "Invalid PowerShell syntax: '&&' is not supported by PowerShell 5.1"
+                        .to_string(),
+                    vec![
+                        "Use ';' to chain commands in PowerShell".to_string(),
+                        "Example: cd src; pnpm test".to_string(),
+                        "If you need conditional execution, use 'if ($LASTEXITCODE -eq 0) { ... }'"
+                            .to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                )
+                .to_mcp_result());
+            }
+        }
+
+        // Get timeout (use default if not specified)
+        let timeout_secs = utils::validate_timeout(args.get("timeout").and_then(|v| v.as_u64()));
+
+        // Enforce maximum sync timeout
+        let sync_max = crate::config::default_execution_timeout();
+        if timeout_secs > sync_max {
+            return Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::InvalidInput,
+                format!(
+                    "Timeout ({} seconds) exceeds maximum ({} seconds)",
+                    timeout_secs, sync_max
+                ),
+                vec![
+                    format!(
+                        "Use spawnProcess for commands longer than {} seconds",
+                        sync_max
+                    ),
+                    "spawnProcess runs in background and returns process_id".to_string(),
+                    format!(
+                        "Current maximum timeout: {}s (LIBRAGENT_DEFAULT_EXECUTION_TIMEOUT)",
+                        sync_max
+                    ),
+                ],
+                ToolGroup::Workspace,
+            )
+            .to_mcp_result());
+        }
+
+        // Execute with Medium isolation (always workspace root anchored)
+        self.execute_shell_with_isolation(
+            raw_command,
+            IsolationLevel::Medium,
+            timeout_secs,
+            session_id,
+        )
+        .await
+    }
+
+    /// Handle async shell execution (separate tool)
+    pub async fn handle_spawn_process(
+        &self,
+        args: Value,
+        session_id: &str,
+    ) -> Result<MCPResult, String> {
+        let raw_command = match args.get("command").and_then(|v| v.as_str()) {
+            Some(cmd) => cmd,
+            None => {
+                return Ok(missing_param_error("command", ToolGroup::Workspace));
+            }
+        };
+
+        #[cfg(windows)]
+        {
+            if Self::contains_unquoted_andand(raw_command) {
+                return Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::InvalidInput,
+                    "Invalid PowerShell syntax: '&&' is not supported by PowerShell 5.1"
+                        .to_string(),
+                    vec![
+                        "Use ';' to chain commands in PowerShell".to_string(),
+                        "Example: cd src; pnpm test".to_string(),
+                        "If you need conditional execution, use 'if ($LASTEXITCODE -eq 0) { ... }'"
+                            .to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                )
+                .to_mcp_result());
+            }
+        }
+
+        // Async mode does not support interactive input
+        let require_input = args
+            .get("requireUserInput")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        if require_input {
+            return Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::InvalidInput,
+                "Background processes cannot prompt for interactive input".to_string(),
+                vec![
+                    format!(
+                        "Use {} (sync mode) for commands requiring user input",
+                        PERSISTENT_SHELL_TOOL
+                    ),
+                    format!(
+                        "{} supports requireUserInput for sudo/interactive commands",
+                        PERSISTENT_SHELL_TOOL
+                    ),
+                    "Async processes run in the background without user interaction".to_string(),
+                ],
+                ToolGroup::Workspace,
+            )
+            .to_mcp_result());
+        }
+
+        // Execute in background
+        self.execute_shell_async(raw_command, &args, session_id)
             .await
     }
 
     /// Execute shell command asynchronously in background
-    async fn execute_shell_async(&self, command: &str, _args: &Value) -> Result<MCPResult, String> {
+    async fn execute_shell_async(
+        &self,
+        command: &str,
+        _args: &Value,
+        session_id: &str,
+    ) -> Result<MCPResult, String> {
         // Get session info
-        let session_id = self
-            .session_manager
-            .get_current_session()
-            .unwrap_or_else(|| "default".to_string());
+        let session_id = session_id.to_string();
 
-        let workspace_path = self.get_workspace_dir();
+        let workspace_path = self
+            .session_manager
+            .get_session_workspace_dir_by_id(&session_id);
 
         // Check concurrent process limit (max 20 per session)
         const MAX_CONCURRENT_PROCESSES: usize = 20;

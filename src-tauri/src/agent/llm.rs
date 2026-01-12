@@ -533,6 +533,9 @@ async fn handle_tool_result_and_continue(
         }
         Err(e) => {
             log::error!("Error handling tool result: {}", e);
+            if let Err(err) = handle_llm_error(active_sessions, app_handle, session_id, e).await {
+                log::error!("Failed to handle LLM error: {}", err);
+            }
         }
     }
 }
@@ -550,7 +553,7 @@ pub async fn handle_llm_error(
         active_sessions,
         app_handle,
         &session_id,
-        SessionStatus::Idle,
+        SessionStatus::Error,
     )
     .await?;
 

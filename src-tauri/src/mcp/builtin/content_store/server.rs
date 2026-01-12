@@ -4,19 +4,32 @@ use crate::mcp::MCPTool;
 use crate::session::SessionManager;
 use log::error;
 use serde_json::Value;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use super::{schemas, search, storage};
 
+/// Information about a recently uploaded file for service context
+#[derive(Debug, Clone)]
+pub struct RecentUploadInfo {
+    pub content_id: String,
+    pub filename: String,
+    pub mime_type: String,
+    pub line_count: usize,
+    #[allow(dead_code)]
+    pub uploaded_at: String,
+}
+
 /// Content-Store built-in MCP server (native backend)
 #[derive(Debug)]
 pub struct ContentStoreServer {
-    #[allow(dead_code)]
     pub(crate) session_id: String,
     pub(crate) session_manager: Arc<SessionManager>,
     pub(crate) storage: Mutex<storage::ContentStoreStorage>,
-    pub(crate) search_engine: Arc<Mutex<search::ContentSearchEngine>>,
+    pub(crate) search_engines: Mutex<HashMap<String, Arc<Mutex<search::ContentSearchEngine>>>>,
+    /// Track recent uploads for service context (FIFO, max 10 items)
+    pub(crate) recent_uploads: Arc<Mutex<VecDeque<RecentUploadInfo>>>,
 }
 
 impl ContentStoreServer {
@@ -26,11 +39,15 @@ impl ContentStoreServer {
         let search_engine = search::ContentSearchEngine::new(search_index_dir)
             .expect("Failed to initialize search engine");
 
+        let mut search_engines = HashMap::new();
+        search_engines.insert(session_id.clone(), Arc::new(Mutex::new(search_engine)));
+
         Self {
             session_id,
             session_manager,
             storage: Mutex::new(storage::ContentStoreStorage::new()),
-            search_engine: Arc::new(Mutex::new(search_engine)),
+            search_engines: Mutex::new(search_engines),
+            recent_uploads: Arc::new(Mutex::new(VecDeque::with_capacity(10))),
         }
     }
 
@@ -46,11 +63,15 @@ impl ContentStoreServer {
 
         let storage = storage::ContentStoreStorage::new_sqlite(database_url).await?;
 
+        let mut search_engines = HashMap::new();
+        search_engines.insert(session_id.clone(), Arc::new(Mutex::new(search_engine)));
+
         Ok(Self {
             session_id,
             session_manager,
             storage: Mutex::new(storage),
-            search_engine: Arc::new(Mutex::new(search_engine)),
+            search_engines: Mutex::new(search_engines),
+            recent_uploads: Arc::new(Mutex::new(VecDeque::with_capacity(10))),
         })
     }
 
@@ -66,11 +87,15 @@ impl ContentStoreServer {
 
         let storage = storage::ContentStoreStorage::new_with_db(db).await?;
 
+        let mut search_engines = HashMap::new();
+        search_engines.insert(session_id.clone(), Arc::new(Mutex::new(search_engine)));
+
         Ok(Self {
             session_id,
             session_manager,
             storage: Mutex::new(storage),
-            search_engine: Arc::new(Mutex::new(search_engine)),
+            search_engines: Mutex::new(search_engines),
+            recent_uploads: Arc::new(Mutex::new(VecDeque::with_capacity(10))),
         })
     }
 
@@ -144,29 +169,6 @@ impl ContentStoreServer {
         ]
     }
 
-    /// Get the session ID for this server instance
-    ///
-    /// In the new multi-session architecture, each ContentStoreServer is bound to a specific
-    /// session at construction time. This method returns that session ID.
-    ///
-    /// For legacy compatibility, if session_manager has a current session set via switch_context,
-    /// that takes precedence. Otherwise, returns the constructor-bound session_id.
-    pub(crate) fn require_active_session_result(&self) -> Result<String, String> {
-        // New architecture: if this server instance is bound to a specific session (not "default"),
-        // strictly use that session ID, ignoring global state. This ensures Agent V2 isolation.
-        if self.session_id != "default" {
-            return Ok(self.session_id.clone());
-        }
-
-        // Legacy compatibility: check if session_manager has an active session
-        if let Some(session_id) = self.session_manager.get_current_session() {
-            Ok(session_id)
-        } else {
-            // Default fallback
-            Ok(self.session_id.clone())
-        }
-    }
-
     pub(crate) async fn ensure_session_store(&self, session_id: &str) -> Result<(), String> {
         let mut storage = self.storage.lock().await;
 
@@ -184,13 +186,41 @@ impl ContentStoreServer {
             .map(|_| ())
     }
 
+    pub(crate) async fn get_search_engine(
+        &self,
+        session_id: &str,
+    ) -> Result<Arc<Mutex<search::ContentSearchEngine>>, String> {
+        let mut engines = self.search_engines.lock().await;
+
+        if let Some(engine) = engines.get(session_id) {
+            return Ok(engine.clone());
+        }
+
+        // Create new search engine instance for this session
+        let session_dir = self
+            .session_manager
+            .get_session_workspace_dir_by_id(session_id);
+        let search_index_dir = session_dir.join("content_store_search");
+
+        let search_engine = search::ContentSearchEngine::new(search_index_dir).map_err(|e| {
+            format!(
+                "Failed to initialize search engine for session {}: {}",
+                session_id, e
+            )
+        })?;
+
+        let engine_arc = Arc::new(Mutex::new(search_engine));
+        engines.insert(session_id.to_string(), engine_arc.clone());
+
+        Ok(engine_arc)
+    }
+
     pub async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
         // Use session_id from constructor (already bound to this session)
-        // This is consistent with Planning/Workspace pattern
         let session_id = &self.session_id;
 
-        // Get content information for this session
-        let count = match self.storage.try_lock() {
+        // Get total content count
+        let total_count = match self.storage.try_lock() {
             Ok(storage) => storage.get_content_count(session_id),
             Err(e) => {
                 log::warn!(
@@ -205,45 +235,100 @@ impl ContentStoreServer {
             }
         };
 
-        // Build context prompt (Legacy style: concise, token-efficient)
-        let file_status = if count == 0 {
-            "no files".to_string()
-        } else if count == 1 {
-            "1 file".to_string()
-        } else {
-            format!("{} files", count)
+        // Get recent uploads
+        let recent_files = match self.recent_uploads.try_lock() {
+            Ok(recent) => recent.iter().cloned().collect::<Vec<_>>(),
+            Err(_) => Vec::new(),
         };
 
-        // Tool count (fixed: saveKnowledge, listContent, readContent, searchKnowledge, deleteContent)
-        let tool_count = 5;
+        // Build context prompt with file details
+        let mut prompt_parts = vec![
+            "## Content Store\n".to_string(),
+            format!(
+                "{} available, 5 tools\n",
+                Self::format_file_count(total_count)
+            ),
+        ];
 
-        let context_prompt = format!(
-            "## Content Store\n\nActive, {} tools, {}",
-            tool_count, file_status
-        );
+        if !recent_files.is_empty() {
+            prompt_parts.push("\n**Recent Uploads:**\n".to_string());
+
+            for (i, file) in recent_files.iter().take(10).enumerate() {
+                prompt_parts.push(format!(
+                    "{}. `{}` (ID: `{}`, {} lines, {})\n",
+                    i + 1,
+                    file.filename,
+                    file.content_id,
+                    file.line_count,
+                    Self::format_mime_type(&file.mime_type)
+                ));
+            }
+
+            prompt_parts.push("\n*Use `readContent(contentId=\"content_xxx\", fromLine=1, toLine=100)` to access files.*\n".to_string());
+        } else if total_count == 0 {
+            prompt_parts.push("*No files uploaded yet.*\n".to_string());
+        }
+
+        let context_prompt = prompt_parts.join("");
 
         ServiceContext {
             context_prompt,
             structured_state: Some(serde_json::json!({
                 "active": true,
-                "tool_count": tool_count,
-                "file_count": count,
-                "session_id": session_id
+                "tool_count": 5,
+                "file_count": total_count,
+                "recent_uploads": recent_files.iter().map(|f| serde_json::json!({
+                    "contentId": f.content_id,
+                    "filename": f.filename,
+                    "lineCount": f.line_count,
+                })).collect::<Vec<_>>(),
             })),
+        }
+    }
+
+    // Helper functions for service context formatting
+    pub(crate) fn format_file_count(count: usize) -> String {
+        match count {
+            0 => "No files".to_string(),
+            1 => "1 file".to_string(),
+            n => format!("{} files", n),
+        }
+    }
+
+    pub(crate) fn normalize_content_id(id: &str) -> String {
+        // "add24ru333bbupvroeea53qj" → "content_add24ru333bbupvroeea53qj"
+        if id.starts_with("content_") {
+            id.to_string()
+        } else {
+            format!("content_{}", id)
+        }
+    }
+
+    pub(crate) fn format_mime_type(mime: &str) -> String {
+        match mime {
+            "text/plain" => "text".to_string(),
+            "text/markdown" => "markdown".to_string(),
+            "application/json" => "JSON".to_string(),
+            "application/pdf" => "PDF".to_string(),
+            _ => mime.to_string(),
         }
     }
 
     pub async fn switch_context(&self, options: ServiceContextOptions) -> Result<(), String> {
         if let Some(session_id) = &options.session_id {
-            // Use the async session setter to avoid blocking and to allow the caller
-            // to cancel the operation by dropping the awaiting future.
-            if let Err(e) = self
-                .session_manager
-                .set_session_async(session_id.clone())
-                .await
+            // Note: In V2, we do not update the global session manager state.
+            // This server instance is bound to self.session_id.
+            // If the requested session_id differs, we log a warning but proceed with the requested ID for storage operations
+            // if that was the intent, although typically V2 severs are session-bound.
+
+            if session_id != &self.session_id {
+                log::warn!("ContentStoreServer: switch_context requested session '{}' but server is bound to '{}'", session_id, self.session_id);
+            }
+
+            // Clear recent uploads for session switch
             {
-                error!("Failed to switch session in session_manager: {e}");
-                return Err(format!("Failed to switch session in session_manager: {e}"));
+                let mut recent = self.recent_uploads.lock().await;
+                recent.clear();
             }
 
             let mut storage = self.storage.lock().await;
@@ -262,6 +347,20 @@ impl ContentStoreServer {
                     return Err(format!(
                         "Failed to get or create content store for session {session_id}: {e}"
                     ));
+                }
+            }
+
+            // Pre-populate recent uploads with existing files (up to 10 most recent)
+            if let Ok(contents) = storage.list_contents_by_session(session_id, Some(10)).await {
+                let mut recent = self.recent_uploads.lock().await;
+                for content in contents {
+                    recent.push_back(RecentUploadInfo {
+                        content_id: content.id,
+                        filename: content.filename,
+                        mime_type: content.mime_type,
+                        line_count: content.line_count,
+                        uploaded_at: content.uploaded_at,
+                    });
                 }
             }
         }

@@ -29,6 +29,14 @@ export interface MCPTextContent {
 }
 
 /**
+ * Represents an error content part in an MCP message.
+ * Extended from MCPTextContent with an isError flag.
+ */
+export interface MCPErrorContent extends MCPTextContent {
+  isError: true;
+}
+
+/**
  * Represents an image content part in an MCP message.
  */
 export interface MCPImageContent {
@@ -78,7 +86,23 @@ type MCPResourceContent = UIResource & {
  */
 export type MCPContent =
   | MCPTextContent
+  | MCPErrorContent
   | MCPImageContent
   | MCPAudioContent
   | MCPResourceLinkContent
   | MCPResourceContent;
+
+/**
+ * Type guard to check if content is an error content.
+ * @param content - The content to check
+ * @returns True if content is an MCPErrorContent
+ */
+export function isMCPErrorContent(
+  content: MCPContent,
+): content is MCPErrorContent {
+  return (
+    content.type === 'text' &&
+    'isError' in content &&
+    (content as MCPErrorContent).isError === true
+  );
+}

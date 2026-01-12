@@ -10,7 +10,11 @@ use log::error;
 use serde_json::Value;
 
 impl ContentStoreServer {
-    pub(crate) async fn handle_save_knowledge(&self, params: Value) -> Result<MCPResult, String> {
+    pub(crate) async fn handle_save_knowledge(
+        &self,
+        params: Value,
+        session_id: &str,
+    ) -> Result<MCPResult, String> {
         let args: AddContentArgs = match serde_json::from_value(params) {
             Ok(args) => args,
             Err(e) => {
@@ -86,12 +90,10 @@ impl ContentStoreServer {
             }
         };
 
-        let session_id = match self.require_active_session_result() {
-            Ok(session_id) => session_id,
-            Err(e) => return Ok(MCPResult::error(&e)),
-        };
+        // Use passed session_id
+        // let session_id = ... (removed)
 
-        if let Err(e) = self.ensure_session_store(&session_id).await {
+        if let Err(e) = self.ensure_session_store(session_id).await {
             error!("Failed to ensure content store for session {session_id}: {e}");
             return Ok(operation_failed_error(
                 "Prepare content store",
@@ -148,7 +150,7 @@ impl ContentStoreServer {
         let mut storage = self.storage.lock().await;
         let content_item = match storage
             .add_content(
-                &session_id,
+                session_id,
                 &final_filename,
                 &mime_type,
                 final_size as usize,
@@ -191,10 +193,36 @@ impl ContentStoreServer {
 
         // Index chunks for search
         {
-            let mut search_engine = self.search_engine.lock().await;
-            if let Err(e) = search_engine.add_chunks(text_chunks).await {
-                // Log error but don't fail the operation
-                eprintln!("Warning: Failed to index content for search: {e}");
+            match self.get_search_engine(session_id).await {
+                Ok(engine_arc) => {
+                    let mut search_engine = engine_arc.lock().await;
+                    if let Err(e) = search_engine.add_chunks(text_chunks).await {
+                        // Log error but don't fail the operation
+                        eprintln!("Warning: Failed to index content for search: {e}");
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Warning: Failed to get search engine for indexing: {e}");
+                }
+            }
+        }
+
+        // Track this upload for service context
+        {
+            let mut recent = self.recent_uploads.lock().await;
+
+            // Add to front of queue (most recent first)
+            recent.push_front(super::server::RecentUploadInfo {
+                content_id: content_item.id.clone(),
+                filename: content_item.filename.clone(),
+                mime_type: content_item.mime_type.clone(),
+                line_count: content_item.line_count,
+                uploaded_at: content_item.uploaded_at.clone(),
+            });
+
+            // Keep only last 10 uploads
+            if recent.len() > 10 {
+                recent.pop_back();
             }
         }
 
@@ -231,7 +259,11 @@ impl ContentStoreServer {
         }))))
     }
 
-    pub(crate) async fn handle_list_content(&self, params: Value) -> Result<MCPResult, String> {
+    pub(crate) async fn handle_list_content(
+        &self,
+        params: Value,
+        session_id: &str,
+    ) -> Result<MCPResult, String> {
         let args: ListContentArgs = if params.is_null() {
             ListContentArgs {
                 pagination: Option::None,
@@ -248,12 +280,10 @@ impl ContentStoreServer {
             }
         };
 
-        let session_id = match self.require_active_session_result() {
-            Ok(id) => id,
-            Err(e) => return Ok(MCPResult::error(&e)),
-        };
+        // Use passed session_id
+        // let session_id = ... (removed)
 
-        if let Err(e) = self.ensure_session_store(&session_id).await {
+        if let Err(e) = self.ensure_session_store(session_id).await {
             error!(
                 "Failed to ensure content store for session {session_id} while listing content: {e}"
             );
@@ -276,7 +306,7 @@ impl ContentStoreServer {
         });
 
         let storage = self.storage.lock().await;
-        let (contents, total) = match storage.list_content(&session_id, offset, limit).await {
+        let (contents, total) = match storage.list_content(session_id, offset, limit).await {
             Ok((contents, total)) => (contents, total),
             Err(e) => {
                 return Ok(operation_failed_error(
@@ -304,11 +334,13 @@ impl ContentStoreServer {
                     item.preview.clone()
                 };
                 format!(
-                    "[{}] ID: {}\n    Title: {}\n    Size: {} bytes\n    Preview: {}\n    Created: {}",
+                    "[{}] ID: {}\n    Title: {}\n    Size: {} bytes, {} lines\n    Line Range: 1-{}\n    Preview: {}\n    Created: {}",
                     idx + 1,
                     item.id,
                     item.filename,
                     item.size,
+                    item.line_count,
+                    item.line_count,
                     preview_text,
                     item.uploaded_at
                 )
@@ -370,7 +402,11 @@ impl ContentStoreServer {
         }))))
     }
 
-    pub(crate) async fn handle_read_content(&self, params: Value) -> Result<MCPResult, String> {
+    pub(crate) async fn handle_read_content(
+        &self,
+        params: Value,
+        session_id: &str,
+    ) -> Result<MCPResult, String> {
         let args: ReadContentArgs = match serde_json::from_value(params) {
             Ok(args) => args,
             Err(e) => {
@@ -381,17 +417,18 @@ impl ContentStoreServer {
             }
         };
 
+        // Normalize content ID (add "content_" prefix if missing)
+        let normalized_content_id = ContentStoreServer::normalize_content_id(&args.content_id);
+
         // Get current session ID
-        let session_id = match self.require_active_session_result() {
-            Ok(id) => id,
-            Err(e) => return Ok(MCPResult::error(&e)),
-        };
+        // Use passed session_id
+        // let session_id = ... (removed)
 
         // Verify content belongs to current session
         let content_session_id = {
             let storage = self.storage.lock().await;
             storage
-                .get_content_session_id(&args.content_id)
+                .get_content_session_id(&normalized_content_id)
                 .ok_or_else(|| format!("Content '{}' not found", args.content_id))
         };
 
@@ -424,8 +461,19 @@ impl ContentStoreServer {
 
         // Read content (session verification passed)
         let storage = self.storage.lock().await;
+
+        // Get content metadata for accurate truncation messaging
+        let content_item = storage
+            .get_content_item(&normalized_content_id)
+            .ok_or_else(|| format!("Content '{}' not found", args.content_id))?;
+        let total_lines = content_item.line_count;
+
         let content = match storage
-            .read_content(&args.content_id, args.from_line.unwrap_or(1), args.to_line)
+            .read_content(
+                &normalized_content_id,
+                args.from_line.unwrap_or(1),
+                args.to_line,
+            )
             .await
         {
             Ok(content) => content,
@@ -442,44 +490,90 @@ impl ContentStoreServer {
                 ));
             }
         };
+        drop(storage);
 
         let from_line = args.from_line.unwrap_or(1);
         let to_line = args
             .to_line
             .unwrap_or_else(|| content.lines().count().max(1));
 
-        // Truncate content if too long, but show preview
-        let content_preview = if content.len() > 2000 {
-            format!(
-                "{}\n... (truncated, {} bytes total)",
-                content.chars().take(2000).collect::<String>(),
-                content.len()
-            )
+        // Determine if all requested lines were returned
+        let is_fully_returned = to_line >= total_lines;
+        let is_preview_truncated = content.len() > 2000;
+
+        // Create appropriate truncation message
+        let (content_preview, next_step_hint) = if is_preview_truncated {
+            if is_fully_returned {
+                // All lines returned, but preview is truncated for display
+                (
+                    format!(
+                        "{}\n(Preview truncated for display. Full content in structured data. End of file reached - {} lines total)",
+                        content.chars().take(2000).collect::<String>(),
+                        total_lines
+                    ),
+                    None
+                )
+            } else {
+                // Partial file, more lines available
+                let remaining = total_lines.saturating_sub(to_line);
+                (
+                    format!(
+                        "{}\n(Preview truncated. {} more lines remaining, {} lines total)",
+                        content.chars().take(2000).collect::<String>(),
+                        remaining,
+                        total_lines
+                    ),
+                    Some(format!(
+                        "To read more, use readContent with fromLine={}",
+                        to_line + 1
+                    )),
+                )
+            }
+        } else if is_fully_returned {
+            (format!("{}\n(End of file reached)", content), None)
         } else {
-            content.clone()
+            (content.clone(), None)
         };
+
+        let mut hints = vec![
+            "Use keywordSimilaritySearch to find specific content".to_string(),
+            format!(
+                "Use deleteContent with contentId='{}' to remove this content",
+                args.content_id
+            ),
+        ];
+
+        if let Some(hint) = next_step_hint {
+            hints.insert(0, hint);
+        }
 
         let hint = SuccessHint::new(
             format!(
                 "Content '{}' (lines {}-{}):\n\n{}",
                 args.content_id, from_line, to_line, content_preview
             ),
-            vec![
-                "Use keywordSimilaritySearch to find specific content".to_string(),
-                format!(
-                    "Use deleteContent with contentId='{}' to remove this content",
-                    args.content_id
-                ),
-            ],
+            hints,
         );
 
         Ok(hint.to_mcp_result_with_data(Some(serde_json::json!({
             "content": content,
-            "lineRange": [from_line, to_line]
+            "lineRange": [from_line, to_line],
+            "totalLines": total_lines,
+            "isComplete": is_fully_returned,
+            "remainingLines": total_lines.saturating_sub(to_line),
+            "suggestedNextRange": if is_fully_returned {
+                serde_json::Value::Null
+            } else {
+                serde_json::json!([to_line + 1, total_lines.min(to_line + 100)])
+            }
         }))))
     }
 
-    pub(crate) async fn handle_search_knowledge(&self, params: Value) -> Result<MCPResult, String> {
+    pub(crate) async fn handle_search_knowledge(
+        &self,
+        params: Value,
+        session_id: &str,
+    ) -> Result<MCPResult, String> {
         let args: KeywordSearchArgs = match serde_json::from_value(params) {
             Ok(args) => args,
             Err(e) => {
@@ -490,12 +584,10 @@ impl ContentStoreServer {
             }
         };
 
-        let session_id = match self.require_active_session_result() {
-            Ok(id) => id,
-            Err(e) => return Ok(MCPResult::error(&e)),
-        };
+        // Use passed session_id
+        // let session_id = ... (removed)
 
-        if let Err(e) = self.ensure_session_store(&session_id).await {
+        if let Err(e) = self.ensure_session_store(session_id).await {
             error!(
                 "Failed to ensure content store for session {session_id} during keyword search: {e}"
             );
@@ -521,22 +613,39 @@ impl ContentStoreServer {
         let ranking_limit = std::cmp::max(top_n, 50);
         let score_threshold = args.options.as_ref().and_then(|opts| opts.threshold);
 
-        let search_engine = self.search_engine.lock().await;
-        let all_results = match search_engine.search_bm25(&args.query, ranking_limit).await {
-            Ok(results) => results,
+        let engine_arc = match self.get_search_engine(session_id).await {
+            Ok(engine) => engine,
             Err(e) => {
                 return Ok(operation_failed_error(
                     "Search content",
-                    &e.to_string(),
+                    &format!("Failed to initialize search: {e}"),
                     vec![
-                        "Verify the search query is valid".to_string(),
-                        "Check if content has been indexed".to_string(),
-                        "Use listContent to see available content".to_string(),
+                        "Check filesystem permissions".to_string(),
+                        "Retry the operation".to_string(),
                     ],
                     ToolGroup::ContentStore,
                 ));
             }
         };
+
+        let search_engine = engine_arc.lock().await;
+
+        let all_results: Vec<search::SearchResult> =
+            match search_engine.search_bm25(&args.query, ranking_limit).await {
+                Ok(results) => results,
+                Err(e) => {
+                    return Ok(operation_failed_error(
+                        "Search content",
+                        &e.to_string(),
+                        vec![
+                            "Verify the search query is valid".to_string(),
+                            "Check if content has been indexed".to_string(),
+                            "Use listContent to see available content".to_string(),
+                        ],
+                        ToolGroup::ContentStore,
+                    ));
+                }
+            };
 
         // Filter results by session_id
         let storage = self.storage.lock().await;
@@ -621,7 +730,11 @@ impl ContentStoreServer {
         }))))
     }
 
-    pub(crate) async fn handle_delete_content(&self, params: Value) -> Result<MCPResult, String> {
+    pub(crate) async fn handle_delete_content(
+        &self,
+        params: Value,
+        session_id: &str,
+    ) -> Result<MCPResult, String> {
         let args: DeleteContentArgs = match serde_json::from_value(params) {
             Ok(args) => args,
             Err(e) => {
@@ -632,16 +745,17 @@ impl ContentStoreServer {
             }
         };
 
+        // Normalize content ID (add "content_" prefix if missing)
+        let normalized_content_id = ContentStoreServer::normalize_content_id(&args.content_id);
+
         // Get current session ID from context
-        let session_id = match self.require_active_session_result() {
-            Ok(id) => id,
-            Err(e) => return Ok(MCPResult::error(&e)),
-        };
+        // Use passed session_id
+        // let session_id = ... (removed)
 
         // Verify the content belongs to the current session
         let content_session_id = {
             let storage = self.storage.lock().await;
-            if let Some(sid) = storage.get_content_session_id(&args.content_id) {
+            if let Some(sid) = storage.get_content_session_id(&normalized_content_id) {
                 sid
             } else {
                 return Ok(not_found_error(
@@ -670,7 +784,7 @@ impl ContentStoreServer {
 
         // Delete from storage
         let mut storage = self.storage.lock().await;
-        if let Err(e) = storage.delete_content(&args.content_id).await {
+        if let Err(e) = storage.delete_content(&normalized_content_id).await {
             return Ok(operation_failed_error(
                 "Delete content",
                 &e.to_string(),
@@ -684,10 +798,17 @@ impl ContentStoreServer {
         }
 
         // Remove from search index
-        let mut search_engine = self.search_engine.lock().await;
-        if let Err(e) = search_engine.remove_chunks(&args.content_id).await {
-            // Log error but don't fail the operation since content is already deleted
-            error!("Failed to remove content from search index: {e}");
+        match self.get_search_engine(session_id).await {
+            Ok(engine_arc) => {
+                let mut search_engine = engine_arc.lock().await;
+                if let Err(e) = search_engine.remove_chunks(&normalized_content_id).await {
+                    // Log error but don't fail the operation since content is already deleted
+                    error!("Failed to remove content from search index: {e}");
+                }
+            }
+            Err(e) => {
+                error!("Failed to get search engine for deletion: {e}");
+            }
         }
 
         let hint = SuccessHint::new(
@@ -737,7 +858,10 @@ mod tests {
             }
         });
 
-        let result = server.handle_save_knowledge(params).await.unwrap();
+        let result = server
+            .handle_save_knowledge(params, "test-session")
+            .await
+            .unwrap();
 
         // Verify response
         assert_eq!(result.is_error, Some(false));
@@ -752,15 +876,18 @@ mod tests {
     async fn test_handle_save_knowledge_missing_session() {
         let (server, _temp) = setup_test_server().await;
 
-        // Don't setup session context
+        // Don't setup session context - server will use default session_id
         let params = serde_json::json!({
             "content": "Test content"
         });
 
-        let result = server.handle_save_knowledge(params).await.unwrap();
+        let result = server
+            .handle_save_knowledge(params, "test-session")
+            .await
+            .unwrap();
 
-        // Should return error about missing session
-        assert_eq!(result.is_error, Some(true));
+        // Should succeed and auto-create store for the session
+        assert_eq!(result.is_error, Some(false));
         assert!(result.content.is_some());
     }
 
@@ -781,7 +908,10 @@ mod tests {
             "fileUrl": "file:///test.txt"
         });
 
-        let result = server.handle_save_knowledge(params).await.unwrap();
+        let result = server
+            .handle_save_knowledge(params, "test-session")
+            .await
+            .unwrap();
 
         // Should return error about ambiguous input
         assert_eq!(result.is_error, Some(true));
@@ -801,7 +931,10 @@ mod tests {
             .unwrap();
 
         let params = serde_json::json!({});
-        let result = server.handle_list_content(params).await.unwrap();
+        let result = server
+            .handle_list_content(params, "test-session")
+            .await
+            .unwrap();
 
         assert_eq!(result.is_error, Some(false));
         let structured_content = result.structured_content.unwrap();
@@ -828,7 +961,10 @@ mod tests {
             }
         });
 
-        let result = server.handle_search_knowledge(params).await.unwrap();
+        let result = server
+            .handle_search_knowledge(params, "test-session")
+            .await
+            .unwrap();
 
         assert_eq!(result.is_error, Some(false));
         let structured_content = result.structured_content.unwrap();
@@ -854,7 +990,10 @@ mod tests {
                 "filename": "delete_test.txt"
             }
         });
-        let add_result = server.handle_save_knowledge(add_params).await.unwrap();
+        let add_result = server
+            .handle_save_knowledge(add_params, "test-session")
+            .await
+            .unwrap();
         let content_id = add_result.structured_content.unwrap()["contentId"]
             .as_str()
             .unwrap()
@@ -866,13 +1005,19 @@ mod tests {
         });
 
         // This would hang if deadlock exists
-        let result = server.handle_delete_content(delete_params).await.unwrap();
+        let result = server
+            .handle_delete_content(delete_params, "test-session")
+            .await
+            .unwrap();
 
         assert_eq!(result.is_error, Some(false));
 
         // Verify deletion
         let list_params = serde_json::json!({});
-        let list_result = server.handle_list_content(list_params).await.unwrap();
+        let list_result = server
+            .handle_list_content(list_params, "test-session")
+            .await
+            .unwrap();
         let total = list_result.structured_content.unwrap()["total"]
             .as_u64()
             .unwrap();

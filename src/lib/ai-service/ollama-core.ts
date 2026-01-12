@@ -415,6 +415,20 @@ export function processChunk(
         }>;
       };
 
+      // DIAGNOSTIC LOGGING: Log keys to see if we are missing anything
+      const messageKeys = Object.keys(message);
+      if (
+        !message.content &&
+        !message.tool_calls &&
+        !message.thinking &&
+        messageKeys.length > 0
+      ) {
+        logger.warn('⚠️ Chunk has message but no known fields', {
+          keys: messageKeys,
+          rawMessage: JSON.stringify(message).substring(0, 200),
+        });
+      }
+
       if (message.content && typeof message.content === 'string') {
         // Ollama may include thinking in content field wrapped in <think> tags
         // Extract thinking and content separately
@@ -603,7 +617,9 @@ export function processChunk(
       return result;
     }
 
-    logger.debug('Chunk has no content, thinking, tool_calls or usage');
+    logger.debug('Chunk has no content, thinking, tool_calls or usage', {
+      rawChunk: JSON.stringify(chunk),
+    });
     return null;
   } catch (error: unknown) {
     logger.error('Failed to process chunk', { error, chunk });

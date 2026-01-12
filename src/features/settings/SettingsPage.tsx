@@ -43,8 +43,12 @@ import {
 import { toast } from 'sonner';
 import { MCPServerManagement } from './MCPServerManagement';
 import { getLogger } from '@/lib/logger';
-import { useSessionContext } from '@/context/SessionContext';
-import { LocalDatabase } from '@/lib/db/service';
+import { LocalDatabase, dbUtils } from '@/lib/db/service';
+import {
+  factoryReset as backendFactoryReset,
+  clearAllSessions as backendClearAllSessions,
+} from '@/lib/backend/sessions';
+import { useDebounce } from '@/hooks/useDebounce';
 
 const logger = getLogger('SettingsPage');
 
@@ -69,17 +73,12 @@ function ProviderCardBase({
   const [localApiKey, setLocalApiKey] = useState(apiKey || '');
   const [localBaseUrl, setLocalBaseUrl] = useState(baseUrl || '');
 
-  // Debounce local edits into pending changes to avoid frequent context updates
-  const debounceRef = useRef<number | null>(null);
-  const schedulePending = useCallback(
+  // Use debounce hook for pending changes
+  const { debounced: schedulePending } = useDebounce(
     (patch: Partial<ServiceConfig>) => {
-      if (debounceRef.current) window.clearTimeout(debounceRef.current);
-      // small debounce to group typing
-      debounceRef.current = window.setTimeout(() => {
-        onPendingChange(provider, patch);
-      }, 350) as unknown as number;
+      onPendingChange(provider, patch);
     },
-    [onPendingChange, provider],
+    350,
   );
 
   return (
@@ -108,7 +107,8 @@ function ProviderCardBase({
           />
         </div>
 
-        {provider === AIServiceProvider.Ollama && (
+        {(provider === AIServiceProvider.Ollama ||
+          provider === AIServiceProvider.OpenAI) && (
           <div className="min-w-0">
             <label className="block text-muted-foreground mb-2 text-sm font-medium">
               Base URL
@@ -163,7 +163,6 @@ export default function SettingsPage() {
   const [pendingCount, setPendingCount] = useState(0);
   const [isDeleting, setIsDeleting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const sessionCtx = useSessionContext();
 
   const [isResetting, setIsResetting] = useState(false);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
@@ -172,12 +171,20 @@ export default function SettingsPage() {
     setResetConfirmOpen(false);
     setIsResetting(true);
     try {
-      // 1. Perform factory reset via context (handles backend + frontend cleanup)
-      await sessionCtx.factoryReset();
+      // 1. Clear ALL frontend data
+      try {
+        await dbUtils.clearAllObjects();
+        await dbUtils.clearAllSessions();
+        await dbUtils.clearAllAssistants();
+        await dbUtils.clearAllMCPServers();
+        await LocalDatabase.getInstance().playbooks.clear();
+      } catch (e) {
+        logger.error('Failed to clear frontend DB during factory reset', e);
+        // Continue to backend reset
+      }
 
-      // 2. Restore defaults (optional, backend might have cleared them but ensuring defaults exist is good)
-      // Actually, factoryReset in service clears Objects store, so we might need to re-seed if we want to stay slightly functional before reload
-      // But reloading immediately is safer.
+      // 2. Perform factory reset on backend
+      await backendFactoryReset();
 
       // 3. Restore defaults
       await LocalDatabase.getInstance().ensureDefaultAssistants();
@@ -870,13 +877,23 @@ export default function SettingsPage() {
                               setConfirmOpen(false);
                               setIsDeleting(true);
                               try {
-                                await sessionCtx.clearAllSessions();
+                                // 1. Clear frontend sessions
+                                await dbUtils.clearAllSessions();
+
+                                // 2. Clear backend sessions
+                                await backendClearAllSessions();
+
                                 toast.success(
                                   t(
                                     'settings.dataReset.success',
                                     'All sessions, messages and workspace files have been successfully deleted.',
                                   ),
                                 );
+
+                                // Reload to ensure UI state sync (simplest path for now)
+                                setTimeout(() => {
+                                  window.location.reload();
+                                }, 1000);
                               } catch (e) {
                                 logger.error('Failed to clear sessions', e);
                                 toast.error(

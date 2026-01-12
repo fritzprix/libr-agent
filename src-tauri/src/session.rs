@@ -1,4 +1,3 @@
-use crate::services::SecureFileManager;
 use log::{error, info, warn};
 use std::collections::HashMap;
 use std::fs;
@@ -38,7 +37,6 @@ where
 
 #[derive(Clone, Debug)]
 pub struct SessionManager {
-    current_session: Arc<RwLock<Option<String>>>,
     base_data_dir: PathBuf,
     workspace_pool: Arc<RwLock<HashMap<String, SessionWorkspaceInfo>>>,
     template_workspace: Arc<RwLock<Option<PathBuf>>>,
@@ -86,7 +84,6 @@ impl SessionManager {
         info!("SessionManager initialized with base directory: {base_data_dir:?}");
 
         Ok(Self {
-            current_session: Arc::new(RwLock::new(None)),
             base_data_dir,
             workspace_pool: Arc::new(RwLock::new(HashMap::new())),
             template_workspace: Arc::new(RwLock::new(Some(template_workspace))),
@@ -129,187 +126,7 @@ echo "Available tools: python3, typescript/deno, shell commands"
         Ok(())
     }
 
-    pub fn set_session(&self, session_id: String) -> Result<(), String> {
-        info!("Setting session to: {session_id}");
-
-        // Check if session already exists in pool
-        let workspace_info = {
-            let pool = self
-                .workspace_pool
-                .read()
-                .map_err(|e| format!("Failed to read workspace pool: {e}"))?;
-            pool.get(&session_id).cloned()
-        };
-
-        let _session_dir = if let Some(mut info) = workspace_info {
-            // Update last accessed time
-            info.last_accessed = Instant::now();
-            {
-                let mut pool = self
-                    .workspace_pool
-                    .write()
-                    .map_err(|e| format!("Failed to write workspace pool: {e}"))?;
-                pool.insert(session_id.clone(), info.clone());
-            }
-            info.workspace_path
-        } else {
-            // Create new session workspace quickly
-            self.create_session_workspace_fast(&session_id)?
-        };
-
-        // Update current session
-        {
-            let mut current = self
-                .current_session
-                .write()
-                .map_err(|e| format!("Failed to acquire write lock: {e}"))?;
-            *current = Some(session_id.clone());
-        }
-
-        info!("Session set successfully: {session_id}");
-        Ok(())
-    }
-
     /// Fast session creation using template workspace
-    fn create_session_workspace_fast(&self, session_id: &str) -> Result<PathBuf, String> {
-        let session_dir = self.base_data_dir.join("workspaces").join(session_id);
-
-        // Create directory structure first
-        fs::create_dir_all(&session_dir)
-            .map_err(|e| format!("Failed to create session directory '{session_id}': {e}"))?;
-
-        // Copy from template if available (fast copy-on-write approach)
-        let template_path_option = {
-            if let Ok(template_lock) = self.template_workspace.read() {
-                template_lock.as_ref().cloned()
-            } else {
-                None
-            }
-        };
-
-        if let Some(template_path) = template_path_option {
-            if template_path.exists() {
-                self.copy_template_to_session(&template_path, &session_dir)?;
-            }
-        }
-
-        // Add to workspace pool
-        let workspace_info = SessionWorkspaceInfo {
-            session_id: session_id.to_string(),
-            workspace_path: session_dir.clone(),
-            created_at: Instant::now(),
-            last_accessed: Instant::now(),
-            is_template: false,
-        };
-
-        {
-            let mut pool = self
-                .workspace_pool
-                .write()
-                .map_err(|e| format!("Failed to write workspace pool: {e}"))?;
-            pool.insert(session_id.to_string(), workspace_info);
-        }
-
-        Ok(session_dir)
-    }
-
-    /// Efficiently copy template to new session workspace
-    fn copy_template_to_session(
-        &self,
-        template_path: &Path,
-        session_dir: &Path,
-    ) -> Result<(), String> {
-        use std::fs;
-
-        // Copy essential directories and files
-        let items_to_copy = vec!["tmp", "projects", "downloads", "scripts", "welcome.sh"];
-
-        for item in items_to_copy {
-            let src = template_path.join(item);
-            let dst = session_dir.join(item);
-
-            if src.exists() {
-                if src.is_dir() {
-                    // For directories, create and copy contents
-                    fs::create_dir_all(&dst)
-                        .map_err(|e| format!("Failed to create directory {item}: {e}"))?;
-
-                    // Copy directory contents recursively but efficiently
-                    self.copy_dir_contents(&src, &dst)?;
-                } else {
-                    // For files, simple copy
-                    fs::copy(&src, &dst).map_err(|e| format!("Failed to copy file {item}: {e}"))?;
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Efficiently copy directory contents
-    #[allow(clippy::only_used_in_recursion)]
-    fn copy_dir_contents(&self, src: &Path, dst: &Path) -> Result<(), String> {
-        use std::fs;
-
-        for entry in fs::read_dir(src).map_err(|e| format!("Failed to read directory: {e}"))? {
-            let entry = entry.map_err(|e| format!("Failed to read entry: {e}"))?;
-            let src_path = entry.path();
-            let dst_path = dst.join(entry.file_name());
-
-            if src_path.is_dir() {
-                fs::create_dir_all(&dst_path)
-                    .map_err(|e| format!("Failed to create directory: {e}"))?;
-                self.copy_dir_contents(&src_path, &dst_path)?;
-            } else {
-                fs::copy(&src_path, &dst_path).map_err(|e| format!("Failed to copy file: {e}"))?;
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Async version of session switching (non-blocking)
-    pub async fn set_session_async(&self, session_id: String) -> Result<(), String> {
-        info!("Setting session asynchronously to: {session_id}");
-
-        // Check if session already exists in pool
-        let workspace_info = {
-            let pool = self
-                .workspace_pool
-                .read()
-                .map_err(|e| format!("Failed to read workspace pool: {e}"))?;
-            pool.get(&session_id).cloned()
-        };
-
-        let _session_dir = if let Some(mut info) = workspace_info {
-            // Update last accessed time
-            info.last_accessed = Instant::now();
-            {
-                let mut pool = self
-                    .workspace_pool
-                    .write()
-                    .map_err(|e| format!("Failed to write workspace pool: {e}"))?;
-                pool.insert(session_id.clone(), info.clone());
-            }
-            info.workspace_path
-        } else {
-            // Create new session workspace asynchronously
-            self.create_session_workspace_async(&session_id).await?
-        };
-
-        // Update current session
-        {
-            let mut current = self
-                .current_session
-                .write()
-                .map_err(|e| format!("Failed to acquire write lock: {e}"))?;
-            *current = Some(session_id.clone());
-        }
-
-        info!("Session set asynchronously: {session_id}");
-        Ok(())
-    }
-
     /// Async session workspace creation
     async fn create_session_workspace_async(&self, session_id: &str) -> Result<PathBuf, String> {
         let session_dir = self.base_data_dir.join("workspaces").join(session_id);
@@ -384,37 +201,6 @@ echo "Available tools: python3, typescript/deno, shell commands"
         }
 
         Ok(())
-    }
-
-    pub fn get_current_session(&self) -> Option<String> {
-        match self.current_session.read() {
-            Ok(session) => session.clone(),
-            Err(e) => {
-                error!("Failed to read current session: {e}");
-                None
-            }
-        }
-    }
-
-    pub fn get_session_workspace_dir(&self) -> PathBuf {
-        let session_id = self
-            .get_current_session()
-            .unwrap_or_else(|| "default".to_string());
-
-        let workspace_dir = self.base_data_dir.join("workspaces").join(session_id);
-
-        // Ensure directory exists
-        if let Err(e) = fs::create_dir_all(&workspace_dir) {
-            warn!("Failed to create workspace directory {workspace_dir:?}: {e}");
-            // Fallback to default workspace
-            let default_dir = self.base_data_dir.join("workspaces").join("default");
-            if let Err(e) = fs::create_dir_all(&default_dir) {
-                error!("Failed to create default workspace: {e}");
-            }
-            return default_dir;
-        }
-
-        workspace_dir
     }
 
     pub fn get_session_workspace_dir_by_id(&self, session_id: &str) -> PathBuf {
@@ -675,7 +461,6 @@ echo "Available tools: python3, typescript/deno, shell commands"
             total_sessions,
             active_sessions,
             pool_sessions,
-            current_session: self.get_current_session(),
         })
     }
 }
@@ -685,15 +470,6 @@ pub struct SessionStats {
     pub total_sessions: usize,
     pub active_sessions: usize,
     pub pool_sessions: usize,
-    pub current_session: Option<String>,
-}
-
-impl SessionManager {
-    /// Get a SecureFileManager instance configured for the current session's workspace
-    pub fn get_file_manager(&self) -> Arc<SecureFileManager> {
-        let workspace_dir = self.get_session_workspace_dir();
-        Arc::new(SecureFileManager::new_with_base_dir(workspace_dir))
-    }
 }
 
 pub fn get_session_manager() -> Result<&'static SessionManager, String> {
@@ -708,7 +484,6 @@ pub fn get_session_manager() -> Result<&'static SessionManager, String> {
             let _ = std::fs::create_dir_all(temp_base.join("config"));
 
             SessionManager {
-                current_session: Arc::new(RwLock::new(None)),
                 base_data_dir: temp_base,
                 workspace_pool: Arc::new(RwLock::new(HashMap::new())),
                 template_workspace: Arc::new(RwLock::new(None)),
@@ -716,4 +491,67 @@ pub fn get_session_manager() -> Result<&'static SessionManager, String> {
         })
     });
     Ok(SESSION_MANAGER.get().unwrap())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_session_isolation() {
+        // Setup temp dir for base
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let base_path = temp_dir.path().to_path_buf();
+
+        // Initialize SessionManager manually
+        // Initialize SessionManager manually
+        let session_manager =
+            SessionManager::new_with_base_dir(base_path.clone()).expect("Failed to init");
+
+        // Get two distinct session paths
+        let session_id_a = "session_a";
+        let session_id_b = "session_b";
+        let path_a = session_manager.get_session_workspace_dir_by_id(session_id_a);
+        let path_b = session_manager.get_session_workspace_dir_by_id(session_id_b);
+
+        // Verify paths are different and correctly structured
+        assert_ne!(path_a, path_b);
+        // Note: Canonical paths might differ on some OS, but structure is what matters
+        assert!(path_a.to_string_lossy().contains("workspaces/session_a"));
+        assert!(path_b.to_string_lossy().contains("workspaces/session_b"));
+
+        // Create a file in Session A
+        let file_a = path_a.join("test.txt");
+        fs::write(&file_a, "Hello A").expect("Failed to write file A");
+
+        // Verify it exists in A but NOT in B path
+        assert!(file_a.exists());
+        let file_b_location = path_b.join("test.txt");
+        assert!(!file_b_location.exists());
+
+        // Create file in Session B
+        let file_b = path_b.join("other.txt");
+        fs::write(&file_b, "Hello B").expect("Failed to write file B");
+
+        assert!(file_b.exists());
+        let file_a_location = path_a.join("other.txt");
+        assert!(!file_a_location.exists());
+    }
+
+    #[test]
+    fn test_default_fallback_session_path() {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let base_path = temp_dir.path().to_path_buf();
+
+        let session_manager =
+            SessionManager::new_with_base_dir(base_path.clone()).expect("Failed to init");
+
+        // If something requests "default" explicitly
+        let path_default = session_manager.get_session_workspace_dir_by_id("default");
+        assert!(path_default
+            .to_string_lossy()
+            .contains("workspaces/default"));
+        assert!(path_default.exists());
+    }
 }

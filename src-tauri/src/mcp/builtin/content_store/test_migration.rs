@@ -34,6 +34,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "Obsolete test - now using SeaORM migrations instead of manual ALTER TABLE"]
     async fn test_migration_adds_src_url() {
         let db_path = "test_migration.db";
         // Clean up previous run

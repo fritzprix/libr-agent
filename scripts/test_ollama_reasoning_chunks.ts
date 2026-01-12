@@ -8,6 +8,41 @@ import { Ollama } from 'ollama/browser';
 const DEFAULT_HOST = 'http://127.0.0.1:11434';
 const TEST_MODEL = 'qwen3:8b';
 
+/**
+ * Interface for Ollama chat message in streaming response.
+ */
+interface OllamaChunkMessage {
+  role?: string;
+  content?: string;
+  thinking?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Interface for Ollama streaming response chunk.
+ */
+interface OllamaStreamChunk {
+  message?: OllamaChunkMessage;
+  done?: boolean;
+  model?: string;
+  created_at?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Type guard to check if an object is a valid Ollama stream chunk.
+ */
+function isOllamaStreamChunk(obj: unknown): obj is OllamaStreamChunk {
+  return (
+    typeof obj === 'object' &&
+    obj !== null &&
+    (!('message' in obj) ||
+      obj.message === null ||
+      obj.message === undefined ||
+      typeof obj.message === 'object')
+  );
+}
+
 async function testReasoningChunks() {
   console.log('🧪 Testing Ollama Reasoning Mode Chunks');
   console.log('═'.repeat(60));
@@ -33,12 +68,13 @@ async function testReasoningChunks() {
     for await (const chunk of stream) {
       chunkIndex++;
 
-      const hasMessage =
-        chunk && typeof chunk === 'object' && 'message' in chunk;
-      const message =
-        hasMessage && chunk.message && typeof chunk.message === 'object'
-          ? (chunk.message as unknown as Record<string, unknown>)
-          : null;
+      // Type-safe chunk validation
+      if (!isOllamaStreamChunk(chunk)) {
+        console.warn(`⚠️ Chunk ${chunkIndex}: Invalid chunk structure`);
+        continue;
+      }
+
+      const message = chunk.message ?? null;
       const hasContent = message && 'content' in message;
       const hasThinking = message && 'thinking' in message;
       const contentValue =

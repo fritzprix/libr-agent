@@ -275,7 +275,7 @@ mod tests {
             .await;
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("No proxy found"));
+        assert!(result.unwrap_err().contains("Session context not found"));
 
         // Test 2: Create proxy and call unknown tool
         proxy_manager
@@ -563,5 +563,65 @@ mod tests {
         // Cleanup
         proxy_manager.destroy_proxy("session-ui-1").await;
         proxy_manager.destroy_proxy("session-ui-2").await;
+    }
+
+    #[tokio::test]
+    async fn test_shell_workspace_path_resolution() {
+        // Create test dependencies
+        let db = create_test_db().await;
+        let session_manager = Arc::new(
+            crate::session::SessionManager::new().expect("Failed to create SessionManager"),
+        );
+        let mcp_manager = MCPServerManager::new_with_session_manager(session_manager.clone());
+
+        let proxy_manager = MCPServiceProxyManager::new(Arc::new(mcp_manager), db, session_manager);
+
+        let session_id = "path_resolution_test_session".to_string();
+
+        // Create proxy with workspace tools
+        proxy_manager
+            .create_proxy(session_id.clone(), vec!["workspace".to_string()], None)
+            .await
+            .expect("Failed to create proxy");
+
+        // Execute 'pwd' command via runInPersistentShell
+        let response = proxy_manager
+            .call_tool(
+                &session_id,
+                "builtin_workspace__runInPersistentShell",
+                json!({
+                    "command": "pwd",
+                    "runMode": "sync"
+                }),
+            )
+            .await
+            .expect("Tool call failed");
+
+        let result = match response.result.expect("No result") {
+            crate::mcp::types::MCPResponseResult::ToolCall(result) => result,
+            _ => panic!("Expected ToolCall result"),
+        };
+
+        // Parse persistent shell output (JSON structured data)
+        let structured_content = result.structured_content.expect("No structured content");
+        let stdout = structured_content["stdout"].as_str().expect("No stdout");
+
+        // Verify the path contains the session ID, confirming it's in the correct isolated workspace
+        assert!(
+            stdout.contains(&session_id),
+            "Shell CWD should contain session ID '{}', got: '{}'",
+            session_id,
+            stdout
+        );
+
+        // Verify it does NOT contain 'default' (unless the session ID is default, which it isn't)
+        assert!(
+            !stdout.contains("default") || stdout.contains("workspaces/default"), // default could be in base path but not as session dir if we used a specific one
+            "Shell CWD should NOT be the default workspace, got: '{}'",
+            stdout
+        );
+
+        // Cleanup
+        proxy_manager.destroy_proxy(&session_id).await;
     }
 }

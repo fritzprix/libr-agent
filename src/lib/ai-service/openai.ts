@@ -28,7 +28,7 @@ export class OpenAIService extends BaseAIService {
     super(apiKey, config);
     this.openai = new OpenAI({
       apiKey: this.apiKey,
-      baseURL: config?.baseUrl,
+      baseURL: config?.baseUrl || undefined,
       dangerouslyAllowBrowser: true,
     });
   }

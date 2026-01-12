@@ -38,7 +38,7 @@ impl KnowledgeServer {
     }
 
     /// Save knowledge to the database
-    async fn save_knowledge(&self, args: Value) -> Result<MCPResult, String> {
+    async fn save_knowledge(&self, args: Value, session_id: &str) -> Result<MCPResult, String> {
         let title = match args.get("title").and_then(|v| v.as_str()) {
             Some(v) => v,
             Option::None => return Ok(missing_param_error("title", ToolGroup::Knowledge)),
@@ -94,7 +94,7 @@ impl KnowledgeServer {
 
         let model = knowledge::ActiveModel {
             id: NotSet,
-            session_id: Set(self.session_id.clone()),
+            session_id: Set(session_id.to_string()),
             title: Set(title.to_string()),
             content: Set(content.to_string()),
             source: Set(source.clone()),
@@ -154,7 +154,7 @@ impl KnowledgeServer {
     }
 
     /// Read a knowledge entry by ID
-    async fn read_knowledge(&self, args: Value) -> Result<MCPResult, String> {
+    async fn read_knowledge(&self, args: Value, session_id: &str) -> Result<MCPResult, String> {
         let id = match args.get("id").and_then(|v| v.as_i64()) {
             Some(v) => v,
             Option::None => return Ok(missing_param_error("id", ToolGroup::Knowledge)),
@@ -163,7 +163,7 @@ impl KnowledgeServer {
         let db = self.get_db();
         let result = KnowledgeEntity::find()
             .filter(knowledge::Column::Id.eq(id))
-            .filter(knowledge::Column::SessionId.eq(&self.session_id))
+            .filter(knowledge::Column::SessionId.eq(session_id))
             .one(db)
             .await;
 
@@ -225,7 +225,7 @@ impl KnowledgeServer {
     }
 
     /// Delete a knowledge entry by ID
-    async fn delete_knowledge(&self, args: Value) -> Result<MCPResult, String> {
+    async fn delete_knowledge(&self, args: Value, session_id: &str) -> Result<MCPResult, String> {
         let id = match args.get("id").and_then(|v| v.as_i64()) {
             Some(v) => v,
             Option::None => return Ok(missing_param_error("id", ToolGroup::Knowledge)),
@@ -234,7 +234,7 @@ impl KnowledgeServer {
         let db = self.get_db();
         let result = KnowledgeEntity::delete_many()
             .filter(knowledge::Column::Id.eq(id))
-            .filter(knowledge::Column::SessionId.eq(&self.session_id))
+            .filter(knowledge::Column::SessionId.eq(session_id))
             .exec(db)
             .await;
 
@@ -272,7 +272,7 @@ impl KnowledgeServer {
     }
 
     /// Search knowledge using FTS5 full-text search
-    async fn search_knowledge(&self, args: Value) -> Result<MCPResult, String> {
+    async fn search_knowledge(&self, args: Value, session_id: &str) -> Result<MCPResult, String> {
         let query_param = args.get("query").and_then(|v| v.as_str());
         let tags_param = args.get("tags").and_then(|v| v.as_array());
         let source_param = args.get("source").and_then(|v| v.as_str());
@@ -330,7 +330,7 @@ impl KnowledgeServer {
 
         sql.push_str(" LIMIT ?");
 
-        let mut values = vec![self.session_id.clone().into()];
+        let mut values = vec![session_id.to_string().into()];
 
         if let Some(q) = query_param {
             values.push(q.into());
@@ -442,7 +442,7 @@ impl KnowledgeServer {
     }
 
     /// List all knowledge entries for this session
-    async fn list_knowledge(&self, args: Value) -> Result<MCPResult, String> {
+    async fn list_knowledge(&self, args: Value, session_id: &str) -> Result<MCPResult, String> {
         let limit = args
             .get("limit")
             .and_then(|v| v.as_i64())
@@ -453,7 +453,7 @@ impl KnowledgeServer {
 
         let db = self.get_db();
         let result = KnowledgeEntity::find()
-            .filter(knowledge::Column::SessionId.eq(&self.session_id))
+            .filter(knowledge::Column::SessionId.eq(session_id))
             .order_by_desc(knowledge::Column::UpdatedAt)
             .limit(limit)
             .offset(offset)
@@ -617,21 +617,36 @@ impl BuiltinMCPServer for KnowledgeServer {
         }
     }
 
-    async fn call_tool(&self, tool_name: &str, args: Value) -> Result<MCPResult, String> {
+    async fn call_tool(
+        &self,
+        tool_name: &str,
+        args: Value,
+        _session_id: Option<String>,
+    ) -> Result<MCPResult, String> {
         log::debug!(
             "Knowledge server tool called: {} for session: {}",
             tool_name,
-            self.session_id
+            _session_id.as_deref().unwrap_or(&self.session_id)
         );
 
+        let target_session_id = _session_id.unwrap_or_else(|| self.session_id.clone());
+
         match tool_name {
-            "saveKnowledge" | "builtin_knowledge__saveKnowledge" => self.save_knowledge(args).await,
-            "readKnowledge" | "builtin_knowledge__readKnowledge" => self.read_knowledge(args).await,
-            "deleteKnowledge" | "builtin_knowledge__deleteKnowledge" => self.delete_knowledge(args).await,
-            "searchKnowledge" | "builtin_knowledge__searchKnowledge" => {
-                self.search_knowledge(args).await
+            "saveKnowledge" | "builtin_knowledge__saveKnowledge" => {
+                self.save_knowledge(args, &target_session_id).await
             }
-            "listKnowledge" | "builtin_knowledge__listKnowledge" => self.list_knowledge(args).await,
+            "readKnowledge" | "builtin_knowledge__readKnowledge" => {
+                self.read_knowledge(args, &target_session_id).await
+            }
+            "deleteKnowledge" | "builtin_knowledge__deleteKnowledge" => {
+                self.delete_knowledge(args, &target_session_id).await
+            }
+            "searchKnowledge" | "builtin_knowledge__searchKnowledge" => {
+                self.search_knowledge(args, &target_session_id).await
+            }
+            "listKnowledge" | "builtin_knowledge__listKnowledge" => {
+                self.list_knowledge(args, &target_session_id).await
+            }
             _ => Err(format!(
                 "Unknown tool: {}. Available tools: saveKnowledge, readKnowledge, deleteKnowledge, searchKnowledge, listKnowledge",
                 tool_name
@@ -857,6 +872,7 @@ mod tests {
                     "content": "Rust uses an ownership system to manage memory safety",
                     "tags": ["rust", "programming"]
                 }),
+                None,
             )
             .await
             .expect("Save should succeed");
@@ -865,7 +881,7 @@ mod tests {
 
         // Search for it
         let result = server
-            .call_tool("searchKnowledge", json!({"query": "ownership"}))
+            .call_tool("searchKnowledge", json!({"query": "ownership"}), None)
             .await
             .expect("Search should succeed");
 
@@ -890,6 +906,7 @@ mod tests {
                         "title": format!("Entry {}", i),
                         "content": format!("Content {}", i)
                     }),
+                    None,
                 )
                 .await
                 .expect("Save should succeed");
@@ -897,7 +914,7 @@ mod tests {
 
         // List all
         let result = server
-            .call_tool("listKnowledge", json!({}))
+            .call_tool("listKnowledge", json!({}), None)
             .await
             .expect("List should succeed");
 
@@ -923,13 +940,14 @@ mod tests {
             .call_tool(
                 "saveKnowledge",
                 json!({"title": "Session 1 Data", "content": "Private"}),
+                None,
             )
             .await
             .expect("Save should succeed");
 
         // List in session 2 - should be empty
         let result = server2
-            .call_tool("listKnowledge", json!({}))
+            .call_tool("listKnowledge", json!({}), None)
             .await
             .expect("List should succeed");
 
@@ -954,6 +972,7 @@ mod tests {
                     "source": "http://example.com/doc-a",
                     "tags": ["test"]
                 }),
+                None,
             )
             .await
             .expect("Save should succeed");
@@ -965,7 +984,7 @@ mod tests {
 
         // Search for it by keyword
         let result = server
-            .call_tool("searchKnowledge", json!({"query": "pineapple"}))
+            .call_tool("searchKnowledge", json!({"query": "pineapple"}), None)
             .await
             .expect("Search should succeed");
 
@@ -987,6 +1006,7 @@ mod tests {
             .call_tool(
                 "searchKnowledge",
                 json!({"source": "http://example.com/doc-a"}),
+                None,
             )
             .await
             .expect("Source search should succeed");
@@ -999,6 +1019,7 @@ mod tests {
             .call_tool(
                 "searchKnowledge",
                 json!({"source": "http://example.com/wrong-doc"}),
+                None,
             )
             .await
             .expect("Source search should succeed");

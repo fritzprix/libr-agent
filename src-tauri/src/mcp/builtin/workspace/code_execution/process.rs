@@ -9,6 +9,145 @@ use tracing::{error, info, warn};
 
 use crate::mcp::builtin::workspace::terminal_manager;
 
+#[cfg(windows)]
+use windows_sys::Win32::Globalization::{GetACP, MultiByteToWideChar};
+
+fn looks_like_utf16le(bytes: &[u8]) -> bool {
+    if bytes.len() < 4 || !bytes.len().is_multiple_of(2) {
+        return false;
+    }
+
+    // Heuristic: many NUL bytes in odd indices.
+    let sample_len = bytes.len().min(200);
+    let mut nul_count = 0;
+    let mut checked = 0;
+
+    for i in (1..sample_len).step_by(2) {
+        checked += 1;
+        if bytes[i] == 0 {
+            nul_count += 1;
+        }
+    }
+
+    checked > 0 && (nul_count * 4 >= checked * 3)
+}
+
+fn strip_ansi_escapes(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch != '\u{1b}' {
+            out.push(ch);
+            continue;
+        }
+
+        match chars.next() {
+            // CSI: ESC [ ... <final byte>
+            Some('[') => {
+                for next in chars.by_ref() {
+                    let code = next as u32;
+                    if (0x40..=0x7E).contains(&code) {
+                        break;
+                    }
+                }
+            }
+            // OSC: ESC ] ... BEL or ESC \
+            Some(']') => {
+                while let Some(next) = chars.next() {
+                    if next == '\u{7}' {
+                        break;
+                    }
+
+                    if next == '\u{1b}' {
+                        if let Some('\\') = chars.peek().copied() {
+                            let _ = chars.next();
+                            break;
+                        }
+                    }
+                }
+            }
+            // Other escapes: skip one char if present
+            Some(_) | None => {}
+        }
+    }
+
+    out
+}
+
+#[cfg(windows)]
+fn decode_process_output(bytes: &[u8]) -> String {
+    if bytes.is_empty() {
+        return String::new();
+    }
+
+    // UTF-8 BOM
+    if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        return String::from_utf8_lossy(&bytes[3..]).to_string();
+    }
+
+    // UTF-16LE (common for some Windows tools)
+    if looks_like_utf16le(bytes) {
+        let start = if bytes.starts_with(&[0xFF, 0xFE]) {
+            2
+        } else {
+            0
+        };
+        let u16_len = (bytes.len() - start) / 2;
+        let mut wide = Vec::with_capacity(u16_len);
+        for chunk in bytes[start..].chunks_exact(2) {
+            wide.push(u16::from_le_bytes([chunk[0], chunk[1]]));
+        }
+        return String::from_utf16_lossy(&wide);
+    }
+
+    // UTF-8 fast path
+    if let Ok(text) = std::str::from_utf8(bytes) {
+        return text.to_string();
+    }
+
+    // Fallback: decode using the system ANSI code page (e.g., CP949 on Korean Windows)
+    let code_page = unsafe { GetACP() };
+    let required = unsafe {
+        MultiByteToWideChar(
+            code_page,
+            0,
+            bytes.as_ptr(),
+            bytes.len() as i32,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+
+    if required <= 0 {
+        return String::from_utf8_lossy(bytes).to_string();
+    }
+
+    let mut wide: Vec<u16> = vec![0; required as usize];
+    let converted = unsafe {
+        MultiByteToWideChar(
+            code_page,
+            0,
+            bytes.as_ptr(),
+            bytes.len() as i32,
+            wide.as_mut_ptr(),
+            required,
+        )
+    };
+
+    if converted <= 0 {
+        return String::from_utf8_lossy(bytes).to_string();
+    }
+
+    wide.truncate(converted as usize);
+    String::from_utf16_lossy(&wide)
+}
+
+#[cfg(not(windows))]
+fn decode_process_output(bytes: &[u8]) -> String {
+    String::from_utf8_lossy(bytes).to_string()
+}
+
 /// Spawn process and stream stdout/stderr to files (common logic for sync/async)
 /// Returns (pid, exit_code, stdout_content, stderr_content)
 /// Respects cancellation token for graceful shutdown
@@ -238,12 +377,11 @@ pub async fn spawn_and_stream_to_files(
     tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
     // Read output files
-    // Read output files using lossy UTF-8 conversion to handle non-UTF8 output (e.g. CP949)
     let stdout_bytes = tokio::fs::read(&stdout_path).await.unwrap_or_default();
-    let stdout_content = String::from_utf8_lossy(&stdout_bytes).to_string();
+    let stdout_content = strip_ansi_escapes(&decode_process_output(&stdout_bytes));
 
     let stderr_bytes = tokio::fs::read(&stderr_path).await.unwrap_or_default();
-    let stderr_content = String::from_utf8_lossy(&stderr_bytes).to_string();
+    let stderr_content = strip_ansi_escapes(&decode_process_output(&stderr_bytes));
 
     info!(
         "Process {} completed with exit code {:?}",
@@ -352,7 +490,8 @@ pub async fn spawn_and_stream_hybrid(
                             line_result = lines.next_line() => {
                                 match line_result {
                                     Ok(Some(line)) => {
-                                        let line_bytes = line.len() as u64 + 1; // +1 for newline
+                                        let cleaned_line = strip_ansi_escapes(&line);
+                                        let line_bytes = cleaned_line.len() as u64 + 1; // +1 for newline
                                         total_bytes += line_bytes;
 
                                         if total_bytes > max_output_size {
@@ -362,10 +501,10 @@ pub async fn spawn_and_stream_hybrid(
                                         }
 
                                         // 1. Send to broadcast channel + buffer
-                                        streaming_clone.push_stdout(line.clone()).await;
+                                        streaming_clone.push_stdout(cleaned_line.clone()).await;
 
                                         // 2. Write to file with periodic flush
-                                        if writer.write_all(line.as_bytes()).await.is_ok() {
+                                        if writer.write_all(cleaned_line.as_bytes()).await.is_ok() {
                                             let _ = writer.write_all(b"\n").await;
                                             lines_since_flush += 1;
                                             if lines_since_flush >= FLUSH_INTERVAL {
@@ -427,7 +566,8 @@ pub async fn spawn_and_stream_hybrid(
                             line_result = lines.next_line() => {
                                 match line_result {
                                     Ok(Some(line)) => {
-                                        let line_bytes = line.len() as u64 + 1;
+                                        let cleaned_line = strip_ansi_escapes(&line);
+                                        let line_bytes = cleaned_line.len() as u64 + 1;
                                         total_bytes += line_bytes;
 
                                         if total_bytes > max_output_size {
@@ -437,10 +577,10 @@ pub async fn spawn_and_stream_hybrid(
                                         }
 
                                         // 1. Send to broadcast channel + buffer
-                                        streaming_clone.push_stderr(line.clone()).await;
+                                        streaming_clone.push_stderr(cleaned_line.clone()).await;
 
                                         // 2. Write to file with periodic flush
-                                        if writer.write_all(line.as_bytes()).await.is_ok() {
+                                        if writer.write_all(cleaned_line.as_bytes()).await.is_ok() {
                                             let _ = writer.write_all(b"\n").await;
                                             lines_since_flush += 1;
                                             if lines_since_flush >= FLUSH_INTERVAL {

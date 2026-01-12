@@ -345,6 +345,182 @@ The system implements a "Dual-Track" architecture to support advanced agentic wo
 4.  **Service Context Pattern:**
     - Tools can dynamically inject context (e.g., browser state, current time) into the system prompt via the `get_service_context` trait method.
 
+### MCP Tool Response Design Principles
+
+**🚨 CRITICAL: What AI Agents Actually See vs. What They Don't**
+
+This is **essential knowledge** for implementing any builtin tool or MCP server integration.
+
+**The MCPResult Structure (LibrAgent-Specific):**
+
+```rust
+pub struct MCPResult {
+    content: Vec<MCPContent>,           // Standard MCP: Agents READ this ✅
+    structured_content: Option<Value>,  // LibrAgent extension: UI only, agents NEVER see ❌
+    is_error: Option<bool>,             // Standard MCP
+}
+```
+
+**Critical Context:** `structured_content` is a **LibrAgent-specific internal extension**, not part of the official MCP specification. The MCP protocol standard only defines:
+
+- `content`: Array of MCPContent (text, images, resources) - what agents see
+- `isError`: Boolean indicating success/failure
+
+We added `structured_content` as a non-standard extension for LibrAgent's UI layer to render rich components without text parsing. External MCP servers connecting to LibrAgent won't have this field - only builtin tools use it.
+
+**Data Visibility Matrix:**
+
+| Component      | Sees Text Content | Sees structured_content |
+| -------------- | ----------------- | ----------------------- |
+| AI Agents      | ✅ YES            | ❌ **NEVER**            |
+| UI Components  | ✅ Yes            | ✅ Yes                  |
+| External Tools | ✅ Yes            | ✅ Yes                  |
+| Debug Logs     | ✅ Yes            | ✅ Yes                  |
+
+**Why This Matters:**
+
+AI agents make decisions based ONLY on text content. If critical information (IDs, paths, status) is only in `structured_content`, agents cannot:
+
+- Extract process IDs to call pollProcess
+- Find file paths to read or modify
+- Understand execution context (persistent vs isolated)
+- Make informed decisions about next steps
+
+**Design Rules:**
+
+1. **All Critical Information in Text**
+   - Process IDs, session IDs, file paths
+   - Status information (running, finished, failed)
+   - Exit codes, error messages, warnings
+   - Directory locations, workspace context
+
+2. **Use structured_content For:**
+   - UI component rendering (charts, tables, formatted views)
+   - Machine-readable data for external tools
+   - Debugging and logging metadata
+   - **NOT for agent decision-making**
+
+3. **Format Text for Copy-Paste**
+   - List IDs line-by-line for easy extraction
+   - Use clear labels: "Process ID:", "Session:", "Path:"
+   - Include IDs in follow-up suggestions
+
+**Examples:**
+
+```rust
+// ❌ BAD: Agent can't extract process ID
+MCPResult {
+    content: vec![text("Process started successfully")],
+    structured_content: Some(json!({"process_id": "abc123"})),
+}
+// Agent response: "How do I check the process status?"
+// Problem: Agent doesn't know process_id is "abc123"
+
+// ✅ GOOD: Agent can extract and use process ID
+MCPResult {
+    content: vec![text(
+        "Background process started (ID: abc123)\n\n"
+        "Use pollProcess(\"abc123\") to check status"
+    )],
+    structured_content: Some(json!({"process_id": "abc123"})),
+}
+// Agent response: "Let me check: pollProcess(\"abc123\")"
+```
+
+```rust
+// ❌ BAD: Agent can't identify processes
+MCPResult {
+    content: vec![text("Found 3 processes (1 running, 2 finished)")],
+    structured_content: Some(json!({
+        "processes": [
+            {"id": "abc", "status": "running"},
+            {"id": "def", "status": "finished"},
+            {"id": "ghi", "status": "finished"}
+        ]
+    })),
+}
+// Agent problem: Can't extract IDs to call readProcessOutput
+
+// ✅ GOOD: Agent can see and use process IDs
+MCPResult {
+    content: vec![text(
+        "Found 3 processes (1 running, 2 finished):\n\n"
+        "• abc123 [running]: npm build --watch\n"
+        "• def456 [finished]: cargo test\n"
+        "• ghi789 [finished]: python train.py"
+    )],
+    structured_content: Some(json!({/* same as above */})),
+}
+// Agent can easily extract "abc123" for follow-up actions
+```
+
+```rust
+// ❌ BAD: State only indicated in JSON
+MCPResult {
+    content: vec![text("Command executed: echo hello\n\nhello")],
+    structured_content: Some(json!({
+        "execution_type": "persistent",
+        "cwd": "/home/user/project"
+    })),
+}
+// Agent confusion: Is this a persistent shell or isolated execution?
+
+// ✅ GOOD: State explicitly indicated in text
+MCPResult {
+    content: vec![text(
+        "Command executed: echo hello\n\n"
+        "hello\n\n"
+        "Persistent shell state (maintained for next runInPersistentShell call):\n"
+        "  Working directory: /home/user/project\n"
+        "  Exit code: 0"
+    )],
+    structured_content: Some(json!({/* same */})),
+}
+// Agent clearly understands persistent execution context
+```
+
+**Implementation Checklist:**
+
+When implementing a builtin tool:
+
+- [ ] Critical IDs (process, session, file) appear in text output
+- [ ] Status information is explicit in text (not just JSON fields)
+- [ ] Follow-up suggestions include actual IDs/parameters to use
+- [ ] State context (persistent, isolated, workspace) is clear from text
+- [ ] Error messages include diagnostic info in text, not just JSON
+- [ ] Test by reading ONLY the text content - pretend JSON doesn't exist
+
+**Common Mistakes:**
+
+1. **Hidden IDs**: Process/session IDs only in structured_content
+2. **Implicit State**: execution_type="persistent" in JSON but no text indicator
+3. **Generic Messages**: "3 items found" without listing the items
+4. **Missing Context**: Paths/IDs in suggestions without showing actual values
+
+**Testing Strategy:**
+
+```rust
+// Test your tool response
+let result = your_tool_handler(args).await?;
+
+// Extract text content
+let text = result.content.iter()
+    .filter_map(|c| match c {
+        MCPContent::Text { text } => Some(text),
+        _ => None,
+    })
+    .collect::<Vec<_>>()
+    .join("\n");
+
+// Ask yourself:
+// 1. Can I extract all IDs needed for follow-up actions?
+// 2. Is the execution context (persistent/isolated) clear?
+// 3. Are error details understandable without JSON?
+// 4. Can I understand what happened by reading text only?
+```
+
+**Remember:** Design tool responses as if `structured_content` doesn't exist. If agents can understand and act on the text content alone, you've done it right.
+
 ## Dependencies
 
 ### Core Framework

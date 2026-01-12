@@ -9,39 +9,69 @@ const logger = getLogger('token-utils');
 /**
  * Estimates the token count for arbitrary text using the `cl100k_base`
  * Byte-Pair Encoding (BPE), which is a common encoding for many modern LLMs.
+ * Falls back to character-based estimation if tiktoken fails (e.g., for non-OpenAI models).
  *
  * @param text The text to estimate the token count for.
  * @returns The estimated number of tokens.
  */
 export function estimateTextTokens(text: string): number {
-  const encoding = get_encoding('cl100k_base');
-  const tokens = encoding.encode(text);
-  encoding.free();
-  return tokens.length;
+  try {
+    const encoding = get_encoding('cl100k_base');
+    const tokens = encoding.encode(text);
+    encoding.free();
+    return tokens.length;
+  } catch (error) {
+    // Fallback: Use character-based estimation (~4 chars per token, conservative OpenAI estimate)
+    // This handles cases where tiktoken WASM fails (e.g., Ollama models, WASM compatibility issues)
+    logger.debug(
+      'tiktoken encoding failed, using character-based fallback',
+      error,
+    );
+    return Math.ceil(text.length / 4);
+  }
 }
 
 /**
  * Estimates the token count for a given message using the `cl100k_base`
  * Byte-Pair Encoding (BPE), which is a common encoding for many modern LLMs.
+ * Falls back to character-based estimation if tiktoken fails.
  *
  * @param message The message to estimate the token count for.
  * @returns The estimated number of tokens.
  */
 export function estimateTokensBPE(message: Message): number {
-  let contentText = '';
-  if (Array.isArray(message.content)) {
-    contentText = message.content
-      .map((c) => {
-        if (c.type === 'text') return c.text;
-        // For resources, we might want to count the text content if available
-        if (c.type === 'resource') return c.resource.text || '';
-        return '';
-      })
-      .join('');
-  }
+  try {
+    let contentText = '';
+    if (Array.isArray(message.content)) {
+      contentText = message.content
+        .map((c) => {
+          if (c.type === 'text') return c.text;
+          // For resources, we might want to count the text content if available
+          if (c.type === 'resource') return c.resource.text || '';
+          return '';
+        })
+        .join('');
+    }
 
-  const text = `${message.role}: ${contentText}`;
-  return estimateTextTokens(text);
+    const text = `${message.role}: ${contentText}`;
+    return estimateTextTokens(text);
+  } catch (error) {
+    // Fallback: Conservative estimate for message overhead + content length
+    logger.debug(
+      'Message token estimation failed, using character-based fallback',
+      error,
+    );
+    let contentLength = 0;
+    if (Array.isArray(message.content)) {
+      contentLength = message.content.reduce((sum, c) => {
+        if (c.type === 'text') return sum + c.text.length;
+        if (c.type === 'resource') return sum + (c.resource.text?.length || 0);
+        return sum;
+      }, 0);
+    }
+    // Account for role prefix and formatting: ~10 chars + content
+    return Math.ceil((10 + contentLength) / 4);
+  }
 }
 
 /**

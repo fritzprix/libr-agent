@@ -73,11 +73,17 @@ pub trait BuiltinMCPServer: Send + Sync + std::fmt::Debug {
     /// # Arguments
     /// * `tool_name` - The name of the tool to call.
     /// * `args` - The arguments for the tool.
+    /// * `session_id` - The session ID of the caller, if available.
     ///
     /// # Returns
     /// A `Result` containing the `MCPResult` on success, or an error message on failure.
     /// The wrapping into `MCPResponse` is handled by `BuiltinServerRegistry`.
-    async fn call_tool(&self, tool_name: &str, args: Value) -> Result<MCPResult, String>;
+    async fn call_tool(
+        &self,
+        tool_name: &str,
+        args: Value,
+        session_id: Option<String>,
+    ) -> Result<MCPResult, String>;
 
     /// Returns a markdown-formatted string describing the server's current status and context.
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
@@ -564,6 +570,7 @@ impl BuiltinServerRegistry {
     /// * `tool_name` - The name of the tool to call.
     /// * `args` - The arguments for the tool.
     /// * `request_id` - Optional request ID from the client. If None, a new UUID is generated.
+    /// * `session_id` - Optional session ID of the caller.
     ///
     /// # Returns
     /// An `MCPResponse` containing the result of the tool call.
@@ -574,6 +581,7 @@ impl BuiltinServerRegistry {
         tool_name: &str,
         args: Value,
         request_id: Option<Value>,
+        session_id: Option<String>,
     ) -> MCPResponse {
         // Generate request_id if not provided
         let id = request_id.unwrap_or_else(|| Value::String(uuid::Uuid::new_v4().to_string()));
@@ -583,7 +591,10 @@ impl BuiltinServerRegistry {
             let normalized_args = Self::normalize_json_args(args);
 
             // Call the server's tool - returns Result<MCPResult, String>
-            match server.call_tool(tool_name, normalized_args).await {
+            match server
+                .call_tool(tool_name, normalized_args, session_id.clone())
+                .await
+            {
                 Ok(mcp_result) => {
                     // Success: wrap MCPResult in MCPResponse with proper type
                     // Convert Value id to JsonRpcId
