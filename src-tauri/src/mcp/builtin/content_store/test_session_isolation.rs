@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::mcp::builtin::content_store::server::ContentStoreServer;
+    use crate::mcp::builtin::content_store::{operations, queries};
     use crate::mcp::types::ServiceContextOptions;
     use crate::session::SessionManager;
     use serde_json::json;
@@ -55,20 +56,20 @@ mod tests {
         let (server_b, _temp_b) = setup_server("session-b").await;
 
         // Add content to session A
-        let add_result = server_a
-            .handle_save_knowledge(
-                json!({
-                    "content": "Secret content from Session A",
-                    "metadata": {
-                        "title": "Session A Document",
-                        "filename": "secret.txt",
-                        "mime_type": "text/plain"
-                    }
-                }),
-                "session-a",
-            )
-            .await
-            .unwrap();
+        let add_result = operations::save_knowledge(
+            &server_a,
+            json!({
+                "content": "Secret content from Session A",
+                "metadata": {
+                    "title": "Session A Document",
+                    "filename": "secret.txt",
+                    "mime_type": "text/plain"
+                }
+            }),
+            "session-a",
+        )
+        .await
+        .unwrap();
 
         // Extract content_id from the response
         let content_id = if let Some(structured) = add_result.structured_content {
@@ -78,15 +79,15 @@ mod tests {
         };
 
         // Verify session A can read its own content
-        let read_result_a = server_a
-            .handle_read_content(
-                json!({
-                    "contentId": content_id.clone()
-                }),
-                "session-a",
-            )
-            .await
-            .unwrap();
+        let read_result_a = queries::read_content(
+            &server_a,
+            json!({
+                "contentId": content_id.clone()
+            }),
+            "session-a",
+        )
+        .await
+        .unwrap();
 
         assert_eq!(read_result_a.is_error, Some(false));
         // Check structured content for actual content
@@ -95,15 +96,15 @@ mod tests {
         assert!(actual_content.contains("Secret content from Session A"));
 
         // Attempt to read from session B (should fail with access denied)
-        let read_result_b = server_b
-            .handle_read_content(
-                json!({
-                    "contentId": content_id
-                }),
-                "session-b",
-            )
-            .await
-            .unwrap();
+        let read_result_b = queries::read_content(
+            &server_b,
+            json!({
+                "contentId": content_id
+            }),
+            "session-b",
+        )
+        .await
+        .unwrap();
 
         // Should return error
         assert_eq!(read_result_b.is_error, Some(true));
@@ -125,40 +126,39 @@ mod tests {
         let (server_b, _temp_b) = setup_server("session-isolation-b").await;
 
         // Add content to session A
-        server_a
-            .handle_save_knowledge(
-                json!({
-                    "content": "Session A content",
-                    "metadata": {
-                        "title": "A Document",
-                        "filename": "a.txt",
-                        "mime_type": "text/plain"
-                    }
-                }),
-                "session-isolation-a",
-            )
-            .await
-            .unwrap();
+        operations::save_knowledge(
+            &server_a,
+            json!({
+                "content": "Session A content",
+                "metadata": {
+                    "title": "A Document",
+                    "filename": "a.txt",
+                    "mime_type": "text/plain"
+                }
+            }),
+            "session-isolation-a",
+        )
+        .await
+        .unwrap();
 
         // Add content to session B
-        server_b
-            .handle_save_knowledge(
-                json!({
-                    "content": "Session B content",
-                    "metadata": {
-                        "title": "B Document",
-                        "filename": "b.txt",
-                        "mime_type": "text/plain"
-                    }
-                }),
-                "session-isolation-b",
-            )
-            .await
-            .unwrap();
+        operations::save_knowledge(
+            &server_b,
+            json!({
+                "content": "Session B content",
+                "metadata": {
+                    "title": "B Document",
+                    "filename": "b.txt",
+                    "mime_type": "text/plain"
+                }
+            }),
+            "session-isolation-b",
+        )
+        .await
+        .unwrap();
 
         // List content in session A
-        let list_a = server_a
-            .handle_list_content(json!({}), "session-isolation-a")
+        let list_a = queries::list_content(&server_a, json!({}), "session-isolation-a")
             .await
             .unwrap();
 
@@ -170,8 +170,7 @@ mod tests {
         assert_eq!(items_a[0]["filename"], "a.txt");
 
         // List content in session B
-        let list_b = server_b
-            .handle_list_content(json!({}), "session-isolation-b")
+        let list_b = queries::list_content(&server_b, json!({}), "session-isolation-b")
             .await
             .unwrap();
 
@@ -189,47 +188,47 @@ mod tests {
         let (server_b, _temp_b) = setup_server("session-search-b").await;
 
         // Add searchable content to session A
-        server_a
-            .handle_save_knowledge(
-                json!({
-                    "content": "This document contains the keyword SEARCHTERM in session A",
-                    "metadata": {
-                        "title": "Session A Searchable",
-                        "filename": "searchable_a.txt",
-                        "mime_type": "text/plain"
-                    }
-                }),
-                "session-search-a",
-            )
-            .await
-            .unwrap();
+        operations::save_knowledge(
+            &server_a,
+            json!({
+                "content": "This document contains the keyword SEARCHTERM in session A",
+                "metadata": {
+                    "title": "Session A Searchable",
+                    "filename": "searchable_a.txt",
+                    "mime_type": "text/plain"
+                }
+            }),
+            "session-search-a",
+        )
+        .await
+        .unwrap();
 
         // Add different content to session B
-        server_b
-            .handle_save_knowledge(
-                json!({
-                    "content": "This is a different document without the special keyword",
-                    "metadata": {
-                        "title": "Session B Document",
-                        "filename": "doc_b.txt",
-                        "mime_type": "text/plain"
-                    }
-                }),
-                "session-search-b",
-            )
-            .await
-            .unwrap();
+        operations::save_knowledge(
+            &server_b,
+            json!({
+                "content": "This is a different document without the special keyword",
+                "metadata": {
+                    "title": "Session B Document",
+                    "filename": "doc_b.txt",
+                    "mime_type": "text/plain"
+                }
+            }),
+            "session-search-b",
+        )
+        .await
+        .unwrap();
 
         // Search in session A for SEARCHTERM
-        let search_a = server_a
-            .handle_search_knowledge(
-                json!({
-                    "query": "SEARCHTERM"
-                }),
-                "session-search-a",
-            )
-            .await
-            .unwrap();
+        let search_a = queries::search_knowledge(
+            &server_a,
+            json!({
+                "query": "SEARCHTERM"
+            }),
+            "session-search-a",
+        )
+        .await
+        .unwrap();
 
         assert_eq!(search_a.is_error, Some(false));
         let structured_a = search_a.structured_content.unwrap();
@@ -237,15 +236,15 @@ mod tests {
         assert_eq!(results_a.len(), 1);
 
         // Search in session B for SEARCHTERM (should find nothing)
-        let search_b = server_b
-            .handle_search_knowledge(
-                json!({
-                    "query": "SEARCHTERM"
-                }),
-                "session-search-b",
-            )
-            .await
-            .unwrap();
+        let search_b = queries::search_knowledge(
+            &server_b,
+            json!({
+                "query": "SEARCHTERM"
+            }),
+            "session-search-b",
+        )
+        .await
+        .unwrap();
 
         assert_eq!(search_b.is_error, Some(false));
         let structured_b = search_b.structured_content.unwrap();
@@ -263,20 +262,20 @@ mod tests {
         let (server_b, _temp_b) = setup_server("session-delete-b").await;
 
         // Add content to session A
-        let add_result = server_a
-            .handle_save_knowledge(
-                json!({
-                    "content": "Content to be protected from cross-session deletion",
-                    "metadata": {
-                        "title": "Protected Document",
-                        "filename": "protected.txt",
-                        "mime_type": "text/plain"
-                    }
-                }),
-                "session-delete-a",
-            )
-            .await
-            .unwrap();
+        let add_result = operations::save_knowledge(
+            &server_a,
+            json!({
+                "content": "Content to be protected from cross-session deletion",
+                "metadata": {
+                    "title": "Protected Document",
+                    "filename": "protected.txt",
+                    "mime_type": "text/plain"
+                }
+            }),
+            "session-delete-a",
+        )
+        .await
+        .unwrap();
 
         let content_id = if let Some(structured) = add_result.structured_content {
             structured["contentId"].as_str().unwrap().to_string()
@@ -285,15 +284,15 @@ mod tests {
         };
 
         // Attempt to delete from session B (should fail)
-        let delete_result_b = server_b
-            .handle_delete_content(
-                json!({
-                    "contentId": content_id.clone()
-                }),
-                "session-delete-b",
-            )
-            .await
-            .unwrap();
+        let delete_result_b = operations::delete_content(
+            &server_b,
+            json!({
+                "contentId": content_id.clone()
+            }),
+            "session-delete-b",
+        )
+        .await
+        .unwrap();
 
         // Should return error
         assert_eq!(delete_result_b.is_error, Some(true));
@@ -309,8 +308,7 @@ mod tests {
         );
 
         // Verify content still exists in session A
-        let list_a = server_a
-            .handle_list_content(json!({}), "session-delete-a")
+        let list_a = queries::list_content(&server_a, json!({}), "session-delete-a")
             .await
             .unwrap();
 
@@ -318,21 +316,20 @@ mod tests {
         assert_eq!(structured_a["total"], 1);
 
         // Verify session A can still delete its own content
-        let delete_result_a = server_a
-            .handle_delete_content(
-                json!({
-                    "contentId": content_id
-                }),
-                "session-delete-a",
-            )
-            .await
-            .unwrap();
+        let delete_result_a = operations::delete_content(
+            &server_a,
+            json!({
+                "contentId": content_id
+            }),
+            "session-delete-a",
+        )
+        .await
+        .unwrap();
 
         assert_eq!(delete_result_a.is_error, Some(false));
 
         // Verify deletion succeeded
-        let list_after = server_a
-            .handle_list_content(json!({}), "session-delete-a")
+        let list_after = queries::list_content(&server_a, json!({}), "session-delete-a")
             .await
             .unwrap();
 

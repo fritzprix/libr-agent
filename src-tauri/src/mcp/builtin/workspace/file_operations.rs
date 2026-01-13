@@ -327,45 +327,34 @@ impl WorkspaceServer {
         Ok(Self::format_lines_with_numbers(&result_lines))
     }
 
-    /// Format lines with line numbers and collapse multiple empty lines
+    /// Format lines with pipe-separated line numbers (LLM-friendly format)
+    ///
+    /// Uses visual separation to prevent confusion between metadata and code:
+    /// ```text
+    /// 10 | def calculate_sum(a, b):
+    /// 11 |     return a + b
+    /// 12 |
+    /// ```
+    ///
+    /// Note: Preserves ALL empty lines for accurate indentation/structure visibility
     fn format_lines_with_numbers(lines: &[(usize, String)]) -> String {
-        let mut result = Vec::new();
-        let mut empty_line_count = 0;
-        let mut last_empty_line_num = 0;
+        if lines.is_empty() {
+            return String::new();
+        }
 
+        // Add header for clarity
+        let mut result = vec![
+            "[File Content - Line numbers are for reference only]".to_string(),
+            "─────────────────────────────────────────────────────".to_string(),
+        ];
+
+        // Format each line with pipe separator
         for (line_num, content) in lines {
-            if content.trim().is_empty() {
-                empty_line_count += 1;
-                last_empty_line_num = *line_num;
-            } else {
-                // If we had multiple empty lines, add a placeholder
-                if empty_line_count > 1 {
-                    result.push(format!(
-                        "<Empty Lines {}-{}>",
-                        last_empty_line_num - empty_line_count + 1,
-                        last_empty_line_num
-                    ));
-                } else if empty_line_count == 1 {
-                    // Single empty line, keep it with line number
-                    result.push(format!("Line {}: ", last_empty_line_num));
-                }
-                empty_line_count = 0;
-
-                // Add the current non-empty line
-                result.push(format!("Line {}: {}", line_num, content));
-            }
+            result.push(format!("{:4} | {}", line_num, content));
         }
 
-        // Handle trailing empty lines
-        if empty_line_count > 1 {
-            result.push(format!(
-                "<Empty Lines {}-{}>",
-                last_empty_line_num - empty_line_count + 1,
-                last_empty_line_num
-            ));
-        } else if empty_line_count == 1 {
-            result.push(format!("Line {}: ", last_empty_line_num));
-        }
+        result.push("─────────────────────────────────────────────────────".to_string());
+        result.push("(Note: Line numbers and '|' symbols are NOT part of the code)".to_string());
 
         result.join("\n")
     }
@@ -1278,13 +1267,13 @@ mod tests {
 
         let result = WorkspaceServer::format_lines_with_numbers(&lines);
 
-        assert!(result.contains("Line 1: #include <stdio.h>"));
-        assert!(result.contains("Line 2: "));
-        assert!(result.contains("Line 3: int main() {"));
+        assert!(result.contains("   1 | #include <stdio.h>"));
+        assert!(result.contains("   2 | "));
+        assert!(result.contains("   3 | int main() {"));
     }
 
     #[test]
-    fn test_format_lines_collapses_multiple_empty_lines() {
+    fn test_format_lines_preserves_all_empty_lines() {
         let lines = vec![
             (1, "#include <stdio.h>".to_string()),
             (2, "".to_string()),
@@ -1301,47 +1290,29 @@ mod tests {
 
         let result = WorkspaceServer::format_lines_with_numbers(&lines);
 
-        // Should have the first line with number
-        assert!(result.contains("Line 1: #include <stdio.h>"));
+        // Should have pipe-separated format
+        assert!(result.contains("   1 | #include <stdio.h>"));
+        assert!(result.contains("   5 | int main() {"));
+        assert!(result.contains("   8 |     printf(\"Hello\");"));
 
-        // Multiple empty lines should be collapsed
-        assert!(result.contains("<Empty Lines 2-4>"));
-        assert!(result.contains("<Empty Lines 6-7>"));
-
-        // Content lines should have numbers
-        assert!(result.contains("Line 5: int main() {"));
-        assert!(result.contains("Line 8:     printf(\"Hello\");"));
-
-        // Single empty line should be preserved
-        assert!(result.contains("Line 9: "));
-
-        assert!(result.contains("Line 10:     return 0;"));
-        assert!(result.contains("Line 11: }"));
+        // All empty lines should be preserved (not collapsed)
+        assert!(result.contains("   2 | "));
+        assert!(result.contains("   3 | "));
+        assert!(result.contains("   4 | "));
+        assert!(result.contains("   6 | "));
+        assert!(result.contains("   7 | "));
+        assert!(result.contains("   9 | "));
     }
 
     #[test]
-    fn test_format_lines_trailing_empty_lines() {
-        let lines = vec![
-            (1, "int main() {}".to_string()),
-            (2, "".to_string()),
-            (3, "".to_string()),
-            (4, "".to_string()),
-        ];
-
-        let result = WorkspaceServer::format_lines_with_numbers(&lines);
-
-        assert!(result.contains("Line 1: int main() {}"));
-        assert!(result.contains("<Empty Lines 2-4>"));
-    }
-
-    #[test]
-    fn test_format_lines_single_trailing_empty_line() {
+    fn test_format_lines_includes_header_and_footer() {
         let lines = vec![(1, "int main() {}".to_string()), (2, "".to_string())];
 
         let result = WorkspaceServer::format_lines_with_numbers(&lines);
 
-        assert!(result.contains("Line 1: int main() {}"));
-        assert!(result.contains("Line 2: "));
-        assert!(!result.contains("<Empty Lines"));
+        assert!(result.contains("[File Content"));
+        assert!(result.contains("NOT part of the code"));
+        assert!(result.contains("   1 | int main() {}"));
+        assert!(result.contains("   2 | "));
     }
 }

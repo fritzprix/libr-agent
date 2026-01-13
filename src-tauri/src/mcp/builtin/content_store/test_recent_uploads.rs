@@ -89,7 +89,7 @@ mod tests {
             }
         });
 
-        let result = server.handle_save_knowledge(args, "test-session").await;
+        let result = super::super::operations::save_knowledge(&server, args, "test-session").await;
         assert!(result.is_ok(), "Failed to save content");
 
         // Check recent uploads queue
@@ -122,8 +122,7 @@ mod tests {
             }
         });
 
-        server
-            .handle_save_knowledge(args, "test-session")
+        super::super::operations::save_knowledge(&server, args, "test-session")
             .await
             .unwrap();
 
@@ -161,8 +160,7 @@ mod tests {
                 }
             });
 
-            server
-                .handle_save_knowledge(args, "test-session")
+            super::super::operations::save_knowledge(&server, args, "test-session")
                 .await
                 .unwrap();
         }

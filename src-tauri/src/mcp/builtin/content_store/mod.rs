@@ -4,16 +4,18 @@ use async_trait::async_trait;
 use crate::mcp::types::MCPResult;
 use crate::mcp::MCPTool;
 
-mod handlers;
-mod helpers;
-mod schemas;
-mod server;
-mod types;
+mod operations;
+mod queries;
 
 // Existing modules
+
+mod helpers;
 pub mod parsers;
+mod schemas;
 pub mod search;
+mod server;
 pub mod storage;
+mod types;
 pub mod utils;
 
 // Re-export public API
@@ -60,14 +62,14 @@ impl BuiltinMCPServer for ContentStoreServer {
 
         match tool_name {
             "saveKnowledge" | "addContent" => {
-                self.handle_save_knowledge(args, &target_session_id).await
+                operations::save_knowledge(self, args, &target_session_id).await
             }
-            "listContent" => self.handle_list_content(args, &target_session_id).await,
-            "readContent" => self.handle_read_content(args, &target_session_id).await,
+            "listContent" => queries::list_content(self, args, &target_session_id).await,
+            "readContent" => queries::read_content(self, args, &target_session_id).await,
             "searchKnowledge" | "keywordSimilaritySearch" => {
-                self.handle_search_knowledge(args, &target_session_id).await
+                queries::search_knowledge(self, args, &target_session_id).await
             }
-            "deleteContent" => self.handle_delete_content(args, &target_session_id).await,
+            "deleteContent" => operations::delete_content(self, args, &target_session_id).await,
             _ => Err(format!("Unknown tool: {tool_name}")),
         }
     }
