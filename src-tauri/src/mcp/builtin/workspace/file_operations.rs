@@ -10,6 +10,10 @@ use std::collections::HashMap;
 use tokio::fs;
 use tracing::{error, info};
 
+// ✅ ENHANCED: Threshold for using spawn_blocking for CPU-intensive line enumeration
+// Large files can block the async runtime during line enumeration
+const LARGE_FILE_THRESHOLD: u64 = 1_048_576; // 1 MB in bytes
+
 #[allow(dead_code)]
 impl WorkspaceServer {
     fn validate_path_with_error(
@@ -35,12 +39,43 @@ impl WorkspaceServer {
         args: Value,
         session_id: Option<String>,
     ) -> Result<MCPResult, String> {
+        // ✅ ENHANCED: Add proactive parameter validation before file operations
+
+        // 1. Parameter existence and non-empty check
         let path_str = match args.get("path").and_then(|v| v.as_str()) {
-            Some(path) => path,
+            Some(path) if !path.trim().is_empty() => path.trim(),
+            Some(_) => {
+                return Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::InvalidInput,
+                    "Path parameter cannot be empty",
+                    vec![
+                        "Provide a file path relative to workspace root".to_string(),
+                        "Example: {\"path\": \"src/main.rs\"}".to_string(),
+                        "Use listDirectory to explore available paths".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                )
+                .to_mcp_result());
+            }
             None => {
                 return Ok(missing_param_error("path", ToolGroup::Workspace));
             }
         };
+
+        // 2. Path pattern validation (reject dangerous patterns)
+        if path_str.contains("..") {
+            return Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::InvalidInput,
+                "Path traversal patterns (..) are not allowed",
+                vec![
+                    "Use relative paths from workspace root".to_string(),
+                    "Example: 'src/main.rs' instead of '../src/main.rs'".to_string(),
+                    "Use listDirectory to explore available paths".to_string(),
+                ],
+                ToolGroup::Workspace,
+            )
+            .to_mcp_result());
+        }
 
         let start_line = args
             .get("startLine")
@@ -51,21 +86,32 @@ impl WorkspaceServer {
             .and_then(|v| v.as_u64())
             .map(|n| n as usize);
 
+        // 3. Line range validation (moved before file access for efficiency)
         if let (Some(start), Some(end)) = (start_line, end_line) {
             if start > end {
                 return Ok(ErrorGuidance::with_guidance(
                     ErrorCategory::InvalidInput,
-                    format!(
-                        "start_line ({}) must be less than or equal to end_line ({})",
-                        start, end
-                    ),
+                    format!("startLine ({}) must be ≤ endLine ({})", start, end),
                     vec![
-                        "Swap the values: make startLine smaller".to_string(),
                         format!(
-                            "Example: {{\"startLine\": {}, \"endLine\": {}}}",
+                            "Correct usage: {{\"startLine\": {}, \"endLine\": {}}}",
                             end, start
                         ),
-                        "Omit both parameters to read the entire file".to_string(),
+                        "Or omit both parameters to read the entire file".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                )
+                .to_mcp_result());
+            }
+
+            // Line numbers must be 1-indexed
+            if start == 0 || end == 0 {
+                return Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::InvalidInput,
+                    "Line numbers must be ≥ 1 (1-indexed)",
+                    vec![
+                        "Line numbering starts at 1, not 0".to_string(),
+                        "Use startLine: 1 for the first line".to_string(),
                     ],
                     ToolGroup::Workspace,
                 )
@@ -73,6 +119,7 @@ impl WorkspaceServer {
             }
         }
 
+        // 4. Path security validation
         let safe_path = match self.validate_path_with_error(path_str, session_id.clone()) {
             Ok(path) => path,
             Err(e) => {
@@ -80,14 +127,35 @@ impl WorkspaceServer {
                     ErrorCategory::PermissionDenied,
                     format!("Path validation failed: {}", e),
                     vec![
-                        "Verify the file path is within allowed directories".to_string(),
+                        "Verify the file path is within workspace boundaries".to_string(),
                         "Use listDirectory to see available files".to_string(),
-                        "Check that the path doesn't contain '..' or absolute paths outside workspace".to_string(),
+                        "Avoid absolute paths outside workspace".to_string(),
                     ],
                     ToolGroup::Workspace,
-                ).to_mcp_result());
+                )
+                .to_mcp_result());
             }
         };
+
+        // 5. File existence check
+        if !safe_path.exists() {
+            return Ok(not_found_error("File", path_str, ToolGroup::Workspace));
+        }
+
+        // 6. File type check (must be file, not directory)
+        if safe_path.is_dir() {
+            return Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::InvalidInput,
+                format!("'{}' is a directory, not a file", path_str),
+                vec![
+                    "Use listDirectory to see directory contents".to_string(),
+                    "To read a file inside this directory, specify the full path".to_string(),
+                    format!("Example: '{}/filename.ext'", path_str),
+                ],
+                ToolGroup::Workspace,
+            )
+            .to_mcp_result());
+        }
 
         let file_manager = self.get_file_manager(session_id);
         let content = if start_line.is_some() || end_line.is_some() {
@@ -102,7 +170,7 @@ impl WorkspaceServer {
                     vec![
                         "The file is too large to read with line ranges".to_string(),
                         "Try reading the entire file without startLine/endLine".to_string(),
-                        "Use searchFiles to find specific content instead".to_string(),
+                        "Use grep to find specific content instead".to_string(),
                     ],
                     ToolGroup::Workspace,
                 )
@@ -193,6 +261,46 @@ impl WorkspaceServer {
     ) -> Result<String, String> {
         use tokio::io::{AsyncBufReadExt, BufReader};
 
+        // ✅ ENHANCED: Use spawn_blocking for large files to prevent async runtime blocking
+        let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+
+        if file_size > LARGE_FILE_THRESHOLD {
+            // Offload to blocking thread for large files
+            let path = path.to_path_buf();
+            let start = start_line.unwrap_or(1);
+            let end = end_line.unwrap_or(usize::MAX);
+
+            let result = tokio::task::spawn_blocking(move || {
+                // Blocking file I/O for CPU-intensive line enumeration
+                let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
+                let reader = std::io::BufReader::new(file);
+                let mut result_lines = Vec::new();
+                let mut current_line = 1;
+
+                use std::io::BufRead;
+                for line_result in reader.lines() {
+                    let line = line_result.map_err(|e| e.to_string())?;
+
+                    if current_line >= start && current_line <= end {
+                        result_lines.push((current_line, line));
+                    }
+
+                    if current_line > end {
+                        break;
+                    }
+
+                    current_line += 1;
+                }
+
+                Ok::<_, String>(Self::format_lines_with_numbers(&result_lines))
+            })
+            .await
+            .map_err(|e| format!("Task join error: {}", e))?;
+
+            return result;
+        }
+
+        // Small files: use async path (original implementation)
         let file = tokio::fs::File::open(path)
             .await
             .map_err(|e| e.to_string())?;
@@ -409,27 +517,48 @@ impl WorkspaceServer {
                     }
                 });
 
+                // ✅ ENHANCED: Format listing with emojis, types, and sizes for AI visibility
+                const MAX_ITEMS_DISPLAY: usize = 100;
+
                 let item_lines: Vec<String> = items
                     .iter()
+                    .take(MAX_ITEMS_DISPLAY)
                     .map(|item| {
                         let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("?");
                         let type_ = item.get("type").and_then(|v| v.as_str()).unwrap_or("?");
                         let size = item.get("size").and_then(|v| v.as_u64());
 
-                        let prefix = if type_ == "directory" {
-                            "[DIR]"
-                        } else {
-                            "[FILE]"
+                        // Use emoji icons for visual clarity
+                        let icon = match type_ {
+                            "directory" => "📁",
+                            "file" => "📄",
+                            "symlink" => "🔗",
+                            _ => "❓",
                         };
+
+                        // Format size in human-readable way
                         let size_str = if let Some(s) = size {
-                            format!(" ({} bytes)", s)
+                            if s < 1024 {
+                                format!(" ({}B)", s)
+                            } else if s < 1024 * 1024 {
+                                format!(" ({:.1}KB)", s as f64 / 1024.0)
+                            } else {
+                                format!(" ({:.1}MB)", s as f64 / 1024.0 / 1024.0)
+                            }
                         } else {
                             "".to_string()
                         };
 
-                        format!("{} {}{}", prefix, name, size_str)
+                        format!("{} [{}] {}{}", icon, type_, name, size_str)
                     })
                     .collect();
+
+                // Add truncation note if needed
+                let truncation_note = if items.len() > MAX_ITEMS_DISPLAY {
+                    format!("\n\n... and {} more items", items.len() - MAX_ITEMS_DISPLAY)
+                } else {
+                    String::new()
+                };
 
                 let listing_str = item_lines.join("\n");
 
@@ -438,15 +567,22 @@ impl WorkspaceServer {
                     safe_path,
                     items.len()
                 );
+
                 let hint = SuccessHint::new(
                     format!(
-                        "Directory listing for {} ({} items):\n{}",
-                        path_str,
-                        items.len(),
-                        listing_str
+                        "Directory listing for '{}':
+
+{}{}
+
+💡 Next Steps:
+- Use readFile('{}/filename') to read a file
+- Use listDirectory('{}/subdir') to explore subdirectories
+- Use grep to search for content in files",
+                        path_str, listing_str, truncation_note, path_str, path_str
                     ),
-                    SuccessHint::for_tool("listDirectory", ToolGroup::Workspace),
+                    vec![],
                 );
+
                 Ok(hint.to_mcp_result_with_data(Some(json!({
                     "items": items,
                     "path": path_str,
@@ -941,6 +1077,9 @@ impl WorkspaceServer {
         args: Value,
         session_id: Option<String>,
     ) -> Result<MCPResult, String> {
+        // ✅ ENHANCED: Replace legacy MCPResult::error() with ErrorGuidance for better context
+
+        // Parameter validation 1: srcAbsPath
         let src_path_str = match args
             .get("srcAbsPath")
             .or_else(|| args.get("src_abs_path"))
@@ -948,10 +1087,20 @@ impl WorkspaceServer {
         {
             Some(path) => path,
             None => {
-                return Ok(MCPResult::error("Missing required parameter: srcAbsPath"));
+                return Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::InvalidInput,
+                    "Missing required parameter: srcAbsPath",
+                    vec![
+                        "Provide the absolute path to the file you want to import".to_string(),
+                        "Example: {\"srcAbsPath\": \"/home/user/file.txt\", \"destRelPath\": \"imports/file.txt\"}".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                )
+                .to_mcp_result());
             }
         };
 
+        // Parameter validation 2: destRelPath
         let dest_rel_path = match args
             .get("destRelPath")
             .or_else(|| args.get("dest_rel_path"))
@@ -959,7 +1108,16 @@ impl WorkspaceServer {
         {
             Some(path) => path,
             None => {
-                return Ok(MCPResult::error("Missing required parameter: destRelPath"));
+                return Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::InvalidInput,
+                    "Missing required parameter: destRelPath",
+                    vec![
+                        "Provide the destination path relative to workspace root".to_string(),
+                        "Example: \"imports/filename.ext\" or \"src/data/file.txt\"".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                )
+                .to_mcp_result());
             }
         };
 
@@ -977,19 +1135,34 @@ impl WorkspaceServer {
                     "Failed to canonicalize source path '{}': {}",
                     src_path_str, e
                 );
-                return Ok(MCPResult::error(&format!(
-                    "Invalid source path: '{src_path_str}'. {e}. \
-                     Please ensure the file exists and the path is correct. \
-                     On Windows, use absolute paths like 'C:\\Users\\...'"
-                )));
+                return Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::ResourceNotFound,
+                    format!("Source file not found or cannot be accessed: {}", src_path_str),
+                    vec![
+                        "Verify the file path is correct and the file exists".to_string(),
+                        "Check file permissions and ensure you have read access".to_string(),
+                        format!("On Windows, use absolute paths like 'C:\\Users\\...', on Unix like '/home/user/...'"),
+                        "Use an absolute path, not a relative path".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                )
+                .to_mcp_result());
             }
         };
 
         // Ensure source is a file, not a directory
         if !src_path.is_file() {
-            return Ok(MCPResult::error(
-                "Source path must be a file, not a directory",
-            ));
+            return Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::InvalidInput,
+                format!("Source path is a directory, not a file: {}", src_path_str),
+                vec![
+                    "Provide the path to a specific file, not a directory".to_string(),
+                    "To import multiple files, call importFile multiple times".to_string(),
+                    "To import directory contents, use shell copy commands instead".to_string(),
+                ],
+                ToolGroup::Workspace,
+            )
+            .to_mcp_result());
         }
 
         // Use file manager to handle destination path validation and copying
@@ -1011,12 +1184,23 @@ impl WorkspaceServer {
                     Err(_) => 0,
                 };
 
-                Ok(MCPResult::success(&format!(
-                    "Successfully imported {} ({} bytes) to {}",
-                    src_path.display(),
-                    file_size,
-                    dest_rel_path
-                )))
+                let hint = SuccessHint::new(
+                    format!(
+                        "✅ Successfully imported {} ({} bytes) to {}",
+                        src_path.display(),
+                        file_size,
+                        dest_rel_path
+                    ),
+                    vec![
+                        format!(
+                            "Use readFile(\"{}\") to view imported content",
+                            dest_rel_path
+                        ),
+                        "Use writeFile to modify the imported file".to_string(),
+                    ],
+                );
+
+                Ok(hint.to_mcp_result())
             }
             Err(e) => {
                 error!(
@@ -1025,7 +1209,56 @@ impl WorkspaceServer {
                     dest_rel_path,
                     e
                 );
-                Ok(MCPResult::error(&format!("Failed to import file: {e}")))
+
+                // Provide context-specific error guidance
+                let (category, guidance) = if e.contains("already exists")
+                    || e.contains("duplicate")
+                {
+                    (
+                        ErrorCategory::InvalidInput,
+                        vec![
+                            format!("File already exists at: {}", dest_rel_path),
+                            "Use writeFile to overwrite the existing file".to_string(),
+                            "Or specify a different destination path with a unique name"
+                                .to_string(),
+                        ],
+                    )
+                } else if e.contains("permission") || e.contains("denied") {
+                    (
+                        ErrorCategory::PermissionDenied,
+                        vec![
+                            "Insufficient permissions to write to destination".to_string(),
+                            "Check workspace permissions and destination directory access"
+                                .to_string(),
+                            "Ensure you have write access to the destination directory".to_string(),
+                        ],
+                    )
+                } else if e.contains("space") {
+                    (
+                        ErrorCategory::InvalidInput,
+                        vec![
+                            "Insufficient disk space to import file".to_string(),
+                            "Free up disk space and try again".to_string(),
+                        ],
+                    )
+                } else {
+                    (
+                        ErrorCategory::InvalidInput,
+                        vec![
+                            "Verify source file is accessible and destination path is valid"
+                                .to_string(),
+                            "Check workspace configuration and file manager settings".to_string(),
+                        ],
+                    )
+                };
+
+                Ok(ErrorGuidance::with_guidance(
+                    category,
+                    format!("Failed to import file: {}", e),
+                    guidance,
+                    ToolGroup::Workspace,
+                )
+                .to_mcp_result())
             }
         }
     }

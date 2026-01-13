@@ -107,9 +107,15 @@ export function SessionCard({ session, onResume, onDelete }: SessionCardProps) {
       </div>
 
       <div className="text-xs text-muted-foreground space-y-1">
-        <div>Created {formatRelativeTime(session.createdAt, new Date()) || 'just now'}</div>
+        <div>
+          Created{' '}
+          {formatRelativeTime(session.createdAt, new Date()) || 'just now'}
+        </div>
         {session.updatedAt && (
-          <div>Updated {formatRelativeTime(session.updatedAt, new Date()) || 'just now'}</div>
+          <div>
+            Updated{' '}
+            {formatRelativeTime(session.updatedAt, new Date()) || 'just now'}
+          </div>
         )}
       </div>
 

@@ -367,19 +367,59 @@ impl WorkspaceServer {
 
         // Add success hint based on process status
         let status_str = format!("{:?}", entry_for_response.status).to_lowercase();
+
+        // ✅ FIXED: Include ALL critical details in text content for AI visibility
+        let status_details = format!(
+            "Process Status for {}:
+
+- Process ID: {}
+- Status: {}
+- Command: {}
+- PID: {}
+- Exit Code: {}
+- Started: {}
+- Finished: {}
+{}",
+            process_id,
+            entry_for_response.id,
+            status_str,
+            entry_for_response.command,
+            entry_for_response
+                .pid
+                .map(|p| p.to_string())
+                .unwrap_or_else(|| "N/A".to_string()),
+            entry_for_response
+                .exit_code
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| "N/A".to_string()),
+            entry_for_response.started_at.format("%Y-%m-%d %H:%M:%S"),
+            entry_for_response
+                .finished_at
+                .map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string())
+                .unwrap_or_else(|| "Still running".to_string()),
+            if tail_output_display.is_empty() {
+                String::new()
+            } else {
+                format!("\n{}", tail_output_display)
+            }
+        );
+
         let hint = SuccessHint::new(
-            format!(
-                "Process {} status: {}{}",
-                process_id, status_str, tail_output_display
-            ),
+            status_details,
             match entry_for_response.status {
                 terminal_manager::ProcessStatus::Running => vec![
                     "Wait for process to complete before polling again".to_string(),
-                    "Use readProcessOutput to view full command output".to_string(),
+                    format!(
+                        "Use readProcessOutput('{}', 'stdout') to view full output",
+                        process_id
+                    ),
                 ],
                 terminal_manager::ProcessStatus::Finished
                 | terminal_manager::ProcessStatus::Failed => vec![
-                    "Use readProcessOutput to view full command output".to_string(),
+                    format!(
+                        "Use readProcessOutput('{}', 'stdout') to view full output",
+                        process_id
+                    ),
                     "Process has completed - no need to poll again".to_string(),
                 ],
                 _ => vec!["Use listProcesses to see all processes".to_string()],
@@ -486,26 +526,91 @@ impl WorkspaceServer {
                         content_display
                     ),
                     vec![
-                        "Use pollProcess to check process status".to_string(),
+                        "Use pollProcess(processId) to check running status".to_string(),
                         format!(
-                            "Use mode=\"{}\" to read different part of output",
-                            if mode == "head" { "tail" } else { "head" }
+                            "Try mode=\"{}\" to read the {} of output instead",
+                            if mode == "head" { "tail" } else { "head" },
+                            if mode == "head" { "end" } else { "beginning" }
                         ),
+                        "Increase lines parameter to get more output (max 100)".to_string(),
                     ],
                 );
 
                 Ok(hint.to_mcp_result_with_data(Some(response)))
             }
-            Err(e) => Ok(operation_failed_error(
-                "Read process output",
-                &e,
-                vec![
-                    "Verify the process_id is correct".to_string(),
-                    "Use listProcesses to see available processes".to_string(),
-                    "Check if the process has generated output yet".to_string(),
-                ],
-                ToolGroup::Workspace,
-            )),
+            Err(e) => {
+                // ✅ ENHANCED: Context-specific error guidance based on error type
+                let error_lower = e.to_lowercase();
+
+                let (error_title, guidance) = if error_lower.contains("not found")
+                    || error_lower.contains("no such file")
+                {
+                    // Process hasn't generated output yet
+                    (
+                        format!("No {} output file found", stream),
+                        vec![
+                            "The process may not have started yet".to_string(),
+                            format!("Use pollProcess(\"{}\") to verify process status", process_id),
+                            "Wait a moment and try again - the process may not have generated output".to_string(),
+                            "Check if the process ran with output redirected elsewhere".to_string(),
+                        ],
+                    )
+                } else if error_lower.contains("permission") || error_lower.contains("denied") {
+                    // Permission denied accessing output file
+                    (
+                        "Permission denied reading output".to_string(),
+                        vec![
+                            format!(
+                                "Cannot read {} stream for process \"{}\"",
+                                stream, process_id
+                            ),
+                            "Check process permissions and ownership".to_string(),
+                            "Try running as elevated user if needed".to_string(),
+                            "Use listProcesses to view process details".to_string(),
+                        ],
+                    )
+                } else if error_lower.contains("too large") || error_lower.contains("too big") {
+                    // File is too large to read entirely
+                    (
+                        "Output file too large".to_string(),
+                        vec![
+                            "Maximum 100 lines per request".to_string(),
+                            format!("Reduce 'lines' parameter to read less data"),
+                            "Use mode=\"head\" for beginning or mode=\"tail\" for end".to_string(),
+                            "Consider grep or other text processing tools for filtering"
+                                .to_string(),
+                        ],
+                    )
+                } else if error_lower.contains("invalid") || error_lower.contains("utf") {
+                    // Output contains invalid UTF-8
+                    (
+                        "Output contains non-UTF-8 data".to_string(),
+                        vec![
+                            "The process output contains binary or invalid UTF-8 data".to_string(),
+                            "Try reading stderr instead if it contains error messages".to_string(),
+                            "Check if the process generated text output or binary data".to_string(),
+                        ],
+                    )
+                } else {
+                    // Generic error
+                    (
+                        "Failed to read process output".to_string(),
+                        vec![
+                            format!("Verify process {} exists: use listProcesses()", process_id),
+                            format!("Check stream=\"{}\" is correct (stdout or stderr)", stream),
+                            "Ensure the process has generated output".to_string(),
+                            "Check file permissions and disk space".to_string(),
+                        ],
+                    )
+                };
+
+                Ok(operation_failed_error(
+                    &error_title,
+                    &e,
+                    guidance,
+                    ToolGroup::Workspace,
+                ))
+            }
         }
     }
 
@@ -585,9 +690,9 @@ impl WorkspaceServer {
             "finished": finished,
         });
 
-        // Build detailed text output with process IDs and commands
+        // ✅ FIXED: Build detailed text output with FULL process details for AI visibility
         let process_list = if processes.is_empty() {
-            "No processes found".to_string()
+            "No processes found in current session".to_string()
         } else {
             processes
                 .iter()
@@ -601,38 +706,70 @@ impl WorkspaceServer {
                         .and_then(|v| v.as_str())
                         .unwrap_or("unknown");
                     let command = p.get("command").and_then(|v| v.as_str()).unwrap_or("");
-                    let truncated_cmd = if command.len() > 60 {
-                        format!("{}...", &command[..57])
-                    } else {
-                        command.to_string()
-                    };
-                    format!("• {} [{}]: {}", id, status, truncated_cmd)
+                    let pid = p
+                        .get("pid")
+                        .and_then(|v| v.as_u64())
+                        .map(|p| format!(" (PID: {})", p))
+                        .unwrap_or_default();
+                    let exit_code = p
+                        .get("exit_code")
+                        .and_then(|v| v.as_i64())
+                        .map(|c| format!(" [exit: {}]", c))
+                        .unwrap_or_default();
+
+                    // Full command visible to agent (no truncation)
+                    format!(
+                        "• {} [{}]{}{}\n  Command: {}",
+                        id, status, pid, exit_code, command
+                    )
                 })
                 .collect::<Vec<_>>()
-                .join("\n")
+                .join("\n\n")
         };
 
         let summary = format!(
-            "Found {} processes ({} running, {} finished)\n\n{}",
-            total, running, finished, process_list
+            "Found {} processes ({} running, {} finished)
+
+{}
+
+💡 Next Steps:
+- Use pollProcess('{}') to check status
+- Use readProcessOutput('{}', 'stdout') to view output
+- Use stopProcess('{}') to terminate running process",
+            total,
+            running,
+            finished,
+            process_list,
+            if total > 0 {
+                processes
+                    .first()
+                    .and_then(|p| p.get("process_id"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("processId")
+            } else {
+                "processId"
+            },
+            if total > 0 {
+                processes
+                    .first()
+                    .and_then(|p| p.get("process_id"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("processId")
+            } else {
+                "processId"
+            },
+            if total > 0 {
+                processes
+                    .first()
+                    .and_then(|p| p.get("process_id"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("processId")
+            } else {
+                "processId"
+            }
         );
 
-        let hint = SuccessHint::new(
-            summary,
-            if running > 0 {
-                vec![
-                    "Use pollProcess(processId) to check status".to_string(),
-                    "Use stopProcess(processId) to cancel".to_string(),
-                ]
-            } else if total > 0 {
-                vec![
-                    "Use readProcessOutput(processId, stream) to view output".to_string(),
-                    "All processes have completed".to_string(),
-                ]
-            } else {
-                vec!["Use spawnProcess to start background processes".to_string()]
-            },
-        );
+        let hint = SuccessHint::new(summary, vec![]); // Guidance is in summary
 
         Ok(hint.to_mcp_result_with_data(Some(response)))
     }
@@ -737,6 +874,7 @@ impl WorkspaceServer {
         Arc::new(SecureFileManager::new_with_base_dir(workspace_dir))
     }
 
+    #[allow(dead_code)]
     fn get_workspace_tree(&self, path: &str, max_depth: usize) -> String {
         use std::fs;
 
@@ -822,29 +960,6 @@ impl BuiltinMCPServer for WorkspaceServer {
         let workspace_dir_path = self.get_workspace_dir(&session_id);
         let workspace_dir = workspace_dir_path.to_string_lossy().to_string();
 
-        // Generate directory tree (2 levels deep)
-        let tree_output = self.get_workspace_tree(&workspace_dir, 2);
-
-        // Get running process count
-
-        // Try to get running count without blocking
-        // If we can't acquire the lock immediately, return 0 to avoid blocking
-        let running_count = {
-            match self.process_registry.try_read() {
-                Ok(reg) => reg
-                    .entries
-                    .values()
-                    .filter(|e| e.session_id == session_id)
-                    .filter(|e| matches!(e.status, terminal_manager::ProcessStatus::Running))
-                    .count(),
-                Err(_) => {
-                    // Lock is held by another task, return 0 to avoid blocking
-                    tracing::debug!("Could not acquire process registry lock for service context");
-                    0
-                }
-            }
-        };
-
         // Platform information
         let os = std::env::consts::OS;
         let arch = std::env::consts::ARCH;
@@ -853,9 +968,6 @@ impl BuiltinMCPServer for WorkspaceServer {
         let shell_cwd = if let Some(cwd) = self.shell_manager.get_shell_cwd(&session_id).await {
             // Convert to relative path if within workspace for better readability
             if cwd.starts_with(&workspace_dir) {
-                // +1 to handle the separator if it's there, but be careful
-                // Simplest is to just replace the prefix string
-                // Ensure uniform separators for agent readability if needed, or keep native
                 cwd.replacen(&workspace_dir, ".", 1)
             } else {
                 cwd
@@ -864,23 +976,78 @@ impl BuiltinMCPServer for WorkspaceServer {
             ".".to_string()
         };
 
+        // ✅ ENHANCED: Get running processes with IDs and commands for AI visibility
+        let (running_count, total_count, running_processes_text) = {
+            match self.process_registry.try_read() {
+                Ok(reg) => {
+                    let processes: Vec<(String, String)> = reg
+                        .entries
+                        .values()
+                        .filter(|e| e.session_id == session_id)
+                        .filter(|e| matches!(e.status, terminal_manager::ProcessStatus::Running))
+                        .take(5) // Limit to prevent context bloat
+                        .map(|e| (e.id.clone(), e.command.clone()))
+                        .collect();
+
+                    let running_count = processes.len();
+                    let total_count = reg
+                        .entries
+                        .values()
+                        .filter(|e| e.session_id == session_id)
+                        .count();
+
+                    let running_text = if running_count == 0 {
+                        "None".to_string()
+                    } else {
+                        let process_list = processes
+                            .iter()
+                            .map(|(id, cmd)| {
+                                // Truncate command if too long
+                                let display_cmd = if cmd.len() > 80 {
+                                    format!("{}...", &cmd[..77])
+                                } else {
+                                    cmd.clone()
+                                };
+                                format!("  • {} - {}", id, display_cmd)
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        format!("\n{}", process_list)
+                    };
+
+                    (running_count, total_count, running_text)
+                }
+                Err(_) => {
+                    // Lock is held by another task, return defaults to avoid blocking
+                    tracing::debug!("Could not acquire process registry lock for service context");
+                    (0, 0, "None".to_string())
+                }
+            }
+        };
+
         info!(
-            "Workspace service context - workspace_dir: {}, shell_cwd: {}, tree_output length: {}, running processes: {}, platform: {}/{}",
+            "Workspace service context - workspace_dir: {}, shell_cwd: {}, running processes: {}, total: {}, platform: {}/{}",
             workspace_dir,
             shell_cwd,
-            tree_output.len(),
             running_count,
+            total_count,
             os,
             arch
         );
 
         let context_prompt = format!(
-            "## Workspace\\n\\n\\\n            **Workspace Root**: {}\\n\\\n            **Persistent Shell CWD**: {}\\n\\\n            **Running Processes**: {}\\n\\\n            **Platform**: {}/{}",
-            workspace_dir,
-            shell_cwd,
-            running_count,
-            os,
-            arch
+            "## Workspace
+
+**Workspace Root**: {}
+**Persistent Shell CWD**: {}
+**Platform**: {} / {}
+
+**Background Processes**:
+- Running: {}{}
+- Total: {}
+
+💡 Use pollProcess(processId) to check status or listProcesses() to see all.",
+            workspace_dir, shell_cwd, os, arch, running_count, running_processes_text, total_count
         );
 
         ServiceContext {
@@ -888,12 +1055,15 @@ impl BuiltinMCPServer for WorkspaceServer {
             structured_state: Some(json!({
                 "workspace_dir": workspace_dir,
                 "shell_cwd": shell_cwd,
-                "workspace_tree": tree_output,
                 "platform": {
                     "os": os,
                     "arch": arch
                 },
-                "running_processes": running_count,
+                "processes": {
+                    "running": running_count,
+                    "total": total_count,
+                },
+                "shell_active": !shell_cwd.is_empty(),
                 "tools_count": self.tools().len()
             })),
         }
