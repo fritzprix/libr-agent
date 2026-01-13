@@ -132,42 +132,28 @@ pub fn create_import_file_tool() -> MCPTool {
     }
 }
 
-pub fn create_replace_lines_in_file_tool() -> MCPTool {
+pub fn create_replace_string_in_file_tool() -> MCPTool {
     let mut item_props = HashMap::new();
     item_props.insert(
-        "startLine".to_string(),
-        integer_prop(Some(1), None, Some("Starting line number (1-based)")),
-    );
-    item_props.insert(
-        "endLine".to_string(),
-        integer_prop(
-            Some(1),
-            None,
-            Some("Ending line number (1-based, optional). If not provided, equals startLine"),
-        ),
-    );
-    item_props.insert(
-        "newContent".to_string(),
+        "oldString".to_string(),
         string_prop(
             None,
             None,
-            Some("The new content for the line range. Use empty string to delete lines."),
+            Some("Exact text content to find and replace. Must match precisely including whitespace. Include surrounding context (3-5 lines) for uniqueness."),
         ),
     );
-
-    // Backward compatibility for existing line_number support
     item_props.insert(
-        "lineNumber".to_string(),
-        integer_prop(
-            Some(1),
+        "newString".to_string(),
+        string_prop(
             None,
-            Some("The 1-based line number to replace (deprecated, use startLine)"),
+            None,
+            Some("New text content to replace oldString with. Use empty string to delete the matched text."),
         ),
     );
 
     let replacement_item_schema = object_schema(
         item_props,
-        vec!["startLine".to_string()], // newContent is now optional for line deletion
+        vec!["oldString".to_string(), "newString".to_string()],
     );
 
     let mut props = HashMap::new();
@@ -183,14 +169,14 @@ pub fn create_replace_lines_in_file_tool() -> MCPTool {
         "replacements".to_string(),
         array_schema(
             replacement_item_schema,
-            Some("An array of line replacement objects"),
+            Some("An array of string replacement objects"),
         ),
     );
 
     MCPTool {
-        name: "replaceLinesInFile".to_string(),
-        title: Some("Replace Lines in File".to_string()),
-        description: "Replace specific lines or line ranges in a file with new content. Use empty content string to delete lines.".to_string(),
+        name: "replaceStringInFile".to_string(),
+        title: Some("Replace String in File".to_string()),
+        description: "Replace text content in a file using exact string matching. More robust than line-based replacement as it works regardless of line number changes. Supports multiple independent replacements in a single call.".to_string(),
         input_schema: object_schema(props, vec!["path".to_string(), "replacements".to_string()]),
         output_schema: None,
         annotations: None,

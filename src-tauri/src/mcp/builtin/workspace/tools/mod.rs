@@ -11,7 +11,7 @@ pub fn file_tools() -> Vec<MCPTool> {
         file_tools::create_read_file_tool(),
         file_tools::create_write_file_tool(),
         file_tools::create_list_directory_tool(),
-        file_tools::create_replace_lines_in_file_tool(),
+        file_tools::create_replace_string_in_file_tool(),
         file_tools::create_import_file_tool(),
     ]
 }

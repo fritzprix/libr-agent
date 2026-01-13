@@ -85,6 +85,10 @@ impl WorkspaceServer {
             .get("endLine")
             .and_then(|v| v.as_u64())
             .map(|n| n as usize);
+        let show_line_numbers = args
+            .get("showLineNumbers")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false); // Default to false for cleaner raw content
 
         // 3. Line range validation (moved before file access for efficiency)
         if let (Some(start), Some(end)) = (start_line, end_line) {
@@ -177,7 +181,7 @@ impl WorkspaceServer {
                 .to_mcp_result());
             }
 
-            self.read_file_lines_range(&safe_path, start_line, end_line)
+            self.read_file_lines_range(&safe_path, start_line, end_line, show_line_numbers)
                 .await
         } else {
             // Read full file and format with line numbers
@@ -192,7 +196,10 @@ impl WorkspaceServer {
                 .map(|(idx, line)| (idx + 1, line.to_string()))
                 .collect();
 
-            Ok(Self::format_lines_with_numbers(&lines_with_numbers))
+            Ok(Self::format_lines_with_numbers(
+                &lines_with_numbers,
+                show_line_numbers,
+            ))
         };
 
         match content {
@@ -201,7 +208,7 @@ impl WorkspaceServer {
 
                 // Include actual content in text for AI agent visibility
                 let text_message = format!(
-                    "File read successfully: {}\n\nContent:\n{}\n\n💡 Next: Use writeFile to modify or replaceLines to make targeted edits",
+                    "File read successfully: {}\n\nContent:\n{}\n\n💡 Next: Use writeFile to modify or replaceStringInFile to make targeted edits",
                     path_str,
                     content
                 );
@@ -258,6 +265,7 @@ impl WorkspaceServer {
         path: &std::path::Path,
         start_line: Option<usize>,
         end_line: Option<usize>,
+        show_line_numbers: bool,
     ) -> Result<String, String> {
         use tokio::io::{AsyncBufReadExt, BufReader};
 
@@ -292,7 +300,10 @@ impl WorkspaceServer {
                     current_line += 1;
                 }
 
-                Ok::<_, String>(Self::format_lines_with_numbers(&result_lines))
+                Ok::<_, String>(Self::format_lines_with_numbers(
+                    &result_lines,
+                    show_line_numbers,
+                ))
             })
             .await
             .map_err(|e| format!("Task join error: {}", e))?;
@@ -324,7 +335,10 @@ impl WorkspaceServer {
             current_line += 1;
         }
 
-        Ok(Self::format_lines_with_numbers(&result_lines))
+        Ok(Self::format_lines_with_numbers(
+            &result_lines,
+            show_line_numbers,
+        ))
     }
 
     /// Format lines with pipe-separated line numbers (LLM-friendly format)
@@ -337,9 +351,18 @@ impl WorkspaceServer {
     /// ```
     ///
     /// Note: Preserves ALL empty lines for accurate indentation/structure visibility
-    fn format_lines_with_numbers(lines: &[(usize, String)]) -> String {
+    fn format_lines_with_numbers(lines: &[(usize, String)], show_line_numbers: bool) -> String {
         if lines.is_empty() {
             return String::new();
+        }
+
+        if !show_line_numbers {
+            // Return raw content without line numbers
+            return lines
+                .iter()
+                .map(|(_, content)| content.as_str())
+                .collect::<Vec<_>>()
+                .join("\n");
         }
 
         // Add header for clarity
@@ -549,17 +572,33 @@ impl WorkspaceServer {
                     String::new()
                 };
 
-                let listing_str = item_lines.join("\n");
-
                 info!(
                     "Successfully listed directory: {:?} ({} items)",
                     safe_path,
                     items.len()
                 );
 
-                let hint = SuccessHint::new(
-                    format!(
-                        "Directory listing for '{}':
+                // ✅ ENHANCED: Clear messaging for empty directories
+                let hint = if items.is_empty() {
+                    SuccessHint::new(
+                        format!(
+                            "Directory listing for '{}':
+
+(This directory is empty)
+
+💡 Next Steps:
+- Use writeFile('{}/filename.txt', content) to create a file
+- Use listDirectory('{}') to verify the directory exists
+- This is a valid empty directory",
+                            path_str, path_str, path_str
+                        ),
+                        vec![],
+                    )
+                } else {
+                    let listing_str = item_lines.join("\n");
+                    SuccessHint::new(
+                        format!(
+                            "Directory listing for '{}':
 
 {}{}
 
@@ -567,10 +606,11 @@ impl WorkspaceServer {
 - Use readFile('{}/filename') to read a file
 - Use listDirectory('{}/subdir') to explore subdirectories
 - Use grep to search for content in files",
-                        path_str, listing_str, truncation_note, path_str, path_str
-                    ),
-                    vec![],
-                );
+                            path_str, listing_str, truncation_note, path_str, path_str
+                        ),
+                        vec![],
+                    )
+                };
 
                 Ok(hint.to_mcp_result_with_data(Some(json!({
                     "items": items,
@@ -726,50 +766,86 @@ impl WorkspaceServer {
         Ok(results)
     }
 
-    pub async fn handle_replace_lines_in_file(
+    pub async fn handle_replace_string_in_file(
         &self,
         args: Value,
         session_id: Option<String>,
     ) -> Result<MCPResult, String> {
         // Layer 1: Parameter existence validation
         let path_str = match args.get("path").and_then(|v| v.as_str()) {
-            Some(path) => path,
+            Some(path) if !path.trim().is_empty() => path.trim(),
+            Some(_) => {
+                return Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::InvalidInput,
+                    "Parameter 'path' cannot be empty",
+                    vec![
+                        "Provide a valid file path: replaceStringInFile('src/file.rs', ...)"
+                            .to_string(),
+                        "Use listDirectory('.') to find files".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                )
+                .to_mcp_result());
+            }
             None => {
                 return Ok(missing_param_error("path", ToolGroup::Workspace));
             }
         };
 
         let replacements_val = match args.get("replacements") {
-            Some(val) => val,
-            None => {
-                return Ok(missing_param_error("replacements", ToolGroup::Workspace));
+            Some(val) if val.is_array() => val,
+            Some(_) => {
+                return Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::InvalidInput,
+                    "'replacements' must be an array",
+                    vec![
+                        "Format: {\"replacements\": [{\"oldString\": \"...\", \"newString\": \"...\"}]}".to_string(),
+                        "Use readFile first to see exact content to replace".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                ).to_mcp_result());
             }
+            None => return Ok(missing_param_error("replacements", ToolGroup::Workspace)),
         };
 
+        // Empty replacements check
+        if replacements_val.as_array().unwrap().is_empty() {
+            return Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::InvalidInput,
+                "Replacements array is empty",
+                vec![
+                    "Provide at least one replacement: {\"oldString\": \"...\", \"newString\": \"...\"}".to_string(),
+                    "Use readFile to identify content to replace".to_string(),
+                ],
+                ToolGroup::Workspace,
+            ).to_mcp_result());
+        }
+
         // Layer 2: Format validation
-        let replacements: Vec<HashMap<String, Value>> = match serde_json::from_value(
-            replacements_val.clone(),
-        ) {
-            Ok(r) => r,
-            Err(e) => {
-                return Ok(ErrorGuidance::with_guidance(
+        let replacements: Vec<HashMap<String, Value>> =
+            match serde_json::from_value(replacements_val.clone()) {
+                Ok(r) => r,
+                Err(e) => {
+                    return Ok(ErrorGuidance::with_guidance(
                         ErrorCategory::InvalidFormat,
                         format!("Invalid replacements format: {}", e),
                         vec![
                             "Replacements must be an array of objects".to_string(),
-                            "Each object needs startLine/lineNumber and newContent".to_string(),
-                            "Example: [{\"startLine\": 1, \"endLine\": 2, \"newContent\": \"new text\"}]".to_string(),
+                            "Each object needs oldString and newString".to_string(),
+                            "Example: [{\"oldString\": \"old text\", \"newString\": \"new text\"}]"
+                                .to_string(),
                         ],
                         ToolGroup::Workspace,
-                    ).to_mcp_result());
-            }
-        };
+                    )
+                    .to_mcp_result());
+                }
+            };
 
         // Layer 3: Business logic - path validation and file reading
         let safe_path = self.validate_path_with_error(path_str, session_id.clone())?;
 
-        let lines = match self.read_file_lines(&safe_path).await {
-            Ok(lines) => lines,
+        let original_content = match self.read_file_as_string(&safe_path).await {
+            Ok(content) => content,
             Err(e) => {
                 return Ok(operation_failed_error(
                     "Read file for replacement",
@@ -784,150 +860,221 @@ impl WorkspaceServer {
             }
         };
 
-        let mut new_lines = lines.clone();
-        let mut replacements_map: HashMap<String, String> = HashMap::new();
+        let mut new_content = original_content.clone();
+        let mut successful_replacements = Vec::new();
+        let mut failed_replacements = Vec::new();
 
-        // Layer 2 (continued): Validate each replacement object
-        for rep in replacements {
-            let start_line = match rep.get("startLine").and_then(|v| v.as_u64()) {
-                Some(num) => num as usize,
-                Option::None => match rep.get("lineNumber").and_then(|v| v.as_u64()) {
-                    Some(num) => num as usize,
-                    Option::None => {
-                        return Ok(ErrorGuidance::with_guidance(
-                            ErrorCategory::InvalidInput,
-                            "Missing startLine or lineNumber in replacement".to_string(),
-                            vec![
-                                "Each replacement must have either 'startLine' or 'lineNumber'".to_string(),
-                                "Use 'startLine' and optional 'endLine' for ranges".to_string(),
-                                "Example: {\"startLine\": 5, \"endLine\": 7, \"newContent\": \"text\"}".to_string(),
-                            ],
-                            ToolGroup::Workspace,
-                        ).to_mcp_result());
+        // Process each replacement
+        for (idx, rep) in replacements.iter().enumerate() {
+            let old_string = match rep.get("oldString").and_then(|v| v.as_str()) {
+                Some(s) => s,
+                None => {
+                    failed_replacements.push(format!(
+                        "Replacement #{}: missing 'oldString' parameter",
+                        idx + 1
+                    ));
+                    continue;
+                }
+            };
+
+            let new_string = match rep.get("newString").and_then(|v| v.as_str()) {
+                Some(s) => s,
+                None => {
+                    failed_replacements.push(format!(
+                        "Replacement #{}: missing 'newString' parameter",
+                        idx + 1
+                    ));
+                    continue;
+                }
+            };
+
+            // Count occurrences
+            let occurrences = new_content.matches(old_string).count();
+
+            if occurrences == 0 {
+                // Calculate similarity for suggestions
+                let lines: Vec<&str> = new_content.lines().collect();
+                let old_lines: Vec<&str> = old_string.lines().collect();
+                let search_size = old_lines.len();
+
+                let mut best_match: Option<(usize, f32)> = None; // (line_num, similarity)
+
+                // Search for similar content
+                for (idx, window) in lines.windows(search_size.max(1)).enumerate() {
+                    let window_text = window.join("\n");
+                    let similarity = self.calculate_similarity(&window_text, old_string);
+
+                    if similarity > 0.3 {
+                        // 30% threshold
+                        if best_match.is_none() || similarity > best_match.unwrap().1 {
+                            best_match = Some((idx + 1, similarity));
+                        }
                     }
-                },
-            };
+                }
 
-            let end_line = rep
-                .get("endLine")
-                .and_then(|v| v.as_u64())
-                .map(|n| n as usize)
-                .unwrap_or(start_line);
-
-            if start_line > end_line {
-                return Ok(ErrorGuidance::with_guidance(
-                    ErrorCategory::InvalidInput,
+                let suggestion = if let Some((line_num, similarity)) = best_match {
                     format!(
-                        "startLine ({}) must be <= endLine ({})",
-                        start_line, end_line
-                    ),
-                    vec![
-                        "Swap the values if you meant to specify a range".to_string(),
-                        format!(
-                            "Correct range: {{\"startLine\": {}, \"endLine\": {}}}",
-                            end_line, start_line
-                        ),
-                        "Or use a single line replacement".to_string(),
-                    ],
-                    ToolGroup::Workspace,
-                )
-                .to_mcp_result());
-            }
-
-            if start_line == 0 || end_line > new_lines.len() {
-                return Ok(ErrorGuidance::with_guidance(
-                    ErrorCategory::InvalidInput,
-                    format!(
-                        "Line range {}-{} is out of bounds (file has {} lines)",
-                        start_line,
-                        end_line,
-                        new_lines.len()
-                    ),
-                    vec![
-                        format!(
-                            "File has {} lines, use line numbers 1-{}",
-                            new_lines.len(),
-                            new_lines.len()
-                        ),
-                        "Use readFile to see the file content and line count".to_string(),
-                        "Line numbers start at 1, not 0".to_string(),
-                    ],
-                    ToolGroup::Workspace,
-                )
-                .to_mcp_result());
-            }
-
-            let content = match rep.get("newContent") {
-                Some(Value::String(s)) => s.to_string(), // Handle string values including empty strings
-                Some(Value::Null) => String::new(), // Handle explicit null as empty string for deletion
-                Some(_) => {
-                    return Ok(ErrorGuidance::with_guidance(
-                        ErrorCategory::InvalidInput,
-                        "newContent must be a string".to_string(),
-                        vec![
-                            "Use a string value for newContent".to_string(),
-                            "Use empty string \"\" or null to delete lines".to_string(),
-                            "Example: {\"startLine\": 1, \"newContent\": \"new line text\"}"
-                                .to_string(),
-                        ],
-                        ToolGroup::Workspace,
+                        "Similar content found at line {} ({}% match). Use readFile('{}', {}, {}) to verify",
+                        line_num,
+                        (similarity * 100.0) as u32,
+                        path_str,
+                        line_num,
+                        line_num + search_size.saturating_sub(1)
                     )
-                    .to_mcp_result());
-                }
-                None => String::new(), // Missing newContent means delete lines
-            };
-
-            let range_key = format!("{start_line}-{end_line}");
-            replacements_map.insert(range_key, content);
-        }
-
-        for (range_key, content) in replacements_map {
-            let parts: Vec<&str> = range_key.split('-').collect();
-            let start_line: usize = parts[0].parse().unwrap();
-            let end_line: usize = parts[1].parse().unwrap();
-
-            if start_line == end_line {
-                if content.is_empty() {
-                    // Delete single line
-                    new_lines.remove(start_line - 1);
                 } else {
-                    // Replace single line
-                    new_lines[start_line - 1] = content;
-                }
-            } else if content.is_empty() {
-                // Delete line range
-                new_lines.splice((start_line - 1)..end_line, vec![]);
-            } else {
-                // Replace line range with single line
-                new_lines.splice((start_line - 1)..end_line, vec![content]);
+                    "Use readFile to see current content and verify the string exists".to_string()
+                };
+
+                failed_replacements.push(format!(
+                    "Replacement #{}: pattern not found. {}",
+                    idx + 1,
+                    suggestion
+                ));
+                continue;
             }
+
+            if occurrences > 1 {
+                failed_replacements.push(format!(
+                    "Replacement #{}: pattern found {} times. Pattern must be unique. Include more context to make it unique.",
+                    idx + 1, occurrences
+                ));
+                continue;
+            }
+
+            // Perform replacement (exactly one match)
+            new_content = new_content.replacen(old_string, new_string, 1);
+            successful_replacements.push((old_string.to_string(), new_string.to_string()));
         }
 
-        // Layer 4: Apply replacements and write
-        let new_content = new_lines.join("\n");
+        // Check if any replacements failed
+        if !failed_replacements.is_empty() && successful_replacements.is_empty() {
+            return Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::InvalidInput,
+                format!("All {} replacement(s) failed", failed_replacements.len()),
+                failed_replacements.iter().take(3).cloned().collect(),
+                ToolGroup::Workspace,
+            )
+            .to_mcp_result());
+        }
+
+        // Write the modified content
         let file_manager = self.get_file_manager(session_id);
         match file_manager.write_file_string(path_str, &new_content).await {
             Ok(_) => {
+                // Generate diff output
+                let diff_output = self.format_string_diff(&successful_replacements);
+
+                let summary = if failed_replacements.is_empty() {
+                    format!(
+                        "✓ Successfully replaced {} pattern(s) in '{}'",
+                        successful_replacements.len(),
+                        path_str
+                    )
+                } else {
+                    format!(
+                        "⚠ Partially successful: {} of {} replacement(s) succeeded in '{}'\n\nFailed:\n{}",
+                        successful_replacements.len(),
+                        replacements.len(),
+                        path_str,
+                        failed_replacements.join("\n")
+                    )
+                };
+
                 let hint = SuccessHint::new(
-                    format!("Successfully replaced lines in file {}", path_str),
-                    SuccessHint::for_tool("replaceLinesInFile", ToolGroup::Workspace),
+                    format!("{}\n\n{}", summary, diff_output),
+                    vec![
+                        format!("Use readFile('{}') to verify all changes", path_str),
+                        "Use grep(path, pattern) to search for specific content".to_string(),
+                    ],
                 );
+
                 Ok(hint.to_mcp_result_with_data(Some(json!({
                     "path": path_str,
-                    "lines_count": new_lines.len()
+                    "successful_replacements": successful_replacements.len(),
+                    "failed_replacements": failed_replacements.len(),
+                    "diff": diff_output,
                 }))))
             }
-            Err(e) => Ok(operation_failed_error(
-                "Write file after replacement",
-                &e.to_string(),
+            Err(e) if e.contains("Permission denied") => Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::PermissionDenied,
+                format!("Permission denied writing to '{}'", path_str),
                 vec![
-                    "Check file permissions".to_string(),
-                    "Verify the file is not locked by another process".to_string(),
-                    "Ensure sufficient disk space".to_string(),
+                    "File may be read-only or locked by another process".to_string(),
+                    "Use listDirectory to check file permissions".to_string(),
+                ],
+                ToolGroup::Workspace,
+            )
+            .to_mcp_result()),
+            Err(e) => Ok(operation_failed_error(
+                "Write file",
+                &e,
+                vec![
+                    "File may be locked or inaccessible".to_string(),
+                    format!("Use readFile('{}') to verify file still exists", path_str),
                 ],
                 ToolGroup::Workspace,
             )),
         }
+    }
+
+    // Helper: Read file as string
+    async fn read_file_as_string(&self, path: &std::path::Path) -> Result<String, String> {
+        tokio::fs::read_to_string(path)
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    // Helper: Calculate text similarity (Levenshtein-based)
+    fn calculate_similarity(&self, text1: &str, text2: &str) -> f32 {
+        let len1 = text1.len();
+        let len2 = text2.len();
+
+        if len1 == 0 && len2 == 0 {
+            return 1.0;
+        }
+        if len1 == 0 || len2 == 0 {
+            return 0.0;
+        }
+
+        // Simplified similarity: count matching characters
+        let matching_chars = text1
+            .chars()
+            .zip(text2.chars())
+            .filter(|(a, b)| a == b)
+            .count();
+
+        matching_chars as f32 / len1.max(len2) as f32
+    }
+
+    // Helper: Format diff output (Git-style)
+    fn format_string_diff(&self, replacements: &[(String, String)]) -> String {
+        let mut diff_lines = vec!["=== Changes Made ===\n".to_string()];
+
+        for (old_str, new_str) in replacements {
+            // Find context around change
+            let old_lines: Vec<&str> = old_str.lines().collect();
+            let new_lines: Vec<&str> = new_str.lines().collect();
+
+            diff_lines.push(format!(
+                "@@ Replaced {} line(s) with {} line(s) @@",
+                old_lines.len(),
+                new_lines.len()
+            ));
+
+            // Show removed lines
+            for line in old_lines {
+                diff_lines.push(format!("- {}", line));
+            }
+
+            // Show added lines
+            for line in new_lines {
+                diff_lines.push(format!("+ {}", line));
+            }
+
+            diff_lines.push(String::new()); // Blank line
+        }
+
+        diff_lines.join("\n")
     }
 
     pub async fn handle_grep(
@@ -1265,7 +1412,7 @@ mod tests {
             (3, "int main() {".to_string()),
         ];
 
-        let result = WorkspaceServer::format_lines_with_numbers(&lines);
+        let result = WorkspaceServer::format_lines_with_numbers(&lines, true);
 
         assert!(result.contains("   1 | #include <stdio.h>"));
         assert!(result.contains("   2 | "));
@@ -1288,7 +1435,7 @@ mod tests {
             (11, "}".to_string()),
         ];
 
-        let result = WorkspaceServer::format_lines_with_numbers(&lines);
+        let result = WorkspaceServer::format_lines_with_numbers(&lines, true);
 
         // Should have pipe-separated format
         assert!(result.contains("   1 | #include <stdio.h>"));
@@ -1308,7 +1455,7 @@ mod tests {
     fn test_format_lines_includes_header_and_footer() {
         let lines = vec![(1, "int main() {}".to_string()), (2, "".to_string())];
 
-        let result = WorkspaceServer::format_lines_with_numbers(&lines);
+        let result = WorkspaceServer::format_lines_with_numbers(&lines, true);
 
         assert!(result.contains("[File Content"));
         assert!(result.contains("NOT part of the code"));
