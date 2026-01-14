@@ -5,8 +5,8 @@
       "apiKeyEnvVar": "OPENAI_API_KEY",
       "baseUrl": "https://api.openai.com/v1",
       "models": {
-        "gpt-4.1": {
-          "name": "GPT-4.1",
+        "skt/ax-k1": {
+          "name": "skt/ax-k1",
           "contextWindow": 1000000,
           "supportReasoning": false,
           "supportTools": true,
