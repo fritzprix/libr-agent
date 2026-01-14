@@ -167,8 +167,16 @@ pub fn create_import_file_tool() -> MCPTool {
 }
 
 pub fn create_replace_string_in_file_tool() -> MCPTool {
-    let mut item_props = HashMap::new();
-    item_props.insert(
+    let mut props = HashMap::new();
+    props.insert(
+        "path".to_string(),
+        string_prop(
+            Some(1),
+            Some(1000),
+            Some("Relative path to the file to modify (from workspace root)"),
+        ),
+    );
+    props.insert(
         "oldString".to_string(),
         string_prop(
             None,
@@ -182,10 +190,12 @@ MANDATORY WORKFLOW:
 4. Use the extracted text as this parameter
 
 ❌ NEVER use text reconstructed from previous attempts
-✅ ALWAYS use text exactly as shown in readFile response"),
+✅ ALWAYS use text exactly as shown in readFile response
+
+💡 TIP: For multiple changes, call this tool multiple times sequentially"),
         ),
     );
-    item_props.insert(
+    props.insert(
         "newString".to_string(),
         string_prop(
             None,
@@ -194,38 +204,21 @@ MANDATORY WORKFLOW:
         ),
     );
 
-    let replacement_item_schema = object_schema(
-        item_props,
-        vec!["oldString".to_string(), "newString".to_string()],
-    );
-
-    let mut props = HashMap::new();
-    props.insert(
-        "path".to_string(),
-        string_prop(
-            Some(1),
-            Some(1000),
-            Some("Relative path to the file to modify (from workspace root)"),
-        ),
-    );
-    props.insert(
-        "replacements".to_string(),
-        array_schema(
-            replacement_item_schema,
-            Some("An array of string replacement objects"),
-        ),
-    );
-
     MCPTool {
         name: "replaceStringInFile".to_string(),
         title: Some("Replace String in File".to_string()),
-        description: "Replace text content in a file using exact string matching. More robust than line-based replacement as it works regardless of line number changes. Supports multiple independent replacements in a single call.
+        description: "Replace text content in a file using exact string matching. Atomic operation - either succeeds completely or fails with clear guidance.
 
 ⚠️ CRITICAL WORKFLOW (MUST FOLLOW):
 1. ALWAYS call readFile(path) or readFile(path, startLine, endLine) FIRST
 2. Extract the exact text from readFile response into oldString parameter
 3. Verify the extracted text includes surrounding context (3-5 lines) for uniqueness
 4. Then call replaceStringInFile with the extracted oldString
+
+💡 MULTIPLE CHANGES: Call this tool multiple times sequentially
+   → Each call is atomic and independent
+   → Easier to track and debug than batch operations
+   → File state is consistent between calls
 
 ❌ NEVER use oldString reconstructed from previous attempts or assumptions
 ✅ ALWAYS use text exactly as returned by readFile to ensure exact match
@@ -237,36 +230,20 @@ MANDATORY WORKFLOW:
 - DO NOT retry with same oldString after failure
 
 💡 NEXT: Use previewReplacement to verify changes before committing or readFile to confirm edits".to_string(),
-        input_schema: object_schema(props, vec!["path".to_string(), "replacements".to_string()]),
+        input_schema: object_schema(
+            props,
+            vec![
+                "path".to_string(),
+                "oldString".to_string(),
+                "newString".to_string(),
+            ],
+        ),
         output_schema: None,
         annotations: None,
     }
 }
 
 pub fn create_preview_replacement_tool() -> MCPTool {
-    let mut item_props = HashMap::new();
-    item_props.insert(
-        "oldString".to_string(),
-        string_prop(
-            None,
-            None,
-            Some("Text content you want to find and replace. Extract from readFile response."),
-        ),
-    );
-    item_props.insert(
-        "newString".to_string(),
-        string_prop(
-            None,
-            None,
-            Some("New text content to replace oldString with."),
-        ),
-    );
-
-    let replacement_item_schema = object_schema(
-        item_props,
-        vec!["oldString".to_string(), "newString".to_string()],
-    );
-
     let mut props = HashMap::new();
     props.insert(
         "path".to_string(),
@@ -277,10 +254,19 @@ pub fn create_preview_replacement_tool() -> MCPTool {
         ),
     );
     props.insert(
-        "replacements".to_string(),
-        array_schema(
-            replacement_item_schema,
-            Some("Array of replacement objects to preview"),
+        "oldString".to_string(),
+        string_prop(
+            None,
+            None,
+            Some("Text content you want to find and replace. Extract from readFile response."),
+        ),
+    );
+    props.insert(
+        "newString".to_string(),
+        string_prop(
+            None,
+            None,
+            Some("New text content to replace oldString with."),
         ),
     );
 
@@ -303,7 +289,14 @@ WORKFLOW:
 - Verify oldString was extracted correctly from readFile
 
 ⚠️ READ-ONLY: This tool does NOT modify files, only shows preview".to_string(),
-        input_schema: object_schema(props, vec!["path".to_string(), "replacements".to_string()]),
+        input_schema: object_schema(
+            props,
+            vec![
+                "path".to_string(),
+                "oldString".to_string(),
+                "newString".to_string(),
+            ],
+        ),
         output_schema: None,
         annotations: None,
     }

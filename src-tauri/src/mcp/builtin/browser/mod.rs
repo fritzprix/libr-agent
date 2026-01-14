@@ -15,6 +15,24 @@ mod navigation;
 mod session;
 
 /// A built-in MCP server that constructs a bridge to the InteractiveBrowserServer service
+///
+/// # Browser Tool Workflows
+///
+/// ## Basic Navigation Flow
+/// 1. `createSession(url?)` → get `session_id`
+/// 2. `navigateToUrl(session_id, url)` → navigate to page
+/// 3. `extractWebContent(session_id)` → read content
+///
+/// ## Interaction Flow
+/// 1. `listInteractable(session_id)` → find elements
+/// 2. `clickElement(session_id, selector)` → interact
+/// 3. `extractWebContent(session_id)` → verify changes
+///
+/// ## Error Recovery
+/// - **Session expired**: call `createSession` again
+/// - **Element not found**: use `listInteractable` to find valid selectors
+/// - **Page load timeout**: abandon and try different URL
+/// - **HTTP 403/401**: do NOT retry, search alternative sources
 #[derive(Debug)]
 pub struct BrowserServer {
     pub(crate) app_handle: AppHandle,
@@ -186,7 +204,14 @@ impl BuiltinMCPServer for BrowserServer {
         vec![
             MCPTool {
                 name: "createSession".to_string(),
-                description: "Create a new browser session. Required before using other browser tools.".to_string(),
+                description: "Create a new browser session for this agent.
+
+⚠️ WORKFLOW:
+1. Call createSession FIRST before any other browser operations
+2. Use the returned session ID for all subsequent browser tools
+3. Session automatically closes if agent terminates
+
+Returns: Session ID (e.g., 'abc123...') - use this ID for all other browser tools".to_string(),
                 input_schema: serde_json::from_value(json!({
                     "type": "object",
                     "properties": {
@@ -203,17 +228,31 @@ impl BuiltinMCPServer for BrowserServer {
             },
             MCPTool {
                 name: "navigateToUrl".to_string(),
-                description: "Navigate to a specific URL.".to_string(),
+                description: "Navigate to a specific URL in the browser session.
+
+⚠️ CRITICAL WORKFLOW:
+1. Ensure createSession was called and returned a session ID
+2. Use the session ID from createSession as the sessionId parameter
+3. URL must include http:// or https:// protocol
+
+⚠️ Common errors:
+- 403/401: Page blocks automated access - abandon and search elsewhere
+- 404: Page not found - check URL or search homepage
+- Timeout: Page too complex or blocking - try different URL
+
+After success:
+- Use extractWebContent to read page content
+- Use listInteractable to see clickable elements".to_string(),
                 input_schema: serde_json::from_value(json!({
                     "type": "object",
                     "properties": {
                          "sessionId": {
                             "type": "string",
-                            "description": "The ID of the browser session"
+                            "description": "⚠️ CRITICAL: Browser session ID returned by createSession.\n\nWORKFLOW:\n1. Call createSession FIRST to get a session ID\n2. Use the exact session ID from createSession response\n3. DO NOT use session IDs from previous attempts or other tools"
                         },
                         "url": {
                             "type": "string",
-                            "description": "URL to navigate to"
+                            "description": "URL to navigate to (must start with http:// or https://)"
                         }
                     },
                     "required": ["sessionId", "url"]
@@ -231,7 +270,7 @@ impl BuiltinMCPServer for BrowserServer {
                     "properties": {
                          "sessionId": {
                             "type": "string",
-                            "description": "The ID of the browser session"
+                            "description": "⚠️ CRITICAL: Browser session ID returned by createSession."
                         }
                     },
                     "required": ["sessionId"]
@@ -249,7 +288,7 @@ impl BuiltinMCPServer for BrowserServer {
                     "properties": {
                          "sessionId": {
                             "type": "string",
-                            "description": "The ID of the browser session"
+                            "description": "⚠️ CRITICAL: Browser session ID returned by createSession."
                         }
                     },
                     "required": ["sessionId"]
@@ -267,7 +306,7 @@ impl BuiltinMCPServer for BrowserServer {
                     "properties": {
                          "sessionId": {
                             "type": "string",
-                            "description": "The ID of the browser session"
+                            "description": "⚠️ CRITICAL: Browser session ID returned by createSession."
                         }
                     },
                     "required": ["sessionId"]
@@ -285,7 +324,7 @@ impl BuiltinMCPServer for BrowserServer {
                     "properties": {
                          "sessionId": {
                             "type": "string",
-                            "description": "The ID of the browser session"
+                            "description": "⚠️ CRITICAL: Browser session ID returned by createSession."
                         }
                     },
                     "required": ["sessionId"]
@@ -297,17 +336,19 @@ impl BuiltinMCPServer for BrowserServer {
             },
             MCPTool {
                 name: "extractWebContent".to_string(),
-                description: "Extract the content of the current page as markdown. Large pages are automatically paginated.".to_string(),
+                description: "Extract the content of the current page as markdown. Large pages are automatically paginated.
+
+For pages > 5000 chars, content is split into pages. Use readWebContent(sessionId, page) to read subsequent pages.".to_string(),
                 input_schema: serde_json::from_value(json!({
                     "type": "object",
                     "properties": {
                          "sessionId": {
                             "type": "string",
-                            "description": "The ID of the browser session"
+                            "description": "⚠️ CRITICAL: Browser session ID returned by createSession.\n\nWORKFLOW:\n1. Call createSession FIRST to get a session ID\n2. Use the exact session ID from createSession response"
                         },
                         "autoMerge": {
                             "type": "boolean",
-                            "description": "Attempt to merge all pages into one response. Only works for content ≤2 pages or <5000 chars. For larger pages, use readWebContent(sessionId, page) to access individual pages. (default: true)"
+                            "description": "Whether to attempt merging all pages into one response (default: true).\n\n⚠️ When to use false:\n- Pages > 5000 characters (will fail to merge anyway)\n- Need precise pagination control\n\nIf merge fails, use readWebContent(sessionId, page) to read individual pages"
                         },
                         "saveRawHtml": {
                             "type": "boolean",
@@ -323,17 +364,21 @@ impl BuiltinMCPServer for BrowserServer {
             },
             MCPTool {
                 name: "clickElement".to_string(),
-                description: "Click an element on the page using a CSS selector.".to_string(),
+                description: "Click an element on the page using a CSS selector.
+
+⚠️ PREREQUISITE:
+- Call listInteractable OR extractWebContent FIRST to find valid selectors on the page.
+- Do NOT guess selectors.".to_string(),
                 input_schema: serde_json::from_value(json!({
                     "type": "object",
                     "properties": {
                          "sessionId": {
                             "type": "string",
-                            "description": "The ID of the browser session"
+                            "description": "⚠️ CRITICAL: Browser session ID returned by createSession."
                         },
                         "selector": {
                             "type": "string",
-                            "description": "CSS selector of the element to click"
+                            "description": "CSS selector of the element to click (must match an element visible in listInteractable/extractWebContent)"
                         }
                     },
                     "required": ["sessionId", "selector"]
@@ -345,13 +390,17 @@ impl BuiltinMCPServer for BrowserServer {
             },
             MCPTool {
                 name: "inputText".to_string(),
-                description: "Input text into an element on the page.".to_string(),
+                description: "Input text into an element on the page.
+
+⚠️ PREREQUISITE:
+- Call listInteractable OR extractWebContent FIRST to find valid selectors.
+- Verify the element is an input or textarea.".to_string(),
                 input_schema: serde_json::from_value(json!({
                     "type": "object",
                     "properties": {
                          "sessionId": {
                             "type": "string",
-                            "description": "The ID of the browser session"
+                            "description": "⚠️ CRITICAL: Browser session ID returned by createSession."
                         },
                         "selector": {
                             "type": "string",
@@ -377,7 +426,7 @@ impl BuiltinMCPServer for BrowserServer {
                     "properties": {
                          "sessionId": {
                             "type": "string",
-                            "description": "The ID of the browser session"
+                            "description": "⚠️ CRITICAL: Browser session ID returned by createSession."
                         },
                         "x": {
                             "type": "number",
@@ -404,12 +453,12 @@ impl BuiltinMCPServer for BrowserServer {
                     "properties": {
                         "sessionId": {
                             "type": "string",
-                            "description": "The browser session ID"
+                            "description": "⚠️ CRITICAL: Browser session ID returned by createSession."
                         },
                         "filterType": {
                             "type": "string",
                             "enum": ["semantic_clickable", "semantic_input", "all_focusable"],
-                            "description": "Filter type (default: semantic_clickable)"
+                            "description": "Filter type:\n- semantic_clickable: Buttons, links, and clickable elements\n- semantic_input: Inputs, textareas, and form fields\n- all_focusable: Everything that can receive focus"
                         },
                         "scope": {
                             "type": "string",
@@ -426,7 +475,7 @@ impl BuiltinMCPServer for BrowserServer {
             },
             MCPTool {
                 name: "closeSession".to_string(),
-                description: "Close the currently active browser session for this agent.".to_string(),
+                description: "Explicitly close the browser session. Good practice after finishing task to free resources.".to_string(),
                 input_schema: serde_json::from_value(json!({
                     "type": "object",
                     "properties": {}
@@ -438,13 +487,13 @@ impl BuiltinMCPServer for BrowserServer {
             },
             MCPTool {
                 name: "readWebContent".to_string(),
-                description: "Read a specific page from previously extracted web content.".to_string(),
+                description: "Read a specific page from previously extracted content (if paginated).".to_string(),
                 input_schema: serde_json::from_value(json!({
                     "type": "object",
                     "properties": {
                         "sessionId": {
                             "type": "string",
-                            "description": "The ID of the browser session"
+                            "description": "⚠️ CRITICAL: Browser session ID returned by createSession."
                         },
                         "page": {
                             "type": "number",

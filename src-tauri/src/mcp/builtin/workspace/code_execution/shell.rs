@@ -353,11 +353,12 @@ impl WorkspaceServer {
                 let _ = tokio::fs::remove_dir_all(&process_tmp_dir).await;
 
                 let success = exit_code.unwrap_or(-1) == 0;
+                let actual_exit_code = exit_code.unwrap_or(-1);
 
                 // Construct JSON response with enhanced metadata
                 let response = serde_json::json!({
                     "command": command,
-                    "exit_code": exit_code.unwrap_or(-1),
+                    "exit_code": actual_exit_code,
                     "stdout": stdout,
                     "stderr": stderr,
                     "status": if success { "finished" } else { "failed" },
@@ -370,12 +371,63 @@ impl WorkspaceServer {
                     command, session_id, exit_code, duration_ms
                 );
 
+                // ✅ CRITICAL FIX: Handle non-zero exit codes as errors
+                if !success {
+                    let error_output = if !stderr.is_empty() {
+                        format!("Error output:\n{}", stderr)
+                    } else if !stdout.is_empty() {
+                        format!("Command output:\n{}", stdout)
+                    } else {
+                        "No error output captured".to_string()
+                    };
+
+                    // Provide context-specific guidance based on exit code
+                    let guidance = match actual_exit_code {
+                        1 => vec![
+                            "General command failure - review error output above".to_string(),
+                            "Verify command syntax and required files exist".to_string(),
+                            "Use listDirectory to check file paths".to_string(),
+                        ],
+                        2 => vec![
+                            "Misuse of shell command or invalid arguments".to_string(),
+                            "Check command syntax in tool documentation".to_string(),
+                            "Verify all required parameters are provided".to_string(),
+                        ],
+                        127 => vec![
+                            "Command not found - program is not installed or not in PATH"
+                                .to_string(),
+                            "Verify the program is installed on the system".to_string(),
+                            "Check for typos in the command name".to_string(),
+                        ],
+                        126 => vec![
+                            "Command found but not executable".to_string(),
+                            "Check file permissions".to_string(),
+                            "Verify the file is a valid executable".to_string(),
+                        ],
+                        130 => vec![
+                            "Command terminated by Ctrl+C (SIGINT)".to_string(),
+                            "Process was interrupted by user or system".to_string(),
+                        ],
+                        _ => vec![
+                            format!("Command failed with exit code: {}", actual_exit_code),
+                            "Review error output above for specific failure reasons".to_string(),
+                            "Verify command syntax and required dependencies".to_string(),
+                        ],
+                    };
+
+                    return Ok(operation_failed_error(
+                        "Execute shell command",
+                        &format!(
+                            "Command failed with exit code: {}\n\n{}",
+                            actual_exit_code, error_output
+                        ),
+                        guidance,
+                        ToolGroup::Workspace,
+                    ));
+                }
+
                 // Enhanced text response with explicit status and output visibility
-                let header = format!(
-                    "Command executed in {}ms (exit code: {})",
-                    duration_ms,
-                    exit_code.unwrap_or(-1)
-                );
+                let header = format!("Command executed in {}ms (exit code: 0)", duration_ms);
 
                 // Include output in text message if available (CRITICAL FIX for sync visibility)
                 let text_message = if !stdout.is_empty() {
