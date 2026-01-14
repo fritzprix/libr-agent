@@ -180,7 +180,37 @@ impl WorkspaceServer {
             .session_manager
             .get_session_workspace_dir_by_id(&target_session_id);
 
-        let workspace_dir_canon = std::fs::canonicalize(&workspace_dir).unwrap_or(workspace_dir);
+        let workspace_dir_canon =
+            std::fs::canonicalize(&workspace_dir).unwrap_or(workspace_dir.clone());
+
+        // Validate all files exist before proceeding
+        let mut missing_files = Vec::new();
+        for file_value in files_array {
+            if let Some(path_str) = file_value.as_str() {
+                let file_path = workspace_dir_canon.join(path_str);
+                if !file_path.exists() {
+                    missing_files.push(path_str.to_string());
+                }
+            }
+        }
+
+        if !missing_files.is_empty() {
+            return Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::ResourceNotFound,
+                format!(
+                    "The following {} file(s) were not found: {}",
+                    missing_files.len(),
+                    missing_files.join(", ")
+                ),
+                vec![
+                    "Use listDirectory to verify file paths".to_string(),
+                    "Check for typos in filenames".to_string(),
+                    "Ensure files are within the workspace".to_string(),
+                ],
+                ToolGroup::Workspace,
+            )
+            .to_mcp_result());
+        }
 
         let exports_dir = match self.ensure_exports_directory(&target_session_id) {
             Ok(dir) => dir,

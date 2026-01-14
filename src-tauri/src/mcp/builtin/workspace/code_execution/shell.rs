@@ -811,14 +811,25 @@ impl WorkspaceServer {
             // Check if it's "executable" followed only by flags (no positional args)
             if let Some(rest) = cmd_trimmed.strip_prefix(exec) {
                 let rest = rest.trim();
+
+                // Exception: "python -c", "python -m", "node -e" are NOT REPL (check first)
+                // These execute code or modules non-interactively
+                if rest.starts_with("-c ")
+                    || rest.starts_with("-m ")
+                    || rest.starts_with("-e ")
+                    || rest.starts_with("--eval ")
+                    || rest.starts_with("-c\t")
+                    || rest.starts_with("-m\t")
+                    || rest.starts_with("-e\t")
+                    || rest.starts_with("--eval\t")
+                {
+                    continue;
+                }
+
                 // If rest is empty or only contains flags starting with -, it's likely REPL
                 if rest.is_empty()
                     || (rest.starts_with('-') && !rest.contains(".py") && !rest.contains(".js"))
                 {
-                    // Exception: "python -c" and "node -e" are not REPL
-                    if rest.contains("-c") || rest.contains("-e") || rest.contains("--eval") {
-                        continue;
-                    }
                     return true;
                 }
             }
@@ -1431,5 +1442,72 @@ mod tests {
             WorkspaceServer::normalize_shell_command("echo \"hello"),
             "echo \"hello"
         );
+    }
+
+    #[test]
+    fn test_is_likely_interactive_command() {
+        // ✅ Python -m commands should NOT be interactive
+        assert!(!WorkspaceServer::is_likely_interactive_command(
+            "python -m unittest discover tests"
+        ));
+        assert!(!WorkspaceServer::is_likely_interactive_command(
+            "python -m pytest"
+        ));
+        assert!(!WorkspaceServer::is_likely_interactive_command(
+            "python3 -m pip install requests"
+        ));
+        assert!(!WorkspaceServer::is_likely_interactive_command(
+            "py -m venv env"
+        ));
+
+        // ✅ Python -c commands should NOT be interactive
+        assert!(!WorkspaceServer::is_likely_interactive_command(
+            "python -c 'print(123)'"
+        ));
+        assert!(!WorkspaceServer::is_likely_interactive_command(
+            "python3 -c \"import sys; print(sys.version)\""
+        ));
+
+        // ✅ Node -e commands should NOT be interactive
+        assert!(!WorkspaceServer::is_likely_interactive_command(
+            "node -e \"console.log('test')\""
+        ));
+
+        // ❌ Bare Python should be interactive (REPL)
+        assert!(WorkspaceServer::is_likely_interactive_command("python"));
+        assert!(WorkspaceServer::is_likely_interactive_command("python3"));
+        assert!(WorkspaceServer::is_likely_interactive_command("node"));
+
+        // ❌ npm init without flags should be interactive
+        assert!(WorkspaceServer::is_likely_interactive_command("npm init"));
+        // ✅ npm init with --yes should NOT be interactive
+        assert!(!WorkspaceServer::is_likely_interactive_command(
+            "npm init --yes"
+        ));
+
+        // ❌ npx create-* without flags should be interactive
+        assert!(WorkspaceServer::is_likely_interactive_command(
+            "npx create-vite my-app"
+        ));
+        // ✅ npx create-* with --force should NOT be interactive
+        assert!(!WorkspaceServer::is_likely_interactive_command(
+            "npx create-vite my-app --force"
+        ));
+
+        // ❌ Read-Host should be interactive
+        assert!(WorkspaceServer::is_likely_interactive_command(
+            "Read-Host 'Enter password'"
+        ));
+
+        // ✅ Normal scripts should NOT be interactive
+        assert!(!WorkspaceServer::is_likely_interactive_command(
+            "python script.py"
+        ));
+        assert!(!WorkspaceServer::is_likely_interactive_command(
+            "node index.js"
+        ));
+        assert!(!WorkspaceServer::is_likely_interactive_command(
+            "cargo test"
+        ));
     }
 }

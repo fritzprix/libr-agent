@@ -1192,7 +1192,7 @@ impl BuiltinMCPServer for WorkspaceServer {
             "readFile" => self.handle_read_file(args, session_id).await,
             "writeFile" => self.handle_write_file(args, session_id).await,
             "listDirectory" => self.handle_list_directory(args, session_id).await,
-            "replaceLinesInFile" => self.handle_replace_lines_in_file(args, session_id).await,
+            "replaceStringInFile" => self.handle_replace_string_in_file(args, session_id).await,
             "importFile" => self.handle_import_file(args, session_id).await,
             "grep" => self.handle_grep(args, session_id).await,
             // Code execution tools

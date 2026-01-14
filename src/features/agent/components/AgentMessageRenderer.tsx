@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useEffect } from 'react';
+import React, { useCallback, useMemo, useRef, useEffect, memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -54,7 +54,7 @@ interface AgentMessageRendererProps {
  *
  * Reference: elaborated_idea.md - UI Resource Auto-Pause/Resume Mechanism
  */
-export const AgentMessageRenderer: React.FC<AgentMessageRendererProps> = ({
+const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
   content,
   message,
   className = '',
@@ -734,4 +734,6 @@ export const AgentMessageRenderer: React.FC<AgentMessageRendererProps> = ({
   );
 };
 
+// Memoized to prevent re-renders of heavy markdown and UI resource components
+export const AgentMessageRenderer = memo(AgentMessageRendererImpl);
 export default AgentMessageRenderer;
