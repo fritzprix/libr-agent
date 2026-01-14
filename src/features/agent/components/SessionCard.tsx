@@ -2,29 +2,9 @@ import { Button } from '@/components/ui/button';
 import { Trash2, Play, Eye } from 'lucide-react';
 import { useState, useCallback } from 'react';
 import { getLogger } from '@/lib/logger';
+import { formatRelativeTime } from '@/lib/date-utils';
 
 const logger = getLogger('SessionCard');
-
-// Simple relative time formatter (avoids external dependency)
-function formatRelativeTime(date: Date): string {
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMins / 60);
-  const diffDays = Math.floor(diffHours / 24);
-
-  if (diffMins < 1) return 'just now';
-  if (diffMins < 60) return `${diffMins} minute${diffMins > 1 ? 's' : ''} ago`;
-  if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
-  if (diffDays < 30) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
-
-  const diffMonths = Math.floor(diffDays / 30);
-  if (diffMonths < 12)
-    return `${diffMonths} month${diffMonths > 1 ? 's' : ''} ago`;
-
-  const diffYears = Math.floor(diffMonths / 12);
-  return `${diffYears} year${diffYears > 1 ? 's' : ''} ago`;
-}
 
 interface AgentSessionMetadata {
   id: string;
@@ -127,9 +107,15 @@ export function SessionCard({ session, onResume, onDelete }: SessionCardProps) {
       </div>
 
       <div className="text-xs text-muted-foreground space-y-1">
-        <div>Created {formatRelativeTime(session.createdAt)}</div>
+        <div>
+          Created{' '}
+          {formatRelativeTime(session.createdAt, new Date()) || 'just now'}
+        </div>
         {session.updatedAt && (
-          <div>Updated {formatRelativeTime(session.updatedAt)}</div>
+          <div>
+            Updated{' '}
+            {formatRelativeTime(session.updatedAt, new Date()) || 'just now'}
+          </div>
         )}
       </div>
 

@@ -35,7 +35,21 @@ pub fn create_read_file_tool() -> MCPTool {
     MCPTool {
         name: "readFile".to_string(),
         title: Some("Read File".to_string()),
-        description: "Read the contents of a file, optionally specifying line ranges".to_string(),
+        description: "Read the contents of a file from the workspace. Returns file content as text.
+
+PARAMETERS:
+- path: Relative path from workspace root
+- startLine (optional): Read from this line number (1-based)
+- endLine (optional): Read up to this line number (1-based)
+
+USAGE:
+- Use readFile(path) to read entire file
+- Use readFile(path, startLine, endLine) to read specific line ranges
+- Line ranges are inclusive [startLine, endLine]
+
+⚠️ PREREQUISITE: File must exist in workspace
+💡 NEXT: Use writeFile to modify content or replaceStringInFile for targeted edits"
+            .to_string(),
         input_schema: object_schema(props, vec!["path".to_string()]),
         output_schema: None,
         annotations: None,
@@ -72,7 +86,20 @@ pub fn create_write_file_tool() -> MCPTool {
     MCPTool {
         name: "writeFile".to_string(),
         title: Some("Write File".to_string()),
-        description: "Write content to a file with optional append mode".to_string(),
+        description: "Write content to a file in the workspace. Creates file if it doesn't exist.
+
+MODES:
+- 'w' (default): Overwrites entire file with new content
+- 'a': Appends content to end of existing file
+
+⚠️ CRITICAL WORKFLOW FOR EDITS:
+1. Call readFile(path) FIRST to see current content
+2. Modify content as needed
+3. Call writeFile(path, newContent, 'w') to save
+
+⚠️ WARNING: Mode 'w' replaces ALL file content - use replaceStringInFile for targeted edits
+💡 NEXT: Use readFile to verify changes or listDirectory to see workspace structure"
+            .to_string(),
         input_schema: object_schema(props, vec!["path".to_string(), "content".to_string()]),
         output_schema: None,
         annotations: None,
@@ -93,7 +120,14 @@ pub fn create_list_directory_tool() -> MCPTool {
     MCPTool {
         name: "listDirectory".to_string(),
         title: Some("List Directory".to_string()),
-        description: "List contents of a directory".to_string(),
+        description: "List all files and subdirectories in a workspace directory. Returns names and types (file/directory).
+
+USAGE:
+- Use listDirectory('.') to see workspace root contents
+- Use listDirectory('src') to explore subdirectories
+- Navigate deeper by concatenating paths: 'src/components'
+
+💡 NEXT: Use readFile to examine file contents or listDirectory on subdirectories to explore deeper".to_string(),
         input_schema: object_schema(props, vec!["path".to_string()]),
         output_schema: None,
         annotations: None,
@@ -132,44 +166,7 @@ pub fn create_import_file_tool() -> MCPTool {
     }
 }
 
-pub fn create_replace_lines_in_file_tool() -> MCPTool {
-    let mut item_props = HashMap::new();
-    item_props.insert(
-        "startLine".to_string(),
-        integer_prop(Some(1), None, Some("Starting line number (1-based)")),
-    );
-    item_props.insert(
-        "endLine".to_string(),
-        integer_prop(
-            Some(1),
-            None,
-            Some("Ending line number (1-based, optional). If not provided, equals startLine"),
-        ),
-    );
-    item_props.insert(
-        "newContent".to_string(),
-        string_prop(
-            None,
-            None,
-            Some("The new content for the line range. Use empty string to delete lines."),
-        ),
-    );
-
-    // Backward compatibility for existing line_number support
-    item_props.insert(
-        "lineNumber".to_string(),
-        integer_prop(
-            Some(1),
-            None,
-            Some("The 1-based line number to replace (deprecated, use startLine)"),
-        ),
-    );
-
-    let replacement_item_schema = object_schema(
-        item_props,
-        vec!["startLine".to_string()], // newContent is now optional for line deletion
-    );
-
+pub fn create_replace_string_in_file_tool() -> MCPTool {
     let mut props = HashMap::new();
     props.insert(
         "path".to_string(),
@@ -180,18 +177,126 @@ pub fn create_replace_lines_in_file_tool() -> MCPTool {
         ),
     );
     props.insert(
-        "replacements".to_string(),
-        array_schema(
-            replacement_item_schema,
-            Some("An array of line replacement objects"),
+        "oldString".to_string(),
+        string_prop(
+            None,
+            None,
+            Some("⚠️ CRITICAL: Exact text content to find and replace. Must match precisely including whitespace.
+
+MANDATORY WORKFLOW:
+1. Call readFile(path) FIRST to get current content
+2. Extract the exact text from readFile response (including all whitespace)
+3. Include surrounding context (3-5 lines) for uniqueness
+4. Use the extracted text as this parameter
+
+❌ NEVER use text reconstructed from previous attempts
+✅ ALWAYS use text exactly as shown in readFile response
+
+💡 TIP: For multiple changes, call this tool multiple times sequentially"),
+        ),
+    );
+    props.insert(
+        "newString".to_string(),
+        string_prop(
+            None,
+            None,
+            Some("New text content to replace oldString with. Use empty string to delete the matched text."),
         ),
     );
 
     MCPTool {
-        name: "replaceLinesInFile".to_string(),
-        title: Some("Replace Lines in File".to_string()),
-        description: "Replace specific lines or line ranges in a file with new content. Use empty content string to delete lines.".to_string(),
-        input_schema: object_schema(props, vec!["path".to_string(), "replacements".to_string()]),
+        name: "replaceStringInFile".to_string(),
+        title: Some("Replace String in File".to_string()),
+        description: "Replace text content in a file using exact string matching. Atomic operation - either succeeds completely or fails with clear guidance.
+
+⚠️ CRITICAL WORKFLOW (MUST FOLLOW):
+1. ALWAYS call readFile(path) or readFile(path, startLine, endLine) FIRST
+2. Extract the exact text from readFile response into oldString parameter
+3. Verify the extracted text includes surrounding context (3-5 lines) for uniqueness
+4. Then call replaceStringInFile with the extracted oldString
+
+💡 MULTIPLE CHANGES: Call this tool multiple times sequentially
+   → Each call is atomic and independent
+   → Easier to track and debug than batch operations
+   → File state is consistent between calls
+
+❌ NEVER use oldString reconstructed from previous attempts or assumptions
+✅ ALWAYS use text exactly as returned by readFile to ensure exact match
+
+⚠️ ERROR RECOVERY:
+- If 'Pattern not found' error: Call readFile again to get updated content
+- If 'Multiple matches' error: Include more surrounding context (5-10 lines)
+- If 'File changed' error: Re-read file before retrying
+- DO NOT retry with same oldString after failure
+
+💡 NEXT: Use previewReplacement to verify changes before committing or readFile to confirm edits".to_string(),
+        input_schema: object_schema(
+            props,
+            vec![
+                "path".to_string(),
+                "oldString".to_string(),
+                "newString".to_string(),
+            ],
+        ),
+        output_schema: None,
+        annotations: None,
+    }
+}
+
+pub fn create_preview_replacement_tool() -> MCPTool {
+    let mut props = HashMap::new();
+    props.insert(
+        "path".to_string(),
+        string_prop(
+            Some(1),
+            Some(1000),
+            Some("Relative path to the file (from workspace root)"),
+        ),
+    );
+    props.insert(
+        "oldString".to_string(),
+        string_prop(
+            None,
+            None,
+            Some("Text content you want to find and replace. Extract from readFile response."),
+        ),
+    );
+    props.insert(
+        "newString".to_string(),
+        string_prop(
+            None,
+            None,
+            Some("New text content to replace oldString with."),
+        ),
+    );
+
+    MCPTool {
+        name: "previewReplacement".to_string(),
+        title: Some("Preview File Replacement".to_string()),
+        description: "Preview what would change if replaceStringInFile is executed. Shows exact diffs without modifying the file.
+
+🎯 USE CASE: Verify oldString matches before committing changes
+
+WORKFLOW:
+1. Call readFile(path) to get current content
+2. Call previewReplacement(path, oldString, newString) to see what would change
+3. Review the diff output (shows ± lines with context)
+4. If preview looks correct, call replaceStringInFile with SAME parameters
+
+✅ BENEFITS:
+- Catch mismatches early without file corruption
+- See exact line numbers and context
+- Verify oldString was extracted correctly from readFile
+
+⚠️ READ-ONLY: This tool does NOT modify files, only shows preview".to_string(),
+        input_schema: object_schema(
+            props,
+            vec![
+                "path".to_string(),
+                "oldString".to_string(),
+                "newString".to_string(),
+            ],
+        ),
         output_schema: None,
         annotations: None,
     }

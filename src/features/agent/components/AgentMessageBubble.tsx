@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, memo } from 'react';
 import { cn } from '@/lib/utils';
 import type { Message } from '@/models/chat';
 import { AgentMessageRenderer } from './AgentMessageRenderer';
@@ -8,7 +8,7 @@ interface AgentMessageBubbleProps {
   getAssistantName?: (msg: Message) => string;
 }
 
-export function AgentMessageBubble({
+function AgentMessageBubbleImpl({
   message: msg,
   getAssistantName,
 }: AgentMessageBubbleProps) {
@@ -133,3 +133,6 @@ export function AgentMessageBubble({
     </div>
   );
 }
+
+// Memoized to prevent unnecessary re-renders of chat bubbles when unrelated state changes (e.g. streaming, scrolling)
+export const AgentMessageBubble = memo(AgentMessageBubbleImpl);

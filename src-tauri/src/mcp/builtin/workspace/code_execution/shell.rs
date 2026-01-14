@@ -96,6 +96,9 @@ impl WorkspaceServer {
                         }
                     };
 
+                    // Invalidate service context cache to reflect CWD or status changes
+                    self.invalidate_context_cache().await;
+
                     // Success - format with clear state reporting
                     let header = format!("✓ Command executed successfully in {}ms", duration_ms);
 
@@ -105,16 +108,20 @@ impl WorkspaceServer {
                         PERSISTENT_SHELL_TOOL, display_cwd, exit_code
                     );
 
-                    // Warning about file tools
-                    let file_tools_warning = "⚠️  File tools (readFile, listDirectory) always use workspace root (.)\n    To list files in shell's current directory, use shell commands: ls or find";
+                    // Only show warning if shell CWD differs from workspace root for less noise
+                    let file_tools_warning = if display_cwd != "." {
+                        "\n⚠️  File tools (readFile, listDirectory) always use workspace root (.)\n    To list files in shell's current directory, use shell commands: ls or find"
+                    } else {
+                        ""
+                    };
 
                     let text_message: String = if !stdout.is_empty() {
                         format!(
-                            "{}\n\nCommand output:\n{}\n\n{}\n\n{}",
+                            "{}\n\nCommand output:\n{}\n\n{}{}",
                             header, stdout, shell_state, file_tools_warning
                         )
                     } else {
-                        format!("{}\n\n{}\n\n{}", header, shell_state, file_tools_warning)
+                        format!("{}\n\n{}{}", header, shell_state, file_tools_warning)
                     };
                     Ok(MCPResult::success_with_data(
                         text_message.as_str(),
@@ -346,11 +353,12 @@ impl WorkspaceServer {
                 let _ = tokio::fs::remove_dir_all(&process_tmp_dir).await;
 
                 let success = exit_code.unwrap_or(-1) == 0;
+                let actual_exit_code = exit_code.unwrap_or(-1);
 
                 // Construct JSON response with enhanced metadata
                 let response = serde_json::json!({
                     "command": command,
-                    "exit_code": exit_code.unwrap_or(-1),
+                    "exit_code": actual_exit_code,
                     "stdout": stdout,
                     "stderr": stderr,
                     "status": if success { "finished" } else { "failed" },
@@ -363,12 +371,63 @@ impl WorkspaceServer {
                     command, session_id, exit_code, duration_ms
                 );
 
+                // ✅ CRITICAL FIX: Handle non-zero exit codes as errors
+                if !success {
+                    let error_output = if !stderr.is_empty() {
+                        format!("Error output:\n{}", stderr)
+                    } else if !stdout.is_empty() {
+                        format!("Command output:\n{}", stdout)
+                    } else {
+                        "No error output captured".to_string()
+                    };
+
+                    // Provide context-specific guidance based on exit code
+                    let guidance = match actual_exit_code {
+                        1 => vec![
+                            "General command failure - review error output above".to_string(),
+                            "Verify command syntax and required files exist".to_string(),
+                            "Use listDirectory to check file paths".to_string(),
+                        ],
+                        2 => vec![
+                            "Misuse of shell command or invalid arguments".to_string(),
+                            "Check command syntax in tool documentation".to_string(),
+                            "Verify all required parameters are provided".to_string(),
+                        ],
+                        127 => vec![
+                            "Command not found - program is not installed or not in PATH"
+                                .to_string(),
+                            "Verify the program is installed on the system".to_string(),
+                            "Check for typos in the command name".to_string(),
+                        ],
+                        126 => vec![
+                            "Command found but not executable".to_string(),
+                            "Check file permissions".to_string(),
+                            "Verify the file is a valid executable".to_string(),
+                        ],
+                        130 => vec![
+                            "Command terminated by Ctrl+C (SIGINT)".to_string(),
+                            "Process was interrupted by user or system".to_string(),
+                        ],
+                        _ => vec![
+                            format!("Command failed with exit code: {}", actual_exit_code),
+                            "Review error output above for specific failure reasons".to_string(),
+                            "Verify command syntax and required dependencies".to_string(),
+                        ],
+                    };
+
+                    return Ok(operation_failed_error(
+                        "Execute shell command",
+                        &format!(
+                            "Command failed with exit code: {}\n\n{}",
+                            actual_exit_code, error_output
+                        ),
+                        guidance,
+                        ToolGroup::Workspace,
+                    ));
+                }
+
                 // Enhanced text response with explicit status and output visibility
-                let header = format!(
-                    "Command executed in {}ms (exit code: {})",
-                    duration_ms,
-                    exit_code.unwrap_or(-1)
-                );
+                let header = format!("Command executed in {}ms (exit code: 0)", duration_ms);
 
                 // Include output in text message if available (CRITICAL FIX for sync visibility)
                 let text_message = if !stdout.is_empty() {
@@ -378,6 +437,59 @@ impl WorkspaceServer {
                 } else {
                     header
                 };
+
+                // ✅ ENHANCED: Detect signs of interactive prompts or cancelled operations
+                let output_lower = (stdout.clone() + &stderr).to_lowercase();
+                let cancellation_indicators = [
+                    "operation cancelled",
+                    "operation canceled",
+                    "aborted",
+                    "user cancelled",
+                    "user canceled",
+                    "no changes made",
+                    "skipping",
+                ];
+                let prompt_indicators = ["overwrite", "? ", "[y/n]", "[yes/no]", "confirm"];
+
+                let detected_cancellation = cancellation_indicators
+                    .iter()
+                    .any(|indicator| output_lower.contains(indicator));
+                let detected_prompt = prompt_indicators
+                    .iter()
+                    .any(|indicator| output_lower.contains(indicator));
+
+                // If interactive indicators detected, provide enhanced guidance
+                if detected_cancellation || detected_prompt {
+                    let indicator_type = if detected_cancellation {
+                        "operation was cancelled"
+                    } else {
+                        "interactive prompt detected"
+                    };
+
+                    let enhanced_message = format!(
+                        "{}\n\n⚠️ NOTICE: Output indicates {} in non-interactive mode.\n\n\
+                        If this command requires user input:\n\
+                        1. Use {} with requireUserInput: true\n\
+                        2. Or add non-interactive flags: --yes, --force, -y\n\
+                        3. Or pipe input: echo y | command\n\n\
+                        Detected indicator: {}",
+                        text_message, indicator_type, PERSISTENT_SHELL_TOOL, indicator_type
+                    );
+
+                    let hint = SuccessHint::new(
+                        enhanced_message,
+                        vec![
+                            format!(
+                                "For interactive commands, use {} with requireUserInput: true",
+                                PERSISTENT_SHELL_TOOL
+                            ),
+                            format!("Add non-interactive flags: {} --yes", command),
+                            "Or use echo/stdin redirection for automated input".to_string(),
+                        ],
+                    );
+
+                    return Ok(hint.to_mcp_result_with_data(Some(response)));
+                }
 
                 let hint = SuccessHint::new(
                     text_message,
@@ -431,14 +543,48 @@ impl WorkspaceServer {
                     "Isolated shell command '{}' timed out after {} seconds",
                     command, timeout_secs
                 );
+
+                // ✅ ENHANCED: Check if timeout might be due to waiting for interactive input
+                let might_be_interactive = Self::is_likely_interactive_command(command);
+
+                let error_message = if might_be_interactive {
+                    format!(
+                        "Command timed out after {} seconds (possibly waiting for interactive input)",
+                        timeout_secs
+                    )
+                } else {
+                    format!("Command timed out after {} seconds", timeout_secs)
+                };
+
+                let mut guidance = Vec::new();
+
+                if might_be_interactive {
+                    guidance.push(
+                        "⚠️ This command may be waiting for interactive input (password, prompts, confirmations)".to_string()
+                    );
+                    guidance.push(format!(
+                        "Use {} with requireUserInput: true for interactive commands",
+                        PERSISTENT_SHELL_TOOL
+                    ));
+                    guidance.push(
+                        "Or add non-interactive flags: --yes, --force, -y, --non-interactive"
+                            .to_string(),
+                    );
+                    guidance
+                        .push("Examples: npm init --yes, npx create-vite . --force".to_string());
+                } else {
+                    guidance.push(format!(
+                        "Increase timeout parameter (current: {}s)",
+                        timeout_secs
+                    ));
+                    guidance.push("Use spawnProcess for long-running background tasks".to_string());
+                    guidance.push("Use pollProcess to check status of async commands".to_string());
+                }
+
                 Ok(ErrorGuidance::with_guidance(
                     ErrorCategory::Timeout,
-                    format!("Command timed out after {} seconds", timeout_secs),
-                    vec![
-                        format!("Increase timeout parameter (current: {}s)", timeout_secs),
-                        "Use \"runMode\": \"async\" for long-running commands".to_string(),
-                        "Use pollProcess to check status of async commands".to_string(),
-                    ],
+                    error_message,
+                    guidance,
                     ToolGroup::Workspace,
                 )
                 .to_mcp_result())
@@ -639,6 +785,150 @@ impl WorkspaceServer {
         false
     }
 
+    /// Detect commands that commonly require interactive input
+    ///
+    /// This function checks for patterns indicating a command will wait for user input,
+    /// such as npm init without --yes, npx create-* without --force, REPL modes, etc.
+    ///
+    /// Returns true if the command is likely to require interactive input.
+    fn is_likely_interactive_command(command: &str) -> bool {
+        let cmd_lower = command.to_lowercase();
+        let cmd_trimmed = cmd_lower.trim();
+
+        // Pattern 1: Package manager initialization without non-interactive flags
+        let package_init_patterns = [
+            ("npm init", &["--yes", "-y"] as &[&str]),
+            ("pnpm init", &["--yes", "-y"]),
+            ("yarn init", &["--yes", "-y", "--private"]),
+            ("bun init", &["--yes", "-y"]),
+        ];
+
+        for (pattern, non_interactive_flags) in package_init_patterns {
+            if cmd_lower.contains(pattern) {
+                let has_flag = non_interactive_flags
+                    .iter()
+                    .any(|flag| cmd_lower.contains(flag));
+                if !has_flag {
+                    return true;
+                }
+            }
+        }
+
+        // Pattern 2: Scaffolding/creation tools without force flags
+        let scaffolding_patterns = [
+            ("npx create-", &["--force", "--yes", "-y"] as &[&str]),
+            ("npm create", &["--force", "--yes", "-y"]),
+            ("pnpm create", &["--force", "--yes", "-y"]),
+            ("yarn create", &["--force", "--yes", "-y"]),
+            ("npx degit", &[]),
+        ];
+
+        for (pattern, non_interactive_flags) in scaffolding_patterns {
+            if cmd_lower.contains(pattern) {
+                if non_interactive_flags.is_empty() {
+                    return true;
+                }
+                let has_flag = non_interactive_flags
+                    .iter()
+                    .any(|flag| cmd_lower.contains(flag));
+                if !has_flag {
+                    return true;
+                }
+            }
+        }
+
+        // Pattern 3: PowerShell interactive cmdlets (always interactive)
+        let ps_interactive_cmdlets = ["read-host", "get-credential", "out-gridview"];
+        for cmdlet in ps_interactive_cmdlets {
+            if cmd_lower.contains(cmdlet) {
+                return true;
+            }
+        }
+
+        // Pattern 4: REPL mode detection (executable without arguments)
+        // Check for bare executables that start interactive sessions
+        let repl_executables = [
+            "python",
+            "python3",
+            "py",
+            "node",
+            "irb",
+            "ruby",
+            "psql",
+            "mysql",
+            "mongosh",
+            "redis-cli",
+        ];
+
+        for exec in repl_executables {
+            // Match pattern: command starts with executable and has no script argument
+            if cmd_trimmed == exec {
+                // Exact match - definitely REPL
+                return true;
+            }
+
+            // Check if it's "executable" followed only by flags (no positional args)
+            if let Some(rest) = cmd_trimmed.strip_prefix(exec) {
+                let rest = rest.trim();
+
+                // Exception: "python -c", "python -m", "node -e" are NOT REPL (check first)
+                // These execute code or modules non-interactively
+                if rest.starts_with("-c ")
+                    || rest.starts_with("-m ")
+                    || rest.starts_with("-e ")
+                    || rest.starts_with("--eval ")
+                    || rest.starts_with("-c\t")
+                    || rest.starts_with("-m\t")
+                    || rest.starts_with("-e\t")
+                    || rest.starts_with("--eval\t")
+                {
+                    continue;
+                }
+
+                // If rest is empty or only contains flags starting with -, it's likely REPL
+                if rest.is_empty()
+                    || (rest.starts_with('-') && !rest.contains(".py") && !rest.contains(".js"))
+                {
+                    return true;
+                }
+            }
+        }
+
+        // Pattern 5: Git interactive commands
+        let git_interactive = [
+            "git add -p",
+            "git add --patch",
+            "git rebase -i",
+            "git rebase --interactive",
+        ];
+        for pattern in git_interactive {
+            if cmd_lower.contains(pattern) {
+                return true;
+            }
+        }
+
+        // Pattern 6: Interactive shells invoked directly
+        let interactive_shells = [
+            "bash\n",
+            "bash\r",
+            "bash ",
+            "sh\n",
+            "sh\r",
+            "sh ",
+            "powershell\n",
+            "powershell\r",
+            "pwsh\n",
+            "pwsh\r",
+        ];
+        for shell_pattern in interactive_shells {
+            if cmd_lower.ends_with(shell_pattern.trim()) || cmd_trimmed == shell_pattern.trim() {
+                return true;
+            }
+        }
+
+        false
+    }
+
     pub async fn handle_execute_shell(
         &self,
         args: Value,
@@ -747,6 +1037,26 @@ impl WorkspaceServer {
                 )
                 .to_mcp_result());
             }
+        }
+
+        // ✅ ENHANCED: Detect commands requiring interactive input BEFORE execution
+        if Self::is_likely_interactive_command(raw_command) {
+            return Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::InvalidInput,
+                "This command likely requires interactive input (prompts, passwords, confirmations)",
+                vec![
+                    format!("Detected interactive pattern in: {}", raw_command),
+                    format!("Use {} with requireUserInput: true for interactive commands", PERSISTENT_SHELL_TOOL),
+                    "Or add non-interactive flags to your command:".to_string(),
+                    "  • npm init → npm init --yes".to_string(),
+                    "  • npx create-vite → npx create-vite . --force".to_string(),
+                    "  • python (REPL) → python script.py".to_string(),
+                    "  • Read-Host → Use config files or environment variables".to_string(),
+                    format!("See {} tool description for requireUserInput usage", PERSISTENT_SHELL_TOOL),
+                ],
+                ToolGroup::Workspace,
+            )
+            .to_mcp_result());
         }
 
         // Get timeout (use default if not specified)
@@ -1079,6 +1389,9 @@ impl WorkspaceServer {
             }
         }
 
+        // Invalidate service context cache to reflect new process
+        self.invalidate_context_cache().await;
+
         // Return immediate response with process_id
         let hint = SuccessHint::new(
             format!("Background process started (ID: {})", process_id),
@@ -1191,5 +1504,72 @@ mod tests {
             WorkspaceServer::normalize_shell_command("echo \"hello"),
             "echo \"hello"
         );
+    }
+
+    #[test]
+    fn test_is_likely_interactive_command() {
+        // ✅ Python -m commands should NOT be interactive
+        assert!(!WorkspaceServer::is_likely_interactive_command(
+            "python -m unittest discover tests"
+        ));
+        assert!(!WorkspaceServer::is_likely_interactive_command(
+            "python -m pytest"
+        ));
+        assert!(!WorkspaceServer::is_likely_interactive_command(
+            "python3 -m pip install requests"
+        ));
+        assert!(!WorkspaceServer::is_likely_interactive_command(
+            "py -m venv env"
+        ));
+
+        // ✅ Python -c commands should NOT be interactive
+        assert!(!WorkspaceServer::is_likely_interactive_command(
+            "python -c 'print(123)'"
+        ));
+        assert!(!WorkspaceServer::is_likely_interactive_command(
+            "python3 -c \"import sys; print(sys.version)\""
+        ));
+
+        // ✅ Node -e commands should NOT be interactive
+        assert!(!WorkspaceServer::is_likely_interactive_command(
+            "node -e \"console.log('test')\""
+        ));
+
+        // ❌ Bare Python should be interactive (REPL)
+        assert!(WorkspaceServer::is_likely_interactive_command("python"));
+        assert!(WorkspaceServer::is_likely_interactive_command("python3"));
+        assert!(WorkspaceServer::is_likely_interactive_command("node"));
+
+        // ❌ npm init without flags should be interactive
+        assert!(WorkspaceServer::is_likely_interactive_command("npm init"));
+        // ✅ npm init with --yes should NOT be interactive
+        assert!(!WorkspaceServer::is_likely_interactive_command(
+            "npm init --yes"
+        ));
+
+        // ❌ npx create-* without flags should be interactive
+        assert!(WorkspaceServer::is_likely_interactive_command(
+            "npx create-vite my-app"
+        ));
+        // ✅ npx create-* with --force should NOT be interactive
+        assert!(!WorkspaceServer::is_likely_interactive_command(
+            "npx create-vite my-app --force"
+        ));
+
+        // ❌ Read-Host should be interactive
+        assert!(WorkspaceServer::is_likely_interactive_command(
+            "Read-Host 'Enter password'"
+        ));
+
+        // ✅ Normal scripts should NOT be interactive
+        assert!(!WorkspaceServer::is_likely_interactive_command(
+            "python script.py"
+        ));
+        assert!(!WorkspaceServer::is_likely_interactive_command(
+            "node index.js"
+        ));
+        assert!(!WorkspaceServer::is_likely_interactive_command(
+            "cargo test"
+        ));
     }
 }
