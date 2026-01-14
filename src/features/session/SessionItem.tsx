@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo, memo } from 'react';
 import { Bot } from 'lucide-react';
 import { useAgentSessionListActions } from '@/context/AgentSessionListContext';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { AgentSession } from '@/models/agent';
 import {
   Button,
@@ -26,25 +26,21 @@ interface SessionItemProps {
   session: AgentSession;
   className?: string;
   isCollapsed?: boolean;
+  isActive?: boolean;
 }
 
 function SessionItem({
   session,
   className,
   isCollapsed = false,
+  isActive = false,
 }: SessionItemProps) {
   const { deleteSession } = useAgentSessionListActions();
   const navigate = useNavigate();
-  const { sessionId } = useParams();
 
   const handleSelect = useCallback(() => {
     navigate(`/agent/${session.id}`);
   }, [navigate, session.id]);
-
-  const isSelected = useMemo(
-    () => sessionId === session.id,
-    [sessionId, session.id],
-  );
 
   const handleDelete = useCallback(
     async (e: React.MouseEvent) => {
@@ -59,12 +55,12 @@ function SessionItem({
       if (userConfirmed) {
         await deleteSession(session.id);
         // If deleted current session, navigate away
-        if (isSelected) {
+        if (isActive) {
           navigate('/agent');
         }
       }
     },
-    [deleteSession, session.id, session.name, isSelected, navigate],
+    [deleteSession, session.id, session.name, isActive, navigate],
   );
 
   const displayName =
@@ -93,7 +89,7 @@ function SessionItem({
           variant="ghost"
           className={cn(
             'flex-1 min-w-0 justify-start text-left transition-colors duration-150 w-full px-0',
-            isSelected
+            isActive
               ? 'text-primary hover:text-primary'
               : 'text-muted-foreground hover:text-foreground hover:no-underline',
           )}
