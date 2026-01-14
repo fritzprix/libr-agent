@@ -8,12 +8,13 @@ This document outlines the common design patterns, principles, and best practice
 
 1. [Architectural Principles](#1-architectural-principles)
 2. [Module Structure](#2-module-structure)
-3. [Tool Response Design](#3-tool-response-design)
-4. [Error Handling System](#4-error-handling-system)
-5. [Service Context Pattern](#5-service-context-pattern)
-6. [Performance Optimization](#6-performance-optimization)
-7. [Tool Chaining & Guidance](#7-tool-chaining--guidance)
-8. [Testing & Validation](#8-testing--validation)
+3. [AI-Compatible Tool Descriptions](#3-ai-compatible-tool-descriptions)
+4. [Tool Response Design](#4-tool-response-design)
+5. [Error Handling System](#5-error-handling-system)
+6. [Service Context Pattern](#6-service-context-pattern)
+7. [Performance Optimization](#7-performance-optimization)
+8. [Tool Chaining & Guidance](#8-tool-chaining--guidance)
+9. [Testing & Validation](#9-testing--validation)
 
 ---
 
@@ -125,9 +126,175 @@ async fn call_tool(&self, tool_name: &str, args: Value, _session_id: Option<Stri
 
 ---
 
-## 3. Tool Response Design
+## 3. AI-Compatible Tool Descriptions
 
-### 3.1 MCPResult Structure
+### 3.1 Understanding AI Agent Capabilities
+
+**CRITICAL:** Tool descriptions and parameter docs are read by AI agents, not humans. AI agents:
+
+- ✅ **CAN:** Read and reference text from previous tool responses
+- ✅ **CAN:** Extract values from structured data in context
+- ✅ **CAN:** Match text patterns exactly as shown
+- ❌ **CANNOT:** "Copy" text (no clipboard/copy-paste concept)
+- ❌ **CANNOT:** Distinguish "from memory" vs "from output" (everything is context data)
+- ❌ **CANNOT:** Execute human physical actions
+
+### 3.2 Language Do's and Don'ts
+
+#### ❌ **Avoid Human-Centric Verbs:**
+
+```rust
+// ❌ WRONG: Human physical actions
+"COPY the exact text from readFile output"
+"Copy text directly from readFile output - do NOT use from memory"
+"Paste the content into this parameter"
+"Highlight the section you want to replace"
+
+// ❌ WRONG: Ambiguous cognitive instructions
+"Remember the previous value"
+"Don't use from memory" (everything AI uses IS memory)
+"Recall the session ID"
+```
+
+#### ✅ **Use AI-Compatible Verbs:**
+
+```rust
+// ✅ CORRECT: Data operations AI can perform
+"Extract the exact text from readFile response"
+"Use text exactly as shown in readFile response"
+"Reference the value returned by previousTool"
+"Match the text precisely as displayed"
+
+// ✅ CORRECT: Clear data flow instructions
+"Use the session_id returned by createSession"
+"Ensure text matches current file content from readFile"
+"Include the exact value from the response"
+```
+
+### 3.3 Parameter Description Template
+
+```rust
+item_props.insert(
+    "paramName".to_string(),
+    string_prop(
+        None,
+        None,
+        Some("⚠️ CRITICAL: [What this parameter is]
+
+MANDATORY WORKFLOW:
+1. Call [prerequisiteTool] FIRST to get current data
+2. Extract the exact [dataType] from [prerequisiteTool] response
+3. Include [context requirements] for uniqueness
+4. Use the extracted [dataType] as this parameter
+
+❌ NEVER use [dataType] reconstructed from previous attempts
+✅ ALWAYS use [dataType] exactly as returned by [prerequisiteTool]"),
+    ),
+);
+```
+
+### 3.4 Tool Description Template
+
+```rust
+MCPTool {
+    name: "toolName".to_string(),
+    description: "[Brief description of what tool does]
+
+⚠️ CRITICAL WORKFLOW (MUST FOLLOW):
+1. ALWAYS call [prerequisiteTool] FIRST
+2. Extract the exact [data] from [prerequisiteTool] response into [paramName] parameter
+3. Verify the extracted data includes [requirements]
+4. Then call toolName with the extracted [paramName]
+
+❌ NEVER use [paramName] reconstructed from previous attempts or assumptions
+✅ ALWAYS use data exactly as returned by [prerequisiteTool] to ensure exact match
+⚠️ If operation fails, DO NOT retry with the same [paramName] - call [prerequisiteTool] again first".to_string(),
+    // ...
+}
+```
+
+### 3.5 Real-World Example: replaceStringInFile
+
+**Before (Human-Centric):**
+
+```rust
+Some("⚠️ CRITICAL: Exact text content to find and replace.
+
+MANDATORY WORKFLOW:
+1. Call readFile(path) FIRST to get current content
+2. COPY the exact text from readFile output (including all whitespace)
+3. Include surrounding context (3-5 lines) for uniqueness
+4. Use the copied text as this parameter
+
+❌ NEVER use text from memory or previous attempts
+✅ ALWAYS copy directly from readFile output")
+```
+
+**After (AI-Compatible):**
+
+```rust
+Some("⚠️ CRITICAL: Exact text content to find and replace.
+
+MANDATORY WORKFLOW:
+1. Call readFile(path) FIRST to get current content
+2. Extract the exact text from readFile response (including all whitespace)
+3. Include surrounding context (3-5 lines) for uniqueness
+4. Use the extracted text as this parameter
+
+❌ NEVER use text reconstructed from previous attempts
+✅ ALWAYS use text exactly as shown in readFile response")
+```
+
+**Key Changes:**
+
+- `"COPY"` → `"Extract"` (data operation vs physical action)
+- `"from readFile output"` → `"from readFile response"` (consistent terminology)
+- `"from memory"` → `"reconstructed from previous attempts"` (specific and meaningful to AI)
+- `"copy directly"` → `"use exactly as shown"` (achievable instruction)
+
+### 3.6 Error Message Language
+
+Apply same principles to error guidance:
+
+```rust
+// ❌ WRONG: Human instructions
+ErrorGuidance::with_guidance(
+    ErrorCategory::InvalidInput,
+    "Pattern not found",
+    vec![
+        "Copy text directly from readFile output - do NOT use from memory".to_string(),
+    ],
+    ToolGroup::Workspace,
+)
+
+// ✅ CORRECT: AI-compatible instructions
+ErrorGuidance::with_guidance(
+    ErrorCategory::InvalidInput,
+    "Pattern not found",
+    vec![
+        "Use text exactly as shown in readFile response - ensure it matches current file content".to_string(),
+    ],
+    ToolGroup::Workspace,
+)
+```
+
+### 3.7 Validation Checklist
+
+Before finalizing tool descriptions:
+
+- [ ] No "COPY", "copy", "paste" verbs used
+- [ ] No "from memory" vs "from output" distinctions
+- [ ] No human physical action verbs ("highlight", "select", "click in description text")
+- [ ] Use "extract", "use", "reference", "match" instead
+- [ ] Workflow steps are data operations AI can perform
+- [ ] Success/error messages follow same language rules
+- [ ] Instructions are specific and actionable for AI processing model
+
+---
+
+## 4. Tool Response Design
+
+### 4.1 MCPResult Structure
 
 **CRITICAL UNDERSTANDING:**
 
@@ -144,7 +311,7 @@ pub struct MCPResult {
 1. `content` → System prompt → AI reads it
 2. `structured_content` → UI components only (debugging, rendering)
 
-### 3.2 Success Response Pattern
+### 4.2 Success Response Pattern
 
 #### **Use SuccessHint for all successful operations:**
 
@@ -187,7 +354,7 @@ let hint = SuccessHint::new(
 Ok(hint.to_mcp_result_with_data(Some(json!({"session_id": session_id}))))
 ```
 
-### 3.3 List Response Pattern
+### 4.3 List Response Pattern
 
 When returning lists, format them clearly in text:
 
@@ -216,7 +383,7 @@ let hint = SuccessHint::new(
 💡 Next: Use processItem(itemId) to work with an item
 ```
 
-### 3.4 Pagination Pattern
+### 4.4 Pagination Pattern
 
 For large content, use consistent pagination:
 
@@ -235,9 +402,9 @@ format!("[Page {}/{}]\n\n{}", current_page, total_pages, page_content)
 
 ---
 
-## 4. Error Handling System
+## 5. Error Handling System
 
-### 4.1 Four-Layer Error Handling
+### 5.1 Four-Layer Error Handling
 
 #### **Layer 1: Proactive Validation**
 
@@ -368,7 +535,7 @@ pub(crate) fn handle_tool_error(
 }
 ```
 
-### 4.2 Error Categories
+### 5.2 Error Categories
 
 Use appropriate error categories:
 
@@ -397,7 +564,7 @@ pub enum ErrorCategory {
 }
 ```
 
-### 4.3 Tool Group Isolation
+### 5.3 Tool Group Isolation
 
 **CRITICAL:** Only suggest tools from the same group:
 
@@ -436,7 +603,7 @@ return Ok(operation_failed_error(
 ));
 ```
 
-### 4.4 Error Response Format
+### 5.4 Error Response Format
 
 All errors follow this format:
 
@@ -459,9 +626,9 @@ All errors follow this format:
 
 ---
 
-## 5. Service Context Pattern
+## 6. Service Context Pattern
 
-### 5.1 Purpose
+### 6.1 Purpose
 
 Service context injects current tool state into the system prompt:
 
@@ -485,7 +652,7 @@ async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext 
 - Stateless tools (one-shot operations)
 - State is always passed as tool parameters
 
-### 5.2 Implementation Pattern
+### 6.2 Implementation Pattern
 
 ```rust
 async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
@@ -520,7 +687,7 @@ async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext 
 }
 ```
 
-### 5.3 Caching Strategy (Optional)
+### 6.3 Caching Strategy (Optional)
 
 For expensive operations (e.g., JS injection), implement caching:
 
@@ -559,7 +726,7 @@ async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext 
 }
 ```
 
-### 5.4 Cache Invalidation
+### 6.4 Cache Invalidation
 
 Invalidate cache after state-changing operations:
 
@@ -586,9 +753,9 @@ pub async fn update_state(server: &MyServer, args: Value) -> Result<MCPResult, S
 
 ---
 
-## 6. Performance Optimization
+## 7. Performance Optimization
 
-### 6.1 Async Runtime Rules
+### 7.1 Async Runtime Rules
 
 Never block the async runtime with CPU-intensive operations:
 
@@ -611,7 +778,7 @@ let markdown = tokio::task::spawn_blocking(move || {
 - Synchronous I/O (file operations, legacy libraries)
 - Operations taking > 10ms on a single thread
 
-### 6.2 Input Size Limits
+### 7.2 Input Size Limits
 
 Prevent resource exhaustion:
 
@@ -630,7 +797,7 @@ if input.len() > MAX_SIZE_BYTES {
 let result = process_large_data(&input)?;
 ```
 
-### 6.3 Pagination
+### 7.3 Pagination
 
 For large result sets, implement pagination:
 
@@ -672,7 +839,7 @@ impl ContentStore {
 }
 ```
 
-### 6.4 Resource Cleanup
+### 7.4 Resource Cleanup
 
 Implement cleanup for long-lived resources:
 
@@ -697,9 +864,9 @@ impl MyServer {
 
 ---
 
-## 7. Tool Chaining & Guidance
+## 8. Tool Chaining & Guidance
 
-### 7.1 Success Hints
+### 8.1 Success Hints
 
 Always provide next-step suggestions:
 
@@ -718,7 +885,7 @@ let hint = SuccessHint::new(
 Ok(hint.to_mcp_result())
 ```
 
-### 7.2 Tool Group Context
+### 8.2 Tool Group Context
 
 Suggestions must respect tool groups:
 
@@ -744,7 +911,7 @@ SuccessHint::new(
 )
 ```
 
-### 7.3 Conditional Guidance
+### 8.3 Conditional Guidance
 
 Provide context-specific suggestions:
 
@@ -764,7 +931,7 @@ let hint = SuccessHint::new(result_message, suggestions);
 Ok(hint.to_mcp_result())
 ```
 
-### 7.4 Error Recovery Guidance
+### 8.4 Error Recovery Guidance
 
 Errors should guide toward recovery:
 
@@ -787,9 +954,9 @@ return Ok(operation_failed_error(
 
 ---
 
-## 8. Testing & Validation
+## 9. Testing & Validation
 
-### 8.1 Unit Tests
+### 9.1 Unit Tests
 
 Test error guidance formatting:
 
@@ -834,7 +1001,7 @@ mod tests {
 }
 ```
 
-### 8.2 Integration Tests
+### 9.2 Integration Tests
 
 Test tool execution flow:
 
@@ -863,7 +1030,7 @@ async fn test_create_and_query_flow() {
 }
 ```
 
-### 8.3 Validation Checklist
+### 9.3 Validation Checklist
 
 Before deploying a new tool:
 
@@ -871,6 +1038,7 @@ Before deploying a new tool:
 - [ ] Error messages include visual markers (✗, 💡)
 - [ ] Success messages include next-step suggestions
 - [ ] Tool group isolation maintained (no cross-tool suggestions)
+- [ ] Tool descriptions use AI-compatible language (no "COPY", "from memory")
 - [ ] IDs and identifiers visible in text responses
 - [ ] Large operations use `spawn_blocking`
 - [ ] Input size limits enforced
@@ -887,16 +1055,18 @@ Before deploying a new tool:
 ### Key Takeaways
 
 1. **AI Sees Text Only**: Everything important must be in `content` field, not `structured_content`
-2. **Four-Layer Errors**: Proactive validation → Standard functions → Context-specific → Global handler
-3. **Tool Isolation**: Only suggest tools from the same tool group
-4. **Success Hints**: Always provide 2-3 actionable next steps
-5. **Performance**: Use `spawn_blocking` for CPU-intensive work
-6. **Service Context**: Inject state as readable text with 5-second cache TTL
-7. **Visual Markers**: ✓ for success, ✗ for errors, 💡 for guidance
+2. **AI-Compatible Language**: Use "extract", "use", "reference" instead of "copy", "paste", "from memory"
+3. **Four-Layer Errors**: Proactive validation → Standard functions → Context-specific → Global handler
+4. **Tool Isolation**: Only suggest tools from the same tool group
+5. **Success Hints**: Always provide 2-3 actionable next steps
+6. **Performance**: Use `spawn_blocking` for CPU-intensive work
+7. **Service Context**: Inject state as readable text with 5-second cache TTL
+8. **Visual Markers**: ✓ for success, ✗ for errors, 💡 for guidance
 
 ### Anti-Patterns to Avoid
 
 ❌ Storing critical IDs only in `structured_content`  
+❌ Using human-centric verbs in tool descriptions ("COPY", "paste", "from memory")  
 ❌ Suggesting tools from different tool groups in errors  
 ❌ Blocking async runtime with CPU-intensive operations  
 ❌ Missing proactive input validation  
@@ -908,10 +1078,11 @@ Before deploying a new tool:
 
 - **Browser Tool**: Session management, caching, pagination (`src-tauri/src/mcp/builtin/browser/`)
 - **Planning Tool**: State tracking, hierarchy validation (`src-tauri/src/mcp/builtin/planning/`)
+- **Workspace Tool**: AI-compatible tool descriptions (`src-tauri/src/mcp/builtin/workspace/tools/file_tools.rs`)
 - **Error Guidance**: Centralized error system (`src-tauri/src/mcp/builtin/error_guidance.rs`)
 
 ---
 
-**Last Updated:** January 13, 2026  
-**Version:** 1.0  
+**Last Updated:** January 14, 2026  
+**Version:** 1.1  
 **Maintainers:** LibrAgent Core Team

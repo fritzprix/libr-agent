@@ -14,6 +14,57 @@ use tracing::{error, info};
 // Large files can block the async runtime during line enumeration
 const LARGE_FILE_THRESHOLD: u64 = 1_048_576; // 1 MB in bytes
 
+/// Format file size in bytes to human-readable format (B, KB, MB, GB)
+fn format_file_size(bytes: u64) -> String {
+    const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
+    let mut size = bytes as f64;
+    let mut unit_idx = 0;
+
+    while size >= 1024.0 && unit_idx < UNITS.len() - 1 {
+        size /= 1024.0;
+        unit_idx += 1;
+    }
+
+    if unit_idx == 0 {
+        format!("{} {}", bytes, UNITS[0])
+    } else {
+        format!("{:.2} {}", size, UNITS[unit_idx])
+    }
+}
+
+/// Detect language/syntax highlighting identifier from file extension
+fn detect_language(path: &std::path::Path) -> &'static str {
+    let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+
+    match extension {
+        "rs" => "rust",
+        "ts" | "tsx" => "typescript",
+        "js" | "jsx" => "javascript",
+        "py" => "python",
+        "md" => "markdown",
+        "json" => "json",
+        "yaml" | "yml" => "yaml",
+        "toml" => "toml",
+        "sh" => "bash",
+        "ps1" => "powershell",
+        "html" => "html",
+        "css" => "css",
+        "go" => "go",
+        "java" => "java",
+        "c" => "c",
+        "cpp" | "cc" | "cxx" => "cpp",
+        "cs" => "csharp",
+        "rb" => "ruby",
+        "php" => "php",
+        "swift" => "swift",
+        "kt" | "kts" => "kotlin",
+        "sql" => "sql",
+        "xml" => "xml",
+        "txt" | "log" => "text",
+        _ => "",
+    }
+}
+
 #[allow(dead_code)]
 impl WorkspaceServer {
     fn validate_path_with_error(
@@ -162,56 +213,84 @@ impl WorkspaceServer {
         }
 
         let file_manager = self.get_file_manager(session_id);
-        let content = if start_line.is_some() || end_line.is_some() {
-            if let Err(e) = file_manager
-                .get_security_validator()
-                .validate_file_size(&safe_path, crate::config::max_file_size())
-            {
-                error!("File size validation failed: {}", e);
-                return Ok(ErrorGuidance::with_guidance(
-                    ErrorCategory::InvalidInput,
-                    format!("File size error: {}", e),
-                    vec![
-                        "The file is too large to read with line ranges".to_string(),
-                        "Try reading the entire file without startLine/endLine".to_string(),
-                        "Use grep to find specific content instead".to_string(),
-                    ],
-                    ToolGroup::Workspace,
-                )
-                .to_mcp_result());
-            }
 
-            self.read_file_lines_range(&safe_path, start_line, end_line, show_line_numbers)
-                .await
-        } else {
-            // Read full file and format with line numbers
-            let raw_content = file_manager
-                .read_file_as_string(path_str)
-                .await
-                .map_err(|e| e.to_string())?;
+        // Security check: validate file size before reading
+        if let Err(e) = file_manager
+            .get_security_validator()
+            .validate_file_size(&safe_path, crate::config::max_file_size())
+        {
+            error!("File size validation failed: {}", e);
+            return Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::InvalidInput,
+                format!("File size error: {}", e),
+                vec![
+                    "The file is too large to read entirely".to_string(),
+                    "Try reading specific line ranges if possible".to_string(),
+                    "Use grep to find specific content instead".to_string(),
+                ],
+                ToolGroup::Workspace,
+            )
+            .to_mcp_result());
+        }
 
-            let lines_with_numbers: Vec<(usize, String)> = raw_content
-                .lines()
-                .enumerate()
-                .map(|(idx, line)| (idx + 1, line.to_string()))
-                .collect();
-
-            Ok(Self::format_lines_with_numbers(
-                &lines_with_numbers,
-                show_line_numbers,
-            ))
-        };
+        // Use read_file_lines_range for all file reading to ensure consistent
+        // handling of large files (spawn_blocking) and formatting.
+        let content = self
+            .read_file_lines_range(&safe_path, start_line, end_line, show_line_numbers)
+            .await;
 
         match content {
             Ok(content) => {
                 info!("Successfully read file: {}", path_str);
 
-                // Include actual content in text for AI agent visibility
-                let text_message = format!(
-                    "File read successfully: {}\n\nContent:\n{}\n\n💡 Next: Use writeFile to modify or replaceStringInFile to make targeted edits",
-                    path_str,
-                    content
-                );
+                // Format response for clean markdown rendering
+                let text_message = if show_line_numbers {
+                    // Line numbers mode: use plain code block
+                    format!(
+                        "📄 **File: `{}`**\n\n```\n{}\n```\n\n💡 **Next Steps:**\n- Use `writeFile` to modify the entire file\n- Use `replaceStringInFile` to make targeted edits",
+                        path_str,
+                        content
+                    )
+                } else {
+                    // Auto-detect language from file extension for syntax highlighting
+                    let language = safe_path
+                        .extension()
+                        .and_then(|ext| ext.to_str())
+                        .map(|ext| match ext {
+                            "rs" => "rust",
+                            "ts" | "tsx" => "typescript",
+                            "js" | "jsx" => "javascript",
+                            "py" => "python",
+                            "md" => "markdown",
+                            "json" => "json",
+                            "yaml" | "yml" => "yaml",
+                            "toml" => "toml",
+                            "sh" => "bash",
+                            "ps1" => "powershell",
+                            "html" => "html",
+                            "css" => "css",
+                            "go" => "go",
+                            "java" => "java",
+                            "c" | "h" => "c",
+                            "cpp" | "hpp" | "cc" => "cpp",
+                            "cs" => "csharp",
+                            "rb" => "ruby",
+                            "php" => "php",
+                            "swift" => "swift",
+                            "kt" => "kotlin",
+                            "sql" => "sql",
+                            "xml" => "xml",
+                            _ => ext,
+                        })
+                        .unwrap_or("");
+
+                    format!(
+                        "📄 **File: `{}`**\n\n```{}\n{}\n```\n\n💡 **Next Steps:**\n- Use `writeFile` to modify the entire file\n- Use `replaceStringInFile` to make targeted edits",
+                        path_str,
+                        language,
+                        content
+                    )
+                };
 
                 Ok(MCPResult::success_with_data(
                     &text_message,
@@ -425,22 +504,95 @@ impl WorkspaceServer {
         match result {
             Ok(()) => {
                 info!("Successfully wrote file: {}", path_str);
-                let action = if mode == "a" { "appended" } else { "written" };
-                let hint = SuccessHint::new(
+
+                // Invalidate service context cache
+                self.invalidate_context_cache().await;
+
+                let action = if mode == "a" { "Appended" } else { "Written" };
+                let action_emoji = if mode == "a" { "➕" } else { "✅" };
+
+                let lines = content.lines().count();
+                let size_str = format_file_size(content.len() as u64);
+                let language = detect_language(std::path::Path::new(path_str));
+
+                // Truncate content for display - show only first 100 lines as preview
+                let max_display_lines = 100;
+                let max_display_bytes = 51200; // 50KB
+                let content_lines: Vec<&str> = content.lines().collect();
+                let is_truncated =
+                    content_lines.len() > max_display_lines || content.len() > max_display_bytes;
+
+                let display_content = if is_truncated {
+                    let truncated_lines: Vec<&str> = if content.len() > max_display_bytes {
+                        // Truncate by bytes first
+                        let truncated = &content[..max_display_bytes.min(content.len())];
+                        truncated.lines().take(max_display_lines).collect()
+                    } else {
+                        content_lines
+                            .iter()
+                            .take(max_display_lines)
+                            .copied()
+                            .collect()
+                    };
                     format!(
-                        "Successfully {} {} bytes to {} (mode: {})",
-                        action,
-                        content.len(),
-                        path_str,
-                        mode
-                    ),
-                    SuccessHint::for_tool("writeFile", ToolGroup::Workspace),
+                        "{}\n\n... ⚠️ TRUNCATED: Showing first {} of {} lines ({}% shown)",
+                        truncated_lines.join("\n"),
+                        truncated_lines.len(),
+                        content_lines.len(),
+                        (truncated_lines.len() * 100) / content_lines.len()
+                    )
+                } else {
+                    content.to_string()
+                };
+
+                let mut message = format!(
+                    "**{} File {}**\n\n\
+                    **File:** `{}`\n\
+                    **Mode:** {} ({})\n\
+                    **Size:** {}\n\
+                    **Lines:** {}\n\n\
+                    **Content Written:**\n```{}",
+                    action_emoji,
+                    action,
+                    path_str,
+                    mode,
+                    if mode == "a" {
+                        "append"
+                    } else {
+                        "write/overwrite"
+                    },
+                    size_str,
+                    lines,
+                    language
                 );
-                Ok(hint.to_mcp_result_with_data(Some(json!({
-                    "path": path_str,
-                    "bytes_written": content.len(),
-                    "mode": mode
-                }))))
+
+                message.push('\n');
+                message.push_str(&display_content);
+                message.push_str("\n```\n\n");
+
+                if is_truncated {
+                    message.push_str(
+                        "⚠️ **CONTENT TRUNCATED**: Only showing first 100 lines as preview\n\n",
+                    );
+                }
+
+                message.push_str(
+                    "**Next Steps:**\n\
+                    - Content verified above (preview only)\n\
+                    - 📖 Use `readFile` to see full content if truncated\n\
+                    - 🔍 Use `grep` to search within the file",
+                );
+
+                Ok(MCPResult::success_with_data(
+                    &message,
+                    json!({
+                        "path": path_str,
+                        "bytes_written": content.len(),
+                        "lines": lines,
+                        "mode": mode,
+                        "truncated": is_truncated
+                    }),
+                ))
             }
             Err(e) => {
                 error!("Failed to write file {}: {}", path_str, e);
@@ -670,21 +822,69 @@ impl WorkspaceServer {
         {
             Ok(results) => {
                 let result_text = if results.is_empty() {
-                    format!("No files found matching pattern '{pattern}' in '{search_path}'")
+                    format!(
+                        "**🔍 File Search: No matches found**\n\n\
+                        Pattern: `{}`\n\
+                        Search Path: `{}`\n\
+                        File Type: {}\n\n\
+                        **Next Steps:**\n\
+                        - Verify the pattern syntax (use glob format like `*.txt` or `**/*.rs`)\n\
+                        - Use listDirectory to explore available files\n\
+                        - Try a broader pattern or different search path",
+                        pattern, search_path, file_type
+                    )
                 } else {
                     let mut text = format!(
-                        "Found {} files matching pattern '{}':\n",
+                        "**🔍 File Search: {} file(s) found**\n\n\
+                        Pattern: `{}`\n\
+                        Search Path: `{}`\n\
+                        File Type: {}\n\n",
                         results.len(),
-                        pattern
+                        pattern,
+                        search_path,
+                        file_type
                     );
+
+                    // Get metadata for file sizes
+                    let mut enriched_results = Vec::new();
                     for item in results.iter().take(50) {
-                        let path = item.get("path").and_then(|v| v.as_str()).unwrap_or("?");
+                        let path_str = item.get("path").and_then(|v| v.as_str()).unwrap_or("?");
                         let type_ = item.get("type").and_then(|v| v.as_str()).unwrap_or("?");
-                        text.push_str(&format!("- [{}] {}\n", type_, path));
+
+                        let size_str = if type_ == "file" {
+                            let full_path = safe_path.join(path_str);
+                            match tokio::fs::metadata(&full_path).await {
+                                Ok(metadata) => format!(" ({})", format_file_size(metadata.len())),
+                                Err(_) => String::new(),
+                            }
+                        } else {
+                            String::new()
+                        };
+
+                        let icon = if type_ == "file" { "📄" } else { "📁" };
+                        enriched_results.push((icon, path_str, size_str));
                     }
+
+                    // Display results
+                    text.push_str("**Matches:**\n");
+                    for (icon, path, size) in &enriched_results {
+                        text.push_str(&format!("- {} `{}`{}\n", icon, path, size));
+                    }
+
                     if results.len() > 50 {
-                        text.push_str(&format!("... and {} more items.", results.len() - 50));
+                        text.push_str(&format!(
+                            "\n*Showing first 50 of {} total matches*\n",
+                            results.len()
+                        ));
                     }
+
+                    text.push_str(
+                        "\n**Next Steps:**\n\
+                        - Use readFile to view file contents\n\
+                        - Use grep to search within matching files\n\
+                        - Refine pattern for more specific results",
+                    );
+
                     text
                 };
 
@@ -766,6 +966,309 @@ impl WorkspaceServer {
         Ok(results)
     }
 
+    /// Preview replacement without modifying file
+    pub async fn handle_preview_replacement(
+        &self,
+        args: Value,
+        session_id: Option<String>,
+    ) -> Result<MCPResult, String> {
+        use crate::mcp::builtin::error_guidance::ErrorCategory;
+
+        // Parameter validation
+        let path_str = match args.get("path").and_then(|v| v.as_str()) {
+            Some(path) if !path.trim().is_empty() => path.trim(),
+            Some(_) => {
+                return Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::InvalidInput,
+                    "Parameter 'path' cannot be empty",
+                    vec!["Provide a valid file path".to_string()],
+                    ToolGroup::Workspace,
+                )
+                .to_mcp_result());
+            }
+            None => {
+                return Ok(missing_param_error("path", ToolGroup::Workspace));
+            }
+        };
+
+        let replacements_val = match args.get("replacements") {
+            Some(val) if val.is_array() => val,
+            Some(_) => {
+                return Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::InvalidInput,
+                    "'replacements' must be an array",
+                    vec![
+                        "Format: {\"replacements\": [{\"oldString\": \"...\", \"newString\": \"...\"}]}"
+                            .to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                )
+                .to_mcp_result());
+            }
+            None => return Ok(missing_param_error("replacements", ToolGroup::Workspace)),
+        };
+
+        let replacements: Vec<HashMap<String, Value>> =
+            match serde_json::from_value(replacements_val.clone()) {
+                Ok(r) => r,
+                Err(e) => {
+                    return Ok(ErrorGuidance::with_guidance(
+                        ErrorCategory::InvalidFormat,
+                        format!("Invalid replacements format: {}", e),
+                        vec!["Each object needs oldString and newString".to_string()],
+                        ToolGroup::Workspace,
+                    )
+                    .to_mcp_result());
+                }
+            };
+
+        if replacements.is_empty() {
+            return Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::InvalidInput,
+                "Replacements array is empty",
+                vec!["Provide at least one replacement".to_string()],
+                ToolGroup::Workspace,
+            )
+            .to_mcp_result());
+        }
+
+        // Validate path and read file
+        let safe_path = self.validate_path_with_error(path_str, session_id)?;
+        let original_content = match self.read_file_as_string(&safe_path).await {
+            Ok(content) => content,
+            Err(e) => {
+                return Ok(operation_failed_error(
+                    "Read file for preview",
+                    &e,
+                    vec![
+                        "Verify file exists with listDirectory".to_string(),
+                        format!("Use readFile('{}') to check content", path_str),
+                    ],
+                    ToolGroup::Workspace,
+                ));
+            }
+        };
+
+        // Calculate preview for each replacement
+        let mut preview_blocks = Vec::new();
+        let mut total_matches = 0;
+        let mut warnings = Vec::new();
+
+        for (idx, rep) in replacements.iter().enumerate() {
+            let old_string = match rep.get("oldString").and_then(|v| v.as_str()) {
+                Some(s) => s,
+                None => {
+                    warnings.push(format!("Replacement #{}: missing 'oldString'", idx + 1));
+                    continue;
+                }
+            };
+
+            let new_string = match rep.get("newString").and_then(|v| v.as_str()) {
+                Some(s) => s,
+                None => {
+                    warnings.push(format!("Replacement #{}: missing 'newString'", idx + 1));
+                    continue;
+                }
+            };
+
+            // Find matches and generate preview
+            let occurrences = original_content.matches(old_string).count();
+            total_matches += occurrences;
+
+            if occurrences == 0 {
+                // Similar content search
+                let lines: Vec<&str> = original_content.lines().collect();
+                let old_lines: Vec<&str> = old_string.lines().collect();
+                let search_size = old_lines.len();
+
+                let mut best_match: Option<(usize, f32)> = None;
+                for (line_idx, window) in lines.windows(search_size.max(1)).enumerate() {
+                    let window_text = window.join("\n");
+                    let similarity = self.calculate_similarity(&window_text, old_string);
+                    if similarity > 0.3
+                        && (best_match.is_none() || similarity > best_match.unwrap().1)
+                    {
+                        best_match = Some((line_idx + 1, similarity));
+                    }
+                }
+
+                let suggestion = if let Some((line_num, similarity)) = best_match {
+                    format!(
+                        "❌ NOT FOUND (but {}% similar at line {})\n   → Use readFile('{}', {}, {}) to verify",
+                        (similarity * 100.0) as u32,
+                        line_num,
+                        path_str,
+                        line_num,
+                        line_num + search_size.saturating_sub(1)
+                    )
+                } else {
+                    "❌ NOT FOUND (no similar content detected)".to_string()
+                };
+
+                preview_blocks.push(format!(
+                    "## Replacement #{}\n{}\n\nOldString (NOT MATCHED):\n{}\n\nNewString:\n{}",
+                    idx + 1,
+                    suggestion,
+                    old_string,
+                    new_string
+                ));
+            } else if occurrences > 1 {
+                warnings.push(format!(
+                    "Replacement #{}: Found {} matches (not unique!)",
+                    idx + 1,
+                    occurrences
+                ));
+
+                // Show all match locations
+                let mut match_locations = Vec::new();
+                let lines: Vec<&str> = original_content.lines().collect();
+                let search_lines: Vec<&str> = old_string.lines().collect();
+
+                for (line_idx, window) in lines.windows(search_lines.len()).enumerate() {
+                    if window.join("\n") == old_string {
+                        match_locations.push(line_idx + 1);
+                    }
+                }
+
+                preview_blocks.push(format!(
+                    "## Replacement #{}\n⚠️ MULTIPLE MATCHES at lines: {}\n\n--- Old (will replace ALL {} occurrences) ---\n{}\n\n+++ New ---\n{}",
+                    idx + 1,
+                    match_locations
+                        .iter()
+                        .map(|n| n.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    occurrences,
+                    old_string,
+                    new_string
+                ));
+            } else {
+                // Exactly 1 match - generate context preview
+                let preview_diff =
+                    self.generate_replacement_context(&original_content, old_string, new_string);
+
+                preview_blocks.push(format!(
+                    "## Replacement #{}\n✅ EXACT MATCH FOUND\n\n{}",
+                    idx + 1,
+                    preview_diff
+                ));
+            }
+        }
+
+        // Format final output
+        let status_summary = if total_matches == 0 {
+            "⚠️ NO MATCHES FOUND - Review oldString content"
+        } else if !warnings.is_empty() {
+            "⚠️ ISSUES DETECTED - Review warnings before applying"
+        } else {
+            "✅ ALL REPLACEMENTS VALID - Safe to apply"
+        };
+
+        let language = detect_language(std::path::Path::new(path_str));
+
+        let mut output_parts = vec![
+            format!(
+                "**🔍 Preview Replacement: {} replacement(s)**\n",
+                replacements.len()
+            ),
+            format!("**File:** `{}`", path_str),
+            format!("**Status:** {}\n", status_summary),
+        ];
+
+        if !warnings.is_empty() {
+            output_parts.push("**⚠️ Warnings:**".to_string());
+            output_parts.extend(warnings.iter().map(|w| format!("- {}", w)));
+            output_parts.push(String::new());
+        }
+
+        output_parts.push("**Changes Preview:**\n".to_string());
+        output_parts.push("```diff".to_string());
+        output_parts.extend(preview_blocks);
+        output_parts.push("```".to_string());
+
+        if !language.is_empty() {
+            output_parts.push(format!("\n*Language: {}*\n", language));
+        }
+
+        output_parts.push("**Next Steps:**".to_string());
+        if total_matches > 0 && warnings.is_empty() {
+            output_parts.push(
+                "- ✅ Preview looks correct? Call `replaceStringInFile` with SAME parameters\n\
+                - 📖 Use `readFile` to see full file context"
+                    .to_string(),
+            );
+        } else {
+            output_parts.push(format!(
+                "- ⚠️ Fix issues first: Call `readFile('{}')` and verify oldString content\n\
+                - 🔍 Use `grep` to find the exact text to replace",
+                path_str
+            ));
+        }
+
+        let text_output = output_parts.join("\n");
+
+        Ok(MCPResult::success_with_data(
+            &text_output,
+            json!({
+                "path": path_str,
+                "total_replacements": replacements.len(),
+                "total_matches": total_matches,
+                "warnings": warnings,
+                "status": if total_matches > 0 && warnings.is_empty() { "ready" } else { "needs_review" }
+            }),
+        ))
+    }
+
+    /// Generate contextual diff preview (shows surrounding lines)
+    fn generate_replacement_context(
+        &self,
+        content: &str,
+        old_string: &str,
+        new_string: &str,
+    ) -> String {
+        let lines: Vec<&str> = content.lines().collect();
+        let search_lines: Vec<&str> = old_string.lines().collect();
+
+        // Find the match location
+        for (line_idx, window) in lines.windows(search_lines.len()).enumerate() {
+            if window.join("\n") == old_string {
+                // Show context: 2 lines before, matched section, 2 lines after
+                let context_start = line_idx.saturating_sub(2);
+                let context_end = (line_idx + search_lines.len() + 2).min(lines.len());
+
+                let mut diff_lines = Vec::new();
+                diff_lines.push(format!(
+                    "@@ Lines {}-{} (showing context) @@",
+                    line_idx + 1,
+                    line_idx + search_lines.len()
+                ));
+
+                for (i, line) in lines[context_start..context_end].iter().enumerate() {
+                    let absolute_line = context_start + i + 1;
+                    let relative_to_match = (context_start + i) as isize - line_idx as isize;
+
+                    if relative_to_match < 0 || relative_to_match >= search_lines.len() as isize {
+                        // Context lines (unchanged)
+                        diff_lines.push(format!("  {:4} | {}", absolute_line, line));
+                    } else {
+                        // Matched lines (will be replaced)
+                        diff_lines.push(format!("- {:4} | {}", absolute_line, line));
+                    }
+                }
+
+                // Show new content
+                for (i, new_line) in new_string.lines().enumerate() {
+                    let target_line = line_idx + i + 1;
+                    diff_lines.push(format!("+ {:4} | {}", target_line, new_line));
+                }
+
+                return diff_lines.join("\n");
+            }
+        }
+
+        "ERROR: Match location not found (should not happen)".to_string()
+    }
+
     pub async fn handle_replace_string_in_file(
         &self,
         args: Value,
@@ -800,7 +1303,8 @@ impl WorkspaceServer {
                     "'replacements' must be an array",
                     vec![
                         "Format: {\"replacements\": [{\"oldString\": \"...\", \"newString\": \"...\"}]}".to_string(),
-                        "Use readFile first to see exact content to replace".to_string(),
+                        "⚠️ CRITICAL: Call readFile FIRST to get exact content for oldString".to_string(),
+                        "Use text exactly as shown in readFile response - ensure it matches current file content".to_string(),
                     ],
                     ToolGroup::Workspace,
                 ).to_mcp_result());
@@ -815,7 +1319,7 @@ impl WorkspaceServer {
                 "Replacements array is empty",
                 vec![
                     "Provide at least one replacement: {\"oldString\": \"...\", \"newString\": \"...\"}".to_string(),
-                    "Use readFile to identify content to replace".to_string(),
+                    "⚠️ WORKFLOW: 1. Call readFile first, 2. Extract exact text, 3. Use as oldString".to_string(),
                 ],
                 ToolGroup::Workspace,
             ).to_mcp_result());
@@ -914,15 +1418,43 @@ impl WorkspaceServer {
 
                 let suggestion = if let Some((line_num, similarity)) = best_match {
                     format!(
-                        "Similar content found at line {} ({}% match). Use readFile('{}', {}, {}) to verify",
+                        "Similar content found at line {} ({}% match).
+
+⚠️ MANDATORY STEPS:
+1. Call readFile('{}', {}, {}) to see the ACTUAL content
+2. Extract the exact text from readFile response (including whitespace)
+3. Use the extracted text as oldString in your next attempt
+
+💡 RECOMMENDED: Use previewReplacement BEFORE replaceStringInFile
+   → previewReplacement('{}', [...]) shows exact diffs WITHOUT modifying the file
+   → Catches mismatches early and shows line numbers
+
+❌ DO NOT retry with the same oldString
+❌ DO NOT reconstruct the text from previous attempts",
                         line_num,
                         (similarity * 100.0) as u32,
                         path_str,
                         line_num,
-                        line_num + search_size.saturating_sub(1)
+                        line_num + search_size.saturating_sub(1),
+                        path_str
                     )
                 } else {
-                    "Use readFile to see current content and verify the string exists".to_string()
+                    format!(
+                        "Pattern not found in file.
+
+⚠️ MANDATORY STEPS:
+1. Call readFile('{}') to see current file content
+2. Extract the exact text you want to replace from readFile response
+3. Use the extracted text as oldString (must match EXACTLY including whitespace)
+
+💡 RECOMMENDED: Use previewReplacement BEFORE replaceStringInFile
+   → previewReplacement('{}', [...]) verifies changes WITHOUT file modification
+   → Shows exact line numbers and context for better accuracy
+
+❌ DO NOT retry without reading the file first
+❌ DO NOT use oldString reconstructed from previous attempts or assumptions",
+                        path_str, path_str
+                    )
                 };
 
                 failed_replacements.push(format!(
@@ -961,39 +1493,52 @@ impl WorkspaceServer {
         let file_manager = self.get_file_manager(session_id);
         match file_manager.write_file_string(path_str, &new_content).await {
             Ok(_) => {
+                // Invalidate service context cache
+                self.invalidate_context_cache().await;
+
                 // Generate diff output
-                let diff_output = self.format_string_diff(&successful_replacements);
+                let diff_output = self.format_string_diff(&successful_replacements, path_str);
 
                 let summary = if failed_replacements.is_empty() {
                     format!(
-                        "✓ Successfully replaced {} pattern(s) in '{}'",
-                        successful_replacements.len(),
-                        path_str
+                        "**✅ String Replacement Successful**\n\n\
+                        **File:** `{}`\n\
+                        **Replacements:** {}\n",
+                        path_str,
+                        successful_replacements.len()
                     )
                 } else {
                     format!(
-                        "⚠ Partially successful: {} of {} replacement(s) succeeded in '{}'\n\nFailed:\n{}",
-                        successful_replacements.len(),
-                        replacements.len(),
+                        "**⚠️ Partial Success**\n\n\
+                        **File:** `{}`\n\
+                        **Successful:** {}\n\
+                        **Failed:** {}\n\n\
+                        **Failed Replacements:**\n{}\n",
                         path_str,
+                        successful_replacements.len(),
+                        failed_replacements.len(),
                         failed_replacements.join("\n")
                     )
                 };
 
-                let hint = SuccessHint::new(
-                    format!("{}\n\n{}", summary, diff_output),
-                    vec![
-                        format!("Use readFile('{}') to verify all changes", path_str),
-                        "Use grep(path, pattern) to search for specific content".to_string(),
-                    ],
+                let message = format!(
+                    "{}\n{}\n\n\
+                    **Next Steps:**\n\
+                    - Use readFile to verify all changes\n\
+                    - Use grep to search for specific content\n\
+                    - Consider using previewReplacement before future changes",
+                    summary, diff_output
                 );
 
-                Ok(hint.to_mcp_result_with_data(Some(json!({
-                    "path": path_str,
-                    "successful_replacements": successful_replacements.len(),
-                    "failed_replacements": failed_replacements.len(),
-                    "diff": diff_output,
-                }))))
+                Ok(MCPResult::success_with_data(
+                    &message,
+                    json!({
+                        "path": path_str,
+                        "successful_replacements": successful_replacements.len(),
+                        "failed_replacements": failed_replacements.len(),
+                        "diff": diff_output,
+                    }),
+                ))
             }
             Err(e) if e.contains("Permission denied") => Ok(ErrorGuidance::with_guidance(
                 ErrorCategory::PermissionDenied,
@@ -1047,16 +1592,24 @@ impl WorkspaceServer {
     }
 
     // Helper: Format diff output (Git-style)
-    fn format_string_diff(&self, replacements: &[(String, String)]) -> String {
-        let mut diff_lines = vec!["=== Changes Made ===\n".to_string()];
+    fn format_string_diff(&self, replacements: &[(String, String)], file_path: &str) -> String {
+        let language = detect_language(std::path::Path::new(file_path));
+        let mut diff_lines = Vec::new();
 
-        for (old_str, new_str) in replacements {
-            // Find context around change
+        diff_lines.push("**Changes Made:**\n".to_string());
+        diff_lines.push("```diff".to_string());
+
+        for (idx, (old_str, new_str)) in replacements.iter().enumerate() {
             let old_lines: Vec<&str> = old_str.lines().collect();
             let new_lines: Vec<&str> = new_str.lines().collect();
 
+            if idx > 0 {
+                diff_lines.push(String::new()); // Separator between replacements
+            }
+
             diff_lines.push(format!(
-                "@@ Replaced {} line(s) with {} line(s) @@",
+                "@@ Replacement #{}: {} line(s) → {} line(s) @@",
+                idx + 1,
                 old_lines.len(),
                 new_lines.len()
             ));
@@ -1070,8 +1623,12 @@ impl WorkspaceServer {
             for line in new_lines {
                 diff_lines.push(format!("+ {}", line));
             }
+        }
 
-            diff_lines.push(String::new()); // Blank line
+        diff_lines.push("```".to_string());
+
+        if !language.is_empty() {
+            diff_lines.push(format!("\n*Language: {}*", language));
         }
 
         diff_lines.join("\n")
@@ -1167,7 +1724,9 @@ impl WorkspaceServer {
         };
 
         let mut matches = Vec::new();
-        for (idx, line) in input_text.lines().enumerate() {
+        let lines: Vec<&str> = input_text.lines().collect();
+
+        for (idx, line) in lines.iter().enumerate() {
             if regex.is_match(line) {
                 if line_numbers {
                     matches.push(json!({ "line": idx + 1, "text": line }));
@@ -1177,28 +1736,95 @@ impl WorkspaceServer {
             }
         }
 
+        let file_path = args.get("path").and_then(|v| v.as_str());
+        let language = file_path
+            .map(|p| detect_language(std::path::Path::new(p)))
+            .unwrap_or("");
+
         let text_output = if matches.is_empty() {
-            "No matches found".to_string()
+            format!(
+                "**🔍 Grep Results: No matches found**\n\n\
+                Pattern: `{}`\n\
+                Options: {}\n\n\
+                **Next Steps:**\n\
+                - Try a different search pattern\n\
+                - Use ignoreCase: true for case-insensitive search\n\
+                - Check if the file contains the expected content with readFile",
+                pattern,
+                if ignore_case {
+                    "case-insensitive"
+                } else {
+                    "case-sensitive"
+                }
+            )
         } else {
-            let mut s = format!("Found {} matches:\n", matches.len());
-            for match_item in matches.iter().take(20) {
+            let mut s = format!("**🔍 Grep Results: {} match(es) found**\n\n", matches.len());
+
+            if let Some(path) = file_path {
+                s.push_str(&format!("File: `{}`\n", path));
+            }
+            s.push_str(&format!("Pattern: `{}`\n", pattern));
+            s.push_str(&format!(
+                "Options: {}\n\n",
+                if ignore_case {
+                    "case-insensitive"
+                } else {
+                    "case-sensitive"
+                }
+            ));
+
+            // Show up to 20 matches with context
+            let matches_to_show = matches.len().min(20);
+            s.push_str("```");
+            if !language.is_empty() {
+                s.push_str(language);
+            }
+            s.push('\n');
+
+            for match_item in matches.iter().take(matches_to_show) {
                 if let Some(obj) = match_item.as_object() {
-                    if let Some(line_num) = obj.get("line") {
-                        s.push_str(&format!(
-                            "Line {}: {}\n",
-                            line_num,
-                            obj.get("text").and_then(|t| t.as_str()).unwrap_or("")
-                        ));
-                    } else {
-                        s.push_str(&format!("{}\n", match_item.as_str().unwrap_or("")));
+                    if let Some(line_num) = obj.get("line").and_then(|v| v.as_u64()) {
+                        let line_idx = (line_num as usize).saturating_sub(1);
+
+                        // Show context: ±2 lines
+                        let context_start = line_idx.saturating_sub(2);
+                        let context_end = (line_idx + 3).min(lines.len());
+
+                        for (i, line) in lines
+                            .iter()
+                            .enumerate()
+                            .skip(context_start)
+                            .take(context_end - context_start)
+                        {
+                            let prefix = if i == line_idx { ">" } else { " " };
+                            let line_number = format!("{:4}", i + 1);
+                            s.push_str(&format!("{} {} | {}\n", prefix, line_number, line));
+                        }
+                        s.push('\n');
+                    } else if let Some(text) = obj.get("text").and_then(|t| t.as_str()) {
+                        s.push_str(&format!("{}\n", text));
                     }
                 } else if let Some(str_val) = match_item.as_str() {
                     s.push_str(&format!("{}\n", str_val));
                 }
             }
+
+            s.push_str("```\n\n");
+
             if matches.len() > 20 {
-                s.push_str(&format!("... and {} more matches.", matches.len() - 20));
+                s.push_str(&format!(
+                    "*Showing first 20 of {} total matches*\n\n",
+                    matches.len()
+                ));
             }
+
+            s.push_str(
+                "**Next Steps:**\n\
+                - Use readFile to see full file context\n\
+                - Use replaceStringInFile to modify matched content\n\
+                - Refine search pattern for more specific results",
+            );
+
             s
         };
 

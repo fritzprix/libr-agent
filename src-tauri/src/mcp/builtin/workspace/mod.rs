@@ -85,6 +85,7 @@ pub struct WorkspaceServer {
     pub(crate) process_registry: terminal_manager::ProcessRegistry,
     pub(crate) pending_executions: Arc<PendingExecutions>,
     pub(crate) shell_manager: Arc<persistent_shell_manager::PersistentShellManager>,
+    pub(crate) context_cache: Arc<tokio::sync::RwLock<Option<(String, std::time::Instant)>>>,
 }
 
 impl WorkspaceServer {
@@ -102,6 +103,15 @@ impl WorkspaceServer {
             process_registry,
             pending_executions: Arc::new(PendingExecutions::new()),
             shell_manager: Arc::new(persistent_shell_manager::PersistentShellManager::new()),
+            context_cache: Arc::new(tokio::sync::RwLock::new(None)),
+        }
+    }
+
+    /// Invalidate the service context cache (call after state changes)
+    pub(crate) async fn invalidate_context_cache(&self) {
+        if let Ok(mut guard) = self.context_cache.try_write() {
+            *guard = None;
+            tracing::trace!("Workspace service context cache invalidated");
         }
     }
 
@@ -431,8 +441,8 @@ impl WorkspaceServer {
             let warning = ErrorGuidance::with_guidance(
                 crate::mcp::builtin::error_guidance::ErrorCategory::InvalidState,
                 format!(
-                    "Excessive polling detected ({} consecutive polls)",
-                    entry_for_response.consecutive_running_polls
+                    "Excessive polling detected ({}/{} consecutive polls exceeds threshold)",
+                    entry_for_response.consecutive_running_polls, threshold
                 ),
                 vec![
                     "Wait at least 10 seconds before next poll".to_string(),
@@ -843,6 +853,9 @@ impl WorkspaceServer {
         // Remove cancellation token
         registry.cancellation_tokens.remove(process_id);
 
+        // Invalidate service context cache
+        self.invalidate_context_cache().await;
+
         let hint = SuccessHint::new(
             format!("Process {} stopped successfully", process_id),
             vec![
@@ -957,6 +970,22 @@ impl BuiltinMCPServer for WorkspaceServer {
             self.session_id.clone()
         };
 
+        // Check cache first
+        const CACHE_TTL_SECS: u64 = 5;
+        if let Ok(guard) = self.context_cache.try_read() {
+            if let Some((cached_prompt, last_update)) = guard.as_ref() {
+                if last_update.elapsed().as_secs() < CACHE_TTL_SECS {
+                    return ServiceContext {
+                        context_prompt: cached_prompt.clone(),
+                        structured_state: Some(json!({
+                            "cached": true,
+                            "session_id": session_id
+                        })),
+                    };
+                }
+            }
+        }
+
         let workspace_dir_path = self.get_workspace_dir(&session_id);
         let workspace_dir = workspace_dir_path.to_string_lossy().to_string();
 
@@ -1046,9 +1075,14 @@ impl BuiltinMCPServer for WorkspaceServer {
 - Running: {}{}
 - Total: {}
 
-💡 Use pollProcess(processId) to check status or listProcesses() to see all.",
+💡 Use pollProcess(processId) to check status or listProcesses() to see all (including full commands).",
             workspace_dir, shell_cwd, os, arch, running_count, running_processes_text, total_count
         );
+
+        // Update cache
+        if let Ok(mut guard) = self.context_cache.try_write() {
+            *guard = Some((context_prompt.clone(), std::time::Instant::now()));
+        }
 
         ServiceContext {
             context_prompt,
@@ -1193,6 +1227,7 @@ impl BuiltinMCPServer for WorkspaceServer {
             "writeFile" => self.handle_write_file(args, session_id).await,
             "listDirectory" => self.handle_list_directory(args, session_id).await,
             "replaceStringInFile" => self.handle_replace_string_in_file(args, session_id).await,
+            "previewReplacement" => self.handle_preview_replacement(args, session_id).await,
             "importFile" => self.handle_import_file(args, session_id).await,
             "grep" => self.handle_grep(args, session_id).await,
             // Code execution tools

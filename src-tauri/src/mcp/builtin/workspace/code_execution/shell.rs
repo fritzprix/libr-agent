@@ -96,6 +96,9 @@ impl WorkspaceServer {
                         }
                     };
 
+                    // Invalidate service context cache to reflect CWD or status changes
+                    self.invalidate_context_cache().await;
+
                     // Success - format with clear state reporting
                     let header = format!("✓ Command executed successfully in {}ms", duration_ms);
 
@@ -105,16 +108,20 @@ impl WorkspaceServer {
                         PERSISTENT_SHELL_TOOL, display_cwd, exit_code
                     );
 
-                    // Warning about file tools
-                    let file_tools_warning = "⚠️  File tools (readFile, listDirectory) always use workspace root (.)\n    To list files in shell's current directory, use shell commands: ls or find";
+                    // Only show warning if shell CWD differs from workspace root for less noise
+                    let file_tools_warning = if display_cwd != "." {
+                        "\n⚠️  File tools (readFile, listDirectory) always use workspace root (.)\n    To list files in shell's current directory, use shell commands: ls or find"
+                    } else {
+                        ""
+                    };
 
                     let text_message: String = if !stdout.is_empty() {
                         format!(
-                            "{}\n\nCommand output:\n{}\n\n{}\n\n{}",
+                            "{}\n\nCommand output:\n{}\n\n{}{}",
                             header, stdout, shell_state, file_tools_warning
                         )
                     } else {
-                        format!("{}\n\n{}\n\n{}", header, shell_state, file_tools_warning)
+                        format!("{}\n\n{}{}", header, shell_state, file_tools_warning)
                     };
                     Ok(MCPResult::success_with_data(
                         text_message.as_str(),
@@ -1329,6 +1336,9 @@ impl WorkspaceServer {
                 }
             }
         }
+
+        // Invalidate service context cache to reflect new process
+        self.invalidate_context_cache().await;
 
         // Return immediate response with process_id
         let hint = SuccessHint::new(
