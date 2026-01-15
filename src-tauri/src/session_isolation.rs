@@ -3,6 +3,15 @@ use std::path::PathBuf;
 use tokio::process::Command as AsyncCommand;
 use tracing::{info, warn};
 
+/// Shell type enumeration for cross-platform shell support
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)] // Used by tool handlers and future shell selection logic
+pub enum ShellType {
+    Bash,
+    PowerShell,
+    Cmd,
+}
+
 /// Cross-platform session isolation manager
 #[derive(Debug, Clone)]
 pub struct SessionIsolationManager {
@@ -32,6 +41,7 @@ pub struct IsolatedProcessConfig {
     pub args: Vec<String>,
     pub env_vars: HashMap<String, String>,
     pub isolation_level: IsolationLevel,
+    pub shell_type: Option<ShellType>,
 }
 
 #[derive(Debug, Clone)]
@@ -103,10 +113,10 @@ impl SessionIsolationManager {
                     false,
                 )
             } else {
-                (self.get_shell_command().to_string(), true)
+                (self.get_shell_command(config.shell_type).to_string(), true)
             }
         } else {
-            (self.get_shell_command().to_string(), true)
+            (self.get_shell_command(None).to_string(), true)
         };
 
         let mut cmd = AsyncCommand::new(&shell_cmd);
@@ -597,10 +607,13 @@ impl SessionIsolationManager {
         }
     }
 
-    /// Get the appropriate shell command for the platform
-    fn get_shell_command(&self) -> &str {
+    /// Get the appropriate shell command for the platform and shell type
+    fn get_shell_command(&self, shell_type: Option<ShellType>) -> &str {
         if cfg!(target_os = "windows") {
-            "powershell"
+            match shell_type {
+                Some(ShellType::Cmd) => "cmd",
+                Some(ShellType::PowerShell) | Some(ShellType::Bash) | None => "powershell",
+            }
         } else {
             "bash"
         }

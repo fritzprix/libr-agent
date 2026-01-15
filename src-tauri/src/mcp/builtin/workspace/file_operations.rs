@@ -246,7 +246,7 @@ impl WorkspaceServer {
                 let text_message = if show_line_numbers {
                     // Line numbers mode: use plain code block
                     format!(
-                        "📄 **File: `{}`**\n\n```\n{}\n```\n\n💡 **Next Steps:**\n- Use `writeFile` to modify the entire file\n- Use `replaceStringInFile` to make targeted edits",
+                        "📄 **File: `{}`**\n\n```\n{}\n```\n\n💡 **Next Steps:**\n- Use `createFile` to create or overwrite the file\n- Use `editFile` to make targeted edits",
                         path_str,
                         content
                     )
@@ -284,7 +284,7 @@ impl WorkspaceServer {
                         .unwrap_or("");
 
                     format!(
-                        "📄 **File: `{}`**\n\n```{}\n{}\n```\n\n💡 **Next Steps:**\n- Use `writeFile` to modify the entire file\n- Use `replaceStringInFile` to make targeted edits",
+                        "📄 **File: `{}`**\n\n```{}\n{}\n```\n\n💡 **Next Steps:**\n- Use `createFile` to create or overwrite the file\n- Use `editFile` to make targeted edits",
                         path_str,
                         language,
                         content
@@ -460,7 +460,7 @@ impl WorkspaceServer {
         result.join("\n")
     }
 
-    pub async fn handle_write_file(
+    pub async fn handle_create_file(
         &self,
         args: Value,
         session_id: Option<String>,
@@ -773,7 +773,7 @@ impl WorkspaceServer {
 (This directory is empty)
 
 💡 Next Steps:
-- Use writeFile('{}/filename.txt', content) to create a file
+- Use createFile('{}/filename.txt', content) to create a file
 - Use listDirectory('{}') to verify the directory exists
 - This is a valid empty directory",
                             path_str, path_str, path_str
@@ -1136,7 +1136,7 @@ impl WorkspaceServer {
             {}\n\
             ```\n\n\
             **Next Steps:**\n\
-            - ✅ Preview looks correct? Call replaceStringInFile with SAME parameters\n\
+            - ✅ Preview looks correct? Call editFile with SAME parameters\n\
             - 📖 Use readFile to see full file context",
             path_str, preview_diff
         );
@@ -1201,7 +1201,7 @@ impl WorkspaceServer {
         "ERROR: Match location not found (should not happen)".to_string()
     }
 
-    pub async fn handle_replace_string_in_file(
+    pub async fn handle_edit_file(
         &self,
         args: Value,
         session_id: Option<String>,
@@ -1214,7 +1214,7 @@ impl WorkspaceServer {
                     ErrorCategory::InvalidInput,
                     "Parameter 'path' cannot be empty",
                     vec![
-                        "Provide a valid file path: replaceStringInFile({path, oldString, newString})"
+                        "Provide a valid file path: editFile({path, oldString, newString})"
                             .to_string(),
                         "Use listDirectory('.') to find files".to_string(),
                     ],
@@ -1304,7 +1304,7 @@ impl WorkspaceServer {
 2. Extract the exact text from readFile response (including whitespace)
 3. Use the extracted text as oldString in your next attempt
 
-💡 RECOMMENDED: Use previewReplacement BEFORE replaceStringInFile
+💡 RECOMMENDED: Use previewReplacement BEFORE editFile
    → previewReplacement(path, oldString, newString) shows exact diffs
    → Catches mismatches early and shows line numbers
 
@@ -1325,7 +1325,7 @@ impl WorkspaceServer {
 2. Extract the exact text you want to replace from readFile response
 3. Use the extracted text as oldString (must match EXACTLY including whitespace)
 
-💡 RECOMMENDED: Use previewReplacement BEFORE replaceStringInFile
+💡 RECOMMENDED: Use previewReplacement BEFORE editFile
    → previewReplacement(path, oldString, newString) verifies without modification
    → Shows exact line numbers and context for better accuracy
 
@@ -1381,7 +1381,7 @@ impl WorkspaceServer {
                     {}\n\n\
                     **Next Steps:**\n\
                     - Use readFile to verify the changes\n\
-                    - For multiple changes, call replaceStringInFile again\n\
+                    - For multiple changes, call editFile again\n\
                     - Each replacement is atomic and independent",
                     path_str, diff_output
                 );
@@ -1736,7 +1736,7 @@ impl WorkspaceServer {
             s.push_str(
                 "**Next Steps:**\n\
                 - Use readFile to see full file context\n\
-                - Use replaceStringInFile to modify matched content\n\
+                - Use editFile to modify matched content\n\
                 - Refine search pattern for more specific results",
             );
 
@@ -1873,7 +1873,7 @@ impl WorkspaceServer {
                             "Use readFile(\"{}\") to view imported content",
                             dest_rel_path
                         ),
-                        "Use writeFile to modify the imported file".to_string(),
+                        "Use createFile to modify the imported file".to_string(),
                     ],
                 );
 
@@ -1895,7 +1895,7 @@ impl WorkspaceServer {
                         ErrorCategory::InvalidInput,
                         vec![
                             format!("File already exists at: {}", dest_rel_path),
-                            "Use writeFile to overwrite the existing file".to_string(),
+                            "Use createFile to overwrite the existing file".to_string(),
                             "Or specify a different destination path with a unique name"
                                 .to_string(),
                         ],

@@ -395,6 +395,128 @@ pub fn create_spawn_process_tool() -> MCPTool {
     }
 }
 
+// Windows platform tool (CMD.exe) - PRIMARY TOOL (Isolated CMD)
+#[cfg(windows)]
+pub fn create_run_cmd_tool() -> MCPTool {
+    let mut props = HashMap::new();
+    props.insert(
+        "command".to_string(),
+        string_prop_with_examples(
+            Some(1),
+            Some(1000),
+            Some("CMD command to execute"),
+            vec![
+                json!("dir"),
+                json!("type README.md"),
+                json!("findstr /R \"pattern\" *.txt"),
+            ],
+        ),
+    );
+    props.insert(
+        "timeout".to_string(),
+        integer_prop_with_default(
+            Some(1),
+            Some(crate::config::max_execution_timeout() as i64),
+            crate::config::default_execution_timeout() as i64,
+            Some("Timeout in seconds (default: 30)"),
+        ),
+    );
+
+    MCPTool {
+        name: "runCmd".to_string(),
+        title: Some("Run CMD Command (Isolated)".to_string()),
+        description: "Execute a CMD command in an ISOLATED cmd.exe session.\n\n\
+                      ⚠️ PRIMARY TOOL: Use this for most CMD commands (90% of cases).\n\n\
+                      ISOLATION & STATE:\n\
+                      - Medium isolation with restricted environment\n\
+                      - NO state preservation - each call is independent\n\
+                      - Synchronous execution with configurable timeout\n\n\
+                      ⚠️ CMD SYNTAX (WINDOWS):\n\
+                      - Use spaces and quotes for paths with spaces\n\
+                      - Environment variables: %VARNAME% (not $env:VARNAME)\n\
+                      - Chaining: Use & for sequential, && for conditional\n\
+                      - Example: 'cd src && dir /S'\n\n\
+                      🔍 WORKING DIRECTORY:\n\
+                      - Commands ALWAYS start from workspace root (project directory)\n\
+                      - Use 'cd dir && command' to work in subdirectories\n\
+                      - Example: 'cd src && dir' lists files in src/ directory\n\n\
+                      USE CASES:\n\
+                      - File operations: dir, type, copy, del\n\
+                      - Text search: findstr, more\n\
+                      - System info: echo %CD%, echo %PATH%\n\
+                      - Batch scripts: Simple one-liners from batch files\n\n\
+                      WHEN TO USE OTHER TOOLS:\n\
+                      - Need persistent state (cd, set)? → Use runInPersistentCmd\n\
+                      - Long-running task (>30s)? → Use spawnProcess\n\n\
+                      PLATFORM: Windows - uses cmd.exe (Command Prompt)."
+            .to_string(),
+        input_schema: object_schema(props, vec!["command".to_string()]),
+        output_schema: None,
+        annotations: None,
+    }
+}
+
+// Windows platform tool (CMD.exe) - ADVANCED TOOL (Persistent CMD)
+#[cfg(windows)]
+pub fn create_run_in_persistent_cmd_tool() -> MCPTool {
+    let mut props = HashMap::new();
+    props.insert(
+        "command".to_string(),
+        string_prop_with_examples(
+            Some(1),
+            Some(1000),
+            Some("CMD command to execute"),
+            vec![
+                json!("dir"),
+                json!("cd src && dir"),
+                json!("set MY_VAR=value && echo %MY_VAR%"),
+            ],
+        ),
+    );
+    props.insert(
+        "timeout".to_string(),
+        integer_prop_with_default(
+            Some(1),
+            Some(crate::config::max_execution_timeout() as i64),
+            crate::config::default_execution_timeout() as i64,
+            Some("Timeout in seconds (default: 30)"),
+        ),
+    );
+
+    MCPTool {
+        name: "runInPersistentCmd".to_string(),
+        title: Some("Execute CMD Command (Persistent Session)".to_string()),
+        description: "Execute a CMD command using a PERSISTENT cmd.exe session.\n\n\
+                      ⚠️ ADVANCED TOOL: Only use when you need state preservation.\n\
+                      For most commands (dir, type, findstr), use runCmd instead.\n\n\
+                      STATE PRESERVATION:\n\
+                      - Environment variables (set VAR=value) persist between calls\n\
+                      - Working directory (cd) persists between calls\n\
+                      - Shell history and environment are maintained\n\
+                      - NOT fully sandboxed - inherits host environment\n\n\
+                      ⚠️ CMD SYNTAX (WINDOWS):\n\
+                      - Use spaces and quotes for paths with spaces\n\
+                      - Environment variables: %VARNAME% (not $env:VARNAME)\n\
+                      - Chaining: Use & for sequential, && for conditional\n\
+                      - Example: 'cd src && dir /S'\n\n\
+                      🔍 WORKING DIRECTORY BEHAVIOR:\n\
+                      - Persistent shell tracks its own CWD (use 'cd' to change)\n\
+                      - 'cd' commands change the shell's CWD for future commands\n\
+                      - ⚠️ FILE TOOLS IGNORE THIS: readFile/listDirectory use workspace root\n\
+                      - To list files in shell's CWD, use: 'dir' or 'dir /S'\n\n\
+                      USE CASES:\n\
+                      - Navigating directories: cd, pushd, popd\n\
+                      - Setting up environment: set VAR=value\n\
+                      - Running quick commands: dir, type, findstr\n\
+                      - For long tasks (>30s), use spawnProcess\n\n\
+                      PLATFORM: Windows - uses cmd.exe (Command Prompt)."
+            .to_string(),
+        input_schema: object_schema(props, vec!["command".to_string()]),
+        output_schema: None,
+        annotations: None,
+    }
+}
+
 // Macro to unify tool constant definition and creation function
 macro_rules! define_mcp_tool {
     (

@@ -22,7 +22,6 @@ import {
   type RevalidateEvent,
 } from '@/lib/services/assistant-service';
 import { useWebMCP } from '@/context/WebMCPContext';
-import { LocalDatabase } from '@/lib/db';
 
 const logger = getLogger('AssistantContext');
 
@@ -177,7 +176,7 @@ export const AssistantContextProvider = ({
   const [{ value: assistants, loading, error: loadError }, loadAssistants] =
     useAsyncFn(async () => {
       // Ensure default assistants exist
-      await LocalDatabase.getInstance().ensureDefaultAssistants();
+      // await LocalDatabase.getInstance().ensureDefaultAssistants();
 
       if (paginationMode === 'paginated') {
         const result = await assistantService.getList({

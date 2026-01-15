@@ -43,7 +43,7 @@ import {
 import { toast } from 'sonner';
 import { MCPServerManagement } from './MCPServerManagement';
 import { getLogger } from '@/lib/logger';
-import { LocalDatabase, dbUtils } from '@/lib/db/service';
+import { dbUtils } from '@/lib/db/service';
 import {
   factoryReset as backendFactoryReset,
   clearAllSessions as backendClearAllSessions,
@@ -177,7 +177,7 @@ export default function SettingsPage() {
         await dbUtils.clearAllSessions();
         await dbUtils.clearAllAssistants();
         await dbUtils.clearAllMCPServers();
-        await LocalDatabase.getInstance().playbooks.clear();
+        await dbUtils.clearAllPlaybooks();
       } catch (e) {
         logger.error('Failed to clear frontend DB during factory reset', e);
         // Continue to backend reset
@@ -187,7 +187,7 @@ export default function SettingsPage() {
       await backendFactoryReset();
 
       // 3. Restore defaults
-      await LocalDatabase.getInstance().ensureDefaultAssistants();
+      // await LocalDatabase.getInstance().ensureDefaultAssistants();
 
       toast.success(
         t(

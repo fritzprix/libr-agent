@@ -4,7 +4,7 @@
 /// (working directory, environment variables) without PTY complexity.
 ///
 /// Key features:
-/// - Cross-platform unified logic (bash for Unix, PowerShell for Windows)
+/// - Cross-platform unified logic (bash for Unix, PowerShell/Cmd for Windows)
 /// - Sentinel-based command synchronization (no timing dependencies)
 /// - UTF-8 lossy conversion for robust encoding handling
 /// - Separate stdout/stderr streams
@@ -18,6 +18,8 @@ use base64::Engine;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU32, Ordering};
+
+use super::ShellType;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
 use tracing::{debug, warn};
@@ -77,11 +79,17 @@ impl PersistentShell {
     /// # Arguments
     /// * `session_id` - Unique identifier for this shell session
     /// * `workspace_path` - Working directory for the shell session
+    /// * `shell_type` - Type of shell to spawn (Bash, PowerShell, or Cmd)
     ///
     /// # Platform-specific behavior
-    /// - Unix: Spawns `bash --norc --noprofile`
-    /// - Windows: Spawns `powershell.exe -NoProfile -NoLogo -NonInteractive`
-    pub async fn new(session_id: String, workspace_path: PathBuf) -> Result<Self> {
+    /// - Unix: Spawns `bash --norc --noprofile` (shell_type must be Bash)
+    /// - Windows (PowerShell): Spawns `powershell.exe -NoProfile -NoLogo -NonInteractive`
+    /// - Windows (Cmd): Spawns `cmd.exe /Q /K` (no echo, keep running)
+    pub async fn new(
+        session_id: String,
+        workspace_path: PathBuf,
+        shell_type: ShellType,
+    ) -> Result<Self> {
         #[cfg(unix)]
         let mut cmd = Command::new("bash");
         #[cfg(unix)]
@@ -108,14 +116,28 @@ impl PersistentShell {
         }
 
         #[cfg(windows)]
-        let mut cmd = Command::new("powershell.exe");
-        #[cfg(windows)]
-        {
-            cmd.arg("-NoProfile");
-            cmd.arg("-NoLogo");
-            cmd.arg("-NonInteractive"); // Critical: removes prompts and echo
-            debug!("Creating persistent PowerShell session for: {}", session_id);
-        }
+        let mut cmd = match shell_type {
+            ShellType::PowerShell => {
+                let mut c = Command::new("powershell.exe");
+                c.arg("-NoProfile");
+                c.arg("-NoLogo");
+                c.arg("-NonInteractive"); // Critical: removes prompts and echo
+                debug!("Creating persistent PowerShell session for: {}", session_id);
+                c
+            }
+            ShellType::Cmd => {
+                let mut c = Command::new("cmd.exe");
+                c.arg("/Q"); // Echo off
+                c.arg("/K"); // Keep running (don't exit after first command)
+                debug!("Creating persistent Cmd shell for: {}", session_id);
+                c
+            }
+            ShellType::Bash => {
+                return Err(anyhow::anyhow!(
+                    "Bash shell type is not supported on Windows"
+                ));
+            }
+        };
 
         // Set working directory to workspace
         cmd.current_dir(&workspace_path);
@@ -139,11 +161,27 @@ impl PersistentShell {
 
         #[cfg(windows)]
         {
-            // Set encoding to UTF-8 for Windows PowerShell to handle non-ASCII characters correctly
-            // We suppress output with [void] cast to avoid polluting the first command's output
-            let setup_cmd = "[void]([Console]::InputEncoding = [Console]::OutputEncoding = [System.Text.Encoding]::UTF8)\n";
-            stdin.write_all(setup_cmd.as_bytes()).await?;
-            stdin.flush().await?;
+            match shell_type {
+                ShellType::PowerShell => {
+                    // Set encoding to UTF-8 for PowerShell to handle non-ASCII characters correctly
+                    // We suppress output with [void] cast to avoid polluting the first command's output
+                    let setup_cmd = "[void]([Console]::InputEncoding = [Console]::OutputEncoding = [System.Text.Encoding]::UTF8)\n";
+                    stdin.write_all(setup_cmd.as_bytes()).await?;
+                    stdin.flush().await?;
+                    debug!("Configuring PowerShell encoding to UTF-8");
+                }
+                ShellType::Cmd => {
+                    // Set encoding to UTF-8 for cmd.exe to handle non-ASCII characters correctly
+                    // chcp 65001 sets the code page to UTF-8
+                    let setup_cmd = "chcp 65001 >nul\r\n";
+                    stdin.write_all(setup_cmd.as_bytes()).await?;
+                    stdin.flush().await?;
+                    debug!("Configuring cmd.exe encoding to UTF-8 (chcp 65001)");
+                }
+                ShellType::Bash => {
+                    // Should not reach here on Windows
+                }
+            }
         }
 
         debug!(
@@ -532,7 +570,18 @@ mod tests {
     async fn test_basic_command() -> Result<()> {
         let temp_dir = std::env::temp_dir().join("test_basic_command");
         std::fs::create_dir_all(&temp_dir)?;
-        let mut shell = PersistentShell::new("test-basic".to_string(), temp_dir.clone()).await?;
+
+        #[cfg(unix)]
+        let mut shell =
+            PersistentShell::new("test-basic".to_string(), temp_dir.clone(), ShellType::Bash)
+                .await?;
+        #[cfg(windows)]
+        let mut shell = PersistentShell::new(
+            "test-basic".to_string(),
+            temp_dir.clone(),
+            ShellType::PowerShell,
+        )
+        .await?;
 
         #[cfg(unix)]
         let (stdout, _, exit_code, _) = shell.execute("echo 'Hello World'").await?;
@@ -551,7 +600,17 @@ mod tests {
     async fn test_working_directory_persistence() -> Result<()> {
         let temp_dir = std::env::temp_dir().join("test_working_dir");
         std::fs::create_dir_all(&temp_dir)?;
-        let mut shell = PersistentShell::new("test-cd".to_string(), temp_dir.clone()).await?;
+
+        #[cfg(unix)]
+        let mut shell =
+            PersistentShell::new("test-cd".to_string(), temp_dir.clone(), ShellType::Bash).await?;
+        #[cfg(windows)]
+        let mut shell = PersistentShell::new(
+            "test-cd".to_string(),
+            temp_dir.clone(),
+            ShellType::PowerShell,
+        )
+        .await?;
 
         #[cfg(unix)]
         {
@@ -580,7 +639,17 @@ mod tests {
     async fn test_environment_variable_persistence() -> Result<()> {
         let temp_dir = std::env::temp_dir().join("test_env_vars");
         std::fs::create_dir_all(&temp_dir)?;
-        let mut shell = PersistentShell::new("test-env".to_string(), temp_dir.clone()).await?;
+
+        #[cfg(unix)]
+        let mut shell =
+            PersistentShell::new("test-env".to_string(), temp_dir.clone(), ShellType::Bash).await?;
+        #[cfg(windows)]
+        let mut shell = PersistentShell::new(
+            "test-env".to_string(),
+            temp_dir.clone(),
+            ShellType::PowerShell,
+        )
+        .await?;
 
         #[cfg(unix)]
         {
@@ -606,7 +675,18 @@ mod tests {
     async fn test_input_injection_safety() -> Result<()> {
         let temp_dir = std::env::temp_dir().join("test_input_safety");
         std::fs::create_dir_all(&temp_dir)?;
-        let mut shell = PersistentShell::new("test-safety".to_string(), temp_dir.clone()).await?;
+
+        #[cfg(unix)]
+        let mut shell =
+            PersistentShell::new("test-safety".to_string(), temp_dir.clone(), ShellType::Bash)
+                .await?;
+        #[cfg(windows)]
+        let mut shell = PersistentShell::new(
+            "test-safety".to_string(),
+            temp_dir.clone(),
+            ShellType::PowerShell,
+        )
+        .await?;
 
         // Test case: Command that ignores input, followed by input that looks like a command
         // If injection is possible, "touch injected_file" might be executed
@@ -637,8 +717,21 @@ mod tests {
     async fn test_stdin_isolation() -> Result<()> {
         let temp_dir = std::env::temp_dir().join("test_stdin_isolation");
         std::fs::create_dir_all(&temp_dir)?;
-        let mut shell =
-            PersistentShell::new("test-isolation".to_string(), temp_dir.clone()).await?;
+
+        #[cfg(unix)]
+        let mut shell = PersistentShell::new(
+            "test-isolation".to_string(),
+            temp_dir.clone(),
+            ShellType::Bash,
+        )
+        .await?;
+        #[cfg(windows)]
+        let mut shell = PersistentShell::new(
+            "test-isolation".to_string(),
+            temp_dir.clone(),
+            ShellType::PowerShell,
+        )
+        .await?;
 
         #[cfg(unix)]
         {
@@ -663,8 +756,21 @@ mod tests {
     async fn test_command_without_newline() -> Result<()> {
         let temp_dir = std::env::temp_dir().join("test_no_newline");
         std::fs::create_dir_all(&temp_dir)?;
-        let mut shell =
-            PersistentShell::new("test-no-newline".to_string(), temp_dir.clone()).await?;
+
+        #[cfg(unix)]
+        let mut shell = PersistentShell::new(
+            "test-no-newline".to_string(),
+            temp_dir.clone(),
+            ShellType::Bash,
+        )
+        .await?;
+        #[cfg(windows)]
+        let mut shell = PersistentShell::new(
+            "test-no-newline".to_string(),
+            temp_dir.clone(),
+            ShellType::PowerShell,
+        )
+        .await?;
 
         #[cfg(unix)]
         let (stdout, _, exit_code, _) = shell.execute("printf 'NoNewline'").await?;
@@ -691,7 +797,21 @@ mod tests {
     async fn test_unicode_handling() -> Result<()> {
         let temp_dir = std::env::temp_dir().join("test_unicode");
         std::fs::create_dir_all(&temp_dir)?;
-        let mut shell = PersistentShell::new("test-unicode".to_string(), temp_dir.clone()).await?;
+
+        #[cfg(unix)]
+        let mut shell = PersistentShell::new(
+            "test-unicode".to_string(),
+            temp_dir.clone(),
+            ShellType::Bash,
+        )
+        .await?;
+        #[cfg(windows)]
+        let mut shell = PersistentShell::new(
+            "test-unicode".to_string(),
+            temp_dir.clone(),
+            ShellType::PowerShell,
+        )
+        .await?;
 
         let unicode_str = "안녕하세요 Hello World";
 

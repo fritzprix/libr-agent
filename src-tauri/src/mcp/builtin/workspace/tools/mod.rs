@@ -9,9 +9,9 @@ use crate::mcp::MCPTool;
 pub fn file_tools() -> Vec<MCPTool> {
     vec![
         file_tools::create_read_file_tool(),
-        file_tools::create_write_file_tool(),
+        file_tools::create_create_file_tool(),
         file_tools::create_list_directory_tool(),
-        file_tools::create_replace_string_in_file_tool(),
+        file_tools::create_edit_file_tool(),
         file_tools::create_preview_replacement_tool(),
         file_tools::create_import_file_tool(),
     ]
@@ -28,6 +28,11 @@ pub fn code_tools() -> Vec<MCPTool> {
         code_tools::create_execute_shell_tool(), // Unix: runInPersistentShell, Windows: runInPersistentPowerShell
         // Background process execution (platform-agnostic)
         code_tools::create_spawn_process_tool(), // Async: background processes
+        // CMD execution tools (Windows only)
+        #[cfg(windows)]
+        code_tools::create_run_cmd_tool(), // Windows: runCmd
+        #[cfg(windows)]
+        code_tools::create_run_in_persistent_cmd_tool(), // Windows: runInPersistentCmd
         // 2nd tool for interactive shell execution (Two-Tool Pattern)
         code_tools::create_execute_pending_shell_tool(),
         // Cancel tool for interactive shell execution
@@ -63,10 +68,13 @@ mod tests {
     #[test]
     fn test_code_tools_returns_platform_tool() {
         let tools = code_tools();
-        // Updated to expect 5 tools: runShell/runPowerShell (primary),
-        // runInPersistentShell/runInPersistentPowerShell (advanced),
-        // spawnProcess, executePendingShell, cancelPendingExecution
+        // Updated to expect different tool counts by platform:
+        // Unix: runShell, runInPersistentShell, spawnProcess, executePendingShell, cancelPendingExecution = 5 tools
+        // Windows: runPowerShell, runInPersistentPowerShell, spawnProcess, runCmd, runInPersistentCmd, executePendingShell, cancelPendingExecution = 7 tools
+        #[cfg(unix)]
         assert_eq!(tools.len(), 5);
+        #[cfg(windows)]
+        assert_eq!(tools.len(), 7);
 
         let primary_tool = &tools[0];
         #[cfg(unix)]
@@ -83,5 +91,15 @@ mod tests {
         // Verify async tool exists
         let async_tool = &tools[2];
         assert_eq!(async_tool.name, "spawnProcess");
+
+        // Verify CMD tools exist on Windows
+        #[cfg(windows)]
+        {
+            let cmd_tool = &tools[3];
+            assert_eq!(cmd_tool.name, "runCmd");
+
+            let persistent_cmd_tool = &tools[4];
+            assert_eq!(persistent_cmd_tool.name, "runInPersistentCmd");
+        }
     }
 }

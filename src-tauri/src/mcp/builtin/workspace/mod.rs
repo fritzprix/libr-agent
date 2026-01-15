@@ -15,6 +15,30 @@ use crate::mcp::MCPTool;
 use crate::services::SecureFileManager;
 use crate::session::SessionManager;
 
+/// Shell type enumeration for cross-platform shell support
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShellType {
+    Bash,
+    PowerShell,
+    Cmd,
+}
+
+impl ShellType {
+    /// Get shell command for spawning
+    pub fn command(&self) -> &str {
+        match self {
+            ShellType::Bash => "bash",
+            ShellType::PowerShell => "powershell.exe",
+            ShellType::Cmd => "cmd.exe",
+        }
+    }
+
+    /// Check if this is a Windows shell
+    pub fn is_windows(&self) -> bool {
+        matches!(self, ShellType::PowerShell | ShellType::Cmd)
+    }
+}
+
 // Platform-specific persistent shell tool name
 #[cfg(unix)]
 pub const PERSISTENT_SHELL_TOOL: &str = "runInPersistentShell";
@@ -992,6 +1016,7 @@ impl BuiltinMCPServer for WorkspaceServer {
         // Platform information
         let os = std::env::consts::OS;
         let arch = std::env::consts::ARCH;
+        let shell = detect_shell(os);
 
         // Get current shell CWD
         let shell_cwd = if let Some(cwd) = self.shell_manager.get_shell_cwd(&session_id).await {
@@ -1055,13 +1080,14 @@ impl BuiltinMCPServer for WorkspaceServer {
         };
 
         info!(
-            "Workspace service context - workspace_dir: {}, shell_cwd: {}, running processes: {}, total: {}, platform: {}/{}",
+            "Workspace service context - workspace_dir: {}, shell_cwd: {}, running processes: {}, total: {}, platform: {}/{}/{}",
             workspace_dir,
             shell_cwd,
             running_count,
             total_count,
             os,
-            arch
+            arch,
+            shell
         );
 
         let context_prompt = format!(
@@ -1069,14 +1095,14 @@ impl BuiltinMCPServer for WorkspaceServer {
 
 **Workspace Root**: {}
 **Persistent Shell CWD**: {}
-**Platform**: {} / {}
+**Platform**: {} / {} using {}
 
 **Background Processes**:
 - Running: {}{}
 - Total: {}
 
 💡 Use pollProcess(processId) to check status or listProcesses() to see all (including full commands).",
-            workspace_dir, shell_cwd, os, arch, running_count, running_processes_text, total_count
+            workspace_dir, shell_cwd, os, arch, shell, running_count, running_processes_text, total_count
         );
 
         // Update cache
@@ -1091,7 +1117,8 @@ impl BuiltinMCPServer for WorkspaceServer {
                 "shell_cwd": shell_cwd,
                 "platform": {
                     "os": os,
-                    "arch": arch
+                    "arch": arch,
+                    "shell": shell
                 },
                 "processes": {
                     "running": running_count,
@@ -1224,9 +1251,9 @@ impl BuiltinMCPServer for WorkspaceServer {
         match tool_name {
             // File operation tools
             "readFile" => self.handle_read_file(args, session_id).await,
-            "writeFile" => self.handle_write_file(args, session_id).await,
+            "createFile" => self.handle_create_file(args, session_id).await,
             "listDirectory" => self.handle_list_directory(args, session_id).await,
-            "replaceStringInFile" => self.handle_replace_string_in_file(args, session_id).await,
+            "editFile" => self.handle_edit_file(args, session_id).await,
             "previewReplacement" => self.handle_preview_replacement(args, session_id).await,
             "importFile" => self.handle_import_file(args, session_id).await,
             "grep" => self.handle_grep(args, session_id).await,
@@ -1245,6 +1272,11 @@ impl BuiltinMCPServer for WorkspaceServer {
             "runInPersistentShell" => self.handle_execute_shell(args, &target_session_id).await,
             #[cfg(windows)]
             "runInPersistentPowerShell" => self.handle_execute_shell(args, &target_session_id).await,
+            // CMD execution tools (Windows only, alternative to PowerShell)
+            #[cfg(windows)]
+            "runCmd" => self.handle_run_shell(args, &target_session_id).await,
+            #[cfg(windows)]
+            "runInPersistentCmd" => self.handle_execute_shell(args, &target_session_id).await,
             // Background process execution (platform-agnostic)
             "spawnProcess" => self.handle_spawn_process(args, &target_session_id).await,
             // Interactive shell execution (2nd tool for user input)
@@ -1264,8 +1296,11 @@ impl BuiltinMCPServer for WorkspaceServer {
             "read_file" | "readContent" => Ok(MCPResult::error(
                 "Tool not found. Did you mean 'readFile'? Please use the exact tool name 'readFile'."
             )),
-            "write_file" | "writeContent" => Ok(MCPResult::error(
-                "Tool not found. Did you mean 'writeFile'? Please use the exact tool name 'writeFile'."
+            "write_file" | "writeContent" | "writeFile" => Ok(MCPResult::error(
+                "Tool not found. Did you mean 'createFile'? Please use the exact tool name 'createFile' to create or write files."
+            )),
+            "replace_file" | "replaceStringInFile" => Ok(MCPResult::error(
+                "Tool not found. Did you mean 'editFile'? Please use the exact tool name 'editFile' to edit file content."
             )),
             "list_directory" | "ls" => Ok(MCPResult::error(
                 "Tool not found. Did you mean 'listDirectory'? Please use the exact tool name 'listDirectory'."
@@ -1274,12 +1309,34 @@ impl BuiltinMCPServer for WorkspaceServer {
                 "Tool not found. Use 'runShell' (Unix) or 'runPowerShell' (Windows) for quick commands. Use exact tool names."
             )),
             "execute_windows_cmd" | "executeWindowsCmd" => Ok(MCPResult::error(
-                "Tool not found. Use 'runPowerShell' for quick commands or 'runInPersistentPowerShell' for persistent state. Use exact tool names."
+                "Tool not found. Use 'runPowerShell' or 'runCmd' for quick commands. Use 'runInPersistentPowerShell' or 'runInPersistentCmd' for persistent state. Use exact tool names."
             )),
             "executeShellAsync" | "executeWindowsCmdAsync" | "runAsync" | "run_async" => Ok(MCPResult::error(
                 "Tool not found. Use 'spawnProcess' for background execution (works on both Unix and Windows)."
             )),
             _ => Err(format!("Tool '{tool_name}' not found")),
         }
+    }
+}
+
+/// Detect default shell for the platform
+fn detect_shell(os: &str) -> String {
+    match os {
+        "windows" => {
+            // Check for PowerShell vs CMD
+            if std::env::var("PSModulePath").is_ok() {
+                "powershell".to_string()
+            } else {
+                "cmd".to_string()
+            }
+        }
+        "macos" | "linux" => {
+            // Check SHELL environment variable
+            std::env::var("SHELL")
+                .ok()
+                .and_then(|shell_path| shell_path.split('/').next_back().map(|s| s.to_string()))
+                .unwrap_or_else(|| "bash".to_string())
+        }
+        _ => "unknown".to_string(),
     }
 }

@@ -48,7 +48,7 @@ USAGE:
 - Line ranges are inclusive [startLine, endLine]
 
 ⚠️ PREREQUISITE: File must exist in workspace
-💡 NEXT: Use writeFile to modify content or replaceStringInFile for targeted edits"
+💡 NEXT: Use createFile to create files, or editFile for targeted edits"
             .to_string(),
         input_schema: object_schema(props, vec!["path".to_string()]),
         output_schema: None,
@@ -56,7 +56,7 @@ USAGE:
     }
 }
 
-pub fn create_write_file_tool() -> MCPTool {
+pub fn create_create_file_tool() -> MCPTool {
     let mut props = HashMap::new();
     props.insert(
         "path".to_string(),
@@ -84,8 +84,8 @@ pub fn create_write_file_tool() -> MCPTool {
     );
 
     MCPTool {
-        name: "writeFile".to_string(),
-        title: Some("Write File".to_string()),
+        name: "createFile".to_string(),
+        title: Some("Create File".to_string()),
         description: "Write content to a file in the workspace. Creates file if it doesn't exist.
 
 MODES:
@@ -95,9 +95,9 @@ MODES:
 ⚠️ CRITICAL WORKFLOW FOR EDITS:
 1. Call readFile(path) FIRST to see current content
 2. Modify content as needed
-3. Call writeFile(path, newContent, 'w') to save
+3. Call createFile(path, newContent, 'w') to save
 
-⚠️ WARNING: Mode 'w' replaces ALL file content - use replaceStringInFile for targeted edits
+⚠️ WARNING: Mode 'w' replaces ALL file content - use editFile for targeted edits
 💡 NEXT: Use readFile to verify changes or listDirectory to see workspace structure"
             .to_string(),
         input_schema: object_schema(props, vec!["path".to_string(), "content".to_string()]),
@@ -166,7 +166,7 @@ pub fn create_import_file_tool() -> MCPTool {
     }
 }
 
-pub fn create_replace_string_in_file_tool() -> MCPTool {
+pub fn create_edit_file_tool() -> MCPTool {
     let mut props = HashMap::new();
     props.insert(
         "path".to_string(),
@@ -205,15 +205,15 @@ MANDATORY WORKFLOW:
     );
 
     MCPTool {
-        name: "replaceStringInFile".to_string(),
-        title: Some("Replace String in File".to_string()),
+        name: "editFile".to_string(),
+        title: Some("Edit File".to_string()),
         description: "Replace text content in a file using exact string matching. Atomic operation - either succeeds completely or fails with clear guidance.
 
 ⚠️ CRITICAL WORKFLOW (MUST FOLLOW):
 1. ALWAYS call readFile(path) or readFile(path, startLine, endLine) FIRST
 2. Extract the exact text from readFile response into oldString parameter
 3. Verify the extracted text includes surrounding context (3-5 lines) for uniqueness
-4. Then call replaceStringInFile with the extracted oldString
+4. Then call editFile with the extracted oldString
 
 💡 MULTIPLE CHANGES: Call this tool multiple times sequentially
    → Each call is atomic and independent
@@ -273,7 +273,7 @@ pub fn create_preview_replacement_tool() -> MCPTool {
     MCPTool {
         name: "previewReplacement".to_string(),
         title: Some("Preview File Replacement".to_string()),
-        description: "Preview what would change if replaceStringInFile is executed. Shows exact diffs without modifying the file.
+        description: "Preview what would change if editFile is executed. Shows exact diffs without modifying the file.
 
 🎯 USE CASE: Verify oldString matches before committing changes
 
@@ -281,7 +281,7 @@ WORKFLOW:
 1. Call readFile(path) to get current content
 2. Call previewReplacement(path, oldString, newString) to see what would change
 3. Review the diff output (shows ± lines with context)
-4. If preview looks correct, call replaceStringInFile with SAME parameters
+4. If preview looks correct, call editFile with SAME parameters
 
 ✅ BENEFITS:
 - Catch mismatches early without file corruption

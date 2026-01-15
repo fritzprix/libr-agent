@@ -11,12 +11,39 @@ pub async fn navigate_to_url(server: &BrowserServer, args: Value) -> Result<MCPR
         Some(u) => u,
         None => return Ok(missing_param_error("url", ToolGroup::Browser)),
     };
-    let session_id = match args.get("sessionId").and_then(|v| v.as_str()) {
-        Some(id) => id,
-        None => return Ok(missing_param_error("sessionId", ToolGroup::Browser)),
+
+    // Get browser session ID from server instance
+    let browser_session_id = {
+        let guard = server
+            .browser_session_id
+            .read()
+            .map_err(|e| e.to_string())?;
+        guard.clone()
     };
 
+    let browser_session_id = browser_session_id
+        .ok_or_else(|| "No active browser session. Call createSession first.".to_string())?;
+
     // Proactive URL validation
+    const MAX_URL_LENGTH: usize = 2048;
+
+    if url.len() > MAX_URL_LENGTH {
+        return Ok(invalid_input_error(
+            &format!(
+                "URL exceeds maximum length of {} characters",
+                MAX_URL_LENGTH
+            ),
+            ToolGroup::Browser,
+        ));
+    }
+
+    if url.starts_with("file://") {
+        return Ok(invalid_input_error(
+            "Local file URLs are not supported for security. Use http:// or https:// URLs only",
+            ToolGroup::Browser,
+        ));
+    }
+
     if !url.starts_with("http://") && !url.starts_with("https://") && !url.starts_with("about:") {
         return Ok(invalid_input_error(
             &format!(
@@ -27,7 +54,7 @@ pub async fn navigate_to_url(server: &BrowserServer, args: Value) -> Result<MCPR
         ));
     }
 
-    let result = match service.navigate_to_url(session_id, url).await {
+    let result = match service.navigate_to_url(&browser_session_id, url).await {
         Ok(res) => res,
         Err(e) => {
             return Ok(handle_browser_op_error(
@@ -87,14 +114,22 @@ pub async fn navigate_to_url(server: &BrowserServer, args: Value) -> Result<MCPR
     Ok(hint.to_mcp_result())
 }
 
-pub async fn navigate_back(server: &BrowserServer, args: Value) -> Result<MCPResult, String> {
+pub async fn navigate_back(server: &BrowserServer, _args: Value) -> Result<MCPResult, String> {
     let service = server.get_browser_service()?;
-    let session_id = match args.get("sessionId").and_then(|v| v.as_str()) {
-        Some(id) => id,
-        None => return Ok(missing_param_error("sessionId", ToolGroup::Browser)),
+
+    // Get browser session ID from server instance
+    let browser_session_id = {
+        let guard = server
+            .browser_session_id
+            .read()
+            .map_err(|e| e.to_string())?;
+        guard.clone()
     };
 
-    let result = match service.navigate_back(session_id).await {
+    let browser_session_id = browser_session_id
+        .ok_or_else(|| "No active browser session. Call createSession first.".to_string())?;
+
+    let result = match service.navigate_back(&browser_session_id).await {
         Ok(res) => res,
         Err(e) => {
             return Ok(handle_browser_op_error(
@@ -118,14 +153,22 @@ pub async fn navigate_back(server: &BrowserServer, args: Value) -> Result<MCPRes
     Ok(hint.to_mcp_result())
 }
 
-pub async fn navigate_forward(server: &BrowserServer, args: Value) -> Result<MCPResult, String> {
+pub async fn navigate_forward(server: &BrowserServer, _args: Value) -> Result<MCPResult, String> {
     let service = server.get_browser_service()?;
-    let session_id = match args.get("sessionId").and_then(|v| v.as_str()) {
-        Some(id) => id,
-        None => return Ok(missing_param_error("sessionId", ToolGroup::Browser)),
+
+    // Get browser session ID from server instance
+    let browser_session_id = {
+        let guard = server
+            .browser_session_id
+            .read()
+            .map_err(|e| e.to_string())?;
+        guard.clone()
     };
 
-    let result = match service.navigate_forward(session_id).await {
+    let browser_session_id = browser_session_id
+        .ok_or_else(|| "No active browser session. Call createSession first.".to_string())?;
+
+    let result = match service.navigate_forward(&browser_session_id).await {
         Ok(res) => res,
         Err(e) => {
             return Ok(handle_browser_op_error(
@@ -149,15 +192,23 @@ pub async fn navigate_forward(server: &BrowserServer, args: Value) -> Result<MCP
     Ok(hint.to_mcp_result())
 }
 
-pub async fn get_current_url(server: &BrowserServer, args: Value) -> Result<MCPResult, String> {
+pub async fn get_current_url(server: &BrowserServer, _args: Value) -> Result<MCPResult, String> {
     let service = server.get_browser_service()?;
-    let session_id = match args.get("sessionId").and_then(|v| v.as_str()) {
-        Some(id) => id,
-        None => return Ok(missing_param_error("sessionId", ToolGroup::Browser)),
+
+    // Get browser session ID from server instance
+    let browser_session_id = {
+        let guard = server
+            .browser_session_id
+            .read()
+            .map_err(|e| e.to_string())?;
+        guard.clone()
     };
 
+    let browser_session_id = browser_session_id
+        .ok_or_else(|| "No active browser session. Call createSession first.".to_string())?;
+
     let result = match service
-        .execute_script(session_id, "window.location.href")
+        .execute_script(&browser_session_id, "window.location.href")
         .await
     {
         Ok(res) => res,
@@ -181,14 +232,25 @@ pub async fn get_current_url(server: &BrowserServer, args: Value) -> Result<MCPR
     Ok(hint.to_mcp_result())
 }
 
-pub async fn get_page_title(server: &BrowserServer, args: Value) -> Result<MCPResult, String> {
+pub async fn get_page_title(server: &BrowserServer, _args: Value) -> Result<MCPResult, String> {
     let service = server.get_browser_service()?;
-    let session_id = match args.get("sessionId").and_then(|v| v.as_str()) {
-        Some(id) => id,
-        None => return Ok(missing_param_error("sessionId", ToolGroup::Browser)),
+
+    // Get browser session ID from server instance
+    let browser_session_id = {
+        let guard = server
+            .browser_session_id
+            .read()
+            .map_err(|e| e.to_string())?;
+        guard.clone()
     };
 
-    let result = match service.execute_script(session_id, "document.title").await {
+    let browser_session_id = browser_session_id
+        .ok_or_else(|| "No active browser session. Call createSession first.".to_string())?;
+
+    let result = match service
+        .execute_script(&browser_session_id, "document.title")
+        .await
+    {
         Ok(res) => res,
         Err(e) => {
             return Ok(operation_failed_error(

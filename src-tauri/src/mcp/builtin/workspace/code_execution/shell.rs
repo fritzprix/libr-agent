@@ -254,6 +254,7 @@ impl WorkspaceServer {
             args: vec![],
             env_vars: HashMap::new(),
             isolation_level,
+            shell_type: None, // Default to platform default shell
         };
 
         // Create isolated command
@@ -1245,6 +1246,7 @@ impl WorkspaceServer {
             args: vec![],
             env_vars: HashMap::new(),
             isolation_level,
+            shell_type: None, // Default to platform default shell
         };
 
         // Create isolated command

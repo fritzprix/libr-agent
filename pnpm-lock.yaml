@@ -82,9 +82,6 @@ importers:
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
-      dexie:
-        specifier: ^4.0.11
-        version: 4.0.11
       fast-deep-equal:
         specifier: ^3.1.3
         version: 3.1.3
@@ -3435,12 +3432,6 @@ packages:
     resolution:
       {
         integrity: sha512-RWmIqhcFf1lRYBvNmr7qTNuyCt/7/ns2jbpp1+PalgE/rDQcBT0fioSMUpJ93irlUhC5hrg4cYqe6U+0ImW0rA==,
-      }
-
-  dexie@4.0.11:
-    resolution:
-      {
-        integrity: sha512-SOKO002EqlvBYYKQSew3iymBoN2EQ4BDw/3yprjh7kAfFzjBYkaMNa/pZvcA7HSWlcKSQb9XhPe3wKyQ0x4A8A==,
       }
 
   dir-glob@3.0.1:
@@ -9661,8 +9652,6 @@ snapshots:
   devlop@1.1.0:
     dependencies:
       dequal: 2.0.3
-
-  dexie@4.0.11: {}
 
   dir-glob@3.0.1:
     dependencies:

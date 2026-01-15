@@ -7,10 +7,19 @@ use serde_json::Value;
 
 pub async fn click_element(server: &BrowserServer, args: Value) -> Result<MCPResult, String> {
     let service = server.get_browser_service()?;
-    let session_id = match args.get("sessionId").and_then(|v| v.as_str()) {
-        Some(id) => id,
-        Option::None => return Ok(missing_param_error("sessionId", ToolGroup::Browser)),
+
+    // Get browser session ID from server instance
+    let browser_session_id = {
+        let guard = server
+            .browser_session_id
+            .read()
+            .map_err(|e| e.to_string())?;
+        guard.clone()
     };
+
+    let browser_session_id = browser_session_id
+        .ok_or_else(|| "No active browser session. Call createSession first.".to_string())?;
+
     let selector = match args.get("selector").and_then(|v| v.as_str()) {
         Some(s) => s,
         Option::None => return Ok(missing_param_error("selector", ToolGroup::Browser)),
@@ -25,7 +34,7 @@ pub async fn click_element(server: &BrowserServer, args: Value) -> Result<MCPRes
     }
 
     let script = get_click_script(selector);
-    let result = match service.execute_script(session_id, &script).await {
+    let result = match service.execute_script(&browser_session_id, &script).await {
         Ok(res) => {
             if res.contains("Element not found") {
                 return Ok(operation_failed_error(
@@ -79,10 +88,19 @@ pub async fn click_element(server: &BrowserServer, args: Value) -> Result<MCPRes
 
 pub async fn input_text(server: &BrowserServer, args: Value) -> Result<MCPResult, String> {
     let service = server.get_browser_service()?;
-    let session_id = match args.get("sessionId").and_then(|v| v.as_str()) {
-        Some(id) => id,
-        Option::None => return Ok(missing_param_error("sessionId", ToolGroup::Browser)),
+
+    // Get browser session ID from server instance
+    let browser_session_id = {
+        let guard = server
+            .browser_session_id
+            .read()
+            .map_err(|e| e.to_string())?;
+        guard.clone()
     };
+
+    let browser_session_id = browser_session_id
+        .ok_or_else(|| "No active browser session. Call createSession first.".to_string())?;
+
     let selector = match args.get("selector").and_then(|v| v.as_str()) {
         Some(s) => s,
         Option::None => return Ok(missing_param_error("selector", ToolGroup::Browser)),
@@ -119,7 +137,7 @@ pub async fn input_text(server: &BrowserServer, args: Value) -> Result<MCPResult
         serde_json::to_string(text).unwrap()
     );
 
-    let result = match service.execute_script(session_id, &script).await {
+    let result = match service.execute_script(&browser_session_id, &script).await {
         Ok(res) => {
             if res.contains("Element not found") {
                 return Ok(operation_failed_error(
@@ -173,10 +191,19 @@ pub async fn input_text(server: &BrowserServer, args: Value) -> Result<MCPResult
 
 pub async fn scroll_page(server: &BrowserServer, args: Value) -> Result<MCPResult, String> {
     let service = server.get_browser_service()?;
-    let session_id = match args.get("sessionId").and_then(|v| v.as_str()) {
-        Some(id) => id,
-        Option::None => return Ok(missing_param_error("sessionId", ToolGroup::Browser)),
+
+    // Get browser session ID from server instance
+    let browser_session_id = {
+        let guard = server
+            .browser_session_id
+            .read()
+            .map_err(|e| e.to_string())?;
+        guard.clone()
     };
+
+    let browser_session_id = browser_session_id
+        .ok_or_else(|| "No active browser session. Call createSession first.".to_string())?;
+
     let x = match args.get("x").and_then(|v| v.as_f64()) {
         Some(x_val) => x_val,
         Option::None => return Ok(missing_param_error("x", ToolGroup::Browser)),
@@ -187,7 +214,7 @@ pub async fn scroll_page(server: &BrowserServer, args: Value) -> Result<MCPResul
     };
 
     let script = format!("window.scrollTo({}, {}); 'Scrolled'", x, y);
-    let result = match service.execute_script(session_id, &script).await {
+    let result = match service.execute_script(&browser_session_id, &script).await {
         Ok(res) => res,
         Err(e) => {
             return Ok(operation_failed_error(
@@ -214,10 +241,19 @@ pub async fn scroll_page(server: &BrowserServer, args: Value) -> Result<MCPResul
 
 pub async fn list_interactable(server: &BrowserServer, args: Value) -> Result<MCPResult, String> {
     let service = server.get_browser_service()?;
-    let session_id = match args.get("sessionId").and_then(|v| v.as_str()) {
-        Some(id) => id,
-        Option::None => return Ok(missing_param_error("sessionId", ToolGroup::Browser)),
+
+    // Get browser session ID from server instance
+    let browser_session_id = {
+        let guard = server
+            .browser_session_id
+            .read()
+            .map_err(|e| e.to_string())?;
+        guard.clone()
     };
+
+    let browser_session_id = browser_session_id
+        .ok_or_else(|| "No active browser session. Call createSession first.".to_string())?;
+
     let filter_type = args
         .get("filterType")
         .and_then(|v| v.as_str())
@@ -241,7 +277,7 @@ pub async fn list_interactable(server: &BrowserServer, args: Value) -> Result<MC
     }
 
     let script = get_filter_script(filter_type, scope);
-    let result_json = match service.execute_script(session_id, &script).await {
+    let result_json = match service.execute_script(&browser_session_id, &script).await {
         Ok(res) => res,
         Err(e) => {
             return Ok(operation_failed_error(

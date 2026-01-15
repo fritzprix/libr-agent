@@ -230,32 +230,25 @@ Returns: Session ID (e.g., 'abc123...') - use this ID for all other browser tool
                 name: "navigateToUrl".to_string(),
                 description: "Navigate to a specific URL in the browser session.
 
-⚠️ CRITICAL WORKFLOW:
-1. Ensure createSession was called and returned a session ID
-2. Use the session ID from createSession as the sessionId parameter
-3. URL must include http:// or https:// protocol
+The browser session is managed automatically by the backend. Simply provide the URL and the system will handle the navigation.
 
-⚠️ Common errors:
+⚠️ Error Handling:
 - 403/401: Page blocks automated access - abandon and search elsewhere
 - 404: Page not found - check URL or search homepage
 - Timeout: Page too complex or blocking - try different URL
 
-After success:
+Next Steps:
 - Use extractWebContent to read page content
 - Use listInteractable to see clickable elements".to_string(),
                 input_schema: serde_json::from_value(json!({
                     "type": "object",
                     "properties": {
-                         "sessionId": {
-                            "type": "string",
-                            "description": "⚠️ CRITICAL: Browser session ID returned by createSession.\n\nWORKFLOW:\n1. Call createSession FIRST to get a session ID\n2. Use the exact session ID from createSession response\n3. DO NOT use session IDs from previous attempts or other tools"
-                        },
                         "url": {
                             "type": "string",
                             "description": "URL to navigate to (must start with http:// or https://)"
                         }
                     },
-                    "required": ["sessionId", "url"]
+                    "required": ["url"]
                 }))
                 .unwrap(),
                 title: None,
@@ -264,16 +257,11 @@ After success:
             },
             MCPTool {
                 name: "navigateBack".to_string(),
-                description: "Navigate back in history.".to_string(),
+                description: "Navigate back in browser history to the previous page.".to_string(),
                 input_schema: serde_json::from_value(json!({
                     "type": "object",
-                    "properties": {
-                         "sessionId": {
-                            "type": "string",
-                            "description": "⚠️ CRITICAL: Browser session ID returned by createSession."
-                        }
-                    },
-                    "required": ["sessionId"]
+                    "properties": {},
+                    "required": []
                 }))
                 .unwrap(),
                 title: None,
@@ -282,16 +270,11 @@ After success:
             },
             MCPTool {
                 name: "navigateForward".to_string(),
-                description: "Navigate forward in history.".to_string(),
+                description: "Navigate forward in browser history to the next page.".to_string(),
                 input_schema: serde_json::from_value(json!({
                     "type": "object",
-                    "properties": {
-                         "sessionId": {
-                            "type": "string",
-                            "description": "⚠️ CRITICAL: Browser session ID returned by createSession."
-                        }
-                    },
-                    "required": ["sessionId"]
+                    "properties": {},
+                    "required": []
                 }))
                 .unwrap(),
                 title: None,
@@ -303,13 +286,8 @@ After success:
                 description: "Get the current URL of the page.".to_string(),
                 input_schema: serde_json::from_value(json!({
                     "type": "object",
-                    "properties": {
-                         "sessionId": {
-                            "type": "string",
-                            "description": "⚠️ CRITICAL: Browser session ID returned by createSession."
-                        }
-                    },
-                    "required": ["sessionId"]
+                    "properties": {},
+                    "required": []
                 }))
                 .unwrap(),
                 title: None,
@@ -320,14 +298,9 @@ After success:
                 name: "getPageTitle".to_string(),
                 description: "Get the title of the current page.".to_string(),
                 input_schema: serde_json::from_value(json!({
-                     "type": "object",
-                    "properties": {
-                         "sessionId": {
-                            "type": "string",
-                            "description": "⚠️ CRITICAL: Browser session ID returned by createSession."
-                        }
-                    },
-                    "required": ["sessionId"]
+                    "type": "object",
+                    "properties": {},
+                    "required": []
                 }))
                 .unwrap(),
                 title: None,
@@ -338,24 +311,20 @@ After success:
                 name: "extractWebContent".to_string(),
                 description: "Extract the content of the current page as markdown. Large pages are automatically paginated.
 
-For pages > 5000 chars, content is split into pages. Use readWebContent(sessionId, page) to read subsequent pages.".to_string(),
+For pages > 3000 tokens, content is split into pages. Use readWebContent(page) to read subsequent pages.".to_string(),
                 input_schema: serde_json::from_value(json!({
                     "type": "object",
                     "properties": {
-                         "sessionId": {
-                            "type": "string",
-                            "description": "⚠️ CRITICAL: Browser session ID returned by createSession.\n\nWORKFLOW:\n1. Call createSession FIRST to get a session ID\n2. Use the exact session ID from createSession response"
-                        },
                         "autoMerge": {
                             "type": "boolean",
-                            "description": "Whether to attempt merging all pages into one response (default: true).\n\n⚠️ When to use false:\n- Pages > 5000 characters (will fail to merge anyway)\n- Need precise pagination control\n\nIf merge fails, use readWebContent(sessionId, page) to read individual pages"
+                            "description": "Whether to attempt merging all pages into one response (default: true)."
                         },
                         "saveRawHtml": {
                             "type": "boolean",
                             "description": "Whether to save raw HTML to a file for debugging (default: false)"
                         }
                     },
-                    "required": ["sessionId"]
+                    "required": []
                 }))
                 .unwrap(),
                 title: None,
@@ -372,16 +341,12 @@ For pages > 5000 chars, content is split into pages. Use readWebContent(sessionI
                 input_schema: serde_json::from_value(json!({
                     "type": "object",
                     "properties": {
-                         "sessionId": {
-                            "type": "string",
-                            "description": "⚠️ CRITICAL: Browser session ID returned by createSession."
-                        },
                         "selector": {
                             "type": "string",
                             "description": "CSS selector of the element to click (must match an element visible in listInteractable/extractWebContent)"
                         }
                     },
-                    "required": ["sessionId", "selector"]
+                    "required": ["selector"]
                 }))
                 .unwrap(),
                 title: None,
@@ -398,10 +363,6 @@ For pages > 5000 chars, content is split into pages. Use readWebContent(sessionI
                 input_schema: serde_json::from_value(json!({
                     "type": "object",
                     "properties": {
-                         "sessionId": {
-                            "type": "string",
-                            "description": "⚠️ CRITICAL: Browser session ID returned by createSession."
-                        },
                         "selector": {
                             "type": "string",
                             "description": "CSS selector of the input element"
@@ -411,7 +372,7 @@ For pages > 5000 chars, content is split into pages. Use readWebContent(sessionI
                             "description": "Text to input"
                         }
                     },
-                    "required": ["sessionId", "selector", "text"]
+                    "required": ["selector", "text"]
                 }))
                 .unwrap(),
                 title: None,
@@ -424,10 +385,6 @@ For pages > 5000 chars, content is split into pages. Use readWebContent(sessionI
                 input_schema: serde_json::from_value(json!({
                     "type": "object",
                     "properties": {
-                         "sessionId": {
-                            "type": "string",
-                            "description": "⚠️ CRITICAL: Browser session ID returned by createSession."
-                        },
                         "x": {
                             "type": "number",
                             "description": "X coordinate to scroll to"
@@ -437,7 +394,7 @@ For pages > 5000 chars, content is split into pages. Use readWebContent(sessionI
                             "description": "Y coordinate to scroll to"
                         }
                     },
-                    "required": ["sessionId", "x", "y"]
+                    "required": ["x", "y"]
                 }))
                 .unwrap(),
                 title: None,
@@ -451,10 +408,6 @@ For pages > 5000 chars, content is split into pages. Use readWebContent(sessionI
                 input_schema: serde_json::from_value(json!({
                     "type": "object",
                     "properties": {
-                        "sessionId": {
-                            "type": "string",
-                            "description": "⚠️ CRITICAL: Browser session ID returned by createSession."
-                        },
                         "filterType": {
                             "type": "string",
                             "enum": ["semantic_clickable", "semantic_input", "all_focusable"],
@@ -466,7 +419,7 @@ For pages > 5000 chars, content is split into pages. Use readWebContent(sessionI
                             "description": "Scope of listing (default: viewport)"
                         }
                     },
-                    "required": ["sessionId"]
+                    "required": []
                 }))
                 .unwrap(),
                 title: None,
@@ -491,16 +444,12 @@ For pages > 5000 chars, content is split into pages. Use readWebContent(sessionI
                 input_schema: serde_json::from_value(json!({
                     "type": "object",
                     "properties": {
-                        "sessionId": {
-                            "type": "string",
-                            "description": "⚠️ CRITICAL: Browser session ID returned by createSession."
-                        },
                         "page": {
                             "type": "number",
                             "description": "Page number to read (1-based index)"
                         }
                     },
-                    "required": ["sessionId", "page"]
+                    "required": ["page"]
                 }))
                 .unwrap(),
                 title: None,

@@ -415,7 +415,15 @@ pub async fn agent_factory_reset(
         .await
         .map_err(|e| format!("Failed to clear MCP servers: {}", e))?;
 
-    // 5. Clear application logs
+    // 5. Restore default assistants so the app is not empty
+    if let Err(e) = crate::services::assistant_init::ensure_default_assistants(db).await {
+        return Err(format!(
+            "Factory reset failed to restore default assistants: {}",
+            e
+        ));
+    }
+
+    // 6. Clear application logs
     // We do this last to preserve logging of the reset process as much as possible
     if let Ok(log_dir_str) = get_app_logs_dir().await {
         let log_dir = std::path::PathBuf::from(log_dir_str);
