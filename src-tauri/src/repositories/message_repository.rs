@@ -100,6 +100,52 @@ impl SqliteMessageRepository {
             error,
         }
     }
+
+    /// Helper to serialize optional JSON fields
+    fn serialize_optional_json<T: serde::Serialize>(
+        value: &Option<T>,
+        field_name: &str,
+    ) -> Result<Option<String>, DbError> {
+        value
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()
+            .map_err(|e| {
+                DbError::SerializationError(format!("Failed to serialize {}: {}", field_name, e))
+            })
+    }
+
+    /// Convert Message type to SeaORM ActiveModel
+    fn message_to_active_model(message: &Message) -> Result<message::ActiveModel, DbError> {
+        // Serialize structured types to JSON strings for DB storage
+        let content_json = serde_json::to_string(&message.content).map_err(|e| {
+            DbError::SerializationError(format!("Failed to serialize content: {}", e))
+        })?;
+
+        let tool_calls_json = Self::serialize_optional_json(&message.tool_calls, "tool_calls")?;
+        let attachments_json = Self::serialize_optional_json(&message.attachments, "attachments")?;
+        let tool_use_json = Self::serialize_optional_json(&message.tool_use, "tool_use")?;
+        let error_json = Self::serialize_optional_json(&message.error, "error")?;
+
+        Ok(message::ActiveModel {
+            id: Set(message.id.clone()),
+            session_id: Set(message.session_id.clone()),
+            role: Set(message.role.clone()),
+            content: Set(content_json),
+            tool_calls: Set(tool_calls_json),
+            tool_call_id: Set(message.tool_call_id.clone()),
+            is_streaming: Set(message.is_streaming.map(|b| if b { 1 } else { 0 })),
+            thinking: Set(message.thinking.clone()),
+            thinking_signature: Set(message.thinking_signature.clone()),
+            assistant_id: Set(message.assistant_id.clone()),
+            attachments: Set(attachments_json),
+            tool_use: Set(tool_use_json),
+            created_at: Set(message.created_at),
+            updated_at: Set(message.updated_at),
+            source: Set(message.source.clone()),
+            error: Set(error_json),
+        })
+    }
 }
 
 #[async_trait]
@@ -157,65 +203,7 @@ impl MessageRepository for SqliteMessageRepository {
     async fn insert(&self, message: &Message) -> Result<(), DbError> {
         use sea_orm::sea_query::OnConflict;
 
-        // Serialize structured types to JSON strings for DB storage
-        let content_json = serde_json::to_string(&message.content).map_err(|e| {
-            DbError::SerializationError(format!("Failed to serialize content: {}", e))
-        })?;
-
-        let tool_calls_json = message
-            .tool_calls
-            .as_ref()
-            .map(serde_json::to_string)
-            .transpose()
-            .map_err(|e| {
-                DbError::SerializationError(format!("Failed to serialize tool_calls: {}", e))
-            })?;
-
-        let attachments_json = message
-            .attachments
-            .as_ref()
-            .map(serde_json::to_string)
-            .transpose()
-            .map_err(|e| {
-                DbError::SerializationError(format!("Failed to serialize attachments: {}", e))
-            })?;
-
-        let tool_use_json = message
-            .tool_use
-            .as_ref()
-            .map(serde_json::to_string)
-            .transpose()
-            .map_err(|e| {
-                DbError::SerializationError(format!("Failed to serialize tool_use: {}", e))
-            })?;
-
-        let error_json = message
-            .error
-            .as_ref()
-            .map(serde_json::to_string)
-            .transpose()
-            .map_err(|e| {
-                DbError::SerializationError(format!("Failed to serialize error: {}", e))
-            })?;
-
-        let model = message::ActiveModel {
-            id: Set(message.id.clone()),
-            session_id: Set(message.session_id.clone()),
-            role: Set(message.role.clone()),
-            content: Set(content_json),
-            tool_calls: Set(tool_calls_json),
-            tool_call_id: Set(message.tool_call_id.clone()),
-            is_streaming: Set(message.is_streaming.map(|b| if b { 1 } else { 0 })),
-            thinking: Set(message.thinking.clone()),
-            thinking_signature: Set(message.thinking_signature.clone()),
-            assistant_id: Set(message.assistant_id.clone()),
-            attachments: Set(attachments_json),
-            tool_use: Set(tool_use_json),
-            created_at: Set(message.created_at),
-            updated_at: Set(message.updated_at),
-            source: Set(message.source.clone()),
-            error: Set(error_json),
-        };
+        let model = Self::message_to_active_model(message)?;
 
         MessageEntity::insert(model)
             .on_conflict(
@@ -251,65 +239,7 @@ impl MessageRepository for SqliteMessageRepository {
         let txn = self.db.begin().await?;
 
         for message in messages {
-            // Serialize structured types to JSON strings for DB storage
-            let content_json = serde_json::to_string(&message.content).map_err(|e| {
-                DbError::SerializationError(format!("Failed to serialize content: {}", e))
-            })?;
-
-            let tool_calls_json = message
-                .tool_calls
-                .as_ref()
-                .map(serde_json::to_string)
-                .transpose()
-                .map_err(|e| {
-                    DbError::SerializationError(format!("Failed to serialize tool_calls: {}", e))
-                })?;
-
-            let attachments_json = message
-                .attachments
-                .as_ref()
-                .map(serde_json::to_string)
-                .transpose()
-                .map_err(|e| {
-                    DbError::SerializationError(format!("Failed to serialize attachments: {}", e))
-                })?;
-
-            let tool_use_json = message
-                .tool_use
-                .as_ref()
-                .map(serde_json::to_string)
-                .transpose()
-                .map_err(|e| {
-                    DbError::SerializationError(format!("Failed to serialize tool_use: {}", e))
-                })?;
-
-            let error_json = message
-                .error
-                .as_ref()
-                .map(serde_json::to_string)
-                .transpose()
-                .map_err(|e| {
-                    DbError::SerializationError(format!("Failed to serialize error: {}", e))
-                })?;
-
-            let model = message::ActiveModel {
-                id: Set(message.id.clone()),
-                session_id: Set(message.session_id.clone()),
-                role: Set(message.role.clone()),
-                content: Set(content_json),
-                tool_calls: Set(tool_calls_json),
-                tool_call_id: Set(message.tool_call_id.clone()),
-                is_streaming: Set(message.is_streaming.map(|b| if b { 1 } else { 0 })),
-                thinking: Set(message.thinking.clone()),
-                thinking_signature: Set(message.thinking_signature.clone()),
-                assistant_id: Set(message.assistant_id.clone()),
-                attachments: Set(attachments_json),
-                tool_use: Set(tool_use_json),
-                created_at: Set(message.created_at),
-                updated_at: Set(message.updated_at),
-                source: Set(message.source.clone()),
-                error: Set(error_json),
-            };
+            let model = Self::message_to_active_model(&message)?;
 
             MessageEntity::insert(model)
                 .on_conflict(
