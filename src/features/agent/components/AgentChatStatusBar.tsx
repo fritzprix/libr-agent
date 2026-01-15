@@ -6,6 +6,7 @@ import {
   Info,
   Loader2,
   Pause,
+  Play,
   RefreshCw,
   Wrench,
 } from 'lucide-react';
@@ -22,7 +23,8 @@ const logger = getLogger('AgentChatStatusBar');
 
 export function AgentChatStatusBar() {
   const { session } = useAgentSessionState();
-  const { workflowStatus, error, llmError, retryMessage } = useAgentChat();
+  const { workflowStatus, error, llmError, retryMessage, resume } =
+    useAgentChat();
   const [showToolsModal, setShowToolsModal] = useState(false);
 
   // ✅ Fetch real-time token metrics
@@ -66,6 +68,14 @@ export function AgentChatStatusBar() {
       await retryMessage();
     } catch (err) {
       logger.error('Failed to retry message:', err);
+    }
+  };
+
+  const handleResume = async () => {
+    try {
+      await resume();
+    } catch (err) {
+      logger.error('Failed to resume session:', err);
     }
   };
 
@@ -123,6 +133,7 @@ export function AgentChatStatusBar() {
         className:
           'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800 text-red-700 dark:text-red-400',
         showRetry: true,
+        showResume: false,
       };
     }
 
@@ -134,6 +145,7 @@ export function AgentChatStatusBar() {
           className:
             'bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-400',
           showRetry: false,
+          showResume: false,
         };
       case 'busy':
         return {
@@ -142,6 +154,7 @@ export function AgentChatStatusBar() {
           className:
             'bg-yellow-50 dark:bg-yellow-950/20 border-yellow-200 dark:border-yellow-800 text-yellow-700 dark:text-yellow-400',
           showRetry: false,
+          showResume: false,
         };
       case 'paused':
         return {
@@ -150,6 +163,7 @@ export function AgentChatStatusBar() {
           className:
             'bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-400',
           showRetry: false,
+          showResume: true,
         };
       case 'error':
         return {
@@ -158,6 +172,7 @@ export function AgentChatStatusBar() {
           className:
             'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800 text-red-700 dark:text-red-400',
           showRetry: true,
+          showResume: false,
         };
       default:
         return {
@@ -166,6 +181,7 @@ export function AgentChatStatusBar() {
           className:
             'bg-gray-50 dark:bg-gray-950/20 border-gray-200 dark:border-gray-800 text-gray-700 dark:text-gray-400',
           showRetry: false,
+          showResume: false,
         };
     }
   };
@@ -191,6 +207,17 @@ export function AgentChatStatusBar() {
           >
             <RefreshCw className="w-3 h-3 mr-1" />
             Retry
+          </Button>
+        )}
+        {config.showResume && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleResume}
+            className="h-7"
+          >
+            <Play className="w-3 h-3 mr-1" />
+            Continue
           </Button>
         )}
       </div>

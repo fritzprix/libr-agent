@@ -194,6 +194,7 @@ pub async fn pause_workflow(
 /// Resume a paused workflow
 pub async fn resume_workflow(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    proxy_manager: &Arc<MCPServiceProxyManager>,
     app_handle: &AppHandle,
     session_id: String,
 ) -> Result<(), String> {
@@ -209,8 +210,19 @@ pub async fn resume_workflow(
     if let Some(session) = active.get_mut(&session_id) {
         session.is_running = true;
     }
+    drop(active); // Drop lock before async call
 
-    log::info!("Resumed workflow for session: {}", session_id);
+    log::info!("Resumed workflow status for session: {}", session_id);
+
+    // Trigger LLM to pick up where it left off
+    crate::agent::llm::request_llm_completion(
+        active_sessions,
+        proxy_manager,
+        app_handle,
+        session_id,
+    )
+    .await?;
+
     Ok(())
 }
 

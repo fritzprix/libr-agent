@@ -90,6 +90,11 @@ interface AgentChatActionsContextValue {
     messages: Message[],
     triggerWorkflow?: boolean,
   ) => Promise<void>;
+
+  /**
+   * Resume a paused workflow
+   */
+  resume: () => Promise<void>;
 }
 
 const AgentChatActionsContext = createContext<
@@ -117,7 +122,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     llmError,
   } = useAgentSessionState();
 
-  const { setError, addMessage } = useAgentSessionActions();
+  const { setError, addMessage, resumeSession } = useAgentSessionActions();
 
   const { streamingMessages } = useLLMService();
   const { value: settingValue } = useSettings();
@@ -481,6 +486,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
       toggleReasoning,
       updateServiceContexts,
       injectMessages,
+      resume: resumeSession,
     }),
     [
       submit,
@@ -489,6 +495,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
       toggleReasoning,
       updateServiceContexts,
       injectMessages,
+      resumeSession,
     ],
   );
 

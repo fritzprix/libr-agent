@@ -142,8 +142,13 @@ impl AgentSessionManager {
 
     /// Resume a paused workflow
     pub async fn resume_workflow(&self, session_id: String) -> Result<(), String> {
-        crate::agent::workflow::resume_workflow(&self.active_sessions, &self.app_handle, session_id)
-            .await
+        crate::agent::workflow::resume_workflow(
+            &self.active_sessions,
+            &self.proxy_manager,
+            &self.app_handle,
+            session_id,
+        )
+        .await
     }
 
     /// Load messages from DB into in-memory cache
