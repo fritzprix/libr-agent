@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { useAgentChat } from '@/context/AgentChatContext';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
 import { useMessageGrouping } from '@/hooks/useMessageGrouping';
@@ -20,6 +20,17 @@ export function AgentChatMessages() {
 
   // Group messages for display
   const groupedMessages = useMessageGrouping(messages);
+
+  // Pre-compute tool results lookup map to avoid O(N*M) lookups
+  const toolResultsMap = useMemo(() => {
+    const map = new Map<string, Message>();
+    for (const msg of messages) {
+      if (msg.role === 'tool' && msg.tool_call_id) {
+        map.set(msg.tool_call_id, msg);
+      }
+    }
+    return map;
+  }, [messages]);
 
   // Only auto-scroll if enabled
   useEffect(() => {
@@ -68,11 +79,18 @@ export function AgentChatMessages() {
       >
         {groupedMessages.map((groupedMessage, index) => {
           if (groupedMessage.type === 'tool_group') {
+            // Prepare tool results array for this group
+            // This is O(K) where K is number of calls in this group (small)
+            const toolResults = groupedMessage.toolGroup.calls.map((call) =>
+              toolResultsMap.get(call.id),
+            );
+
             return (
               <AgentToolCallGroup
                 key={groupedMessage.message.id}
                 message={groupedMessage.message}
                 toolGroup={groupedMessage.toolGroup}
+                toolResults={toolResults}
                 isLast={index === groupedMessages.length - 1}
               />
             );
