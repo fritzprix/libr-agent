@@ -242,50 +242,33 @@ impl WorkspaceServer {
             Ok(content) => {
                 info!("Successfully read file: {}", path_str);
 
+                // Get file metadata for stats
+                let total_size = tokio::fs::metadata(&safe_path)
+                    .await
+                    .map(|m| m.len())
+                    .unwrap_or(content.len() as u64);
+                let size_str = format_file_size(total_size);
+                let line_count = content.lines().count();
+
                 // Format response for clean markdown rendering
                 let text_message = if show_line_numbers {
                     // Line numbers mode: use plain code block
                     format!(
-                        "📄 **File: `{}`**\n\n```\n{}\n```\n\n💡 **Next Steps:**\n- Use `createFile` to create or overwrite the file\n- Use `editFile` to make targeted edits",
+                        "📄 **File: `{}`**\n**Size:** {}\n**Lines:** {}\n\n```\n{}\n```\n\n💡 **Next Steps:**\n- Use `createFile` to create or overwrite the file\n- Use `editFile` to make targeted edits",
                         path_str,
+                        size_str,
+                        line_count,
                         content
                     )
                 } else {
                     // Auto-detect language from file extension for syntax highlighting
-                    let language = safe_path
-                        .extension()
-                        .and_then(|ext| ext.to_str())
-                        .map(|ext| match ext {
-                            "rs" => "rust",
-                            "ts" | "tsx" => "typescript",
-                            "js" | "jsx" => "javascript",
-                            "py" => "python",
-                            "md" => "markdown",
-                            "json" => "json",
-                            "yaml" | "yml" => "yaml",
-                            "toml" => "toml",
-                            "sh" => "bash",
-                            "ps1" => "powershell",
-                            "html" => "html",
-                            "css" => "css",
-                            "go" => "go",
-                            "java" => "java",
-                            "c" | "h" => "c",
-                            "cpp" | "hpp" | "cc" => "cpp",
-                            "cs" => "csharp",
-                            "rb" => "ruby",
-                            "php" => "php",
-                            "swift" => "swift",
-                            "kt" => "kotlin",
-                            "sql" => "sql",
-                            "xml" => "xml",
-                            _ => ext,
-                        })
-                        .unwrap_or("");
+                    let language = detect_language(&safe_path);
 
                     format!(
-                        "📄 **File: `{}`**\n\n```{}\n{}\n```\n\n💡 **Next Steps:**\n- Use `createFile` to create or overwrite the file\n- Use `editFile` to make targeted edits",
+                        "📄 **File: `{}`**\n**Size:** {}\n**Lines:** {}\n\n```{}\n{}\n```\n\n💡 **Next Steps:**\n- Use `createFile` to create or overwrite the file\n- Use `editFile` to make targeted edits",
                         path_str,
+                        size_str,
+                        line_count,
                         language,
                         content
                     )
@@ -296,7 +279,8 @@ impl WorkspaceServer {
                     json!({
                         "content": content,
                         "path": path_str,
-                        "size": content.len()
+                        "size": total_size,
+                        "lines": line_count
                     }),
                 ))
             }
@@ -349,12 +333,12 @@ impl WorkspaceServer {
 
         // ✅ ENHANCED: Use spawn_blocking for large files to prevent async runtime blocking
         let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+        let start = start_line.unwrap_or(1);
+        let end = end_line.unwrap_or(usize::MAX);
 
         if file_size > LARGE_FILE_THRESHOLD {
             // Offload to blocking thread for large files
             let path = path.to_path_buf();
-            let start = start_line.unwrap_or(1);
-            let end = end_line.unwrap_or(usize::MAX);
 
             let result = tokio::task::spawn_blocking(move || {
                 // Blocking file I/O for CPU-intensive line enumeration
@@ -362,20 +346,37 @@ impl WorkspaceServer {
                 let reader = std::io::BufReader::new(file);
                 let mut result_lines = Vec::new();
                 let mut current_line = 1;
+                let mut total_lines = 0;
 
                 use std::io::BufRead;
                 for line_result in reader.lines() {
                     let line = line_result.map_err(|e| e.to_string())?;
+                    total_lines += 1;
 
                     if current_line >= start && current_line <= end {
                         result_lines.push((current_line, line));
                     }
 
                     if current_line > end {
-                        break;
+                        // Continue counting total lines if checking bounds is critical,
+                        // but for performance we might stop if we have what we need.
+                        // However, to strictly validate start > total, we need to know total
+                        // OR we know if we never reached start.
+                        if result_lines.is_empty() {
+                            // We haven't found any lines yet, so we must continue
+                        } else {
+                            break;
+                        }
                     }
 
                     current_line += 1;
+                }
+
+                if result_lines.is_empty() && start > total_lines && total_lines > 0 {
+                    return Err(format!(
+                        "Requested start line {} exceeds file length of {} lines",
+                        start, total_lines
+                    ));
                 }
 
                 Ok::<_, String>(Self::format_lines_with_numbers(
@@ -384,9 +385,9 @@ impl WorkspaceServer {
                 ))
             })
             .await
-            .map_err(|e| format!("Task join error: {}", e))?;
+            .map_err(|e| format!("Task join error: {}", e))??;
 
-            return result;
+            return Ok(result);
         }
 
         // Small files: use async path (original implementation)
@@ -397,11 +398,10 @@ impl WorkspaceServer {
         let mut lines = reader.lines();
         let mut result_lines = Vec::new();
         let mut current_line = 1;
-
-        let start = start_line.unwrap_or(1);
-        let end = end_line.unwrap_or(usize::MAX);
+        let mut total_lines = 0;
 
         while let Ok(Some(line)) = lines.next_line().await {
+            total_lines += 1;
             if current_line >= start && current_line <= end {
                 result_lines.push((current_line, line));
             }
@@ -411,6 +411,21 @@ impl WorkspaceServer {
             }
 
             current_line += 1;
+        }
+
+        // Check if start line was out of bounds
+        // Note: For the async loop, we stopped at `end`, so `total_lines` might not be the full file length
+        // if we broke early. BUT, if result_lines is empty, it means we likely never reached `start`.
+        // To be sure, if we reached EOF (loop finished naturally) and result is empty, check start.
+        if result_lines.is_empty() && start > total_lines {
+            // If we broke early (current_line > end), then start must have been <= end.
+            // If start <= end and we have no lines, it means the file is smaller than start?
+            // Actually, if we break, it means current_line > end.
+            // If start > total_lines, it means we consumed the whole file and never reached start.
+            return Err(format!(
+                "Requested start line {} exceeds file length of {} lines",
+                start, total_lines
+            ));
         }
 
         Ok(Self::format_lines_with_numbers(
