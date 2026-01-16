@@ -221,14 +221,12 @@ pub async fn agent_resume_workflow(
     manager: State<'_, AgentSessionManager>,
     session_id: String,
 ) -> Result<AgentResponse, String> {
-    // Initialize cache from DB before resuming workflow
-    manager.init_session_with_messages(&session_id).await?;
-
+    // Resume the workflow (internal logic handles cache validation)
     manager.resume_workflow(session_id.clone()).await?;
 
     Ok(AgentResponse {
         success: true,
-        message: format!("Workflow resumed with cache initialized: {}", session_id),
+        message: format!("Workflow resumed: {}", session_id),
         data: None,
     })
 }

@@ -1,3 +1,4 @@
+use crate::agent::session_manager::AgentSessionManager;
 use crate::agent::types::ToolCall;
 use crate::mcp::types::MCPContent;
 use crate::repositories::MessageRepository;
@@ -5,6 +6,7 @@ use crate::search::index_storage::{get_index_path, write_index_atomic, IndexData
 use crate::search::message_index::{MessageDocument, MessageSearchEngine, SearchResult};
 use crate::state::{get_database_connection, get_message_repository};
 use serde::{Deserialize, Serialize};
+use tauri::State;
 
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
 use std::collections::HashMap;
@@ -99,12 +101,47 @@ pub async fn messages_upsert(message: Message) -> Result<(), String> {
 }
 
 /// Delete a single message by ID.
+/// Also removes the message from the in-memory cache of active sessions to maintain consistency.
 #[command]
-pub async fn messages_delete(message_id: String) -> Result<(), String> {
+pub async fn messages_delete(
+    message_id: String,
+    session_manager: State<'_, AgentSessionManager>,
+) -> Result<(), String> {
+    // First, get the message to find which session it belongs to
     let repo = get_message_repository();
+
+    // Find the message's session_id before deleting
+    // We need to load it to identify which session cache to update
+    let page = repo
+        .get_page("", 1, 10000) // This is inefficient but messages_delete doesn't have session context
+        .await
+        .map_err(|e| format!("Failed to query messages: {}", e))?;
+
+    let target_message = page.items.iter().find(|m| m.id == message_id);
+    let session_id = target_message.map(|m| m.session_id.clone());
+
+    // Delete from database
     repo.delete_by_id(&message_id)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    // Update in-memory cache if this session is active
+    if let Some(sid) = session_id {
+        if let Err(e) = session_manager
+            .remove_message_from_cache(&sid, &message_id)
+            .await
+        {
+            log::warn!(
+                "Failed to remove message {} from in-memory cache for session {}: {}",
+                message_id,
+                sid,
+                e
+            );
+            // Don't fail the entire operation - DB is already updated
+        }
+    }
+
+    Ok(())
 }
 
 /// Delete all messages for a specific session.

@@ -88,20 +88,18 @@ pub async fn start_workflow(
     crate::agent::events::emit_agent_event(app_handle, message_added_event)
         .map_err(|e| format!("Failed to emit MessageAdded event: {}", e))?;
 
-    // 3. Persist to DB asynchronously (fire-and-forget)
-    let msg_for_db = user_message.clone();
-    let sid_for_db = session_id.clone();
-    tokio::spawn(async move {
-        let repo = crate::state::get_message_repository();
-        if let Err(e) = repo.insert(&msg_for_db).await {
-            log::error!(
-                "Failed to save user message to DB: session={}, msg_id={}, error={}",
-                sid_for_db,
-                msg_for_db.id,
-                e
-            );
-        }
-    });
+    // 3. Persist to DB synchronously to ensure data integrity
+    // We await this to prevent "ghost messages" where memory has state but DB doesn't (causing data loss on reload)
+    let repo = crate::state::get_message_repository();
+    if let Err(e) = repo.insert(&user_message).await {
+        log::error!(
+            "Failed to save user message to DB: session={}, msg_id={}, error={}",
+            session_id,
+            user_message.id,
+            e
+        );
+        return Err(format!("Failed to persist message: {}", e));
+    }
 
     log::info!(
         "Started workflow for session: {} with message: {}",
@@ -198,6 +196,9 @@ pub async fn resume_workflow(
     app_handle: &AppHandle,
     session_id: String,
 ) -> Result<(), String> {
+    // Ensure cache is initialized before resuming (lazy load if needed, preserve if exists)
+    crate::agent::lifecycle::ensure_cache_initialized(active_sessions, &session_id).await?;
+
     crate::agent::lifecycle::update_session_status(
         active_sessions,
         app_handle,

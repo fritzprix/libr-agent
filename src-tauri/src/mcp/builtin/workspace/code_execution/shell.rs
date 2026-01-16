@@ -12,7 +12,7 @@ use crate::mcp::types::MCPResult;
 use crate::session_isolation::{IsolatedProcessConfig, IsolationLevel};
 
 use super::super::{terminal_manager, utils, WorkspaceServer, PERSISTENT_SHELL_TOOL};
-use super::process;
+use super::{normalization, process, validation};
 
 impl WorkspaceServer {
     /// Execute command using persistent shell
@@ -32,7 +32,7 @@ impl WorkspaceServer {
             .get_session_workspace_dir_by_id(&session_id);
 
         // Normalize command
-        let normalized_command = Self::normalize_shell_command(command);
+        let normalized_command = normalization::normalize_shell_command(command);
 
         // Track execution time
         let execution_start = std::time::Instant::now();
@@ -100,7 +100,7 @@ impl WorkspaceServer {
                     self.invalidate_context_cache().await;
 
                     // Success - format with clear state reporting
-                    let header = format!("✓ Command executed successfully in {}ms", duration_ms);
+                    let header = format!("Command executed successfully in {}ms", duration_ms);
 
                     // Clear shell state section with persistence indicator
                     let shell_state = format!(
@@ -123,10 +123,12 @@ impl WorkspaceServer {
                     } else {
                         format!("{}\n\n{}{}", header, shell_state, file_tools_warning)
                     };
-                    Ok(MCPResult::success_with_data(
-                        text_message.as_str(),
-                        structured_data,
-                    ))
+
+                    let hint = SuccessHint::new(
+                        text_message,
+                        SuccessHint::for_tool(PERSISTENT_SHELL_TOOL, ToolGroup::Workspace),
+                    );
+                    Ok(hint.to_mcp_result_with_data(Some(structured_data)))
                 } else {
                     // Failure - use ErrorGuidance format
                     let header = format!(
@@ -215,7 +217,7 @@ impl WorkspaceServer {
             .get_session_workspace_dir_by_id(&session_id);
 
         // Normalize shell command
-        let normalized_command = Self::normalize_shell_command(command);
+        let normalized_command = normalization::normalize_shell_command(command);
 
         // Track execution time
         let execution_start = std::time::Instant::now();
@@ -546,7 +548,7 @@ impl WorkspaceServer {
                 );
 
                 // ✅ ENHANCED: Check if timeout might be due to waiting for interactive input
-                let might_be_interactive = Self::is_likely_interactive_command(command);
+                let might_be_interactive = validation::is_likely_interactive_command(command);
 
                 let error_message = if might_be_interactive {
                     format!(
@@ -593,343 +595,6 @@ impl WorkspaceServer {
         }
     }
 
-    /// Normalize shell command for proper execution
-    /// Handles platform-specific quoting and escaping rules
-    pub(crate) fn normalize_shell_command(raw_command: &str) -> String {
-        #[cfg(windows)]
-        {
-            // Windows: PowerShell handles both single and double quotes correctly
-            // No normalization needed - pass command as-is to avoid breaking nested quotes
-            // in Python/Node.js inline commands like: python -c "print('Hello')"
-            info!("Windows command (no normalization): {}", raw_command);
-            raw_command.to_string()
-        }
-
-        #[cfg(not(windows))]
-        {
-            // Unix shell quoting normalization (existing logic)
-            let mut normalized = raw_command.to_string();
-
-            // 1. Detect incomplete quote pairs using a state machine
-            let mut double_quote_count = 0;
-            let mut single_quote_count = 0;
-            let mut in_double_quote = false;
-            let mut in_single_quote = false;
-            let mut escaped = false;
-
-            for c in normalized.chars() {
-                if in_single_quote {
-                    // Inside single quotes, backslash is literal, only single quote escapes
-                    if c == '\'' {
-                        in_single_quote = false;
-                        single_quote_count += 1;
-                    }
-                } else if in_double_quote {
-                    // Inside double quotes, backslash escapes next char
-                    if escaped {
-                        escaped = false;
-                        continue;
-                    }
-                    if c == '\\' {
-                        escaped = true;
-                        continue;
-                    }
-                    if c == '"' {
-                        in_double_quote = false;
-                        double_quote_count += 1;
-                    }
-                } else {
-                    // Normal state
-                    if escaped {
-                        escaped = false;
-                        continue;
-                    }
-                    if c == '\\' {
-                        escaped = true;
-                        continue;
-                    }
-                    if c == '"' {
-                        in_double_quote = true;
-                        double_quote_count += 1;
-                    } else if c == '\'' {
-                        in_single_quote = true;
-                        single_quote_count += 1;
-                    }
-                }
-            }
-
-            // 2. Add missing closing quotes
-            if double_quote_count % 2 != 0 {
-                normalized.push('"');
-                info!("Shell command: Added missing double quote");
-            }
-            if single_quote_count % 2 != 0 {
-                normalized.push('\'');
-                info!("Shell command: Added missing single quote");
-            }
-
-            // 3. Fix consecutive quote patterns
-            if normalized.contains("\"\"") {
-                normalized = Self::fix_consecutive_quotes(&normalized);
-            }
-
-            normalized
-        }
-    }
-
-    /// Fix consecutive quotes based on context
-    #[cfg(not(windows))]
-    fn fix_consecutive_quotes(input: &str) -> String {
-        let mut result = String::new();
-        let chars: Vec<char> = input.chars().collect();
-        let mut i = 0;
-
-        while i < chars.len() {
-            if i + 1 < chars.len() && chars[i] == '"' && chars[i + 1] == '"' {
-                // Consecutive quotes found
-
-                // Check if the first quote is escaped (preceded by odd number of backslashes)
-                let mut backslash_count = 0;
-                let mut j = i;
-                while j > 0 && chars[j - 1] == '\\' {
-                    backslash_count += 1;
-                    j -= 1;
-                }
-
-                if backslash_count % 2 != 0 {
-                    // It is an escaped quote (e.g. \"), so it's not a start of consecutive quotes
-                    result.push(chars[i]);
-                    i += 1;
-                    continue;
-                }
-
-                if i > 0 && chars[i - 1] != ' ' && chars[i - 1] != '=' {
-                    // If no space or equals before, escape the first one
-                    result.push('\\');
-                    result.push('"');
-                    i += 1; // Second quote processed in next loop
-                } else if i + 2 < chars.len() && chars[i + 2] != ' ' {
-                    // If no space after, escape the second one
-                    result.push('"');
-                    result.push('\\');
-                    result.push('"');
-                    i += 2;
-                } else {
-                    // Default: keep one, remove one
-                    result.push('"');
-                    i += 2;
-                }
-            } else {
-                result.push(chars[i]);
-                i += 1;
-            }
-        }
-
-        result
-    }
-
-    #[cfg(windows)]
-    fn contains_unquoted_andand(input: &str) -> bool {
-        let mut in_single = false;
-        let mut in_double = false;
-        let chars: Vec<char> = input.chars().collect();
-        let mut i = 0;
-
-        while i < chars.len() {
-            let ch = chars[i];
-
-            if in_single {
-                if ch == '\'' {
-                    // PowerShell single-quote escaping: '' inside single quotes
-                    if i + 1 < chars.len() && chars[i + 1] == '\'' {
-                        i += 2;
-                        continue;
-                    }
-                    in_single = false;
-                }
-                i += 1;
-                continue;
-            }
-
-            if in_double {
-                // PowerShell escape inside double quotes via backtick
-                if ch == '`' {
-                    i += 2;
-                    continue;
-                }
-                if ch == '"' {
-                    in_double = false;
-                }
-                i += 1;
-                continue;
-            }
-
-            if ch == '\'' {
-                in_single = true;
-                i += 1;
-                continue;
-            }
-
-            if ch == '"' {
-                in_double = true;
-                i += 1;
-                continue;
-            }
-
-            if ch == '&' && i + 1 < chars.len() && chars[i + 1] == '&' {
-                return true;
-            }
-
-            i += 1;
-        }
-
-        false
-    }
-
-    /// Detect commands that commonly require interactive input
-    ///
-    /// This function checks for patterns indicating a command will wait for user input,
-    /// such as npm init without --yes, npx create-* without --force, REPL modes, etc.
-    ///
-    /// Returns true if the command is likely to require interactive input.
-    fn is_likely_interactive_command(command: &str) -> bool {
-        let cmd_lower = command.to_lowercase();
-        let cmd_trimmed = cmd_lower.trim();
-
-        // Pattern 1: Package manager initialization without non-interactive flags
-        let package_init_patterns = [
-            ("npm init", &["--yes", "-y"] as &[&str]),
-            ("pnpm init", &["--yes", "-y"]),
-            ("yarn init", &["--yes", "-y", "--private"]),
-            ("bun init", &["--yes", "-y"]),
-        ];
-
-        for (pattern, non_interactive_flags) in package_init_patterns {
-            if cmd_lower.contains(pattern) {
-                let has_flag = non_interactive_flags
-                    .iter()
-                    .any(|flag| cmd_lower.contains(flag));
-                if !has_flag {
-                    return true;
-                }
-            }
-        }
-
-        // Pattern 2: Scaffolding/creation tools without force flags
-        let scaffolding_patterns = [
-            ("npx create-", &["--force", "--yes", "-y"] as &[&str]),
-            ("npm create", &["--force", "--yes", "-y"]),
-            ("pnpm create", &["--force", "--yes", "-y"]),
-            ("yarn create", &["--force", "--yes", "-y"]),
-            ("npx degit", &[]),
-        ];
-
-        for (pattern, non_interactive_flags) in scaffolding_patterns {
-            if cmd_lower.contains(pattern) {
-                if non_interactive_flags.is_empty() {
-                    return true;
-                }
-                let has_flag = non_interactive_flags
-                    .iter()
-                    .any(|flag| cmd_lower.contains(flag));
-                if !has_flag {
-                    return true;
-                }
-            }
-        }
-
-        // Pattern 3: PowerShell interactive cmdlets (always interactive)
-        let ps_interactive_cmdlets = ["read-host", "get-credential", "out-gridview"];
-        for cmdlet in ps_interactive_cmdlets {
-            if cmd_lower.contains(cmdlet) {
-                return true;
-            }
-        }
-
-        // Pattern 4: REPL mode detection (executable without arguments)
-        // Check for bare executables that start interactive sessions
-        let repl_executables = [
-            "python",
-            "python3",
-            "py",
-            "node",
-            "irb",
-            "ruby",
-            "psql",
-            "mysql",
-            "mongosh",
-            "redis-cli",
-        ];
-
-        for exec in repl_executables {
-            // Match pattern: command starts with executable and has no script argument
-            if cmd_trimmed == exec {
-                // Exact match - definitely REPL
-                return true;
-            }
-
-            // Check if it's "executable" followed only by flags (no positional args)
-            if let Some(rest) = cmd_trimmed.strip_prefix(exec) {
-                let rest = rest.trim();
-
-                // Exception: "python -c", "python -m", "node -e" are NOT REPL (check first)
-                // These execute code or modules non-interactively
-                if rest.starts_with("-c ")
-                    || rest.starts_with("-m ")
-                    || rest.starts_with("-e ")
-                    || rest.starts_with("--eval ")
-                    || rest.starts_with("-c\t")
-                    || rest.starts_with("-m\t")
-                    || rest.starts_with("-e\t")
-                    || rest.starts_with("--eval\t")
-                {
-                    continue;
-                }
-
-                // If rest is empty or only contains flags starting with -, it's likely REPL
-                if rest.is_empty()
-                    || (rest.starts_with('-') && !rest.contains(".py") && !rest.contains(".js"))
-                {
-                    return true;
-                }
-            }
-        }
-
-        // Pattern 5: Git interactive commands
-        let git_interactive = [
-            "git add -p",
-            "git add --patch",
-            "git rebase -i",
-            "git rebase --interactive",
-        ];
-        for pattern in git_interactive {
-            if cmd_lower.contains(pattern) {
-                return true;
-            }
-        }
-
-        // Pattern 6: Interactive shells invoked directly
-        let interactive_shells = [
-            "bash\n",
-            "bash\r",
-            "bash ",
-            "sh\n",
-            "sh\r",
-            "sh ",
-            "powershell\n",
-            "powershell\r",
-            "pwsh\n",
-            "pwsh\r",
-        ];
-        for shell_pattern in interactive_shells {
-            if cmd_lower.ends_with(shell_pattern.trim()) || cmd_trimmed == shell_pattern.trim() {
-                return true;
-            }
-        }
-
-        false
-    }
-
     pub async fn handle_execute_shell(
         &self,
         args: Value,
@@ -944,7 +609,7 @@ impl WorkspaceServer {
 
         #[cfg(windows)]
         {
-            if Self::contains_unquoted_andand(raw_command) {
+            if validation::contains_unquoted_andand(raw_command) {
                 return Ok(ErrorGuidance::with_guidance(
                     ErrorCategory::InvalidInput,
                     "Invalid PowerShell syntax: '&&' is not supported by PowerShell 5.1"
@@ -966,7 +631,7 @@ impl WorkspaceServer {
             .get("requireUserInput")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
-        let auto_detect = self.detect_privilege_escalation(raw_command);
+        let auto_detect = validation::detect_privilege_escalation(raw_command);
 
         // If user input required, return UIResource for interactive execution
         if require_input || auto_detect {
@@ -1023,7 +688,7 @@ impl WorkspaceServer {
 
         #[cfg(windows)]
         {
-            if Self::contains_unquoted_andand(raw_command) {
+            if validation::contains_unquoted_andand(raw_command) {
                 return Ok(ErrorGuidance::with_guidance(
                     ErrorCategory::InvalidInput,
                     "Invalid PowerShell syntax: '&&' is not supported by PowerShell 5.1"
@@ -1041,7 +706,7 @@ impl WorkspaceServer {
         }
 
         // ✅ ENHANCED: Detect commands requiring interactive input BEFORE execution
-        if Self::is_likely_interactive_command(raw_command) {
+        if validation::is_likely_interactive_command(raw_command) {
             return Ok(ErrorGuidance::with_guidance(
                 ErrorCategory::InvalidInput,
                 "This command likely requires interactive input (prompts, passwords, confirmations)",
@@ -1113,7 +778,7 @@ impl WorkspaceServer {
 
         #[cfg(windows)]
         {
-            if Self::contains_unquoted_andand(raw_command) {
+            if validation::contains_unquoted_andand(raw_command) {
                 return Ok(ErrorGuidance::with_guidance(
                     ErrorCategory::InvalidInput,
                     "Invalid PowerShell syntax: '&&' is not supported by PowerShell 5.1"
@@ -1154,6 +819,25 @@ impl WorkspaceServer {
                 ToolGroup::Workspace,
             )
             .to_mcp_result());
+        }
+
+        // Check validation for interactive commands (async mode cannot handle them)
+        if validation::is_likely_interactive_command(raw_command) {
+            // Warn but allow execution (user might know what they are doing, e.g. using expect script)
+            tracing::warn!("Async command likely interactive: {}", raw_command);
+            // We could return an error here, but for now we trust the user if they didn't set requireUserInput
+            // Actually, requireUserInput was false (checked above), so we should warn the user.
+            // Given the critique, let's follow the pattern in handle_run_shell and return an error/guidance
+            return Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::InvalidInput,
+                "This command likely requires interactive input but async mode does not support interaction",
+                vec![
+                    format!("Detected interactive pattern in: {}", raw_command),
+                    format!("Use {} (sync mode) with requireUserInput: true", PERSISTENT_SHELL_TOOL),
+                    "Or add non-interactive flags to your command".to_string(),
+                ],
+                ToolGroup::Workspace,
+            ).to_mcp_result());
         }
 
         // Execute in background
@@ -1233,7 +917,7 @@ impl WorkspaceServer {
         let stderr_path = process_tmp_dir.join("stderr");
 
         // Normalize command
-        let normalized_command = Self::normalize_shell_command(command);
+        let normalized_command = normalization::normalize_shell_command(command);
 
         // Always use Medium isolation
         let isolation_level = IsolationLevel::Medium;
@@ -1414,164 +1098,5 @@ impl WorkspaceServer {
         });
 
         Ok(hint.to_mcp_result_with_data(Some(response_data)))
-    }
-
-    /// Platform-specific privilege detection for Unix systems
-    /// Detects commands that require elevated privileges (sudo, su, doas, pkexec)
-    #[cfg(unix)]
-    pub(crate) fn detect_privilege_escalation(&self, command: &str) -> bool {
-        let trimmed = command.trim_start();
-        let patterns = ["sudo ", "su ", "doas ", "pkexec "];
-        patterns.iter().any(|p| trimmed.starts_with(p))
-    }
-
-    /// Platform-specific privilege detection for Windows
-    /// Windows UAC cannot be detected from command string
-    /// Agent must explicitly set require_user_input=true
-    #[cfg(windows)]
-    pub(crate) fn detect_privilege_escalation(&self, _command: &str) -> bool {
-        false
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    #[cfg(not(windows))]
-    fn test_normalize_shell_command_unix() {
-        // Basic cases
-        assert_eq!(
-            WorkspaceServer::normalize_shell_command("echo hello"),
-            "echo hello"
-        );
-        assert_eq!(
-            WorkspaceServer::normalize_shell_command("echo 'hello'"),
-            "echo 'hello'"
-        );
-        assert_eq!(
-            WorkspaceServer::normalize_shell_command("echo \"hello\""),
-            "echo \"hello\""
-        );
-
-        // Missing quotes
-        assert_eq!(
-            WorkspaceServer::normalize_shell_command("echo \"hello"),
-            "echo \"hello\""
-        );
-        assert_eq!(
-            WorkspaceServer::normalize_shell_command("echo 'hello"),
-            "echo 'hello'"
-        );
-
-        // Escaped quotes (should NOT be counted as closing quotes)
-        assert_eq!(
-            WorkspaceServer::normalize_shell_command("echo \"foo\\\"bar\""),
-            "echo \"foo\\\"bar\""
-        );
-
-        // Nested quotes
-        assert_eq!(
-            WorkspaceServer::normalize_shell_command("echo '\"hello\"'"),
-            "echo '\"hello\"'"
-        );
-        assert_eq!(
-            WorkspaceServer::normalize_shell_command("echo \"'hello'\""),
-            "echo \"'hello'\""
-        );
-
-        // Complex case with multiple escapes
-        assert_eq!(
-            WorkspaceServer::normalize_shell_command("echo \"path: \\\"/tmp/foo\\\"\""),
-            "echo \"path: \\\"/tmp/foo\\\"\""
-        );
-
-        // Trailing backslash (should be preserved)
-        assert_eq!(
-            WorkspaceServer::normalize_shell_command("echo hello \\"),
-            "echo hello \\"
-        );
-    }
-
-    #[test]
-    #[cfg(windows)]
-    fn test_normalize_shell_command_windows() {
-        // Windows should pass through everything as-is
-        assert_eq!(
-            WorkspaceServer::normalize_shell_command("echo hello"),
-            "echo hello"
-        );
-        assert_eq!(
-            WorkspaceServer::normalize_shell_command("echo \"hello"),
-            "echo \"hello"
-        );
-    }
-
-    #[test]
-    fn test_is_likely_interactive_command() {
-        // ✅ Python -m commands should NOT be interactive
-        assert!(!WorkspaceServer::is_likely_interactive_command(
-            "python -m unittest discover tests"
-        ));
-        assert!(!WorkspaceServer::is_likely_interactive_command(
-            "python -m pytest"
-        ));
-        assert!(!WorkspaceServer::is_likely_interactive_command(
-            "python3 -m pip install requests"
-        ));
-        assert!(!WorkspaceServer::is_likely_interactive_command(
-            "py -m venv env"
-        ));
-
-        // ✅ Python -c commands should NOT be interactive
-        assert!(!WorkspaceServer::is_likely_interactive_command(
-            "python -c 'print(123)'"
-        ));
-        assert!(!WorkspaceServer::is_likely_interactive_command(
-            "python3 -c \"import sys; print(sys.version)\""
-        ));
-
-        // ✅ Node -e commands should NOT be interactive
-        assert!(!WorkspaceServer::is_likely_interactive_command(
-            "node -e \"console.log('test')\""
-        ));
-
-        // ❌ Bare Python should be interactive (REPL)
-        assert!(WorkspaceServer::is_likely_interactive_command("python"));
-        assert!(WorkspaceServer::is_likely_interactive_command("python3"));
-        assert!(WorkspaceServer::is_likely_interactive_command("node"));
-
-        // ❌ npm init without flags should be interactive
-        assert!(WorkspaceServer::is_likely_interactive_command("npm init"));
-        // ✅ npm init with --yes should NOT be interactive
-        assert!(!WorkspaceServer::is_likely_interactive_command(
-            "npm init --yes"
-        ));
-
-        // ❌ npx create-* without flags should be interactive
-        assert!(WorkspaceServer::is_likely_interactive_command(
-            "npx create-vite my-app"
-        ));
-        // ✅ npx create-* with --force should NOT be interactive
-        assert!(!WorkspaceServer::is_likely_interactive_command(
-            "npx create-vite my-app --force"
-        ));
-
-        // ❌ Read-Host should be interactive
-        assert!(WorkspaceServer::is_likely_interactive_command(
-            "Read-Host 'Enter password'"
-        ));
-
-        // ✅ Normal scripts should NOT be interactive
-        assert!(!WorkspaceServer::is_likely_interactive_command(
-            "python script.py"
-        ));
-        assert!(!WorkspaceServer::is_likely_interactive_command(
-            "node index.js"
-        ));
-        assert!(!WorkspaceServer::is_likely_interactive_command(
-            "cargo test"
-        ));
     }
 }
