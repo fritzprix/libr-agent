@@ -307,6 +307,35 @@ mod tests {
     }
 
     #[test]
+    fn test_from_model_conversion() {
+        let model = Model {
+            id: "msg-1".to_string(),
+            session_id: "session-1".to_string(),
+            role: "user".to_string(),
+            content: "Hello world".to_string(),
+            tool_calls: None,
+            tool_call_id: None,
+            is_streaming: None,
+            thinking: None,
+            thinking_signature: None,
+            assistant_id: None,
+            attachments: None,
+            tool_use: None,
+            created_at: 1000,
+            updated_at: 1000,
+            source: None,
+            error: None,
+        };
+
+        let doc = MessageDocument::from(model);
+
+        assert_eq!(doc.id, "msg-1");
+        assert_eq!(doc.session_id, "session-1");
+        assert_eq!(doc.content, "Hello world");
+        assert_eq!(doc.created_at, 1000);
+    }
+
+    #[test]
     fn test_basic_search() {
         let mut engine = MessageSearchEngine::new("test-session".to_string(), 0);
 

@@ -132,12 +132,7 @@ async fn rebuild_session_index(session_id: &str) -> Result<(), String> {
     // Convert to MessageDocument
     let documents: Vec<MessageDocument> = messages
         .into_iter()
-        .map(|model| MessageDocument {
-            id: model.id,
-            session_id: model.session_id,
-            content: model.content,
-            created_at: model.created_at,
-        })
+        .map(MessageDocument::from)
         .collect();
 
     // Build index
