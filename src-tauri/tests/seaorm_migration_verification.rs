@@ -215,6 +215,7 @@ async fn test_playbook_crud_operations() {
     // Insert playbook (ID must be provided, it's a String, not auto-increment)
     let playbook = playbook::ActiveModel {
         id: Set("playbook-1".to_string()),
+        assistant_id: Set("assistant-1".to_string()),
         session_id: Set("test-session".to_string()),
         goal: Set("Test Goal".to_string()),
         initial_command: Set(Some("test command".to_string())),
@@ -237,6 +238,7 @@ async fn test_playbook_crud_operations() {
     // Read playbook (composite key query)
     let found = playbook::Entity::find()
         .filter(playbook::Column::Id.eq("playbook-1"))
+        .filter(playbook::Column::AssistantId.eq("assistant-1"))
         .filter(playbook::Column::SessionId.eq("test-session"))
         .one(&db)
         .await;

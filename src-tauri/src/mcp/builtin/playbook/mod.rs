@@ -17,14 +17,20 @@ mod types;
 /// Playbook MCP Server
 #[derive(Debug)]
 pub struct PlaybookServer {
-    session_id: String,
+    assistant_id: String,
+    session_id: String, // For tracking creation context
     db_conn: DatabaseConnection,
 }
 
 impl PlaybookServer {
     pub async fn new(session_id: String, db: Arc<DatabaseConnection>) -> Result<Self, String> {
         let db_conn = (*db).clone();
+
+        // Get assistant_id from session
+        let assistant_id = get_assistant_id_from_session(&db_conn, &session_id).await?;
+
         let server = Self {
+            assistant_id,
             session_id,
             db_conn,
         };
@@ -36,6 +42,42 @@ impl PlaybookServer {
     fn get_db(&self) -> &DatabaseConnection {
         &self.db_conn
     }
+}
+
+/// Helper function to get assistant_id from session
+async fn get_assistant_id_from_session(
+    db: &DatabaseConnection,
+    session_id: &str,
+) -> Result<String, String> {
+    use crate::entity::session::Entity as SessionEntity;
+    use serde_json::Value;
+
+    let session_model = SessionEntity::find_by_id(session_id)
+        .one(db)
+        .await
+        .map_err(|e| format!("Failed to query session: {}", e))?
+        .ok_or_else(|| format!("Session not found: {}", session_id))?;
+
+    let agent_config_str = session_model
+        .agent_config
+        .ok_or_else(|| format!("Session {} has no agent config", session_id))?;
+
+    let agent_config: Value = serde_json::from_str(&agent_config_str)
+        .map_err(|e| format!("Failed to parse agent config: {}", e))?;
+
+    // Try "assistantId" first (test data), fallback to "id" (production AgentConfig serialization)
+    let assistant_id = agent_config
+        .get("assistantId")
+        .or_else(|| agent_config.get("id"))
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            format!(
+                "No id/assistantId in agent config for session {}",
+                session_id
+            )
+        })?;
+
+    Ok(assistant_id.to_string())
 }
 
 // Helper to create tool definitions concisely
@@ -135,9 +177,9 @@ impl BuiltinMCPServer for PlaybookServer {
     ) -> crate::mcp::types::ServiceContext {
         use crate::entity::{playbook, playbook::Entity as PlaybookEntity};
 
-        // Query playbook count for this session
+        // Query playbook count for this assistant
         let total_count = match PlaybookEntity::find()
-            .filter(playbook::Column::SessionId.eq(&self.session_id))
+            .filter(playbook::Column::AssistantId.eq(&self.assistant_id))
             .count(&self.db_conn)
             .await
         {
@@ -164,7 +206,7 @@ impl BuiltinMCPServer for PlaybookServer {
 
         // Fetch recent 3 playbooks (Planning-style detail)
         let models = match PlaybookEntity::find()
-            .filter(playbook::Column::SessionId.eq(&self.session_id))
+            .filter(playbook::Column::AssistantId.eq(&self.assistant_id))
             .order_by_desc(playbook::Column::UpdatedAt)
             .limit(3)
             .all(&self.db_conn)
@@ -381,28 +423,34 @@ impl BuiltinMCPServer for PlaybookServer {
     ) -> Result<MCPResult, String> {
         match tool_name {
             "createPlaybook" | "builtin_playbook__createPlaybook" => {
-                operations::create_playbook(&self.db_conn, &self.session_id, args).await
+                operations::create_playbook(
+                    &self.db_conn,
+                    &self.assistant_id,
+                    &self.session_id,
+                    args,
+                )
+                .await
             }
             "selectPlaybook" | "builtin_playbook__selectPlaybook" => {
-                operations::select_playbook(&self.db_conn, &self.session_id, args).await
+                operations::select_playbook(&self.db_conn, &self.assistant_id, args).await
             }
             "listPlaybooks" | "builtin_playbook__listPlaybooks" => {
-                operations::list_playbooks(&self.db_conn, &self.session_id, args, false).await
+                operations::list_playbooks(&self.db_conn, &self.assistant_id, args, false).await
             }
             "showPlaybooks" | "builtin_playbook__showPlaybooks" => {
-                operations::list_playbooks(&self.db_conn, &self.session_id, args, true).await
+                operations::list_playbooks(&self.db_conn, &self.assistant_id, args, true).await
             }
             "getPlaybookPage" | "builtin_playbook__getPlaybookPage" => {
-                operations::list_playbooks(&self.db_conn, &self.session_id, args, true).await
+                operations::list_playbooks(&self.db_conn, &self.assistant_id, args, true).await
             }
             "deletePlaybook" | "builtin_playbook__deletePlaybook" => {
-                operations::delete_playbook(&self.db_conn, &self.session_id, args).await
+                operations::delete_playbook(&self.db_conn, &self.assistant_id, args).await
             }
             "getPlaybook" | "builtin_playbook__getPlaybook" => {
-                operations::get_playbook(&self.db_conn, &self.session_id, args).await
+                operations::get_playbook(&self.db_conn, &self.assistant_id, args).await
             }
             "updatePlaybook" | "builtin_playbook__updatePlaybook" => {
-                operations::update_playbook(&self.db_conn, &self.session_id, args).await
+                operations::update_playbook(&self.db_conn, &self.assistant_id, args).await
             }
             _ => Err(format!("Unknown tool: {}", tool_name)),
         }

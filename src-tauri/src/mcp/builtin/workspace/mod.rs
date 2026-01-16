@@ -281,6 +281,16 @@ impl WorkspaceServer {
         Arc::new(SecureFileManager::new_with_base_dir(workspace_dir))
     }
 
+    /// Validate path with security checks (helper for file operations)
+    pub fn validate_path_with_error(
+        &self,
+        path_str: &str,
+        session_id: Option<String>,
+    ) -> Result<std::path::PathBuf, String> {
+        let file_manager = self.get_file_manager(session_id);
+        file_operations::utils::validate_path_with_error(&file_manager, path_str)
+    }
+
     #[allow(dead_code)]
     fn get_workspace_tree(&self, path: &str, max_depth: usize) -> String {
         use std::fs;

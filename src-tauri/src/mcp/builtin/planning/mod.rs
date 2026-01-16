@@ -112,14 +112,14 @@ impl BuiltinMCPServer for PlanningServer {
             MCPTool {
                 name: "checkTodo".to_string(),
                 title: Some("Check Todo".to_string()),
-                description: "Mark a todo item as checked (completed) or unchecked, optionally with a completion summary. You can specify either id (database ID) or index (0-based position in the list).".to_string(),
+                description: "Mark a todo item as completed or unchecked. Checked todos remain in the list for progress tracking and can be unchecked later. Optionally provide a summary of how the task was completed (e.g., 'Fixed with PR #42', 'Resolved in commit abc123').".to_string(),
                 input_schema: serde_json::from_value(json!({
                     "type": "object",
                     "properties": {
                         "id": { "type": "number", "minimum": 1, "description": "The database ID of the todo to update" },
                         "index": { "type": "number", "minimum": 0, "description": "The 0-based index position of the todo in the current list" },
                         "checked": { "type": "boolean", "description": "Whether to mark the todo as checked (true) or unchecked (false). Defaults to true." },
-                        "summary": { "type": "string", "description": "Optional summary or completion note for the todo (e.g., \"Completed with PR #42\")." }
+                        "summary": { "type": "string", "description": "Completion summary documenting how the task was resolved (e.g., 'Fixed with PR #42', 'Resolved in commit abc123', 'Documentation updated'). This summary is displayed in service context and helps track progress across sessions." }
                     }
                 }))
                 .unwrap(),
@@ -127,14 +127,14 @@ impl BuiltinMCPServer for PlanningServer {
                 annotations: None,
             },
             MCPTool {
-                name: "clearTodos".to_string(),
-                title: Some("Clear Todos".to_string()),
-                description: "Clear specific todos by their indices (0-based) or IDs. If no indices or IDs are provided, all todos will be cleared. Use to remove completed tasks or reset the todo list.".to_string(),
+                name: "cancelTodo".to_string(),
+                title: Some("Cancel Todo".to_string()),
+                description: "Permanently remove specific todos by ID or index. Use this tool when:\n• Task was created incorrectly\n• Requirements changed and task is no longer needed\n• Task duplicates another todo\n\n⚠️ IMPORTANT: This operation is irreversible\n❌ DO NOT use for completed tasks - use checkTodo instead to preserve completion history\n✓ Use cancelTodo only for tasks that should not exist\n\nIf no parameters provided, cancels ALL todos (complete reset).".to_string(),
                 input_schema: serde_json::from_value(json!({
                     "type": "object",
                     "properties": {
-                        "ids": { "type": "array", "items": { "type": "number", "minimum": 1 }, "description": "Array of todo IDs to clear." },
-                        "indices": { "type": "array", "items": { "type": "number", "minimum": 0 }, "description": "Array of todo indices (0-based) to clear." }
+                        "ids": { "type": "array", "items": { "type": "number", "minimum": 1 }, "description": "Array of todo IDs to cancel. Extract from getCurrentState response." },
+                        "indices": { "type": "array", "items": { "type": "number", "minimum": 0 }, "description": "Array of todo indices (0-based) to cancel. Extract from getCurrentState response." }
                     }
                 }))
                 .unwrap(),
@@ -309,8 +309,8 @@ impl BuiltinMCPServer for PlanningServer {
             "checkTodo" | "builtin_planning__checkTodo" => {
                 todos::check_todo(self.db.as_ref(), &target_session_id, args).await
             }
-            "clearTodos" | "builtin_planning__clearTodos" => {
-                todos::clear_todos(self.db.as_ref(), &target_session_id, args).await
+            "cancelTodo" | "builtin_planning__cancelTodo" => {
+                todos::cancel_todo(self.db.as_ref(), &target_session_id, args).await
             }
             "clearSession" | "builtin_planning__clearSession" => {
                 let txn = self

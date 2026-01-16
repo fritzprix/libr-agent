@@ -248,6 +248,7 @@ impl MigrationTrait for Migration {
                     .if_not_exists()
                     .col(ColumnDef::new(Playbooks::Id).string().not_null())
                     .col(ColumnDef::new(Playbooks::SessionId).string().not_null())
+                    .col(ColumnDef::new(Playbooks::AssistantId).string().not_null())
                     .col(ColumnDef::new(Playbooks::Goal).string().not_null())
                     .col(ColumnDef::new(Playbooks::InitialCommand).string())
                     .col(ColumnDef::new(Playbooks::Workflow).string().not_null())
@@ -262,7 +263,12 @@ impl MigrationTrait for Migration {
                             .big_integer()
                             .not_null(),
                     )
-                    .primary_key(Index::create().col(Playbooks::Id).col(Playbooks::SessionId))
+                    // Composite primary key: id + assistant_id (playbooks are assistant-scoped)
+                    .primary_key(
+                        Index::create()
+                            .col(Playbooks::Id)
+                            .col(Playbooks::AssistantId),
+                    )
                     .to_owned(),
             )
             .await?;
@@ -275,6 +281,18 @@ impl MigrationTrait for Migration {
                     .name("idx_playbooks_session")
                     .table(Playbooks::Table)
                     .col(Playbooks::SessionId)
+                    .to_owned(),
+            )
+            .await?;
+
+        // Create index on assistant_id for quick lookup
+        manager
+            .create_index(
+                Index::create()
+                    .if_not_exists()
+                    .name("idx_playbooks_assistant")
+                    .table(Playbooks::Table)
+                    .col(Playbooks::AssistantId)
                     .to_owned(),
             )
             .await?;
@@ -442,6 +460,7 @@ enum Playbooks {
     Table,
     Id,
     SessionId,
+    AssistantId,
     Goal,
     InitialCommand,
     Workflow,
