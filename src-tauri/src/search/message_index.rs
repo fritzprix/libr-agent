@@ -2,6 +2,7 @@
 ///
 /// Provides full-text search over message content with session-level indexing,
 /// incremental updates, and configurable index size limits.
+use crate::entity::message::Model;
 use bm25::{Embedder, EmbedderBuilder, Language, Scorer};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -24,6 +25,17 @@ pub struct MessageDocument {
     pub session_id: String,
     pub content: String,
     pub created_at: i64,
+}
+
+impl From<Model> for MessageDocument {
+    fn from(model: Model) -> Self {
+        Self {
+            id: model.id,
+            session_id: model.session_id,
+            content: model.content,
+            created_at: model.created_at,
+        }
+    }
 }
 
 /// BM25 Message Search Engine

@@ -166,12 +166,7 @@ async fn get_or_build_index(session_id: &str) -> Result<MessageSearchEngine, Str
     // Convert to MessageDocument
     let documents: Vec<MessageDocument> = messages
         .into_iter()
-        .map(|model| MessageDocument {
-            id: model.id,
-            session_id: model.session_id,
-            content: model.content,
-            created_at: model.created_at,
-        })
+        .map(MessageDocument::from)
         .collect();
 
     // Build index
@@ -264,12 +259,7 @@ pub async fn messages_search(
 
         let documents: Vec<MessageDocument> = messages
             .into_iter()
-            .map(|model| MessageDocument {
-                id: model.id,
-                session_id: model.session_id,
-                content: model.content,
-                created_at: model.created_at,
-            })
+            .map(MessageDocument::from)
             .collect();
 
         let mut engine = MessageSearchEngine::new("global".to_string(), max_docs);
