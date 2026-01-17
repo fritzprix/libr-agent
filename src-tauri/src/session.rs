@@ -225,6 +225,21 @@ echo "Available tools: python3, typescript/deno, shell commands"
     }
 
     pub fn get_logs_dir(&self) -> PathBuf {
+        #[cfg(target_os = "windows")]
+        {
+            if let Some(local_data) = dirs::data_local_dir() {
+                return local_data.join("com.fritzprix.libragent").join("logs");
+            }
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            if let Some(home) = dirs::home_dir() {
+                return home.join("Library/Logs/com.fritzprix.libragent");
+            }
+        }
+
+        // Fallback for Linux or if platform specific dirs fail
         self.base_data_dir.join("logs")
     }
 

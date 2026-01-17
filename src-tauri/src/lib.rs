@@ -1,11 +1,11 @@
 use log::{error, info, warn};
 use tauri::{Emitter, Listener, Manager};
-use tauri_plugin_log::{Target, TargetKind};
 
 mod agent;
 mod commands;
 mod config;
 pub mod entity; // SeaORM entity definitions
+mod logger; // Custom file logger
 pub mod mcp; // Make public for integration tests
 pub mod repositories; // Make public for integration tests
 mod search;
@@ -32,7 +32,10 @@ use commands::browser_commands::*;
 use commands::content_store_commands::delete_content_store;
 use commands::download_commands::{download_workspace_file, export_and_download_zip};
 use commands::file_commands::{read_dropped_file, read_file, workspace_write_file, write_file};
-use commands::log_commands::{backup_current_log, clear_current_log, list_log_files};
+use commands::log_commands::{
+    backup_current_log, clear_current_log, list_log_files, log_debug, log_error_from_frontend,
+    log_info, log_trace, log_warn,
+};
 use commands::mcp_commands::{
     call_builtin_tool, call_mcp_tool, check_all_servers_status, check_server_status,
     complete_oauth_flow, get_connected_servers, get_oauth_token, get_service_context,
@@ -227,18 +230,6 @@ pub fn run() {
         tauri::Builder::default()
             .plugin(tauri_plugin_http::init())
             .plugin(tauri_plugin_dialog::init())
-            .plugin(
-                tauri_plugin_log::Builder::default()
-                    .targets([
-                        Target::new(TargetKind::Stdout),
-                        Target::new(TargetKind::LogDir {
-                            file_name: Some("libragent".to_string()),
-                        }),
-                        Target::new(TargetKind::Webview),
-                    ])
-                    .level(log::LevelFilter::Info)
-                    .build(),
-            )
             .plugin(tauri_plugin_opener::init())
             .invoke_handler(tauri::generate_handler![
                 greet,
@@ -274,6 +265,11 @@ pub fn run() {
                 backup_current_log,
                 clear_current_log,
                 list_log_files,
+                log_trace,
+                log_debug,
+                log_info,
+                log_warn,
+                log_error_from_frontend,
                 read_file,
                 read_dropped_file,
                 write_file,
@@ -346,6 +342,12 @@ pub fn run() {
                 list_settings,
             ])
             .setup(|app| {
+                // Setup custom file logger FIRST (before any log calls)
+                let log_dir = app.path().app_log_dir().unwrap();
+                logger::setup_file_logger(log_dir)?;
+                
+                // Test if Rust logger is properly initialized
+                log::info!("🔥 Logger initialized - testing Rust log to file");
                 info!("🚀 LibrAgent initializing...");
 
                 // Initialize SecureFileManager and add to managed state
