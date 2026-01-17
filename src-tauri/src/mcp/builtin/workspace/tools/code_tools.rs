@@ -1,548 +1,486 @@
-use crate::mcp::{utils::schema_builder::*, MCPTool};
-use serde_json::json;
-use std::collections::HashMap;
+use crate::define_mcp_tool;
 
 // Unix platform tool (bash/sh) - PRIMARY TOOL (Isolated Shell)
 #[cfg(unix)]
-pub fn create_run_shell_tool() -> MCPTool {
-    let mut props = HashMap::new();
-    props.insert(
-        "command".to_string(),
-        string_prop_with_examples(
-            Some(1),
-            Some(1000),
-            Some("Shell command to execute (bash/sh)"),
-            vec![
-                json!("ls -la"),
-                json!("cat README.md"),
-                json!("grep -r 'pattern' src/"),
-            ],
-        ),
-    );
-    props.insert(
-        "timeout".to_string(),
-        integer_prop_with_default(
-            Some(1),
-            Some(crate::config::max_execution_timeout() as i64),
-            crate::config::default_execution_timeout() as i64,
-            Some("Timeout in seconds (default: 30)"),
-        ),
-    );
-
-    MCPTool {
-        name: "runShell".to_string(),
-        title: Some("Run Shell Command (Isolated)".to_string()),
-        description: "Execute a shell command in an ISOLATED bash/sh session.\n\n\
-                      ⚠️ PRIMARY TOOL: Use this for most shell commands (90% of cases).\n\n\
-                      ISOLATION & STATE:\n\
-                      - Medium isolation with restricted environment\n\
-                      - NO state preservation - each call is independent\n\
-                      - Synchronous execution with configurable timeout\n\n\
-                      🔍 WORKING DIRECTORY:\n\
-                      - Commands ALWAYS start from workspace root (project directory)\n\
-                      - Use 'cd dir && command' to work in subdirectories\n\
-                      - Example: 'cd src && ls' lists files in src/ directory\n\n\
-                      USE CASES:\n\
-                      - File operations: ls, cat, grep, find\n\
-                      - Quick scripts: python script.py, node test.js\n\
-                      - System info: pwd, whoami, env\n\
-                      - Text processing: awk, sed, cut\n\n\
-                      WHEN TO USE OTHER TOOLS:\n\
-                      - Need persistent state (cd, export)? → Use runInPersistentShell\n\
-                      - Long-running task (>30s)? → Use spawnProcess\n\n\
-                      PLATFORM: Unix (Linux, macOS) - uses bash or sh shell."
-            .to_string(),
-        input_schema: object_schema(props, vec!["command".to_string()]),
-        output_schema: None,
-        annotations: None,
-    }
+define_mcp_tool! {
+    const RUN_SHELL = "runShell";
+    fn create_run_shell_tool();
+    title: "Run Shell Command (Isolated)";
+    description: "Execute a shell command in an ISOLATED bash/sh session.\n\n\
+                  ⚠️ PRIMARY TOOL: Use this for most shell commands (90% of cases).\n\n\
+                  ISOLATION & STATE:\n\
+                  - Medium isolation with restricted environment\n\
+                  - NO state preservation - each call is independent\n\
+                  - Synchronous execution with configurable timeout\n\n\
+                  🔍 WORKING DIRECTORY:\n\
+                  - Commands ALWAYS start from workspace root (project directory)\n\
+                  - Use 'cd dir && command' to work in subdirectories\n\
+                  - Example: 'cd src && ls' lists files in src/ directory\n\n\
+                  USE CASES:\n\
+                  - File operations: ls, cat, grep, find\n\
+                  - Quick scripts: python script.py, node test.js\n\
+                  - System info: pwd, whoami, env\n\
+                  - Text processing: awk, sed, cut\n\n\
+                  WHEN TO USE OTHER TOOLS:\n\
+                  - Need persistent state (cd, export)? → Use runInPersistentShell\n\
+                  - Long-running task (>30s)? → Use spawnProcess\n\n\
+                  PLATFORM: Unix (Linux, macOS) - uses bash or sh shell.";
+    inputs: props => {
+        props.insert(
+            "command".to_string(),
+            string_prop_with_examples(
+                Some(1),
+                Some(1000),
+                Some("Shell command to execute (bash/sh)"),
+                vec![
+                    json!("ls -la"),
+                    json!("cat README.md"),
+                    json!("grep -r 'pattern' src/"),
+                ],
+            ),
+        );
+        props.insert(
+            "timeout".to_string(),
+            integer_prop_with_default(
+                Some(1),
+                Some(crate::config::max_execution_timeout() as i64),
+                crate::config::default_execution_timeout() as i64,
+                Some("Timeout in seconds (default: 30)"),
+            ),
+        );
+    };
+    required: vec!["command".to_string()];
 }
 
 // Unix platform tool (bash/sh) - ADVANCED TOOL (Persistent Shell)
 #[cfg(unix)]
-pub fn create_execute_shell_tool() -> MCPTool {
-    let mut props = HashMap::new();
-    props.insert(
-        "command".to_string(),
-        string_prop_with_examples(
-            Some(1),
-            Some(1000),
-            Some("Shell command to execute (bash/sh)"),
-            vec![
-                json!("ls -la"),
-                json!("cd src && ls"),
-                json!("export VAR=value && echo $VAR"),
-            ],
-        ),
-    );
-    props.insert(
-        "timeout".to_string(),
-        integer_prop_with_default(
-            Some(1),
-            Some(crate::config::max_execution_timeout() as i64),
-            crate::config::default_execution_timeout() as i64,
-            Some("Timeout in seconds (default: 30)"),
-        ),
-    );
-    props.insert(
-        "requireUserInput".to_string(),
-        {
-            let mut schema = boolean_prop(Some("Request user input before execution (e.g., sudo password). Auto-detects sudo/su/doas/pkexec on Unix."));
-            schema.default = Some(json!(false));
-            schema
-        },
-    );
-    props.insert(
-        "inputPrompt".to_string(),
-        string_prop(
-            None,
-            None,
-            Some("Custom prompt message for user input (default: auto-detected based on command)"),
-        ),
-    );
-    props.insert(
-        "inputType".to_string(),
-        enum_prop(
-            vec!["password", "text"],
-            "text",
-            Some("Input type: 'password' (hidden) or 'text' (visible). Auto-set to 'password' for sudo commands."),
-        ),
-    );
-
-    MCPTool {
-        name: "runInPersistentShell".to_string(),
-        title: Some("Execute Shell Command (Persistent Session)".to_string()),
-        description: "Execute a shell command using a PERSISTENT bash/sh session.\n\n\
-                      ⚠️ ADVANCED TOOL: Only use when you need state preservation.\n\
-                      For most commands (ls, cat, grep), use runShell instead.\n\n\
-                      STATE PRESERVATION:\n\
-                      - Variables (export VAR=value) persist between calls\n\
-                      - Working directory (cd) persists between calls\n\
-                      - Shell history and environment are maintained\n\
-                      - NOT fully sandboxed - inherits host environment\n\n\
-                      🔍 WORKING DIRECTORY BEHAVIOR:\n\
-                      - Persistent shell tracks its own CWD (use 'pwd' to check)\n\
-                      - 'cd' commands change the shell's CWD for future commands\n\
-                      - ⚠️ FILE TOOLS IGNORE THIS: readFile/listDirectory always use workspace root\n\
-                      - To list files in shell's CWD, use shell commands: 'ls' or 'find'\n\n\
-                      INTERACTIVE INPUT:\n\
-                      - Set 'requireUserInput: true' for sudo/interactive commands\n\
-                      - Auto-detects privilege escalation (sudo, su, doas, pkexec)\n\
-                      - ⚠️ LIMITATION: Only ONE input prompt supported\n\n\
-                      USE CASES:\n\
-                      - Navigating directories: cd, pushd, popd\n\
-                      - Setting up environment: source, export\n\
-                      - Running quick commands: ls, cat, grep\n\
-                      - For long-running tasks (>30s), use spawnProcess\n\n\
-                      PLATFORM: Unix (Linux, macOS) - uses bash or sh shell."
-            .to_string(),
-        input_schema: object_schema(props, vec!["command".to_string()]),
-        output_schema: None,
-        annotations: None,
-    }
+define_mcp_tool! {
+    const RUN_IN_PERSISTENT_SHELL = "runInPersistentShell";
+    fn create_execute_shell_tool();
+    title: "Execute Shell Command (Persistent Session)";
+    description: "Execute a shell command using a PERSISTENT bash/sh session.\n\n\
+                  ⚠️ ADVANCED TOOL: Only use when you need state preservation.\n\
+                  For most commands (ls, cat, grep), use runShell instead.\n\n\
+                  STATE PRESERVATION:\n\
+                  - Variables (export VAR=value) persist between calls\n\
+                  - Working directory (cd) persists between calls\n\
+                  - Shell history and environment are maintained\n\
+                  - NOT fully sandboxed - inherits host environment\n\n\
+                  🔍 WORKING DIRECTORY BEHAVIOR:\n\
+                  - Persistent shell tracks its own CWD (use 'pwd' to check)\n\
+                  - 'cd' commands change the shell's CWD for future commands\n\
+                  - ⚠️ FILE TOOLS IGNORE THIS: readFile/listDirectory always use workspace root\n\
+                  - To list files in shell's CWD, use shell commands: 'ls' or 'find'\n\n\
+                  INTERACTIVE INPUT:\n\
+                  - Set 'requireUserInput: true' for sudo/interactive commands\n\
+                  - Auto-detects privilege escalation (sudo, su, doas, pkexec)\n\
+                  - ⚠️ LIMITATION: Only ONE input prompt supported\n\n\
+                  USE CASES:\n\
+                  - Navigating directories: cd, pushd, popd\n\
+                  - Setting up environment: source, export\n\
+                  - Running quick commands: ls, cat, grep\n\
+                  - For long-running tasks (>30s), use spawnProcess\n\n\
+                  PLATFORM: Unix (Linux, macOS) - uses bash or sh shell.";
+    inputs: props => {
+        props.insert(
+            "command".to_string(),
+            string_prop_with_examples(
+                Some(1),
+                Some(1000),
+                Some("Shell command to execute (bash/sh)"),
+                vec![
+                    json!("ls -la"),
+                    json!("cd src && ls"),
+                    json!("export VAR=value && echo $VAR"),
+                ],
+            ),
+        );
+        props.insert(
+            "timeout".to_string(),
+            integer_prop_with_default(
+                Some(1),
+                Some(crate::config::max_execution_timeout() as i64),
+                crate::config::default_execution_timeout() as i64,
+                Some("Timeout in seconds (default: 30)"),
+            ),
+        );
+        props.insert(
+            "requireUserInput".to_string(),
+            {
+                let mut schema = boolean_prop(Some("Request user input before execution (e.g., sudo password). Auto-detects sudo/su/doas/pkexec on Unix."));
+                schema.default = Some(json!(false));
+                schema
+            },
+        );
+        props.insert(
+            "inputPrompt".to_string(),
+            string_prop(
+                None,
+                None,
+                Some("Custom prompt message for user input (default: auto-detected based on command)"),
+            ),
+        );
+        props.insert(
+            "inputType".to_string(),
+            enum_prop(
+                vec!["password", "text"],
+                "text",
+                Some("Input type: 'password' (hidden) or 'text' (visible). Auto-set to 'password' for sudo commands."),
+            ),
+        );
+    };
+    required: vec!["command".to_string()];
 }
 
 // Background process spawning tool (platform-agnostic)
 #[cfg(unix)]
-pub fn create_spawn_process_tool() -> MCPTool {
-    let mut props = HashMap::new();
-    props.insert(
-        "command".to_string(),
-        string_prop_with_examples(
-            Some(1),
-            Some(1000),
-            Some("Shell command to execute as background process"),
-            vec![
-                json!("cd src && npm run build"),
-                json!("python train_model.py --epochs 100"),
-                json!("cd ./project && make all"),
-            ],
-        ),
-    );
-
-    MCPTool {
-        name: "spawnProcess".to_string(),
-        title: Some("Spawn Background Process".to_string()),
-        description: "Spawn a shell command as a BACKGROUND PROCESS.\n\n\
-                      ⚠️ ISOLATION & STATE:\n\
-                      - NO state preservation - each call is independent\n\
-                      - Medium isolation with restricted environment\n\
-                      - Returns process_id immediately (non-blocking)\n\n\
-                      🔍 WORKING DIRECTORY:\n\
-                      - ⚠️ Commands ALWAYS execute from workspace root (the project directory)\n\
-                      - Your command runs as if typed in a terminal opened at workspace root\n\
-                      - To run in subdirectories, prefix with 'cd': \"cd src && npm install\"\n\
-                      - No persistent directory - each call starts fresh at workspace root\n\
-                      - Example: \"cd src && ls\" lists files in src/ directory\n\n\
-                      PROCESS MANAGEMENT:\n\
-                      - Use pollProcess(process_id) to check status\n\
-                      - Use readProcessOutput(process_id) to get output\n\
-                      - Use stopProcess(process_id) to cancel\n\
-                      - Use listProcesses() to see all running processes\n\n\
-                      USE CASES:\n\
-                      - Long-running builds (npm run build, make)\n\
-                      - Training models or heavy computations\n\
-                      - File downloads or processing\n\
-                      - Any command expected to take >30 seconds\n\n\
-                      ⚠️ NO INTERACTIVE INPUT:\n\
-                      - Background processes cannot prompt for input\n\
-                      - For sudo commands, use runInPersistentShell with requireUserInput\n\n\
-                      PLATFORM: Unix (Linux, macOS) - uses bash or sh shell."
-            .to_string(),
-        input_schema: object_schema(props, vec!["command".to_string()]),
-        output_schema: None,
-        annotations: None,
-    }
+define_mcp_tool! {
+    const SPAWN_PROCESS = "spawnProcess";
+    fn create_spawn_process_tool();
+    title: "Spawn Background Process";
+    description: "Spawn a shell command as a BACKGROUND PROCESS.\n\n\
+                  ⚠️ ISOLATION & STATE:\n\
+                  - NO state preservation - each call is independent\n\
+                  - Medium isolation with restricted environment\n\
+                  - Returns process_id immediately (non-blocking)\n\n\
+                  🔍 WORKING DIRECTORY:\n\
+                  - ⚠️ Commands ALWAYS execute from workspace root (the project directory)\n\
+                  - Your command runs as if typed in a terminal opened at workspace root\n\
+                  - To run in subdirectories, prefix with 'cd': \"cd src && npm install\"\n\
+                  - No persistent directory - each call starts fresh at workspace root\n\
+                  - Example: \"cd src && ls\" lists files in src/ directory\n\n\
+                  PROCESS MANAGEMENT:\n\
+                  - Use pollProcess(process_id) to check status\n\
+                  - Use readProcessOutput(process_id) to get output\n\
+                  - Use stopProcess(process_id) to cancel\n\
+                  - Use listProcesses() to see all running processes\n\n\
+                  USE CASES:\n\
+                  - Long-running builds (npm run build, make)\n\
+                  - Training models or heavy computations\n\
+                  - File downloads or processing\n\
+                  - Any command expected to take >30 seconds\n\n\
+                  ⚠️ NO INTERACTIVE INPUT:\n\
+                  - Background processes cannot prompt for input\n\
+                  - For sudo commands, use runInPersistentShell with requireUserInput\n\n\
+                  PLATFORM: Unix (Linux, macOS) - uses bash or sh shell.";
+    inputs: props => {
+        props.insert(
+            "command".to_string(),
+            string_prop_with_examples(
+                Some(1),
+                Some(1000),
+                Some("Shell command to execute as background process"),
+                vec![
+                    json!("cd src && npm run build"),
+                    json!("python train_model.py --epochs 100"),
+                    json!("cd ./project && make all"),
+                ],
+            ),
+        );
+    };
+    required: vec!["command".to_string()];
 }
 
 // Windows platform tool (PowerShell) - PRIMARY TOOL (Isolated PowerShell)
 #[cfg(windows)]
-pub fn create_run_powershell_tool() -> MCPTool {
-    let mut props = HashMap::new();
-    props.insert(
-        "command".to_string(),
-        string_prop_with_examples(
-            Some(1),
-            Some(1000),
-            Some("PowerShell command to execute"),
-            vec![
-                json!("Get-ChildItem"),
-                json!("Get-Content README.md"),
-                json!("Get-Process | Select-Object -First 10"),
-            ],
-        ),
-    );
-    props.insert(
-        "timeout".to_string(),
-        integer_prop_with_default(
-            Some(1),
-            Some(crate::config::max_execution_timeout() as i64),
-            crate::config::default_execution_timeout() as i64,
-            Some("Timeout in seconds (default: 30)"),
-        ),
-    );
-
-    MCPTool {
-        name: "runPowerShell".to_string(),
-        title: Some("Run PowerShell Command (Isolated)".to_string()),
-        description: "Execute a PowerShell command in an ISOLATED PowerShell session.\n\n\
-                      ⚠️ PRIMARY TOOL: Use this for most PowerShell commands (90% of cases).\n\n\
-                      ISOLATION & STATE:\n\
-                      - Medium isolation with restricted environment\n\
-                      - NO state preservation - each call is independent\n\
-                      - Synchronous execution with configurable timeout\n\n\
-                      ⚠️ POWERSHELL SYNTAX (WINDOWS):\n\
-                      - Use semicolons ';' to chain commands on one line\n\
-                      - NEVER use '&&' (bash syntax). Windows PowerShell 5.1 (default) will throw a ParserError\n\
-                      - Example: 'New-Item -ItemType Directory test; Set-Location test; Get-ChildItem'\n\n\
-                      🔍 WORKING DIRECTORY:\n\
-                      - Commands ALWAYS start from workspace root (project directory)\n\
-                      - Use 'Set-Location dir; command' to work in subdirectories\n\
-                      - Example: 'Set-Location src; Get-ChildItem' lists src/ files\n\n\
-                      USE CASES:\n\
-                      - File operations: Get-ChildItem, Get-Content, Select-String\n\
-                      - Quick scripts: python script.py, node test.js\n\
-                      - System info: Get-Location, whoami, Get-Process\n\
-                      - Text processing: Select-String, ForEach-Object\n\n\
-                      WHEN TO USE OTHER TOOLS:\n\
-                      - Need persistent state (Set-Location, $env:)? → Use runInPersistentPowerShell\n\
-                      - Long-running task (>30s)? → Use spawnProcess\n\n\
-                      PLATFORM: Windows - uses PowerShell."
-            .to_string(),
-        input_schema: object_schema(props, vec!["command".to_string()]),
-        output_schema: None,
-        annotations: None,
-    }
+define_mcp_tool! {
+    const RUN_POWERSHELL = "runPowerShell";
+    fn create_run_powershell_tool();
+    title: "Run PowerShell Command (Isolated)";
+    description: "Execute a PowerShell command in an ISOLATED PowerShell session.\n\n\
+                  ⚠️ PRIMARY TOOL: Use this for most PowerShell commands (90% of cases).\n\n\
+                  ISOLATION & STATE:\n\
+                  - Medium isolation with restricted environment\n\
+                  - NO state preservation - each call is independent\n\
+                  - Synchronous execution with configurable timeout\n\n\
+                  ⚠️ POWERSHELL SYNTAX (WINDOWS):\n\
+                  - Use semicolons ';' to chain commands on one line\n\
+                  - NEVER use '&&' (bash syntax). Windows PowerShell 5.1 (default) will throw a ParserError\n\
+                  - Example: 'New-Item -ItemType Directory test; Set-Location test; Get-ChildItem'\n\n\
+                  🔍 WORKING DIRECTORY:\n\
+                  - Commands ALWAYS start from workspace root (project directory)\n\
+                  - Use 'Set-Location dir; command' to work in subdirectories\n\
+                  - Example: 'Set-Location src; Get-ChildItem' lists src/ files\n\n\
+                  USE CASES:\n\
+                  - File operations: Get-ChildItem, Get-Content, Select-String\n\
+                  - Quick scripts: python script.py, node test.js\n\
+                  - System info: Get-Location, whoami, Get-Process\n\
+                  - Text processing: Select-String, ForEach-Object\n\n\
+                  WHEN TO USE OTHER TOOLS:\n\
+                  - Need persistent state (Set-Location, $env:)? → Use runInPersistentPowerShell\n\
+                  - Long-running task (>30s)? → Use spawnProcess\n\n\
+                  PLATFORM: Windows - uses PowerShell.";
+    inputs: props => {
+        props.insert(
+            "command".to_string(),
+            string_prop_with_examples(
+                Some(1),
+                Some(1000),
+                Some("PowerShell command to execute"),
+                vec![
+                    json!("Get-ChildItem"),
+                    json!("Get-Content README.md"),
+                    json!("Get-Process | Select-Object -First 10"),
+                ],
+            ),
+        );
+        props.insert(
+            "timeout".to_string(),
+            integer_prop_with_default(
+                Some(1),
+                Some(crate::config::max_execution_timeout() as i64),
+                crate::config::default_execution_timeout() as i64,
+                Some("Timeout in seconds (default: 30)"),
+            ),
+        );
+    };
+    required: vec!["command".to_string()];
 }
 
 // Windows platform tool (PowerShell) - ADVANCED TOOL (Persistent Shell)
 #[cfg(windows)]
-pub fn create_execute_shell_tool() -> MCPTool {
-    let mut props = HashMap::new();
-    props.insert(
-        "command".to_string(),
-        string_prop_with_examples(
-            Some(1),
-            Some(1000),
-            Some("Command to execute using PowerShell"),
-            vec![
-                json!("Get-ChildItem"),
-                json!("Write-Host 'Hello World'"),
-                json!("Get-Content file.txt"),
-            ],
-        ),
-    );
-    props.insert(
-        "timeout".to_string(),
-        integer_prop_with_default(
-            Some(1),
-            Some(crate::config::max_execution_timeout() as i64),
-            crate::config::default_execution_timeout() as i64,
-            Some("Timeout in seconds (default: 30)"),
-        ),
-    );
-    props.insert(
-        "requireUserInput".to_string(),
-        {
-            let mut schema = boolean_prop(Some("Request user input before execution. Must be explicitly set on Windows (no auto-detection)."));
-            schema.default = Some(json!(false));
-            schema
-        },
-    );
-    props.insert(
-        "inputPrompt".to_string(),
-        string_prop(None, None, Some("Custom prompt message for user input")),
-    );
-    props.insert(
-        "inputType".to_string(),
-        enum_prop(
-            vec!["password", "text"],
-            "text",
-            Some("Input type: 'password' (hidden) or 'text' (visible)"),
-        ),
-    );
-
-    MCPTool {
-        name: "runInPersistentPowerShell".to_string(),
-        title: Some("Execute PowerShell Command (Persistent Session)".to_string()),
-        description: "Execute a command using a PERSISTENT PowerShell session.\n\n\
-                      ⚠️ ADVANCED TOOL: Only use when you need state preservation.\n\
-                      For most commands (Get-ChildItem, Get-Content), use runPowerShell instead.\n\n\
-                      STATE PRESERVATION:\n\
-                      - Variables ($VAR=value) persist between calls\n\
-                      - Working directory (Set-Location) persists between calls\n\
-                      - PowerShell environment is maintained\n\
-                      - NOT fully sandboxed - inherits host environment\n\n\
-                      ⚠️ POWERSHELL SYNTAX (WINDOWS):\n\
-                      - Use semicolons ';' to chain commands on one line\n\
-                      - NEVER use '&&' (bash syntax). Windows PowerShell 5.1 (default) will throw a ParserError\n\
-                      - Example: 'Set-Location src; Get-ChildItem'\n\n\
-                      🔍 WORKING DIRECTORY BEHAVIOR:\n\
-                      - Persistent shell tracks its own CWD (use Get-Location)\n\
-                      - Set-Location (cd) changes CWD for future commands\n\
-                      - ⚠️ FILE TOOLS IGNORE THIS: readFile/listDirectory use workspace root\n\
-                      - To list files in shell's CWD, use: Get-ChildItem\n\n\
-                      INTERACTIVE INPUT:\n\
-                      - Set 'requireUserInput: true' for interactive commands\n\
-                      - No auto-detection on Windows (must be explicit)\n\
-                      - ⚠️ LIMITATION: Only ONE input prompt supported\n\n\
-                      WINDOWS TIPS:\n\
-                      - Use double quotes for paths with spaces\n\
-                      - 'python' not found? Try 'py' or 'where.exe python'\n\
-                      - 'where' failed? Use 'where.exe' (PowerShell alias conflict)\n\n\
-                      USE CASES:\n\
-                      - Navigating directories: Set-Location, Push-Location\n\
-                      - Setting variables: $env:VAR=value\n\
-                      - Quick commands: Get-ChildItem, Get-Content\n\
-                      - For long tasks (>30s), use spawnProcess"
-            .to_string(),
-        input_schema: object_schema(props, vec!["command".to_string()]),
-        output_schema: None,
-        annotations: None,
-    }
+define_mcp_tool! {
+    const RUN_IN_PERSISTENT_POWERSHELL = "runInPersistentPowerShell";
+    fn create_execute_shell_tool();
+    title: "Execute PowerShell Command (Persistent Session)";
+    description: "Execute a command using a PERSISTENT PowerShell session.\n\n\
+                  ⚠️ ADVANCED TOOL: Only use when you need state preservation.\n\
+                  For most commands (Get-ChildItem, Get-Content), use runPowerShell instead.\n\n\
+                  STATE PRESERVATION:\n\
+                  - Variables ($VAR=value) persist between calls\n\
+                  - Working directory (Set-Location) persists between calls\n\
+                  - PowerShell environment is maintained\n\
+                  - NOT fully sandboxed - inherits host environment\n\n\
+                  ⚠️ POWERSHELL SYNTAX (WINDOWS):\n\
+                  - Use semicolons ';' to chain commands on one line\n\
+                  - NEVER use '&&' (bash syntax). Windows PowerShell 5.1 (default) will throw a ParserError\n\
+                  - Example: 'Set-Location src; Get-ChildItem'\n\n\
+                  🔍 WORKING DIRECTORY BEHAVIOR:\n\
+                  - Persistent shell tracks its own CWD (use Get-Location)\n\
+                  - Set-Location (cd) changes CWD for future commands\n\
+                  - ⚠️ FILE TOOLS IGNORE THIS: readFile/listDirectory use workspace root\n\
+                  - To list files in shell's CWD, use: Get-ChildItem\n\n\
+                  INTERACTIVE INPUT:\n\
+                  - Set 'requireUserInput: true' for interactive commands\n\
+                  - No auto-detection on Windows (must be explicit)\n\
+                  - ⚠️ LIMITATION: Only ONE input prompt supported\n\n\
+                  WINDOWS TIPS:\n\
+                  - Use double quotes for paths with spaces\n\
+                  - 'python' not found? Try 'py' or 'where.exe python'\n\
+                  - 'where' failed? Use 'where.exe' (PowerShell alias conflict)\n\n\
+                  USE CASES:\n\
+                  - Navigating directories: Set-Location, Push-Location\n\
+                  - Setting variables: $env:VAR=value\n\
+                  - Quick commands: Get-ChildItem, Get-Content\n\
+                  - For long tasks (>30s), use spawnProcess";
+    inputs: props => {
+        props.insert(
+            "command".to_string(),
+            string_prop_with_examples(
+                Some(1),
+                Some(1000),
+                Some("Command to execute using PowerShell"),
+                vec![
+                    json!("Get-ChildItem"),
+                    json!("Write-Host 'Hello World'"),
+                    json!("Get-Content file.txt"),
+                ],
+            ),
+        );
+        props.insert(
+            "timeout".to_string(),
+            integer_prop_with_default(
+                Some(1),
+                Some(crate::config::max_execution_timeout() as i64),
+                crate::config::default_execution_timeout() as i64,
+                Some("Timeout in seconds (default: 30)"),
+            ),
+        );
+        props.insert(
+            "requireUserInput".to_string(),
+            {
+                let mut schema = boolean_prop(Some("Request user input before execution. Must be explicitly set on Windows (no auto-detection)."));
+                schema.default = Some(json!(false));
+                schema
+            },
+        );
+        props.insert(
+            "inputPrompt".to_string(),
+            string_prop(None, None, Some("Custom prompt message for user input")),
+        );
+        props.insert(
+            "inputType".to_string(),
+            enum_prop(
+                vec!["password", "text"],
+                "text",
+                Some("Input type: 'password' (hidden) or 'text' (visible)"),
+            ),
+        );
+    };
+    required: vec!["command".to_string()];
 }
 
 // Background process spawning tool (platform-agnostic)
 #[cfg(windows)]
-pub fn create_spawn_process_tool() -> MCPTool {
-    let mut props = HashMap::new();
-    props.insert(
-        "command".to_string(),
-        string_prop_with_examples(
-            Some(1),
-            Some(1000),
-            Some("PowerShell command to execute as background process"),
-            vec![
-                json!("Set-Location src; npm run build"),
-                json!("python train_model.py --epochs 100"),
-                json!("cd ./project; make all"),
-            ],
-        ),
-    );
-
-    MCPTool {
-        name: "spawnProcess".to_string(),
-        title: Some("Spawn Background Process".to_string()),
-        description: "Spawn a shell command as a BACKGROUND PROCESS.\n\n\
-                      ⚠️ ISOLATION & STATE:\n\
-                      - NO state preservation - each call is independent\n\
-                      - Medium isolation with restricted environment\n\
-                      - Returns process_id immediately (non-blocking)\n\n\
-                      🔍 WORKING DIRECTORY:\n\
-                      - ⚠️ Commands ALWAYS execute from workspace root (the project directory)\n\
-                      - Your command runs as if typed in PowerShell opened at workspace root\n\
-                      - To run in subdirectories, prefix with 'Set-Location': \"Set-Location src; npm install\"\n\
-                      - No persistent directory - each call starts fresh at workspace root\n\
-                      - Example: \"Set-Location src; Get-ChildItem\" lists files in src/ directory\n\n\
-                      PROCESS MANAGEMENT:\n\
-                      - Use pollProcess(process_id) to check status\n\
-                      - Use readProcessOutput(process_id) to get output\n\
-                      - Use stopProcess(process_id) to cancel\n\
-                      - Use listProcesses() to see all running processes\n\n\
-                      USE CASES:\n\
-                      - Long-running builds (npm, msbuild)\n\
-                      - Training models or heavy computations\n\
-                      - File processing or downloads\n\
-                      - Any command expected to take >30 seconds\n\n\
-                      ⚠️ NO INTERACTIVE INPUT:\n\
-                      - Background processes cannot prompt for input\n\
-                      - For interactive commands, use runInPersistentPowerShell\n\n\
-                      PLATFORM: Windows - uses PowerShell (powershell.exe)"
-            .to_string(),
-        input_schema: object_schema(props, vec!["command".to_string()]),
-        output_schema: None,
-        annotations: None,
-    }
+define_mcp_tool! {
+    const SPAWN_PROCESS = "spawnProcess";
+    fn create_spawn_process_tool();
+    title: "Spawn Background Process";
+    description: "Spawn a shell command as a BACKGROUND PROCESS.\n\n\
+                  ⚠️ ISOLATION & STATE:\n\
+                  - NO state preservation - each call is independent\n\
+                  - Medium isolation with restricted environment\n\
+                  - Returns process_id immediately (non-blocking)\n\n\
+                  🔍 WORKING DIRECTORY:\n\
+                  - ⚠️ Commands ALWAYS execute from workspace root (the project directory)\n\
+                  - Your command runs as if typed in PowerShell opened at workspace root\n\
+                  - To run in subdirectories, prefix with 'Set-Location': \"Set-Location src; npm install\"\n\
+                  - No persistent directory - each call starts fresh at workspace root\n\
+                  - Example: \"Set-Location src; Get-ChildItem\" lists files in src/ directory\n\n\
+                  PROCESS MANAGEMENT:\n\
+                  - Use pollProcess(process_id) to check status\n\
+                  - Use readProcessOutput(process_id) to get output\n\
+                  - Use stopProcess(process_id) to cancel\n\
+                  - Use listProcesses() to see all running processes\n\n\
+                  USE CASES:\n\
+                  - Long-running builds (npm, msbuild)\n\
+                  - Training models or heavy computations\n\
+                  - File processing or downloads\n\
+                  - Any command expected to take >30 seconds\n\n\
+                  ⚠️ NO INTERACTIVE INPUT:\n\
+                  - Background processes cannot prompt for input\n\
+                  - For interactive commands, use runInPersistentPowerShell\n\n\
+                  PLATFORM: Windows - uses PowerShell (powershell.exe)";
+    inputs: props => {
+        props.insert(
+            "command".to_string(),
+            string_prop_with_examples(
+                Some(1),
+                Some(1000),
+                Some("PowerShell command to execute as background process"),
+                vec![
+                    json!("Set-Location src; npm run build"),
+                    json!("python train_model.py --epochs 100"),
+                    json!("cd ./project; make all"),
+                ],
+            ),
+        );
+    };
+    required: vec!["command".to_string()];
 }
 
 // Windows platform tool (CMD.exe) - PRIMARY TOOL (Isolated CMD)
 #[cfg(windows)]
-pub fn create_run_cmd_tool() -> MCPTool {
-    let mut props = HashMap::new();
-    props.insert(
-        "command".to_string(),
-        string_prop_with_examples(
-            Some(1),
-            Some(1000),
-            Some("CMD command to execute"),
-            vec![
-                json!("dir"),
-                json!("type README.md"),
-                json!("findstr /R \"pattern\" *.txt"),
-            ],
-        ),
-    );
-    props.insert(
-        "timeout".to_string(),
-        integer_prop_with_default(
-            Some(1),
-            Some(crate::config::max_execution_timeout() as i64),
-            crate::config::default_execution_timeout() as i64,
-            Some("Timeout in seconds (default: 30)"),
-        ),
-    );
-
-    MCPTool {
-        name: "runCmd".to_string(),
-        title: Some("Run CMD Command (Isolated)".to_string()),
-        description: "Execute a CMD command in an ISOLATED cmd.exe session.\n\n\
-                      ⚠️ PRIMARY TOOL: Use this for most CMD commands (90% of cases).\n\n\
-                      ISOLATION & STATE:\n\
-                      - Medium isolation with restricted environment\n\
-                      - NO state preservation - each call is independent\n\
-                      - Synchronous execution with configurable timeout\n\n\
-                      ⚠️ CMD SYNTAX (WINDOWS):\n\
-                      - Use spaces and quotes for paths with spaces\n\
-                      - Environment variables: %VARNAME% (not $env:VARNAME)\n\
-                      - Chaining: Use & for sequential, && for conditional\n\
-                      - Example: 'cd src && dir /S'\n\n\
-                      🔍 WORKING DIRECTORY:\n\
-                      - Commands ALWAYS start from workspace root (project directory)\n\
-                      - Use 'cd dir && command' to work in subdirectories\n\
-                      - Example: 'cd src && dir' lists files in src/ directory\n\n\
-                      USE CASES:\n\
-                      - File operations: dir, type, copy, del\n\
-                      - Text search: findstr, more\n\
-                      - System info: echo %CD%, echo %PATH%\n\
-                      - Batch scripts: Simple one-liners from batch files\n\n\
-                      WHEN TO USE OTHER TOOLS:\n\
-                      - Need persistent state (cd, set)? → Use runInPersistentCmd\n\
-                      - Long-running task (>30s)? → Use spawnProcess\n\n\
-                      PLATFORM: Windows - uses cmd.exe (Command Prompt)."
-            .to_string(),
-        input_schema: object_schema(props, vec!["command".to_string()]),
-        output_schema: None,
-        annotations: None,
-    }
+define_mcp_tool! {
+    const RUN_CMD = "runCmd";
+    fn create_run_cmd_tool();
+    title: "Run CMD Command (Isolated)";
+    description: "Execute a CMD command in an ISOLATED cmd.exe session.\n\n\
+                  ⚠️ PRIMARY TOOL: Use this for most CMD commands (90% of cases).\n\n\
+                  ISOLATION & STATE:\n\
+                  - Medium isolation with restricted environment\n\
+                  - NO state preservation - each call is independent\n\
+                  - Synchronous execution with configurable timeout\n\n\
+                  ⚠️ CMD SYNTAX (WINDOWS):\n\
+                  - Use spaces and quotes for paths with spaces\n\
+                  - Environment variables: %VARNAME% (not $env:VARNAME)\n\
+                  - Chaining: Use & for sequential, && for conditional\n\
+                  - Example: 'cd src && dir /S'\n\n\
+                  🔍 WORKING DIRECTORY:\n\
+                  - Commands ALWAYS start from workspace root (project directory)\n\
+                  - Use 'cd dir && command' to work in subdirectories\n\
+                  - Example: 'cd src && dir' lists files in src/ directory\n\n\
+                  USE CASES:\n\
+                  - File operations: dir, type, copy, del\n\
+                  - Text search: findstr, more\n\
+                  - System info: echo %CD%, echo %PATH%\n\
+                  - Batch scripts: Simple one-liners from batch files\n\n\
+                  WHEN TO USE OTHER TOOLS:\n\
+                  - Need persistent state (cd, set)? → Use runInPersistentCmd\n\
+                  - Long-running task (>30s)? → Use spawnProcess\n\n\
+                  PLATFORM: Windows - uses cmd.exe (Command Prompt).";
+    inputs: props => {
+        props.insert(
+            "command".to_string(),
+            string_prop_with_examples(
+                Some(1),
+                Some(1000),
+                Some("CMD command to execute"),
+                vec![
+                    json!("dir"),
+                    json!("type README.md"),
+                    json!("findstr /R \"pattern\" *.txt"),
+                ],
+            ),
+        );
+        props.insert(
+            "timeout".to_string(),
+            integer_prop_with_default(
+                Some(1),
+                Some(crate::config::max_execution_timeout() as i64),
+                crate::config::default_execution_timeout() as i64,
+                Some("Timeout in seconds (default: 30)"),
+            ),
+        );
+    };
+    required: vec!["command".to_string()];
 }
 
 // Windows platform tool (CMD.exe) - ADVANCED TOOL (Persistent CMD)
 #[cfg(windows)]
-pub fn create_run_in_persistent_cmd_tool() -> MCPTool {
-    let mut props = HashMap::new();
-    props.insert(
-        "command".to_string(),
-        string_prop_with_examples(
-            Some(1),
-            Some(1000),
-            Some("CMD command to execute"),
-            vec![
-                json!("dir"),
-                json!("cd src && dir"),
-                json!("set MY_VAR=value && echo %MY_VAR%"),
-            ],
-        ),
-    );
-    props.insert(
-        "timeout".to_string(),
-        integer_prop_with_default(
-            Some(1),
-            Some(crate::config::max_execution_timeout() as i64),
-            crate::config::default_execution_timeout() as i64,
-            Some("Timeout in seconds (default: 30)"),
-        ),
-    );
-
-    MCPTool {
-        name: "runInPersistentCmd".to_string(),
-        title: Some("Execute CMD Command (Persistent Session)".to_string()),
-        description: "Execute a CMD command using a PERSISTENT cmd.exe session.\n\n\
-                      ⚠️ ADVANCED TOOL: Only use when you need state preservation.\n\
-                      For most commands (dir, type, findstr), use runCmd instead.\n\n\
-                      STATE PRESERVATION:\n\
-                      - Environment variables (set VAR=value) persist between calls\n\
-                      - Working directory (cd) persists between calls\n\
-                      - Shell history and environment are maintained\n\
-                      - NOT fully sandboxed - inherits host environment\n\n\
-                      ⚠️ CMD SYNTAX (WINDOWS):\n\
-                      - Use spaces and quotes for paths with spaces\n\
-                      - Environment variables: %VARNAME% (not $env:VARNAME)\n\
-                      - Chaining: Use & for sequential, && for conditional\n\
-                      - Example: 'cd src && dir /S'\n\n\
-                      🔍 WORKING DIRECTORY BEHAVIOR:\n\
-                      - Persistent shell tracks its own CWD (use 'cd' to change)\n\
-                      - 'cd' commands change the shell's CWD for future commands\n\
-                      - ⚠️ FILE TOOLS IGNORE THIS: readFile/listDirectory use workspace root\n\
-                      - To list files in shell's CWD, use: 'dir' or 'dir /S'\n\n\
-                      USE CASES:\n\
-                      - Navigating directories: cd, pushd, popd\n\
-                      - Setting up environment: set VAR=value\n\
-                      - Running quick commands: dir, type, findstr\n\
-                      - For long tasks (>30s), use spawnProcess\n\n\
-                      PLATFORM: Windows - uses cmd.exe (Command Prompt)."
-            .to_string(),
-        input_schema: object_schema(props, vec!["command".to_string()]),
-        output_schema: None,
-        annotations: None,
-    }
-}
-
-// Macro to unify tool constant definition and creation function
-macro_rules! define_mcp_tool {
-    (
-        const $const_name:ident = $tool_name:expr;
-        fn $fn_name:ident();
-        title: $title:expr;
-        description: $desc:expr;
-        inputs: $props_ident:ident => $props_block:block;
-        required: $required:expr;
-    ) => {
-        pub const $const_name: &str = $tool_name;
-
-        pub fn $fn_name() -> MCPTool {
-            let mut $props_ident = HashMap::new();
-            $props_block
-
-            MCPTool {
-                name: $const_name.to_string(),
-                title: Some($title.to_string()),
-                description: $desc.to_string(),
-                input_schema: object_schema($props_ident, $required),
-                output_schema: None,
-                annotations: None,
-            }
-        }
+define_mcp_tool! {
+    const RUN_IN_PERSISTENT_CMD = "runInPersistentCmd";
+    fn create_run_in_persistent_cmd_tool();
+    title: "Execute CMD Command (Persistent Session)";
+    description: "Execute a CMD command using a PERSISTENT cmd.exe session.\n\n\
+                  ⚠️ ADVANCED TOOL: Only use when you need state preservation.\n\
+                  For most commands (dir, type, findstr), use runCmd instead.\n\n\
+                  STATE PRESERVATION:\n\
+                  - Environment variables (set VAR=value) persist between calls\n\
+                  - Working directory (cd) persists between calls\n\
+                  - Shell history and environment are maintained\n\
+                  - NOT fully sandboxed - inherits host environment\n\n\
+                  ⚠️ CMD SYNTAX (WINDOWS):\n\
+                  - Use spaces and quotes for paths with spaces\n\
+                  - Environment variables: %VARNAME% (not $env:VARNAME)\n\
+                  - Chaining: Use & for sequential, && for conditional\n\
+                  - Example: 'cd src && dir /S'\n\n\
+                  🔍 WORKING DIRECTORY BEHAVIOR:\n\
+                  - Persistent shell tracks its own CWD (use 'cd' to change)\n\
+                  - 'cd' commands change the shell's CWD for future commands\n\
+                  - ⚠️ FILE TOOLS IGNORE THIS: readFile/listDirectory use workspace root\n\
+                  - To list files in shell's CWD, use: 'dir' or 'dir /S'\n\n\
+                  USE CASES:\n\
+                  - Navigating directories: cd, pushd, popd\n\
+                  - Setting up environment: set VAR=value\n\
+                  - Running quick commands: dir, type, findstr\n\
+                  - For long tasks (>30s), use spawnProcess\n\n\
+                  PLATFORM: Windows - uses cmd.exe (Command Prompt).";
+    inputs: props => {
+        props.insert(
+            "command".to_string(),
+            string_prop_with_examples(
+                Some(1),
+                Some(1000),
+                Some("CMD command to execute"),
+                vec![
+                    json!("dir"),
+                    json!("cd src && dir"),
+                    json!("set MY_VAR=value && echo %MY_VAR%"),
+                ],
+            ),
+        );
+        props.insert(
+            "timeout".to_string(),
+            integer_prop_with_default(
+                Some(1),
+                Some(crate::config::max_execution_timeout() as i64),
+                crate::config::default_execution_timeout() as i64,
+                Some("Timeout in seconds (default: 30)"),
+            ),
+        );
     };
+    required: vec!["command".to_string()];
 }
 
 define_mcp_tool! {

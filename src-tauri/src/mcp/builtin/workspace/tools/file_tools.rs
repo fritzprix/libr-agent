@@ -1,41 +1,13 @@
-use crate::mcp::{utils::schema_builder::*, MCPTool};
-
-use std::collections::HashMap;
+use crate::define_mcp_tool;
 
 // Note: maximum file size is enforced at runtime (LIBRAGENT_MAX_FILE_SIZE).
 // The input schema cannot call runtime functions; therefore `content` has no hard cap here.
 
-pub fn create_read_file_tool() -> MCPTool {
-    let mut props = HashMap::new();
-    props.insert(
-        "path".to_string(),
-        string_prop(
-            Some(1),
-            Some(1000),
-            Some("Relative path to the file to read (from workspace root)"),
-        ),
-    );
-    props.insert(
-        "startLine".to_string(),
-        integer_prop(
-            Some(1),
-            None,
-            Some("Starting line number (1-based, optional)"),
-        ),
-    );
-    props.insert(
-        "endLine".to_string(),
-        integer_prop(
-            Some(1),
-            None,
-            Some("Ending line number (1-based, optional)"),
-        ),
-    );
-
-    MCPTool {
-        name: "readFile".to_string(),
-        title: Some("Read File".to_string()),
-        description: "Read the contents of a file from the workspace. Returns file content as text.
+define_mcp_tool! {
+    const READ_FILE = "readFile";
+    fn create_read_file_tool();
+    title: "Read File";
+    description: "Read the contents of a file from the workspace. Returns file content as text.
 
 PARAMETERS:
 - path: Relative path from workspace root
@@ -48,45 +20,41 @@ USAGE:
 - Line ranges are inclusive [startLine, endLine]
 
 ⚠️ PREREQUISITE: File must exist in workspace
-💡 NEXT: Use createFile to create files, or editFile for targeted edits"
-            .to_string(),
-        input_schema: object_schema(props, vec!["path".to_string()]),
-        output_schema: None,
-        annotations: None,
-    }
+💡 NEXT: Use createFile to create files, or editFile for targeted edits";
+    inputs: props => {
+        props.insert(
+            "path".to_string(),
+            string_prop(
+                Some(1),
+                Some(1000),
+                Some("Relative path to the file to read (from workspace root)"),
+            ),
+        );
+        props.insert(
+            "startLine".to_string(),
+            integer_prop(
+                Some(1),
+                None,
+                Some("Starting line number (1-based, optional)"),
+            ),
+        );
+        props.insert(
+            "endLine".to_string(),
+            integer_prop(
+                Some(1),
+                None,
+                Some("Ending line number (1-based, optional)"),
+            ),
+        );
+    };
+    required: vec!["path".to_string()];
 }
 
-pub fn create_create_file_tool() -> MCPTool {
-    let mut props = HashMap::new();
-    props.insert(
-        "path".to_string(),
-        string_prop(
-            Some(1),
-            Some(1000),
-            Some("Relative path to the file to write (from workspace root)"),
-        ),
-    );
-    props.insert(
-        "content".to_string(),
-        string_prop(
-            None,
-            None,
-            Some("Content to write to the file. Actual maximum is enforced server-side via LIBRAGENT_MAX_FILE_SIZE"),
-        ),
-    );
-    props.insert(
-        "mode".to_string(),
-        string_prop(
-            None,
-            None,
-            Some("Write mode: 'w' for overwrite (default), 'a' for append"),
-        ),
-    );
-
-    MCPTool {
-        name: "createFile".to_string(),
-        title: Some("Create File".to_string()),
-        description: "Write content to a file in the workspace. Creates file if it doesn't exist.
+define_mcp_tool! {
+    const CREATE_FILE = "createFile";
+    fn create_create_file_tool();
+    title: "Create File";
+    description: "Write content to a file in the workspace. Creates file if it doesn't exist.
 
 MODES:
 - 'w' (default): Overwrites entire file with new content
@@ -98,116 +66,92 @@ MODES:
 3. Call createFile(path, newContent, 'w') to save
 
 ⚠️ WARNING: Mode 'w' replaces ALL file content - use editFile for targeted edits
-💡 NEXT: Use readFile to verify changes or listDirectory to see workspace structure"
-            .to_string(),
-        input_schema: object_schema(props, vec!["path".to_string(), "content".to_string()]),
-        output_schema: None,
-        annotations: None,
-    }
+💡 NEXT: Use readFile to verify changes or listDirectory to see workspace structure";
+    inputs: props => {
+        props.insert(
+            "path".to_string(),
+            string_prop(
+                Some(1),
+                Some(1000),
+                Some("Relative path to the file to write (from workspace root)"),
+            ),
+        );
+        props.insert(
+            "content".to_string(),
+            string_prop(
+                None,
+                None,
+                Some("Content to write to the file. Actual maximum is enforced server-side via LIBRAGENT_MAX_FILE_SIZE"),
+            ),
+        );
+        props.insert(
+            "mode".to_string(),
+            string_prop(
+                None,
+                None,
+                Some("Write mode: 'w' for overwrite (default), 'a' for append"),
+            ),
+        );
+    };
+    required: vec!["path".to_string(), "content".to_string()];
 }
 
-pub fn create_list_directory_tool() -> MCPTool {
-    let mut props = HashMap::new();
-    props.insert(
-        "path".to_string(),
-        string_prop(
-            Some(1),
-            Some(1000),
-            Some("Relative path to the directory to list (from workspace root)"),
-        ),
-    );
-
-    MCPTool {
-        name: "listDirectory".to_string(),
-        title: Some("List Directory".to_string()),
-        description: "List all files and subdirectories in a workspace directory. Returns names and types (file/directory).
+define_mcp_tool! {
+    const LIST_DIRECTORY = "listDirectory";
+    fn create_list_directory_tool();
+    title: "List Directory";
+    description: "List all files and subdirectories in a workspace directory. Returns names and types (file/directory).
 
 USAGE:
 - Use listDirectory('.') to see workspace root contents
 - Use listDirectory('src') to explore subdirectories
 - Navigate deeper by concatenating paths: 'src/components'
 
-💡 NEXT: Use readFile to examine file contents or listDirectory on subdirectories to explore deeper".to_string(),
-        input_schema: object_schema(props, vec!["path".to_string()]),
-        output_schema: None,
-        annotations: None,
-    }
+💡 NEXT: Use readFile to examine file contents or listDirectory on subdirectories to explore deeper";
+    inputs: props => {
+        props.insert(
+            "path".to_string(),
+            string_prop(
+                Some(1),
+                Some(1000),
+                Some("Relative path to the directory to list (from workspace root)"),
+            ),
+        );
+    };
+    required: vec!["path".to_string()];
 }
 
-pub fn create_import_file_tool() -> MCPTool {
-    let mut props = HashMap::new();
-    props.insert(
-        "srcAbsPath".to_string(),
-        string_prop(
-            Some(1),
-            Some(1000),
-            Some("Absolute path of source file to import"),
-        ),
-    );
-    props.insert(
-        "destRelPath".to_string(),
-        string_prop(
-            Some(1),
-            Some(1000),
-            Some("Relative path in workspace where file will be imported"),
-        ),
-    );
-
-    MCPTool {
-        name: "importFile".to_string(),
-        title: Some("Import File".to_string()),
-        description: "Import an external file into the workspace".to_string(),
-        input_schema: object_schema(
-            props,
-            vec!["srcAbsPath".to_string(), "destRelPath".to_string()],
-        ),
-        output_schema: None,
-        annotations: None,
-    }
+define_mcp_tool! {
+    const IMPORT_FILE = "importFile";
+    fn create_import_file_tool();
+    title: "Import File";
+    description: "Import an external file into the workspace";
+    inputs: props => {
+        props.insert(
+            "srcAbsPath".to_string(),
+            string_prop(
+                Some(1),
+                Some(1000),
+                Some("Absolute path of source file to import"),
+            ),
+        );
+        props.insert(
+            "destRelPath".to_string(),
+            string_prop(
+                Some(1),
+                Some(1000),
+                Some("Relative path in workspace where file will be imported"),
+            ),
+        );
+    };
+    required: vec!["srcAbsPath".to_string(), "destRelPath".to_string()];
 }
 
-pub fn create_edit_file_tool() -> MCPTool {
-    let mut props = HashMap::new();
-    props.insert(
-        "path".to_string(),
-        string_prop(
-            Some(1),
-            Some(1000),
-            Some("Relative path to the file to modify (from workspace root)"),
-        ),
-    );
-    props.insert(
-        "oldString".to_string(),
-        string_prop(
-            None,
-            None,
-            Some("⚠️ CRITICAL: Exact text content to find and replace. Must match precisely including whitespace.
-
-MANDATORY WORKFLOW:
-1. Call readFile(path) FIRST to get current content
-2. Extract the exact text from readFile response (including all whitespace)
-3. Include surrounding context (3-5 lines) for uniqueness
-4. Use the extracted text as this parameter
-
-❌ NEVER use text reconstructed from previous attempts
-✅ ALWAYS use text exactly as shown in readFile response
-
-💡 TIP: For multiple changes, call this tool multiple times sequentially"),
-        ),
-    );
-    props.insert(
-        "newString".to_string(),
-        string_prop(
-            None,
-            None,
-            Some("New text content to replace oldString with. Use empty string to delete the matched text."),
-        ),
-    );
-
-    MCPTool {
-        name: "editFile".to_string(),
-        title: Some("Edit File".to_string()),
-        description: "Replace text content in a file using exact string matching. Atomic operation - either succeeds completely or fails with clear guidance.
+define_mcp_tool! {
+    const EDIT_FILE = "editFile";
+    fn create_edit_file_tool();
+    title: "Edit File";
+    description: "Replace text content in a file using exact string matching. Atomic operation - either succeeds completely or fails with clear guidance.
 
 ⚠️ CRITICAL WORKFLOW (MUST FOLLOW):
 1. ALWAYS call readFile(path) or readFile(path, startLine, endLine) FIRST
@@ -229,51 +173,56 @@ MANDATORY WORKFLOW:
 - If 'File changed' error: Re-read file before retrying
 - DO NOT retry with same oldString after failure
 
-💡 NEXT: Use previewReplacement to verify changes before committing or readFile to confirm edits".to_string(),
-        input_schema: object_schema(
-            props,
-            vec![
-                "path".to_string(),
-                "oldString".to_string(),
-                "newString".to_string(),
-            ],
-        ),
-        output_schema: None,
-        annotations: None,
-    }
+💡 NEXT: Use previewReplacement to verify changes before committing or readFile to confirm edits";
+    inputs: props => {
+        props.insert(
+            "path".to_string(),
+            string_prop(
+                Some(1),
+                Some(1000),
+                Some("Relative path to the file to modify (from workspace root)"),
+            ),
+        );
+        props.insert(
+            "oldString".to_string(),
+            string_prop(
+                None,
+                None,
+                Some("⚠️ CRITICAL: Exact text content to find and replace. Must match precisely including whitespace.
+
+MANDATORY WORKFLOW:
+1. Call readFile(path) FIRST to get current content
+2. Extract the exact text from readFile response (including all whitespace)
+3. Include surrounding context (3-5 lines) for uniqueness
+4. Use the extracted text as this parameter
+
+❌ NEVER use text reconstructed from previous attempts
+✅ ALWAYS use text exactly as shown in readFile response
+
+💡 TIP: For multiple changes, call this tool multiple times sequentially"),
+            ),
+        );
+        props.insert(
+            "newString".to_string(),
+            string_prop(
+                None,
+                None,
+                Some("New text content to replace oldString with. Use empty string to delete the matched text."),
+            ),
+        );
+    };
+    required: vec![
+        "path".to_string(),
+        "oldString".to_string(),
+        "newString".to_string(),
+    ];
 }
 
-pub fn create_preview_replacement_tool() -> MCPTool {
-    let mut props = HashMap::new();
-    props.insert(
-        "path".to_string(),
-        string_prop(
-            Some(1),
-            Some(1000),
-            Some("Relative path to the file (from workspace root)"),
-        ),
-    );
-    props.insert(
-        "oldString".to_string(),
-        string_prop(
-            None,
-            None,
-            Some("Text content you want to find and replace. Extract from readFile response."),
-        ),
-    );
-    props.insert(
-        "newString".to_string(),
-        string_prop(
-            None,
-            None,
-            Some("New text content to replace oldString with."),
-        ),
-    );
-
-    MCPTool {
-        name: "previewReplacement".to_string(),
-        title: Some("Preview File Replacement".to_string()),
-        description: "Preview what would change if editFile is executed. Shows exact diffs without modifying the file.
+define_mcp_tool! {
+    const PREVIEW_REPLACEMENT = "previewReplacement";
+    fn create_preview_replacement_tool();
+    title: "Preview File Replacement";
+    description: "Preview what would change if editFile is executed. Shows exact diffs without modifying the file.
 
 🎯 USE CASE: Verify oldString matches before committing changes
 
@@ -288,16 +237,36 @@ WORKFLOW:
 - See exact line numbers and context
 - Verify oldString was extracted correctly from readFile
 
-⚠️ READ-ONLY: This tool does NOT modify files, only shows preview".to_string(),
-        input_schema: object_schema(
-            props,
-            vec![
-                "path".to_string(),
-                "oldString".to_string(),
-                "newString".to_string(),
-            ],
-        ),
-        output_schema: None,
-        annotations: None,
-    }
+⚠️ READ-ONLY: This tool does NOT modify files, only shows preview";
+    inputs: props => {
+        props.insert(
+            "path".to_string(),
+            string_prop(
+                Some(1),
+                Some(1000),
+                Some("Relative path to the file (from workspace root)"),
+            ),
+        );
+        props.insert(
+            "oldString".to_string(),
+            string_prop(
+                None,
+                None,
+                Some("Text content you want to find and replace. Extract from readFile response."),
+            ),
+        );
+        props.insert(
+            "newString".to_string(),
+            string_prop(
+                None,
+                None,
+                Some("New text content to replace oldString with."),
+            ),
+        );
+    };
+    required: vec![
+        "path".to_string(),
+        "oldString".to_string(),
+        "newString".to_string(),
+    ];
 }
