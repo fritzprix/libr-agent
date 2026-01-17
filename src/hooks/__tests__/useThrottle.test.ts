@@ -190,4 +190,34 @@ describe('useThrottle', () => {
     // Now the scheduled call should execute
     expect(callback).toHaveBeenCalledTimes(2);
   });
+
+  it('should maintain referential stability of the returned function when callback changes', () => {
+    const callback1 = vi.fn();
+    const callback2 = vi.fn();
+
+    const { result, rerender } = renderHook(
+      ({ cb, delay }) => useThrottle(cb, delay),
+      {
+        initialProps: { cb: callback1, delay: 100 },
+      },
+    );
+
+    const firstResult = result.current;
+
+    // Change the callback
+    rerender({ cb: callback2, delay: 100 });
+
+    const secondResult = result.current;
+
+    // The function reference should be the same
+    expect(secondResult).toBe(firstResult);
+
+    // But it should call the new callback
+    act(() => {
+      secondResult();
+    });
+
+    expect(callback1).toHaveBeenCalledTimes(0);
+    expect(callback2).toHaveBeenCalledTimes(1);
+  });
 });
