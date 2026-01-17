@@ -14,7 +14,7 @@ use super::{helpers, KnowledgeServer};
 pub async fn save_knowledge(
     server: &KnowledgeServer,
     args: Value,
-    session_id: &str,
+    assistant_id: &str,
 ) -> Result<MCPResult, String> {
     let title = match args.get("title").and_then(|v| v.as_str()) {
         Some(v) => v,
@@ -78,7 +78,7 @@ pub async fn save_knowledge(
 
     let model = knowledge::ActiveModel {
         id: NotSet,
-        session_id: Set(session_id.to_string()),
+        assistant_id: Set(assistant_id.to_string()),
         title: Set(title.to_string()),
         content: Set(content.to_string()),
         source: Set(source.clone()),
@@ -98,7 +98,7 @@ pub async fn save_knowledge(
 
             let knowledge = json!({
                 "id": id,
-                "session_id": session_id,
+                "assistant_id": assistant_id,
                 "title": title,
                 "content": content,
                 "source": source,
@@ -137,7 +137,7 @@ pub async fn save_knowledge(
 pub async fn delete_knowledge(
     server: &KnowledgeServer,
     args: Value,
-    session_id: &str,
+    assistant_id: &str,
 ) -> Result<MCPResult, String> {
     let id = match args.get("id").and_then(|v| v.as_i64()) {
         Some(v) => v,
@@ -147,7 +147,7 @@ pub async fn delete_knowledge(
     let db = server.get_db();
     let result = KnowledgeEntity::delete_many()
         .filter(knowledge::Column::Id.eq(id))
-        .filter(knowledge::Column::SessionId.eq(session_id))
+        .filter(knowledge::Column::AssistantId.eq(assistant_id))
         .exec(db)
         .await;
 

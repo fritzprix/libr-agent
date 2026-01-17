@@ -155,7 +155,7 @@ async fn test_knowledge_crud_operations() {
     // Insert knowledge
     let knowledge = knowledge::ActiveModel {
         id: NotSet,
-        session_id: Set("test-session".to_string()),
+        assistant_id: Set("test-session".to_string()),
         title: Set("Test Knowledge".to_string()),
         content: Set("This is test content".to_string()),
         tags: Set(Some("tag1,tag2".to_string())),

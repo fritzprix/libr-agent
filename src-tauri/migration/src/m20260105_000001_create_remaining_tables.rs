@@ -120,7 +120,7 @@ impl MigrationTrait for Migration {
                             .auto_increment()
                             .primary_key(),
                     )
-                    .col(ColumnDef::new(Knowledge::SessionId).string().not_null())
+                    .col(ColumnDef::new(Knowledge::AssistantId).string().not_null())
                     .col(ColumnDef::new(Knowledge::Title).string().not_null())
                     .col(ColumnDef::new(Knowledge::Content).string().not_null())
                     .col(ColumnDef::new(Knowledge::Tags).string())
@@ -138,14 +138,14 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
-        // Create index on knowledge.session_id
+        // Create index on knowledge.assistant_id
         manager
             .create_index(
                 Index::create()
                     .if_not_exists()
-                    .name("idx_knowledge_session")
+                    .name("idx_knowledge_assistant")
                     .table(Knowledge::Table)
-                    .col(Knowledge::SessionId)
+                    .col(Knowledge::AssistantId)
                     .to_owned(),
             )
             .await?;
@@ -437,7 +437,7 @@ enum Chunks {
 enum Knowledge {
     Table,
     Id,
-    SessionId,
+    AssistantId,
     Title,
     Content,
     Tags,

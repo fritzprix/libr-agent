@@ -7,7 +7,6 @@ import React, {
   useEffect,
 } from 'react';
 import useSWR from 'swr';
-import { useRustMCPServer } from '@/hooks/use-rust-mcp-server';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
 import { getLogger } from '@/lib/logger';
 import {
@@ -15,14 +14,12 @@ import {
   EFFECTIVE_MAX_SIZE,
   createFileSizeErrorMessage,
 } from '@/lib/workspace-sync-service';
-import {
-  ContentStoreServerProxy,
-  ListContentArgs,
-  DeleteContentArgs,
-} from '@/models/content-store';
-import { ContentStoreItem } from '@/models/content-store';
+import type { ContentStoreItem } from '@/models/content-store';
 import { AttachmentReference } from '@/models/chat';
-import { saveAgentFile } from '@/features/agent/api/agent-backend';
+import {
+  saveAgentFile,
+  agentCallBuiltinTool,
+} from '@/features/agent/api/agent-backend';
 
 const logger = getLogger('AgentResourceAttachmentContext');
 
@@ -65,80 +62,89 @@ export function AgentResourceAttachmentProvider({
 }: {
   children: React.ReactNode;
 }) {
-  const { server, loading: serverLoading } =
-    useRustMCPServer<ContentStoreServerProxy>('contentstore');
-
   // Use Agent V2 Session State
   const { session: currentSession } = useAgentSessionState();
 
   const [pendingFiles, setPendingFiles] = useState<AttachmentReference[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Use SWR to fetch session files
+  // Use SWR to fetch session files via Agent V2 session-specific proxy
   const { data: sessionFiles = [], mutate: mutateSessionFiles } = useSWR(
-    currentSession?.id && server
-      ? ['agent_content_list', currentSession.id]
-      : null,
+    currentSession?.id ? ['agent_content_list', currentSession.id] : null,
     async () => {
-      logger.info('[AgentResourceAttachmentContext] SWR fetcher called', {
-        hasServer: !!server,
-        currentSessionId: currentSession?.id,
-        serverLoading,
-      });
-
-      if (server && currentSession?.id) {
-        const sessionId = currentSession.id;
-        try {
-          // Check if store exists by trying to list content
-          // If it fails with "store not found", we return empty list
-          // We don't auto-create store here to avoid side effects in read-only operations
-          const listContentArgs: ListContentArgs = {
-            sessionId,
-          };
-          logger.info('[AgentResourceAttachmentContext] Calling listContent', {
-            sessionId,
-          });
-          const result = await server.listContent(listContentArgs);
-          logger.info('Proxy: server.listContent completed successfully', {
-            sessionId,
-            contentCount: result?.contents?.length || 0,
-            contents: result?.contents,
-          });
-          const files =
-            result?.contents?.map((content) => ({
-              sessionId: content.sessionId,
-              contentId: content.contentId,
-              filename: content.filename,
-              mimeType: content.mimeType,
-              size: Number((content as { size?: number | null }).size ?? 0),
-              lineCount: content.lineCount || 0,
-              preview: content.preview ?? content.filename ?? '',
-              uploadedAt: content.uploadedAt || new Date().toISOString(),
-              chunkCount: content.chunkCount,
-              lastAccessedAt: content.lastAccessedAt,
-            })) || [];
-
-          logger.info('[AgentResourceAttachmentContext] Mapped files result', {
-            filesCount: files.length,
-            files,
-          });
-          return files;
-        } catch (error) {
-          logger.warn(
-            'Session context not ready yet or store missing, will retry on next revalidation',
-            { sessionId, error },
-          );
-          return [];
-        }
+      if (!currentSession?.id) {
+        logger.warn('[AgentResourceAttachmentContext] No session ID available');
+        return [];
       }
-      logger.warn(
-        '[AgentResourceAttachmentContext] SWR fetcher: No server or session',
-        {
-          hasServer: !!server,
-          sessionId: currentSession?.id,
-        },
+
+      const sessionId = currentSession.id;
+      logger.info(
+        '[AgentResourceAttachmentContext] Fetching files via Agent V2 proxy',
+        { sessionId },
       );
-      return [];
+
+      try {
+        // Use Agent V2 session-specific proxy to call listContent
+        const response = await agentCallBuiltinTool<{
+          contents: ContentStoreItem[];
+        }>(sessionId, 'builtin_contentstore__listContent', {
+          sessionId,
+        });
+
+        logger.info(
+          '[AgentResourceAttachmentContext] Agent V2 proxy response',
+          {
+            sessionId,
+            hasStructuredContent: !!response.structuredContent,
+            responseType: typeof response,
+          },
+        );
+
+        // Extract contents from structuredContent or fallback
+        let contents: ContentStoreItem[] = [];
+        if (
+          response.structuredContent &&
+          typeof response.structuredContent === 'object' &&
+          'contents' in response.structuredContent
+        ) {
+          contents =
+            (response.structuredContent as { contents: ContentStoreItem[] })
+              .contents || [];
+        }
+
+        logger.info('[AgentResourceAttachmentContext] Parsed contents', {
+          sessionId,
+          contentCount: contents.length,
+          filenames: contents.map((c) => c.filename),
+        });
+
+        // Map to AttachmentReference format
+        const files: AttachmentReference[] = contents.map((content) => ({
+          sessionId: content.sessionId,
+          contentId: content.contentId,
+          filename: content.filename,
+          mimeType: content.mimeType,
+          size: Number((content as { size?: number | null }).size ?? 0),
+          lineCount: content.lineCount || 0,
+          preview: content.preview ?? content.filename ?? '',
+          uploadedAt: content.uploadedAt || new Date().toISOString(),
+          chunkCount: content.chunkCount,
+          lastAccessedAt: content.lastAccessedAt,
+        }));
+
+        logger.info('[AgentResourceAttachmentContext] Mapped files result', {
+          filesCount: files.length,
+          files,
+        });
+
+        return files;
+      } catch (error) {
+        logger.warn(
+          'Agent V2 Content Store listing failed, will retry on next revalidation',
+          { sessionId, error },
+        );
+        return [];
+      }
     },
     {
       revalidateOnFocus: false,
@@ -268,8 +274,8 @@ export function AgentResourceAttachmentProvider({
     ): Promise<AttachmentReference> => {
       const actualFilename = filename || extractFilenameFromUrl(url);
 
-      if (!server || !currentSession?.id) {
-        throw new Error('Content store server or session not available');
+      if (!currentSession?.id) {
+        throw new Error('Session not available');
       }
 
       // Store will be auto-created on first saveKnowledge call
@@ -330,6 +336,29 @@ export function AgentResourceAttachmentProvider({
         }
       }
 
+      const SUPPORTED_EXTENSIONS = /\.(txt|md|json|pdf|docx|xlsx)$/i;
+      const isSupported = SUPPORTED_EXTENSIONS.test(actualFilename);
+
+      if (!isSupported) {
+        logger.info(
+          'File type not supported by ContentStore, saving to workspace only',
+          { filename: actualFilename },
+        );
+
+        return {
+          sessionId: currentSession.id,
+          contentId: `workspace_only_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+          filename: actualFilename,
+          mimeType: actualMimeType,
+          size: fileSize,
+          lineCount: 0,
+          preview: '',
+          uploadedAt: new Date().toISOString(),
+          workspacePath,
+          isWorkspaceOnly: true,
+        };
+      }
+
       try {
         // Use session-specific saveAgentFile instead of global server.saveKnowledge
         // This ensures the file is associated with the correct agent session
@@ -380,14 +409,13 @@ export function AgentResourceAttachmentProvider({
         }
       }
     },
-    [server, currentSession, extractFilenameFromUrl, convertToBlobUrl],
+    [currentSession, extractFilenameFromUrl, convertToBlobUrl],
   );
 
   const commitPendingFiles = useCallback(async (): Promise<
     AttachmentReference[]
   > => {
     if (pendingFiles.length === 0) return [];
-    if (!server) throw new Error('Content store server not available');
 
     setIsLoading(true);
     const results: AttachmentReference[] = [];
@@ -428,7 +456,7 @@ export function AgentResourceAttachmentProvider({
     } finally {
       setIsLoading(false);
     }
-  }, [pendingFiles, addFileInternal, mutateSessionFiles, server]);
+  }, [pendingFiles, addFileInternal, mutateSessionFiles]);
 
   const removeFile = useCallback(
     async (ref: AttachmentReference): Promise<void> => {
@@ -443,11 +471,14 @@ export function AgentResourceAttachmentProvider({
         return;
       }
 
-      if (!server) return;
+      if (!currentSession?.id) return;
 
       try {
-        const deleteArgs: DeleteContentArgs = { contentId: ref.contentId };
-        await server.deleteContent(deleteArgs);
+        await agentCallBuiltinTool(
+          currentSession.id,
+          'builtin_contentstore__deleteContent',
+          { contentId: ref.contentId },
+        );
         await mutateSessionFiles();
       } catch (error) {
         logger.error('Failed to remove file from server', {
@@ -457,7 +488,7 @@ export function AgentResourceAttachmentProvider({
         throw error;
       }
     },
-    [pendingFiles, server, mutateSessionFiles],
+    [pendingFiles, currentSession, mutateSessionFiles],
   );
 
   const clearPendingFiles = useCallback(() => {

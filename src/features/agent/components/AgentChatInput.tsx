@@ -142,8 +142,20 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
         updatedAt: new Date(),
       };
 
-      if (attachedFileRefs.length > 0) {
-        userMessage.attachments = attachedFileRefs;
+      const supportedFiles = attachedFileRefs.filter((f) => !f.isWorkspaceOnly);
+      const workspaceFiles = attachedFileRefs.filter((f) => f.isWorkspaceOnly);
+
+      if (supportedFiles.length > 0) {
+        userMessage.attachments = supportedFiles;
+      }
+
+      if (workspaceFiles.length > 0) {
+        const fileList = workspaceFiles.map((f) => f.filename).join(', ');
+        const notice = `I have uploaded the following files to the workspace: ${fileList}`;
+        const originalText = (userMessage.content[0] as { text: string }).text;
+        const separator = originalText ? '\n\n' : '';
+        (userMessage.content[0] as { text: string }).text =
+          `${originalText}${separator}${notice}`;
       }
 
       setIsSubmitting(true);

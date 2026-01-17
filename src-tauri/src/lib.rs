@@ -37,9 +37,10 @@ use commands::mcp_commands::{
     call_builtin_tool, call_mcp_tool, check_all_servers_status, check_server_status,
     complete_oauth_flow, get_connected_servers, get_oauth_token, get_service_context,
     get_validated_tools, has_oauth_token, list_all_tools, list_all_tools_unified,
-    list_builtin_servers, list_builtin_servers_with_metadata, list_builtin_tools, list_mcp_tools,
-    list_tools_from_config, revoke_oauth_token, sample_from_mcp_server, start_mcp_server,
-    start_oauth_flow, stop_mcp_server, switch_context, validate_tool_schema,
+    list_available_builtin_server_definitions, list_builtin_servers,
+    list_builtin_servers_with_metadata, list_builtin_tools, list_mcp_tools, list_tools_from_config,
+    revoke_oauth_token, sample_from_mcp_server, start_mcp_server, start_oauth_flow,
+    stop_mcp_server, validate_tool_schema,
 };
 use commands::mcp_server_config_commands::{
     create_mcp_server_config, delete_mcp_server_config, list_mcp_server_configs,
@@ -257,6 +258,7 @@ pub fn run() {
                 list_builtin_servers,
                 list_builtin_tools,
                 list_builtin_servers_with_metadata,
+                list_available_builtin_server_definitions,
                 call_builtin_tool,
                 list_all_tools_unified,
                 list_all_tools_unified,
@@ -289,7 +291,6 @@ pub fn run() {
                 navigate_back,
                 navigate_forward,
                 get_service_context,
-                switch_context,
                 // OAuth 2.1 Authentication commands
                 start_oauth_flow,
                 complete_oauth_flow,

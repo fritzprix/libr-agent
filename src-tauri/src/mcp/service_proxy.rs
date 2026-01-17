@@ -8,6 +8,7 @@ use super::builtin::BuiltinMCPServer;
 use super::server::MCPServerManager;
 use super::types::{MCPResponse, ServiceContext};
 use crate::session::SessionManager;
+use sea_orm::EntityTrait; // Needed for find_by_id in helper
 
 /// Session-specific MCP service proxy
 ///
@@ -248,9 +249,13 @@ async fn create_builtin_server(
         "bootstrap" => Ok(Some(Box::new(
             crate::mcp::builtin::bootstrap::BootstrapServer::new(),
         ))),
-        "knowledge" => Ok(Some(Box::new(
-            crate::mcp::builtin::knowledge::KnowledgeServer::new(_session_id, _db).await?,
-        ))),
+        "knowledge" => {
+            let db_conn = (*_db).clone();
+            let assistant_id = get_assistant_id_from_session(&db_conn, &_session_id).await?;
+            Ok(Some(Box::new(
+                crate::mcp::builtin::knowledge::KnowledgeServer::new(assistant_id, _db).await?,
+            )))
+        }
         "planning" => Ok(Some(Box::new(
             crate::mcp::builtin::planning::PlanningServer::new(_session_id, _db).await?,
         ))),
@@ -280,6 +285,9 @@ async fn create_builtin_server(
                 Ok(None)
             }
         }
+        "mcp_manager" => Ok(Some(Box::new(
+            crate::mcp::builtin::mcp_manager::MCPManagerServer::new(),
+        ))),
         _ => Ok(None), // Unknown tool, skip
     }
 }
@@ -302,4 +310,33 @@ mod tests {
     async fn test_invalid_tool_name() {
         // TODO: Test error handling for invalid tool names
     }
+}
+
+async fn get_assistant_id_from_session(
+    db: &DatabaseConnection,
+    session_id: &str,
+) -> Result<String, String> {
+    use crate::entity::session::Entity as SessionEntity;
+
+    let session = SessionEntity::find_by_id(session_id)
+        .one(db)
+        .await
+        .map_err(|e| format!("Database error fetching session: {}", e))?
+        .ok_or_else(|| format!("Session not found: {}", session_id))?;
+
+    let config_str = session
+        .agent_config
+        .clone()
+        .ok_or_else(|| "Session has no config".to_string())?;
+
+    let config: serde_json::Value = serde_json::from_str(&config_str)
+        .map_err(|e| format!("Invalid session config JSON: {}", e))?;
+
+    config
+        .get("assistant_id")
+        .or_else(|| config.get("assistantId"))
+        .or_else(|| config.get("id"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .ok_or_else(|| "No assistant ID in session config".to_string())
 }

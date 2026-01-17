@@ -112,19 +112,6 @@ export async function getServiceContext(
   });
 }
 
-/**
- * Switches the context for a given server.
- * @param serverId The ID of the server.
- * @param options The context options to switch to.
- * @returns A promise that resolves when the context is switched.
- */
-export async function switchContext(
-  serverId: string,
-  options: ServiceContextOptions,
-): Promise<void> {
-  return safeInvoke<void>('switch_context', { serverId, options });
-}
-
 // ========================================
 // Miscellaneous
 // ========================================

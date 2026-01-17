@@ -15,7 +15,6 @@ import { useLLMService } from './LLMServiceContext';
 import { AIServiceProvider } from '@/lib/ai-service';
 import { getLogger } from '../lib/logger';
 import type { Message, RustMessage } from '@/models/chat';
-import { deleteMessage } from '@/lib/backend/messages';
 import { useSettings } from '@/hooks/use-settings';
 import { supportsThinking } from '@/lib/ai-service/model-capabilities';
 

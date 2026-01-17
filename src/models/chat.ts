@@ -33,6 +33,7 @@ export interface AttachmentReference {
   originalPath?: string; // File system path (Tauri environment)
   file?: File; // File object (browser environment)
   blobCleanup?: () => void; // Cleanup function for blob URLs
+  isWorkspaceOnly?: boolean; // Flag for files only in workspace (not in Content Store)
 }
 
 /**

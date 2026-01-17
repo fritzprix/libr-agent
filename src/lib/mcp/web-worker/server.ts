@@ -45,13 +45,6 @@ export interface WebMCPServer {
   getServiceContext?: (
     options?: ServiceContextOptions,
   ) => Promise<ServiceContext<unknown>>;
-  /**
-   * An optional function to switch the context for the server.
-   * This allows servers to maintain state based on external context like session IDs or assistant IDs.
-   * @param context The context object containing session/assistant identifiers and other state.
-   * @returns A promise that resolves when the context is switched.
-   */
-  switchContext?: (context: ServiceContextOptions) => Promise<void>;
 }
 
 /**

@@ -22,7 +22,7 @@ pub mod utils;
 pub use server::ContentStoreServer;
 
 use super::BuiltinMCPServer;
-use crate::mcp::types::{ServiceContext, ServiceContextOptions};
+use crate::mcp::types::ServiceContext;
 use serde_json::Value;
 
 // BuiltinMCPServer trait implementation
@@ -46,10 +46,6 @@ impl BuiltinMCPServer for ContentStoreServer {
 
     async fn get_service_context(&self, options: Option<&Value>) -> ServiceContext {
         self.get_service_context(options).await
-    }
-
-    async fn switch_context(&self, options: ServiceContextOptions) -> Result<(), String> {
-        self.switch_context(options).await
     }
 
     async fn call_tool(
@@ -81,5 +77,6 @@ mod test_functional;
 mod test_migration;
 #[cfg(test)]
 mod test_recent_uploads;
-#[cfg(test)]
-mod test_session_isolation;
+// V1 switch_context test - obsolete in V2 session-per-proxy architecture
+// #[cfg(test)]
+// mod test_session_isolation;

@@ -40,6 +40,8 @@ export const useRustBackend = () => {
     listBuiltinServers: client.listBuiltinServers,
     listBuiltinTools: client.listBuiltinTools,
     listBuiltinServersWithMetadata: client.listBuiltinServersWithMetadata,
+    listAvailableBuiltinServerDefinitions:
+      client.listAvailableBuiltinServerDefinitions,
     callBuiltinTool: client.callBuiltinTool,
 
     // Unified Tools API
@@ -66,7 +68,6 @@ export const useRustBackend = () => {
 
     // Service Context
     getServiceContext: client.getServiceContext,
-    switchContext: client.switchContext,
 
     // Utility
     greet: client.greet,

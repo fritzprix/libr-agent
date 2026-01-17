@@ -4,7 +4,7 @@ mod scratchpad;
 mod todos;
 
 use crate::mcp::builtin::BuiltinMCPServer;
-use crate::mcp::types::{MCPResult, ServiceContext, ServiceContextOptions};
+use crate::mcp::types::{MCPResult, ServiceContext};
 use crate::mcp::MCPTool;
 use async_trait::async_trait;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, TransactionTrait};
@@ -31,19 +31,8 @@ impl PlanningServer {
 
         Ok(server)
     }
-}
-
-#[async_trait]
-impl BuiltinMCPServer for PlanningServer {
-    fn name(&self) -> &str {
-        "planning"
-    }
-
-    fn description(&self) -> &str {
-        "Session-scoped planning tools for goal/todo/scratchpad management"
-    }
-
-    fn tools(&self) -> Vec<MCPTool> {
+    /// Get tools statically (without an instance)
+    pub fn tools_static() -> Vec<MCPTool> {
         vec![
             MCPTool {
                 name: "createGoal".to_string(),
@@ -279,6 +268,21 @@ impl BuiltinMCPServer for PlanningServer {
             },
         ]
     }
+}
+
+#[async_trait]
+impl BuiltinMCPServer for PlanningServer {
+    fn name(&self) -> &str {
+        "planning"
+    }
+
+    fn description(&self) -> &str {
+        "Session-scoped planning tools for goal/todo/scratchpad management"
+    }
+
+    fn tools(&self) -> Vec<MCPTool> {
+        Self::tools_static()
+    }
 
     async fn call_tool(
         &self,
@@ -377,10 +381,6 @@ impl BuiltinMCPServer for PlanningServer {
             }
             _ => Err(format!("Unknown tool: {}", tool_name)),
         }
-    }
-
-    async fn switch_context(&self, _options: ServiceContextOptions) -> Result<(), String> {
-        Err("Context switching not supported for session-bound planning server".to_string())
     }
 
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {

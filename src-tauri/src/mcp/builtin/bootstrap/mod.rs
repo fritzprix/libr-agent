@@ -8,9 +8,7 @@ use crate::mcp::builtin::error_guidance::{
     invalid_input_error, missing_param_error, SuccessHint, ToolGroup,
 };
 use crate::mcp::builtin::BuiltinMCPServer;
-use crate::mcp::types::{
-    BuiltinServerMetadata, MCPResult, MCPTool, ServiceContext, ServiceContextOptions,
-};
+use crate::mcp::types::{BuiltinServerMetadata, MCPResult, MCPTool, ServiceContext};
 use crate::mcp::utils::schema_builder::*;
 
 pub mod guides;
@@ -220,11 +218,6 @@ impl BuiltinMCPServer for BootstrapServer {
                 tool_name
             )),
         }
-    }
-
-    async fn switch_context(&self, _options: ServiceContextOptions) -> Result<(), String> {
-        // Bootstrap server is stateless, no context switching needed
-        Ok(())
     }
 }
 
