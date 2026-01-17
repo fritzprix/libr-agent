@@ -1,4 +1,4 @@
-use log::error;
+use log::{error, info, warn};
 use tauri::{Emitter, Listener, Manager};
 use tauri_plugin_log::{Target, TargetKind};
 
@@ -83,7 +83,7 @@ pub use state::{
 pub fn run_with_sqlite_sync(db_url: String) {
     // Set the SQLite URL
     set_sqlite_db_url(db_url.clone());
-    println!("🔄 Initializing LibrAgent with SQLite support: {db_url}");
+    info!("🔄 Initializing LibrAgent with SQLite support: {db_url}");
 
     // Create a Tokio runtime for async initialization
     let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
@@ -98,17 +98,17 @@ pub fn run_with_sqlite_sync(db_url: String) {
             .unwrap_or_else(|e| {
                 // If this looks like a file-backed sqlite URL, try to create the file
                 if let Some(path) = db_url.strip_prefix("sqlite://") {
-                    println!("⚙️ Database connect failed, attempting to create DB file: {path}");
+                    info!("⚙️ Database connect failed, attempting to create DB file: {path}");
                     if let Some(parent) = std::path::Path::new(path).parent() {
                         if let Err(err) = std::fs::create_dir_all(parent) {
-                            eprintln!("Failed to create parent directory for DB: {err}");
+                            error!("Failed to create parent directory for DB: {err}");
                         }
                     }
 
                     if let Err(err) = std::fs::File::create(path) {
-                        eprintln!("Failed to create SQLite DB file: {err}");
+                        error!("Failed to create SQLite DB file: {err}");
                     } else {
-                        println!("✅ Created new SQLite DB file: {path}");
+                        info!("✅ Created new SQLite DB file: {path}");
                     }
 
                     // Retry connection once
@@ -123,20 +123,20 @@ pub fn run_with_sqlite_sync(db_url: String) {
                     panic!("Failed to connect to database: {e}");
                 }
             });
-        println!("✅ Database connected: {db_url}");
+        info!("✅ Database connected: {db_url}");
 
         // Run migrations
         use migration::{Migrator, MigratorTrait};
         Migrator::up(&db, None)
             .await
             .expect("Failed to run database migrations");
-        println!("✅ Database migrations applied");
+        info!("✅ Database migrations applied");
 
         // Ensure default assistants exist
         if let Err(e) = services::assistant_init::ensure_default_assistants(&db).await {
-            eprintln!("❌ Failed to ensure default assistants: {}", e);
+            error!("❌ Failed to ensure default assistants: {}", e);
         } else {
-            println!("✅ Default assistants verified");
+            info!("✅ Default assistants verified");
         }
 
         // Initialize repository instances
@@ -145,27 +145,27 @@ pub fn run_with_sqlite_sync(db_url: String) {
         };
 
         let message_repo = SqliteMessageRepository::new(db.clone());
-        println!("✅ Message repository initialized");
+        info!("✅ Message repository initialized");
 
         let content_store_repo = SqliteContentStoreRepository::new(db.clone());
-        println!("✅ Content store repository initialized");
+        info!("✅ Content store repository initialized");
 
         let session_repo = SqliteSessionRepository::new(db.clone());
-        println!("✅ Session repository initialized");
+        info!("✅ Session repository initialized");
 
         // Start background indexing worker (checks every 5 minutes)
         let _indexing_worker = search::IndexingWorker::new(std::time::Duration::from_secs(300));
-        println!("✅ Background message indexing worker started");
+        info!("✅ Background message indexing worker started");
 
         // Set the global database connection
         set_database_connection(db.clone());
-        println!("✅ Database connection initialized");
+        info!("✅ Database connection initialized");
 
         // Set the global repository instances
         set_message_repository(message_repo);
         set_content_store_repository(content_store_repo);
         set_session_repository(session_repo);
-        println!("✅ Repository instances initialized");
+        info!("✅ Repository instances initialized");
 
         // Initialize the MCP manager with database connection
         let mcp_manager = MCPServerManager::new_with_session_manager_and_db(
@@ -177,7 +177,7 @@ pub fn run_with_sqlite_sync(db_url: String) {
         // Set the global MCP manager
         set_mcp_manager(mcp_manager);
 
-        println!("✅ SeaORM-backed MCP Manager initialized");
+        info!("✅ SeaORM-backed MCP Manager initialized");
 
         // Initialize the MCP Service Proxy Manager for session-aware builtin tools
         use mcp::MCPServiceProxyManager;
@@ -188,7 +188,7 @@ pub fn run_with_sqlite_sync(db_url: String) {
 
         set_mcp_service_proxy_manager(proxy_manager);
 
-        println!("✅ MCP Service Proxy Manager initialized");
+        info!("✅ MCP Service Proxy Manager initialized");
     });
 
     // Call the main run function
@@ -346,22 +346,22 @@ pub fn run() {
                 list_settings,
             ])
             .setup(|app| {
-                println!("🚀 LibrAgent initializing...");
+                info!("🚀 LibrAgent initializing...");
 
                 // Initialize SecureFileManager and add to managed state
                 // Use a dedicated global directory for the global instance to avoid legacy session dependency
                 let global_file_dir = app.path().app_data_dir().unwrap().join("global_shared");
                 let file_manager = SecureFileManager::new_with_base_dir(global_file_dir);
                 app.manage(file_manager);
-                println!("✅ SecureFileManager initialized");
+                info!("✅ SecureFileManager initialized");
 
                 // Initialize Interactive Browser Server and add to managed state
                 let browser_server = InteractiveBrowserServer::new(app.handle().clone());
                 app.manage(browser_server);
-                println!("✅ Interactive Browser Server initialized");
+                info!("✅ Interactive Browser Server initialized");
 
                 // Initialize Agent Runtime State
-                println!("✅ Interactive Browser Server initialized");
+                // Removed duplicate logging
 
                 // Initialize Agent Session Manager with proxy manager
                 // Get static reference and wrap in Arc using the same unsafe pattern
@@ -386,12 +386,12 @@ pub fn run() {
                 });
 
                 app.manage(agent_session_manager);
-                println!("✅ Agent Session Manager initialized with proxy manager");
-                println!("🔄 Session recovery initiated in background");
+                info!("✅ Agent Session Manager initialized with proxy manager");
+                info!("🔄 Session recovery initiated in background");
 
                 // Built-in servers are now automatically initialized with SessionManager support
                 // via the get_mcp_manager() function when first called.
-                println!("✅ Builtin servers initialized with SessionManager support");
+                info!("✅ Builtin servers initialized with SessionManager support");
 
                 // Setup OAuth deep link handler for libr-agent://oauth/callback
                 let app_handle = app.handle().clone();
@@ -409,22 +409,20 @@ pub fn run() {
                         }
                     }
                 });
-                println!("✅ OAuth deep link handler registered");
+                info!("✅ OAuth deep link handler registered");
 
                 // Linux-specific checks (environment variables are now set in main.rs)
                 #[cfg(target_os = "linux")]
                 {
-                    println!(
-                        "🐧 Linux detected - WebKit compatibility flags already set in main.rs"
-                    );
+                    info!("🐧 Linux detected - WebKit compatibility flags already set in main.rs");
 
                     // Check if running in a container or other limited graphics environment
                     if std::env::var("container").is_ok() || std::env::var("DISPLAY").is_err() {
-                        eprintln!("⚠️  Warning: Running in limited graphics environment");
+                        warn!("⚠️  Warning: Running in limited graphics environment");
                     }
                 }
 
-                println!("✅ LibrAgent setup completed successfully");
+                info!("✅ LibrAgent setup completed successfully");
                 Ok(())
             })
             .run(tauri::generate_context!())
@@ -434,25 +432,23 @@ pub fn run() {
     match result {
         Ok(app_result) => {
             if let Err(e) = app_result {
-                eprintln!("❌ Tauri application error: {e}");
+                error!("❌ Tauri application error: {e}");
                 std::process::exit(1);
             }
         }
         Err(panic_payload) => {
-            eprintln!("❌ Application panicked during startup");
+            error!("❌ Application panicked during startup");
             if let Some(panic_str) = panic_payload.downcast_ref::<&str>() {
-                eprintln!("   Panic message: {panic_str}");
+                error!("   Panic message: {panic_str}");
             } else if let Some(panic_string) = panic_payload.downcast_ref::<String>() {
-                eprintln!("   Panic message: {panic_string}");
+                error!("   Panic message: {panic_string}");
             }
 
-            eprintln!("💡 Troubleshooting suggestions:");
-            eprintln!(
-                "   1. Check WebKit/GTK installation: sudo apt install libwebkit2gtk-4.1-dev"
-            );
-            eprintln!("   2. Update graphics drivers");
-            eprintln!("   3. Set WEBKIT_DISABLE_COMPOSITING_MODE=1");
-            eprintln!("   4. Run in a desktop environment with proper display");
+            warn!("💡 Troubleshooting suggestions:");
+            warn!("   1. Check WebKit/GTK installation: sudo apt install libwebkit2gtk-4.1-dev");
+            warn!("   2. Update graphics drivers");
+            warn!("   3. Set WEBKIT_DISABLE_COMPOSITING_MODE=1");
+            warn!("   4. Run in a desktop environment with proper display");
 
             std::process::exit(1);
         }

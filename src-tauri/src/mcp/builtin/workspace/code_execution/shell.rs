@@ -1080,10 +1080,20 @@ impl WorkspaceServer {
 
         // Return immediate response with process_id
         let hint = SuccessHint::new(
-            format!("Background process started (ID: {})", process_id),
+            format!(
+                "Background process started successfully
+
+• Process ID: {}
+• Command: {}
+• Mode: Asynchronous (long-running)
+
+💡 Next Steps:",
+                process_id, command
+            ),
             vec![
+                format!("Use pollProcess(\"{}\") to check status", process_id),
                 format!(
-                    "Use pollProcess with process_id \"{}\" to check status",
+                    "Use readProcessOutput(\"{}\", \"stdout\") to view output",
                     process_id
                 ),
                 "Use listProcesses to see all running processes".to_string(),

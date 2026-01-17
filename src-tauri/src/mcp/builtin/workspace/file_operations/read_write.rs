@@ -1,5 +1,5 @@
 use super::super::WorkspaceServer;
-use super::utils::{detect_language, format_file_diff, format_file_size, LARGE_FILE_THRESHOLD};
+use super::utils::{detect_language, format_file_size, LARGE_FILE_THRESHOLD};
 use crate::mcp::builtin::error_guidance::{
     missing_param_error, not_found_error, operation_failed_error, permission_denied_error,
     ErrorCategory, ErrorGuidance, SuccessHint, ToolGroup,
@@ -235,13 +235,45 @@ impl WorkspaceServer {
         args: Value,
         session_id: Option<String>,
     ) -> Result<MCPResult, String> {
+        // Layer 1: Proactive Parameter Validation
+
+        // 1. Path parameter existence and non-empty check
         let path_str = match args.get("path").and_then(|v| v.as_str()) {
-            Some(path) => path,
+            Some(path) if !path.trim().is_empty() => path.trim(),
+            Some(_) => {
+                return Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::InvalidInput,
+                    "Path parameter cannot be empty",
+                    vec![
+                        "Provide a file path relative to workspace root".to_string(),
+                        "Example: {\"path\": \"src/main.rs\"}".to_string(),
+                        "Use listDirectory('.') to explore available paths".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                )
+                .to_mcp_result());
+            }
             None => {
                 return Ok(missing_param_error("path", ToolGroup::Workspace));
             }
         };
 
+        // 2. Path traversal validation
+        if path_str.contains("..") {
+            return Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::InvalidInput,
+                "Path traversal patterns (..) are not allowed",
+                vec![
+                    "Use relative paths from workspace root".to_string(),
+                    "Example: 'src/main.rs' instead of '../src/main.rs'".to_string(),
+                    "Use listDirectory to explore available paths".to_string(),
+                ],
+                ToolGroup::Workspace,
+            )
+            .to_mcp_result());
+        }
+
+        // 3. Content parameter validation
         let content = match args.get("content").and_then(|v| v.as_str()) {
             Some(content) => content,
             None => {
@@ -249,33 +281,16 @@ impl WorkspaceServer {
             }
         };
 
-        let mode = args.get("mode").and_then(|v| v.as_str()).unwrap_or("w");
-
-        let file_manager = self.get_file_manager(session_id.clone());
-
-        // Read original content for diff generation (overwrite mode only)
-        let original_content = if mode == "w" {
-            let path = std::path::Path::new(path_str);
-            if path.exists() {
-                tokio::fs::read_to_string(path).await.ok()
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        let result = match mode {
-            "w" => file_manager.write_file_string(path_str, content).await,
-            "a" => file_manager.append_file_string(path_str, content).await,
-            _ => {
+        // Validate path security
+        let safe_path = match self.validate_path_with_error(path_str, session_id.clone()) {
+            Ok(path) => path,
+            Err(e) => {
                 return Ok(ErrorGuidance::with_guidance(
-                    ErrorCategory::InvalidInput,
-                    format!("Invalid mode '{}'. Must be 'w' or 'a'", mode),
+                    ErrorCategory::PermissionDenied,
+                    format!("Path validation failed: {}", e),
                     vec![
-                        "Use 'w' to overwrite the file (default)".to_string(),
-                        "Use 'a' to append to the file".to_string(),
-                        "Example: {\"mode\": \"w\"}".to_string(),
+                        "Verify the file path is within workspace boundaries".to_string(),
+                        "Use listDirectory to see available paths".to_string(),
                     ],
                     ToolGroup::Workspace,
                 )
@@ -283,15 +298,48 @@ impl WorkspaceServer {
             }
         };
 
+        // Check if file already exists - PREVENT OVERWRITE
+        if safe_path.exists() {
+            return Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::InvalidInput,
+                format!(
+                    "File '{}' already exists - createFile cannot overwrite",
+                    path_str
+                ),
+                vec![
+                    "✅ RECOMMENDED: For incremental changes (safer)".to_string(),
+                    format!(
+                        "   → First: readFile(\"{}\") to see current content",
+                        path_str
+                    ),
+                    format!("   → Then: editFile(\"{}\", oldText, newText)", path_str),
+                    "   → Why: Preserves existing content, only changes specific sections"
+                        .to_string(),
+                    "".to_string(),
+                    "⚠️ ALTERNATIVE: Complete file replacement (destructive)".to_string(),
+                    format!("   → First: deleteFile(\"{}\")", path_str),
+                    format!("   → Then: createFile(\"{}\", newContent)", path_str),
+                    "   → Why: Use when rewriting entire file structure".to_string(),
+                    "".to_string(),
+                    "💡 DECISION GUIDE:".to_string(),
+                    "   • Small edits → Use editFile".to_string(),
+                    "   • Add/remove sections → Use editFile".to_string(),
+                    "   • Complete rewrite → Use deleteFile + createFile".to_string(),
+                ],
+                ToolGroup::Workspace,
+            )
+            .to_mcp_result());
+        }
+
+        let file_manager = self.get_file_manager(session_id.clone());
+        let result = file_manager.write_file_string(path_str, content).await;
+
         match result {
             Ok(()) => {
-                info!("Successfully wrote file: {}", path_str);
+                info!("Successfully created new file: {}", path_str);
 
                 // Invalidate service context cache
                 self.invalidate_context_cache().await;
-
-                let action = if mode == "a" { "Appended" } else { "Written" };
-                let action_emoji = if mode == "a" { "➕" } else { "✅" };
 
                 let lines = content.lines().count();
                 let size_str = format_file_size(content.len() as u64);
@@ -327,64 +375,63 @@ impl WorkspaceServer {
                     content.to_string()
                 };
 
-                // Generate diff for overwrite mode if original content exists
-                let diff_section =
-                    if let (true, Some(old_content)) = (mode == "w", &original_content) {
-                        let diff = format_file_diff(old_content, content, path_str);
-                        format!("\n{}\n\n", diff)
-                    } else {
-                        String::new()
-                    };
-
-                let mut message = if mode == "w" && original_content.is_some() {
-                    // Overwrite mode with existing file - show diff
-                    format!(
-                        "**{} File Overwritten**\n\n\
-                        **File:** `{}`\n\
-                        **Mode:** {} ({})\n\
-                        **Size:** {}\n\
-                        **Lines:** {}\n\
-                        {}",
-                        action_emoji, path_str, mode, "overwrite", size_str, lines, diff_section
-                    )
-                } else {
-                    // Append mode or new file - show content
-                    let mut msg = format!(
-                        "**{} File {}**\n\n\
-                        **File:** `{}`\n\
-                        **Mode:** {} ({})\n\
-                        **Size:** {}\n\
-                        **Lines:** {}\n\n\
-                        **Content Written:**\n```{}",
-                        action_emoji,
-                        action,
-                        path_str,
-                        mode,
-                        if mode == "a" { "append" } else { "create new" },
-                        size_str,
-                        lines,
-                        language
-                    );
-
-                    msg.push('\n');
-                    msg.push_str(&display_content);
-                    msg.push_str("\n```\n\n");
-
-                    if is_truncated {
-                        msg.push_str(
-                            "⚠️ **CONTENT TRUNCATED**: Only showing first 100 lines as preview\n\n",
-                        );
-                    }
-
-                    msg
-                };
-
-                message.push_str(
-                    "**Next Steps:**\n\
-                    - Content verified above (preview only)\n\
-                    - 📖 Use `readFile` to see full content if truncated\n\
-                    - 🔍 Use `grep` to search within the file",
+                let mut message = format!(
+                    "**✅ File Created**\n\n\
+                    **File:** `{}`\n\
+                    **Size:** {}\n\
+                    **Lines:** {}\n\n\
+                    **Content:**\n```{}",
+                    path_str, size_str, lines, language
                 );
+
+                message.push('\n');
+                message.push_str(&display_content);
+                message.push_str("\n```\n\n");
+
+                if is_truncated {
+                    message.push_str(
+                        "⚠️ **CONTENT TRUNCATED**: Only showing first 100 lines as preview\n\n",
+                    );
+                }
+
+                // Context-aware next steps
+                let mut next_steps = vec!["- Content verified above (preview only)".to_string()];
+
+                if is_truncated {
+                    next_steps.push(format!(
+                        "- 📖 Use `readFile(\"{}\")` to see full content",
+                        path_str
+                    ));
+                }
+
+                // File type specific suggestions
+                if path_str.ends_with(".md")
+                    || path_str.ends_with(".txt")
+                    || path_str.ends_with(".rs")
+                    || path_str.ends_with(".js")
+                    || path_str.ends_with(".ts")
+                {
+                    next_steps.push(format!(
+                        "- ✏️ Use `editFile(\"{}\", oldText, newText)` for edits",
+                        path_str
+                    ));
+                } else if path_str.ends_with(".json") || path_str.ends_with(".yaml") {
+                    next_steps.push(format!(
+                        "- 🔍 Use `grep(\"{}\", pattern)` to validate structure",
+                        path_str
+                    ));
+                    next_steps.push(format!(
+                        "- ✏️ Use `editFile(\"{}\", oldText, newText)` for edits",
+                        path_str
+                    ));
+                }
+
+                next_steps.push(format!(
+                    "- 🗑️ Use `deleteFile(\"{}\")` to remove if needed",
+                    path_str
+                ));
+
+                message.push_str(&format!("**Next Steps:**\n{}", next_steps.join("\n")));
 
                 Ok(MCPResult::success_with_data(
                     &message,
@@ -392,9 +439,7 @@ impl WorkspaceServer {
                         "path": path_str,
                         "bytes_written": content.len(),
                         "lines": lines,
-                        "mode": mode,
-                        "truncated": is_truncated,
-                        "had_original": original_content.is_some()
+                        "truncated": is_truncated
                     }),
                 ))
             }
@@ -506,7 +551,7 @@ impl WorkspaceServer {
                 vec![
                     "Provide the path to a specific file, not a directory".to_string(),
                     "To import multiple files, call importFile multiple times".to_string(),
-                    "To import directory contents, use shell copy commands instead".to_string(),
+                    "To import directory contents, use shell commands (e.g., runShell('cp -r src dest'))".to_string(),
                 ],
                 ToolGroup::Workspace,
             )

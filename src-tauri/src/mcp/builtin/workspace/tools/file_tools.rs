@@ -37,6 +37,12 @@ pub fn create_read_file_tool() -> MCPTool {
         title: Some("Read File".to_string()),
         description: "Read the contents of a file from the workspace. Returns file content as text.
 
+⚠️ CRITICAL WORKFLOW (PREREQUISITE FOR EDITS):
+1. ALWAYS call readFile BEFORE editFile or previewReplacement
+2. Extract exact text from readFile response (including whitespace)
+3. Use extracted text as oldString parameter in editFile
+4. Verify file exists with listDirectory if needed
+
 PARAMETERS:
 - path: Relative path from workspace root
 - startLine (optional): Read from this line number (1-based)
@@ -47,8 +53,10 @@ USAGE:
 - Use readFile(path, startLine, endLine) to read specific line ranges
 - Line ranges are inclusive [startLine, endLine]
 
-⚠️ PREREQUISITE: File must exist in workspace
-💡 NEXT: Use createFile to create files, or editFile for targeted edits"
+❌ NEVER edit files without reading them first
+✅ ALWAYS use readFile before any edit operation
+
+💡 NEXT: Use editFile for targeted changes or createFile for new files"
             .to_string(),
         input_schema: object_schema(props, vec!["path".to_string()]),
         output_schema: None,
@@ -63,7 +71,16 @@ pub fn create_create_file_tool() -> MCPTool {
         string_prop(
             Some(1),
             Some(1000),
-            Some("Relative path to the file to write (from workspace root)"),
+            Some(
+                "Relative path from workspace root. Examples: 'src/main.rs', 'docs/README.md'
+
+⚠️ VALIDATION:
+- Must be relative path (no '../' traversal)
+- Must not exist (checked before creation)
+- Parent directories created automatically
+
+💡 TIP: Use listDirectory('.') to see current workspace structure",
+            ),
         ),
     );
     props.insert(
@@ -71,34 +88,38 @@ pub fn create_create_file_tool() -> MCPTool {
         string_prop(
             None,
             None,
-            Some("Content to write to the file. Actual maximum is enforced server-side via LIBRAGENT_MAX_FILE_SIZE"),
-        ),
-    );
-    props.insert(
-        "mode".to_string(),
-        string_prop(
-            None,
-            None,
-            Some("Write mode: 'w' for overwrite (default), 'a' for append"),
+            Some("Content to write to the new file. Maximum size enforced server-side via LIBRAGENT_MAX_FILE_SIZE
+
+⚠️ SIZE LIMITS:
+- Typical limit: 10MB per file
+- For larger files: Split into smaller files or use external storage
+
+💡 TIP: Empty content is allowed for creating placeholder files"),
         ),
     );
 
     MCPTool {
         name: "createFile".to_string(),
         title: Some("Create File".to_string()),
-        description: "Write content to a file in the workspace. Creates file if it doesn't exist.
+        description: "Create a new file in the workspace. FAILS if file already exists.
 
-MODES:
-- 'w' (default): Overwrites entire file with new content
-- 'a': Appends content to end of existing file
+⚠️ CRITICAL BEHAVIOR:
+- Creates NEW files only
+- FAILS if file already exists (prevents accidental overwrites)
+- Returns error with guidance for existing files
 
-⚠️ CRITICAL WORKFLOW FOR EDITS:
-1. Call readFile(path) FIRST to see current content
-2. Modify content as needed
-3. Call createFile(path, newContent, 'w') to save
+💡 WORKFLOW:
+1. Check if file exists: Use listDirectory or readFile first
+2. For new files: Call createFile directly
+3. For existing files: Use editFile for incremental changes
+4. For complete replacement: deleteFile → createFile
 
-⚠️ WARNING: Mode 'w' replaces ALL file content - use editFile for targeted edits
-💡 NEXT: Use readFile to verify changes or listDirectory to see workspace structure"
+⚠️ COMMON SCENARIOS:
+- New file: createFile(path, content) → Success
+- Existing file (modify): Use editFile instead
+- Existing file (replace all): deleteFile(path) → createFile(path, content)
+
+💡 NEXT: Use readFile to verify content or listDirectory to see workspace structure"
             .to_string(),
         input_schema: object_schema(props, vec!["path".to_string(), "content".to_string()]),
         output_schema: None,
@@ -122,12 +143,21 @@ pub fn create_list_directory_tool() -> MCPTool {
         title: Some("List Directory".to_string()),
         description: "List all files and subdirectories in a workspace directory. Returns names and types (file/directory).
 
+⚠️ CRITICAL WORKFLOW (ENTRY POINT):
+1. Start with listDirectory('.') to see workspace root
+2. Identify target files or subdirectories
+3. Use readFile(path) to view file contents
+4. Use listDirectory(subdir) to explore subdirectories
+
 USAGE:
 - Use listDirectory('.') to see workspace root contents
 - Use listDirectory('src') to explore subdirectories
 - Navigate deeper by concatenating paths: 'src/components'
 
-💡 NEXT: Use readFile to examine file contents or listDirectory on subdirectories to explore deeper".to_string(),
+✅ ALWAYS start exploration with listDirectory
+💡 TIP: Use searchFiles for finding specific file patterns
+
+💡 NEXT: Use readFile to examine files or listDirectory to explore deeper".to_string(),
         input_schema: object_schema(props, vec!["path".to_string()]),
         output_schema: None,
         annotations: None,
