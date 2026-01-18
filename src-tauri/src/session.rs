@@ -223,23 +223,49 @@ echo "Available tools: python3, typescript/deno, shell commands"
                 if let Some(override_path) = &info.workspace_override {
                     return override_path.clone();
                 }
+                // Also return the standard path if found in pool (avoids re-creation checks)
+                return info.workspace_path.clone();
             }
         }
 
         let workspace_dir = self.base_data_dir.join("workspaces").join(session_id);
 
         // Ensure directory exists
-        if let Err(e) = fs::create_dir_all(&workspace_dir) {
+        let final_dir = if let Err(e) = fs::create_dir_all(&workspace_dir) {
             warn!("Failed to create workspace directory {workspace_dir:?}: {e}");
             // Fallback to default workspace
             let default_dir = self.base_data_dir.join("workspaces").join("default");
             if let Err(e) = fs::create_dir_all(&default_dir) {
                 error!("Failed to create default workspace: {e}");
             }
-            return default_dir;
+            default_dir
+        } else {
+            workspace_dir
+        };
+
+        // Lazy load: Add to pool if missing
+        if let Ok(mut pool) = self.workspace_pool.write() {
+            // Double check inside write lock
+            if let Some(info) = pool.get(session_id) {
+                if let Some(override_path) = &info.workspace_override {
+                    return override_path.clone();
+                }
+                return info.workspace_path.clone();
+            }
+
+            let workspace_info = SessionWorkspaceInfo {
+                session_id: session_id.to_string(),
+                workspace_path: final_dir.clone(),
+                workspace_override: None,
+                created_at: Instant::now(),
+                last_accessed: Instant::now(),
+                is_template: false,
+            };
+            pool.insert(session_id.to_string(), workspace_info);
+            info!("Lazy loaded workspace info for session: {}", session_id);
         }
 
-        workspace_dir
+        final_dir
     }
 
     pub fn get_base_data_dir(&self) -> &PathBuf {

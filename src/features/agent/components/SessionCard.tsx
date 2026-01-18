@@ -1,5 +1,5 @@
 import { Button } from '@/components/ui/button';
-import { Trash2, Play, Eye } from 'lucide-react';
+import { Trash2, Play, Eye, Circle, Pause, XCircle } from 'lucide-react';
 import { useState, useCallback } from 'react';
 import { getLogger } from '@/lib/logger';
 import { formatRelativeTime } from '@/lib/date-utils';
@@ -34,27 +34,32 @@ export function SessionCard({ session, onResume, onDelete }: SessionCardProps) {
     switch (status) {
       case 'busy':
         return {
-          badge: '🟢 Active',
+          icon: 'active',
+          badge: 'Active',
           color: 'bg-green-500/20 text-green-700 dark:text-green-400',
         };
       case 'idle':
         return {
-          badge: '🔵 Idle',
+          icon: 'idle',
+          badge: 'Idle',
           color: 'bg-blue-500/20 text-blue-700 dark:text-blue-400',
         };
       case 'paused':
         return {
-          badge: '⏸️ Paused',
+          icon: 'paused',
+          badge: 'Paused',
           color: 'bg-yellow-500/20 text-yellow-700 dark:text-yellow-400',
         };
       case 'error':
         return {
-          badge: '🔴 Error',
+          icon: 'error',
+          badge: 'Error',
           color: 'bg-red-500/20 text-red-700 dark:text-red-400',
         };
       default:
         return {
-          badge: '⚪ Unknown',
+          icon: 'unknown',
+          badge: 'Unknown',
           color: 'bg-gray-500/20 text-gray-700 dark:text-gray-400',
         };
     }
@@ -97,11 +102,16 @@ export function SessionCard({ session, onResume, onDelete }: SessionCardProps) {
             {session.name || `Session ${session.id.slice(0, 8)}`}
           </h3>
           <div
-            className={`text-xs px-2 py-0.5 rounded-full inline-block mt-1 ${statusConfig.color}`}
+            className={`text-xs px-2 py-0.5 rounded-full inline-flex items-center gap-1 mt-1 ${statusConfig.color}`}
             role="status"
             aria-label={`Session status: ${statusConfig.badge}`}
           >
-            {statusConfig.badge}
+            {statusConfig.icon === 'active' && <Circle className="w-2 h-2 fill-current" />}
+            {statusConfig.icon === 'idle' && <Circle className="w-2 h-2 fill-current" />}
+            {statusConfig.icon === 'paused' && <Pause className="w-3 h-3" />}
+            {statusConfig.icon === 'error' && <XCircle className="w-3 h-3" />}
+            {statusConfig.icon === 'unknown' && <Circle className="w-2 h-2 fill-current" />}
+            <span>{statusConfig.badge}</span>
           </div>
         </div>
       </div>

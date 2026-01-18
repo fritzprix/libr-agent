@@ -234,18 +234,30 @@ pub async fn open_workspace_in_explorer(session_id: String) -> Result<(), String
     {
         let file_managers = ["nautilus", "dolphin", "thunar", "pcmanfm"];
         let mut opened = false;
+        let mut errors: Vec<String> = Vec::new();
 
         for fm in &file_managers {
-            if let Ok(_) = Command::new(fm).arg(&workspace_path).spawn() {
-                opened = true;
-                break;
+            match Command::new(fm).arg(&workspace_path).spawn() {
+                Ok(_) => {
+                    opened = true;
+                    break;
+                }
+                Err(e) => {
+                    errors.push(format!("{}: {}", fm, e));
+                }
             }
         }
 
         if !opened {
-            return Err(
-                "No file manager found. Supported: nautilus, dolphin, thunar, pcmanfm".to_string(),
-            );
+            let error_details = if errors.is_empty() {
+                String::new()
+            } else {
+                format!("\n\nAttempted commands and errors:\n{}", errors.join("\n"))
+            };
+            return Err(format!(
+                "No file manager found. Supported: nautilus, dolphin, thunar, pcmanfm{}",
+                error_details
+            ));
         }
     }
 
@@ -293,26 +305,33 @@ pub async fn open_workspace_in_terminal(session_id: String) -> Result<(), String
 
     #[cfg(target_os = "linux")]
     {
-        return Err(format!(
+        Err(format!(
             "Terminal launch not supported on Linux. No standard command available. \
              Open a terminal manually and navigate to: {}",
             workspace_path.display()
-        ));
+        ))
     }
 
-    // Fallback for other OS if not caught by cfg
+    // For Windows and macOS, the terminal was already launched above
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    {
+        Ok(())
+    }
+
+    // Fallback for unsupported platforms (unlikely, but comprehensive)
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
     {
-        return Err("Platform not supported".to_string());
+        Err("Terminal launch not supported on this platform".to_string())
     }
-
-    #[cfg(not(target_os = "linux"))]
-    Ok(())
 }
 
 #[tauri::command]
 pub async fn get_workspace_override(session_id: String) -> Result<Option<String>, String> {
     let session_manager = get_session_manager().map_err(|e| e.to_string())?;
+
+    // Ensure session workspace exists in pool (triggers lazy loading)
+    let _workspace_path = session_manager.get_session_workspace_dir_by_id(&session_id);
+
     let info = session_manager
         .get_session_info(&session_id)
         .ok_or("Session not found")?;
@@ -333,7 +352,10 @@ pub async fn set_workspace_override(
     }
 
     if !override_path.is_dir() {
-        return Err(format!("Path is not a directory: {}", override_path.display()));
+        return Err(format!(
+            "Path is not a directory: {}",
+            override_path.display()
+        ));
     }
 
     if !check_dir_access(&override_path).await? {
@@ -341,6 +363,10 @@ pub async fn set_workspace_override(
     }
 
     let session_manager = get_session_manager().map_err(|e| e.to_string())?;
+
+    // Ensure session workspace exists in pool (triggers lazy loading)
+    let _workspace_path = session_manager.get_session_workspace_dir_by_id(&session_id);
+
     session_manager
         .set_workspace_override(&session_id, override_path)
         .await
@@ -349,5 +375,9 @@ pub async fn set_workspace_override(
 #[tauri::command]
 pub async fn cancel_workspace_override(session_id: String) -> Result<(), String> {
     let session_manager = get_session_manager().map_err(|e| e.to_string())?;
+
+    // Ensure session workspace exists in pool (triggers lazy loading)
+    let _workspace_path = session_manager.get_session_workspace_dir_by_id(&session_id);
+
     session_manager.remove_workspace_override(&session_id).await
 }

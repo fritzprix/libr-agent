@@ -26,6 +26,11 @@ export {
   listWorkspaceFiles,
   workspaceWriteFile,
   openWorkspaceFileWithDefaultApp,
+  openWorkspaceInExplorer,
+  openWorkspaceInTerminal,
+  getWorkspaceOverride,
+  setWorkspaceOverride,
+  cancelWorkspaceOverride,
 } from './workspace';
 
 // MCP server management

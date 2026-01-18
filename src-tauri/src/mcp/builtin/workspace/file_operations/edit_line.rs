@@ -310,10 +310,8 @@ impl WorkspaceServer {
                 if idx < new_lines.len() {
                     diff_output.push_str(&format!("+{}: {}\n", line_num, new_lines[idx]));
                 }
-            } else {
-                if idx < orig_lines.len() {
-                    diff_output.push_str(&format!("  {}: {}\n", line_num, orig_lines[idx]));
-                }
+            } else if idx < orig_lines.len() {
+                diff_output.push_str(&format!("  {}: {}\n", line_num, orig_lines[idx]));
             }
         }
 
