@@ -22,7 +22,7 @@ export default function TextareaWithLabel({
       label={label}
       error={error}
       containerClassName={containerClassName}
-      labelClassName="text-gray-400"
+      labelClassName="text-muted-foreground"
     >
       <Textarea
         className={cn(error && 'border-red-400', className)}
