@@ -296,24 +296,15 @@ export const AssistantContextProvider = ({
 
   const [{ error: deleteError }, deleteAssistant] = useAsyncFn(
     async (assistantId: string) => {
-      const assistant = assistants?.find((a) => a.id === assistantId);
-      const assistantName = assistant?.name || 'Unknown';
-      if (
-        window.confirm(
-          `Are you sure you want to delete '${assistantName}' assistant? This action cannot be undone.`,
-        )
-      ) {
-        try {
-          await assistantService.delete(assistantId);
-        } catch (err) {
-          showError('Failed to delete assistant.', err);
-          // Error is automatically captured by useAsyncFn's deleteError
-        } finally {
-          await loadAssistants();
-        }
+      try {
+        await assistantService.delete(assistantId);
+        await loadAssistants();
+      } catch (err) {
+        showError('Failed to delete assistant.', err);
+        throw err; // Re-throw for caller to handle
       }
     },
-    [loadAssistants, assistants, showError, assistantService],
+    [loadAssistants, showError, assistantService],
   );
 
   const searchAssistants = useCallback(
