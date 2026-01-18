@@ -23,8 +23,8 @@ interface SessionFilesPopoverProps {
 
 export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
   const { sessionFiles } = useAgentResourceAttachment();
-  // Ensure contentstore service context is loaded (for future structured state)
-  useServiceContext('contentstore');
+  // Ensure content_store service context is loaded (for future structured state)
+  useServiceContext('content_store');
   const { executeTool } = useBuiltInTool();
   const [isOpen, setIsOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<AttachmentReference | null>(
@@ -66,7 +66,7 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
             id: `read_content_${Date.now()}`,
             type: 'function',
             function: {
-              name: 'builtin_contentstore__readContent',
+              name: 'builtin_content_store__readContent',
               arguments: JSON.stringify({
                 sessionId: file.sessionId,
                 contentId: file.contentId,

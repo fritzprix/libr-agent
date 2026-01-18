@@ -26,6 +26,7 @@ export function useAgentFileAttachment() {
     removeFile,
     clearPendingFiles,
     isLoading: isAttachmentLoading,
+    refetchSessionFiles,
   } = useAgentResourceAttachment();
 
   const rustBackend = useRustBackend();
@@ -296,5 +297,6 @@ export function useAgentFileAttachment() {
     getMimeType,
     processFileDrop,
     validateFiles,
+    refetchSessionFiles,
   };
 }

@@ -101,9 +101,9 @@ impl ContentStoreServer {
     pub fn tools_static() -> Vec<MCPTool> {
         vec![
             MCPTool {
-                name: "saveKnowledge".to_string(),
-                title: Some("Save Knowledge".to_string()),
-                description: "Save knowledge entry (text or file) to the content store".to_string(),
+                name: "addContent".to_string(),
+                title: Some("Add Content".to_string()),
+                description: "Add content entry (text or file) to the content store".to_string(),
                 input_schema: serde_json::from_value(serde_json::json!({
                     "type": "object",
                     "properties": {
@@ -136,9 +136,9 @@ impl ContentStoreServer {
                 annotations: Option::None,
             },
             MCPTool {
-                name: "searchKnowledge".to_string(),
-                title: Some("Search Knowledge".to_string()),
-                description: "Search for knowledge entries using keywords".to_string(),
+                name: "keywordSimilaritySearch".to_string(),
+                title: Some("Keyword Similarity Search".to_string()),
+                description: "Search for content entries using keyword similarity (BM25 algorithm)".to_string(),
                 input_schema: serde_json::from_value(serde_json::json!({
                     "type": "object",
                     "properties": {

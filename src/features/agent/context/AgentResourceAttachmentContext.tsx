@@ -41,6 +41,7 @@ interface AgentResourceAttachmentContextType {
   commitPendingFiles: () => Promise<AttachmentReference[]>;
   clearPendingFiles: () => void;
   validateFiles: (files: File[]) => File[];
+  refetchSessionFiles: () => Promise<void>;
 }
 
 const AgentResourceAttachmentContext = createContext<
@@ -87,7 +88,7 @@ export function AgentResourceAttachmentProvider({
         // Use Agent V2 session-specific proxy to call listContent
         const response = await agentCallBuiltinTool<{
           contents: ContentStoreItem[];
-        }>(sessionId, 'builtin_contentstore__listContent', {
+        }>(sessionId, 'builtin_content_store__listContent', {
           sessionId,
         });
 
@@ -118,10 +119,11 @@ export function AgentResourceAttachmentProvider({
           filenames: contents.map((c) => c.filename),
         });
 
-        // Map to AttachmentReference format
+        // Map to AttachmentReference format with explicit committed status
         const files: AttachmentReference[] = contents.map((content) => ({
           sessionId: content.sessionId,
           contentId: content.contentId,
+          status: 'committed',
           filename: content.filename,
           mimeType: content.mimeType,
           size: Number((content as { size?: number | null }).size ?? 0),
@@ -157,7 +159,7 @@ export function AgentResourceAttachmentProvider({
   );
 
   // Track session ID for caching store IDs
-  // NOTE: Content stores are auto-created on first use (saveKnowledge/listContent)
+  // NOTE: Content stores are auto-created on first use (addContent/listContent)
   // No explicit createStore tool is needed
   const sessionStoreIdRef = useRef<string | undefined>();
   // Reset files when session changes
@@ -244,7 +246,8 @@ export function AgentResourceAttachmentProvider({
     (files: PendingFileInput[]) => {
       const newPending = files.map((file) => ({
         sessionId: currentSession?.id || '',
-        contentId: `pending_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
+        pendingId: `pending_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        status: 'pending' as const,
         filename: file.filename || extractFilenameFromUrl(file.url),
         mimeType: file.mimeType,
         size: file.file?.size || 0,
@@ -278,7 +281,7 @@ export function AgentResourceAttachmentProvider({
         throw new Error('Session not available');
       }
 
-      // Store will be auto-created on first saveKnowledge call
+      // Store will be auto-created on first addContent call
       const storeId = currentSession.id;
 
       let fileUrl: string;
@@ -345,22 +348,22 @@ export function AgentResourceAttachmentProvider({
           { filename: actualFilename },
         );
 
+        // Return AttachmentReference without contentId for workspace-only files
         return {
           sessionId: currentSession.id,
-          contentId: `workspace_only_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+          status: 'workspace-only',
           filename: actualFilename,
           mimeType: actualMimeType,
           size: fileSize,
           lineCount: 0,
-          preview: '',
+          preview: actualFilename,
           uploadedAt: new Date().toISOString(),
           workspacePath,
-          isWorkspaceOnly: true,
         };
       }
 
       try {
-        // Use session-specific saveAgentFile instead of global server.saveKnowledge
+        // Use session-specific saveAgentFile instead of global server.addContent
         // This ensures the file is associated with the correct agent session
         const result = (await saveAgentFile(storeId, actualFilename, {
           content: undefined, // Content is handled via fileUrl or direct upload
@@ -393,6 +396,7 @@ export function AgentResourceAttachmentProvider({
         return {
           sessionId: result.sessionId,
           contentId: result.contentId,
+          status: 'committed',
           filename: result.filename ?? actualFilename, // Fallback to computed filename
           mimeType: result.mimeType,
           size: Number(result.size ?? fileSize ?? 0),
@@ -439,7 +443,11 @@ export function AgentResourceAttachmentProvider({
         }
       }
 
-      await mutateSessionFiles();
+      // Optimistic update: immediately update the local state with new files
+      await mutateSessionFiles(
+        (currentFiles) => [...(currentFiles || []), ...results],
+        { revalidate: true },
+      );
 
       pendingFiles.forEach((file) => {
         if (file.blobCleanup) {
@@ -460,32 +468,51 @@ export function AgentResourceAttachmentProvider({
 
   const removeFile = useCallback(
     async (ref: AttachmentReference): Promise<void> => {
-      if (ref.contentId.startsWith('pending_')) {
+      // Handle pending files - check by pendingId
+      if (ref.status === 'pending') {
         const fileToRemove = pendingFiles.find(
-          (file) => file.contentId === ref.contentId,
+          (file) => file.pendingId === ref.pendingId,
         );
         if (fileToRemove?.blobCleanup) fileToRemove.blobCleanup();
         setPendingFiles((prev) =>
-          prev.filter((p) => p.contentId !== ref.contentId),
+          prev.filter((p) => p.pendingId !== ref.pendingId),
         );
         return;
       }
 
-      if (!currentSession?.id) return;
-
-      try {
-        await agentCallBuiltinTool(
-          currentSession.id,
-          'builtin_contentstore__deleteContent',
-          { contentId: ref.contentId },
-        );
-        await mutateSessionFiles();
-      } catch (error) {
-        logger.error('Failed to remove file from server', {
-          contentId: ref.contentId,
-          error,
+      // Handle workspace-only files - no server deletion needed
+      if (ref.status === 'workspace-only') {
+        logger.info('Workspace-only file removal (no server deletion)', {
+          filename: ref.filename,
         });
-        throw error;
+        // Note: Actual workspace file deletion would require additional implementation
+        return;
+      }
+
+      // Handle committed files - delete from server
+      if (ref.status === 'committed') {
+        if (!currentSession?.id) return;
+        if (!ref.contentId) {
+          logger.error('Cannot delete committed file without contentId', {
+            filename: ref.filename,
+          });
+          return;
+        }
+
+        try {
+          await agentCallBuiltinTool(
+            currentSession.id,
+            'builtin_content_store__deleteContent',
+            { contentId: ref.contentId },
+          );
+          await mutateSessionFiles();
+        } catch (error) {
+          logger.error('Failed to remove file from server', {
+            contentId: ref.contentId,
+            error,
+          });
+          throw error;
+        }
       }
     },
     [pendingFiles, currentSession, mutateSessionFiles],
@@ -515,6 +542,17 @@ export function AgentResourceAttachmentProvider({
     });
   }, []);
 
+  const refetchSessionFiles = useCallback(async () => {
+    logger.info('Manually refetching session files');
+    await mutateSessionFiles();
+  }, [mutateSessionFiles]);
+
+  logger.info('AgentResourceAttachmentContext state', {
+    pendingFile: pendingFiles,
+    sessionFile: sessionFiles,
+    isLoading,
+  });
+
   return (
     <AgentResourceAttachmentContext.Provider
       value={{
@@ -526,6 +564,7 @@ export function AgentResourceAttachmentProvider({
         commitPendingFiles,
         clearPendingFiles,
         validateFiles,
+        refetchSessionFiles,
       }}
     >
       {children}

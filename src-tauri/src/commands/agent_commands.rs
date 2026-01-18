@@ -293,12 +293,14 @@ pub async fn agent_handle_llm_error(
 }
 
 /// Call a builtin tool directly via proxy_manager (for testing and direct execution)
+/// Returns the unwrapped MCPResult (not the full MCPResponse wrapper)
 #[command]
 pub async fn agent_call_builtin_tool(
     session_id: String,
     tool_name: String,
     args: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
+    use crate::mcp::types::MCPResponseResult;
     use crate::state::get_mcp_service_proxy_manager;
 
     let proxy_manager = get_mcp_service_proxy_manager();
@@ -307,8 +309,29 @@ pub async fn agent_call_builtin_tool(
         .call_tool(&session_id, &tool_name, args)
         .await?;
 
-    // Convert MCPResponse to JSON
-    serde_json::to_value(response).map_err(|e| format!("Failed to serialize response: {}", e))
+    // Handle errors from tool execution
+    if let Some(error) = response.error {
+        return Err(format!("Tool execution error: {}", error.message));
+    }
+
+    // Extract result from MCPResponse
+    let result = response
+        .result
+        .ok_or_else(|| "Tool execution returned no result or error".to_string())?;
+
+    // Unwrap MCPResult from MCPResponseResult::ToolCall variant
+    // This matches the TypeScript expectation of receiving MCPResult directly
+    match result {
+        MCPResponseResult::ToolCall(mcp_result) => {
+            // Serialize MCPResult (with camelCase field names matching TypeScript interface)
+            serde_json::to_value(mcp_result)
+                .map_err(|e| format!("Failed to serialize MCPResult: {}", e))
+        }
+        _ => Err(format!(
+            "Unexpected response type for builtin tool '{}': expected ToolCall variant",
+            tool_name
+        )),
+    }
 }
 
 /// Get service contexts for a session

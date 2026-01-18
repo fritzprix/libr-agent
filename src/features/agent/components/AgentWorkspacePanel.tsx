@@ -239,7 +239,7 @@ export function AgentWorkspacePanel() {
             ? destPath.slice(2)
             : destPath;
 
-          // Call builtin workspace tool
+          // Call builtin workspace tool (returns MCPResult directly after fix)
           const response = (await agentCallBuiltinTool(
             session.id,
             'builtin_workspace__importFile',
@@ -247,7 +247,11 @@ export function AgentWorkspacePanel() {
               src_abs_path: srcPath,
               dest_rel_path: destRelPath,
             },
-          )) as { result?: unknown; error?: { message: string } };
+          )) as {
+            content?: Array<{ type: string; text?: string }>;
+            structuredContent?: unknown;
+            isError?: boolean;
+          };
 
           // Create tool messages for chat history
           const toolCallId = createId();
@@ -256,48 +260,49 @@ export function AgentWorkspacePanel() {
           let resultText = '';
 
           try {
-            if (response.error) {
-              resultText = `❌ ${response.error.message}`;
-            } else if (response.result) {
-              const resAsUnknown: unknown = response.result as unknown;
-              const content =
-                typeof resAsUnknown === 'object' && resAsUnknown !== null
-                  ? (resAsUnknown as Record<string, unknown>)['content']
-                  : undefined;
-              if (Array.isArray(content) && content.length > 0) {
-                const texts: string[] = [];
-                for (const item of content) {
-                  if (item && typeof item === 'object') {
-                    if (
-                      'text' in (item as Record<string, unknown>) &&
-                      typeof (item as Record<string, unknown>)['text'] ===
-                        'string'
-                    ) {
-                      texts.push(
-                        (item as Record<string, unknown>)['text'] as string,
-                      );
-                    } else if (
-                      (item as Record<string, unknown>)['type'] === 'text' &&
-                      !('text' in (item as Record<string, unknown>))
-                    ) {
-                      // explicit text type but missing text field - skip
-                    } else {
-                      try {
-                        texts.push(JSON.stringify(item));
-                      } catch {
-                        // ignore
-                      }
+            // Check if this is an error result
+            if (response.isError === true) {
+              // Extract error message from content
+              const errorContent = response.content?.[0];
+              if (
+                errorContent &&
+                typeof errorContent === 'object' &&
+                'text' in errorContent
+              ) {
+                resultText = `❌ ${errorContent.text}`;
+              } else {
+                resultText = '❌ Tool execution failed';
+              }
+            } else if (response.content && Array.isArray(response.content)) {
+              // Extract text from content array
+              const texts: string[] = [];
+              for (const item of response.content) {
+                if (item && typeof item === 'object') {
+                  if (
+                    'text' in (item as Record<string, unknown>) &&
+                    typeof (item as Record<string, unknown>)['text'] ===
+                      'string'
+                  ) {
+                    texts.push(
+                      (item as Record<string, unknown>)['text'] as string,
+                    );
+                  } else if (
+                    (item as Record<string, unknown>)['type'] === 'text' &&
+                    !('text' in (item as Record<string, unknown>))
+                  ) {
+                    // explicit text type but missing text field - skip
+                  } else {
+                    try {
+                      texts.push(JSON.stringify(item));
+                    } catch {
+                      // ignore
                     }
                   }
                 }
-
-                if (texts.length > 0) resultText = texts.join('\n');
-                else resultText = JSON.stringify(response.result);
-              } else if (typeof resAsUnknown === 'string') {
-                resultText = resAsUnknown as string;
-              } else {
-                resultText = JSON.stringify(response.result);
               }
+
+              if (texts.length > 0) resultText = texts.join('\n');
+              else resultText = JSON.stringify(response.content);
             } else {
               resultText = 'No result returned from importFile';
             }

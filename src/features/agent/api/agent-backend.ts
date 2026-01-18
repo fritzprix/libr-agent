@@ -36,7 +36,7 @@ export async function saveAgentFile(
   // Server ID is 'content_store' (with underscore) in extract_builtin_tool_ids (tools.rs)
   const response = await agentCallBuiltinTool(
     sessionId,
-    'builtin_content_store__saveKnowledge',
+    'builtin_content_store__addContent',
     {
       ...args,
       metadata: {

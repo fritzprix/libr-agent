@@ -95,7 +95,7 @@ impl MCPServiceProxy {
     /// - External MCP server (stdio-based)
     ///
     /// # Arguments
-    /// * `tool_name` - Full tool name (e.g., "builtin_knowledge__saveKnowledge")
+    /// * `tool_name` - Full tool name (e.g., "builtin_content_store__addContent")
     /// * `args` - JSON arguments for the tool
     ///
     /// # Returns
@@ -103,7 +103,7 @@ impl MCPServiceProxy {
     /// * `Err(String)` - Error if tool not found or execution fails
     pub async fn call_tool(&self, tool_name: &str, args: Value) -> Result<MCPResponse, String> {
         if tool_name.starts_with("builtin_") {
-            // Extract tool ID from full name (builtin_knowledge__saveKnowledge -> knowledge)
+            // Extract tool ID from full name (builtin_content_store__addContent -> content_store)
             let tool_id = tool_name
                 .strip_prefix("builtin_")
                 .and_then(|s| s.split("__").next())

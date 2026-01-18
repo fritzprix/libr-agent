@@ -18,7 +18,7 @@ export interface UIResource {
 // MCP file attachment reference type
 export interface AttachmentReference {
   sessionId: string; // MCP file store ID (same as session ID)
-  contentId: string; // MCP content ID
+  contentId?: string; // MCP content ID (undefined for pending/workspace-only files)
   filename: string; // Original filename
   mimeType: string; // MIME type (e.g., 'text/plain', 'text/markdown')
   size: number; // File size (bytes)
@@ -28,12 +28,14 @@ export interface AttachmentReference {
   chunkCount?: number; // Number of chunks (for search purposes)
   lastAccessedAt?: string; // Last access time
   workspacePath?: string; // File path where it's saved in the workspace
+  // Explicit state tracking (replaces brittle contentId prefix checking)
+  status: 'pending' | 'committed' | 'workspace-only'; // File upload/storage status
+  pendingId?: string; // Temporary ID for pending files (before commit)
   // For pending files only - used during upload process
   originalUrl?: string; // Original URL or blob URL
   originalPath?: string; // File system path (Tauri environment)
   file?: File; // File object (browser environment)
   blobCleanup?: () => void; // Cleanup function for blob URLs
-  isWorkspaceOnly?: boolean; // Flag for files only in workspace (not in Content Store)
 }
 
 /**

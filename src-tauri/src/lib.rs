@@ -345,7 +345,7 @@ pub fn run() {
                 // Setup custom file logger FIRST (before any log calls)
                 let log_dir = app.path().app_log_dir().unwrap();
                 logger::setup_file_logger(log_dir)?;
-                
+
                 // Test if Rust logger is properly initialized
                 log::info!("🔥 Logger initialized - testing Rust log to file");
                 info!("🚀 LibrAgent initializing...");

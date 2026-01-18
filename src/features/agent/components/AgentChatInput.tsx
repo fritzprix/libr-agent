@@ -45,6 +45,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     removeFile,
     processFileDrop,
     validateFiles,
+    refetchSessionFiles,
   } = useAgentFileAttachment();
 
   const attachedFiles = pendingFiles;
@@ -142,8 +143,12 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
         updatedAt: new Date(),
       };
 
-      const supportedFiles = attachedFileRefs.filter((f) => !f.isWorkspaceOnly);
-      const workspaceFiles = attachedFileRefs.filter((f) => f.isWorkspaceOnly);
+      const supportedFiles = attachedFileRefs.filter(
+        (f) => f.status !== 'workspace-only',
+      );
+      const workspaceFiles = attachedFileRefs.filter(
+        (f) => f.status === 'workspace-only',
+      );
 
       if (supportedFiles.length > 0) {
         userMessage.attachments = supportedFiles;
@@ -166,6 +171,15 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
       try {
         await submit(userMessage);
         logger.info('Message submitted successfully');
+
+        // Refetch session files after successful message submission
+        // This ensures SessionFilesPopover shows updated file count
+        if (attachedFileRefs.length > 0) {
+          logger.info(
+            'Refetching session files after message with attachments',
+          );
+          await refetchSessionFiles();
+        }
       } catch (err) {
         // Restore input on error
         setInput(currentInput);
@@ -181,6 +195,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
       commitPendingFiles,
       clearPendingFiles,
       submit,
+      refetchSessionFiles,
     ],
   );
 
