@@ -4,6 +4,8 @@
 /// including file listing, data directories, and log directories.
 use crate::session::get_session_manager;
 use chrono::{DateTime, Utc};
+use std::path::PathBuf;
+use std::process::Command;
 use tokio::fs;
 
 /// Represents a file or directory item in the workspace for display in the frontend.
@@ -191,4 +193,160 @@ pub async fn open_workspace_file_with_default_app(
         .map_err(|e| format!("Failed to open file: {}", e))?;
 
     Ok(())
+}
+
+async fn check_dir_access(path: &PathBuf) -> Result<bool, String> {
+    match fs::read_dir(path).await {
+        Ok(_) => Ok(true),
+        Err(e) => {
+            if e.kind() == std::io::ErrorKind::PermissionDenied {
+                Ok(false)
+            } else {
+                Err(e.to_string())
+            }
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn open_workspace_in_explorer(session_id: String) -> Result<(), String> {
+    let session_manager = get_session_manager().map_err(|e| e.to_string())?;
+    let workspace_path = session_manager.get_session_workspace_dir_by_id(&session_id);
+
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("explorer")
+            .arg(format!("/select,{}", workspace_path.display()))
+            .spawn()
+            .map_err(|e| format!("Failed to open Explorer: {}", e))?;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg("-R")
+            .arg(workspace_path)
+            .spawn()
+            .map_err(|e| format!("Failed to open Finder: {}", e))?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let file_managers = ["nautilus", "dolphin", "thunar", "pcmanfm"];
+        let mut opened = false;
+
+        for fm in &file_managers {
+            if let Ok(_) = Command::new(fm).arg(&workspace_path).spawn() {
+                opened = true;
+                break;
+            }
+        }
+
+        if !opened {
+            return Err(
+                "No file manager found. Supported: nautilus, dolphin, thunar, pcmanfm".to_string(),
+            );
+        }
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn open_workspace_in_terminal(session_id: String) -> Result<(), String> {
+    let session_manager = get_session_manager().map_err(|e| e.to_string())?;
+    let workspace_path = session_manager.get_session_workspace_dir_by_id(&session_id);
+
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("cmd")
+            .args(&[
+                "/c",
+                "start",
+                "cmd",
+                "/k",
+                &format!("cd /d \"{}\"", workspace_path.display()),
+            ])
+            .spawn()
+            .map_err(|e| format!("Failed to open terminal: {}", e))?;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let path_str = workspace_path.to_string_lossy();
+        // Quote for shell
+        let shell_quoted = format!("'{}'", path_str.replace("'", "'\\''"));
+        // Escape for AppleScript string
+        let script_cmd = format!("cd {}", shell_quoted);
+        let applescript_escaped = script_cmd.replace("\\", "\\\\").replace("\"", "\\\"");
+
+        let script = format!(
+            "tell application \"Terminal\" to do script \"{}\"",
+            applescript_escaped
+        );
+
+        Command::new("osascript")
+            .args(&["-e", &script])
+            .spawn()
+            .map_err(|e| format!("Failed to open Terminal: {}", e))?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        return Err(
+            "Terminal launch not supported on Linux. No standard command available. \
+             Open a terminal manually and navigate to the workspace directory."
+                .to_string(),
+        );
+    }
+
+    // Fallback for other OS if not caught by cfg
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        return Err("Platform not supported".to_string());
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_workspace_override(session_id: String) -> Result<Option<String>, String> {
+    let session_manager = get_session_manager().map_err(|e| e.to_string())?;
+    let info = session_manager
+        .get_session_info(&session_id)
+        .ok_or("Session not found")?;
+    Ok(info
+        .workspace_override
+        .map(|p| p.to_string_lossy().to_string()))
+}
+
+#[tauri::command]
+pub async fn set_workspace_override(
+    session_id: String,
+    override_path: String,
+) -> Result<(), String> {
+    let override_path = PathBuf::from(&override_path);
+
+    if !override_path.exists() {
+        return Err(format!("Path does not exist: {}", override_path.display()));
+    }
+
+    if !override_path.is_dir() {
+        return Err(format!("Path is not a directory: {}", override_path.display()));
+    }
+
+    if !check_dir_access(&override_path).await? {
+        return Err("Directory is not accessible (check permissions)".to_string());
+    }
+
+    let session_manager = get_session_manager().map_err(|e| e.to_string())?;
+    session_manager
+        .set_workspace_override(&session_id, override_path)
+        .await
+}
+
+#[tauri::command]
+pub async fn cancel_workspace_override(session_id: String) -> Result<(), String> {
+    let session_manager = get_session_manager().map_err(|e| e.to_string())?;
+    session_manager.remove_workspace_override(&session_id).await
 }

@@ -16,6 +16,8 @@ import { useRustBackend, WorkspaceFileItem } from '@/hooks/use-rust-backend';
 import { useAgentMessageTrigger } from '@/hooks/use-agent-message-trigger';
 import { toast } from 'sonner';
 import { getLogger } from '@/lib/logger';
+import { invoke } from '@tauri-apps/api/core';
+import { Input } from '@/components/ui/input';
 import {
   useDnDContext,
   type DragAndDropEvent,
@@ -50,6 +52,8 @@ export function AgentWorkspacePanel() {
   const { session } = useAgentSessionState();
   const { submit, injectMessages } = useAgentChatActions();
   const [rootPath, setRootPath] = useState<string>('./');
+  const [workspaceOverride, setWorkspaceOverride] = useState<string>('');
+  const [isOverrideActive, setIsOverrideActive] = useState(false);
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -64,6 +68,23 @@ export function AgentWorkspacePanel() {
     logger.info('AgentWorkspacePanel initialized', { rootPath });
     loadDirectory(rootPath);
   }, []);
+
+  // Load current workspace override
+  useEffect(() => {
+    if (session?.id) {
+      invoke('get_workspace_override', { sessionId: session.id })
+        .then((path) => {
+          if (path) {
+            setWorkspaceOverride(path as string);
+            setIsOverrideActive(true);
+          } else {
+            setWorkspaceOverride('');
+            setIsOverrideActive(false);
+          }
+        })
+        .catch((err) => logger.error('Failed to load workspace override', err));
+    }
+  }, [session?.id]);
 
   // Message-based automatic file list updates
   useAgentMessageTrigger(
@@ -377,6 +398,58 @@ export function AgentWorkspacePanel() {
     [loadDirectory],
   );
 
+  const handleSetOverride = async () => {
+    if (!workspaceOverride.trim() || !session?.id) return;
+
+    try {
+      await invoke('set_workspace_override', {
+        sessionId: session.id,
+        overridePath: workspaceOverride,
+      });
+      setIsOverrideActive(true);
+      toast.success('Workspace override set successfully');
+      loadDirectory('./');
+    } catch (error) {
+      logger.error('Failed to set workspace override', error);
+      toast.error(`Failed to set override: ${error}`);
+    }
+  };
+
+  const handleCancelOverride = async () => {
+    if (!session?.id) return;
+
+    try {
+      await invoke('cancel_workspace_override', { sessionId: session.id });
+      setWorkspaceOverride('');
+      setIsOverrideActive(false);
+      toast.success('Workspace override cancelled');
+      loadDirectory('./');
+    } catch (error) {
+      logger.error('Failed to cancel workspace override', error);
+      toast.error(`Failed to cancel override: ${error}`);
+    }
+  };
+
+  const handleOpenInExplorer = async () => {
+    if (!session?.id) return;
+    try {
+      await invoke('open_workspace_in_explorer', { sessionId: session.id });
+    } catch (error) {
+      logger.error('Failed to open explorer', error);
+      toast.error(`Failed to open explorer: ${error}`);
+    }
+  };
+
+  const handleOpenInTerminal = async () => {
+    if (!session?.id) return;
+    try {
+      await invoke('open_workspace_in_terminal', { sessionId: session.id });
+    } catch (error) {
+      logger.error('Failed to open terminal', error);
+      toast.error(`Failed to open terminal: ${error}`);
+    }
+  };
+
   // Open file with system default app
   const handleOpenFile = useCallback(
     async (node: FileNode) => {
@@ -503,11 +576,20 @@ export function AgentWorkspacePanel() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => navigateToDirectory('/')}
-                className="h-6 w-6 p-0"
-                title="Go to root"
+                onClick={handleOpenInExplorer}
+                className="h-6 px-2 text-xs"
+                title="Open in Explorer"
               >
-                <Home className="w-3 h-3" />
+                📁
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleOpenInTerminal}
+                className="h-6 px-2 text-xs"
+                title="Open in Terminal"
+              >
+                ⌨️
               </Button>
               <Button
                 variant="ghost"
@@ -521,6 +603,44 @@ export function AgentWorkspacePanel() {
                 />
               </Button>
             </div>
+          </div>
+
+          {/* Workspace Override UI */}
+          <div className="px-0 py-2 space-y-2 border-b border-border/50 mb-2">
+            <div className="flex gap-2">
+              <Input
+                type="text"
+                placeholder="Workspace Override Path"
+                value={workspaceOverride}
+                onChange={(e) => setWorkspaceOverride(e.target.value)}
+                className="h-7 text-xs"
+                disabled={isOverrideActive}
+              />
+              {!isOverrideActive ? (
+                <Button
+                  onClick={handleSetOverride}
+                  size="sm"
+                  className="h-7 text-xs"
+                  disabled={!workspaceOverride.trim()}
+                >
+                  Set
+                </Button>
+              ) : (
+                <Button
+                  onClick={handleCancelOverride}
+                  size="sm"
+                  variant="destructive"
+                  className="h-7 text-xs"
+                >
+                  Cancel
+                </Button>
+              )}
+            </div>
+            {isOverrideActive && (
+              <p className="text-[10px] text-yellow-500">
+                ⚠️ Using custom workspace
+              </p>
+            )}
           </div>
 
           <div

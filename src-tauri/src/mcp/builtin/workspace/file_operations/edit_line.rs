@@ -1,3 +1,4 @@
+use super::super::utils::get_diff_context_lines;
 use super::super::WorkspaceServer;
 use super::utils::read_file_as_string;
 use crate::mcp::builtin::error_guidance::*;
@@ -270,18 +271,49 @@ impl WorkspaceServer {
             new_content
         };
 
-        // Generate simple diff showing changed lines
+        // Generate diff with context
+        let context_lines = get_diff_context_lines().await;
         let orig_lines: Vec<&str> = original_content.lines().collect();
         let new_lines: Vec<&str> = new_content.lines().collect();
         let mut diff_output = String::new();
 
-        for edit in &edits {
-            let line_idx = edit.line - 1;
-            if line_idx < orig_lines.len() {
-                diff_output.push_str(&format!("-{}: {}\n", edit.line, orig_lines[line_idx]));
+        // Identify changed line indices (0-based)
+        let changed_indices: HashSet<usize> = edits.iter().map(|e| e.line - 1).collect();
+
+        // Calculate lines to show
+        let mut lines_to_show: Vec<usize> = Vec::new();
+        for &idx in &changed_indices {
+            let start = idx.saturating_sub(context_lines);
+            let end = (idx + context_lines).min(orig_lines.len().saturating_sub(1));
+            for i in start..=end {
+                lines_to_show.push(i);
             }
-            if line_idx < new_lines.len() {
-                diff_output.push_str(&format!("+{}: {}\n", edit.line, new_lines[line_idx]));
+        }
+        lines_to_show.sort_unstable();
+        lines_to_show.dedup();
+
+        // Generate diff
+        let mut prev_idx: Option<usize> = None;
+        for &idx in &lines_to_show {
+            if let Some(prev) = prev_idx {
+                if idx > prev + 1 {
+                    diff_output.push_str("...\n");
+                }
+            }
+            prev_idx = Some(idx);
+
+            let line_num = idx + 1;
+            if changed_indices.contains(&idx) {
+                if idx < orig_lines.len() {
+                    diff_output.push_str(&format!("-{}: {}\n", line_num, orig_lines[idx]));
+                }
+                if idx < new_lines.len() {
+                    diff_output.push_str(&format!("+{}: {}\n", line_num, new_lines[idx]));
+                }
+            } else {
+                if idx < orig_lines.len() {
+                    diff_output.push_str(&format!("  {}: {}\n", line_num, orig_lines[idx]));
+                }
             }
         }
 

@@ -224,6 +224,7 @@ export default function SettingsPage() {
         maxRetries: 1,
         retryDelay: 5000,
         circuitBreakerThreshold: 3,
+        diffContextLines: 3,
       },
     );
   const [localDisplay, setLocalDisplay] = useState<DisplaySettings>(
@@ -729,6 +730,29 @@ export default function SettingsPage() {
 
           <TabsContent value="advanced">
             <div className="space-y-6">
+              <div className="min-w-0">
+                <label className="block text-muted-foreground mb-2 font-medium">
+                  Diff Context Lines
+                </label>
+                <Input
+                  type="number"
+                  placeholder="e.g., 3"
+                  min={1}
+                  max={10}
+                  value={localAdvancedSettings.diffContextLines ?? 3}
+                  onChange={(e) =>
+                    handleAdvancedSettingsChange(
+                      'diffContextLines',
+                      parseInt(e.target.value, 10) || 3,
+                    )
+                  }
+                  className="bg-background border text-foreground w-full max-w-xs"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Number of context lines to show in file edit diffs (1-10).
+                </p>
+              </div>
+
               <div className="min-w-0">
                 <label className="block text-muted-foreground mb-2 font-medium">
                   {t('settings.advanced.maxRetries', 'Max Retry Attempts')}

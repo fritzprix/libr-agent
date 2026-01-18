@@ -13,6 +13,7 @@ mod services;
 pub mod session;
 mod session_isolation;
 mod state;
+pub mod utils;
 
 // Re-export migration for use in MCP modules
 pub use migration;
@@ -60,8 +61,9 @@ use commands::session_commands::{remove_session, switch_session};
 use commands::settings_commands::{delete_setting, get_setting, list_settings, set_setting};
 use commands::url_commands::open_external_url;
 use commands::workspace_commands::{
-    get_app_data_dir, get_app_logs_dir, greet, list_workspace_files,
-    open_workspace_file_with_default_app,
+    cancel_workspace_override, get_app_data_dir, get_app_logs_dir, get_workspace_override, greet,
+    list_workspace_files, open_workspace_in_explorer, open_workspace_in_terminal,
+    open_workspace_file_with_default_app, set_workspace_override,
 };
 use mcp::MCPServerManager;
 use services::{InteractiveBrowserServer, SecureFileManager};
@@ -276,6 +278,11 @@ pub fn run() {
                 workspace_write_file,
                 open_external_url,
                 open_workspace_file_with_default_app,
+                open_workspace_in_explorer,
+                open_workspace_in_terminal,
+                get_workspace_override,
+                set_workspace_override,
+                cancel_workspace_override,
                 // Interactive Browser commands
                 create_browser_session,
                 close_browser_session,

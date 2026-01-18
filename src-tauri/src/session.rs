@@ -13,6 +13,8 @@ pub struct SessionWorkspaceInfo {
     pub session_id: String,
     #[serde(serialize_with = "serialize_pathbuf")]
     pub workspace_path: PathBuf,
+    #[serde(serialize_with = "serialize_option_pathbuf")]
+    pub workspace_override: Option<PathBuf>,
     #[serde(serialize_with = "serialize_instant")]
     pub created_at: Instant,
     #[serde(serialize_with = "serialize_instant")]
@@ -25,6 +27,16 @@ where
     S: serde::Serializer,
 {
     serializer.serialize_str(&path.to_string_lossy())
+}
+
+fn serialize_option_pathbuf<S>(path: &Option<PathBuf>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    match path {
+        Some(p) => serializer.serialize_str(&p.to_string_lossy()),
+        None => serializer.serialize_none(),
+    }
 }
 
 fn serialize_instant<S>(instant: &Instant, serializer: S) -> Result<S::Ok, S::Error>
@@ -156,6 +168,7 @@ echo "Available tools: python3, typescript/deno, shell commands"
         let workspace_info = SessionWorkspaceInfo {
             session_id: session_id.to_string(),
             workspace_path: session_dir.clone(),
+            workspace_override: None,
             created_at: Instant::now(),
             last_accessed: Instant::now(),
             is_template: false,
@@ -204,6 +217,15 @@ echo "Available tools: python3, typescript/deno, shell commands"
     }
 
     pub fn get_session_workspace_dir_by_id(&self, session_id: &str) -> PathBuf {
+        // Try to find in pool first to see if there is an override
+        if let Ok(pool) = self.workspace_pool.read() {
+            if let Some(info) = pool.get(session_id) {
+                if let Some(override_path) = &info.workspace_override {
+                    return override_path.clone();
+                }
+            }
+        }
+
         let workspace_dir = self.base_data_dir.join("workspaces").join(session_id);
 
         // Ensure directory exists
@@ -280,6 +302,12 @@ echo "Available tools: python3, typescript/deno, shell commands"
         let mut sessions: Vec<SessionWorkspaceInfo> = pool.values().cloned().collect();
         sessions.sort_by(|a, b| b.last_accessed.cmp(&a.last_accessed));
         Ok(sessions)
+    }
+
+    /// Get specific session info
+    pub fn get_session_info(&self, session_id: &str) -> Option<SessionWorkspaceInfo> {
+        let pool = self.workspace_pool.read().ok()?;
+        pool.get(session_id).cloned()
     }
 
     /// Pre-allocate sessions for faster switching
@@ -386,6 +414,42 @@ echo "Available tools: python3, typescript/deno, shell commands"
         info!("Renamed session '{old_session_id}' to '{new_session_id}'");
 
         Ok(())
+    }
+
+    /// Set a workspace override path for a session
+    pub async fn set_workspace_override(
+        &self,
+        session_id: &str,
+        override_path: PathBuf,
+    ) -> Result<(), String> {
+        let mut pool = self
+            .workspace_pool
+            .write()
+            .map_err(|e| format!("Failed to write workspace pool: {e}"))?;
+
+        if let Some(session_info) = pool.get_mut(session_id) {
+            session_info.workspace_override = Some(override_path);
+            session_info.last_accessed = Instant::now();
+            Ok(())
+        } else {
+            Err(format!("Session '{session_id}' not found"))
+        }
+    }
+
+    /// Remove a workspace override path for a session
+    pub async fn remove_workspace_override(&self, session_id: &str) -> Result<(), String> {
+        let mut pool = self
+            .workspace_pool
+            .write()
+            .map_err(|e| format!("Failed to write workspace pool: {e}"))?;
+
+        if let Some(session_info) = pool.get_mut(session_id) {
+            session_info.workspace_override = None;
+            session_info.last_accessed = Instant::now();
+            Ok(())
+        } else {
+            Err(format!("Session '{session_id}' not found"))
+        }
     }
 
     /// Clean up old or unused sessions
