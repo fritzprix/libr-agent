@@ -44,8 +44,7 @@ export function useThrottle<T extends (...args: unknown[]) => void>(
 
       if (timeSinceLastRun >= delay) {
         // Execute immediately if enough time has passed
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (callbackRef.current as any)(...args);
+        callbackRef.current(...args);
         lastRun.current = now;
       } else {
         // Schedule execution for the remaining time
@@ -53,8 +52,7 @@ export function useThrottle<T extends (...args: unknown[]) => void>(
           clearTimeout(timeoutRef.current);
         }
         timeoutRef.current = setTimeout(() => {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (callbackRef.current as any)(...args);
+          callbackRef.current(...args);
           lastRun.current = Date.now();
         }, delay - timeSinceLastRun);
       }
