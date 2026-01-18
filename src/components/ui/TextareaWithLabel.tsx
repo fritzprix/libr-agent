@@ -1,5 +1,7 @@
 import React from 'react';
 import { Textarea } from './textarea';
+import { FieldWrapper } from './field-wrapper';
+import { cn } from '@/lib/utils';
 
 interface TextareaWithLabelProps
   extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
@@ -11,20 +13,21 @@ interface TextareaWithLabelProps
 export default function TextareaWithLabel({
   label,
   error,
-  className = '',
-  containerClassName = '',
+  className,
+  containerClassName,
   ...props
 }: TextareaWithLabelProps) {
   return (
-    <div className={containerClassName}>
-      {label && (
-        <label className="block text-gray-400 mb-2 font-medium">{label}</label>
-      )}
+    <FieldWrapper
+      label={label}
+      error={error}
+      containerClassName={containerClassName}
+      labelClassName="text-muted-foreground"
+    >
       <Textarea
-        className={`${error ? 'border-red-400' : ''} ${className}`}
+        className={cn(error && 'border-red-400', className)}
         {...props}
       />
-      {error && <p className="text-red-400 text-xs mt-1">{error}</p>}
-    </div>
+    </FieldWrapper>
   );
 }

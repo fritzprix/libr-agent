@@ -12,3 +12,8 @@
 
 **Pattern:** Identical manual field mapping from `entity::message::Model` to `MessageDocument` in both search indexing and global search command handlers.
 **Action:** Implemented `From<Model>` trait for `MessageDocument` to centralize the conversion logic and replaced manual mapping with `MessageDocument::from` or `.into()`.
+
+## 2026-01-18 - [Duplicated Labeled Input Logic]
+
+**Pattern:** Identical JSX structure (container, label, error message) duplicated in `InputWithLabel.tsx` and `TextareaWithLabel.tsx`.
+**Action:** Extracted `FieldWrapper` component to centralize the layout and styling logic for labeled form fields.
