@@ -1,4 +1,5 @@
 import React from 'react';
+import { Paperclip } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { useAgentResourceAttachment } from '@/features/agent/hooks/useAgentResourceAttachment';
 import { AttachmentReference } from '@/models/chat';
@@ -19,7 +20,10 @@ export function AgentChatAttachedFiles() {
 
   return (
     <div className="px-4 py-2 border-t">
-      <div className="text-xs mb-2">📎 Attached Files:</div>
+      <div className="text-xs mb-2 flex items-center gap-1">
+        <Paperclip className="w-3 h-3" />
+        <span>Attached Files:</span>
+      </div>
       <div className="flex flex-wrap gap-2">
         {attachedFiles.map((file) => (
           <div

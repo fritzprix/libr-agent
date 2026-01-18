@@ -37,6 +37,7 @@ async fn test_playbook_ui_rendering_integration() {
     let new_session = session::ActiveModel {
         id: Set("integration-test".to_string()),
         name: Set(Some("Integration Test".to_string())),
+        agent_config: Set(Some(r#"{"assistantId":"assistant-1"}"#.to_string())),
         status: Set("idle".to_string()),
         created_at: Set(0),
         updated_at: Set(0),
@@ -129,7 +130,8 @@ async fn test_playbook_ui_rendering_integration() {
     } = &content[1]
     {
         let uri = resource["uri"].as_str().unwrap();
-        assert!(uri.contains("ui://playbook/list/integration-test"));
+        // Playbook UI is assistant-scoped; URI should reference the assistant ID
+        assert!(uri.contains("ui://playbook/list/assistant-1"));
 
         let mime_type = resource["mimeType"].as_str().unwrap();
         assert_eq!(mime_type, "text/html");
@@ -177,6 +179,7 @@ async fn test_playbook_ui_interaction_flow() {
     let new_session = session::ActiveModel {
         id: Set("flow-test".to_string()),
         name: Set(Some("Flow Test".to_string())),
+        agent_config: Set(Some(r#"{"assistantId":"assistant-1"}"#.to_string())),
         status: Set("idle".to_string()),
         created_at: Set(0),
         updated_at: Set(0),

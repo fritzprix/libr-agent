@@ -1,5 +1,4 @@
 import { Ollama } from 'ollama/browser';
-import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
 import type {
   ChatRequest,
   ListResponse,
@@ -69,67 +68,11 @@ export class OllamaService extends BaseAIService {
     });
     this.host = config?.baseUrl || 'http://127.0.0.1:11434';
 
-    // Strategy:
-    // 1. Dev Mode (port 1420): Use Native Fetch.
-    //    - Origin is http://localhost:1420.
-    //    - Ollama allows this (usually).
-    //    - Native fetch is faster and easier to debug.
-    //
-    // 2. Prod Mode (port 1421 via tauri-plugin-localhost): Use Tauri Plugin Fetch.
-    //    - Origin is http://localhost:1421.
-    //    - Ollama REJECTS this origin with 403 Forbidden (strict CORS).
-    //    - Tauri Plugin Fetch (Rust) does not send the Origin header (or acts as a backend client), bypassing CORS.
-    //    - We force 127.0.0.1 to avoid IPv6 resolution issues in Rust.
-
-    const isDev = window.location.port === '1420';
-
-    if (isDev) {
-      this.ollamaClient = new Ollama({ host: this.host });
-      logger.info('Ollama service initialized (Dev Mode - Native Fetch)', {
-        host: this.host,
-      });
-    } else {
-      // Ensure we use IPv4 for local connections in Rust to avoid resolution issues
-      let effectiveHost = this.host;
-      if (effectiveHost.includes('localhost')) {
-        effectiveHost = effectiveHost.replace('localhost', '127.0.0.1');
-      }
-
-      // Custom fetch to handle CORS/Origin issues in Tauri production
-      const customFetch = async (
-        input: RequestInfo | URL,
-        init?: RequestInit,
-      ) => {
-        // Clone init or create new one to modify headers
-        const newInit = { ...init };
-        const headers = new Headers(newInit.headers);
-
-        // Force Origin to bypass strict CORS checks.
-        // Since we are using the Tauri HTTP plugin (Rust backend), we can manually set the Origin header.
-        // We set it to the Ollama host itself, which is always allowed.
-        headers.set('Origin', effectiveHost);
-        newInit.headers = headers;
-
-        try {
-          return await tauriFetch(input, newInit);
-        } catch (error) {
-          logger.error('Ollama Fetch Error', error);
-          throw error;
-        }
-      };
-
-      this.ollamaClient = new Ollama({
-        host: effectiveHost,
-        fetch: customFetch,
-      });
-      logger.info(
-        'Ollama service initialized (Prod Mode - Tauri Plugin Fetch)',
-        {
-          host: effectiveHost,
-          originalHost: this.host,
-        },
-      );
-    }
+    // Use native fetch for all modes - simpler and faster
+    this.ollamaClient = new Ollama({ host: this.host });
+    logger.info('Ollama service initialized', {
+      host: this.host,
+    });
   }
 
   /**

@@ -112,16 +112,18 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
     let (message, suggestions) = if url_param.is_some() {
         if status_msg.contains("load wait timed out") {
             (
-                format!("Browser session created: {}. {}", id, status_msg),
+                format!("Browser session created. {}", status_msg),
                 vec![
-                    "Try creating a new session with 'createSession' to reset the state"
+                    "Page loading is slow, but the session is ready and page may be usable."
                         .to_string(),
-                    "The site might be blocking automated access or is too slow".to_string(),
+                    "Try extractWebContent to see if content loaded despite the timeout."
+                        .to_string(),
+                    "If the page is blank, navigate to a different URL.".to_string(),
                 ],
             )
         } else if status_msg.contains("(HTTP 403)") || status_msg.contains("(HTTP 401)") {
             (
-                format!("Browser session created: {}. {}", id, status_msg),
+                format!("Browser session created. {}", status_msg),
                 vec![
                     "The page is blocking access (Forbidden/Unauthorized). Abandon this page."
                         .to_string(),
@@ -131,7 +133,7 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
             )
         } else if status_msg.contains("(HTTP 404)") {
             (
-                format!("Browser session created: {}. {}", id, status_msg),
+                format!("Browser session created. {}", status_msg),
                 vec![
                     "The page was not found (404). Check the URL.".to_string(),
                     "Search for the content on the site's homepage or use a search engine."
@@ -140,7 +142,7 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
             )
         } else if status_msg.contains("(HTTP 5") {
             (
-                format!("Browser session created: {}. {}", id, status_msg),
+                format!("Browser session created. {}", status_msg),
                 vec![
                     "The website is experiencing server errors (5xx). Abandon this page."
                         .to_string(),
@@ -149,7 +151,7 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
             )
         } else if status_msg.contains("Network Error") {
             (
-                format!("Browser session created: {}. {}", id, status_msg),
+                format!("Browser session created. {}", status_msg),
                 vec![
                     "A network error occurred. Check the URL and internet connection.".to_string(),
                     "The site may be down or unreachable.".to_string(),
@@ -157,7 +159,7 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
             )
         } else if status_msg.contains("(HTTP ") {
             (
-                format!("Browser session created: {}. {}", id, status_msg),
+                format!("Browser session created. {}", status_msg),
                 vec![
                     "The site returned an error. Consider finding an alternative source."
                         .to_string(),
@@ -165,7 +167,7 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
             )
         } else {
             (
-                format!("Browser session created: {}. Page loaded: {}", id, url),
+                format!("Browser session created. Page loaded: {}", url),
                 vec![
                     "Use extractWebContent to read the page content".to_string(),
                     "Use listInteractable to see interactive elements".to_string(),
@@ -174,7 +176,7 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
         }
     } else {
         (
-            format!("Browser session created: {}. {}", id, status_msg),
+            format!("Browser session created. {}", status_msg),
             vec!["Use navigateToUrl to load a webpage".to_string()],
         )
     };

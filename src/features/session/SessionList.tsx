@@ -1,4 +1,5 @@
 import { useMemo, useState, memo } from 'react';
+import { useParams } from 'react-router-dom';
 import SessionItem from './SessionItem';
 import { Input, Badge } from '@/components/ui';
 import { useDebounced } from '@/hooks/useDebounced';
@@ -19,6 +20,7 @@ function SessionList({
   emptyMessage = 'No sessions found',
   isCollapsed = false,
 }: SessionListProps) {
+  const { sessionId } = useParams();
   const [searchQuery, setSearchQuery] = useState('');
   // Debounce search query to reduce filtering operations during typing
   const debouncedQuery = useDebounced(searchQuery, 300);
@@ -66,7 +68,11 @@ function SessionList({
             )
           : filteredSessions.map((session) => (
               <div key={session.id} className="relative">
-                <SessionItem session={session} isCollapsed={isCollapsed} />
+                <SessionItem
+                  session={session}
+                  isCollapsed={isCollapsed}
+                  isActive={session.id === sessionId}
+                />
                 {/* Display search hit count badge if available */}
                 {session.searchHits !== undefined && session.searchHits > 0 && (
                   <div className="absolute top-2 right-2">

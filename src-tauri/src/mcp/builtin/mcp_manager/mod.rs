@@ -1,436 +1,41 @@
 use async_trait::async_trait;
-use sea_orm::*;
 use serde_json::{json, Value};
 
 use super::BuiltinMCPServer;
-use crate::entity::{mcp_server, mcp_server::Entity as McpServerEntity};
-use crate::mcp::builtin::error_guidance::{
-    invalid_input_error, missing_param_error, not_found_error, operation_failed_error, ToolGroup,
-};
-use crate::mcp::types::{MCPResult, MCPServerConfig, ServiceContext, TransportConfig};
+use crate::mcp::types::{MCPResult, ServiceContext};
+
 use crate::mcp::MCPTool;
-use crate::state::{get_database_connection, get_mcp_manager};
+use crate::state::get_mcp_manager;
+
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::sync::RwLock;
+
+mod operations;
+mod queries;
+
+#[derive(Debug, Clone)]
+struct ContextCache {
+    prompt: String,
+    state: Value,
+    last_update: Instant,
+}
 
 #[derive(Debug, Default, Clone)]
-pub struct MCPManagerServer;
+pub struct MCPManagerServer {
+    cache: Arc<RwLock<Option<ContextCache>>>,
+}
 
 impl MCPManagerServer {
     pub fn new() -> Self {
-        Self
-    }
-
-    fn get_db(&self) -> DatabaseConnection {
-        let db = get_database_connection();
-        db.clone()
-    }
-
-    async fn save_server_config(&self, config: &MCPServerConfig) -> Result<(), String> {
-        let db = self.get_db();
-        let now = chrono::Utc::now().timestamp_millis();
-        let config_json = serde_json::to_string(config).map_err(|e| e.to_string())?;
-
-        // Upsert using SeaORM
-        let model = mcp_server::ActiveModel {
-            name: Set(config.name.clone()),
-            config: Set(config_json.clone()),
-            created_at: Set(now),
-            updated_at: Set(now),
-        };
-
-        // Try to insert, if conflict update
-        match McpServerEntity::insert(model.clone()).exec(&db).await {
-            Ok(_) => Ok(()),
-            Err(DbErr::RecordNotInserted) | Err(DbErr::Exec(_)) => {
-                // Try update instead
-                let update_model = mcp_server::ActiveModel {
-                    name: Set(config.name.clone()),
-                    config: Set(config_json),
-                    created_at: NotSet,
-                    updated_at: Set(now),
-                };
-                McpServerEntity::update(update_model)
-                    .exec(&db)
-                    .await
-                    .map_err(|e| format!("DB Update Error: {}", e))?;
-                Ok(())
-            }
-            Err(e) => Err(format!("DB Save Error: {}", e)),
+        Self {
+            cache: Arc::new(RwLock::new(None)),
         }
     }
 
-    async fn get_server_config(&self, name: &str) -> Result<Option<MCPServerConfig>, String> {
-        let db = self.get_db();
-
-        let model = McpServerEntity::find_by_id(name.to_string())
-            .one(&db)
-            .await
-            .map_err(|e| format!("DB Fetch Error: {}", e))?;
-
-        if let Some(model) = model {
-            let config = serde_json::from_str(&model.config).map_err(|e| e.to_string())?;
-            Ok(Some(config))
-        } else {
-            Ok(None)
-        }
-    }
-
-    async fn list_all_configs(&self) -> Result<Vec<MCPServerConfig>, String> {
-        let db = self.get_db();
-
-        let models = McpServerEntity::find()
-            .all(&db)
-            .await
-            .map_err(|e| format!("DB List Error: {}", e))?;
-
-        let mut configs = Vec::new();
-        for model in models {
-            if let Ok(config) = serde_json::from_str::<MCPServerConfig>(&model.config) {
-                configs.push(config);
-            }
-        }
-        Ok(configs)
-    }
-
-    /// Delete server configuration (not currently used, kept for API completeness)
-    #[allow(dead_code)]
-    async fn delete_server_config(&self, name: &str) -> Result<(), String> {
-        let db = self.get_db();
-
-        McpServerEntity::delete_by_id(name.to_string())
-            .exec(&db)
-            .await
-            .map_err(|e| format!("DB Delete Error: {}", e))?;
-
-        Ok(())
-    }
-
-    async fn list_servers(&self, args: Value) -> Result<MCPResult, String> {
-        let include_inactive = args
-            .get("includeInactive")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true);
-
-        let manager = get_mcp_manager();
-        let connections = manager.connections.lock().await;
-
-        // Get active servers
-        let mut server_map: std::collections::HashMap<String, Value> =
-            std::collections::HashMap::new();
-
-        for (name, conn) in connections.iter() {
-            server_map.insert(
-                name.clone(),
-                json!({
-                    "name": name,
-                    "status": "connected",
-                    "config": conn.config,
-                    "transport": conn.config.transport
-                }),
-            );
-        }
-
-        // Get persisted servers and merge
-        if include_inactive {
-            if let Ok(configs) = self.list_all_configs().await {
-                for config in configs {
-                    if !server_map.contains_key(&config.name) {
-                        server_map.insert(
-                            config.name.clone(),
-                            json!({
-                                "name": config.name,
-                                "status": "disconnected",
-                                "config": config,
-                                "transport": config.transport
-                            }),
-                        );
-                    }
-                }
-            }
-        }
-
-        let mut servers: Vec<Value> = server_map.into_values().collect();
-        // Sort by name
-        servers.sort_by(|a, b| {
-            let name_a = a["name"].as_str().unwrap_or("");
-            let name_b = b["name"].as_str().unwrap_or("");
-            name_a.cmp(name_b)
-        });
-
-        let text_output = if servers.is_empty() {
-            "No servers found".to_string()
-        } else {
-            let mut s = format!("MCP Servers List ({} total):\n", servers.len());
-            for server in &servers {
-                let name = server.get("name").and_then(|v| v.as_str()).unwrap_or("?");
-                let status = server.get("status").and_then(|v| v.as_str()).unwrap_or("?");
-                let transport = server
-                    .get("transport")
-                    .and_then(|t| t.get("type"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("unknown");
-                s.push_str(&format!(
-                    "- **{}** ({}) [Transport: {}]\n",
-                    name, status, transport
-                ));
-            }
-            s
-        };
-
-        Ok(MCPResult::success_with_data(
-            &text_output,
-            json!({
-                "servers": servers,
-                "total": servers.len(),
-                "page": 1,
-                "pageSize": servers.len()
-            }),
-        ))
-    }
-
-    async fn search_server(&self, args: Value) -> Result<MCPResult, String> {
-        let query = match args.get("query").and_then(|v| v.as_str()) {
-            Some(q) if !q.is_empty() => q.to_lowercase(),
-            Some(_) => {
-                return Ok(invalid_input_error(
-                    "Query parameter cannot be empty",
-                    ToolGroup::McpManager,
-                ))
-            }
-            None => return Ok(missing_param_error("query", ToolGroup::McpManager)),
-        };
-
-        let manager = get_mcp_manager();
-        let connections = manager.connections.lock().await;
-
-        let mut results_map: std::collections::HashMap<String, Value> =
-            std::collections::HashMap::new();
-
-        // Search active connections
-        for (name, conn) in connections.iter() {
-            if name.to_lowercase().contains(&query) {
-                results_map.insert(
-                    name.clone(),
-                    json!({
-                        "name": name,
-                        "status": "connected",
-                        "config": conn.config,
-                        "transport": conn.config.transport
-                    }),
-                );
-            }
-        }
-
-        // Search persisted configs
-        if let Ok(configs) = self.list_all_configs().await {
-            for config in configs {
-                if config.name.to_lowercase().contains(&query)
-                    && !results_map.contains_key(&config.name)
-                {
-                    results_map.insert(
-                        config.name.clone(),
-                        json!({
-                            "name": config.name,
-                            "status": "disconnected",
-                            "config": config,
-                            "transport": config.transport
-                        }),
-                    );
-                }
-            }
-        }
-
-        let results: Vec<Value> = results_map.into_values().collect();
-
-        let text_output = if results.is_empty() {
-            format!("No servers found matching '{}'", query)
-        } else {
-            let mut s = format!("Found {} servers matching '{}':\n", results.len(), query);
-            for server in &results {
-                let name = server.get("name").and_then(|v| v.as_str()).unwrap_or("?");
-                let status = server.get("status").and_then(|v| v.as_str()).unwrap_or("?");
-                s.push_str(&format!("- **{}** ({})\n", name, status));
-            }
-            s
-        };
-
-        Ok(MCPResult::success_with_data(
-            &text_output,
-            json!({
-                "results": results,
-                "count": results.len()
-            }),
-        ))
-    }
-
-    async fn create_server(&self, args: Value) -> Result<MCPResult, String> {
-        let name = match args.get("name").and_then(|v| v.as_str()) {
-            Some(n) if !n.is_empty() => n,
-            Some(_) => {
-                return Ok(invalid_input_error(
-                    "Server name cannot be empty",
-                    ToolGroup::McpManager,
-                ))
-            }
-            None => return Ok(missing_param_error("name", ToolGroup::McpManager)),
-        };
-
-        let transport = match args.get("transport") {
-            Some(t) => t,
-            None => return Ok(missing_param_error("transport", ToolGroup::McpManager)),
-        };
-
-        let transport_config: TransportConfig = match serde_json::from_value(transport.clone()) {
-            Ok(config) => config,
-            Err(e) => {
-                return Ok(invalid_input_error(
-                    &format!("Invalid transport config: {}. Must include 'type' field (stdio or http) and appropriate parameters", e),
-                    ToolGroup::McpManager,
-                ))
-            }
-        };
-
-        let config = MCPServerConfig {
-            name: name.to_string(),
-            transport: transport_config,
-            authentication: None,
-            metadata: None,
-        };
-
-        // Save config first
-        if let Err(e) = self.save_server_config(&config).await {
-            return Ok(operation_failed_error(
-                "createServer",
-                &format!("Failed to save server configuration: {}", e),
-                vec![
-                    "Verify database permissions".to_string(),
-                    "Check if server name already exists".to_string(),
-                    "Use listServers to see existing servers".to_string(),
-                ],
-                ToolGroup::McpManager,
-            ));
-        }
-
-        let manager = get_mcp_manager();
-        match manager.start_server(config).await {
-            Ok(server_name) => Ok(MCPResult::success(&format!(
-                "Server '{}' started successfully",
-                server_name
-            ))),
-            Err(e) => Ok(operation_failed_error(
-                "createServer",
-                &format!("Failed to start server: {}", e),
-                vec![
-                    "Verify transport configuration is correct".to_string(),
-                    "For stdio: check command path and arguments".to_string(),
-                    "For http: verify URL is accessible".to_string(),
-                    "Use listServers to see server status".to_string(),
-                ],
-                ToolGroup::McpManager,
-            )),
-        }
-    }
-
-    async fn connect_server(&self, args: Value) -> Result<MCPResult, String> {
-        let server_name = match args
-            .get("serverName")
-            .or_else(|| args.get("serverId"))
-            .and_then(|v| v.as_str())
-        {
-            Some(name) if !name.is_empty() => name,
-            Some(_) => {
-                return Ok(invalid_input_error(
-                    "Server name cannot be empty",
-                    ToolGroup::McpManager,
-                ))
-            }
-            None => return Ok(missing_param_error("serverName", ToolGroup::McpManager)),
-        };
-
-        // Check if already connected
-        let manager = get_mcp_manager();
-        {
-            let connections = manager.connections.lock().await;
-            if connections.contains_key(server_name) {
-                return Ok(MCPResult::success(&format!(
-                    "Server '{}' is already connected",
-                    server_name
-                )));
-            }
-        }
-
-        // Load config from DB
-        let config = match self.get_server_config(server_name).await {
-            Ok(Some(cfg)) => cfg,
-            Ok(None) => {
-                return Ok(not_found_error(
-                    "server configuration",
-                    server_name,
-                    ToolGroup::McpManager,
-                ))
-            }
-            Err(e) => {
-                return Ok(operation_failed_error(
-                    "connectServer",
-                    &format!("Failed to load server configuration: {}", e),
-                    vec![
-                        "Verify database is accessible".to_string(),
-                        "Use listServers to see available servers".to_string(),
-                    ],
-                    ToolGroup::McpManager,
-                ))
-            }
-        };
-
-        // Start server
-        match manager.start_server(config).await {
-            Ok(_) => Ok(MCPResult::success(&format!(
-                "Server '{}' connected successfully",
-                server_name
-            ))),
-            Err(e) => Ok(operation_failed_error(
-                "connectServer",
-                &format!("Failed to connect server: {}", e),
-                vec![
-                    "Verify server configuration is correct".to_string(),
-                    "Check if the server process is available".to_string(),
-                    "Use listServers to see server status".to_string(),
-                ],
-                ToolGroup::McpManager,
-            )),
-        }
-    }
-
-    async fn disconnect_server(&self, args: Value) -> Result<MCPResult, String> {
-        let server_name = match args
-            .get("serverName")
-            .or_else(|| args.get("serverId"))
-            .and_then(|v| v.as_str())
-        {
-            Some(name) if !name.is_empty() => name,
-            Some(_) => {
-                return Ok(invalid_input_error(
-                    "Server name cannot be empty",
-                    ToolGroup::McpManager,
-                ))
-            }
-            None => return Ok(missing_param_error("serverName", ToolGroup::McpManager)),
-        };
-
-        let manager = get_mcp_manager();
-        match manager.stop_server(server_name).await {
-            Ok(_) => Ok(MCPResult::success(&format!(
-                "Server '{}' disconnected",
-                server_name
-            ))),
-            Err(e) => Ok(operation_failed_error(
-                "disconnectServer",
-                &format!("Failed to disconnect server: {}", e),
-                vec![
-                    "Verify server is currently connected".to_string(),
-                    "Use listServers to see active servers".to_string(),
-                ],
-                ToolGroup::McpManager,
-            )),
+    pub(crate) async fn invalidate_cache(&self) {
+        if let Ok(mut cache) = self.cache.try_write() {
+            *cache = None;
         }
     }
 }
@@ -450,12 +55,17 @@ impl BuiltinMCPServer for MCPManagerServer {
             MCPTool {
                 name: "listServers".to_string(),
                 title: Some("List Servers".to_string()),
-                description: "List all registered MCP servers".to_string(),
+                description: "List all registered MCP servers
+                
+⚠️ MANDATORY:
+1. Extract the 'name' from the list for subsequent target operations.
+2. Use this tool if server status is unknown.
+".to_string(),
                 input_schema: serde_json::from_value(json!({
                     "type": "object",
                     "properties": {
                         "page": { "type": "integer", "minimum": 1, "description": "Page number for pagination" },
-                        "pageSize": { "type": "integer", "minimum": -1, "description": "Number of items per page" },
+                        "pageSize": { "type": "integer", "minimum": 1, "maximum": 50, "description": "Items per page (max 50)" },
                         "filterByAssistant": { "type": "boolean", "description": "Filter servers by assistant capability" },
                         "includeInactive": { "type": "boolean", "description": "Include inactive/disconnected servers" }
                     }
@@ -471,7 +81,7 @@ impl BuiltinMCPServer for MCPManagerServer {
                 input_schema: serde_json::from_value(json!({
                     "type": "object",
                     "properties": {
-                        "query": { "type": "string", "description": "Search query" },
+                        "query": { "type": "string", "description": "Search target query" },
                         "searchMode": { "type": "string", "enum": ["simple", "bm25"], "description": "Search mode (simple or bm25)" },
                         "weights": { 
                             "type": "object", 
@@ -479,7 +89,7 @@ impl BuiltinMCPServer for MCPManagerServer {
                                 "name": { "type": "number" },
                                 "description": { "type": "number" }
                             },
-                            "description": "Search weights for fields"
+                            "description": "Target search weights for fields"
                         }
                     },
                     "required": ["query"]
@@ -491,18 +101,47 @@ impl BuiltinMCPServer for MCPManagerServer {
             MCPTool {
                 name: "createServer".to_string(),
                 title: Some("Create Server".to_string()),
-                description: "Register and start a new MCP server".to_string(),
+                description: "Register and start a new MCP server.
+
+⚠️ PREREQUISITES:
+1. Verify target command exists before registration (stdio servers)
+2. For NPM packages: Use 'npx -y <package>' (auto-installs on-demand)
+3. For Python: Use 'uvx' or direct 'python -m' if installed
+4. For Docker: Use 'docker run' with appropriate image
+
+NAMING (REQUIRED):
+• Provide human-readable 'name' (e.g., 'filesystem-workspace', 'github-api')
+• Must be unique across all servers
+• Use descriptive names for easy identification
+
+RETURNS:
+• Server name for subsequent management operations
+• Connection status
+
+EXAMPLE:
+  name: 'filesystem-workspace'
+  transport:
+    type: 'stdio'
+    command: 'npx'
+    args: ['-y', '@modelcontextprotocol/server-filesystem', '/workspace']
+".to_string(),
                 input_schema: serde_json::from_value(json!({
                     "type": "object",
                     "properties": {
-                        "name": { "type": "string", "minLength": 1, "description": "Unique name for the server" },
+                        "name": {
+                            "type": "string",
+                            "description": "Human-readable server name (e.g., 'filesystem-workspace', 'github-api'). Must be unique.",
+                            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$",
+                            "minLength": 1,
+                            "maxLength": 63
+                        },
                         "transport": {
                             "type": "object",
                             "description": "Transport configuration",
                             "properties": {
                                 "type": { "type": "string", "enum": ["stdio", "http"], "description": "Transport type" },
-                                "command": { "type": "string", "description": "Command to execute (stdio only)" },
-                                "args": { "type": "array", "items": { "type": "string" }, "description": "Command arguments (stdio only)" },
+                                "command": { "type": "string", "description": "Command to execute (stdio only). Use 'npx' for NPM packages, 'uvx' for Python, 'docker' for containers. NEVER 'npm' or 'pip' install commands." },
+                                "args": { "type": "array", "items": { "type": "string" }, "description": "Command arguments (stdio only). For npx, start with '-y' flag: ['-y', '@modelcontextprotocol/server-*', ...args]" },
                                 "env": { "type": "object", "description": "Environment variables" },
                                 "url": { "type": "string", "description": "Server URL (http only)" },
                                 "headers": { "type": "object", "description": "HTTP headers" }
@@ -517,16 +156,75 @@ impl BuiltinMCPServer for MCPManagerServer {
                 annotations: None,
             },
             MCPTool {
-                name: "connectServer".to_string(),
-                title: Some("Connect Server".to_string()),
-                description: "Connect to an existing MCP server".to_string(),
+                name: "updateServer".to_string(),
+                title: Some("Update Server".to_string()),
+                description: "Update configuration for an existing MCP server.
+
+⚠️ PREREQUISITES:
+1. Use listServers or searchServer to extract the target server 'name' (ID)
+2. Server will restart automatically if currently running
+3. For NPM packages: Use 'npx -y <package>' pattern
+
+Returns:
+• Update status
+• Restart result if applicable
+".to_string(),
                 input_schema: serde_json::from_value(json!({
                     "type": "object",
                     "properties": {
-                        "serverName": { "type": "string", "description": "Name of the server to connect" },
-                        "serverId": { "type": "string", "description": "ID of the server (optional)" },
-                        "scope": { "type": "string", "description": "Connection scope (optional)" }
-                    }
+                        "name": { "type": "string", "description": "Target name of the server to update" },
+                        "transport": {
+                            "type": "object",
+                            "description": "New transport configuration",
+                            "properties": {
+                                "type": { "type": "string", "enum": ["stdio", "http"], "description": "Transport type" },
+                                "command": { "type": "string", "description": "Command to execute (stdio only). Use 'npx' for NPM packages, 'uvx' for Python, 'docker' for containers. NEVER 'npm' or 'pip' install commands." },
+                                "args": { "type": "array", "items": { "type": "string" }, "description": "Command arguments (stdio only). For npx, start with '-y' flag: ['-y', '@modelcontextprotocol/server-*', ...args]" },
+                                "env": { "type": "object", "description": "Environment variables" },
+                                "url": { "type": "string", "description": "Server URL (http only)" },
+                                "headers": { "type": "object", "description": "HTTP headers" }
+                            },
+                            "required": ["type"]
+                        }
+                    },
+                    "required": ["name", "transport"]
+                }))
+                .unwrap(),
+                output_schema: None,
+                annotations: None,
+            },
+            MCPTool {
+                name: "deleteServer".to_string(),
+                title: Some("Delete Server".to_string()),
+                description: "Delete an MCP server configuration.
+                
+⚠️ WARNING: This action is permanent.
+".to_string(),
+                input_schema: serde_json::from_value(json!({
+                    "type": "object",
+                    "properties": {
+                        "name": { "type": "string", "description": "Target name of the server to exclude from configuration" }
+                    },
+                    "required": ["name"]
+                }))
+                .unwrap(),
+                output_schema: None,
+                annotations: None,
+            },
+            MCPTool {
+                name: "connectServer".to_string(),
+                title: Some("Connect Server".to_string()),
+                description: "Connect to an existing MCP server.
+                
+⚠️ MANDATORY:
+1. Extract the 'name' from 'listServers' FIRST.
+".to_string(),
+                input_schema: serde_json::from_value(json!({
+                    "type": "object",
+                    "properties": {
+                        "name": { "type": "string", "description": "Target server name" }
+                    },
+                    "required": ["name"]
                 }))
                 .unwrap(),
                 output_schema: None,
@@ -535,13 +233,35 @@ impl BuiltinMCPServer for MCPManagerServer {
             MCPTool {
                 name: "disconnectServer".to_string(),
                 title: Some("Disconnect Server".to_string()),
-                description: "Disconnect an MCP server".to_string(),
+                description: "Disconnect an MCP server.
+                
+⚠️ MANDATORY:
+1. Extract the 'name' from 'listServers' FIRST.
+".to_string(),
                 input_schema: serde_json::from_value(json!({
                     "type": "object",
                     "properties": {
-                        "serverName": { "type": "string", "description": "Name of the server to disconnect" },
-                        "serverId": { "type": "string", "description": "ID of the server (optional)" },
-                        "scope": { "type": "string", "description": "Connection scope (optional)" }
+                        "name": { "type": "string", "description": "Target server name" }
+                    },
+                    "required": ["name"]
+                }))
+                .unwrap(),
+                output_schema: None,
+                annotations: None,
+            },
+
+            MCPTool {
+                name: "listBuiltinTools".to_string(),
+                title: Some("List Builtin Tools".to_string()),
+                description: "List all available built-in MCP tools across all servers.
+                
+⚠️ USEFUL FOR DISCOVERY:
+1. Use this to find available capabilities (file ops, browser, etc.).
+".to_string(),
+                input_schema: serde_json::from_value(json!({
+                    "type": "object",
+                    "properties": {
+                        "serverName": { "type": "string", "description": "Optional: Filter by server name (e.g. 'workspace')"}
                     }
                 }))
                 .unwrap(),
@@ -558,24 +278,59 @@ impl BuiltinMCPServer for MCPManagerServer {
         _session_id: Option<String>,
     ) -> Result<MCPResult, String> {
         match tool_name {
-            "listServers" => self.list_servers(args).await,
-            "searchServer" => self.search_server(args).await,
-            "createServer" => self.create_server(args).await,
-            "connectServer" => self.connect_server(args).await,
-            "disconnectServer" => self.disconnect_server(args).await,
+            "listServers" => queries::list_servers(args).await,
+            "searchServer" => queries::search_server(args).await,
+            "createServer" => operations::create_server(self, args).await,
+            "updateServer" => operations::update_server(self, args).await,
+            "deleteServer" => operations::delete_server(self, args).await,
+            "connectServer" => operations::connect_server(self, args).await,
+            "disconnectServer" => operations::disconnect_server(self, args).await,
+            "listBuiltinTools" => queries::list_builtin_tools(args).await,
             _ => Err(format!("Unknown tool: {}", tool_name)),
         }
     }
 
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
+        const CACHE_TTL: Duration = Duration::from_secs(5);
+
+        if let Some(cache) = self.cache.read().await.as_ref() {
+            if cache.last_update.elapsed() < CACHE_TTL {
+                return ServiceContext {
+                    context_prompt: cache.prompt.clone(),
+                    structured_state: Some(cache.state.clone()),
+                };
+            }
+        }
+
         let manager = get_mcp_manager();
-        let count = manager.connections.lock().await.len();
+        let connections = manager.connections.lock().await;
+        let count = connections.len();
+
+        // Detailed list for context
+        let active_servers: Vec<String> = connections.keys().cloned().collect();
+
+        let context_prompt = format!(
+            "## MCP Manager\n\nActive servers ({}): {}\nStatus: Ready",
+            count,
+            active_servers.join(", ")
+        );
+        let structured_state = json!({
+            "active_servers_count": count,
+            "active_servers": active_servers
+        });
+
+        // Update cache
+        if let Ok(mut cache) = self.cache.try_write() {
+            *cache = Some(ContextCache {
+                prompt: context_prompt.clone(),
+                state: structured_state.clone(),
+                last_update: Instant::now(),
+            });
+        }
 
         ServiceContext {
-            context_prompt: format!("MCP Manager: {} active servers", count),
-            structured_state: Some(json!({
-                "active_servers_count": count
-            })),
+            context_prompt,
+            structured_state: Some(structured_state),
         }
     }
 }

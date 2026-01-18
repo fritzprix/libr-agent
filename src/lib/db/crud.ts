@@ -5,25 +5,31 @@ import type {
   MCPServerEntity,
 } from '@/models/chat';
 import type { CRUD, DatabaseObject, Page } from './types';
-import { LocalDatabase } from './database';
 import type { Playbook } from '@/types/playbook';
-type PlaybookRecord = Playbook & {
-  id: string;
-  createdAt?: Date;
-  updatedAt?: Date;
-};
+
+import * as assistantsBackend from '@/lib/backend/assistants';
+import * as mcpBackent from '@/lib/backend/mcp-server-config';
+import * as settingsBackend from '@/lib/backend/settings';
+import * as sessionsBackend from '@/lib/backend/session-crud';
+import * as messagesBackend from '@/lib/backend/messages';
+import * as playbooksBackend from '@/lib/backend/playbooks';
 
 /**
- * Creates a pagination object.
- * This helper function constructs a `Page` object which is used
- * throughout the application for paginated data responses.
- *
- * @template T The type of items in the page.
- * @param items The array of items for the current page.
- * @param page The current page number.
- * @param pageSize The number of items per page. If -1, all items are returned on a single page.
- * @param totalItems The total number of items across all pages.
- * @returns A `Page` object containing the items and pagination metadata.
+ * Validates pagination parameters and returns defaults if invalid
+ */
+function validatePagination(
+  page: number,
+  pageSize: number,
+): { page: number; pageSize: number } {
+  return {
+    page: Math.max(1, page),
+    pageSize: pageSize === -1 ? -1 : Math.max(1, pageSize),
+  };
+}
+
+/**
+ * Creates a pagination object. (Helper - typically backend handles paging or we simulate)
+ * Keeping this if we need to simulate paging from backend lists.
  */
 export const createPage = <T>(
   items: T[],
@@ -43,7 +49,7 @@ export const createPage = <T>(
     };
   }
 
-  const totalPages = Math.ceil(totalItems / pageSize);
+  const totalPages = Math.ceil(totalItems / pageSize) || 1;
   const start = (page - 1) * pageSize;
   const end = start + pageSize;
   const paginatedItems = items.slice(start, end);
@@ -60,128 +66,52 @@ export const createPage = <T>(
 };
 
 /**
- * CRUD operations for managing `Assistant` objects in the local database.
- * This object provides a standardized interface for creating, reading,
- * updating, deleting, and paginating assistants.
+ * CRUD operations for managing `Assistant` objects via Rust Backend.
  */
 export const assistantsCRUD: CRUD<Assistant> = {
   upsert: async (assistant: Assistant) => {
-    const now = new Date();
-    if (!assistant.createdAt) assistant.createdAt = now;
-    assistant.updatedAt = now;
-    await LocalDatabase.getInstance().assistants.put(assistant);
+    await assistantsBackend.upsertAssistant(assistant);
   },
   upsertMany: async (assistants: Assistant[]) => {
-    const now = new Date();
-    const updatedAssistants = assistants.map((assistant) => ({
-      ...assistant,
-      createdAt: assistant.createdAt || now,
-      updatedAt: now,
-    }));
-    await LocalDatabase.getInstance().assistants.bulkPut(updatedAssistants);
+    await assistantsBackend.upsertAssistants(assistants);
   },
   read: async (id: string) => {
-    return LocalDatabase.getInstance().assistants.get(id);
+    return assistantsBackend.getAssistant(id);
   },
   delete: async (id: string) => {
-    await LocalDatabase.getInstance().assistants.delete(id);
+    await assistantsBackend.deleteAssistant(id);
   },
   getPage: async (page: number, pageSize: number): Promise<Page<Assistant>> => {
-    const db = LocalDatabase.getInstance();
-    const totalItems = await db.assistants.count();
-
-    if (pageSize === -1) {
-      const items = await db.assistants.orderBy('createdAt').toArray();
-      return createPage(items, page, pageSize, totalItems);
-    }
-
-    const offset = (page - 1) * pageSize;
-    const items = await db.assistants
-      .orderBy('createdAt')
-      .offset(offset)
-      .limit(pageSize)
-      .toArray();
-
-    return createPage(items, page, pageSize, totalItems);
+    const { page: p, pageSize: ps } = validatePagination(page, pageSize);
+    return assistantsBackend.getAssistantsPage(p, ps);
   },
   count: async (): Promise<number> => {
-    return LocalDatabase.getInstance().assistants.count();
+    const all = await assistantsBackend.listAssistants();
+    return all.length;
   },
 };
 
 /**
- * CRUD operations for managing `MCPServerEntity` objects in the local database.
- * This object provides a standardized interface for creating, reading,
- * updating, deleting, and paginating MCP server configurations.
+ * CRUD operations for managing `MCPServerEntity` objects via Rust Backend.
  */
 export const mcpServersCRUD: CRUD<MCPServerEntity> = {
   upsert: async (server: MCPServerEntity) => {
-    const db = LocalDatabase.getInstance();
-    const now = new Date();
-
-    // Check for unique name constraint (case-insensitive)
-    const existing = await db.mcpServers
-      .filter(
-        (s) =>
-          s.name.toLowerCase() === server.name.toLowerCase() &&
-          s.id !== server.id,
-      )
-      .first();
-
-    if (existing) {
-      throw new Error(`MCP server with name "${server.name}" already exists`);
-    }
-
-    if (!server.createdAt) server.createdAt = now;
-    server.updatedAt = now;
-    await db.mcpServers.put(server);
+    // Unique check is handled by backend or upsert logic
+    await mcpBackent.upsertMCPServer(server);
   },
   upsertMany: async (servers: MCPServerEntity[]) => {
-    const db = LocalDatabase.getInstance();
-    const now = new Date();
-
-    // Check for duplicate names within the batch
-    const nameMap = new Map<string, number>();
-    servers.forEach((server) => {
-      const lowerName = server.name.toLowerCase();
-      nameMap.set(lowerName, (nameMap.get(lowerName) || 0) + 1);
-      if (nameMap.get(lowerName)! > 1) {
-        throw new Error(`Duplicate server name in batch: "${server.name}"`);
-      }
-    });
-
-    // Check for conflicts with existing servers
-    const existingServers = await db.mcpServers.toArray();
-    const serverIds = new Set(servers.map((s) => s.id));
-
-    for (const existing of existingServers) {
-      if (!serverIds.has(existing.id)) {
-        const conflict = servers.find(
-          (s) => s.name.toLowerCase() === existing.name.toLowerCase(),
-        );
-        if (conflict) {
-          throw new Error(
-            `MCP server with name "${conflict.name}" already exists`,
-          );
-        }
-      }
+    for (const s of servers) {
+      await mcpBackent.upsertMCPServer(s);
     }
-
-    const updatedServers = servers.map((server) => ({
-      ...server,
-      createdAt: server.createdAt || now,
-      updatedAt: now,
-    }));
-    await db.mcpServers.bulkPut(updatedServers);
   },
   read: async (id: string) => {
-    return LocalDatabase.getInstance().mcpServers.get(id);
+    // ID = Name
+    return mcpBackent.getMCPServer(id);
   },
   delete: async (id: string) => {
-    const db = LocalDatabase.getInstance();
-
-    // Check if any assistant references this server
-    const assistants = await db.assistants.toArray();
+    // ID = Name
+    // Check references
+    const assistants = await assistantsBackend.listAssistants();
     const referencingAssistants = assistants.filter((a) =>
       a.mcpServerIds?.includes(id),
     );
@@ -193,208 +123,123 @@ export const mcpServersCRUD: CRUD<MCPServerEntity> = {
       );
     }
 
-    await db.mcpServers.delete(id);
+    await mcpBackent.deleteMCPServer(id);
   },
   getPage: async (
     page: number,
     pageSize: number,
   ): Promise<Page<MCPServerEntity>> => {
-    const db = LocalDatabase.getInstance();
-    const totalItems = await db.mcpServers.count();
-
-    if (pageSize === -1) {
-      const items = await db.mcpServers.orderBy('createdAt').toArray();
-      return createPage(items, page, pageSize, totalItems);
-    }
-
-    const offset = (page - 1) * pageSize;
-    const items = await db.mcpServers
-      .orderBy('createdAt')
-      .offset(offset)
-      .limit(pageSize)
-      .toArray();
-
-    return createPage(items, page, pageSize, totalItems);
+    const { page: p, pageSize: ps } = validatePagination(page, pageSize);
+    return mcpBackent.getMCPServersPage(p, ps);
   },
   count: async (): Promise<number> => {
-    return LocalDatabase.getInstance().mcpServers.count();
+    const all = await mcpBackent.listMCPServers();
+    return all.length;
   },
 };
 
 /**
- * Generic CRUD operations for managing `DatabaseObject` instances in the local database.
- * This can be used to store any type of object that conforms to the `DatabaseObject` interface.
- *
- * @template T The type of the data stored within the `DatabaseObject`.
+ * Generic CRUD operations for managing `DatabaseObject` instances via Rust Backend (Settings).
  */
 export const objectsCRUD: CRUD<
   DatabaseObject<unknown>,
   DatabaseObject<unknown>
 > = {
   upsert: async <T>(object: DatabaseObject<T>) => {
-    const now = new Date();
-    if (!object.createdAt) object.createdAt = now;
-    object.updatedAt = now;
-    await LocalDatabase.getInstance().objects.put(
-      object as DatabaseObject<unknown>,
-    );
+    await settingsBackend.upsertSetting(object);
   },
   upsertMany: async <T>(objects: DatabaseObject<T>[]) => {
-    const now = new Date();
-    const updatedObjects = objects.map((obj) => ({
-      ...obj,
-      createdAt: obj.createdAt || now,
-      updatedAt: now,
-    }));
-    await LocalDatabase.getInstance().objects.bulkPut(
-      updatedObjects as DatabaseObject<unknown>[],
-    );
+    await settingsBackend.upsertSettings(objects);
   },
   read: async <T>(key: string): Promise<DatabaseObject<T> | undefined> => {
-    return LocalDatabase.getInstance().objects.get(key) as Promise<
-      DatabaseObject<T> | undefined
-    >;
+    return settingsBackend.getSetting<T>(key);
   },
   delete: async (key: string) => {
-    await LocalDatabase.getInstance().objects.delete(key);
+    await settingsBackend.deleteSetting(key);
   },
   getPage: async <T>(
     page: number,
     pageSize: number,
   ): Promise<Page<DatabaseObject<T>>> => {
-    const db = LocalDatabase.getInstance();
-    const totalItems = await db.objects.count();
-
-    if (pageSize === -1) {
-      const items = (await db.objects
-        .orderBy('createdAt')
-        .toArray()) as DatabaseObject<T>[];
-      return createPage(items, page, pageSize, totalItems);
-    }
-
-    const offset = (page - 1) * pageSize;
-    const items = (await db.objects
-      .orderBy('createdAt')
-      .offset(offset)
-      .limit(pageSize)
-      .toArray()) as DatabaseObject<T>[];
-
-    return createPage(items, page, pageSize, totalItems);
+    const { page: p, pageSize: ps } = validatePagination(page, pageSize);
+    return settingsBackend.getSettingsPage<T>(p, ps);
   },
   count: async (): Promise<number> => {
-    return LocalDatabase.getInstance().objects.count();
+    const all = await settingsBackend.listSettings();
+    return all.length;
   },
 };
 
 /**
- * CRUD operations for managing `Session` objects in the local database.
- * Provides methods for standard database interactions with sessions.
+ * CRUD operations for managing `Session` objects via Rust Backend.
  */
 export const sessionsCRUD: CRUD<Session> = {
   upsert: async (session: Session) => {
-    const now = new Date();
-    if (!session.createdAt) session.createdAt = now;
-    session.updatedAt = now;
-    await LocalDatabase.getInstance().sessions.put(session);
+    await sessionsBackend.upsertSession(session);
   },
   upsertMany: async (sessions: Session[]) => {
-    const now = new Date();
-    const updatedSessions = sessions.map((session) => ({
-      ...session,
-      createdAt: session.createdAt || now,
-      updatedAt: now,
-    }));
-    await LocalDatabase.getInstance().sessions.bulkPut(updatedSessions);
+    for (const s of sessions) {
+      await sessionsBackend.upsertSession(s);
+    }
   },
   read: async (id: string) => {
-    return LocalDatabase.getInstance().sessions.get(id);
+    return sessionsBackend.getSession(id);
   },
-  /**
-   * Deletes a session and all its related data in a single transaction.
-   * This includes all messages, file stores, file contents, and file chunks
-   * associated with the specified session ID.
-   *
-   * @param id The ID of the session to delete.
-   */
   delete: async (id: string) => {
-    const db = LocalDatabase.getInstance();
-    // File content is handled by the Rust backend; on the frontend we only
-    // need to remove messages and session row.
-    await db.transaction('rw', [db.sessions, db.messages], async () => {
-      await db.messages.where('sessionId').equals(id).delete();
-      await db.sessions.delete(id);
-    });
+    await sessionsBackend.deleteSession(id);
   },
   getPage: async (page: number, pageSize: number): Promise<Page<Session>> => {
-    const db = LocalDatabase.getInstance();
-    const totalItems = await db.sessions.count();
-
-    if (pageSize === -1) {
-      const items = await db.sessions.orderBy('updatedAt').reverse().toArray();
-      return createPage(items, page, pageSize, totalItems);
-    }
-
-    const offset = (page - 1) * pageSize;
-    const items = await db.sessions
-      .orderBy('updatedAt')
-      .reverse()
-      .offset(offset)
-      .limit(pageSize)
-      .toArray();
-
-    return createPage(items, page, pageSize, totalItems);
+    const { page: p, pageSize: ps } = validatePagination(page, pageSize);
+    return sessionsBackend.getSessionsPage(p, ps);
   },
   count: async (): Promise<number> => {
-    return LocalDatabase.getInstance().sessions.count();
+    const all = await sessionsBackend.listSessions();
+    return all.length;
   },
 };
 
 /**
- * CRUD operations for managing `Message` objects in the local database.
- * This provides a standard interface for interacting with chat messages.
+ * CRUD operations for managing `Message` objects via Rust Backend.
  */
 export const messagesCRUD: CRUD<Message> = {
   upsert: async (message: Message) => {
-    const now = new Date();
-    if (!message.createdAt) message.createdAt = now;
-    message.updatedAt = now;
-    await LocalDatabase.getInstance().messages.put(message);
+    await messagesBackend.upsertMessage(message);
   },
   upsertMany: async (messages: Message[]) => {
-    const now = new Date();
-    const updatedMessages = messages.map((msg) => ({
-      ...msg,
-      createdAt: msg.createdAt || now,
-      updatedAt: now,
-    }));
-    await LocalDatabase.getInstance().messages.bulkPut(updatedMessages);
+    await messagesBackend.upsertMessages(messages);
   },
   read: async (id: string) => {
-    return LocalDatabase.getInstance().messages.get(id);
+    // Backend migration: Read single message not directly supported yet.
+    // Simulating or returning undefined. logic flow usually doesn't need single message read by ID except internally.
+    console.warn(
+      'Single message read not supported in backend migration yet. returning undefined for id:',
+      id,
+    );
+    return undefined;
   },
   delete: async (id: string) => {
-    await LocalDatabase.getInstance().messages.delete(id);
+    await messagesBackend.deleteMessage(id);
   },
-  getPage: async (page: number, pageSize: number): Promise<Page<Message>> => {
-    const db = LocalDatabase.getInstance();
-    const totalItems = await db.messages.count();
-
-    if (pageSize === -1) {
-      const items = await db.messages.orderBy('createdAt').toArray();
-      return createPage(items, page, pageSize, totalItems);
+  getPage: async (
+    page: number,
+    pageSize: number,
+    filter?: { sessionId?: string; threadId?: string },
+  ): Promise<Page<Message>> => {
+    // If filter is provided, use specialized backend call
+    if (filter?.sessionId && filter?.threadId) {
+      const { page: p, pageSize: ps } = validatePagination(page, pageSize);
+      return (await messagesBackend.getMessagesPageForSession(
+        filter.sessionId,
+        filter.threadId,
+        p,
+        ps,
+      )) as Page<Message>;
     }
-
-    const offset = (page - 1) * pageSize;
-    const items = await db.messages
-      .orderBy('createdAt')
-      .offset(offset)
-      .limit(pageSize)
-      .toArray();
-
-    return createPage(items, page, pageSize, totalItems);
+    // Fallback: empty page if no session filter (global message list not supported)
+    return createPage([], page, pageSize, 0);
   },
   count: async (): Promise<number> => {
-    return LocalDatabase.getInstance().messages.count();
+    return 0; // Not supported globally
   },
 };
 
@@ -403,8 +248,13 @@ export const messagesCRUD: CRUD<Message> = {
  * A FileStore represents a collection of files, typically associated with a session.
  */
 // FileStore / FileContent / FileChunk CRUD removed: backend (Rust) is authoritative
+type PlaybookRecord = Playbook & {
+  id: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+};
 
-/** CRUD for persisted Task records stored in the LocalDatabase.tasks table. */
+/** CRUD for persisted Task records stored in the Backend. */
 export const playbooksCRUD: CRUD<PlaybookRecord> & {
   getPageForAgent: (
     agentId: string,
@@ -412,98 +262,36 @@ export const playbooksCRUD: CRUD<PlaybookRecord> & {
     pageSize: number,
   ) => Promise<Page<PlaybookRecord>>;
 } = {
-  upsert: async (playbook) => {
-    const now = new Date();
-    const maybeId = playbook as unknown as { id?: unknown };
-    const maybeCreated = playbook as unknown as { createdAt?: unknown };
-    const record: PlaybookRecord = {
-      ...playbook,
-      id: typeof maybeId.id === 'string' ? maybeId.id : String(Date.now()),
-      createdAt:
-        maybeCreated.createdAt instanceof Date ? maybeCreated.createdAt : now,
-      updatedAt: now,
-    } as PlaybookRecord;
-    await LocalDatabase.getInstance().table('playbooks').put(record);
+  upsert: async (playbook: PlaybookRecord) => {
+    // PlaybookRecord includes id and timestamps which backend handles
+    await playbooksBackend.upsertPlaybook(playbook);
   },
-  upsertMany: async (playbooksArr) => {
-    const now = new Date();
-    const updated = playbooksArr.map((t) => {
-      const mid = t as unknown as { id?: unknown };
-      const mcreated = t as unknown as { createdAt?: unknown };
-      return {
-        ...t,
-        id:
-          typeof mid.id === 'string'
-            ? mid.id
-            : String(Date.now() + Math.random()),
-        createdAt:
-          mcreated.createdAt instanceof Date
-            ? (mcreated.createdAt as Date)
-            : now,
-        updatedAt: now,
-      } as PlaybookRecord;
-    });
-    await LocalDatabase.getInstance().table('playbooks').bulkPut(updated);
-  },
-  read: async (id) => {
-    return LocalDatabase.getInstance().table('playbooks').get(id) as Promise<
-      PlaybookRecord | undefined
-    >;
-  },
-  delete: async (id) => {
-    await LocalDatabase.getInstance().table('playbooks').delete(id);
-  },
-  getPage: async (page, pageSize) => {
-    const db = LocalDatabase.getInstance();
-    const table = db.table('playbooks');
-    const totalItems = await table.count();
-    if (pageSize === -1) {
-      const items = await table.toArray();
-      return createPage(items as PlaybookRecord[], page, pageSize, totalItems);
+  upsertMany: async (playbooksArr: PlaybookRecord[]) => {
+    for (const p of playbooksArr) {
+      await playbooksBackend.upsertPlaybook(p);
     }
-    const offset = (page - 1) * pageSize;
-    const items = await table.offset(offset).limit(pageSize).toArray();
-    return createPage(items as PlaybookRecord[], page, pageSize, totalItems);
+  },
+  read: async (id: string) => {
+    return playbooksBackend.getPlaybook(id);
+  },
+  delete: async (id: string) => {
+    await playbooksBackend.deletePlaybook(id);
+  },
+  getPage: async (page: number, pageSize: number) => {
+    const { page: p, pageSize: ps } = validatePagination(page, pageSize);
+    return playbooksBackend.getPlaybooksPage(p, ps);
   },
   count: async () => {
-    return LocalDatabase.getInstance().table('playbooks').count();
+    const all = await playbooksBackend.listPlaybooks();
+    return all.length;
   },
 
   // New method: agentId-filtered pagination
-  getPageForAgent: async (agentId, page, pageSize) => {
-    const db = LocalDatabase.getInstance();
-    const table = db.table('playbooks');
+  getPageForAgent: async (agentId: string, page: number, pageSize: number) => {
+    // Fetch all and filter (simulated pagination)
+    const all = await playbooksBackend.listPlaybooks();
+    const filtered = all.filter((p) => p.agentId === agentId);
 
-    // Count total items for this agent using indexed query
-    const totalItems = await table.where('agentId').equals(agentId).count();
-
-    if (pageSize === -1) {
-      // Return all items for this agent
-      const items = await table.where('agentId').equals(agentId).toArray();
-      return createPage(items as PlaybookRecord[], page, pageSize, totalItems);
-    }
-
-    // Paginate with offset and limit
-    const offset = (page - 1) * pageSize;
-    const items = await table
-      .where('agentId')
-      .equals(agentId)
-      .offset(offset)
-      .limit(pageSize)
-      .toArray();
-
-    return createPage(items as PlaybookRecord[], page, pageSize, totalItems);
+    return createPage(filtered, page, pageSize, filtered.length);
   },
 };
-
-/**
- * CRUD operations for managing `FileContent` objects in the local database.
- * A FileContent represents a single file's metadata within a FileStore.
- */
-// FileContent CRUD removed
-
-/**
- * CRUD operations for managing `FileChunk` objects in the local database.
- * FileChunks store the actual binary data of files in smaller pieces.
- */
-// FileChunk CRUD removed

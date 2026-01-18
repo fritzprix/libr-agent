@@ -11,6 +11,45 @@ pub struct InstallationGuide {
     pub notes: Vec<String>,
 }
 
+impl InstallationGuide {
+    /// Format guide as human-readable text for AI agents
+    pub fn format_as_text(&self) -> String {
+        let steps_text = self
+            .steps
+            .iter()
+            .enumerate()
+            .map(|(i, step)| {
+                let mut parts = vec![format!("{}. {}", i + 1, step.description)];
+
+                if let Some(cmd) = &step.command {
+                    parts.push(format!("   $ {}", cmd));
+                }
+
+                if let Some(url) = &step.url {
+                    parts.push(format!("   🔗 {}", url));
+                }
+
+                parts.join("\n")
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n");
+
+        let notes_text = if !self.notes.is_empty() {
+            format!("\n\n📝 Notes:\n• {}", self.notes.join("\n• "))
+        } else {
+            String::new()
+        };
+
+        format!(
+            "✓ Installation guide for {} on {}:\n\n\
+             {}\n\n\
+             📋 Verification:\n\
+             $ {}{}",
+            self.tool, self.platform, steps_text, self.verification, notes_text
+        )
+    }
+}
+
 /// A single installation step
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -383,5 +422,41 @@ mod tests {
         let guide = get_installation_guide("git", None);
         assert_eq!(guide.tool, "git");
         assert!(!guide.platform.is_empty());
+    }
+
+    #[test]
+    fn test_installation_guide_formatter() {
+        let guide = InstallationGuide {
+            tool: "test-tool".to_string(),
+            platform: "test-platform".to_string(),
+            steps: vec![
+                InstallationStep {
+                    description: "Step one".to_string(),
+                    command: Some("command1".to_string()),
+                    url: None,
+                },
+                InstallationStep {
+                    description: "Step two".to_string(),
+                    command: None,
+                    url: Some("https://example.com".to_string()),
+                },
+            ],
+            verification: "verify command".to_string(),
+            notes: vec!["Note 1".to_string(), "Note 2".to_string()],
+        };
+
+        let formatted = guide.format_as_text();
+
+        // Check structure
+        assert!(formatted.contains("✓ Installation guide"));
+        assert!(formatted.contains("1. Step one"));
+        assert!(formatted.contains("$ command1"));
+        assert!(formatted.contains("2. Step two"));
+        assert!(formatted.contains("🔗 https://example.com"));
+        assert!(formatted.contains("📋 Verification"));
+        assert!(formatted.contains("$ verify command"));
+        assert!(formatted.contains("📝 Notes"));
+        assert!(formatted.contains("• Note 1"));
+        assert!(formatted.contains("• Note 2"));
     }
 }

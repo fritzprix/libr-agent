@@ -93,6 +93,267 @@ impl BrowserServer {
     }
 }
 
+impl BrowserServer {
+    pub fn tools_static() -> Vec<MCPTool> {
+        vec![
+            MCPTool {
+                name: "createSession".to_string(),
+                description: "Create a new browser session for this agent.
+
+⚠️ WORKFLOW:
+1. Call createSession FIRST before any other browser operations
+2. Use the returned session ID for all subsequent browser tools
+3. Session automatically closes if agent terminates
+
+Returns: Session ID (e.g., 'abc123...') - use this ID for all other browser tools".to_string(),
+                input_schema: serde_json::from_value(json!({
+                    "type": "object",
+                    "properties": {
+                         "url": {
+                            "type": "string",
+                            "description": "Initial URL to open (default: about:blank)"
+                        }
+                    }
+                }))
+                .unwrap(),
+                title: None,
+                output_schema: None,
+                annotations: None,
+            },
+            MCPTool {
+                name: "navigateToUrl".to_string(),
+                description: "Navigate to a specific URL in the browser session.
+
+The browser session is managed automatically by the backend. Simply provide the URL and the system will handle the navigation.
+
+⚠️ Error Handling:
+- 403/401: Page blocks automated access - abandon and search elsewhere
+- 404: Page not found - check URL or search homepage
+- Timeout: Page too complex or blocking - try different URL
+
+Next Steps:
+- Use extractWebContent to read page content
+- Use listInteractable to see clickable elements".to_string(),
+                input_schema: serde_json::from_value(json!({
+                    "type": "object",
+                    "properties": {
+                        "url": {
+                            "type": "string",
+                            "description": "URL to navigate to (must start with http:// or https://)"
+                        }
+                    },
+                    "required": ["url"]
+                }))
+                .unwrap(),
+                title: None,
+                output_schema: None,
+                annotations: None,
+            },
+            MCPTool {
+                name: "navigateBack".to_string(),
+                description: "Navigate back in browser history to the previous page.".to_string(),
+                input_schema: serde_json::from_value(json!({
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }))
+                .unwrap(),
+                title: None,
+                output_schema: None,
+                annotations: None,
+            },
+            MCPTool {
+                name: "navigateForward".to_string(),
+                description: "Navigate forward in browser history to the next page.".to_string(),
+                input_schema: serde_json::from_value(json!({
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }))
+                .unwrap(),
+                title: None,
+                output_schema: None,
+                annotations: None,
+            },
+            MCPTool {
+                name: "getCurrentUrl".to_string(),
+                description: "Get the current URL of the page.".to_string(),
+                input_schema: serde_json::from_value(json!({
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }))
+                .unwrap(),
+                title: None,
+                output_schema: None,
+                annotations: None,
+            },
+            MCPTool {
+                name: "getPageTitle".to_string(),
+                description: "Get the title of the current page.".to_string(),
+                input_schema: serde_json::from_value(json!({
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }))
+                .unwrap(),
+                title: None,
+                output_schema: None,
+                annotations: None,
+            },
+            MCPTool {
+                name: "extractWebContent".to_string(),
+                description: "Extract the content of the current page as markdown. Large pages are automatically paginated.
+
+For pages > 3000 tokens, content is split into pages. Use readWebContent(page) to read subsequent pages.".to_string(),
+                input_schema: serde_json::from_value(json!({
+                    "type": "object",
+                    "properties": {
+                        "autoMerge": {
+                            "type": "boolean",
+                            "description": "Whether to attempt merging all pages into one response (default: true)."
+                        },
+                        "saveRawHtml": {
+                            "type": "boolean",
+                            "description": "Whether to save raw HTML to a file for debugging (default: false)"
+                        }
+                    },
+                    "required": []
+                }))
+                .unwrap(),
+                title: None,
+                output_schema: None,
+                annotations: None,
+            },
+            MCPTool {
+                name: "clickElement".to_string(),
+                description: "Click an element on the page using a CSS selector.
+
+⚠️ PREREQUISITE:
+- Call listInteractable OR extractWebContent FIRST to find valid selectors on the page.
+- Do NOT guess selectors.".to_string(),
+                input_schema: serde_json::from_value(json!({
+                    "type": "object",
+                    "properties": {
+                        "selector": {
+                            "type": "string",
+                            "description": "CSS selector of the element to click (must match an element visible in listInteractable/extractWebContent)"
+                        }
+                    },
+                    "required": ["selector"]
+                }))
+                .unwrap(),
+                title: None,
+                output_schema: None,
+                annotations: None,
+            },
+            MCPTool {
+                name: "inputText".to_string(),
+                description: "Input text into an element on the page.
+
+⚠️ PREREQUISITE:
+- Call listInteractable OR extractWebContent FIRST to find valid selectors.
+- Verify the element is an input or textarea.".to_string(),
+                input_schema: serde_json::from_value(json!({
+                    "type": "object",
+                    "properties": {
+                        "selector": {
+                            "type": "string",
+                            "description": "CSS selector of the input element"
+                        },
+                        "text": {
+                            "type": "string",
+                            "description": "Text to input"
+                        }
+                    },
+                    "required": ["selector", "text"]
+                }))
+                .unwrap(),
+                title: None,
+                output_schema: None,
+                annotations: None,
+            },
+            MCPTool {
+                name: "scrollPage".to_string(),
+                description: "Scroll the page to a specific position.".to_string(),
+                input_schema: serde_json::from_value(json!({
+                    "type": "object",
+                    "properties": {
+                        "x": {
+                            "type": "number",
+                            "description": "X coordinate to scroll to"
+                        },
+                        "y": {
+                            "type": "number",
+                            "description": "Y coordinate to scroll to"
+                        }
+                    },
+                    "required": ["x", "y"]
+                }))
+                .unwrap(),
+                title: None,
+                output_schema: None,
+                annotations: None,
+            },
+
+            MCPTool {
+                name: "listInteractable".to_string(),
+                description: "List interactable elements on the page.".to_string(),
+                input_schema: serde_json::from_value(json!({
+                    "type": "object",
+                    "properties": {
+                        "filterType": {
+                            "type": "string",
+                            "enum": ["semantic_clickable", "semantic_input", "all_focusable"],
+                            "description": "Filter type:\n- semantic_clickable: Buttons, links, and clickable elements\n- semantic_input: Inputs, textareas, and form fields\n- all_focusable: Everything that can receive focus"
+                        },
+                        "scope": {
+                            "type": "string",
+                            "enum": ["viewport", "all"],
+                            "description": "Scope of listing (default: viewport)"
+                        }
+                    },
+                    "required": []
+                }))
+                .unwrap(),
+                title: None,
+                output_schema: None,
+                annotations: None,
+            },
+            MCPTool {
+                name: "closeSession".to_string(),
+                description: "Explicitly close the browser session. Good practice after finishing task to free resources.".to_string(),
+                input_schema: serde_json::from_value(json!({
+                    "type": "object",
+                    "properties": {}
+                }))
+                .unwrap(),
+                title: None,
+                output_schema: None,
+                annotations: None,
+            },
+            MCPTool {
+                name: "readWebContent".to_string(),
+                description: "Read a specific page from previously extracted content (if paginated).".to_string(),
+                input_schema: serde_json::from_value(json!({
+                    "type": "object",
+                    "properties": {
+                        "page": {
+                            "type": "number",
+                            "description": "Page number to read (1-based index)"
+                        }
+                    },
+                    "required": ["page"]
+                }))
+                .unwrap(),
+                title: None,
+                output_schema: None,
+                annotations: None,
+            },
+        ]
+    }
+}
+
 #[async_trait]
 impl BuiltinMCPServer for BrowserServer {
     fn name(&self) -> &str {
@@ -201,313 +462,7 @@ impl BuiltinMCPServer for BrowserServer {
     }
 
     fn tools(&self) -> Vec<MCPTool> {
-        vec![
-            MCPTool {
-                name: "createSession".to_string(),
-                description: "Create a new browser session for this agent.
-
-⚠️ WORKFLOW:
-1. Call createSession FIRST before any other browser operations
-2. Use the returned session ID for all subsequent browser tools
-3. Session automatically closes if agent terminates
-
-Returns: Session ID (e.g., 'abc123...') - use this ID for all other browser tools".to_string(),
-                input_schema: serde_json::from_value(json!({
-                    "type": "object",
-                    "properties": {
-                         "url": {
-                            "type": "string",
-                            "description": "Initial URL to open (default: about:blank)"
-                        }
-                    }
-                }))
-                .unwrap(),
-                title: None,
-                output_schema: None,
-                annotations: None,
-            },
-            MCPTool {
-                name: "navigateToUrl".to_string(),
-                description: "Navigate to a specific URL in the browser session.
-
-⚠️ CRITICAL WORKFLOW:
-1. Ensure createSession was called and returned a session ID
-2. Use the session ID from createSession as the sessionId parameter
-3. URL must include http:// or https:// protocol
-
-⚠️ Common errors:
-- 403/401: Page blocks automated access - abandon and search elsewhere
-- 404: Page not found - check URL or search homepage
-- Timeout: Page too complex or blocking - try different URL
-
-After success:
-- Use extractWebContent to read page content
-- Use listInteractable to see clickable elements".to_string(),
-                input_schema: serde_json::from_value(json!({
-                    "type": "object",
-                    "properties": {
-                         "sessionId": {
-                            "type": "string",
-                            "description": "⚠️ CRITICAL: Browser session ID returned by createSession.\n\nWORKFLOW:\n1. Call createSession FIRST to get a session ID\n2. Use the exact session ID from createSession response\n3. DO NOT use session IDs from previous attempts or other tools"
-                        },
-                        "url": {
-                            "type": "string",
-                            "description": "URL to navigate to (must start with http:// or https://)"
-                        }
-                    },
-                    "required": ["sessionId", "url"]
-                }))
-                .unwrap(),
-                title: None,
-                output_schema: None,
-                annotations: None,
-            },
-            MCPTool {
-                name: "navigateBack".to_string(),
-                description: "Navigate back in history.".to_string(),
-                input_schema: serde_json::from_value(json!({
-                    "type": "object",
-                    "properties": {
-                         "sessionId": {
-                            "type": "string",
-                            "description": "⚠️ CRITICAL: Browser session ID returned by createSession."
-                        }
-                    },
-                    "required": ["sessionId"]
-                }))
-                .unwrap(),
-                title: None,
-                output_schema: None,
-                annotations: None,
-            },
-            MCPTool {
-                name: "navigateForward".to_string(),
-                description: "Navigate forward in history.".to_string(),
-                input_schema: serde_json::from_value(json!({
-                    "type": "object",
-                    "properties": {
-                         "sessionId": {
-                            "type": "string",
-                            "description": "⚠️ CRITICAL: Browser session ID returned by createSession."
-                        }
-                    },
-                    "required": ["sessionId"]
-                }))
-                .unwrap(),
-                title: None,
-                output_schema: None,
-                annotations: None,
-            },
-            MCPTool {
-                name: "getCurrentUrl".to_string(),
-                description: "Get the current URL of the page.".to_string(),
-                input_schema: serde_json::from_value(json!({
-                    "type": "object",
-                    "properties": {
-                         "sessionId": {
-                            "type": "string",
-                            "description": "⚠️ CRITICAL: Browser session ID returned by createSession."
-                        }
-                    },
-                    "required": ["sessionId"]
-                }))
-                .unwrap(),
-                title: None,
-                output_schema: None,
-                annotations: None,
-            },
-            MCPTool {
-                name: "getPageTitle".to_string(),
-                description: "Get the title of the current page.".to_string(),
-                input_schema: serde_json::from_value(json!({
-                     "type": "object",
-                    "properties": {
-                         "sessionId": {
-                            "type": "string",
-                            "description": "⚠️ CRITICAL: Browser session ID returned by createSession."
-                        }
-                    },
-                    "required": ["sessionId"]
-                }))
-                .unwrap(),
-                title: None,
-                output_schema: None,
-                annotations: None,
-            },
-            MCPTool {
-                name: "extractWebContent".to_string(),
-                description: "Extract the content of the current page as markdown. Large pages are automatically paginated.
-
-For pages > 5000 chars, content is split into pages. Use readWebContent(sessionId, page) to read subsequent pages.".to_string(),
-                input_schema: serde_json::from_value(json!({
-                    "type": "object",
-                    "properties": {
-                         "sessionId": {
-                            "type": "string",
-                            "description": "⚠️ CRITICAL: Browser session ID returned by createSession.\n\nWORKFLOW:\n1. Call createSession FIRST to get a session ID\n2. Use the exact session ID from createSession response"
-                        },
-                        "autoMerge": {
-                            "type": "boolean",
-                            "description": "Whether to attempt merging all pages into one response (default: true).\n\n⚠️ When to use false:\n- Pages > 5000 characters (will fail to merge anyway)\n- Need precise pagination control\n\nIf merge fails, use readWebContent(sessionId, page) to read individual pages"
-                        },
-                        "saveRawHtml": {
-                            "type": "boolean",
-                            "description": "Whether to save raw HTML to a file for debugging (default: false)"
-                        }
-                    },
-                    "required": ["sessionId"]
-                }))
-                .unwrap(),
-                title: None,
-                output_schema: None,
-                annotations: None,
-            },
-            MCPTool {
-                name: "clickElement".to_string(),
-                description: "Click an element on the page using a CSS selector.
-
-⚠️ PREREQUISITE:
-- Call listInteractable OR extractWebContent FIRST to find valid selectors on the page.
-- Do NOT guess selectors.".to_string(),
-                input_schema: serde_json::from_value(json!({
-                    "type": "object",
-                    "properties": {
-                         "sessionId": {
-                            "type": "string",
-                            "description": "⚠️ CRITICAL: Browser session ID returned by createSession."
-                        },
-                        "selector": {
-                            "type": "string",
-                            "description": "CSS selector of the element to click (must match an element visible in listInteractable/extractWebContent)"
-                        }
-                    },
-                    "required": ["sessionId", "selector"]
-                }))
-                .unwrap(),
-                title: None,
-                output_schema: None,
-                annotations: None,
-            },
-            MCPTool {
-                name: "inputText".to_string(),
-                description: "Input text into an element on the page.
-
-⚠️ PREREQUISITE:
-- Call listInteractable OR extractWebContent FIRST to find valid selectors.
-- Verify the element is an input or textarea.".to_string(),
-                input_schema: serde_json::from_value(json!({
-                    "type": "object",
-                    "properties": {
-                         "sessionId": {
-                            "type": "string",
-                            "description": "⚠️ CRITICAL: Browser session ID returned by createSession."
-                        },
-                        "selector": {
-                            "type": "string",
-                            "description": "CSS selector of the input element"
-                        },
-                        "text": {
-                            "type": "string",
-                            "description": "Text to input"
-                        }
-                    },
-                    "required": ["sessionId", "selector", "text"]
-                }))
-                .unwrap(),
-                title: None,
-                output_schema: None,
-                annotations: None,
-            },
-            MCPTool {
-                name: "scrollPage".to_string(),
-                description: "Scroll the page to a specific position.".to_string(),
-                input_schema: serde_json::from_value(json!({
-                    "type": "object",
-                    "properties": {
-                         "sessionId": {
-                            "type": "string",
-                            "description": "⚠️ CRITICAL: Browser session ID returned by createSession."
-                        },
-                        "x": {
-                            "type": "number",
-                            "description": "X coordinate to scroll to"
-                        },
-                        "y": {
-                            "type": "number",
-                            "description": "Y coordinate to scroll to"
-                        }
-                    },
-                    "required": ["sessionId", "x", "y"]
-                }))
-                .unwrap(),
-                title: None,
-                output_schema: None,
-                annotations: None,
-            },
-
-            MCPTool {
-                name: "listInteractable".to_string(),
-                description: "List interactable elements on the page.".to_string(),
-                input_schema: serde_json::from_value(json!({
-                    "type": "object",
-                    "properties": {
-                        "sessionId": {
-                            "type": "string",
-                            "description": "⚠️ CRITICAL: Browser session ID returned by createSession."
-                        },
-                        "filterType": {
-                            "type": "string",
-                            "enum": ["semantic_clickable", "semantic_input", "all_focusable"],
-                            "description": "Filter type:\n- semantic_clickable: Buttons, links, and clickable elements\n- semantic_input: Inputs, textareas, and form fields\n- all_focusable: Everything that can receive focus"
-                        },
-                        "scope": {
-                            "type": "string",
-                            "enum": ["viewport", "all"],
-                            "description": "Scope of listing (default: viewport)"
-                        }
-                    },
-                    "required": ["sessionId"]
-                }))
-                .unwrap(),
-                title: None,
-                output_schema: None,
-                annotations: None,
-            },
-            MCPTool {
-                name: "closeSession".to_string(),
-                description: "Explicitly close the browser session. Good practice after finishing task to free resources.".to_string(),
-                input_schema: serde_json::from_value(json!({
-                    "type": "object",
-                    "properties": {}
-                }))
-                .unwrap(),
-                title: None,
-                output_schema: None,
-                annotations: None,
-            },
-            MCPTool {
-                name: "readWebContent".to_string(),
-                description: "Read a specific page from previously extracted content (if paginated).".to_string(),
-                input_schema: serde_json::from_value(json!({
-                    "type": "object",
-                    "properties": {
-                        "sessionId": {
-                            "type": "string",
-                            "description": "⚠️ CRITICAL: Browser session ID returned by createSession."
-                        },
-                        "page": {
-                            "type": "number",
-                            "description": "Page number to read (1-based index)"
-                        }
-                    },
-                    "required": ["sessionId", "page"]
-                }))
-                .unwrap(),
-                title: None,
-                output_schema: None,
-                annotations: None,
-            },
-        ]
+        Self::tools_static()
     }
 
     async fn call_tool(

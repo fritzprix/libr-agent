@@ -502,8 +502,8 @@ pub async fn check_todo(
     }
 }
 
-/// Clear todos (Legacy: clearTodos)
-pub async fn clear_todos(
+/// Cancel (permanently delete) todos (Legacy: clearTodos)
+pub async fn cancel_todo(
     db: &DatabaseConnection,
     session_id: &str,
     args: Value,
@@ -512,7 +512,7 @@ pub async fn clear_todos(
     let indices = args.get("indices").and_then(|v| v.as_array());
 
     if ids.is_none() && indices.is_none() {
-        // Clear all
+        // Cancel all
         let result = planning_todo::Entity::delete_many()
             .filter(planning_todo::Column::SessionId.eq(session_id))
             .exec(db)
@@ -522,12 +522,25 @@ pub async fn clear_todos(
             Ok(r) => {
                 let summary_text = get_planning_summary(db, session_id).await;
                 let hint = SuccessHint::new(
-                    format!("✓ Cleared {} todos{}", r.rows_affected, summary_text),
-                    vec!["Use 'addTodo' to replan, or 'updateGoal'/'createGoal' to refine objectives".to_string()],
+                    format!("✓ Cancelled {} todos{}", r.rows_affected, summary_text),
+                    vec![
+                        "All todos cancelled. Use 'getCurrentState' to verify empty state."
+                            .to_string(),
+                        "Use 'createGoal' to start a new objective.".to_string(),
+                    ],
                 );
                 Ok(hint.to_mcp_result())
             }
-            Err(e) => Ok(MCPResult::error(&format!("Failed to clear todos: {}", e))),
+            Err(e) => Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::DatabaseError,
+                format!("Failed to cancel todos: {}", e),
+                vec![
+                    "Try again - this may be a transient database error".to_string(),
+                    "Use getCurrentState to verify current todo state".to_string(),
+                ],
+                ToolGroup::Planning,
+            )
+            .to_mcp_result()),
         };
     }
 
@@ -538,10 +551,10 @@ pub async fn clear_todos(
         for id_val in id_list {
             if let Some(id) = id_val.as_i64() {
                 if id < 1 {
-                    return Ok(MCPResult::error(&format!(
-                        "Invalid id '{}'. Must be >= 1",
-                        id
-                    )));
+                    return Ok(invalid_input_error(
+                        "Invalid 'id'. Must be >= 1",
+                        ToolGroup::Planning,
+                    ));
                 }
                 target_ids.push(id);
             }
@@ -564,10 +577,10 @@ pub async fn clear_todos(
         for idx_val in idx_list {
             if let Some(idx) = idx_val.as_i64() {
                 if idx < 0 {
-                    return Ok(MCPResult::error(&format!(
-                        "Invalid index '{}'. Must be >= 0",
-                        idx
-                    )));
+                    return Ok(invalid_input_error(
+                        "Invalid 'index'. Must be >= 0",
+                        ToolGroup::Planning,
+                    ));
                 }
                 let idx = idx as usize;
                 if idx < all_todos.len() {
@@ -578,7 +591,11 @@ pub async fn clear_todos(
     }
 
     if target_ids.is_empty() {
-        return Ok(MCPResult::success("✓ No todos found to clear"));
+        return Ok(SuccessHint::new(
+            "✓ No todos found to cancel".to_string(),
+            vec!["Use 'getCurrentState' to see available todos".to_string()],
+        )
+        .to_mcp_result());
     }
 
     // Remove duplicates
@@ -606,31 +623,46 @@ pub async fn clear_todos(
                 .unwrap_or_default();
 
             let next_actions = if next_todos.is_empty() {
-                vec!["All todos cleared/checked! Use 'critiqueAndReflection' to review work, or 'createGoal' to start a new objective.".to_string()]
+                vec![
+                    "All todos cancelled! Use 'critiqueAndReflection' to review work.".to_string(),
+                    "Use 'createGoal' to start a new objective.".to_string(),
+                ]
             } else {
                 let mut actions = Vec::new();
-                for todo in next_todos {
-                    let content = todo.content;
+                for todo in next_todos.iter().take(2) {
+                    let content = &todo.content;
                     let safe_content = if content.chars().count() > 40 {
                         let truncated: String = content.chars().take(40).collect();
                         format!("{}...", truncated)
                     } else {
-                        content
+                        content.clone()
                     };
                     actions.push(format!(
                         "Process next: \"{}\" (ID: {})",
                         safe_content, todo.id
                     ));
                 }
+                actions.push(
+                    "Use 'checkTodo' to mark done, or 'cancelTodo' to remove more.".to_string(),
+                );
                 actions
             };
 
             let hint = SuccessHint::new(
-                format!("✓ Cleared {} todos{}", r.rows_affected, summary_text),
+                format!("✓ Cancelled {} todos{}", r.rows_affected, summary_text),
                 next_actions,
             );
             Ok(hint.to_mcp_result())
         }
-        Err(e) => Ok(MCPResult::error(&format!("Failed to clear todos: {}", e))),
+        Err(e) => Ok(ErrorGuidance::with_guidance(
+            ErrorCategory::DatabaseError,
+            format!("Failed to cancel todos: {}", e),
+            vec![
+                "Try again - this may be a transient database error".to_string(),
+                "Use getCurrentState to verify current todo state".to_string(),
+            ],
+            ToolGroup::Planning,
+        )
+        .to_mcp_result()),
     }
 }

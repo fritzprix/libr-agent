@@ -13,6 +13,8 @@ pub struct SessionWorkspaceInfo {
     pub session_id: String,
     #[serde(serialize_with = "serialize_pathbuf")]
     pub workspace_path: PathBuf,
+    #[serde(serialize_with = "serialize_option_pathbuf")]
+    pub workspace_override: Option<PathBuf>,
     #[serde(serialize_with = "serialize_instant")]
     pub created_at: Instant,
     #[serde(serialize_with = "serialize_instant")]
@@ -25,6 +27,16 @@ where
     S: serde::Serializer,
 {
     serializer.serialize_str(&path.to_string_lossy())
+}
+
+fn serialize_option_pathbuf<S>(path: &Option<PathBuf>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    match path {
+        Some(p) => serializer.serialize_str(&p.to_string_lossy()),
+        None => serializer.serialize_none(),
+    }
 }
 
 fn serialize_instant<S>(instant: &Instant, serializer: S) -> Result<S::Ok, S::Error>
@@ -156,6 +168,7 @@ echo "Available tools: python3, typescript/deno, shell commands"
         let workspace_info = SessionWorkspaceInfo {
             session_id: session_id.to_string(),
             workspace_path: session_dir.clone(),
+            workspace_override: None,
             created_at: Instant::now(),
             last_accessed: Instant::now(),
             is_template: false,
@@ -204,20 +217,55 @@ echo "Available tools: python3, typescript/deno, shell commands"
     }
 
     pub fn get_session_workspace_dir_by_id(&self, session_id: &str) -> PathBuf {
+        // Try to find in pool first to see if there is an override
+        if let Ok(pool) = self.workspace_pool.read() {
+            if let Some(info) = pool.get(session_id) {
+                if let Some(override_path) = &info.workspace_override {
+                    return override_path.clone();
+                }
+                // Also return the standard path if found in pool (avoids re-creation checks)
+                return info.workspace_path.clone();
+            }
+        }
+
         let workspace_dir = self.base_data_dir.join("workspaces").join(session_id);
 
         // Ensure directory exists
-        if let Err(e) = fs::create_dir_all(&workspace_dir) {
+        let final_dir = if let Err(e) = fs::create_dir_all(&workspace_dir) {
             warn!("Failed to create workspace directory {workspace_dir:?}: {e}");
             // Fallback to default workspace
             let default_dir = self.base_data_dir.join("workspaces").join("default");
             if let Err(e) = fs::create_dir_all(&default_dir) {
                 error!("Failed to create default workspace: {e}");
             }
-            return default_dir;
+            default_dir
+        } else {
+            workspace_dir
+        };
+
+        // Lazy load: Add to pool if missing
+        if let Ok(mut pool) = self.workspace_pool.write() {
+            // Double check inside write lock
+            if let Some(info) = pool.get(session_id) {
+                if let Some(override_path) = &info.workspace_override {
+                    return override_path.clone();
+                }
+                return info.workspace_path.clone();
+            }
+
+            let workspace_info = SessionWorkspaceInfo {
+                session_id: session_id.to_string(),
+                workspace_path: final_dir.clone(),
+                workspace_override: None,
+                created_at: Instant::now(),
+                last_accessed: Instant::now(),
+                is_template: false,
+            };
+            pool.insert(session_id.to_string(), workspace_info);
+            info!("Lazy loaded workspace info for session: {}", session_id);
         }
 
-        workspace_dir
+        final_dir
     }
 
     pub fn get_base_data_dir(&self) -> &PathBuf {
@@ -225,6 +273,21 @@ echo "Available tools: python3, typescript/deno, shell commands"
     }
 
     pub fn get_logs_dir(&self) -> PathBuf {
+        #[cfg(target_os = "windows")]
+        {
+            if let Some(local_data) = dirs::data_local_dir() {
+                return local_data.join("com.fritzprix.libragent").join("logs");
+            }
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            if let Some(home) = dirs::home_dir() {
+                return home.join("Library/Logs/com.fritzprix.libragent");
+            }
+        }
+
+        // Fallback for Linux or if platform specific dirs fail
         self.base_data_dir.join("logs")
     }
 
@@ -265,6 +328,12 @@ echo "Available tools: python3, typescript/deno, shell commands"
         let mut sessions: Vec<SessionWorkspaceInfo> = pool.values().cloned().collect();
         sessions.sort_by(|a, b| b.last_accessed.cmp(&a.last_accessed));
         Ok(sessions)
+    }
+
+    /// Get specific session info
+    pub fn get_session_info(&self, session_id: &str) -> Option<SessionWorkspaceInfo> {
+        let pool = self.workspace_pool.read().ok()?;
+        pool.get(session_id).cloned()
     }
 
     /// Pre-allocate sessions for faster switching
@@ -371,6 +440,42 @@ echo "Available tools: python3, typescript/deno, shell commands"
         info!("Renamed session '{old_session_id}' to '{new_session_id}'");
 
         Ok(())
+    }
+
+    /// Set a workspace override path for a session
+    pub async fn set_workspace_override(
+        &self,
+        session_id: &str,
+        override_path: PathBuf,
+    ) -> Result<(), String> {
+        let mut pool = self
+            .workspace_pool
+            .write()
+            .map_err(|e| format!("Failed to write workspace pool: {e}"))?;
+
+        if let Some(session_info) = pool.get_mut(session_id) {
+            session_info.workspace_override = Some(override_path);
+            session_info.last_accessed = Instant::now();
+            Ok(())
+        } else {
+            Err(format!("Session '{session_id}' not found"))
+        }
+    }
+
+    /// Remove a workspace override path for a session
+    pub async fn remove_workspace_override(&self, session_id: &str) -> Result<(), String> {
+        let mut pool = self
+            .workspace_pool
+            .write()
+            .map_err(|e| format!("Failed to write workspace pool: {e}"))?;
+
+        if let Some(session_info) = pool.get_mut(session_id) {
+            session_info.workspace_override = None;
+            session_info.last_accessed = Instant::now();
+            Ok(())
+        } else {
+            Err(format!("Session '{session_id}' not found"))
+        }
     }
 
     /// Clean up old or unused sessions

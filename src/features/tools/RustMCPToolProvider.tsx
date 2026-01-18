@@ -21,29 +21,42 @@ const logger = getLogger('RustMCPToolProvider');
 export function RustMCPToolProvider() {
   const { register, unregister } = useBuiltInTool();
   const {
-    listBuiltinServersWithMetadata,
+    listAvailableBuiltinServerDefinitions,
     listBuiltinTools,
     callBuiltinTool,
     getServiceContext,
-    switchContext,
   } = useRustBackend();
 
   const [{ loading, value, error }, loadBuiltInServers] =
     useAsyncFn(async () => {
-      logger.debug('Loading built-in servers with metadata from Rust backend');
+      logger.debug(
+        'Loading ALL available built-in server definitions from Rust backend',
+      );
 
-      // Use new API to get metadata in one call
-      const serverInfos = await listBuiltinServersWithMetadata();
+      // Use new API to get ALL available builtin server definitions (not just registered instances)
+      const serverInfos = await listAvailableBuiltinServerDefinitions();
+      logger.info('RustMCP: Fetched server definitions', {
+        count: serverInfos.length,
+        names: serverInfos.map((s) => s.name),
+      });
 
       // Load tools for each server
       const serverData = await Promise.all(
-        serverInfos
-          .filter((info) => info.name !== 'builtin_planning') // Disable Rust planning server in favor of WebMCP
-          .map(async (info) => ({
+        serverInfos.map(async (info) => {
+          const tools = await listBuiltinTools(info.name);
+          if (info.name === 'planning' || info.name === 'builtin_planning') {
+            logger.info('RustMCP: Loaded planning tools', {
+              serverName: info.name,
+              toolCount: tools.length,
+              toolNames: tools.map((t) => t.name),
+            });
+          }
+          return {
             name: info.name,
             metadata: info.metadata,
-            tools: await listBuiltinTools(info.name),
-          })),
+            tools: tools,
+          };
+        }),
       );
 
       const serverMap: Record<
@@ -57,7 +70,7 @@ export function RustMCPToolProvider() {
         };
       }
 
-      logger.info('Built-in servers loaded with metadata', {
+      logger.info('All available built-in server definitions loaded', {
         serverCount: serverInfos.length,
         servers: serverInfos.map((s) => ({
           name: s.name,
@@ -66,7 +79,7 @@ export function RustMCPToolProvider() {
       });
 
       return serverMap;
-    }, [listBuiltinServersWithMetadata, listBuiltinTools]);
+    }, [listAvailableBuiltinServerDefinitions, listBuiltinTools]);
 
   useEffect(() => {
     if (!loading && value) {
@@ -120,11 +133,6 @@ export function RustMCPToolProvider() {
           ): Promise<ServiceContext<unknown>> => {
             const context = await getServiceContext(serviceId, options);
             return context;
-          },
-          switchContext: async (options?: ServiceContextOptions) => {
-            if (options) {
-              await switchContext(serviceId, options);
-            }
           },
         });
       });

@@ -26,6 +26,11 @@ export {
   listWorkspaceFiles,
   workspaceWriteFile,
   openWorkspaceFileWithDefaultApp,
+  openWorkspaceInExplorer,
+  openWorkspaceInTerminal,
+  getWorkspaceOverride,
+  setWorkspaceOverride,
+  cancelWorkspaceOverride,
 } from './workspace';
 
 // MCP server management
@@ -54,6 +59,7 @@ export {
   listBuiltinServers,
   listBuiltinTools,
   listBuiltinServersWithMetadata,
+  listAvailableBuiltinServerDefinitions,
   callBuiltinTool,
   listAllToolsUnified,
   callToolUnified,
@@ -89,7 +95,7 @@ export {
 } from './agent-commands';
 
 // Session management
-export { removeSession, deleteContentStore, switchSession } from './sessions';
+export { removeSession, deleteContentStore } from './sessions';
 
 // Utilities
 export {
@@ -101,6 +107,5 @@ export {
   downloadWorkspaceFile,
   exportAndDownloadZip,
   getServiceContext,
-  switchContext,
   greet,
 } from './utils';

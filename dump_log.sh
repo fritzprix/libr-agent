@@ -23,8 +23,8 @@ elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
     # Linux - using LibrAgent identifier
     DEFAULT_SRC="$HOME/.local/share/com.fritzprix.libragent/logs/libragent.log"
 elif [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
-    # Windows - using LibrAgent identifier
-    DEFAULT_SRC="$APPDATA/com.fritzprix.libragent/logs/libragent.log"
+    # Windows - using LibrAgent identifier (LocalAppData, not Roaming)
+    DEFAULT_SRC="$LOCALAPPDATA/com.fritzprix.libragent/logs/libragent.log"
 else
     # Unknown OS, try Linux path as fallback
     DEFAULT_SRC="$HOME/.local/share/com.fritzprix.libragent/logs/libragent.log"

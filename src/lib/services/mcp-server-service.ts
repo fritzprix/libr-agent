@@ -1,5 +1,5 @@
 import { MCPServerEntity } from '@/models/chat';
-import { dbService, dbUtils, LocalDatabase } from '@/lib/db/service';
+import { dbService, dbUtils } from '@/lib/db/service';
 import { getLogger } from '@/lib/logger';
 import { Page } from '@/lib/db/types';
 
@@ -42,10 +42,8 @@ export class LocalMcpServerService implements IMcpServerService {
   }
 
   async getByName(name: string): Promise<MCPServerEntity | undefined> {
-    return LocalDatabase.getInstance()
-      .mcpServers.where('name')
-      .equalsIgnoreCase(name)
-      .first();
+    const all = await dbUtils.getAllMCPServers();
+    return all.find((s) => s.name === name);
   }
 
   async save(server: MCPServerEntity): Promise<MCPServerEntity> {

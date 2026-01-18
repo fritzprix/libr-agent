@@ -1,5 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { RustMessage } from '../../models/chat';
+import type { MCPResult } from '../mcp/protocol/response';
+import type { MCPTool } from '@/lib/mcp-types';
 import { createId } from '@paralleldrive/cuid2';
 
 /**
@@ -67,7 +69,7 @@ export async function handleUserToolCall(
  */
 export async function getAgentAvailableTools(
   sessionId: string,
-): Promise<unknown[]> {
+): Promise<MCPTool[]> {
   return invoke('agent_get_available_tools', { sessionId });
 }
 
@@ -78,12 +80,13 @@ export async function getAgentAvailableTools(
  * @param sessionId - The active session ID
  * @param toolName - The name of the tool to execute
  * @param args - The arguments for the tool
+ * @returns Promise resolving to MCPResult with optional structured content
  */
-export async function agentCallBuiltinTool(
+export async function agentCallBuiltinTool<T = unknown>(
   sessionId: string,
   toolName: string,
   args: Record<string, unknown>,
-): Promise<unknown> {
+): Promise<MCPResult<T>> {
   return invoke('agent_call_builtin_tool', {
     sessionId,
     toolName,

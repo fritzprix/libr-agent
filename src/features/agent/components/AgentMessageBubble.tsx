@@ -1,6 +1,7 @@
 import { useCallback, memo } from 'react';
 import { cn } from '@/lib/utils';
 import type { Message } from '@/models/chat';
+import { Paperclip, FileText } from 'lucide-react';
 import { AgentMessageRenderer } from './AgentMessageRenderer';
 
 interface AgentMessageBubbleProps {
@@ -49,7 +50,7 @@ function AgentMessageBubbleImpl({
             {msg.attachments && msg.attachments.length > 0 && (
               <div className="mb-3 p-3 bg-muted/30 rounded-lg border border-muted/20">
                 <div className="text-sm mb-2 font-medium flex items-center gap-2">
-                  <span>📎</span>
+                  <Paperclip className="w-4 h-4" />
                   <span>
                     {msg.attachments.length} file
                     {msg.attachments.length > 1 ? 's' : ''} attached
@@ -62,7 +63,7 @@ function AgentMessageBubbleImpl({
                       className="flex items-center justify-between p-2 bg-background/50 rounded border"
                     >
                       <div className="flex items-center gap-2 min-w-0 flex-1">
-                        <span className="text-xs">📄</span>
+                        <FileText className="w-3 h-3 text-muted-foreground flex-shrink-0" />
                         <span className="text-xs font-medium truncate">
                           {attachment.filename}
                         </span>
@@ -85,8 +86,7 @@ function AgentMessageBubbleImpl({
               <>
                 {/* Thinking bubble (shown during reasoning phase or when streaming starts) */}
                 {(msg.thinking ||
-                  (msg.isStreaming &&
-                    (!msg.content || msg.content.length === 0))) && (
+                  (msg.isStreaming && !msg.content?.length)) && (
                   <div className="flex flex-col gap-2 mb-3 p-3 bg-popover rounded-lg border border-border">
                     <div className="flex items-center gap-2 text-xs font-medium opacity-70">
                       {msg.isStreaming && (

@@ -68,7 +68,7 @@ export default function History() {
     const m = new Map<string, SessionWithHits>();
     // initialize all sessions with zero hits
     for (const sess of sessions) {
-      m.set(sess.id, { ...sess, searchHits: 0 });
+      m.set(sess.id, sess);
     }
 
     // accumulate search hits per session (if any)

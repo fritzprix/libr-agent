@@ -554,6 +554,7 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
               tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
               thinking: thinkingContent || undefined,
               usage: finalUsage,
+              isStreaming: true,
             });
             return next;
           });
@@ -778,6 +779,7 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
               threadId: sessionId,
               role: 'assistant',
               content: [],
+              isStreaming: true,
               createdAt: new Date(),
             });
             return next;

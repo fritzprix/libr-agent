@@ -155,7 +155,7 @@ async fn test_knowledge_crud_operations() {
     // Insert knowledge
     let knowledge = knowledge::ActiveModel {
         id: NotSet,
-        session_id: Set("test-session".to_string()),
+        assistant_id: Set("test-session".to_string()),
         title: Set("Test Knowledge".to_string()),
         content: Set("This is test content".to_string()),
         tags: Set(Some("tag1,tag2".to_string())),
@@ -215,6 +215,7 @@ async fn test_playbook_crud_operations() {
     // Insert playbook (ID must be provided, it's a String, not auto-increment)
     let playbook = playbook::ActiveModel {
         id: Set("playbook-1".to_string()),
+        assistant_id: Set("assistant-1".to_string()),
         session_id: Set("test-session".to_string()),
         goal: Set("Test Goal".to_string()),
         initial_command: Set(Some("test command".to_string())),
@@ -237,6 +238,7 @@ async fn test_playbook_crud_operations() {
     // Read playbook (composite key query)
     let found = playbook::Entity::find()
         .filter(playbook::Column::Id.eq("playbook-1"))
+        .filter(playbook::Column::AssistantId.eq("assistant-1"))
         .filter(playbook::Column::SessionId.eq("test-session"))
         .one(&db)
         .await;

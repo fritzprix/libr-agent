@@ -1,6 +1,6 @@
 [package]
 name = "libragent"
-version = "0.4.1"
+version = "0.4.2"
 description = "A desktop app for AI agents with built-in tools"
 authors = ["fritzprix"]
 license = "MIT"
@@ -39,6 +39,7 @@ reqwest = { version = "0.12", features = ["json", "stream"], default-features = 
 tauri-plugin-log = "2"
 tauri-plugin-http = { version = "2", features = ["unsafe-headers"] }
 log = "0.4.29"
+fern = "0.7"
 tauri-plugin-dialog = "2"
 path-clean = "1.0"
 tempfile = "3.24"

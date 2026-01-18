@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { useAgentChat } from '@/context/AgentChatContext';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
+import { useAgentResourceAttachment } from '@/features/agent/hooks/useAgentResourceAttachment';
 import { useMessageGrouping } from '@/hooks/useMessageGrouping';
 import { useThrottle } from '@/hooks/useThrottle';
 import { AgentToolCallGroup } from './AgentToolCallGroup';
@@ -13,6 +14,7 @@ export function AgentChatMessages() {
   const { messages, error, llmError, retryMessage, workflowStatus } =
     useAgentChat();
   const { session, workflowPhase } = useAgentSessionState();
+  const { refetchSessionFiles } = useAgentResourceAttachment();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -21,12 +23,39 @@ export function AgentChatMessages() {
   // Group messages for display
   const groupedMessages = useMessageGrouping(messages);
 
+  // Pre-compute tool results lookup map to avoid O(N*M) lookups
+  const toolResultsMap = useMemo(() => {
+    const map = new Map<string, Message>();
+    for (const msg of messages) {
+      if (msg.role === 'tool' && msg.tool_call_id) {
+        map.set(msg.tool_call_id, msg);
+      }
+    }
+    return map;
+  }, [messages]);
+
   // Only auto-scroll if enabled
   useEffect(() => {
     if (autoScrollEnabled) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages, autoScrollEnabled]);
+
+  // Refetch session files when message stack updates
+  // This ensures SessionFilesPopover reflects any files added by agent tool calls
+  useEffect(() => {
+    if (messages.length > 0) {
+      // Check if last message contains tool results (file operations)
+      const lastMessage = messages[messages.length - 1];
+      const hasToolResults =
+        lastMessage.role === 'tool' ||
+        (lastMessage.role === 'assistant' && lastMessage.tool_calls);
+
+      if (hasToolResults) {
+        refetchSessionFiles();
+      }
+    }
+  }, [messages, refetchSessionFiles]);
 
   // Detect user scroll position with throttling to improve performance
   const handleScroll = useThrottle(() => {
@@ -68,11 +97,18 @@ export function AgentChatMessages() {
       >
         {groupedMessages.map((groupedMessage, index) => {
           if (groupedMessage.type === 'tool_group') {
+            // Prepare tool results array for this group
+            // This is O(K) where K is number of calls in this group (small)
+            const toolResults = groupedMessage.toolGroup.calls.map((call) =>
+              toolResultsMap.get(call.id),
+            );
+
             return (
               <AgentToolCallGroup
                 key={groupedMessage.message.id}
                 message={groupedMessage.message}
                 toolGroup={groupedMessage.toolGroup}
+                toolResults={toolResults}
                 isLast={index === groupedMessages.length - 1}
               />
             );

@@ -309,7 +309,7 @@ pub async fn read_content(
     }))))
 }
 
-pub async fn search_knowledge(
+pub async fn keyword_similarity_search(
     server: &ContentStoreServer,
     params: Value,
     session_id: &str,

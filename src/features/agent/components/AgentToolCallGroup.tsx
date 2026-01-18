@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, memo } from 'react';
 import type { Message, ToolCall } from '@/models/chat';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -19,13 +19,13 @@ import {
   hasUIResource,
 } from '@/lib/tool-call-utils';
 import { AgentToolCallDetails } from './AgentToolCallDetails';
-import { useAgentChatState } from '@/context/AgentChatContext';
 
 interface AgentToolCallGroupProps {
   message: Message;
   toolGroup: {
     calls: ToolCall[];
   };
+  toolResults: (Message | undefined)[];
   isLast?: boolean;
   visibleCount?: number; // Default visible count if settings not available
 }
@@ -298,16 +298,16 @@ const ToolCallCompactItem: React.FC<ToolCallCompactItemProps> = ({
 
 /**
  * Groups multiple tool calls into a single collapsible bubble for Agent V2.
- * Uses AgentChatContext for message lookup instead of prop drilling.
+ * Optimized with React.memo to prevent unnecessary re-renders during streaming or history updates.
  */
-export const AgentToolCallGroup: React.FC<AgentToolCallGroupProps> = ({
+const AgentToolCallGroupImpl: React.FC<AgentToolCallGroupProps> = ({
   message,
   toolGroup,
+  toolResults,
   isLast = false,
   visibleCount = 3, // Default to 3 if not provided
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
-  const { messages } = useAgentChatState();
 
   // Check if this is a multipart message (has text content)
   const hasTextContent =
@@ -317,17 +317,14 @@ export const AgentToolCallGroup: React.FC<AgentToolCallGroupProps> = ({
       (c) => c.type === 'text' && c.text && c.text.trim().length > 0,
     );
 
-  // Calculate status summary by looking up tool results dynamically
+  // Calculate status summary using passed toolResults
   const statusSummary: StatusSummary = useMemo(() => {
     let success = 0;
     let error = 0;
     let running = 0;
 
-    toolGroup.calls.forEach((toolCall) => {
-      const toolResult = messages.find(
-        (m) => m.role === 'tool' && m.tool_call_id === toolCall.id,
-      );
-
+    // toolResults corresponds 1:1 with toolGroup.calls
+    toolResults.forEach((toolResult) => {
       if (!toolResult) {
         running++;
       } else {
@@ -340,7 +337,7 @@ export const AgentToolCallGroup: React.FC<AgentToolCallGroupProps> = ({
     });
 
     return { successCount: success, errorCount: error, runningCount: running };
-  }, [toolGroup.calls, messages]);
+  }, [toolResults]);
 
   // Determine visible items
   const visibleCalls = isExpanded
@@ -387,9 +384,12 @@ export const AgentToolCallGroup: React.FC<AgentToolCallGroupProps> = ({
       {/* Tool Call List - Compact items without individual borders */}
       <div className="px-2 py-2 space-y-0.5">
         {visibleCalls.map((toolCall, index) => {
-          const toolResult = messages.find(
-            (m) => m.role === 'tool' && m.tool_call_id === toolCall.id,
-          );
+          // Find the corresponding result.
+          // Since visibleCalls is a slice, we need the original index for toolResults lookup.
+          // However, we can also just find it, but toolResults is 1:1.
+          // A safer way if slicing is involved is to find index in original calls.
+          const originalIndex = toolGroup.calls.indexOf(toolCall);
+          const toolResult = toolResults[originalIndex];
 
           const isLastItem = isLast && index === visibleCalls.length - 1;
 
@@ -415,4 +415,34 @@ export const AgentToolCallGroup: React.FC<AgentToolCallGroupProps> = ({
   );
 };
 
+// Custom comparison for React.memo
+function arePropsEqual(
+  prev: AgentToolCallGroupProps,
+  next: AgentToolCallGroupProps,
+) {
+  // Check message identity
+  if (prev.message.id !== next.message.id) return false;
+
+  // Check primitive props
+  if (prev.isLast !== next.isLast) return false;
+  if (prev.visibleCount !== next.visibleCount) return false;
+
+  // Check calls array content (length and reference of items)
+  // We assume ToolCall objects inside are stable if unchanged.
+  if (prev.toolGroup.calls.length !== next.toolGroup.calls.length) return false;
+  for (let i = 0; i < prev.toolGroup.calls.length; i++) {
+    if (prev.toolGroup.calls[i] !== next.toolGroup.calls[i]) return false;
+  }
+
+  // Check toolResults array content (shallow comparison of Message objects)
+  // We assume Message objects are stable (from useAgentChatState)
+  if (prev.toolResults.length !== next.toolResults.length) return false;
+  for (let i = 0; i < prev.toolResults.length; i++) {
+    if (prev.toolResults[i] !== next.toolResults[i]) return false;
+  }
+
+  return true;
+}
+
+export const AgentToolCallGroup = memo(AgentToolCallGroupImpl, arePropsEqual);
 export default AgentToolCallGroup;

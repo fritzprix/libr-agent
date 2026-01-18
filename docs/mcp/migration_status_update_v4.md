@@ -20,7 +20,8 @@ This final evaluation confirms that the Rust implementation of the built-in MCP 
 ### 1. Planning Module (✅ Fully Compliant)
 
 - **Schema**: `addScratchpad` correctly accepts `tags` as `string[]`, matching TypeScript.
-- **Tools**: All tools (`createGoal`, `updateGoal`, `clearGoal`, `addTodo`, `checkTodo`, `clearTodos`, `clearSession`, `addScratchpad`, `listScratchpad`, `readScratchpad`, `clearScratchpad`, `getCurrentState`, `pauseAndThink`, `critiqueAndReflection`) are implemented and verified.
+- **Tools**: All tools (`createGoal`, `updateGoal`, `clearGoal`, `addTodo`, `checkTodo`, `cancelTodo`, `clearSession`, `addScratchpad`, `listScratchpad`, `readScratchpad`, `clearScratchpad`, `getCurrentState`, `pauseAndThink`, `critiqueAndReflection`) are implemented and verified.
+- **Note**: `clearTodos` renamed to `cancelTodo` for better semantic clarity (January 2026).
 
 ### 2. Knowledge Module (✅ Fully Compliant)
 

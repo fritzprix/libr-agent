@@ -29,6 +29,13 @@ export function useThrottle<T extends (...args: unknown[]) => void>(
   // Initialize to 0 so that the very first call executes immediately
   const lastRun = useRef(0);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const callbackRef = useRef(callback);
+
+  // Update callback ref when callback changes so the throttled function
+  // always calls the latest version without changing its own identity
+  useEffect(() => {
+    callbackRef.current = callback;
+  }, [callback]);
 
   const throttledCallback = useCallback(
     (...args: Parameters<T>) => {
@@ -37,7 +44,7 @@ export function useThrottle<T extends (...args: unknown[]) => void>(
 
       if (timeSinceLastRun >= delay) {
         // Execute immediately if enough time has passed
-        callback(...args);
+        callbackRef.current(...args);
         lastRun.current = now;
       } else {
         // Schedule execution for the remaining time
@@ -45,12 +52,12 @@ export function useThrottle<T extends (...args: unknown[]) => void>(
           clearTimeout(timeoutRef.current);
         }
         timeoutRef.current = setTimeout(() => {
-          callback(...args);
+          callbackRef.current(...args);
           lastRun.current = Date.now();
         }, delay - timeSinceLastRun);
       }
     },
-    [callback, delay],
+    [delay],
   ) as T;
 
   // Cleanup timeout on unmount

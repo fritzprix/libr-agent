@@ -172,6 +172,11 @@ impl ErrorGuidance {
                 "Use updateAssistant to modify the existing one".to_string(),
                 "Use listAssistants to see all assistants".to_string(),
             ],
+            (ErrorCategory::InvalidInput, ToolGroup::Assistant) => vec![
+                "Verify all required parameters are provided".to_string(),
+                "Check that parameter values are in the correct format".to_string(),
+                "Use listAssistants or getAssistant to verify existing data".to_string(),
+            ],
 
             // Content Store tool errors
             (ErrorCategory::InvalidFormat, ToolGroup::ContentStore) => vec![
@@ -188,7 +193,7 @@ impl ErrorGuidance {
             // Knowledge tool errors
             (ErrorCategory::ResourceNotFound, ToolGroup::Knowledge) => vec![
                 "Use listKnowledge to see available knowledge entries".to_string(),
-                "Use searchKnowledge to find entries by keyword".to_string(),
+                "Use keywordSimilaritySearch to find entries by keyword".to_string(),
                 "Verify the knowledge ID is correct".to_string(),
             ],
 

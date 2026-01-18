@@ -41,6 +41,21 @@ export async function listBuiltinServersWithMetadata(): Promise<
 }
 
 /**
+ * Lists all POSSIBLE builtin server definitions for UI configuration.
+ * This returns static metadata for all builtin servers that can be used in Agent V2 sessions,
+ * regardless of what's currently instantiated in the global registry.
+ * Use this for showing available tools in assistant/agent configuration UI.
+ * @returns A promise that resolves to an array of `BuiltinServerInfo` objects.
+ */
+export async function listAvailableBuiltinServerDefinitions(): Promise<
+  BuiltinServerInfo[]
+> {
+  return safeInvoke<BuiltinServerInfo[]>(
+    'list_available_builtin_server_definitions',
+  );
+}
+
+/**
  * Calls a tool on a built-in server.
  * @param serverName The name of the built-in server.
  * @param toolName The name of the tool to call.

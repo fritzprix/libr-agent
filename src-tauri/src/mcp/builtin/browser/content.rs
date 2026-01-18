@@ -17,10 +17,18 @@ static BROWSER_CONTENT_STORE: Lazy<BrowserContentStore> = Lazy::new(BrowserConte
 
 pub async fn extract_web_content(server: &BrowserServer, args: Value) -> Result<MCPResult, String> {
     let service = server.get_browser_service()?;
-    let session_id = match args.get("sessionId").and_then(|v| v.as_str()) {
-        Some(id) => id,
-        Option::None => return Ok(missing_param_error("sessionId", ToolGroup::Browser)),
+
+    // Get browser session ID from server instance
+    let browser_session_id = {
+        let guard = server
+            .browser_session_id
+            .read()
+            .map_err(|e| e.to_string())?;
+        guard.clone()
     };
+
+    let browser_session_id = browser_session_id
+        .ok_or_else(|| "No active browser session. Call createSession first.".to_string())?;
 
     let save_raw_html = args
         .get("saveRawHtml")
@@ -34,17 +42,17 @@ pub async fn extract_web_content(server: &BrowserServer, args: Value) -> Result<
 
     // Extract page title and URL
     let page_title = service
-        .execute_script(session_id, "document.title")
+        .execute_script(&browser_session_id, "document.title")
         .await
         .unwrap_or_default();
 
     let current_url = service
-        .execute_script(session_id, "window.location.href")
+        .execute_script(&browser_session_id, "window.location.href")
         .await
         .unwrap_or_default();
 
     // Extract HTML (body.outerHTML)
-    let raw_html = match extract_html_from_page(&service, session_id).await {
+    let raw_html = match extract_html_from_page(&service, &browser_session_id).await {
         Ok(html) => html,
         Err(e) => {
             return Ok(handle_browser_op_error(
@@ -80,7 +88,7 @@ pub async fn extract_web_content(server: &BrowserServer, args: Value) -> Result<
     let target_tokens_per_page = 3000;
     let (total_pages, first_page, merged_content, auto_merged) = BROWSER_CONTENT_STORE
         .save_content(
-            session_id,
+            &browser_session_id,
             markdown_content.clone(),
             target_tokens_per_page,
             auto_merge,
@@ -182,7 +190,7 @@ pub async fn extract_web_content(server: &BrowserServer, args: Value) -> Result<
 
     // Save raw HTML if requested
     if save_raw_html {
-        match save_raw_html_to_file(&server.app_handle, session_id, &raw_html).await {
+        match save_raw_html_to_file(&server.app_handle, &browser_session_id, &raw_html).await {
             Ok(path) => {
                 response_text.push_str(&format!(
                     "\n\n--- File Save Information ---\nRaw HTML saved to: {}",
@@ -214,11 +222,18 @@ pub async fn extract_web_content(server: &BrowserServer, args: Value) -> Result<
     }))))
 }
 
-pub async fn read_web_content(_server: &BrowserServer, args: Value) -> Result<MCPResult, String> {
-    let session_id = match args.get("sessionId").and_then(|v| v.as_str()) {
-        Some(id) => id,
-        Option::None => return Ok(missing_param_error("sessionId", ToolGroup::Browser)),
+pub async fn read_web_content(server: &BrowserServer, args: Value) -> Result<MCPResult, String> {
+    // Get browser session ID from server instance
+    let browser_session_id = {
+        let guard = server
+            .browser_session_id
+            .read()
+            .map_err(|e| e.to_string())?;
+        guard.clone()
     };
+
+    let browser_session_id = browser_session_id
+        .ok_or_else(|| "No active browser session. Call createSession first.".to_string())?;
 
     let page = match args.get("page").and_then(|v| v.as_u64()) {
         Some(p) => p as usize,
@@ -226,16 +241,16 @@ pub async fn read_web_content(_server: &BrowserServer, args: Value) -> Result<MC
     };
 
     // Check if content exists
-    if !BROWSER_CONTENT_STORE.has_content(session_id) {
+    if !BROWSER_CONTENT_STORE.has_content(&browser_session_id) {
         return Ok(not_found_error(
             "Extracted content",
-            session_id,
+            &browser_session_id,
             ToolGroup::Browser,
         ));
     }
 
     // Get the requested page
-    match BROWSER_CONTENT_STORE.get_page(session_id, page) {
+    match BROWSER_CONTENT_STORE.get_page(&browser_session_id, page) {
         Some(page_data) => {
             let response_text = format!(
                 "[Page {}/{}]\n\n{}",
@@ -266,7 +281,7 @@ pub async fn read_web_content(_server: &BrowserServer, args: Value) -> Result<MC
         }
         Option::None => {
             let total_pages = BROWSER_CONTENT_STORE
-                .get_total_pages(session_id)
+                .get_total_pages(&browser_session_id)
                 .unwrap_or(0);
             let error = ErrorGuidance::with_guidance(
                 ErrorCategory::InvalidInput,

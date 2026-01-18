@@ -364,7 +364,7 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
           case 'notify': {
             // 알림을 시스템 메시지로 채팅에 추가
             const notificationMessage = createSystemMessage(
-              `🔔 ${result.payload.message}`,
+              `[Notification] ${result.payload.message}`,
               sessionId,
               undefined, // assistantId는 session에 binding됨
               'ui',

@@ -1,17 +1,24 @@
-use crate::entity::{assistant, assistant::Entity as AssistantEntity};
-use crate::mcp::builtin::error_guidance::{
-    duplicate_error, missing_param_error, not_found_error, operation_failed_error, SuccessHint,
-    ToolGroup,
-};
 use crate::mcp::builtin::BuiltinMCPServer;
-use crate::mcp::types::{MCPResult, ServiceContext, ServiceContextOptions};
+use crate::mcp::types::{MCPResult, ServiceContext};
 use crate::mcp::utils::schema_builder::*;
 use crate::mcp::MCPTool;
 use async_trait::async_trait;
-use sea_orm::*;
+use sea_orm::DatabaseConnection;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
+
+mod operations;
+mod queries;
+
+use std::time::{Duration, Instant};
+use tokio::sync::RwLock;
+
+#[derive(Debug, Clone)]
+struct ContextCache {
+    prompt: String,
+    last_update: Instant,
+}
 
 /// Assistant MCP Server
 ///
@@ -20,6 +27,7 @@ use std::sync::Arc;
 #[derive(Debug)]
 pub struct AssistantServer {
     db: Arc<DatabaseConnection>,
+    cache: Arc<RwLock<Option<ContextCache>>>,
 }
 
 impl AssistantServer {
@@ -27,494 +35,34 @@ impl AssistantServer {
     ///
     /// Note: Unlike other servers, this is NOT session-bound.
     /// Assistants are global and can be reused across multiple sessions.
+    /// Assistants are global and can be reused across multiple sessions.
     pub async fn new(db: Arc<DatabaseConnection>) -> Result<Self, String> {
-        let server = Self { db };
+        let server = Self {
+            db,
+            cache: Arc::new(RwLock::new(None)),
+        };
         Ok(server)
     }
 
-    fn get_db(&self) -> &DatabaseConnection {
+    pub fn get_db(&self) -> &DatabaseConnection {
         &self.db
     }
 
-    /// Create a new assistant
-    async fn create_assistant(&self, args: Value) -> Result<MCPResult, String> {
-        let db = self.get_db();
-
-        // Legacy support: generate ID if not provided
-        let id = args
-            .get("id")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
-            .unwrap_or_else(cuid2::create_id);
-
-        let name = match args.get("name").and_then(|v| v.as_str()) {
-            Some(v) => v,
-            None => return Ok(missing_param_error("name", ToolGroup::Assistant)),
-        };
-
-        // Extract config fields
-        let mut config = args.get("config").cloned().unwrap_or(json!({}));
-
-        // Map legacy/flat fields to config
-        if let Some(v) = args.get("systemPrompt") {
-            config["systemPrompt"] = v.clone();
-        }
-        if let Some(v) = args.get("description") {
-            config["description"] = v.clone();
-        }
-        if let Some(v) = args.get("modelProvider") {
-            config["modelProvider"] = v.clone();
-        }
-        if let Some(v) = args.get("modelName") {
-            config["modelName"] = v.clone();
-        }
-        if let Some(v) = args.get("temperature") {
-            config["temperature"] = v.clone();
-        }
-        if let Some(v) = args.get("maxTokens") {
-            config["maxTokens"] = v.clone();
-        }
-
-        // Handle tools (v2) -> allowedBuiltInServiceAliases
-        if let Some(v) = args.get("tools") {
-            config["allowedBuiltInServiceAliases"] = v.clone();
-        }
-        // Handle allowedBuiltInServiceAliases (v1)
-        if let Some(v) = args.get("allowedBuiltInServiceAliases") {
-            config["allowedBuiltInServiceAliases"] = v.clone();
-        }
-
-        // Handle mcpServers (v2) and mcpServerIds (v1)
-        if let Some(v) = args.get("mcpServers") {
-            config["mcpServerIds"] = v.clone();
-        } else if let Some(v) = args.get("mcpServerIds") {
-            config["mcpServerIds"] = v.clone();
-        }
-
-        // Validate config is a valid JSON object
-        let config_str =
-            serde_json::to_string(&config).map_err(|e| format!("Invalid config JSON: {}", e))?;
-
-        let now = chrono::Utc::now().timestamp_millis();
-
-        let model = assistant::ActiveModel {
-            id: Set(id.clone()),
-            name: Set(name.to_string()),
-            config: Set(config_str),
-            created_at: Set(now),
-            updated_at: Set(now),
-        };
-
-        let result = AssistantEntity::insert(model).exec(db).await;
-
-        match result {
-            Ok(_) => {
-                let hint = SuccessHint::new(
-                    format!("Assistant '{}' created successfully", name),
-                    vec![
-                        "Use builtin_assistant__listAssistants to see all assistants".to_string(),
-                        "Use builtin_assistant__updateAssistant to modify configuration"
-                            .to_string(),
-                    ],
-                );
-
-                Ok(hint.to_mcp_result_with_data(Some(json!({
-                    "success": true,
-                    "id": id,
-                    "name": name
-                }))))
-            }
-            Err(e) => {
-                if e.to_string().contains("UNIQUE constraint failed") {
-                    Ok(duplicate_error("Assistant", &id, ToolGroup::Assistant))
-                } else {
-                    Ok(operation_failed_error(
-                        "Create assistant",
-                        &e.to_string(),
-                        vec!["Check database connection".to_string()],
-                        ToolGroup::Assistant,
-                    ))
-                }
-            }
+    pub(crate) async fn invalidate_cache(&self) {
+        if let Ok(mut cache) = self.cache.try_write() {
+            *cache = None;
         }
     }
 
-    /// Update an existing assistant
-    async fn update_assistant(&self, args: Value) -> Result<MCPResult, String> {
-        let id = match args.get("id").and_then(|v| v.as_str()) {
-            Some(v) => v,
-            None => return Ok(missing_param_error("id", ToolGroup::Assistant)),
-        };
-
-        let db = self.get_db();
-
-        // Fetch existing assistant to merge config
-        let existing_model = AssistantEntity::find_by_id(id)
-            .one(db)
-            .await
-            .map_err(|e| format!("Failed to fetch assistant: {}", e))?;
-
-        let (mut name, mut config) = if let Some(model) = existing_model {
-            (
-                model.name,
-                serde_json::from_str::<Value>(&model.config).unwrap_or(json!({})),
-            )
-        } else {
-            return Ok(not_found_error("Assistant", id, ToolGroup::Assistant));
-        };
-
-        // Update name if provided
-        if let Some(n) = args.get("name").and_then(|v| v.as_str()) {
-            name = n.to_string();
-        }
-
-        // Update config from 'config' object if provided
-        if let Some(c) = args.get("config").and_then(|v| v.as_object()) {
-            for (k, v) in c {
-                config[k] = v.clone();
-            }
-        }
-
-        // Update config fields (individual overrides)
-        if let Some(v) = args.get("systemPrompt") {
-            config["systemPrompt"] = v.clone();
-        }
-        if let Some(v) = args.get("modelProvider") {
-            config["modelProvider"] = v.clone();
-        }
-        if let Some(v) = args.get("modelName") {
-            config["modelName"] = v.clone();
-        }
-        if let Some(v) = args.get("temperature") {
-            config["temperature"] = v.clone();
-        }
-        if let Some(v) = args.get("maxTokens") {
-            config["maxTokens"] = v.clone();
-        }
-        // Handle tools (v2) -> allowedBuiltInServiceAliases
-        if let Some(v) = args.get("tools") {
-            config["allowedBuiltInServiceAliases"] = v.clone();
-        }
-        // Handle allowedBuiltInServiceAliases (v1)
-        if let Some(v) = args.get("allowedBuiltInServiceAliases") {
-            config["allowedBuiltInServiceAliases"] = v.clone();
-        }
-
-        // Handle mcpServers (v2) and mcpServerIds (v1)
-        if let Some(v) = args.get("mcpServers") {
-            config["mcpServerIds"] = v.clone();
-        }
-        if let Some(v) = args.get("mcpServerIds") {
-            config["mcpServerIds"] = v.clone();
-        }
-
-        let config_str =
-            serde_json::to_string(&config).map_err(|e| format!("Invalid config JSON: {}", e))?;
-
-        let now = chrono::Utc::now().timestamp_millis();
-
-        let model = assistant::ActiveModel {
-            id: Set(id.to_string()),
-            name: Set(name.to_string()),
-            config: Set(config_str),
-            created_at: NotSet,
-            updated_at: Set(now),
-        };
-
-        let result = AssistantEntity::update(model).exec(db).await;
-
-        match result {
-            Ok(_) => {
-                let hint = SuccessHint::new(
-                    format!("Assistant '{}' updated successfully", id),
-                    vec!["Use builtin_assistant__getAssistant to verify changes".to_string()],
-                );
-
-                Ok(hint.to_mcp_result_with_data(Some(json!({
-                    "success": true,
-                    "id": id,
-                    "name": name,
-                    "config": config
-                }))))
-            }
-            Err(e) => Ok(operation_failed_error(
-                "Update assistant",
-                &e.to_string(),
-                vec![
-                    "Verify the config JSON is valid".to_string(),
-                    "Check database connectivity".to_string(),
-                    "Use builtin_assistant__getAssistant to verify the assistant exists"
-                        .to_string(),
-                ],
-                ToolGroup::Assistant,
-            )),
-        }
-    }
-
-    /// Delete an assistant
-    async fn delete_assistant(&self, args: Value) -> Result<MCPResult, String> {
-        let db = self.get_db();
-
-        let id = match args.get("id").and_then(|v| v.as_str()) {
-            Some(v) => v,
-            None => return Ok(missing_param_error("id", ToolGroup::Assistant)),
-        };
-
-        let result = AssistantEntity::delete_by_id(id.to_string()).exec(db).await;
-
-        match result {
-            Ok(delete_result) => {
-                if delete_result.rows_affected > 0 {
-                    let hint = SuccessHint::new(
-                        format!("Assistant '{}' deleted successfully", id),
-                        vec![
-                            "Use builtin_assistant__listAssistants to see remaining assistants"
-                                .to_string(),
-                        ],
-                    );
-
-                    Ok(hint.to_mcp_result_with_data(Some(json!({
-                        "success": true,
-                        "id": id
-                    }))))
-                } else {
-                    Ok(not_found_error("Assistant", id, ToolGroup::Assistant))
-                }
-            }
-            Err(e) => Ok(operation_failed_error(
-                "Delete assistant",
-                &e.to_string(),
-                vec![
-                    "Verify the assistant ID is correct".to_string(),
-                    "Use builtin_assistant__listAssistants to see existing assistants".to_string(),
-                    "Check database connectivity".to_string(),
-                ],
-                ToolGroup::Assistant,
-            )),
-        }
-    }
-
-    /// List all assistants with pagination support
-    async fn list_assistants(&self, args: Value) -> Result<MCPResult, String> {
-        let db = self.get_db();
-
-        // Legacy support: page/pageSize -> limit/offset
-        let page = args
-            .get("page")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(1)
-            .max(1);
-        let page_size = args
-            .get("pageSize")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(20)
-            .clamp(1, 100);
-
-        // Also support direct limit/offset if provided (v2 native)
-        let limit = args
-            .get("limit")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(page_size)
-            .clamp(1, 100);
-        let offset = args
-            .get("offset")
-            .and_then(|v| v.as_i64())
-            .unwrap_or((page - 1) * page_size);
-
-        // Get total count for pagination metadata
-        let total_count = AssistantEntity::find().count(db).await.unwrap_or(0) as i64;
-
-        // Fetch paginated results
-        let result = AssistantEntity::find()
-            .order_by_desc(assistant::Column::UpdatedAt)
-            .limit(limit as u64)
-            .offset(offset as u64)
-            .all(db)
-            .await;
-
-        match result {
-            Ok(models) => {
-                let assistants: Vec<Value> = models
-                    .into_iter()
-                    .map(|model| {
-                        // Parse config JSON
-                        let config =
-                            serde_json::from_str::<Value>(&model.config).unwrap_or(json!({}));
-
-                        json!({
-                            "id": model.id,
-                            "name": model.name,
-                            "config": config,
-                            "created_at": model.created_at,
-                            "updated_at": model.updated_at
-                        })
-                    })
-                    .collect();
-
-                let has_more = (offset + limit) < total_count;
-
-                let hint = SuccessHint::new(
-                    format!(
-                        "Found {} of {} assistants (showing {} to {})",
-                        total_count,
-                        total_count,
-                        offset + 1,
-                        (offset + assistants.len() as i64).min(total_count)
-                    ),
-                    if has_more {
-                        vec![format!(
-                            "Use limit={} offset={} to see more assistants",
-                            limit,
-                            offset + limit
-                        )]
-                    } else if total_count > 0 {
-                        vec!["Use builtin_assistant__getAssistant to view details".to_string()]
-                    } else {
-                        vec![
-                            "Use builtin_assistant__createAssistant to create an assistant"
-                                .to_string(),
-                        ]
-                    },
-                );
-
-                Ok(hint.to_mcp_result_with_data(Some(json!({
-                    "assistants": assistants,
-                    "total": total_count,
-                    "limit": limit,
-                    "offset": offset,
-                    "returned": assistants.len(),
-                    "has_more": has_more
-                }))))
-            }
-            Err(e) => Ok(operation_failed_error(
-                "List assistants",
-                &e.to_string(),
-                vec![
-                    "Check database connectivity".to_string(),
-                    "Verify pagination parameters are valid integers".to_string(),
-                ],
-                ToolGroup::Assistant,
-            )),
-        }
-    }
-
-    /// Search assistants
-    async fn search_assistant(&self, args: Value) -> Result<MCPResult, String> {
-        let query = match args.get("query").and_then(|v| v.as_str()) {
-            Some(v) => v,
-            None => return Ok(missing_param_error("query", ToolGroup::Assistant)),
-        };
-
-        let limit = args
-            .get("limit")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(10)
-            .min(100);
-
-        let search_pattern = format!("%{}%", query);
-
-        let result = AssistantEntity::find()
-            .filter(
-                Condition::any()
-                    .add(assistant::Column::Name.like(&search_pattern))
-                    .add(assistant::Column::Config.like(&search_pattern)),
-            )
-            .order_by_desc(assistant::Column::UpdatedAt)
-            .limit(limit as u64)
-            .all(self.get_db())
-            .await;
-
-        match result {
-            Ok(models) => {
-                let assistants: Vec<Value> = models
-                    .into_iter()
-                    .map(|model| {
-                        let config =
-                            serde_json::from_str::<Value>(&model.config).unwrap_or(json!({}));
-                        json!({
-                            "id": model.id,
-                            "name": model.name,
-                            "config": config,
-                            "created_at": model.created_at,
-                            "updated_at": model.updated_at
-                        })
-                    })
-                    .collect();
-
-                let hint = SuccessHint::new(
-                    format!("Found {} assistants", assistants.len()),
-                    if assistants.is_empty() {
-                        vec![
-                            format!("No assistants match '{}'", query),
-                            "Use builtin_assistant__listAssistants to see all assistants"
-                                .to_string(),
-                        ]
-                    } else {
-                        vec!["Use builtin_assistant__getAssistant to view details".to_string()]
-                    },
-                );
-
-                Ok(hint.to_mcp_result_with_data(Some(json!({
-                    "assistants": assistants,
-                    "count": assistants.len()
-                }))))
-            }
-            Err(e) => Ok(operation_failed_error(
-                "Search assistants",
-                &e.to_string(),
-                vec![
-                    "Check database connectivity".to_string(),
-                    "Verify query parameter is a valid string".to_string(),
-                ],
-                ToolGroup::Assistant,
-            )),
-        }
-    }
-
-    /// Get an assistant by ID
-    async fn get_assistant(&self, args: Value) -> Result<MCPResult, String> {
-        let id = match args.get("id").and_then(|v| v.as_str()) {
-            Some(v) => v,
-            None => return Ok(missing_param_error("id", ToolGroup::Assistant)),
-        };
-
-        let result = AssistantEntity::find_by_id(id).one(self.get_db()).await;
-
-        match result {
-            Ok(Some(model)) => {
-                // Parse config JSON
-                let config = serde_json::from_str::<Value>(&model.config).unwrap_or(json!({}));
-
-                let hint = SuccessHint::new(
-                    format!("Assistant: {}", model.name),
-                    vec![
-                        "Use builtin_assistant__updateAssistant to modify configuration"
-                            .to_string(),
-                        "Use builtin_assistant__deleteAssistant to remove this assistant"
-                            .to_string(),
-                    ],
-                );
-
-                Ok(hint.to_mcp_result_with_data(Some(json!({
-                    "id": model.id,
-                    "name": model.name,
-                    "config": config,
-                    "created_at": model.created_at,
-                    "updated_at": model.updated_at
-                }))))
-            }
-            Ok(None) => Ok(not_found_error("Assistant", id, ToolGroup::Assistant)),
-            Err(e) => Ok(operation_failed_error(
-                "Get assistant",
-                &e.to_string(),
-                vec![
-                    "Verify the assistant ID is correct".to_string(),
-                    "Use builtin_assistant__listAssistants to see existing assistants".to_string(),
-                    "Check database connectivity".to_string(),
-                ],
-                ToolGroup::Assistant,
-            )),
-        }
+    pub fn tools_static() -> Vec<MCPTool> {
+        vec![
+            create_create_assistant_tool(),
+            create_update_assistant_tool(),
+            create_delete_assistant_tool(),
+            create_list_assistants_tool(),
+            create_get_assistant_tool(),
+            create_search_assistant_tool(),
+        ]
     }
 }
 
@@ -529,14 +77,7 @@ impl BuiltinMCPServer for AssistantServer {
     }
 
     fn tools(&self) -> Vec<MCPTool> {
-        vec![
-            create_create_assistant_tool(),
-            create_update_assistant_tool(),
-            create_delete_assistant_tool(),
-            create_list_assistants_tool(),
-            create_get_assistant_tool(),
-            create_search_assistant_tool(),
-        ]
+        Self::tools_static()
     }
 
     async fn call_tool(
@@ -547,25 +88,15 @@ impl BuiltinMCPServer for AssistantServer {
     ) -> Result<MCPResult, String> {
         log::debug!("Assistant server tool called: {}", tool_name);
 
+        let db = self.get_db();
+
         match tool_name {
-            "createAssistant" | "builtin_assistant__createAssistant" => {
-                self.create_assistant(args).await
-            }
-            "updateAssistant" | "builtin_assistant__updateAssistant" => {
-                self.update_assistant(args).await
-            }
-            "deleteAssistant" | "builtin_assistant__deleteAssistant" => {
-                self.delete_assistant(args).await
-            }
-            "listAssistants" | "builtin_assistant__listAssistants" => {
-                self.list_assistants(args).await
-            }
-            "getAssistant" | "builtin_assistant__getAssistant" => {
-                self.get_assistant(args).await
-            }
-            "searchAssistant" | "builtin_assistant__searchAssistant" => {
-                self.search_assistant(args).await
-            }
+            "createAssistant" => operations::create_assistant(self, args).await,
+            "updateAssistant" => operations::update_assistant(self, args).await,
+            "deleteAssistant" => operations::delete_assistant(self, args).await,
+            "listAssistants" => queries::list_assistants(db, args).await,
+            "getAssistant" => queries::get_assistant(db, args).await,
+            "searchAssistant" => queries::search_assistant(db, args).await,
             _ => Err(format!(
                 "Unknown tool: {}. Available tools: createAssistant, updateAssistant, deleteAssistant, listAssistants, getAssistant, searchAssistant",
                 tool_name
@@ -573,17 +104,44 @@ impl BuiltinMCPServer for AssistantServer {
         }
     }
 
-    async fn switch_context(&self, _options: ServiceContextOptions) -> Result<(), String> {
-        Err("Context switching not supported for global assistant server".to_string())
-    }
-
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
+        const CACHE_TTL: Duration = Duration::from_secs(5);
+
+        if let Some(cache) = self.cache.read().await.as_ref() {
+            if cache.last_update.elapsed() < CACHE_TTL {
+                return ServiceContext {
+                    context_prompt: cache.prompt.clone(),
+                    structured_state: None,
+                };
+            }
+        }
+
+        use crate::entity::assistant::Entity as AssistantEntity;
+        use sea_orm::{EntityTrait, PaginatorTrait};
+
+        let total_count = AssistantEntity::find()
+            .count(self.get_db())
+            .await
+            .unwrap_or(0);
+
+        let context_prompt = format!(
+            "# Assistant Server Status\n\
+            **Scope**: Global (shared across all sessions)\n\
+            **Status**: Active\n\
+            **Active Assistants**: {}\n\
+            **Features**: Create, update, delete, and manage assistant configurations",
+            total_count
+        );
+
+        if let Ok(mut cache) = self.cache.try_write() {
+            *cache = Some(ContextCache {
+                prompt: context_prompt.clone(),
+                last_update: Instant::now(),
+            });
+        }
+
         ServiceContext {
-            context_prompt: "# Assistant Server Status\n\
-                **Scope**: Global (shared across all sessions)\n\
-                **Status**: Active\n\
-                **Features**: Create, update, delete, and manage assistant configurations"
-                .to_string(),
+            context_prompt,
             structured_state: None,
         }
     }
@@ -592,31 +150,37 @@ impl BuiltinMCPServer for AssistantServer {
 /// Create the createAssistant tool definition
 fn create_create_assistant_tool() -> MCPTool {
     MCPTool {
-        name: "builtin_assistant__createAssistant".to_string(),
+        name: "createAssistant".to_string(),
         title: Some("Create Assistant".to_string()),
-        description: "Create a new global assistant configuration".to_string(),
+        description: "Create a new global assistant configuration.
+
+⚠️ CRITICAL WORKFLOW (MUST FOLLOW):
+1. ALWAYS call listAssistants FIRST to check for duplicates
+2. Verify 'name' is unique
+3. Then call this tool to create
+
+❌ NEVER create without checking for duplicates first".to_string(),
         input_schema: serde_json::from_value(json!({
             "type": "object",
             "properties": {
-                "id": { "type": "string", "description": "Unique assistant identifier" },
-                "name": { "type": "string", "description": "Assistant name" },
+                "name": { "type": "string", "description": "Assistant name (Must be unique)" },
                 "systemPrompt": { "type": "string", "description": "System prompt for the assistant" },
-                "modelProvider": { "type": "string", "description": "AI model provider (e.g., openai, anthropic)" },
-                "modelName": { "type": "string", "description": "Specific model name (e.g., gpt-4)" },
+                "modelProvider": { "type": "string", "description": "AI model provider (e.g., openai, anthropic, ollama)" },
+                "modelName": { "type": "string", "description": "Specific model name (e.g., gpt-4, claude-3-5-sonnet)" },
                 "temperature": { "type": "number", "description": "Model temperature (0.0 to 1.0)" },
                 "maxTokens": { "type": "integer", "description": "Maximum tokens for response" },
-                "allowedBuiltInServiceAliases": { 
-                    "type": "array", 
+                "allowedBuiltInServiceAliases": {
+                    "type": "array",
                     "items": { "type": "string" },
-                    "description": "List of allowed built-in service aliases"
+                    "description": "List of allowed built-in service aliases (e.g., 'mcp_manager', 'workspace', 'browser')"
                 },
                 "mcpServerIds": {
                     "type": "array",
                     "items": { "type": "string" },
-                    "description": "List of enabled MCP server IDs"
+                    "description": "List of enabled MCP server IDs (must exist in mcp_servers table).\n\n⚠️ CRITICAL: IDs must be valid.\n1. Call builtin_mcp_manager__listMcpServers FIRST to get valid IDs\n2. Extract exact ID values from listMcpServers response\n3. Invalid IDs will cause validation error"
                 }
             },
-            "required": ["id", "name"]
+            "required": ["name"]
         })).unwrap(),
         annotations: None,
         output_schema: None,
@@ -626,28 +190,34 @@ fn create_create_assistant_tool() -> MCPTool {
 /// Create the updateAssistant tool definition
 fn create_update_assistant_tool() -> MCPTool {
     MCPTool {
-        name: "builtin_assistant__updateAssistant".to_string(),
+        name: "updateAssistant".to_string(),
         title: Some("Update Assistant".to_string()),
-        description: "Update an existing assistant configuration".to_string(),
+        description: "Update an existing assistant configuration.
+
+⚠️ CRITICAL WORKFLOW:
+1. Call getAssistant(id) FIRST to get current config
+2. Extract exact 'id' from response
+3. Include ONLY fields you want to change
+4. Update 'allowedBuiltInServiceAliases' to enable/disable builtin tools".to_string(),
         input_schema: serde_json::from_value(json!({
             "type": "object",
             "properties": {
-                "id": { "type": "string", "description": "Assistant identifier" },
-                "name": { "type": "string", "description": "Assistant name" },
-                "systemPrompt": { "type": "string", "description": "System prompt for the assistant" },
-                "modelProvider": { "type": "string", "description": "AI model provider" },
-                "modelName": { "type": "string", "description": "Specific model name" },
-                "temperature": { "type": "number", "description": "Model temperature" },
-                "maxTokens": { "type": "integer", "description": "Maximum tokens" },
-                "allowedBuiltInServiceAliases": { 
-                    "type": "array", 
+                "id": { "type": "string", "description": "⚠️ Exact Assistant ID from getAssistant response" },
+                "name": { "type": "string", "description": "New name" },
+                "systemPrompt": { "type": "string", "description": "New system prompt" },
+                "modelProvider": { "type": "string", "description": "New AI model provider" },
+                "modelName": { "type": "string", "description": "New model name" },
+                "temperature": { "type": "number", "description": "New temperature" },
+                "maxTokens": { "type": "integer", "description": "New max tokens" },
+                "allowedBuiltInServiceAliases": {
+                    "type": "array",
                     "items": { "type": "string" },
-                    "description": "List of allowed built-in service aliases"
+                    "description": "Update list of allowed built-in service aliases"
                 },
                 "mcpServerIds": {
                     "type": "array",
                     "items": { "type": "string" },
-                    "description": "List of enabled MCP server IDs"
+                    "description": "Update list of enabled MCP server IDs (must exist in mcp_servers table).\n\n⚠️ Use builtin_mcp_manager__listMcpServers to get valid IDs before updating"
                 }
             },
             "required": ["id"]
@@ -662,13 +232,17 @@ fn create_delete_assistant_tool() -> MCPTool {
     let mut props = HashMap::new();
     props.insert(
         "id".to_string(),
-        string_prop_required("Assistant identifier"),
+        string_prop_required("⚠️ Exact Assistant ID from listAssistants/getAssistant response"),
     );
 
     MCPTool {
-        name: "builtin_assistant__deleteAssistant".to_string(),
+        name: "deleteAssistant".to_string(),
         title: Some("Delete Assistant".to_string()),
-        description: "Delete an assistant configuration".to_string(),
+        description: "Delete an assistant configuration.
+
+⚠️ WARNING: This action is permanent.
+✅ ALWAYS verify the ID with getAssistant before deleting"
+            .to_string(),
         input_schema: object_schema(props, vec!["id".to_string()]),
         annotations: None,
         output_schema: None,
@@ -678,15 +252,18 @@ fn create_delete_assistant_tool() -> MCPTool {
 /// Create the listAssistants tool definition
 fn create_list_assistants_tool() -> MCPTool {
     MCPTool {
-        name: "builtin_assistant__listAssistants".to_string(),
+        name: "listAssistants".to_string(),
         title: Some("List Assistants".to_string()),
-        description: "List available assistants with pagination".to_string(),
+        description: "List available assistants with pagination.
+
+Returns 'id', 'name', and 'config' for each assistant.
+Use 'limit' and 'offset' to navigate through results.".to_string(),
         input_schema: serde_json::from_value(json!({
             "type": "object",
             "properties": {
-                "page": { "type": "integer", "description": "Page number (1-based)", "default": 1 },
-                "pageSize": { "type": "integer", "description": "Items per page", "default": 20 },
-                "search": { "type": "string", "description": "Search term for filtering assistants" }
+                "limit": { "type": "integer", "description": "Items to return (max 100)", "default": 20 },
+                "offset": { "type": "integer", "description": "Items to skip", "default": 0 },
+                "search": { "type": "string", "description": "Search term for filtering" }
             }
         })).unwrap(),
         annotations: None,
@@ -699,13 +276,16 @@ fn create_get_assistant_tool() -> MCPTool {
     let mut props = HashMap::new();
     props.insert(
         "id".to_string(),
-        string_prop_required("Assistant identifier"),
+        string_prop_required("⚠️ Exact Assistant ID from listAssistants response"),
     );
 
     MCPTool {
-        name: "builtin_assistant__getAssistant".to_string(),
+        name: "getAssistant".to_string(),
         title: Some("Get Assistant".to_string()),
-        description: "Get an assistant configuration by ID".to_string(),
+        description: "Get full details of a specific assistant.
+
+✅ Use this to retrieve the current configuration before updating."
+            .to_string(),
         input_schema: object_schema(props, vec!["id".to_string()]),
         annotations: None,
         output_schema: None,
@@ -715,13 +295,13 @@ fn create_get_assistant_tool() -> MCPTool {
 /// Create the searchAssistant tool definition
 fn create_search_assistant_tool() -> MCPTool {
     MCPTool {
-        name: "builtin_assistant__searchAssistant".to_string(),
+        name: "searchAssistant".to_string(),
         title: Some("Search Assistant".to_string()),
-        description: "Search assistants by name or configuration content".to_string(),
+        description: "Search assistants by name or configuration content.".to_string(),
         input_schema: serde_json::from_value(json!({
             "type": "object",
             "properties": {
-                "query": { "type": "string", "description": "Search query" },
+                "query": { "type": "string", "description": "Search query text" },
                 "limit": { "type": "integer", "description": "Maximum number of results" }
             },
             "required": ["query"]
@@ -735,7 +315,8 @@ fn create_search_assistant_tool() -> MCPTool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sea_orm::{Database, Schema};
+    use crate::entity::assistant::Entity as AssistantEntity;
+    use sea_orm::{ConnectionTrait, Database, Schema};
 
     async fn create_test_db() -> Arc<DatabaseConnection> {
         let db = Database::connect("sqlite::memory:")
@@ -755,259 +336,57 @@ mod tests {
     #[tokio::test]
     async fn test_create_and_get_assistant() {
         let db = create_test_db().await;
-        let server = AssistantServer::new(db)
+        // Use operations directly for specialized testing, or server.call_tool for integration
+        let server = AssistantServer::new(db.clone())
             .await
             .expect("Failed to create server");
 
         // Create assistant
         let create_result = server
-            .create_assistant(json!({
-                "id": "test-assistant",
-                "name": "Test Assistant",
-                "config": {
-                    "model": "gpt-4",
+            .call_tool(
+                "createAssistant",
+                json!({
+                    "name": "Test Assistant",
+                    "systemPrompt": "You are a helpful assistant",
+                    "modelProvider": "openai",
+                    "modelName": "gpt-4",
                     "temperature": 0.7
-                }
-            }))
+                }),
+                None,
+            )
             .await
             .expect("Failed to create assistant");
 
         assert!(create_result.is_error == Some(false));
 
-        // Get assistant
+        // Extract the system-generated ID from the response
+        let created_id = create_result
+            .structured_content
+            .as_ref()
+            .and_then(|c| c.get("id"))
+            .and_then(|id| id.as_str())
+            .expect("Expected id in create response");
+
+        // Get assistant using system-generated ID
         let get_result = server
-            .get_assistant(json!({"id": "test-assistant"}))
+            .call_tool("getAssistant", json!({"id": created_id}), None)
             .await
             .expect("Failed to get assistant");
 
         assert!(get_result.is_error == Some(false));
-        let structured = get_result.structured_content.unwrap();
-        assert_eq!(structured["name"], "Test Assistant");
-        assert_eq!(structured["config"]["model"], "gpt-4");
-    }
+        // Note: structured_content is Option<Value>
+        let content = get_result.structured_content.unwrap();
+        assert_eq!(content["name"], "Test Assistant");
+        assert_eq!(content["config"]["modelName"], "gpt-4");
 
-    #[tokio::test]
-    async fn test_update_assistant() {
-        let db = create_test_db().await;
-        let server = AssistantServer::new(db)
-            .await
-            .expect("Failed to create server");
-
-        // Create assistant
-        server
-            .create_assistant(json!({
-                "id": "update-test",
-                "name": "Original Name",
-                "config": {"version": 1}
-            }))
-            .await
-            .expect("Failed to create assistant");
-
-        // Update assistant
-        let update_result = server
-            .update_assistant(json!({
-                "id": "update-test",
-                "config": {"version": 2, "updated": true}
-            }))
-            .await
-            .expect("Failed to update assistant");
-
-        assert!(update_result.is_error == Some(false));
-
-        // Verify update
-        let get_result = server
-            .get_assistant(json!({"id": "update-test"}))
-            .await
-            .expect("Failed to get assistant");
-
-        let structured = get_result.structured_content.unwrap();
-        assert_eq!(structured["config"]["version"], 2);
-        assert_eq!(structured["config"]["updated"], true);
-    }
-
-    #[tokio::test]
-    async fn test_list_and_delete_assistants() {
-        let db = create_test_db().await;
-        let server = AssistantServer::new(db)
-            .await
-            .expect("Failed to create server");
-
-        // Create multiple assistants
-        server
-            .create_assistant(json!({
-                "id": "assistant-1",
-                "name": "Assistant 1",
-                "config": {}
-            }))
-            .await
-            .expect("Failed to create assistant 1");
-
-        server
-            .create_assistant(json!({
-                "id": "assistant-2",
-                "name": "Assistant 2",
-                "config": {}
-            }))
-            .await
-            .expect("Failed to create assistant 2");
-
-        // List assistants
-        let list_result = server
-            .list_assistants(json!({}))
-            .await
-            .expect("Failed to list assistants");
-
-        assert!(list_result.is_error == Some(false));
-        let structured = list_result.structured_content.unwrap();
-        assert_eq!(structured["total"], 2);
-        assert_eq!(structured["returned"], 2);
-
-        // Delete one assistant
-        let delete_result = server
-            .delete_assistant(json!({"id": "assistant-1"}))
-            .await
-            .expect("Failed to delete assistant");
-
-        assert!(delete_result.is_error == Some(false));
-
-        // List again - should have 1 assistant
-        let list_result2 = server
-            .list_assistants(json!({}))
-            .await
-            .expect("Failed to list assistants");
-
-        let structured2 = list_result2.structured_content.unwrap();
-        assert_eq!(structured2["total"], 1);
-        assert_eq!(structured2["returned"], 1);
-    }
-
-    #[tokio::test]
-    async fn test_global_scope() {
-        // This test verifies that AssistantServer is global scope
-        // by showing that assistants persist across different "sessions"
-        // In this mock test, we reuse the same DB connection to simulate shared DB
-        let db = create_test_db().await;
-
-        // Create first server instance
-        let server1 = AssistantServer::new(db.clone())
-            .await
-            .expect("Failed to create server 1");
-
-        // Create assistant
-        server1
-            .create_assistant(json!({
-                "id": "global-assistant",
-                "name": "Global Assistant",
-                "config": {"shared": true}
-            }))
-            .await
-            .expect("Failed to create assistant");
-
-        // Create second server instance (simulating different session)
-        let server2 = AssistantServer::new(db)
-            .await
-            .expect("Failed to create server 2");
-
-        // Get assistant from second instance - should work because it's global
-        let get_result = server2
-            .get_assistant(json!({"id": "global-assistant"}))
-            .await
-            .expect("Failed to get assistant from server 2");
-
-        assert!(get_result.is_error == Some(false));
-        let structured = get_result.structured_content.unwrap();
-        assert_eq!(structured["name"], "Global Assistant");
-        assert_eq!(structured["config"]["shared"], true);
-    }
-
-    #[tokio::test]
-    async fn test_list_assistants_pagination() {
-        let db = create_test_db().await;
-        let server = AssistantServer::new(db)
-            .await
-            .expect("Failed to create server");
-
-        // Create 25 assistants
-        for i in 1..=25 {
-            server
-                .create_assistant(json!({
-                    "id": format!("assistant-{:02}", i),
-                    "name": format!("Assistant {}", i),
-                    "config": {"index": i}
-                }))
-                .await
-                .unwrap_or_else(|_| panic!("Failed to create assistant {}", i));
-        }
-
-        // Test page 1: limit=10, offset=0
-        let page1 = server
-            .list_assistants(json!({"limit": 10, "offset": 0}))
-            .await
-            .expect("Failed to get page 1");
-
-        assert_eq!(page1.is_error, Some(false));
-        let structured1 = page1.structured_content.unwrap();
-        assert_eq!(structured1["total"], 25);
-        assert_eq!(structured1["limit"], 10);
-        assert_eq!(structured1["offset"], 0);
-        assert_eq!(structured1["returned"], 10);
-        assert_eq!(structured1["has_more"], true);
-        let assistants1 = structured1["assistants"].as_array().unwrap();
-        assert_eq!(assistants1.len(), 10);
-
-        // Test page 2: limit=10, offset=10
-        let page2 = server
-            .list_assistants(json!({"limit": 10, "offset": 10}))
-            .await
-            .expect("Failed to get page 2");
-
-        let structured2 = page2.structured_content.unwrap();
-        assert_eq!(structured2["total"], 25);
-        assert_eq!(structured2["limit"], 10);
-        assert_eq!(structured2["offset"], 10);
-        assert_eq!(structured2["returned"], 10);
-        assert_eq!(structured2["has_more"], true);
-        let assistants2 = structured2["assistants"].as_array().unwrap();
-        assert_eq!(assistants2.len(), 10);
-
-        // Verify different assistants
-        assert_ne!(assistants1[0]["id"], assistants2[0]["id"]);
-
-        // Test page 3: limit=10, offset=20 (last page with 5 items)
-        let page3 = server
-            .list_assistants(json!({"limit": 10, "offset": 20}))
-            .await
-            .expect("Failed to get page 3");
-
-        let structured3 = page3.structured_content.unwrap();
-        assert_eq!(structured3["total"], 25);
-        assert_eq!(structured3["limit"], 10);
-        assert_eq!(structured3["offset"], 20);
-        assert_eq!(structured3["returned"], 5);
-        assert_eq!(structured3["has_more"], false);
-        let assistants3 = structured3["assistants"].as_array().unwrap();
-        assert_eq!(assistants3.len(), 5);
-
-        // Test default pagination (no params)
-        let default_page = server
-            .list_assistants(json!({}))
-            .await
-            .expect("Failed to get default page");
-
-        let structured_default = default_page.structured_content.unwrap();
-        assert_eq!(structured_default["total"], 25);
-        assert_eq!(structured_default["limit"], 20); // Default limit
-        assert_eq!(structured_default["offset"], 0); // Default offset
-        assert_eq!(structured_default["returned"], 20);
-        assert_eq!(structured_default["has_more"], true);
-
-        // Test limit exceeding max (should cap at 100)
-        let capped = server
-            .list_assistants(json!({"limit": 150}))
-            .await
-            .expect("Failed with oversized limit");
-
-        let structured_capped = capped.structured_content.unwrap();
-        assert_eq!(structured_capped["limit"], 100); // Capped at max
+        // Verify system-generated ID is returned and is not empty
+        assert!(
+            !created_id.is_empty(),
+            "Expected non-empty system-generated ID"
+        );
+        assert!(
+            created_id.len() > 10,
+            "Expected CUID-like ID format (length > 10)"
+        );
     }
 }

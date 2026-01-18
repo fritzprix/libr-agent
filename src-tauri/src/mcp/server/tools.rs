@@ -370,10 +370,29 @@ pub async fn list_builtin_tools(manager: &MCPServerManager) -> Vec<MCPTool> {
 }
 
 pub async fn list_builtin_tools_for(manager: &MCPServerManager, server_name: &str) -> Vec<MCPTool> {
+    // 1. Try to get tools from active registry first
     let servers = manager.builtin_servers.lock().await;
-    match servers.as_ref() {
+    let tools = match servers.as_ref() {
         Some(registry) => registry.list_tools_for_server(server_name),
         None => Vec::new(),
+    };
+
+    // 2. If no tools found (e.g. server is session-bound/virtual), try static definition
+    if tools.is_empty() {
+        match server_name {
+            "planning" => crate::mcp::builtin::planning::PlanningServer::tools_static(),
+            "knowledge" => crate::mcp::builtin::knowledge::KnowledgeServer::tools_static(),
+            "playbook" => crate::mcp::builtin::playbook::PlaybookServer::tools_static(),
+            "assistant" => crate::mcp::builtin::assistant::AssistantServer::tools_static(),
+            "content_store" => {
+                crate::mcp::builtin::content_store::ContentStoreServer::tools_static()
+            }
+            "browser" => crate::mcp::builtin::browser::BrowserServer::tools_static(),
+            "workspace" => crate::mcp::builtin::workspace::WorkspaceServer::tools_static(),
+            _ => Vec::new(),
+        }
+    } else {
+        tools
     }
 }
 
@@ -398,6 +417,97 @@ pub async fn list_builtin_servers_with_metadata(
             .collect(),
         None => Vec::new(),
     }
+}
+
+/// Lists all POSSIBLE builtin server definitions (static metadata)
+/// This is used by the UI to show all available builtin tools for configuration,
+/// regardless of which servers are currently instantiated in the global registry.
+/// Returns static metadata for all builtin servers that can be used in Agent V2 sessions.
+pub fn list_available_builtin_server_definitions() -> Vec<BuiltinServerInfo> {
+    use crate::mcp::builtin::*;
+
+    vec![
+        BuiltinServerInfo {
+            name: "bootstrap".to_string(),
+            metadata: bootstrap::BootstrapServer::new().metadata(),
+            tool_count: bootstrap::BootstrapServer::new().tools().len(),
+        },
+        BuiltinServerInfo {
+            name: "knowledge".to_string(),
+            metadata: crate::mcp::types::BuiltinServerMetadata {
+                display_name: "Knowledge".to_string(),
+                description: "Manage and query session-specific knowledge base".to_string(),
+                icon: None,
+            },
+            tool_count: 7, // Approximate count
+        },
+        BuiltinServerInfo {
+            name: "planning".to_string(),
+            metadata: crate::mcp::types::BuiltinServerMetadata {
+                display_name: "Planning".to_string(),
+                description: "Task planning and todo list management".to_string(),
+                icon: None,
+            },
+            tool_count: 8, // Approximate count
+        },
+        BuiltinServerInfo {
+            name: "playbook".to_string(),
+            metadata: crate::mcp::types::BuiltinServerMetadata {
+                display_name: "Playbook".to_string(),
+                description: "Execute and manage reusable playbooks".to_string(),
+                icon: None,
+            },
+            tool_count: 4, // Approximate count
+        },
+        BuiltinServerInfo {
+            name: "assistant".to_string(),
+            metadata: crate::mcp::types::BuiltinServerMetadata {
+                display_name: "Assistant".to_string(),
+                description: "Manage assistant configurations and presets".to_string(),
+                icon: None,
+            },
+            tool_count: 4, // Approximate count
+        },
+        BuiltinServerInfo {
+            name: "workspace".to_string(),
+            metadata: crate::mcp::types::BuiltinServerMetadata {
+                display_name: "Workspace".to_string(),
+                description: "Execute shell commands and manage background processes".to_string(),
+                icon: None,
+            },
+            tool_count: 7, // runInPersistentShell, runInIsolatedShell, getShellState, pollProcess, listProcesses, killProcess, readProcessOutput
+        },
+        BuiltinServerInfo {
+            name: "content_store".to_string(),
+            metadata: crate::mcp::types::BuiltinServerMetadata {
+                display_name: "Content Store".to_string(),
+                description:
+                    "Store and retrieve extracted web content for agent memory and context"
+                        .to_string(),
+                icon: None,
+            },
+            tool_count: 5, // storeContent, getContent, listContents, searchContents, deleteContent
+        },
+        BuiltinServerInfo {
+            name: "ui".to_string(),
+            metadata: ui::UiServer::new().metadata(),
+            tool_count: ui::UiServer::new().tools().len(),
+        },
+        BuiltinServerInfo {
+            name: "browser".to_string(),
+            metadata: crate::mcp::types::BuiltinServerMetadata {
+                display_name: "Browser".to_string(),
+                description: "Control and automate web browser interactions".to_string(),
+                icon: None,
+            },
+            tool_count: 10, // Approximate count
+        },
+        BuiltinServerInfo {
+            name: "mcp_manager".to_string(),
+            metadata: mcp_manager::MCPManagerServer::new().metadata(),
+            tool_count: mcp_manager::MCPManagerServer::new().tools().len(),
+        },
+    ]
 }
 
 pub async fn call_builtin_tool(
@@ -497,20 +607,4 @@ pub async fn get_service_context(
         context_prompt: format!("# MCP Server Context\nServer ID: {server_name}\nStatus: Active"),
         structured_state: None,
     })
-}
-
-pub async fn switch_context(
-    manager: &MCPServerManager,
-    server_name: &str,
-    options: ServiceContextOptions,
-) -> Result<(), String> {
-    // Check built-in servers first
-    let servers = manager.builtin_servers.lock().await;
-    if let Some(registry) = servers.as_ref() {
-        return registry.switch_server_context(server_name, options).await;
-    }
-
-    // Fallback for external MCP servers (future implementation)
-    info!("Switching context for external server: {server_name} (not implemented)");
-    Ok(())
 }

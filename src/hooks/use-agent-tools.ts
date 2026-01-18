@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { getAgentAvailableTools } from '@/lib/rust-backend-client';
 import type { MCPTool } from '@/lib/mcp-types';
 import { getLogger } from '@/lib/logger';
+import { validateMCPTools } from '@/lib/schemas/mcp-tool';
 
 const logger = getLogger('useAgentTools');
 
@@ -35,7 +36,23 @@ export function useAgentTools(sessionId: string | undefined) {
       try {
         logger.debug('Loading agent tools', { sessionId });
 
-        const tools = (await getAgentAvailableTools(sessionId)) as MCPTool[];
+        const response = await getAgentAvailableTools(sessionId);
+
+        // Validate response is an array
+        if (!Array.isArray(response)) {
+          throw new Error('Expected array of tools from backend');
+        }
+
+        // Filter and validate tools using Zod schema
+        const tools = validateMCPTools(response);
+
+        if (tools.length !== response.length) {
+          logger.warn('Some tools failed validation', {
+            sessionId,
+            received: response.length,
+            validated: tools.length,
+          });
+        }
 
         if (isMounted) {
           setAvailableTools(tools);

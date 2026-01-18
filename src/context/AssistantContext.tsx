@@ -17,12 +17,7 @@ import { useMCPServer } from '@/hooks/use-mcp-server';
 import { useMCPServerRegistry } from '@/context/MCPServerRegistryContext';
 import type { MCPTool } from '@/lib/mcp-types';
 import { useSettings } from '@/hooks/use-settings';
-import {
-  AssistantService,
-  type RevalidateEvent,
-} from '@/lib/services/assistant-service';
-import { useWebMCP } from '@/context/WebMCPContext';
-import { LocalDatabase } from '@/lib/db';
+import { AssistantService } from '@/lib/services/assistant-service';
 
 const logger = getLogger('AssistantContext');
 
@@ -157,7 +152,6 @@ export const AssistantContextProvider = ({
   const { connectServersFromAssistant, availableTools } = useMCPServer();
   const { activeServers } = useMCPServerRegistry();
   const { value: settings } = useSettings();
-  const { proxy: webMCPProxy } = useWebMCP();
 
   const assistantService = useMemo(() => {
     return new AssistantService(settings.agentHubUrl);
@@ -177,7 +171,7 @@ export const AssistantContextProvider = ({
   const [{ value: assistants, loading, error: loadError }, loadAssistants] =
     useAsyncFn(async () => {
       // Ensure default assistants exist
-      await LocalDatabase.getInstance().ensureDefaultAssistants();
+      // await LocalDatabase.getInstance().ensureDefaultAssistants();
 
       if (paginationMode === 'paginated') {
         const result = await assistantService.getList({
@@ -302,24 +296,15 @@ export const AssistantContextProvider = ({
 
   const [{ error: deleteError }, deleteAssistant] = useAsyncFn(
     async (assistantId: string) => {
-      const assistant = assistants?.find((a) => a.id === assistantId);
-      const assistantName = assistant?.name || 'Unknown';
-      if (
-        window.confirm(
-          `Are you sure you want to delete '${assistantName}' assistant? This action cannot be undone.`,
-        )
-      ) {
-        try {
-          await assistantService.delete(assistantId);
-        } catch (err) {
-          showError('Failed to delete assistant.', err);
-          // Error is automatically captured by useAsyncFn's deleteError
-        } finally {
-          await loadAssistants();
-        }
+      try {
+        await assistantService.delete(assistantId);
+        await loadAssistants();
+      } catch (err) {
+        showError('Failed to delete assistant.', err);
+        throw err; // Re-throw for caller to handle
       }
     },
-    [loadAssistants, assistants, showError, assistantService],
+    [loadAssistants, showError, assistantService],
   );
 
   const searchAssistants = useCallback(
@@ -412,27 +397,6 @@ export const AssistantContextProvider = ({
     };
     // We intentionally depend on activeServers reference to reflect registry changes
   }, [activeServers, connectServersFromAssistant]);
-
-  // Subscribe to Worker revalidation events
-  useEffect(() => {
-    if (!webMCPProxy) return;
-
-    const unsubscribe = webMCPProxy.onNotify(
-      'service-revalidate',
-      (data: unknown) => {
-        const event = data as RevalidateEvent;
-        if (event.entity === 'assistants') {
-          logger.debug(
-            'Received assistant revalidation event from Worker, refreshing...',
-            event,
-          );
-          loadAssistants();
-        }
-      },
-    );
-
-    return unsubscribe;
-  }, [webMCPProxy, loadAssistants]);
 
   // Subscribe to local service events (Main Thread changes)
   useEffect(() => {

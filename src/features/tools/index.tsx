@@ -1,5 +1,4 @@
 import { getLogger } from '@/lib/logger';
-import { switchSession } from '@/lib/rust-backend-client';
 import { MCPResponse, MCPTool } from '@/lib/mcp-types';
 import { toValidJsName, isValidServiceAlias } from '@/lib/utils';
 import { ToolCall } from '@/models/chat';
@@ -352,61 +351,6 @@ Tool details and usage instructions are provided separately.
     availableTools.length,
     currentSession, // Updated dependency
     currentAssistant,
-  ]);
-
-  // 세션/어시스턴트 변경 시 switchContext를 호출하여 서비스가 내부 정리/프리로드를 수행하도록 함
-  useEffect(() => {
-    const sessionId = currentSession?.id;
-    const assistantId = currentAssistant?.id;
-
-    // Session backend management: switch to the new session
-    if (sessionId) {
-      switchSession(sessionId, true).catch((error) => {
-        logger.error('Failed to switch session in backend', {
-          sessionId,
-          error,
-        });
-      });
-    }
-
-    const readyServices = Array.from(serviceEntriesRef.current.values()).filter(
-      (e) => e.status === 'ready',
-    );
-
-    if (!readyServices.length) {
-      return;
-    }
-
-    Promise.allSettled(
-      readyServices.map((entry) =>
-        entry.service.switchContext({ sessionId, assistantId }),
-      ),
-    ).then((results) => {
-      const failureCount = results.filter(
-        (r) => r.status === 'rejected',
-      ).length;
-
-      if (failureCount > 0) {
-        logger.warn('switchContext completed with failures', {
-          total: results.length,
-          failed: failureCount,
-        });
-
-        results.forEach((r, i) => {
-          if (r.status === 'rejected') {
-            const svc = readyServices[i].service;
-            logger.error('switchContext failed for service', {
-              serviceId: svc.metadata.displayName,
-              error: (r as PromiseRejectedResult).reason,
-            });
-          }
-        });
-      }
-    });
-  }, [
-    currentSession?.id,
-    currentAssistant?.id,
-    Array.from(serviceEntries.keys()),
   ]);
 
   // Get service metadata by alias

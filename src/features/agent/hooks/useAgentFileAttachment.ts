@@ -26,6 +26,7 @@ export function useAgentFileAttachment() {
     removeFile,
     clearPendingFiles,
     isLoading: isAttachmentLoading,
+    refetchSessionFiles,
   } = useAgentResourceAttachment();
 
   const rustBackend = useRustBackend();
@@ -84,19 +85,20 @@ export function useAgentFileAttachment() {
             filePath.split('\\').pop() ||
             'unknown';
 
-          const supportedExtensions = /\.(txt|md|json|pdf|docx|xlsx)$/i;
+          // ALLOW ALL FILES - Validation happens at commit stage for Content Store support
+          // const supportedExtensions = /\.(txt|md|json|pdf|docx|xlsx)$/i;
 
           logger.info('Processing dropped file', {
             filePath,
             filename,
-            supportedExtensions: supportedExtensions.source,
+            // supportedExtensions: supportedExtensions.source,
           });
 
-          if (!supportedExtensions.test(filename)) {
-            logger.info('Unsupported file format', { filename });
-            alert(`File "${filename}" format is not supported.`);
-            continue;
-          }
+          // if (!supportedExtensions.test(filename)) {
+          //   logger.info('Unsupported file format', { filename });
+          //   alert(`File "${filename}" format is not supported.`);
+          //   continue;
+          // }
 
           logger.info(`Preparing dropped file`, {
             filePath,
@@ -206,11 +208,12 @@ export function useAgentFileAttachment() {
       }
 
       for (const file of files) {
-        const supportedExtensions = /\.(txt|md|json|pdf|docx|xlsx)$/i;
-        if (!supportedExtensions.test(file.name)) {
-          alert(`File "${file.name}" format is not supported.`);
-          continue;
-        }
+        // ALLOW ALL FILES - Validation happens at commit stage for Content Store support
+        // const supportedExtensions = /\.(txt|md|json|pdf|docx|xlsx)$/i;
+        // if (!supportedExtensions.test(file.name)) {
+        //   alert(`File "${file.name}" format is not supported.`);
+        //   continue;
+        // }
 
         if (!validateFileSize(file)) {
           alert(createFileSizeErrorMessage(file.name, file.size));
@@ -267,15 +270,17 @@ export function useAgentFileAttachment() {
   );
 
   const validateFiles = useCallback((paths: string[]): boolean => {
-    const supportedExtensions = /\.(txt|md|json|pdf|docx|xlsx)$/i;
+    // ALLOW ALL FILES
+    // const supportedExtensions = /\.(txt|md|json|pdf|docx|xlsx)$/i;
     return paths.every((path: string) => {
       const filename = path.split('/').pop() || path.split('\\').pop() || '';
-      const isValid = supportedExtensions.test(filename);
+      // const isValid = supportedExtensions.test(filename);
+      const isValid = true;
       logger.info('Validating file extension', {
         path,
         filename,
         isValid,
-        supportedExtensions: supportedExtensions.source,
+        // supportedExtensions: supportedExtensions.source,
       });
       return isValid;
     });
@@ -292,5 +297,6 @@ export function useAgentFileAttachment() {
     getMimeType,
     processFileDrop,
     validateFiles,
+    refetchSessionFiles,
   };
 }

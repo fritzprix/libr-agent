@@ -32,7 +32,9 @@
       "delete": "삭제",
       "deleting": "삭제중...",
       "deleteBlocked": "보호된 어시스턴트는 삭제할 수 없습니다.",
-      "deleteConfirmTitle": "어시스턴트 삭제"
+      "deleteConfirmTitle": "어시스턴트 삭제",
+      "confirmDelete": "삭제 확인",
+      "cancel": "취소"
     }
   },
   "status": {

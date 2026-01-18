@@ -9,11 +9,7 @@ import React, {
 } from 'react';
 import { mutate } from 'swr';
 import { MCPServerEntity } from '@/models/chat';
-import {
-  McpServerService,
-  type RevalidateEvent,
-} from '@/lib/services/mcp-server-service';
-import { useWebMCP } from '@/context/WebMCPContext';
+import { McpServerService } from '@/lib/services/mcp-server-service';
 import { useSettings } from '@/hooks/use-settings';
 import { getLogger } from '@/lib/logger';
 
@@ -64,7 +60,6 @@ export const MCPServerRegistryProvider = ({
   const [error, setError] = useState<string>();
 
   const { value: settings } = useSettings();
-  const { proxy: webMCPProxy } = useWebMCP();
 
   // Use service layer
   const mcpServerService = useMemo(() => {
@@ -161,27 +156,6 @@ export const MCPServerRegistryProvider = ({
     () => allServers.filter((s) => s.isActive),
     [allServers],
   );
-
-  // Subscribe to Worker revalidation events
-  useEffect(() => {
-    if (!webMCPProxy) return;
-
-    const unsubscribe = webMCPProxy.onNotify(
-      'service-revalidate',
-      (data: unknown) => {
-        const event = data as RevalidateEvent;
-        if (event.entity === 'mcpServers') {
-          logger.debug(
-            'Received service-revalidate event from Worker, refreshing...',
-            event,
-          );
-          refreshAll();
-        }
-      },
-    );
-
-    return unsubscribe;
-  }, [webMCPProxy, refreshAll]);
 
   // Subscribe to local service events (Main Thread changes)
   useEffect(() => {

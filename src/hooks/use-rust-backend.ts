@@ -1,4 +1,17 @@
 import * as client from '@/lib/rust-backend-client';
+import type {
+  MCPTool,
+  MCPServerConfig,
+  MCPConfig,
+  SamplingOptions,
+  SamplingResponse,
+} from '@/lib/mcp-types';
+import type { MCPResponse } from '@/lib/mcp/protocol';
+import type { MCPResult } from '@/lib/mcp/protocol/response';
+import type {
+  ServiceContext,
+  ServiceContextOptions,
+} from '@/features/tools/types';
 
 // Workspace types
 export type { WorkspaceFileItem } from '@/lib/rust-backend-client';
@@ -14,10 +27,120 @@ export interface LogFileBackupResult {
 }
 
 /**
+ * Strongly-typed interface for Rust backend operations
+ * This ensures type safety between Rust backend and React frontend
+ */
+export interface RustBackendAPI {
+  // Workspace Management
+  listWorkspaceFiles: (
+    path?: string,
+    sessionId?: string,
+  ) => Promise<client.WorkspaceFileItem[]>;
+  openWorkspaceFileWithDefaultApp: (
+    filePath: string,
+    sessionId?: string,
+  ) => Promise<void>;
+
+  // MCP Server Management
+  startMCPServer: (config: MCPServerConfig) => Promise<string>;
+  stopMCPServer: (serverName: string) => Promise<void>;
+  callMCPTool: (
+    serverName: string,
+    toolName: string,
+    args: Record<string, unknown>,
+    requestId?: string,
+  ) => Promise<MCPResponse<unknown>>;
+  listMCPTools: (serverName: string) => Promise<MCPTool[]>;
+  listToolsFromConfig: (
+    config: MCPConfig,
+  ) => Promise<Record<string, MCPTool[]>>;
+  getConnectedServers: () => Promise<string[]>;
+  checkServerStatus: (serverName: string) => Promise<boolean>;
+  checkAllServersStatus: () => Promise<Record<string, boolean>>;
+  listAllTools: () => Promise<MCPTool[]>;
+  getValidatedTools: (serverName: string) => Promise<MCPTool[]>;
+  validateToolSchema: (tool: MCPTool) => Promise<void>;
+
+  // Built-in Tools
+  listBuiltinServers: () => Promise<string[]>;
+  listBuiltinTools: (serverName: string) => Promise<MCPTool[]>;
+  listBuiltinServersWithMetadata: () => Promise<client.BuiltinServerInfo[]>;
+  listAvailableBuiltinServerDefinitions: () => Promise<
+    client.BuiltinServerInfo[]
+  >;
+  callBuiltinTool: (
+    serverName: string,
+    toolName: string,
+    args: Record<string, unknown>,
+  ) => Promise<MCPResponse<unknown>>;
+
+  // Unified Tools API
+  listAllToolsUnified: () => Promise<MCPTool[]>;
+  callToolUnified: (
+    serverName: string,
+    toolName: string,
+    args: Record<string, unknown>,
+  ) => Promise<MCPResponse<unknown>>;
+
+  // File System Operations (returns number[] representing bytes)
+  readFile: (filePath: string) => Promise<number[]>;
+  readDroppedFile: (filePath: string) => Promise<number[]>;
+  writeFile: (filePath: string, content: number[]) => Promise<void>;
+
+  // Log Management
+  getAppLogsDir: () => Promise<string>;
+  backupCurrentLog: () => Promise<string>;
+  clearCurrentLog: () => Promise<void>;
+  listLogFiles: () => Promise<string[]>;
+
+  // External URL handling
+  openExternalUrl: (url: string) => Promise<void>;
+
+  // File Download Operations
+  downloadWorkspaceFile: (
+    filePath: string,
+    sessionId: string,
+  ) => Promise<string>;
+  exportAndDownloadZip: (
+    files: string[],
+    packageName: string,
+    sessionId: string,
+  ) => Promise<string>;
+
+  // Service Context
+  getServiceContext: (
+    serverId: string,
+    options?: ServiceContextOptions,
+  ) => Promise<ServiceContext<unknown>>;
+
+  // Utility
+  greet: (name: string) => Promise<string>;
+
+  /**
+   * Call a builtin tool for a specific agent session
+   * @returns MCPResult with typed structured content
+   */
+  agentCallBuiltinTool: <T = unknown>(
+    sessionId: string,
+    toolName: string,
+    args: Record<string, unknown>,
+  ) => Promise<MCPResult<T>>;
+
+  // Additional methods that may be used by legacy code
+  sampleFromModel: (
+    serverName: string,
+    prompt: string,
+    options?: SamplingOptions,
+  ) => Promise<SamplingResponse>;
+}
+
+/**
  * React hook wrapping the shared Rust backend client
  * Provides a React-friendly API while delegating to the shared implementation
+ *
+ * @returns Strongly-typed interface to Rust backend operations
  */
-export const useRustBackend = () => {
+export const useRustBackend = (): RustBackendAPI => {
   return {
     // Workspace Management
     listWorkspaceFiles: client.listWorkspaceFiles,
@@ -40,6 +163,8 @@ export const useRustBackend = () => {
     listBuiltinServers: client.listBuiltinServers,
     listBuiltinTools: client.listBuiltinTools,
     listBuiltinServersWithMetadata: client.listBuiltinServersWithMetadata,
+    listAvailableBuiltinServerDefinitions:
+      client.listAvailableBuiltinServerDefinitions,
     callBuiltinTool: client.callBuiltinTool,
 
     // Unified Tools API
@@ -66,7 +191,6 @@ export const useRustBackend = () => {
 
     // Service Context
     getServiceContext: client.getServiceContext,
-    switchContext: client.switchContext,
 
     // Utility
     greet: client.greet,
@@ -74,7 +198,5 @@ export const useRustBackend = () => {
 
     // Additional methods that may be used by legacy code
     sampleFromModel: client.sampleFromModel,
-  } as const;
+  };
 };
-
-export type RustBackend = ReturnType<typeof useRustBackend>;

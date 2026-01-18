@@ -21,6 +21,7 @@ export interface AdvancedSettings {
   maxRetries: number;
   retryDelay: number; // in milliseconds
   circuitBreakerThreshold: number;
+  diffContextLines: number;
 }
 
 export interface DisplaySettings {
@@ -63,6 +64,7 @@ export const DEFAULT_SETTING: Settings = {
     maxRetries: 1,
     retryDelay: 5000,
     circuitBreakerThreshold: 3,
+    diffContextLines: 3,
   },
   display: {
     metricDisplayMode: 'inline',

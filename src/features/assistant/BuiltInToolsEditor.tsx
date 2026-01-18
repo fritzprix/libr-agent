@@ -22,10 +22,20 @@ export default function BuiltInToolsEditor() {
 
   // Group tools by service alias
   const services = useMemo((): BuiltInServiceInfo[] => {
+    logger.info('BuiltInToolsEditor: Computing services from available tools', {
+      totalTools: availableTools.length,
+    });
     const serviceMap = new Map<string, BuiltInServiceInfo>();
 
     availableTools.forEach((tool) => {
       const alias = extractBuiltInServiceAlias(tool.name);
+
+      if (tool.name.includes('planning') || tool.name.includes('createGoal')) {
+        logger.info('BuiltInToolsEditor: Processing planning tool', {
+          toolName: tool.name,
+          extractedAlias: alias,
+        });
+      }
 
       if (!alias) {
         logger.warn("alias doesn't exist for ", { name: tool.name });

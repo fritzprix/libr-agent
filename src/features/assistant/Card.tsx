@@ -14,12 +14,8 @@ interface AssistantCardProps {
 }
 
 export default function AssistantCard({ assistant }: AssistantCardProps) {
-  const {
-    currentAssistant,
-    setCurrentAssistant,
-    deleteAssistant,
-    saveAssistant: upsertAssistant,
-  } = useAssistantContext();
+  const { deleteAssistant, saveAssistant: upsertAssistant } =
+    useAssistantContext();
   const {
     status,
     isLoading: isCheckingStatus,
@@ -27,7 +23,7 @@ export default function AssistantCard({ assistant }: AssistantCardProps) {
     connectServersFromAssistant,
   } = useMCPServer();
   const [isDeleting, setIsDeleting] = useState(false);
-  const isActive = currentAssistant?.id === assistant.id;
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [edit, setEdit] = useState<boolean>(false);
   const { t } = useTranslation('common');
   const logger = getLogger('AssistantCard');
@@ -48,31 +44,35 @@ export default function AssistantCard({ assistant }: AssistantCardProps) {
     }
   }, [assistant, connectServersFromAssistant, logger]);
 
-  const handleDelete = async () => {
+  const handleDeleteClick = useCallback(() => {
     if (assistant.deletionProtected === true) {
       alert(t('assistant.card.deleteBlocked'));
       return;
     }
+    setShowDeleteConfirm(true);
+  }, [assistant.deletionProtected, t]);
 
+  const handleDeleteConfirm = useCallback(async () => {
+    setIsDeleting(true);
     try {
-      setIsDeleting(true);
       if (assistant.id) {
         await deleteAssistant(assistant.id);
+        logger.info('Assistant deleted', { assistantId: assistant.id });
       }
+    } catch (error) {
+      logger.error('Failed to delete assistant', error);
     } finally {
       setIsDeleting(false);
+      setShowDeleteConfirm(false);
     }
-  };
+  }, [assistant.id, deleteAssistant, logger]);
+
+  const handleDeleteCancel = useCallback(() => {
+    setShowDeleteConfirm(false);
+  }, []);
   return (
     <EditorProvider initialValue={assistant} onFinalize={handleEditComplete}>
-      <div
-        className={`border rounded p-3 cursor-pointer transition-colors ${
-          isActive
-            ? 'border-primary bg-primary/20'
-            : 'border-muted hover:border-accent'
-        }`}
-        onClick={() => setCurrentAssistant(assistant)}
-      >
+      <div className="border rounded p-3 transition-colors border-muted hover:border-accent">
         <div className="flex justify-between items-start mb-2">
           <h3 className="text-primary font-medium">{assistant.name}</h3>
           <div className="flex gap-1 flex-wrap">
@@ -80,9 +80,6 @@ export default function AssistantCard({ assistant }: AssistantCardProps) {
               <Badge variant="destructive">
                 {t('assistant.card.protected')}
               </Badge>
-            )}
-            {isActive && (
-              <Badge variant="default">{t('assistant.card.active')}</Badge>
             )}
           </div>
         </div>
@@ -101,80 +98,109 @@ export default function AssistantCard({ assistant }: AssistantCardProps) {
           })}
         </div>
 
-        {isActive &&
-          assistant.mcpServerIds &&
-          assistant.mcpServerIds.length > 0 && (
-            <div className="flex flex-wrap gap-1 mb-2">
-              {assistant.mcpServerIds.map((serverId) => {
-                const serverMeta = serversById?.[serverId];
-                const serverName = serverMeta?.name ?? serverId;
-                // status 맵은 server name을 키로 사용 (serverId가 아님)
-                const isConnected = serverMeta?.name
-                  ? status[serverMeta.name]
-                  : undefined;
-                const version = serverMeta?.metadata?.version;
-                const description = serverMeta?.metadata?.description;
+        {assistant.mcpServerIds && assistant.mcpServerIds.length > 0 && (
+          <div className="flex flex-wrap gap-1 mb-2">
+            {assistant.mcpServerIds.map((serverId) => {
+              const serverMeta = serversById?.[serverId];
+              const serverName = serverMeta?.name ?? serverId;
+              // status 맵은 server name을 키로 사용 (serverId가 아님)
+              const isConnected = serverMeta?.name
+                ? status[serverMeta.name]
+                : undefined;
+              const version = serverMeta?.metadata?.version;
+              const description = serverMeta?.metadata?.description;
 
-                return (
-                  <div
-                    key={serverId}
-                    className="flex items-center gap-1 text-xs px-1 py-0.5 rounded bg-muted"
-                    title={`Name: ${serverName}\nID: ${serverId}${version ? `\nVersion: ${version}` : ''}${description ? `\nDescription: ${description}` : ''}`}
-                  >
-                    <StatusIndicator
-                      status={
-                        isConnected === true
-                          ? 'connected'
-                          : isConnected === false
-                            ? 'disconnected'
-                            : 'unknown'
-                      }
-                      size="sm"
-                    />
-                    <span className="text-foreground truncate max-w-[120px]">
-                      {serverName}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+              return (
+                <div
+                  key={serverId}
+                  className="flex items-center gap-1 text-xs px-1 py-0.5 rounded bg-muted"
+                  title={`Name: ${serverName}\nID: ${serverId}${version ? `\nVersion: ${version}` : ''}${description ? `\nDescription: ${description}` : ''}`}
+                >
+                  <StatusIndicator
+                    status={
+                      isConnected === true
+                        ? 'connected'
+                        : isConnected === false
+                          ? 'disconnected'
+                          : 'unknown'
+                    }
+                    size="sm"
+                  />
+                  <span className="text-foreground truncate max-w-[120px]">
+                    {serverName}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant="secondary" onClick={() => setEdit(true)}>
-            {t('assistant.card.edit')}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={handleCheckStatus}
-            disabled={isCheckingStatus}
-            title={
-              isCheckingStatus
-                ? t('assistant.card.checking')
-                : t('assistant.card.checkStatus')
-            }
-            className="gap-1"
-          >
-            {isCheckingStatus && <Loader2 className="h-3 w-3 animate-spin" />}
-            {isCheckingStatus
-              ? t('assistant.card.checking')
-              : t('assistant.card.checkStatus')}
-          </Button>
-          <Button
-            size="sm"
-            variant="destructive"
-            onClick={handleDelete}
-            title={
-              assistant.deletionProtected === true
-                ? t('assistant.card.deleteBlocked')
-                : t('assistant.card.deleteConfirmTitle')
-            }
-          >
-            {isDeleting
-              ? t('assistant.card.deleting')
-              : t('assistant.card.delete')}
-          </Button>
+          {!showDeleteConfirm ? (
+            <>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => setEdit(true)}
+              >
+                {t('assistant.card.edit')}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={handleCheckStatus}
+                disabled={isCheckingStatus}
+                title={
+                  isCheckingStatus
+                    ? t('assistant.card.checking')
+                    : t('assistant.card.checkStatus')
+                }
+                className="gap-1"
+              >
+                {isCheckingStatus && (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                )}
+                {isCheckingStatus
+                  ? t('assistant.card.checking')
+                  : t('assistant.card.checkStatus')}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={handleDeleteClick}
+                disabled={isDeleting}
+                title={
+                  assistant.deletionProtected === true
+                    ? t('assistant.card.deleteBlocked')
+                    : t('assistant.card.delete')
+                }
+              >
+                {t('assistant.card.delete')}
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={handleDeleteConfirm}
+                disabled={isDeleting}
+                className="flex-1"
+              >
+                {isDeleting
+                  ? t('assistant.card.deleting')
+                  : t('assistant.card.confirmDelete')}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleDeleteCancel}
+                disabled={isDeleting}
+              >
+                {t('assistant.card.cancel')}
+              </Button>
+            </>
+          )}
         </div>
       </div>
       <AssistantEditor.Dialog open={edit} onOpenChange={setEdit} />

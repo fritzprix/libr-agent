@@ -187,6 +187,11 @@ impl MCPServerManager {
         tools::list_builtin_servers_with_metadata(self).await
     }
 
+    /// Lists all POSSIBLE builtin server definitions for UI configuration
+    pub fn list_available_builtin_server_definitions() -> Vec<BuiltinServerInfo> {
+        tools::list_available_builtin_server_definitions()
+    }
+
     /// Calls a tool on a built-in server.
     pub async fn call_builtin_tool(
         &self,
@@ -222,16 +227,6 @@ impl MCPServerManager {
         options: Option<ServiceContextOptions>,
     ) -> Result<ServiceContext, String> {
         tools::get_service_context(self, server_name, options).await
-    }
-
-    /// Switches the context for a given server.
-    #[allow(dead_code)]
-    pub async fn switch_context(
-        &self,
-        server_name: &str,
-        options: ServiceContextOptions,
-    ) -> Result<(), String> {
-        tools::switch_context(self, server_name, options).await
     }
 
     /// Returns a reference to the OAuth manager for handling OAuth 2.1 flows.

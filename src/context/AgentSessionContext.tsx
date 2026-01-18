@@ -93,6 +93,7 @@ interface AgentSessionActionsContextValue {
   setError: (error: string | null) => void;
 
   addMessage: (message: Message) => void;
+  resumeSession: () => Promise<void>;
 }
 
 const AgentSessionActionsContext = createContext<
@@ -405,6 +406,20 @@ export function AgentSessionProvider({
       });
     } catch (err) {
       logger.error('Failed to stop session', err);
+      setSession(null);
+    }
+  }, [session]);
+
+  const resumeSession = useCallback(async () => {
+    if (!session) return;
+
+    try {
+      await invoke('agent_resume_workflow', {
+        sessionId: session.id,
+      });
+      // Status update will come via event
+    } catch (err) {
+      logger.error('Failed to resume session', err);
       throw err;
     }
   }, [session]);
@@ -434,10 +449,11 @@ export function AgentSessionProvider({
     () => ({
       sendMessage,
       stopSession,
+      resumeSession,
       addMessage,
       setError,
     }),
-    [sendMessage, stopSession, addMessage, setError],
+    [sendMessage, stopSession, resumeSession, addMessage, setError],
   );
 
   return (

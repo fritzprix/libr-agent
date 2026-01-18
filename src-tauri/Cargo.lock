@@ -3042,6 +3042,7 @@ dependencies = [
  "dirs 5.0.1",
  "docx-rs",
  "dotenvy",
+ "fern",
  "futures",
  "glob",
  "handlebars",

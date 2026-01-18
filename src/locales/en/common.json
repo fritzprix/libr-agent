@@ -32,7 +32,9 @@
       "delete": "Delete",
       "deleting": "Deleting...",
       "deleteBlocked": "Protected assistant cannot be deleted.",
-      "deleteConfirmTitle": "Delete Assistant"
+      "deleteConfirmTitle": "Delete Assistant",
+      "confirmDelete": "Confirm Delete",
+      "cancel": "Cancel"
     }
   },
   "status": {

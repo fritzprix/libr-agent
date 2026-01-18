@@ -6,9 +6,7 @@ use std::sync::Arc;
 
 use crate::entity::{knowledge, knowledge::Entity as KnowledgeEntity};
 use crate::mcp::builtin::BuiltinMCPServer;
-use crate::mcp::types::{
-    BuiltinServerMetadata, MCPResult, MCPTool, ServiceContext, ServiceContextOptions,
-};
+use crate::mcp::types::{BuiltinServerMetadata, MCPResult, MCPTool, ServiceContext};
 use crate::mcp::utils::schema_builder::*;
 
 mod helpers;
@@ -21,20 +19,31 @@ mod queries;
 /// SQLite FTS5 for efficient full-text search.
 #[derive(Debug)]
 pub struct KnowledgeServer {
-    session_id: String,
+    assistant_id: String,
     db: Arc<DatabaseConnection>,
 }
 
 impl KnowledgeServer {
-    /// Create a new KnowledgeServer instance for a specific session
-    pub async fn new(session_id: String, db: Arc<DatabaseConnection>) -> Result<Self, String> {
-        let server = Self { session_id, db };
+    /// Create a new KnowledgeServer instance for a specific assistant
+    pub async fn new(assistant_id: String, db: Arc<DatabaseConnection>) -> Result<Self, String> {
+        let server = Self { assistant_id, db };
 
         Ok(server)
     }
 
     pub(crate) fn get_db(&self) -> &DatabaseConnection {
         &self.db
+    }
+
+    /// Get tools statically (without an instance)
+    pub fn tools_static() -> Vec<MCPTool> {
+        vec![
+            create_save_knowledge_tool(),
+            create_read_knowledge_tool(),
+            create_delete_knowledge_tool(),
+            create_search_knowledge_tool(),
+            create_list_knowledge_tool(),
+        ]
     }
 }
 
@@ -45,7 +54,7 @@ impl BuiltinMCPServer for KnowledgeServer {
     }
 
     fn description(&self) -> &str {
-        "Session-scoped knowledge base with full-text search"
+        "Assistant-scoped knowledge base with full-text search"
     }
 
     fn version(&self) -> &str {
@@ -65,26 +74,20 @@ impl BuiltinMCPServer for KnowledgeServer {
     }
 
     fn tools(&self) -> Vec<MCPTool> {
-        vec![
-            create_save_knowledge_tool(),
-            create_read_knowledge_tool(),
-            create_delete_knowledge_tool(),
-            create_search_knowledge_tool(),
-            create_list_knowledge_tool(),
-        ]
+        Self::tools_static()
     }
 
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
         // Query knowledge count with error handling using SeaORM
         let db = self.get_db();
         let count: u64 = KnowledgeEntity::find()
-            .filter(knowledge::Column::SessionId.eq(&self.session_id))
+            .filter(knowledge::Column::AssistantId.eq(&self.assistant_id))
             .count(db)
             .await
             .unwrap_or_else(|e| {
                 log::warn!(
-                    "Failed to query knowledge count for session '{}': {}",
-                    self.session_id,
+                    "Failed to query knowledge count for assistant '{}': {}",
+                    self.assistant_id,
                     e
                 );
                 0
@@ -114,7 +117,7 @@ impl BuiltinMCPServer for KnowledgeServer {
         ServiceContext {
             context_prompt: parts.join("\n"),
             structured_state: Some(json!({
-                "session_id": self.session_id,
+                "assistant_id": self.assistant_id,
                 "knowledge_count": count
             })),
         }
@@ -124,42 +127,37 @@ impl BuiltinMCPServer for KnowledgeServer {
         &self,
         tool_name: &str,
         args: Value,
-        _session_id: Option<String>,
+        _assistant_id: Option<String>,
     ) -> Result<MCPResult, String> {
         log::debug!(
-            "Knowledge server tool called: {} for session: {}",
+            "Knowledge server tool called: {} for assistant: {}",
             tool_name,
-            _session_id.as_deref().unwrap_or(&self.session_id)
+            _assistant_id.as_deref().unwrap_or(&self.assistant_id)
         );
 
-        let target_session_id = _session_id.unwrap_or_else(|| self.session_id.clone());
+        let target_assistant_id = _assistant_id.unwrap_or_else(|| self.assistant_id.clone());
 
         match tool_name {
             "saveKnowledge" | "builtin_knowledge__saveKnowledge" => {
-                operations::save_knowledge(self, args, &target_session_id).await
+                operations::save_knowledge(self, args, &target_assistant_id).await
             }
             "readKnowledge" | "builtin_knowledge__readKnowledge" => {
-                queries::read_knowledge(self, args, &target_session_id).await
+                queries::read_knowledge(self, args, &target_assistant_id).await
             }
             "deleteKnowledge" | "builtin_knowledge__deleteKnowledge" => {
-                operations::delete_knowledge(self, args, &target_session_id).await
+                operations::delete_knowledge(self, args, &target_assistant_id).await
             }
             "searchKnowledge" | "builtin_knowledge__searchKnowledge" => {
-                queries::search_knowledge(self, args, &target_session_id).await
+                queries::search_knowledge(self, args, &target_assistant_id).await
             }
             "listKnowledge" | "builtin_knowledge__listKnowledge" => {
-                queries::list_knowledge(self, args, &target_session_id).await
+                queries::list_knowledge(self, args, &target_assistant_id).await
             }
             _ => Err(format!(
                 "Unknown tool: {}. Available tools: saveKnowledge, readKnowledge, deleteKnowledge, searchKnowledge, listKnowledge",
                 tool_name
             )),
         }
-    }
-
-    async fn switch_context(&self, _options: ServiceContextOptions) -> Result<(), String> {
-        // Knowledge server is session-bound, context switching not supported
-        Err("Context switching not supported for session-bound knowledge server".to_string())
     }
 }
 
@@ -168,7 +166,7 @@ fn create_save_knowledge_tool() -> MCPTool {
     MCPTool {
         name: "saveKnowledge".to_string(),
         title: Some("Save Knowledge".to_string()),
-        description: "Save a knowledge entry to the session-scoped knowledge base".to_string(),
+        description: "Save a knowledge entry to the assistant-scoped knowledge base".to_string(),
         input_schema: serde_json::from_value(json!({
             "type": "object",
             "properties": {
@@ -288,7 +286,7 @@ fn create_list_knowledge_tool() -> MCPTool {
     MCPTool {
         name: "listKnowledge".to_string(),
         title: Some("List Knowledge".to_string()),
-        description: "List all knowledge entries for this session (paginated)".to_string(),
+        description: "List all knowledge entries for this assistant (paginated)".to_string(),
         input_schema: object_schema(props, vec![]),
         output_schema: None,
         annotations: None,

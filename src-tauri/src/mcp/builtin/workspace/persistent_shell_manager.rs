@@ -9,6 +9,7 @@ use tokio::sync::Mutex;
 use tracing::{debug, info, warn};
 
 use super::persistent_shell::PersistentShell;
+use super::ShellType;
 
 /// Manager for persistent shell sessions
 ///
@@ -61,7 +62,12 @@ impl PersistentShellManager {
 
         // Create new shell
         info!("Creating new persistent shell for session: {}", session_id);
-        let shell = PersistentShell::new(session_id.clone(), workspace_path)
+        #[cfg(unix)]
+        let shell_type = ShellType::Bash;
+        #[cfg(windows)]
+        let shell_type = ShellType::PowerShell; // Default to PowerShell on Windows
+
+        let shell = PersistentShell::new(session_id.clone(), workspace_path, shell_type)
             .await
             .map_err(|e| format!("Failed to create shell: {e}"))?;
 

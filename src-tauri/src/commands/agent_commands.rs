@@ -221,14 +221,12 @@ pub async fn agent_resume_workflow(
     manager: State<'_, AgentSessionManager>,
     session_id: String,
 ) -> Result<AgentResponse, String> {
-    // Initialize cache from DB before resuming workflow
-    manager.init_session_with_messages(&session_id).await?;
-
+    // Resume the workflow (internal logic handles cache validation)
     manager.resume_workflow(session_id.clone()).await?;
 
     Ok(AgentResponse {
         success: true,
-        message: format!("Workflow resumed with cache initialized: {}", session_id),
+        message: format!("Workflow resumed: {}", session_id),
         data: None,
     })
 }
@@ -295,12 +293,14 @@ pub async fn agent_handle_llm_error(
 }
 
 /// Call a builtin tool directly via proxy_manager (for testing and direct execution)
+/// Returns the unwrapped MCPResult (not the full MCPResponse wrapper)
 #[command]
 pub async fn agent_call_builtin_tool(
     session_id: String,
     tool_name: String,
     args: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
+    use crate::mcp::types::MCPResponseResult;
     use crate::state::get_mcp_service_proxy_manager;
 
     let proxy_manager = get_mcp_service_proxy_manager();
@@ -309,8 +309,29 @@ pub async fn agent_call_builtin_tool(
         .call_tool(&session_id, &tool_name, args)
         .await?;
 
-    // Convert MCPResponse to JSON
-    serde_json::to_value(response).map_err(|e| format!("Failed to serialize response: {}", e))
+    // Handle errors from tool execution
+    if let Some(error) = response.error {
+        return Err(format!("Tool execution error: {}", error.message));
+    }
+
+    // Extract result from MCPResponse
+    let result = response
+        .result
+        .ok_or_else(|| "Tool execution returned no result or error".to_string())?;
+
+    // Unwrap MCPResult from MCPResponseResult::ToolCall variant
+    // This matches the TypeScript expectation of receiving MCPResult directly
+    match result {
+        MCPResponseResult::ToolCall(mcp_result) => {
+            // Serialize MCPResult (with camelCase field names matching TypeScript interface)
+            serde_json::to_value(mcp_result)
+                .map_err(|e| format!("Failed to serialize MCPResult: {}", e))
+        }
+        _ => Err(format!(
+            "Unexpected response type for builtin tool '{}': expected ToolCall variant",
+            tool_name
+        )),
+    }
 }
 
 /// Get service contexts for a session
@@ -415,7 +436,15 @@ pub async fn agent_factory_reset(
         .await
         .map_err(|e| format!("Failed to clear MCP servers: {}", e))?;
 
-    // 5. Clear application logs
+    // 5. Restore default assistants so the app is not empty
+    if let Err(e) = crate::services::assistant_init::ensure_default_assistants(db).await {
+        return Err(format!(
+            "Factory reset failed to restore default assistants: {}",
+            e
+        ));
+    }
+
+    // 6. Clear application logs
     // We do this last to preserve logging of the reset process as much as possible
     if let Ok(log_dir_str) = get_app_logs_dir().await {
         let log_dir = std::path::PathBuf::from(log_dir_str);

@@ -182,14 +182,6 @@ export function BrowserToolProvider() {
           };
         }
       },
-      switchContext: async (options?: ServiceContextOptions) => {
-        // 브라우저 세션은 현재 전역적으로 관리되므로 특별한 정리 작업이 필요하지 않음
-        // 향후 세션별 브라우저 관리가 필요할 경우 여기서 구현
-        logger.debug('Browser service context switched', {
-          sessionId: options?.sessionId,
-          assistantId: options?.assistantId,
-        });
-      },
     };
 
     register(serviceId, service);

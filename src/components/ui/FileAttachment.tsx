@@ -103,8 +103,9 @@ export default function FileAttachment({
       {/* Attached Files Display */}
       {files.length > 0 && (
         <div className="mt-2">
-          <div className="text-xs text-muted-foreground mb-2">
-            📎 Attached Files:
+          <div className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
+            <Paperclip className="w-3 h-3" />
+            <span>Attached Files:</span>
           </div>
           <div className="space-y-1">
             {files.map((file, index) => (

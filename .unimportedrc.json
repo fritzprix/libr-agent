@@ -47,16 +47,7 @@
     "src/components/ui/alert-dialog.tsx",
     "src/components/ui/collapsible.tsx",
     "src/components/ui/sonner.tsx",
-    "src/features/tools/BrowserDeadlockTester.tsx",
-    "src/hooks/__tests__/use-ai-service.completeText.spec.ts",
-    "src/lib/search/bm25.ts",
-    "src/lib/services/mcp-server-service.ts",
-    "src/lib/web-mcp/mcp-worker.ts",
-    "src/lib/web-mcp/modules/__tests__",
-    "src/lib/web-mcp/utils/ui-utils.ts",
-    "src/test/setup.ts",
-    "src/test/types/test-types.ts",
-    "src/test/utils/html-test-utils.ts"
+    "src/test/setup.ts"
   ],
   "ignoreDependencies": ["handlebars"]
 }
