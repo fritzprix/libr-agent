@@ -273,6 +273,7 @@ impl WorkspaceServer {
 
     // Common utility methods
     pub fn get_workspace_dir(&self, session_id: &str) -> std::path::PathBuf {
+        // Resolve path dynamically via SessionManager to support per-session overrides
         self.session_manager
             .get_session_workspace_dir_by_id(session_id)
     }
