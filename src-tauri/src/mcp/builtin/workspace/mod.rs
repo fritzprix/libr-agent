@@ -130,9 +130,14 @@ impl WorkspaceServer {
 
     /// Invalidate the service context cache (call after state changes)
     pub(crate) async fn invalidate_context_cache(&self) {
-        if let Ok(mut guard) = self.context_cache.try_write() {
-            *guard = None;
-            tracing::trace!("Workspace service context cache invalidated");
+        match self.context_cache.try_write() {
+            Ok(mut guard) => {
+                *guard = None;
+                tracing::debug!("Workspace service context cache invalidated");
+            }
+            Err(_) => {
+                tracing::warn!("Failed to invalidate context cache - lock held by another task");
+            }
         }
     }
 
@@ -533,7 +538,8 @@ impl BuiltinMCPServer for WorkspaceServer {
             "editFile" => self.handle_edit_file(args, session_id).await,
             "previewReplacement" => self.handle_preview_replacement(args, session_id).await,
             "importFile" => self.handle_import_file(args, session_id).await,
-            "grep" => self.handle_grep(args, session_id).await,
+            "searchLineInFile" => self.handle_grep(args, session_id).await,
+            "editLineInFile" => self.handle_edit_line_in_file(args, session_id).await,
             // Code execution tools
             // Note: Python/TypeScript execution were removed from the public tool
             // interface to avoid external runtime dependencies and to prevent
@@ -581,6 +587,9 @@ impl BuiltinMCPServer for WorkspaceServer {
             )),
             "list_directory" | "ls" => Ok(MCPResult::error(
                 "Tool not found. Did you mean 'listDirectory'? Please use the exact tool name 'listDirectory'."
+            )),
+            "grep" => Ok(MCPResult::error(
+                "Tool not found. Use 'searchLineInFile' instead. The 'grep' alias has been removed for tool name consistency."
             )),
             "execute_shell" | "execute_command" | "run_command" => Ok(MCPResult::error(
                 "Tool not found. Use 'runShell' (Unix) or 'runPowerShell' (Windows) for quick commands. Use exact tool names."

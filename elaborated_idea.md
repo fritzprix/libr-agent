@@ -1,644 +1,1288 @@
-# Agentic Workflow Backend Migration: Elaborated Architecture (Additive Strategy)
+# Sprint W3-Jan-26: Elaborated Implementation Plan
 
-**Date:** 2024-12-25
-**Based on:** `idea.md` & `refactoring_20241225_1500.md`
-**Strategy:** Additive & Safe Migration (Dual-Track System)
-
-## 1. Problem Statement & Motivation
-
-### Current Limitations
-
-- **Session Interruption:** The current Agentic Workflow is tightly coupled to the React Component Lifecycle (`ChatContext`). Switching sessions unmounts the component, killing active tool loops and LLM streams.
-- **State Fragmentation:** Message history lives in IndexedDB (Frontend) while session metadata is in Rust. This split makes it hard to maintain a single source of truth.
-- **Limited Multi-Agent Support:** Running multiple agents in the background is impossible because the execution logic is tied to the visible UI.
-
-### Goal
-
-Migrate the **Orchestration Logic** (the "Brain" that cycles through Think -> Act -> Observe via event-driven state transitions) to the **Rust Backend**.
-This ensures agents continue running regardless of UI state, enabling true background execution and multi-agent collaboration. The V2 architecture is purely Rust-driven (`src-tauri/src/mcp/service_proxy_manager.rs`), removing dependency on frontend tool bridges.
-
-**Implementation Pattern**: Not a traditional while loop or recursion, but a **conditional event-driven cycle** where each `handle_llm_response` call completes and returns, then emits an event to trigger the next cycle if tool calls exist. **No call stack accumulation** - each cycle is an independent function invocation.
+**Date:** January 18, 2026  
+**Sprint:** W3-Jan-26  
+**Branch:** dev/0.4.0  
+**Status:** Planning & Clarification Phase
 
 ---
 
-## 2. Solution: Dual-Track Hybrid Architecture
+## 📋 Table of Contents
 
-We adopt a **"Dual-Track"** model to ensure 100% stability for existing features while introducing the new Rust-based orchestration.
-
-- **Track 1 (Legacy)**: Existing `ChatContext` + `useAIService` (Frontend Orchestration). Used for existing sessions.
-- **Track 2 (Agent V2)**: New `AgentSessionContext` + `AgentSessionManager` (Rust Orchestration). Used for new Agent sessions.
-
-### Core Components (V2 Track)
-
-#### A. Rust Backend (The Orchestrator)
-
-- **`AgentSessionManager`**: The central authority. Manages active session workflows via event-driven state machine, handles state transitions (Idle -> Busy -> Paused), and persists data. Each `handle_llm_response` call conditionally triggers the next cycle by checking for tool calls.
-- **`MessageRepository` (SQLite)**: The Single Source of Truth for all chat history.
-- **`MCPServiceProxyManager`**: Global manager that creates and manages session-specific `MCPServiceProxy` instances. Ensures complete isolation between concurrent agent sessions while sharing common resources (External MCP processes, DB connection pools).
-- **`MCPServiceProxy`**: **Per-session tool aggregator**. Each session has its own dedicated proxy instance with isolated Built-in tool instances. External MCP servers are shared via references. Enables true multi-agent parallel execution without context interference.
-
-#### B. Frontend Service Layer (The Worker)
-
-- **`LLMServiceProvider`**: A global React Context (never unmounts). Listens for LLM requests from Rust, executes them using existing `useAIService` logic, and streams results back. **Critical role**: Sets `isStreaming: false` on completion to trigger message persistence in `AgentChatContext`.
-- **`AgentChatContext`**: **(NEW)** Replaces `ChatContext` for V2 sessions. **Owns the message stack** per `idea.md` architecture. Manages local message state via React hooks:
-  - Optimistically adds user messages immediately
-  - Detects `isStreaming: false` via useEffect and adds completed assistant messages
-  - Listens to `agent:event(MessageAdded)` for tool result messages
-  - **No DB reload during active workflow** - maintains complete message history in React state
-- **`ToolBridgeProvider`**: **(Removed)** previously used to expose Web-based MCP tools. With the completion of the backend migration, all essential tools (Browser, Filesystem, Command) are now native Rust services. This bridge has been removed as the architecture is now fully Rust-centric.
-
-#### C. IPC Bridge (The Nervous System)
-
-- **Commands (TS -> Rust)**: `agent_create_session`, `agent_send_message`, `agent_terminate_workflow`.
-- **Events (Rust -> TS)**: `agent:event` (Status updates), `llm:request` (Ask TS to call LLM), `tool:request` (Ask TS to run Web Tool).
+1. [Overview](#overview)
+2. [Feature Analysis: File Operations Enhancement](#feature-analysis-file-operations-enhancement)
+3. [Feature Analysis: Workspace Management](#feature-analysis-workspace-management)
+4. [Critical Clarification Questions](#critical-clarification-questions)
+5. [Implementation Priorities](#implementation-priorities)
+6. [Technical Implementation Notes](#technical-implementation-notes)
+7. [Risk Assessment](#risk-assessment)
 
 ---
 
-## 3. Detailed Technical Specifications
+## Overview
 
-### 3.1. Lifecycle Management
+This document provides a comprehensive feasibility analysis and design clarification for the Sprint W3-Jan-26 agenda, which focuses on two main areas:
 
-- **App Window**: The application window is expected to remain open (or minimized). We do _not_ support headless execution (tray-only with closed window) in this phase.
-- **Session Termination**:
-  - Users can explicitly stop an agent via `stop_agent_session`.
-  - Rust uses `CancellationToken` to immediately abort active workflows and pending async operations (LLM generation or Tool execution).
+1. **File Operations Enhancement** - Improving editFile and adding new search/edit capabilities
+2. **Workspace Management** - Enhanced workspace mounting, opening, and configuration
 
-### 3.2. Data Sovereignty
+---
 
-- **SQLite is King**: All messages are stored in Rust's SQLite (`messages` table). Acts as the source of truth on app restart and session resume.
-- **Session-Scoped Data**: Built-in tools (Knowledge, Planning, Playbook, etc.) store their data in SQLite with `session_id` foreign keys, ensuring complete isolation between sessions.
-- **IndexedDB Deprecation**: IndexedDB is no longer used for chat history or tool state in V2. Web MCP tools are being migrated to Rust Built-in servers with SQLite persistence.
-- **⚠️ Performance Note**: Current implementation queries SQLite on every LLM request to load conversation history. This is a known bottleneck being addressed in the refactoring plan (see `docs/history/refactoring_20241228_2330.md`).
+## Feature Analysis: File Operations Enhancement
 
-### 3.3. LLM Integration (The "Wrap First" Strategy)
+### 1. editFile: Identical String Detection
 
-Instead of rewriting all LLM logic in Rust immediately:
+#### 📊 Status: ✅ HIGHLY FEASIBLE
 
-1.  **Rust** decides _when_ to call the LLM.
-2.  **Rust** emits `llm:request` with the conversation history and config.
-    - ⚠️ **Current Issue**: Loads history from DB on every LLM request (performance bottleneck)
-    - 🔜 **Planned**: Use in-memory cache to eliminate redundant DB queries
-3.  **TS** (`LLMServiceProvider`) receives the event, performs token counting/context pruning, and calls the API.
-4.  **TS** streams the response to the UI (for immediate feedback):
-    - During streaming: Updates `streamingMessages` with `isStreaming: true`
-    - On completion: Sets `isStreaming: false` to trigger `AgentChatContext` effect
-    - Effect adds message to local React state (`setMessages`)
-5.  **TS** sends the final result back to Rust for DB persistence.
+#### Current Implementation
 
-**State Management Clarification**:
+- **Location:** [`src-tauri/src/mcp/builtin/workspace/file_operations/edit_replace.rs`](src-tauri/src/mcp/builtin/workspace/file_operations/edit_replace.rs)
+- **Lines:** 162-370
+- **Pattern:** Extensive validation using `ErrorGuidance` pattern
 
-- **React State** (`AgentChatContext.localMessages`): Authoritative for UI rendering during active workflow. Provides optimistic updates and streaming UX.
-- **Rust In-Memory Cache** (`AgentSession.messages`): **Planned** - Will eliminate DB queries during workflow cycles. Currently missing, causing performance issues.
-- **SQLite Database**: Source of truth on app restart and initial session load. Rust persists messages asynchronously for durability.
+#### Proposed Enhancement
 
-**Key Principle**: Both Rust (planned cache) and React (UI state) maintain message stacks for different purposes. Rust cache optimizes LLM context building. React state optimizes UI responsiveness. SQLite ensures data persistence.
-
-### 3.4. Tool Execution Architecture
-
-#### Multi-Agent Architecture: Session-Per-Proxy Design
-
-To support **concurrent multi-agent execution**, we adopt a **session-per-proxy** architecture:
+Add validation to detect when `oldString` and `newString` are identical:
 
 ```rust
-pub struct MCPServiceProxyManager {
-    proxies: Arc<RwLock<HashMap<String, Arc<MCPServiceProxy>>>>, // sessionId -> proxy
-    external_mcp_manager: Arc<MCPServerManager>, // Shared across all sessions
-    db_pool: Arc<SqlitePool>, // Shared DB connection pool
+// After line 202 (after newString parameter extraction)
+if old_string == new_string {
+    return Ok(ErrorGuidance::with_guidance(
+        ErrorCategory::InvalidInput,
+        "oldString and newString are identical - no changes to make",
+        vec![
+            "Verify you intended to modify the content".to_string(),
+            "If deleting text, use empty string for newString".to_string(),
+            "If no changes needed, this operation is unnecessary".to_string(),
+        ],
+        ToolGroup::Workspace,
+    ).to_mcp_result());
 }
+```
 
-pub struct MCPServiceProxy {
+#### Implementation Details
+
+- **Effort Estimate:** ⏱️ 30 minutes
+- **Files to Modify:** 1 (edit_replace.rs)
+- **Testing Required:** Unit test + integration test
+- **Breaking Changes:** None
+- **Dependencies:** None
+
+#### Benefits
+
+- Prevents unnecessary file writes
+- Clearer error messages for agents
+- Catches common copy-paste errors
+- Maintains file modification timestamps accurately
+
+---
+
+### 2. searchLineInFile Tool
+
+#### 📊 Status: ⚠️ PARTIALLY IMPLEMENTED - Needs Clarification
+
+#### Existing Implementation: `grep` Tool
+
+The [`grep`](src-tauri/src/mcp/builtin/workspace/file_operations/search_query.rs) tool (lines 308-507) already provides:
+
+✅ **Current Capabilities:**
+
+- Regex pattern matching
+- Exact string matching
+- Line number reporting (`lineNumbers: true`)
+- Context display (±2 lines around matches)
+- Both file and text input support
+
+**Current Output Format:**
+
+```json
+{
+  "matches": [
+    { "line": 42, "text": "matched content" },
+    { "line": 87, "text": "another match" }
+  ]
+}
+```
+
+**Text Output Example:**
+
+````
+**🔍 Grep Results: 2 match(es) found**
+
+File: `src/main.rs`
+Pattern: `error`
+Options: case-insensitive
+
+```rust
+>   42 | fn handle_error() {
+    43 |     log::error!("Error occurred");
+    44 | }
+````
+
+#### Critical Clarification Questions
+
+**Q1: Tool Naming & Discoverability**
+
+- Should `searchLineInFile` be a **new separate tool** or an **alias** to `grep`?
+- Problem: `grep` is not discoverable as "search line in file" functionality
+- Agents may not know to use `grep` for line searching
+
+> Answer: yes, it's kind of semantic issue of the tool name, agent never uses the `grep` tool even though there is task where the tool would be efficiently used for. in terms of functionality, the grep tool is almost identical to the search in line tool
+
+**Q2: Functional Differences**
+What specific features would `searchLineInFile` have that `grep` doesn't?
+
+| Feature       | Current `grep` | Proposed `searchLineInFile` |
+| ------------- | -------------- | --------------------------- |
+| Regex support | ✅ Yes         | ❓ Yes/No?                  |
+| Exact match   | ✅ Yes         | ❓ Yes only?                |
+| Line numbers  | ✅ Optional    | ❓ Always?                  |
+| Context lines | ✅ ±2 lines    | ❓ Configurable?            |
+| Return format | JSON + Text    | ❓ Same/Different?          |
+
+> Answer: no difference, just reuse the logic implemented
+
+**Q3: Interface Design**
+
+```rust
+// Option A: Enhance grep tool description
+"grep" - Search for patterns in files (also known as: searchLineInFile)
+
+// Option B: Create separate simpler tool
+"searchLineInFile" - Simple exact string search with line numbers
+  → No regex complexity
+  → Always returns line numbers
+  → Simpler interface for basic searches
+
+// Option C: Create alias tool
+"searchLineInFile" - Alias for grep tool with preset options
+  → Calls grep internally with lineNumbers=true
+  → Simplified parameter set
+```
+
+> Answer just keep searchLineInFile as sole tool for the feature and remove grep, I think we can just rename grep tool and update their description in tool metadata
+
+#### Recommendations
+
+**Option 1: Enhance grep Tool (Recommended)**
+
+- **Effort:** ⏱️ 1-2 hours
+- **Approach:** Update tool description and examples
+- **Benefits:** No code duplication, maintains single source of truth
+
+```rust
+pub fn create_grep_tool() -> MCPTool {
+    MCPTool {
+        name: "grep".to_string(),
+        title: Some("Search Lines in File (grep)".to_string()),
+        description: "Search for patterns in files and return matching lines with line numbers.
+
+🎯 USE CASES:
+- Find specific text in files (exact match or regex)
+- Search with line numbers for editLineInFile
+- Locate code sections before editing
+- Text pattern matching
+
+ALIASES: searchLineInFile, searchPattern, findInFile
+
+PARAMETERS:
+- pattern: Search pattern (exact string or regex)
+- path: File path to search (or use 'input' for text)
+- lineNumbers: true (returns line numbers) | false (text only)
+- ignoreCase: Case-insensitive search
+
+RETURNS:
+- Line numbers and matched text
+- Context lines (±2 lines around matches)
+- Language-highlighted code blocks
+
+EXAMPLES:
+1. Find function definition:
+   grep({pattern: \"def calculate\", path: \"main.py\", lineNumbers: true})
+
+2. Search for errors:
+   grep({pattern: \"error|exception\", path: \"logs.txt\", ignoreCase: true})
+
+💡 NEXT: Use editLineInFile to modify matched lines
+"
+    }
+}
+```
+
+**Option 2: Create Separate Tool**
+
+- **Effort:** ⏱️ 4-6 hours
+- **Approach:** New tool with simplified interface
+- **Risks:** Code duplication, maintenance overhead
+
+---
+
+### 3. editLineInFile Tool
+
+#### 📊 Status: ⚠️ NEEDS DESIGN CLARIFICATION - Complex Feature
+
+#### Proposed Interface (from idea.md)
+
+```typescript
+editLineInFile(
+  path: string,
+  edits: [{line: number, value: string}]
+) -> diff output (±2-3 lines around changes)
+```
+
+#### Critical Design Issues
+
+##### Issue 1: Line Number Instability ⚠️
+
+**Problem:** Line numbers change after each edit
+
+**Example:**
+
+```
+Original file (5 lines):
+1: import os
+2: import sys
+3:
+4: def main():
+5:     pass
+
+Edit request: [
+  {line: 2, value: "import json"},  // Replace line 2
+  {line: 5, value: "    print('hello')"}  // Replace line 5
+]
+
+After first edit:
+1: import os
+2: import json  ← Changed
+3:                ← Line 3 is now different!
+4: def main():   ← Line 4 is now what was line 4
+5:     pass      ← Line 5 is still line 5
+
+But what if the edit changes number of lines?
+```
+
+**Solutions:**
+
+1. **Apply in reverse order** (high to low) to maintain line numbers
+2. **Atomic transaction** - calculate all offsets first
+3. **Content-based matching** - like current `editFile`
+
+##### Issue 2: Safety vs Convenience Trade-off
+
+**Option A: Line-Number-Only (Dangerous)**
+
+```rust
+// No content validation
+edits: [
+  {line: 42, value: "new content"}
+]
+// Risk: Wrong line edited if file changed since last read
+```
+
+**Option B: Line-Number + Content Validation (Safe)**
+
+```rust
+// Requires old content for safety
+edits: [
+  {line: 42, old_value: "original", new_value: "new content"}
+]
+// Benefit: Fails if line doesn't match expectation
+```
+
+**Option C: Hybrid Approach**
+
+```rust
+// Optional old_value for validation
+edits: [
+  {line: 42, old_value?: "original", new_value: "new content"}
+]
+// If old_value provided → validate
+// If omitted → blind replacement (agent's responsibility)
+```
+
+##### Issue 3: Multi-Edit Coordination
+
+**Q1: Atomicity**
+
+- Should all edits succeed/fail together?
+  - only successful, when all the line given as input param are valid
+- Or partial success with error reporting?
+  - report which ones are incorrect as the agent can clearly understand what they are wrong about
+
+**Q2: Conflict Detection**
+
+```rust
+edits: [
+  {line: 5, value: "new 5"},
+  {line: 5, value: "other 5"}  // Conflict!
+]
+```
+
+- need definitely this feature, we have to check the conflict and if there is, the tool call should be rejected with proper error message
+
+**Q3: Line Range Edits**
+
+```rust
+// What if edit spans multiple lines?
+edits: [
+  {line: 5, value: "line 5\nline 6\nline 7"}
+]
+// Does this replace line 5 only? Or 5-7?
+```
+
+- agent should use editFile for such a use case
+
+#### Design Comparison: editFile vs editLineInFile
+
+| Aspect             | Current `editFile`                 | Proposed `editLineInFile`         |
+| ------------------ | ---------------------------------- | --------------------------------- |
+| **Input Method**   | Content-based (exact string match) | Line-number-based                 |
+| **Safety**         | High (requires exact match)        | Low (line numbers can shift)      |
+| **Multi-edit**     | Sequential calls                   | Batch array                       |
+| **Validation**     | Always validates content           | Optional validation?              |
+| **Diff Output**    | ✅ Shows ±3 lines context          | ✅ Requested feature              |
+| **Agent Workflow** | readFile → extract → edit          | searchLineInFile → editLineInFile |
+
+#### Use Case Analysis
+
+**Current Workflow (editFile):**
+
+```javascript
+// Agent workflow
+1. readFile("test.py", 40, 50)  // Read lines 40-50
+2. Agent extracts exact text:
+   const oldText = `def calculate(a, b):
+       return a + b`
+3. editFile("test.py", oldText, newText)
+4. Receives diff with context
+```
+
+**Proposed Workflow (editLineInFile):**
+
+```javascript
+// Proposed workflow
+1. searchLineInFile("test.py", "def calculate")  // Find line
+2. Returns: {line: 42, text: "def calculate(a, b):"}
+3. editLineInFile("test.py", [
+     {line: 42, value: "def calculate(a, b, c):"},
+     {line: 43, value: "    return a + b + c"}
+   ])
+4. Receives diff with context
+```
+
+**Question:** What advantage does line-number-based editing provide?
+
+**Concerns:**
+
+1. **Race Condition:** File changes between search and edit
+2. **Fragility:** Line numbers are not stable identifiers
+3. **Agent V2 Context:** Agents see text content, not structured JSON arrays
+4. **Duplication:** Current `editFile` already handles multi-line replacements
+
+#### Critical Clarification Questions
+
+**Q1: Primary Use Case**
+
+- What specific scenario requires line-number-based editing?
+- Why can't current `editFile` (content-based) solve this?
+- Is the goal to simplify agent workflow or add new capability?
+
+**Q2: Safety Requirements**
+
+- Should line content be validated before replacement?
+- How to handle file changes between search and edit?
+- Is blind line replacement acceptable risk?
+
+**Q3: Multi-Edit Semantics**
+
+- Atomic (all-or-nothing) or partial success?
+- How to handle overlapping line edits?
+- Should edits be ordered by user or auto-sorted?
+
+**Q4: Line Range Handling**
+
+- Can one edit replace multiple lines?
+- What if new_value contains multiple lines?
+- How to delete lines (empty string or omit)?
+
+**Q5: Backward Compatibility**
+
+- Will this complement or replace `editFile`?
+- Should agents be trained to use both tools?
+- Migration path for existing agent prompts?
+
+#### Proposed Design (Pending Clarification)
+
+**Design A: Safe Line Editor (Recommended)**
+
+```rust
+pub async fn handle_edit_line_in_file(
+    &self,
+    args: Value,
+    session_id: Option<String>,
+) -> Result<MCPResult, String> {
+    // Parameters
+    struct LineEdit {
+        line: usize,              // 1-based line number
+        old_value: Option<String>, // Optional validation
+        new_value: String,         // New content (can be multi-line)
+    }
+
+    // Algorithm
+    // 1. Read entire file
+    // 2. Validate all line numbers in range
+    // 3. If old_value provided, validate content matches
+    // 4. Sort edits by line number (descending) for stability
+    // 5. Apply edits in reverse order (high to low)
+    // 6. Generate unified diff with ±3 line context
+    // 7. Write file atomically
+    // 8. Return diff output
+}
+```
+
+**Design B: Hybrid Editor**
+
+```rust
+// Support both validation modes
+edits: [
+  // Validated edit
+  {
+    line: 42,
+    old_value: "original content",  // Fails if mismatch
+    new_value: "new content"
+  },
+  // Unvalidated edit (agent's responsibility)
+  {
+    line: 50,
+    new_value: "blind replacement"  // No validation
+  }
+]
+```
+
+#### Implementation Estimate
+
+- **Effort:** ⏱️ 8-12 hours
+  - Core logic: 4-6 hours
+  - Validation & error handling: 2-3 hours
+  - Diff generation: 1-2 hours
+  - Tests: 2-3 hours
+- **Complexity:** High
+- **Risk:** Medium (design ambiguity)
+
+---
+
+## Feature Analysis: Workspace Management
+
+### 1. Workspace Created in Local App Cache
+
+#### 📊 Status: ✅ ALREADY IMPLEMENTED
+
+#### Current Implementation
+
+- **Location:** [`src-tauri/src/session.rs`](src-tauri/src/session.rs)
+- **Function:** `create_session_workspace_async()` (lines 132-183)
+- **Path Pattern:** `{app_data_dir}/workspaces/{session_id}/`
+
+**Evidence:**
+
+```rust
+let session_dir = self.base_data_dir.join("workspaces").join(session_id);
+// Example: ~/.local/share/com.fritzprix.libragent/workspaces/abc123/
+```
+
+**Features:**
+
+- ✅ Template-based workspace creation
+- ✅ Async directory creation
+- ✅ Session isolation
+- ✅ Error handling and fallback
+
+**Conclusion:** ✅ No action required - feature already complete
+
+---
+
+### 2. User-Configurable Workspace Directory
+
+#### 📊 Status: ⚠️ PARTIALLY IMPLEMENTED - UI Needed
+
+#### Current Backend Support
+
+**Implemented:**
+
+- ✅ `SessionManager::get_workspace_dir()` - returns per-session workspace
+- ✅ `switch_session` command - updates workspace context
+- ✅ Session isolation mechanism
+
+**Missing:**
+
+- ❌ UI to override workspace directory
+- ❌ Backend command to update session workspace path
+- ❌ Settings storage for custom workspace roots
+- ❌ Path validation and security checks
+
+#### Critical Clarification Questions
+
+**Q1: Scope of Configuration**
+
+- **Per-Session Override:** Each session has custom workspace?
+- **Global Override:** All sessions use same custom directory?
+- **Template Override:** Change default for new sessions only?
+
+**Q2: UI Placement**
+Where should this configuration appear?
+
+**Option A: Workspace Panel**
+
+```tsx
+<WorkspacePanel.Header>
+  <Button onClick={openWorkspaceDirSelector}>
+    <Settings /> Configure Directory
+  </Button>
+</WorkspacePanel.Header>
+```
+
+**Option B: Settings Modal**
+
+```tsx
+<Settings.Workspace>
+  <DirectoryPicker
+    label="Default Workspace Directory"
+    value={workspaceRoot}
+    onChange={setWorkspaceRoot}
+  />
+</Settings.Workspace>
+```
+
+**Option C: Session Settings**
+
+```tsx
+<SessionDetails>
+  <DirectoryPicker
+    label="Workspace Directory for this Session"
+    value={sessionWorkspaceDir}
+    onChange={updateSessionWorkspace}
+  />
+</SessionDetails>
+```
+
+**Q3: Persistence**
+
+- **Temporary:** Override lasts until app restart?
+- **Session-Persistent:** Saved to session metadata in DB?
+- **Global-Persistent:** Saved to app settings?
+
+**Q4: Security Constraints**
+Which directories should be allowed?
+
+- **Unrestricted:** Any directory user can access?
+- **Restricted:** Only subdirectories of app data dir?
+- **Whitelist:** User-approved directories only?
+- **Sandboxed:** Respect OS sandboxing (macOS, Windows)?
+
+**Q5: Migration Strategy**
+What happens to existing sessions?
+
+- Keep using default workspace?
+- Migrate files to new directory?
+- Provide migration tool?
+
+#### Proposed Implementation
+
+**Backend Changes:**
+
+```rust
+// src-tauri/src/commands/workspace_commands.rs
+
+#[tauri::command]
+pub async fn set_workspace_directory(
     session_id: String,
-    builtin_servers: HashMap<String, Box<dyn BuiltinMCPServer>>, // Isolated per session
-    external_mcp_manager: Arc<MCPServerManager>, // Reference to shared manager
-}
-```
-
-**Resource Sharing Strategy:**
-
-| Component                   | Scope           | Rationale                                         |
-| :-------------------------- | :-------------- | :------------------------------------------------ |
-| **MCPServiceProxy**         | Per-session     | Complete state isolation for concurrent agents    |
-| **Built-in Tool Instances** | Per-session     | Each session needs independent tool state         |
-| **External MCP Processes**  | Global (shared) | Expensive resources, safe to share via manager    |
-| **SQLite Connection Pool**  | Global (shared) | Efficient connection reuse, isolation via queries |
-
-**Session Context Management:**
-
-1. **Proxy Creation:**
-
-   ```rust
-   impl MCPServiceProxyManager {
-       pub async fn create_proxy(&self, session_id: String, tools: Vec<String>)
-           -> Result<Arc<MCPServiceProxy>, String> {
-
-           // Create session-specific built-in tool instances
-           let mut builtin_servers = HashMap::new();
-           for tool_id in tools {
-               let server = create_builtin_server(
-                   &tool_id,
-                   session_id.clone(),
-                   self.db_pool.clone()
-               ).await?;
-               builtin_servers.insert(tool_id, server);
-           }
-
-           let proxy = Arc::new(MCPServiceProxy {
-               session_id: session_id.clone(),
-               builtin_servers,
-               external_mcp_manager: self.external_mcp_manager.clone(),
-           });
-
-           self.proxies.write().await.insert(session_id, proxy.clone());
-           Ok(proxy)
-       }
-   }
-   ```
-
-2. **Tool Execution Flow:**
-
-   ```rust
-   impl MCPServiceProxy {
-       pub async fn call_tool(&self, tool_name: &str, args: Value)
-           -> Result<MCPResponse, String> {
-
-           if tool_name.starts_with("builtin_") {
-               // Use this session's dedicated built-in tool instance
-               self.builtin_servers.get(tool_name)
-                   .ok_or("Tool not found")?
-                   .call_tool(tool_name, args).await
-           } else {
-               // Route to shared external MCP manager
-               // External servers are stateless or use tool-level session handling
-               self.external_mcp_manager
-                   .call_tool(tool_name, args).await
-           }
-       }
-   }
-   ```
-
-**Multi-Agent Isolation Example:**
-
-```rust
-// Session A (Agent analyzing code)
-let proxy_a = manager.create_proxy("session-a", vec!["knowledge", "planning"]).await?;
-proxy_a.call_tool("saveKnowledge", json!({"title": "Code Review"})).await?;
-
-// Session B (Agent writing documentation) - concurrent execution
-let proxy_b = manager.create_proxy("session-b", vec!["knowledge", "playbook"]).await?;
-proxy_b.call_tool("saveKnowledge", json!({"title": "API Docs"})).await?;
-
-// ✅ No interference: Each proxy has its own KnowledgeServer instance
-// ✅ DB isolation: Both write to same table but with different session_ids
-```
-
-#### Migration Strategy: Web MCP → Rust Built-in
-
-Web MCP tools are being migrated in phases to eliminate the ToolBridge dependency:
-
-**Phase 1: System Tools (Session-Independent)**
-
-- `bootstrap-server` → `BootstrapServer` (Rust)
-  - Platform detection, installation guides
-  - No session state required
-- `mcp-manager` → Extended `MCPServerManager` API
-  - Server CRUD operations
-  - Global configuration
-
-**Phase 2: Session-Scoped Data Tools**
-
-- `knowledge-server` → `KnowledgeServer` (Rust + SQLite)
-  - Table: `knowledge (session_id, assistant_id, title, content, ...)`
-  - BM25 search implementation in Rust
-- `planning-server` → `PlanningServer` (Rust + SQLite)
-  - Tables: `goals`, `todos`, `scratchpad`
-  - Foreign key: `session_id`
-- `assistant-manager` → `AssistantServer` (Rust + SQLite)
-  - Unified with existing assistant repository
-
-**Phase 3: UI & System Resource Tools (Completed)**
-
-- `browser-server` → `InteractiveBrowserServer` (Rust + Tauri AppHandle)
-  - Native window manipulation via Tauri
-  - IPC-based control from Rust MCP proxy
-  - Session-isolated browser instances
-  - Full legacy feature parity (element selection, js injection, navigation)
-- `playbook-store` → `PlaybookServer` (Rust + SQLite)
-- `ui` → `UiServer` (Rust)
-  - Interactive prompts
-- `workspace` → `WorkspaceServer` (Rust)
-  - Unified FileSystem and Shell access
-
-**Tool State Isolation Example:**
-
-```rust
-pub struct KnowledgeServer {
-    session_id: String, // Bound at initialization
-    db_pool: Arc<SqlitePool>, // Shared connection pool
-}
-
-impl KnowledgeServer {
-    pub fn new(session_id: String, db_pool: Arc<SqlitePool>) -> Self {
-        Self { session_id, db_pool }
-    }
-
-    async fn call_tool(&self, tool_name: &str, args: Value) -> Result<MCPResult, String> {
-        // No need to extract session_id from context - it's bound to this instance
-        match tool_name {
-            "saveKnowledge" => {
-                // INSERT INTO knowledge (session_id, ...) VALUES (?, ...)
-                self.db_pool.insert_knowledge(&self.session_id, args).await
-            }
-            "searchKnowledge" => {
-                // SELECT * FROM knowledge WHERE session_id = ?
-                self.db_pool.search_knowledge(&self.session_id, args).await
-            }
-            _ => Err(format!("Unknown tool: {}", tool_name))
-        }
-    }
-}
-```
-
-#### Transitional Bridge (Web MCP Tools)
-
-During migration, `ToolBridgeProvider` handles unmigrated Web MCP tools:
-
-- Rust emits `tool:execute-request` event
-- TS executes via `useUnifiedMCP().executeToolCall()`
-- TS returns result via `agent_handle_tool_result` command
-
-**Deprecation Status:**
-
-- **Status**: Removed.
-- **Why**: `service_proxy_manager.rs` now handles:
-  - Built-in Rust tools (Browser, Workspace, Knowledge, etc.)
-  - External Stdio MCP servers
-  - External HTTP MCP servers (via shared manager)
-- The frontend now acts purely as a UI renderer and LLM stream handler.
-
----
-
-## 4. Sequence Diagrams
-
-### 4.1. Creating a New Session
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant UI as useAgentSession
-    participant Manager as AgentSessionManager
-    participant ProxyMgr as MCPServiceProxyManager
-    participant Proxy as MCPServiceProxy
-    participant DB as SQLite
-
-    User->>UI: create(agent, llmConfig)
-    UI->>Manager: createSession(agent, llmConfig)
-    Manager->>DB: INSERT session
-    DB-->>Manager: session_id
-
-    Manager->>ProxyMgr: create_proxy(session_id, tools)
-    ProxyMgr->>ProxyMgr: Initialize External MCP connections
-    ProxyMgr->>ProxyMgr: Create Built-in tool instances
-
-    loop for each builtin tool
-        ProxyMgr->>Proxy: new Tool(session_id, db_pool)
-        Note right of Proxy: Each tool bound to this session
-    end
-
-    ProxyMgr-->>Manager: Arc<MCPServiceProxy>
-    Manager-->>UI: SessionMetadata
-    UI-->>User: Navigate to /chat/{session_id}
-```
-
-### 4.2. Starting a Workflow (User Message)
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant UI as AgentChatContext
-    participant TS as LLMServiceProvider
-    participant Manager as AgentSessionManager
-    participant ProxyMgr as MCPServiceProxyManager
-    participant Proxy as MCPServiceProxy
-    participant Tool as BuiltinTool
-    participant DB as SQLite
-
-    User->>UI: sendMessage(content)
-
-    Note over UI: React owns message state (idea.md)
-    UI->>UI: setMessages([...prev, userMessage])
-    Note right of UI: Optimistic update - immediate display
-
-    UI->>Manager: agent_send_message(sessionId, msg)
-    Manager->>DB: Save User Message
-    Manager->>Manager: Update Status -> BUSY
-    Manager->>UI: Emit 'agent:event' (Status=BUSY)
-
-    Note over Manager,UI: ⚠️ NOT a while loop! Event-driven recursive cycle below:
-
-    rect rgb(240, 240, 250)
-        Note right of Manager: Cycle Entry Point (via handle_llm_response)
-        Manager->>UI: Emit 'llm:request' (history)
-        UI->>TS: (Intercepted by LLMServiceProvider)
-        TS->>TS: Call LLM API (Stream)
-
-        Note over TS,UI: Streaming phase
-        TS->>TS: setStreamingMessages(sessionId, { isStreaming: true, ... })
-        TS-->>UI: Update Streaming UI (via streamingMessages)
-        Note right of UI: displayMessages = messages + streamingMessages
-
-        Note over TS,UI: Completion phase
-        TS->>TS: finalMessage = { isStreaming: false, ... }
-        TS->>TS: setStreamingMessages(sessionId, finalMessage)
-        Note right of TS: Trigger AgentChatContext effect
-
-        UI->>UI: useEffect detects isStreaming: false
-        UI->>UI: setMessages([...prev, finalMessage])
-        Note right of UI: React state updated - idea.md architecture
-
-        TS->>Manager: agent_llm_response(finalMsg)
-        Manager->>DB: Save Assistant Message
-        Note right of Manager: Rust saves to DB (backup)
-
-        alt Has Tool Calls AND No UI Resources? (Condition Check)
-            Note right of Manager: Check: hasToolCall(lastMsg) && !hasUIResource(lastMsg)
-            Manager->>Manager: Parse Tool Calls
-            par Execute Tools
-                Manager->>ProxyMgr: call_tool(sessionId, toolName, args)
-                ProxyMgr->>Proxy: Get proxy for session
-
-                alt Built-in Tool
-                    Proxy->>Tool: call_tool(toolName, args)
-                    Note right of Tool: Uses bound session_id
-                    Tool->>DB: Query with session_id filter
-                    DB-->>Tool: Session-scoped data
-                    Tool-->>Proxy: MCPResult
-                else External MCP Tool
-                    Proxy->>Proxy: Route to external_mcp_manager
-                    Note right of Proxy: Shared stdio/http process
-                end
-
-                Proxy-->>ProxyMgr: MCPResponse
-                ProxyMgr-->>Manager: ToolResult
-
-                Manager->>UI: Emit 'tool:request' (Web Tool - Transitional)
-                UI->>TS: Execute Web Tool
-                TS->>Manager: agent_tool_response(result)
-            end
-
-            Manager->>DB: Save Tool Results
-            Manager->>UI: Emit 'agent:event' (MessageAdded: toolResults)
-            Note right of UI: React adds tool messages to state
-            UI->>UI: setMessages([...prev, ...toolResults])
-
-            alt Tool Result Contains UI Resource?
-                Note right of Manager: 🔍 Check: hasUIResource(toolResult)
-                Note right of Manager: MCPContent::Resource with mimeType: "text/html"
-                Manager->>Manager: Skip re-submit (Auto-Pause)
-                Note right of Manager: ⏸️ Workflow pauses - waiting for UI Action
-                Note right of UI: User interacts with UI Resource (button click)
-                UI->>UI: handleUIAction → executeToolCall
-                UI->>Manager: agent_tool_response(uiActionResult)
-                Note right of Manager: New tool result (no UI Resource) added
-                Manager->>UI: Emit 'llm:request' (Auto-Resume)
-                Note right of Manager: ▶️ Workflow resumes automatically
-            else No UI Resource in Tool Result
-                Manager->>UI: Emit 'llm:request' (Re-enter cycle with tool results)
-                Note right of Manager: ⚡ Recursive re-entry: Cycle continues
-            end
-        else No Tool Calls (Termination Condition)
-            Manager->>Manager: Workflow Complete
-            Note right of Manager: ✅ Cycle terminates naturally
-        end
-    end
-
-    Manager->>Manager: Update Status -> IDLE
-    Manager->>UI: Emit 'agent:event' (WorkflowCompleted)
-    UI->>UI: setWorkflowStatus('idle')
-    Note right of UI: All messages already in React state
-```
-
-**Implementation Note**:  
-The diagram shows one cycle iteration. The "loop" is **implicit** - each `handle_llm_response` with tool calls emits `llm:request` **and then returns** (function ends, stack freed), causing TypeScript to call `agent_llm_response` again after LLM completion, creating a new independent invocation. No explicit `while` loop or recursion exists - each cycle is a fresh function call with no stack accumulation.
-
-**UI Resource Auto-Pause/Resume Mechanism**:
-
-**Auto-Pause (Natural Wait State)**:
-
-- After tool execution, Rust checks tool result content for UI Resources
-- **Detection Criteria**: `MCPContent::Resource` with `mimeType: "text/html"` exists
-- **Pause Action**: Skip `request_llm_completion()` call - workflow naturally pauses
-- **No Status Change**: Session remains `Busy` but conditionally idle (no explicit `Paused` status)
-- **UI Indicator**: Frontend renders UI Resource via `MessageRenderer` → `UIResourceRenderer`
-
-**Auto-Resume (UI Action Triggers Continuation)**:
-
-- User interacts with UI Resource (e.g., clicks button in Playbook list)
-- `UIResourceRenderer` sends `postMessage` → `handleUIAction` → `useUnifiedMCP.executeToolCall()`
-- Tool execution adds new tool result message **without UI Resource**
-- Rust detects `hasToolCall(lastMsg) && !hasUIResource(lastMsg)` = true
-- **Resume Action**: Automatically emit `llm:request` - workflow continues
-
-**Helper Function Specification**:
-
-```rust
-/// Check if message content contains UI Resource
-fn has_ui_resource(content: &[MCPContent]) -> bool {
-    content.iter().any(|c| {
-        matches!(c, MCPContent::Resource { resource })
-            && resource.get("mimeType")
-                .and_then(|v| v.as_str())
-                .map_or(false, |mime| mime == "text/html")
+    directory_path: String,
+    validate_only: bool,
+) -> Result<SetWorkspaceResponse, String> {
+    let session_manager = get_session_manager()?;
+
+    // 1. Validate path exists and is accessible
+    // 2. Check security constraints
+    // 3. Verify write permissions
+    // 4. If validate_only, return validation result
+    // 5. Otherwise, update session workspace path
+    // 6. Create directory if needed
+    // 7. Invalidate workspace cache
+
+    Ok(SetWorkspaceResponse {
+        success: true,
+        workspace_path: validated_path,
     })
 }
 ```
 
-**Key Advantages**:
+**Frontend Changes:**
 
-- ✅ No additional IPC commands needed (`agent_resume_workflow` unnecessary)
-- ✅ No status state management complexity (`Paused` state unused)
-- ✅ UI Action naturally serves as resume trigger
-- ✅ Workflow cycle logic remains simple and conditional
-- ✅ Supports multiple sequential UI Resources automatically
+```tsx
+// src/features/agent/components/WorkspaceDirectorySelector.tsx
 
-**React State Management (Key Principle from idea.md)**:
+export function WorkspaceDirectorySelector() {
+  const [customDir, setCustomDir] = useState<string | null>(null);
 
-- **React owns the message stack**: `AgentChatContext.messages` is the primary state
-- **User messages**: Optimistically added to React state immediately
-- **Assistant messages**: Added when `isStreaming: false` is detected via useEffect
-- **Tool result messages**: Added via `agent:event(MessageAdded)` listener
-- **Rust DB**: Acts as persistent backup, not the UI's source of truth during workflow
-- **No DB reload during workflow**: React maintains complete message history locally
+  const handleSelectDirectory = async () => {
+    const selected = await openDirectoryDialog();
 
-### 4.3. Terminating a Session
+    // Validate before setting
+    const result = await setWorkspaceDirectory(
+      sessionId,
+      selected,
+      true, // validate_only
+    );
 
-```mermaid
-sequenceDiagram
-    participant User
-    participant UI as AgentSessionContext
-    participant Manager as AgentSessionManager
-    participant ProxyMgr as MCPServiceProxyManager
-    participant Proxy as MCPServiceProxy
-
-    User->>UI: Click "Stop"
-    UI->>Manager: agent_terminate_workflow(sessionId)
-    Manager->>Manager: Trigger CancellationToken
-    note right of Manager: Aborts pending LLM/Tool futures
-    Manager->>Manager: Update Status -> STOPPED
-    Manager->>UI: Emit 'agent:event' (Status=STOPPED)
-
-    opt Session Cleanup
-        Manager->>ProxyMgr: destroy_proxy(sessionId)
-        ProxyMgr->>Proxy: Drop Arc<MCPServiceProxy>
-        Note right of Proxy: All built-in tool instances dropped
-        Note right of Proxy: External MCP connections remain (shared)
-    end
-```
-
----
-
-## 5. Migration & Coexistence Strategy (The "Additive" Approach)
-
-To guarantee zero regression and safe rollout, we adopt a **complete separation strategy** with no modifications to existing code:
-
-1.  **Complete Frontend Separation**:
-    - **V1 (Legacy Track)**: Existing route `/chat/*` → `SessionContext` → `ChatView` → IndexedDB
-    - **V2 (Agent Track)**: New route `/agent/*` → `AgentSessionContext` → `AgentChatView` → Rust SQLite
-    - **No shared Session models** - Each track maintains completely independent data structures and storage
-    - Both contexts coexist as parallel providers in the same app, with zero cross-talk
-
-2.  **Independent Route Space**:
-    - Legacy route: `/chat/:sessionId` continues using IndexedDB-based sessions
-    - Agent route: `/agent/:sessionId` (future) uses Rust SQLite-based sessions
-    - Users navigate between tracks via UI (future: migration tool for data transfer)
-    - No conditional logic or type detection in existing routing components
-
-3.  **Zero Modification Guarantee**:
-    - **No changes** to existing files: `ChatContext.tsx`, `ChatView.tsx`, `Session` model, `ChatContainer.tsx`
-    - **No feature flags** added to existing models or contexts
-    - V2 components live in separate directories with independent implementations
-    - Legacy functionality remains 100% intact and untouched
-
-4.  **Provider Architecture**:
-
-    ```tsx
-    <SettingsProvider>
-      <SessionContextProvider>
-        {' '}
-        {/* V1: Manages IndexedDB sessions */}
-        <AgentSessionProvider>
-          {' '}
-          {/* V2: Manages Rust SQLite sessions */}
-          {/* Both providers coexist independently */}
-          <Routes>
-            <Route path="/chat/*" /> {/* V1 routes - untouched */}
-            <Route path="/agent/*" /> {/* V2 routes - new addition */}
-          </Routes>
-        </AgentSessionProvider>
-      </SessionContextProvider>
-    </SettingsProvider>
-    ```
-
-5.  **Migration Path** (Future Scope):
-    - Users continue using V1 sessions indefinitely - no forced migration
-    - Optional migration tool will transfer V1 session data to V2 format
-    - V1 and V2 sessions can coexist in the same app permanently
-
-**Key Principle**: This is **not** a "feature flag" or "conditional rendering" approach. It's a complete duplication of the frontend stack for V2, ensuring V1 remains frozen and untouched.
-
----
-
-## 6. Error Handling
-
-- **Crash Recovery**: On App restart, Rust checks for sessions stuck in `BUSY` state and resets them to `PAUSED` or `IDLE` to prevent "zombie" states.
-- **Network Failure**: If the LLM call fails in TS, it reports an error back to Rust. Rust records the error in DB and pauses the workflow, allowing the user to retry.
-- **Tool Execution Errors**:
-  - Built-in tools return structured errors via `MCPResult::error()`
-  - Proxy catches errors and converts to tool result messages
-  - Session continues with error feedback to LLM for recovery
-
----
-
-## 7. Built-in Tool Architecture (BuiltinMCPServer Trait)
-
-All Built-in servers implement a standardized interface:
-
-```rust
-#[async_trait]
-pub trait BuiltinMCPServer: Send + Sync + Debug {
-    fn name(&self) -> &str;
-    fn description(&self) -> &str;
-    fn tools(&self) -> Vec<MCPTool>;
-
-    /// Returns current server state as context for system prompt
-    fn get_service_context(&self, options: Option<&Value>) -> ServiceContext {
-        // Default: minimal context
+    if (result.success) {
+      setCustomDir(selected);
+      await setWorkspaceDirectory(sessionId, selected, false);
     }
+  };
 
-    /// Execute tool (session context is bound at construction)
-    async fn call_tool(&self, tool_name: &str, args: Value) -> Result<MCPResult, String>;
+  return <DirectoryPicker value={customDir} onSelect={handleSelectDirectory} />;
 }
 ```
 
-**Session-Per-Instance Pattern:**
+#### Implementation Estimate
 
-Built-in tools are instantiated **per session** with bound session context:
+- **Effort:** ⏱️ 6-8 hours
+  - Backend validation: 2-3 hours
+  - UI component: 2-3 hours
+  - Settings persistence: 1-2 hours
+  - Testing: 1-2 hours
+
+---
+
+### 3. Open Workspace in File Explorer
+
+#### 📊 Status: ✅ HIGHLY FEASIBLE
+
+#### Current Implementation
+
+- **Backend API:** `openWorkspaceFileWithDefaultApp()` - already exists!
+- **Location:** [`src/lib/backend/workspace.ts`](src/lib/backend/workspace.ts)
+- **Current Usage:** Opens individual files
+
+#### Proposed Enhancement
+
+Extend to open directories:
+
+**Frontend Implementation:**
+
+```tsx
+// src/features/agent/components/AgentWorkspacePanel.tsx
+
+const openWorkspaceInExplorer = async () => {
+  try {
+    // Get current workspace directory
+    const workspaceDir = await getWorkspaceDir(session?.id);
+
+    // Open directory with system default file manager
+    await openWorkspaceFileWithDefaultApp(workspaceDir, session?.id);
+
+    toast.success('Opened workspace in file explorer');
+  } catch (error) {
+    logger.error('Failed to open workspace', { error });
+    toast.error('Failed to open workspace directory');
+  }
+};
+
+// Add button to header
+<CardHeader>
+  <div className="flex items-center gap-1">
+    <Button onClick={openWorkspaceInExplorer}>
+      <FolderOpen className="w-3 h-3" />
+    </Button>
+  </div>
+</CardHeader>;
+```
+
+**Backend Verification:**
 
 ```rust
-// Factory function for creating session-specific tool instances
-pub async fn create_builtin_server(
-    tool_id: &str,
-    session_id: String,
-    db_pool: Arc<SqlitePool>,
-) -> Result<Box<dyn BuiltinMCPServer>, String> {
-    match tool_id {
-        "knowledge" => Ok(Box::new(KnowledgeServer::new(session_id, db_pool))),
-        "planning" => Ok(Box::new(PlanningServer::new(session_id, db_pool))),
-        "playbook" => Ok(Box::new(PlaybookServer::new(session_id, db_pool))),
-        "bootstrap" => Ok(Box::new(BootstrapServer::new())), // Stateless
-        _ => Err(format!("Unknown builtin tool: {}", tool_id)),
-    }
+// src-tauri/src/commands/workspace_commands.rs
+
+#[tauri::command]
+pub async fn open_workspace_in_explorer(
+    session_id: Option<String>,
+) -> Result<(), String> {
+    let session_manager = get_session_manager()?;
+    let workspace_dir = session_manager.get_workspace_dir(
+        &session_id.unwrap_or("default".to_string())
+    );
+
+    // Open directory with system default app
+    open::that(workspace_dir)
+        .map_err(|e| format!("Failed to open directory: {}", e))?;
+
+    Ok(())
 }
 ```
 
-**Lifecycle Management:**
+#### Platform Support
+
+- ✅ Windows: Opens in File Explorer
+- ✅ macOS: Opens in Finder
+- ✅ Linux: Opens in default file manager
+
+#### Implementation Estimate
+
+- **Effort:** ⏱️ 2-3 hours
+- **Complexity:** Low
+- **Risk:** Low
+
+---
+
+### 4. Open Workspace in Terminal
+
+#### 📊 Status: ⚠️ BACKEND COMMAND NEEDED
+
+#### Current State
+
+- ❌ No existing command to open terminal
+- ✅ Workspace path available via `get_workspace_dir()`
+- ⚠️ Platform-specific terminal launching needed
+
+#### Proposed Implementation
+
+**Backend Command:**
 
 ```rust
-impl MCPServiceProxyManager {
-    pub async fn create_proxy(&self, session_id: String, tools: Vec<String>)
-        -> Result<Arc<MCPServiceProxy>, String> {
+// src-tauri/src/commands/workspace_commands.rs
 
-        // Create fresh tool instances for this session
-        let mut builtin_servers = HashMap::new();
-        for tool_id in tools {
-            let server = create_builtin_server(
-                &tool_id,
-                session_id.clone(),
-                self.db_pool.clone(),
-            ).await?;
-            builtin_servers.insert(tool_id.clone(), server);
+#[tauri::command]
+pub async fn open_terminal_at_workspace(
+    session_id: Option<String>,
+) -> Result<(), String> {
+    let session_manager = get_session_manager()?;
+    let workspace_dir = session_manager.get_workspace_dir(
+        &session_id.unwrap_or("default".to_string())
+    );
+
+    open_terminal_at_path(&workspace_dir)?;
+    Ok(())
+}
+
+fn open_terminal_at_path(path: &Path) -> Result<(), String> {
+    use std::process::Command;
+
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("cmd")
+            .args(&["/c", "start", "cmd", "/k", "cd", "/d"])
+            .arg(path)
+            .spawn()
+            .map_err(|e| format!("Failed to open terminal: {}", e))?;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        // Use AppleScript for better control
+        Command::new("osascript")
+            .arg("-e")
+            .arg(format!(
+                "tell application \"Terminal\" to do script \"cd '{}'\"",
+                path.display()
+            ))
+            .spawn()
+            .map_err(|e| format!("Failed to open terminal: {}", e))?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        // Try multiple terminal emulators
+        let terminals = [
+            ("gnome-terminal", vec!["--working-directory"]),
+            ("konsole", vec!["--workdir"]),
+            ("xfce4-terminal", vec!["--working-directory"]),
+            ("xterm", vec!["-e", "cd"]),
+        ];
+
+        let mut success = false;
+        for (terminal, args) in terminals.iter() {
+            if let Ok(_) = Command::new(terminal)
+                .args(args)
+                .arg(path)
+                .spawn()
+            {
+                success = true;
+                break;
+            }
         }
 
-        let proxy = Arc::new(MCPServiceProxy {
-            session_id: session_id.clone(),
-            builtin_servers,
-            external_mcp_manager: self.external_mcp_manager.clone(),
-        });
-
-        self.proxies.write().await.insert(session_id, proxy.clone());
-        Ok(proxy)
+        if !success {
+            return Err("No supported terminal emulator found".to_string());
+        }
     }
 
-    pub async fn destroy_proxy(&self, session_id: &str) {
-        // Remove proxy and drop all associated tool instances
-        self.proxies.write().await.remove(session_id);
-    }
+    Ok(())
 }
 ```
 
-**Advantages of Session-Per-Instance:**
+**Frontend Integration:**
 
-1. **No Race Conditions:** Each session has completely isolated tool state
-2. **Simple Implementation:** No need for `switch_context()` or context locking
-3. **Clean Lifecycle:** Tools are created with session, destroyed when session ends
-4. **Multi-Agent Ready:** Concurrent sessions never interfere with each other
-5. **Type Safety:** Session context is compile-time bound, not runtime-checked
+```tsx
+const openWorkspaceInTerminal = async () => {
+  try {
+    await openTerminalAtWorkspace(session?.id);
+    toast.success('Opened workspace in terminal');
+  } catch (error) {
+    logger.error('Failed to open terminal', { error });
+    toast.error('Failed to open terminal');
+  }
+};
+
+<Button onClick={openWorkspaceInTerminal}>
+  <Terminal className="w-3 h-3" />
+</Button>;
+```
+
+#### Platform Considerations
+
+**Windows:**
+
+- Opens cmd.exe by default
+- Could support PowerShell as alternative
+- WSL terminal support?
+
+**macOS:**
+
+- Opens Terminal.app
+- Could support iTerm2 detection
+- AppleScript provides good control
+
+**Linux:**
+
+- Multiple terminal emulators to support
+- Fallback chain for compatibility
+- Wayland vs X11 considerations
+
+#### Implementation Estimate
+
+- **Effort:** ⏱️ 4-5 hours
+  - Backend command: 2-3 hours
+  - Platform testing: 1-2 hours
+  - UI integration: 1 hour
+
+---
+
+### 5. Remove "Go to Home" Button
+
+#### 📊 Status: ✅ TRIVIAL - Simple Removal
+
+#### Current Implementation
+
+**Location:** [`src/features/agent/components/AgentWorkspacePanel.tsx`](src/features/agent/components/AgentWorkspacePanel.tsx) line 515
+
+```tsx
+<Button
+  variant="ghost"
+  size="sm"
+  onClick={() => navigateToDirectory('/')}
+  className="h-6 w-6 p-0"
+  title="Go to root"
+>
+  <Home className="w-3 h-3" />
+</Button>
+```
+
+#### Clarification Questions
+
+**Q1: What is the Bug?**
+
+- Does `navigateToDirectory('/')` not work?
+- Does it navigate to wrong directory?
+- Does it cause errors?
+
+**Q2: Fix vs Remove**
+
+- Should we **fix** the navigation logic?
+- Or **remove** because feature is not useful?
+- Or **replace** with "Open in Explorer" button?
+
+#### Proposed Actions
+
+**Option A: Simple Removal**
+
+```tsx
+// Delete lines 510-520
+// Keep only Refresh button
+<div className="flex items-center gap-1">
+  <Button onClick={() => loadDirectory(rootPath)}>
+    <RefreshCw />
+  </Button>
+</div>
+```
+
+**Option B: Fix Navigation**
+
+```tsx
+// Fix to navigate to workspace root
+<Button
+  onClick={() => {
+    const workspaceRoot = './';
+    setRootPath(workspaceRoot);
+    loadDirectory(workspaceRoot);
+  }}
+>
+  <Home />
+</Button>
+```
+
+**Option C: Replace with Explorer Button**
+
+```tsx
+// Remove Home, add Explorer and Terminal
+<div className="flex items-center gap-1">
+  <Button onClick={openWorkspaceInExplorer}>
+    <FolderOpen />
+  </Button>
+  <Button onClick={openWorkspaceInTerminal}>
+    <Terminal />
+  </Button>
+  <Button onClick={() => loadDirectory(rootPath)}>
+    <RefreshCw />
+  </Button>
+</div>
+```
+
+#### Implementation Estimate
+
+- **Effort:** ⏱️ 5 minutes (removal) | 30 minutes (fix) | 3-4 hours (replace with new buttons)
+
+---
+
+## Critical Clarification Questions
+
+### Priority 1: Blocking Implementation
+
+#### Q1: editLineInFile - Core Purpose
+
+**Question:** What is the primary use case that `editLineInFile` solves that current `editFile` cannot?
+
+**Context:**
+
+- Current `editFile` already handles multi-line replacements
+- Content-based matching is safer than line-number-based
+- Agents work with text content, not structured arrays
+
+**Options:**
+
+- A) Simplify agent workflow (fewer steps)
+- B) Enable new capability (batch edits)
+- C) Improve performance (single call vs multiple)
+- D) Other reason (please specify)
+
+#### Q2: editLineInFile - Safety Model
+
+**Question:** Should line edits validate content before replacement?
+
+**Trade-offs:**
+
+- **Validated:** Safer but requires more parameters
+- **Unvalidated:** Simpler but risk of wrong-line edits
+
+**Recommendation:** Hybrid - optional validation for safety
+
+#### Q3: searchLineInFile vs grep
+
+**Question:** Should we create a new tool or enhance `grep`'s discoverability?
+
+**Analysis:**
+
+- `grep` already provides all requested functionality
+- Issue is discoverability, not capability
+- Creating duplicate tool increases maintenance burden
+
+**Recommendation:** Enhance `grep` tool description and add aliases
+
+---
+
+### Priority 2: Design Decisions
+
+#### Q4: Workspace Override Scope
+
+**Question:** Should workspace directory override be per-session or global?
+
+**Options:**
+
+- **Per-Session:** More flexible, complex UI
+- **Global:** Simpler, less flexible
+- **Both:** Maximum flexibility, most complex
+
+#### Q5: Workspace Override Security
+
+**Question:** What security restrictions should apply to custom workspace directories?
+
+**Options:**
+
+- **Unrestricted:** Any accessible directory
+- **Restricted:** Only within app data dir
+- **Approved:** User must explicitly approve each directory
+
+**Recommendation:** Approved list for security
+
+#### Q6: Terminal Launch Preference
+
+**Question:** Should users be able to choose which terminal emulator to use?
+
+**Context:** Linux has many terminal emulators
+
+**Options:**
+
+- **Auto-detect:** Try common terminals in order
+- **Configurable:** User selects preferred terminal
+- **Both:** Auto-detect with override option
+
+---
+
+## Implementation Priorities
+
+### Phase 1: Quick Wins (Week 1)
+
+**Total Effort:** ~4-5 hours
+
+1. ✅ **editFile Identical String Check** (30 min)
+   - Simple validation addition
+   - Clear error messages
+   - No dependencies
+
+2. ✅ **Remove/Fix Home Button** (5-30 min)
+   - Clarify bug first
+   - Simple code change
+
+3. ✅ **Open in File Explorer** (2-3 hours)
+   - Backend already supports it
+   - Simple UI addition
+   - Cross-platform compatible
+
+---
+
+### Phase 2: Medium Priority (Week 2-3)
+
+**Total Effort:** ~10-12 hours
+
+4. 🔶 **Open in Terminal** (4-5 hours)
+   - Backend command needed
+   - Platform-specific logic
+   - Testing required
+
+5. 🔶 **Enhance grep Tool Documentation** (1-2 hours)
+   - Update descriptions
+   - Add aliases
+   - Improve examples
+
+6. 🔶 **Workspace Directory Override UI** (6-8 hours)
+   - Pending scope clarification
+   - Settings integration
+   - Validation logic
+
+---
+
+### Phase 3: Complex Features (Week 3-4)
+
+**Total Effort:** ~8-12 hours
+
+7. ⏸️ **editLineInFile Tool** (8-12 hours)
+   - **BLOCKED:** Awaiting design clarification
+   - High complexity
+   - Significant testing required
+
+---
+
+## Technical Implementation Notes
+
+### File Operations Architecture
+
+#### Current Pattern: Content-Based Editing
+
+```
+Agent → readFile → Extract Exact Text → editFile(oldText,newText) →
+Validate & Replace → Generate Diff → Write File
+```
+
+**Advantages:**
+
+- Safe: Content must match exactly
+- Stable: Immune to line number shifts
+- Validated: Automatic verification
+
+#### Proposed Pattern: Line-Based Editing
+
+```
+Agent → searchLineInFile → Find Line Numbers → editLineInFile(lines) →
+Validate Line Numbers → Sort Edits → Apply in Reverse → Generate Diff → Write File
+```
+
+**Advantages:**
+
+- Convenient: Fewer parameters
+- Batch: Multiple edits in one call
+- Fast: Single file write
+
+**Disadvantages:**
+
+- Risky: Line numbers can be stale
+- Complex: Multi-edit coordination
+- Validation: Optional vs required
+
+---
+
+### Workspace Management Architecture
+
+#### Current Session Isolation
+
+```
+app_data_dir/
+├── workspaces/
+│   ├── session_abc123/     ← Isolated workspace
+│   ├── session_def456/     ← Isolated workspace
+│   └── templates/
+│       └── base/           ← Template for new sessions
+├── config/
+└── logs/
+```
+
+#### Proposed Custom Workspaces
+
+```
+app_data_dir/
+├── workspaces/
+│   ├── session_abc123/     ← Default location
+│   └── session_def456 -> /custom/path/  ← Symlink to custom dir
+├── config/
+│   └── workspace_overrides.json  ← Custom directory mappings
+└── logs/
+```
+
+**Security Considerations:**
+
+- Validate custom paths don't escape sandbox
+- Check write permissions before switching
+- Maintain approved directory list
+- Handle symlink/junction for redirect
+
+---
+
+## Risk Assessment
+
+### High Risk Items
+
+#### 1. editLineInFile - Design Ambiguity
+
+**Risk:** Unclear requirements lead to multiple reimplementations
+
+**Mitigation:**
+
+- ✅ Defer implementation until design clarified
+- ✅ Create detailed design document first
+- ✅ Get stakeholder approval before coding
+
+#### 2. Workspace Override - Security
+
+**Risk:** Unrestricted directory access creates security vulnerabilities
+
+**Mitigation:**
+
+- ✅ Implement path validation
+- ✅ Maintain approved directory list
+- ✅ Respect OS-level sandboxing
+- ✅ Audit all path operations
+
+---
+
+### Medium Risk Items
+
+#### 3. Terminal Launch - Platform Compatibility
+
+**Risk:** Different terminal emulators on Linux
+
+**Mitigation:**
+
+- ✅ Implement fallback chain
+- ✅ Test on multiple distros
+- ✅ Provide configuration option
+- ✅ Clear error messages if no terminal found
+
+#### 4. grep Enhancement - Breaking Changes
+
+**Risk:** Changing grep behavior affects existing agents
+
+**Mitigation:**
+
+- ✅ Only update descriptions, not behavior
+- ✅ Add aliases without changing core
+- ✅ Maintain backward compatibility
+
+---
+
+### Low Risk Items
+
+#### 5. editFile Validation - Simple Addition
+
+**Risk:** Minimal - simple validation check
+
+**Mitigation:**
+
+- ✅ Add comprehensive tests
+- ✅ Maintain existing error patterns
+
+#### 6. UI Button Changes - Cosmetic
+
+**Risk:** Minimal - UI-only changes
+
+**Mitigation:**
+
+- ✅ Test on all platforms
+- ✅ Verify accessibility
+
+---
+
+## Next Steps
+
+### Immediate Actions Required
+
+1. **Answer Clarification Questions**
+   - Review Priority 1 questions
+   - Decide on editLineInFile design
+   - Confirm workspace override scope
+
+2. **Approve Implementation Priorities**
+   - Phase 1: Quick wins
+   - Phase 2: Medium priority
+   - Phase 3: Complex features
+
+3. **Begin Phase 1 Implementation**
+   - Start with low-risk items
+   - Gather feedback iteratively
+
+---
+
+## Appendix: Code Location Reference
+
+### Backend Files
+
+- File Operations: `src-tauri/src/mcp/builtin/workspace/file_operations/`
+  - `edit_replace.rs` - editFile implementation
+  - `search_query.rs` - grep/searchFiles implementation
+  - `read_write.rs` - readFile/createFile implementation
+- Session Management: `src-tauri/src/session.rs`
+- Workspace Commands: `src-tauri/src/commands/workspace_commands.rs`
+
+### Frontend Files
+
+- Workspace Panel: `src/features/agent/components/AgentWorkspacePanel.tsx`
+- Backend Client: `src/lib/backend/workspace.ts`
+- Rust Backend Hook: `src/hooks/use-rust-backend.ts`
+
+### Tool Definitions
+
+- File Tools: `src-tauri/src/mcp/builtin/workspace/tools/file_tools.rs`
+- Tool Registry: `src-tauri/src/mcp/builtin/workspace/tools/mod.rs`
+
+---
+
+**Document Version:** 1.0  
+**Last Updated:** January 18, 2026  
+**Status:** Awaiting Clarification

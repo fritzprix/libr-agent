@@ -219,8 +219,8 @@ MANDATORY WORKFLOW:
 3. Include surrounding context (3-5 lines) for uniqueness
 4. Use the extracted text as this parameter
 
-❌ NEVER use text reconstructed from previous attempts
-✅ ALWAYS use text exactly as shown in readFile response
+❌ NEVER use text reconstructed from previous attempts or assumed values
+✅ ALWAYS use text exactly as returned by readFile to ensure exact match
 
 💡 TIP: For multiple changes, call this tool multiple times sequentially"),
         ),
@@ -250,7 +250,7 @@ MANDATORY WORKFLOW:
    → Easier to track and debug than batch operations
    → File state is consistent between calls
 
-❌ NEVER use oldString reconstructed from previous attempts or assumptions
+❌ NEVER use oldString reconstructed from previous attempts or assumed values
 ✅ ALWAYS use text exactly as returned by readFile to ensure exact match
 
 ⚠️ ERROR RECOVERY:
@@ -327,6 +327,200 @@ WORKFLOW:
                 "newString".to_string(),
             ],
         ),
+        output_schema: None,
+        annotations: None,
+    }
+}
+
+pub fn create_search_line_in_file_tool() -> MCPTool {
+    let mut props = HashMap::new();
+    props.insert(
+        "path".to_string(),
+        string_prop(
+            Some(1),
+            Some(1000),
+            Some("Relative path to the file to search (from workspace root)"),
+        ),
+    );
+    props.insert(
+        "pattern".to_string(),
+        string_prop(
+            Some(1),
+            Some(1000),
+            Some("Search pattern (regex or exact string, depending on mode)"),
+        ),
+    );
+    props.insert(
+        "mode".to_string(),
+        string_prop(
+            None,
+            None,
+            Some("Search mode: 'regex' (default) or 'exact'"),
+        ),
+    );
+    props.insert(
+        "ignoreCase".to_string(),
+        boolean_prop(Some("Case-insensitive search (default: false)")),
+    );
+    props.insert(
+        "lineNumbers".to_string(),
+        boolean_prop(Some("Include line numbers in results (default: true)")),
+    );
+
+    MCPTool {
+        name: "searchLineInFile".to_string(),
+        title: Some("Search Lines in File".to_string()),
+        description: "Search for text patterns in a file and get matching line numbers with context.
+
+⚠️ PRIMARY USE CASE: Find line numbers for targeted editing
+This tool returns line numbers where patterns match, enabling precise line-based edits.
+
+SEARCH MODES:
+- regex (default): Use regular expressions for pattern matching
+- exact: Literal string matching (case-sensitive unless ignoreCase=true)
+
+PARAMETERS:
+- path: File to search (relative to workspace root)
+- pattern: Search pattern (regex or exact string)
+- mode: 'regex' or 'exact' (default: 'regex')
+- ignoreCase: Case-insensitive search (default: false)
+- lineNumbers: Include line numbers (default: true)
+
+RETURNS:
+- Line numbers of matches
+- Matched content with ±2 lines of context
+- Formatted code blocks for readability
+
+💡 WORKFLOW:
+1. Use searchLineInFile to find line numbers
+2. Use editLineInFile for batch editing at those lines
+3. Or use readFile + editFile for content-based editing
+
+EXAMPLES:
+- searchLineInFile({path: 'main.rs', pattern: 'fn handle_', mode: 'regex'})
+  → Returns all lines with function definitions
+  
+- searchLineInFile({path: 'config.json', pattern: '\"debug\": true', mode: 'exact'})
+  → Returns exact line number of debug config
+
+✅ BEST FOR: Finding specific lines for editing within a single file
+❌ NOT FOR: Finding files by name pattern (use searchFiles for glob-based file finding)
+
+NOTE: This tool searches FILE CONTENT and returns LINE NUMBERS with context. For finding files by filename pattern, use searchFiles (which returns file paths).".to_string(),
+        input_schema: object_schema(props, vec!["path".to_string(), "pattern".to_string()]),
+        output_schema: None,
+        annotations: None,
+    }
+}
+
+pub fn create_edit_line_in_file_tool() -> MCPTool {
+    let mut props = HashMap::new();
+    props.insert(
+        "path".to_string(),
+        string_prop(
+            Some(1),
+            Some(1000),
+            Some("Relative path to the file to edit (from workspace root)"),
+        ),
+    );
+
+    // Define the edits array schema
+    let mut edit_item_props = HashMap::new();
+    edit_item_props.insert(
+        "line".to_string(),
+        integer_prop(Some(1), None, Some("Line number to edit (1-based)")),
+    );
+    edit_item_props.insert(
+        "old_value".to_string(),
+        string_prop(
+            None,
+            None,
+            Some("Optional: Expected current line content for validation. If provided, must match exactly."),
+        ),
+    );
+    edit_item_props.insert(
+        "new_value".to_string(),
+        string_prop(
+            None,
+            None,
+            Some("New line content (single-line only, no newline characters)"),
+        ),
+    );
+
+    let edit_item_schema = object_schema(
+        edit_item_props,
+        vec!["line".to_string(), "new_value".to_string()],
+    );
+
+    props.insert(
+        "edits".to_string(),
+        array_schema(
+            edit_item_schema,
+            Some(
+                "Array of line edit operations. Each edit must have 'line' and 'new_value' fields.",
+            ),
+        ),
+    );
+
+    MCPTool {
+        name: "editLineInFile".to_string(),
+        title: Some("Edit Multiple Lines in File".to_string()),
+        description: "Edit multiple lines in a file atomically using line numbers. All edits succeed or all fail.
+
+⚠️ CRITICAL: ATOMIC OPERATION
+- ALL line edits must be valid or ENTIRE operation fails
+- No partial edits - file remains unchanged if any edit fails
+- Use for batch single-line edits (5+ edits recommended)
+- Line count limit: 10,000 lines maximum (exceeds practical LLM context)
+
+WORKFLOW:
+1. Use searchLineInFile to find line numbers
+2. Use editLineInFile to edit multiple lines at once
+3. All changes applied together or none at all
+
+PARAMETERS:
+- path: File to edit (relative to workspace root)
+- edits: Array of {line, old_value?, new_value}
+  - line: 1-based line number (required)
+  - old_value: Optional validation - must match current content exactly
+  - new_value: New line content (required, single-line only)
+
+VALIDATION:
+✅ All line numbers must exist in file
+✅ No duplicate line numbers allowed (conflict detection)
+✅ If old_value provided, must match current content
+✅ new_value must be single-line (no \\n characters)
+
+EXAMPLE:
+{
+  \"path\": \"src/main.rs\",
+  \"edits\": [
+    {\"line\": 10, \"old_value\": \"old text\", \"new_value\": \"new text\"},
+    {\"line\": 25, \"new_value\": \"another line\"}
+  ]
+}
+
+ERROR HANDLING:
+❌ Line out of range → FAIL (no changes applied)
+❌ Duplicate line number → FAIL (no changes applied)
+❌ old_value mismatch → FAIL (no changes applied)
+❌ Multi-line new_value → FAIL with guidance to use editFile
+
+💡 WHEN TO USE:
+✅ Editing 5+ lines in same file
+✅ Batch updates with known line numbers
+✅ Replacing similar patterns across multiple lines
+
+❌ WHEN NOT TO USE:
+- Multi-line replacements → use editFile instead
+- Unknown line numbers → use searchLineInFile first
+- Content-based editing → use readFile + editFile
+
+🔗 RELATED TOOLS:
+- searchLineInFile: Find line numbers for editing
+- readFile: Get current file content and verify changes
+- editFile: For content-based or multi-line edits".to_string(),
+        input_schema: object_schema(props, vec!["path".to_string(), "edits".to_string()]),
         output_schema: None,
         annotations: None,
     }

@@ -205,6 +205,21 @@ impl WorkspaceServer {
             None => return Ok(missing_param_error("newString", ToolGroup::Workspace)),
         };
 
+        // Validate: Reject identical strings early (before file I/O)
+        if old_string == new_string {
+            return Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::InvalidInput,
+                "oldString and newString are identical - no changes needed",
+                vec![
+                    "The replacement would result in no changes to the file".to_string(),
+                    "Verify that newString contains the intended modifications".to_string(),
+                    "If no changes are needed, consider skipping this operation".to_string(),
+                ],
+                ToolGroup::Workspace,
+            )
+            .to_mcp_result());
+        }
+
         // Layer 2: Business logic - path validation and file reading
         let safe_path = self.validate_path_with_error(path_str, session_id.clone())?;
 
