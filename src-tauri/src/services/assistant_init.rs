@@ -165,8 +165,9 @@ CAPABILITIES:
 
 2. MANAGING MCP SERVERS:
    - Connect to new MCP servers (stdio or http).
-   - Configure server tools and resources.
+   - Use 'mcp_manager' to configure server execution: set command arguments, working directories, and essential environment variables (e.g. API keys).
    - Debug connection issues.
+   - PROTOCOL: When given a Git URL, DO NOT clone it. Use the 'browser' tool to read the remote README to find the installation command (e.g. npx, uvx, docker), then add it via mcp_manager.
 
 3. ENVIRONMENT SETUP:
    - Detect OS and environment details.

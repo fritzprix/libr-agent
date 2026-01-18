@@ -1,25 +1,79 @@
-use crate::entity::{assistant, assistant::Entity as AssistantEntity};
+use crate::entity::{
+    assistant, assistant::Entity as AssistantEntity, mcp_server::Entity as McpServerEntity,
+};
 use crate::mcp::builtin::error_guidance::{
-    duplicate_error, missing_param_error, not_found_error, operation_failed_error, SuccessHint,
-    ToolGroup,
+    duplicate_error, invalid_input_error, missing_param_error, not_found_error,
+    operation_failed_error, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
 use sea_orm::*;
 use serde_json::{json, Value};
 
+use super::AssistantServer;
+
+/// Validate that all mcpServerIds exist in the mcp_servers table
+async fn validate_mcp_server_ids(
+    db: &DatabaseConnection,
+    server_ids: &[String],
+) -> Result<(), String> {
+    if server_ids.is_empty() {
+        return Ok(()); // Empty list is valid
+    }
+
+    // Query database to check which IDs exist
+    let existing_servers = McpServerEntity::find()
+        .filter(
+            sea_orm::sea_query::Expr::col(crate::entity::mcp_server::Column::Name)
+                .is_in(server_ids.to_vec()),
+        )
+        .all(db)
+        .await
+        .map_err(|e| format!("Failed to validate MCP server IDs: {}", e))?;
+
+    let existing_ids: std::collections::HashSet<_> =
+        existing_servers.iter().map(|s| s.name.as_str()).collect();
+
+    // Find invalid IDs
+    let invalid_ids: Vec<_> = server_ids
+        .iter()
+        .filter(|id| !existing_ids.contains(id.as_str()))
+        .collect();
+
+    if !invalid_ids.is_empty() {
+        return Err(format!(
+            "Invalid MCP server IDs: {}. Use builtin_mcp_manager__listMcpServers to see available servers.",
+            invalid_ids
+                .iter()
+                .map(|id| format!("'{}'", id))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+
+    Ok(())
+}
+
 /// Create a new assistant
-pub async fn create_assistant(db: &DatabaseConnection, args: Value) -> Result<MCPResult, String> {
-    // Legacy support: generate ID if not provided
-    let id = args
-        .get("id")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
-        .unwrap_or_else(cuid2::create_id);
+pub async fn create_assistant(server: &AssistantServer, args: Value) -> Result<MCPResult, String> {
+    let db = server.get_db();
+    // Always auto-generate ID
+    let id = cuid2::create_id();
 
     let name = match args.get("name").and_then(|v| v.as_str()) {
         Some(v) => v,
         Option::None => return Ok(missing_param_error("name", ToolGroup::Assistant)),
     };
+
+    // Check for duplicate name BEFORE attempting insert
+    let existing = AssistantEntity::find()
+        .filter(assistant::Column::Name.eq(name))
+        .one(db)
+        .await
+        .map_err(|e| format!("Failed to check for duplicate name: {}", e))?;
+
+    if existing.is_some() {
+        return Ok(duplicate_error("Assistant", name, ToolGroup::Assistant));
+    }
 
     // Extract config fields
     let mut config = args.get("config").cloned().unwrap_or(json!({}));
@@ -60,6 +114,20 @@ pub async fn create_assistant(db: &DatabaseConnection, args: Value) -> Result<MC
         config["mcpServerIds"] = v.clone();
     }
 
+    // Validate mcpServerIds if provided
+    if let Some(server_ids_value) = config.get("mcpServerIds") {
+        if let Some(server_ids_array) = server_ids_value.as_array() {
+            let server_ids: Vec<String> = server_ids_array
+                .iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect();
+
+            if let Err(err_msg) = validate_mcp_server_ids(db, &server_ids).await {
+                return Ok(invalid_input_error(&err_msg, ToolGroup::Assistant));
+            }
+        }
+    }
+
     // Validate config is a valid JSON object
     let config_str =
         serde_json::to_string(&config).map_err(|e| format!("Invalid config JSON: {}", e))?;
@@ -79,12 +147,14 @@ pub async fn create_assistant(db: &DatabaseConnection, args: Value) -> Result<MC
     match result {
         Ok(_) => {
             let hint = SuccessHint::new(
-                format!("Assistant '{}' created successfully", name),
+                format!("Assistant '{}' created successfully (ID: {})", name, id),
                 vec![
                     "Use builtin_assistant__listAssistants to see all assistants".to_string(),
                     "Use builtin_assistant__updateAssistant to modify configuration".to_string(),
                 ],
             );
+
+            server.invalidate_cache().await;
 
             Ok(hint.to_mcp_result_with_data(Some(json!({
                 "success": true,
@@ -92,23 +162,18 @@ pub async fn create_assistant(db: &DatabaseConnection, args: Value) -> Result<MC
                 "name": name
             }))))
         }
-        Err(e) => {
-            if e.to_string().contains("UNIQUE constraint failed") {
-                Ok(duplicate_error("Assistant", &id, ToolGroup::Assistant))
-            } else {
-                Ok(operation_failed_error(
-                    "Create assistant",
-                    &e.to_string(),
-                    vec!["Check database connection".to_string()],
-                    ToolGroup::Assistant,
-                ))
-            }
-        }
+        Err(e) => Ok(operation_failed_error(
+            "Create assistant",
+            &e.to_string(),
+            vec!["Check database connection".to_string()],
+            ToolGroup::Assistant,
+        )),
     }
 }
 
 /// Update an existing assistant
-pub async fn update_assistant(db: &DatabaseConnection, args: Value) -> Result<MCPResult, String> {
+pub async fn update_assistant(server: &AssistantServer, args: Value) -> Result<MCPResult, String> {
+    let db = server.get_db();
     let id = match args.get("id").and_then(|v| v.as_str()) {
         Some(v) => v,
         Option::None => return Ok(missing_param_error("id", ToolGroup::Assistant)),
@@ -174,6 +239,20 @@ pub async fn update_assistant(db: &DatabaseConnection, args: Value) -> Result<MC
         config["mcpServerIds"] = v.clone();
     }
 
+    // Validate mcpServerIds if provided
+    if let Some(server_ids_value) = config.get("mcpServerIds") {
+        if let Some(server_ids_array) = server_ids_value.as_array() {
+            let server_ids: Vec<String> = server_ids_array
+                .iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect();
+
+            if let Err(err_msg) = validate_mcp_server_ids(db, &server_ids).await {
+                return Ok(invalid_input_error(&err_msg, ToolGroup::Assistant));
+            }
+        }
+    }
+
     let config_str =
         serde_json::to_string(&config).map_err(|e| format!("Invalid config JSON: {}", e))?;
 
@@ -196,6 +275,8 @@ pub async fn update_assistant(db: &DatabaseConnection, args: Value) -> Result<MC
                 vec!["Use builtin_assistant__getAssistant to verify changes".to_string()],
             );
 
+            server.invalidate_cache().await;
+
             Ok(hint.to_mcp_result_with_data(Some(json!({
                 "success": true,
                 "id": id,
@@ -217,32 +298,40 @@ pub async fn update_assistant(db: &DatabaseConnection, args: Value) -> Result<MC
 }
 
 /// Delete an assistant
-pub async fn delete_assistant(db: &DatabaseConnection, args: Value) -> Result<MCPResult, String> {
+pub async fn delete_assistant(server: &AssistantServer, args: Value) -> Result<MCPResult, String> {
+    let db = server.get_db();
     let id = match args.get("id").and_then(|v| v.as_str()) {
         Some(v) => v,
         Option::None => return Ok(missing_param_error("id", ToolGroup::Assistant)),
     };
 
+    // Hallucination Firewall: Check existence first
+    if AssistantEntity::find_by_id(id)
+        .one(db)
+        .await
+        .unwrap_or(None)
+        .is_none()
+    {
+        return Ok(not_found_error("Assistant", id, ToolGroup::Assistant));
+    }
+
     let result = AssistantEntity::delete_by_id(id.to_string()).exec(db).await;
 
     match result {
-        Ok(delete_result) => {
-            if delete_result.rows_affected > 0 {
-                let hint = SuccessHint::new(
-                    format!("Assistant '{}' deleted successfully", id),
-                    vec![
-                        "Use builtin_assistant__listAssistants to see remaining assistants"
-                            .to_string(),
-                    ],
-                );
+        Ok(_) => {
+            server.invalidate_cache().await;
 
-                Ok(hint.to_mcp_result_with_data(Some(json!({
-                    "success": true,
-                    "id": id
-                }))))
-            } else {
-                Ok(not_found_error("Assistant", id, ToolGroup::Assistant))
-            }
+            let hint = SuccessHint::new(
+                format!("Assistant '{}' deleted successfully", id),
+                vec![
+                    "Use builtin_assistant__listAssistants to see remaining assistants".to_string(),
+                ],
+            );
+
+            Ok(hint.to_mcp_result_with_data(Some(json!({
+                "success": true,
+                "id": id
+            }))))
         }
         Err(e) => Ok(operation_failed_error(
             "Delete assistant",

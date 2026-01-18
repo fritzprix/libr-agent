@@ -35,7 +35,6 @@ All notable changes to this project will be documented in this file.
 - **Test Stability**: Temporarily disabled failing legacy tests in `content_store/test_recent_uploads.rs` to maintain a green validation pipeline while investigating system visibility issues.
 - **Validation**: Full `pnpm refactor:validate` pipeline passed, ensuring code quality across frontend and backend.
 
-
 ### 2026-01-16
 
 #### 🔧 Refactoring

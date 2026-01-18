@@ -62,13 +62,27 @@ pub async fn list_assistants(db: &DatabaseConnection, args: Value) -> Result<MCP
 
             let has_more = (offset + limit) < total_count;
 
+            // Format list for AI readability
+            let assistants_text = assistants
+                .iter()
+                .map(|a| {
+                    format!(
+                        "• {} [ID: {}]",
+                        a["name"].as_str().unwrap_or("?"),
+                        a["id"].as_str().unwrap_or("?")
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+
             let hint = SuccessHint::new(
                 format!(
-                    "Found {} of {} assistants (showing {} to {})",
+                    "Found {} of {} assistants (showing {} to {}):\n\n{}",
                     total_count,
                     total_count,
                     offset + 1,
-                    (offset + assistants.len() as i64).min(total_count)
+                    (offset + assistants.len() as i64).min(total_count),
+                    assistants_text
                 ),
                 if has_more {
                     vec![format!(
@@ -148,8 +162,26 @@ pub async fn search_assistant(db: &DatabaseConnection, args: Value) -> Result<MC
                 })
                 .collect();
 
+            // Format list for AI readability
+            let assistants_text = assistants
+                .iter()
+                .map(|a| {
+                    format!(
+                        "• {} [ID: {}]",
+                        a["name"].as_str().unwrap_or("?"),
+                        a["id"].as_str().unwrap_or("?")
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+
             let hint = SuccessHint::new(
-                format!("Found {} assistants matching '{}'", assistants.len(), query),
+                format!(
+                    "Found {} assistants matching '{}':\n\n{}",
+                    assistants.len(),
+                    query,
+                    assistants_text
+                ),
                 if assistants.is_empty() {
                     vec!["Use builtin_assistant__listAssistants to see all assistants".to_string()]
                 } else {
@@ -188,8 +220,14 @@ pub async fn get_assistant(db: &DatabaseConnection, args: Value) -> Result<MCPRe
             // Parse config JSON
             let config = serde_json::from_str::<Value>(&model.config).unwrap_or(json!({}));
 
+            let config_display =
+                serde_json::to_string_pretty(&config).unwrap_or_else(|_| "{}".to_string());
+
             let hint = SuccessHint::new(
-                format!("Assistant: {}", model.name),
+                format!(
+                    "Assistant: {}\nID: {}\n\nConfiguration:\n{}",
+                    model.name, model.id, config_display
+                ),
                 vec![
                     "Use builtin_assistant__updateAssistant to modify configuration".to_string(),
                     "Use builtin_assistant__deleteAssistant to remove this assistant".to_string(),
@@ -204,7 +242,7 @@ pub async fn get_assistant(db: &DatabaseConnection, args: Value) -> Result<MCPRe
                 "updated_at": model.updated_at
             }))))
         }
-        Ok(None) => Ok(not_found_error("Assistant", id, ToolGroup::Assistant)),
+        Ok(Option::None) => Ok(not_found_error("Assistant", id, ToolGroup::Assistant)),
         Err(e) => Ok(operation_failed_error(
             "Get assistant",
             &e.to_string(),

@@ -172,6 +172,11 @@ impl ErrorGuidance {
                 "Use updateAssistant to modify the existing one".to_string(),
                 "Use listAssistants to see all assistants".to_string(),
             ],
+            (ErrorCategory::InvalidInput, ToolGroup::Assistant) => vec![
+                "Verify all required parameters are provided".to_string(),
+                "Check that parameter values are in the correct format".to_string(),
+                "Use listAssistants or getAssistant to verify existing data".to_string(),
+            ],
 
             // Content Store tool errors
             (ErrorCategory::InvalidFormat, ToolGroup::ContentStore) => vec![

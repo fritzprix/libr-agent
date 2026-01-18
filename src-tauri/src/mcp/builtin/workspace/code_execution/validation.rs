@@ -11,9 +11,9 @@ pub fn is_likely_interactive_command(command: &str) -> bool {
     // Pattern 1: Package manager initialization without non-interactive flags
     let package_init_patterns = [
         ("npm init", &["--yes", "-y"] as &[&str]),
-        ("pnpm init", &["--yes", "-y"]),
-        ("yarn init", &["--yes", "-y", "--private"]),
-        ("bun init", &["--yes", "-y"]),
+        ("pnpm init", &["--yes", "-y"] as &[&str]),
+        ("yarn init", &["--yes", "-y", "--private"] as &[&str]),
+        ("bun init", &["--yes", "-y"] as &[&str]),
     ];
 
     for (pattern, non_interactive_flags) in package_init_patterns {
@@ -27,28 +27,8 @@ pub fn is_likely_interactive_command(command: &str) -> bool {
         }
     }
 
-    // Pattern 2: Scaffolding/creation tools without force flags
-    let scaffolding_patterns = [
-        ("npx create-", &["--force", "--yes", "-y"] as &[&str]),
-        ("npm create", &["--force", "--yes", "-y"]),
-        ("pnpm create", &["--force", "--yes", "-y"]),
-        ("yarn create", &["--force", "--yes", "-y"]),
-        ("npx degit", &[]),
-    ];
-
-    for (pattern, non_interactive_flags) in scaffolding_patterns {
-        if cmd_lower.contains(pattern) {
-            if non_interactive_flags.is_empty() {
-                return true;
-            }
-            let has_flag = non_interactive_flags
-                .iter()
-                .any(|flag| cmd_lower.contains(flag));
-            if !has_flag {
-                return true;
-            }
-        }
-    }
+    // Pattern 2: Scaffolding/creation tools (REMOVED: Too strict, prone to false positives)
+    // We now rely on user intention or manual bypass for these.
 
     // Pattern 3: PowerShell interactive cmdlets (always interactive)
     let ps_interactive_cmdlets = ["read-host", "get-credential", "out-gridview"];
@@ -98,12 +78,21 @@ pub fn is_likely_interactive_command(command: &str) -> bool {
                 continue;
             }
 
-            // If rest is empty or only contains flags starting with -, it's likely REPL
-            if rest.is_empty()
-                || (rest.starts_with('-') && !rest.contains(".py") && !rest.contains(".js"))
-            {
+            // Relaxed REPL detection:
+            // 1. If rest is empty -> Bare command (Interactive)
+            // 2. If rest starts with -i or --interactive -> Explicit interactive flag
+            // 3. Otherwise -> Assume non-interactive (allow --version, --help, -p, etc.)
+
+            if rest.is_empty() {
                 return true;
             }
+
+            if rest.starts_with("-i") || rest.starts_with("--interactive") {
+                return true;
+            }
+
+            // Allow all other flags (including --version, -v, --help, arbitrary args)
+            continue;
         }
     }
 
@@ -244,19 +233,26 @@ mod tests {
             "node -e \"console.log('test')\""
         ));
 
-        // ❌ Bare Python should be interactive (REPL)
+        // ✅ Node with flags (like --version) should NOT be interactive
+        assert!(!is_likely_interactive_command("node --version"));
+        assert!(!is_likely_interactive_command("npm --version"));
+
+        // ❌ Bare Python/Node should be interactive (REPL)
         assert!(is_likely_interactive_command("python"));
         assert!(is_likely_interactive_command("python3"));
         assert!(is_likely_interactive_command("node"));
+
+        // ❌ Node with REPL flag
+        assert!(is_likely_interactive_command("node -i"));
+        assert!(is_likely_interactive_command("node --interactive"));
 
         // ❌ npm init without flags should be interactive
         assert!(is_likely_interactive_command("npm init"));
         // ✅ npm init with --yes should NOT be interactive
         assert!(!is_likely_interactive_command("npm init --yes"));
 
-        // ❌ npx create-* without flags should be interactive
-        assert!(is_likely_interactive_command("npx create-vite my-app"));
-        // ✅ npx create-* with --force should NOT be interactive
+        // ✅ npx create-* should now be considered NON-interactive by default (relaxed rule)
+        assert!(!is_likely_interactive_command("npx create-vite my-app"));
         assert!(!is_likely_interactive_command(
             "npx create-vite my-app --force"
         ));

@@ -11,6 +11,15 @@ use std::sync::Arc;
 mod operations;
 mod queries;
 
+use std::time::{Duration, Instant};
+use tokio::sync::RwLock;
+
+#[derive(Debug, Clone)]
+struct ContextCache {
+    prompt: String,
+    last_update: Instant,
+}
+
 /// Assistant MCP Server
 ///
 /// Provides global assistant configuration management.
@@ -18,6 +27,7 @@ mod queries;
 #[derive(Debug)]
 pub struct AssistantServer {
     db: Arc<DatabaseConnection>,
+    cache: Arc<RwLock<Option<ContextCache>>>,
 }
 
 impl AssistantServer {
@@ -25,13 +35,23 @@ impl AssistantServer {
     ///
     /// Note: Unlike other servers, this is NOT session-bound.
     /// Assistants are global and can be reused across multiple sessions.
+    /// Assistants are global and can be reused across multiple sessions.
     pub async fn new(db: Arc<DatabaseConnection>) -> Result<Self, String> {
-        let server = Self { db };
+        let server = Self {
+            db,
+            cache: Arc::new(RwLock::new(None)),
+        };
         Ok(server)
     }
 
-    fn get_db(&self) -> &DatabaseConnection {
+    pub fn get_db(&self) -> &DatabaseConnection {
         &self.db
+    }
+
+    pub(crate) async fn invalidate_cache(&self) {
+        if let Ok(mut cache) = self.cache.try_write() {
+            *cache = None;
+        }
     }
 
     pub fn tools_static() -> Vec<MCPTool> {
@@ -71,9 +91,9 @@ impl BuiltinMCPServer for AssistantServer {
         let db = self.get_db();
 
         match tool_name {
-            "createAssistant" => operations::create_assistant(db, args).await,
-            "updateAssistant" => operations::update_assistant(db, args).await,
-            "deleteAssistant" => operations::delete_assistant(db, args).await,
+            "createAssistant" => operations::create_assistant(self, args).await,
+            "updateAssistant" => operations::update_assistant(self, args).await,
+            "deleteAssistant" => operations::delete_assistant(self, args).await,
             "listAssistants" => queries::list_assistants(db, args).await,
             "getAssistant" => queries::get_assistant(db, args).await,
             "searchAssistant" => queries::search_assistant(db, args).await,
@@ -85,12 +105,43 @@ impl BuiltinMCPServer for AssistantServer {
     }
 
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
+        const CACHE_TTL: Duration = Duration::from_secs(5);
+
+        if let Some(cache) = self.cache.read().await.as_ref() {
+            if cache.last_update.elapsed() < CACHE_TTL {
+                return ServiceContext {
+                    context_prompt: cache.prompt.clone(),
+                    structured_state: None,
+                };
+            }
+        }
+
+        use crate::entity::assistant::Entity as AssistantEntity;
+        use sea_orm::{EntityTrait, PaginatorTrait};
+
+        let total_count = AssistantEntity::find()
+            .count(self.get_db())
+            .await
+            .unwrap_or(0);
+
+        let context_prompt = format!(
+            "# Assistant Server Status\n\
+            **Scope**: Global (shared across all sessions)\n\
+            **Status**: Active\n\
+            **Active Assistants**: {}\n\
+            **Features**: Create, update, delete, and manage assistant configurations",
+            total_count
+        );
+
+        if let Ok(mut cache) = self.cache.try_write() {
+            *cache = Some(ContextCache {
+                prompt: context_prompt.clone(),
+                last_update: Instant::now(),
+            });
+        }
+
         ServiceContext {
-            context_prompt: "# Assistant Server Status\n\
-                **Scope**: Global (shared across all sessions)\n\
-                **Status**: Active\n\
-                **Features**: Create, update, delete, and manage assistant configurations"
-                .to_string(),
+            context_prompt,
             structured_state: None,
         }
     }
@@ -112,7 +163,6 @@ fn create_create_assistant_tool() -> MCPTool {
         input_schema: serde_json::from_value(json!({
             "type": "object",
             "properties": {
-                "id": { "type": "string", "description": "Optional: Unique assistant identifier (UUID). If omitted, one will be generated." },
                 "name": { "type": "string", "description": "Assistant name (Must be unique)" },
                 "systemPrompt": { "type": "string", "description": "System prompt for the assistant" },
                 "modelProvider": { "type": "string", "description": "AI model provider (e.g., openai, anthropic, ollama)" },
@@ -127,7 +177,7 @@ fn create_create_assistant_tool() -> MCPTool {
                 "mcpServerIds": {
                     "type": "array",
                     "items": { "type": "string" },
-                    "description": "List of enabled MCP server IDs"
+                    "description": "List of enabled MCP server IDs (must exist in mcp_servers table).\n\n⚠️ CRITICAL: IDs must be valid.\n1. Call builtin_mcp_manager__listMcpServers FIRST to get valid IDs\n2. Extract exact ID values from listMcpServers response\n3. Invalid IDs will cause validation error"
                 }
             },
             "required": ["name"]
@@ -167,7 +217,7 @@ fn create_update_assistant_tool() -> MCPTool {
                 "mcpServerIds": {
                     "type": "array",
                     "items": { "type": "string" },
-                    "description": "Update list of enabled MCP server IDs"
+                    "description": "Update list of enabled MCP server IDs (must exist in mcp_servers table).\n\n⚠️ Use builtin_mcp_manager__listMcpServers to get valid IDs before updating"
                 }
             },
             "required": ["id"]
@@ -296,12 +346,11 @@ mod tests {
             .call_tool(
                 "createAssistant",
                 json!({
-                    "id": "test-assistant",
                     "name": "Test Assistant",
-                    "config": {
-                        "model": "gpt-4",
-                        "temperature": 0.7
-                    }
+                    "systemPrompt": "You are a helpful assistant",
+                    "modelProvider": "openai",
+                    "modelName": "gpt-4",
+                    "temperature": 0.7
                 }),
                 None,
             )
@@ -310,9 +359,17 @@ mod tests {
 
         assert!(create_result.is_error == Some(false));
 
-        // Get assistant
+        // Extract the system-generated ID from the response
+        let created_id = create_result
+            .structured_content
+            .as_ref()
+            .and_then(|c| c.get("id"))
+            .and_then(|id| id.as_str())
+            .expect("Expected id in create response");
+
+        // Get assistant using system-generated ID
         let get_result = server
-            .call_tool("getAssistant", json!({"id": "test-assistant"}), None)
+            .call_tool("getAssistant", json!({"id": created_id}), None)
             .await
             .expect("Failed to get assistant");
 
@@ -320,6 +377,16 @@ mod tests {
         // Note: structured_content is Option<Value>
         let content = get_result.structured_content.unwrap();
         assert_eq!(content["name"], "Test Assistant");
-        assert_eq!(content["config"]["model"], "gpt-4");
+        assert_eq!(content["config"]["modelName"], "gpt-4");
+
+        // Verify system-generated ID is returned and is not empty
+        assert!(
+            !created_id.is_empty(),
+            "Expected non-empty system-generated ID"
+        );
+        assert!(
+            created_id.len() > 10,
+            "Expected CUID-like ID format (length > 10)"
+        );
     }
 }

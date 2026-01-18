@@ -40,31 +40,109 @@ impl BootstrapServer {
         }
     }
 
+    /// Build service context from platform info
+    fn build_service_context(platform: &platform::PlatformInfo) -> ServiceContext {
+        let mut context_parts = vec![
+            format!("Platform: {} ({})", platform.os, platform.arch),
+            format!("Shell: {}", platform.shell),
+        ];
+
+        if let Some(distro) = &platform.distro {
+            context_parts.push(format!("Distribution: {} ({})", distro.name, distro.id));
+        }
+
+        if let Some(pm) = &platform.package_manager {
+            context_parts.push(format!("Package Manager: {}", pm));
+        }
+
+        let installed: Vec<String> = platform
+            .installed_tools
+            .iter()
+            .filter(|(_, info)| info.installed)
+            .map(|(name, _)| name.clone())
+            .collect();
+
+        if !installed.is_empty() {
+            context_parts.push(format!("Installed Tools: {}", installed.join(", ")));
+        }
+
+        ServiceContext {
+            context_prompt: format!("## Bootstrap\n\n{}", context_parts.join("\n")),
+            structured_state: Some(json!(platform)),
+        }
+    }
+
     /// Detect the current platform
     fn detect_platform(&self) -> MCPResult {
         let platform = platform::detect_current_platform();
 
-        let text = format!(
-            "✓ Platform detected:\n\n\
-             OS: {}\n\
-             Architecture: {}\n\
-             Shell: {}\n\
-             Home Directory: {}\n\
-             Temp Directory: {}",
-            platform.os,
-            platform.arch,
-            platform.shell,
-            platform.home_dir.as_deref().unwrap_or("N/A"),
-            platform.temp_dir
-        );
+        let mut sections = vec![
+            format!("OS: {}", platform.os),
+            format!("Architecture: {}", platform.arch),
+            format!("Shell: {}", platform.shell),
+            format!(
+                "Home Directory: {}",
+                platform.home_dir.as_deref().unwrap_or("N/A")
+            ),
+            format!("Temp Directory: {}", platform.temp_dir),
+        ];
 
-        let hint = SuccessHint::new(
-            text,
-            vec![
-                "Use getBootstrapGuide(tool) to get installation instructions".to_string(),
-                "Available tools: node, python, uv, docker, git".to_string(),
-            ],
-        );
+        // Add Linux distribution info
+        if let Some(distro) = &platform.distro {
+            sections.push("\nLinux Distribution:".to_string());
+            sections.push(format!("  Name: {}", distro.name));
+            sections.push(format!("  ID: {}", distro.id));
+            if let Some(version) = &distro.version {
+                sections.push(format!("  Version: {}", version));
+            }
+        }
+
+        // Add package manager info
+        if let Some(pm) = &platform.package_manager {
+            sections.push(format!("\nPackage Manager: {}", pm));
+        }
+
+        // Add installed tools summary
+        let installed: Vec<&String> = platform
+            .installed_tools
+            .iter()
+            .filter(|(_, info)| info.installed)
+            .map(|(name, _)| name)
+            .collect();
+
+        let missing: Vec<&String> = platform
+            .installed_tools
+            .iter()
+            .filter(|(_, info)| !info.installed)
+            .map(|(name, _)| name)
+            .collect();
+
+        if !installed.is_empty() {
+            sections.push(format!("\nInstalled Tools ({}):", installed.len()));
+            for tool in &installed {
+                if let Some(info) = platform.installed_tools.get(*tool) {
+                    let version = info.version.as_deref().unwrap_or("unknown");
+                    sections.push(format!("  ✓ {}: {}", tool, version));
+                }
+            }
+        }
+
+        if !missing.is_empty() {
+            sections.push(format!("\nMissing Tools ({}):", missing.len()));
+            for tool in &missing {
+                sections.push(format!("  ✗ {}", tool));
+            }
+        }
+
+        let text = format!("✓ Platform detected:\n\n{}", sections.join("\n"));
+
+        let mut next_steps = vec![];
+        if !missing.is_empty() {
+            next_steps.push("Use getBootstrapGuide(tool) to install missing tools".to_string());
+        }
+        next_steps.push("Available guides: node, python, uv, docker, git".to_string());
+
+        let hint = SuccessHint::new(text, next_steps);
 
         hint.to_mcp_result_with_data(Some(json!(platform)))
     }
@@ -172,13 +250,7 @@ impl BuiltinMCPServer for BootstrapServer {
         if let Ok(cache_guard) = self.platform_cache.read() {
             if let Some((platform, last_update)) = cache_guard.as_ref() {
                 if last_update.elapsed().as_secs() < CACHE_TTL_SECS {
-                    return ServiceContext {
-                        context_prompt: format!(
-                            "## Bootstrap\n\nCurrent platform: {} ({}) using {}",
-                            platform.os, platform.arch, platform.shell
-                        ),
-                        structured_state: Some(json!(platform)),
-                    };
+                    return Self::build_service_context(platform);
                 }
             }
         }
@@ -191,13 +263,7 @@ impl BuiltinMCPServer for BootstrapServer {
             *cache_guard = Some((platform.clone(), Instant::now()));
         }
 
-        ServiceContext {
-            context_prompt: format!(
-                "## Bootstrap\n\nCurrent platform: {} ({}) using {}",
-                platform.os, platform.arch, platform.shell
-            ),
-            structured_state: Some(json!(platform)),
-        }
+        Self::build_service_context(&platform)
     }
 
     async fn call_tool(
@@ -224,19 +290,32 @@ fn create_detect_platform_tool() -> MCPTool {
     MCPTool {
         name: "detectPlatform".to_string(),
         title: Some("Detect Platform".to_string()),
-        description: "Detect current operating system, architecture, and shell environment
+        description:
+            "Comprehensively detect current system environment and installed development tools
 
 Use this tool to:
 • Identify platform-specific requirements before installation
+• Check which development tools are already installed
+• Determine the appropriate package manager for your system
+• Get Linux distribution details (Debian, Ubuntu, Arch, Fedora, etc.)
 • Verify system compatibility with development tools
 • Get accurate environment information for troubleshooting
 
-Returns: OS type (windows/darwin/linux), CPU architecture (x64/arm64), default shell, home directory path, and temp directory path
+Returns:
+• OS type (windows/darwin/linux)
+• CPU architecture (x64/arm64/arm)
+• Default shell (bash/zsh/powershell/etc.)
+• Linux distribution info (name, ID, version) if applicable
+• Available package manager (apt/dnf/pacman/brew/etc.)
+• Installed tools with versions (node, python, docker, git, cargo, etc.)
+• Missing tools that can be installed
+• Home and temp directory paths
 
 💡 Next Steps:
-• Use getBootstrapGuide(tool) to get installation instructions for your detected platform
-• Available tools: node, python, uv, docker, git"
-            .to_string(),
+• Review installed tools - no need to reinstall what you already have
+• Use getBootstrapGuide(tool) only for missing tools
+• Available guides: node, python, uv, docker, git"
+                .to_string(),
         input_schema: object_schema(HashMap::new(), vec![]),
         output_schema: None,
         annotations: None,

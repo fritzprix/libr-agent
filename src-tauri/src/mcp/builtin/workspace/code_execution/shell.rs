@@ -713,11 +713,7 @@ impl WorkspaceServer {
                 vec![
                     format!("Detected interactive pattern in: {}", raw_command),
                     format!("Use {} with requireUserInput: true for interactive commands", PERSISTENT_SHELL_TOOL),
-                    "Or add non-interactive flags to your command:".to_string(),
-                    "  • npm init → npm init --yes".to_string(),
-                    "  • npx create-vite → npx create-vite . --force".to_string(),
-                    "  • python (REPL) → python script.py".to_string(),
-                    "  • Read-Host → Use config files or environment variables".to_string(),
+                    "Or add non-interactive flags to your command (e.g. npm init --yes)".to_string(),
                     format!("See {} tool description for requireUserInput usage", PERSISTENT_SHELL_TOOL),
                 ],
                 ToolGroup::Workspace,
