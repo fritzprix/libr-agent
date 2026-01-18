@@ -10,10 +10,7 @@ import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { useAgentSessionState, useAgentSessionActions } from '../AgentSessionContext';
 import type { Message } from '@/models/chat';
-import {
-  getMessagesPageForSession,
-  deleteMessage,
-} from '@/lib/backend/messages';
+import { getMessagesPageForSession } from '@/lib/backend/messages';
 import { LLMServiceProvider } from '../LLMServiceContext';
 import { SettingsProvider } from '../SettingsContext';
 import type { ReactNode } from 'react';
@@ -98,6 +95,7 @@ describe('AgentChatContext', () => {
     // Setup AgentSessionActions mock
     (useAgentSessionActions as ReturnType<typeof vi.fn>).mockReturnValue({
       setError: mockSetError,
+      resumeSession: vi.fn().mockResolvedValue(undefined),
     });
 
     // Setup backend messages mock
@@ -304,6 +302,8 @@ describe('AgentChatContext', () => {
 
   describe('Retry Action', () => {
     it('should retry last user message', async () => {
+      const mockResumeSession = vi.fn().mockResolvedValue(undefined);
+
       const messagesWithError: Message[] = [
         {
           id: 'msg1',
@@ -338,6 +338,12 @@ describe('AgentChatContext', () => {
         workflowStatus: 'idle',
       });
 
+      // Update AgentSessionActions mock with resumeSession
+      (useAgentSessionActions as ReturnType<typeof vi.fn>).mockReturnValue({
+        setError: mockSetError,
+        resumeSession: mockResumeSession,
+      });
+
       // Mock backend messages
       (getMessagesPageForSession as ReturnType<typeof vi.fn>).mockResolvedValue({
         items: messagesWithError,
@@ -360,19 +366,8 @@ describe('AgentChatContext', () => {
         await result.current.retryMessage();
       });
 
-      // Should delete the error message
-      expect(deleteMessage).toHaveBeenCalledWith('msg2');
-
-      // Should re-submit the user message
-      expect(invoke).toHaveBeenCalledWith('agent_send_message', {
-        request: {
-          sessionId: 'test-session',
-          message: expect.objectContaining({
-            id: 'msg1',
-            role: 'user',
-          }),
-        },
-      });
+      // Should call resumeSession
+      expect(mockResumeSession).toHaveBeenCalled();
     });
 
     it('should handle retry with no user message', async () => {

@@ -1,8 +1,7 @@
 // server.rs - ContentStoreServer implementation
-use crate::mcp::types::{ServiceContext, ServiceContextOptions};
+use crate::mcp::types::ServiceContext;
 use crate::mcp::MCPTool;
 use crate::session::SessionManager;
-use log::error;
 use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
@@ -99,12 +98,12 @@ impl ContentStoreServer {
         })
     }
 
-    pub fn tools(&self) -> Vec<MCPTool> {
+    pub fn tools_static() -> Vec<MCPTool> {
         vec![
             MCPTool {
-                name: "saveKnowledge".to_string(),
-                title: Some("Save Knowledge".to_string()),
-                description: "Save knowledge entry (text or file) to the content store".to_string(),
+                name: "addContent".to_string(),
+                title: Some("Add Content".to_string()),
+                description: "Add content entry (text or file) to the content store".to_string(),
                 input_schema: serde_json::from_value(serde_json::json!({
                     "type": "object",
                     "properties": {
@@ -137,9 +136,9 @@ impl ContentStoreServer {
                 annotations: Option::None,
             },
             MCPTool {
-                name: "searchKnowledge".to_string(),
-                title: Some("Search Knowledge".to_string()),
-                description: "Search for knowledge entries using keywords".to_string(),
+                name: "keywordSimilaritySearch".to_string(),
+                title: Some("Keyword Similarity Search".to_string()),
+                description: "Search for content entries using keyword similarity (BM25 algorithm)".to_string(),
                 input_schema: serde_json::from_value(serde_json::json!({
                     "type": "object",
                     "properties": {
@@ -167,6 +166,10 @@ impl ContentStoreServer {
                 annotations: Option::None,
             },
         ]
+    }
+
+    pub fn tools(&self) -> Vec<MCPTool> {
+        Self::tools_static()
     }
 
     pub(crate) async fn ensure_session_store(&self, session_id: &str) -> Result<(), String> {
@@ -312,59 +315,5 @@ impl ContentStoreServer {
             "application/pdf" => "PDF".to_string(),
             _ => mime.to_string(),
         }
-    }
-
-    pub async fn switch_context(&self, options: ServiceContextOptions) -> Result<(), String> {
-        if let Some(session_id) = &options.session_id {
-            // Note: In V2, we do not update the global session manager state.
-            // This server instance is bound to self.session_id.
-            // If the requested session_id differs, we log a warning but proceed with the requested ID for storage operations
-            // if that was the intent, although typically V2 severs are session-bound.
-
-            if session_id != &self.session_id {
-                log::warn!("ContentStoreServer: switch_context requested session '{}' but server is bound to '{}'", session_id, self.session_id);
-            }
-
-            // Clear recent uploads for session switch
-            {
-                let mut recent = self.recent_uploads.lock().await;
-                recent.clear();
-            }
-
-            let mut storage = self.storage.lock().await;
-
-            match storage
-                .get_or_create_store(
-                    session_id.clone(),
-                    Some(format!("Session Store: {session_id}")),
-                    Some(format!("Content store for session {session_id}")),
-                )
-                .await
-            {
-                Ok(_) => {}
-                Err(e) => {
-                    error!("Failed to get or create content store for session {session_id}: {e}");
-                    return Err(format!(
-                        "Failed to get or create content store for session {session_id}: {e}"
-                    ));
-                }
-            }
-
-            // Pre-populate recent uploads with existing files (up to 10 most recent)
-            if let Ok(contents) = storage.list_contents_by_session(session_id, Some(10)).await {
-                let mut recent = self.recent_uploads.lock().await;
-                for content in contents {
-                    recent.push_back(RecentUploadInfo {
-                        content_id: content.id,
-                        filename: content.filename,
-                        mime_type: content.mime_type,
-                        line_count: content.line_count,
-                        uploaded_at: content.uploaded_at,
-                    });
-                }
-            }
-        }
-
-        Ok(())
     }
 }

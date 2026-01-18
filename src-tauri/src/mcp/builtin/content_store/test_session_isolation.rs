@@ -220,7 +220,7 @@ mod tests {
         .unwrap();
 
         // Search in session A for SEARCHTERM
-        let search_a = queries::search_knowledge(
+        let search_a = queries::keyword_similarity_search(
             &server_a,
             json!({
                 "query": "SEARCHTERM"
@@ -236,7 +236,7 @@ mod tests {
         assert_eq!(results_a.len(), 1);
 
         // Search in session B for SEARCHTERM (should find nothing)
-        let search_b = queries::search_knowledge(
+        let search_b = queries::keyword_similarity_search(
             &server_b,
             json!({
                 "query": "SEARCHTERM"

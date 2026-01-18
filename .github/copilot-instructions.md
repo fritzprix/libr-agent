@@ -225,82 +225,183 @@ fn copy_dir_contents(&self, src: &Path, dst: &Path) -> Result<(), String> {
 - **Principle: Never use `any` in TypeScript.** The lint configuration is extremely strict; always use precise types and interfaces.
   - **Data from Backend/External Sources:** Never type incoming data as `any`. Define a proper interface (e.g., `RustMessage`) or use `unknown` with type guards/validation.
   - Do not add ESLint-disable comments that permanently or locally disable rules (for example: `// eslint-disable-next-line @typescript-eslint/no-explicit-any`). Instead, refactor the code to avoid `any` or use `unknown`/proper typing and document the rationale in a code comment and PR description when an exception is truly necessary.
-- **CRITICAL: Never use blind casting anti-patterns:**
-  - **Blind Type Assertions**: Never use `as` or `<Type>` casting without runtime validation
-  - **Unsafe unknown handling**: When using `unknown`, ALWAYS validate before casting
-  - **No blind any conversion**: Never cast `any` directly to a specific type without validation
 
-  #### ❌ Bad (Blind Casting Anti-Patterns)
+### Type Safety Principles & Anti-Patterns
 
-  ```typescript
-  // ❌ Direct casting without validation
-  const data = response as MyInterface;
-  const result = <UserData>jsonData;
+#### 🚫 CRITICAL: Prohibited Patterns
 
-  // ❌ Unknown to type without validation
-  function process(input: unknown) {
-    const user = input as User; // Unsafe!
-    return user.name;
+1. **Blind Type Assertions** - Never use `as` or `<Type>` casting without runtime validation
+2. **Unsafe unknown handling** - When using `unknown`, ALWAYS validate before casting
+3. **Blind any conversion** - Never cast `any` directly to a specific type without validation
+4. **JSON.parse without validation** - Never cast parsed JSON without runtime checks
+5. **Backend response assumptions** - Never assume backend data structure without validation
+6. **Generic type casts** - Never use `as T` in generic functions without validation
+
+#### ❌ Bad (Anti-Patterns to Avoid)
+
+```typescript
+// ❌ Direct casting without validation
+const data = response as MyInterface;
+const result = <UserData>jsonData;
+
+// ❌ Unknown to type without validation
+function process(input: unknown) {
+  const user = input as User; // Unsafe!
+  return user.name;
+}
+
+// ❌ Any to specific type
+function handle(data: any) {
+  const config: Config = data; // Unsafe!
+}
+
+// ❌ JSON.parse without validation
+const config = JSON.parse(jsonString) as AppConfig;
+
+// ❌ Backend response without validation
+const tools = (await getTools(sessionId)) as MCPTool[];
+
+// ❌ Generic cast without validation
+function getValue<T>(key: string, defaultValue: T): T {
+  const value = storage.get(key);
+  return (value ?? defaultValue) as T; // Unsafe!
+}
+
+// ❌ Double casting to bypass errors
+const sdk = this.client as unknown as SpecificSDK;
+```
+
+#### ✅ Good (Type-Safe Patterns)
+
+```typescript
+// ✅ Type guard validation
+interface User {
+  name: string;
+  age: number;
+}
+
+function isUser(obj: unknown): obj is User {
+  return (
+    typeof obj === 'object' &&
+    obj !== null &&
+    'name' in obj &&
+    typeof obj.name === 'string' &&
+    'age' in obj &&
+    typeof obj.age === 'number'
+  );
+}
+
+function process(input: unknown) {
+  if (isUser(input)) {
+    return input.name; // Type-safe!
+  }
+  throw new Error('Invalid user data');
+}
+
+// ✅ Use Zod for complex validation
+import { z } from 'zod';
+
+const UserSchema = z.object({
+  name: z.string(),
+  age: z.number(),
+});
+
+function processWithZod(input: unknown) {
+  const user = UserSchema.parse(input); // Runtime validation + type inference
+  return user.name;
+}
+
+// ✅ JSON.parse with schema validation
+const ConfigSchema = z.object({
+  theme: z.enum(['light', 'dark']),
+  fontSize: z.number().positive(),
+});
+
+const parsed = JSON.parse(jsonString);
+const config = ConfigSchema.parse(parsed); // Safe!
+
+// ✅ Backend response validation
+async function getValidatedTools(sessionId: string): Promise<MCPTool[]> {
+  const response = await getTools(sessionId);
+
+  if (!Array.isArray(response)) {
+    throw new Error('Expected array of tools');
   }
 
-  // ❌ Any to specific type
-  function handle(data: any) {
-    const config: Config = data; // Unsafe!
-  }
-  ```
-
-  #### ✅ Good (Type-Safe Validation)
-
-  ```typescript
-  // ✅ Type guard validation
-  interface User {
-    name: string;
-    age: number;
-  }
-
-  function isUser(obj: unknown): obj is User {
-    return (
-      typeof obj === 'object' &&
-      obj !== null &&
-      'name' in obj &&
-      typeof obj.name === 'string' &&
-      'age' in obj &&
-      typeof obj.age === 'number'
-    );
-  }
-
-  function process(input: unknown) {
-    if (isUser(input)) {
-      return input.name; // Type-safe!
-    }
-    throw new Error('Invalid user data');
-  }
-
-  // ✅ Use Zod for complex validation
-  import { z } from 'zod';
-
-  const UserSchema = z.object({
-    name: z.string(),
-    age: z.number(),
+  return response.filter((tool): tool is MCPTool => {
+    return isMCPTool(tool); // Use type guard
   });
+}
 
-  function processWithZod(input: unknown) {
-    const user = UserSchema.parse(input); // Runtime validation
-    return user.name;
+// ✅ Generic with validator parameter
+function getValue<T>(
+  key: string,
+  defaultValue: T,
+  validator: (val: unknown) => val is T,
+): T {
+  const value = storage.get(key);
+  if (value !== undefined && validator(value)) {
+    return value;
   }
+  return defaultValue;
+}
 
-  // ✅ Narrow types progressively
-  function handleData(data: unknown) {
-    if (typeof data !== 'object' || data === null) {
-      throw new Error('Expected object');
-    }
-    if (!('type' in data) || typeof data.type !== 'string') {
-      throw new Error('Missing type field');
-    }
-    // Now data is narrowed to { type: string } & object
-    return data.type;
+// ✅ Narrow types progressively
+function handleData(data: unknown) {
+  if (typeof data !== 'object' || data === null) {
+    throw new Error('Expected object');
   }
-  ```
+  if (!('type' in data) || typeof data.type !== 'string') {
+    throw new Error('Missing type field');
+  }
+  // Now data is narrowed to { type: string } & object
+  return data.type;
+}
+
+// ✅ SDK with proper interface definition
+interface OpenAIModelsAPI {
+  models: { list: () => Promise<{ data: unknown[] }> };
+}
+
+// Define explicit interface and document why cast is needed
+const openaiModels = this.openai as OpenAIModelsAPI;
+```
+
+#### 📋 Type Safety Checklist
+
+Before merging any PR, verify:
+
+- [ ] No `as any` casts (use `grep "as any" src/`)
+- [ ] No ESLint disable comments for type rules
+- [ ] All `JSON.parse` operations have schema validation
+- [ ] All backend responses validated with type guards
+- [ ] All `unknown` types narrowed before use
+- [ ] Generic functions include validator parameters
+- [ ] Type assertions documented with rationale
+
+#### 🔧 Refactoring Guidelines
+
+When encountering type safety issues:
+
+1. **Identify the root cause** - Why is the type unknown or any?
+2. **Add runtime validation** - Use type guards or Zod schemas
+3. **Update types at source** - Fix backend type definitions if possible
+4. **Document exceptions** - If cast is truly necessary, document why
+5. **Add tests** - Ensure validation catches invalid data
+
+See [Type Safety Refactoring Plan](../../docs/refactoring/type-safety-refactoring-plan.md) for detailed migration guide.
+
+#### 🎯 Acceptable `unknown` Usage
+
+These patterns are acceptable:
+
+- **Logger variadic arguments**: `...args: unknown[]` for flexible logging
+- **Error catch blocks**: `catch (error: unknown)` per TypeScript best practice
+- **Test environment mocking**: `(global as unknown as MockType)` for test setup
+- **Protocol definitions**: JSON-RPC payloads where structure varies
+- **Abstract base classes**: When subclasses define concrete types
+
+**Key difference:** These use `unknown` as input that gets validated, not as output assumed to be valid.
 
 - **Use the centralized logger instead of console.log**: Import `getLogger` from `@/lib/logger` and use context-specific logging (e.g., `const logger = getLogger('ComponentName')`) instead of `console.*` methods for better debugging and log management.
 - **Never use inline import() types in interfaces.** Always use proper import statements at the top of the file instead of `import('../path').Type`. This improves readability, maintainability, and IDE support.

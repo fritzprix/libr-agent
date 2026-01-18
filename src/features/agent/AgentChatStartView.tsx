@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { RefreshCw, Search } from 'lucide-react';
 import type { Assistant } from '@/models/chat';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const logger = getLogger('AgentChatStartView');
 
@@ -41,6 +42,7 @@ export default function AgentChatStartView() {
   const [startingAssistantId, setStartingAssistantId] = useState<string | null>(
     null,
   );
+  const [activeTab, setActiveTab] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Load sessions on mount
@@ -57,11 +59,17 @@ export default function AgentChatStartView() {
       error: 4,
     };
 
-    // Filter by search query
     let filtered = sessions;
+
+    // Filter by Tab
+    if (activeTab !== 'all') {
+      filtered = filtered.filter((session) => session.status === activeTab);
+    }
+
+    // Filter by search query
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
-      filtered = sessions.filter(
+      filtered = filtered.filter(
         (session) =>
           session.name?.toLowerCase().includes(query) ||
           session.id.toLowerCase().includes(query),
@@ -74,7 +82,24 @@ export default function AgentChatStartView() {
       if (statusDiff !== 0) return statusDiff;
       return b.createdAt.getTime() - a.createdAt.getTime();
     });
-  }, [sessions, searchQuery]);
+  }, [sessions, searchQuery, activeTab]);
+
+  // Compute counts for tabs
+  const statusCounts = useMemo(() => {
+    const counts = {
+      all: sessions.length,
+      busy: 0,
+      idle: 0,
+      paused: 0,
+      error: 0,
+    };
+    sessions.forEach((s) => {
+      if (Object.prototype.hasOwnProperty.call(counts, s.status)) {
+        counts[s.status as keyof typeof counts]++;
+      }
+    });
+    return counts;
+  }, [sessions]);
 
   const handleAssistantSelect = useCallback(
     async (assistant: Assistant) => {
@@ -255,7 +280,31 @@ export default function AgentChatStartView() {
             </Button>
           </div>
 
-          {/* Search Input */}
+          <Tabs
+            defaultValue="all"
+            value={activeTab}
+            onValueChange={setActiveTab}
+            className="w-full mb-4"
+          >
+            <TabsList className="w-full justify-start overflow-x-auto">
+              <TabsTrigger value="all" className="flex-1">
+                All ({statusCounts.all})
+              </TabsTrigger>
+              <TabsTrigger value="busy" className="flex-1">
+                Busy ({statusCounts.busy})
+              </TabsTrigger>
+              <TabsTrigger value="idle" className="flex-1">
+                Idle ({statusCounts.idle})
+              </TabsTrigger>
+              <TabsTrigger value="paused" className="flex-1">
+                Paused ({statusCounts.paused})
+              </TabsTrigger>
+              <TabsTrigger value="error" className="flex-1">
+                Error ({statusCounts.error})
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input

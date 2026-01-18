@@ -57,8 +57,7 @@ export function useDebounce<T extends (...args: never[]) => void>(
     }
     if (argsRef.current !== undefined) {
       const args = argsRef.current;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (callbackRef.current as any)(...args);
+      callbackRef.current(...args);
       argsRef.current = undefined;
     }
   }, []);
@@ -68,8 +67,7 @@ export function useDebounce<T extends (...args: never[]) => void>(
       cancel();
       argsRef.current = args;
       timeoutRef.current = setTimeout(() => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (callbackRef.current as any)(...args);
+        callbackRef.current(...args);
         timeoutRef.current = null;
         argsRef.current = undefined;
       }, delay);

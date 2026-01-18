@@ -274,6 +274,14 @@ pub async fn list_builtin_servers_with_metadata() -> Vec<BuiltinServerInfo> {
     manager.list_builtin_servers_with_metadata().await
 }
 
+/// Lists all POSSIBLE builtin server definitions for UI configuration
+/// This shows what builtin tools are available to configure for assistants/agents,
+/// not what's currently instantiated in the global registry.
+#[tauri::command]
+pub fn list_available_builtin_server_definitions() -> Vec<BuiltinServerInfo> {
+    MCPServerManager::list_available_builtin_server_definitions()
+}
+
 /// Calls a tool on one of the built-in MCP servers.
 #[tauri::command]
 pub async fn call_builtin_tool(
@@ -336,23 +344,6 @@ pub async fn get_service_context(
     get_mcp_manager()
         .get_service_context(&server_id, options)
         .await
-}
-
-/// Switches the context for a given MCP server.
-///
-/// # Arguments
-/// * `server_id` - The unique identifier for the MCP server.
-/// * `options` - The context options to switch to.
-///
-/// # Returns
-/// A `Result` indicating success or an error string on failure.
-#[tauri::command]
-#[allow(dead_code)]
-pub async fn switch_context(
-    server_id: String,
-    options: ServiceContextOptions,
-) -> Result<(), String> {
-    get_mcp_manager().switch_context(&server_id, options).await
 }
 
 // ============================================================================

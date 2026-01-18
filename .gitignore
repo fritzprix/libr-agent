@@ -63,4 +63,4 @@ node-repl.history
 Thumbs.db
 *.pem
 *.p12
-*.key
+*.keysrc-tauri/target

@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use tracing::info;
 
 use super::BuiltinMCPServer;
-use crate::mcp::types::{MCPResult, ServiceContext, ServiceContextOptions};
+use crate::mcp::types::{MCPResult, ServiceContext};
 use crate::mcp::MCPTool;
 use crate::services::SecureFileManager;
 use crate::session::SessionManager;
@@ -281,6 +281,16 @@ impl WorkspaceServer {
         Arc::new(SecureFileManager::new_with_base_dir(workspace_dir))
     }
 
+    /// Validate path with security checks (helper for file operations)
+    pub fn validate_path_with_error(
+        &self,
+        path_str: &str,
+        session_id: Option<String>,
+    ) -> Result<std::path::PathBuf, String> {
+        let file_manager = self.get_file_manager(session_id);
+        file_operations::utils::validate_path_with_error(&file_manager, path_str)
+    }
+
     #[allow(dead_code)]
     fn get_workspace_tree(&self, path: &str, max_depth: usize) -> String {
         use std::fs;
@@ -328,6 +338,14 @@ impl WorkspaceServer {
 
         build_tree(std::path::Path::new(path), "", 0, max_depth)
     }
+    pub fn tools_static() -> Vec<MCPTool> {
+        let mut tools = Vec::new();
+        tools.extend(tools::file_tools());
+        tools.extend(tools::code_tools());
+        tools.extend(tools::export_tools());
+        tools.extend(tools::terminal_tools());
+        tools
+    }
 }
 
 #[async_trait]
@@ -345,12 +363,7 @@ impl BuiltinMCPServer for WorkspaceServer {
     }
 
     fn tools(&self) -> Vec<MCPTool> {
-        let mut tools = Vec::new();
-        tools.extend(tools::file_tools());
-        tools.extend(tools::code_tools());
-        tools.extend(tools::export_tools());
-        tools.extend(tools::terminal_tools());
-        tools
+        Self::tools_static()
     }
 
     async fn get_service_context(&self, options: Option<&Value>) -> ServiceContext {
@@ -498,112 +511,6 @@ impl BuiltinMCPServer for WorkspaceServer {
                 "tools_count": self.tools().len()
             })),
         }
-    }
-
-    async fn switch_context(&self, options: ServiceContextOptions) -> Result<(), String> {
-        // Update session context if session_id is provided
-        if let Some(new_session_id) = options.session_id {
-            info!("Switching workspace context to session: {}", new_session_id);
-
-            // Get current session before switching
-            let old_session_id = self.session_id.clone();
-
-            info!(
-                "Checking context switch: old='{}', new='{}'",
-                old_session_id, new_session_id
-            );
-
-            // Cancel all processes for the old session
-            if old_session_id != new_session_id {
-                info!(
-                    "Switching workspace context: {} -> {}",
-                    old_session_id, new_session_id
-                );
-
-                info!("Acquiring process registry lock for cleanup...");
-                let mut reg = self.process_registry.write().await;
-                info!("Process registry lock acquired. Starting cleanup.");
-
-                // Get all process IDs for the old session
-                let old_session_processes: Vec<String> = reg
-                    .entries
-                    .values()
-                    .filter(|e| e.session_id == old_session_id)
-                    .filter(|e| {
-                        matches!(
-                            e.status,
-                            terminal_manager::ProcessStatus::Starting
-                                | terminal_manager::ProcessStatus::Running
-                        )
-                    })
-                    .map(|e| e.id.clone())
-                    .collect();
-
-                // Cancel all processes via their tokens
-                for process_id in &old_session_processes {
-                    if let Some(token) = reg.cancellation_tokens.get(process_id) {
-                        info!("Cancelling process: {}", process_id);
-                        token.cancel();
-                    }
-
-                    // Update status to Killed
-                    if let Some(entry) = reg.entries.get_mut(process_id) {
-                        entry.status = terminal_manager::ProcessStatus::Killed;
-                        entry.finished_at = Some(chrono::Utc::now());
-                    }
-                }
-
-                // Also kill by PID for safety (in case token didn't work)
-                for process_id in old_session_processes {
-                    if let Some(entry) = reg.entries.get(&process_id) {
-                        if let Some(pid) = entry.pid {
-                            info!("Force-killing process {} (PID {})", process_id, pid);
-
-                            #[cfg(unix)]
-                            {
-                                use std::process::Command;
-                                let _ = Command::new("kill")
-                                    .arg("-TERM")
-                                    .arg(pid.to_string())
-                                    .output();
-                            }
-
-                            #[cfg(windows)]
-                            {
-                                use std::process::Command;
-                                let _ = Command::new("taskkill")
-                                    .args(["/PID", &pid.to_string(), "/F"])
-                                    .output();
-                            }
-                        }
-                    }
-                }
-
-                drop(reg);
-                info!("Process registry lock released.");
-            } else {
-                info!("Session context unchanged, skipping process cleanup.");
-            }
-
-            // Switch session in session_manager (use async version to avoid blocking)
-            // LEGACY: In Agent V2, we don't update global session state.
-            // This is kept as a log for debugging but no state change occurs.
-            info!(
-                "Context switch requested to: {}. (Global session update skipped)",
-                new_session_id
-            );
-
-            // The session manager handles session-specific workspace directories
-            // No additional action needed as get_workspace_dir() uses session context
-        }
-
-        // Update assistant context if assistant_id is provided
-        if let Some(assistant_id) = options.assistant_id {
-            info!("Switching workspace context to assistant: {}", assistant_id);
-            // Workspace server doesn't filter by assistant, but logs for awareness
-        }
-
-        Ok(())
     }
 
     async fn call_tool(

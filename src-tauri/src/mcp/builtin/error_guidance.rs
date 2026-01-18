@@ -188,7 +188,7 @@ impl ErrorGuidance {
             // Knowledge tool errors
             (ErrorCategory::ResourceNotFound, ToolGroup::Knowledge) => vec![
                 "Use listKnowledge to see available knowledge entries".to_string(),
-                "Use searchKnowledge to find entries by keyword".to_string(),
+                "Use keywordSimilaritySearch to find entries by keyword".to_string(),
                 "Verify the knowledge ID is correct".to_string(),
             ],
 

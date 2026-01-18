@@ -1,6 +1,13 @@
 import { safeInvoke } from './core';
 import type { Playbook } from '@/types/playbook';
 import type { Page } from '@/lib/db/types';
+import {
+  safeParsePlaybookWorkflow,
+  safeParseSuccessCriteria,
+} from '@/lib/schemas/playbook';
+import { getLogger } from '@/lib/logger';
+
+const logger = getLogger('PlaybooksBackend');
 
 /**
  * Backend DTO for Playbook
@@ -24,26 +31,32 @@ interface PlaybookDto {
 function deserializePlaybook(
   dto: PlaybookDto,
 ): Playbook & { id: string; createdAt: Date; updatedAt: Date } {
-  // Parse workflow JSON string to PlaybookStep[]
+  // Parse workflow JSON string to PlaybookStep[] with validation
   let workflow: Playbook['workflow'] = [];
   if (typeof dto.workflow === 'string') {
-    try {
-      workflow = JSON.parse(dto.workflow) as Playbook['workflow'];
-    } catch {
+    const parsed = safeParsePlaybookWorkflow(dto.workflow);
+    if (parsed) {
+      workflow = parsed.steps;
+    } else {
+      logger.warn('Invalid workflow JSON in playbook', { id: dto.id });
       workflow = [];
     }
   } else if (dto.workflow && typeof dto.workflow === 'object') {
-    workflow = dto.workflow as Playbook['workflow'];
+    // Already parsed, try to validate structure
+    const validated = safeParsePlaybookWorkflow(JSON.stringify(dto.workflow));
+    workflow = validated?.steps || (dto.workflow as Playbook['workflow']);
   }
 
-  // Parse successCriteria JSON string to proper object
+  // Parse successCriteria JSON string with validation
   let successCriteria: Playbook['successCriteria'] = { description: '' };
   if (typeof dto.successCriteria === 'string') {
-    try {
-      successCriteria = JSON.parse(
-        dto.successCriteria,
-      ) as Playbook['successCriteria'];
-    } catch {
+    const parsed = safeParseSuccessCriteria(dto.successCriteria);
+    if (parsed) {
+      successCriteria = parsed;
+    } else {
+      logger.warn('Invalid successCriteria JSON in playbook', {
+        id: dto.id,
+      });
       successCriteria = { description: '' };
     }
   } else if (dto.successCriteria && typeof dto.successCriteria === 'object') {

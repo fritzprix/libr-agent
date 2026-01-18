@@ -1,0 +1,3 @@
+
+> libragent@0.4.1 lint /app
+> eslint src --ext ts,tsx --report-unused-disable-directives

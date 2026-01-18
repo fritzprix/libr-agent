@@ -1,6 +1,7 @@
 import { safeInvoke } from './core';
 import type { Session, Assistant } from '@/models/chat';
 import type { Page } from '@/lib/db/types';
+import { safeParseAgentConfig } from '@/lib/schemas/agent-config';
 
 interface SessionDto {
   id: string;
@@ -28,7 +29,14 @@ function deserializeSession(dto: SessionDto): Session {
 
   // Simulation: We assume the caller might need to hydrate assistants separately
   // or we return minimal Assistant objects (just with IDs).
-  const config = (dto.config || {}) as AgentConfig;
+  let config: AgentConfig = {};
+  if (typeof dto.config === 'string') {
+    config = safeParseAgentConfig(dto.config);
+  } else if (dto.config && typeof dto.config === 'object') {
+    const result = safeParseAgentConfig(JSON.stringify(dto.config));
+    config = result || {};
+  }
+
   const assistantIds = config.assistants || [];
 
   // Minimal assistants stub

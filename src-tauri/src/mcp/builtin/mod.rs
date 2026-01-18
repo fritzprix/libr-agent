@@ -1,5 +1,5 @@
 use crate::mcp::types::MCPResult;
-use crate::mcp::types::{BuiltinServerMetadata, ServiceContext, ServiceContextOptions};
+use crate::mcp::types::{BuiltinServerMetadata, ServiceContext};
 use crate::mcp::{MCPResponse, MCPTool};
 use crate::session::SessionManager;
 use async_trait::async_trait;
@@ -95,13 +95,6 @@ pub trait BuiltinMCPServer: Send + Sync + std::fmt::Debug {
             ),
             structured_state: None,
         }
-    }
-
-    /// Switches the context for this server based on the provided options.
-    #[allow(dead_code)]
-    async fn switch_context(&self, _options: ServiceContextOptions) -> Result<(), String> {
-        // Default implementation: no-op, servers can override for context switching
-        Ok(())
     }
 }
 
@@ -347,18 +340,22 @@ impl BuiltinServerRegistry {
 
     /// Creates a new `BuiltinServerRegistry` and registers the default servers
     /// using the provided `SessionManager`.
+    ///
+    /// Note: Only registers stateless servers. Stateful servers (knowledge, planning, playbook,
+    /// assistant, browser) are instantiated per-session in MCPServiceProxy.
     pub fn new_with_session_manager(session_manager: std::sync::Arc<SessionManager>) -> Self {
         let mut registry = Self {
             servers: std::collections::HashMap::new(),
         };
 
-        // Register built-in workspace server with SessionManager
+        // Register stateless builtin servers
+        registry.register_server(Box::new(bootstrap::BootstrapServer::new()));
+
         registry.register_server(Box::new(workspace::WorkspaceServer::new(
             "default".to_string(),
             session_manager.clone(),
         )));
 
-        // Register content-store server (native backend)
         registry.register_server(Box::new(
             crate::mcp::builtin::content_store::ContentStoreServer::new(
                 "default".to_string(),
@@ -366,11 +363,11 @@ impl BuiltinServerRegistry {
             ),
         ));
 
-        // Register MCP Manager server
+        registry.register_server(Box::new(ui::UiServer::new()));
         registry.register_server(Box::new(mcp_manager::MCPManagerServer::new()));
 
-        // Browser Agent server removed to prevent duplicate tools.
-        // Browser functionality now provided by frontend BrowserToolProvider.
+        // Session-specific servers (knowledge, planning, playbook, assistant, browser) are
+        // instantiated per-session in MCPServiceProxy::create_builtin_server()
 
         registry
     }
@@ -388,13 +385,17 @@ impl BuiltinServerRegistry {
             servers: std::collections::HashMap::new(),
         };
 
-        // Register built-in workspace server with SessionManager
+        // V1 LEGACY: Only register servers that don't need session-specific parameters
+        // Agent V2 uses MCPServiceProxy per-session instead
+        registry.register_server(Box::new(bootstrap::BootstrapServer::new()));
+        // knowledge, planning, playbook, assistant require session_id + db - can't instantiate globally
+        // browser requires AppHandle + session_id - can't instantiate globally
+
         registry.register_server(Box::new(workspace::WorkspaceServer::new(
             "default".to_string(),
             session_manager.clone(),
         )));
 
-        // Register content-store server with SQLite support
         let content_store_server =
             crate::mcp::builtin::content_store::ContentStoreServer::new_with_sqlite(
                 "default".to_string(),
@@ -406,11 +407,9 @@ impl BuiltinServerRegistry {
 
         registry.register_server(Box::new(content_store_server));
 
-        // Register MCP Manager server
+        registry.register_server(Box::new(ui::UiServer::new()));
+        // browser requires AppHandle - can't instantiate without Tauri app context
         registry.register_server(Box::new(mcp_manager::MCPManagerServer::new()));
-
-        // Browser Agent server removed to prevent duplicate tools.
-        // Browser functionality now provided by frontend BrowserToolProvider.
 
         registry
     }
@@ -428,13 +427,17 @@ impl BuiltinServerRegistry {
             servers: std::collections::HashMap::new(),
         };
 
-        // Register built-in workspace server with SessionManager
+        // V1 LEGACY: Only register servers that don't need session-specific parameters
+        // Agent V2 uses MCPServiceProxy per-session instead
+        registry.register_server(Box::new(bootstrap::BootstrapServer::new()));
+        // knowledge, planning, playbook, assistant require session_id + db - can't instantiate globally
+        // browser requires AppHandle + session_id - can't instantiate globally
+
         registry.register_server(Box::new(workspace::WorkspaceServer::new(
             "default".to_string(),
             session_manager.clone(),
         )));
 
-        // Register content-store server with DatabaseConnection support
         let content_store_server =
             crate::mcp::builtin::content_store::ContentStoreServer::new_with_db(
                 "default".to_string(),
@@ -446,11 +449,9 @@ impl BuiltinServerRegistry {
 
         registry.register_server(Box::new(content_store_server));
 
-        // Register MCP Manager server
+        registry.register_server(Box::new(ui::UiServer::new()));
+        // browser requires AppHandle - can't instantiate without Tauri app context
         registry.register_server(Box::new(mcp_manager::MCPManagerServer::new()));
-
-        // Browser Agent server removed to prevent duplicate tools.
-        // Browser functionality now provided by frontend BrowserToolProvider.
 
         registry
     }
@@ -531,33 +532,6 @@ impl BuiltinServerRegistry {
 
         if let Some(server) = self.get_server(normalized_server_name) {
             Ok(server.get_service_context(options.as_ref()).await)
-        } else {
-            Err(format!("Built-in server '{server_name}' not found"))
-        }
-    }
-
-    /// Switches the context for a specific built-in server.
-    ///
-    /// # Arguments
-    /// * `server_name` - The name of the server.
-    /// * `options` - The context options to switch to.
-    ///
-    /// # Returns
-    /// A `Result` indicating success or an error.
-    pub async fn switch_server_context(
-        &self,
-        server_name: &str,
-        options: ServiceContextOptions,
-    ) -> Result<(), String> {
-        // Remove "builtin." prefix if present
-        let normalized_server_name = if let Some(stripped) = server_name.strip_prefix("builtin.") {
-            stripped
-        } else {
-            server_name
-        };
-
-        if let Some(server) = self.get_server(normalized_server_name) {
-            server.switch_context(options).await
         } else {
             Err(format!("Built-in server '{server_name}' not found"))
         }

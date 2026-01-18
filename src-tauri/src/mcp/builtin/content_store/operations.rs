@@ -8,7 +8,7 @@ use crate::mcp::types::MCPResult;
 use log::error;
 use serde_json::Value;
 
-pub async fn save_knowledge(
+pub async fn add_content(
     server: &ContentStoreServer,
     params: Value,
     session_id: &str,
@@ -17,7 +17,7 @@ pub async fn save_knowledge(
         Ok(args) => args,
         Err(e) => {
             return Ok(invalid_input_error(
-                &format!("Invalid save_knowledge parameters: {e}"),
+                &format!("Invalid addContent parameters: {e}"),
                 ToolGroup::ContentStore,
             ));
         }
