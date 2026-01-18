@@ -1,4 +1,28 @@
+use crate::entity::settings;
+use crate::state::get_database_connection;
 use regex::Regex;
+use sea_orm::EntityTrait;
+use serde_json::Value;
+
+/// Get diff context lines from settings (defaults to 3)
+pub async fn get_diff_context_lines() -> usize {
+    let db = get_database_connection();
+    // Setting key is 'advancedSettings' based on RustSettingsService
+    match settings::Entity::find_by_id("advancedSettings")
+        .one(db)
+        .await
+    {
+        Ok(Some(model)) => match serde_json::from_str::<Value>(&model.value) {
+            Ok(json) => json
+                .get("diffContextLines")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize)
+                .unwrap_or(3),
+            Err(_) => 3,
+        },
+        _ => 3,
+    }
+}
 
 /// Validate timeout value, applying default and max limits
 pub fn validate_timeout(timeout: Option<u64>) -> u64 {

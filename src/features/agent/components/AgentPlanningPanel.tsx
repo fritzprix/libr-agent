@@ -1,4 +1,5 @@
 import { useEffect, useCallback } from 'react';
+import { Circle } from 'lucide-react';
 import { useAgentChat, ServiceContext } from '@/context/AgentChatContext';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
 import { useAgentMessageTrigger } from '@/hooks/use-agent-message-trigger';
@@ -90,13 +91,22 @@ export function AgentPlanningPanel() {
                         {todo.priority && (
                           <Badge
                             variant="outline"
-                            className="text-xs px-1 py-0 h-4"
+                            className="text-xs px-1 py-0 h-4 flex items-center gap-1"
                           >
+                            <Circle
+                              className={`w-2 h-2 fill-current ${
+                                todo.priority === 'high'
+                                  ? 'text-red-500'
+                                  : todo.priority === 'medium'
+                                    ? 'text-yellow-500'
+                                    : 'text-green-500'
+                              }`}
+                            />
                             {todo.priority === 'high'
-                              ? '🔴'
+                              ? 'High'
                               : todo.priority === 'medium'
-                                ? '🟡'
-                                : '🟢'}
+                                ? 'Medium'
+                                : 'Low'}
                           </Badge>
                         )}
                       </div>

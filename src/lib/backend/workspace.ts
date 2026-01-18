@@ -51,3 +51,63 @@ export async function openWorkspaceFileWithDefaultApp(
     sessionId,
   });
 }
+
+/**
+ * Opens the session's workspace directory in the system file explorer.
+ * @param sessionId The session ID to identify which workspace to open.
+ * @returns A promise that resolves when the explorer is launched.
+ */
+export async function openWorkspaceInExplorer(
+  sessionId: string,
+): Promise<void> {
+  return safeInvoke<void>('open_workspace_in_explorer', { sessionId });
+}
+
+/**
+ * Opens the session's workspace directory in a system terminal.
+ * @param sessionId The session ID to identify which workspace to open.
+ * @returns A promise that resolves when the terminal is launched.
+ */
+export async function openWorkspaceInTerminal(
+  sessionId: string,
+): Promise<void> {
+  return safeInvoke<void>('open_workspace_in_terminal', { sessionId });
+}
+
+/**
+ * Gets the current workspace override path for a session.
+ * @param sessionId The session ID to query.
+ * @returns A promise that resolves to the override path string, or null if no override is set.
+ */
+export async function getWorkspaceOverride(
+  sessionId: string,
+): Promise<string | null> {
+  return safeInvoke<string | null>('get_workspace_override', { sessionId });
+}
+
+/**
+ * Sets a workspace override path for a session.
+ * @param sessionId The session ID to configure.
+ * @param overridePath The absolute path to use as the workspace directory.
+ * @returns A promise that resolves when the override is set.
+ */
+export async function setWorkspaceOverride(
+  sessionId: string,
+  overridePath: string,
+): Promise<void> {
+  return safeInvoke<void>('set_workspace_override', {
+    sessionId,
+    overridePath,
+  });
+}
+
+/**
+ * Cancels/removes the workspace override for a session.
+ * @param sessionId The session ID to configure.
+ * @returns A promise that resolves when the override is cancelled.
+ */
+export async function cancelWorkspaceOverride(
+  sessionId: string,
+): Promise<void> {
+  return safeInvoke<void>('cancel_workspace_override', { sessionId });
+}

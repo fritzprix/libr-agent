@@ -9,13 +9,23 @@ import {
   Folder,
   FolderOpen,
   RefreshCw,
-  Home,
   Upload,
+  Terminal,
+  AlertTriangle,
 } from 'lucide-react';
 import { useRustBackend, WorkspaceFileItem } from '@/hooks/use-rust-backend';
 import { useAgentMessageTrigger } from '@/hooks/use-agent-message-trigger';
 import { toast } from 'sonner';
 import { getLogger } from '@/lib/logger';
+import { Input } from '@/components/ui/input';
+import { open } from '@tauri-apps/plugin-dialog';
+import {
+  openWorkspaceInExplorer,
+  openWorkspaceInTerminal,
+  getWorkspaceOverride,
+  setWorkspaceOverride,
+  cancelWorkspaceOverride,
+} from '@/lib/backend';
 import {
   useDnDContext,
   type DragAndDropEvent,
@@ -49,7 +59,9 @@ export function AgentWorkspacePanel() {
   } = useRustBackend();
   const { session } = useAgentSessionState();
   const { submit, injectMessages } = useAgentChatActions();
-  const [rootPath, setRootPath] = useState<string>('./');
+  const [rootPath] = useState<string>('./');
+  const [workspaceOverride, setWorkspaceOverridePath] = useState<string>('');
+  const [isOverrideActive, setIsOverrideActive] = useState(false);
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -64,6 +76,23 @@ export function AgentWorkspacePanel() {
     logger.info('AgentWorkspacePanel initialized', { rootPath });
     loadDirectory(rootPath);
   }, []);
+
+  // Load current workspace override
+  useEffect(() => {
+    if (session?.id) {
+      getWorkspaceOverride(session.id)
+        .then((path) => {
+          if (path) {
+            setWorkspaceOverridePath(path);
+            setIsOverrideActive(true);
+          } else {
+            setWorkspaceOverridePath('');
+            setIsOverrideActive(false);
+          }
+        })
+        .catch((err) => logger.error('Failed to load workspace override', err));
+    }
+  }, [session?.id]);
 
   // Message-based automatic file list updates
   useAgentMessageTrigger(
@@ -269,9 +298,9 @@ export function AgentWorkspacePanel() {
                 typeof errorContent === 'object' &&
                 'text' in errorContent
               ) {
-                resultText = `❌ ${errorContent.text}`;
+                resultText = `${errorContent.text}`;
               } else {
-                resultText = '❌ Tool execution failed';
+                resultText = 'Tool execution failed';
               }
             } else if (response.content && Array.isArray(response.content)) {
               // Extract text from content array
@@ -368,14 +397,71 @@ export function AgentWorkspacePanel() {
     };
   }, [subscribe, handleWorkspaceFileDrop]);
 
-  // Navigate to directory
-  const navigateToDirectory = useCallback(
-    (path: string) => {
-      setRootPath(path);
-      loadDirectory(path);
-    },
-    [loadDirectory],
-  );
+  const handleSetOverride = async () => {
+    if (!workspaceOverride.trim() || !session?.id) return;
+
+    try {
+      await setWorkspaceOverride(session.id, workspaceOverride);
+      setIsOverrideActive(true);
+      toast.success('Workspace override set successfully');
+      loadDirectory('./');
+    } catch (error) {
+      logger.error('Failed to set workspace override', error);
+      toast.error(`Failed to set override: ${error}`);
+    }
+  };
+
+  const handleCancelOverride = async () => {
+    if (!session?.id) return;
+
+    try {
+      await cancelWorkspaceOverride(session.id);
+      setWorkspaceOverridePath('');
+      setIsOverrideActive(false);
+      toast.success('Workspace override cancelled');
+      loadDirectory('./');
+    } catch (error) {
+      logger.error('Failed to cancel workspace override', error);
+      toast.error(`Failed to cancel override: ${error}`);
+    }
+  };
+
+  const handleOpenInExplorer = async () => {
+    if (!session?.id) return;
+    try {
+      await openWorkspaceInExplorer(session.id);
+    } catch (error) {
+      logger.error('Failed to open explorer', error);
+      toast.error(`Failed to open explorer: ${error}`);
+    }
+  };
+
+  const handleOpenInTerminal = async () => {
+    if (!session?.id) return;
+    try {
+      await openWorkspaceInTerminal(session.id);
+    } catch (error) {
+      logger.error('Failed to open terminal', error);
+      toast.error(`Failed to open terminal: ${error}`);
+    }
+  };
+
+  const handleBrowseFolder = async () => {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: 'Select Workspace Directory',
+      });
+
+      if (selected && typeof selected === 'string') {
+        setWorkspaceOverridePath(selected);
+      }
+    } catch (error) {
+      logger.error('Failed to open folder dialog', error);
+      toast.error(`Failed to open folder dialog: ${error}`);
+    }
+  };
 
   // Open file with system default app
   const handleOpenFile = useCallback(
@@ -503,11 +589,20 @@ export function AgentWorkspacePanel() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => navigateToDirectory('/')}
-                className="h-6 w-6 p-0"
-                title="Go to root"
+                onClick={handleOpenInExplorer}
+                className="h-6 px-2 text-xs"
+                title="Open in Explorer"
               >
-                <Home className="w-3 h-3" />
+                <Folder className="w-3 h-3" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleOpenInTerminal}
+                className="h-6 px-2 text-xs"
+                title="Open in Terminal"
+              >
+                <Terminal className="w-3 h-3" />
               </Button>
               <Button
                 variant="ghost"
@@ -521,6 +616,55 @@ export function AgentWorkspacePanel() {
                 />
               </Button>
             </div>
+          </div>
+
+          {/* Workspace Override UI */}
+          <div className="px-0 py-2 space-y-2 border-b border-border/50 mb-2">
+            <div className="flex gap-2">
+              <Input
+                type="text"
+                placeholder="No workspace override (click Browse to select)"
+                value={workspaceOverride}
+                readOnly
+                className="h-7 text-xs flex-1"
+                disabled={isOverrideActive}
+              />
+              {!isOverrideActive && (
+                <Button
+                  onClick={handleBrowseFolder}
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs whitespace-nowrap"
+                >
+                  Browse...
+                </Button>
+              )}
+              {!isOverrideActive ? (
+                <Button
+                  onClick={handleSetOverride}
+                  size="sm"
+                  className="h-7 text-xs"
+                  disabled={!workspaceOverride.trim()}
+                >
+                  Set
+                </Button>
+              ) : (
+                <Button
+                  onClick={handleCancelOverride}
+                  size="sm"
+                  variant="destructive"
+                  className="h-7 text-xs"
+                >
+                  Cancel
+                </Button>
+              )}
+            </div>
+            {isOverrideActive && (
+              <p className="text-[10px] text-yellow-500 flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" />
+                Using custom workspace
+              </p>
+            )}
           </div>
 
           <div

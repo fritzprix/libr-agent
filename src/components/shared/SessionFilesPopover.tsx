@@ -1,4 +1,5 @@
 import { useCallback, useState, useEffect, useMemo } from 'react';
+import { Folder, FolderOpen, FileText } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -136,7 +137,8 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
             className="text-xs hover:text-blue-400 transition-colors flex items-center gap-1"
             title="세션 파일 보기"
           >
-            📁 {currentSessionFiles.length}
+            <Folder className="w-3 h-3" />
+            <span>{currentSessionFiles.length}</span>
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent className="w-80 p-0" side="bottom" align="end">
@@ -177,11 +179,16 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
                           </span>
                         )}
                         {file.workspacePath && (
-                          <span className="text-green-400">📁 Workspace</span>
+                          <span className="text-green-400 flex items-center gap-1">
+                            <FolderOpen className="w-3 h-3" />
+                            Workspace
+                          </span>
                         )}
                       </div>
                     </div>
-                    <div className="text-xs text-gray-400">📄</div>
+                    <div className="text-xs text-gray-400">
+                      <FileText className="w-4 h-4" />
+                    </div>
                   </div>
                   {file.preview && (
                     <div className="text-xs text-gray-400 mt-1 truncate">

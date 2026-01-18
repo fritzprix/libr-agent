@@ -9,6 +9,7 @@ import {
   Play,
   RefreshCw,
   Wrench,
+  AlertTriangle,
 } from 'lucide-react';
 import { AgentModelPicker } from '@/features/agent/components/AgentModelPicker';
 import { useAgentTools } from '@/hooks/use-agent-tools';
@@ -121,7 +122,7 @@ export function AgentChatStatusBar() {
 
   const getToolsIcon = () => {
     if (toolsLoading) return <LoadingSpinner />;
-    if (toolsError) return '⚠️';
+    if (toolsError) return <AlertTriangle className="w-3.5 h-3.5" />;
     return <Wrench size={14} />;
   };
 
