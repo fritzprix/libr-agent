@@ -209,10 +209,8 @@ impl BuiltinMCPServer for BootstrapServer {
         log::debug!("Bootstrap server tool called: {}", tool_name);
 
         match tool_name {
-            "detectPlatform" | "builtin_bootstrap__detectPlatform" => Ok(self.detect_platform()),
-            "getBootstrapGuide" | "builtin_bootstrap__getBootstrapGuide" => {
-                Ok(self.get_bootstrap_guide(args))
-            }
+            "detectPlatform" => Ok(self.detect_platform()),
+            "getBootstrapGuide" => Ok(self.get_bootstrap_guide(args)),
             _ => Err(format!(
                 "Unknown tool: {}. Available tools: detectPlatform, getBootstrapGuide",
                 tool_name

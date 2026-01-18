@@ -5,67 +5,7 @@ use serde_json::json;
 pub async fn ensure_default_assistants(db: &DatabaseConnection) -> Result<(), String> {
     let now = chrono::Utc::now().timestamp_millis();
 
-    // 1. Bootstrap Assistant
-    let bootstrap_name = "Bootstrap Assistant";
-    let bootstrap_exists = assistant::Entity::find()
-        .filter(assistant::Column::Name.eq(bootstrap_name))
-        .one(db)
-        .await
-        .map_err(|e| format!("Failed to check for Bootstrap Assistant: {}", e))?;
-
-    if bootstrap_exists.is_none() {
-        println!("✨ Creating default 'Bootstrap Assistant'...");
-        let system_prompt = r#"You are the Bootstrap Assistant for LibrAgent.
-Your job is to help users bootstrap their environment by detecting the platform, checking for installed tools, and guiding them through installation.
-
-CRITICAL PROTOCOLS:
-1. VERIFY BEFORE ACTION: Never assume a tool is missing. Always check first.
-2. CONFIRM INSTALLATION: After installation steps, verify the tool is actually available.
-3. REPORT ERRORS: If a step fails, report the specific error message.
-
-Strategy:
-- Goal & Plan: Always start by setting a goal and plan.
-- Detect Platform: Always identify the OS and shell environment first (e.g., using 'ver', 'uname -a', or $PSVersionTable).
-- Verify Dependencies: Check if necessary tools are installed before attempting to use them.
-  - USE: `where.exe <tool>` (Windows) or `which <tool>` (Unix) to verify existence.
-  - USE: `<tool> --version` to verify functionality.
-- Guide Installation: If a tool is missing, provide clear, step-by-step installation instructions.
-- Verify Success: AFTER installation instructions, ask user to run verification command again to confirm success.
-- Configure Integration: Assist the user in configuring and connecting external tools or servers (MCP).
-
-Usage Guardrails:
-- Do not suggest commands for the wrong platform.
-- Do not claim installation success without verification."#;
-
-        let config = json!({
-            "systemPrompt": system_prompt,
-            "mcpServerIds": [],
-            "deletionProtected": true,
-            "localServices": [],
-            "allowedBuiltInServiceAliases": [
-                "bootstrap",
-                "mcp_manager",
-                "workspace",
-                "planning",
-                "assistant_manager",
-            ]
-        });
-
-        let assistant = assistant::ActiveModel {
-            id: Set(uuid::Uuid::new_v4().to_string()),
-            name: Set(bootstrap_name.to_string()),
-            config: Set(config.to_string()),
-            created_at: Set(now),
-            updated_at: Set(now),
-        };
-
-        assistant
-            .insert(db)
-            .await
-            .map_err(|e| format!("Failed to create Bootstrap Assistant: {}", e))?;
-    }
-
-    // 2. Libr Assistant
+    // 1. Libr Assistant
     let libr_name = "Libr Assistant";
     let libr_exists = assistant::Entity::find()
         .filter(assistant::Column::Name.eq(libr_name))
@@ -117,7 +57,7 @@ Tools Usage Standard:
                 "playbook",
                 "mcp_manager",
                 "ui",
-                "assistant_manager",
+                "assistant",
             ]
         });
 
@@ -135,7 +75,7 @@ Tools Usage Standard:
             .map_err(|e| format!("Failed to create Libr Assistant: {}", e))?;
     }
 
-    // 3. Coding Expert Assistant
+    // 2. Coding Expert Assistant
     let coding_name = "Coding Expert";
     let coding_exists = assistant::Entity::find()
         .filter(assistant::Column::Name.eq(coding_name))
@@ -185,7 +125,7 @@ Tools Usage:
                 "contentstore",
                 "playbook",
                 "browser",
-                "assistant_manager",
+                "assistant",
             ]
         });
 
@@ -201,6 +141,74 @@ Tools Usage:
             .insert(db)
             .await
             .map_err(|e| format!("Failed to create Coding Expert: {}", e))?;
+    }
+
+    // 3. App Wizard (Setup Assistant)
+    let wizard_name = "App Wizard";
+    let wizard_exists = assistant::Entity::find()
+        .filter(assistant::Column::Name.eq(wizard_name))
+        .one(db)
+        .await
+        .map_err(|e| format!("Failed to check for App Wizard: {}", e))?;
+
+    if wizard_exists.is_none() {
+        println!("✨ Creating default 'App Wizard'...");
+        let system_prompt = r#"You are the App Wizard: a specialized agent for managing the LibrAgent application environment.
+Your role is to help users configure the application, manage assistants, and set up MCP servers.
+
+CAPABILITIES:
+1. MANAGING ASSISTANTS:
+   - Create new specialized assistants for specific tasks.
+   - Update existing assistant configurations.
+   - List and search available assistants.
+   - TUNE SYSTEM PROMPTS: When creating assistants, write detailed, role-playing system prompts.
+
+2. MANAGING MCP SERVERS:
+   - Connect to new MCP servers (stdio or http).
+   - Configure server tools and resources.
+   - Debug connection issues.
+
+3. ENVIRONMENT SETUP:
+   - Detect OS and environment details.
+   - Verify installed tools (git, node, python, etc.).
+   - Help users install missing dependencies.
+
+STRATEGY:
+- detectPlatform: From the 'bootstrap' service, used for OS and shell detection.
+- mcp_manager: For all server operations (list, create, update, delete).
+- assistant: For creating and managing other agents.
+- workspace: For reading config files or checking local tools.
+- browser: For finding documentation on MCP servers or tools."#;
+
+        let config = json!({
+            "systemPrompt": system_prompt,
+            "mcpServerIds": [],
+            "deletionProtected": true,
+            "localServices": [],
+            "allowedBuiltInServiceAliases": [
+                "bootstrap",
+                "mcp_manager",
+                "assistant",
+                "workspace",
+                "browser",
+                "planning",
+                "ui",
+                "contentstore"
+            ]
+        });
+
+        let assistant = assistant::ActiveModel {
+            id: Set(uuid::Uuid::new_v4().to_string()),
+            name: Set(wizard_name.to_string()),
+            config: Set(config.to_string()),
+            created_at: Set(now),
+            updated_at: Set(now),
+        };
+
+        assistant
+            .insert(db)
+            .await
+            .map_err(|e| format!("Failed to create App Wizard: {}", e))?;
     }
 
     Ok(())

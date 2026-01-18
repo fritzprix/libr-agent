@@ -1,21 +1,15 @@
 # Sprint W3-Jan-26
 
-## file operations enhancement
+## App Wizard Agent and the App Management Tools
 
-- editFile
-  - if the oldString and newString are identical, then return error clearly state that there is nothing to update
-- new operations
-  - searchLineInFile
-    - search pattern in file, regex can be used, and exact match as well
-    - return line number of match and the string the matched line
-  - editLineInFile
-    - replace the multiple lines with new string
-    - [{line:number, value: string},]
-    - return the diff state of updated block (+- 2 ~ 3 lines around the change, so that the agent understand the update is correct or not)
+- Assistant Management Built In Tool
+  - create assistant
+  - update assistant (allow the assistant specific tools)
 
-## workspace mounting and opening
-
-- workspace is created when the session initiated with local app cache dir
-- user can configure certain directory as workspace so that the workspace directory setting can be overridden
-- new button to open the workspace in file explore and terminal, and override workspace directory in Workspace Panel
-- remove buggy go to home button in Workspace Panel (it is not functional at this moment)
+- MCP server management built in tool
+  - manage MCP server registry (create, delete, update)
+- New Default Assistant
+  - alternative to the Bootstrap Assistant
+  - can help add MCP server to the registry when the user copy and paste the MCP Github URL or the MCP server Configuration JSON
+  - can help the user to setup the desktop environment to guarantee the MCP server runs successfully
+  - can help the assistant based on what user want and give the tool access to the assistant to help the user

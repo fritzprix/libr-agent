@@ -91,13 +91,13 @@ connections.insert(name.clone(), connection);
 
 #### Key Characteristics
 
-| Feature | Implementation | Benefit |
-|---------|---------------|---------|
-| **Isolation** | OS process per session | Complete state separation |
-| **Communication** | stdin/stdout pipes | Standard, language-agnostic |
-| **Resource Usage** | Higher (multiple processes) | Guaranteed no state conflicts |
-| **Lifecycle** | Client controls subprocess | Clean termination |
-| **Session Tracking** | Implicit (process = session) | No protocol overhead |
+| Feature              | Implementation               | Benefit                       |
+| -------------------- | ---------------------------- | ----------------------------- |
+| **Isolation**        | OS process per session       | Complete state separation     |
+| **Communication**    | stdin/stdout pipes           | Standard, language-agnostic   |
+| **Resource Usage**   | Higher (multiple processes)  | Guaranteed no state conflicts |
+| **Lifecycle**        | Client controls subprocess   | Clean termination             |
+| **Session Tracking** | Implicit (process = session) | No protocol overhead          |
 
 #### Configuration Example
 
@@ -151,13 +151,13 @@ let client = ().serve(transport).await?;
 
 #### Key Characteristics
 
-| Feature | Implementation | Benefit |
-|---------|---------------|---------|
-| **Isolation** | `Mcp-Session-Id` header | Server-side state tracking |
-| **Communication** | HTTP POST + SSE streams | Firewall-friendly, standard |
-| **Resource Usage** | Lower (shared connections) | Efficient for multiple sessions |
-| **Lifecycle** | Server manages sessions | 404 triggers re-init |
-| **Session Tracking** | Explicit (protocol-level) | Server can enforce policies |
+| Feature              | Implementation             | Benefit                         |
+| -------------------- | -------------------------- | ------------------------------- |
+| **Isolation**        | `Mcp-Session-Id` header    | Server-side state tracking      |
+| **Communication**    | HTTP POST + SSE streams    | Firewall-friendly, standard     |
+| **Resource Usage**   | Lower (shared connections) | Efficient for multiple sessions |
+| **Lifecycle**        | Server manages sessions    | 404 triggers re-init            |
+| **Session Tracking** | Explicit (protocol-level)  | Server can enforce policies     |
 
 #### Configuration Example
 
@@ -183,15 +183,15 @@ let client = ().serve(transport).await?;
 
 #### MCP Specification Compliance
 
-| Spec Requirement | Implementation | Location |
-|-----------------|----------------|----------|
-| POST for client messages | ✅ `rmcp` transport layer | `lifecycle.rs:143` |
-| GET for SSE streams | ✅ `enable_sse` flag | `lifecycle.rs:136` |
-| `Mcp-Session-Id` header | ✅ Injected at connection time | `lifecycle.rs:117-123` |
-| `Accept: text/event-stream` | ✅ `rmcp` handles | RMCP library |
-| Protocol version negotiation | ✅ `protocol_version` field | `types.rs:23` |
-| DNS rebinding protection | ✅ `SecurityConfig` | `types.rs:39-45` |
-| Session termination (404) | ⚠️ Server responsibility | - |
+| Spec Requirement             | Implementation                 | Location               |
+| ---------------------------- | ------------------------------ | ---------------------- |
+| POST for client messages     | ✅ `rmcp` transport layer      | `lifecycle.rs:143`     |
+| GET for SSE streams          | ✅ `enable_sse` flag           | `lifecycle.rs:136`     |
+| `Mcp-Session-Id` header      | ✅ Injected at connection time | `lifecycle.rs:117-123` |
+| `Accept: text/event-stream`  | ✅ `rmcp` handles              | RMCP library           |
+| Protocol version negotiation | ✅ `protocol_version` field    | `types.rs:23`          |
+| DNS rebinding protection     | ✅ `SecurityConfig`            | `types.rs:39-45`       |
+| Session termination (404)    | ⚠️ Server responsibility       | -                      |
 
 ---
 
@@ -287,6 +287,7 @@ Agent V2 uses external MCP servers through a three-layer architecture:
 **Location**: `src-tauri/src/agent/mod.rs`
 
 **Responsibilities**:
+
 - Manages "Think-Act-Observe" loop
 - Calls tools through MCPServiceProxy
 - Handles cancellation and error recovery
@@ -297,7 +298,7 @@ pub async fn send_message(&self, request: SendMessageRequest) -> Result<()> {
     loop {
         // 1. Think: Call LLM
         let response = self.call_llm(messages).await?;
-        
+
         // 2. Act: Execute tool calls
         if let Some(tool_calls) = response.tool_calls {
             for tool_call in tool_calls {
@@ -305,10 +306,10 @@ pub async fn send_message(&self, request: SendMessageRequest) -> Result<()> {
                 tool_results.push(result);
             }
         }
-        
+
         // 3. Observe: Add results to context
         messages.extend(tool_results);
-        
+
         // 4. Check if done
         if response.stop_reason == "end_turn" { break; }
     }
@@ -320,6 +321,7 @@ pub async fn send_message(&self, request: SendMessageRequest) -> Result<()> {
 **Location**: `src-tauri/src/mcp/service_proxy.rs`
 
 **Responsibilities**:
+
 - Routes tool calls to builtin or external servers
 - Maintains per-session builtin server instances
 - Provides unified interface for tool execution
@@ -355,6 +357,7 @@ impl MCPServiceProxy {
 **Location**: `src-tauri/src/mcp/server/mod.rs`
 
 **Responsibilities**:
+
 - Manages connections to external MCP servers
 - Handles both stdio and HTTP transports
 - Provides tool listing and execution
@@ -370,7 +373,7 @@ impl MCPServerManager {
     pub async fn call_tool(&self, server_name: &str, tool_name: &str, ...) -> MCPResponse {
         let connections = self.connections.lock().await;
         let connection = connections.get(server_name)?;
-        
+
         // Call through rmcp client (handles stdio or HTTP transport)
         connection.client.call_tool(tool_name, args).await
     }
@@ -524,7 +527,7 @@ pub async fn collect_available_tools(
     proxy_manager: &Arc<MCPServiceProxyManager>,
 ) -> Result<Vec<MCPTool>, String> {
     let mut all_tools = Vec::new();
-    
+
     // 1. Collect builtin tools
     if let Some(proxy) = proxy_manager.get_proxy(session_id).await {
         for tool_id in proxy.builtin_tool_ids() {
@@ -532,7 +535,7 @@ pub async fn collect_available_tools(
             all_tools.extend(server_tools);
         }
     }
-    
+
     // 2. Collect external tools (filtered by agent_config.mcp_server_ids)
     let external_tools = proxy_manager.list_all_external_tools().await?;
     let filtered_tools = external_tools
@@ -542,7 +545,7 @@ pub async fn collect_available_tools(
             agent_config.mcp_server_ids.contains(&server_name.to_string())
         })
         .collect();
-    
+
     all_tools.extend(filtered_tools);
     Ok(all_tools)
 }
@@ -557,10 +560,10 @@ pub async fn call_tool(&self, tool_name: &str, args: Value) -> Result<MCPRespons
         let tool_id = tool_name
             .strip_prefix("builtin_")
             .and_then(|s| s.split("__").next())?;
-        
+
         let server = self.builtin_servers.get(tool_id)?;
         let result = server.handle_call(tool_name, args).await?;
-        
+
         Ok(MCPResponse {
             result: Some(MCPResponseResult::ToolCall(result)),
             error: None,
@@ -568,7 +571,7 @@ pub async fn call_tool(&self, tool_name: &str, args: Value) -> Result<MCPRespons
     } else {
         // External: "filesystem__read_file" -> server="filesystem", tool="read_file"
         let (server_name, real_tool_name) = tool_name.split_once("__")?;
-        
+
         self.external_mcp_manager
             .call_tool(server_name, real_tool_name, args, None)
             .await
@@ -675,29 +678,29 @@ let result = proxy.call_tool(
 // Frontend: src/models/assistant.ts
 interface AgentConfig {
   assistant_id: string;
-  allowed_built_in_service_aliases?: string[];  // ["workspace", "planning", ...]
-  mcp_server_ids: string[];  // ["filesystem", "github", "slack"]
+  allowed_built_in_service_aliases?: string[]; // ["workspace", "planning", ...]
+  mcp_server_ids: string[]; // ["filesystem", "github", "slack"]
 }
 
 // Agent with only stdio servers
 const config1: AgentConfig = {
-  assistant_id: "asst_123",
-  allowed_built_in_service_aliases: ["workspace", "planning"],
-  mcp_server_ids: ["filesystem", "git"]  // stdio servers
+  assistant_id: 'asst_123',
+  allowed_built_in_service_aliases: ['workspace', 'planning'],
+  mcp_server_ids: ['filesystem', 'git'], // stdio servers
 };
 
 // Agent with HTTP servers
 const config2: AgentConfig = {
-  assistant_id: "asst_456",
-  allowed_built_in_service_aliases: ["ui", "browser"],
-  mcp_server_ids: ["github", "slack-api"]  // HTTP servers
+  assistant_id: 'asst_456',
+  allowed_built_in_service_aliases: ['ui', 'browser'],
+  mcp_server_ids: ['github', 'slack-api'], // HTTP servers
 };
 
 // Agent with mixed transports
 const config3: AgentConfig = {
-  assistant_id: "asst_789",
-  allowed_built_in_service_aliases: ["workspace"],
-  mcp_server_ids: ["filesystem", "github", "database"]  // Mixed
+  assistant_id: 'asst_789',
+  allowed_built_in_service_aliases: ['workspace'],
+  mcp_server_ids: ['filesystem', 'github', 'database'], // Mixed
 };
 ```
 
@@ -707,25 +710,27 @@ const config3: AgentConfig = {
 
 ### 1. Choosing Transport Type
 
-| Scenario | Recommended Transport | Reason |
-|----------|----------------------|--------|
-| Local file operations | **stdio** | No network overhead, OS-level isolation |
-| Database access | **stdio** | Connection pooling per session |
-| Cloud API integration | **HTTP** | Single connection, server handles state |
-| Stateful operations | **stdio** | Process memory is session-exclusive |
-| Stateless operations | **HTTP** | Connection reuse, lower resource usage |
-| Development/testing | **stdio** | Easier debugging, logs to stderr |
-| Production remote | **HTTP** | Centralized server, better monitoring |
+| Scenario              | Recommended Transport | Reason                                  |
+| --------------------- | --------------------- | --------------------------------------- |
+| Local file operations | **stdio**             | No network overhead, OS-level isolation |
+| Database access       | **stdio**             | Connection pooling per session          |
+| Cloud API integration | **HTTP**              | Single connection, server handles state |
+| Stateful operations   | **stdio**             | Process memory is session-exclusive     |
+| Stateless operations  | **HTTP**              | Connection reuse, lower resource usage  |
+| Development/testing   | **stdio**             | Easier debugging, logs to stderr        |
+| Production remote     | **HTTP**              | Centralized server, better monitoring   |
 
 ### 2. Session Isolation Checklist
 
 ✅ **stdio Servers**:
+
 - Each session spawns independent subprocess
 - No configuration needed—automatic isolation
 - Verify `command` path is correct for all environments
 - Use absolute paths or ensure PATH is set correctly
 
 ✅ **HTTP Servers**:
+
 - Server MUST implement `Mcp-Session-Id` header parsing
 - Server MUST return 404 for expired/invalid sessions
 - Client should handle 404 by re-initializing session
@@ -771,7 +776,7 @@ impl Drop for MCPServiceProxy {
 pub async fn cleanup_session(session_id: &str, manager: &MCPServerManager) {
     // Get list of servers for this session
     let servers = get_session_servers(session_id).await;
-    
+
     for server_name in servers {
         if let Err(e) = manager.stop_server(&server_name).await {
             log::warn!("Failed to stop server {}: {:?}", server_name, e);
@@ -782,11 +787,11 @@ pub async fn cleanup_session(session_id: &str, manager: &MCPServerManager) {
 
 ### 5. Tool Naming Conventions
 
-| Tool Type | Naming Pattern | Example |
-|-----------|---------------|---------|
-| External stdio | `{server}__{tool}` | `filesystem__read_file` |
-| External HTTP | `{server}__{tool}` | `github__search_repos` |
-| Builtin | `builtin_{service}__{tool}` | `builtin_workspace__editFile` |
+| Tool Type      | Naming Pattern              | Example                       |
+| -------------- | --------------------------- | ----------------------------- |
+| External stdio | `{server}__{tool}`          | `filesystem__read_file`       |
+| External HTTP  | `{server}__{tool}`          | `github__search_repos`        |
+| Builtin        | `builtin_{service}__{tool}` | `builtin_workspace__editFile` |
 
 **Important**: Use double underscore (`__`) as separator, NOT single underscore.
 
@@ -801,6 +806,7 @@ pub async fn cleanup_session(session_id: &str, manager: &MCPServerManager) {
 **Symptom**: `Tool not found: filesystem__read_file`
 
 **Diagnosis**:
+
 ```rust
 // Check if server is connected
 let connected = manager.get_connected_servers().await;
@@ -815,6 +821,7 @@ let tool_names: Vec<_> = tools.iter().map(|t| &t.name).collect();
 ```
 
 **Solutions**:
+
 1. Verify server config in agent_config.mcp_server_ids
 2. Check server started successfully: `mcp_start_server(config)`
 3. Confirm tool name matches server's list_tools output
@@ -829,6 +836,7 @@ let tool_names: Vec<_> = tools.iter().map(|t| &t.name).collect();
 **Diagnosis**: This should NEVER happen with stdio transport—OS process isolation prevents it.
 
 **If it happens**:
+
 1. Verify separate processes were spawned: `ps aux | grep mcp`
 2. Check logs for process reuse: `grep "Created transport" logs.txt`
 3. Ensure each session calls `start_server()` independently
@@ -842,6 +850,7 @@ let tool_names: Vec<_> = tools.iter().map(|t| &t.name).collect();
 **Symptom**: HTTP server returns wrong session's data
 
 **Diagnosis**:
+
 ```rust
 // Verify session ID is being sent
 let config = get_server_config("github").await;
@@ -854,6 +863,7 @@ match config.transport {
 ```
 
 **Solutions**:
+
 1. Ensure `session_id` field is set in TransportConfig::Http
 2. Verify server logs show `Mcp-Session-Id` header in requests
 3. Check server implementation handles header correctly
@@ -866,6 +876,7 @@ match config.transport {
 **Symptom**: HTTP server responses are slow or timeout
 
 **Diagnosis**:
+
 ```rust
 // Check SSE is enabled
 match config.transport {
@@ -877,6 +888,7 @@ match config.transport {
 ```
 
 **Solutions**:
+
 1. Set `enable_sse: Some(true)` in HTTP config
 2. Verify server supports SSE (check server docs)
 3. Check firewall allows streaming responses
@@ -889,6 +901,7 @@ match config.transport {
 **Symptom**: Tool calls hang indefinitely
 
 **Diagnosis**:
+
 ```rust
 // Add timeout wrapper
 use tokio::time::{timeout, Duration};
@@ -906,6 +919,7 @@ match result {
 ```
 
 **Solutions**:
+
 1. Check server process is alive: `ps aux | grep {server}`
 2. Verify network connectivity for HTTP servers
 3. Check server logs for hanging operations
@@ -985,24 +999,26 @@ curl -N -H "Accept: text/event-stream" \
 
 ### Code References
 
-| Component | File | Lines |
-|-----------|------|-------|
-| stdio transport | `src-tauri/src/mcp/server/lifecycle.rs` | 36-78 |
-| HTTP transport | `src-tauri/src/mcp/server/lifecycle.rs` | 83-171 |
-| Session isolation (stdio) | `src-tauri/src/mcp/session_isolation/stdio_manager.rs` | 1-150 |
-| Session isolation (HTTP) | `src-tauri/src/mcp/session_isolation/http_manager.rs` | 1-149 |
-| Tool collection | `src-tauri/src/agent/tools.rs` | 13-95 |
-| Tool routing | `src-tauri/src/mcp/service_proxy.rs` | 95-165 |
+| Component                 | File                                                   | Lines  |
+| ------------------------- | ------------------------------------------------------ | ------ |
+| stdio transport           | `src-tauri/src/mcp/server/lifecycle.rs`                | 36-78  |
+| HTTP transport            | `src-tauri/src/mcp/server/lifecycle.rs`                | 83-171 |
+| Session isolation (stdio) | `src-tauri/src/mcp/session_isolation/stdio_manager.rs` | 1-150  |
+| Session isolation (HTTP)  | `src-tauri/src/mcp/session_isolation/http_manager.rs`  | 1-149  |
+| Tool collection           | `src-tauri/src/agent/tools.rs`                         | 13-95  |
+| Tool routing              | `src-tauri/src/mcp/service_proxy.rs`                   | 95-165 |
 
 ### Testing
 
 Run integration tests:
+
 ```bash
 cd src-tauri
 cargo test --test '*' --features test-integration mcp
 ```
 
 Test specific component:
+
 ```bash
 cargo test -p libr-agent --lib mcp::session_isolation::http_manager::tests
 ```
@@ -1013,15 +1029,15 @@ cargo test -p libr-agent --lib mcp::session_isolation::http_manager::tests
 
 ### Transport Types (§ 1 & § 2)
 
-| Feature | stdio | HTTP Streamable |
-|---------|-------|-----------------|
-| **Local/Remote** | Local only | Both |
-| **Process Model** | Subprocess per client | Single server |
-| **Message Format** | JSON-RPC over stdin/stdout | JSON-RPC over HTTP |
-| **Streaming** | N/A (request/response) | SSE (Server-Sent Events) |
+| Feature                | stdio                       | HTTP Streamable           |
+| ---------------------- | --------------------------- | ------------------------- |
+| **Local/Remote**       | Local only                  | Both                      |
+| **Process Model**      | Subprocess per client       | Single server             |
+| **Message Format**     | JSON-RPC over stdin/stdout  | JSON-RPC over HTTP        |
+| **Streaming**          | N/A (request/response)      | SSE (Server-Sent Events)  |
 | **Session Management** | Implicit (process lifetime) | Explicit (Mcp-Session-Id) |
-| **Initialization** | Client spawns server | Client connects to URL |
-| **Termination** | Kill subprocess | HTTP DELETE or timeout |
+| **Initialization**     | Client spawns server        | Client connects to URL    |
+| **Termination**        | Kill subprocess             | HTTP DELETE or timeout    |
 
 ### Session Lifecycle (§ 2.5)
 
@@ -1033,6 +1049,7 @@ cargo test -p libr-agent --lib mcp::session_isolation::http_manager::tests
 ### Security Considerations (§ 2.0.1)
 
 For HTTP transport:
+
 1. Validate `Origin` header (DNS rebinding protection)
 2. Bind to localhost (127.0.0.1) for local servers
 3. Implement authentication for all connections

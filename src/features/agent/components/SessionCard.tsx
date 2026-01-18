@@ -106,11 +106,17 @@ export function SessionCard({ session, onResume, onDelete }: SessionCardProps) {
             role="status"
             aria-label={`Session status: ${statusConfig.badge}`}
           >
-            {statusConfig.icon === 'active' && <Circle className="w-2 h-2 fill-current" />}
-            {statusConfig.icon === 'idle' && <Circle className="w-2 h-2 fill-current" />}
+            {statusConfig.icon === 'active' && (
+              <Circle className="w-2 h-2 fill-current" />
+            )}
+            {statusConfig.icon === 'idle' && (
+              <Circle className="w-2 h-2 fill-current" />
+            )}
             {statusConfig.icon === 'paused' && <Pause className="w-3 h-3" />}
             {statusConfig.icon === 'error' && <XCircle className="w-3 h-3" />}
-            {statusConfig.icon === 'unknown' && <Circle className="w-2 h-2 fill-current" />}
+            {statusConfig.icon === 'unknown' && (
+              <Circle className="w-2 h-2 fill-current" />
+            )}
             <span>{statusConfig.badge}</span>
           </div>
         </div>
